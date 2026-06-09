@@ -2,7 +2,8 @@ import { LitElement, html, css, nothing } from 'lit';
 import { state } from 'lit/decorators.js';
 import { define } from '@erplora/outfitkit/define';
 import '@erplora/outfitkit/ok-data-table';
-import type { DataTableColumn } from '@erplora/outfitkit';
+import type { DataTableColumn, DataTableAction } from '@erplora/outfitkit';
+import '../erp-sales-document/erp-sales-document.js';
 import { createListController } from '@erplora/module-sdk';
 import type { ListController, ListClient, ListParams, ListPage } from '@erplora/module-sdk';
 
@@ -46,6 +47,13 @@ export class ErpSalesList extends LitElement {
   @state() statsError = '';
 
   @state() tick = 0;
+
+  /** Venta seleccionada para ver su documento (tiquet/factura) en el modal. */
+  @state() docSaleId?: string;
+
+  private documentActions: DataTableAction[] = [
+    { id: 'document', label: 'Documento', icon: 'receipt-outline' },
+  ];
 
   private ctrl!: ListController<Sale>;
 
@@ -115,7 +123,21 @@ export class ErpSalesList extends LitElement {
         </div>
         ${this.statsError ? html`<p class="err">${this.statsError}</p>` : nothing}
         ${this.ctrl?.error ? html`<p class="err">${this.ctrl.error}</p>` : nothing}
-        <ok-data-table .serverSide=${true} .columns=${this.columns} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.ctrl?.state.sort} .sortDir=${this.ctrl?.state.dir ?? 'desc'} .searchable=${true} .searchPlaceholder=${"Buscar número o cliente…"} .emptyMessage=${this.ctrl?.loading ? 'Cargando…' : 'Aún no hay ventas.'} @pageChange=${(e: CustomEvent<number>) => this.ctrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.ctrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.ctrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.ctrl.setFilter(e.detail.col, e.detail.value)}></ok-data-table>
+        <ok-data-table .serverSide=${true} .columns=${this.columns} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.ctrl?.state.sort} .sortDir=${this.ctrl?.state.dir ?? 'desc'} .searchable=${true} .searchPlaceholder=${"Buscar número o cliente…"} .emptyMessage=${this.ctrl?.loading ? 'Cargando…' : 'Aún no hay ventas.'} .actions=${this.documentActions} @rowAction=${(e: CustomEvent<{ actionId: string; row: Sale }>) => { if (e.detail.actionId === 'document') this.docSaleId = e.detail.row.id; }} @pageChange=${(e: CustomEvent<number>) => this.ctrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.ctrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.ctrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.ctrl.setFilter(e.detail.col, e.detail.value)}></ok-data-table>
+
+        <ion-modal .isOpen=${!!this.docSaleId} @ionModalDidDismiss=${() => { this.docSaleId = undefined; }}>
+          <ion-header>
+            <ion-toolbar>
+              <ion-title>Documento de venta</ion-title>
+              <ion-buttons slot="end">
+                <ion-button @click=${() => { this.docSaleId = undefined; }}>Cerrar</ion-button>
+              </ion-buttons>
+            </ion-toolbar>
+          </ion-header>
+          <ion-content class="ion-padding">
+            ${this.docSaleId ? html`<erp-sales-document .saleId=${this.docSaleId}></erp-sales-document>` : nothing}
+          </ion-content>
+        </ion-modal>
       </div>`;
   }
 }
