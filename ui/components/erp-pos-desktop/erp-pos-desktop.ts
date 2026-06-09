@@ -1,0 +1,250 @@
+import { LitElement, html, css, nothing } from 'lit';
+import { state, query } from 'lit/decorators.js';
+import { define } from '@erplora/outfitkit/define';
+import '../erp-sales-document/erp-sales-document.js';
+
+// erp-pos-desktop — pantalla de venta para RETAIL sin táctil: campo de escaneo/SKU (Enter añade),
+// lista compacta de líneas con cantidad editable por teclado, y cobro con importe por teclado.
+// Mismo backend que la táctil: sales.complete_sale (channel='pos') → set_document_type → documento.
+
+interface ErploraClientLike {
+  query<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T>;
+  command<T = unknown>(name: string, payload?: Record<string, unknown>): Promise<T>;
+}
+interface Product { id: string; name: string; sku?: string; price: number; is_active?: number; }
+interface CartLine { id: string; name: string; sku?: string; price: number; qty: number; }
+interface PayMethod { id: string; name: string; }
+interface PosSettings { default_document_format?: string; currency?: string; }
+
+function erplora(): ErploraClientLike {
+  const c = (globalThis as { erplora?: ErploraClientLike }).erplora;
+  if (!c) throw new Error('erplora SDK no inicializado por el shell');
+  return c;
+}
+function rows<T>(r: unknown): T[] {
+  if (Array.isArray(r)) return r as T[];
+  if (r && typeof r === 'object' && Array.isArray((r as { rows?: T[] }).rows)) return (r as { rows: T[] }).rows;
+  return [];
+}
+
+export class ErpPosDesktop extends LitElement {
+  static styles = css`
+    :host { display:block; font-family: system-ui, sans-serif; color: var(--ion-text-color,#1c1b18); }
+    .scan { display:flex; gap:.5rem; margin-bottom:.8rem; }
+    .scan input { flex:1; font-size:1.1rem; padding:.7rem .9rem; border:2px solid var(--ion-color-primary,#0091ce); border-radius:10px; background:var(--ion-background-color,#fff); color:inherit; }
+    .sugg { position:relative; }
+    .drop { position:absolute; z-index:5; left:0; right:0; background:var(--ion-background-color,#fff); border:1px solid var(--ion-border-color,#d9d6cf); border-radius:0 0 10px 10px; max-height:14rem; overflow:auto; box-shadow:0 8px 24px rgba(0,0,0,.12); }
+    .drop button { display:flex; justify-content:space-between; width:100%; border:none; background:none; padding:.5rem .8rem; cursor:pointer; font:inherit; }
+    .drop button:hover { background:var(--ion-color-light,#f2f1ed); }
+    table { width:100%; border-collapse:collapse; }
+    th, td { padding:.5rem .4rem; border-bottom:1px solid var(--ion-border-color,#eee); text-align:left; }
+    th { font-size:.75rem; text-transform:uppercase; color:#8b897f; }
+    td.num, th.num { text-align:right; white-space:nowrap; }
+    td input.q { width:3.5rem; text-align:center; font:inherit; padding:.3rem; border:1px solid var(--ion-border-color,#d9d6cf); border-radius:6px; background:var(--ion-background-color,#fff); color:inherit; }
+    .rm { background:none; border:none; color:#d9480f; cursor:pointer; }
+    .foot { display:flex; justify-content:space-between; align-items:center; margin-top:1rem; gap:1rem; }
+    .total { font-size:1.4rem; font-weight:800; }
+    .empty { color:#8b897f; text-align:center; padding:2rem 0; }
+    /* overlay cobro */
+    .scrim { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:50; }
+    .sheet { background:var(--ion-background-color,#fff); border-radius:16px; padding:1rem; width:min(92vw,24rem); box-shadow:0 12px 48px rgba(0,0,0,.35); }
+    .sheet-h { display:flex; justify-content:space-between; align-items:center; margin-bottom:.8rem; }
+    .sheet-h .t { font-size:1.2rem; font-weight:700; }
+    .x { background:none; border:none; font-size:1.3rem; cursor:pointer; color:#8b897f; }
+    .pay { display:flex; flex-direction:column; gap:.8rem; }
+    .methods { display:flex; gap:.4rem; flex-wrap:wrap; }
+    .chip { padding:.5rem .9rem; border-radius:999px; border:1px solid var(--ion-border-color,#d9d6cf); background:var(--ion-background-color,#fff); cursor:pointer; }
+    .chip[aria-pressed=true] { background:var(--ion-color-primary,#0091ce); color:#fff; border-color:transparent; }
+    .field label { font-size:.85rem; color:#8b897f; }
+    .field input { width:100%; box-sizing:border-box; font-size:1.3rem; padding:.6rem; border:1px solid var(--ion-border-color,#d9d6cf); border-radius:10px; background:var(--ion-background-color,#fff); color:inherit; }
+    .change { color:#2f9e44; font-weight:700; }
+  `;
+
+  @state() private products: Product[] = [];
+  @state() private cart: CartLine[] = [];
+  @state() private methods: PayMethod[] = [];
+  @state() private settings: PosSettings = {};
+  @state() private term = '';
+  @state() private paying = false;
+  @state() private tendered = '';
+  @state() private payMethod?: PayMethod;
+  @state() private docFormat: 'ticket' | 'invoice' = 'ticket';
+  @state() private busy = false;
+  @state() private error = '';
+  @state() private docSaleId?: string;
+
+  @query('#scan') private scanInput?: HTMLInputElement;
+
+  async connectedCallback() {
+    super.connectedCallback();
+    try {
+      const [prods, methods, settingsRows] = await Promise.all([
+        erplora().query('inventory.products.list', { page_size: 500 }).catch(() => []),
+        erplora().query('sales.payment_methods').catch(() => []),
+        erplora().query('sales.settings.get').catch(() => []),
+      ]);
+      this.products = rows<Product>(prods).filter((p) => p.is_active !== 0);
+      this.methods = rows<PayMethod>(methods);
+      this.settings = rows<PosSettings>(settingsRows)[0] || {};
+      this.docFormat = this.settings.default_document_format === 'invoice' ? 'invoice' : 'ticket';
+      this.payMethod = this.methods[0];
+    } catch (e) {
+      this.error = e instanceof Error ? e.message : 'Error cargando el POS';
+    }
+  }
+
+  private cur() { return this.settings.currency || '€'; }
+  private money(n: number) { return `${n.toFixed(2)} ${this.cur()}`; }
+  private get total() { return this.cart.reduce((s, l) => s + l.price * l.qty, 0); }
+
+  private get matches() {
+    const q = this.term.trim().toLowerCase();
+    if (!q) return [];
+    return this.products
+      .filter((p) => (p.sku || '').toLowerCase().includes(q) || p.name.toLowerCase().includes(q))
+      .slice(0, 8);
+  }
+
+  private add(p: Product) {
+    const ex = this.cart.find((l) => l.id === p.id);
+    this.cart = ex
+      ? this.cart.map((l) => (l.id === p.id ? { ...l, qty: l.qty + 1 } : l))
+      : [...this.cart, { id: p.id, name: p.name, sku: p.sku, price: Number(p.price), qty: 1 }];
+    this.term = '';
+    this.scanInput?.focus();
+  }
+  private onScanKey(e: KeyboardEvent) {
+    if (e.key !== 'Enter') return;
+    const q = this.term.trim().toLowerCase();
+    if (!q) return;
+    const exact = this.products.find((p) => (p.sku || '').toLowerCase() === q);
+    const pick = exact || this.matches[0];
+    if (pick) this.add(pick);
+  }
+  private setQty(id: string, qty: number) {
+    this.cart = this.cart.map((l) => (l.id === id ? { ...l, qty: Math.max(1, qty || 1) } : l));
+  }
+  private remove(id: string) { this.cart = this.cart.filter((l) => l.id !== id); }
+
+  private openPay() {
+    if (!this.cart.length) return;
+    this.tendered = String(this.total.toFixed(2));
+    this.payMethod = this.methods[0];
+    this.docFormat = this.settings.default_document_format === 'invoice' ? 'invoice' : 'ticket';
+    this.paying = true;
+  }
+  private get tenderedNum() { return Number(this.tendered || '0'); }
+  private get change() { return Math.max(0, this.tenderedNum - this.total); }
+
+  private async confirm() {
+    this.busy = true; this.error = '';
+    try {
+      const items = this.cart.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: l.qty }));
+      await erplora().command('sales.complete_sale', {
+        items,
+        payment_method_id: this.payMethod?.id ?? null,
+        payment_method_name: this.payMethod?.name ?? 'Efectivo',
+        amount_tendered: this.tenderedNum || this.total,
+        channel: 'pos',
+        source_module: 'pos',
+      });
+      const recent = rows<{ id: string }>(await erplora().query('sales.list', { page_size: 1, sort: 'created_at', dir: 'desc' }));
+      const saleId = recent[0]?.id;
+      if (saleId && this.docFormat === 'invoice') {
+        await erplora().command('sales.set_document_type', { sale_id: saleId, document_type: 'invoice' });
+      }
+      this.paying = false;
+      this.cart = [];
+      if (saleId) this.docSaleId = saleId;
+    } catch (e) {
+      this.error = e instanceof Error ? e.message : 'Error al cobrar';
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  render() {
+    return html`<div>
+      <div class="scan">
+        <div class="sugg" style="flex:1">
+          <input id="scan" placeholder="Escanea código / escribe SKU o nombre y Enter…"
+            .value=${this.term}
+            @input=${(e: Event) => { this.term = (e.target as HTMLInputElement).value; }}
+            @keydown=${(e: KeyboardEvent) => this.onScanKey(e)} />
+          ${this.matches.length
+            ? html`<div class="drop">
+                ${this.matches.map((p) => html`<button @click=${() => this.add(p)}>
+                  <span>${p.name} ${p.sku ? html`<small style="color:#8b897f">· ${p.sku}</small>` : nothing}</span>
+                  <span>${this.money(Number(p.price))}</span>
+                </button>`)}
+              </div>`
+            : nothing}
+        </div>
+      </div>
+      ${this.error ? html`<p style="color:#d9480f">${this.error}</p>` : nothing}
+
+      <table>
+        <thead><tr><th>Producto</th><th class="num">Precio</th><th class="num">Cant.</th><th class="num">Importe</th><th></th></tr></thead>
+        <tbody>
+          ${this.cart.length
+            ? this.cart.map((l) => html`<tr>
+                <td>${l.name} ${l.sku ? html`<small style="color:#8b897f">· ${l.sku}</small>` : nothing}</td>
+                <td class="num">${this.money(l.price)}</td>
+                <td class="num"><input class="q" type="number" min="1" .value=${String(l.qty)}
+                  @input=${(e: Event) => this.setQty(l.id, Number((e.target as HTMLInputElement).value))} /></td>
+                <td class="num">${this.money(l.price * l.qty)}</td>
+                <td class="num"><button class="rm" @click=${() => this.remove(l.id)} title="Quitar">✕</button></td>
+              </tr>`)
+            : html`<tr><td colspan="5"><div class="empty">Escanea o busca un producto para empezar.</div></td></tr>`}
+        </tbody>
+      </table>
+
+      <div class="foot">
+        <div class="total">Total ${this.money(this.total)}</div>
+        <ion-button ?disabled=${!this.cart.length} @click=${() => this.openPay()}>Cobrar (F2)</ion-button>
+      </div>
+
+      ${this.paying
+        ? html`<div class="scrim" @click=${(e: Event) => { if ((e.target as HTMLElement).classList.contains('scrim')) this.paying = false; }}>
+            <div class="sheet">
+              <div class="sheet-h"><span class="t">Cobrar ${this.money(this.total)}</span>
+                <button class="x" @click=${() => { this.paying = false; }}>✕</button></div>
+              <div class="pay">
+                <div class="methods">
+                  ${this.methods.map((m) => html`<button class="chip" aria-pressed=${this.payMethod?.id === m.id} @click=${() => { this.payMethod = m; }}>${m.name}</button>`)}
+                  ${!this.methods.length ? html`<button class="chip" aria-pressed="true">Efectivo</button>` : nothing}
+                </div>
+                <div class="field"><label>Entregado</label>
+                  <input type="number" step="0.01" .value=${this.tendered}
+                    @input=${(e: Event) => { this.tendered = (e.target as HTMLInputElement).value; }} /></div>
+                <div>Cambio: <span class="change">${this.money(this.change)}</span></div>
+                <ion-segment value=${this.docFormat} @ionChange=${(e: CustomEvent) => { this.docFormat = ((e.detail as { value: string }).value === 'invoice' ? 'invoice' : 'ticket'); }}>
+                  <ion-segment-button value="ticket"><ion-label>Tiquet</ion-label></ion-segment-button>
+                  <ion-segment-button value="invoice"><ion-label>Factura</ion-label></ion-segment-button>
+                </ion-segment>
+                ${this.error ? html`<p style="color:#d9480f">${this.error}</p>` : nothing}
+                <ion-button expand="block" ?disabled=${this.busy} @click=${() => this.confirm()}>${this.busy ? 'Cobrando…' : 'Confirmar cobro'}</ion-button>
+              </div>
+            </div>
+          </div>`
+        : nothing}
+
+      <ion-modal .isOpen=${!!this.docSaleId} @ionModalDidDismiss=${() => { this.docSaleId = undefined; }}>
+        <ion-header><ion-toolbar><ion-title>Documento</ion-title>
+          <ion-buttons slot="end"><ion-button @click=${() => { this.docSaleId = undefined; }}>Cerrar</ion-button></ion-buttons>
+        </ion-toolbar></ion-header>
+        <ion-content class="ion-padding">
+          ${this.docSaleId ? html`<erp-sales-document .saleId=${this.docSaleId}></erp-sales-document>` : nothing}
+        </ion-content>
+      </ion-modal>
+    </div>`;
+  }
+}
+
+define('erp-pos-desktop', ErpPosDesktop);
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'erp-pos-desktop': ErpPosDesktop;
+  }
+}

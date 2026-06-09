@@ -58,7 +58,7 @@
       "id": "pos",
       "label": "Vender",
       "icon": "storefront",
-      "component": "erp-pos-touch"
+      "component": "erp-pos"
     },
     {
       "id": "sales",
