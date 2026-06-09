@@ -2434,6 +2434,286 @@ __decorateClass([
 ], ErpSalesDocument.prototype, "error", 2);
 define("erp-sales-document", ErpSalesDocument);
 
+// modules/sales/ui/components/erp-pos-touch/erp-pos-touch.ts
+function erplora2() {
+  const c5 = globalThis.erplora;
+  if (!c5) throw new Error("erplora SDK no inicializado por el shell");
+  return c5;
+}
+function rows(r6) {
+  if (Array.isArray(r6)) return r6;
+  if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
+  return [];
+}
+var ErpPosTouch = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.products = [];
+    this.q = "";
+    this.cart = [];
+    this.methods = [];
+    this.settings = {};
+    this.paying = false;
+    this.tendered = "";
+    this.docFormat = "ticket";
+    this.busy = false;
+    this.error = "";
+  }
+  static {
+    this.styles = i`
+    :host { display:block; height:100%; font-family: system-ui, sans-serif; color: var(--ion-text-color,#1c1b18); }
+    .pos { display:grid; grid-template-columns: 1fr 22rem; gap:1rem; height:100%; min-height:30rem; }
+    .catalog { display:flex; flex-direction:column; min-width:0; }
+    .search { margin-bottom:.6rem; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr)); gap:.6rem; overflow:auto; align-content:start; }
+    .tile { border:1px solid var(--ion-border-color,#e0ddd4); border-radius:14px; padding:.7rem; cursor:pointer; background:var(--ion-background-color,#fff); text-align:left; min-height:5rem; display:flex; flex-direction:column; justify-content:space-between; transition:transform .05s; }
+    .tile:active { transform:scale(.97); }
+    .tile .n { font-weight:600; font-size:.92rem; line-height:1.2; }
+    .tile .p { font-weight:700; color:var(--ion-color-primary,#0091ce); margin-top:.4rem; }
+    .cart { display:flex; flex-direction:column; border:1px solid var(--ion-border-color,#e0ddd4); border-radius:14px; padding:.7rem; }
+    .cart h3 { margin:0 0 .5rem; font-size:1rem; }
+    .lines { flex:1; overflow:auto; display:flex; flex-direction:column; gap:.4rem; }
+    .line { display:grid; grid-template-columns: 1fr auto; gap:.2rem .5rem; align-items:center; border-bottom:1px solid var(--ion-border-color,#eee); padding-bottom:.4rem; }
+    .line .nm { font-size:.9rem; }
+    .line .lt { font-weight:700; white-space:nowrap; }
+    .qty { display:flex; align-items:center; gap:.4rem; }
+    .qbtn { width:1.9rem; height:1.9rem; border-radius:50%; border:1px solid var(--ion-border-color,#d9d6cf); background:var(--ion-background-color,#fff); font-size:1.1rem; cursor:pointer; }
+    .rm { background:none; border:none; color:#d9480f; cursor:pointer; font-size:.8rem; }
+    .total { display:flex; justify-content:space-between; align-items:baseline; margin:.6rem 0; font-size:1rem; }
+    .total b { font-size:1.5rem; }
+    .charge { font-size:1.1rem; padding:1rem; }
+    .empty { color:#8b897f; text-align:center; padding:2rem 0; }
+    /* numpad */
+    .pay { display:flex; flex-direction:column; gap:.8rem; }
+    .methods { display:flex; gap:.4rem; flex-wrap:wrap; }
+    .chip { padding:.5rem .9rem; border-radius:999px; border:1px solid var(--ion-border-color,#d9d6cf); background:var(--ion-background-color,#fff); cursor:pointer; }
+    .chip[aria-pressed=true] { background:var(--ion-color-primary,#0091ce); color:#fff; border-color:transparent; }
+    .amt { display:flex; justify-content:space-between; font-size:1.1rem; }
+    .amt .v { font-weight:700; }
+    .change { color:#2f9e44; }
+    .numpad { display:grid; grid-template-columns: repeat(3, 1fr); gap:.5rem; }
+    .numpad button { font-size:1.3rem; padding:1rem; border-radius:12px; border:1px solid var(--ion-border-color,#d9d6cf); background:var(--ion-background-color,#fff); cursor:pointer; }
+    /* Overlay de cobro propio (en el shadow → conserva estos estilos; ion-modal los perdería). */
+    .scrim { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:50; }
+    .sheet { background:var(--ion-background-color,#fff); border-radius:16px; padding:1rem; width:min(92vw,24rem); max-height:90vh; overflow:auto; box-shadow:0 12px 48px rgba(0,0,0,.35); }
+    .sheet-h { display:flex; justify-content:space-between; align-items:center; margin-bottom:.8rem; }
+    .sheet-h .t { font-size:1.2rem; font-weight:700; }
+    .x { background:none; border:none; font-size:1.3rem; cursor:pointer; color:#8b897f; }
+  `;
+  }
+  async connectedCallback() {
+    super.connectedCallback();
+    try {
+      const [prods, methods, settingsRows] = await Promise.all([
+        erplora2().query("inventory.products.list", { page_size: 200 }).catch(() => []),
+        erplora2().query("sales.payment_methods").catch(() => []),
+        erplora2().query("sales.settings.get").catch(() => [])
+      ]);
+      this.products = rows(prods).filter((p4) => p4.is_active !== 0);
+      this.methods = rows(methods);
+      this.settings = rows(settingsRows)[0] || {};
+      this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
+      this.payMethod = this.methods[0];
+    } catch (e5) {
+      this.error = e5 instanceof Error ? e5.message : "Error cargando el POS";
+    }
+  }
+  cur() {
+    return this.settings.currency || "\u20AC";
+  }
+  money(n6) {
+    return `${n6.toFixed(2)} ${this.cur()}`;
+  }
+  get total() {
+    return this.cart.reduce((s5, l3) => s5 + l3.price * l3.qty, 0);
+  }
+  add(p4) {
+    const ex = this.cart.find((l3) => l3.id === p4.id);
+    this.cart = ex ? this.cart.map((l3) => l3.id === p4.id ? { ...l3, qty: l3.qty + 1 } : l3) : [...this.cart, { id: p4.id, name: p4.name, sku: p4.sku, price: Number(p4.price), qty: 1 }];
+  }
+  setQty(id, d3) {
+    this.cart = this.cart.map((l3) => l3.id === id ? { ...l3, qty: l3.qty + d3 } : l3).filter((l3) => l3.qty > 0);
+  }
+  remove(id) {
+    this.cart = this.cart.filter((l3) => l3.id !== id);
+  }
+  openPay() {
+    if (!this.cart.length) return;
+    this.tendered = "";
+    this.payMethod = this.methods[0];
+    this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
+    this.paying = true;
+  }
+  tap(k2) {
+    if (k2 === "C") {
+      this.tendered = "";
+      return;
+    }
+    if (k2 === "." && this.tendered.includes(".")) return;
+    this.tendered = (this.tendered + k2).slice(0, 9);
+  }
+  get tenderedNum() {
+    return Number(this.tendered || "0");
+  }
+  get change() {
+    return Math.max(0, this.tenderedNum - this.total);
+  }
+  async confirm() {
+    this.busy = true;
+    this.error = "";
+    try {
+      const items = this.cart.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: l3.qty }));
+      await erplora2().command("sales.complete_sale", {
+        items,
+        payment_method_id: this.payMethod?.id ?? null,
+        payment_method_name: this.payMethod?.name ?? "Efectivo",
+        amount_tendered: this.tenderedNum || this.total,
+        channel: "pos",
+        source_module: "pos"
+      });
+      const recent = rows(await erplora2().query("sales.list", { page_size: 1, sort: "created_at", dir: "desc" }));
+      const saleId = recent[0]?.id;
+      if (saleId && this.docFormat === "invoice") {
+        await erplora2().command("sales.set_document_type", { sale_id: saleId, document_type: "invoice" });
+      }
+      this.paying = false;
+      this.cart = [];
+      if (saleId) this.docSaleId = saleId;
+    } catch (e5) {
+      this.error = e5 instanceof Error ? e5.message : "Error al cobrar";
+    } finally {
+      this.busy = false;
+    }
+  }
+  get filtered() {
+    const q = this.q.trim().toLowerCase();
+    return q ? this.products.filter((p4) => p4.name.toLowerCase().includes(q) || (p4.sku || "").toLowerCase().includes(q)) : this.products;
+  }
+  render() {
+    return b2`<div class="pos">
+      <div class="catalog">
+        <ion-searchbar class="search" placeholder="Buscar producto…" value=${this.q}
+          @ionInput=${(e5) => {
+      this.q = e5.target.value || "";
+    }}></ion-searchbar>
+        ${this.error ? b2`<p style="color:#d9480f">${this.error}</p>` : A}
+        <div class="grid">
+          ${this.filtered.map((p4) => b2`<button class="tile" @click=${() => this.add(p4)}>
+            <div class="n">${p4.name}</div>
+            <div class="p">${this.money(Number(p4.price))}</div>
+          </button>`)}
+          ${!this.filtered.length ? b2`<div class="empty">Sin productos.</div>` : A}
+        </div>
+      </div>
+
+      <div class="cart">
+        <h3>Venta</h3>
+        <div class="lines">
+          ${this.cart.length ? this.cart.map((l3) => b2`<div class="line">
+                <div class="nm">${l3.name}</div>
+                <div class="lt">${this.money(l3.price * l3.qty)}</div>
+                <div class="qty">
+                  <button class="qbtn" @click=${() => this.setQty(l3.id, -1)}>−</button>
+                  <span>${l3.qty}</span>
+                  <button class="qbtn" @click=${() => this.setQty(l3.id, 1)}>+</button>
+                  <button class="rm" @click=${() => this.remove(l3.id)}>quitar</button>
+                </div>
+              </div>`) : b2`<div class="empty">Toca un producto para añadirlo.</div>`}
+        </div>
+        <div class="total"><span>Total</span><b>${this.money(this.total)}</b></div>
+        <ion-button class="charge" expand="block" ?disabled=${!this.cart.length} @click=${() => this.openPay()}>Cobrar</ion-button>
+      </div>
+
+      ${this.paying ? b2`<div class="scrim" @click=${(e5) => {
+      if (e5.target.classList.contains("scrim")) this.paying = false;
+    }}>
+            <div class="sheet">
+              <div class="sheet-h">
+                <span class="t">Cobrar ${this.money(this.total)}</span>
+                <button class="x" @click=${() => {
+      this.paying = false;
+    }}>✕</button>
+              </div>
+              <div class="pay">
+                <div class="methods">
+                  ${this.methods.map((m4) => b2`<button class="chip" aria-pressed=${this.payMethod?.id === m4.id} @click=${() => {
+      this.payMethod = m4;
+    }}>${m4.name}</button>`)}
+                  ${!this.methods.length ? b2`<button class="chip" aria-pressed="true">Efectivo</button>` : A}
+                </div>
+                <div class="amt"><span>Entregado</span><span class="v">${this.money(this.tenderedNum)}</span></div>
+                <div class="amt"><span>Cambio</span><span class="v change">${this.money(this.change)}</span></div>
+                <div class="numpad">
+                  ${["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "C"].map((k2) => b2`<button @click=${() => this.tap(k2)}>${k2}</button>`)}
+                </div>
+                <ion-segment value=${this.docFormat} @ionChange=${(e5) => {
+      this.docFormat = e5.detail.value === "invoice" ? "invoice" : "ticket";
+    }}>
+                  <ion-segment-button value="ticket"><ion-label>Tiquet</ion-label></ion-segment-button>
+                  <ion-segment-button value="invoice"><ion-label>Factura</ion-label></ion-segment-button>
+                </ion-segment>
+                ${this.error ? b2`<p style="color:#d9480f">${this.error}</p>` : A}
+                <ion-button expand="block" ?disabled=${this.busy} @click=${() => this.confirm()}>
+                  ${this.busy ? "Cobrando\u2026" : "Confirmar cobro"}
+                </ion-button>
+              </div>
+            </div>
+          </div>` : A}
+
+      <ion-modal .isOpen=${!!this.docSaleId} @ionModalDidDismiss=${() => {
+      this.docSaleId = void 0;
+    }}>
+        <ion-header><ion-toolbar>
+          <ion-title>Documento</ion-title>
+          <ion-buttons slot="end"><ion-button @click=${() => {
+      this.docSaleId = void 0;
+    }}>Cerrar</ion-button></ion-buttons>
+        </ion-toolbar></ion-header>
+        <ion-content class="ion-padding">
+          ${this.docSaleId ? b2`<erp-sales-document .saleId=${this.docSaleId}></erp-sales-document>` : A}
+        </ion-content>
+      </ion-modal>
+    </div>`;
+  }
+};
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "products", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "q", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "cart", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "methods", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "settings", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "paying", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "tendered", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "payMethod", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "docFormat", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "busy", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "error", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "docSaleId", 2);
+define("erp-pos-touch", ErpPosTouch);
+
 // ../module-toolkit/node_modules/lit-html/directive.js
 var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e4 = (t5) => (...e5) => ({ _$litDirective$: t5, values: e5 });
@@ -2988,17 +3268,17 @@ var OkDataTable = class extends i3 {
       out.push(row);
     }
     const headers = out.shift() ?? [];
-    const rows = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
-    return { headers, rows };
+    const rows2 = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
+    return { headers, rows: rows2 };
   }
   async onImportFile(ev) {
     const input = ev.target;
     const file = input.files?.[0];
     if (!file) return;
     const text = await file.text();
-    const { headers, rows } = this.parseCsv(text);
-    this.emit("csvImport", { headers, rows });
-    this.emit("import", { headers, rows });
+    const { headers, rows: rows2 } = this.parseCsv(text);
+    this.emit("csvImport", { headers, rows: rows2 });
+    this.emit("import", { headers, rows: rows2 });
     input.value = "";
   }
   toggle(p4) {
@@ -3950,7 +4230,7 @@ function createListController(client, queryName, onChange = () => {
 }
 
 // modules/sales/ui/components/erp-sales-list/erp-sales-list.ts
-function erplora2() {
+function erplora3() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
   return c5;
@@ -3998,14 +4278,14 @@ var ErpSalesList = class extends i3 {
   // sola vez tras el primer render, considera firstUpdated() en su lugar.
   async connectedCallback() {
     super.connectedCallback();
-    this.ctrl = createListController(erplora2(), "sales.list", () => this.requestUpdate(), {
+    this.ctrl = createListController(erplora3(), "sales.list", () => this.requestUpdate(), {
       pageSize: 50,
       sort: "created_at",
       dir: "desc"
     });
     await Promise.all([this.ctrl.load(), this.loadStats()]);
     try {
-      this.unsub = erplora2().on("sale.completed", () => {
+      this.unsub = erplora3().on("sale.completed", () => {
         this.ctrl.load();
         this.loadStats();
       });
@@ -4018,8 +4298,8 @@ var ErpSalesList = class extends i3 {
   }
   async loadStats() {
     try {
-      const rows = await erplora2().query("sales.stats");
-      this.stats = rows && rows[0] || { count: 0, total_revenue: 0, avg_ticket: 0 };
+      const rows2 = await erplora3().query("sales.stats");
+      this.stats = rows2 && rows2[0] || { count: 0, total_revenue: 0, avg_ticket: 0 };
     } catch (e5) {
       this.statsError = e5 instanceof Error ? e5.message : "Error cargando m\xE9tricas";
     }
@@ -4100,7 +4380,7 @@ var DEFAULTS = {
   default_document_format: "ticket",
   auto_invoice_with_tax_id: 1
 };
-function erplora3() {
+function erplora4() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
   return c5;
@@ -4140,8 +4420,8 @@ var ErpSalesSettings = class extends i3 {
   async connectedCallback() {
     super.connectedCallback();
     try {
-      const rows = await erplora3().query("sales.settings.get");
-      const row = Array.isArray(rows) ? rows[0] : rows;
+      const rows2 = await erplora4().query("sales.settings.get");
+      const row = Array.isArray(rows2) ? rows2[0] : rows2;
       this.s = { ...DEFAULTS, ...row || {} };
     } catch (e5) {
       this.error = e5 instanceof Error ? e5.message : "Error cargando ajustes";
@@ -4158,7 +4438,7 @@ var ErpSalesSettings = class extends i3 {
     this.message = "";
     this.error = "";
     try {
-      await erplora3().command("sales.settings.update", { ...this.s });
+      await erplora4().command("sales.settings.update", { ...this.s });
       this.message = "Ajustes guardados.";
     } catch (e5) {
       this.error = e5 instanceof Error ? e5.message : "Error guardando";
