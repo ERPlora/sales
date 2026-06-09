@@ -55,6 +55,12 @@
   },
   "navigation": [
     {
+      "id": "pos",
+      "label": "Vender",
+      "icon": "storefront",
+      "component": "erp-pos-touch"
+    },
+    {
       "id": "sales",
       "label": "Sales",
       "icon": "shopping-cart",
@@ -70,7 +76,8 @@
   "migrations": {
     "sqlite": [
       "migrations/sqlite/001_init.sql",
-      "migrations/sqlite/002_pos_settings.sql"
+      "migrations/sqlite/002_pos_settings.sql",
+      "migrations/sqlite/003_document_type.sql"
     ]
   },
   "queries": {
@@ -226,6 +233,16 @@
       ],
       "ai": {
         "description": "Updates the point-of-sale configuration settings of the sales module"
+      }
+    },
+    "sales.set_document_type": {
+      "permission": "sales.add_sale",
+      "transaction": true,
+      "sql": [
+        "commands/set_document_type.sql"
+      ],
+      "ai": {
+        "description": "Sets the document type (ticket or invoice) issued for a sale"
       }
     }
   },
