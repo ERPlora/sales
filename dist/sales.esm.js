@@ -1268,6 +1268,1172 @@ function define(tag, ctor) {
   }
 }
 
+// ../outfitkit/dist/ok-qr.js
+var __defProp2 = Object.defineProperty;
+var __decorateClass2 = (decorators, target, key, kind) => {
+  var result = void 0;
+  for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
+    if (decorator = decorators[i7])
+      result = decorator(target, key, result) || result;
+  if (result) __defProp2(target, key, result);
+  return result;
+};
+var GF_EXP = new Uint8Array(512);
+var GF_LOG = new Uint8Array(256);
+(() => {
+  let x2 = 1;
+  for (let i7 = 0; i7 < 255; i7++) {
+    GF_EXP[i7] = x2;
+    GF_LOG[x2] = i7;
+    x2 <<= 1;
+    if (x2 & 256) x2 ^= 285;
+  }
+  for (let i7 = 255; i7 < 512; i7++) GF_EXP[i7] = GF_EXP[i7 - 255];
+})();
+function gfMul(a3, b3) {
+  if (a3 === 0 || b3 === 0) return 0;
+  return GF_EXP[GF_LOG[a3] + GF_LOG[b3]];
+}
+function rsGeneratorPoly(degree) {
+  let poly = new Uint8Array([1]);
+  for (let i7 = 0; i7 < degree; i7++) {
+    const next = new Uint8Array(poly.length + 1);
+    for (let j2 = 0; j2 < poly.length; j2++) {
+      next[j2] ^= poly[j2];
+      next[j2 + 1] ^= gfMul(poly[j2], GF_EXP[i7]);
+    }
+    poly = next;
+  }
+  return poly;
+}
+function rsEncode(data, degree) {
+  const gen = rsGeneratorPoly(degree);
+  const res = new Uint8Array(data.length + degree);
+  res.set(data);
+  for (let i7 = 0; i7 < data.length; i7++) {
+    const coef = res[i7];
+    if (coef !== 0) {
+      for (let j2 = 0; j2 < gen.length; j2++) {
+        res[i7 + j2] ^= gfMul(gen[j2], coef);
+      }
+    }
+  }
+  return res.slice(data.length);
+}
+var EC_ORDER = ["L", "M", "Q", "H"];
+var TOTAL_CODEWORDS = [
+  26,
+  44,
+  70,
+  100,
+  134,
+  172,
+  196,
+  242,
+  292,
+  346,
+  404,
+  466,
+  532,
+  581,
+  655,
+  733,
+  815,
+  901,
+  991,
+  1085,
+  1156,
+  1258,
+  1364,
+  1474,
+  1588,
+  1706,
+  1828,
+  1921,
+  2051,
+  2185,
+  2323,
+  2465,
+  2611,
+  2761,
+  2876,
+  3034,
+  3196,
+  3362,
+  3532,
+  3706
+];
+var EC_BLOCKS = [
+  /* v1 */
+  [[7, 1, 19, 0, 0], [10, 1, 16, 0, 0], [13, 1, 13, 0, 0], [17, 1, 9, 0, 0]],
+  /* v2 */
+  [[10, 1, 34, 0, 0], [16, 1, 28, 0, 0], [22, 1, 22, 0, 0], [28, 1, 16, 0, 0]],
+  /* v3 */
+  [[15, 1, 55, 0, 0], [26, 1, 44, 0, 0], [18, 2, 17, 0, 0], [22, 2, 13, 0, 0]],
+  /* v4 */
+  [[20, 1, 80, 0, 0], [18, 2, 32, 0, 0], [26, 2, 24, 0, 0], [16, 4, 9, 0, 0]],
+  /* v5 */
+  [[26, 1, 108, 0, 0], [24, 2, 43, 0, 0], [18, 2, 15, 2, 16], [22, 2, 11, 2, 12]],
+  /* v6 */
+  [[18, 2, 68, 0, 0], [16, 4, 27, 0, 0], [24, 4, 19, 0, 0], [28, 4, 15, 0, 0]],
+  /* v7 */
+  [[20, 2, 78, 0, 0], [18, 4, 31, 0, 0], [18, 2, 14, 4, 15], [26, 4, 13, 1, 14]],
+  /* v8 */
+  [[24, 2, 97, 0, 0], [22, 2, 38, 2, 39], [22, 4, 18, 2, 19], [26, 4, 14, 2, 15]],
+  /* v9 */
+  [[30, 2, 116, 0, 0], [22, 3, 36, 2, 37], [20, 4, 16, 4, 17], [24, 4, 12, 4, 13]],
+  /* v10 */
+  [[18, 2, 68, 2, 69], [26, 4, 43, 1, 44], [24, 6, 19, 2, 20], [28, 6, 15, 2, 16]],
+  /* v11 */
+  [[20, 4, 81, 0, 0], [30, 1, 50, 4, 51], [28, 4, 22, 4, 23], [24, 3, 12, 8, 13]],
+  /* v12 */
+  [[24, 2, 92, 2, 93], [22, 6, 36, 2, 37], [26, 4, 20, 6, 21], [28, 7, 14, 4, 15]],
+  /* v13 */
+  [[26, 4, 107, 0, 0], [22, 8, 37, 1, 38], [24, 8, 20, 4, 21], [22, 12, 11, 4, 12]],
+  /* v14 */
+  [[30, 3, 115, 1, 116], [24, 4, 40, 5, 41], [20, 11, 16, 5, 17], [24, 11, 12, 5, 13]],
+  /* v15 */
+  [[22, 5, 87, 1, 88], [24, 5, 41, 5, 42], [30, 5, 24, 7, 25], [24, 11, 12, 7, 13]],
+  /* v16 */
+  [[24, 5, 98, 1, 99], [28, 7, 45, 3, 46], [24, 15, 19, 2, 20], [30, 3, 15, 13, 16]],
+  /* v17 */
+  [[28, 1, 107, 5, 108], [28, 10, 46, 1, 47], [28, 1, 22, 15, 23], [28, 2, 14, 17, 15]],
+  /* v18 */
+  [[30, 5, 120, 1, 121], [26, 9, 43, 4, 44], [28, 17, 22, 1, 23], [28, 2, 14, 19, 15]],
+  /* v19 */
+  [[28, 3, 113, 4, 114], [26, 3, 44, 11, 45], [26, 17, 21, 4, 22], [26, 9, 13, 16, 14]],
+  /* v20 */
+  [[28, 3, 107, 5, 108], [26, 3, 41, 13, 42], [30, 15, 24, 5, 25], [28, 15, 15, 10, 16]],
+  /* v21 */
+  [[28, 4, 116, 4, 117], [26, 17, 42, 0, 0], [28, 17, 22, 6, 23], [30, 19, 16, 6, 17]],
+  /* v22 */
+  [[28, 2, 111, 7, 112], [28, 17, 46, 0, 0], [30, 7, 24, 16, 25], [24, 34, 13, 0, 0]],
+  /* v23 */
+  [[30, 4, 121, 5, 122], [28, 4, 47, 14, 48], [30, 11, 24, 14, 25], [30, 16, 15, 14, 16]],
+  /* v24 */
+  [[30, 6, 117, 4, 118], [28, 6, 45, 14, 46], [30, 11, 24, 16, 25], [30, 30, 16, 2, 17]],
+  /* v25 */
+  [[26, 8, 106, 4, 107], [28, 8, 47, 13, 48], [30, 7, 24, 22, 25], [30, 22, 15, 13, 16]],
+  /* v26 */
+  [[28, 10, 114, 2, 115], [28, 19, 46, 4, 47], [28, 28, 22, 6, 23], [30, 33, 16, 4, 17]],
+  /* v27 */
+  [[30, 8, 122, 4, 123], [28, 22, 45, 3, 46], [30, 8, 23, 26, 24], [30, 12, 15, 28, 16]],
+  /* v28 */
+  [[30, 3, 117, 10, 118], [28, 3, 45, 23, 46], [30, 4, 24, 31, 25], [30, 11, 15, 31, 16]],
+  /* v29 */
+  [[30, 7, 116, 7, 117], [28, 21, 45, 7, 46], [30, 1, 23, 37, 24], [30, 19, 15, 26, 16]],
+  /* v30 */
+  [[30, 5, 115, 10, 116], [28, 19, 47, 10, 48], [30, 15, 24, 25, 25], [30, 23, 15, 25, 16]],
+  /* v31 */
+  [[30, 13, 115, 3, 116], [28, 2, 46, 29, 47], [30, 42, 24, 1, 25], [30, 23, 15, 28, 16]],
+  /* v32 */
+  [[30, 17, 115, 0, 0], [28, 10, 46, 23, 47], [30, 10, 24, 35, 25], [30, 19, 15, 35, 16]],
+  /* v33 */
+  [[30, 17, 115, 1, 116], [28, 14, 46, 21, 47], [30, 29, 24, 19, 25], [30, 11, 15, 46, 16]],
+  /* v34 */
+  [[30, 13, 115, 6, 116], [28, 14, 46, 23, 47], [30, 44, 24, 7, 25], [30, 59, 16, 1, 17]],
+  /* v35 */
+  [[30, 12, 121, 7, 122], [28, 12, 47, 26, 48], [30, 39, 24, 14, 25], [30, 22, 15, 41, 16]],
+  /* v36 */
+  [[30, 6, 121, 14, 122], [28, 6, 47, 34, 48], [30, 46, 24, 10, 25], [30, 2, 15, 64, 16]],
+  /* v37 */
+  [[30, 17, 122, 4, 123], [28, 29, 46, 14, 47], [30, 49, 24, 10, 25], [30, 24, 15, 46, 16]],
+  /* v38 */
+  [[30, 4, 122, 18, 123], [28, 13, 46, 32, 47], [30, 48, 24, 14, 25], [30, 42, 15, 32, 16]],
+  /* v39 */
+  [[30, 20, 117, 4, 118], [28, 40, 47, 7, 48], [30, 43, 24, 22, 25], [30, 10, 15, 67, 16]],
+  /* v40 */
+  [[30, 19, 118, 6, 119], [28, 18, 47, 31, 48], [30, 34, 24, 34, 25], [30, 20, 15, 61, 16]]
+];
+var ALIGN_POS = [
+  [],
+  [6, 18],
+  [6, 22],
+  [6, 26],
+  [6, 30],
+  [6, 34],
+  [6, 22, 38],
+  [6, 24, 42],
+  [6, 26, 46],
+  [6, 28, 50],
+  [6, 30, 54],
+  [6, 32, 58],
+  [6, 34, 62],
+  [6, 26, 46, 66],
+  [6, 26, 48, 70],
+  [6, 26, 50, 74],
+  [6, 30, 54, 78],
+  [6, 30, 56, 82],
+  [6, 30, 58, 86],
+  [6, 34, 62, 90],
+  [6, 28, 50, 72, 94],
+  [6, 26, 50, 74, 98],
+  [6, 30, 54, 78, 102],
+  [6, 28, 54, 80, 106],
+  [6, 32, 58, 84, 110],
+  [6, 30, 58, 86, 114],
+  [6, 34, 62, 90, 118],
+  [6, 26, 50, 74, 98, 122],
+  [6, 30, 54, 78, 102, 126],
+  [6, 26, 52, 78, 104, 130],
+  [6, 30, 56, 82, 108, 134],
+  [6, 34, 60, 86, 112, 138],
+  [6, 30, 58, 86, 114, 142],
+  [6, 34, 62, 90, 118, 146],
+  [6, 30, 54, 78, 102, 126, 150],
+  [6, 24, 50, 76, 102, 128, 154],
+  [6, 28, 54, 80, 106, 132, 158],
+  [6, 32, 58, 84, 110, 136, 162],
+  [6, 26, 54, 82, 110, 138, 166],
+  [6, 30, 58, 86, 114, 142, 170]
+];
+var VERSION_INFO = [
+  31892,
+  34236,
+  39577,
+  42195,
+  48118,
+  51042,
+  55367,
+  58893,
+  63784,
+  68472,
+  70749,
+  76311,
+  79154,
+  84390,
+  87683,
+  92361,
+  96236,
+  102084,
+  102881,
+  110507,
+  110734,
+  117786,
+  119615,
+  126325,
+  127568,
+  133589,
+  136944,
+  141498,
+  145311,
+  150283,
+  152622,
+  158308,
+  161089,
+  167017
+];
+var FORMAT_INFO = [
+  21522,
+  20773,
+  24188,
+  23371,
+  17913,
+  16590,
+  20375,
+  19104,
+  30660,
+  29427,
+  32170,
+  30877,
+  26159,
+  25368,
+  27713,
+  26998,
+  5769,
+  5054,
+  7399,
+  6608,
+  1890,
+  597,
+  3340,
+  2107,
+  13663,
+  12392,
+  16177,
+  14854,
+  9396,
+  8579,
+  11994,
+  11245
+];
+var EC_FORMAT_BITS = { L: 1, M: 0, Q: 3, H: 2 };
+var BitBuffer = class {
+  constructor() {
+    this.bits = [];
+  }
+  put(value, length) {
+    for (let i7 = length - 1; i7 >= 0; i7--) {
+      this.bits.push(value >>> i7 & 1);
+    }
+  }
+  get length() {
+    return this.bits.length;
+  }
+};
+function charCountBits(version) {
+  return version <= 9 ? 8 : 16;
+}
+function encodeData(bytes, version, ec) {
+  const totalCw = TOTAL_CODEWORDS[version - 1];
+  const blocks = EC_BLOCKS[version - 1][EC_ORDER.indexOf(ec)];
+  const ecPerBlock = blocks[0];
+  const numBlocks = blocks[1] + blocks[3];
+  const totalEcCw = ecPerBlock * numBlocks;
+  const dataCwCapacity = totalCw - totalEcCw;
+  const dataBitCapacity = dataCwCapacity * 8;
+  const ccBits = charCountBits(version);
+  const buf = new BitBuffer();
+  buf.put(4, 4);
+  buf.put(bytes.length, ccBits);
+  for (const b3 of bytes) buf.put(b3, 8);
+  if (buf.length > dataBitCapacity) return null;
+  const remaining = dataBitCapacity - buf.length;
+  buf.put(0, Math.min(4, remaining));
+  while (buf.length % 8 !== 0) buf.bits.push(0);
+  const padBytes = [236, 17];
+  let pi = 0;
+  while (buf.length < dataBitCapacity) {
+    buf.put(padBytes[pi], 8);
+    pi ^= 1;
+  }
+  const dataCw = new Uint8Array(dataCwCapacity);
+  for (let i7 = 0; i7 < dataCwCapacity; i7++) {
+    let byte = 0;
+    for (let j2 = 0; j2 < 8; j2++) byte = byte << 1 | buf.bits[i7 * 8 + j2];
+    dataCw[i7] = byte;
+  }
+  const dataBlocks = [];
+  const ecBlocks = [];
+  let offset = 0;
+  const layout = [];
+  for (let g3 = 0; g3 < blocks[1]; g3++) layout.push([blocks[2]]);
+  for (let g3 = 0; g3 < blocks[3]; g3++) layout.push([blocks[4]]);
+  for (const [dlen] of layout) {
+    const dblk = dataCw.slice(offset, offset + dlen);
+    offset += dlen;
+    dataBlocks.push(dblk);
+    ecBlocks.push(rsEncode(dblk, ecPerBlock));
+  }
+  const result = new Uint8Array(totalCw);
+  let ri = 0;
+  const maxData = Math.max(...dataBlocks.map((b3) => b3.length));
+  for (let i7 = 0; i7 < maxData; i7++) {
+    for (const blk of dataBlocks) if (i7 < blk.length) result[ri++] = blk[i7];
+  }
+  for (let i7 = 0; i7 < ecPerBlock; i7++) {
+    for (const blk of ecBlocks) result[ri++] = blk[i7];
+  }
+  return result;
+}
+function buildMatrix(codewords, version, ec) {
+  const size = version * 4 + 17;
+  const m4 = Array.from({ length: size }, () => new Array(size).fill(null));
+  const reserved = Array.from({ length: size }, () => new Array(size).fill(false));
+  const set = (r6, c5, v3, isReserved = true) => {
+    m4[r6][c5] = v3;
+    if (isReserved) reserved[r6][c5] = true;
+  };
+  const placeFinder = (r6, c5) => {
+    for (let dr = -1; dr <= 7; dr++) {
+      for (let dc = -1; dc <= 7; dc++) {
+        const rr = r6 + dr;
+        const cc = c5 + dc;
+        if (rr < 0 || rr >= size || cc < 0 || cc >= size) continue;
+        const inRing = dr >= 0 && dr <= 6 && (dc === 0 || dc === 6) || dc >= 0 && dc <= 6 && (dr === 0 || dr === 6);
+        const inCore = dr >= 2 && dr <= 4 && dc >= 2 && dc <= 4;
+        set(rr, cc, inRing || inCore ? 1 : 0);
+      }
+    }
+  };
+  placeFinder(0, 0);
+  placeFinder(0, size - 7);
+  placeFinder(size - 7, 0);
+  for (let i7 = 8; i7 < size - 8; i7++) {
+    const v3 = i7 % 2 === 0 ? 1 : 0;
+    set(6, i7, v3);
+    set(i7, 6, v3);
+  }
+  const aps = ALIGN_POS[version - 1];
+  for (const r6 of aps) {
+    for (const c5 of aps) {
+      if (reserved[r6][c5]) continue;
+      for (let dr = -2; dr <= 2; dr++) {
+        for (let dc = -2; dc <= 2; dc++) {
+          const ring = Math.max(Math.abs(dr), Math.abs(dc));
+          set(r6 + dr, c5 + dc, ring === 1 ? 0 : 1);
+        }
+      }
+    }
+  }
+  set(size - 8, 8, 1);
+  for (let i7 = 0; i7 < 9; i7++) {
+    if (!reserved[8][i7]) reserved[8][i7] = true;
+    if (!reserved[i7][8]) reserved[i7][8] = true;
+  }
+  for (let i7 = 0; i7 < 8; i7++) {
+    reserved[8][size - 1 - i7] = true;
+    reserved[size - 1 - i7][8] = true;
+  }
+  reserved[8][8] = true;
+  reserved[8][7] = true;
+  reserved[7][8] = true;
+  if (version >= 7) {
+    for (let i7 = 0; i7 < 6; i7++) {
+      for (let j2 = 0; j2 < 3; j2++) {
+        reserved[i7][size - 11 + j2] = true;
+        reserved[size - 11 + j2][i7] = true;
+      }
+    }
+  }
+  let bitIdx = 0;
+  const totalBits = codewords.length * 8;
+  const getBit = (idx) => idx < totalBits ? codewords[idx >> 3] >> 7 - (idx & 7) & 1 : 0;
+  let upward = true;
+  for (let col = size - 1; col > 0; col -= 2) {
+    if (col === 6) col--;
+    for (let i7 = 0; i7 < size; i7++) {
+      const row = upward ? size - 1 - i7 : i7;
+      for (let k2 = 0; k2 < 2; k2++) {
+        const c5 = col - k2;
+        if (reserved[row][c5] || m4[row][c5] !== null) continue;
+        m4[row][c5] = getBit(bitIdx);
+        bitIdx++;
+      }
+    }
+    upward = !upward;
+  }
+  const maskFns = [
+    (r6, c5) => (r6 + c5) % 2 === 0,
+    (r6) => r6 % 2 === 0,
+    (_r, c5) => c5 % 3 === 0,
+    (r6, c5) => (r6 + c5) % 3 === 0,
+    (r6, c5) => (Math.floor(r6 / 2) + Math.floor(c5 / 3)) % 2 === 0,
+    (r6, c5) => r6 * c5 % 2 + r6 * c5 % 3 === 0,
+    (r6, c5) => (r6 * c5 % 2 + r6 * c5 % 3) % 2 === 0,
+    (r6, c5) => ((r6 + c5) % 2 + r6 * c5 % 3) % 2 === 0
+  ];
+  let bestPenalty = Infinity;
+  let bestMatrix = [];
+  for (let mask = 0; mask < 8; mask++) {
+    const grid = Array.from({ length: size }, () => new Array(size).fill(false));
+    for (let r6 = 0; r6 < size; r6++) {
+      for (let c5 = 0; c5 < size; c5++) {
+        let v3 = m4[r6][c5] === 1;
+        if (!reserved[r6][c5] && maskFns[mask](r6, c5)) v3 = !v3;
+        grid[r6][c5] = v3;
+      }
+    }
+    applyFormatAndVersion(grid, reserved, version, ec, mask);
+    const penalty = scorePenalty(grid);
+    if (penalty < bestPenalty) {
+      bestPenalty = penalty;
+      bestMatrix = grid;
+    }
+  }
+  return bestMatrix;
+}
+function applyFormatAndVersion(grid, _reserved, version, ec, mask) {
+  const size = grid.length;
+  const fmt = FORMAT_INFO[EC_FORMAT_BITS[ec] << 3 | mask];
+  for (let i7 = 0; i7 < 15; i7++) {
+    const bit = (fmt >> i7 & 1) === 1;
+    if (i7 < 6) grid[i7][8] = bit;
+    else if (i7 === 6) grid[7][8] = bit;
+    else if (i7 === 7) grid[8][8] = bit;
+    else if (i7 === 8) grid[8][7] = bit;
+    else grid[8][14 - i7] = bit;
+    if (i7 < 8) grid[8][size - 1 - i7] = bit;
+    else grid[size - 15 + i7][8] = bit;
+  }
+  grid[size - 8][8] = true;
+  if (version >= 7) {
+    const vinfo = VERSION_INFO[version - 7];
+    for (let i7 = 0; i7 < 18; i7++) {
+      const bit = (vinfo >> i7 & 1) === 1;
+      const r6 = Math.floor(i7 / 3);
+      const c5 = i7 % 3;
+      grid[r6][size - 11 + c5] = bit;
+      grid[size - 11 + c5][r6] = bit;
+    }
+  }
+}
+function scorePenalty(grid) {
+  const n6 = grid.length;
+  let penalty = 0;
+  const lineRun = (get) => {
+    let p4 = 0;
+    let runColor = get(0);
+    let runLen = 1;
+    for (let i7 = 1; i7 < n6; i7++) {
+      const v3 = get(i7);
+      if (v3 === runColor) {
+        runLen++;
+      } else {
+        if (runLen >= 5) p4 += 3 + (runLen - 5);
+        runColor = v3;
+        runLen = 1;
+      }
+    }
+    if (runLen >= 5) p4 += 3 + (runLen - 5);
+    return p4;
+  };
+  for (let r6 = 0; r6 < n6; r6++) penalty += lineRun((c5) => grid[r6][c5]);
+  for (let c5 = 0; c5 < n6; c5++) penalty += lineRun((r6) => grid[r6][c5]);
+  for (let r6 = 0; r6 < n6 - 1; r6++) {
+    for (let c5 = 0; c5 < n6 - 1; c5++) {
+      const v3 = grid[r6][c5];
+      if (v3 === grid[r6][c5 + 1] && v3 === grid[r6 + 1][c5] && v3 === grid[r6 + 1][c5 + 1]) penalty += 3;
+    }
+  }
+  const pat1 = [true, false, true, true, true, false, true, false, false, false, false];
+  const pat2 = [false, false, false, false, true, false, true, true, true, false, true];
+  const matchAt = (get, start) => {
+    let a3 = true;
+    let b3 = true;
+    for (let k22 = 0; k22 < 11; k22++) {
+      const v3 = get(start + k22);
+      if (v3 !== pat1[k22]) a3 = false;
+      if (v3 !== pat2[k22]) b3 = false;
+    }
+    return a3 || b3;
+  };
+  for (let r6 = 0; r6 < n6; r6++) {
+    for (let c5 = 0; c5 <= n6 - 11; c5++) {
+      if (matchAt((i7) => grid[r6][i7], c5)) penalty += 40;
+    }
+  }
+  for (let c5 = 0; c5 < n6; c5++) {
+    for (let r6 = 0; r6 <= n6 - 11; r6++) {
+      if (matchAt((i7) => grid[i7][c5], r6)) penalty += 40;
+    }
+  }
+  let dark = 0;
+  for (let r6 = 0; r6 < n6; r6++) for (let c5 = 0; c5 < n6; c5++) if (grid[r6][c5]) dark++;
+  const ratio = dark * 100 / (n6 * n6);
+  const k2 = Math.floor(Math.abs(ratio - 50) / 5);
+  penalty += k2 * 10;
+  return penalty;
+}
+function generateQr(value, ec) {
+  const bytes = new TextEncoder().encode(value);
+  for (let version = 1; version <= 40; version++) {
+    const codewords = encodeData(bytes, version, ec);
+    if (codewords) return buildMatrix(codewords, version, ec);
+  }
+  return null;
+}
+var OkQr = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.value = "";
+    this.ec = "M";
+    this.size = 160;
+    this.color = "";
+    this.background = "";
+    this.margin = 4;
+  }
+  static {
+    this.styles = i`
+    :host {
+      /* Tokens overridables (cadena --ok-* → --ion-* → hex). */
+      --module-color: var(--ok-text, var(--ion-text-color, #000000));
+      --bg-color: var(--ok-surface, transparent);
+
+      /* Inline: ocupa solo lo que necesita su tamaño. */
+      display: inline-block;
+      line-height: 0;
+    }
+    svg {
+      display: block;
+      width: var(--ok-qr-size, 160px);
+      height: var(--ok-qr-size, 160px);
+    }
+    rect.qr-bg {
+      fill: var(--bg-color);
+    }
+    path.qr-fg {
+      fill: var(--module-color);
+      shape-rendering: crispEdges;
+    }
+  `;
+  }
+  render() {
+    if (!this.value) return b2``;
+    const level = EC_ORDER.includes(this.ec) ? this.ec : "M";
+    const matrix = generateQr(this.value, level);
+    if (!matrix) return b2``;
+    const count = matrix.length;
+    const quiet = Math.max(0, Math.floor(this.margin));
+    const dim = count + quiet * 2;
+    let d3 = "";
+    for (let r6 = 0; r6 < count; r6++) {
+      for (let c5 = 0; c5 < count; c5++) {
+        if (matrix[r6][c5]) {
+          d3 += `M${c5 + quiet} ${r6 + quiet}h1v1h-1z`;
+        }
+      }
+    }
+    const fg = this.color || void 0;
+    const bg = this.background || void 0;
+    const fgStyle = fg ? `fill:${fg}` : void 0;
+    const bgStyle = bg ? `fill:${bg}` : void 0;
+    const body = w`
+      <rect class="qr-bg" x="0" y="0" width="${dim}" height="${dim}" style="${bgStyle ?? ""}"></rect>
+      <path class="qr-fg" d="${d3}" style="${fgStyle ?? ""}"></path>
+    `;
+    return b2`
+      <svg
+        style="width:${this.size}px;height:${this.size}px"
+        viewBox="0 0 ${dim} ${dim}"
+        xmlns="http://www.w3.org/2000/svg"
+        role="img"
+        aria-label=${`C\xF3digo QR: ${this.value}`}
+        shape-rendering="crispEdges"
+      >
+        ${body}
+      </svg>
+    `;
+  }
+};
+__decorateClass2([
+  n4({ type: String })
+], OkQr.prototype, "value");
+__decorateClass2([
+  n4({ type: String })
+], OkQr.prototype, "ec");
+__decorateClass2([
+  n4({ type: Number })
+], OkQr.prototype, "size");
+__decorateClass2([
+  n4({ type: String })
+], OkQr.prototype, "color");
+__decorateClass2([
+  n4({ type: String })
+], OkQr.prototype, "background");
+__decorateClass2([
+  n4({ type: Number })
+], OkQr.prototype, "margin");
+define("ok-qr", OkQr);
+
+// ../outfitkit/dist/ok-receipt.js
+var __defProp3 = Object.defineProperty;
+var __decorateClass3 = (decorators, target, key, kind) => {
+  var result = void 0;
+  for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
+    if (decorator = decorators[i7])
+      result = decorator(target, key, result) || result;
+  if (result) __defProp3(target, key, result);
+  return result;
+};
+var OkReceipt = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.qrSize = 120;
+  }
+  static {
+    this.styles = i`
+    :host {
+      /* Ancho de papel térmico estándar (80mm). Overridable vía --receipt-width. */
+      --w: var(--receipt-width, 80mm);
+      display: block;
+      width: 100%;
+    }
+    .paper {
+      box-sizing: border-box;
+      width: var(--w);
+      max-width: 100%;
+      margin: 0 auto;
+      padding: 4mm 3mm;
+      background: #fff;
+      color: #000;
+      /* Monospace = look de tiquet; tabular para alinear importes. */
+      font-family: 'Roboto Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+      font-size: 11px;
+      line-height: 1.45;
+      font-variant-numeric: tabular-nums;
+    }
+    .center { text-align: center; }
+    .biz-logo { max-width: 60%; max-height: 22mm; margin: 0 auto 2mm; display: block; }
+    .biz-name { font-size: 14px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+    .biz-meta { font-size: 10px; }
+    .sep { border: none; border-top: 1px dashed #000; margin: 2mm 0; }
+    .meta {
+      display: flex; justify-content: space-between; gap: .5rem;
+      font-size: 10px;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: .3mm 0; vertical-align: top; }
+    thead th { font-size: 9px; text-transform: uppercase; text-align: left; border-bottom: 1px solid #000; }
+    th.num, td.num { text-align: right; white-space: nowrap; }
+    .line-name { word-break: break-word; }
+    .line-note { font-size: 9px; padding-left: 2mm; opacity: .8; }
+    .qty-price { font-size: 9px; opacity: .85; }
+    .totals { width: 100%; }
+    .totals td { padding: .2mm 0; }
+    .totals td.num { text-align: right; white-space: nowrap; }
+    .grand td { font-size: 14px; font-weight: 700; padding-top: 1mm; }
+    .pay td { font-size: 10px; }
+    .footer { font-size: 10px; white-space: pre-line; }
+    .qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 1mm; margin-top: 2mm; }
+    .qr-note { font-size: 8px; text-align: center; word-break: break-word; }
+    .empty { padding: 4mm; text-align: center; color: #888; font-style: italic; }
+  `;
+  }
+  cur() {
+    return this.receipt?.currency ?? "\u20AC";
+  }
+  money(n6) {
+    return `${Number(n6 ?? 0).toFixed(2)} ${this.cur()}`;
+  }
+  render() {
+    const r6 = this.receipt;
+    if (!r6) return b2`<div class="paper empty">Sin datos de tiquet.</div>`;
+    return b2`<div class="paper" part="paper">
+      ${this.renderHeader(r6)}
+      <hr class="sep" />
+      ${this.renderMeta(r6)}
+      <hr class="sep" />
+      ${this.renderLines(r6)}
+      <hr class="sep" />
+      ${this.renderTotals(r6)}
+      ${r6.footer ? b2`<hr class="sep" /><div class="center footer">${r6.footer}</div>` : A}
+      ${this.renderQr(r6)}
+    </div>`;
+  }
+  renderHeader(r6) {
+    const b3 = r6.business ?? { name: "" };
+    return b2`<div class="center">
+      ${b3.logo_url ? b2`<img class="biz-logo" src=${b3.logo_url} alt=${b3.name || "logo"} />` : b2`<slot name="logo"></slot>`}
+      <div class="biz-name">${b3.name}</div>
+      ${b3.address ? b2`<div class="biz-meta">${b3.address}</div>` : A}
+      ${b3.tax_id ? b2`<div class="biz-meta">${b3.tax_id}</div>` : A}
+      ${b3.phone ? b2`<div class="biz-meta">Tel. ${b3.phone}</div>` : A}
+    </div>`;
+  }
+  renderMeta(r6) {
+    return b2`<div class="meta">
+        <span>Tiquet: <strong>${r6.number}</strong></span>
+        ${r6.datetime ? b2`<span>${r6.datetime}</span>` : A}
+      </div>
+      ${r6.cashier || r6.customer ? b2`<div class="meta">
+            ${r6.cashier ? b2`<span>Atendido: ${r6.cashier}</span>` : b2`<span></span>`}
+            ${r6.customer ? b2`<span>Cliente: ${r6.customer}</span>` : A}
+          </div>` : A}`;
+  }
+  renderLines(r6) {
+    const lines = r6.lines ?? [];
+    if (!lines.length) return b2`<div class="center biz-meta">— Sin líneas —</div>`;
+    return b2`<table>
+      <thead>
+        <tr><th>Concepto</th><th class="num">Importe</th></tr>
+      </thead>
+      <tbody>
+        ${lines.map(
+      (l3) => b2`<tr>
+              <td class="line-name">
+                <div>${l3.name}</div>
+                <div class="qty-price">${l3.qty} × ${this.money(l3.unit_price)}</div>
+                ${l3.note ? b2`<div class="line-note">${l3.note}</div>` : A}
+              </td>
+              <td class="num">${this.money(l3.total)}</td>
+            </tr>`
+    )}
+      </tbody>
+    </table>`;
+  }
+  renderTotals(r6) {
+    const taxes = r6.taxes ?? [];
+    return b2`<table class="totals">
+      ${r6.subtotal != null ? b2`<tr><td>Subtotal</td><td class="num">${this.money(r6.subtotal)}</td></tr>` : A}
+      ${taxes.map(
+      (t5) => b2`<tr><td>${t5.label}</td><td class="num">${this.money(t5.amount)}</td></tr>`
+    )}
+      <tr class="grand"><td>TOTAL</td><td class="num">${this.money(r6.total)}</td></tr>
+      ${r6.payment ? b2`<tr class="pay"><td>${r6.payment.method}</td><td class="num">${this.money(
+      r6.payment.paid ?? r6.total
+    )}</td></tr>
+            ${r6.payment.change != null ? b2`<tr class="pay"><td>Cambio</td><td class="num">${this.money(
+      r6.payment.change
+    )}</td></tr>` : A}` : A}
+    </table>`;
+  }
+  renderQr(r6) {
+    if (!r6.qr) return A;
+    return b2`<div class="qr-wrap">
+      <ok-qr .value=${r6.qr} .size=${this.qrSize} ec="M" color="#000" background="#fff"></ok-qr>
+      ${r6.qr_note ? b2`<div class="qr-note">${r6.qr_note}</div>` : A}
+    </div>`;
+  }
+};
+__decorateClass3([
+  n4({ attribute: false })
+], OkReceipt.prototype, "receipt");
+__decorateClass3([
+  n4({ type: Number, attribute: "qr-size" })
+], OkReceipt.prototype, "qrSize");
+define("ok-receipt", OkReceipt);
+
+// ../outfitkit/dist/ok-invoice.js
+var __defProp4 = Object.defineProperty;
+var __decorateClass4 = (decorators, target, key, kind) => {
+  var result = void 0;
+  for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
+    if (decorator = decorators[i7])
+      result = decorator(target, key, result) || result;
+  if (result) __defProp4(target, key, result);
+  return result;
+};
+var OkInvoice = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.qrSize = 96;
+  }
+  static {
+    this.styles = i`
+    :host {
+      --ink: var(--ok-text, var(--ion-text-color, #1c1b18));
+      --muted: #6b6b6b;
+      --rule: #d9d6cf;
+      --accent: var(--ok-color-primary, var(--ion-color-primary, #0091ce));
+      --soft: color-mix(in srgb, var(--accent) 8%, #fff);
+      display: block;
+      width: 100%;
+    }
+    .sheet {
+      box-sizing: border-box;
+      /* A4: ancho de papel. Overridable vía --invoice-width. */
+      width: var(--invoice-width, 210mm);
+      max-width: 100%;
+      margin: 0 auto;
+      padding: 16mm 14mm;
+      background: #fff;
+      color: var(--ink);
+      font-family: var(--ok-font, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    /* Cabecera: emisor a la izquierda, bloque "FACTURA" a la derecha. */
+    .top { display: flex; justify-content: space-between; gap: 2rem; align-items: flex-start; }
+    .issuer-logo { max-height: 18mm; max-width: 55mm; margin-bottom: .5rem; display: block; }
+    .issuer-name { font-size: 15px; font-weight: 700; }
+    .issuer-meta, .party-meta { color: var(--muted); font-size: 11px; white-space: pre-line; }
+    .doc { text-align: right; min-width: 48mm; }
+    .doc-title { font-size: 24px; font-weight: 800; letter-spacing: .06em; color: var(--accent); text-transform: uppercase; }
+    .doc-type { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+    .doc-grid { margin-top: .6rem; display: grid; grid-template-columns: auto auto; gap: .1rem .8rem; justify-content: end; font-size: 11px; }
+    .doc-grid .k { color: var(--muted); text-align: right; }
+    .doc-grid .v { font-weight: 600; text-align: right; }
+    /* Bloque receptor. */
+    .bill-to { margin: 9mm 0 6mm; padding: 3mm 4mm; background: var(--soft); border-radius: 8px; }
+    .bill-to .label { font-size: 9px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+    .bill-to .name { font-weight: 700; font-size: 13px; }
+    /* Tabla de líneas. */
+    table.lines { width: 100%; border-collapse: collapse; margin-top: 2mm; }
+    table.lines thead th {
+      font-size: 9px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
+      text-align: left; padding: 2mm 2mm; border-bottom: 1.5px solid var(--ink);
+    }
+    table.lines tbody td { padding: 2mm 2mm; border-bottom: 1px solid var(--rule); vertical-align: top; }
+    .num { text-align: right; white-space: nowrap; }
+    .desc { width: 42%; }
+    /* Resumen de totales (derecha). */
+    .summary { display: flex; justify-content: flex-end; margin-top: 4mm; }
+    .summary table { border-collapse: collapse; min-width: 70mm; }
+    .summary td { padding: 1mm 2mm; }
+    .summary td.num { text-align: right; white-space: nowrap; }
+    .summary .grand td { font-size: 15px; font-weight: 800; border-top: 1.5px solid var(--ink); padding-top: 2mm; }
+    .summary .grand td.num { color: var(--accent); }
+    .muted { color: var(--muted); }
+    /* Pie: pago, notas, QR. */
+    .foot { margin-top: 8mm; display: flex; justify-content: space-between; gap: 2rem; align-items: flex-start; }
+    .pay-box { font-size: 11px; }
+    .pay-box .h { font-size: 9px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+    .qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 1mm; }
+    .qr-note { font-size: 8px; max-width: 36mm; text-align: center; color: var(--muted); word-break: break-word; }
+    .legal { margin-top: 8mm; padding-top: 3mm; border-top: 1px solid var(--rule); font-size: 9px; color: var(--muted); white-space: pre-line; text-align: center; }
+    .empty { padding: 12mm; text-align: center; color: #999; font-style: italic; }
+  `;
+  }
+  cur() {
+    return this.invoice?.currency ?? "\u20AC";
+  }
+  money(n6) {
+    return `${Number(n6 ?? 0).toFixed(2)} ${this.cur()}`;
+  }
+  render() {
+    const inv = this.invoice;
+    if (!inv) return b2`<div class="sheet empty">Sin datos de factura.</div>`;
+    return b2`<div class="sheet" part="sheet">
+      ${this.renderTop(inv)}
+      ${this.renderBillTo(inv)}
+      ${this.renderLines(inv)}
+      ${this.renderSummary(inv)}
+      ${this.renderFoot(inv)}
+      ${inv.footer ? b2`<div class="legal">${inv.footer}</div>` : A}
+    </div>`;
+  }
+  party(p4) {
+    const loc = [p4.postal_code, p4.city].filter(Boolean).join(" ");
+    const lines = [p4.address, loc, p4.country, p4.tax_id, p4.email, p4.phone].filter(Boolean);
+    return b2`${lines.map((l3) => b2`<div>${l3}</div>`)}`;
+  }
+  renderTop(inv) {
+    const iss = inv.issuer ?? { name: "" };
+    return b2`<div class="top">
+      <div>
+        ${iss.logo_url ? b2`<img class="issuer-logo" src=${iss.logo_url} alt=${iss.name || "logo"} />` : A}
+        <div class="issuer-name">${iss.name}</div>
+        <div class="issuer-meta">${this.party(iss)}</div>
+      </div>
+      <div class="doc">
+        <div class="doc-title">Factura</div>
+        ${inv.type ? b2`<div class="doc-type">${inv.type}</div>` : A}
+        <div class="doc-grid">
+          <span class="k">Nº</span><span class="v">${inv.number}</span>
+          <span class="k">Fecha</span><span class="v">${inv.issue_date}</span>
+          ${inv.due_date ? b2`<span class="k">Vencimiento</span><span class="v">${inv.due_date}</span>` : A}
+        </div>
+      </div>
+    </div>`;
+  }
+  renderBillTo(inv) {
+    const c5 = inv.customer;
+    if (!c5) return A;
+    return b2`<div class="bill-to">
+      <div class="label">Facturar a</div>
+      <div class="name">${c5.name}</div>
+      <div class="party-meta">${this.party(c5)}</div>
+    </div>`;
+  }
+  renderLines(inv) {
+    const lines = inv.lines ?? [];
+    const hasDisc = lines.some((l3) => l3.discount_percent);
+    const hasTax = lines.some((l3) => l3.tax_rate != null);
+    return b2`<table class="lines">
+      <thead>
+        <tr>
+          <th class="desc">Descripción</th>
+          <th class="num">Cant.</th>
+          <th class="num">Precio</th>
+          ${hasDisc ? b2`<th class="num">Dto.</th>` : A}
+          ${hasTax ? b2`<th class="num">Imp.</th>` : A}
+          <th class="num">Importe</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${lines.length ? lines.map(
+      (l3) => b2`<tr>
+                <td class="desc">${l3.description}</td>
+                <td class="num">${l3.qty}</td>
+                <td class="num">${this.money(l3.unit_price)}</td>
+                ${hasDisc ? b2`<td class="num">${l3.discount_percent ? `${l3.discount_percent}%` : "\u2014"}</td>` : A}
+                ${hasTax ? b2`<td class="num">${l3.tax_rate != null ? `${l3.tax_rate}%` : "\u2014"}</td>` : A}
+                <td class="num">${this.money(l3.total)}</td>
+              </tr>`
+    ) : b2`<tr><td colspan="6" class="muted" style="text-align:center;padding:6mm">— Sin líneas —</td></tr>`}
+      </tbody>
+    </table>`;
+  }
+  renderSummary(inv) {
+    const taxes = inv.taxes ?? [];
+    return b2`<div class="summary">
+      <table>
+        <tr><td class="muted">Base imponible</td><td class="num">${this.money(inv.subtotal)}</td></tr>
+        ${inv.discount_total ? b2`<tr><td class="muted">Descuento</td><td class="num">−${this.money(inv.discount_total)}</td></tr>` : A}
+        ${taxes.map(
+      (t5) => b2`<tr><td class="muted">${t5.label}${t5.base != null ? b2` <span class="muted">(${this.money(t5.base)})</span>` : A}</td><td class="num">${this.money(t5.amount)}</td></tr>`
+    )}
+        <tr class="grand"><td>TOTAL</td><td class="num">${this.money(inv.total)}</td></tr>
+      </table>
+    </div>`;
+  }
+  renderFoot(inv) {
+    const hasPay = inv.payment_method || inv.payment_terms || inv.notes;
+    if (!hasPay && !inv.qr) return A;
+    return b2`<div class="foot">
+      <div class="pay-box">
+        ${inv.payment_method ? b2`<div class="h">Forma de pago</div><div>${inv.payment_method}</div>` : A}
+        ${inv.payment_terms ? b2`<div style="margin-top:2mm" class="muted">${inv.payment_terms}</div>` : A}
+        ${inv.notes ? b2`<div style="margin-top:3mm">${inv.notes}</div>` : A}
+      </div>
+      ${inv.qr ? b2`<div class="qr-wrap">
+            <ok-qr .value=${inv.qr} .size=${this.qrSize} ec="M"></ok-qr>
+            ${inv.qr_note ? b2`<div class="qr-note">${inv.qr_note}</div>` : A}
+          </div>` : A}
+    </div>`;
+  }
+};
+__decorateClass4([
+  n4({ attribute: false })
+], OkInvoice.prototype, "invoice");
+__decorateClass4([
+  n4({ type: Number, attribute: "qr-size" })
+], OkInvoice.prototype, "qrSize");
+define("ok-invoice", OkInvoice);
+
+// modules/sales/ui/lib/document-mappers.ts
+function parseTaxes(tax_breakdown) {
+  if (!tax_breakdown) return [];
+  let obj;
+  try {
+    obj = JSON.parse(tax_breakdown);
+  } catch {
+    return [];
+  }
+  return Object.entries(obj).map(([rate, v3]) => {
+    const r6 = Number(rate);
+    return {
+      label: `IVA ${Number.isFinite(r6) ? r6.toFixed(0) : rate}%`,
+      rate: Number.isFinite(r6) ? r6 : void 0,
+      base: Number(v3?.base ?? 0),
+      amount: Number(v3?.tax ?? 0)
+    };
+  }).filter((t5) => t5.amount || t5.base);
+}
+function resolveFormat(sale, settings) {
+  const v3 = sale.document_type || settings.default_document_format || "ticket";
+  return v3 === "invoice" ? "invoice" : "ticket";
+}
+function saleToReceipt(sale, lines, settings = {}) {
+  const header = (settings.receipt_header || "").trim();
+  return {
+    business: { name: header.split("\n")[0] || "Mi negocio", address: header.split("\n").slice(1).join(" ") || void 0 },
+    number: sale.sale_number,
+    datetime: sale.created_at,
+    customer: sale.customer_name || void 0,
+    lines: lines.map((l3) => ({
+      name: l3.product_name,
+      qty: Number(l3.quantity),
+      unit_price: Number(l3.unit_price),
+      total: Number(l3.line_total)
+    })),
+    subtotal: sale.subtotal != null ? Number(sale.subtotal) : void 0,
+    taxes: parseTaxes(sale.tax_breakdown).map((t5) => ({ label: t5.label, base: t5.base, amount: t5.amount })),
+    total: Number(sale.total ?? 0),
+    payment: sale.payment_method_name ? { method: sale.payment_method_name, paid: sale.amount_tendered != null ? Number(sale.amount_tendered) : void 0, change: sale.change_due != null ? Number(sale.change_due) : void 0 } : void 0,
+    currency: settings.currency || "\u20AC",
+    footer: settings.receipt_footer || void 0
+  };
+}
+function saleToInvoice(sale, lines, settings = {}) {
+  const header = (settings.receipt_header || "").trim();
+  const invLines = lines.map((l3) => ({
+    description: l3.product_name,
+    qty: Number(l3.quantity),
+    unit_price: Number(l3.unit_price),
+    discount_percent: l3.discount_percent ? Number(l3.discount_percent) : void 0,
+    tax_rate: l3.tax_rate != null ? Number(l3.tax_rate) : void 0,
+    total: Number(l3.line_total)
+  }));
+  const taxes = parseTaxes(sale.tax_breakdown);
+  return {
+    issuer: { name: header.split("\n")[0] || "Mi negocio", address: header.split("\n").slice(1).join(" ") || void 0 },
+    customer: { name: sale.customer_name || "Cliente" },
+    number: sale.sale_number,
+    issue_date: sale.created_at || "",
+    lines: invLines,
+    subtotal: Number(sale.subtotal ?? 0),
+    discount_total: sale.discount_amount ? Number(sale.discount_amount) : void 0,
+    taxes: taxes.map((t5) => ({ label: t5.label, rate: t5.rate, base: t5.base, amount: t5.amount })),
+    tax_total: Number(sale.tax_amount ?? 0),
+    total: Number(sale.total ?? 0),
+    currency: settings.currency || "\u20AC",
+    payment_method: sale.payment_method_name || void 0,
+    footer: settings.receipt_footer || void 0
+  };
+}
+
+// modules/sales/ui/components/erp-sales-document/erp-sales-document.ts
+function erplora() {
+  const c5 = globalThis.erplora;
+  if (!c5) throw new Error("erplora SDK no inicializado por el shell");
+  return c5;
+}
+var ErpSalesDocument = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.loading = false;
+    this.error = "";
+  }
+  static {
+    this.styles = i`
+    :host { display:block; }
+    .bar { display:flex; gap:.5rem; align-items:center; justify-content:flex-end; margin-bottom:.6rem; }
+    .err { color:#d9480f; }
+    .muted { color:#8b897f; }
+    /* Al imprimir: solo el documento; se oculta la barra de acciones. */
+    @media print {
+      .bar { display:none; }
+      :host { background:#fff; }
+    }
+  `;
+  }
+  async connectedCallback() {
+    super.connectedCallback();
+    if (!this.sale && this.saleId) await this.load();
+  }
+  updated(changed) {
+    if (changed.has("saleId") && this.saleId && !this.sale) this.load();
+  }
+  async load() {
+    this.loading = true;
+    this.error = "";
+    try {
+      const [sale, lines, settingsRows] = await Promise.all([
+        erplora().query("sales.get", { sale_id: this.saleId }),
+        erplora().query("sales.lines", { sale_id: this.saleId }),
+        erplora().query("sales.settings.get").catch(() => [])
+      ]);
+      this.sale = Array.isArray(sale) ? sale[0] : sale;
+      this.lines = lines || [];
+      this.settings = (Array.isArray(settingsRows) ? settingsRows[0] : settingsRows) || {};
+    } catch (e5) {
+      this.error = e5 instanceof Error ? e5.message : "Error cargando el documento";
+    } finally {
+      this.loading = false;
+    }
+  }
+  render() {
+    if (this.loading) return b2`<p class="muted">Cargando documento…</p>`;
+    if (this.error) return b2`<p class="err">${this.error}</p>`;
+    if (!this.sale) return b2`<p class="muted">Sin venta.</p>`;
+    const settings = this.settings || {};
+    const lines = this.lines || [];
+    const fmt = this.format || resolveFormat(this.sale, settings);
+    return b2`<div>
+      <div class="bar">
+        <ion-button size="small" fill="outline" @click=${() => window.print()}>
+          <ion-icon slot="start" name="print-outline"></ion-icon> Imprimir
+        </ion-button>
+      </div>
+      ${fmt === "invoice" ? b2`<ok-invoice .invoice=${saleToInvoice(this.sale, lines, settings)}></ok-invoice>` : b2`<ok-receipt .receipt=${saleToReceipt(this.sale, lines, settings)}></ok-receipt>`}
+    </div>`;
+  }
+};
+__decorateClass([
+  n4({ attribute: "sale-id" })
+], ErpSalesDocument.prototype, "saleId", 2);
+__decorateClass([
+  n4({ attribute: false })
+], ErpSalesDocument.prototype, "sale", 2);
+__decorateClass([
+  n4({ attribute: false })
+], ErpSalesDocument.prototype, "lines", 2);
+__decorateClass([
+  n4({ attribute: false })
+], ErpSalesDocument.prototype, "settings", 2);
+__decorateClass([
+  n4()
+], ErpSalesDocument.prototype, "format", 2);
+__decorateClass([
+  r5()
+], ErpSalesDocument.prototype, "loading", 2);
+__decorateClass([
+  r5()
+], ErpSalesDocument.prototype, "error", 2);
+define("erp-sales-document", ErpSalesDocument);
+
 // ../module-toolkit/node_modules/lit-html/directive.js
 var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e4 = (t5) => (...e5) => ({ _$litDirective$: t5, values: e5 });
@@ -1404,13 +2570,13 @@ var o6 = e4(class extends i4 {
 });
 
 // ../outfitkit/dist/ok-data-table.js
-var __defProp2 = Object.defineProperty;
-var __decorateClass2 = (decorators, target, key, kind) => {
+var __defProp5 = Object.defineProperty;
+var __decorateClass5 = (decorators, target, key, kind) => {
   var result = void 0;
   for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
     if (decorator = decorators[i7])
       result = decorator(target, key, result) || result;
-  if (result) __defProp2(target, key, result);
+  if (result) __defProp5(target, key, result);
   return result;
 };
 var DEFAULT_LABELS = {
@@ -2519,148 +3685,148 @@ var OkDataTable = class extends i3 {
     `;
   }
 };
-__decorateClass2([
+__decorateClass5([
   n4({ attribute: false })
 ], OkDataTable.prototype, "columns");
-__decorateClass2([
+__decorateClass5([
   n4({ attribute: false })
 ], OkDataTable.prototype, "rows");
-__decorateClass2([
+__decorateClass5([
   n4({ attribute: false })
 ], OkDataTable.prototype, "searchKeys");
-__decorateClass2([
+__decorateClass5([
   n4({ attribute: "row-key-field" })
 ], OkDataTable.prototype, "rowKeyField");
-__decorateClass2([
+__decorateClass5([
   n4({ attribute: false })
 ], OkDataTable.prototype, "rowKey");
-__decorateClass2([
+__decorateClass5([
   n4({ type: Number, attribute: "page-size" })
 ], OkDataTable.prototype, "pageSize");
-__decorateClass2([
+__decorateClass5([
   n4({ attribute: "empty-message" })
 ], OkDataTable.prototype, "emptyMessage");
-__decorateClass2([
+__decorateClass5([
   n4({ attribute: "search-placeholder" })
 ], OkDataTable.prototype, "searchPlaceholder");
-__decorateClass2([
+__decorateClass5([
   n4({ attribute: false })
 ], OkDataTable.prototype, "labels");
-__decorateClass2([
+__decorateClass5([
   n4({ attribute: false })
 ], OkDataTable.prototype, "actions");
-__decorateClass2([
+__decorateClass5([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "addable");
-__decorateClass2([
+__decorateClass5([
   n4({ attribute: false })
 ], OkDataTable.prototype, "pageSizeOptions");
-__decorateClass2([
+__decorateClass5([
   n4({ type: Boolean, reflect: true })
 ], OkDataTable.prototype, "fill");
-__decorateClass2([
+__decorateClass5([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "columnPicker");
-__decorateClass2([
+__decorateClass5([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "csv");
-__decorateClass2([
+__decorateClass5([
   n4({ attribute: "csv-name" })
 ], OkDataTable.prototype, "csvName");
-__decorateClass2([
+__decorateClass5([
   n4({ type: Boolean, attribute: "server-side" })
 ], OkDataTable.prototype, "serverSide");
-__decorateClass2([
+__decorateClass5([
   n4({ type: Number })
 ], OkDataTable.prototype, "total");
-__decorateClass2([
+__decorateClass5([
   n4({ type: Number })
 ], OkDataTable.prototype, "page");
-__decorateClass2([
+__decorateClass5([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "searchable");
-__decorateClass2([
+__decorateClass5([
   n4({ type: String })
 ], OkDataTable.prototype, "sort");
-__decorateClass2([
+__decorateClass5([
   n4({ attribute: "sort-dir" })
 ], OkDataTable.prototype, "sortDir");
-__decorateClass2([
+__decorateClass5([
   n4()
 ], OkDataTable.prototype, "title");
-__decorateClass2([
+__decorateClass5([
   n4({ attribute: false })
 ], OkDataTable.prototype, "views");
-__decorateClass2([
+__decorateClass5([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "exportable");
-__decorateClass2([
+__decorateClass5([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "importable");
-__decorateClass2([
+__decorateClass5([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "columnSelector");
-__decorateClass2([
+__decorateClass5([
   n4({ attribute: false })
 ], OkDataTable.prototype, "pageSizes");
-__decorateClass2([
+__decorateClass5([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "selectable");
-__decorateClass2([
+__decorateClass5([
   n4({ attribute: false })
 ], OkDataTable.prototype, "selectedKeys");
-__decorateClass2([
+__decorateClass5([
   n4({ attribute: false })
 ], OkDataTable.prototype, "primaryAction");
-__decorateClass2([
+__decorateClass5([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "inlineFilters");
-__decorateClass2([
+__decorateClass5([
   n4({ attribute: false })
 ], OkDataTable.prototype, "menuActions");
-__decorateClass2([
+__decorateClass5([
   n4({ attribute: false })
 ], OkDataTable.prototype, "cardTitle");
-__decorateClass2([
+__decorateClass5([
   n4({ attribute: false })
 ], OkDataTable.prototype, "cardIcon");
-__decorateClass2([
+__decorateClass5([
   n4({ attribute: false })
 ], OkDataTable.prototype, "renderCard");
-__decorateClass2([
+__decorateClass5([
   r5()
 ], OkDataTable.prototype, "q");
-__decorateClass2([
+__decorateClass5([
   r5()
 ], OkDataTable.prototype, "clientPage");
-__decorateClass2([
+__decorateClass5([
   r5()
 ], OkDataTable.prototype, "clientPageSize");
-__decorateClass2([
+__decorateClass5([
   r5()
 ], OkDataTable.prototype, "clientSort");
-__decorateClass2([
+__decorateClass5([
   r5()
 ], OkDataTable.prototype, "clientSortDir");
-__decorateClass2([
+__decorateClass5([
   r5()
 ], OkDataTable.prototype, "clientFilters");
-__decorateClass2([
+__decorateClass5([
   r5()
 ], OkDataTable.prototype, "filterDraft");
-__decorateClass2([
+__decorateClass5([
   r5()
 ], OkDataTable.prototype, "panel");
-__decorateClass2([
+__decorateClass5([
   r5()
 ], OkDataTable.prototype, "viewMode");
-__decorateClass2([
+__decorateClass5([
   r5()
 ], OkDataTable.prototype, "hiddenKeys");
-__decorateClass2([
+__decorateClass5([
   r5()
 ], OkDataTable.prototype, "internalSelection");
-__decorateClass2([
+__decorateClass5([
   r5()
 ], OkDataTable.prototype, "menuOpen");
 define("ok-data-table", OkDataTable);
@@ -2784,7 +3950,7 @@ function createListController(client, queryName, onChange = () => {
 }
 
 // modules/sales/ui/components/erp-sales-list/erp-sales-list.ts
-function erplora() {
+function erplora2() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
   return c5;
@@ -2795,6 +3961,9 @@ var ErpSalesList = class extends i3 {
     this.stats = { count: 0, total_revenue: 0, avg_ticket: 0 };
     this.statsError = "";
     this.tick = 0;
+    this.documentActions = [
+      { id: "document", label: "Documento", icon: "receipt-outline" }
+    ];
     this.columns = [
       { key: "sale_number", header: "N\xFAmero", sortable: true, filterable: true, filterType: "text" },
       { key: "customer_name", header: "Cliente", sortable: true, filterable: true, filterType: "text", format: (r6) => r6.customer_name || "\u2014" },
@@ -2829,14 +3998,14 @@ var ErpSalesList = class extends i3 {
   // sola vez tras el primer render, considera firstUpdated() en su lugar.
   async connectedCallback() {
     super.connectedCallback();
-    this.ctrl = createListController(erplora(), "sales.list", () => this.requestUpdate(), {
+    this.ctrl = createListController(erplora2(), "sales.list", () => this.requestUpdate(), {
       pageSize: 50,
       sort: "created_at",
       dir: "desc"
     });
     await Promise.all([this.ctrl.load(), this.loadStats()]);
     try {
-      this.unsub = erplora().on("sale.completed", () => {
+      this.unsub = erplora2().on("sale.completed", () => {
         this.ctrl.load();
         this.loadStats();
       });
@@ -2849,7 +4018,7 @@ var ErpSalesList = class extends i3 {
   }
   async loadStats() {
     try {
-      const rows = await erplora().query("sales.stats");
+      const rows = await erplora2().query("sales.stats");
       this.stats = rows && rows[0] || { count: 0, total_revenue: 0, avg_ticket: 0 };
     } catch (e5) {
       this.statsError = e5 instanceof Error ? e5.message : "Error cargando m\xE9tricas";
@@ -2874,7 +4043,27 @@ var ErpSalesList = class extends i3 {
         </div>
         ${this.statsError ? b2`<p class="err">${this.statsError}</p>` : A}
         ${this.ctrl?.error ? b2`<p class="err">${this.ctrl.error}</p>` : A}
-        <ok-data-table .serverSide=${true} .columns=${this.columns} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.ctrl?.state.sort} .sortDir=${this.ctrl?.state.dir ?? "desc"} .searchable=${true} .searchPlaceholder=${"Buscar n\xFAmero o cliente\u2026"} .emptyMessage=${this.ctrl?.loading ? "Cargando\u2026" : "A\xFAn no hay ventas."} @pageChange=${(e5) => this.ctrl.setPage(e5.detail)} @sortChange=${(e5) => this.ctrl.setSort(e5.detail.sort, e5.detail.dir)} @searchChange=${(e5) => this.ctrl.setSearch(e5.detail)} @filterChange=${(e5) => this.ctrl.setFilter(e5.detail.col, e5.detail.value)}></ok-data-table>
+        <ok-data-table .serverSide=${true} .columns=${this.columns} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.ctrl?.state.sort} .sortDir=${this.ctrl?.state.dir ?? "desc"} .searchable=${true} .searchPlaceholder=${"Buscar n\xFAmero o cliente\u2026"} .emptyMessage=${this.ctrl?.loading ? "Cargando\u2026" : "A\xFAn no hay ventas."} .actions=${this.documentActions} @rowAction=${(e5) => {
+      if (e5.detail.actionId === "document") this.docSaleId = e5.detail.row.id;
+    }} @pageChange=${(e5) => this.ctrl.setPage(e5.detail)} @sortChange=${(e5) => this.ctrl.setSort(e5.detail.sort, e5.detail.dir)} @searchChange=${(e5) => this.ctrl.setSearch(e5.detail)} @filterChange=${(e5) => this.ctrl.setFilter(e5.detail.col, e5.detail.value)}></ok-data-table>
+
+        <ion-modal .isOpen=${!!this.docSaleId} @ionModalDidDismiss=${() => {
+      this.docSaleId = void 0;
+    }}>
+          <ion-header>
+            <ion-toolbar>
+              <ion-title>Documento de venta</ion-title>
+              <ion-buttons slot="end">
+                <ion-button @click=${() => {
+      this.docSaleId = void 0;
+    }}>Cerrar</ion-button>
+              </ion-buttons>
+            </ion-toolbar>
+          </ion-header>
+          <ion-content class="ion-padding">
+            ${this.docSaleId ? b2`<erp-sales-document .saleId=${this.docSaleId}></erp-sales-document>` : A}
+          </ion-content>
+        </ion-modal>
       </div>`;
   }
 };
@@ -2887,6 +4076,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpSalesList.prototype, "tick", 2);
+__decorateClass([
+  r5()
+], ErpSalesList.prototype, "docSaleId", 2);
 define("erp-sales-list", ErpSalesList);
 
 // modules/sales/ui/components/erp-sales-settings/erp-sales-settings.ts
@@ -2908,7 +4100,7 @@ var DEFAULTS = {
   default_document_format: "ticket",
   auto_invoice_with_tax_id: 1
 };
-function erplora2() {
+function erplora3() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
   return c5;
@@ -2948,7 +4140,7 @@ var ErpSalesSettings = class extends i3 {
   async connectedCallback() {
     super.connectedCallback();
     try {
-      const rows = await erplora2().query("sales.settings.get");
+      const rows = await erplora3().query("sales.settings.get");
       const row = Array.isArray(rows) ? rows[0] : rows;
       this.s = { ...DEFAULTS, ...row || {} };
     } catch (e5) {
@@ -2966,7 +4158,7 @@ var ErpSalesSettings = class extends i3 {
     this.message = "";
     this.error = "";
     try {
-      await erplora2().command("sales.settings.update", { ...this.s });
+      await erplora3().command("sales.settings.update", { ...this.s });
       this.message = "Ajustes guardados.";
     } catch (e5) {
       this.error = e5 instanceof Error ? e5.message : "Error guardando";
