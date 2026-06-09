@@ -680,16 +680,16 @@ var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "a
 var s = Symbol();
 var o = /* @__PURE__ */ new WeakMap();
 var n = class {
-  constructor(t5, e5, o7) {
+  constructor(t5, e6, o7) {
     if (this._$cssResult$ = true, o7 !== s) throw Error("CSSResult is not constructable. Use `unsafeCSS` or `css` instead.");
-    this.cssText = t5, this.t = e5;
+    this.cssText = t5, this.t = e6;
   }
   get styleSheet() {
     let t5 = this.o;
     const s5 = this.t;
     if (e && void 0 === t5) {
-      const e5 = void 0 !== s5 && 1 === s5.length;
-      e5 && (t5 = o.get(s5)), void 0 === t5 && ((this.o = t5 = new CSSStyleSheet()).replaceSync(this.cssText), e5 && o.set(s5, t5));
+      const e6 = void 0 !== s5 && 1 === s5.length;
+      e6 && (t5 = o.get(s5)), void 0 === t5 && ((this.o = t5 = new CSSStyleSheet()).replaceSync(this.cssText), e6 && o.set(s5, t5));
     }
     return t5;
   }
@@ -698,8 +698,8 @@ var n = class {
   }
 };
 var r = (t5) => new n("string" == typeof t5 ? t5 : t5 + "", void 0, s);
-var i = (t5, ...e5) => {
-  const o7 = 1 === t5.length ? t5[0] : e5.reduce((e6, s5, o8) => e6 + ((t6) => {
+var i = (t5, ...e6) => {
+  const o7 = 1 === t5.length ? t5[0] : e6.reduce((e7, s5, o8) => e7 + ((t6) => {
     if (true === t6._$cssResult$) return t6.cssText;
     if ("number" == typeof t6) return t6;
     throw Error("Value passed to 'css' function must be a 'css' function result: " + t6 + ". Use 'unsafeCSS' to pass non-literal values, but take care to ensure page security.");
@@ -708,15 +708,15 @@ var i = (t5, ...e5) => {
 };
 var S = (s5, o7) => {
   if (e) s5.adoptedStyleSheets = o7.map((t5) => t5 instanceof CSSStyleSheet ? t5 : t5.styleSheet);
-  else for (const e5 of o7) {
+  else for (const e6 of o7) {
     const o8 = document.createElement("style"), n6 = t.litNonce;
-    void 0 !== n6 && o8.setAttribute("nonce", n6), o8.textContent = e5.cssText, s5.appendChild(o8);
+    void 0 !== n6 && o8.setAttribute("nonce", n6), o8.textContent = e6.cssText, s5.appendChild(o8);
   }
 };
 var c = e || void 0 === t.CSSStyleSheet ? (t5) => t5 : (t5) => t5 instanceof CSSStyleSheet ? ((t6) => {
-  let e5 = "";
-  for (const s5 of t6.cssRules) e5 += s5.cssText;
-  return r(e5);
+  let e6 = "";
+  for (const s5 of t6.cssRules) e6 += s5.cssText;
+  return r(e6);
 })(t5) : t5;
 
 // ../module-toolkit/node_modules/@lit/reactive-element/node/reactive-element.js
@@ -768,18 +768,18 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
   }
   static createProperty(t5, s5 = y) {
     if (s5.state && (s5.attribute = false), this._$Ei(), this.prototype.hasOwnProperty(t5) && ((s5 = Object.create(s5)).wrapped = true), this.elementProperties.set(t5, s5), !s5.noAccessor) {
-      const i7 = Symbol(), e5 = this.getPropertyDescriptor(t5, i7, s5);
-      void 0 !== e5 && r2(this.prototype, t5, e5);
+      const i7 = Symbol(), e6 = this.getPropertyDescriptor(t5, i7, s5);
+      void 0 !== e6 && r2(this.prototype, t5, e6);
     }
   }
   static getPropertyDescriptor(t5, s5, i7) {
-    const { get: e5, set: h4 } = o2(this.prototype, t5) ?? { get() {
+    const { get: e6, set: h4 } = o2(this.prototype, t5) ?? { get() {
       return this[s5];
     }, set(t6) {
       this[s5] = t6;
     } };
-    return { get: e5, set(s6) {
-      const r6 = e5?.call(this);
+    return { get: e6, set(s6) {
+      const r6 = e6?.call(this);
       h4?.call(this, s6), this.requestUpdate(t5, r6, i7);
     }, configurable: true, enumerable: true };
   }
@@ -812,8 +812,8 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
   static finalizeStyles(t5) {
     const s5 = [];
     if (Array.isArray(t5)) {
-      const e5 = new Set(t5.flat(1 / 0).reverse());
-      for (const t6 of e5) s5.unshift(c(t6));
+      const e6 = new Set(t5.flat(1 / 0).reverse());
+      for (const t6 of e6) s5.unshift(c(t6));
     } else void 0 !== t5 && s5.push(c(t5));
     return s5;
   }
@@ -854,31 +854,31 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
     this._$AK(t5, i7);
   }
   _$ET(t5, s5) {
-    const i7 = this.constructor.elementProperties.get(t5), e5 = this.constructor._$Eu(t5, i7);
-    if (void 0 !== e5 && true === i7.reflect) {
+    const i7 = this.constructor.elementProperties.get(t5), e6 = this.constructor._$Eu(t5, i7);
+    if (void 0 !== e6 && true === i7.reflect) {
       const h4 = (void 0 !== i7.converter?.toAttribute ? i7.converter : b).toAttribute(s5, i7.type);
-      this._$Em = t5, null == h4 ? this.removeAttribute(e5) : this.setAttribute(e5, h4), this._$Em = null;
+      this._$Em = t5, null == h4 ? this.removeAttribute(e6) : this.setAttribute(e6, h4), this._$Em = null;
     }
   }
   _$AK(t5, s5) {
-    const i7 = this.constructor, e5 = i7._$Eh.get(t5);
-    if (void 0 !== e5 && this._$Em !== e5) {
-      const t6 = i7.getPropertyOptions(e5), h4 = "function" == typeof t6.converter ? { fromAttribute: t6.converter } : void 0 !== t6.converter?.fromAttribute ? t6.converter : b;
-      this._$Em = e5;
+    const i7 = this.constructor, e6 = i7._$Eh.get(t5);
+    if (void 0 !== e6 && this._$Em !== e6) {
+      const t6 = i7.getPropertyOptions(e6), h4 = "function" == typeof t6.converter ? { fromAttribute: t6.converter } : void 0 !== t6.converter?.fromAttribute ? t6.converter : b;
+      this._$Em = e6;
       const r6 = h4.fromAttribute(s5, t6.type);
-      this[e5] = r6 ?? this._$Ej?.get(e5) ?? r6, this._$Em = null;
+      this[e6] = r6 ?? this._$Ej?.get(e6) ?? r6, this._$Em = null;
     }
   }
-  requestUpdate(t5, s5, i7, e5 = false, h4) {
+  requestUpdate(t5, s5, i7, e6 = false, h4) {
     if (void 0 !== t5) {
       const r6 = this.constructor;
-      if (false === e5 && (h4 = this[t5]), i7 ??= r6.getPropertyOptions(t5), !((i7.hasChanged ?? m)(h4, s5) || i7.useDefault && i7.reflect && h4 === this._$Ej?.get(t5) && !this.hasAttribute(r6._$Eu(t5, i7)))) return;
+      if (false === e6 && (h4 = this[t5]), i7 ??= r6.getPropertyOptions(t5), !((i7.hasChanged ?? m)(h4, s5) || i7.useDefault && i7.reflect && h4 === this._$Ej?.get(t5) && !this.hasAttribute(r6._$Eu(t5, i7)))) return;
       this.C(t5, s5, i7);
     }
     false === this.isUpdatePending && (this._$ES = this._$EP());
   }
-  C(t5, s5, { useDefault: i7, reflect: e5, wrapped: h4 }, r6) {
-    i7 && !(this._$Ej ??= /* @__PURE__ */ new Map()).has(t5) && (this._$Ej.set(t5, r6 ?? s5 ?? this[t5]), true !== h4 || void 0 !== r6) || (this._$AL.has(t5) || (this.hasUpdated || i7 || (s5 = void 0), this._$AL.set(t5, s5)), true === e5 && this._$Em !== t5 && (this._$Eq ??= /* @__PURE__ */ new Set()).add(t5));
+  C(t5, s5, { useDefault: i7, reflect: e6, wrapped: h4 }, r6) {
+    i7 && !(this._$Ej ??= /* @__PURE__ */ new Map()).has(t5) && (this._$Ej.set(t5, r6 ?? s5 ?? this[t5]), true !== h4 || void 0 !== r6) || (this._$AL.has(t5) || (this.hasUpdated || i7 || (s5 = void 0), this._$AL.set(t5, s5)), true === e6 && this._$Em !== t5 && (this._$Eq ??= /* @__PURE__ */ new Set()).add(t5));
   }
   async _$EP() {
     this.isUpdatePending = true;
@@ -902,8 +902,8 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
       }
       const t6 = this.constructor.elementProperties;
       if (t6.size > 0) for (const [s6, i7] of t6) {
-        const { wrapped: t7 } = i7, e5 = this[s6];
-        true !== t7 || this._$AL.has(s6) || void 0 === e5 || this.C(s6, void 0, i7, e5);
+        const { wrapped: t7 } = i7, e6 = this[s6];
+        true !== t7 || this._$AL.has(s6) || void 0 === e6 || this.C(s6, void 0, i7, e6);
       }
     }
     let t5 = false;
@@ -978,32 +978,32 @@ function V(t5, i7) {
   return void 0 !== e2 ? e2.createHTML(i7) : i7;
 }
 var N = (t5, i7) => {
-  const s5 = t5.length - 1, e5 = [];
+  const s5 = t5.length - 1, e6 = [];
   let n6, l3 = 2 === i7 ? "<svg>" : 3 === i7 ? "<math>" : "", c5 = v;
   for (let i8 = 0; i8 < s5; i8++) {
     const s6 = t5[i8];
     let a3, u5, d3 = -1, f3 = 0;
     for (; f3 < s6.length && (c5.lastIndex = f3, u5 = c5.exec(s6), null !== u5); ) f3 = c5.lastIndex, c5 === v ? "!--" === u5[1] ? c5 = _ : void 0 !== u5[1] ? c5 = m2 : void 0 !== u5[2] ? (y2.test(u5[2]) && (n6 = RegExp("</" + u5[2], "g")), c5 = p2) : void 0 !== u5[3] && (c5 = p2) : c5 === p2 ? ">" === u5[0] ? (c5 = n6 ?? v, d3 = -1) : void 0 === u5[1] ? d3 = -2 : (d3 = c5.lastIndex - u5[2].length, a3 = u5[1], c5 = void 0 === u5[3] ? p2 : '"' === u5[3] ? $ : g2) : c5 === $ || c5 === g2 ? c5 = p2 : c5 === _ || c5 === m2 ? c5 = v : (c5 = p2, n6 = void 0);
     const x2 = c5 === p2 && t5[i8 + 1].startsWith("/>") ? " " : "";
-    l3 += c5 === v ? s6 + r3 : d3 >= 0 ? (e5.push(a3), s6.slice(0, d3) + h2 + s6.slice(d3) + o3 + x2) : s6 + o3 + (-2 === d3 ? i8 : x2);
+    l3 += c5 === v ? s6 + r3 : d3 >= 0 ? (e6.push(a3), s6.slice(0, d3) + h2 + s6.slice(d3) + o3 + x2) : s6 + o3 + (-2 === d3 ? i8 : x2);
   }
-  return [V(t5, l3 + (t5[s5] || "<?>") + (2 === i7 ? "</svg>" : 3 === i7 ? "</math>" : "")), e5];
+  return [V(t5, l3 + (t5[s5] || "<?>") + (2 === i7 ? "</svg>" : 3 === i7 ? "</math>" : "")), e6];
 };
 var S2 = class _S {
-  constructor({ strings: t5, _$litType$: i7 }, e5) {
+  constructor({ strings: t5, _$litType$: i7 }, e6) {
     let r6;
     this.parts = [];
     let l3 = 0, a3 = 0;
     const u5 = t5.length - 1, d3 = this.parts, [f3, v3] = N(t5, i7);
-    if (this.el = _S.createElement(f3, e5), P.currentNode = this.el.content, 2 === i7 || 3 === i7) {
+    if (this.el = _S.createElement(f3, e6), P.currentNode = this.el.content, 2 === i7 || 3 === i7) {
       const t6 = this.el.content.firstChild;
       t6.replaceWith(...t6.childNodes);
     }
     for (; null !== (r6 = P.nextNode()) && d3.length < u5; ) {
       if (1 === r6.nodeType) {
         if (r6.hasAttributes()) for (const t6 of r6.getAttributeNames()) if (t6.endsWith(h2)) {
-          const i8 = v3[a3++], s5 = r6.getAttribute(t6).split(o3), e6 = /([.?@])?(.*)/.exec(i8);
-          d3.push({ type: 1, index: l3, name: e6[2], strings: s5, ctor: "." === e6[1] ? I : "?" === e6[1] ? L : "@" === e6[1] ? z : H }), r6.removeAttribute(t6);
+          const i8 = v3[a3++], s5 = r6.getAttribute(t6).split(o3), e7 = /([.?@])?(.*)/.exec(i8);
+          d3.push({ type: 1, index: l3, name: e7[2], strings: s5, ctor: "." === e7[1] ? I : "?" === e7[1] ? L : "@" === e7[1] ? z : H }), r6.removeAttribute(t6);
         } else t6.startsWith(o3) && (d3.push({ type: 6, index: l3 }), r6.removeAttribute(t6));
         if (y2.test(r6.tagName)) {
           const t6 = r6.textContent.split(o3), i8 = t6.length - 1;
@@ -1026,11 +1026,11 @@ var S2 = class _S {
     return s5.innerHTML = t5, s5;
   }
 };
-function M(t5, i7, s5 = t5, e5) {
+function M(t5, i7, s5 = t5, e6) {
   if (i7 === E) return i7;
-  let h4 = void 0 !== e5 ? s5._$Co?.[e5] : s5._$Cl;
+  let h4 = void 0 !== e6 ? s5._$Co?.[e6] : s5._$Cl;
   const o7 = a2(i7) ? void 0 : i7._$litDirective$;
-  return h4?.constructor !== o7 && (h4?._$AO?.(false), void 0 === o7 ? h4 = void 0 : (h4 = new o7(t5), h4._$AT(t5, s5, e5)), void 0 !== e5 ? (s5._$Co ??= [])[e5] = h4 : s5._$Cl = h4), void 0 !== h4 && (i7 = M(t5, h4._$AS(t5, i7.values), h4, e5)), i7;
+  return h4?.constructor !== o7 && (h4?._$AO?.(false), void 0 === o7 ? h4 = void 0 : (h4 = new o7(t5), h4._$AT(t5, s5, e6)), void 0 !== e6 ? (s5._$Co ??= [])[e6] = h4 : s5._$Cl = h4), void 0 !== h4 && (i7 = M(t5, h4._$AS(t5, i7.values), h4, e6)), i7;
 }
 var R = class {
   constructor(t5, i7) {
@@ -1043,8 +1043,8 @@ var R = class {
     return this._$AM._$AU;
   }
   u(t5) {
-    const { el: { content: i7 }, parts: s5 } = this._$AD, e5 = (t5?.creationScope ?? l2).importNode(i7, true);
-    P.currentNode = e5;
+    const { el: { content: i7 }, parts: s5 } = this._$AD, e6 = (t5?.creationScope ?? l2).importNode(i7, true);
+    P.currentNode = e6;
     let h4 = P.nextNode(), o7 = 0, n6 = 0, r6 = s5[0];
     for (; void 0 !== r6; ) {
       if (o7 === r6.index) {
@@ -1053,7 +1053,7 @@ var R = class {
       }
       o7 !== r6?.index && (h4 = P.nextNode(), o7++);
     }
-    return P.currentNode = l2, e5;
+    return P.currentNode = l2, e6;
   }
   p(t5) {
     let i7 = 0;
@@ -1064,8 +1064,8 @@ var k = class _k {
   get _$AU() {
     return this._$AM?._$AU ?? this._$Cv;
   }
-  constructor(t5, i7, s5, e5) {
-    this.type = 2, this._$AH = A, this._$AN = void 0, this._$AA = t5, this._$AB = i7, this._$AM = s5, this.options = e5, this._$Cv = e5?.isConnected ?? true;
+  constructor(t5, i7, s5, e6) {
+    this.type = 2, this._$AH = A, this._$AN = void 0, this._$AA = t5, this._$AB = i7, this._$AM = s5, this.options = e6, this._$Cv = e6?.isConnected ?? true;
   }
   get parentNode() {
     let t5 = this._$AA.parentNode;
@@ -1091,10 +1091,10 @@ var k = class _k {
     this._$AH !== A && a2(this._$AH) ? this._$AA.nextSibling.data = t5 : this.T(l2.createTextNode(t5)), this._$AH = t5;
   }
   $(t5) {
-    const { values: i7, _$litType$: s5 } = t5, e5 = "number" == typeof s5 ? this._$AC(t5) : (void 0 === s5.el && (s5.el = S2.createElement(V(s5.h, s5.h[0]), this.options)), s5);
-    if (this._$AH?._$AD === e5) this._$AH.p(i7);
+    const { values: i7, _$litType$: s5 } = t5, e6 = "number" == typeof s5 ? this._$AC(t5) : (void 0 === s5.el && (s5.el = S2.createElement(V(s5.h, s5.h[0]), this.options)), s5);
+    if (this._$AH?._$AD === e6) this._$AH.p(i7);
     else {
-      const t6 = new R(e5, this), s6 = t6.u(this.options);
+      const t6 = new R(e6, this), s6 = t6.u(this.options);
       t6.p(i7), this.T(s6), this._$AH = t6;
     }
   }
@@ -1105,9 +1105,9 @@ var k = class _k {
   k(t5) {
     u2(this._$AH) || (this._$AH = [], this._$AR());
     const i7 = this._$AH;
-    let s5, e5 = 0;
-    for (const h4 of t5) e5 === i7.length ? i7.push(s5 = new _k(this.O(c3()), this.O(c3()), this, this.options)) : s5 = i7[e5], s5._$AI(h4), e5++;
-    e5 < i7.length && (this._$AR(s5 && s5._$AB.nextSibling, e5), i7.length = e5);
+    let s5, e6 = 0;
+    for (const h4 of t5) e6 === i7.length ? i7.push(s5 = new _k(this.O(c3()), this.O(c3()), this, this.options)) : s5 = i7[e6], s5._$AI(h4), e6++;
+    e6 < i7.length && (this._$AR(s5 && s5._$AB.nextSibling, e6), i7.length = e6);
   }
   _$AR(t5 = this._$AA.nextSibling, s5) {
     for (this._$AP?.(false, true, s5); t5 !== this._$AB; ) {
@@ -1126,19 +1126,19 @@ var H = class {
   get _$AU() {
     return this._$AM._$AU;
   }
-  constructor(t5, i7, s5, e5, h4) {
-    this.type = 1, this._$AH = A, this._$AN = void 0, this.element = t5, this.name = i7, this._$AM = e5, this.options = h4, s5.length > 2 || "" !== s5[0] || "" !== s5[1] ? (this._$AH = Array(s5.length - 1).fill(new String()), this.strings = s5) : this._$AH = A;
+  constructor(t5, i7, s5, e6, h4) {
+    this.type = 1, this._$AH = A, this._$AN = void 0, this.element = t5, this.name = i7, this._$AM = e6, this.options = h4, s5.length > 2 || "" !== s5[0] || "" !== s5[1] ? (this._$AH = Array(s5.length - 1).fill(new String()), this.strings = s5) : this._$AH = A;
   }
-  _$AI(t5, i7 = this, s5, e5) {
+  _$AI(t5, i7 = this, s5, e6) {
     const h4 = this.strings;
     let o7 = false;
     if (void 0 === h4) t5 = M(this, t5, i7, 0), o7 = !a2(t5) || t5 !== this._$AH && t5 !== E, o7 && (this._$AH = t5);
     else {
-      const e6 = t5;
+      const e7 = t5;
       let n6, r6;
-      for (t5 = h4[0], n6 = 0; n6 < h4.length - 1; n6++) r6 = M(this, e6[s5 + n6], i7, n6), r6 === E && (r6 = this._$AH[n6]), o7 ||= !a2(r6) || r6 !== this._$AH[n6], r6 === A ? t5 = A : t5 !== A && (t5 += (r6 ?? "") + h4[n6 + 1]), this._$AH[n6] = r6;
+      for (t5 = h4[0], n6 = 0; n6 < h4.length - 1; n6++) r6 = M(this, e7[s5 + n6], i7, n6), r6 === E && (r6 = this._$AH[n6]), o7 ||= !a2(r6) || r6 !== this._$AH[n6], r6 === A ? t5 = A : t5 !== A && (t5 += (r6 ?? "") + h4[n6 + 1]), this._$AH[n6] = r6;
     }
-    o7 && !e5 && this.j(t5);
+    o7 && !e6 && this.j(t5);
   }
   j(t5) {
     t5 === A ? this.element.removeAttribute(this.name) : this.element.setAttribute(this.name, t5 ?? "");
@@ -1161,13 +1161,13 @@ var L = class extends H {
   }
 };
 var z = class extends H {
-  constructor(t5, i7, s5, e5, h4) {
-    super(t5, i7, s5, e5, h4), this.type = 5;
+  constructor(t5, i7, s5, e6, h4) {
+    super(t5, i7, s5, e6, h4), this.type = 5;
   }
   _$AI(t5, i7 = this) {
     if ((t5 = M(this, t5, i7, 0) ?? A) === E) return;
-    const s5 = this._$AH, e5 = t5 === A && s5 !== A || t5.capture !== s5.capture || t5.once !== s5.once || t5.passive !== s5.passive, h4 = t5 !== A && (s5 === A || e5);
-    e5 && this.element.removeEventListener(this.name, this, s5), h4 && this.element.addEventListener(this.name, this, t5), this._$AH = t5;
+    const s5 = this._$AH, e6 = t5 === A && s5 !== A || t5.capture !== s5.capture || t5.once !== s5.once || t5.passive !== s5.passive, h4 = t5 !== A && (s5 === A || e6);
+    e6 && this.element.removeEventListener(this.name, this, s5), h4 && this.element.addEventListener(this.name, this, t5), this._$AH = t5;
   }
   handleEvent(t5) {
     "function" == typeof this._$AH ? this._$AH.call(this.options?.host ?? this.element, t5) : this._$AH.handleEvent(t5);
@@ -1188,11 +1188,11 @@ var j = { M: h2, P: o3, A: n3, C: 1, L: N, R, D: d2, V: M, I: k, H, N: L, U: z, 
 var B = t2.litHtmlPolyfillSupport;
 B?.(S2, k), (t2.litHtmlVersions ??= []).push("3.3.3");
 var D = (t5, i7, s5) => {
-  const e5 = s5?.renderBefore ?? i7;
-  let h4 = e5._$litPart$;
+  const e6 = s5?.renderBefore ?? i7;
+  let h4 = e6._$litPart$;
   if (void 0 === h4) {
     const t6 = s5?.renderBefore ?? null;
-    e5._$litPart$ = h4 = new k(i7.insertBefore(c3(), t6), t6, void 0, s5 ?? {});
+    e6._$litPart$ = h4 = new k(i7.insertBefore(c3(), t6), t6, void 0, s5 ?? {});
   }
   return h4._$AI(t5), h4;
 };
@@ -1228,37 +1228,64 @@ o4?.({ LitElement: i3 });
 
 // ../module-toolkit/node_modules/@lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
-var r4 = (t5 = o5, e5, r6) => {
+var r4 = (t5 = o5, e6, r6) => {
   const { kind: n6, metadata: i7 } = r6;
   let s5 = globalThis.litPropertyMetadata.get(i7);
   if (void 0 === s5 && globalThis.litPropertyMetadata.set(i7, s5 = /* @__PURE__ */ new Map()), "setter" === n6 && ((t5 = Object.create(t5)).wrapped = true), s5.set(r6.name, t5), "accessor" === n6) {
     const { name: o7 } = r6;
     return { set(r7) {
-      const n7 = e5.get.call(this);
-      e5.set.call(this, r7), this.requestUpdate(o7, n7, t5, true, r7);
-    }, init(e6) {
-      return void 0 !== e6 && this.C(o7, void 0, t5, e6), e6;
+      const n7 = e6.get.call(this);
+      e6.set.call(this, r7), this.requestUpdate(o7, n7, t5, true, r7);
+    }, init(e7) {
+      return void 0 !== e7 && this.C(o7, void 0, t5, e7), e7;
     } };
   }
   if ("setter" === n6) {
     const { name: o7 } = r6;
     return function(r7) {
       const n7 = this[o7];
-      e5.call(this, r7), this.requestUpdate(o7, n7, t5, true, r7);
+      e6.call(this, r7), this.requestUpdate(o7, n7, t5, true, r7);
     };
   }
   throw Error("Unsupported decorator location: " + n6);
 };
 function n4(t5) {
-  return (e5, o7) => "object" == typeof o7 ? r4(t5, e5, o7) : ((t6, e6, o8) => {
-    const r6 = e6.hasOwnProperty(o8);
-    return e6.constructor.createProperty(o8, t6), r6 ? Object.getOwnPropertyDescriptor(e6, o8) : void 0;
-  })(t5, e5, o7);
+  return (e6, o7) => "object" == typeof o7 ? r4(t5, e6, o7) : ((t6, e7, o8) => {
+    const r6 = e7.hasOwnProperty(o8);
+    return e7.constructor.createProperty(o8, t6), r6 ? Object.getOwnPropertyDescriptor(e7, o8) : void 0;
+  })(t5, e6, o7);
 }
 
 // ../module-toolkit/node_modules/@lit/reactive-element/node/decorators/state.js
 function r5(r6) {
   return n4({ ...r6, state: true, attribute: false });
+}
+
+// ../module-toolkit/node_modules/@lit/reactive-element/node/decorators/base.js
+var e3 = (e6, t5, c5) => (c5.configurable = true, c5.enumerable = true, Reflect.decorate && "object" != typeof t5 && Object.defineProperty(e6, t5, c5), c5);
+
+// ../module-toolkit/node_modules/@lit/reactive-element/node/decorators/query.js
+function e4(e6, r6) {
+  return (n6, s5, i7) => {
+    const o7 = (t5) => t5.renderRoot?.querySelector(e6) ?? null;
+    if (r6) {
+      const { get: e7, set: r7 } = "object" == typeof s5 ? n6 : i7 ?? (() => {
+        const t5 = Symbol();
+        return { get() {
+          return this[t5];
+        }, set(e8) {
+          this[t5] = e8;
+        } };
+      })();
+      return e3(n6, s5, { get() {
+        let t5 = e7.call(this);
+        return void 0 === t5 && (t5 = o7(this), (null !== t5 || this.hasUpdated) && r7.call(this, t5)), t5;
+      } });
+    }
+    return e3(n6, s5, { get() {
+      return o7(this);
+    } });
+  };
 }
 
 // ../outfitkit/dist/define.js
@@ -2388,8 +2415,8 @@ var ErpSalesDocument = class extends i3 {
       this.sale = Array.isArray(sale) ? sale[0] : sale;
       this.lines = lines || [];
       this.settings = (Array.isArray(settingsRows) ? settingsRows[0] : settingsRows) || {};
-    } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : "Error cargando el documento";
+    } catch (e6) {
+      this.error = e6 instanceof Error ? e6.message : "Error cargando el documento";
     } finally {
       this.loading = false;
     }
@@ -2514,8 +2541,8 @@ var ErpPosTouch = class extends i3 {
       this.settings = rows(settingsRows)[0] || {};
       this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
       this.payMethod = this.methods[0];
-    } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : "Error cargando el POS";
+    } catch (e6) {
+      this.error = e6 instanceof Error ? e6.message : "Error cargando el POS";
     }
   }
   cur() {
@@ -2579,8 +2606,8 @@ var ErpPosTouch = class extends i3 {
       this.paying = false;
       this.cart = [];
       if (saleId) this.docSaleId = saleId;
-    } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : "Error al cobrar";
+    } catch (e6) {
+      this.error = e6 instanceof Error ? e6.message : "Error al cobrar";
     } finally {
       this.busy = false;
     }
@@ -2593,8 +2620,8 @@ var ErpPosTouch = class extends i3 {
     return b2`<div class="pos">
       <div class="catalog">
         <ion-searchbar class="search" placeholder="Buscar producto…" value=${this.q}
-          @ionInput=${(e5) => {
-      this.q = e5.target.value || "";
+          @ionInput=${(e6) => {
+      this.q = e6.target.value || "";
     }}></ion-searchbar>
         ${this.error ? b2`<p style="color:#d9480f">${this.error}</p>` : A}
         <div class="grid">
@@ -2624,8 +2651,8 @@ var ErpPosTouch = class extends i3 {
         <ion-button class="charge" expand="block" ?disabled=${!this.cart.length} @click=${() => this.openPay()}>Cobrar</ion-button>
       </div>
 
-      ${this.paying ? b2`<div class="scrim" @click=${(e5) => {
-      if (e5.target.classList.contains("scrim")) this.paying = false;
+      ${this.paying ? b2`<div class="scrim" @click=${(e6) => {
+      if (e6.target.classList.contains("scrim")) this.paying = false;
     }}>
             <div class="sheet">
               <div class="sheet-h">
@@ -2646,8 +2673,8 @@ var ErpPosTouch = class extends i3 {
                 <div class="numpad">
                   ${["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "C"].map((k2) => b2`<button @click=${() => this.tap(k2)}>${k2}</button>`)}
                 </div>
-                <ion-segment value=${this.docFormat} @ionChange=${(e5) => {
-      this.docFormat = e5.detail.value === "invoice" ? "invoice" : "ticket";
+                <ion-segment value=${this.docFormat} @ionChange=${(e6) => {
+      this.docFormat = e6.detail.value === "invoice" ? "invoice" : "ticket";
     }}>
                   <ion-segment-button value="ticket"><ion-label>Tiquet</ion-label></ion-segment-button>
                   <ion-segment-button value="invoice"><ion-label>Factura</ion-label></ion-segment-button>
@@ -2714,23 +2741,340 @@ __decorateClass([
 ], ErpPosTouch.prototype, "docSaleId", 2);
 define("erp-pos-touch", ErpPosTouch);
 
+// modules/sales/ui/components/erp-pos-desktop/erp-pos-desktop.ts
+function erplora3() {
+  const c5 = globalThis.erplora;
+  if (!c5) throw new Error("erplora SDK no inicializado por el shell");
+  return c5;
+}
+function rows2(r6) {
+  if (Array.isArray(r6)) return r6;
+  if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
+  return [];
+}
+var ErpPosDesktop = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.products = [];
+    this.cart = [];
+    this.methods = [];
+    this.settings = {};
+    this.term = "";
+    this.paying = false;
+    this.tendered = "";
+    this.docFormat = "ticket";
+    this.busy = false;
+    this.error = "";
+  }
+  static {
+    this.styles = i`
+    :host { display:block; font-family: system-ui, sans-serif; color: var(--ion-text-color,#1c1b18); }
+    .scan { display:flex; gap:.5rem; margin-bottom:.8rem; }
+    .scan input { flex:1; font-size:1.1rem; padding:.7rem .9rem; border:2px solid var(--ion-color-primary,#0091ce); border-radius:10px; background:var(--ion-background-color,#fff); color:inherit; }
+    .sugg { position:relative; }
+    .drop { position:absolute; z-index:5; left:0; right:0; background:var(--ion-background-color,#fff); border:1px solid var(--ion-border-color,#d9d6cf); border-radius:0 0 10px 10px; max-height:14rem; overflow:auto; box-shadow:0 8px 24px rgba(0,0,0,.12); }
+    .drop button { display:flex; justify-content:space-between; width:100%; border:none; background:none; padding:.5rem .8rem; cursor:pointer; font:inherit; }
+    .drop button:hover { background:var(--ion-color-light,#f2f1ed); }
+    table { width:100%; border-collapse:collapse; }
+    th, td { padding:.5rem .4rem; border-bottom:1px solid var(--ion-border-color,#eee); text-align:left; }
+    th { font-size:.75rem; text-transform:uppercase; color:#8b897f; }
+    td.num, th.num { text-align:right; white-space:nowrap; }
+    td input.q { width:3.5rem; text-align:center; font:inherit; padding:.3rem; border:1px solid var(--ion-border-color,#d9d6cf); border-radius:6px; background:var(--ion-background-color,#fff); color:inherit; }
+    .rm { background:none; border:none; color:#d9480f; cursor:pointer; }
+    .foot { display:flex; justify-content:space-between; align-items:center; margin-top:1rem; gap:1rem; }
+    .total { font-size:1.4rem; font-weight:800; }
+    .empty { color:#8b897f; text-align:center; padding:2rem 0; }
+    /* overlay cobro */
+    .scrim { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:50; }
+    .sheet { background:var(--ion-background-color,#fff); border-radius:16px; padding:1rem; width:min(92vw,24rem); box-shadow:0 12px 48px rgba(0,0,0,.35); }
+    .sheet-h { display:flex; justify-content:space-between; align-items:center; margin-bottom:.8rem; }
+    .sheet-h .t { font-size:1.2rem; font-weight:700; }
+    .x { background:none; border:none; font-size:1.3rem; cursor:pointer; color:#8b897f; }
+    .pay { display:flex; flex-direction:column; gap:.8rem; }
+    .methods { display:flex; gap:.4rem; flex-wrap:wrap; }
+    .chip { padding:.5rem .9rem; border-radius:999px; border:1px solid var(--ion-border-color,#d9d6cf); background:var(--ion-background-color,#fff); cursor:pointer; }
+    .chip[aria-pressed=true] { background:var(--ion-color-primary,#0091ce); color:#fff; border-color:transparent; }
+    .field label { font-size:.85rem; color:#8b897f; }
+    .field input { width:100%; box-sizing:border-box; font-size:1.3rem; padding:.6rem; border:1px solid var(--ion-border-color,#d9d6cf); border-radius:10px; background:var(--ion-background-color,#fff); color:inherit; }
+    .change { color:#2f9e44; font-weight:700; }
+  `;
+  }
+  async connectedCallback() {
+    super.connectedCallback();
+    try {
+      const [prods, methods, settingsRows] = await Promise.all([
+        erplora3().query("inventory.products.list", { page_size: 500 }).catch(() => []),
+        erplora3().query("sales.payment_methods").catch(() => []),
+        erplora3().query("sales.settings.get").catch(() => [])
+      ]);
+      this.products = rows2(prods).filter((p4) => p4.is_active !== 0);
+      this.methods = rows2(methods);
+      this.settings = rows2(settingsRows)[0] || {};
+      this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
+      this.payMethod = this.methods[0];
+    } catch (e6) {
+      this.error = e6 instanceof Error ? e6.message : "Error cargando el POS";
+    }
+  }
+  cur() {
+    return this.settings.currency || "\u20AC";
+  }
+  money(n6) {
+    return `${n6.toFixed(2)} ${this.cur()}`;
+  }
+  get total() {
+    return this.cart.reduce((s5, l3) => s5 + l3.price * l3.qty, 0);
+  }
+  get matches() {
+    const q = this.term.trim().toLowerCase();
+    if (!q) return [];
+    return this.products.filter((p4) => (p4.sku || "").toLowerCase().includes(q) || p4.name.toLowerCase().includes(q)).slice(0, 8);
+  }
+  add(p4) {
+    const ex = this.cart.find((l3) => l3.id === p4.id);
+    this.cart = ex ? this.cart.map((l3) => l3.id === p4.id ? { ...l3, qty: l3.qty + 1 } : l3) : [...this.cart, { id: p4.id, name: p4.name, sku: p4.sku, price: Number(p4.price), qty: 1 }];
+    this.term = "";
+    this.scanInput?.focus();
+  }
+  onScanKey(e6) {
+    if (e6.key !== "Enter") return;
+    const q = this.term.trim().toLowerCase();
+    if (!q) return;
+    const exact = this.products.find((p4) => (p4.sku || "").toLowerCase() === q);
+    const pick = exact || this.matches[0];
+    if (pick) this.add(pick);
+  }
+  setQty(id, qty) {
+    this.cart = this.cart.map((l3) => l3.id === id ? { ...l3, qty: Math.max(1, qty || 1) } : l3);
+  }
+  remove(id) {
+    this.cart = this.cart.filter((l3) => l3.id !== id);
+  }
+  openPay() {
+    if (!this.cart.length) return;
+    this.tendered = String(this.total.toFixed(2));
+    this.payMethod = this.methods[0];
+    this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
+    this.paying = true;
+  }
+  get tenderedNum() {
+    return Number(this.tendered || "0");
+  }
+  get change() {
+    return Math.max(0, this.tenderedNum - this.total);
+  }
+  async confirm() {
+    this.busy = true;
+    this.error = "";
+    try {
+      const items = this.cart.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: l3.qty }));
+      await erplora3().command("sales.complete_sale", {
+        items,
+        payment_method_id: this.payMethod?.id ?? null,
+        payment_method_name: this.payMethod?.name ?? "Efectivo",
+        amount_tendered: this.tenderedNum || this.total,
+        channel: "pos",
+        source_module: "pos"
+      });
+      const recent = rows2(await erplora3().query("sales.list", { page_size: 1, sort: "created_at", dir: "desc" }));
+      const saleId = recent[0]?.id;
+      if (saleId && this.docFormat === "invoice") {
+        await erplora3().command("sales.set_document_type", { sale_id: saleId, document_type: "invoice" });
+      }
+      this.paying = false;
+      this.cart = [];
+      if (saleId) this.docSaleId = saleId;
+    } catch (e6) {
+      this.error = e6 instanceof Error ? e6.message : "Error al cobrar";
+    } finally {
+      this.busy = false;
+    }
+  }
+  render() {
+    return b2`<div>
+      <div class="scan">
+        <div class="sugg" style="flex:1">
+          <input id="scan" placeholder="Escanea código / escribe SKU o nombre y Enter…"
+            .value=${this.term}
+            @input=${(e6) => {
+      this.term = e6.target.value;
+    }}
+            @keydown=${(e6) => this.onScanKey(e6)} />
+          ${this.matches.length ? b2`<div class="drop">
+                ${this.matches.map((p4) => b2`<button @click=${() => this.add(p4)}>
+                  <span>${p4.name} ${p4.sku ? b2`<small style="color:#8b897f">· ${p4.sku}</small>` : A}</span>
+                  <span>${this.money(Number(p4.price))}</span>
+                </button>`)}
+              </div>` : A}
+        </div>
+      </div>
+      ${this.error ? b2`<p style="color:#d9480f">${this.error}</p>` : A}
+
+      <table>
+        <thead><tr><th>Producto</th><th class="num">Precio</th><th class="num">Cant.</th><th class="num">Importe</th><th></th></tr></thead>
+        <tbody>
+          ${this.cart.length ? this.cart.map((l3) => b2`<tr>
+                <td>${l3.name} ${l3.sku ? b2`<small style="color:#8b897f">· ${l3.sku}</small>` : A}</td>
+                <td class="num">${this.money(l3.price)}</td>
+                <td class="num"><input class="q" type="number" min="1" .value=${String(l3.qty)}
+                  @input=${(e6) => this.setQty(l3.id, Number(e6.target.value))} /></td>
+                <td class="num">${this.money(l3.price * l3.qty)}</td>
+                <td class="num"><button class="rm" @click=${() => this.remove(l3.id)} title="Quitar">✕</button></td>
+              </tr>`) : b2`<tr><td colspan="5"><div class="empty">Escanea o busca un producto para empezar.</div></td></tr>`}
+        </tbody>
+      </table>
+
+      <div class="foot">
+        <div class="total">Total ${this.money(this.total)}</div>
+        <ion-button ?disabled=${!this.cart.length} @click=${() => this.openPay()}>Cobrar (F2)</ion-button>
+      </div>
+
+      ${this.paying ? b2`<div class="scrim" @click=${(e6) => {
+      if (e6.target.classList.contains("scrim")) this.paying = false;
+    }}>
+            <div class="sheet">
+              <div class="sheet-h"><span class="t">Cobrar ${this.money(this.total)}</span>
+                <button class="x" @click=${() => {
+      this.paying = false;
+    }}>✕</button></div>
+              <div class="pay">
+                <div class="methods">
+                  ${this.methods.map((m4) => b2`<button class="chip" aria-pressed=${this.payMethod?.id === m4.id} @click=${() => {
+      this.payMethod = m4;
+    }}>${m4.name}</button>`)}
+                  ${!this.methods.length ? b2`<button class="chip" aria-pressed="true">Efectivo</button>` : A}
+                </div>
+                <div class="field"><label>Entregado</label>
+                  <input type="number" step="0.01" .value=${this.tendered}
+                    @input=${(e6) => {
+      this.tendered = e6.target.value;
+    }} /></div>
+                <div>Cambio: <span class="change">${this.money(this.change)}</span></div>
+                <ion-segment value=${this.docFormat} @ionChange=${(e6) => {
+      this.docFormat = e6.detail.value === "invoice" ? "invoice" : "ticket";
+    }}>
+                  <ion-segment-button value="ticket"><ion-label>Tiquet</ion-label></ion-segment-button>
+                  <ion-segment-button value="invoice"><ion-label>Factura</ion-label></ion-segment-button>
+                </ion-segment>
+                ${this.error ? b2`<p style="color:#d9480f">${this.error}</p>` : A}
+                <ion-button expand="block" ?disabled=${this.busy} @click=${() => this.confirm()}>${this.busy ? "Cobrando\u2026" : "Confirmar cobro"}</ion-button>
+              </div>
+            </div>
+          </div>` : A}
+
+      <ion-modal .isOpen=${!!this.docSaleId} @ionModalDidDismiss=${() => {
+      this.docSaleId = void 0;
+    }}>
+        <ion-header><ion-toolbar><ion-title>Documento</ion-title>
+          <ion-buttons slot="end"><ion-button @click=${() => {
+      this.docSaleId = void 0;
+    }}>Cerrar</ion-button></ion-buttons>
+        </ion-toolbar></ion-header>
+        <ion-content class="ion-padding">
+          ${this.docSaleId ? b2`<erp-sales-document .saleId=${this.docSaleId}></erp-sales-document>` : A}
+        </ion-content>
+      </ion-modal>
+    </div>`;
+  }
+};
+__decorateClass([
+  r5()
+], ErpPosDesktop.prototype, "products", 2);
+__decorateClass([
+  r5()
+], ErpPosDesktop.prototype, "cart", 2);
+__decorateClass([
+  r5()
+], ErpPosDesktop.prototype, "methods", 2);
+__decorateClass([
+  r5()
+], ErpPosDesktop.prototype, "settings", 2);
+__decorateClass([
+  r5()
+], ErpPosDesktop.prototype, "term", 2);
+__decorateClass([
+  r5()
+], ErpPosDesktop.prototype, "paying", 2);
+__decorateClass([
+  r5()
+], ErpPosDesktop.prototype, "tendered", 2);
+__decorateClass([
+  r5()
+], ErpPosDesktop.prototype, "payMethod", 2);
+__decorateClass([
+  r5()
+], ErpPosDesktop.prototype, "docFormat", 2);
+__decorateClass([
+  r5()
+], ErpPosDesktop.prototype, "busy", 2);
+__decorateClass([
+  r5()
+], ErpPosDesktop.prototype, "error", 2);
+__decorateClass([
+  r5()
+], ErpPosDesktop.prototype, "docSaleId", 2);
+__decorateClass([
+  e4("#scan")
+], ErpPosDesktop.prototype, "scanInput", 2);
+define("erp-pos-desktop", ErpPosDesktop);
+
+// modules/sales/ui/components/erp-pos/erp-pos.ts
+function erplora4() {
+  const c5 = globalThis.erplora;
+  if (!c5) throw new Error("erplora SDK no inicializado por el shell");
+  return c5;
+}
+var ErpPos = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.layout = "touch";
+    this.ready = false;
+  }
+  static {
+    this.styles = i`:host { display:block; height:100%; }`;
+  }
+  async connectedCallback() {
+    super.connectedCallback();
+    try {
+      const rows3 = await erplora4().query("sales.settings.get");
+      const row = Array.isArray(rows3) ? rows3[0] : rows3;
+      this.layout = row?.pos_layout === "desktop" ? "desktop" : "touch";
+    } catch {
+      this.layout = "touch";
+    } finally {
+      this.ready = true;
+    }
+  }
+  render() {
+    if (!this.ready) return b2``;
+    return this.layout === "desktop" ? b2`<erp-pos-desktop></erp-pos-desktop>` : b2`<erp-pos-touch></erp-pos-touch>`;
+  }
+};
+__decorateClass([
+  r5()
+], ErpPos.prototype, "layout", 2);
+__decorateClass([
+  r5()
+], ErpPos.prototype, "ready", 2);
+define("erp-pos", ErpPos);
+
 // ../module-toolkit/node_modules/lit-html/directive.js
 var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
-var e4 = (t5) => (...e5) => ({ _$litDirective$: t5, values: e5 });
+var e5 = (t5) => (...e6) => ({ _$litDirective$: t5, values: e6 });
 var i4 = class {
   constructor(t5) {
   }
   get _$AU() {
     return this._$AM._$AU;
   }
-  _$AT(t5, e5, i7) {
-    this._$Ct = t5, this._$AM = e5, this._$Ci = i7;
+  _$AT(t5, e6, i7) {
+    this._$Ct = t5, this._$AM = e6, this._$Ci = i7;
   }
-  _$AS(t5, e5) {
-    return this.update(t5, e5);
+  _$AS(t5, e6) {
+    return this.update(t5, e6);
   }
-  update(t5, e5) {
-    return this.render(...e5);
+  update(t5, e6) {
+    return this.render(...e6);
   }
 };
 
@@ -2738,26 +3082,26 @@ var i4 = class {
 var { I: t4 } = j;
 var i5 = (o7) => o7;
 var s4 = () => document.createComment("");
-var v2 = (o7, n6, e5) => {
+var v2 = (o7, n6, e6) => {
   const l3 = o7._$AA.parentNode, d3 = void 0 === n6 ? o7._$AB : n6._$AA;
-  if (void 0 === e5) {
+  if (void 0 === e6) {
     const i7 = l3.insertBefore(s4(), d3), n7 = l3.insertBefore(s4(), d3);
-    e5 = new t4(i7, n7, o7, o7.options);
+    e6 = new t4(i7, n7, o7, o7.options);
   } else {
-    const t5 = e5._$AB.nextSibling, n7 = e5._$AM, c5 = n7 !== o7;
+    const t5 = e6._$AB.nextSibling, n7 = e6._$AM, c5 = n7 !== o7;
     if (c5) {
       let t6;
-      e5._$AQ?.(o7), e5._$AM = o7, void 0 !== e5._$AP && (t6 = o7._$AU) !== n7._$AU && e5._$AP(t6);
+      e6._$AQ?.(o7), e6._$AM = o7, void 0 !== e6._$AP && (t6 = o7._$AU) !== n7._$AU && e6._$AP(t6);
     }
     if (t5 !== d3 || c5) {
-      let o8 = e5._$AA;
+      let o8 = e6._$AA;
       for (; o8 !== t5; ) {
         const t6 = i5(o8).nextSibling;
         i5(l3).insertBefore(o8, d3), o8 = t6;
       }
     }
   }
-  return e5;
+  return e6;
 };
 var u3 = (o7, t5, i7 = o7) => (o7._$AI(t5, i7), o7);
 var m3 = {};
@@ -2768,25 +3112,25 @@ var h3 = (o7) => {
 };
 
 // ../module-toolkit/node_modules/lit-html/directives/repeat.js
-var u4 = (e5, s5, t5) => {
+var u4 = (e6, s5, t5) => {
   const r6 = /* @__PURE__ */ new Map();
-  for (let l3 = s5; l3 <= t5; l3++) r6.set(e5[l3], l3);
+  for (let l3 = s5; l3 <= t5; l3++) r6.set(e6[l3], l3);
   return r6;
 };
-var c4 = e4(class extends i4 {
-  constructor(e5) {
-    if (super(e5), e5.type !== t3.CHILD) throw Error("repeat() can only be used in text expressions");
+var c4 = e5(class extends i4 {
+  constructor(e6) {
+    if (super(e6), e6.type !== t3.CHILD) throw Error("repeat() can only be used in text expressions");
   }
-  dt(e5, s5, t5) {
+  dt(e6, s5, t5) {
     let r6;
     void 0 === t5 ? t5 = s5 : void 0 !== s5 && (r6 = s5);
     const l3 = [], o7 = [];
     let i7 = 0;
-    for (const s6 of e5) l3[i7] = r6 ? r6(s6, i7) : i7, o7[i7] = t5(s6, i7), i7++;
+    for (const s6 of e6) l3[i7] = r6 ? r6(s6, i7) : i7, o7[i7] = t5(s6, i7), i7++;
     return { values: o7, keys: l3 };
   }
-  render(e5, s5, t5) {
-    return this.dt(e5, s5, t5).values;
+  render(e6, s5, t5) {
+    return this.dt(e6, s5, t5).values;
   }
   update(s5, [t5, r6, c5]) {
     const d3 = M2(s5), { values: p4, keys: a3 } = this.dt(t5, r6, c5);
@@ -2800,21 +3144,21 @@ var c4 = e4(class extends i4 {
     else if (h4[x2] === a3[w2]) v3[w2] = u3(d3[x2], p4[w2]), v2(s5, v3[w2 + 1], d3[x2]), x2++, w2--;
     else if (h4[j2] === a3[k2]) v3[k2] = u3(d3[j2], p4[k2]), v2(s5, d3[x2], d3[j2]), j2--, k2++;
     else if (void 0 === m4 && (m4 = u4(a3, k2, w2), y3 = u4(h4, x2, j2)), m4.has(h4[x2])) if (m4.has(h4[j2])) {
-      const e5 = y3.get(a3[k2]), t6 = void 0 !== e5 ? d3[e5] : null;
+      const e6 = y3.get(a3[k2]), t6 = void 0 !== e6 ? d3[e6] : null;
       if (null === t6) {
-        const e6 = v2(s5, d3[x2]);
-        u3(e6, p4[k2]), v3[k2] = e6;
-      } else v3[k2] = u3(t6, p4[k2]), v2(s5, d3[x2], t6), d3[e5] = null;
+        const e7 = v2(s5, d3[x2]);
+        u3(e7, p4[k2]), v3[k2] = e7;
+      } else v3[k2] = u3(t6, p4[k2]), v2(s5, d3[x2], t6), d3[e6] = null;
       k2++;
     } else h3(d3[j2]), j2--;
     else h3(d3[x2]), x2++;
     for (; k2 <= w2; ) {
-      const e5 = v2(s5, v3[w2 + 1]);
-      u3(e5, p4[k2]), v3[k2++] = e5;
+      const e6 = v2(s5, v3[w2 + 1]);
+      u3(e6, p4[k2]), v3[k2++] = e6;
     }
     for (; x2 <= j2; ) {
-      const e5 = d3[x2++];
-      null !== e5 && h3(e5);
+      const e6 = d3[x2++];
+      null !== e6 && h3(e6);
     }
     return this.ut = a3, p3(s5, v3), E;
   }
@@ -2823,26 +3167,26 @@ var c4 = e4(class extends i4 {
 // ../module-toolkit/node_modules/lit-html/directives/style-map.js
 var n5 = "important";
 var i6 = " !" + n5;
-var o6 = e4(class extends i4 {
+var o6 = e5(class extends i4 {
   constructor(t5) {
     if (super(t5), t5.type !== t3.ATTRIBUTE || "style" !== t5.name || t5.strings?.length > 2) throw Error("The `styleMap` directive must be used in the `style` attribute and must be the only part in the attribute.");
   }
   render(t5) {
-    return Object.keys(t5).reduce((e5, r6) => {
+    return Object.keys(t5).reduce((e6, r6) => {
       const s5 = t5[r6];
-      return null == s5 ? e5 : e5 + `${r6 = r6.includes("-") ? r6 : r6.replace(/(?:^(webkit|moz|ms|o)|)(?=[A-Z])/g, "-$&").toLowerCase()}:${s5};`;
+      return null == s5 ? e6 : e6 + `${r6 = r6.includes("-") ? r6 : r6.replace(/(?:^(webkit|moz|ms|o)|)(?=[A-Z])/g, "-$&").toLowerCase()}:${s5};`;
     }, "");
   }
-  update(e5, [r6]) {
-    const { style: s5 } = e5.element;
+  update(e6, [r6]) {
+    const { style: s5 } = e6.element;
     if (void 0 === this.ft) return this.ft = new Set(Object.keys(r6)), this.render(r6);
     for (const t5 of this.ft) null == r6[t5] && (this.ft.delete(t5), t5.includes("-") ? s5.removeProperty(t5) : s5[t5] = null);
     for (const t5 in r6) {
-      const e6 = r6[t5];
-      if (null != e6) {
+      const e7 = r6[t5];
+      if (null != e7) {
         this.ft.add(t5);
-        const r7 = "string" == typeof e6 && e6.endsWith(i6);
-        t5.includes("-") || r7 ? s5.setProperty(t5, r7 ? e6.slice(0, -11) : e6, r7 ? n5 : "") : s5[t5] = e6;
+        const r7 = "string" == typeof e7 && e7.endsWith(i6);
+        t5.includes("-") || r7 ? s5.setProperty(t5, r7 ? e7.slice(0, -11) : e7, r7 ? n5 : "") : s5[t5] = e7;
       }
     }
     return E;
@@ -3268,17 +3612,17 @@ var OkDataTable = class extends i3 {
       out.push(row);
     }
     const headers = out.shift() ?? [];
-    const rows2 = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
-    return { headers, rows: rows2 };
+    const rows3 = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
+    return { headers, rows: rows3 };
   }
   async onImportFile(ev) {
     const input = ev.target;
     const file = input.files?.[0];
     if (!file) return;
     const text = await file.text();
-    const { headers, rows: rows2 } = this.parseCsv(text);
-    this.emit("csvImport", { headers, rows: rows2 });
-    this.emit("import", { headers, rows: rows2 });
+    const { headers, rows: rows3 } = this.parseCsv(text);
+    this.emit("csvImport", { headers, rows: rows3 });
+    this.emit("import", { headers, rows: rows3 });
     input.value = "";
   }
   toggle(p4) {
@@ -3515,7 +3859,7 @@ var OkDataTable = class extends i3 {
           interface="modal"
           .interfaceOptions=${{ cssClass: "ok-overlay" }}
           placeholder=${col.header}
-          @ionChange=${(e5) => this.onFilterSelect(col, e5.detail.value, multi)}
+          @ionChange=${(e6) => this.onFilterSelect(col, e6.detail.value, multi)}
         >
           ${multi ? A : b2`<ion-select-option value="">${col.header}</ion-select-option>`}
           ${opts.map((o7) => b2`<ion-select-option value=${o7.value}>${o7.label}</ion-select-option>`)}
@@ -3530,9 +3874,9 @@ var OkDataTable = class extends i3 {
           <span class="flabel">${col.header}</span>
           <div class="frange">
             <ion-input type=${t5} fill="outline" placeholder=${type === "daterange" ? this.t.from : this.t.gte}
-              @ionInput=${(e5) => onEdge(col, "from", e5)}></ion-input>
+              @ionInput=${(e6) => onEdge(col, "from", e6)}></ion-input>
             <ion-input type=${t5} fill="outline" placeholder=${type === "daterange" ? this.t.to : this.t.lte}
-              @ionInput=${(e5) => onEdge(col, "to", e5)}></ion-input>
+              @ionInput=${(e6) => onEdge(col, "to", e6)}></ion-input>
           </div>
         </div>
       `;
@@ -3545,7 +3889,7 @@ var OkDataTable = class extends i3 {
         label=${col.header}
         label-placement="stacked"
         placeholder=${this.t.filterPlaceholder}
-        @ionInput=${(e5) => this.onFilterInput(col, e5)}
+        @ionInput=${(e6) => this.onFilterInput(col, e6)}
       ></ion-input>
     `;
   }
@@ -3576,7 +3920,7 @@ var OkDataTable = class extends i3 {
           aria-label=${col.header}
           placeholder=${col.header}
           .value=${current}
-          @ionChange=${(e5) => this.onFilterSelect(col, e5.detail.value, multi)}
+          @ionChange=${(e6) => this.onFilterSelect(col, e6.detail.value, multi)}
         >
           ${multi ? A : b2`<ion-select-option value="">${col.header}</ion-select-option>`}
           ${opts.map((o7) => b2`<ion-select-option value=${o7.value}>${o7.label}</ion-select-option>`)}
@@ -3586,9 +3930,9 @@ var OkDataTable = class extends i3 {
     return b2`
       <span class="tk-daterange" role="group" aria-label=${col.header}>
         <ion-icon name="calendar-outline"></ion-icon>
-        <ion-input type="date" aria-label=${this.t.fromOf.replace("{label}", col.header)} .value=${f3?.from ?? ""} @ionChange=${(e5) => this.onInlineRange(col, "from", e5)}></ion-input>
+        <ion-input type="date" aria-label=${this.t.fromOf.replace("{label}", col.header)} .value=${f3?.from ?? ""} @ionChange=${(e6) => this.onInlineRange(col, "from", e6)}></ion-input>
         <span class="arr">→</span>
-        <ion-input type="date" aria-label=${this.t.toOf.replace("{label}", col.header)} .value=${f3?.to ?? ""} @ionChange=${(e5) => this.onInlineRange(col, "to", e5)}></ion-input>
+        <ion-input type="date" aria-label=${this.t.toOf.replace("{label}", col.header)} .value=${f3?.to ?? ""} @ionChange=${(e6) => this.onInlineRange(col, "to", e6)}></ion-input>
       </span>
     `;
   }
@@ -3596,7 +3940,7 @@ var OkDataTable = class extends i3 {
   renderOverflowMenu() {
     if (!this.menuActions.length) return A;
     return b2`
-      <ion-button class="toolbtn" fill="clear" aria-label=${this.t.moreActions} @click=${(e5) => this.openMenu(e5)}>
+      <ion-button class="toolbtn" fill="clear" aria-label=${this.t.moreActions} @click=${(e6) => this.openMenu(e6)}>
         <ion-icon slot="icon-only" name="ellipsis-vertical"></ion-icon>
       </ion-button>
       <ion-popover
@@ -3725,7 +4069,7 @@ var OkDataTable = class extends i3 {
                             interface="popover"
                             aria-label=${this.t.rowsPerPage}
                             .value=${ps}
-                            @ionChange=${(e5) => setPageSize(Number(e5.detail.value))}
+                            @ionChange=${(e6) => setPageSize(Number(e6.detail.value))}
                           >
                             ${this.effPageSizes.map((n6) => b2`<ion-select-option .value=${n6}>${n6}</ion-select-option>`)}
                           </ion-select>
@@ -3744,7 +4088,7 @@ var OkDataTable = class extends i3 {
                             aria-label=${this.t.columnsVisible}
                             .value=${this.visibleColumns.map((c5) => c5.key)}
                             .selectedText=${this.t.columns}
-                            @ionChange=${(e5) => this.setVisibleColumns(e5.detail.value)}
+                            @ionChange=${(e6) => this.setVisibleColumns(e6.detail.value)}
                           >
                             ${this.columns.map((c5) => b2`<ion-select-option value=${c5.key}>${c5.header}</ion-select-option>`)}
                           </ion-select>
@@ -3752,7 +4096,7 @@ var OkDataTable = class extends i3 {
                     ${this.hasFilterRow && !this.inlineFilters ? this.toolButton("funnel-outline", this.panel === "filters" || this.activeFilterCount > 0, () => this.toggle("filters"), this.t.filters, this.serverSide ? void 0 : this.activeFilterCount) : A}
                     ${this.effImport ? b2`
                           ${this.toolButton("cloud-upload-outline", false, () => this.renderRoot.querySelector(".tk-file")?.click(), this.t.importCsv)}
-                          <input class="tk-file" type="file" accept=".csv,text/csv" hidden @change=${(e5) => this.onImportFile(e5)} />
+                          <input class="tk-file" type="file" accept=".csv,text/csv" hidden @change=${(e6) => this.onImportFile(e6)} />
                         ` : A}
                     ${this.effExport ? this.toolButton("download-outline", false, () => this.exportCsv(), this.t.exportCsv) : A}
                     ${this.addable ? this.toolButton("add", this.panel === "create", () => this.toggle("create"), this.t.add) : A}
@@ -3791,7 +4135,7 @@ var OkDataTable = class extends i3 {
                     <span class="strong">${count}</span> ${count === 1 ? this.t.recordSingular : this.t.recordPlural}
                   </span>
                   ${!showTopbar && this.effPageSizes.length ? b2`
-                        <select class="psize" @change=${(e5) => setPageSize(Number(e5.target.value))}>
+                        <select class="psize" @change=${(e6) => setPageSize(Number(e6.target.value))}>
                           ${this.effPageSizes.map((n6) => b2`<option value=${n6} ?selected=${n6 === ps}>${this.t.perPageShort.replace("{n}", String(n6))}</option>`)}
                         </select>
                       ` : A}
@@ -3844,8 +4188,8 @@ var OkDataTable = class extends i3 {
         <div class="fblock">
           <span class="flabel">${label}</span>
           <div class="daterange">
-            <ion-input type="date" label=${this.t.from} label-placement="stacked" fill="outline" .value=${f3.from ?? ""} @ionChange=${(e5) => this.setFilterRange(col.key, "from", e5.detail.value ?? "")}></ion-input>
-            <ion-input type="date" label=${this.t.to} label-placement="stacked" fill="outline" .value=${f3.to ?? ""} @ionChange=${(e5) => this.setFilterRange(col.key, "to", e5.detail.value ?? "")}></ion-input>
+            <ion-input type="date" label=${this.t.from} label-placement="stacked" fill="outline" .value=${f3.from ?? ""} @ionChange=${(e6) => this.setFilterRange(col.key, "from", e6.detail.value ?? "")}></ion-input>
+            <ion-input type="date" label=${this.t.to} label-placement="stacked" fill="outline" .value=${f3.to ?? ""} @ionChange=${(e6) => this.setFilterRange(col.key, "to", e6.detail.value ?? "")}></ion-input>
           </div>
         </div>
       `;
@@ -4161,11 +4505,11 @@ var ListController = class {
       if (mySeq !== this.seq) return;
       this.rows = page.rows ?? [];
       this.total = page.total ?? this.rows.length;
-    } catch (e5) {
+    } catch (e6) {
       if (mySeq !== this.seq) return;
       this.rows = [];
       this.total = 0;
-      this.error = e5 instanceof Error ? e5.message : "Error cargando datos";
+      this.error = e6 instanceof Error ? e6.message : "Error cargando datos";
     } finally {
       if (mySeq === this.seq) {
         this.loading = false;
@@ -4230,7 +4574,7 @@ function createListController(client, queryName, onChange = () => {
 }
 
 // modules/sales/ui/components/erp-sales-list/erp-sales-list.ts
-function erplora3() {
+function erplora5() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
   return c5;
@@ -4278,14 +4622,14 @@ var ErpSalesList = class extends i3 {
   // sola vez tras el primer render, considera firstUpdated() en su lugar.
   async connectedCallback() {
     super.connectedCallback();
-    this.ctrl = createListController(erplora3(), "sales.list", () => this.requestUpdate(), {
+    this.ctrl = createListController(erplora5(), "sales.list", () => this.requestUpdate(), {
       pageSize: 50,
       sort: "created_at",
       dir: "desc"
     });
     await Promise.all([this.ctrl.load(), this.loadStats()]);
     try {
-      this.unsub = erplora3().on("sale.completed", () => {
+      this.unsub = erplora5().on("sale.completed", () => {
         this.ctrl.load();
         this.loadStats();
       });
@@ -4298,10 +4642,10 @@ var ErpSalesList = class extends i3 {
   }
   async loadStats() {
     try {
-      const rows2 = await erplora3().query("sales.stats");
-      this.stats = rows2 && rows2[0] || { count: 0, total_revenue: 0, avg_ticket: 0 };
-    } catch (e5) {
-      this.statsError = e5 instanceof Error ? e5.message : "Error cargando m\xE9tricas";
+      const rows3 = await erplora5().query("sales.stats");
+      this.stats = rows3 && rows3[0] || { count: 0, total_revenue: 0, avg_ticket: 0 };
+    } catch (e6) {
+      this.statsError = e6 instanceof Error ? e6.message : "Error cargando m\xE9tricas";
     }
   }
   render() {
@@ -4323,9 +4667,9 @@ var ErpSalesList = class extends i3 {
         </div>
         ${this.statsError ? b2`<p class="err">${this.statsError}</p>` : A}
         ${this.ctrl?.error ? b2`<p class="err">${this.ctrl.error}</p>` : A}
-        <ok-data-table .serverSide=${true} .columns=${this.columns} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.ctrl?.state.sort} .sortDir=${this.ctrl?.state.dir ?? "desc"} .searchable=${true} .searchPlaceholder=${"Buscar n\xFAmero o cliente\u2026"} .emptyMessage=${this.ctrl?.loading ? "Cargando\u2026" : "A\xFAn no hay ventas."} .actions=${this.documentActions} @rowAction=${(e5) => {
-      if (e5.detail.actionId === "document") this.docSaleId = e5.detail.row.id;
-    }} @pageChange=${(e5) => this.ctrl.setPage(e5.detail)} @sortChange=${(e5) => this.ctrl.setSort(e5.detail.sort, e5.detail.dir)} @searchChange=${(e5) => this.ctrl.setSearch(e5.detail)} @filterChange=${(e5) => this.ctrl.setFilter(e5.detail.col, e5.detail.value)}></ok-data-table>
+        <ok-data-table .serverSide=${true} .columns=${this.columns} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.ctrl?.state.sort} .sortDir=${this.ctrl?.state.dir ?? "desc"} .searchable=${true} .searchPlaceholder=${"Buscar n\xFAmero o cliente\u2026"} .emptyMessage=${this.ctrl?.loading ? "Cargando\u2026" : "A\xFAn no hay ventas."} .actions=${this.documentActions} @rowAction=${(e6) => {
+      if (e6.detail.actionId === "document") this.docSaleId = e6.detail.row.id;
+    }} @pageChange=${(e6) => this.ctrl.setPage(e6.detail)} @sortChange=${(e6) => this.ctrl.setSort(e6.detail.sort, e6.detail.dir)} @searchChange=${(e6) => this.ctrl.setSearch(e6.detail)} @filterChange=${(e6) => this.ctrl.setFilter(e6.detail.col, e6.detail.value)}></ok-data-table>
 
         <ion-modal .isOpen=${!!this.docSaleId} @ionModalDidDismiss=${() => {
       this.docSaleId = void 0;
@@ -4380,7 +4724,7 @@ var DEFAULTS = {
   default_document_format: "ticket",
   auto_invoice_with_tax_id: 1
 };
-function erplora4() {
+function erplora6() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
   return c5;
@@ -4420,11 +4764,11 @@ var ErpSalesSettings = class extends i3 {
   async connectedCallback() {
     super.connectedCallback();
     try {
-      const rows2 = await erplora4().query("sales.settings.get");
-      const row = Array.isArray(rows2) ? rows2[0] : rows2;
+      const rows3 = await erplora6().query("sales.settings.get");
+      const row = Array.isArray(rows3) ? rows3[0] : rows3;
       this.s = { ...DEFAULTS, ...row || {} };
-    } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : "Error cargando ajustes";
+    } catch (e6) {
+      this.error = e6 instanceof Error ? e6.message : "Error cargando ajustes";
     } finally {
       this.loading = false;
     }
@@ -4438,10 +4782,10 @@ var ErpSalesSettings = class extends i3 {
     this.message = "";
     this.error = "";
     try {
-      await erplora4().command("sales.settings.update", { ...this.s });
+      await erplora6().command("sales.settings.update", { ...this.s });
       this.message = "Ajustes guardados.";
-    } catch (e5) {
-      this.error = e5 instanceof Error ? e5.message : "Error guardando";
+    } catch (e6) {
+      this.error = e6 instanceof Error ? e6.message : "Error guardando";
     } finally {
       this.saving = false;
     }
@@ -4451,7 +4795,7 @@ var ErpSalesSettings = class extends i3 {
       <div class="lbl">${label}${hint ? b2`<small>${hint}</small>` : A}</div>
       <ion-toggle
         .checked=${!!this.s[key]}
-        @ionChange=${(e5) => this.set(key, e5.target.checked ? 1 : 0)}
+        @ionChange=${(e6) => this.set(key, e6.target.checked ? 1 : 0)}
       ></ion-toggle>
     </div>`;
   }
@@ -4459,7 +4803,7 @@ var ErpSalesSettings = class extends i3 {
     return b2`<ion-segment
       class="seg"
       .value=${String(this.s[key])}
-      @ionChange=${(e5) => this.set(key, String(e5.detail.value))}
+      @ionChange=${(e6) => this.set(key, String(e6.detail.value))}
     >
       ${opts.map((o7) => b2`<ion-segment-button value=${o7.value}><ion-label>${o7.label}</ion-label></ion-segment-button>`)}
     </ion-segment>`;
@@ -4512,7 +4856,7 @@ var ErpSalesSettings = class extends i3 {
         <div class="field">
           <label>Caducidad de tiquets aparcados (horas)</label>
           <input type="number" min="1" .value=${String(this.s.ticket_expiry_hours)}
-            @input=${(e5) => this.set("ticket_expiry_hours", Number(e5.target.value || 0))} />
+            @input=${(e6) => this.set("ticket_expiry_hours", Number(e6.target.value || 0))} />
         </div>
       </div>
 
@@ -4521,17 +4865,17 @@ var ErpSalesSettings = class extends i3 {
         <div class="field">
           <label>Cabecera</label>
           <textarea rows="2" .value=${this.s.receipt_header}
-            @input=${(e5) => this.set("receipt_header", e5.target.value)}></textarea>
+            @input=${(e6) => this.set("receipt_header", e6.target.value)}></textarea>
         </div>
         <div class="field">
           <label>Pie</label>
           <textarea rows="2" .value=${this.s.receipt_footer}
-            @input=${(e5) => this.set("receipt_footer", e5.target.value)}></textarea>
+            @input=${(e6) => this.set("receipt_footer", e6.target.value)}></textarea>
         </div>
         <div class="field">
           <label>Imagen de pie (URL)</label>
           <input type="text" .value=${this.s.receipt_footer_image}
-            @input=${(e5) => this.set("receipt_footer_image", e5.target.value)} />
+            @input=${(e6) => this.set("receipt_footer_image", e6.target.value)} />
         </div>
       </div>
 
