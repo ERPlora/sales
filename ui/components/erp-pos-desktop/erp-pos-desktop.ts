@@ -6,13 +6,10 @@ import '../erp-sales-document/erp-sales-document.js';
 // erp-pos-desktop — pantalla de venta para RETAIL sin táctil: campo de escaneo/SKU (Enter añade),
 // lista compacta de líneas con cantidad editable por teclado, y cobro con importe por teclado.
 // Mismo backend que la táctil: sales.complete_sale (channel='pos') → set_document_type → documento.
+// El carrito en curso se persiste en sales_active_cart (sales.cart.*) y sobrevive a recargas.
+import { loadActiveCart, persistActiveCart, type CartLine, type ErploraClientLike } from '../../lib/pos-cart.js';
 
-interface ErploraClientLike {
-  query<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T>;
-  command<T = unknown>(name: string, payload?: Record<string, unknown>): Promise<T>;
-}
 interface Product { id: string; name: string; sku?: string; price: number; is_active?: number; }
-interface CartLine { id: string; name: string; sku?: string; price: number; qty: number; }
 interface PayMethod { id: string; name: string; }
 interface PosSettings { default_document_format?: string; currency?: string; }
 
@@ -75,22 +72,49 @@ export class ErpPosDesktop extends LitElement {
 
   @query('#scan') private scanInput?: HTMLInputElement;
 
+  private cartRestored = false;
+  private saveTimer?: ReturnType<typeof setTimeout>;
+
   async connectedCallback() {
     super.connectedCallback();
     try {
-      const [prods, methods, settingsRows] = await Promise.all([
+      const [prods, methods, settingsRows, savedCart] = await Promise.all([
         erplora().query('inventory.products.list', { page_size: 500 }).catch(() => []),
         erplora().query('sales.payment_methods').catch(() => []),
         erplora().query('sales.settings.get').catch(() => []),
+        loadActiveCart(erplora()),
       ]);
       this.products = rows<Product>(prods).filter((p) => p.is_active !== 0);
       this.methods = rows<PayMethod>(methods);
       this.settings = rows<PosSettings>(settingsRows)[0] || {};
       this.docFormat = this.settings.default_document_format === 'invoice' ? 'invoice' : 'ticket';
       this.payMethod = this.methods[0];
+      if (savedCart.length) this.cart = savedCart;
+      await this.updateComplete;
     } catch (e) {
       this.error = e instanceof Error ? e.message : 'Error cargando el POS';
+    } finally {
+      this.cartRestored = true;
     }
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = undefined;
+      void persistActiveCart(erplora(), this.cart);
+    }
+  }
+
+  /** Persiste el carrito (debounced) cada vez que cambia, una vez restaurado el guardado. */
+  protected updated(changed: Map<PropertyKey, unknown>) {
+    if (!changed.has('cart') || !this.cartRestored) return;
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = undefined;
+      void persistActiveCart(erplora(), this.cart);
+    }, 400);
   }
 
   private cur() { return this.settings.currency || '€'; }
