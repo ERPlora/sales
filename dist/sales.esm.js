@@ -2513,7 +2513,7 @@ function rows(r6) {
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
   return [];
 }
-function parseLines(cartData) {
+function parseCartLines(cartData) {
   try {
     const parsed = typeof cartData === "string" ? JSON.parse(cartData) : cartData;
     const lines = Array.isArray(parsed) ? parsed : parsed?.lines;
@@ -2532,7 +2532,7 @@ function parseLines(cartData) {
 async function loadActiveCart(client) {
   try {
     const r6 = rows(await client.query("sales.cart.get"));
-    return r6.length ? parseLines(r6[0].cart_data) : [];
+    return r6.length ? parseCartLines(r6[0].cart_data) : [];
   } catch {
     return [];
   }
@@ -2546,6 +2546,34 @@ async function persistActiveCart(client, cart) {
     }
   } catch {
   }
+}
+async function listParkedTickets(client) {
+  try {
+    return rows(await client.query("sales.parked_tickets"));
+  } catch {
+    return [];
+  }
+}
+async function parkCart(client, cart, notes = "") {
+  if (!cart.length) return null;
+  const d3 = /* @__PURE__ */ new Date();
+  const pad = (n6) => String(n6).padStart(2, "0");
+  const ticketNumber = `P-${pad(d3.getHours())}${pad(d3.getMinutes())}${pad(d3.getSeconds())}`;
+  try {
+    await client.command("sales.park_ticket", {
+      ticket_number: ticketNumber,
+      cart_data: JSON.stringify({ lines: cart }),
+      notes
+    });
+    return ticketNumber;
+  } catch {
+    return null;
+  }
+}
+async function retrieveParkedTicket(client, ticket) {
+  const lines = parseCartLines(ticket.cart_data);
+  await client.command("sales.retrieve_ticket", { ticket_id: ticket.id });
+  return lines;
 }
 
 // ui/components/erp-pos-touch/erp-pos-touch.ts
@@ -2572,6 +2600,8 @@ var ErpPosTouch = class extends i3 {
     this.docFormat = "ticket";
     this.busy = false;
     this.error = "";
+    this.parked = [];
+    this.parkedOpen = false;
     this.cartRestored = false;
   }
   static {
@@ -2614,22 +2644,32 @@ var ErpPosTouch = class extends i3 {
     .sheet-h { display:flex; justify-content:space-between; align-items:center; margin-bottom:.8rem; }
     .sheet-h .t { font-size:1.2rem; font-weight:700; }
     .x { background:none; border:none; font-size:1.3rem; cursor:pointer; color:#8b897f; }
+    /* tickets aparcados */
+    .parkrow { display:flex; gap:.4rem; margin-top:.4rem; }
+    .parkrow ion-button { flex:1; }
+    .plist { display:flex; flex-direction:column; gap:.4rem; max-height:50vh; overflow:auto; }
+    .pitem { display:flex; justify-content:space-between; align-items:center; gap:.6rem; border:1px solid var(--ion-border-color,#e0ddd4); border-radius:10px; padding:.5rem .7rem; }
+    .pn { font-weight:700; }
+    .pm { color:#8b897f; }
+    .hint { color:#8b897f; font-size:.85rem; margin:.2rem 0 .6rem; }
   `;
   }
   async connectedCallback() {
     super.connectedCallback();
     try {
-      const [prods, methods, settingsRows, savedCart] = await Promise.all([
+      const [prods, methods, settingsRows, savedCart, parked] = await Promise.all([
         erplora2().query("inventory.products.list", { page_size: 200 }).catch(() => []),
         erplora2().query("sales.payment_methods").catch(() => []),
         erplora2().query("sales.settings.get").catch(() => []),
-        loadActiveCart(erplora2())
+        loadActiveCart(erplora2()),
+        listParkedTickets(erplora2())
       ]);
       this.products = rows2(prods).filter((p4) => p4.is_active !== 0);
       this.methods = rows2(methods);
       this.settings = rows2(settingsRows)[0] || {};
       this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
       this.payMethod = this.methods[0];
+      this.parked = parked;
       if (savedCart.length) this.cart = savedCart;
       await this.updateComplete;
     } catch (e6) {
@@ -2663,6 +2703,31 @@ var ErpPosTouch = class extends i3 {
   }
   get total() {
     return this.cart.reduce((s5, l3) => s5 + l3.price * l3.qty, 0);
+  }
+  get parkingEnabled() {
+    return this.settings.enable_parked_tickets !== 0;
+  }
+  /** Aparca el carrito actual como ticket y lo deja libre para la siguiente venta. */
+  async park() {
+    if (!this.cart.length) return;
+    const num = await parkCart(erplora2(), this.cart);
+    if (!num) {
+      this.error = "No se pudo aparcar el ticket";
+      return;
+    }
+    this.cart = [];
+    this.parked = await listParkedTickets(erplora2());
+  }
+  /** Recupera un ticket aparcado al carrito (solo con el carrito vacío). */
+  async retrieve(t5) {
+    if (this.cart.length) return;
+    try {
+      this.cart = await retrieveParkedTicket(erplora2(), t5);
+      this.parkedOpen = false;
+      this.parked = await listParkedTickets(erplora2());
+    } catch (e6) {
+      this.error = e6 instanceof Error ? e6.message : "No se pudo recuperar el ticket";
+    }
   }
   add(p4) {
     const ex = this.cart.find((l3) => l3.id === p4.id);
@@ -2759,7 +2824,39 @@ var ErpPosTouch = class extends i3 {
         </div>
         <div class="total"><span>Total</span><b>${this.money(this.total)}</b></div>
         <ion-button class="charge" expand="block" ?disabled=${!this.cart.length} @click=${() => this.openPay()}>Cobrar</ion-button>
+        ${this.parkingEnabled ? b2`<div class="parkrow">
+              <ion-button size="small" fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>Aparcar</ion-button>
+              <ion-button size="small" fill="outline" ?disabled=${!this.parked.length} @click=${() => {
+      this.parkedOpen = true;
+    }}>
+                Aparcados (${this.parked.length})
+              </ion-button>
+            </div>` : A}
       </div>
+
+      ${this.parkedOpen ? b2`<div class="scrim" @click=${(e6) => {
+      if (e6.target.classList.contains("scrim")) this.parkedOpen = false;
+    }}>
+            <div class="sheet">
+              <div class="sheet-h">
+                <span class="t">Tickets aparcados</span>
+                <button class="x" @click=${() => {
+      this.parkedOpen = false;
+    }}>✕</button>
+              </div>
+              ${this.cart.length ? b2`<p class="hint">Cobra o aparca la venta actual para recuperar un ticket.</p>` : A}
+              <div class="plist">
+                ${this.parked.map((t5) => b2`<div class="pitem">
+                  <div>
+                    <div class="pn">${t5.ticket_number}</div>
+                    <small class="pm">${(t5.created_at || "").replace("T", " ").slice(0, 16)}</small>
+                  </div>
+                  <ion-button size="small" ?disabled=${!!this.cart.length} @click=${() => this.retrieve(t5)}>Recuperar</ion-button>
+                </div>`)}
+                ${!this.parked.length ? b2`<div class="empty">No hay tickets aparcados.</div>` : A}
+              </div>
+            </div>
+          </div>` : A}
 
       ${this.paying ? b2`<div class="scrim" @click=${(e6) => {
       if (e6.target.classList.contains("scrim")) this.paying = false;
@@ -2849,6 +2946,12 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "docSaleId", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "parked", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "parkedOpen", 2);
 define("erp-pos-touch", ErpPosTouch);
 
 // ui/components/erp-pos-desktop/erp-pos-desktop.ts
@@ -2875,6 +2978,8 @@ var ErpPosDesktop = class extends i3 {
     this.docFormat = "ticket";
     this.busy = false;
     this.error = "";
+    this.parked = [];
+    this.parkedOpen = false;
     this.cartRestored = false;
   }
   static {
@@ -2908,22 +3013,31 @@ var ErpPosDesktop = class extends i3 {
     .field label { font-size:.85rem; color:#8b897f; }
     .field input { width:100%; box-sizing:border-box; font-size:1.3rem; padding:.6rem; border:1px solid var(--ion-border-color,#d9d6cf); border-radius:10px; background:var(--ion-background-color,#fff); color:inherit; }
     .change { color:#2f9e44; font-weight:700; }
+    /* tickets aparcados */
+    .actions { display:flex; gap:.4rem; flex-wrap:wrap; }
+    .plist { display:flex; flex-direction:column; gap:.4rem; max-height:50vh; overflow:auto; }
+    .pitem { display:flex; justify-content:space-between; align-items:center; gap:.6rem; border:1px solid var(--ion-border-color,#e0ddd4); border-radius:10px; padding:.5rem .7rem; }
+    .pn { font-weight:700; }
+    .pm { color:#8b897f; }
+    .hint { color:#8b897f; font-size:.85rem; margin:.2rem 0 .6rem; }
   `;
   }
   async connectedCallback() {
     super.connectedCallback();
     try {
-      const [prods, methods, settingsRows, savedCart] = await Promise.all([
+      const [prods, methods, settingsRows, savedCart, parked] = await Promise.all([
         erplora3().query("inventory.products.list", { page_size: 500 }).catch(() => []),
         erplora3().query("sales.payment_methods").catch(() => []),
         erplora3().query("sales.settings.get").catch(() => []),
-        loadActiveCart(erplora3())
+        loadActiveCart(erplora3()),
+        listParkedTickets(erplora3())
       ]);
       this.products = rows3(prods).filter((p4) => p4.is_active !== 0);
       this.methods = rows3(methods);
       this.settings = rows3(settingsRows)[0] || {};
       this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
       this.payMethod = this.methods[0];
+      this.parked = parked;
       if (savedCart.length) this.cart = savedCart;
       await this.updateComplete;
     } catch (e6) {
@@ -2957,6 +3071,32 @@ var ErpPosDesktop = class extends i3 {
   }
   get total() {
     return this.cart.reduce((s5, l3) => s5 + l3.price * l3.qty, 0);
+  }
+  get parkingEnabled() {
+    return this.settings.enable_parked_tickets !== 0;
+  }
+  /** Aparca el carrito actual como ticket y lo deja libre para la siguiente venta. */
+  async park() {
+    if (!this.cart.length) return;
+    const num = await parkCart(erplora3(), this.cart);
+    if (!num) {
+      this.error = "No se pudo aparcar el ticket";
+      return;
+    }
+    this.cart = [];
+    this.parked = await listParkedTickets(erplora3());
+    this.scanInput?.focus();
+  }
+  /** Recupera un ticket aparcado al carrito (solo con el carrito vacío). */
+  async retrieve(t5) {
+    if (this.cart.length) return;
+    try {
+      this.cart = await retrieveParkedTicket(erplora3(), t5);
+      this.parkedOpen = false;
+      this.parked = await listParkedTickets(erplora3());
+    } catch (e6) {
+      this.error = e6 instanceof Error ? e6.message : "No se pudo recuperar el ticket";
+    }
   }
   get matches() {
     const q = this.term.trim().toLowerCase();
@@ -3059,8 +3199,39 @@ var ErpPosDesktop = class extends i3 {
 
       <div class="foot">
         <div class="total">Total ${this.money(this.total)}</div>
-        <ion-button ?disabled=${!this.cart.length} @click=${() => this.openPay()}>Cobrar (F2)</ion-button>
+        <div class="actions">
+          ${this.parkingEnabled ? b2`
+                <ion-button fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>Aparcar</ion-button>
+                <ion-button fill="outline" ?disabled=${!this.parked.length} @click=${() => {
+      this.parkedOpen = true;
+    }}>
+                  Aparcados (${this.parked.length})
+                </ion-button>` : A}
+          <ion-button ?disabled=${!this.cart.length} @click=${() => this.openPay()}>Cobrar (F2)</ion-button>
+        </div>
       </div>
+
+      ${this.parkedOpen ? b2`<div class="scrim" @click=${(e6) => {
+      if (e6.target.classList.contains("scrim")) this.parkedOpen = false;
+    }}>
+            <div class="sheet">
+              <div class="sheet-h"><span class="t">Tickets aparcados</span>
+                <button class="x" @click=${() => {
+      this.parkedOpen = false;
+    }}>✕</button></div>
+              ${this.cart.length ? b2`<p class="hint">Cobra o aparca la venta actual para recuperar un ticket.</p>` : A}
+              <div class="plist">
+                ${this.parked.map((t5) => b2`<div class="pitem">
+                  <div>
+                    <div class="pn">${t5.ticket_number}</div>
+                    <small class="pm">${(t5.created_at || "").replace("T", " ").slice(0, 16)}</small>
+                  </div>
+                  <ion-button size="small" ?disabled=${!!this.cart.length} @click=${() => this.retrieve(t5)}>Recuperar</ion-button>
+                </div>`)}
+                ${!this.parked.length ? b2`<div class="empty">No hay tickets aparcados.</div>` : A}
+              </div>
+            </div>
+          </div>` : A}
 
       ${this.paying ? b2`<div class="scrim" @click=${(e6) => {
       if (e6.target.classList.contains("scrim")) this.paying = false;
@@ -3146,6 +3317,12 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosDesktop.prototype, "docSaleId", 2);
+__decorateClass([
+  r5()
+], ErpPosDesktop.prototype, "parked", 2);
+__decorateClass([
+  r5()
+], ErpPosDesktop.prototype, "parkedOpen", 2);
 __decorateClass([
   e4("#scan")
 ], ErpPosDesktop.prototype, "scanInput", 2);

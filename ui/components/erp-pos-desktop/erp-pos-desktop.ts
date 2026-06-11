@@ -7,11 +7,14 @@ import '../erp-sales-document/erp-sales-document.js';
 // lista compacta de líneas con cantidad editable por teclado, y cobro con importe por teclado.
 // Mismo backend que la táctil: sales.complete_sale (channel='pos') → set_document_type → documento.
 // El carrito en curso se persiste en sales_active_cart (sales.cart.*) y sobrevive a recargas.
-import { loadActiveCart, persistActiveCart, type CartLine, type ErploraClientLike } from '../../lib/pos-cart.js';
+import {
+  loadActiveCart, persistActiveCart, listParkedTickets, parkCart, retrieveParkedTicket,
+  type CartLine, type ErploraClientLike, type ParkedTicket,
+} from '../../lib/pos-cart.js';
 
 interface Product { id: string; name: string; sku?: string; price: number; is_active?: number; }
 interface PayMethod { id: string; name: string; }
-interface PosSettings { default_document_format?: string; currency?: string; }
+interface PosSettings { default_document_format?: string; currency?: string; enable_parked_tickets?: number; }
 
 function erplora(): ErploraClientLike {
   const c = (globalThis as { erplora?: ErploraClientLike }).erplora;
@@ -55,6 +58,13 @@ export class ErpPosDesktop extends LitElement {
     .field label { font-size:.85rem; color:#8b897f; }
     .field input { width:100%; box-sizing:border-box; font-size:1.3rem; padding:.6rem; border:1px solid var(--ion-border-color,#d9d6cf); border-radius:10px; background:var(--ion-background-color,#fff); color:inherit; }
     .change { color:#2f9e44; font-weight:700; }
+    /* tickets aparcados */
+    .actions { display:flex; gap:.4rem; flex-wrap:wrap; }
+    .plist { display:flex; flex-direction:column; gap:.4rem; max-height:50vh; overflow:auto; }
+    .pitem { display:flex; justify-content:space-between; align-items:center; gap:.6rem; border:1px solid var(--ion-border-color,#e0ddd4); border-radius:10px; padding:.5rem .7rem; }
+    .pn { font-weight:700; }
+    .pm { color:#8b897f; }
+    .hint { color:#8b897f; font-size:.85rem; margin:.2rem 0 .6rem; }
   `;
 
   @state() private products: Product[] = [];
@@ -69,6 +79,8 @@ export class ErpPosDesktop extends LitElement {
   @state() private busy = false;
   @state() private error = '';
   @state() private docSaleId?: string;
+  @state() private parked: ParkedTicket[] = [];
+  @state() private parkedOpen = false;
 
   @query('#scan') private scanInput?: HTMLInputElement;
 
@@ -78,17 +90,19 @@ export class ErpPosDesktop extends LitElement {
   async connectedCallback() {
     super.connectedCallback();
     try {
-      const [prods, methods, settingsRows, savedCart] = await Promise.all([
+      const [prods, methods, settingsRows, savedCart, parked] = await Promise.all([
         erplora().query('inventory.products.list', { page_size: 500 }).catch(() => []),
         erplora().query('sales.payment_methods').catch(() => []),
         erplora().query('sales.settings.get').catch(() => []),
         loadActiveCart(erplora()),
+        listParkedTickets(erplora()),
       ]);
       this.products = rows<Product>(prods).filter((p) => p.is_active !== 0);
       this.methods = rows<PayMethod>(methods);
       this.settings = rows<PosSettings>(settingsRows)[0] || {};
       this.docFormat = this.settings.default_document_format === 'invoice' ? 'invoice' : 'ticket';
       this.payMethod = this.methods[0];
+      this.parked = parked;
       if (savedCart.length) this.cart = savedCart;
       await this.updateComplete;
     } catch (e) {
@@ -120,6 +134,29 @@ export class ErpPosDesktop extends LitElement {
   private cur() { return this.settings.currency || '€'; }
   private money(n: number) { return `${n.toFixed(2)} ${this.cur()}`; }
   private get total() { return this.cart.reduce((s, l) => s + l.price * l.qty, 0); }
+  private get parkingEnabled() { return this.settings.enable_parked_tickets !== 0; }
+
+  /** Aparca el carrito actual como ticket y lo deja libre para la siguiente venta. */
+  private async park() {
+    if (!this.cart.length) return;
+    const num = await parkCart(erplora(), this.cart);
+    if (!num) { this.error = 'No se pudo aparcar el ticket'; return; }
+    this.cart = [];
+    this.parked = await listParkedTickets(erplora());
+    this.scanInput?.focus();
+  }
+
+  /** Recupera un ticket aparcado al carrito (solo con el carrito vacío). */
+  private async retrieve(t: ParkedTicket) {
+    if (this.cart.length) return;
+    try {
+      this.cart = await retrieveParkedTicket(erplora(), t);
+      this.parkedOpen = false;
+      this.parked = await listParkedTickets(erplora());
+    } catch (e) {
+      this.error = e instanceof Error ? e.message : 'No se pudo recuperar el ticket';
+    }
+  }
 
   private get matches() {
     const q = this.term.trim().toLowerCase();
@@ -225,8 +262,37 @@ export class ErpPosDesktop extends LitElement {
 
       <div class="foot">
         <div class="total">Total ${this.money(this.total)}</div>
-        <ion-button ?disabled=${!this.cart.length} @click=${() => this.openPay()}>Cobrar (F2)</ion-button>
+        <div class="actions">
+          ${this.parkingEnabled
+            ? html`
+                <ion-button fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>Aparcar</ion-button>
+                <ion-button fill="outline" ?disabled=${!this.parked.length} @click=${() => { this.parkedOpen = true; }}>
+                  Aparcados (${this.parked.length})
+                </ion-button>`
+            : nothing}
+          <ion-button ?disabled=${!this.cart.length} @click=${() => this.openPay()}>Cobrar (F2)</ion-button>
+        </div>
       </div>
+
+      ${this.parkedOpen
+        ? html`<div class="scrim" @click=${(e: Event) => { if ((e.target as HTMLElement).classList.contains('scrim')) this.parkedOpen = false; }}>
+            <div class="sheet">
+              <div class="sheet-h"><span class="t">Tickets aparcados</span>
+                <button class="x" @click=${() => { this.parkedOpen = false; }}>✕</button></div>
+              ${this.cart.length ? html`<p class="hint">Cobra o aparca la venta actual para recuperar un ticket.</p>` : nothing}
+              <div class="plist">
+                ${this.parked.map((t) => html`<div class="pitem">
+                  <div>
+                    <div class="pn">${t.ticket_number}</div>
+                    <small class="pm">${(t.created_at || '').replace('T', ' ').slice(0, 16)}</small>
+                  </div>
+                  <ion-button size="small" ?disabled=${!!this.cart.length} @click=${() => this.retrieve(t)}>Recuperar</ion-button>
+                </div>`)}
+                ${!this.parked.length ? html`<div class="empty">No hay tickets aparcados.</div>` : nothing}
+              </div>
+            </div>
+          </div>`
+        : nothing}
 
       ${this.paying
         ? html`<div class="scrim" @click=${(e: Event) => { if ((e.target as HTMLElement).classList.contains('scrim')) this.paying = false; }}>

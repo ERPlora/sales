@@ -1,7 +1,8 @@
-// pos-cart — persistencia del carrito activo del POS (tabla sales_active_cart).
-// Compartido por erp-pos-touch y erp-pos-desktop: el carrito en curso del empleado actual
-// sobrevive a recargas/navegación. El empleado lo resuelve el runtime (:current_user_id),
-// la UI solo envía el JSON del carrito.
+// pos-cart — persistencia del carrito activo (sales_active_cart) y tickets aparcados
+// (sales_parked_ticket) del POS. Compartido por erp-pos-touch y erp-pos-desktop: el carrito
+// en curso del empleado actual sobrevive a recargas/navegación, y se puede aparcar como
+// ticket recuperable. El empleado lo resuelve el runtime (:current_user_id), la UI solo
+// envía el JSON del carrito.
 
 export interface CartLine {
   id: string;
@@ -22,7 +23,8 @@ function rows<T>(r: unknown): T[] {
   return [];
 }
 
-function parseLines(cartData: unknown): CartLine[] {
+/** Parsea el JSON de `cart_data` ({lines:[…]} o array suelto) a líneas ([] si no parsea). */
+export function parseCartLines(cartData: unknown): CartLine[] {
   try {
     const parsed = typeof cartData === 'string' ? JSON.parse(cartData) : cartData;
     const lines = Array.isArray(parsed) ? parsed : (parsed as { lines?: unknown[] })?.lines;
@@ -46,7 +48,7 @@ function parseLines(cartData: unknown): CartLine[] {
 export async function loadActiveCart(client: ErploraClientLike): Promise<CartLine[]> {
   try {
     const r = rows<{ cart_data?: string }>(await client.query('sales.cart.get'));
-    return r.length ? parseLines(r[0].cart_data) : [];
+    return r.length ? parseCartLines(r[0].cart_data) : [];
   } catch {
     return [];
   }
@@ -63,4 +65,51 @@ export async function persistActiveCart(client: ErploraClientLike, cart: CartLin
   } catch {
     /* la persistencia del carrito nunca debe romper la venta */
   }
+}
+
+// ── Tickets aparcados (sales_parked_ticket) ──────────────────────────────────────────────
+
+export interface ParkedTicket {
+  id: string;
+  ticket_number: string;
+  cart_data?: string;
+  employee_id?: string;
+  notes?: string;
+  expires_at?: string;
+  created_at?: string;
+}
+
+/** Tickets aparcados vigentes (no expirados), más recientes primero ([] si falla). */
+export async function listParkedTickets(client: ErploraClientLike): Promise<ParkedTicket[]> {
+  try {
+    return rows<ParkedTicket>(await client.query('sales.parked_tickets'));
+  } catch {
+    return [];
+  }
+}
+
+/** Aparca el carrito como ticket recuperable; devuelve el número asignado o null si falla.
+ *  La caducidad (expires_at) la calcula la BD con ticket_expiry_hours de sales_settings. */
+export async function parkCart(client: ErploraClientLike, cart: CartLine[], notes = ''): Promise<string | null> {
+  if (!cart.length) return null;
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const ticketNumber = `P-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  try {
+    await client.command('sales.park_ticket', {
+      ticket_number: ticketNumber,
+      cart_data: JSON.stringify({ lines: cart }),
+      notes,
+    });
+    return ticketNumber;
+  } catch {
+    return null;
+  }
+}
+
+/** Recupera un ticket aparcado: lo retira de la lista (soft-delete) y devuelve sus líneas. */
+export async function retrieveParkedTicket(client: ErploraClientLike, ticket: ParkedTicket): Promise<CartLine[]> {
+  const lines = parseCartLines(ticket.cart_data);
+  await client.command('sales.retrieve_ticket', { ticket_id: ticket.id });
+  return lines;
 }
