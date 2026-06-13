@@ -63,7 +63,7 @@
     {
       "id": "sales",
       "label": "Sales",
-      "icon": "shopping-cart",
+      "icon": "cart-outline",
       "component": "erp-sales-list"
     },
     {
