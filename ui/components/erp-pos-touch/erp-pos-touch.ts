@@ -7,11 +7,16 @@ import {
   type CartLine, type ErploraClientLike, type ParkedTicket,
 } from '../../lib/pos-cart.js';
 
-// erp-pos-touch — pantalla de venta TÁCTIL de mostrador. Rejilla de productos (tap = añadir),
-// carrito con +/−, cobro con numpad y elección de documento (tiquet/factura), y al cobrar:
-// `sales.complete_sale` → fija `document_type` → muestra el documento (erp-sales-document).
-// Todas las ventas pasan por `sales.complete_sale` (channel='pos'). Cliente = a pie por defecto.
-// El carrito en curso se persiste en sales_active_cart (sales.cart.*) y sobrevive a recargas.
+// erp-pos-touch — pantalla de venta TÁCTIL de mostrador. Rejilla de productos (tap = añadir) y el
+// carrito como PANEL (cabecera + cuerpo con scroll + pie). En pantalla grande el panel se ve
+// desplegado al lado; en pantalla pequeña se recoge a un botón flotante con icono de carrito que lo
+// abre como overlay deslizante. La cabecera aloja un botón de pantalla completa (kiosko) y una fila
+// de CONTEXTO de venta que otros módulos rellenan por slots (ADR-0043): `sales.pos.order_context`
+// (mesa, módulo `tables`) y `sales.pos.customer_context` (cliente, módulo `customers`). El POS NO
+// conoce a esos módulos: recibe `erp:order-context`/`erp:customer-context` por DOM y adjunta
+// table_id/customer a la venta; tras cobrar dispara los `*-reset` para que los fillers se limpien.
+// Quitar una línea = bajar su cantidad a 0. Al cobrar: `sales.complete_sale` (channel='pos') →
+// fija `document_type` → muestra el documento. El carrito en curso se persiste en sales_active_cart.
 
 interface Product { id: string; name: string; sku?: string; price: number; is_active?: number; product_type?: string; }
 interface PayMethod { id: string; name: string; type?: string; }
@@ -40,22 +45,41 @@ export class ErpPosTouch extends LitElement {
     .tile:active { transform:scale(.97); }
     .tile .n { font-weight:600; font-size:.92rem; line-height:1.2; }
     .tile .p { font-weight:700; color:var(--ion-color-primary,#0091ce); margin-top:.4rem; }
-    .cart { display:flex; flex-direction:column; border:1px solid var(--ion-border-color,#e0ddd4); border-radius:14px; padding:.7rem; }
-    .cart h3 { margin:0 0 .5rem; font-size:1rem; display:flex; align-items:center; gap:.5rem; }
-    .table-tag { font-size:.75rem; font-weight:700; color:#fff; background:var(--ion-color-primary,#0091ce); border-radius:999px; padding:.15rem .55rem; }
-    .order-slot:not(:empty) { margin-bottom:.5rem; }
-    .lines { flex:1; overflow:auto; display:flex; flex-direction:column; gap:.4rem; }
+
+    /* Panel del carrito: cabecera + cuerpo (scroll) + pie */
+    .cart { display:flex; flex-direction:column; border:1px solid var(--ion-border-color,#e0ddd4); border-radius:14px; overflow:hidden; background:var(--ion-background-color,#fff); }
+    .cart-top { display:flex; flex-direction:column; gap:.5rem; padding:.6rem .7rem; border-bottom:1px solid var(--ion-border-color,#e0ddd4); }
+    .ct-row { display:flex; align-items:center; gap:.5rem; }
+    .ct-title { font-size:1rem; font-weight:700; flex:1; }
+    .ct-close, .ct-fs { background:none; border:none; cursor:pointer; color:var(--ion-text-color,#1c1b18); display:inline-flex; align-items:center; justify-content:center; width:2rem; height:2rem; border-radius:8px; }
+    .ct-close { display:none; }
+    .ct-fs:hover, .ct-close:hover { background:var(--ion-color-light,#f2f1ed); }
+    .ct-fs ion-icon, .ct-close ion-icon { font-size:1.25rem; }
+    /* Fila de contexto: aquí montan el shell los fillers de slot (mesa / cliente). */
+    .ct-ctx { display:flex; gap:.4rem; }
+    .order-slot, .customer-slot { flex:1; min-width:0; }
+    .order-slot:empty, .customer-slot:empty { display:none; }
+    .ct-ctx:empty { display:none; }
+
+    .lines { flex:1; overflow:auto; display:flex; flex-direction:column; gap:.4rem; padding:.7rem; min-height:6rem; }
     .line { display:grid; grid-template-columns: 1fr auto; gap:.2rem .5rem; align-items:center; border-bottom:1px solid var(--ion-border-color,#eee); padding-bottom:.4rem; }
     .line .nm { font-size:.9rem; }
     .line .lt { font-weight:700; white-space:nowrap; }
-    .qty { display:flex; align-items:center; gap:.4rem; }
-    .qbtn { width:1.9rem; height:1.9rem; border-radius:50%; border:1px solid var(--ion-border-color,#d9d6cf); background:var(--ion-background-color,#fff); font-size:1.1rem; cursor:pointer; }
-    .rm { background:none; border:none; color:#d9480f; cursor:pointer; font-size:.8rem; }
-    .total { display:flex; justify-content:space-between; align-items:baseline; margin:.6rem 0; font-size:1rem; }
-    .total b { font-size:1.5rem; }
-    .charge { font-size:1.1rem; padding:1rem; }
+    .qty { display:flex; align-items:center; gap:.5rem; }
+    .qbtn { width:2rem; height:2rem; border-radius:50%; border:1px solid var(--ion-border-color,#d9d6cf); background:var(--ion-background-color,#fff); font-size:1.1rem; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
+    .qty span { min-width:1.2rem; text-align:center; }
     .empty { color:#8b897f; text-align:center; padding:2rem 0; }
-    /* numpad */
+
+    .cart-foot { padding:.7rem; border-top:1px solid var(--ion-border-color,#e0ddd4); }
+    .total { display:flex; justify-content:space-between; align-items:baseline; margin:.2rem 0 .6rem; font-size:1rem; }
+    .total b { font-size:1.5rem; }
+    .charge { font-size:1.1rem; }
+
+    /* Botón flotante de carrito — solo móvil (ver @media) */
+    .fab { display:none; }
+    .cart-backdrop { display:none; }
+
+    /* numpad / cobro */
     .pay { display:flex; flex-direction:column; gap:.8rem; }
     .methods { display:flex; gap:.4rem; flex-wrap:wrap; }
     .chip { padding:.5rem .9rem; border-radius:999px; border:1px solid var(--ion-border-color,#d9d6cf); background:var(--ion-background-color,#fff); cursor:pointer; }
@@ -65,8 +89,8 @@ export class ErpPosTouch extends LitElement {
     .change { color:#2f9e44; }
     .numpad { display:grid; grid-template-columns: repeat(3, 1fr); gap:.5rem; }
     .numpad button { font-size:1.3rem; padding:1rem; border-radius:12px; border:1px solid var(--ion-border-color,#d9d6cf); background:var(--ion-background-color,#fff); cursor:pointer; }
-    /* Overlay de cobro propio (en el shadow → conserva estos estilos; ion-modal los perdería). */
-    .scrim { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:50; }
+    /* Overlays propios (en el shadow → conservan estilos; ion-modal los perdería). */
+    .scrim { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:70; }
     .sheet { background:var(--ion-background-color,#fff); border-radius:16px; padding:1rem; width:min(92vw,24rem); max-height:90vh; overflow:auto; box-shadow:0 12px 48px rgba(0,0,0,.35); }
     .sheet-h { display:flex; justify-content:space-between; align-items:center; margin-bottom:.8rem; }
     .sheet-h .t { font-size:1.2rem; font-weight:700; }
@@ -79,6 +103,27 @@ export class ErpPosTouch extends LitElement {
     .pn { font-weight:700; }
     .pm { color:#8b897f; }
     .hint { color:#8b897f; font-size:.85rem; margin:.2rem 0 .6rem; }
+
+    @media (max-width: 820px) {
+      .pos { grid-template-columns: 1fr; }
+      .cart {
+        position:fixed; top:0; right:0; bottom:0; width:min(92vw,26rem);
+        z-index:60; border-radius:0; border:none;
+        box-shadow:-8px 0 32px rgba(0,0,0,.25);
+        transform:translateX(100%); transition:transform .25s ease;
+      }
+      .cart[data-open] { transform:translateX(0); }
+      .cart-backdrop[data-open] { display:block; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:55; }
+      .ct-close { display:inline-flex; }
+      .fab {
+        display:inline-flex; align-items:center; gap:.5rem; position:fixed; right:1rem; bottom:1rem; z-index:50;
+        padding:.7rem 1rem; border:none; border-radius:999px; cursor:pointer;
+        background:var(--ion-color-primary,#0091ce); color:#fff; font:inherit; font-weight:700;
+        box-shadow:0 8px 24px rgba(0,0,0,.3);
+      }
+      .fab ion-icon { font-size:1.4rem; }
+      .fab .fab-badge { position:absolute; top:-.35rem; left:1.4rem; min-width:1.2rem; height:1.2rem; padding:0 .25rem; border-radius:999px; background:#d9480f; color:#fff; font-size:.72rem; display:inline-flex; align-items:center; justify-content:center; }
+    }
   `;
 
   @state() private products: Product[] = [];
@@ -95,26 +140,38 @@ export class ErpPosTouch extends LitElement {
   @state() private docSaleId?: string;
   @state() private parked: ParkedTicket[] = [];
   @state() private parkedOpen = false;
-  // Contexto de pedido aportado por un slot filler (ADR-0043), p. ej. la mesa elegida en el
-  // selector del módulo `tables` montado en `sales.pos.order_context`. El POS no conoce a `tables`:
-  // recibe `{table_id,label}` por el evento `erp:order-context` y lo adjunta a la venta.
+  // Panel del carrito (overlay en móvil) + kiosko a pantalla completa.
+  @state() private cartOpen = false;
+  @state() private fullscreen = false;
+  // Contexto de venta aportado por slot fillers (ADR-0043): mesa (`tables`) y cliente (`customers`).
+  // El POS recibe los datos por evento DOM y los adjunta a la venta; no conoce a esos módulos.
   @state() private tableId?: string;
   @state() private tableLabel = '';
+  @state() private customerId?: string;
+  @state() private customerName = '';
 
   private cartRestored = false;
   private saveTimer?: ReturnType<typeof setTimeout>;
-  /** Fillers resueltos del slot (undefined = aún sin resolver; [] = slot vacío). */
-  private slotFillersResolved?: { component: string }[];
-  /** Instancias de los WC del slot, creadas UNA vez y re-enganchadas si el contenedor se recrea. */
-  private slotEls: HTMLElement[] = [];
+  /** Slots de contexto que el POS expone; cada uno lo rellena (o no) un módulo externo. */
+  private readonly slots: Array<{ slot: string; container: string; reset: string; resolved?: { component: string }[]; els: HTMLElement[] }> = [
+    { slot: 'sales.pos.order_context', container: '.order-slot', reset: 'erp:order-context-reset', els: [] },
+    { slot: 'sales.pos.customer_context', container: '.customer-slot', reset: 'erp:customer-context-reset', els: [] },
+  ];
   private readonly onOrderContext = (e: Event) => {
     const d = (e as CustomEvent<{ table_id: string | null; label?: string }>).detail ?? { table_id: null };
     this.tableId = d.table_id ?? undefined;
     this.tableLabel = d.label ?? '';
   };
+  private readonly onCustomerContext = (e: Event) => {
+    const d = (e as CustomEvent<{ customer_id: string | null; customer_name?: string }>).detail ?? { customer_id: null };
+    this.customerId = d.customer_id ?? undefined;
+    this.customerName = d.customer_name ?? '';
+  };
+  private readonly onFsChange = () => { this.fullscreen = document.fullscreenElement === this; };
 
   async connectedCallback() {
     super.connectedCallback();
+    document.addEventListener('fullscreenchange', this.onFsChange);
     try {
       const [prods, methods, settingsRows, savedCart, parked] = await Promise.all([
         erplora().query('inventory.products.list', { page_size: 200 }).catch(() => []),
@@ -132,8 +189,9 @@ export class ErpPosTouch extends LitElement {
       if (savedCart.length) this.cart = savedCart;
       await this.updateComplete;
       this.addEventListener('erp:order-context', this.onOrderContext);
-      await this.resolveOrderSlot();
-      this.ensureOrderSlotMounted();
+      this.addEventListener('erp:customer-context', this.onCustomerContext);
+      await this.resolveSlots();
+      this.ensureSlotsMounted();
     } catch (e) {
       this.error = e instanceof Error ? e.message : 'Error cargando el POS';
     } finally {
@@ -143,7 +201,9 @@ export class ErpPosTouch extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    document.removeEventListener('fullscreenchange', this.onFsChange);
     this.removeEventListener('erp:order-context', this.onOrderContext);
+    this.removeEventListener('erp:customer-context', this.onCustomerContext);
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = undefined;
@@ -152,41 +212,52 @@ export class ErpPosTouch extends LitElement {
   }
 
   /**
-   * Resuelve (una vez) los slot fillers de `sales.pos.order_context` (ADR-0043) y crea sus
-   * instancias. El POS no conoce al proveedor (p. ej. `tables`): pregunta al cliente SDK qué Web
-   * Components rellenan el slot y carga su ESM. Las instancias se crean aquí y se re-enganchan en
-   * `ensureOrderSlotMounted` — así sobreviven a que el carrito cambie de layout (panel ↔ overlay).
+   * Resuelve (una vez) los fillers de cada slot de contexto (ADR-0043) y crea sus instancias. El POS
+   * no conoce a los proveedores (`tables`, `customers`): pregunta al cliente SDK qué Web Components
+   * rellenan cada slot y carga su ESM. Las instancias se crean aquí y se re-enganchan en
+   * `ensureSlotsMounted` — así sobreviven a que el carrito cambie de layout (panel ↔ overlay móvil).
    */
-  private async resolveOrderSlot() {
-    if (this.slotFillersResolved) return;
+  private async resolveSlots() {
     const sdk = (globalThis as { erplora?: { loadSlot?: (s: string) => Promise<{ component: string }[]> } }).erplora;
-    if (!sdk?.loadSlot) { this.slotFillersResolved = []; return; }
-    try {
-      this.slotFillersResolved = await sdk.loadSlot('sales.pos.order_context');
-    } catch {
-      this.slotFillersResolved = []; // slot vacío o ESM no disponible → el POS funciona igual
+    for (const s of this.slots) {
+      if (s.resolved) continue;
+      if (!sdk?.loadSlot) { s.resolved = []; continue; }
+      try {
+        s.resolved = await sdk.loadSlot(s.slot);
+      } catch {
+        s.resolved = []; // slot vacío o ESM no disponible → el POS funciona igual
+      }
+      s.els = s.resolved.map((f) => document.createElement(f.component) as HTMLElement);
     }
-    this.slotEls = this.slotFillersResolved.map((f) => document.createElement(f.component) as HTMLElement);
   }
 
   /**
-   * (Re)engancha los fillers en el `.order-slot` ACTUAL. Idempotente y barato: si el contenedor ya
-   * tiene los hijos, no hace nada. Se llama tras resolver y en CADA `updated()`, para que el slot
-   * sobreviva a que el carrito se re-renderice o pase a un overlay móvil (el contenedor se destruye
-   * y recrea). Reusa las MISMAS instancias → conserva el estado del filler (mesa elegida) entre
-   * aperturas/cierres del overlay. Contrato con cualquier rediseño del carrito: basta con que el
-   * markup conserve un `<div class="order-slot">` en la zona de venta.
+   * (Re)engancha los fillers en sus contenedores ACTUALES. Idempotente y barato: si el contenedor ya
+   * tiene hijos, no hace nada. Se llama tras resolver y en CADA `updated()`, para que los slots
+   * sobrevivan a que el carrito se re-renderice o pase a overlay móvil (el contenedor se recrea).
+   * Reusa las MISMAS instancias → conserva el estado del filler (mesa/cliente elegido). Contrato con
+   * cualquier rediseño del carrito: basta con conservar un `<div class="order-slot">` y un
+   * `<div class="customer-slot">` en la zona de venta.
    */
-  private ensureOrderSlotMounted() {
-    const host = this.renderRoot.querySelector('.order-slot') as HTMLElement | null;
-    if (!host || !this.slotEls.length) return;
-    if (host.firstElementChild) return; // ya montado en este contenedor
-    this.slotEls.forEach((el) => host.appendChild(el));
+  private ensureSlotsMounted() {
+    for (const s of this.slots) {
+      const host = this.renderRoot.querySelector(s.container) as HTMLElement | null;
+      if (!host || !s.els.length) continue;
+      if (host.firstElementChild) continue; // ya montado en este contenedor
+      s.els.forEach((el) => host.appendChild(el));
+    }
   }
 
-  /** Persiste el carrito (debounced) y re-engancha el slot tras cada render (layout responsive). */
+  /** Avisa a los fillers para que limpien su selección (tras cobrar). */
+  private resetSlotContexts() {
+    for (const s of this.slots) {
+      s.els.forEach((el) => el.dispatchEvent(new CustomEvent(s.reset, { bubbles: false })));
+    }
+  }
+
+  /** Persiste el carrito (debounced) y re-engancha los slots tras cada render (layout responsive). */
   protected updated(changed: Map<PropertyKey, unknown>) {
-    this.ensureOrderSlotMounted();
+    this.ensureSlotsMounted();
     if (!changed.has('cart') || !this.cartRestored) return;
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
@@ -198,7 +269,16 @@ export class ErpPosTouch extends LitElement {
   private cur() { return this.settings.currency || '€'; }
   private money(n: number) { return `${n.toFixed(2)} ${this.cur()}`; }
   private get total() { return this.cart.reduce((s, l) => s + l.price * l.qty, 0); }
+  private get itemCount() { return this.cart.reduce((s, l) => s + l.qty, 0); }
   private get parkingEnabled() { return this.settings.enable_parked_tickets !== 0; }
+
+  /** Pantalla completa de TODO el POS (modo kiosko). */
+  private async toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await this.requestFullscreen();
+    } catch { /* el navegador puede rechazar fullscreen; se ignora */ }
+  }
 
   /** Aparca el carrito actual como ticket y lo deja libre para la siguiente venta. */
   private async park() {
@@ -227,12 +307,12 @@ export class ErpPosTouch extends LitElement {
       ? this.cart.map((l) => (l.id === p.id ? { ...l, qty: l.qty + 1 } : l))
       : [...this.cart, { id: p.id, name: p.name, sku: p.sku, price: Number(p.price), qty: 1 }];
   }
+  /** Cambia la cantidad; al llegar a 0 la línea se elimina (quitar = poner a 0). */
   private setQty(id: string, d: number) {
     this.cart = this.cart
       .map((l) => (l.id === id ? { ...l, qty: l.qty + d } : l))
       .filter((l) => l.qty > 0);
   }
-  private remove(id: string) { this.cart = this.cart.filter((l) => l.id !== id); }
 
   private openPay() {
     if (!this.cart.length) return;
@@ -261,6 +341,8 @@ export class ErpPosTouch extends LitElement {
         channel: 'pos',
         source_module: 'pos',
         table_id: this.tableId ?? null,
+        customer_id: this.customerId ?? null,
+        customer_name: this.customerName,
       });
       // El handler WASM no devuelve el id → tomamos la venta más reciente.
       const recent = rows<{ id: string }>(await erplora().query('sales.list', { page_size: 1, sort: 'created_at', dir: 'desc' }));
@@ -270,10 +352,10 @@ export class ErpPosTouch extends LitElement {
       }
       this.paying = false;
       this.cart = [];
-      // Libera el contexto de pedido (mesa) y avisa al filler para que limpie su selección.
-      this.tableId = undefined;
-      this.tableLabel = '';
-      this.slotEls.forEach((el) => el.dispatchEvent(new CustomEvent('erp:order-context-reset', { bubbles: false })));
+      // Libera el contexto de venta (mesa/cliente) y avisa a los fillers para que se limpien.
+      this.tableId = undefined; this.tableLabel = '';
+      this.customerId = undefined; this.customerName = '';
+      this.resetSlotContexts();
       if (saleId) this.docSaleId = saleId;
     } catch (e) {
       this.error = e instanceof Error ? e.message : 'Error al cobrar';
@@ -302,11 +384,37 @@ export class ErpPosTouch extends LitElement {
         </div>
       </div>
 
-      <div class="cart">
-        <h3>Venta${this.tableLabel ? html`<span class="table-tag">${this.tableLabel}</span>` : nothing}</h3>
-        <!-- Slot de contexto de pedido (ADR-0043): aquí monta el shell el WC del proveedor (p. ej.
-             el selector de mesas del módulo tables). Vacío si no hay módulo que rellene el slot. -->
-        <div class="order-slot"></div>
+      <!-- Botón flotante (solo móvil): abre el panel del carrito -->
+      ${!this.cartOpen
+        ? html`<button class="fab" @click=${() => { this.cartOpen = true; }}>
+            <ion-icon name="cart-outline"></ion-icon>
+            ${this.itemCount ? html`<span class="fab-badge">${this.itemCount}</span>` : nothing}
+            <span>${this.money(this.total)}</span>
+          </button>`
+        : nothing}
+
+      <!-- Backdrop del panel (solo móvil, cuando está abierto) -->
+      <div class="cart-backdrop" ?data-open=${this.cartOpen} @click=${() => { this.cartOpen = false; }}></div>
+
+      <aside class="cart" ?data-open=${this.cartOpen}>
+        <header class="cart-top">
+          <div class="ct-row">
+            <button class="ct-close" title="Cerrar" @click=${() => { this.cartOpen = false; }}>
+              <ion-icon name="chevron-down-outline"></ion-icon>
+            </button>
+            <span class="ct-title">Venta</span>
+            <button class="ct-fs" title="Pantalla completa" @click=${() => this.toggleFullscreen()}>
+              <ion-icon name=${this.fullscreen ? 'contract-outline' : 'expand-outline'}></ion-icon>
+            </button>
+          </div>
+          <!-- Fila de contexto (ADR-0043): el shell monta aquí los fillers (mesa / cliente). Cada
+               contenedor se oculta si ningún módulo rellena su slot. -->
+          <div class="ct-ctx">
+            <div class="order-slot"></div>
+            <div class="customer-slot"></div>
+          </div>
+        </header>
+
         <div class="lines">
           ${this.cart.length
             ? this.cart.map((l) => html`<div class="line">
@@ -316,22 +424,24 @@ export class ErpPosTouch extends LitElement {
                   <button class="qbtn" @click=${() => this.setQty(l.id, -1)}>−</button>
                   <span>${l.qty}</span>
                   <button class="qbtn" @click=${() => this.setQty(l.id, 1)}>+</button>
-                  <button class="rm" @click=${() => this.remove(l.id)}>quitar</button>
                 </div>
               </div>`)
             : html`<div class="empty">Toca un producto para añadirlo.</div>`}
         </div>
-        <div class="total"><span>Total</span><b>${this.money(this.total)}</b></div>
-        <ion-button class="charge" expand="block" ?disabled=${!this.cart.length} @click=${() => this.openPay()}>Cobrar</ion-button>
-        ${this.parkingEnabled
-          ? html`<div class="parkrow">
-              <ion-button size="small" fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>Aparcar</ion-button>
-              <ion-button size="small" fill="outline" ?disabled=${!this.parked.length} @click=${() => { this.parkedOpen = true; }}>
-                Aparcados (${this.parked.length})
-              </ion-button>
-            </div>`
-          : nothing}
-      </div>
+
+        <footer class="cart-foot">
+          <div class="total"><span>Total</span><b>${this.money(this.total)}</b></div>
+          <ion-button class="charge" expand="block" ?disabled=${!this.cart.length} @click=${() => this.openPay()}>Cobrar</ion-button>
+          ${this.parkingEnabled
+            ? html`<div class="parkrow">
+                <ion-button size="small" fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>Aparcar</ion-button>
+                <ion-button size="small" fill="outline" ?disabled=${!this.parked.length} @click=${() => { this.parkedOpen = true; }}>
+                  Aparcados (${this.parked.length})
+                </ion-button>
+              </div>`
+            : nothing}
+        </footer>
+      </aside>
 
       ${this.parkedOpen
         ? html`<div class="scrim" @click=${(e: Event) => { if ((e.target as HTMLElement).classList.contains('scrim')) this.parkedOpen = false; }}>
