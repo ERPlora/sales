@@ -177,6 +177,7 @@ pub fn complete_sale_pure(input: Value) -> Output {
     h.insert("channel".into(), json!(str_or(&payload, "channel", "")));
     h.insert("source_module".into(), json!(str_or(&payload, "source_module", "pos")));
     h.insert("table_id".into(), payload.get("table_id").cloned().unwrap_or(Value::Null));
+    h.insert("order_id".into(), payload.get("order_id").cloned().unwrap_or(Value::Null));
     ops[header_idx] = Operation::sql("sales._insert_sale", h);
 
     // Líneas compactas para listeners cross-módulo (inventory descuenta stock por
@@ -194,9 +195,14 @@ pub fn complete_sale_pure(input: Value) -> Output {
         }))
         .collect();
 
+    // order_id/order_number viajan en el evento (ADR-0010) para que `orders`
+    // enlace el pedido (link_to_sale) sin re-consultar; NULL si la venta no
+    // proviene de un pedido (el listener de orders es no-op en ese caso).
     let event = Event::new("sale.completed", json!({
         "sender": "sales",
         "sale_id": sale_id,
+        "order_id": payload.get("order_id").cloned().unwrap_or(Value::Null),
+        "order_number": payload.get("order_number").cloned().unwrap_or(Value::Null),
         "total": round2(total),
         "subtotal": round2(subtotal),
         "tax_amount": round2(tax_total),
