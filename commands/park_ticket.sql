@@ -7,7 +7,7 @@ INSERT INTO sales_parked_ticket
    is_deleted, created_by, updated_by, created_at, updated_at)
 VALUES
   (:new_id, :hub_id, :ticket_number, :cart_data, :current_user_id, COALESCE(:notes, ''),
-   datetime(:now, '+' || COALESCE(
+   erp_dateadd(:now, COALESCE(
      (SELECT ticket_expiry_hours FROM sales_settings WHERE hub_id = :hub_id AND is_deleted = 0),
-     24) || ' hours'),
+     24), 'hours'),
    0, :current_user_id, :current_user_id, :now, :now);

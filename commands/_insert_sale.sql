@@ -1,6 +1,6 @@
 -- Inserta cabecera. sale_number YYYYMMDD-NNNN se calcula leyendo el contador
 -- (recién incrementado) en la MISMA transacción (sin read-back desde el guest).
--- printf() es de SQLite; Postgres usaría lpad() (portabilidad SQL §14).
+-- Padding portable: erp_pad(valor, ancho) (ADR-0007) → printf/lpad por dialecto en el shim.
 INSERT INTO sales_sale (
     id, hub_id, sale_number, status,
     subtotal, tax_amount, tax_breakdown, discount_amount, discount_percent, total,
@@ -10,9 +10,9 @@ INSERT INTO sales_sale (
     is_deleted, created_by, updated_by, created_at, updated_at
 ) VALUES (
     :sale_id, :hub_id,
-    :day || '-' || printf('%04d', (
+    :day || '-' || erp_pad((
         SELECT last_number FROM sales_sale_counter WHERE hub_id = :hub_id AND day = :day
-    )),
+    ), 4),
     :status,
     :subtotal, :tax_amount, :tax_breakdown, :discount_amount, :discount_percent, :total,
     :payment_method_id, :payment_method_name, :amount_tendered, :change_due,

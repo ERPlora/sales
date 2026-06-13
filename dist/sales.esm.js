@@ -9,7 +9,7 @@ var __decorateClass = (decorators, target, key, kind) => {
   return result;
 };
 
-// ../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
+// node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
 var ElementInternalsShim = class ElementInternals {
   get shadowRoot() {
     return this.__host.__shadowRoot;
@@ -88,7 +88,7 @@ var ElementInternalsShim = class ElementInternals {
   }
 };
 
-// ../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
+// node_modules/@lit-labs/ssr-dom-shim/lib/events.js
 var __classPrivateFieldSet = function(receiver, state, value, kind, f3) {
   if (kind === "m") throw new TypeError("Private method is not writable");
   if (kind === "a" && !f3) throw new TypeError("Private accessor was defined without a setter");
@@ -246,7 +246,7 @@ Object.defineProperties(CustomEventShim.prototype, {
 var EventShimWithRealType = EventShim;
 var CustomEventShimWithRealType = CustomEventShim;
 
-// ../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
+// node_modules/@lit-labs/ssr-dom-shim/lib/css.js
 var _a2;
 var CSSRuleShim = (_a2 = class CSSRule {
   constructor() {
@@ -277,7 +277,7 @@ var CSSRuleShim = (_a2 = class CSSRule {
   }
 }, _a2.STYLE_RULE = 1, _a2.CHARSET_RULE = 2, _a2.IMPORT_RULE = 3, _a2.MEDIA_RULE = 4, _a2.FONT_FACE_RULE = 5, _a2.PAGE_RULE = 6, _a2.NAMESPACE_RULE = 10, _a2.KEYFRAMES_RULE = 7, _a2.KEYFRAME_RULE = 8, _a2.SUPPORTS_RULE = 12, _a2.COUNTER_STYLE_RULE = 11, _a2.FONT_FEATURE_VALUES_RULE = 14, _a2.MARGIN_RULE = 9, _a2);
 
-// ../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/index.js
+// node_modules/@lit-labs/ssr-dom-shim/index.js
 globalThis.Event ??= EventShimWithRealType;
 globalThis.CustomEvent ??= CustomEventShimWithRealType;
 var constructionToken = Symbol();
@@ -674,7 +674,7 @@ var CustomElementRegistryShimWithRealType = CustomElementRegistry;
 var customElements2 = new CustomElementRegistryShimWithRealType();
 var windowShim = new WindowShim(constructionToken);
 
-// ../module-toolkit/node_modules/@lit/reactive-element/node/css-tag.js
+// node_modules/@lit/reactive-element/node/css-tag.js
 var t = globalThis;
 var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
 var s = Symbol();
@@ -719,7 +719,7 @@ var c = e || void 0 === t.CSSStyleSheet ? (t5) => t5 : (t5) => t5 instanceof CSS
   return r(e6);
 })(t5) : t5;
 
-// ../module-toolkit/node_modules/@lit/reactive-element/node/reactive-element.js
+// node_modules/@lit/reactive-element/node/reactive-element.js
 var { is: h, defineProperty: r2, getOwnPropertyDescriptor: o2, getOwnPropertyNames: n2, getOwnPropertySymbols: a, getPrototypeOf: c2 } = Object;
 var l = globalThis;
 l.customElements ??= customElements2;
@@ -942,7 +942,7 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
 };
 g.elementStyles = [], g.shadowRootOptions = { mode: "open" }, g[f("elementProperties")] = /* @__PURE__ */ new Map(), g[f("finalized")] = /* @__PURE__ */ new Map(), u?.({ ReactiveElement: g }), (l.reactiveElementVersions ??= []).push("2.1.2");
 
-// ../module-toolkit/node_modules/lit-html/lit-html.js
+// node_modules/lit-html/lit-html.js
 var t2 = globalThis;
 var i2 = (t5) => t5;
 var s2 = t2.trustedTypes;
@@ -1197,7 +1197,7 @@ var D = (t5, i7, s5) => {
   return h4._$AI(t5), h4;
 };
 
-// ../module-toolkit/node_modules/lit-element/lit-element.js
+// node_modules/lit-element/lit-element.js
 var s3 = globalThis;
 var i3 = class extends g {
   constructor() {
@@ -1226,7 +1226,7 @@ var o4 = s3.litElementPolyfillSupport;
 o4?.({ LitElement: i3 });
 (s3.litElementVersions ??= []).push("4.2.2");
 
-// ../module-toolkit/node_modules/@lit/reactive-element/node/decorators/property.js
+// node_modules/@lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
 var r4 = (t5 = o5, e6, r6) => {
   const { kind: n6, metadata: i7 } = r6;
@@ -1256,15 +1256,15 @@ function n4(t5) {
   })(t5, e6, o7);
 }
 
-// ../module-toolkit/node_modules/@lit/reactive-element/node/decorators/state.js
+// node_modules/@lit/reactive-element/node/decorators/state.js
 function r5(r6) {
   return n4({ ...r6, state: true, attribute: false });
 }
 
-// ../module-toolkit/node_modules/@lit/reactive-element/node/decorators/base.js
+// node_modules/@lit/reactive-element/node/decorators/base.js
 var e3 = (e6, t5, c5) => (c5.configurable = true, c5.enumerable = true, Reflect.decorate && "object" != typeof t5 && Object.defineProperty(e6, t5, c5), c5);
 
-// ../module-toolkit/node_modules/@lit/reactive-element/node/decorators/query.js
+// node_modules/@lit/reactive-element/node/decorators/query.js
 function e4(e6, r6) {
   return (n6, s5, i7) => {
     const o7 = (t5) => t5.renderRoot?.querySelector(e6) ?? null;
@@ -2345,7 +2345,7 @@ __decorateClass4([
 ], OkInvoice.prototype, "labels");
 define("ok-invoice", OkInvoice);
 
-// modules/sales/ui/lib/document-mappers.ts
+// ../modules-workspace/modules/sales/ui/lib/document-mappers.ts
 function parseTaxes(tax_breakdown) {
   if (!tax_breakdown) return [];
   let obj;
@@ -2417,7 +2417,7 @@ function saleToInvoice(sale, lines, settings = {}) {
   };
 }
 
-// modules/sales/ui/components/erp-sales-document/erp-sales-document.ts
+// ../modules-workspace/modules/sales/ui/components/erp-sales-document/erp-sales-document.ts
 function erplora() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -2507,7 +2507,7 @@ __decorateClass([
 ], ErpSalesDocument.prototype, "error", 2);
 define("erp-sales-document", ErpSalesDocument);
 
-// modules/sales/ui/lib/pos-cart.ts
+// ../modules-workspace/modules/sales/ui/lib/pos-cart.ts
 function rows(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
@@ -2576,7 +2576,7 @@ async function retrieveParkedTicket(client, ticket) {
   return lines;
 }
 
-// modules/sales/ui/components/erp-pos-touch/erp-pos-touch.ts
+// ../modules-workspace/modules/sales/ui/components/erp-pos-touch/erp-pos-touch.ts
 function erplora2() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -2602,7 +2602,15 @@ var ErpPosTouch = class extends i3 {
     this.error = "";
     this.parked = [];
     this.parkedOpen = false;
+    this.tableLabel = "";
     this.cartRestored = false;
+    /** Instancias de los WC del slot, creadas UNA vez y re-enganchadas si el contenedor se recrea. */
+    this.slotEls = [];
+    this.onOrderContext = (e6) => {
+      const d3 = e6.detail ?? { table_id: null };
+      this.tableId = d3.table_id ?? void 0;
+      this.tableLabel = d3.label ?? "";
+    };
   }
   static {
     this.styles = i`
@@ -2616,7 +2624,9 @@ var ErpPosTouch = class extends i3 {
     .tile .n { font-weight:600; font-size:.92rem; line-height:1.2; }
     .tile .p { font-weight:700; color:var(--ion-color-primary,#0091ce); margin-top:.4rem; }
     .cart { display:flex; flex-direction:column; border:1px solid var(--ion-border-color,#e0ddd4); border-radius:14px; padding:.7rem; }
-    .cart h3 { margin:0 0 .5rem; font-size:1rem; }
+    .cart h3 { margin:0 0 .5rem; font-size:1rem; display:flex; align-items:center; gap:.5rem; }
+    .table-tag { font-size:.75rem; font-weight:700; color:#fff; background:var(--ion-color-primary,#0091ce); border-radius:999px; padding:.15rem .55rem; }
+    .order-slot:not(:empty) { margin-bottom:.5rem; }
     .lines { flex:1; overflow:auto; display:flex; flex-direction:column; gap:.4rem; }
     .line { display:grid; grid-template-columns: 1fr auto; gap:.2rem .5rem; align-items:center; border-bottom:1px solid var(--ion-border-color,#eee); padding-bottom:.4rem; }
     .line .nm { font-size:.9rem; }
@@ -2672,6 +2682,9 @@ var ErpPosTouch = class extends i3 {
       this.parked = parked;
       if (savedCart.length) this.cart = savedCart;
       await this.updateComplete;
+      this.addEventListener("erp:order-context", this.onOrderContext);
+      await this.resolveOrderSlot();
+      this.ensureOrderSlotMounted();
     } catch (e6) {
       this.error = e6 instanceof Error ? e6.message : "Error cargando el POS";
     } finally {
@@ -2680,14 +2693,50 @@ var ErpPosTouch = class extends i3 {
   }
   disconnectedCallback() {
     super.disconnectedCallback();
+    this.removeEventListener("erp:order-context", this.onOrderContext);
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = void 0;
       void persistActiveCart(erplora2(), this.cart);
     }
   }
-  /** Persiste el carrito (debounced) cada vez que cambia, una vez restaurado el guardado. */
+  /**
+   * Resuelve (una vez) los slot fillers de `sales.pos.order_context` (ADR-0043) y crea sus
+   * instancias. El POS no conoce al proveedor (p. ej. `tables`): pregunta al cliente SDK qué Web
+   * Components rellenan el slot y carga su ESM. Las instancias se crean aquí y se re-enganchan en
+   * `ensureOrderSlotMounted` — así sobreviven a que el carrito cambie de layout (panel ↔ overlay).
+   */
+  async resolveOrderSlot() {
+    if (this.slotFillersResolved) return;
+    const sdk = globalThis.erplora;
+    if (!sdk?.loadSlot) {
+      this.slotFillersResolved = [];
+      return;
+    }
+    try {
+      this.slotFillersResolved = await sdk.loadSlot("sales.pos.order_context");
+    } catch {
+      this.slotFillersResolved = [];
+    }
+    this.slotEls = this.slotFillersResolved.map((f3) => document.createElement(f3.component));
+  }
+  /**
+   * (Re)engancha los fillers en el `.order-slot` ACTUAL. Idempotente y barato: si el contenedor ya
+   * tiene los hijos, no hace nada. Se llama tras resolver y en CADA `updated()`, para que el slot
+   * sobreviva a que el carrito se re-renderice o pase a un overlay móvil (el contenedor se destruye
+   * y recrea). Reusa las MISMAS instancias → conserva el estado del filler (mesa elegida) entre
+   * aperturas/cierres del overlay. Contrato con cualquier rediseño del carrito: basta con que el
+   * markup conserve un `<div class="order-slot">` en la zona de venta.
+   */
+  ensureOrderSlotMounted() {
+    const host = this.renderRoot.querySelector(".order-slot");
+    if (!host || !this.slotEls.length) return;
+    if (host.firstElementChild) return;
+    this.slotEls.forEach((el) => host.appendChild(el));
+  }
+  /** Persiste el carrito (debounced) y re-engancha el slot tras cada render (layout responsive). */
   updated(changed) {
+    this.ensureOrderSlotMounted();
     if (!changed.has("cart") || !this.cartRestored) return;
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
@@ -2771,7 +2820,8 @@ var ErpPosTouch = class extends i3 {
         payment_method_name: this.payMethod?.name ?? "Efectivo",
         amount_tendered: this.tenderedNum || this.total,
         channel: "pos",
-        source_module: "pos"
+        source_module: "pos",
+        table_id: this.tableId ?? null
       });
       const recent = rows2(await erplora2().query("sales.list", { page_size: 1, sort: "created_at", dir: "desc" }));
       const saleId = recent[0]?.id;
@@ -2780,6 +2830,9 @@ var ErpPosTouch = class extends i3 {
       }
       this.paying = false;
       this.cart = [];
+      this.tableId = void 0;
+      this.tableLabel = "";
+      this.slotEls.forEach((el) => el.dispatchEvent(new CustomEvent("erp:order-context-reset", { bubbles: false })));
       if (saleId) this.docSaleId = saleId;
     } catch (e6) {
       this.error = e6 instanceof Error ? e6.message : "Error al cobrar";
@@ -2809,7 +2862,10 @@ var ErpPosTouch = class extends i3 {
       </div>
 
       <div class="cart">
-        <h3>Venta</h3>
+        <h3>Venta${this.tableLabel ? b2`<span class="table-tag">${this.tableLabel}</span>` : A}</h3>
+        <!-- Slot de contexto de pedido (ADR-0043): aquí monta el shell el WC del proveedor (p. ej.
+             el selector de mesas del módulo tables). Vacío si no hay módulo que rellene el slot. -->
+        <div class="order-slot"></div>
         <div class="lines">
           ${this.cart.length ? this.cart.map((l3) => b2`<div class="line">
                 <div class="nm">${l3.name}</div>
@@ -2952,9 +3008,15 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "parkedOpen", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "tableId", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "tableLabel", 2);
 define("erp-pos-touch", ErpPosTouch);
 
-// modules/sales/ui/components/erp-pos-desktop/erp-pos-desktop.ts
+// ../modules-workspace/modules/sales/ui/components/erp-pos-desktop/erp-pos-desktop.ts
 function erplora3() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -3328,7 +3390,7 @@ __decorateClass([
 ], ErpPosDesktop.prototype, "scanInput", 2);
 define("erp-pos-desktop", ErpPosDesktop);
 
-// modules/sales/ui/components/erp-pos/erp-pos.ts
+// ../modules-workspace/modules/sales/ui/components/erp-pos/erp-pos.ts
 function erplora4() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -3368,7 +3430,7 @@ __decorateClass([
 ], ErpPos.prototype, "ready", 2);
 define("erp-pos", ErpPos);
 
-// ../module-toolkit/node_modules/lit-html/directive.js
+// node_modules/lit-html/directive.js
 var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e5 = (t5) => (...e6) => ({ _$litDirective$: t5, values: e6 });
 var i4 = class {
@@ -3388,7 +3450,7 @@ var i4 = class {
   }
 };
 
-// ../module-toolkit/node_modules/lit-html/directive-helpers.js
+// node_modules/lit-html/directive-helpers.js
 var { I: t4 } = j;
 var i5 = (o7) => o7;
 var s4 = () => document.createComment("");
@@ -3421,7 +3483,7 @@ var h3 = (o7) => {
   o7._$AR(), o7._$AA.remove();
 };
 
-// ../module-toolkit/node_modules/lit-html/directives/repeat.js
+// node_modules/lit-html/directives/repeat.js
 var u4 = (e6, s5, t5) => {
   const r6 = /* @__PURE__ */ new Map();
   for (let l3 = s5; l3 <= t5; l3++) r6.set(e6[l3], l3);
@@ -3474,7 +3536,7 @@ var c4 = e5(class extends i4 {
   }
 });
 
-// ../module-toolkit/node_modules/lit-html/directives/style-map.js
+// node_modules/lit-html/directives/style-map.js
 var n5 = "important";
 var i6 = " !" + n5;
 var o6 = e5(class extends i4 {
@@ -4888,7 +4950,7 @@ function createListController(client, queryName, onChange = () => {
   return new ListController(client, queryName, onChange, opts);
 }
 
-// modules/sales/ui/components/erp-sales-list/erp-sales-list.ts
+// ../modules-workspace/modules/sales/ui/components/erp-sales-list/erp-sales-list.ts
 function erplora5() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -5020,7 +5082,7 @@ __decorateClass([
 ], ErpSalesList.prototype, "docSaleId", 2);
 define("erp-sales-list", ErpSalesList);
 
-// modules/sales/ui/components/erp-sales-settings/erp-sales-settings.ts
+// ../modules-workspace/modules/sales/ui/components/erp-sales-settings/erp-sales-settings.ts
 var DEFAULTS = {
   allow_cash: 1,
   allow_card: 1,

@@ -41,7 +41,9 @@ export class ErpPosTouch extends LitElement {
     .tile .n { font-weight:600; font-size:.92rem; line-height:1.2; }
     .tile .p { font-weight:700; color:var(--ion-color-primary,#0091ce); margin-top:.4rem; }
     .cart { display:flex; flex-direction:column; border:1px solid var(--ion-border-color,#e0ddd4); border-radius:14px; padding:.7rem; }
-    .cart h3 { margin:0 0 .5rem; font-size:1rem; }
+    .cart h3 { margin:0 0 .5rem; font-size:1rem; display:flex; align-items:center; gap:.5rem; }
+    .table-tag { font-size:.75rem; font-weight:700; color:#fff; background:var(--ion-color-primary,#0091ce); border-radius:999px; padding:.15rem .55rem; }
+    .order-slot:not(:empty) { margin-bottom:.5rem; }
     .lines { flex:1; overflow:auto; display:flex; flex-direction:column; gap:.4rem; }
     .line { display:grid; grid-template-columns: 1fr auto; gap:.2rem .5rem; align-items:center; border-bottom:1px solid var(--ion-border-color,#eee); padding-bottom:.4rem; }
     .line .nm { font-size:.9rem; }
@@ -93,9 +95,23 @@ export class ErpPosTouch extends LitElement {
   @state() private docSaleId?: string;
   @state() private parked: ParkedTicket[] = [];
   @state() private parkedOpen = false;
+  // Contexto de pedido aportado por un slot filler (ADR-0043), p. ej. la mesa elegida en el
+  // selector del módulo `tables` montado en `sales.pos.order_context`. El POS no conoce a `tables`:
+  // recibe `{table_id,label}` por el evento `erp:order-context` y lo adjunta a la venta.
+  @state() private tableId?: string;
+  @state() private tableLabel = '';
 
   private cartRestored = false;
   private saveTimer?: ReturnType<typeof setTimeout>;
+  /** Fillers resueltos del slot (undefined = aún sin resolver; [] = slot vacío). */
+  private slotFillersResolved?: { component: string }[];
+  /** Instancias de los WC del slot, creadas UNA vez y re-enganchadas si el contenedor se recrea. */
+  private slotEls: HTMLElement[] = [];
+  private readonly onOrderContext = (e: Event) => {
+    const d = (e as CustomEvent<{ table_id: string | null; label?: string }>).detail ?? { table_id: null };
+    this.tableId = d.table_id ?? undefined;
+    this.tableLabel = d.label ?? '';
+  };
 
   async connectedCallback() {
     super.connectedCallback();
@@ -115,6 +131,9 @@ export class ErpPosTouch extends LitElement {
       this.parked = parked;
       if (savedCart.length) this.cart = savedCart;
       await this.updateComplete;
+      this.addEventListener('erp:order-context', this.onOrderContext);
+      await this.resolveOrderSlot();
+      this.ensureOrderSlotMounted();
     } catch (e) {
       this.error = e instanceof Error ? e.message : 'Error cargando el POS';
     } finally {
@@ -124,6 +143,7 @@ export class ErpPosTouch extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    this.removeEventListener('erp:order-context', this.onOrderContext);
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = undefined;
@@ -131,8 +151,42 @@ export class ErpPosTouch extends LitElement {
     }
   }
 
-  /** Persiste el carrito (debounced) cada vez que cambia, una vez restaurado el guardado. */
+  /**
+   * Resuelve (una vez) los slot fillers de `sales.pos.order_context` (ADR-0043) y crea sus
+   * instancias. El POS no conoce al proveedor (p. ej. `tables`): pregunta al cliente SDK qué Web
+   * Components rellenan el slot y carga su ESM. Las instancias se crean aquí y se re-enganchan en
+   * `ensureOrderSlotMounted` — así sobreviven a que el carrito cambie de layout (panel ↔ overlay).
+   */
+  private async resolveOrderSlot() {
+    if (this.slotFillersResolved) return;
+    const sdk = (globalThis as { erplora?: { loadSlot?: (s: string) => Promise<{ component: string }[]> } }).erplora;
+    if (!sdk?.loadSlot) { this.slotFillersResolved = []; return; }
+    try {
+      this.slotFillersResolved = await sdk.loadSlot('sales.pos.order_context');
+    } catch {
+      this.slotFillersResolved = []; // slot vacío o ESM no disponible → el POS funciona igual
+    }
+    this.slotEls = this.slotFillersResolved.map((f) => document.createElement(f.component) as HTMLElement);
+  }
+
+  /**
+   * (Re)engancha los fillers en el `.order-slot` ACTUAL. Idempotente y barato: si el contenedor ya
+   * tiene los hijos, no hace nada. Se llama tras resolver y en CADA `updated()`, para que el slot
+   * sobreviva a que el carrito se re-renderice o pase a un overlay móvil (el contenedor se destruye
+   * y recrea). Reusa las MISMAS instancias → conserva el estado del filler (mesa elegida) entre
+   * aperturas/cierres del overlay. Contrato con cualquier rediseño del carrito: basta con que el
+   * markup conserve un `<div class="order-slot">` en la zona de venta.
+   */
+  private ensureOrderSlotMounted() {
+    const host = this.renderRoot.querySelector('.order-slot') as HTMLElement | null;
+    if (!host || !this.slotEls.length) return;
+    if (host.firstElementChild) return; // ya montado en este contenedor
+    this.slotEls.forEach((el) => host.appendChild(el));
+  }
+
+  /** Persiste el carrito (debounced) y re-engancha el slot tras cada render (layout responsive). */
   protected updated(changed: Map<PropertyKey, unknown>) {
+    this.ensureOrderSlotMounted();
     if (!changed.has('cart') || !this.cartRestored) return;
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
@@ -206,6 +260,7 @@ export class ErpPosTouch extends LitElement {
         amount_tendered: this.tenderedNum || this.total,
         channel: 'pos',
         source_module: 'pos',
+        table_id: this.tableId ?? null,
       });
       // El handler WASM no devuelve el id → tomamos la venta más reciente.
       const recent = rows<{ id: string }>(await erplora().query('sales.list', { page_size: 1, sort: 'created_at', dir: 'desc' }));
@@ -215,6 +270,10 @@ export class ErpPosTouch extends LitElement {
       }
       this.paying = false;
       this.cart = [];
+      // Libera el contexto de pedido (mesa) y avisa al filler para que limpie su selección.
+      this.tableId = undefined;
+      this.tableLabel = '';
+      this.slotEls.forEach((el) => el.dispatchEvent(new CustomEvent('erp:order-context-reset', { bubbles: false })));
       if (saleId) this.docSaleId = saleId;
     } catch (e) {
       this.error = e instanceof Error ? e.message : 'Error al cobrar';
@@ -244,7 +303,10 @@ export class ErpPosTouch extends LitElement {
       </div>
 
       <div class="cart">
-        <h3>Venta</h3>
+        <h3>Venta${this.tableLabel ? html`<span class="table-tag">${this.tableLabel}</span>` : nothing}</h3>
+        <!-- Slot de contexto de pedido (ADR-0043): aquí monta el shell el WC del proveedor (p. ej.
+             el selector de mesas del módulo tables). Vacío si no hay módulo que rellene el slot. -->
+        <div class="order-slot"></div>
         <div class="lines">
           ${this.cart.length
             ? this.cart.map((l) => html`<div class="line">

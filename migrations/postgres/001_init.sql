@@ -5,7 +5,7 @@
 -- Tipos: subconjunto portable "ERPlora SQL" (ADR-0007):
 --   * ids/refs → TEXT (UUIDs del runtime como texto);
 --   * flags 0/1 → INTEGER (los commands bindean 0/1; Postgres no castea entero→bool);
---   * importes → NUMERIC;
+--   * importes → INTEGER en céntimos (ADR-0007; shim → BIGINT); tasas %/cantidades → REAL;
 --   * FECHAS → TEXT ISO-8601 (NO TIMESTAMPTZ): el motor de sync (ADR-0031) compara
 --     updated_at como string lexicográfico; timestamptz rompería el LWW entre dialectos.
 
@@ -61,16 +61,16 @@ CREATE TABLE IF NOT EXISTS sales_sale (
     hub_id              TEXT NOT NULL,
     sale_number         TEXT NOT NULL,
     status              TEXT NOT NULL DEFAULT 'completed',  -- draft|pending|completed|voided|refunded
-    subtotal            NUMERIC NOT NULL DEFAULT 0,
-    tax_amount          NUMERIC NOT NULL DEFAULT 0,
-    tax_breakdown       TEXT NOT NULL DEFAULT '{}',
-    discount_amount     NUMERIC NOT NULL DEFAULT 0,
-    discount_percent    NUMERIC NOT NULL DEFAULT 0,
-    total               NUMERIC NOT NULL DEFAULT 0,
+    subtotal            INTEGER NOT NULL DEFAULT 0,  -- céntimos (shim → BIGINT en Postgres)
+    tax_amount          INTEGER NOT NULL DEFAULT 0,  -- céntimos
+    tax_breakdown       TEXT NOT NULL DEFAULT '{}',  -- {rate: {base,tax}} en céntimos
+    discount_amount     INTEGER NOT NULL DEFAULT 0,  -- céntimos
+    discount_percent    REAL NOT NULL DEFAULT 0,     -- tasa % (no es dinero)
+    total               INTEGER NOT NULL DEFAULT 0,  -- céntimos
     payment_method_id   TEXT,
     payment_method_name TEXT NOT NULL DEFAULT '',
-    amount_tendered     NUMERIC NOT NULL DEFAULT 0,
-    change_due          NUMERIC NOT NULL DEFAULT 0,
+    amount_tendered     INTEGER NOT NULL DEFAULT 0,  -- céntimos
+    change_due          INTEGER NOT NULL DEFAULT 0,  -- céntimos
     customer_id         TEXT,
     customer_name       TEXT NOT NULL DEFAULT '',
     employee_id         TEXT,
@@ -95,14 +95,14 @@ CREATE TABLE IF NOT EXISTS sales_sale_item (
     product_name     TEXT NOT NULL,
     product_sku      TEXT NOT NULL DEFAULT '',
     is_service       INTEGER NOT NULL DEFAULT 0,
-    quantity         NUMERIC NOT NULL DEFAULT 1,
-    unit_price       NUMERIC NOT NULL DEFAULT 0,
-    discount_percent NUMERIC NOT NULL DEFAULT 0,
-    tax_rate         NUMERIC NOT NULL DEFAULT 0,
+    quantity         REAL NOT NULL DEFAULT 1,        -- cantidad fraccionable (no es dinero)
+    unit_price       INTEGER NOT NULL DEFAULT 0,     -- céntimos
+    discount_percent REAL NOT NULL DEFAULT 0,        -- tasa % (no es dinero)
+    tax_rate         REAL NOT NULL DEFAULT 0,         -- tasa % (no es dinero)
     tax_class_name   TEXT NOT NULL DEFAULT '',
-    net_amount       NUMERIC NOT NULL DEFAULT 0,
-    tax_amount       NUMERIC NOT NULL DEFAULT 0,
-    line_total       NUMERIC NOT NULL DEFAULT 0,
+    net_amount       INTEGER NOT NULL DEFAULT 0,     -- céntimos
+    tax_amount       INTEGER NOT NULL DEFAULT 0,     -- céntimos
+    line_total       INTEGER NOT NULL DEFAULT 0,     -- céntimos
     modifiers        TEXT NOT NULL DEFAULT '{}',
     notes            TEXT NOT NULL DEFAULT '',
     created_at       TEXT,
