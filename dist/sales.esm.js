@@ -9,7 +9,7 @@ var __decorateClass = (decorators, target, key, kind) => {
   return result;
 };
 
-// node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
+// node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
 var ElementInternalsShim = class ElementInternals {
   get shadowRoot() {
     return this.__host.__shadowRoot;
@@ -88,7 +88,7 @@ var ElementInternalsShim = class ElementInternals {
   }
 };
 
-// node_modules/@lit-labs/ssr-dom-shim/lib/events.js
+// node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
 var __classPrivateFieldSet = function(receiver, state, value, kind, f3) {
   if (kind === "m") throw new TypeError("Private method is not writable");
   if (kind === "a" && !f3) throw new TypeError("Private accessor was defined without a setter");
@@ -246,7 +246,7 @@ Object.defineProperties(CustomEventShim.prototype, {
 var EventShimWithRealType = EventShim;
 var CustomEventShimWithRealType = CustomEventShim;
 
-// node_modules/@lit-labs/ssr-dom-shim/lib/css.js
+// node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
 var _a2;
 var CSSRuleShim = (_a2 = class CSSRule {
   constructor() {
@@ -277,7 +277,7 @@ var CSSRuleShim = (_a2 = class CSSRule {
   }
 }, _a2.STYLE_RULE = 1, _a2.CHARSET_RULE = 2, _a2.IMPORT_RULE = 3, _a2.MEDIA_RULE = 4, _a2.FONT_FACE_RULE = 5, _a2.PAGE_RULE = 6, _a2.NAMESPACE_RULE = 10, _a2.KEYFRAMES_RULE = 7, _a2.KEYFRAME_RULE = 8, _a2.SUPPORTS_RULE = 12, _a2.COUNTER_STYLE_RULE = 11, _a2.FONT_FEATURE_VALUES_RULE = 14, _a2.MARGIN_RULE = 9, _a2);
 
-// node_modules/@lit-labs/ssr-dom-shim/index.js
+// node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/index.js
 globalThis.Event ??= EventShimWithRealType;
 globalThis.CustomEvent ??= CustomEventShimWithRealType;
 var constructionToken = Symbol();
@@ -674,7 +674,7 @@ var CustomElementRegistryShimWithRealType = CustomElementRegistry;
 var customElements2 = new CustomElementRegistryShimWithRealType();
 var windowShim = new WindowShim(constructionToken);
 
-// node_modules/@lit/reactive-element/node/css-tag.js
+// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/css-tag.js
 var t = globalThis;
 var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
 var s = Symbol();
@@ -719,7 +719,7 @@ var c = e || void 0 === t.CSSStyleSheet ? (t5) => t5 : (t5) => t5 instanceof CSS
   return r(e6);
 })(t5) : t5;
 
-// node_modules/@lit/reactive-element/node/reactive-element.js
+// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/reactive-element.js
 var { is: h, defineProperty: r2, getOwnPropertyDescriptor: o2, getOwnPropertyNames: n2, getOwnPropertySymbols: a, getPrototypeOf: c2 } = Object;
 var l = globalThis;
 l.customElements ??= customElements2;
@@ -942,7 +942,7 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
 };
 g.elementStyles = [], g.shadowRootOptions = { mode: "open" }, g[f("elementProperties")] = /* @__PURE__ */ new Map(), g[f("finalized")] = /* @__PURE__ */ new Map(), u?.({ ReactiveElement: g }), (l.reactiveElementVersions ??= []).push("2.1.2");
 
-// node_modules/lit-html/lit-html.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
 var t2 = globalThis;
 var i2 = (t5) => t5;
 var s2 = t2.trustedTypes;
@@ -1197,7 +1197,7 @@ var D = (t5, i7, s5) => {
   return h4._$AI(t5), h4;
 };
 
-// node_modules/lit-element/lit-element.js
+// node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
 var s3 = globalThis;
 var i3 = class extends g {
   constructor() {
@@ -1226,7 +1226,7 @@ var o4 = s3.litElementPolyfillSupport;
 o4?.({ LitElement: i3 });
 (s3.litElementVersions ??= []).push("4.2.2");
 
-// node_modules/@lit/reactive-element/node/decorators/property.js
+// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
 var r4 = (t5 = o5, e6, r6) => {
   const { kind: n6, metadata: i7 } = r6;
@@ -1256,15 +1256,15 @@ function n4(t5) {
   })(t5, e6, o7);
 }
 
-// node_modules/@lit/reactive-element/node/decorators/state.js
+// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/state.js
 function r5(r6) {
   return n4({ ...r6, state: true, attribute: false });
 }
 
-// node_modules/@lit/reactive-element/node/decorators/base.js
+// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/base.js
 var e3 = (e6, t5, c5) => (c5.configurable = true, c5.enumerable = true, Reflect.decorate && "object" != typeof t5 && Object.defineProperty(e6, t5, c5), c5);
 
-// node_modules/@lit/reactive-element/node/decorators/query.js
+// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/query.js
 function e4(e6, r6) {
   return (n6, s5, i7) => {
     const o7 = (t5) => t5.renderRoot?.querySelector(e6) ?? null;
@@ -1288,14 +1288,14 @@ function e4(e6, r6) {
   };
 }
 
-// ../outfitkit/dist/define.js
+// node_modules/.pnpm/@outfitkit+core@file+..+outfitkit/node_modules/@outfitkit/core/dist/define.js
 function define(tag, ctor) {
   if (typeof customElements !== "undefined" && !customElements.get(tag)) {
     customElements.define(tag, ctor);
   }
 }
 
-// ../outfitkit/dist/ok-qr.js
+// node_modules/.pnpm/@outfitkit+core@file+..+outfitkit/node_modules/@outfitkit/core/dist/ok-qr.js
 var __defProp2 = Object.defineProperty;
 var __decorateClass2 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -1943,7 +1943,7 @@ __decorateClass2([
 ], OkQr.prototype, "margin");
 define("ok-qr", OkQr);
 
-// ../outfitkit/dist/ok-receipt.js
+// node_modules/.pnpm/@outfitkit+core@file+..+outfitkit/node_modules/@outfitkit/core/dist/ok-receipt.js
 var __defProp3 = Object.defineProperty;
 var __decorateClass3 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2121,7 +2121,7 @@ __decorateClass3([
 ], OkReceipt.prototype, "labels");
 define("ok-receipt", OkReceipt);
 
-// ../outfitkit/dist/ok-invoice.js
+// node_modules/.pnpm/@outfitkit+core@file+..+outfitkit/node_modules/@outfitkit/core/dist/ok-invoice.js
 var __defProp4 = Object.defineProperty;
 var __decorateClass4 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2345,7 +2345,7 @@ __decorateClass4([
 ], OkInvoice.prototype, "labels");
 define("ok-invoice", OkInvoice);
 
-// ../modules-workspace/modules/sales/ui/lib/document-mappers.ts
+// modules/sales/ui/lib/document-mappers.ts
 function parseTaxes(tax_breakdown) {
   if (!tax_breakdown) return [];
   let obj;
@@ -2417,7 +2417,7 @@ function saleToInvoice(sale, lines, settings = {}) {
   };
 }
 
-// ../modules-workspace/modules/sales/ui/components/erp-sales-document/erp-sales-document.ts
+// modules/sales/ui/components/erp-sales-document/erp-sales-document.ts
 function erplora() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -2507,7 +2507,215 @@ __decorateClass([
 ], ErpSalesDocument.prototype, "error", 2);
 define("erp-sales-document", ErpSalesDocument);
 
-// ../modules-workspace/modules/sales/ui/lib/pos-cart.ts
+// node_modules/.pnpm/@outfitkit+core@file+..+outfitkit/node_modules/@outfitkit/core/dist/ok-qty-stepper.js
+var __defProp5 = Object.defineProperty;
+var __decorateClass5 = (decorators, target, key, kind) => {
+  var result = void 0;
+  for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
+    if (decorator = decorators[i7])
+      result = decorator(target, key, result) || result;
+  if (result) __defProp5(target, key, result);
+  return result;
+};
+var DEFAULT_LABELS3 = {
+  decrement: "Decrease",
+  increment: "Increase"
+};
+var OkQtyStepper = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.value = 0;
+    this.min = 0;
+    this.step = 1;
+    this.disabled = false;
+    this.labels = {};
+  }
+  static {
+    this.styles = i`
+    :host {
+      /* Vars overridable (estilo Ionic), default = cadena --ok-* -> --ion-* -> hex */
+      --color: var(--ok-text, var(--ion-text-color, #1c1b17));
+      --field-bg: var(--ok-surface, var(--ion-background-color, #ffffff));
+      --border-color: var(--ok-border, rgba(var(--ion-text-color-rgb, 28, 27, 23), 0.18));
+      --border-radius: var(--ok-radius, 8px);
+      --field-width: var(--ok-qty-field-width, 3.2rem);
+      --font: var(--ok-font, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif);
+
+      /* Inline: ocupa solo lo necesario, alineado con texto circundante. */
+      display: inline-flex;
+      vertical-align: middle;
+      color: var(--color);
+      font-family: var(--font);
+    }
+    :host([disabled]) {
+      opacity: 0.5;
+      pointer-events: none;
+    }
+
+    .wrap {
+      display: inline-flex;
+      align-items: stretch;
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius);
+      overflow: hidden;
+      background: var(--field-bg);
+    }
+
+    /* Botones -/+ : ion-button compactos y sin margen, encajados en la caja. */
+    ion-button {
+      --padding-start: 0;
+      --padding-end: 0;
+      --border-radius: 0;
+      --box-shadow: none;
+      margin: 0;
+      height: auto;
+      min-width: 2.1rem;
+    }
+    ion-button ion-icon {
+      font-size: 1.1rem;
+    }
+
+    /* Campo central editable: numérico, centrado, sin spinners nativos. */
+    .field {
+      width: var(--field-width);
+      min-width: 0;
+      text-align: center;
+      border: 0;
+      border-left: 1px solid var(--border-color);
+      border-right: 1px solid var(--border-color);
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      font-size: 0.95rem;
+      padding: 0.25rem 0.2rem;
+      -moz-appearance: textfield;
+      appearance: textfield;
+    }
+    .field::-webkit-outer-spin-button,
+    .field::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    .field:focus {
+      outline: none;
+    }
+    .field:disabled {
+      background: transparent;
+    }
+  `;
+  }
+  // Textos efectivos: defaults en inglés + overrides del consumidor.
+  get t() {
+    return { ...DEFAULT_LABELS3, ...this.labels };
+  }
+  // Recorta `n` al rango [min, max] respetando los límites definidos.
+  clamp(n6) {
+    let v3 = n6;
+    if (typeof this.min === "number" && v3 < this.min) v3 = this.min;
+    if (typeof this.max === "number" && v3 > this.max) v3 = this.max;
+    return v3;
+  }
+  // Aplica un nuevo valor (con clamp) y emite `ok-change` si cambió.
+  commit(next) {
+    const clamped = this.clamp(next);
+    if (clamped === this.value) {
+      this.requestUpdate();
+      return;
+    }
+    this.value = clamped;
+    this.dispatchEvent(
+      new CustomEvent("ok-change", {
+        detail: { value: clamped },
+        bubbles: true,
+        composed: true
+      })
+    );
+  }
+  decrement() {
+    if (this.disabled) return;
+    this.commit(this.value - this.step);
+  }
+  increment() {
+    if (this.disabled) return;
+    this.commit(this.value + this.step);
+  }
+  // Valida la edición manual: parsea, ignora no-números y hace clamp.
+  onInput(e6) {
+    const raw = e6.target.value;
+    const parsed = Number(raw);
+    if (raw === "" || Number.isNaN(parsed)) return;
+    this.commit(parsed);
+  }
+  // Al salir del campo, normaliza el texto al valor válido actual.
+  onBlur(e6) {
+    const input = e6.target;
+    const parsed = Number(input.value);
+    if (input.value === "" || Number.isNaN(parsed)) {
+      input.value = String(this.value);
+    } else {
+      this.commit(parsed);
+      input.value = String(this.value);
+    }
+  }
+  render() {
+    const atMin = typeof this.min === "number" && this.value <= this.min;
+    const atMax = typeof this.max === "number" && this.value >= this.max;
+    return b2`<div class="wrap">
+      <ion-button
+        fill="clear"
+        size="small"
+        aria-label=${this.t.decrement}
+        ?disabled=${this.disabled || atMin}
+        @click=${() => this.decrement()}
+      >
+        <ion-icon slot="icon-only" name="remove"></ion-icon>
+      </ion-button>
+      <input
+        class="field"
+        type="number"
+        inputmode="numeric"
+        .value=${String(this.value)}
+        min=${this.min}
+        max=${this.max ?? ""}
+        step=${this.step}
+        ?disabled=${this.disabled}
+        @input=${(e6) => this.onInput(e6)}
+        @change=${(e6) => this.onBlur(e6)}
+        @blur=${(e6) => this.onBlur(e6)}
+      />
+      <ion-button
+        fill="clear"
+        size="small"
+        aria-label=${this.t.increment}
+        ?disabled=${this.disabled || atMax}
+        @click=${() => this.increment()}
+      >
+        <ion-icon slot="icon-only" name="add"></ion-icon>
+      </ion-button>
+    </div>`;
+  }
+};
+__decorateClass5([
+  n4({ type: Number })
+], OkQtyStepper.prototype, "value");
+__decorateClass5([
+  n4({ type: Number })
+], OkQtyStepper.prototype, "min");
+__decorateClass5([
+  n4({ type: Number })
+], OkQtyStepper.prototype, "max");
+__decorateClass5([
+  n4({ type: Number })
+], OkQtyStepper.prototype, "step");
+__decorateClass5([
+  n4({ type: Boolean, reflect: true })
+], OkQtyStepper.prototype, "disabled");
+__decorateClass5([
+  n4({ attribute: false })
+], OkQtyStepper.prototype, "labels");
+define("ok-qty-stepper", OkQtyStepper);
+
+// modules/sales/ui/lib/pos-cart.ts
 function rows(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
@@ -2576,7 +2784,7 @@ async function retrieveParkedTicket(client, ticket) {
   return lines;
 }
 
-// ../modules-workspace/modules/sales/ui/components/erp-pos-touch/erp-pos-touch.ts
+// modules/sales/ui/components/erp-pos-touch/erp-pos-touch.ts
 function erplora2() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -2587,10 +2795,22 @@ function rows2(r6) {
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
   return [];
 }
+function initials(name) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "\xB7";
+}
+function gradient(s5) {
+  let h4 = 0;
+  for (let i7 = 0; i7 < s5.length; i7++) h4 = (h4 * 31 + s5.charCodeAt(i7)) % 360;
+  const h22 = (h4 + 38) % 360;
+  return `linear-gradient(135deg, hsl(${h4} 42% 38%), hsl(${h22} 44% 26%))`;
+}
 var ErpPosTouch = class extends i3 {
   constructor() {
     super(...arguments);
     this.products = [];
+    this.categories = [];
+    this.activeCat = "";
     this.q = "";
     this.cart = [];
     this.methods = [];
@@ -2602,77 +2822,162 @@ var ErpPosTouch = class extends i3 {
     this.error = "";
     this.parked = [];
     this.parkedOpen = false;
+    this.cartOpen = false;
+    this.fullscreen = false;
     this.tableLabel = "";
+    this.customerName = "";
+    this.prodCats = /* @__PURE__ */ new Map();
     this.cartRestored = false;
-    /** Instancias de los WC del slot, creadas UNA vez y re-enganchadas si el contenedor se recrea. */
-    this.slotEls = [];
+    this.slots = [
+      { slot: "sales.pos.order_context", container: ".order-slot", reset: "erp:order-context-reset", els: [] },
+      { slot: "sales.pos.customer_context", container: ".customer-slot", reset: "erp:customer-context-reset", els: [] }
+    ];
     this.onOrderContext = (e6) => {
       const d3 = e6.detail ?? { table_id: null };
       this.tableId = d3.table_id ?? void 0;
       this.tableLabel = d3.label ?? "";
     };
+    this.onCustomerContext = (e6) => {
+      const d3 = e6.detail ?? { customer_id: null };
+      this.customerId = d3.customer_id ?? void 0;
+      this.customerName = d3.customer_name ?? "";
+    };
+    this.onFsChange = () => {
+      this.fullscreen = document.fullscreenElement === this;
+    };
   }
   static {
     this.styles = i`
-    :host { display:block; height:100%; font-family: system-ui, sans-serif; color: var(--ion-text-color,#1c1b18); }
-    .pos { display:grid; grid-template-columns: 1fr 22rem; gap:1rem; height:100%; min-height:30rem; }
-    .catalog { display:flex; flex-direction:column; min-width:0; }
-    .search { margin-bottom:.6rem; }
-    .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr)); gap:.6rem; overflow:auto; align-content:start; }
-    .tile { border:1px solid var(--ion-border-color,#e0ddd4); border-radius:14px; padding:.7rem; cursor:pointer; background:var(--ion-background-color,#fff); text-align:left; min-height:5rem; display:flex; flex-direction:column; justify-content:space-between; transition:transform .05s; }
-    .tile:active { transform:scale(.97); }
-    .tile .n { font-weight:600; font-size:.92rem; line-height:1.2; }
-    .tile .p { font-weight:700; color:var(--ion-color-primary,#0091ce); margin-top:.4rem; }
-    .cart { display:flex; flex-direction:column; border:1px solid var(--ion-border-color,#e0ddd4); border-radius:14px; padding:.7rem; }
-    .cart h3 { margin:0 0 .5rem; font-size:1rem; display:flex; align-items:center; gap:.5rem; }
-    .table-tag { font-size:.75rem; font-weight:700; color:#fff; background:var(--ion-color-primary,#0091ce); border-radius:999px; padding:.15rem .55rem; }
-    .order-slot:not(:empty) { margin-bottom:.5rem; }
-    .lines { flex:1; overflow:auto; display:flex; flex-direction:column; gap:.4rem; }
-    .line { display:grid; grid-template-columns: 1fr auto; gap:.2rem .5rem; align-items:center; border-bottom:1px solid var(--ion-border-color,#eee); padding-bottom:.4rem; }
-    .line .nm { font-size:.9rem; }
-    .line .lt { font-weight:700; white-space:nowrap; }
-    .qty { display:flex; align-items:center; gap:.4rem; }
-    .qbtn { width:1.9rem; height:1.9rem; border-radius:50%; border:1px solid var(--ion-border-color,#d9d6cf); background:var(--ion-background-color,#fff); font-size:1.1rem; cursor:pointer; }
-    .rm { background:none; border:none; color:#d9480f; cursor:pointer; font-size:.8rem; }
-    .total { display:flex; justify-content:space-between; align-items:baseline; margin:.6rem 0; font-size:1rem; }
-    .total b { font-size:1.5rem; }
-    .charge { font-size:1.1rem; padding:1rem; }
-    .empty { color:#8b897f; text-align:center; padding:2rem 0; }
-    /* numpad */
+    /* El COLOR lo pone el tema de Ionic (claro/oscuro según el hub); el POS solo aporta el LAYOUT.
+       Los nombres internos (--bg/--tile/--accent…) se remapean a tokens --ion-* con fallback. */
+    :host {
+      --bg: var(--ion-background-color, #fff);
+      --panel: var(--ion-background-color, #fff);
+      --tile: var(--ion-card-background, var(--ion-background-color, #fff));
+      --tile-hi: var(--ion-color-light, #f2f1ed);
+      --line: var(--ion-border-color, #e6e3db);
+      --tx: var(--ion-text-color, #1c1b18);
+      --mut: var(--ion-color-medium, #8b897f);
+      --accent: var(--ion-color-primary, #0091ce);
+      --accent-2: var(--ion-color-primary-shade, #0081b9);
+      display:block; height:100%; box-sizing:border-box; font-family: system-ui, sans-serif; color:var(--tx);
+    }
+    *, *::before, *::after { box-sizing:border-box; }
+
+    .card { height:100%; display:flex; flex-direction:column; overflow:hidden; background:var(--bg);
+      border:1px solid var(--line); border-radius:16px; }
+    .body { position:relative; flex:1; min-height:0; display:grid; grid-template-columns: 1fr 23rem; }
+
+    /* ── Catálogo ── */
+    .catalog { display:flex; flex-direction:column; min-width:0; padding:.8rem; }
+    .catbar { display:flex; align-items:center; gap:.4rem; margin-bottom:.7rem; }
+    .arrow { flex:none; width:2.1rem; height:2.1rem; border-radius:10px; border:1px solid var(--line);
+      background:var(--tile); color:var(--mut); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
+    .arrow:hover { background:var(--tile-hi); color:var(--tx); }
+    .arrow ion-icon { font-size:1.1rem; }
+    .seg { flex:1; min-width:0; display:flex; gap:.55rem; overflow-x:auto; scroll-behavior:smooth; padding:.15rem; scrollbar-width:none; }
+    .seg::-webkit-scrollbar { display:none; }
+    .catcard { flex:none; width:9.5rem; height:4.4rem; border-radius:12px; overflow:hidden; position:relative; cursor:pointer;
+      border:2px solid transparent; background:var(--tile); padding:0; text-align:left; color:#fff; }
+    .catcard .cc-img { position:absolute; inset:0; background-size:cover; background-position:center; }
+    .catcard .cc-img::after { content:''; position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,.15), rgba(0,0,0,.72)); }
+    .catcard .cc-meta { position:absolute; left:.6rem; right:.6rem; bottom:.45rem; }
+    .catcard .cc-n { font-weight:700; font-size:.92rem; line-height:1.1; }
+    .catcard .cc-c { font-size:.72rem; color:#d8d6cf; margin-top:.1rem; }
+    .catcard[aria-pressed=true] { border-color:var(--accent); }
+
+    .search { margin-bottom:.7rem; --background:var(--tile); --color:var(--tx); --placeholder-color:var(--mut); --icon-color:var(--mut); --border-radius:12px; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap:.7rem; overflow:auto; align-content:start; padding-bottom:.3rem; }
+    ion-card.tile { margin:0; border-radius:14px; box-shadow:none; border:1px solid var(--line); background:var(--tile);
+      overflow:hidden; display:flex; flex-direction:column; transition:border-color .12s, transform .05s; }
+    ion-card.tile:hover { border-color:var(--accent); }
+    ion-card.tile:active { transform:scale(.98); }
+    .thumb { height:5.6rem; background-size:cover; background-position:center; display:flex; align-items:center; justify-content:center;
+      font-weight:800; font-size:1.4rem; color:rgba(255,255,255,.85); }
+    .thumb img { width:100%; height:100%; object-fit:cover; }
+    .tinfo { padding:.5rem .6rem .65rem; }
+    .tile .n { font-weight:600; font-size:.9rem; line-height:1.2; color:var(--tx); }
+    .tile .p { font-weight:800; color:var(--accent); margin-top:.25rem; }
+
+    /* ── Carrito ── */
+    .cart { position:relative; display:flex; flex-direction:column; min-height:0; background:var(--panel); border-left:1px solid var(--line); }
+    .cart ion-header ion-toolbar { --background:var(--panel); --color:var(--tx); --border-color:var(--line); }
+    .cart ion-title { font-size:1rem; }
+    .cart-ctx { display:flex; gap:.4rem; padding:.5rem .6rem; border-bottom:1px solid var(--line); }
+    .cart-ctx .order-slot, .cart-ctx .customer-slot { flex:1; min-width:0; }
+    .cart-ctx .order-slot:empty, .cart-ctx .customer-slot:empty { display:none; }
+    .cart-ctx:has(.order-slot:empty):has(.customer-slot:empty) { display:none; }
+    ion-list.lines { flex:1; overflow:auto; min-height:6rem; padding:0; background:transparent; }
+    ion-list.lines ion-item { --background:transparent; --color:var(--tx); --border-color:var(--line); --padding-start:.7rem; --inner-padding-end:.5rem; }
+    ion-list.lines ion-item h3 { font-weight:600; color:var(--tx); }
+    ion-list.lines ion-item p { color:var(--mut); }
+    .lineend { display:flex; flex-direction:column; align-items:flex-end; gap:.3rem; }
+    .lineend .lt { font-weight:700; white-space:nowrap; }
+    ok-qty-stepper { --ok-qty-field-width:2.3rem; --ok-surface:var(--tile); --ok-text:var(--tx); --ok-border:var(--line); }
+    .empty { color:var(--mut); text-align:center; padding:2.5rem 1rem; }
+    .cart-foot { padding:.75rem; border-top:1px solid var(--line); background:var(--panel); }
+    .total { display:flex; justify-content:space-between; align-items:baseline; margin:.1rem 0 .65rem; font-size:1rem; color:var(--mut); }
+    .total b { font-size:1.7rem; color:var(--tx); }
+    .charge { font-size:1.05rem; font-weight:700; }
+
+    /* desplegable tickets aparcados */
+    .pdrop-back { position:absolute; inset:0; z-index:40; }
+    .pdrop { position:absolute; top:2.9rem; right:.5rem; z-index:41; width:min(20rem,90%); background:var(--tile);
+      border:1px solid var(--line); border-radius:12px; box-shadow:0 12px 32px rgba(0,0,0,.5); padding:.5rem; max-height:60%; overflow:auto; }
+    .pdrop .hint { color:var(--mut); font-size:.82rem; margin:.3rem .2rem .5rem; }
+    .pitem { display:flex; justify-content:space-between; align-items:center; gap:.6rem; border:1px solid var(--line); border-radius:10px; padding:.45rem .6rem; margin-bottom:.35rem; }
+    .pn { font-weight:700; font-size:.9rem; }
+    .pm { color:var(--mut); font-size:.78rem; }
+    .badge-num { font-size:.62rem; min-width:1rem; height:1rem; padding:0 .2rem; border-radius:999px; background:var(--accent); color:#fff; display:inline-flex; align-items:center; justify-content:center; position:absolute; top:.2rem; right:.2rem; }
+
+    /* botón flotante de carrito (solo móvil) */
+    .fab { display:none; position:absolute; right:1rem; bottom:1rem; z-index:50; width:3.6rem; height:3.6rem; border-radius:50%;
+      border:none; background:var(--accent); color:#fff; cursor:pointer; box-shadow:0 10px 26px rgba(0,0,0,.45); align-items:center; justify-content:center; }
+    .fab ion-icon { font-size:1.6rem; }
+    .fab .badge { position:absolute; top:-.2rem; right:-.2rem; min-width:1.3rem; height:1.3rem; padding:0 .25rem; border-radius:999px;
+      background:#fff; color:var(--accent); font-size:.72rem; font-weight:800; display:inline-flex; align-items:center; justify-content:center; }
+    .cart-close { display:none; }
+
+    /* cobro / numpad (sheet oscuro) */
     .pay { display:flex; flex-direction:column; gap:.8rem; }
     .methods { display:flex; gap:.4rem; flex-wrap:wrap; }
-    .chip { padding:.5rem .9rem; border-radius:999px; border:1px solid var(--ion-border-color,#d9d6cf); background:var(--ion-background-color,#fff); cursor:pointer; }
-    .chip[aria-pressed=true] { background:var(--ion-color-primary,#0091ce); color:#fff; border-color:transparent; }
+    .chip { padding:.5rem .9rem; border-radius:999px; border:1px solid var(--line); background:var(--tile); color:var(--tx); cursor:pointer; }
+    .chip[aria-pressed=true] { background:var(--accent); color:#fff; border-color:transparent; }
     .amt { display:flex; justify-content:space-between; font-size:1.1rem; }
     .amt .v { font-weight:700; }
-    .change { color:#2f9e44; }
+    .change { color:var(--ion-color-success, #2f9e44); }
     .numpad { display:grid; grid-template-columns: repeat(3, 1fr); gap:.5rem; }
-    .numpad button { font-size:1.3rem; padding:1rem; border-radius:12px; border:1px solid var(--ion-border-color,#d9d6cf); background:var(--ion-background-color,#fff); cursor:pointer; }
-    /* Overlay de cobro propio (en el shadow → conserva estos estilos; ion-modal los perdería). */
-    .scrim { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:50; }
-    .sheet { background:var(--ion-background-color,#fff); border-radius:16px; padding:1rem; width:min(92vw,24rem); max-height:90vh; overflow:auto; box-shadow:0 12px 48px rgba(0,0,0,.35); }
+    .numpad button { font-size:1.3rem; padding:1rem; border-radius:12px; border:1px solid var(--line); background:var(--tile); color:var(--tx); cursor:pointer; }
+    .scrim { position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; z-index:70; }
+    .sheet { background:var(--panel); color:var(--tx); border:1px solid var(--line); border-radius:16px; padding:1rem; width:min(92vw,24rem); max-height:90vh; overflow:auto; box-shadow:0 12px 48px rgba(0,0,0,.6); }
     .sheet-h { display:flex; justify-content:space-between; align-items:center; margin-bottom:.8rem; }
     .sheet-h .t { font-size:1.2rem; font-weight:700; }
-    .x { background:none; border:none; font-size:1.3rem; cursor:pointer; color:#8b897f; }
-    /* tickets aparcados */
-    .parkrow { display:flex; gap:.4rem; margin-top:.4rem; }
-    .parkrow ion-button { flex:1; }
-    .plist { display:flex; flex-direction:column; gap:.4rem; max-height:50vh; overflow:auto; }
-    .pitem { display:flex; justify-content:space-between; align-items:center; gap:.6rem; border:1px solid var(--ion-border-color,#e0ddd4); border-radius:10px; padding:.5rem .7rem; }
-    .pn { font-weight:700; }
-    .pm { color:#8b897f; }
-    .hint { color:#8b897f; font-size:.85rem; margin:.2rem 0 .6rem; }
+    .x { background:none; border:none; font-size:1.3rem; cursor:pointer; color:var(--mut); }
+
+    @media (max-width: 820px) {
+      .body { grid-template-columns: 1fr; }
+      .cart { position:absolute; top:0; right:0; bottom:0; width:min(92%,26rem); z-index:60;
+        box-shadow:-8px 0 32px rgba(0,0,0,.5); transform:translateX(100%); transition:transform .25s ease; }
+      .cart[data-open] { transform:translateX(0); }
+      .cart-close { display:inline-flex; }
+      .cart-backdrop[data-open] { display:block; position:absolute; inset:0; background:rgba(0,0,0,.5); z-index:55; }
+      .fab { display:inline-flex; }
+    }
+    .cart-backdrop { display:none; }
   `;
   }
   async connectedCallback() {
     super.connectedCallback();
+    document.addEventListener("fullscreenchange", this.onFsChange);
     try {
-      const [prods, methods, settingsRows, savedCart, parked] = await Promise.all([
+      const [prods, methods, settingsRows, savedCart, parked, cats, prodCats] = await Promise.all([
         erplora2().query("inventory.products.list", { page_size: 200 }).catch(() => []),
         erplora2().query("sales.payment_methods").catch(() => []),
         erplora2().query("sales.settings.get").catch(() => []),
         loadActiveCart(erplora2()),
-        listParkedTickets(erplora2())
+        listParkedTickets(erplora2()),
+        erplora2().query("inventory.categories.list", { page_size: 100, sort: "name", dir: "asc" }).catch(() => []),
+        erplora2().query("inventory.product_categories", { page_size: 2e3 }).catch(() => [])
       ]);
       this.products = rows2(prods).filter((p4) => p4.is_active !== 0);
       this.methods = rows2(methods);
@@ -2680,11 +2985,17 @@ var ErpPosTouch = class extends i3 {
       this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
       this.payMethod = this.methods[0];
       this.parked = parked;
+      this.categories = rows2(cats).filter((c5) => c5.name);
+      for (const pc of rows2(prodCats)) {
+        if (!this.prodCats.has(pc.product_id)) this.prodCats.set(pc.product_id, /* @__PURE__ */ new Set());
+        this.prodCats.get(pc.product_id).add(pc.category_id);
+      }
       if (savedCart.length) this.cart = savedCart;
       await this.updateComplete;
       this.addEventListener("erp:order-context", this.onOrderContext);
-      await this.resolveOrderSlot();
-      this.ensureOrderSlotMounted();
+      this.addEventListener("erp:customer-context", this.onCustomerContext);
+      await this.resolveSlots();
+      this.ensureSlotsMounted();
     } catch (e6) {
       this.error = e6 instanceof Error ? e6.message : "Error cargando el POS";
     } finally {
@@ -2693,50 +3004,46 @@ var ErpPosTouch = class extends i3 {
   }
   disconnectedCallback() {
     super.disconnectedCallback();
+    document.removeEventListener("fullscreenchange", this.onFsChange);
     this.removeEventListener("erp:order-context", this.onOrderContext);
+    this.removeEventListener("erp:customer-context", this.onCustomerContext);
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = void 0;
       void persistActiveCart(erplora2(), this.cart);
     }
   }
-  /**
-   * Resuelve (una vez) los slot fillers de `sales.pos.order_context` (ADR-0043) y crea sus
-   * instancias. El POS no conoce al proveedor (p. ej. `tables`): pregunta al cliente SDK qué Web
-   * Components rellenan el slot y carga su ESM. Las instancias se crean aquí y se re-enganchan en
-   * `ensureOrderSlotMounted` — así sobreviven a que el carrito cambie de layout (panel ↔ overlay).
-   */
-  async resolveOrderSlot() {
-    if (this.slotFillersResolved) return;
+  async resolveSlots() {
     const sdk = globalThis.erplora;
-    if (!sdk?.loadSlot) {
-      this.slotFillersResolved = [];
-      return;
+    for (const s5 of this.slots) {
+      if (s5.resolved) continue;
+      if (!sdk?.loadSlot) {
+        s5.resolved = [];
+        continue;
+      }
+      try {
+        s5.resolved = await sdk.loadSlot(s5.slot);
+      } catch {
+        s5.resolved = [];
+      }
+      s5.els = s5.resolved.map((f3) => document.createElement(f3.component));
     }
-    try {
-      this.slotFillersResolved = await sdk.loadSlot("sales.pos.order_context");
-    } catch {
-      this.slotFillersResolved = [];
+  }
+  ensureSlotsMounted() {
+    for (const s5 of this.slots) {
+      const host = this.renderRoot.querySelector(s5.container);
+      if (!host || !s5.els.length) continue;
+      if (host.firstElementChild) continue;
+      s5.els.forEach((el) => host.appendChild(el));
     }
-    this.slotEls = this.slotFillersResolved.map((f3) => document.createElement(f3.component));
   }
-  /**
-   * (Re)engancha los fillers en el `.order-slot` ACTUAL. Idempotente y barato: si el contenedor ya
-   * tiene los hijos, no hace nada. Se llama tras resolver y en CADA `updated()`, para que el slot
-   * sobreviva a que el carrito se re-renderice o pase a un overlay móvil (el contenedor se destruye
-   * y recrea). Reusa las MISMAS instancias → conserva el estado del filler (mesa elegida) entre
-   * aperturas/cierres del overlay. Contrato con cualquier rediseño del carrito: basta con que el
-   * markup conserve un `<div class="order-slot">` en la zona de venta.
-   */
-  ensureOrderSlotMounted() {
-    const host = this.renderRoot.querySelector(".order-slot");
-    if (!host || !this.slotEls.length) return;
-    if (host.firstElementChild) return;
-    this.slotEls.forEach((el) => host.appendChild(el));
+  resetSlotContexts() {
+    for (const s5 of this.slots) {
+      s5.els.forEach((el) => el.dispatchEvent(new CustomEvent(s5.reset, { bubbles: false })));
+    }
   }
-  /** Persiste el carrito (debounced) y re-engancha el slot tras cada render (layout responsive). */
   updated(changed) {
-    this.ensureOrderSlotMounted();
+    this.ensureSlotsMounted();
     if (!changed.has("cart") || !this.cartRestored) return;
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
@@ -2753,10 +3060,27 @@ var ErpPosTouch = class extends i3 {
   get total() {
     return this.cart.reduce((s5, l3) => s5 + l3.price * l3.qty, 0);
   }
+  get itemCount() {
+    return this.cart.reduce((s5, l3) => s5 + l3.qty, 0);
+  }
   get parkingEnabled() {
     return this.settings.enable_parked_tickets !== 0;
   }
-  /** Aparca el carrito actual como ticket y lo deja libre para la siguiente venta. */
+  catCount(id) {
+    const c5 = this.categories.find((x2) => x2.id === id);
+    return c5?.product_count ?? this.products.filter((p4) => this.prodCats.get(p4.id)?.has(id)).length;
+  }
+  scrollCats(dir) {
+    const seg = this.renderRoot.querySelector(".seg");
+    seg?.scrollBy({ left: dir * 220, behavior: "smooth" });
+  }
+  async toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await this.requestFullscreen();
+    } catch {
+    }
+  }
   async park() {
     if (!this.cart.length) return;
     const num = await parkCart(erplora2(), this.cart);
@@ -2765,9 +3089,9 @@ var ErpPosTouch = class extends i3 {
       return;
     }
     this.cart = [];
+    this.parkedOpen = false;
     this.parked = await listParkedTickets(erplora2());
   }
-  /** Recupera un ticket aparcado al carrito (solo con el carrito vacío). */
   async retrieve(t5) {
     if (this.cart.length) return;
     try {
@@ -2782,11 +3106,9 @@ var ErpPosTouch = class extends i3 {
     const ex = this.cart.find((l3) => l3.id === p4.id);
     this.cart = ex ? this.cart.map((l3) => l3.id === p4.id ? { ...l3, qty: l3.qty + 1 } : l3) : [...this.cart, { id: p4.id, name: p4.name, sku: p4.sku, price: Number(p4.price), qty: 1 }];
   }
-  setQty(id, d3) {
-    this.cart = this.cart.map((l3) => l3.id === id ? { ...l3, qty: l3.qty + d3 } : l3).filter((l3) => l3.qty > 0);
-  }
-  remove(id) {
-    this.cart = this.cart.filter((l3) => l3.id !== id);
+  /** Fija la cantidad de una línea (desde ok-qty-stepper); al llegar a 0 la línea se elimina. */
+  setQtyAbs(id, v3) {
+    this.cart = this.cart.map((l3) => l3.id === id ? { ...l3, qty: Math.max(0, Math.round(v3)) } : l3).filter((l3) => l3.qty > 0);
   }
   openPay() {
     if (!this.cart.length) return;
@@ -2821,7 +3143,9 @@ var ErpPosTouch = class extends i3 {
         amount_tendered: this.tenderedNum || this.total,
         channel: "pos",
         source_module: "pos",
-        table_id: this.tableId ?? null
+        table_id: this.tableId ?? null,
+        customer_id: this.customerId ?? null,
+        customer_name: this.customerName
       });
       const recent = rows2(await erplora2().query("sales.list", { page_size: 1, sort: "created_at", dir: "desc" }));
       const saleId = recent[0]?.id;
@@ -2832,7 +3156,9 @@ var ErpPosTouch = class extends i3 {
       this.cart = [];
       this.tableId = void 0;
       this.tableLabel = "";
-      this.slotEls.forEach((el) => el.dispatchEvent(new CustomEvent("erp:order-context-reset", { bubbles: false })));
+      this.customerId = void 0;
+      this.customerName = "";
+      this.resetSlotContexts();
       if (saleId) this.docSaleId = saleId;
     } catch (e6) {
       this.error = e6 instanceof Error ? e6.message : "Error al cobrar";
@@ -2842,77 +3168,128 @@ var ErpPosTouch = class extends i3 {
   }
   get filtered() {
     const q = this.q.trim().toLowerCase();
-    return q ? this.products.filter((p4) => p4.name.toLowerCase().includes(q) || (p4.sku || "").toLowerCase().includes(q)) : this.products;
+    let list = this.products;
+    if (this.activeCat && this.prodCats.size) {
+      list = list.filter((p4) => this.prodCats.get(p4.id)?.has(this.activeCat));
+    }
+    if (q) list = list.filter((p4) => p4.name.toLowerCase().includes(q) || (p4.sku || "").toLowerCase().includes(q));
+    return list;
+  }
+  renderCatBar() {
+    const cell = (id, name, count, bg) => b2`
+      <button class="catcard" aria-pressed=${this.activeCat === id} @click=${() => {
+      this.activeCat = id;
+    }}>
+        <span class="cc-img" style=${`background-image:${bg}`}></span>
+        <span class="cc-meta"><span class="cc-n">${name}</span><span class="cc-c">${count} productos</span></span>
+      </button>`;
+    return b2`
+      <div class="catbar">
+        <button class="arrow" title="Anterior" @click=${() => this.scrollCats(-1)}><ion-icon name="chevron-back-outline"></ion-icon></button>
+        <div class="seg">
+          ${cell("", "Todos", this.products.length, gradient("Todos"))}
+          ${this.categories.map((c5) => cell(c5.id, c5.name, this.catCount(c5.id), c5.image ? `url(${c5.image})` : gradient(c5.name)))}
+        </div>
+        <button class="arrow" title="Siguiente" @click=${() => this.scrollCats(1)}><ion-icon name="chevron-forward-outline"></ion-icon></button>
+      </div>`;
+  }
+  renderCart() {
+    return b2`
+      <ion-header>
+        <ion-toolbar>
+          <ion-buttons slot="start">
+            <ion-button class="cart-close" title="Cerrar" @click=${() => {
+      this.cartOpen = false;
+    }}>
+              <ion-icon slot="icon-only" name="chevron-forward-outline"></ion-icon>
+            </ion-button>
+          </ion-buttons>
+          <ion-title>${this.tableLabel || "Venta"}${this.customerName ? b2` · ${this.customerName}` : A}</ion-title>
+          <ion-buttons slot="end">
+            ${this.parkingEnabled ? b2`<ion-button title="Tickets aparcados" style="position:relative" @click=${() => {
+      this.parkedOpen = !this.parkedOpen;
+    }}>
+                  <ion-icon slot="icon-only" name="file-tray-stacked-outline"></ion-icon>
+                  ${this.parked.length ? b2`<span class="badge-num">${this.parked.length}</span>` : A}
+                </ion-button>` : A}
+            <ion-button title="Pantalla completa" @click=${() => this.toggleFullscreen()}>
+              <ion-icon slot="icon-only" name=${this.fullscreen ? "contract-outline" : "expand-outline"}></ion-icon>
+            </ion-button>
+          </ion-buttons>
+        </ion-toolbar>
+      </ion-header>
+
+      <div class="cart-ctx">
+        <div class="order-slot"></div>
+        <div class="customer-slot"></div>
+      </div>
+
+      ${this.parkedOpen ? b2`
+          <div class="pdrop-back" @click=${() => {
+      this.parkedOpen = false;
+    }}></div>
+          <div class="pdrop">
+            <ion-button size="small" expand="block" fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>Aparcar venta actual</ion-button>
+            <p class="hint">Tickets aparcados</p>
+            ${this.parked.map((t5) => b2`<div class="pitem">
+              <div><div class="pn">${t5.ticket_number}</div><div class="pm">${(t5.created_at || "").replace("T", " ").slice(0, 16)}</div></div>
+              <ion-button size="small" ?disabled=${!!this.cart.length} @click=${() => this.retrieve(t5)}>Recuperar</ion-button>
+            </div>`)}
+            ${!this.parked.length ? b2`<div class="hint" style="text-align:center">No hay tickets aparcados.</div>` : A}
+          </div>` : A}
+
+      ${this.cart.length ? b2`<ion-list class="lines" lines="full">
+            ${this.cart.map((l3) => b2`<ion-item>
+              <ion-label><h3>${l3.name}</h3><p>${this.money(l3.price)}</p></ion-label>
+              <div slot="end" class="lineend">
+                <span class="lt">${this.money(l3.price * l3.qty)}</span>
+                <ok-qty-stepper .value=${l3.qty} .min=${0} .step=${1}
+                  @ok-change=${(e6) => this.setQtyAbs(l3.id, e6.detail.value)}></ok-qty-stepper>
+              </div>
+            </ion-item>`)}
+          </ion-list>` : b2`<div class="lines"><div class="empty">Toca un producto para añadirlo.</div></div>`}
+
+      <div class="cart-foot">
+        <div class="total"><span>Total</span><b>${this.money(this.total)}</b></div>
+        <ion-button class="charge" expand="block" ?disabled=${!this.cart.length} @click=${() => this.openPay()}>
+          Cobrar ${this.money(this.total)}
+        </ion-button>
+      </div>`;
   }
   render() {
-    return b2`<div class="pos">
-      <div class="catalog">
-        <ion-searchbar class="search" placeholder="Buscar producto…" value=${this.q}
-          @ionInput=${(e6) => {
+    return b2`<div class="card">
+      <div class="body">
+        <div class="catalog">
+          ${this.renderCatBar()}
+          <ion-searchbar class="search" placeholder="Buscar producto…" value=${this.q}
+            @ionInput=${(e6) => {
       this.q = e6.target.value || "";
     }}></ion-searchbar>
-        ${this.error ? b2`<p style="color:#d9480f">${this.error}</p>` : A}
-        <div class="grid">
-          ${this.filtered.map((p4) => b2`<button class="tile" @click=${() => this.add(p4)}>
-            <div class="n">${p4.name}</div>
-            <div class="p">${this.money(Number(p4.price))}</div>
-          </button>`)}
-          ${!this.filtered.length ? b2`<div class="empty">Sin productos.</div>` : A}
-        </div>
-      </div>
-
-      <div class="cart">
-        <h3>Venta${this.tableLabel ? b2`<span class="table-tag">${this.tableLabel}</span>` : A}</h3>
-        <!-- Slot de contexto de pedido (ADR-0043): aquí monta el shell el WC del proveedor (p. ej.
-             el selector de mesas del módulo tables). Vacío si no hay módulo que rellene el slot. -->
-        <div class="order-slot"></div>
-        <div class="lines">
-          ${this.cart.length ? this.cart.map((l3) => b2`<div class="line">
-                <div class="nm">${l3.name}</div>
-                <div class="lt">${this.money(l3.price * l3.qty)}</div>
-                <div class="qty">
-                  <button class="qbtn" @click=${() => this.setQty(l3.id, -1)}>−</button>
-                  <span>${l3.qty}</span>
-                  <button class="qbtn" @click=${() => this.setQty(l3.id, 1)}>+</button>
-                  <button class="rm" @click=${() => this.remove(l3.id)}>quitar</button>
-                </div>
-              </div>`) : b2`<div class="empty">Toca un producto para añadirlo.</div>`}
-        </div>
-        <div class="total"><span>Total</span><b>${this.money(this.total)}</b></div>
-        <ion-button class="charge" expand="block" ?disabled=${!this.cart.length} @click=${() => this.openPay()}>Cobrar</ion-button>
-        ${this.parkingEnabled ? b2`<div class="parkrow">
-              <ion-button size="small" fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>Aparcar</ion-button>
-              <ion-button size="small" fill="outline" ?disabled=${!this.parked.length} @click=${() => {
-      this.parkedOpen = true;
-    }}>
-                Aparcados (${this.parked.length})
-              </ion-button>
-            </div>` : A}
-      </div>
-
-      ${this.parkedOpen ? b2`<div class="scrim" @click=${(e6) => {
-      if (e6.target.classList.contains("scrim")) this.parkedOpen = false;
-    }}>
-            <div class="sheet">
-              <div class="sheet-h">
-                <span class="t">Tickets aparcados</span>
-                <button class="x" @click=${() => {
-      this.parkedOpen = false;
-    }}>✕</button>
+          ${this.error ? b2`<p style="color:var(--ion-color-danger,#d9480f)">${this.error}</p>` : A}
+          <div class="grid">
+            ${this.filtered.map((p4) => b2`<ion-card button class="tile" @click=${() => this.add(p4)}>
+              <div class="thumb" style=${p4.image ? `background-image:url(${p4.image})` : `background:${gradient(p4.name)}`}>
+                ${p4.image ? A : initials(p4.name)}
               </div>
-              ${this.cart.length ? b2`<p class="hint">Cobra o aparca la venta actual para recuperar un ticket.</p>` : A}
-              <div class="plist">
-                ${this.parked.map((t5) => b2`<div class="pitem">
-                  <div>
-                    <div class="pn">${t5.ticket_number}</div>
-                    <small class="pm">${(t5.created_at || "").replace("T", " ").slice(0, 16)}</small>
-                  </div>
-                  <ion-button size="small" ?disabled=${!!this.cart.length} @click=${() => this.retrieve(t5)}>Recuperar</ion-button>
-                </div>`)}
-                ${!this.parked.length ? b2`<div class="empty">No hay tickets aparcados.</div>` : A}
-              </div>
-            </div>
-          </div>` : A}
+              <div class="tinfo"><div class="n">${p4.name}</div><div class="p">${this.money(Number(p4.price))}</div></div>
+            </ion-card>`)}
+            ${!this.filtered.length ? b2`<div class="empty">Sin productos.</div>` : A}
+          </div>
+        </div>
+
+        <div class="cart-backdrop" ?data-open=${this.cartOpen} @click=${() => {
+      this.cartOpen = false;
+    }}></div>
+        <aside class="cart" ?data-open=${this.cartOpen}>${this.renderCart()}</aside>
+
+        <!-- Botón flotante de carrito (solo móvil) -->
+        <button class="fab" @click=${() => {
+      this.cartOpen = true;
+    }}>
+          <ion-icon name="cart-outline"></ion-icon>
+          ${this.itemCount ? b2`<span class="badge">${this.itemCount}</span>` : A}
+        </button>
+      </div>
 
       ${this.paying ? b2`<div class="scrim" @click=${(e6) => {
       if (e6.target.classList.contains("scrim")) this.paying = false;
@@ -2942,8 +3319,8 @@ var ErpPosTouch = class extends i3 {
                   <ion-segment-button value="ticket"><ion-label>Tiquet</ion-label></ion-segment-button>
                   <ion-segment-button value="invoice"><ion-label>Factura</ion-label></ion-segment-button>
                 </ion-segment>
-                ${this.error ? b2`<p style="color:#d9480f">${this.error}</p>` : A}
-                <ion-button expand="block" ?disabled=${this.busy} @click=${() => this.confirm()}>
+                ${this.error ? b2`<p style="color:var(--ion-color-danger,#d9480f)">${this.error}</p>` : A}
+                <ion-button class="charge" expand="block" ?disabled=${this.busy} @click=${() => this.confirm()}>
                   ${this.busy ? "Cobrando\u2026" : "Confirmar cobro"}
                 </ion-button>
               </div>
@@ -2969,6 +3346,12 @@ var ErpPosTouch = class extends i3 {
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "products", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "categories", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "activeCat", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "q", 2);
@@ -3010,13 +3393,25 @@ __decorateClass([
 ], ErpPosTouch.prototype, "parkedOpen", 2);
 __decorateClass([
   r5()
+], ErpPosTouch.prototype, "cartOpen", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "fullscreen", 2);
+__decorateClass([
+  r5()
 ], ErpPosTouch.prototype, "tableId", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "tableLabel", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "customerId", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "customerName", 2);
 define("erp-pos-touch", ErpPosTouch);
 
-// ../modules-workspace/modules/sales/ui/components/erp-pos-desktop/erp-pos-desktop.ts
+// modules/sales/ui/components/erp-pos-desktop/erp-pos-desktop.ts
 function erplora3() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -3042,7 +3437,24 @@ var ErpPosDesktop = class extends i3 {
     this.error = "";
     this.parked = [];
     this.parkedOpen = false;
+    this.tableLabel = "";
+    this.customerName = "";
     this.cartRestored = false;
+    /** Slots de contexto que el POS expone; cada uno lo rellena (o no) un módulo externo. */
+    this.slots = [
+      { slot: "sales.pos.order_context", container: ".order-slot", reset: "erp:order-context-reset", els: [] },
+      { slot: "sales.pos.customer_context", container: ".customer-slot", reset: "erp:customer-context-reset", els: [] }
+    ];
+    this.onOrderContext = (e6) => {
+      const d3 = e6.detail ?? { table_id: null };
+      this.tableId = d3.table_id ?? void 0;
+      this.tableLabel = d3.label ?? "";
+    };
+    this.onCustomerContext = (e6) => {
+      const d3 = e6.detail ?? { customer_id: null };
+      this.customerId = d3.customer_id ?? void 0;
+      this.customerName = d3.customer_name ?? "";
+    };
   }
   static {
     this.styles = i`
@@ -3060,7 +3472,14 @@ var ErpPosDesktop = class extends i3 {
     td input.q { width:3.5rem; text-align:center; font:inherit; padding:.3rem; border:1px solid var(--ion-border-color,#d9d6cf); border-radius:6px; background:var(--ion-background-color,#fff); color:inherit; }
     .rm { background:none; border:none; color:#d9480f; cursor:pointer; }
     .foot { display:flex; justify-content:space-between; align-items:center; margin-top:1rem; gap:1rem; }
-    .total { font-size:1.4rem; font-weight:800; }
+    .total { font-size:1.4rem; font-weight:800; display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; }
+    .table-tag, .customer-tag { font-size:.8rem; font-weight:700; color:#fff; border-radius:999px; padding:.15rem .6rem; }
+    .table-tag { background:var(--ion-color-primary,#0091ce); }
+    .customer-tag { background:#5c7cfa; }
+    .ct-ctx { display:flex; gap:.5rem; margin-bottom:.8rem; }
+    .order-slot, .customer-slot { flex:1; min-width:0; }
+    .order-slot:empty, .customer-slot:empty { display:none; }
+    .ct-ctx:empty { display:none; }
     .empty { color:#8b897f; text-align:center; padding:2rem 0; }
     /* overlay cobro */
     .scrim { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:50; }
@@ -3102,6 +3521,10 @@ var ErpPosDesktop = class extends i3 {
       this.parked = parked;
       if (savedCart.length) this.cart = savedCart;
       await this.updateComplete;
+      this.addEventListener("erp:order-context", this.onOrderContext);
+      this.addEventListener("erp:customer-context", this.onCustomerContext);
+      await this.resolveSlots();
+      this.ensureSlotsMounted();
     } catch (e6) {
       this.error = e6 instanceof Error ? e6.message : "Error cargando el POS";
     } finally {
@@ -3110,14 +3533,49 @@ var ErpPosDesktop = class extends i3 {
   }
   disconnectedCallback() {
     super.disconnectedCallback();
+    this.removeEventListener("erp:order-context", this.onOrderContext);
+    this.removeEventListener("erp:customer-context", this.onCustomerContext);
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = void 0;
       void persistActiveCart(erplora3(), this.cart);
     }
   }
-  /** Persiste el carrito (debounced) cada vez que cambia, una vez restaurado el guardado. */
+  /** Resuelve (una vez) los fillers de cada slot de contexto (ADR-0043) y crea sus instancias. */
+  async resolveSlots() {
+    const sdk = globalThis.erplora;
+    for (const s5 of this.slots) {
+      if (s5.resolved) continue;
+      if (!sdk?.loadSlot) {
+        s5.resolved = [];
+        continue;
+      }
+      try {
+        s5.resolved = await sdk.loadSlot(s5.slot);
+      } catch {
+        s5.resolved = [];
+      }
+      s5.els = s5.resolved.map((f3) => document.createElement(f3.component));
+    }
+  }
+  /** (Re)engancha los fillers en sus contenedores; idempotente, sobrevive a re-renders. */
+  ensureSlotsMounted() {
+    for (const s5 of this.slots) {
+      const host = this.renderRoot.querySelector(s5.container);
+      if (!host || !s5.els.length) continue;
+      if (host.firstElementChild) continue;
+      s5.els.forEach((el) => host.appendChild(el));
+    }
+  }
+  /** Avisa a los fillers para que limpien su selección (tras cobrar). */
+  resetSlotContexts() {
+    for (const s5 of this.slots) {
+      s5.els.forEach((el) => el.dispatchEvent(new CustomEvent(s5.reset, { bubbles: false })));
+    }
+  }
+  /** Persiste el carrito (debounced) y re-engancha los slots tras cada render. */
   updated(changed) {
+    this.ensureSlotsMounted();
     if (!changed.has("cart") || !this.cartRestored) return;
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
@@ -3209,7 +3667,10 @@ var ErpPosDesktop = class extends i3 {
         payment_method_name: this.payMethod?.name ?? "Efectivo",
         amount_tendered: this.tenderedNum || this.total,
         channel: "pos",
-        source_module: "pos"
+        source_module: "pos",
+        table_id: this.tableId ?? null,
+        customer_id: this.customerId ?? null,
+        customer_name: this.customerName
       });
       const recent = rows3(await erplora3().query("sales.list", { page_size: 1, sort: "created_at", dir: "desc" }));
       const saleId = recent[0]?.id;
@@ -3218,6 +3679,11 @@ var ErpPosDesktop = class extends i3 {
       }
       this.paying = false;
       this.cart = [];
+      this.tableId = void 0;
+      this.tableLabel = "";
+      this.customerId = void 0;
+      this.customerName = "";
+      this.resetSlotContexts();
       if (saleId) this.docSaleId = saleId;
     } catch (e6) {
       this.error = e6 instanceof Error ? e6.message : "Error al cobrar";
@@ -3245,6 +3711,14 @@ var ErpPosDesktop = class extends i3 {
       </div>
       ${this.error ? b2`<p style="color:#d9480f">${this.error}</p>` : A}
 
+      <!-- Slots de contexto de venta (ADR-0043): el shell monta aquí los WC de los proveedores
+           (mesa = módulo tables, cliente = módulo customers). Cada contenedor se oculta si nadie
+           rellena su slot. -->
+      <div class="ct-ctx">
+        <div class="order-slot"></div>
+        <div class="customer-slot"></div>
+      </div>
+
       <table>
         <thead><tr><th>Producto</th><th class="num">Precio</th><th class="num">Cant.</th><th class="num">Importe</th><th></th></tr></thead>
         <tbody>
@@ -3260,7 +3734,7 @@ var ErpPosDesktop = class extends i3 {
       </table>
 
       <div class="foot">
-        <div class="total">Total ${this.money(this.total)}</div>
+        <div class="total">Total ${this.money(this.total)}${this.tableLabel ? b2`<span class="table-tag">${this.tableLabel}</span>` : A}${this.customerName ? b2`<span class="customer-tag">${this.customerName}</span>` : A}</div>
         <div class="actions">
           ${this.parkingEnabled ? b2`
                 <ion-button fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>Aparcar</ion-button>
@@ -3386,11 +3860,23 @@ __decorateClass([
   r5()
 ], ErpPosDesktop.prototype, "parkedOpen", 2);
 __decorateClass([
+  r5()
+], ErpPosDesktop.prototype, "tableId", 2);
+__decorateClass([
+  r5()
+], ErpPosDesktop.prototype, "tableLabel", 2);
+__decorateClass([
+  r5()
+], ErpPosDesktop.prototype, "customerId", 2);
+__decorateClass([
+  r5()
+], ErpPosDesktop.prototype, "customerName", 2);
+__decorateClass([
   e4("#scan")
 ], ErpPosDesktop.prototype, "scanInput", 2);
 define("erp-pos-desktop", ErpPosDesktop);
 
-// ../modules-workspace/modules/sales/ui/components/erp-pos/erp-pos.ts
+// modules/sales/ui/components/erp-pos/erp-pos.ts
 function erplora4() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -3430,7 +3916,7 @@ __decorateClass([
 ], ErpPos.prototype, "ready", 2);
 define("erp-pos", ErpPos);
 
-// node_modules/lit-html/directive.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
 var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e5 = (t5) => (...e6) => ({ _$litDirective$: t5, values: e6 });
 var i4 = class {
@@ -3450,7 +3936,7 @@ var i4 = class {
   }
 };
 
-// node_modules/lit-html/directive-helpers.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
 var { I: t4 } = j;
 var i5 = (o7) => o7;
 var s4 = () => document.createComment("");
@@ -3483,7 +3969,7 @@ var h3 = (o7) => {
   o7._$AR(), o7._$AA.remove();
 };
 
-// node_modules/lit-html/directives/repeat.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
 var u4 = (e6, s5, t5) => {
   const r6 = /* @__PURE__ */ new Map();
   for (let l3 = s5; l3 <= t5; l3++) r6.set(e6[l3], l3);
@@ -3536,7 +4022,7 @@ var c4 = e5(class extends i4 {
   }
 });
 
-// node_modules/lit-html/directives/style-map.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
 var n5 = "important";
 var i6 = " !" + n5;
 var o6 = e5(class extends i4 {
@@ -3565,17 +4051,17 @@ var o6 = e5(class extends i4 {
   }
 });
 
-// ../outfitkit/dist/ok-data-table.js
-var __defProp5 = Object.defineProperty;
-var __decorateClass5 = (decorators, target, key, kind) => {
+// node_modules/.pnpm/@outfitkit+core@file+..+outfitkit/node_modules/@outfitkit/core/dist/ok-data-table.js
+var __defProp6 = Object.defineProperty;
+var __decorateClass6 = (decorators, target, key, kind) => {
   var result = void 0;
   for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
     if (decorator = decorators[i7])
       result = decorator(target, key, result) || result;
-  if (result) __defProp5(target, key, result);
+  if (result) __defProp6(target, key, result);
   return result;
 };
-var DEFAULT_LABELS3 = {
+var DEFAULT_LABELS4 = {
   search: "Search\u2026",
   empty: "No results",
   filters: "Filters",
@@ -3867,7 +4353,7 @@ var OkDataTable = class extends i3 {
   }
   // ── i18n: textos efectivos (default inglés ← overrides de `.labels`) ──────────────────────
   get t() {
-    return { ...DEFAULT_LABELS3, ...this.labels };
+    return { ...DEFAULT_LABELS4, ...this.labels };
   }
   /** Placeholder efectivo del buscador (prop explícita → label i18n → default inglés). */
   get effSearchPlaceholder() {
@@ -4686,153 +5172,153 @@ var OkDataTable = class extends i3 {
     `;
   }
 };
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: false })
 ], OkDataTable.prototype, "columns");
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: false })
 ], OkDataTable.prototype, "rows");
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: false })
 ], OkDataTable.prototype, "searchKeys");
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: "row-key-field" })
 ], OkDataTable.prototype, "rowKeyField");
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: false })
 ], OkDataTable.prototype, "rowKey");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Number, attribute: "page-size" })
 ], OkDataTable.prototype, "pageSize");
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: "empty-message" })
 ], OkDataTable.prototype, "emptyMessage");
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: "search-placeholder" })
 ], OkDataTable.prototype, "searchPlaceholder");
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: false })
 ], OkDataTable.prototype, "labels");
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: false })
 ], OkDataTable.prototype, "actions");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "addable");
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: false })
 ], OkDataTable.prototype, "pageSizeOptions");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Boolean, reflect: true })
 ], OkDataTable.prototype, "fill");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "columnPicker");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "csv");
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: "csv-name" })
 ], OkDataTable.prototype, "csvName");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Boolean, attribute: "server-side" })
 ], OkDataTable.prototype, "serverSide");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Number })
 ], OkDataTable.prototype, "total");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Number })
 ], OkDataTable.prototype, "page");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "searchable");
-__decorateClass5([
+__decorateClass6([
   n4({ type: String })
 ], OkDataTable.prototype, "sort");
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: "sort-dir" })
 ], OkDataTable.prototype, "sortDir");
-__decorateClass5([
+__decorateClass6([
   n4()
 ], OkDataTable.prototype, "title");
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: false })
 ], OkDataTable.prototype, "views");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "exportable");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "importable");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "columnSelector");
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: false })
 ], OkDataTable.prototype, "pageSizes");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "selectable");
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: false })
 ], OkDataTable.prototype, "selectedKeys");
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: false })
 ], OkDataTable.prototype, "primaryAction");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "inlineFilters");
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: false })
 ], OkDataTable.prototype, "menuActions");
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: false })
 ], OkDataTable.prototype, "cardTitle");
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: false })
 ], OkDataTable.prototype, "cardIcon");
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: false })
 ], OkDataTable.prototype, "renderCard");
-__decorateClass5([
+__decorateClass6([
   r5()
 ], OkDataTable.prototype, "q");
-__decorateClass5([
+__decorateClass6([
   r5()
 ], OkDataTable.prototype, "clientPage");
-__decorateClass5([
+__decorateClass6([
   r5()
 ], OkDataTable.prototype, "clientPageSize");
-__decorateClass5([
+__decorateClass6([
   r5()
 ], OkDataTable.prototype, "clientSort");
-__decorateClass5([
+__decorateClass6([
   r5()
 ], OkDataTable.prototype, "clientSortDir");
-__decorateClass5([
+__decorateClass6([
   r5()
 ], OkDataTable.prototype, "clientFilters");
-__decorateClass5([
+__decorateClass6([
   r5()
 ], OkDataTable.prototype, "filterDraft");
-__decorateClass5([
+__decorateClass6([
   r5()
 ], OkDataTable.prototype, "panel");
-__decorateClass5([
+__decorateClass6([
   r5()
 ], OkDataTable.prototype, "viewMode");
-__decorateClass5([
+__decorateClass6([
   r5()
 ], OkDataTable.prototype, "hiddenKeys");
-__decorateClass5([
+__decorateClass6([
   r5()
 ], OkDataTable.prototype, "internalSelection");
-__decorateClass5([
+__decorateClass6([
   r5()
 ], OkDataTable.prototype, "menuOpen");
 define("ok-data-table", OkDataTable);
 
-// ../hub/packages/module-sdk/src/index.ts
+// node_modules/.pnpm/@erplora+module-sdk@file+..+hub+packages+module-sdk/node_modules/@erplora/module-sdk/src/index.ts
 function isEmpty(v3) {
   return v3 === null || v3 === void 0 || v3 === "";
 }
@@ -4950,7 +5436,7 @@ function createListController(client, queryName, onChange = () => {
   return new ListController(client, queryName, onChange, opts);
 }
 
-// ../modules-workspace/modules/sales/ui/components/erp-sales-list/erp-sales-list.ts
+// modules/sales/ui/components/erp-sales-list/erp-sales-list.ts
 function erplora5() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -5082,7 +5568,7 @@ __decorateClass([
 ], ErpSalesList.prototype, "docSaleId", 2);
 define("erp-sales-list", ErpSalesList);
 
-// ../modules-workspace/modules/sales/ui/components/erp-sales-settings/erp-sales-settings.ts
+// modules/sales/ui/components/erp-sales-settings/erp-sales-settings.ts
 var DEFAULTS = {
   allow_cash: 1,
   allow_card: 1,
@@ -5117,7 +5603,7 @@ var ErpSalesSettings = class extends i3 {
   }
   static {
     this.styles = i`
-    :host { display:block; font-family: system-ui, sans-serif; color: var(--ion-text-color,#1c1b18); }
+    :host { display:block; height:100%; overflow-y:auto; box-sizing:border-box; padding:1rem 1rem 2rem; font-family: system-ui, sans-serif; color: var(--ion-text-color,#1c1b18); }
     h2 { margin:0 0 .25rem; font-size:1.15rem; }
     .sub { color:#8b897f; font-size:.85rem; margin:0 0 1rem; }
     .group { border:1px solid var(--ion-border-color,#e0ddd4); border-radius:12px; padding:.4rem .9rem; margin-bottom:1rem; }
@@ -5188,8 +5674,6 @@ var ErpSalesSettings = class extends i3 {
   render() {
     if (this.loading) return b2`<p class="sub">Cargando ajustes…</p>`;
     return b2`<div>
-      <h2>Ajustes del punto de venta</h2>
-      <p class="sub">Configuración del módulo de ventas para este negocio.</p>
       ${this.error ? b2`<p class="msg err">${this.error}</p>` : A}
 
       <div class="group">

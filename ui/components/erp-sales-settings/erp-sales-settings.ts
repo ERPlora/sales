@@ -58,7 +58,7 @@ function erplora(): ErploraClientLike {
 
 export class ErpSalesSettings extends LitElement {
   static styles = css`
-    :host { display:block; font-family: system-ui, sans-serif; color: var(--ion-text-color,#1c1b18); }
+    :host { display:block; height:100%; overflow-y:auto; box-sizing:border-box; padding:1rem 1rem 2rem; font-family: system-ui, sans-serif; color: var(--ion-text-color,#1c1b18); }
     h2 { margin:0 0 .25rem; font-size:1.15rem; }
     .sub { color:#8b897f; font-size:.85rem; margin:0 0 1rem; }
     .group { border:1px solid var(--ion-border-color,#e0ddd4); border-radius:12px; padding:.4rem .9rem; margin-bottom:1rem; }
@@ -142,8 +142,6 @@ export class ErpSalesSettings extends LitElement {
   render() {
     if (this.loading) return html`<p class="sub">Cargando ajustes…</p>`;
     return html`<div>
-      <h2>Ajustes del punto de venta</h2>
-      <p class="sub">Configuración del módulo de ventas para este negocio.</p>
       ${this.error ? html`<p class="msg err">${this.error}</p>` : nothing}
 
       <div class="group">

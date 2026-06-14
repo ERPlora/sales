@@ -43,7 +43,14 @@ export class ErpPosDesktop extends LitElement {
     td input.q { width:3.5rem; text-align:center; font:inherit; padding:.3rem; border:1px solid var(--ion-border-color,#d9d6cf); border-radius:6px; background:var(--ion-background-color,#fff); color:inherit; }
     .rm { background:none; border:none; color:#d9480f; cursor:pointer; }
     .foot { display:flex; justify-content:space-between; align-items:center; margin-top:1rem; gap:1rem; }
-    .total { font-size:1.4rem; font-weight:800; }
+    .total { font-size:1.4rem; font-weight:800; display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; }
+    .table-tag, .customer-tag { font-size:.8rem; font-weight:700; color:#fff; border-radius:999px; padding:.15rem .6rem; }
+    .table-tag { background:var(--ion-color-primary,#0091ce); }
+    .customer-tag { background:#5c7cfa; }
+    .ct-ctx { display:flex; gap:.5rem; margin-bottom:.8rem; }
+    .order-slot, .customer-slot { flex:1; min-width:0; }
+    .order-slot:empty, .customer-slot:empty { display:none; }
+    .ct-ctx:empty { display:none; }
     .empty { color:#8b897f; text-align:center; padding:2rem 0; }
     /* overlay cobro */
     .scrim { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:50; }
@@ -81,11 +88,32 @@ export class ErpPosDesktop extends LitElement {
   @state() private docSaleId?: string;
   @state() private parked: ParkedTicket[] = [];
   @state() private parkedOpen = false;
+  // Contexto de venta aportado por slot fillers (ADR-0043): mesa (`tables`) y cliente (`customers`).
+  // El POS recibe los datos por evento DOM y los adjunta a la venta; no conoce a esos módulos.
+  @state() private tableId?: string;
+  @state() private tableLabel = '';
+  @state() private customerId?: string;
+  @state() private customerName = '';
 
   @query('#scan') private scanInput?: HTMLInputElement;
 
   private cartRestored = false;
   private saveTimer?: ReturnType<typeof setTimeout>;
+  /** Slots de contexto que el POS expone; cada uno lo rellena (o no) un módulo externo. */
+  private readonly slots: Array<{ slot: string; container: string; reset: string; resolved?: { component: string }[]; els: HTMLElement[] }> = [
+    { slot: 'sales.pos.order_context', container: '.order-slot', reset: 'erp:order-context-reset', els: [] },
+    { slot: 'sales.pos.customer_context', container: '.customer-slot', reset: 'erp:customer-context-reset', els: [] },
+  ];
+  private readonly onOrderContext = (e: Event) => {
+    const d = (e as CustomEvent<{ table_id: string | null; label?: string }>).detail ?? { table_id: null };
+    this.tableId = d.table_id ?? undefined;
+    this.tableLabel = d.label ?? '';
+  };
+  private readonly onCustomerContext = (e: Event) => {
+    const d = (e as CustomEvent<{ customer_id: string | null; customer_name?: string }>).detail ?? { customer_id: null };
+    this.customerId = d.customer_id ?? undefined;
+    this.customerName = d.customer_name ?? '';
+  };
 
   async connectedCallback() {
     super.connectedCallback();
@@ -105,6 +133,10 @@ export class ErpPosDesktop extends LitElement {
       this.parked = parked;
       if (savedCart.length) this.cart = savedCart;
       await this.updateComplete;
+      this.addEventListener('erp:order-context', this.onOrderContext);
+      this.addEventListener('erp:customer-context', this.onCustomerContext);
+      await this.resolveSlots();
+      this.ensureSlotsMounted();
     } catch (e) {
       this.error = e instanceof Error ? e.message : 'Error cargando el POS';
     } finally {
@@ -114,6 +146,8 @@ export class ErpPosDesktop extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    this.removeEventListener('erp:order-context', this.onOrderContext);
+    this.removeEventListener('erp:customer-context', this.onCustomerContext);
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = undefined;
@@ -121,8 +155,41 @@ export class ErpPosDesktop extends LitElement {
     }
   }
 
-  /** Persiste el carrito (debounced) cada vez que cambia, una vez restaurado el guardado. */
+  /** Resuelve (una vez) los fillers de cada slot de contexto (ADR-0043) y crea sus instancias. */
+  private async resolveSlots() {
+    const sdk = (globalThis as { erplora?: { loadSlot?: (s: string) => Promise<{ component: string }[]> } }).erplora;
+    for (const s of this.slots) {
+      if (s.resolved) continue;
+      if (!sdk?.loadSlot) { s.resolved = []; continue; }
+      try {
+        s.resolved = await sdk.loadSlot(s.slot);
+      } catch {
+        s.resolved = [];
+      }
+      s.els = s.resolved.map((f) => document.createElement(f.component) as HTMLElement);
+    }
+  }
+
+  /** (Re)engancha los fillers en sus contenedores; idempotente, sobrevive a re-renders. */
+  private ensureSlotsMounted() {
+    for (const s of this.slots) {
+      const host = this.renderRoot.querySelector(s.container) as HTMLElement | null;
+      if (!host || !s.els.length) continue;
+      if (host.firstElementChild) continue;
+      s.els.forEach((el) => host.appendChild(el));
+    }
+  }
+
+  /** Avisa a los fillers para que limpien su selección (tras cobrar). */
+  private resetSlotContexts() {
+    for (const s of this.slots) {
+      s.els.forEach((el) => el.dispatchEvent(new CustomEvent(s.reset, { bubbles: false })));
+    }
+  }
+
+  /** Persiste el carrito (debounced) y re-engancha los slots tras cada render. */
   protected updated(changed: Map<PropertyKey, unknown>) {
+    this.ensureSlotsMounted();
     if (!changed.has('cart') || !this.cartRestored) return;
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
@@ -208,6 +275,9 @@ export class ErpPosDesktop extends LitElement {
         amount_tendered: this.tenderedNum || this.total,
         channel: 'pos',
         source_module: 'pos',
+        table_id: this.tableId ?? null,
+        customer_id: this.customerId ?? null,
+        customer_name: this.customerName,
       });
       const recent = rows<{ id: string }>(await erplora().query('sales.list', { page_size: 1, sort: 'created_at', dir: 'desc' }));
       const saleId = recent[0]?.id;
@@ -216,6 +286,10 @@ export class ErpPosDesktop extends LitElement {
       }
       this.paying = false;
       this.cart = [];
+      // Libera el contexto de venta (mesa/cliente) y avisa a los fillers para que se limpien.
+      this.tableId = undefined; this.tableLabel = '';
+      this.customerId = undefined; this.customerName = '';
+      this.resetSlotContexts();
       if (saleId) this.docSaleId = saleId;
     } catch (e) {
       this.error = e instanceof Error ? e.message : 'Error al cobrar';
@@ -244,6 +318,14 @@ export class ErpPosDesktop extends LitElement {
       </div>
       ${this.error ? html`<p style="color:#d9480f">${this.error}</p>` : nothing}
 
+      <!-- Slots de contexto de venta (ADR-0043): el shell monta aquí los WC de los proveedores
+           (mesa = módulo tables, cliente = módulo customers). Cada contenedor se oculta si nadie
+           rellena su slot. -->
+      <div class="ct-ctx">
+        <div class="order-slot"></div>
+        <div class="customer-slot"></div>
+      </div>
+
       <table>
         <thead><tr><th>Producto</th><th class="num">Precio</th><th class="num">Cant.</th><th class="num">Importe</th><th></th></tr></thead>
         <tbody>
@@ -261,7 +343,7 @@ export class ErpPosDesktop extends LitElement {
       </table>
 
       <div class="foot">
-        <div class="total">Total ${this.money(this.total)}</div>
+        <div class="total">Total ${this.money(this.total)}${this.tableLabel ? html`<span class="table-tag">${this.tableLabel}</span>` : nothing}${this.customerName ? html`<span class="customer-tag">${this.customerName}</span>` : nothing}</div>
         <div class="actions">
           ${this.parkingEnabled
             ? html`
