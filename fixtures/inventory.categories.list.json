@@ -1,0 +1,10 @@
+[
+  {"id":"c1","name":"Cafés"},
+  {"id":"c2","name":"Bebidas"},
+  {"id":"c3","name":"Comidas"},
+  {"id":"c4","name":"Postres"},
+  {"id":"c5","name":"Snacks"},
+  {"id":"c6","name":"Vinos"},
+  {"id":"c7","name":"Cervezas"},
+  {"id":"c8","name":"Desayunos"}
+]
