@@ -1,0 +1,14 @@
+{
+  "name": "Ventas / TPV",
+  "navigation": {
+    "pos": {
+      "label": "Vender"
+    },
+    "sales": {
+      "label": "Ventas"
+    },
+    "settings": {
+      "label": "Ajustes TPV"
+    }
+  }
+}

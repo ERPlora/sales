@@ -1,0 +1,14 @@
+{
+  "name": "Sales & POS",
+  "navigation": {
+    "pos": {
+      "label": "Vender"
+    },
+    "sales": {
+      "label": "Sales"
+    },
+    "settings": {
+      "label": "POS Settings"
+    }
+  }
+}
