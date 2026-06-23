@@ -11,6 +11,10 @@ import {
   type SaleLineRow,
   type SaleSettings,
 } from '../../lib/document-mappers.js';
+// Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC.
+import esLocale from '../../../locales/es.json';
+import enLocale from '../../../locales/en.json';
+const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
 // erp-sales-document — visor del documento de una venta (tiquet u factura) en el formato adecuado.
 // Carga `sales.get` + `sales.lines` + `sales.settings.get` por `sale-id`, mapea (document-mappers)
@@ -19,6 +23,9 @@ import {
 
 interface ErploraClientLike {
   query<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T>;
+  /** i18n del módulo (ADR-0055): idioma activo + traducción del catálogo `ui`. */
+  locale: string;
+  t(catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>): string;
 }
 
 function erplora(): ErploraClientLike {
@@ -57,9 +64,17 @@ export class ErpSalesDocument extends LitElement {
 
   @state() private error = '';
 
+  private readonly onLocaleChange = (): void => this.requestUpdate();
+
   async connectedCallback() {
     super.connectedCallback();
+    window.addEventListener('erplora:locale-changed', this.onLocaleChange);
     if (!this.sale && this.saleId) await this.load();
+  }
+
+  disconnectedCallback() {
+    window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
+    super.disconnectedCallback();
   }
 
   updated(changed: Map<string, unknown>) {
@@ -78,16 +93,17 @@ export class ErpSalesDocument extends LitElement {
       this.lines = lines || [];
       this.settings = (Array.isArray(settingsRows) ? settingsRows[0] : settingsRows) || {};
     } catch (e) {
-      this.error = e instanceof Error ? e.message : 'Error cargando el documento';
+      this.error = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errorDocument');
     } finally {
       this.loading = false;
     }
   }
 
   render() {
-    if (this.loading) return html`<p class="muted">Cargando documento…</p>`;
+    const t = (k: string): string => erplora().t(CATALOG, k);
+    if (this.loading) return html`<p class="muted">${t('ui.loadingDocument')}</p>`;
     if (this.error) return html`<p class="err">${this.error}</p>`;
-    if (!this.sale) return html`<p class="muted">Sin venta.</p>`;
+    if (!this.sale) return html`<p class="muted">${t('ui.noSale')}</p>`;
 
     const settings = this.settings || {};
     const lines = this.lines || [];
@@ -96,7 +112,7 @@ export class ErpSalesDocument extends LitElement {
     return html`<div>
       <div class="bar">
         <ion-button size="small" fill="outline" @click=${() => window.print()}>
-          <ion-icon slot="start" name="print-outline"></ion-icon> Imprimir
+          <ion-icon slot="start" name="print-outline"></ion-icon> ${t('ui.print')}
         </ion-button>
       </div>
       ${fmt === 'invoice'

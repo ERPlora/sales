@@ -1,6 +1,10 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { state } from 'lit/decorators.js';
 import { define } from '@erplora/outfitkit/define';
+// Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC.
+import esLocale from '../../../locales/es.json';
+import enLocale from '../../../locales/en.json';
+const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
 // erp-sales-settings — formulario de la configuración singleton del módulo sales (POS).
 // Carga `sales.settings.get` y guarda con `sales.settings.update` (upsert por hub_id).
@@ -9,6 +13,9 @@ import { define } from '@erplora/outfitkit/define';
 interface ErploraClientLike {
   query<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T>;
   command(name: string, payload?: Record<string, unknown>): Promise<unknown>;
+  /** i18n del módulo (ADR-0055): idioma activo + traducción del catálogo `ui`. */
+  locale: string;
+  t(catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>): string;
 }
 
 /** Forma de la fila `sales_settings` (los booleanos viajan como 0/1). */
@@ -89,17 +96,25 @@ export class ErpSalesSettings extends LitElement {
 
   @state() error = '';
 
+  private readonly onLocaleChange = (): void => this.requestUpdate();
+
   async connectedCallback() {
     super.connectedCallback();
+    window.addEventListener('erplora:locale-changed', this.onLocaleChange);
     try {
       const rows = await erplora().query<Settings[]>('sales.settings.get');
       const row = Array.isArray(rows) ? rows[0] : (rows as Settings | undefined);
       this.s = { ...DEFAULTS, ...(row || {}) };
     } catch (e) {
-      this.error = e instanceof Error ? e.message : 'Error cargando ajustes';
+      this.error = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errorLoadingSettings');
     } finally {
       this.loading = false;
     }
+  }
+
+  disconnectedCallback() {
+    window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
+    super.disconnectedCallback();
   }
 
   private set<K extends keyof Settings>(key: K, value: Settings[K]) {
@@ -111,9 +126,9 @@ export class ErpSalesSettings extends LitElement {
     this.saving = true; this.message = ''; this.error = '';
     try {
       await erplora().command('sales.settings.update', { ...this.s });
-      this.message = 'Ajustes guardados.';
+      this.message = erplora().t(CATALOG, 'ui.settingsSaved');
     } catch (e) {
-      this.error = e instanceof Error ? e.message : 'Error guardando';
+      this.error = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errorSaving');
     } finally {
       this.saving = false;
     }
@@ -140,69 +155,70 @@ export class ErpSalesSettings extends LitElement {
   }
 
   render() {
-    if (this.loading) return html`<p class="sub">Cargando ajustes…</p>`;
+    const t = (k: string): string => erplora().t(CATALOG, k);
+    if (this.loading) return html`<p class="sub">${t('ui.loadingSettings')}</p>`;
     return html`<div>
       ${this.error ? html`<p class="msg err">${this.error}</p>` : nothing}
 
       <div class="group">
-        <div class="gh">Pantalla de venta</div>
+        <div class="gh">${t('ui.groupSaleScreen')}</div>
         <div class="row">
-          <div class="lbl">Pantalla por defecto<small>Cuál se abre al vender</small></div>
+          <div class="lbl">${t('ui.defaultScreen')}<small>${t('ui.defaultScreenHint')}</small></div>
           ${this.segment('pos_layout', [
-            { value: 'touch', label: 'Táctil' },
-            { value: 'desktop', label: 'Escritorio' },
+            { value: 'touch', label: t('ui.screenTouch') },
+            { value: 'desktop', label: t('ui.screenDesktop') },
           ])}
         </div>
       </div>
 
       <div class="group">
-        <div class="gh">Documento de la venta</div>
+        <div class="gh">${t('ui.groupSaleDocument')}</div>
         <div class="row">
-          <div class="lbl">Formato por defecto<small>Tiquet 80mm o factura A4</small></div>
+          <div class="lbl">${t('ui.defaultFormat')}<small>${t('ui.defaultFormatHint')}</small></div>
           ${this.segment('default_document_format', [
-            { value: 'ticket', label: 'Tiquet' },
-            { value: 'invoice', label: 'Factura' },
+            { value: 'ticket', label: t('ui.formatTicket') },
+            { value: 'invoice', label: t('ui.formatInvoice') },
           ])}
         </div>
-        ${this.toggle('auto_invoice_with_tax_id', 'Factura automática con NIF', 'Si el cliente tiene NIF/CIF, emitir factura A4')}
+        ${this.toggle('auto_invoice_with_tax_id', t('ui.autoInvoiceTaxId'), t('ui.autoInvoiceTaxIdHint'))}
       </div>
 
       <div class="group">
-        <div class="gh">Métodos de pago</div>
-        ${this.toggle('allow_cash', 'Efectivo')}
-        ${this.toggle('allow_card', 'Tarjeta')}
-        ${this.toggle('allow_transfer', 'Transferencia')}
+        <div class="gh">${t('ui.groupPaymentMethods')}</div>
+        ${this.toggle('allow_cash', t('ui.cash'))}
+        ${this.toggle('allow_card', t('ui.card'))}
+        ${this.toggle('allow_transfer', t('ui.transfer'))}
       </div>
 
       <div class="group">
-        <div class="gh">Venta</div>
-        ${this.toggle('require_customer', 'Exigir cliente', 'Obliga a seleccionar cliente en cada venta')}
-        ${this.toggle('allow_discounts', 'Permitir descuentos')}
-        ${this.toggle('default_tax_included', 'Precios con impuestos incluidos')}
-        ${this.toggle('enable_parked_tickets', 'Tiquets aparcados', 'Permite dejar ventas en espera')}
-        ${this.toggle('sync_products', 'Sincronizar productos')}
-        ${this.toggle('sync_services', 'Sincronizar servicios')}
+        <div class="gh">${t('ui.groupSale')}</div>
+        ${this.toggle('require_customer', t('ui.requireCustomer'), t('ui.requireCustomerHint'))}
+        ${this.toggle('allow_discounts', t('ui.allowDiscounts'))}
+        ${this.toggle('default_tax_included', t('ui.taxIncluded'))}
+        ${this.toggle('enable_parked_tickets', t('ui.parkedTicketsToggle'), t('ui.parkedTicketsToggleHint'))}
+        ${this.toggle('sync_products', t('ui.syncProducts'))}
+        ${this.toggle('sync_services', t('ui.syncServices'))}
         <div class="field">
-          <label>Caducidad de tiquets aparcados (horas)</label>
+          <label>${t('ui.parkedExpiryHours')}</label>
           <input type="number" min="1" .value=${String(this.s.ticket_expiry_hours)}
             @input=${(e: Event) => this.set('ticket_expiry_hours', Number((e.target as HTMLInputElement).value || 0))} />
         </div>
       </div>
 
       <div class="group">
-        <div class="gh">Tiquet (cabecera y pie)</div>
+        <div class="gh">${t('ui.groupReceipt')}</div>
         <div class="field">
-          <label>Cabecera</label>
+          <label>${t('ui.receiptHeader')}</label>
           <textarea rows="2" .value=${this.s.receipt_header}
             @input=${(e: Event) => this.set('receipt_header', (e.target as HTMLTextAreaElement).value)}></textarea>
         </div>
         <div class="field">
-          <label>Pie</label>
+          <label>${t('ui.receiptFooter')}</label>
           <textarea rows="2" .value=${this.s.receipt_footer}
             @input=${(e: Event) => this.set('receipt_footer', (e.target as HTMLTextAreaElement).value)}></textarea>
         </div>
         <div class="field">
-          <label>Imagen de pie (URL)</label>
+          <label>${t('ui.receiptFooterImage')}</label>
           <input type="text" .value=${this.s.receipt_footer_image}
             @input=${(e: Event) => this.set('receipt_footer_image', (e.target as HTMLInputElement).value)} />
         </div>
@@ -210,7 +226,7 @@ export class ErpSalesSettings extends LitElement {
 
       <div class="bar">
         <ion-button @click=${() => this.save()} ?disabled=${this.saving}>
-          ${this.saving ? 'Guardando…' : 'Guardar ajustes'}
+          ${this.saving ? t('ui.saving') : t('ui.saveSettings')}
         </ion-button>
         ${this.message ? html`<span class="msg ok">${this.message}</span>` : nothing}
       </div>

@@ -9,7 +9,7 @@ var __decorateClass = (decorators, target, key, kind) => {
   return result;
 };
 
-// node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
+// node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
 var ElementInternalsShim = class ElementInternals {
   get shadowRoot() {
     return this.__host.__shadowRoot;
@@ -88,7 +88,7 @@ var ElementInternalsShim = class ElementInternals {
   }
 };
 
-// node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
+// node_modules/@lit-labs/ssr-dom-shim/lib/events.js
 var __classPrivateFieldSet = function(receiver, state, value, kind, f3) {
   if (kind === "m") throw new TypeError("Private method is not writable");
   if (kind === "a" && !f3) throw new TypeError("Private accessor was defined without a setter");
@@ -246,7 +246,7 @@ Object.defineProperties(CustomEventShim.prototype, {
 var EventShimWithRealType = EventShim;
 var CustomEventShimWithRealType = CustomEventShim;
 
-// node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
+// node_modules/@lit-labs/ssr-dom-shim/lib/css.js
 var _a2;
 var CSSRuleShim = (_a2 = class CSSRule {
   constructor() {
@@ -277,7 +277,7 @@ var CSSRuleShim = (_a2 = class CSSRule {
   }
 }, _a2.STYLE_RULE = 1, _a2.CHARSET_RULE = 2, _a2.IMPORT_RULE = 3, _a2.MEDIA_RULE = 4, _a2.FONT_FACE_RULE = 5, _a2.PAGE_RULE = 6, _a2.NAMESPACE_RULE = 10, _a2.KEYFRAMES_RULE = 7, _a2.KEYFRAME_RULE = 8, _a2.SUPPORTS_RULE = 12, _a2.COUNTER_STYLE_RULE = 11, _a2.FONT_FEATURE_VALUES_RULE = 14, _a2.MARGIN_RULE = 9, _a2);
 
-// node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/index.js
+// node_modules/@lit-labs/ssr-dom-shim/index.js
 globalThis.Event ??= EventShimWithRealType;
 globalThis.CustomEvent ??= CustomEventShimWithRealType;
 var constructionToken = Symbol();
@@ -674,221 +674,221 @@ var CustomElementRegistryShimWithRealType = CustomElementRegistry;
 var customElements2 = new CustomElementRegistryShimWithRealType();
 var windowShim = new WindowShim(constructionToken);
 
-// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/css-tag.js
+// node_modules/@lit/reactive-element/node/css-tag.js
 var t = globalThis;
 var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
 var s = Symbol();
 var o = /* @__PURE__ */ new WeakMap();
 var n = class {
-  constructor(t5, e6, o7) {
+  constructor(t7, e6, o7) {
     if (this._$cssResult$ = true, o7 !== s) throw Error("CSSResult is not constructable. Use `unsafeCSS` or `css` instead.");
-    this.cssText = t5, this.t = e6;
+    this.cssText = t7, this.t = e6;
   }
   get styleSheet() {
-    let t5 = this.o;
+    let t7 = this.o;
     const s5 = this.t;
-    if (e && void 0 === t5) {
+    if (e && void 0 === t7) {
       const e6 = void 0 !== s5 && 1 === s5.length;
-      e6 && (t5 = o.get(s5)), void 0 === t5 && ((this.o = t5 = new CSSStyleSheet()).replaceSync(this.cssText), e6 && o.set(s5, t5));
+      e6 && (t7 = o.get(s5)), void 0 === t7 && ((this.o = t7 = new CSSStyleSheet()).replaceSync(this.cssText), e6 && o.set(s5, t7));
     }
-    return t5;
+    return t7;
   }
   toString() {
     return this.cssText;
   }
 };
-var r = (t5) => new n("string" == typeof t5 ? t5 : t5 + "", void 0, s);
-var i = (t5, ...e6) => {
-  const o7 = 1 === t5.length ? t5[0] : e6.reduce((e7, s5, o8) => e7 + ((t6) => {
-    if (true === t6._$cssResult$) return t6.cssText;
-    if ("number" == typeof t6) return t6;
-    throw Error("Value passed to 'css' function must be a 'css' function result: " + t6 + ". Use 'unsafeCSS' to pass non-literal values, but take care to ensure page security.");
-  })(s5) + t5[o8 + 1], t5[0]);
-  return new n(o7, t5, s);
+var r = (t7) => new n("string" == typeof t7 ? t7 : t7 + "", void 0, s);
+var i = (t7, ...e6) => {
+  const o7 = 1 === t7.length ? t7[0] : e6.reduce((e7, s5, o8) => e7 + ((t8) => {
+    if (true === t8._$cssResult$) return t8.cssText;
+    if ("number" == typeof t8) return t8;
+    throw Error("Value passed to 'css' function must be a 'css' function result: " + t8 + ". Use 'unsafeCSS' to pass non-literal values, but take care to ensure page security.");
+  })(s5) + t7[o8 + 1], t7[0]);
+  return new n(o7, t7, s);
 };
 var S = (s5, o7) => {
-  if (e) s5.adoptedStyleSheets = o7.map((t5) => t5 instanceof CSSStyleSheet ? t5 : t5.styleSheet);
+  if (e) s5.adoptedStyleSheets = o7.map((t7) => t7 instanceof CSSStyleSheet ? t7 : t7.styleSheet);
   else for (const e6 of o7) {
     const o8 = document.createElement("style"), n6 = t.litNonce;
     void 0 !== n6 && o8.setAttribute("nonce", n6), o8.textContent = e6.cssText, s5.appendChild(o8);
   }
 };
-var c = e || void 0 === t.CSSStyleSheet ? (t5) => t5 : (t5) => t5 instanceof CSSStyleSheet ? ((t6) => {
+var c = e || void 0 === t.CSSStyleSheet ? (t7) => t7 : (t7) => t7 instanceof CSSStyleSheet ? ((t8) => {
   let e6 = "";
-  for (const s5 of t6.cssRules) e6 += s5.cssText;
+  for (const s5 of t8.cssRules) e6 += s5.cssText;
   return r(e6);
-})(t5) : t5;
+})(t7) : t7;
 
-// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/reactive-element.js
+// node_modules/@lit/reactive-element/node/reactive-element.js
 var { is: h, defineProperty: r2, getOwnPropertyDescriptor: o2, getOwnPropertyNames: n2, getOwnPropertySymbols: a, getPrototypeOf: c2 } = Object;
 var l = globalThis;
 l.customElements ??= customElements2;
 var p = l.trustedTypes;
 var d = p ? p.emptyScript : "";
 var u = l.reactiveElementPolyfillSupport;
-var f = (t5, s5) => t5;
-var b = { toAttribute(t5, s5) {
+var f = (t7, s5) => t7;
+var b = { toAttribute(t7, s5) {
   switch (s5) {
     case Boolean:
-      t5 = t5 ? d : null;
+      t7 = t7 ? d : null;
       break;
     case Object:
     case Array:
-      t5 = null == t5 ? t5 : JSON.stringify(t5);
+      t7 = null == t7 ? t7 : JSON.stringify(t7);
   }
-  return t5;
-}, fromAttribute(t5, s5) {
-  let i7 = t5;
+  return t7;
+}, fromAttribute(t7, s5) {
+  let i7 = t7;
   switch (s5) {
     case Boolean:
-      i7 = null !== t5;
+      i7 = null !== t7;
       break;
     case Number:
-      i7 = null === t5 ? null : Number(t5);
+      i7 = null === t7 ? null : Number(t7);
       break;
     case Object:
     case Array:
       try {
-        i7 = JSON.parse(t5);
-      } catch (t6) {
+        i7 = JSON.parse(t7);
+      } catch (t8) {
         i7 = null;
       }
   }
   return i7;
 } };
-var m = (t5, s5) => !h(t5, s5);
+var m = (t7, s5) => !h(t7, s5);
 var y = { attribute: true, type: String, converter: b, reflect: false, useDefault: false, hasChanged: m };
 Symbol.metadata ??= Symbol("metadata"), l.litPropertyMetadata ??= /* @__PURE__ */ new WeakMap();
 var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
-  static addInitializer(t5) {
-    this._$Ei(), (this.l ??= []).push(t5);
+  static addInitializer(t7) {
+    this._$Ei(), (this.l ??= []).push(t7);
   }
   static get observedAttributes() {
     return this.finalize(), this._$Eh && [...this._$Eh.keys()];
   }
-  static createProperty(t5, s5 = y) {
-    if (s5.state && (s5.attribute = false), this._$Ei(), this.prototype.hasOwnProperty(t5) && ((s5 = Object.create(s5)).wrapped = true), this.elementProperties.set(t5, s5), !s5.noAccessor) {
-      const i7 = Symbol(), e6 = this.getPropertyDescriptor(t5, i7, s5);
-      void 0 !== e6 && r2(this.prototype, t5, e6);
+  static createProperty(t7, s5 = y) {
+    if (s5.state && (s5.attribute = false), this._$Ei(), this.prototype.hasOwnProperty(t7) && ((s5 = Object.create(s5)).wrapped = true), this.elementProperties.set(t7, s5), !s5.noAccessor) {
+      const i7 = Symbol(), e6 = this.getPropertyDescriptor(t7, i7, s5);
+      void 0 !== e6 && r2(this.prototype, t7, e6);
     }
   }
-  static getPropertyDescriptor(t5, s5, i7) {
-    const { get: e6, set: h4 } = o2(this.prototype, t5) ?? { get() {
+  static getPropertyDescriptor(t7, s5, i7) {
+    const { get: e6, set: h4 } = o2(this.prototype, t7) ?? { get() {
       return this[s5];
-    }, set(t6) {
-      this[s5] = t6;
+    }, set(t8) {
+      this[s5] = t8;
     } };
     return { get: e6, set(s6) {
       const r6 = e6?.call(this);
-      h4?.call(this, s6), this.requestUpdate(t5, r6, i7);
+      h4?.call(this, s6), this.requestUpdate(t7, r6, i7);
     }, configurable: true, enumerable: true };
   }
-  static getPropertyOptions(t5) {
-    return this.elementProperties.get(t5) ?? y;
+  static getPropertyOptions(t7) {
+    return this.elementProperties.get(t7) ?? y;
   }
   static _$Ei() {
     if (this.hasOwnProperty(f("elementProperties"))) return;
-    const t5 = c2(this);
-    t5.finalize(), void 0 !== t5.l && (this.l = [...t5.l]), this.elementProperties = new Map(t5.elementProperties);
+    const t7 = c2(this);
+    t7.finalize(), void 0 !== t7.l && (this.l = [...t7.l]), this.elementProperties = new Map(t7.elementProperties);
   }
   static finalize() {
     if (this.hasOwnProperty(f("finalized"))) return;
     if (this.finalized = true, this._$Ei(), this.hasOwnProperty(f("properties"))) {
-      const t6 = this.properties, s5 = [...n2(t6), ...a(t6)];
-      for (const i7 of s5) this.createProperty(i7, t6[i7]);
+      const t8 = this.properties, s5 = [...n2(t8), ...a(t8)];
+      for (const i7 of s5) this.createProperty(i7, t8[i7]);
     }
-    const t5 = this[Symbol.metadata];
-    if (null !== t5) {
-      const s5 = litPropertyMetadata.get(t5);
-      if (void 0 !== s5) for (const [t6, i7] of s5) this.elementProperties.set(t6, i7);
+    const t7 = this[Symbol.metadata];
+    if (null !== t7) {
+      const s5 = litPropertyMetadata.get(t7);
+      if (void 0 !== s5) for (const [t8, i7] of s5) this.elementProperties.set(t8, i7);
     }
     this._$Eh = /* @__PURE__ */ new Map();
-    for (const [t6, s5] of this.elementProperties) {
-      const i7 = this._$Eu(t6, s5);
-      void 0 !== i7 && this._$Eh.set(i7, t6);
+    for (const [t8, s5] of this.elementProperties) {
+      const i7 = this._$Eu(t8, s5);
+      void 0 !== i7 && this._$Eh.set(i7, t8);
     }
     this.elementStyles = this.finalizeStyles(this.styles);
   }
-  static finalizeStyles(t5) {
+  static finalizeStyles(t7) {
     const s5 = [];
-    if (Array.isArray(t5)) {
-      const e6 = new Set(t5.flat(1 / 0).reverse());
-      for (const t6 of e6) s5.unshift(c(t6));
-    } else void 0 !== t5 && s5.push(c(t5));
+    if (Array.isArray(t7)) {
+      const e6 = new Set(t7.flat(1 / 0).reverse());
+      for (const t8 of e6) s5.unshift(c(t8));
+    } else void 0 !== t7 && s5.push(c(t7));
     return s5;
   }
-  static _$Eu(t5, s5) {
+  static _$Eu(t7, s5) {
     const i7 = s5.attribute;
-    return false === i7 ? void 0 : "string" == typeof i7 ? i7 : "string" == typeof t5 ? t5.toLowerCase() : void 0;
+    return false === i7 ? void 0 : "string" == typeof i7 ? i7 : "string" == typeof t7 ? t7.toLowerCase() : void 0;
   }
   constructor() {
     super(), this._$Ep = void 0, this.isUpdatePending = false, this.hasUpdated = false, this._$Em = null, this._$Ev();
   }
   _$Ev() {
-    this._$ES = new Promise((t5) => this.enableUpdating = t5), this._$AL = /* @__PURE__ */ new Map(), this._$E_(), this.requestUpdate(), this.constructor.l?.forEach((t5) => t5(this));
+    this._$ES = new Promise((t7) => this.enableUpdating = t7), this._$AL = /* @__PURE__ */ new Map(), this._$E_(), this.requestUpdate(), this.constructor.l?.forEach((t7) => t7(this));
   }
-  addController(t5) {
-    (this._$EO ??= /* @__PURE__ */ new Set()).add(t5), void 0 !== this.renderRoot && this.isConnected && t5.hostConnected?.();
+  addController(t7) {
+    (this._$EO ??= /* @__PURE__ */ new Set()).add(t7), void 0 !== this.renderRoot && this.isConnected && t7.hostConnected?.();
   }
-  removeController(t5) {
-    this._$EO?.delete(t5);
+  removeController(t7) {
+    this._$EO?.delete(t7);
   }
   _$E_() {
-    const t5 = /* @__PURE__ */ new Map(), s5 = this.constructor.elementProperties;
-    for (const i7 of s5.keys()) this.hasOwnProperty(i7) && (t5.set(i7, this[i7]), delete this[i7]);
-    t5.size > 0 && (this._$Ep = t5);
+    const t7 = /* @__PURE__ */ new Map(), s5 = this.constructor.elementProperties;
+    for (const i7 of s5.keys()) this.hasOwnProperty(i7) && (t7.set(i7, this[i7]), delete this[i7]);
+    t7.size > 0 && (this._$Ep = t7);
   }
   createRenderRoot() {
-    const t5 = this.shadowRoot ?? this.attachShadow(this.constructor.shadowRootOptions);
-    return S(t5, this.constructor.elementStyles), t5;
+    const t7 = this.shadowRoot ?? this.attachShadow(this.constructor.shadowRootOptions);
+    return S(t7, this.constructor.elementStyles), t7;
   }
   connectedCallback() {
-    this.renderRoot ??= this.createRenderRoot(), this.enableUpdating(true), this._$EO?.forEach((t5) => t5.hostConnected?.());
+    this.renderRoot ??= this.createRenderRoot(), this.enableUpdating(true), this._$EO?.forEach((t7) => t7.hostConnected?.());
   }
-  enableUpdating(t5) {
+  enableUpdating(t7) {
   }
   disconnectedCallback() {
-    this._$EO?.forEach((t5) => t5.hostDisconnected?.());
+    this._$EO?.forEach((t7) => t7.hostDisconnected?.());
   }
-  attributeChangedCallback(t5, s5, i7) {
-    this._$AK(t5, i7);
+  attributeChangedCallback(t7, s5, i7) {
+    this._$AK(t7, i7);
   }
-  _$ET(t5, s5) {
-    const i7 = this.constructor.elementProperties.get(t5), e6 = this.constructor._$Eu(t5, i7);
+  _$ET(t7, s5) {
+    const i7 = this.constructor.elementProperties.get(t7), e6 = this.constructor._$Eu(t7, i7);
     if (void 0 !== e6 && true === i7.reflect) {
       const h4 = (void 0 !== i7.converter?.toAttribute ? i7.converter : b).toAttribute(s5, i7.type);
-      this._$Em = t5, null == h4 ? this.removeAttribute(e6) : this.setAttribute(e6, h4), this._$Em = null;
+      this._$Em = t7, null == h4 ? this.removeAttribute(e6) : this.setAttribute(e6, h4), this._$Em = null;
     }
   }
-  _$AK(t5, s5) {
-    const i7 = this.constructor, e6 = i7._$Eh.get(t5);
+  _$AK(t7, s5) {
+    const i7 = this.constructor, e6 = i7._$Eh.get(t7);
     if (void 0 !== e6 && this._$Em !== e6) {
-      const t6 = i7.getPropertyOptions(e6), h4 = "function" == typeof t6.converter ? { fromAttribute: t6.converter } : void 0 !== t6.converter?.fromAttribute ? t6.converter : b;
+      const t8 = i7.getPropertyOptions(e6), h4 = "function" == typeof t8.converter ? { fromAttribute: t8.converter } : void 0 !== t8.converter?.fromAttribute ? t8.converter : b;
       this._$Em = e6;
-      const r6 = h4.fromAttribute(s5, t6.type);
+      const r6 = h4.fromAttribute(s5, t8.type);
       this[e6] = r6 ?? this._$Ej?.get(e6) ?? r6, this._$Em = null;
     }
   }
-  requestUpdate(t5, s5, i7, e6 = false, h4) {
-    if (void 0 !== t5) {
+  requestUpdate(t7, s5, i7, e6 = false, h4) {
+    if (void 0 !== t7) {
       const r6 = this.constructor;
-      if (false === e6 && (h4 = this[t5]), i7 ??= r6.getPropertyOptions(t5), !((i7.hasChanged ?? m)(h4, s5) || i7.useDefault && i7.reflect && h4 === this._$Ej?.get(t5) && !this.hasAttribute(r6._$Eu(t5, i7)))) return;
-      this.C(t5, s5, i7);
+      if (false === e6 && (h4 = this[t7]), i7 ??= r6.getPropertyOptions(t7), !((i7.hasChanged ?? m)(h4, s5) || i7.useDefault && i7.reflect && h4 === this._$Ej?.get(t7) && !this.hasAttribute(r6._$Eu(t7, i7)))) return;
+      this.C(t7, s5, i7);
     }
     false === this.isUpdatePending && (this._$ES = this._$EP());
   }
-  C(t5, s5, { useDefault: i7, reflect: e6, wrapped: h4 }, r6) {
-    i7 && !(this._$Ej ??= /* @__PURE__ */ new Map()).has(t5) && (this._$Ej.set(t5, r6 ?? s5 ?? this[t5]), true !== h4 || void 0 !== r6) || (this._$AL.has(t5) || (this.hasUpdated || i7 || (s5 = void 0), this._$AL.set(t5, s5)), true === e6 && this._$Em !== t5 && (this._$Eq ??= /* @__PURE__ */ new Set()).add(t5));
+  C(t7, s5, { useDefault: i7, reflect: e6, wrapped: h4 }, r6) {
+    i7 && !(this._$Ej ??= /* @__PURE__ */ new Map()).has(t7) && (this._$Ej.set(t7, r6 ?? s5 ?? this[t7]), true !== h4 || void 0 !== r6) || (this._$AL.has(t7) || (this.hasUpdated || i7 || (s5 = void 0), this._$AL.set(t7, s5)), true === e6 && this._$Em !== t7 && (this._$Eq ??= /* @__PURE__ */ new Set()).add(t7));
   }
   async _$EP() {
     this.isUpdatePending = true;
     try {
       await this._$ES;
-    } catch (t6) {
-      Promise.reject(t6);
+    } catch (t8) {
+      Promise.reject(t8);
     }
-    const t5 = this.scheduleUpdate();
-    return null != t5 && await t5, !this.isUpdatePending;
+    const t7 = this.scheduleUpdate();
+    return null != t7 && await t7, !this.isUpdatePending;
   }
   scheduleUpdate() {
     return this.performUpdate();
@@ -897,28 +897,28 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
     if (!this.isUpdatePending) return;
     if (!this.hasUpdated) {
       if (this.renderRoot ??= this.createRenderRoot(), this._$Ep) {
-        for (const [t7, s6] of this._$Ep) this[t7] = s6;
+        for (const [t9, s6] of this._$Ep) this[t9] = s6;
         this._$Ep = void 0;
       }
-      const t6 = this.constructor.elementProperties;
-      if (t6.size > 0) for (const [s6, i7] of t6) {
-        const { wrapped: t7 } = i7, e6 = this[s6];
-        true !== t7 || this._$AL.has(s6) || void 0 === e6 || this.C(s6, void 0, i7, e6);
+      const t8 = this.constructor.elementProperties;
+      if (t8.size > 0) for (const [s6, i7] of t8) {
+        const { wrapped: t9 } = i7, e6 = this[s6];
+        true !== t9 || this._$AL.has(s6) || void 0 === e6 || this.C(s6, void 0, i7, e6);
       }
     }
-    let t5 = false;
+    let t7 = false;
     const s5 = this._$AL;
     try {
-      t5 = this.shouldUpdate(s5), t5 ? (this.willUpdate(s5), this._$EO?.forEach((t6) => t6.hostUpdate?.()), this.update(s5)) : this._$EM();
+      t7 = this.shouldUpdate(s5), t7 ? (this.willUpdate(s5), this._$EO?.forEach((t8) => t8.hostUpdate?.()), this.update(s5)) : this._$EM();
     } catch (s6) {
-      throw t5 = false, this._$EM(), s6;
+      throw t7 = false, this._$EM(), s6;
     }
-    t5 && this._$AE(s5);
+    t7 && this._$AE(s5);
   }
-  willUpdate(t5) {
+  willUpdate(t7) {
   }
-  _$AE(t5) {
-    this._$EO?.forEach((t6) => t6.hostUpdated?.()), this.hasUpdated || (this.hasUpdated = true, this.firstUpdated(t5)), this.updated(t5);
+  _$AE(t7) {
+    this._$EO?.forEach((t8) => t8.hostUpdated?.()), this.hasUpdated || (this.hasUpdated = true, this.firstUpdated(t7)), this.updated(t7);
   }
   _$EM() {
     this._$AL = /* @__PURE__ */ new Map(), this.isUpdatePending = false;
@@ -929,33 +929,33 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
   getUpdateComplete() {
     return this._$ES;
   }
-  shouldUpdate(t5) {
+  shouldUpdate(t7) {
     return true;
   }
-  update(t5) {
-    this._$Eq &&= this._$Eq.forEach((t6) => this._$ET(t6, this[t6])), this._$EM();
+  update(t7) {
+    this._$Eq &&= this._$Eq.forEach((t8) => this._$ET(t8, this[t8])), this._$EM();
   }
-  updated(t5) {
+  updated(t7) {
   }
-  firstUpdated(t5) {
+  firstUpdated(t7) {
   }
 };
 g.elementStyles = [], g.shadowRootOptions = { mode: "open" }, g[f("elementProperties")] = /* @__PURE__ */ new Map(), g[f("finalized")] = /* @__PURE__ */ new Map(), u?.({ ReactiveElement: g }), (l.reactiveElementVersions ??= []).push("2.1.2");
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
+// node_modules/lit-html/lit-html.js
 var t2 = globalThis;
-var i2 = (t5) => t5;
+var i2 = (t7) => t7;
 var s2 = t2.trustedTypes;
-var e2 = s2 ? s2.createPolicy("lit-html", { createHTML: (t5) => t5 }) : void 0;
+var e2 = s2 ? s2.createPolicy("lit-html", { createHTML: (t7) => t7 }) : void 0;
 var h2 = "$lit$";
 var o3 = `lit$${Math.random().toFixed(9).slice(2)}$`;
 var n3 = "?" + o3;
 var r3 = `<${n3}>`;
 var l2 = document;
 var c3 = () => l2.createComment("");
-var a2 = (t5) => null === t5 || "object" != typeof t5 && "function" != typeof t5;
+var a2 = (t7) => null === t7 || "object" != typeof t7 && "function" != typeof t7;
 var u2 = Array.isArray;
-var d2 = (t5) => u2(t5) || "function" == typeof t5?.[Symbol.iterator];
+var d2 = (t7) => u2(t7) || "function" == typeof t7?.[Symbol.iterator];
 var f2 = "[ 	\n\f\r]";
 var v = /<(?:(!--|\/[^a-zA-Z])|(\/?[a-zA-Z][^>\s]*)|(\/?$))/g;
 var _ = /-->/g;
@@ -965,7 +965,7 @@ var p2 = RegExp(`>|${f2}(?:([^\\s"'>=/]+)(${f2}*=${f2}*(?:[^
 var g2 = /'/g;
 var $ = /"/g;
 var y2 = /^(?:script|style|textarea|title)$/i;
-var x = (t5) => (i7, ...s5) => ({ _$litType$: t5, strings: i7, values: s5 });
+var x = (t7) => (i7, ...s5) => ({ _$litType$: t7, strings: i7, values: s5 });
 var b2 = x(1);
 var w = x(2);
 var T = x(3);
@@ -973,68 +973,68 @@ var E = Symbol.for("lit-noChange");
 var A = Symbol.for("lit-nothing");
 var C = /* @__PURE__ */ new WeakMap();
 var P = l2.createTreeWalker(l2, 129);
-function V(t5, i7) {
-  if (!u2(t5) || !t5.hasOwnProperty("raw")) throw Error("invalid template strings array");
+function V(t7, i7) {
+  if (!u2(t7) || !t7.hasOwnProperty("raw")) throw Error("invalid template strings array");
   return void 0 !== e2 ? e2.createHTML(i7) : i7;
 }
-var N = (t5, i7) => {
-  const s5 = t5.length - 1, e6 = [];
+var N = (t7, i7) => {
+  const s5 = t7.length - 1, e6 = [];
   let n6, l3 = 2 === i7 ? "<svg>" : 3 === i7 ? "<math>" : "", c5 = v;
   for (let i8 = 0; i8 < s5; i8++) {
-    const s6 = t5[i8];
+    const s6 = t7[i8];
     let a3, u5, d3 = -1, f3 = 0;
     for (; f3 < s6.length && (c5.lastIndex = f3, u5 = c5.exec(s6), null !== u5); ) f3 = c5.lastIndex, c5 === v ? "!--" === u5[1] ? c5 = _ : void 0 !== u5[1] ? c5 = m2 : void 0 !== u5[2] ? (y2.test(u5[2]) && (n6 = RegExp("</" + u5[2], "g")), c5 = p2) : void 0 !== u5[3] && (c5 = p2) : c5 === p2 ? ">" === u5[0] ? (c5 = n6 ?? v, d3 = -1) : void 0 === u5[1] ? d3 = -2 : (d3 = c5.lastIndex - u5[2].length, a3 = u5[1], c5 = void 0 === u5[3] ? p2 : '"' === u5[3] ? $ : g2) : c5 === $ || c5 === g2 ? c5 = p2 : c5 === _ || c5 === m2 ? c5 = v : (c5 = p2, n6 = void 0);
-    const x2 = c5 === p2 && t5[i8 + 1].startsWith("/>") ? " " : "";
+    const x2 = c5 === p2 && t7[i8 + 1].startsWith("/>") ? " " : "";
     l3 += c5 === v ? s6 + r3 : d3 >= 0 ? (e6.push(a3), s6.slice(0, d3) + h2 + s6.slice(d3) + o3 + x2) : s6 + o3 + (-2 === d3 ? i8 : x2);
   }
-  return [V(t5, l3 + (t5[s5] || "<?>") + (2 === i7 ? "</svg>" : 3 === i7 ? "</math>" : "")), e6];
+  return [V(t7, l3 + (t7[s5] || "<?>") + (2 === i7 ? "</svg>" : 3 === i7 ? "</math>" : "")), e6];
 };
 var S2 = class _S {
-  constructor({ strings: t5, _$litType$: i7 }, e6) {
+  constructor({ strings: t7, _$litType$: i7 }, e6) {
     let r6;
     this.parts = [];
     let l3 = 0, a3 = 0;
-    const u5 = t5.length - 1, d3 = this.parts, [f3, v3] = N(t5, i7);
+    const u5 = t7.length - 1, d3 = this.parts, [f3, v3] = N(t7, i7);
     if (this.el = _S.createElement(f3, e6), P.currentNode = this.el.content, 2 === i7 || 3 === i7) {
-      const t6 = this.el.content.firstChild;
-      t6.replaceWith(...t6.childNodes);
+      const t8 = this.el.content.firstChild;
+      t8.replaceWith(...t8.childNodes);
     }
     for (; null !== (r6 = P.nextNode()) && d3.length < u5; ) {
       if (1 === r6.nodeType) {
-        if (r6.hasAttributes()) for (const t6 of r6.getAttributeNames()) if (t6.endsWith(h2)) {
-          const i8 = v3[a3++], s5 = r6.getAttribute(t6).split(o3), e7 = /([.?@])?(.*)/.exec(i8);
-          d3.push({ type: 1, index: l3, name: e7[2], strings: s5, ctor: "." === e7[1] ? I : "?" === e7[1] ? L : "@" === e7[1] ? z : H }), r6.removeAttribute(t6);
-        } else t6.startsWith(o3) && (d3.push({ type: 6, index: l3 }), r6.removeAttribute(t6));
+        if (r6.hasAttributes()) for (const t8 of r6.getAttributeNames()) if (t8.endsWith(h2)) {
+          const i8 = v3[a3++], s5 = r6.getAttribute(t8).split(o3), e7 = /([.?@])?(.*)/.exec(i8);
+          d3.push({ type: 1, index: l3, name: e7[2], strings: s5, ctor: "." === e7[1] ? I : "?" === e7[1] ? L : "@" === e7[1] ? z : H }), r6.removeAttribute(t8);
+        } else t8.startsWith(o3) && (d3.push({ type: 6, index: l3 }), r6.removeAttribute(t8));
         if (y2.test(r6.tagName)) {
-          const t6 = r6.textContent.split(o3), i8 = t6.length - 1;
+          const t8 = r6.textContent.split(o3), i8 = t8.length - 1;
           if (i8 > 0) {
             r6.textContent = s2 ? s2.emptyScript : "";
-            for (let s5 = 0; s5 < i8; s5++) r6.append(t6[s5], c3()), P.nextNode(), d3.push({ type: 2, index: ++l3 });
-            r6.append(t6[i8], c3());
+            for (let s5 = 0; s5 < i8; s5++) r6.append(t8[s5], c3()), P.nextNode(), d3.push({ type: 2, index: ++l3 });
+            r6.append(t8[i8], c3());
           }
         }
       } else if (8 === r6.nodeType) if (r6.data === n3) d3.push({ type: 2, index: l3 });
       else {
-        let t6 = -1;
-        for (; -1 !== (t6 = r6.data.indexOf(o3, t6 + 1)); ) d3.push({ type: 7, index: l3 }), t6 += o3.length - 1;
+        let t8 = -1;
+        for (; -1 !== (t8 = r6.data.indexOf(o3, t8 + 1)); ) d3.push({ type: 7, index: l3 }), t8 += o3.length - 1;
       }
       l3++;
     }
   }
-  static createElement(t5, i7) {
+  static createElement(t7, i7) {
     const s5 = l2.createElement("template");
-    return s5.innerHTML = t5, s5;
+    return s5.innerHTML = t7, s5;
   }
 };
-function M(t5, i7, s5 = t5, e6) {
+function M(t7, i7, s5 = t7, e6) {
   if (i7 === E) return i7;
   let h4 = void 0 !== e6 ? s5._$Co?.[e6] : s5._$Cl;
   const o7 = a2(i7) ? void 0 : i7._$litDirective$;
-  return h4?.constructor !== o7 && (h4?._$AO?.(false), void 0 === o7 ? h4 = void 0 : (h4 = new o7(t5), h4._$AT(t5, s5, e6)), void 0 !== e6 ? (s5._$Co ??= [])[e6] = h4 : s5._$Cl = h4), void 0 !== h4 && (i7 = M(t5, h4._$AS(t5, i7.values), h4, e6)), i7;
+  return h4?.constructor !== o7 && (h4?._$AO?.(false), void 0 === o7 ? h4 = void 0 : (h4 = new o7(t7), h4._$AT(t7, s5, e6)), void 0 !== e6 ? (s5._$Co ??= [])[e6] = h4 : s5._$Cl = h4), void 0 !== h4 && (i7 = M(t7, h4._$AS(t7, i7.values), h4, e6)), i7;
 }
 var R = class {
-  constructor(t5, i7) {
-    this._$AV = [], this._$AN = void 0, this._$AD = t5, this._$AM = i7;
+  constructor(t7, i7) {
+    this._$AV = [], this._$AN = void 0, this._$AD = t7, this._$AM = i7;
   }
   get parentNode() {
     return this._$AM.parentNode;
@@ -1042,35 +1042,35 @@ var R = class {
   get _$AU() {
     return this._$AM._$AU;
   }
-  u(t5) {
-    const { el: { content: i7 }, parts: s5 } = this._$AD, e6 = (t5?.creationScope ?? l2).importNode(i7, true);
+  u(t7) {
+    const { el: { content: i7 }, parts: s5 } = this._$AD, e6 = (t7?.creationScope ?? l2).importNode(i7, true);
     P.currentNode = e6;
     let h4 = P.nextNode(), o7 = 0, n6 = 0, r6 = s5[0];
     for (; void 0 !== r6; ) {
       if (o7 === r6.index) {
         let i8;
-        2 === r6.type ? i8 = new k(h4, h4.nextSibling, this, t5) : 1 === r6.type ? i8 = new r6.ctor(h4, r6.name, r6.strings, this, t5) : 6 === r6.type && (i8 = new Z(h4, this, t5)), this._$AV.push(i8), r6 = s5[++n6];
+        2 === r6.type ? i8 = new k(h4, h4.nextSibling, this, t7) : 1 === r6.type ? i8 = new r6.ctor(h4, r6.name, r6.strings, this, t7) : 6 === r6.type && (i8 = new Z(h4, this, t7)), this._$AV.push(i8), r6 = s5[++n6];
       }
       o7 !== r6?.index && (h4 = P.nextNode(), o7++);
     }
     return P.currentNode = l2, e6;
   }
-  p(t5) {
+  p(t7) {
     let i7 = 0;
-    for (const s5 of this._$AV) void 0 !== s5 && (void 0 !== s5.strings ? (s5._$AI(t5, s5, i7), i7 += s5.strings.length - 2) : s5._$AI(t5[i7])), i7++;
+    for (const s5 of this._$AV) void 0 !== s5 && (void 0 !== s5.strings ? (s5._$AI(t7, s5, i7), i7 += s5.strings.length - 2) : s5._$AI(t7[i7])), i7++;
   }
 };
 var k = class _k {
   get _$AU() {
     return this._$AM?._$AU ?? this._$Cv;
   }
-  constructor(t5, i7, s5, e6) {
-    this.type = 2, this._$AH = A, this._$AN = void 0, this._$AA = t5, this._$AB = i7, this._$AM = s5, this.options = e6, this._$Cv = e6?.isConnected ?? true;
+  constructor(t7, i7, s5, e6) {
+    this.type = 2, this._$AH = A, this._$AN = void 0, this._$AA = t7, this._$AB = i7, this._$AM = s5, this.options = e6, this._$Cv = e6?.isConnected ?? true;
   }
   get parentNode() {
-    let t5 = this._$AA.parentNode;
+    let t7 = this._$AA.parentNode;
     const i7 = this._$AM;
-    return void 0 !== i7 && 11 === t5?.nodeType && (t5 = i7.parentNode), t5;
+    return void 0 !== i7 && 11 === t7?.nodeType && (t7 = i7.parentNode), t7;
   }
   get startNode() {
     return this._$AA;
@@ -1078,45 +1078,45 @@ var k = class _k {
   get endNode() {
     return this._$AB;
   }
-  _$AI(t5, i7 = this) {
-    t5 = M(this, t5, i7), a2(t5) ? t5 === A || null == t5 || "" === t5 ? (this._$AH !== A && this._$AR(), this._$AH = A) : t5 !== this._$AH && t5 !== E && this._(t5) : void 0 !== t5._$litType$ ? this.$(t5) : void 0 !== t5.nodeType ? this.T(t5) : d2(t5) ? this.k(t5) : this._(t5);
+  _$AI(t7, i7 = this) {
+    t7 = M(this, t7, i7), a2(t7) ? t7 === A || null == t7 || "" === t7 ? (this._$AH !== A && this._$AR(), this._$AH = A) : t7 !== this._$AH && t7 !== E && this._(t7) : void 0 !== t7._$litType$ ? this.$(t7) : void 0 !== t7.nodeType ? this.T(t7) : d2(t7) ? this.k(t7) : this._(t7);
   }
-  O(t5) {
-    return this._$AA.parentNode.insertBefore(t5, this._$AB);
+  O(t7) {
+    return this._$AA.parentNode.insertBefore(t7, this._$AB);
   }
-  T(t5) {
-    this._$AH !== t5 && (this._$AR(), this._$AH = this.O(t5));
+  T(t7) {
+    this._$AH !== t7 && (this._$AR(), this._$AH = this.O(t7));
   }
-  _(t5) {
-    this._$AH !== A && a2(this._$AH) ? this._$AA.nextSibling.data = t5 : this.T(l2.createTextNode(t5)), this._$AH = t5;
+  _(t7) {
+    this._$AH !== A && a2(this._$AH) ? this._$AA.nextSibling.data = t7 : this.T(l2.createTextNode(t7)), this._$AH = t7;
   }
-  $(t5) {
-    const { values: i7, _$litType$: s5 } = t5, e6 = "number" == typeof s5 ? this._$AC(t5) : (void 0 === s5.el && (s5.el = S2.createElement(V(s5.h, s5.h[0]), this.options)), s5);
+  $(t7) {
+    const { values: i7, _$litType$: s5 } = t7, e6 = "number" == typeof s5 ? this._$AC(t7) : (void 0 === s5.el && (s5.el = S2.createElement(V(s5.h, s5.h[0]), this.options)), s5);
     if (this._$AH?._$AD === e6) this._$AH.p(i7);
     else {
-      const t6 = new R(e6, this), s6 = t6.u(this.options);
-      t6.p(i7), this.T(s6), this._$AH = t6;
+      const t8 = new R(e6, this), s6 = t8.u(this.options);
+      t8.p(i7), this.T(s6), this._$AH = t8;
     }
   }
-  _$AC(t5) {
-    let i7 = C.get(t5.strings);
-    return void 0 === i7 && C.set(t5.strings, i7 = new S2(t5)), i7;
+  _$AC(t7) {
+    let i7 = C.get(t7.strings);
+    return void 0 === i7 && C.set(t7.strings, i7 = new S2(t7)), i7;
   }
-  k(t5) {
+  k(t7) {
     u2(this._$AH) || (this._$AH = [], this._$AR());
     const i7 = this._$AH;
     let s5, e6 = 0;
-    for (const h4 of t5) e6 === i7.length ? i7.push(s5 = new _k(this.O(c3()), this.O(c3()), this, this.options)) : s5 = i7[e6], s5._$AI(h4), e6++;
+    for (const h4 of t7) e6 === i7.length ? i7.push(s5 = new _k(this.O(c3()), this.O(c3()), this, this.options)) : s5 = i7[e6], s5._$AI(h4), e6++;
     e6 < i7.length && (this._$AR(s5 && s5._$AB.nextSibling, e6), i7.length = e6);
   }
-  _$AR(t5 = this._$AA.nextSibling, s5) {
-    for (this._$AP?.(false, true, s5); t5 !== this._$AB; ) {
-      const s6 = i2(t5).nextSibling;
-      i2(t5).remove(), t5 = s6;
+  _$AR(t7 = this._$AA.nextSibling, s5) {
+    for (this._$AP?.(false, true, s5); t7 !== this._$AB; ) {
+      const s6 = i2(t7).nextSibling;
+      i2(t7).remove(), t7 = s6;
     }
   }
-  setConnected(t5) {
-    void 0 === this._$AM && (this._$Cv = t5, this._$AP?.(t5));
+  setConnected(t7) {
+    void 0 === this._$AM && (this._$Cv = t7, this._$AP?.(t7));
   }
 };
 var H = class {
@@ -1126,90 +1126,90 @@ var H = class {
   get _$AU() {
     return this._$AM._$AU;
   }
-  constructor(t5, i7, s5, e6, h4) {
-    this.type = 1, this._$AH = A, this._$AN = void 0, this.element = t5, this.name = i7, this._$AM = e6, this.options = h4, s5.length > 2 || "" !== s5[0] || "" !== s5[1] ? (this._$AH = Array(s5.length - 1).fill(new String()), this.strings = s5) : this._$AH = A;
+  constructor(t7, i7, s5, e6, h4) {
+    this.type = 1, this._$AH = A, this._$AN = void 0, this.element = t7, this.name = i7, this._$AM = e6, this.options = h4, s5.length > 2 || "" !== s5[0] || "" !== s5[1] ? (this._$AH = Array(s5.length - 1).fill(new String()), this.strings = s5) : this._$AH = A;
   }
-  _$AI(t5, i7 = this, s5, e6) {
+  _$AI(t7, i7 = this, s5, e6) {
     const h4 = this.strings;
     let o7 = false;
-    if (void 0 === h4) t5 = M(this, t5, i7, 0), o7 = !a2(t5) || t5 !== this._$AH && t5 !== E, o7 && (this._$AH = t5);
+    if (void 0 === h4) t7 = M(this, t7, i7, 0), o7 = !a2(t7) || t7 !== this._$AH && t7 !== E, o7 && (this._$AH = t7);
     else {
-      const e7 = t5;
+      const e7 = t7;
       let n6, r6;
-      for (t5 = h4[0], n6 = 0; n6 < h4.length - 1; n6++) r6 = M(this, e7[s5 + n6], i7, n6), r6 === E && (r6 = this._$AH[n6]), o7 ||= !a2(r6) || r6 !== this._$AH[n6], r6 === A ? t5 = A : t5 !== A && (t5 += (r6 ?? "") + h4[n6 + 1]), this._$AH[n6] = r6;
+      for (t7 = h4[0], n6 = 0; n6 < h4.length - 1; n6++) r6 = M(this, e7[s5 + n6], i7, n6), r6 === E && (r6 = this._$AH[n6]), o7 ||= !a2(r6) || r6 !== this._$AH[n6], r6 === A ? t7 = A : t7 !== A && (t7 += (r6 ?? "") + h4[n6 + 1]), this._$AH[n6] = r6;
     }
-    o7 && !e6 && this.j(t5);
+    o7 && !e6 && this.j(t7);
   }
-  j(t5) {
-    t5 === A ? this.element.removeAttribute(this.name) : this.element.setAttribute(this.name, t5 ?? "");
+  j(t7) {
+    t7 === A ? this.element.removeAttribute(this.name) : this.element.setAttribute(this.name, t7 ?? "");
   }
 };
 var I = class extends H {
   constructor() {
     super(...arguments), this.type = 3;
   }
-  j(t5) {
-    this.element[this.name] = t5 === A ? void 0 : t5;
+  j(t7) {
+    this.element[this.name] = t7 === A ? void 0 : t7;
   }
 };
 var L = class extends H {
   constructor() {
     super(...arguments), this.type = 4;
   }
-  j(t5) {
-    this.element.toggleAttribute(this.name, !!t5 && t5 !== A);
+  j(t7) {
+    this.element.toggleAttribute(this.name, !!t7 && t7 !== A);
   }
 };
 var z = class extends H {
-  constructor(t5, i7, s5, e6, h4) {
-    super(t5, i7, s5, e6, h4), this.type = 5;
+  constructor(t7, i7, s5, e6, h4) {
+    super(t7, i7, s5, e6, h4), this.type = 5;
   }
-  _$AI(t5, i7 = this) {
-    if ((t5 = M(this, t5, i7, 0) ?? A) === E) return;
-    const s5 = this._$AH, e6 = t5 === A && s5 !== A || t5.capture !== s5.capture || t5.once !== s5.once || t5.passive !== s5.passive, h4 = t5 !== A && (s5 === A || e6);
-    e6 && this.element.removeEventListener(this.name, this, s5), h4 && this.element.addEventListener(this.name, this, t5), this._$AH = t5;
+  _$AI(t7, i7 = this) {
+    if ((t7 = M(this, t7, i7, 0) ?? A) === E) return;
+    const s5 = this._$AH, e6 = t7 === A && s5 !== A || t7.capture !== s5.capture || t7.once !== s5.once || t7.passive !== s5.passive, h4 = t7 !== A && (s5 === A || e6);
+    e6 && this.element.removeEventListener(this.name, this, s5), h4 && this.element.addEventListener(this.name, this, t7), this._$AH = t7;
   }
-  handleEvent(t5) {
-    "function" == typeof this._$AH ? this._$AH.call(this.options?.host ?? this.element, t5) : this._$AH.handleEvent(t5);
+  handleEvent(t7) {
+    "function" == typeof this._$AH ? this._$AH.call(this.options?.host ?? this.element, t7) : this._$AH.handleEvent(t7);
   }
 };
 var Z = class {
-  constructor(t5, i7, s5) {
-    this.element = t5, this.type = 6, this._$AN = void 0, this._$AM = i7, this.options = s5;
+  constructor(t7, i7, s5) {
+    this.element = t7, this.type = 6, this._$AN = void 0, this._$AM = i7, this.options = s5;
   }
   get _$AU() {
     return this._$AM._$AU;
   }
-  _$AI(t5) {
-    M(this, t5);
+  _$AI(t7) {
+    M(this, t7);
   }
 };
 var j = { M: h2, P: o3, A: n3, C: 1, L: N, R, D: d2, V: M, I: k, H, N: L, U: z, B: I, F: Z };
 var B = t2.litHtmlPolyfillSupport;
 B?.(S2, k), (t2.litHtmlVersions ??= []).push("3.3.3");
-var D = (t5, i7, s5) => {
+var D = (t7, i7, s5) => {
   const e6 = s5?.renderBefore ?? i7;
   let h4 = e6._$litPart$;
   if (void 0 === h4) {
-    const t6 = s5?.renderBefore ?? null;
-    e6._$litPart$ = h4 = new k(i7.insertBefore(c3(), t6), t6, void 0, s5 ?? {});
+    const t8 = s5?.renderBefore ?? null;
+    e6._$litPart$ = h4 = new k(i7.insertBefore(c3(), t8), t8, void 0, s5 ?? {});
   }
-  return h4._$AI(t5), h4;
+  return h4._$AI(t7), h4;
 };
 
-// node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
+// node_modules/lit-element/lit-element.js
 var s3 = globalThis;
 var i3 = class extends g {
   constructor() {
     super(...arguments), this.renderOptions = { host: this }, this._$Do = void 0;
   }
   createRenderRoot() {
-    const t5 = super.createRenderRoot();
-    return this.renderOptions.renderBefore ??= t5.firstChild, t5;
+    const t7 = super.createRenderRoot();
+    return this.renderOptions.renderBefore ??= t7.firstChild, t7;
   }
-  update(t5) {
+  update(t7) {
     const r6 = this.render();
-    this.hasUpdated || (this.renderOptions.isConnected = this.isConnected), super.update(t5), this._$Do = D(r6, this.renderRoot, this.renderOptions);
+    this.hasUpdated || (this.renderOptions.isConnected = this.isConnected), super.update(t7), this._$Do = D(r6, this.renderRoot, this.renderOptions);
   }
   connectedCallback() {
     super.connectedCallback(), this._$Do?.setConnected(true);
@@ -1226,60 +1226,60 @@ var o4 = s3.litElementPolyfillSupport;
 o4?.({ LitElement: i3 });
 (s3.litElementVersions ??= []).push("4.2.2");
 
-// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/property.js
+// node_modules/@lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
-var r4 = (t5 = o5, e6, r6) => {
+var r4 = (t7 = o5, e6, r6) => {
   const { kind: n6, metadata: i7 } = r6;
   let s5 = globalThis.litPropertyMetadata.get(i7);
-  if (void 0 === s5 && globalThis.litPropertyMetadata.set(i7, s5 = /* @__PURE__ */ new Map()), "setter" === n6 && ((t5 = Object.create(t5)).wrapped = true), s5.set(r6.name, t5), "accessor" === n6) {
+  if (void 0 === s5 && globalThis.litPropertyMetadata.set(i7, s5 = /* @__PURE__ */ new Map()), "setter" === n6 && ((t7 = Object.create(t7)).wrapped = true), s5.set(r6.name, t7), "accessor" === n6) {
     const { name: o7 } = r6;
     return { set(r7) {
       const n7 = e6.get.call(this);
-      e6.set.call(this, r7), this.requestUpdate(o7, n7, t5, true, r7);
+      e6.set.call(this, r7), this.requestUpdate(o7, n7, t7, true, r7);
     }, init(e7) {
-      return void 0 !== e7 && this.C(o7, void 0, t5, e7), e7;
+      return void 0 !== e7 && this.C(o7, void 0, t7, e7), e7;
     } };
   }
   if ("setter" === n6) {
     const { name: o7 } = r6;
     return function(r7) {
       const n7 = this[o7];
-      e6.call(this, r7), this.requestUpdate(o7, n7, t5, true, r7);
+      e6.call(this, r7), this.requestUpdate(o7, n7, t7, true, r7);
     };
   }
   throw Error("Unsupported decorator location: " + n6);
 };
-function n4(t5) {
-  return (e6, o7) => "object" == typeof o7 ? r4(t5, e6, o7) : ((t6, e7, o8) => {
+function n4(t7) {
+  return (e6, o7) => "object" == typeof o7 ? r4(t7, e6, o7) : ((t8, e7, o8) => {
     const r6 = e7.hasOwnProperty(o8);
-    return e7.constructor.createProperty(o8, t6), r6 ? Object.getOwnPropertyDescriptor(e7, o8) : void 0;
-  })(t5, e6, o7);
+    return e7.constructor.createProperty(o8, t8), r6 ? Object.getOwnPropertyDescriptor(e7, o8) : void 0;
+  })(t7, e6, o7);
 }
 
-// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/state.js
+// node_modules/@lit/reactive-element/node/decorators/state.js
 function r5(r6) {
   return n4({ ...r6, state: true, attribute: false });
 }
 
-// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/base.js
-var e3 = (e6, t5, c5) => (c5.configurable = true, c5.enumerable = true, Reflect.decorate && "object" != typeof t5 && Object.defineProperty(e6, t5, c5), c5);
+// node_modules/@lit/reactive-element/node/decorators/base.js
+var e3 = (e6, t7, c5) => (c5.configurable = true, c5.enumerable = true, Reflect.decorate && "object" != typeof t7 && Object.defineProperty(e6, t7, c5), c5);
 
-// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/query.js
+// node_modules/@lit/reactive-element/node/decorators/query.js
 function e4(e6, r6) {
   return (n6, s5, i7) => {
-    const o7 = (t5) => t5.renderRoot?.querySelector(e6) ?? null;
+    const o7 = (t7) => t7.renderRoot?.querySelector(e6) ?? null;
     if (r6) {
       const { get: e7, set: r7 } = "object" == typeof s5 ? n6 : i7 ?? (() => {
-        const t5 = Symbol();
+        const t7 = Symbol();
         return { get() {
-          return this[t5];
+          return this[t7];
         }, set(e8) {
-          this[t5] = e8;
+          this[t7] = e8;
         } };
       })();
       return e3(n6, s5, { get() {
-        let t5 = e7.call(this);
-        return void 0 === t5 && (t5 = o7(this), (null !== t5 || this.hasUpdated) && r7.call(this, t5)), t5;
+        let t7 = e7.call(this);
+        return void 0 === t7 && (t7 = o7(this), (null !== t7 || this.hasUpdated) && r7.call(this, t7)), t7;
       } });
     }
     return e3(n6, s5, { get() {
@@ -1288,14 +1288,14 @@ function e4(e6, r6) {
   };
 }
 
-// node_modules/.pnpm/@outfitkit+core@file+..+outfitkit/node_modules/@outfitkit/core/dist/define.js
+// ../outfitkit/dist/define.js
 function define(tag, ctor) {
   if (typeof customElements !== "undefined" && !customElements.get(tag)) {
     customElements.define(tag, ctor);
   }
 }
 
-// node_modules/.pnpm/@outfitkit+core@file+..+outfitkit/node_modules/@outfitkit/core/dist/ok-qr.js
+// ../outfitkit/dist/ok-qr.js
 var __defProp2 = Object.defineProperty;
 var __decorateClass2 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -1943,7 +1943,7 @@ __decorateClass2([
 ], OkQr.prototype, "margin");
 define("ok-qr", OkQr);
 
-// node_modules/.pnpm/@outfitkit+core@file+..+outfitkit/node_modules/@outfitkit/core/dist/ok-receipt.js
+// ../outfitkit/dist/ok-receipt.js
 var __defProp3 = Object.defineProperty;
 var __decorateClass3 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2091,7 +2091,7 @@ var OkReceipt = class extends i3 {
     return b2`<table class="totals">
       ${r6.subtotal != null ? b2`<tr><td>${this.t.subtotal}</td><td class="num">${this.money(r6.subtotal)}</td></tr>` : A}
       ${taxes.map(
-      (t5) => b2`<tr><td>${t5.label}</td><td class="num">${this.money(t5.amount)}</td></tr>`
+      (t7) => b2`<tr><td>${t7.label}</td><td class="num">${this.money(t7.amount)}</td></tr>`
     )}
       <tr class="grand"><td>${this.t.total}</td><td class="num">${this.money(r6.total)}</td></tr>
       ${r6.payment ? b2`<tr class="pay"><td>${r6.payment.method}</td><td class="num">${this.money(
@@ -2121,7 +2121,7 @@ __decorateClass3([
 ], OkReceipt.prototype, "labels");
 define("ok-receipt", OkReceipt);
 
-// node_modules/.pnpm/@outfitkit+core@file+..+outfitkit/node_modules/@outfitkit/core/dist/ok-invoice.js
+// ../outfitkit/dist/ok-invoice.js
 var __defProp4 = Object.defineProperty;
 var __decorateClass4 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2312,7 +2312,7 @@ var OkInvoice = class extends i3 {
         <tr><td class="muted">${this.t.taxBase}</td><td class="num">${this.money(inv.subtotal)}</td></tr>
         ${inv.discount_total ? b2`<tr><td class="muted">${this.t.discountTotal}</td><td class="num">−${this.money(inv.discount_total)}</td></tr>` : A}
         ${taxes.map(
-      (t5) => b2`<tr><td class="muted">${t5.label}${t5.base != null ? b2` <span class="muted">(${this.money(t5.base)})</span>` : A}</td><td class="num">${this.money(t5.amount)}</td></tr>`
+      (t7) => b2`<tr><td class="muted">${t7.label}${t7.base != null ? b2` <span class="muted">(${this.money(t7.base)})</span>` : A}</td><td class="num">${this.money(t7.amount)}</td></tr>`
     )}
         <tr class="grand"><td>${this.t.total}</td><td class="num">${this.money(inv.total)}</td></tr>
       </table>
@@ -2345,7 +2345,7 @@ __decorateClass4([
 ], OkInvoice.prototype, "labels");
 define("ok-invoice", OkInvoice);
 
-// modules/sales/ui/lib/document-mappers.ts
+// ../modules-workspace/modules/sales/ui/lib/document-mappers.ts
 function parseTaxes(tax_breakdown) {
   if (!tax_breakdown) return [];
   let obj;
@@ -2362,7 +2362,7 @@ function parseTaxes(tax_breakdown) {
       base: Number(v3?.base ?? 0),
       amount: Number(v3?.tax ?? 0)
     };
-  }).filter((t5) => t5.amount || t5.base);
+  }).filter((t7) => t7.amount || t7.base);
 }
 function resolveFormat(sale, settings) {
   const v3 = sale.document_type || settings.default_document_format || "ticket";
@@ -2382,7 +2382,7 @@ function saleToReceipt(sale, lines, settings = {}) {
       total: Number(l3.line_total)
     })),
     subtotal: sale.subtotal != null ? Number(sale.subtotal) : void 0,
-    taxes: parseTaxes(sale.tax_breakdown).map((t5) => ({ label: t5.label, base: t5.base, amount: t5.amount })),
+    taxes: parseTaxes(sale.tax_breakdown).map((t7) => ({ label: t7.label, base: t7.base, amount: t7.amount })),
     total: Number(sale.total ?? 0),
     payment: sale.payment_method_name ? { method: sale.payment_method_name, paid: sale.amount_tendered != null ? Number(sale.amount_tendered) : void 0, change: sale.change_due != null ? Number(sale.change_due) : void 0 } : void 0,
     currency: settings.currency || "\u20AC",
@@ -2408,7 +2408,7 @@ function saleToInvoice(sale, lines, settings = {}) {
     lines: invLines,
     subtotal: Number(sale.subtotal ?? 0),
     discount_total: sale.discount_amount ? Number(sale.discount_amount) : void 0,
-    taxes: taxes.map((t5) => ({ label: t5.label, rate: t5.rate, base: t5.base, amount: t5.amount })),
+    taxes: taxes.map((t7) => ({ label: t7.label, rate: t7.rate, base: t7.base, amount: t7.amount })),
     tax_total: Number(sale.tax_amount ?? 0),
     total: Number(sale.total ?? 0),
     currency: settings.currency || "\u20AC",
@@ -2417,7 +2417,230 @@ function saleToInvoice(sale, lines, settings = {}) {
   };
 }
 
-// modules/sales/ui/components/erp-sales-document/erp-sales-document.ts
+// ../modules-workspace/modules/sales/locales/es.json
+var es_default = {
+  name: "Ventas / TPV",
+  navigation: {
+    pos: {
+      label: "Vender"
+    },
+    sales: {
+      label: "Ventas"
+    },
+    settings: {
+      label: "Ajustes TPV"
+    }
+  },
+  ui: {
+    sales: "Ventas",
+    tickets: "Tickets",
+    revenue: "Ingresos",
+    avgTicket: "Ticket medio",
+    colNumber: "N\xFAmero",
+    colCustomer: "Cliente",
+    colPayment: "Pago",
+    colStatus: "Estado",
+    colTotal: "Total",
+    statusCompleted: "Completada",
+    statusVoided: "Anulada",
+    actionDocument: "Documento",
+    searchSalePlaceholder: "Buscar n\xFAmero o cliente\u2026",
+    loading: "Cargando\u2026",
+    noSales: "A\xFAn no hay ventas.",
+    saleDocument: "Documento de venta",
+    close: "Cerrar",
+    errorStats: "Error cargando m\xE9tricas",
+    print: "Imprimir",
+    loadingDocument: "Cargando documento\u2026",
+    noSale: "Sin venta.",
+    errorDocument: "Error cargando el documento",
+    document: "Documento",
+    loadingSettings: "Cargando ajustes\u2026",
+    settingsSaved: "Ajustes guardados.",
+    errorLoadingSettings: "Error cargando ajustes",
+    errorSaving: "Error guardando",
+    saving: "Guardando\u2026",
+    saveSettings: "Guardar ajustes",
+    groupSaleScreen: "Pantalla de venta",
+    defaultScreen: "Pantalla por defecto",
+    defaultScreenHint: "Cu\xE1l se abre al vender",
+    screenTouch: "T\xE1ctil",
+    screenDesktop: "Escritorio",
+    groupSaleDocument: "Documento de la venta",
+    defaultFormat: "Formato por defecto",
+    defaultFormatHint: "Tiquet 80mm o factura A4",
+    formatTicket: "Tiquet",
+    formatInvoice: "Factura",
+    autoInvoiceTaxId: "Factura autom\xE1tica con NIF",
+    autoInvoiceTaxIdHint: "Si el cliente tiene NIF/CIF, emitir factura A4",
+    groupPaymentMethods: "M\xE9todos de pago",
+    cash: "Efectivo",
+    card: "Tarjeta",
+    transfer: "Transferencia",
+    groupSale: "Venta",
+    requireCustomer: "Exigir cliente",
+    requireCustomerHint: "Obliga a seleccionar cliente en cada venta",
+    allowDiscounts: "Permitir descuentos",
+    taxIncluded: "Precios con impuestos incluidos",
+    parkedTicketsToggle: "Tiquets aparcados",
+    parkedTicketsToggleHint: "Permite dejar ventas en espera",
+    syncProducts: "Sincronizar productos",
+    syncServices: "Sincronizar servicios",
+    parkedExpiryHours: "Caducidad de tiquets aparcados (horas)",
+    groupReceipt: "Tiquet (cabecera y pie)",
+    receiptHeader: "Cabecera",
+    receiptFooter: "Pie",
+    receiptFooterImage: "Imagen de pie (URL)",
+    scanPlaceholder: "Escanea c\xF3digo / escribe SKU o nombre y Enter\u2026",
+    errorLoadingPos: "Error cargando el POS",
+    colProduct: "Producto",
+    colPrice: "Precio",
+    colQty: "Cant.",
+    colAmount: "Importe",
+    remove: "Quitar",
+    cartEmptyDesktop: "Escanea o busca un producto para empezar.",
+    park: "Aparcar",
+    parked: "Aparcados",
+    charge: "Cobrar",
+    chargeShortcut: "Cobrar (F2)",
+    parkedTickets: "Tickets aparcados",
+    retrieveHint: "Cobra o aparca la venta actual para recuperar un ticket.",
+    retrieve: "Recuperar",
+    noParkedTickets: "No hay tickets aparcados.",
+    errorPark: "No se pudo aparcar el ticket",
+    errorRetrieve: "No se pudo recuperar el ticket",
+    tendered: "Entregado",
+    change: "Cambio",
+    confirmCharge: "Confirmar cobro",
+    charging: "Cobrando\u2026",
+    errorCharge: "Error al cobrar",
+    all: "Todos",
+    products: "productos",
+    previous: "Anterior",
+    next: "Siguiente",
+    searchProductPlaceholder: "Buscar producto\u2026",
+    noProducts: "Sin productos.",
+    sale: "Venta",
+    cartEmptyTouch: "Toca un producto para a\xF1adirlo.",
+    parkCurrentSale: "Aparcar venta actual",
+    closeAction: "Cerrar",
+    fullscreen: "Pantalla completa"
+  }
+};
+
+// ../modules-workspace/modules/sales/locales/en.json
+var en_default = {
+  name: "Sales & POS",
+  navigation: {
+    pos: {
+      label: "Vender"
+    },
+    sales: {
+      label: "Sales"
+    },
+    settings: {
+      label: "POS Settings"
+    }
+  },
+  ui: {
+    sales: "Sales",
+    tickets: "Tickets",
+    revenue: "Revenue",
+    avgTicket: "Avg. ticket",
+    colNumber: "Number",
+    colCustomer: "Customer",
+    colPayment: "Payment",
+    colStatus: "Status",
+    colTotal: "Total",
+    statusCompleted: "Completed",
+    statusVoided: "Voided",
+    actionDocument: "Document",
+    searchSalePlaceholder: "Search number or customer\u2026",
+    loading: "Loading\u2026",
+    noSales: "No sales yet.",
+    saleDocument: "Sale document",
+    close: "Close",
+    errorStats: "Error loading metrics",
+    print: "Print",
+    loadingDocument: "Loading document\u2026",
+    noSale: "No sale.",
+    errorDocument: "Error loading the document",
+    document: "Document",
+    loadingSettings: "Loading settings\u2026",
+    settingsSaved: "Settings saved.",
+    errorLoadingSettings: "Error loading settings",
+    errorSaving: "Error saving",
+    saving: "Saving\u2026",
+    saveSettings: "Save settings",
+    groupSaleScreen: "Sale screen",
+    defaultScreen: "Default screen",
+    defaultScreenHint: "Which one opens when selling",
+    screenTouch: "Touch",
+    screenDesktop: "Desktop",
+    groupSaleDocument: "Sale document",
+    defaultFormat: "Default format",
+    defaultFormatHint: "80mm receipt or A4 invoice",
+    formatTicket: "Receipt",
+    formatInvoice: "Invoice",
+    autoInvoiceTaxId: "Automatic invoice with tax ID",
+    autoInvoiceTaxIdHint: "If the customer has a tax ID, issue an A4 invoice",
+    groupPaymentMethods: "Payment methods",
+    cash: "Cash",
+    card: "Card",
+    transfer: "Transfer",
+    groupSale: "Sale",
+    requireCustomer: "Require customer",
+    requireCustomerHint: "Forces selecting a customer on every sale",
+    allowDiscounts: "Allow discounts",
+    taxIncluded: "Prices include tax",
+    parkedTicketsToggle: "Parked tickets",
+    parkedTicketsToggleHint: "Allows leaving sales on hold",
+    syncProducts: "Sync products",
+    syncServices: "Sync services",
+    parkedExpiryHours: "Parked ticket expiry (hours)",
+    groupReceipt: "Receipt (header and footer)",
+    receiptHeader: "Header",
+    receiptFooter: "Footer",
+    receiptFooterImage: "Footer image (URL)",
+    scanPlaceholder: "Scan code / type SKU or name and Enter\u2026",
+    errorLoadingPos: "Error loading the POS",
+    colProduct: "Product",
+    colPrice: "Price",
+    colQty: "Qty",
+    colAmount: "Amount",
+    remove: "Remove",
+    cartEmptyDesktop: "Scan or search for a product to start.",
+    park: "Park",
+    parked: "Parked",
+    charge: "Charge",
+    chargeShortcut: "Charge (F2)",
+    parkedTickets: "Parked tickets",
+    retrieveHint: "Charge or park the current sale to retrieve a ticket.",
+    retrieve: "Retrieve",
+    noParkedTickets: "No parked tickets.",
+    errorPark: "Could not park the ticket",
+    errorRetrieve: "Could not retrieve the ticket",
+    tendered: "Tendered",
+    change: "Change",
+    confirmCharge: "Confirm charge",
+    charging: "Charging\u2026",
+    errorCharge: "Error charging",
+    all: "All",
+    products: "products",
+    previous: "Previous",
+    next: "Next",
+    searchProductPlaceholder: "Search product\u2026",
+    noProducts: "No products.",
+    sale: "Sale",
+    cartEmptyTouch: "Tap a product to add it.",
+    parkCurrentSale: "Park current sale",
+    closeAction: "Close",
+    fullscreen: "Fullscreen"
+  }
+};
+
+// ../modules-workspace/modules/sales/ui/components/erp-sales-document/erp-sales-document.ts
+var CATALOG = { es: es_default, en: en_default };
 function erplora() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -2428,6 +2651,7 @@ var ErpSalesDocument = class extends i3 {
     super(...arguments);
     this.loading = false;
     this.error = "";
+    this.onLocaleChange = () => this.requestUpdate();
   }
   static {
     this.styles = i`
@@ -2444,7 +2668,12 @@ var ErpSalesDocument = class extends i3 {
   }
   async connectedCallback() {
     super.connectedCallback();
+    window.addEventListener("erplora:locale-changed", this.onLocaleChange);
     if (!this.sale && this.saleId) await this.load();
+  }
+  disconnectedCallback() {
+    window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
+    super.disconnectedCallback();
   }
   updated(changed) {
     if (changed.has("saleId") && this.saleId && !this.sale) this.load();
@@ -2462,22 +2691,23 @@ var ErpSalesDocument = class extends i3 {
       this.lines = lines || [];
       this.settings = (Array.isArray(settingsRows) ? settingsRows[0] : settingsRows) || {};
     } catch (e6) {
-      this.error = e6 instanceof Error ? e6.message : "Error cargando el documento";
+      this.error = e6 instanceof Error ? e6.message : erplora().t(CATALOG, "ui.errorDocument");
     } finally {
       this.loading = false;
     }
   }
   render() {
-    if (this.loading) return b2`<p class="muted">Cargando documento…</p>`;
+    const t7 = (k2) => erplora().t(CATALOG, k2);
+    if (this.loading) return b2`<p class="muted">${t7("ui.loadingDocument")}</p>`;
     if (this.error) return b2`<p class="err">${this.error}</p>`;
-    if (!this.sale) return b2`<p class="muted">Sin venta.</p>`;
+    if (!this.sale) return b2`<p class="muted">${t7("ui.noSale")}</p>`;
     const settings = this.settings || {};
     const lines = this.lines || [];
     const fmt = this.format || resolveFormat(this.sale, settings);
     return b2`<div>
       <div class="bar">
         <ion-button size="small" fill="outline" @click=${() => window.print()}>
-          <ion-icon slot="start" name="print-outline"></ion-icon> Imprimir
+          <ion-icon slot="start" name="print-outline"></ion-icon> ${t7("ui.print")}
         </ion-button>
       </div>
       ${fmt === "invoice" ? b2`<ok-invoice .invoice=${saleToInvoice(this.sale, lines, settings)}></ok-invoice>` : b2`<ok-receipt .receipt=${saleToReceipt(this.sale, lines, settings)}></ok-receipt>`}
@@ -2507,7 +2737,7 @@ __decorateClass([
 ], ErpSalesDocument.prototype, "error", 2);
 define("erp-sales-document", ErpSalesDocument);
 
-// node_modules/.pnpm/@outfitkit+core@file+..+outfitkit/node_modules/@outfitkit/core/dist/ok-qty-stepper.js
+// ../outfitkit/dist/ok-qty-stepper.js
 var __defProp5 = Object.defineProperty;
 var __decorateClass5 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2715,7 +2945,7 @@ __decorateClass5([
 ], OkQtyStepper.prototype, "labels");
 define("ok-qty-stepper", OkQtyStepper);
 
-// modules/sales/ui/lib/pos-cart.ts
+// ../modules-workspace/modules/sales/ui/lib/pos-cart.ts
 function rows(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
@@ -2784,11 +3014,15 @@ async function retrieveParkedTicket(client, ticket) {
   return lines;
 }
 
-// modules/sales/ui/components/erp-pos-touch/erp-pos-touch.ts
+// ../modules-workspace/modules/sales/ui/components/erp-pos-touch/erp-pos-touch.ts
+var CATALOG2 = { es: es_default, en: en_default };
 function erplora2() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
   return c5;
+}
+function t3(key, params) {
+  return erplora2().t(CATALOG2, key, params);
 }
 function rows2(r6) {
   if (Array.isArray(r6)) return r6;
@@ -2845,6 +3079,7 @@ var ErpPosTouch = class extends i3 {
     this.onFsChange = () => {
       this.fullscreen = document.fullscreenElement === this;
     };
+    this.onLocaleChange = () => this.requestUpdate();
   }
   static {
     this.styles = i`
@@ -2969,6 +3204,7 @@ var ErpPosTouch = class extends i3 {
   async connectedCallback() {
     super.connectedCallback();
     document.addEventListener("fullscreenchange", this.onFsChange);
+    window.addEventListener("erplora:locale-changed", this.onLocaleChange);
     try {
       const [prods, methods, settingsRows, savedCart, parked, cats, prodCats] = await Promise.all([
         erplora2().query("inventory.products.list", { page_size: 200 }).catch(() => []),
@@ -2997,7 +3233,7 @@ var ErpPosTouch = class extends i3 {
       await this.resolveSlots();
       this.ensureSlotsMounted();
     } catch (e6) {
-      this.error = e6 instanceof Error ? e6.message : "Error cargando el POS";
+      this.error = e6 instanceof Error ? e6.message : t3("ui.errorLoadingPos");
     } finally {
       this.cartRestored = true;
     }
@@ -3005,6 +3241,7 @@ var ErpPosTouch = class extends i3 {
   disconnectedCallback() {
     super.disconnectedCallback();
     document.removeEventListener("fullscreenchange", this.onFsChange);
+    window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
     this.removeEventListener("erp:order-context", this.onOrderContext);
     this.removeEventListener("erp:customer-context", this.onCustomerContext);
     if (this.saveTimer) {
@@ -3085,21 +3322,21 @@ var ErpPosTouch = class extends i3 {
     if (!this.cart.length) return;
     const num = await parkCart(erplora2(), this.cart);
     if (!num) {
-      this.error = "No se pudo aparcar el ticket";
+      this.error = t3("ui.errorPark");
       return;
     }
     this.cart = [];
     this.parkedOpen = false;
     this.parked = await listParkedTickets(erplora2());
   }
-  async retrieve(t5) {
+  async retrieve(t7) {
     if (this.cart.length) return;
     try {
-      this.cart = await retrieveParkedTicket(erplora2(), t5);
+      this.cart = await retrieveParkedTicket(erplora2(), t7);
       this.parkedOpen = false;
       this.parked = await listParkedTickets(erplora2());
     } catch (e6) {
-      this.error = e6 instanceof Error ? e6.message : "No se pudo recuperar el ticket";
+      this.error = e6 instanceof Error ? e6.message : t7("ui.errorRetrieve");
     }
   }
   add(p4) {
@@ -3161,7 +3398,7 @@ var ErpPosTouch = class extends i3 {
       this.resetSlotContexts();
       if (saleId) this.docSaleId = saleId;
     } catch (e6) {
-      this.error = e6 instanceof Error ? e6.message : "Error al cobrar";
+      this.error = e6 instanceof Error ? e6.message : t3("ui.errorCharge");
     } finally {
       this.busy = false;
     }
@@ -3181,16 +3418,16 @@ var ErpPosTouch = class extends i3 {
       this.activeCat = id;
     }}>
         <span class="cc-img" style=${`background-image:${bg}`}></span>
-        <span class="cc-meta"><span class="cc-n">${name}</span><span class="cc-c">${count} productos</span></span>
+        <span class="cc-meta"><span class="cc-n">${name}</span><span class="cc-c">${count} ${t3("ui.products")}</span></span>
       </button>`;
     return b2`
       <div class="catbar">
-        <button class="arrow" title="Anterior" @click=${() => this.scrollCats(-1)}><ion-icon name="chevron-back-outline"></ion-icon></button>
+        <button class="arrow" title=${t3("ui.previous")} @click=${() => this.scrollCats(-1)}><ion-icon name="chevron-back-outline"></ion-icon></button>
         <div class="seg">
-          ${cell("", "Todos", this.products.length, gradient("Todos"))}
+          ${cell("", t3("ui.all"), this.products.length, gradient("Todos"))}
           ${this.categories.map((c5) => cell(c5.id, c5.name, this.catCount(c5.id), c5.image ? `url(${c5.image})` : gradient(c5.name)))}
         </div>
-        <button class="arrow" title="Siguiente" @click=${() => this.scrollCats(1)}><ion-icon name="chevron-forward-outline"></ion-icon></button>
+        <button class="arrow" title=${t3("ui.next")} @click=${() => this.scrollCats(1)}><ion-icon name="chevron-forward-outline"></ion-icon></button>
       </div>`;
   }
   renderCart() {
@@ -3198,21 +3435,21 @@ var ErpPosTouch = class extends i3 {
       <ion-header>
         <ion-toolbar>
           <ion-buttons slot="start">
-            <ion-button class="cart-close" title="Cerrar" @click=${() => {
+            <ion-button class="cart-close" title=${t3("ui.closeAction")} @click=${() => {
       this.cartOpen = false;
     }}>
               <ion-icon slot="icon-only" name="chevron-forward-outline"></ion-icon>
             </ion-button>
           </ion-buttons>
-          <ion-title>${this.tableLabel || "Venta"}${this.customerName ? b2` · ${this.customerName}` : A}</ion-title>
+          <ion-title>${this.tableLabel || t3("ui.sale")}${this.customerName ? b2` · ${this.customerName}` : A}</ion-title>
           <ion-buttons slot="end">
-            ${this.parkingEnabled ? b2`<ion-button title="Tickets aparcados" style="position:relative" @click=${() => {
+            ${this.parkingEnabled ? b2`<ion-button title=${t3("ui.parkedTickets")} style="position:relative" @click=${() => {
       this.parkedOpen = !this.parkedOpen;
     }}>
                   <ion-icon slot="icon-only" name="file-tray-stacked-outline"></ion-icon>
                   ${this.parked.length ? b2`<span class="badge-num">${this.parked.length}</span>` : A}
                 </ion-button>` : A}
-            <ion-button title="Pantalla completa" @click=${() => this.toggleFullscreen()}>
+            <ion-button title=${t3("ui.fullscreen")} @click=${() => this.toggleFullscreen()}>
               <ion-icon slot="icon-only" name=${this.fullscreen ? "contract-outline" : "expand-outline"}></ion-icon>
             </ion-button>
           </ion-buttons>
@@ -3229,13 +3466,13 @@ var ErpPosTouch = class extends i3 {
       this.parkedOpen = false;
     }}></div>
           <div class="pdrop">
-            <ion-button size="small" expand="block" fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>Aparcar venta actual</ion-button>
-            <p class="hint">Tickets aparcados</p>
-            ${this.parked.map((t5) => b2`<div class="pitem">
-              <div><div class="pn">${t5.ticket_number}</div><div class="pm">${(t5.created_at || "").replace("T", " ").slice(0, 16)}</div></div>
-              <ion-button size="small" ?disabled=${!!this.cart.length} @click=${() => this.retrieve(t5)}>Recuperar</ion-button>
+            <ion-button size="small" expand="block" fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>${t3("ui.parkCurrentSale")}</ion-button>
+            <p class="hint">${t3("ui.parkedTickets")}</p>
+            ${this.parked.map((pt) => b2`<div class="pitem">
+              <div><div class="pn">${pt.ticket_number}</div><div class="pm">${(pt.created_at || "").replace("T", " ").slice(0, 16)}</div></div>
+              <ion-button size="small" ?disabled=${!!this.cart.length} @click=${() => this.retrieve(pt)}>${t3("ui.retrieve")}</ion-button>
             </div>`)}
-            ${!this.parked.length ? b2`<div class="hint" style="text-align:center">No hay tickets aparcados.</div>` : A}
+            ${!this.parked.length ? b2`<div class="hint" style="text-align:center">${t3("ui.noParkedTickets")}</div>` : A}
           </div>` : A}
 
       ${this.cart.length ? b2`<ion-list class="lines" lines="full">
@@ -3247,12 +3484,12 @@ var ErpPosTouch = class extends i3 {
                   @ok-change=${(e6) => this.setQtyAbs(l3.id, e6.detail.value)}></ok-qty-stepper>
               </div>
             </ion-item>`)}
-          </ion-list>` : b2`<div class="lines"><div class="empty">Toca un producto para añadirlo.</div></div>`}
+          </ion-list>` : b2`<div class="lines"><div class="empty">${t3("ui.cartEmptyTouch")}</div></div>`}
 
       <div class="cart-foot">
-        <div class="total"><span>Total</span><b>${this.money(this.total)}</b></div>
+        <div class="total"><span>${t3("ui.colTotal")}</span><b>${this.money(this.total)}</b></div>
         <ion-button class="charge" expand="block" ?disabled=${!this.cart.length} @click=${() => this.openPay()}>
-          Cobrar ${this.money(this.total)}
+          ${t3("ui.charge")} ${this.money(this.total)}
         </ion-button>
       </div>`;
   }
@@ -3261,7 +3498,7 @@ var ErpPosTouch = class extends i3 {
       <div class="body">
         <div class="catalog">
           ${this.renderCatBar()}
-          <ion-searchbar class="search" placeholder="Buscar producto…" value=${this.q}
+          <ion-searchbar class="search" placeholder=${t3("ui.searchProductPlaceholder")} value=${this.q}
             @ionInput=${(e6) => {
       this.q = e6.target.value || "";
     }}></ion-searchbar>
@@ -3273,7 +3510,7 @@ var ErpPosTouch = class extends i3 {
               </div>
               <div class="tinfo"><div class="n">${p4.name}</div><div class="p">${this.money(Number(p4.price))}</div></div>
             </ion-card>`)}
-            ${!this.filtered.length ? b2`<div class="empty">Sin productos.</div>` : A}
+            ${!this.filtered.length ? b2`<div class="empty">${t3("ui.noProducts")}</div>` : A}
           </div>
         </div>
 
@@ -3296,7 +3533,7 @@ var ErpPosTouch = class extends i3 {
     }}>
             <div class="sheet">
               <div class="sheet-h">
-                <span class="t">Cobrar ${this.money(this.total)}</span>
+                <span class="t">${t3("ui.charge")} ${this.money(this.total)}</span>
                 <button class="x" @click=${() => {
       this.paying = false;
     }}>✕</button>
@@ -3306,22 +3543,22 @@ var ErpPosTouch = class extends i3 {
                   ${this.methods.map((m4) => b2`<button class="chip" aria-pressed=${this.payMethod?.id === m4.id} @click=${() => {
       this.payMethod = m4;
     }}>${m4.name}</button>`)}
-                  ${!this.methods.length ? b2`<button class="chip" aria-pressed="true">Efectivo</button>` : A}
+                  ${!this.methods.length ? b2`<button class="chip" aria-pressed="true">${t3("ui.cash")}</button>` : A}
                 </div>
-                <div class="amt"><span>Entregado</span><span class="v">${this.money(this.tenderedNum)}</span></div>
-                <div class="amt"><span>Cambio</span><span class="v change">${this.money(this.change)}</span></div>
+                <div class="amt"><span>${t3("ui.tendered")}</span><span class="v">${this.money(this.tenderedNum)}</span></div>
+                <div class="amt"><span>${t3("ui.change")}</span><span class="v change">${this.money(this.change)}</span></div>
                 <div class="numpad">
                   ${["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "C"].map((k2) => b2`<button @click=${() => this.tap(k2)}>${k2}</button>`)}
                 </div>
                 <ion-segment value=${this.docFormat} @ionChange=${(e6) => {
       this.docFormat = e6.detail.value === "invoice" ? "invoice" : "ticket";
     }}>
-                  <ion-segment-button value="ticket"><ion-label>Tiquet</ion-label></ion-segment-button>
-                  <ion-segment-button value="invoice"><ion-label>Factura</ion-label></ion-segment-button>
+                  <ion-segment-button value="ticket"><ion-label>${t3("ui.formatTicket")}</ion-label></ion-segment-button>
+                  <ion-segment-button value="invoice"><ion-label>${t3("ui.formatInvoice")}</ion-label></ion-segment-button>
                 </ion-segment>
                 ${this.error ? b2`<p style="color:var(--ion-color-danger,#d9480f)">${this.error}</p>` : A}
                 <ion-button class="charge" expand="block" ?disabled=${this.busy} @click=${() => this.confirm()}>
-                  ${this.busy ? "Cobrando\u2026" : "Confirmar cobro"}
+                  ${this.busy ? t3("ui.charging") : t3("ui.confirmCharge")}
                 </ion-button>
               </div>
             </div>
@@ -3331,10 +3568,10 @@ var ErpPosTouch = class extends i3 {
       this.docSaleId = void 0;
     }}>
         <ion-header><ion-toolbar>
-          <ion-title>Documento</ion-title>
+          <ion-title>${t3("ui.document")}</ion-title>
           <ion-buttons slot="end"><ion-button @click=${() => {
       this.docSaleId = void 0;
-    }}>Cerrar</ion-button></ion-buttons>
+    }}>${t3("ui.close")}</ion-button></ion-buttons>
         </ion-toolbar></ion-header>
         <ion-content class="ion-padding">
           ${this.docSaleId ? b2`<erp-sales-document .saleId=${this.docSaleId}></erp-sales-document>` : A}
@@ -3411,11 +3648,15 @@ __decorateClass([
 ], ErpPosTouch.prototype, "customerName", 2);
 define("erp-pos-touch", ErpPosTouch);
 
-// modules/sales/ui/components/erp-pos-desktop/erp-pos-desktop.ts
+// ../modules-workspace/modules/sales/ui/components/erp-pos-desktop/erp-pos-desktop.ts
+var CATALOG3 = { es: es_default, en: en_default };
 function erplora3() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
   return c5;
+}
+function t4(key, params) {
+  return erplora3().t(CATALOG3, key, params);
 }
 function rows3(r6) {
   if (Array.isArray(r6)) return r6;
@@ -3455,6 +3696,7 @@ var ErpPosDesktop = class extends i3 {
       this.customerId = d3.customer_id ?? void 0;
       this.customerName = d3.customer_name ?? "";
     };
+    this.onLocaleChange = () => this.requestUpdate();
   }
   static {
     this.styles = i`
@@ -3505,6 +3747,7 @@ var ErpPosDesktop = class extends i3 {
   }
   async connectedCallback() {
     super.connectedCallback();
+    window.addEventListener("erplora:locale-changed", this.onLocaleChange);
     try {
       const [prods, methods, settingsRows, savedCart, parked] = await Promise.all([
         erplora3().query("inventory.products.list", { page_size: 500 }).catch(() => []),
@@ -3526,13 +3769,14 @@ var ErpPosDesktop = class extends i3 {
       await this.resolveSlots();
       this.ensureSlotsMounted();
     } catch (e6) {
-      this.error = e6 instanceof Error ? e6.message : "Error cargando el POS";
+      this.error = e6 instanceof Error ? e6.message : t4("ui.errorLoadingPos");
     } finally {
       this.cartRestored = true;
     }
   }
   disconnectedCallback() {
     super.disconnectedCallback();
+    window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
     this.removeEventListener("erp:order-context", this.onOrderContext);
     this.removeEventListener("erp:customer-context", this.onCustomerContext);
     if (this.saveTimer) {
@@ -3600,7 +3844,7 @@ var ErpPosDesktop = class extends i3 {
     if (!this.cart.length) return;
     const num = await parkCart(erplora3(), this.cart);
     if (!num) {
-      this.error = "No se pudo aparcar el ticket";
+      this.error = t4("ui.errorPark");
       return;
     }
     this.cart = [];
@@ -3608,14 +3852,14 @@ var ErpPosDesktop = class extends i3 {
     this.scanInput?.focus();
   }
   /** Recupera un ticket aparcado al carrito (solo con el carrito vacío). */
-  async retrieve(t5) {
+  async retrieve(t7) {
     if (this.cart.length) return;
     try {
-      this.cart = await retrieveParkedTicket(erplora3(), t5);
+      this.cart = await retrieveParkedTicket(erplora3(), t7);
       this.parkedOpen = false;
       this.parked = await listParkedTickets(erplora3());
     } catch (e6) {
-      this.error = e6 instanceof Error ? e6.message : "No se pudo recuperar el ticket";
+      this.error = e6 instanceof Error ? e6.message : t7("ui.errorRetrieve");
     }
   }
   get matches() {
@@ -3686,7 +3930,7 @@ var ErpPosDesktop = class extends i3 {
       this.resetSlotContexts();
       if (saleId) this.docSaleId = saleId;
     } catch (e6) {
-      this.error = e6 instanceof Error ? e6.message : "Error al cobrar";
+      this.error = e6 instanceof Error ? e6.message : t4("ui.errorCharge");
     } finally {
       this.busy = false;
     }
@@ -3695,7 +3939,7 @@ var ErpPosDesktop = class extends i3 {
     return b2`<div>
       <div class="scan">
         <div class="sugg" style="flex:1">
-          <input id="scan" placeholder="Escanea código / escribe SKU o nombre y Enter…"
+          <input id="scan" placeholder=${t4("ui.scanPlaceholder")}
             .value=${this.term}
             @input=${(e6) => {
       this.term = e6.target.value;
@@ -3720,7 +3964,7 @@ var ErpPosDesktop = class extends i3 {
       </div>
 
       <table>
-        <thead><tr><th>Producto</th><th class="num">Precio</th><th class="num">Cant.</th><th class="num">Importe</th><th></th></tr></thead>
+        <thead><tr><th>${t4("ui.colProduct")}</th><th class="num">${t4("ui.colPrice")}</th><th class="num">${t4("ui.colQty")}</th><th class="num">${t4("ui.colAmount")}</th><th></th></tr></thead>
         <tbody>
           ${this.cart.length ? this.cart.map((l3) => b2`<tr>
                 <td>${l3.name} ${l3.sku ? b2`<small style="color:#8b897f">· ${l3.sku}</small>` : A}</td>
@@ -3728,22 +3972,22 @@ var ErpPosDesktop = class extends i3 {
                 <td class="num"><input class="q" type="number" min="1" .value=${String(l3.qty)}
                   @input=${(e6) => this.setQty(l3.id, Number(e6.target.value))} /></td>
                 <td class="num">${this.money(l3.price * l3.qty)}</td>
-                <td class="num"><button class="rm" @click=${() => this.remove(l3.id)} title="Quitar">✕</button></td>
-              </tr>`) : b2`<tr><td colspan="5"><div class="empty">Escanea o busca un producto para empezar.</div></td></tr>`}
+                <td class="num"><button class="rm" @click=${() => this.remove(l3.id)} title=${t4("ui.remove")}>✕</button></td>
+              </tr>`) : b2`<tr><td colspan="5"><div class="empty">${t4("ui.cartEmptyDesktop")}</div></td></tr>`}
         </tbody>
       </table>
 
       <div class="foot">
-        <div class="total">Total ${this.money(this.total)}${this.tableLabel ? b2`<span class="table-tag">${this.tableLabel}</span>` : A}${this.customerName ? b2`<span class="customer-tag">${this.customerName}</span>` : A}</div>
+        <div class="total">${t4("ui.colTotal")} ${this.money(this.total)}${this.tableLabel ? b2`<span class="table-tag">${this.tableLabel}</span>` : A}${this.customerName ? b2`<span class="customer-tag">${this.customerName}</span>` : A}</div>
         <div class="actions">
           ${this.parkingEnabled ? b2`
-                <ion-button fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>Aparcar</ion-button>
+                <ion-button fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>${t4("ui.park")}</ion-button>
                 <ion-button fill="outline" ?disabled=${!this.parked.length} @click=${() => {
       this.parkedOpen = true;
     }}>
-                  Aparcados (${this.parked.length})
+                  ${t4("ui.parked")} (${this.parked.length})
                 </ion-button>` : A}
-          <ion-button ?disabled=${!this.cart.length} @click=${() => this.openPay()}>Cobrar (F2)</ion-button>
+          <ion-button ?disabled=${!this.cart.length} @click=${() => this.openPay()}>${t4("ui.chargeShortcut")}</ion-button>
         </div>
       </div>
 
@@ -3751,20 +3995,20 @@ var ErpPosDesktop = class extends i3 {
       if (e6.target.classList.contains("scrim")) this.parkedOpen = false;
     }}>
             <div class="sheet">
-              <div class="sheet-h"><span class="t">Tickets aparcados</span>
+              <div class="sheet-h"><span class="t">${t4("ui.parkedTickets")}</span>
                 <button class="x" @click=${() => {
       this.parkedOpen = false;
     }}>✕</button></div>
-              ${this.cart.length ? b2`<p class="hint">Cobra o aparca la venta actual para recuperar un ticket.</p>` : A}
+              ${this.cart.length ? b2`<p class="hint">${t4("ui.retrieveHint")}</p>` : A}
               <div class="plist">
-                ${this.parked.map((t5) => b2`<div class="pitem">
+                ${this.parked.map((pt) => b2`<div class="pitem">
                   <div>
-                    <div class="pn">${t5.ticket_number}</div>
-                    <small class="pm">${(t5.created_at || "").replace("T", " ").slice(0, 16)}</small>
+                    <div class="pn">${pt.ticket_number}</div>
+                    <small class="pm">${(pt.created_at || "").replace("T", " ").slice(0, 16)}</small>
                   </div>
-                  <ion-button size="small" ?disabled=${!!this.cart.length} @click=${() => this.retrieve(t5)}>Recuperar</ion-button>
+                  <ion-button size="small" ?disabled=${!!this.cart.length} @click=${() => this.retrieve(pt)}>${t4("ui.retrieve")}</ion-button>
                 </div>`)}
-                ${!this.parked.length ? b2`<div class="empty">No hay tickets aparcados.</div>` : A}
+                ${!this.parked.length ? b2`<div class="empty">${t4("ui.noParkedTickets")}</div>` : A}
               </div>
             </div>
           </div>` : A}
@@ -3773,7 +4017,7 @@ var ErpPosDesktop = class extends i3 {
       if (e6.target.classList.contains("scrim")) this.paying = false;
     }}>
             <div class="sheet">
-              <div class="sheet-h"><span class="t">Cobrar ${this.money(this.total)}</span>
+              <div class="sheet-h"><span class="t">${t4("ui.charge")} ${this.money(this.total)}</span>
                 <button class="x" @click=${() => {
       this.paying = false;
     }}>✕</button></div>
@@ -3782,22 +4026,22 @@ var ErpPosDesktop = class extends i3 {
                   ${this.methods.map((m4) => b2`<button class="chip" aria-pressed=${this.payMethod?.id === m4.id} @click=${() => {
       this.payMethod = m4;
     }}>${m4.name}</button>`)}
-                  ${!this.methods.length ? b2`<button class="chip" aria-pressed="true">Efectivo</button>` : A}
+                  ${!this.methods.length ? b2`<button class="chip" aria-pressed="true">${t4("ui.cash")}</button>` : A}
                 </div>
-                <div class="field"><label>Entregado</label>
+                <div class="field"><label>${t4("ui.tendered")}</label>
                   <input type="number" step="0.01" .value=${this.tendered}
                     @input=${(e6) => {
       this.tendered = e6.target.value;
     }} /></div>
-                <div>Cambio: <span class="change">${this.money(this.change)}</span></div>
+                <div>${t4("ui.change")}: <span class="change">${this.money(this.change)}</span></div>
                 <ion-segment value=${this.docFormat} @ionChange=${(e6) => {
       this.docFormat = e6.detail.value === "invoice" ? "invoice" : "ticket";
     }}>
-                  <ion-segment-button value="ticket"><ion-label>Tiquet</ion-label></ion-segment-button>
-                  <ion-segment-button value="invoice"><ion-label>Factura</ion-label></ion-segment-button>
+                  <ion-segment-button value="ticket"><ion-label>${t4("ui.formatTicket")}</ion-label></ion-segment-button>
+                  <ion-segment-button value="invoice"><ion-label>${t4("ui.formatInvoice")}</ion-label></ion-segment-button>
                 </ion-segment>
                 ${this.error ? b2`<p style="color:#d9480f">${this.error}</p>` : A}
-                <ion-button expand="block" ?disabled=${this.busy} @click=${() => this.confirm()}>${this.busy ? "Cobrando\u2026" : "Confirmar cobro"}</ion-button>
+                <ion-button expand="block" ?disabled=${this.busy} @click=${() => this.confirm()}>${this.busy ? t4("ui.charging") : t4("ui.confirmCharge")}</ion-button>
               </div>
             </div>
           </div>` : A}
@@ -3805,10 +4049,10 @@ var ErpPosDesktop = class extends i3 {
       <ion-modal .isOpen=${!!this.docSaleId} @ionModalDidDismiss=${() => {
       this.docSaleId = void 0;
     }}>
-        <ion-header><ion-toolbar><ion-title>Documento</ion-title>
+        <ion-header><ion-toolbar><ion-title>${t4("ui.document")}</ion-title>
           <ion-buttons slot="end"><ion-button @click=${() => {
       this.docSaleId = void 0;
-    }}>Cerrar</ion-button></ion-buttons>
+    }}>${t4("ui.close")}</ion-button></ion-buttons>
         </ion-toolbar></ion-header>
         <ion-content class="ion-padding">
           ${this.docSaleId ? b2`<erp-sales-document .saleId=${this.docSaleId}></erp-sales-document>` : A}
@@ -3876,7 +4120,7 @@ __decorateClass([
 ], ErpPosDesktop.prototype, "scanInput", 2);
 define("erp-pos-desktop", ErpPosDesktop);
 
-// modules/sales/ui/components/erp-pos/erp-pos.ts
+// ../modules-workspace/modules/sales/ui/components/erp-pos/erp-pos.ts
 function erplora4() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -3916,82 +4160,82 @@ __decorateClass([
 ], ErpPos.prototype, "ready", 2);
 define("erp-pos", ErpPos);
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
-var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
-var e5 = (t5) => (...e6) => ({ _$litDirective$: t5, values: e6 });
+// node_modules/lit-html/directive.js
+var t5 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
+var e5 = (t7) => (...e6) => ({ _$litDirective$: t7, values: e6 });
 var i4 = class {
-  constructor(t5) {
+  constructor(t7) {
   }
   get _$AU() {
     return this._$AM._$AU;
   }
-  _$AT(t5, e6, i7) {
-    this._$Ct = t5, this._$AM = e6, this._$Ci = i7;
+  _$AT(t7, e6, i7) {
+    this._$Ct = t7, this._$AM = e6, this._$Ci = i7;
   }
-  _$AS(t5, e6) {
-    return this.update(t5, e6);
+  _$AS(t7, e6) {
+    return this.update(t7, e6);
   }
-  update(t5, e6) {
+  update(t7, e6) {
     return this.render(...e6);
   }
 };
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
-var { I: t4 } = j;
+// node_modules/lit-html/directive-helpers.js
+var { I: t6 } = j;
 var i5 = (o7) => o7;
 var s4 = () => document.createComment("");
 var v2 = (o7, n6, e6) => {
   const l3 = o7._$AA.parentNode, d3 = void 0 === n6 ? o7._$AB : n6._$AA;
   if (void 0 === e6) {
     const i7 = l3.insertBefore(s4(), d3), n7 = l3.insertBefore(s4(), d3);
-    e6 = new t4(i7, n7, o7, o7.options);
+    e6 = new t6(i7, n7, o7, o7.options);
   } else {
-    const t5 = e6._$AB.nextSibling, n7 = e6._$AM, c5 = n7 !== o7;
+    const t7 = e6._$AB.nextSibling, n7 = e6._$AM, c5 = n7 !== o7;
     if (c5) {
-      let t6;
-      e6._$AQ?.(o7), e6._$AM = o7, void 0 !== e6._$AP && (t6 = o7._$AU) !== n7._$AU && e6._$AP(t6);
+      let t8;
+      e6._$AQ?.(o7), e6._$AM = o7, void 0 !== e6._$AP && (t8 = o7._$AU) !== n7._$AU && e6._$AP(t8);
     }
-    if (t5 !== d3 || c5) {
+    if (t7 !== d3 || c5) {
       let o8 = e6._$AA;
-      for (; o8 !== t5; ) {
-        const t6 = i5(o8).nextSibling;
-        i5(l3).insertBefore(o8, d3), o8 = t6;
+      for (; o8 !== t7; ) {
+        const t8 = i5(o8).nextSibling;
+        i5(l3).insertBefore(o8, d3), o8 = t8;
       }
     }
   }
   return e6;
 };
-var u3 = (o7, t5, i7 = o7) => (o7._$AI(t5, i7), o7);
+var u3 = (o7, t7, i7 = o7) => (o7._$AI(t7, i7), o7);
 var m3 = {};
-var p3 = (o7, t5 = m3) => o7._$AH = t5;
+var p3 = (o7, t7 = m3) => o7._$AH = t7;
 var M2 = (o7) => o7._$AH;
 var h3 = (o7) => {
   o7._$AR(), o7._$AA.remove();
 };
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
-var u4 = (e6, s5, t5) => {
+// node_modules/lit-html/directives/repeat.js
+var u4 = (e6, s5, t7) => {
   const r6 = /* @__PURE__ */ new Map();
-  for (let l3 = s5; l3 <= t5; l3++) r6.set(e6[l3], l3);
+  for (let l3 = s5; l3 <= t7; l3++) r6.set(e6[l3], l3);
   return r6;
 };
 var c4 = e5(class extends i4 {
   constructor(e6) {
-    if (super(e6), e6.type !== t3.CHILD) throw Error("repeat() can only be used in text expressions");
+    if (super(e6), e6.type !== t5.CHILD) throw Error("repeat() can only be used in text expressions");
   }
-  dt(e6, s5, t5) {
+  dt(e6, s5, t7) {
     let r6;
-    void 0 === t5 ? t5 = s5 : void 0 !== s5 && (r6 = s5);
+    void 0 === t7 ? t7 = s5 : void 0 !== s5 && (r6 = s5);
     const l3 = [], o7 = [];
     let i7 = 0;
-    for (const s6 of e6) l3[i7] = r6 ? r6(s6, i7) : i7, o7[i7] = t5(s6, i7), i7++;
+    for (const s6 of e6) l3[i7] = r6 ? r6(s6, i7) : i7, o7[i7] = t7(s6, i7), i7++;
     return { values: o7, keys: l3 };
   }
-  render(e6, s5, t5) {
-    return this.dt(e6, s5, t5).values;
+  render(e6, s5, t7) {
+    return this.dt(e6, s5, t7).values;
   }
-  update(s5, [t5, r6, c5]) {
-    const d3 = M2(s5), { values: p4, keys: a3 } = this.dt(t5, r6, c5);
+  update(s5, [t7, r6, c5]) {
+    const d3 = M2(s5), { values: p4, keys: a3 } = this.dt(t7, r6, c5);
     if (!Array.isArray(d3)) return this.ut = a3, p4;
     const h4 = this.ut ??= [], v3 = [];
     let m4, y3, x2 = 0, j2 = d3.length - 1, k2 = 0, w2 = p4.length - 1;
@@ -4002,11 +4246,11 @@ var c4 = e5(class extends i4 {
     else if (h4[x2] === a3[w2]) v3[w2] = u3(d3[x2], p4[w2]), v2(s5, v3[w2 + 1], d3[x2]), x2++, w2--;
     else if (h4[j2] === a3[k2]) v3[k2] = u3(d3[j2], p4[k2]), v2(s5, d3[x2], d3[j2]), j2--, k2++;
     else if (void 0 === m4 && (m4 = u4(a3, k2, w2), y3 = u4(h4, x2, j2)), m4.has(h4[x2])) if (m4.has(h4[j2])) {
-      const e6 = y3.get(a3[k2]), t6 = void 0 !== e6 ? d3[e6] : null;
-      if (null === t6) {
+      const e6 = y3.get(a3[k2]), t8 = void 0 !== e6 ? d3[e6] : null;
+      if (null === t8) {
         const e7 = v2(s5, d3[x2]);
         u3(e7, p4[k2]), v3[k2] = e7;
-      } else v3[k2] = u3(t6, p4[k2]), v2(s5, d3[x2], t6), d3[e6] = null;
+      } else v3[k2] = u3(t8, p4[k2]), v2(s5, d3[x2], t8), d3[e6] = null;
       k2++;
     } else h3(d3[j2]), j2--;
     else h3(d3[x2]), x2++;
@@ -4022,36 +4266,36 @@ var c4 = e5(class extends i4 {
   }
 });
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
+// node_modules/lit-html/directives/style-map.js
 var n5 = "important";
 var i6 = " !" + n5;
 var o6 = e5(class extends i4 {
-  constructor(t5) {
-    if (super(t5), t5.type !== t3.ATTRIBUTE || "style" !== t5.name || t5.strings?.length > 2) throw Error("The `styleMap` directive must be used in the `style` attribute and must be the only part in the attribute.");
+  constructor(t7) {
+    if (super(t7), t7.type !== t5.ATTRIBUTE || "style" !== t7.name || t7.strings?.length > 2) throw Error("The `styleMap` directive must be used in the `style` attribute and must be the only part in the attribute.");
   }
-  render(t5) {
-    return Object.keys(t5).reduce((e6, r6) => {
-      const s5 = t5[r6];
+  render(t7) {
+    return Object.keys(t7).reduce((e6, r6) => {
+      const s5 = t7[r6];
       return null == s5 ? e6 : e6 + `${r6 = r6.includes("-") ? r6 : r6.replace(/(?:^(webkit|moz|ms|o)|)(?=[A-Z])/g, "-$&").toLowerCase()}:${s5};`;
     }, "");
   }
   update(e6, [r6]) {
     const { style: s5 } = e6.element;
     if (void 0 === this.ft) return this.ft = new Set(Object.keys(r6)), this.render(r6);
-    for (const t5 of this.ft) null == r6[t5] && (this.ft.delete(t5), t5.includes("-") ? s5.removeProperty(t5) : s5[t5] = null);
-    for (const t5 in r6) {
-      const e7 = r6[t5];
+    for (const t7 of this.ft) null == r6[t7] && (this.ft.delete(t7), t7.includes("-") ? s5.removeProperty(t7) : s5[t7] = null);
+    for (const t7 in r6) {
+      const e7 = r6[t7];
       if (null != e7) {
-        this.ft.add(t5);
+        this.ft.add(t7);
         const r7 = "string" == typeof e7 && e7.endsWith(i6);
-        t5.includes("-") || r7 ? s5.setProperty(t5, r7 ? e7.slice(0, -11) : e7, r7 ? n5 : "") : s5[t5] = e7;
+        t7.includes("-") || r7 ? s5.setProperty(t7, r7 ? e7.slice(0, -11) : e7, r7 ? n5 : "") : s5[t7] = e7;
       }
     }
     return E;
   }
 });
 
-// node_modules/.pnpm/@outfitkit+core@file+..+outfitkit/node_modules/@outfitkit/core/dist/ok-data-table.js
+// ../outfitkit/dist/ok-data-table.js
 var __defProp6 = Object.defineProperty;
 var __decorateClass6 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -4110,7 +4354,7 @@ var OkDataTable = class extends i3 {
     this.addable = false;
     this.pageSizeOptions = [10, 25, 50, 100];
     this.fill = false;
-    this.columnPicker = false;
+    this.columnPicker = true;
     this.csv = false;
     this.csvName = "export.csv";
     this.serverSide = false;
@@ -4219,22 +4463,34 @@ var OkDataTable = class extends i3 {
 
     /* ── Topbar / cabecera (relieve) ─────────────────────────────────────────────────────── */
     .bar { display: flex; flex-direction: column; gap: 0.6rem; padding: 0.65rem 1rem; border-bottom: 1px solid var(--border-color); background: var(--header-background); }
+    /* Toolbar CONSOLIDADA: TODOS los controles son hijos directos de UNA sola fila flex que
+     * envuelve ELEMENTO A ELEMENTO (no por bloques): caben en una línea → una línea; los que no
+     * caben bajan a la(s) línea(s) que hagan falta. El cluster derecho se empuja al borde con
+     * .tk-spacer (hueco flexible) solo cuando todo cabe en una línea; al envolver, el spacer se
+     * oculta y todo se apila a la izquierda.
+     * ORDEN CANÓNICO (2026-06-22, izquierda→derecha): [buscador] · [filtros en línea] · ‹spacer› ·
+     * [SELECTORES: columnas → filas/página] · [BOTONES: vistas → filtros(funnel) → import → export →
+     * alta → ⋮ → acción primaria]. Es decir: buscador al inicio, filtros en medio, y al final los
+     * selectores (columnas, luego «N por página») seguidos de los botones de acción. */
     .bar-main { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
-    .title-wrap { display: flex; align-items: baseline; gap: 0.5rem; margin-right: auto; }
+    .bar-main > ion-button { --padding-start: 0.5rem; --padding-end: 0.5rem; margin: 0; }
+    /* Spacer que absorbe el hueco libre en pantallas anchas (empuja el cluster derecho al borde).
+     * Se oculta por debajo de 1024px para que, al envolver, los controles se apilen a la izquierda. */
+    .tk-spacer { flex: 1 1 0; min-width: 0; align-self: stretch; }
+    @media (max-width: 1024px) { .tk-spacer { display: none; } }
+    /* Buscador a ancho completo (línea propia) en móvil; el resto envuelve debajo. */
+    @media (max-width: 640px) { .search { flex-basis: 100%; max-width: none; } }
+    .title-wrap { display: flex; align-items: baseline; gap: 0.5rem; }
     .title { font-size: 15px; font-weight: 600; line-height: 1; margin: 0; }
     .title-count { font-size: 12px; font-weight: 500; color: var(--color-muted); }
-    /* flex-wrap: en pantallas estrechas los controles (y el slot "toolbar",
-     * p.ej. selects de filtro del host) saltan de línea en vez de desbordar
-     * recortados por el borde derecho (cloud#551). */
-    .bar-end { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
-    .bar-end ion-button { --padding-start: 0.5rem; --padding-end: 0.5rem; margin: 0; }
 
     /* Botón de herramienta cuadrado (filtros/import/export), look del Hub: 36×36, badge contador. */
     .toolbtn { position: relative; --padding-start: 0; --padding-end: 0; --border-radius: 10px; width: 36px; height: 36px; margin: 0; }
     .toolbtn .badge { position: absolute; top: -5px; right: -5px; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 999px; background: var(--primary); color: var(--primary-contrast); font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; pointer-events: none; }
 
-    /* Buscador (caja con icono + limpiar), look del Hub */
-    .search { flex: 1 1 12rem; min-width: 10rem; max-width: 22rem; }
+    /* Buscador (caja con icono + limpiar), look del Hub. No crece (el spacer se queda el hueco);
+     * puede encoger hasta min-width y, por debajo, envuelve. */
+    .search { flex: 0 1 22rem; min-width: 12rem; max-width: 24rem; }
     ion-searchbar { --background: var(--background); --border-radius: 10px; padding: 0; min-height: 36px; }
     /* Flat: el buscador quita borde y elevación vía la clase específica de Ionic 'ion-no-border'.
      * (La regla global de Ionic para .ion-no-border no cruza el Shadow DOM, así que la
@@ -4599,10 +4855,10 @@ var OkDataTable = class extends i3 {
           }
           if (f3.from || f3.to) {
             const raw = this.rawValue(col, row);
-            const t5 = raw == null ? NaN : new Date(raw).getTime();
+            const t7 = raw == null ? NaN : new Date(raw).getTime();
             const from = f3.from ? new Date(f3.from).getTime() : -Infinity;
             const to = f3.to ? new Date(f3.to).getTime() + 864e5 - 1 : Infinity;
-            return !Number.isNaN(t5) && t5 >= from && t5 <= to;
+            return !Number.isNaN(t7) && t7 >= from && t7 <= to;
           }
           return true;
         })
@@ -4730,15 +4986,15 @@ var OkDataTable = class extends i3 {
       `;
     }
     if (type === "range" || type === "daterange") {
-      const t5 = type === "daterange" ? "date" : "number";
+      const t7 = type === "daterange" ? "date" : "number";
       const onEdge = type === "daterange" ? this.onDateRangeInput.bind(this) : this.onRangeInput.bind(this);
       return b2`
         <div class="fblock">
           <span class="flabel">${col.header}</span>
           <div class="frange">
-            <ion-input type=${t5} fill="outline" placeholder=${type === "daterange" ? this.t.from : this.t.gte}
+            <ion-input type=${t7} fill="outline" placeholder=${type === "daterange" ? this.t.from : this.t.gte}
               @ionInput=${(e6) => onEdge(col, "from", e6)}></ion-input>
-            <ion-input type=${t5} fill="outline" placeholder=${type === "daterange" ? this.t.to : this.t.lte}
+            <ion-input type=${t7} fill="outline" placeholder=${type === "daterange" ? this.t.to : this.t.lte}
               @ionInput=${(e6) => onEdge(col, "to", e6)}></ion-input>
           </div>
         </div>
@@ -4761,8 +5017,8 @@ var OkDataTable = class extends i3 {
   // `inlineFilters`. Look: «Todos los Estados» (placeholder) / «01/10/25 → 18/10/25».
   renderInlineFilters() {
     const cols = this.filterColumns.filter((c5) => {
-      const t5 = c5.filterType ?? "text";
-      return t5 === "select" || t5 === "multiselect" || t5 === "date" || t5 === "daterange";
+      const t7 = c5.filterType ?? "text";
+      return t7 === "select" || t7 === "multiselect" || t7 === "date" || t7 === "daterange";
     });
     if (!cols.length) return A;
     return b2`${cols.map((c5) => this.renderInlineFilter(c5))}`;
@@ -4923,9 +5179,22 @@ var OkDataTable = class extends i3 {
               <div class="bar">
                 <div class="bar-main">
                   ${this.title ? b2`<div class="title-wrap"><h2 class="title">${this.title}</h2><span class="title-count">${count}</span></div>` : A}
-                  ${this.hasSearch ? b2`<div class="search">${searchbar}</div>` : this.title ? A : b2`<span style="margin-right:auto"></span>`}
+                  ${this.hasSearch ? b2`<div class="search">${searchbar}</div>` : A}
                   ${this.inlineFilters ? this.renderInlineFilters() : A}
-                  <div class="bar-end">
+                  <span class="tk-spacer"></span>
+                    ${this.effColumnPicker ? b2`
+                          <ion-select
+                            class="tk-cols"
+                            multiple
+                            interface="popover"
+                            aria-label=${this.t.columnsVisible}
+                            .value=${this.visibleColumns.map((c5) => c5.key)}
+                            .selectedText=${this.t.columns}
+                            @ionChange=${(e6) => this.setVisibleColumns(e6.detail.value)}
+                          >
+                            ${this.columns.map((c5) => b2`<ion-select-option value=${c5.key}>${c5.header}</ion-select-option>`)}
+                          </ion-select>
+                        ` : A}
                     ${this.effPageSizes.length ? b2`
                           <ion-select
                             class="tk-psize"
@@ -4942,19 +5211,6 @@ var OkDataTable = class extends i3 {
                             ${this.toolButton("list-outline", this.viewMode === "table", () => this.setViewMode("table"), this.t.viewList)}
                             ${this.toolButton("grid-outline", this.viewMode === "cards", () => this.setViewMode("cards"), this.t.viewCards)}
                           </span>
-                        ` : A}
-                    ${this.effColumnPicker ? b2`
-                          <ion-select
-                            class="tk-cols"
-                            multiple
-                            interface="popover"
-                            aria-label=${this.t.columnsVisible}
-                            .value=${this.visibleColumns.map((c5) => c5.key)}
-                            .selectedText=${this.t.columns}
-                            @ionChange=${(e6) => this.setVisibleColumns(e6.detail.value)}
-                          >
-                            ${this.columns.map((c5) => b2`<ion-select-option value=${c5.key}>${c5.header}</ion-select-option>`)}
-                          </ion-select>
                         ` : A}
                     ${this.hasFilterRow && !this.inlineFilters ? this.toolButton("funnel-outline", this.panel === "filters" || this.activeFilterCount > 0, () => this.toggle("filters"), this.t.filters, this.serverSide ? void 0 : this.activeFilterCount) : A}
                     ${this.effImport ? b2`
@@ -4975,7 +5231,6 @@ var OkDataTable = class extends i3 {
                         ` : A}
                     <!-- El módulo proyecta aquí acciones globales adicionales. -->
                     <slot name="toolbar"></slot>
-                  </div>
                 </div>
                 ${this.selectable && selCount > 0 ? b2`
                       <div class="selbar">
@@ -5212,7 +5467,7 @@ __decorateClass6([
   n4({ type: Boolean, reflect: true })
 ], OkDataTable.prototype, "fill");
 __decorateClass6([
-  n4({ type: Boolean })
+  n4({ type: Boolean, attribute: "column-picker" })
 ], OkDataTable.prototype, "columnPicker");
 __decorateClass6([
   n4({ type: Boolean })
@@ -5251,7 +5506,7 @@ __decorateClass6([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "importable");
 __decorateClass6([
-  n4({ type: Boolean })
+  n4({ type: Boolean, attribute: "column-selector" })
 ], OkDataTable.prototype, "columnSelector");
 __decorateClass6([
   n4({ attribute: false })
@@ -5318,7 +5573,7 @@ __decorateClass6([
 ], OkDataTable.prototype, "menuOpen");
 define("ok-data-table", OkDataTable);
 
-// node_modules/.pnpm/@erplora+module-sdk@file+..+hub+packages+module-sdk/node_modules/@erplora/module-sdk/src/index.ts
+// ../hub/packages/module-sdk/src/index.ts
 function isEmpty(v3) {
   return v3 === null || v3 === void 0 || v3 === "";
 }
@@ -5436,7 +5691,8 @@ function createListController(client, queryName, onChange = () => {
   return new ListController(client, queryName, onChange, opts);
 }
 
-// modules/sales/ui/components/erp-sales-list/erp-sales-list.ts
+// ../modules-workspace/modules/sales/ui/components/erp-sales-list/erp-sales-list.ts
+var CATALOG4 = { es: es_default, en: en_default };
 function erplora5() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -5448,26 +5704,7 @@ var ErpSalesList = class extends i3 {
     this.stats = { count: 0, total_revenue: 0, avg_ticket: 0 };
     this.statsError = "";
     this.tick = 0;
-    this.documentActions = [
-      { id: "document", label: "Documento", icon: "receipt-outline" }
-    ];
-    this.columns = [
-      { key: "sale_number", header: "N\xFAmero", sortable: true, filterable: true, filterType: "text" },
-      { key: "customer_name", header: "Cliente", sortable: true, filterable: true, filterType: "text", format: (r6) => r6.customer_name || "\u2014" },
-      { key: "payment_method_name", header: "Pago", sortable: true, filterable: true, filterType: "text", format: (r6) => r6.payment_method_name || "\u2014" },
-      {
-        key: "status",
-        header: "Estado",
-        sortable: true,
-        filterable: true,
-        filterType: "select",
-        options: [
-          { value: "completed", label: "Completada" },
-          { value: "voided", label: "Anulada" }
-        ]
-      },
-      { key: "total", header: "Total", align: "right", sortable: true, filterable: true, filterType: "range", format: (r6) => Number(r6.total || 0).toFixed(2) }
-    ];
+    this.onLocaleChange = () => this.requestUpdate();
   }
   static {
     this.styles = i`
@@ -5480,11 +5717,39 @@ var ErpSalesList = class extends i3 {
     .err { color:#d9480f; }
   `;
   }
+  // Getter (no campo): se re-evalúa en cada render, así los textos cambian con el idioma activo
+  // (ADR-0055). El listener `erplora:locale-changed` re-renderiza.
+  get documentActions() {
+    return [
+      { id: "document", label: erplora5().t(CATALOG4, "ui.actionDocument"), icon: "receipt-outline" }
+    ];
+  }
+  get columns() {
+    const t7 = (k2) => erplora5().t(CATALOG4, k2);
+    return [
+      { key: "sale_number", header: t7("ui.colNumber"), sortable: true, filterable: true, filterType: "text" },
+      { key: "customer_name", header: t7("ui.colCustomer"), sortable: true, filterable: true, filterType: "text", format: (r6) => r6.customer_name || "\u2014" },
+      { key: "payment_method_name", header: t7("ui.colPayment"), sortable: true, filterable: true, filterType: "text", format: (r6) => r6.payment_method_name || "\u2014" },
+      {
+        key: "status",
+        header: t7("ui.colStatus"),
+        sortable: true,
+        filterable: true,
+        filterType: "select",
+        options: [
+          { value: "completed", label: t7("ui.statusCompleted") },
+          { value: "voided", label: t7("ui.statusVoided") }
+        ]
+      },
+      { key: "total", header: t7("ui.colTotal"), align: "right", sortable: true, filterable: true, filterType: "range", format: (r6) => Number(r6.total || 0).toFixed(2) }
+    ];
+  }
   // TODO-LIT: componentWillLoad → connectedCallback. Recuerda: connectedCallback se dispara
   // en CADA reconexión al DOM (no solo en el primer montaje). Si la init debe correr una
   // sola vez tras el primer render, considera firstUpdated() en su lugar.
   async connectedCallback() {
     super.connectedCallback();
+    window.addEventListener("erplora:locale-changed", this.onLocaleChange);
     this.ctrl = createListController(erplora5(), "sales.list", () => this.requestUpdate(), {
       pageSize: 50,
       sort: "created_at",
@@ -5500,6 +5765,7 @@ var ErpSalesList = class extends i3 {
     }
   }
   disconnectedCallback() {
+    window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
     super.disconnectedCallback();
     this.unsub?.();
   }
@@ -5508,29 +5774,30 @@ var ErpSalesList = class extends i3 {
       const rows4 = await erplora5().query("sales.stats");
       this.stats = rows4 && rows4[0] || { count: 0, total_revenue: 0, avg_ticket: 0 };
     } catch (e6) {
-      this.statsError = e6 instanceof Error ? e6.message : "Error cargando m\xE9tricas";
+      this.statsError = e6 instanceof Error ? e6.message : erplora5().t(CATALOG4, "ui.errorStats");
     }
   }
   render() {
+    const t7 = (k2) => erplora5().t(CATALOG4, k2);
     return b2`<div>
-        <h2>Ventas</h2>
+        <h2>${t7("ui.sales")}</h2>
         <div class="cards">
           <div class="card">
-            <div class="k">Tickets</div>
+            <div class="k">${t7("ui.tickets")}</div>
             <div class="v">${this.stats.count}</div>
           </div>
           <div class="card">
-            <div class="k">Ingresos</div>
+            <div class="k">${t7("ui.revenue")}</div>
             <div class="v">${Number(this.stats.total_revenue || 0).toFixed(2)}</div>
           </div>
           <div class="card">
-            <div class="k">Ticket medio</div>
+            <div class="k">${t7("ui.avgTicket")}</div>
             <div class="v">${Number(this.stats.avg_ticket || 0).toFixed(2)}</div>
           </div>
         </div>
         ${this.statsError ? b2`<p class="err">${this.statsError}</p>` : A}
         ${this.ctrl?.error ? b2`<p class="err">${this.ctrl.error}</p>` : A}
-        <ok-data-table .serverSide=${true} .columns=${this.columns} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.ctrl?.state.sort} .sortDir=${this.ctrl?.state.dir ?? "desc"} .searchable=${true} .searchPlaceholder=${"Buscar n\xFAmero o cliente\u2026"} .emptyMessage=${this.ctrl?.loading ? "Cargando\u2026" : "A\xFAn no hay ventas."} .actions=${this.documentActions} @rowAction=${(e6) => {
+        <ok-data-table .serverSide=${true} .columns=${this.columns} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.ctrl?.state.sort} .sortDir=${this.ctrl?.state.dir ?? "desc"} .searchable=${true} .searchPlaceholder=${t7("ui.searchSalePlaceholder")} .emptyMessage=${this.ctrl?.loading ? t7("ui.loading") : t7("ui.noSales")} .actions=${this.documentActions} @rowAction=${(e6) => {
       if (e6.detail.actionId === "document") this.docSaleId = e6.detail.row.id;
     }} @pageChange=${(e6) => this.ctrl.setPage(e6.detail)} @sortChange=${(e6) => this.ctrl.setSort(e6.detail.sort, e6.detail.dir)} @searchChange=${(e6) => this.ctrl.setSearch(e6.detail)} @filterChange=${(e6) => this.ctrl.setFilter(e6.detail.col, e6.detail.value)}></ok-data-table>
 
@@ -5539,11 +5806,11 @@ var ErpSalesList = class extends i3 {
     }}>
           <ion-header>
             <ion-toolbar>
-              <ion-title>Documento de venta</ion-title>
+              <ion-title>${t7("ui.saleDocument")}</ion-title>
               <ion-buttons slot="end">
                 <ion-button @click=${() => {
       this.docSaleId = void 0;
-    }}>Cerrar</ion-button>
+    }}>${t7("ui.close")}</ion-button>
               </ion-buttons>
             </ion-toolbar>
           </ion-header>
@@ -5568,7 +5835,8 @@ __decorateClass([
 ], ErpSalesList.prototype, "docSaleId", 2);
 define("erp-sales-list", ErpSalesList);
 
-// modules/sales/ui/components/erp-sales-settings/erp-sales-settings.ts
+// ../modules-workspace/modules/sales/ui/components/erp-sales-settings/erp-sales-settings.ts
+var CATALOG5 = { es: es_default, en: en_default };
 var DEFAULTS = {
   allow_cash: 1,
   allow_card: 1,
@@ -5600,6 +5868,7 @@ var ErpSalesSettings = class extends i3 {
     this.saving = false;
     this.message = "";
     this.error = "";
+    this.onLocaleChange = () => this.requestUpdate();
   }
   static {
     this.styles = i`
@@ -5626,15 +5895,20 @@ var ErpSalesSettings = class extends i3 {
   }
   async connectedCallback() {
     super.connectedCallback();
+    window.addEventListener("erplora:locale-changed", this.onLocaleChange);
     try {
       const rows4 = await erplora6().query("sales.settings.get");
       const row = Array.isArray(rows4) ? rows4[0] : rows4;
       this.s = { ...DEFAULTS, ...row || {} };
     } catch (e6) {
-      this.error = e6 instanceof Error ? e6.message : "Error cargando ajustes";
+      this.error = e6 instanceof Error ? e6.message : erplora6().t(CATALOG5, "ui.errorLoadingSettings");
     } finally {
       this.loading = false;
     }
+  }
+  disconnectedCallback() {
+    window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
+    super.disconnectedCallback();
   }
   set(key, value) {
     this.s = { ...this.s, [key]: value };
@@ -5646,9 +5920,9 @@ var ErpSalesSettings = class extends i3 {
     this.error = "";
     try {
       await erplora6().command("sales.settings.update", { ...this.s });
-      this.message = "Ajustes guardados.";
+      this.message = erplora6().t(CATALOG5, "ui.settingsSaved");
     } catch (e6) {
-      this.error = e6 instanceof Error ? e6.message : "Error guardando";
+      this.error = e6 instanceof Error ? e6.message : erplora6().t(CATALOG5, "ui.errorSaving");
     } finally {
       this.saving = false;
     }
@@ -5672,69 +5946,70 @@ var ErpSalesSettings = class extends i3 {
     </ion-segment>`;
   }
   render() {
-    if (this.loading) return b2`<p class="sub">Cargando ajustes…</p>`;
+    const t7 = (k2) => erplora6().t(CATALOG5, k2);
+    if (this.loading) return b2`<p class="sub">${t7("ui.loadingSettings")}</p>`;
     return b2`<div>
       ${this.error ? b2`<p class="msg err">${this.error}</p>` : A}
 
       <div class="group">
-        <div class="gh">Pantalla de venta</div>
+        <div class="gh">${t7("ui.groupSaleScreen")}</div>
         <div class="row">
-          <div class="lbl">Pantalla por defecto<small>Cuál se abre al vender</small></div>
+          <div class="lbl">${t7("ui.defaultScreen")}<small>${t7("ui.defaultScreenHint")}</small></div>
           ${this.segment("pos_layout", [
-      { value: "touch", label: "T\xE1ctil" },
-      { value: "desktop", label: "Escritorio" }
+      { value: "touch", label: t7("ui.screenTouch") },
+      { value: "desktop", label: t7("ui.screenDesktop") }
     ])}
         </div>
       </div>
 
       <div class="group">
-        <div class="gh">Documento de la venta</div>
+        <div class="gh">${t7("ui.groupSaleDocument")}</div>
         <div class="row">
-          <div class="lbl">Formato por defecto<small>Tiquet 80mm o factura A4</small></div>
+          <div class="lbl">${t7("ui.defaultFormat")}<small>${t7("ui.defaultFormatHint")}</small></div>
           ${this.segment("default_document_format", [
-      { value: "ticket", label: "Tiquet" },
-      { value: "invoice", label: "Factura" }
+      { value: "ticket", label: t7("ui.formatTicket") },
+      { value: "invoice", label: t7("ui.formatInvoice") }
     ])}
         </div>
-        ${this.toggle("auto_invoice_with_tax_id", "Factura autom\xE1tica con NIF", "Si el cliente tiene NIF/CIF, emitir factura A4")}
+        ${this.toggle("auto_invoice_with_tax_id", t7("ui.autoInvoiceTaxId"), t7("ui.autoInvoiceTaxIdHint"))}
       </div>
 
       <div class="group">
-        <div class="gh">Métodos de pago</div>
-        ${this.toggle("allow_cash", "Efectivo")}
-        ${this.toggle("allow_card", "Tarjeta")}
-        ${this.toggle("allow_transfer", "Transferencia")}
+        <div class="gh">${t7("ui.groupPaymentMethods")}</div>
+        ${this.toggle("allow_cash", t7("ui.cash"))}
+        ${this.toggle("allow_card", t7("ui.card"))}
+        ${this.toggle("allow_transfer", t7("ui.transfer"))}
       </div>
 
       <div class="group">
-        <div class="gh">Venta</div>
-        ${this.toggle("require_customer", "Exigir cliente", "Obliga a seleccionar cliente en cada venta")}
-        ${this.toggle("allow_discounts", "Permitir descuentos")}
-        ${this.toggle("default_tax_included", "Precios con impuestos incluidos")}
-        ${this.toggle("enable_parked_tickets", "Tiquets aparcados", "Permite dejar ventas en espera")}
-        ${this.toggle("sync_products", "Sincronizar productos")}
-        ${this.toggle("sync_services", "Sincronizar servicios")}
+        <div class="gh">${t7("ui.groupSale")}</div>
+        ${this.toggle("require_customer", t7("ui.requireCustomer"), t7("ui.requireCustomerHint"))}
+        ${this.toggle("allow_discounts", t7("ui.allowDiscounts"))}
+        ${this.toggle("default_tax_included", t7("ui.taxIncluded"))}
+        ${this.toggle("enable_parked_tickets", t7("ui.parkedTicketsToggle"), t7("ui.parkedTicketsToggleHint"))}
+        ${this.toggle("sync_products", t7("ui.syncProducts"))}
+        ${this.toggle("sync_services", t7("ui.syncServices"))}
         <div class="field">
-          <label>Caducidad de tiquets aparcados (horas)</label>
+          <label>${t7("ui.parkedExpiryHours")}</label>
           <input type="number" min="1" .value=${String(this.s.ticket_expiry_hours)}
             @input=${(e6) => this.set("ticket_expiry_hours", Number(e6.target.value || 0))} />
         </div>
       </div>
 
       <div class="group">
-        <div class="gh">Tiquet (cabecera y pie)</div>
+        <div class="gh">${t7("ui.groupReceipt")}</div>
         <div class="field">
-          <label>Cabecera</label>
+          <label>${t7("ui.receiptHeader")}</label>
           <textarea rows="2" .value=${this.s.receipt_header}
             @input=${(e6) => this.set("receipt_header", e6.target.value)}></textarea>
         </div>
         <div class="field">
-          <label>Pie</label>
+          <label>${t7("ui.receiptFooter")}</label>
           <textarea rows="2" .value=${this.s.receipt_footer}
             @input=${(e6) => this.set("receipt_footer", e6.target.value)}></textarea>
         </div>
         <div class="field">
-          <label>Imagen de pie (URL)</label>
+          <label>${t7("ui.receiptFooterImage")}</label>
           <input type="text" .value=${this.s.receipt_footer_image}
             @input=${(e6) => this.set("receipt_footer_image", e6.target.value)} />
         </div>
@@ -5742,7 +6017,7 @@ var ErpSalesSettings = class extends i3 {
 
       <div class="bar">
         <ion-button @click=${() => this.save()} ?disabled=${this.saving}>
-          ${this.saving ? "Guardando\u2026" : "Guardar ajustes"}
+          ${this.saving ? t7("ui.saving") : t7("ui.saveSettings")}
         </ion-button>
         ${this.message ? b2`<span class="msg ok">${this.message}</span>` : A}
       </div>

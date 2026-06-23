@@ -6,11 +6,18 @@ import type { DataTableColumn, DataTableAction } from '@erplora/outfitkit';
 import '../erp-sales-document/erp-sales-document.js';
 import { createListController } from '@erplora/module-sdk';
 import type { ListController, ListClient, ListParams, ListPage } from '@erplora/module-sdk';
+// Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC.
+import esLocale from '../../../locales/es.json';
+import enLocale from '../../../locales/en.json';
+const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
 interface ErploraClientLike extends ListClient {
   query<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T>;
   queryPage<R = unknown>(name: string, params: ListParams): Promise<ListPage<R>>;
   on(event: string, cb: (payload: unknown) => void): () => void;
+  /** i18n del módulo (ADR-0055): idioma activo + traducción del catálogo `ui`. */
+  locale: string;
+  t(catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>): string;
 }
 
 interface Sale {
@@ -51,37 +58,47 @@ export class ErpSalesList extends LitElement {
   /** Venta seleccionada para ver su documento (tiquet/factura) en el modal. */
   @state() docSaleId?: string;
 
-  private documentActions: DataTableAction[] = [
-    { id: 'document', label: 'Documento', icon: 'receipt-outline' },
-  ];
+  // Getter (no campo): se re-evalúa en cada render, así los textos cambian con el idioma activo
+  // (ADR-0055). El listener `erplora:locale-changed` re-renderiza.
+  private get documentActions(): DataTableAction[] {
+    return [
+      { id: 'document', label: erplora().t(CATALOG, 'ui.actionDocument'), icon: 'receipt-outline' },
+    ];
+  }
 
   private ctrl!: ListController<Sale>;
 
   private unsub?: () => void;
 
-  private columns: DataTableColumn[] = [
-    { key: 'sale_number', header: 'Número', sortable: true, filterable: true, filterType: 'text' },
-    { key: 'customer_name', header: 'Cliente', sortable: true, filterable: true, filterType: 'text', format: (r) => (r.customer_name as string) || '—' },
-    { key: 'payment_method_name', header: 'Pago', sortable: true, filterable: true, filterType: 'text', format: (r) => (r.payment_method_name as string) || '—' },
+  private readonly onLocaleChange = (): void => this.requestUpdate();
+
+  private get columns(): DataTableColumn[] {
+    const t = (k: string): string => erplora().t(CATALOG, k);
+    return [
+    { key: 'sale_number', header: t('ui.colNumber'), sortable: true, filterable: true, filterType: 'text' },
+    { key: 'customer_name', header: t('ui.colCustomer'), sortable: true, filterable: true, filterType: 'text', format: (r) => (r.customer_name as string) || '—' },
+    { key: 'payment_method_name', header: t('ui.colPayment'), sortable: true, filterable: true, filterType: 'text', format: (r) => (r.payment_method_name as string) || '—' },
     {
       key: 'status',
-      header: 'Estado',
+      header: t('ui.colStatus'),
       sortable: true,
       filterable: true,
       filterType: 'select',
       options: [
-        { value: 'completed', label: 'Completada' },
-        { value: 'voided', label: 'Anulada' },
+        { value: 'completed', label: t('ui.statusCompleted') },
+        { value: 'voided', label: t('ui.statusVoided') },
       ],
     },
-    { key: 'total', header: 'Total', align: 'right', sortable: true, filterable: true, filterType: 'range', format: (r) => Number(r.total || 0).toFixed(2) },
-  ];
+    { key: 'total', header: t('ui.colTotal'), align: 'right', sortable: true, filterable: true, filterType: 'range', format: (r) => Number(r.total || 0).toFixed(2) },
+    ];
+  }
 
   // TODO-LIT: componentWillLoad → connectedCallback. Recuerda: connectedCallback se dispara
   // en CADA reconexión al DOM (no solo en el primer montaje). Si la init debe correr una
   // sola vez tras el primer render, considera firstUpdated() en su lugar.
   async connectedCallback() {
     super.connectedCallback();
+    window.addEventListener('erplora:locale-changed', this.onLocaleChange);
     this.ctrl = createListController<Sale>(erplora(), 'sales.list', () => this.requestUpdate(), {
       pageSize: 50,
       sort: 'created_at',
@@ -93,6 +110,7 @@ export class ErpSalesList extends LitElement {
   }
 
   disconnectedCallback() {
+    window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
     super.disconnectedCallback(); this.unsub?.(); }
 
   private async loadStats() {
@@ -100,37 +118,38 @@ export class ErpSalesList extends LitElement {
       const rows = await erplora().query<Stats[]>('sales.stats');
       this.stats = (rows && rows[0]) || { count: 0, total_revenue: 0, avg_ticket: 0 };
     } catch (e) {
-      this.statsError = e instanceof Error ? e.message : 'Error cargando métricas';
+      this.statsError = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errorStats');
     }
   }
 
   render() {
+    const t = (k: string): string => erplora().t(CATALOG, k);
     return html`<div>
-        <h2>Ventas</h2>
+        <h2>${t('ui.sales')}</h2>
         <div class="cards">
           <div class="card">
-            <div class="k">Tickets</div>
+            <div class="k">${t('ui.tickets')}</div>
             <div class="v">${this.stats.count}</div>
           </div>
           <div class="card">
-            <div class="k">Ingresos</div>
+            <div class="k">${t('ui.revenue')}</div>
             <div class="v">${Number(this.stats.total_revenue || 0).toFixed(2)}</div>
           </div>
           <div class="card">
-            <div class="k">Ticket medio</div>
+            <div class="k">${t('ui.avgTicket')}</div>
             <div class="v">${Number(this.stats.avg_ticket || 0).toFixed(2)}</div>
           </div>
         </div>
         ${this.statsError ? html`<p class="err">${this.statsError}</p>` : nothing}
         ${this.ctrl?.error ? html`<p class="err">${this.ctrl.error}</p>` : nothing}
-        <ok-data-table .serverSide=${true} .columns=${this.columns} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.ctrl?.state.sort} .sortDir=${this.ctrl?.state.dir ?? 'desc'} .searchable=${true} .searchPlaceholder=${"Buscar número o cliente…"} .emptyMessage=${this.ctrl?.loading ? 'Cargando…' : 'Aún no hay ventas.'} .actions=${this.documentActions} @rowAction=${(e: CustomEvent<{ actionId: string; row: Sale }>) => { if (e.detail.actionId === 'document') this.docSaleId = e.detail.row.id; }} @pageChange=${(e: CustomEvent<number>) => this.ctrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.ctrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.ctrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.ctrl.setFilter(e.detail.col, e.detail.value)}></ok-data-table>
+        <ok-data-table .serverSide=${true} .columns=${this.columns} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.ctrl?.state.sort} .sortDir=${this.ctrl?.state.dir ?? 'desc'} .searchable=${true} .searchPlaceholder=${t('ui.searchSalePlaceholder')} .emptyMessage=${this.ctrl?.loading ? t('ui.loading') : t('ui.noSales')} .actions=${this.documentActions} @rowAction=${(e: CustomEvent<{ actionId: string; row: Sale }>) => { if (e.detail.actionId === 'document') this.docSaleId = e.detail.row.id; }} @pageChange=${(e: CustomEvent<number>) => this.ctrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.ctrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.ctrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.ctrl.setFilter(e.detail.col, e.detail.value)}></ok-data-table>
 
         <ion-modal .isOpen=${!!this.docSaleId} @ionModalDidDismiss=${() => { this.docSaleId = undefined; }}>
           <ion-header>
             <ion-toolbar>
-              <ion-title>Documento de venta</ion-title>
+              <ion-title>${t('ui.saleDocument')}</ion-title>
               <ion-buttons slot="end">
-                <ion-button @click=${() => { this.docSaleId = undefined; }}>Cerrar</ion-button>
+                <ion-button @click=${() => { this.docSaleId = undefined; }}>${t('ui.close')}</ion-button>
               </ion-buttons>
             </ion-toolbar>
           </ion-header>

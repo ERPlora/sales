@@ -7,6 +7,10 @@ import {
   loadActiveCart, persistActiveCart, listParkedTickets, parkCart, retrieveParkedTicket,
   type CartLine, type ErploraClientLike, type ParkedTicket,
 } from '../../lib/pos-cart.js';
+// Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC.
+import esLocale from '../../../locales/es.json';
+import enLocale from '../../../locales/en.json';
+const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
 // erp-pos-touch — pantalla de venta TÁCTIL: un "canvas" oscuro de TPV. A la izquierda el catálogo
 // con su carrusel de CATEGORÍAS (tarjetas con imagen/gradiente + nº de productos, flechas ‹ ›) y la
@@ -22,10 +26,21 @@ interface PosSettings { default_document_format?: string; currency?: string; ena
 interface Category { id: string; name: string; icon?: string; color?: string; image?: string; product_count?: number; }
 interface ProdCat { product_id: string; category_id: string; }
 
+/** i18n del módulo (ADR-0055): idioma activo + traducción del catálogo `ui`. */
+interface I18nClient {
+  locale: string;
+  t(catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>): string;
+}
+
 function erplora(): ErploraClientLike {
   const c = (globalThis as { erplora?: ErploraClientLike }).erplora;
   if (!c) throw new Error('erplora SDK no inicializado por el shell');
   return c;
+}
+
+/** Traduce una clave del catálogo `ui` con el idioma activo del shell. */
+function t(key: string, params?: Record<string, unknown>): string {
+  return (erplora() as unknown as I18nClient).t(CATALOG, key, params);
 }
 
 function rows<T>(r: unknown): T[] {
@@ -207,10 +222,12 @@ export class ErpPosTouch extends LitElement {
     this.customerName = d.customer_name ?? '';
   };
   private readonly onFsChange = () => { this.fullscreen = document.fullscreenElement === this; };
+  private readonly onLocaleChange = (): void => this.requestUpdate();
 
   async connectedCallback() {
     super.connectedCallback();
     document.addEventListener('fullscreenchange', this.onFsChange);
+    window.addEventListener('erplora:locale-changed', this.onLocaleChange);
     try {
       const [prods, methods, settingsRows, savedCart, parked, cats, prodCats] = await Promise.all([
         erplora().query('inventory.products.list', { page_size: 200 }).catch(() => []),
@@ -239,7 +256,7 @@ export class ErpPosTouch extends LitElement {
       await this.resolveSlots();
       this.ensureSlotsMounted();
     } catch (e) {
-      this.error = e instanceof Error ? e.message : 'Error cargando el POS';
+      this.error = e instanceof Error ? e.message : t('ui.errorLoadingPos');
     } finally {
       this.cartRestored = true;
     }
@@ -248,6 +265,7 @@ export class ErpPosTouch extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     document.removeEventListener('fullscreenchange', this.onFsChange);
+    window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
     this.removeEventListener('erp:order-context', this.onOrderContext);
     this.removeEventListener('erp:customer-context', this.onCustomerContext);
     if (this.saveTimer) {
@@ -318,7 +336,7 @@ export class ErpPosTouch extends LitElement {
   private async park() {
     if (!this.cart.length) return;
     const num = await parkCart(erplora(), this.cart);
-    if (!num) { this.error = 'No se pudo aparcar el ticket'; return; }
+    if (!num) { this.error = t('ui.errorPark'); return; }
     this.cart = [];
     this.parkedOpen = false;
     this.parked = await listParkedTickets(erplora());
@@ -331,7 +349,7 @@ export class ErpPosTouch extends LitElement {
       this.parkedOpen = false;
       this.parked = await listParkedTickets(erplora());
     } catch (e) {
-      this.error = e instanceof Error ? e.message : 'No se pudo recuperar el ticket';
+      this.error = e instanceof Error ? e.message : t('ui.errorRetrieve');
     }
   }
 
@@ -390,7 +408,7 @@ export class ErpPosTouch extends LitElement {
       this.resetSlotContexts();
       if (saleId) this.docSaleId = saleId;
     } catch (e) {
-      this.error = e instanceof Error ? e.message : 'Error al cobrar';
+      this.error = e instanceof Error ? e.message : t('ui.errorCharge');
     } finally {
       this.busy = false;
     }
@@ -410,16 +428,16 @@ export class ErpPosTouch extends LitElement {
     const cell = (id: string, name: string, count: number, bg: string) => html`
       <button class="catcard" aria-pressed=${this.activeCat === id} @click=${() => { this.activeCat = id; }}>
         <span class="cc-img" style=${`background-image:${bg}`}></span>
-        <span class="cc-meta"><span class="cc-n">${name}</span><span class="cc-c">${count} productos</span></span>
+        <span class="cc-meta"><span class="cc-n">${name}</span><span class="cc-c">${count} ${t('ui.products')}</span></span>
       </button>`;
     return html`
       <div class="catbar">
-        <button class="arrow" title="Anterior" @click=${() => this.scrollCats(-1)}><ion-icon name="chevron-back-outline"></ion-icon></button>
+        <button class="arrow" title=${t('ui.previous')} @click=${() => this.scrollCats(-1)}><ion-icon name="chevron-back-outline"></ion-icon></button>
         <div class="seg">
-          ${cell('', 'Todos', this.products.length, gradient('Todos'))}
+          ${cell('', t('ui.all'), this.products.length, gradient('Todos'))}
           ${this.categories.map((c) => cell(c.id, c.name, this.catCount(c.id), c.image ? `url(${c.image})` : gradient(c.name)))}
         </div>
-        <button class="arrow" title="Siguiente" @click=${() => this.scrollCats(1)}><ion-icon name="chevron-forward-outline"></ion-icon></button>
+        <button class="arrow" title=${t('ui.next')} @click=${() => this.scrollCats(1)}><ion-icon name="chevron-forward-outline"></ion-icon></button>
       </div>`;
   }
 
@@ -428,19 +446,19 @@ export class ErpPosTouch extends LitElement {
       <ion-header>
         <ion-toolbar>
           <ion-buttons slot="start">
-            <ion-button class="cart-close" title="Cerrar" @click=${() => { this.cartOpen = false; }}>
+            <ion-button class="cart-close" title=${t('ui.closeAction')} @click=${() => { this.cartOpen = false; }}>
               <ion-icon slot="icon-only" name="chevron-forward-outline"></ion-icon>
             </ion-button>
           </ion-buttons>
-          <ion-title>${this.tableLabel || 'Venta'}${this.customerName ? html` · ${this.customerName}` : nothing}</ion-title>
+          <ion-title>${this.tableLabel || t('ui.sale')}${this.customerName ? html` · ${this.customerName}` : nothing}</ion-title>
           <ion-buttons slot="end">
             ${this.parkingEnabled
-              ? html`<ion-button title="Tickets aparcados" style="position:relative" @click=${() => { this.parkedOpen = !this.parkedOpen; }}>
+              ? html`<ion-button title=${t('ui.parkedTickets')} style="position:relative" @click=${() => { this.parkedOpen = !this.parkedOpen; }}>
                   <ion-icon slot="icon-only" name="file-tray-stacked-outline"></ion-icon>
                   ${this.parked.length ? html`<span class="badge-num">${this.parked.length}</span>` : nothing}
                 </ion-button>`
               : nothing}
-            <ion-button title="Pantalla completa" @click=${() => this.toggleFullscreen()}>
+            <ion-button title=${t('ui.fullscreen')} @click=${() => this.toggleFullscreen()}>
               <ion-icon slot="icon-only" name=${this.fullscreen ? 'contract-outline' : 'expand-outline'}></ion-icon>
             </ion-button>
           </ion-buttons>
@@ -456,13 +474,13 @@ export class ErpPosTouch extends LitElement {
         ? html`
           <div class="pdrop-back" @click=${() => { this.parkedOpen = false; }}></div>
           <div class="pdrop">
-            <ion-button size="small" expand="block" fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>Aparcar venta actual</ion-button>
-            <p class="hint">Tickets aparcados</p>
-            ${this.parked.map((t) => html`<div class="pitem">
-              <div><div class="pn">${t.ticket_number}</div><div class="pm">${(t.created_at || '').replace('T', ' ').slice(0, 16)}</div></div>
-              <ion-button size="small" ?disabled=${!!this.cart.length} @click=${() => this.retrieve(t)}>Recuperar</ion-button>
+            <ion-button size="small" expand="block" fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>${t('ui.parkCurrentSale')}</ion-button>
+            <p class="hint">${t('ui.parkedTickets')}</p>
+            ${this.parked.map((pt) => html`<div class="pitem">
+              <div><div class="pn">${pt.ticket_number}</div><div class="pm">${(pt.created_at || '').replace('T', ' ').slice(0, 16)}</div></div>
+              <ion-button size="small" ?disabled=${!!this.cart.length} @click=${() => this.retrieve(pt)}>${t('ui.retrieve')}</ion-button>
             </div>`)}
-            ${!this.parked.length ? html`<div class="hint" style="text-align:center">No hay tickets aparcados.</div>` : nothing}
+            ${!this.parked.length ? html`<div class="hint" style="text-align:center">${t('ui.noParkedTickets')}</div>` : nothing}
           </div>`
         : nothing}
 
@@ -477,12 +495,12 @@ export class ErpPosTouch extends LitElement {
               </div>
             </ion-item>`)}
           </ion-list>`
-        : html`<div class="lines"><div class="empty">Toca un producto para añadirlo.</div></div>`}
+        : html`<div class="lines"><div class="empty">${t('ui.cartEmptyTouch')}</div></div>`}
 
       <div class="cart-foot">
-        <div class="total"><span>Total</span><b>${this.money(this.total)}</b></div>
+        <div class="total"><span>${t('ui.colTotal')}</span><b>${this.money(this.total)}</b></div>
         <ion-button class="charge" expand="block" ?disabled=${!this.cart.length} @click=${() => this.openPay()}>
-          Cobrar ${this.money(this.total)}
+          ${t('ui.charge')} ${this.money(this.total)}
         </ion-button>
       </div>`;
   }
@@ -492,7 +510,7 @@ export class ErpPosTouch extends LitElement {
       <div class="body">
         <div class="catalog">
           ${this.renderCatBar()}
-          <ion-searchbar class="search" placeholder="Buscar producto…" value=${this.q}
+          <ion-searchbar class="search" placeholder=${t('ui.searchProductPlaceholder')} value=${this.q}
             @ionInput=${(e: CustomEvent) => { this.q = (e.target as HTMLInputElement).value || ''; }}></ion-searchbar>
           ${this.error ? html`<p style="color:var(--ion-color-danger,#d9480f)">${this.error}</p>` : nothing}
           <div class="grid">
@@ -502,7 +520,7 @@ export class ErpPosTouch extends LitElement {
               </div>
               <div class="tinfo"><div class="n">${p.name}</div><div class="p">${this.money(Number(p.price))}</div></div>
             </ion-card>`)}
-            ${!this.filtered.length ? html`<div class="empty">Sin productos.</div>` : nothing}
+            ${!this.filtered.length ? html`<div class="empty">${t('ui.noProducts')}</div>` : nothing}
           </div>
         </div>
 
@@ -520,26 +538,26 @@ export class ErpPosTouch extends LitElement {
         ? html`<div class="scrim" @click=${(e: Event) => { if ((e.target as HTMLElement).classList.contains('scrim')) this.paying = false; }}>
             <div class="sheet">
               <div class="sheet-h">
-                <span class="t">Cobrar ${this.money(this.total)}</span>
+                <span class="t">${t('ui.charge')} ${this.money(this.total)}</span>
                 <button class="x" @click=${() => { this.paying = false; }}>✕</button>
               </div>
               <div class="pay">
                 <div class="methods">
                   ${this.methods.map((m) => html`<button class="chip" aria-pressed=${this.payMethod?.id === m.id} @click=${() => { this.payMethod = m; }}>${m.name}</button>`)}
-                  ${!this.methods.length ? html`<button class="chip" aria-pressed="true">Efectivo</button>` : nothing}
+                  ${!this.methods.length ? html`<button class="chip" aria-pressed="true">${t('ui.cash')}</button>` : nothing}
                 </div>
-                <div class="amt"><span>Entregado</span><span class="v">${this.money(this.tenderedNum)}</span></div>
-                <div class="amt"><span>Cambio</span><span class="v change">${this.money(this.change)}</span></div>
+                <div class="amt"><span>${t('ui.tendered')}</span><span class="v">${this.money(this.tenderedNum)}</span></div>
+                <div class="amt"><span>${t('ui.change')}</span><span class="v change">${this.money(this.change)}</span></div>
                 <div class="numpad">
                   ${['1','2','3','4','5','6','7','8','9','.','0','C'].map((k) => html`<button @click=${() => this.tap(k)}>${k}</button>`)}
                 </div>
                 <ion-segment value=${this.docFormat} @ionChange=${(e: CustomEvent) => { this.docFormat = ((e.detail as { value: string }).value === 'invoice' ? 'invoice' : 'ticket'); }}>
-                  <ion-segment-button value="ticket"><ion-label>Tiquet</ion-label></ion-segment-button>
-                  <ion-segment-button value="invoice"><ion-label>Factura</ion-label></ion-segment-button>
+                  <ion-segment-button value="ticket"><ion-label>${t('ui.formatTicket')}</ion-label></ion-segment-button>
+                  <ion-segment-button value="invoice"><ion-label>${t('ui.formatInvoice')}</ion-label></ion-segment-button>
                 </ion-segment>
                 ${this.error ? html`<p style="color:var(--ion-color-danger,#d9480f)">${this.error}</p>` : nothing}
                 <ion-button class="charge" expand="block" ?disabled=${this.busy} @click=${() => this.confirm()}>
-                  ${this.busy ? 'Cobrando…' : 'Confirmar cobro'}
+                  ${this.busy ? t('ui.charging') : t('ui.confirmCharge')}
                 </ion-button>
               </div>
             </div>
@@ -548,8 +566,8 @@ export class ErpPosTouch extends LitElement {
 
       <ion-modal .isOpen=${!!this.docSaleId} @ionModalDidDismiss=${() => { this.docSaleId = undefined; }}>
         <ion-header><ion-toolbar>
-          <ion-title>Documento</ion-title>
-          <ion-buttons slot="end"><ion-button @click=${() => { this.docSaleId = undefined; }}>Cerrar</ion-button></ion-buttons>
+          <ion-title>${t('ui.document')}</ion-title>
+          <ion-buttons slot="end"><ion-button @click=${() => { this.docSaleId = undefined; }}>${t('ui.close')}</ion-button></ion-buttons>
         </ion-toolbar></ion-header>
         <ion-content class="ion-padding">
           ${this.docSaleId ? html`<erp-sales-document .saleId=${this.docSaleId}></erp-sales-document>` : nothing}
