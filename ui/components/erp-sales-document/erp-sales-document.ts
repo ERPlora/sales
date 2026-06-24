@@ -10,6 +10,7 @@ import {
   type SaleRow,
   type SaleLineRow,
   type SaleSettings,
+  type FiscalData,
 } from '../../lib/document-mappers.js';
 // Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC.
 import esLocale from '../../../locales/es.json';
@@ -64,6 +65,9 @@ export class ErpSalesDocument extends LitElement {
 
   @state() private error = '';
 
+  /** Datos fiscales (VeriFactu) resueltos para el documento: QR de validación AEAT + nº oficial. */
+  @state() private fiscal: FiscalData = {};
+
   private readonly onLocaleChange = (): void => this.requestUpdate();
 
   async connectedCallback() {
@@ -92,10 +96,40 @@ export class ErpSalesDocument extends LitElement {
       this.sale = Array.isArray(sale) ? (sale as SaleRow[])[0] : sale;
       this.lines = lines || [];
       this.settings = (Array.isArray(settingsRows) ? settingsRows[0] : settingsRows) || {};
+      // Datos fiscales (QR VeriFactu) — best-effort: si no hay factura/permiso, el documento se
+      // pinta igual sin QR (no rompe el recibo).
+      this.fiscal = this.saleId ? await this.resolveFiscal(this.saleId) : {};
     } catch (e) {
       this.error = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errorDocument');
     } finally {
       this.loading = false;
+    }
+  }
+
+  /** Resuelve venta → factura (`invoice.by_source`) → registro VeriFactu (`verifactu.records.by_invoice`)
+   *  para obtener el QR de validación AEAT + nº fiscal oficial + CSV. Tolerante a fallos. */
+  private async resolveFiscal(saleId: string): Promise<FiscalData> {
+    try {
+      const invRows = await erplora().query<Record<string, unknown> | Record<string, unknown>[]>(
+        'invoice.by_source', { source_id: saleId });
+      const invoice = (Array.isArray(invRows) ? invRows[0] : invRows) as Record<string, unknown> | undefined;
+      if (!invoice?.id) return {};
+      const recRows = await erplora().query<Record<string, unknown> | Record<string, unknown>[]>(
+        'verifactu.records.by_invoice', { invoice_id: invoice.id });
+      const rec = (Array.isArray(recRows) ? recRows[0] : recRows) as Record<string, unknown> | undefined;
+      const csv = (rec?.aeat_csv as string) || '';
+      const qr = (rec?.qr_url as string) || '';
+      const t = (k: string): string => erplora().t(CATALOG, k);
+      return {
+        qr: qr || undefined,
+        qr_note: csv ? `CSV: ${csv}` : (qr ? t('ui.qrValidateNote') : undefined),
+        number: (invoice.number as string) || undefined,
+        issuer_nif: (invoice.issuer_nif as string) || undefined,
+        customer_name: (invoice.customer_name as string) || undefined,
+        customer_tax_id: (invoice.customer_tax_id as string) || undefined,
+      };
+    } catch {
+      return {}; // sin factura aún / sin permiso → documento sin QR
     }
   }
 
@@ -116,8 +150,8 @@ export class ErpSalesDocument extends LitElement {
         </ion-button>
       </div>
       ${fmt === 'invoice'
-        ? html`<ok-invoice .invoice=${saleToInvoice(this.sale, lines, settings)}></ok-invoice>`
-        : html`<ok-receipt .receipt=${saleToReceipt(this.sale, lines, settings)}></ok-receipt>`}
+        ? html`<ok-invoice .invoice=${saleToInvoice(this.sale, lines, settings, this.fiscal)}></ok-invoice>`
+        : html`<ok-receipt .receipt=${saleToReceipt(this.sale, lines, settings, this.fiscal)}></ok-receipt>`}
     </div>`;
   }
 }

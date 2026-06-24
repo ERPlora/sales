@@ -58,7 +58,8 @@
       "id": "pos",
       "label": "Vender",
       "icon": "storefront",
-      "component": "erp-pos"
+      "component": "erp-pos",
+      "chrome": ["fullscreen"]
     },
     {
       "id": "sales",
@@ -84,6 +85,7 @@
   "queries": {
     "sales.list": {
       "permission": "sales.view_sale",
+      "expose_api": true,
       "sql": "queries/list.sql",
       "list": {
         "search": [
@@ -138,6 +140,7 @@
     },
     "sales.get": {
       "permission": "sales.view_sale",
+      "expose_api": true,
       "sql": "queries/get.sql",
       "ai": {
         "description": "Retrieves the full detail of a sale by its identifier"
@@ -145,6 +148,7 @@
     },
     "sales.lines": {
       "permission": "sales.view_sale",
+      "expose_api": true,
       "sql": "queries/lines.sql",
       "ai": {
         "description": "Lists the product lines (items) belonging to a sale"
@@ -159,6 +163,7 @@
     },
     "sales.payment_methods": {
       "permission": "sales.view_paymentmethod",
+      "expose_api": true,
       "sql": "queries/payment_methods.sql",
       "ai": {
         "description": "Lists the available payment methods"
@@ -183,6 +188,20 @@
       "sql": "queries/parked_tickets.sql",
       "ai": {
         "description": "Lists the parked (on-hold) POS tickets that have not expired yet, newest first"
+      }
+    },
+    "sales.today": {
+      "permission": "sales.view_reports",
+      "sql": "queries/today.sql",
+      "ai": {
+        "description": "Returns today's sales totals: amount sold and number of completed tickets"
+      }
+    },
+    "sales.last_7_days": {
+      "permission": "sales.view_reports",
+      "sql": "queries/last_7_days.sql",
+      "ai": {
+        "description": "Returns the sales amount per day for the last 7 days (one row per day with sales)"
       }
     }
   },
@@ -299,6 +318,61 @@
       "ai": {
         "description": "Sets the document type (ticket or invoice) issued for a sale"
       }
+    }
+  },
+  "widgets": {
+    "sales.today": {
+      "title": "Ventas hoy",
+      "icon": "trending-up-outline",
+      "category": "Ventas",
+      "size": "sm",
+      "permission": "sales.view_reports",
+      "sectors": ["hosteleria", "retail"],
+      "default": true,
+      "kind": "kpi",
+      "query": "sales.today",
+      "map": { "value": "total" },
+      "options": { "label": "Hoy", "icon": "cash-outline", "format": "currency", "currency": "EUR", "locale": "es-ES" }
+    },
+    "sales.tickets_today": {
+      "title": "Tickets hoy",
+      "icon": "receipt-outline",
+      "category": "Ventas",
+      "size": "sm",
+      "permission": "sales.view_reports",
+      "sectors": ["hosteleria", "retail"],
+      "default": true,
+      "kind": "kpi",
+      "query": "sales.today",
+      "map": { "value": "tickets" },
+      "options": { "label": "Tickets", "icon": "receipt-outline", "format": "number", "locale": "es-ES" }
+    },
+    "sales.last_7_days": {
+      "title": "Ventas últimos 7 días",
+      "icon": "bar-chart-outline",
+      "category": "Ventas",
+      "size": "lg",
+      "permission": "sales.view_reports",
+      "sectors": ["hosteleria", "retail"],
+      "default": false,
+      "kind": "chart",
+      "query": "sales.last_7_days",
+      "map": { "label": "day", "value": "total" },
+      "options": { "chartType": "bar", "seriesName": "Ventas", "gridlines": true, "format": "currency", "height": 220 }
+    },
+    "sales.recent_activity": {
+      "title": "Actividad reciente",
+      "icon": "time-outline",
+      "category": "Ventas",
+      "size": "md",
+      "permission": "sales.view_sale",
+      "sectors": ["hosteleria", "retail"],
+      "default": false,
+      "kind": "timeline",
+      "query": "sales.list",
+      "params": { "limit": 8, "sort": "created_at", "dir": "desc" },
+      "map": { "id": "id", "title": "sale_number", "description": "customer_name", "time": "created_at", "status": "status" },
+      "options": { "align": "left" }
     }
   },
   "ui": {

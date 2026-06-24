@@ -31,6 +31,7 @@
     "close": "Close",
     "errorStats": "Error loading metrics",
     "print": "Print",
+    "qrValidateNote": "Scan to validate the invoice at the AEAT",
     "loadingDocument": "Loading document…",
     "noSale": "No sale.",
     "errorDocument": "Error loading the document",

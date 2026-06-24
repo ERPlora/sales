@@ -15,6 +15,9 @@ export interface CartLine {
 export interface ErploraClientLike {
   query<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T>;
   command<T = unknown>(name: string, payload?: Record<string, unknown>): Promise<T>;
+  /** Moneda del hub + formateo de dinero (ADR-0059). El POS formatea con la moneda del HUB. */
+  currency: string;
+  formatAmount(units: number, opts?: { currency?: string; locale?: string }): string;
 }
 
 function rows<T>(r: unknown): T[] {

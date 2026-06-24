@@ -31,6 +31,7 @@
     "close": "Cerrar",
     "errorStats": "Error cargando métricas",
     "print": "Imprimir",
+    "qrValidateNote": "Escanea para validar la factura en la AEAT",
     "loadingDocument": "Cargando documento…",
     "noSale": "Sin venta.",
     "errorDocument": "Error cargando el documento",

@@ -226,19 +226,32 @@ pub fn complete_sale_pure(input: Value) -> Output {
     ops[header_idx] = Operation::sql("sales._insert_sale", h);
 
     // Líneas compactas para listeners cross-módulo (inventory descuenta stock por
-    // product_id+quantity, saltando servicios). El payload del evento ES lo que
-    // recibe el listener; por eso viaja la lista, no solo los totales. `unit_price`
-    // viaja en céntimos (contrato inter-módulo).
+    // product_id+quantity, saltando servicios; invoice factura por net/tax YA
+    // calculados). El payload del evento ES lo que recibe el listener; por eso viaja
+    // la lista, no solo los totales. `unit_price` viaja en céntimos (contrato
+    // inter-módulo). `net_amount`/`tax_amount` por línea (céntimos) los recalculó
+    // `calc_line` respetando `tax_included`: invoice NO debe re-sumar IVA sobre el
+    // bruto (precios IVA-incluido), debe USAR estos importes. Recomputamos aquí en
+    // el mismo orden que arriba para emitir la base/IVA por línea sin reestructurar.
     let event_items: Vec<Value> = items
         .iter()
-        .map(|it| json!({
-            "product_id": it.get("product_id").cloned().unwrap_or(Value::Null),
-            "product_name": as_str(it.get("product_name").unwrap_or(&Value::Null)),
-            "quantity": it.get("quantity").map(|v| as_f64(v, 1.0)).unwrap_or(1.0),
-            "unit_price": as_cents(it.get("price").unwrap_or(&Value::Null), 0),
-            "tax_rate": it.get("tax_rate").map(|v| as_f64(v, 0.0)).unwrap_or(0.0),
-            "is_service": it.get("is_service").map(as_bool).unwrap_or(false),
-        }))
+        .map(|it| {
+            let unit_price = as_cents(it.get("price").unwrap_or(&Value::Null), 0); // céntimos
+            let qty = it.get("quantity").map(|v| as_f64(v, 1.0)).unwrap_or(1.0);
+            let line_disc = it.get("discount").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
+            let tax_rate = it.get("tax_rate").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
+            let t = calc_line(unit_price, qty, line_disc, tax_rate, tax_incl);
+            json!({
+                "product_id": it.get("product_id").cloned().unwrap_or(Value::Null),
+                "product_name": as_str(it.get("product_name").unwrap_or(&Value::Null)),
+                "quantity": qty,
+                "unit_price": unit_price,           // céntimos (bruto/unitario tal cual lo envió la UI)
+                "tax_rate": tax_rate,               // tasa %
+                "net_amount": t.net,                // céntimos: base imponible YA extraída
+                "tax_amount": t.tax,                // céntimos: IVA YA calculado
+                "is_service": it.get("is_service").map(as_bool).unwrap_or(false),
+            })
+        })
         .collect();
 
     // order_id/order_number viajan en el evento (ADR-0010) para que `orders`
@@ -251,6 +264,13 @@ pub fn complete_sale_pure(input: Value) -> Output {
         "sale_id": sale_id,
         "order_id": payload.get("order_id").cloned().unwrap_or(Value::Null),
         "order_number": payload.get("order_number").cloned().unwrap_or(Value::Null),
+        // table_id viaja en el evento (D3): kitchen.create_order_from_sale lo lee para
+        // decidir order_type=dine_in (con mesa) y enlazar la comanda a la mesa. NULL si
+        // la venta no proviene de una mesa.
+        "table_id": payload.get("table_id").cloned().unwrap_or(Value::Null),
+        // tax_included indica que unit_price de cada línea es bruto (IVA-incluido).
+        // invoice usa net_amount/tax_amount por línea (ya extraídos) y NO re-suma IVA.
+        "tax_included": tax_incl,
         "total": total,
         "subtotal": subtotal,
         "tax_amount": tax_total,
@@ -321,6 +341,28 @@ mod tests {
         assert_eq!(out.events[0].payload["items_count"], json!(2));
         // El evento viaja en céntimos.
         assert_eq!(out.events[0].payload["total"], json!(352)); // 242 + 110
+        // tax_included viaja en el evento (default true en el helper input()).
+        assert_eq!(out.events[0].payload["tax_included"], json!(true));
+        // net/tax por línea YA extraídos (IVA-incluido): 121×2 bruto → net 200, tax 42.
+        let l0 = &out.events[0].payload["items"][0];
+        assert_eq!(l0["net_amount"], json!(200));
+        assert_eq!(l0["tax_amount"], json!(42));
+        assert_eq!(l0["unit_price"], json!(121)); // bruto unitario tal cual
+    }
+
+    #[test]
+    fn event_carries_table_id_for_kitchen() {
+        // D3: table_id debe viajar en sale.completed para que kitchen cree dine_in.
+        let new_ids: Vec<Value> = (0..4).map(|i| json!(format!("id-{i}"))).collect();
+        let input = json!({
+            "payload": {
+                "items": [{ "product_name": "X", "price": 121, "quantity": 1, "tax_rate": 21.0 }],
+                "tax_included": true, "amount_tendered": 200, "table_id": "table-7"
+            },
+            "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-05-31T10:00:00+00:00", "new_ids": new_ids }
+        });
+        let out = complete_sale_pure(input);
+        assert_eq!(out.events[0].payload["table_id"], json!("table-7"));
     }
 
     #[test]

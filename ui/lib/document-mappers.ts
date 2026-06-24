@@ -50,6 +50,19 @@ export interface SaleSettings {
   currency?: string;
 }
 
+/** Datos fiscales (VeriFactu) del documento: QR de validación AEAT, número oficial y partes.
+ *  Los resuelve el componente vía `invoice.by_source` + `verifactu.records.by_invoice`. Todo
+ *  opcional: si no hay registro fiscal (p.ej. venta sin factura aún), el documento se pinta igual
+ *  pero sin QR. */
+export interface FiscalData {
+  qr?: string;          // qr_url del registro VeriFactu (URL de validación en la AEAT)
+  qr_note?: string;     // leyenda bajo el QR (p.ej. CSV de la AEAT o "Validar en la AEAT")
+  number?: string;      // número fiscal oficial (puede diferir del sale_number)
+  issuer_nif?: string;
+  customer_name?: string;
+  customer_tax_id?: string;
+}
+
 interface TaxLine {
   label: string;
   rate?: number;
@@ -90,13 +103,14 @@ export function saleToReceipt(
   sale: SaleRow,
   lines: SaleLineRow[],
   settings: SaleSettings = {},
+  fiscal: FiscalData = {},
 ): ReceiptData {
   const header = (settings.receipt_header || '').trim();
   return {
-    business: { name: header.split('\n')[0] || 'Mi negocio', address: header.split('\n').slice(1).join(' ') || undefined },
-    number: sale.sale_number,
+    business: { name: header.split('\n')[0] || 'Mi negocio', address: header.split('\n').slice(1).join(' ') || undefined, tax_id: fiscal.issuer_nif || undefined },
+    number: fiscal.number || sale.sale_number,
     datetime: sale.created_at,
-    customer: sale.customer_name || undefined,
+    customer: fiscal.customer_name || sale.customer_name || undefined,
     lines: lines.map((l) => ({
       name: l.product_name,
       qty: Number(l.quantity),
@@ -111,6 +125,8 @@ export function saleToReceipt(
       : undefined,
     currency: settings.currency || '€',
     footer: settings.receipt_footer || undefined,
+    qr: fiscal.qr || undefined,
+    qr_note: fiscal.qr_note || undefined,
   };
 }
 
@@ -119,6 +135,7 @@ export function saleToInvoice(
   sale: SaleRow,
   lines: SaleLineRow[],
   settings: SaleSettings = {},
+  fiscal: FiscalData = {},
 ): InvoiceData {
   const header = (settings.receipt_header || '').trim();
   const invLines: InvoiceLine[] = lines.map((l) => ({
@@ -131,9 +148,9 @@ export function saleToInvoice(
   }));
   const taxes = parseTaxes(sale.tax_breakdown);
   return {
-    issuer: { name: header.split('\n')[0] || 'Mi negocio', address: header.split('\n').slice(1).join(' ') || undefined },
-    customer: { name: sale.customer_name || 'Cliente' },
-    number: sale.sale_number,
+    issuer: { name: header.split('\n')[0] || 'Mi negocio', address: header.split('\n').slice(1).join(' ') || undefined, tax_id: fiscal.issuer_nif || undefined },
+    customer: { name: fiscal.customer_name || sale.customer_name || 'Cliente', tax_id: fiscal.customer_tax_id || undefined },
+    number: fiscal.number || sale.sale_number,
     issue_date: sale.created_at || '',
     lines: invLines,
     subtotal: Number(sale.subtotal ?? 0),
@@ -144,5 +161,7 @@ export function saleToInvoice(
     currency: settings.currency || '€',
     payment_method: sale.payment_method_name || undefined,
     footer: settings.receipt_footer || undefined,
+    qr: fiscal.qr || undefined,
+    qr_note: fiscal.qr_note || undefined,
   };
 }
