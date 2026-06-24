@@ -311,8 +311,9 @@ export class ErpPosTouch extends LitElement {
     }, 400);
   }
 
-  private cur() { return this.settings.currency || '€'; }
-  private money(n: number) { return `${n.toFixed(2)} ${this.cur()}`; }
+  // Dinero formateado con la MONEDA DEL HUB (ADR-0059): el SDK la resuelve de /api/hub/context
+  // (misma fuente que dashboard/billing). Antes hardcodeaba '€' / la moneda por-módulo.
+  private money(n: number) { return erplora().formatAmount(Number(n) || 0); }
   private get total() { return this.cart.reduce((s, l) => s + l.price * l.qty, 0); }
   private get itemCount() { return this.cart.reduce((s, l) => s + l.qty, 0); }
   private get parkingEnabled() { return this.settings.enable_parked_tickets !== 0; }
@@ -565,9 +566,9 @@ export class ErpPosTouch extends LitElement {
         : nothing}
 
       <ion-modal .isOpen=${!!this.docSaleId} @ionModalDidDismiss=${() => { this.docSaleId = undefined; }}>
-        <ion-header><ion-toolbar>
+        <ion-header class="ion-no-border"><ion-toolbar>
           <ion-title>${t('ui.document')}</ion-title>
-          <ion-buttons slot="end"><ion-button @click=${() => { this.docSaleId = undefined; }}>${t('ui.close')}</ion-button></ion-buttons>
+          <ion-buttons slot="end"><ion-button aria-label=${t('ui.close')} @click=${() => { this.docSaleId = undefined; }}><ion-icon name="close" slot="icon-only"></ion-icon></ion-button></ion-buttons>
         </ion-toolbar></ion-header>
         <ion-content class="ion-padding">
           ${this.docSaleId ? html`<erp-sales-document .saleId=${this.docSaleId}></erp-sales-document>` : nothing}
