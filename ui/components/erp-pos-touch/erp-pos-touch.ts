@@ -80,13 +80,13 @@ export class ErpPosTouch extends LitElement {
     *, *::before, *::after { box-sizing:border-box; }
 
     .card { height:100%; display:flex; flex-direction:column; overflow:hidden; background:var(--bg);
-      border:1px solid var(--line); border-radius:16px; }
+      border:1px solid var(--ion-border-color); border-radius:16px; }
     .body { position:relative; flex:1; min-height:0; display:grid; grid-template-columns: 1fr 23rem; }
 
     /* ── Catálogo ── */
     .catalog { display:flex; flex-direction:column; min-width:0; padding:.8rem; }
     .catbar { display:flex; align-items:center; gap:.4rem; margin-bottom:.7rem; }
-    .arrow { flex:none; width:2.1rem; height:2.1rem; border-radius:10px; border:1px solid var(--line);
+    .arrow { flex:none; width:2.1rem; height:2.1rem; border-radius:10px; border:1px solid var(--ion-border-color);
       background:var(--tile); color:var(--mut); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
     .arrow:hover { background:var(--tile-hi); color:var(--tx); }
     .arrow ion-icon { font-size:1.1rem; }
@@ -103,7 +103,7 @@ export class ErpPosTouch extends LitElement {
 
     .search { margin-bottom:.7rem; --background:var(--tile); --color:var(--tx); --placeholder-color:var(--mut); --icon-color:var(--mut); --border-radius:12px; }
     .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap:.7rem; overflow:auto; align-content:start; padding-bottom:.3rem; }
-    ion-card.tile { margin:0; border-radius:14px; box-shadow:none; border:1px solid var(--line); background:var(--tile);
+    ion-card.tile { margin:0; border-radius:14px; box-shadow:none; border:1px solid var(--ion-border-color); background:var(--tile);
       overflow:hidden; display:flex; flex-direction:column; transition:border-color .12s, transform .05s; }
     ion-card.tile:hover { border-color:var(--accent); }
     ion-card.tile:active { transform:scale(.98); }
@@ -115,22 +115,22 @@ export class ErpPosTouch extends LitElement {
     .tile .p { font-weight:800; color:var(--accent); margin-top:.25rem; }
 
     /* ── Carrito ── */
-    .cart { position:relative; display:flex; flex-direction:column; min-height:0; background:var(--panel); border-left:1px solid var(--line); }
-    .cart ion-header ion-toolbar { --background:var(--panel); --color:var(--tx); --border-color:var(--line); }
+    .cart { position:relative; display:flex; flex-direction:column; min-height:0; background:var(--panel); border-left:1px solid var(--ion-border-color); }
+    .cart ion-header ion-toolbar { --background:var(--panel); --color:var(--tx); --border-color:var(--ion-border-color); }
     .cart ion-title { font-size:1rem; }
-    .cart-ctx { display:flex; gap:.4rem; padding:.5rem .6rem; border-bottom:1px solid var(--line); }
+    .cart-ctx { display:flex; gap:.4rem; padding:.5rem .6rem; border-bottom:1px solid var(--ion-border-color); }
     .cart-ctx .order-slot, .cart-ctx .customer-slot { flex:1; min-width:0; }
     .cart-ctx .order-slot:empty, .cart-ctx .customer-slot:empty { display:none; }
     .cart-ctx:has(.order-slot:empty):has(.customer-slot:empty) { display:none; }
     ion-list.lines { flex:1; overflow:auto; min-height:6rem; padding:0; background:transparent; }
-    ion-list.lines ion-item { --background:transparent; --color:var(--tx); --border-color:var(--line); --padding-start:.7rem; --inner-padding-end:.5rem; }
+    ion-list.lines ion-item { --background:transparent; --color:var(--tx); --border-color:var(--ion-border-color); --padding-start:.7rem; --inner-padding-end:.5rem; }
     ion-list.lines ion-item h3 { font-weight:600; color:var(--tx); }
     ion-list.lines ion-item p { color:var(--mut); }
     .lineend { display:flex; flex-direction:column; align-items:flex-end; gap:.3rem; }
     .lineend .lt { font-weight:700; white-space:nowrap; }
-    ok-qty-stepper { --ok-qty-field-width:2.3rem; --ok-surface:var(--tile); --ok-text:var(--tx); --ok-border:var(--line); }
+    ok-qty-stepper { --ok-qty-field-width:2.3rem; --ok-surface:var(--tile); --ok-text:var(--tx); --ok-border:var(--ion-border-color); }
     .empty { color:var(--mut); text-align:center; padding:2.5rem 1rem; }
-    .cart-foot { padding:.75rem; border-top:1px solid var(--line); background:var(--panel); }
+    .cart-foot { padding:.75rem; border-top:1px solid var(--ion-border-color); background:var(--panel); }
     .total { display:flex; justify-content:space-between; align-items:baseline; margin:.1rem 0 .65rem; font-size:1rem; color:var(--mut); }
     .total b { font-size:1.7rem; color:var(--tx); }
     .charge { font-size:1.05rem; font-weight:700; }
@@ -138,9 +138,9 @@ export class ErpPosTouch extends LitElement {
     /* desplegable tickets aparcados */
     .pdrop-back { position:absolute; inset:0; z-index:40; }
     .pdrop { position:absolute; top:2.9rem; right:.5rem; z-index:41; width:min(20rem,90%); background:var(--tile);
-      border:1px solid var(--line); border-radius:12px; box-shadow:0 12px 32px rgba(0,0,0,.5); padding:.5rem; max-height:60%; overflow:auto; }
+      border:1px solid var(--ion-border-color); border-radius:12px; box-shadow:0 12px 32px rgba(0,0,0,.5); padding:.5rem; max-height:60%; overflow:auto; }
     .pdrop .hint { color:var(--mut); font-size:.82rem; margin:.3rem .2rem .5rem; }
-    .pitem { display:flex; justify-content:space-between; align-items:center; gap:.6rem; border:1px solid var(--line); border-radius:10px; padding:.45rem .6rem; margin-bottom:.35rem; }
+    .pitem { display:flex; justify-content:space-between; align-items:center; gap:.6rem; border:1px solid var(--ion-border-color); border-radius:10px; padding:.45rem .6rem; margin-bottom:.35rem; }
     .pn { font-weight:700; font-size:.9rem; }
     .pm { color:var(--mut); font-size:.78rem; }
     .badge-num { font-size:.62rem; min-width:1rem; height:1rem; padding:0 .2rem; border-radius:999px; background:var(--accent); color:#fff; display:inline-flex; align-items:center; justify-content:center; position:absolute; top:.2rem; right:.2rem; }
@@ -156,15 +156,15 @@ export class ErpPosTouch extends LitElement {
     /* cobro / numpad (sheet oscuro) */
     .pay { display:flex; flex-direction:column; gap:.8rem; }
     .methods { display:flex; gap:.4rem; flex-wrap:wrap; }
-    .chip { padding:.5rem .9rem; border-radius:999px; border:1px solid var(--line); background:var(--tile); color:var(--tx); cursor:pointer; }
+    .chip { padding:.5rem .9rem; border-radius:999px; border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); cursor:pointer; }
     .chip[aria-pressed=true] { background:var(--accent); color:#fff; border-color:transparent; }
     .amt { display:flex; justify-content:space-between; font-size:1.1rem; }
     .amt .v { font-weight:700; }
     .change { color:var(--ion-color-success, #2f9e44); }
     .numpad { display:grid; grid-template-columns: repeat(3, 1fr); gap:.5rem; }
-    .numpad button { font-size:1.3rem; padding:1rem; border-radius:12px; border:1px solid var(--line); background:var(--tile); color:var(--tx); cursor:pointer; }
+    .numpad button { font-size:1.3rem; padding:1rem; border-radius:12px; border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); cursor:pointer; }
     .scrim { position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; z-index:70; }
-    .sheet { background:var(--panel); color:var(--tx); border:1px solid var(--line); border-radius:16px; padding:1rem; width:min(92vw,24rem); max-height:90vh; overflow:auto; box-shadow:0 12px 48px rgba(0,0,0,.6); }
+    .sheet { background:var(--panel); color:var(--tx); border:1px solid var(--ion-border-color); border-radius:16px; padding:1rem; width:min(92vw,24rem); max-height:90vh; overflow:auto; box-shadow:0 12px 48px rgba(0,0,0,.6); }
     .sheet-h { display:flex; justify-content:space-between; align-items:center; margin-bottom:.8rem; }
     .sheet-h .t { font-size:1.2rem; font-weight:700; }
     .x { background:none; border:none; font-size:1.3rem; cursor:pointer; color:var(--mut); }
