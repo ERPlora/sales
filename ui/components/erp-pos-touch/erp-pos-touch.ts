@@ -7,6 +7,7 @@ import {
   loadActiveCart, persistActiveCart, listParkedTickets, parkCart, retrieveParkedTicket,
   type CartLine, type ErploraClientLike, type ParkedTicket,
 } from '../../lib/pos-cart.js';
+import { buildRatesMap, resolveLineTax } from '../../lib/pos-tax.js';
 // Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC.
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
@@ -20,9 +21,9 @@ const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 // (naranja). En móvil el carrito se recoge a un drawer abierto desde un botón flotante naranja.
 // Quitar línea = cantidad a 0. Al cobrar: `sales.complete_sale` (channel='pos') → documento.
 
-interface Product { id: string; name: string; sku?: string; price: number; is_active?: number; product_type?: string; image?: string; }
+interface Product { id: string; name: string; sku?: string; price: number; is_active?: number; product_type?: string; image?: string; tax_rate_id?: string; }
 interface PayMethod { id: string; name: string; type?: string; }
-interface PosSettings { default_document_format?: string; currency?: string; enable_parked_tickets?: number; }
+interface PosSettings { default_document_format?: string; currency?: string; enable_parked_tickets?: number; default_tax_included?: number; }
 interface Category { id: string; name: string; icon?: string; color?: string; image?: string; product_count?: number; }
 interface ProdCat { product_id: string; category_id: string; }
 
@@ -205,6 +206,8 @@ export class ErpPosTouch extends LitElement {
   @state() private customerName = '';
 
   private prodCats = new Map<string, Set<string>>();
+  /** Mapa tax_rate_id → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
+  private ratesMap = new Map<string, number>();
   private cartRestored = false;
   private saveTimer?: ReturnType<typeof setTimeout>;
   private readonly slots: Array<{ slot: string; container: string; reset: string; resolved?: { component: string }[]; els: HTMLElement[] }> = [
@@ -229,7 +232,7 @@ export class ErpPosTouch extends LitElement {
     document.addEventListener('fullscreenchange', this.onFsChange);
     window.addEventListener('erplora:locale-changed', this.onLocaleChange);
     try {
-      const [prods, methods, settingsRows, savedCart, parked, cats, prodCats] = await Promise.all([
+      const [prods, methods, settingsRows, savedCart, parked, cats, prodCats, ratesMap] = await Promise.all([
         erplora().query('inventory.products.list', { page_size: 200 }).catch(() => []),
         erplora().query('sales.payment_methods').catch(() => []),
         erplora().query('sales.settings.get').catch(() => []),
@@ -237,7 +240,9 @@ export class ErpPosTouch extends LitElement {
         listParkedTickets(erplora()),
         erplora().query('inventory.categories.list', { page_size: 100, sort: 'name', dir: 'asc' }).catch(() => []),
         erplora().query('inventory.product_categories', { page_size: 2000 }).catch(() => []),
+        buildRatesMap(erplora()),
       ]);
+      this.ratesMap = ratesMap;
       this.products = rows<Product>(prods).filter((p) => p.is_active !== 0);
       this.methods = rows<PayMethod>(methods);
       this.settings = rows<PosSettings>(settingsRows)[0] || {};
@@ -313,7 +318,9 @@ export class ErpPosTouch extends LitElement {
 
   // Dinero formateado con la MONEDA DEL HUB (ADR-0059): el SDK la resuelve de /api/hub/context
   // (misma fuente que dashboard/billing). Antes hardcodeaba '€' / la moneda por-módulo.
-  private money(n: number) { return erplora().formatAmount(Number(n) || 0); }
+  // FIX QA (2026-06-25): el POS trabaja en CÉNTIMOS → formatMoney (divide /100), NO formatAmount
+  // (que mostraba precios ×100).
+  private money(n: number) { return erplora().formatMoney(Number(n) || 0); }
   private get total() { return this.cart.reduce((s, l) => s + l.price * l.qty, 0); }
   private get itemCount() { return this.cart.reduce((s, l) => s + l.qty, 0); }
   private get parkingEnabled() { return this.settings.enable_parked_tickets !== 0; }
@@ -356,9 +363,12 @@ export class ErpPosTouch extends LitElement {
 
   private add(p: Product) {
     const ex = this.cart.find((l) => l.id === p.id);
+    // tax_rate_id = referencia fiscal del producto (autoridad del servidor, ADR-0069).
+    // tax_rate = % resuelto en cliente SOLO para el preview del total.
+    const tax_rate = resolveLineTax(this.ratesMap, p.tax_rate_id);
     this.cart = ex
       ? this.cart.map((l) => (l.id === p.id ? { ...l, qty: l.qty + 1 } : l))
-      : [...this.cart, { id: p.id, name: p.name, sku: p.sku, price: Number(p.price), qty: 1 }];
+      : [...this.cart, { id: p.id, name: p.name, sku: p.sku, price: Number(p.price), qty: 1, tax_rate_id: p.tax_rate_id, tax_rate }];
   }
   /** Fija la cantidad de una línea (desde ok-qty-stepper); al llegar a 0 la línea se elimina. */
   private setQtyAbs(id: string, v: number) {
@@ -385,9 +395,15 @@ export class ErpPosTouch extends LitElement {
   private async confirm() {
     this.busy = true; this.error = '';
     try {
-      const items = this.cart.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: l.qty }));
+      // ADR-0069: la AUTORIDAD del IVA es el servidor. Cada línea manda su `tax_rate_id`
+      // (referencia fiscal del producto) y el handler resuelve `rate_pct` desde el catálogo de
+      // confianza (`taxes.rates.list` pre-cargado vía `reads`), expandiendo grupos. Mantenemos
+      // `tax_rate` (% resuelto en cliente) SOLO como pista/preview; el handler lo ignora si puede
+      // resolver el id (fallback al % solo si no hay catálogo o el id no existe — backward-compat).
+      const items = this.cart.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: l.qty, tax_rate_id: l.tax_rate_id ?? null, tax_rate: l.tax_rate ?? 0 }));
       await erplora().command('sales.complete_sale', {
         items,
+        tax_included: this.settings.default_tax_included !== 0,
         payment_method_id: this.payMethod?.id ?? null,
         payment_method_name: this.payMethod?.name ?? 'Efectivo',
         amount_tendered: this.tenderedNum || this.total,

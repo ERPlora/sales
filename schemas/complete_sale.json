@@ -7,10 +7,13 @@
         "product_id": {"type":["string","null"]}, "product_name": {"type":"string"},
         "product_sku": {"type":"string"}, "is_service": {"type":"boolean"},
         "quantity": {"type":"number"}, "price": {"type":"number"},
-        "discount": {"type":"number"}, "tax_rate": {"type":"number"}, "tax_class_name": {"type":"string"} } } },
+        "discount": {"type":"number"}, "tax_rate_id": {"type":["string","null"]},
+        "tax_rate": {"type":"number"}, "tax_class_name": {"type":"string"} } } },
     "tax_included": {"type":"boolean"}, "discount_percent": {"type":"number"},
     "amount_tendered": {"type":"number"}, "payment_method_id": {"type":["string","null"]},
     "payment_method_name": {"type":"string"}, "customer_id": {"type":["string","null"]},
     "customer_name": {"type":"string"}, "notes": {"type":"string"}, "channel": {"type":"string"},
     "source_module": {"type":"string"}, "status": {"type":"string"}, "table_id": {"type":["string","null"]},
-    "order_id": {"type":["string","null"]}, "order_number": {"type":["string","null"]} } }
+    "order_id": {"type":["string","null"]}, "order_number": {"type":["string","null"]},
+    "staff_id": {"type":["string","null"]}, "staff_name": {"type":"string"},
+    "appointment_id": {"type":["string","null"]} } }
