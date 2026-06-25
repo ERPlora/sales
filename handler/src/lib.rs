@@ -429,6 +429,11 @@ pub fn complete_sale_pure(input: Value) -> Output {
                 "net_amount": t.net,                // céntimos: base imponible YA extraída
                 "tax_amount": t.tax,                // céntimos: IVA YA calculado
                 "is_service": it.get("is_service").map(as_bool).unwrap_or(false),
+                // category_id por línea (aditivo, QA 2026-06-25): el KDS enruta la comanda a su
+                // estación (station_id) por la categoría del producto. Sin esto, el KDS recibe
+                // station_id vacío. Opaco para sales (no FK cross-módulo); NULL si la línea no
+                // trae categoría (p.ej. producto sin clasificar). No depende de qué KDS se instale.
+                "category_id": it.get("category_id").cloned().unwrap_or(Value::Null),
             })
         })
         .collect();
@@ -563,6 +568,27 @@ mod tests {
         });
         let out = complete_sale_pure(input);
         assert_eq!(out.events[0].payload["table_id"], json!("table-7"));
+    }
+
+    #[test]
+    fn event_carries_category_id_per_line_for_kds() {
+        // category_id por línea debe viajar en sale.completed para que el KDS enrute la comanda
+        // a su estación (station_id). Una línea con categoría la lleva; una sin categoría → null.
+        let new_ids: Vec<Value> = (0..4).map(|i| json!(format!("id-{i}"))).collect();
+        let input = json!({
+            "payload": {
+                "items": [
+                    { "product_name": "Pollo", "price": 121, "quantity": 1, "tax_rate": 21.0, "category_id": "cat-cocina" },
+                    { "product_name": "Agua",  "price": 110, "quantity": 1, "tax_rate": 10.0 }
+                ],
+                "tax_included": true, "amount_tendered": 500
+            },
+            "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-05-31T10:00:00+00:00", "new_ids": new_ids }
+        });
+        let out = complete_sale_pure(input);
+        // Línea con categoría → category_id presente; sin categoría → null (no rompe el evento).
+        assert_eq!(out.events[0].payload["items"][0]["category_id"], json!("cat-cocina"));
+        assert_eq!(out.events[0].payload["items"][1]["category_id"], Value::Null);
     }
 
     #[test]

@@ -400,7 +400,10 @@ export class ErpPosTouch extends LitElement {
       // confianza (`taxes.rates.list` pre-cargado vía `reads`), expandiendo grupos. Mantenemos
       // `tax_rate` (% resuelto en cliente) SOLO como pista/preview; el handler lo ignora si puede
       // resolver el id (fallback al % solo si no hay catálogo o el id no existe — backward-compat).
-      const items = this.cart.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: l.qty, tax_rate_id: l.tax_rate_id ?? null, tax_rate: l.tax_rate ?? 0 }));
+      // category_id por línea (aditivo, QA 2026-06-25): el KDS enruta cada comanda a su estación
+      // por la categoría del producto. Se toma la categoría PRIMARIA (primera) del producto desde
+      // `prodCats` (Map product_id → Set category_id). null si el producto no está clasificado.
+      const items = this.cart.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: l.qty, tax_rate_id: l.tax_rate_id ?? null, tax_rate: l.tax_rate ?? 0, category_id: this.prodCats.get(l.id)?.values().next().value ?? null }));
       await erplora().command('sales.complete_sale', {
         items,
         tax_included: this.settings.default_tax_included !== 0,
