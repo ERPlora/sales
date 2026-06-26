@@ -67,14 +67,15 @@
       "label": "Sales",
       "icon": "cart-outline",
       "component": "erp-sales-list"
-    },
-    {
-      "id": "settings",
-      "label": "POS Settings",
-      "icon": "settings",
-      "component": "erp-sales-settings"
     }
   ],
+  "settings": {
+    "title": "TPV",
+    "icon": "card-outline",
+    "schema": "schemas/settings_update.json",
+    "get": "sales.settings.get",
+    "set": "sales.settings.update"
+  },
   "migrations": {
     "sqlite": [
       "migrations/sqlite/001_init.sql",
@@ -277,6 +278,7 @@
     "sales.settings.update": {
       "permission": "sales.manage_settings",
       "transaction": true,
+      "schema": "schemas/settings_update.json",
       "sql": [
         "commands/settings_upsert.sql"
       ],

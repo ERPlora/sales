@@ -9,7 +9,7 @@ var __decorateClass = (decorators, target, key, kind) => {
   return result;
 };
 
-// ../../node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
+// node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
 var ElementInternalsShim = class ElementInternals {
   get shadowRoot() {
     return this.__host.__shadowRoot;
@@ -88,7 +88,7 @@ var ElementInternalsShim = class ElementInternals {
   }
 };
 
-// ../../node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
+// node_modules/@lit-labs/ssr-dom-shim/lib/events.js
 var __classPrivateFieldSet = function(receiver, state, value, kind, f3) {
   if (kind === "m") throw new TypeError("Private method is not writable");
   if (kind === "a" && !f3) throw new TypeError("Private accessor was defined without a setter");
@@ -246,7 +246,7 @@ Object.defineProperties(CustomEventShim.prototype, {
 var EventShimWithRealType = EventShim;
 var CustomEventShimWithRealType = CustomEventShim;
 
-// ../../node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
+// node_modules/@lit-labs/ssr-dom-shim/lib/css.js
 var _a2;
 var CSSRuleShim = (_a2 = class CSSRule {
   constructor() {
@@ -277,7 +277,7 @@ var CSSRuleShim = (_a2 = class CSSRule {
   }
 }, _a2.STYLE_RULE = 1, _a2.CHARSET_RULE = 2, _a2.IMPORT_RULE = 3, _a2.MEDIA_RULE = 4, _a2.FONT_FACE_RULE = 5, _a2.PAGE_RULE = 6, _a2.NAMESPACE_RULE = 10, _a2.KEYFRAMES_RULE = 7, _a2.KEYFRAME_RULE = 8, _a2.SUPPORTS_RULE = 12, _a2.COUNTER_STYLE_RULE = 11, _a2.FONT_FEATURE_VALUES_RULE = 14, _a2.MARGIN_RULE = 9, _a2);
 
-// ../../node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/index.js
+// node_modules/@lit-labs/ssr-dom-shim/index.js
 globalThis.Event ??= EventShimWithRealType;
 globalThis.CustomEvent ??= CustomEventShimWithRealType;
 var constructionToken = Symbol();
@@ -674,7 +674,7 @@ var CustomElementRegistryShimWithRealType = CustomElementRegistry;
 var customElements2 = new CustomElementRegistryShimWithRealType();
 var windowShim = new WindowShim(constructionToken);
 
-// ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/css-tag.js
+// node_modules/@lit/reactive-element/node/css-tag.js
 var t = globalThis;
 var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
 var s = Symbol();
@@ -719,7 +719,7 @@ var c = e || void 0 === t.CSSStyleSheet ? (t7) => t7 : (t7) => t7 instanceof CSS
   return r(e6);
 })(t7) : t7;
 
-// ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/reactive-element.js
+// node_modules/@lit/reactive-element/node/reactive-element.js
 var { is: h, defineProperty: r2, getOwnPropertyDescriptor: o2, getOwnPropertyNames: n2, getOwnPropertySymbols: a, getPrototypeOf: c2 } = Object;
 var l = globalThis;
 l.customElements ??= customElements2;
@@ -942,7 +942,7 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
 };
 g.elementStyles = [], g.shadowRootOptions = { mode: "open" }, g[f("elementProperties")] = /* @__PURE__ */ new Map(), g[f("finalized")] = /* @__PURE__ */ new Map(), u?.({ ReactiveElement: g }), (l.reactiveElementVersions ??= []).push("2.1.2");
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
+// node_modules/lit-html/lit-html.js
 var t2 = globalThis;
 var i2 = (t7) => t7;
 var s2 = t2.trustedTypes;
@@ -1197,7 +1197,7 @@ var D = (t7, i7, s5) => {
   return h4._$AI(t7), h4;
 };
 
-// ../../node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
+// node_modules/lit-element/lit-element.js
 var s3 = globalThis;
 var i3 = class extends g {
   constructor() {
@@ -1226,7 +1226,7 @@ var o4 = s3.litElementPolyfillSupport;
 o4?.({ LitElement: i3 });
 (s3.litElementVersions ??= []).push("4.2.2");
 
-// ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/property.js
+// node_modules/@lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
 var r4 = (t7 = o5, e6, r6) => {
   const { kind: n6, metadata: i7 } = r6;
@@ -1256,15 +1256,15 @@ function n4(t7) {
   })(t7, e6, o7);
 }
 
-// ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/state.js
+// node_modules/@lit/reactive-element/node/decorators/state.js
 function r5(r6) {
   return n4({ ...r6, state: true, attribute: false });
 }
 
-// ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/base.js
+// node_modules/@lit/reactive-element/node/decorators/base.js
 var e3 = (e6, t7, c5) => (c5.configurable = true, c5.enumerable = true, Reflect.decorate && "object" != typeof t7 && Object.defineProperty(e6, t7, c5), c5);
 
-// ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/query.js
+// node_modules/@lit/reactive-element/node/decorators/query.js
 function e4(e6, r6) {
   return (n6, s5, i7) => {
     const o7 = (t7) => t7.renderRoot?.querySelector(e6) ?? null;
@@ -1288,14 +1288,14 @@ function e4(e6, r6) {
   };
 }
 
-// ../../node_modules/.pnpm/@outfitkit+core@file+..+outfitkit/node_modules/@outfitkit/core/dist/define.js
+// ../outfitkit/dist/define.js
 function define(tag, ctor) {
   if (typeof customElements !== "undefined" && !customElements.get(tag)) {
     customElements.define(tag, ctor);
   }
 }
 
-// ../../node_modules/.pnpm/@outfitkit+core@file+..+outfitkit/node_modules/@outfitkit/core/dist/ok-qr.js
+// ../outfitkit/dist/ok-qr.js
 var __defProp2 = Object.defineProperty;
 var __decorateClass2 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -1943,7 +1943,7 @@ __decorateClass2([
 ], OkQr.prototype, "margin");
 define("ok-qr", OkQr);
 
-// ../../node_modules/.pnpm/@outfitkit+core@file+..+outfitkit/node_modules/@outfitkit/core/dist/ok-receipt.js
+// ../outfitkit/dist/ok-receipt.js
 var __defProp3 = Object.defineProperty;
 var __decorateClass3 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2121,7 +2121,7 @@ __decorateClass3([
 ], OkReceipt.prototype, "labels");
 define("ok-receipt", OkReceipt);
 
-// ../../node_modules/.pnpm/@outfitkit+core@file+..+outfitkit/node_modules/@outfitkit/core/dist/ok-invoice.js
+// ../outfitkit/dist/ok-invoice.js
 var __defProp4 = Object.defineProperty;
 var __decorateClass4 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2345,7 +2345,7 @@ __decorateClass4([
 ], OkInvoice.prototype, "labels");
 define("ok-invoice", OkInvoice);
 
-// ui/lib/document-mappers.ts
+// ../modules-workspace/modules/sales/ui/lib/document-mappers.ts
 function parseTaxes(tax_breakdown) {
   if (!tax_breakdown) return [];
   let obj;
@@ -2421,7 +2421,7 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}) {
   };
 }
 
-// locales/es.json
+// ../modules-workspace/modules/sales/locales/es.json
 var es_default = {
   name: "Ventas / TPV",
   navigation: {
@@ -2533,7 +2533,7 @@ var es_default = {
   }
 };
 
-// locales/en.json
+// ../modules-workspace/modules/sales/locales/en.json
 var en_default = {
   name: "Sales & POS",
   navigation: {
@@ -2645,7 +2645,7 @@ var en_default = {
   }
 };
 
-// ui/components/erp-sales-document/erp-sales-document.ts
+// ../modules-workspace/modules/sales/ui/components/erp-sales-document/erp-sales-document.ts
 var CATALOG = { es: es_default, en: en_default };
 function erplora() {
   const c5 = globalThis.erplora;
@@ -2778,7 +2778,7 @@ __decorateClass([
 ], ErpSalesDocument.prototype, "fiscal", 2);
 define("erp-sales-document", ErpSalesDocument);
 
-// ../../node_modules/.pnpm/@outfitkit+core@file+..+outfitkit/node_modules/@outfitkit/core/dist/ok-qty-stepper.js
+// ../outfitkit/dist/ok-qty-stepper.js
 var __defProp5 = Object.defineProperty;
 var __decorateClass5 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2986,7 +2986,7 @@ __decorateClass5([
 ], OkQtyStepper.prototype, "labels");
 define("ok-qty-stepper", OkQtyStepper);
 
-// ui/lib/pos-cart.ts
+// ../modules-workspace/modules/sales/ui/lib/pos-cart.ts
 function rows(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
@@ -3059,7 +3059,7 @@ async function retrieveParkedTicket(client, ticket) {
   return lines;
 }
 
-// ui/lib/pos-tax.ts
+// ../modules-workspace/modules/sales/ui/lib/pos-tax.ts
 function rows2(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
@@ -3083,7 +3083,7 @@ function resolveLineTax(ratesMap, taxRateId) {
   return ratesMap.get(String(taxRateId)) ?? 0;
 }
 
-// ui/components/erp-pos-touch/erp-pos-touch.ts
+// ../modules-workspace/modules/sales/ui/components/erp-pos-touch/erp-pos-touch.ts
 var CATALOG2 = { es: es_default, en: en_default };
 function erplora2() {
   const c5 = globalThis.erplora;
@@ -3724,7 +3724,7 @@ __decorateClass([
 ], ErpPosTouch.prototype, "customerName", 2);
 define("erp-pos-touch", ErpPosTouch);
 
-// ui/components/erp-pos-desktop/erp-pos-desktop.ts
+// ../modules-workspace/modules/sales/ui/components/erp-pos-desktop/erp-pos-desktop.ts
 var CATALOG3 = { es: es_default, en: en_default };
 function erplora3() {
   const c5 = globalThis.erplora;
@@ -4204,7 +4204,7 @@ __decorateClass([
 ], ErpPosDesktop.prototype, "scanInput", 2);
 define("erp-pos-desktop", ErpPosDesktop);
 
-// ui/components/erp-pos/erp-pos.ts
+// ../modules-workspace/modules/sales/ui/components/erp-pos/erp-pos.ts
 function erplora4() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -4244,7 +4244,7 @@ __decorateClass([
 ], ErpPos.prototype, "ready", 2);
 define("erp-pos", ErpPos);
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
+// node_modules/lit-html/directive.js
 var t5 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e5 = (t7) => (...e6) => ({ _$litDirective$: t7, values: e6 });
 var i4 = class {
@@ -4264,7 +4264,7 @@ var i4 = class {
   }
 };
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
+// node_modules/lit-html/directive-helpers.js
 var { I: t6 } = j;
 var i5 = (o7) => o7;
 var s4 = () => document.createComment("");
@@ -4297,7 +4297,7 @@ var h3 = (o7) => {
   o7._$AR(), o7._$AA.remove();
 };
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
+// node_modules/lit-html/directives/repeat.js
 var u4 = (e6, s5, t7) => {
   const r6 = /* @__PURE__ */ new Map();
   for (let l3 = s5; l3 <= t7; l3++) r6.set(e6[l3], l3);
@@ -4350,7 +4350,7 @@ var c4 = e5(class extends i4 {
   }
 });
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
+// node_modules/lit-html/directives/style-map.js
 var n5 = "important";
 var i6 = " !" + n5;
 var o6 = e5(class extends i4 {
@@ -4379,7 +4379,7 @@ var o6 = e5(class extends i4 {
   }
 });
 
-// ../../node_modules/.pnpm/@outfitkit+core@file+..+outfitkit/node_modules/@outfitkit/core/dist/ok-data-table.js
+// ../outfitkit/dist/ok-data-table.js
 var __defProp6 = Object.defineProperty;
 var __decorateClass6 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -5676,7 +5676,7 @@ __decorateClass6([
 ], OkDataTable.prototype, "menuOpen");
 define("ok-data-table", OkDataTable);
 
-// ../../node_modules/.pnpm/@erplora+module-sdk@file+..+hub+packages+module-sdk/node_modules/@erplora/module-sdk/src/index.ts
+// ../hub/packages/module-sdk/src/index.ts
 function isEmpty(v3) {
   return v3 === null || v3 === void 0 || v3 === "";
 }
@@ -5794,7 +5794,7 @@ function createListController(client, queryName, onChange = () => {
   return new ListController(client, queryName, onChange, opts);
 }
 
-// ui/components/erp-sales-list/erp-sales-list.ts
+// ../modules-workspace/modules/sales/ui/components/erp-sales-list/erp-sales-list.ts
 var CATALOG4 = { es: es_default, en: en_default };
 function erplora5() {
   const c5 = globalThis.erplora;
@@ -5937,209 +5937,3 @@ __decorateClass([
   r5()
 ], ErpSalesList.prototype, "docSaleId", 2);
 define("erp-sales-list", ErpSalesList);
-
-// ui/components/erp-sales-settings/erp-sales-settings.ts
-var CATALOG5 = { es: es_default, en: en_default };
-var DEFAULTS = {
-  allow_cash: 1,
-  allow_card: 1,
-  allow_transfer: 0,
-  sync_products: 1,
-  sync_services: 0,
-  require_customer: 0,
-  allow_discounts: 1,
-  enable_parked_tickets: 1,
-  default_tax_included: 1,
-  ticket_expiry_hours: 24,
-  receipt_header: "",
-  receipt_footer: "",
-  receipt_footer_image: "",
-  pos_layout: "touch",
-  default_document_format: "ticket",
-  auto_invoice_with_tax_id: 1
-};
-function erplora6() {
-  const c5 = globalThis.erplora;
-  if (!c5) throw new Error("erplora SDK no inicializado por el shell");
-  return c5;
-}
-var ErpSalesSettings = class extends i3 {
-  constructor() {
-    super(...arguments);
-    this.s = { ...DEFAULTS };
-    this.loading = true;
-    this.saving = false;
-    this.message = "";
-    this.error = "";
-    this.onLocaleChange = () => this.requestUpdate();
-  }
-  static {
-    this.styles = i`
-    :host { display:block; height:100%; overflow-y:auto; box-sizing:border-box; padding:1rem 1rem 2rem; font-family: system-ui, sans-serif; color: var(--ion-text-color,#1c1b18); }
-    h2 { margin:0 0 .25rem; font-size:1.15rem; }
-    .sub { color:#8b897f; font-size:.85rem; margin:0 0 1rem; }
-    .group { border:1px solid var(--ion-border-color,#e0ddd4); border-radius:12px; padding:.4rem .9rem; margin-bottom:1rem; }
-    .group > .gh { font-size:.75rem; text-transform:uppercase; letter-spacing:.05em; color:#8b897f; padding:.6rem 0 .2rem; }
-    .row { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:.5rem 0; border-top:1px solid var(--ion-border-color,#eee); }
-    .row:first-of-type { border-top:none; }
-    .row .lbl { font-size:.92rem; }
-    .row .lbl small { display:block; color:#8b897f; font-size:.78rem; }
-    .seg { min-width:14rem; }
-    textarea, input[type=text], input[type=number] {
-      width:100%; box-sizing:border-box; font:inherit; padding:.5rem .6rem;
-      border:1px solid var(--ion-border-color,#d9d6cf); border-radius:8px; background:var(--ion-background-color,#fff); color:inherit;
-    }
-    .field { padding:.5rem 0; }
-    .field label { display:block; font-size:.85rem; margin-bottom:.25rem; }
-    .bar { display:flex; gap:.6rem; align-items:center; margin-top:.5rem; }
-    .msg { font-size:.85rem; }
-    .msg.ok { color:#2f9e44; } .msg.err { color:#d9480f; }
-  `;
-  }
-  async connectedCallback() {
-    super.connectedCallback();
-    window.addEventListener("erplora:locale-changed", this.onLocaleChange);
-    try {
-      const rows5 = await erplora6().query("sales.settings.get");
-      const row = Array.isArray(rows5) ? rows5[0] : rows5;
-      this.s = { ...DEFAULTS, ...row || {} };
-    } catch (e6) {
-      this.error = e6 instanceof Error ? e6.message : erplora6().t(CATALOG5, "ui.errorLoadingSettings");
-    } finally {
-      this.loading = false;
-    }
-  }
-  disconnectedCallback() {
-    window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
-    super.disconnectedCallback();
-  }
-  set(key, value) {
-    this.s = { ...this.s, [key]: value };
-    this.message = "";
-  }
-  async save() {
-    this.saving = true;
-    this.message = "";
-    this.error = "";
-    try {
-      await erplora6().command("sales.settings.update", { ...this.s });
-      this.message = erplora6().t(CATALOG5, "ui.settingsSaved");
-    } catch (e6) {
-      this.error = e6 instanceof Error ? e6.message : erplora6().t(CATALOG5, "ui.errorSaving");
-    } finally {
-      this.saving = false;
-    }
-  }
-  toggle(key, label, hint) {
-    return b2`<div class="row">
-      <div class="lbl">${label}${hint ? b2`<small>${hint}</small>` : A}</div>
-      <ion-toggle
-        .checked=${!!this.s[key]}
-        @ionChange=${(e6) => this.set(key, e6.target.checked ? 1 : 0)}
-      ></ion-toggle>
-    </div>`;
-  }
-  segment(key, opts) {
-    return b2`<ion-segment
-      class="seg"
-      .value=${String(this.s[key])}
-      @ionChange=${(e6) => this.set(key, String(e6.detail.value))}
-    >
-      ${opts.map((o7) => b2`<ion-segment-button value=${o7.value}><ion-label>${o7.label}</ion-label></ion-segment-button>`)}
-    </ion-segment>`;
-  }
-  render() {
-    const t7 = (k2) => erplora6().t(CATALOG5, k2);
-    if (this.loading) return b2`<p class="sub">${t7("ui.loadingSettings")}</p>`;
-    return b2`<div>
-      ${this.error ? b2`<p class="msg err">${this.error}</p>` : A}
-
-      <div class="group">
-        <div class="gh">${t7("ui.groupSaleScreen")}</div>
-        <div class="row">
-          <div class="lbl">${t7("ui.defaultScreen")}<small>${t7("ui.defaultScreenHint")}</small></div>
-          ${this.segment("pos_layout", [
-      { value: "touch", label: t7("ui.screenTouch") },
-      { value: "desktop", label: t7("ui.screenDesktop") }
-    ])}
-        </div>
-      </div>
-
-      <div class="group">
-        <div class="gh">${t7("ui.groupSaleDocument")}</div>
-        <div class="row">
-          <div class="lbl">${t7("ui.defaultFormat")}<small>${t7("ui.defaultFormatHint")}</small></div>
-          ${this.segment("default_document_format", [
-      { value: "ticket", label: t7("ui.formatTicket") },
-      { value: "invoice", label: t7("ui.formatInvoice") }
-    ])}
-        </div>
-        ${this.toggle("auto_invoice_with_tax_id", t7("ui.autoInvoiceTaxId"), t7("ui.autoInvoiceTaxIdHint"))}
-      </div>
-
-      <div class="group">
-        <div class="gh">${t7("ui.groupPaymentMethods")}</div>
-        ${this.toggle("allow_cash", t7("ui.cash"))}
-        ${this.toggle("allow_card", t7("ui.card"))}
-        ${this.toggle("allow_transfer", t7("ui.transfer"))}
-      </div>
-
-      <div class="group">
-        <div class="gh">${t7("ui.groupSale")}</div>
-        ${this.toggle("require_customer", t7("ui.requireCustomer"), t7("ui.requireCustomerHint"))}
-        ${this.toggle("allow_discounts", t7("ui.allowDiscounts"))}
-        ${this.toggle("default_tax_included", t7("ui.taxIncluded"))}
-        ${this.toggle("enable_parked_tickets", t7("ui.parkedTicketsToggle"), t7("ui.parkedTicketsToggleHint"))}
-        ${this.toggle("sync_products", t7("ui.syncProducts"))}
-        ${this.toggle("sync_services", t7("ui.syncServices"))}
-        <div class="field">
-          <label>${t7("ui.parkedExpiryHours")}</label>
-          <input type="number" min="1" .value=${String(this.s.ticket_expiry_hours)}
-            @input=${(e6) => this.set("ticket_expiry_hours", Number(e6.target.value || 0))} />
-        </div>
-      </div>
-
-      <div class="group">
-        <div class="gh">${t7("ui.groupReceipt")}</div>
-        <div class="field">
-          <label>${t7("ui.receiptHeader")}</label>
-          <textarea rows="2" .value=${this.s.receipt_header}
-            @input=${(e6) => this.set("receipt_header", e6.target.value)}></textarea>
-        </div>
-        <div class="field">
-          <label>${t7("ui.receiptFooter")}</label>
-          <textarea rows="2" .value=${this.s.receipt_footer}
-            @input=${(e6) => this.set("receipt_footer", e6.target.value)}></textarea>
-        </div>
-        <div class="field">
-          <label>${t7("ui.receiptFooterImage")}</label>
-          <input type="text" .value=${this.s.receipt_footer_image}
-            @input=${(e6) => this.set("receipt_footer_image", e6.target.value)} />
-        </div>
-      </div>
-
-      <div class="bar">
-        <ion-button @click=${() => this.save()} ?disabled=${this.saving}>
-          ${this.saving ? t7("ui.saving") : t7("ui.saveSettings")}
-        </ion-button>
-        ${this.message ? b2`<span class="msg ok">${this.message}</span>` : A}
-      </div>
-    </div>`;
-  }
-};
-__decorateClass([
-  r5()
-], ErpSalesSettings.prototype, "s", 2);
-__decorateClass([
-  r5()
-], ErpSalesSettings.prototype, "loading", 2);
-__decorateClass([
-  r5()
-], ErpSalesSettings.prototype, "saving", 2);
-__decorateClass([
-  r5()
-], ErpSalesSettings.prototype, "message", 2);
-__decorateClass([
-  r5()
-], ErpSalesSettings.prototype, "error", 2);
-define("erp-sales-settings", ErpSalesSettings);
