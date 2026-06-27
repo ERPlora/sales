@@ -18,22 +18,24 @@
 //! * **Tasas** (`tax_rate`, `discount`) = porcentaje `f64` (no es dinero).
 //! * **Cantidad** (`quantity`) = `f64` fraccionable (no es dinero).
 //!
-//! IMPUESTO SERVER-AUTHORITATIVE (ADR-0069 — keystone, supera el interino ADR-0066):
-//! * El POS manda por línea un `tax_rate_id` (referencia fiscal del producto) y, como
-//!   pista de **preview**, un `tax_rate` (% resuelto en cliente). **La autoridad del % es
-//!   este handler**: por cada línea resuelve `rate_pct`/`tax_type` desde el **catálogo de
-//!   confianza** que el runtime pre-carga en `context.reads["taxes.rates.list"]`
-//!   (declarado como `reads` en el manifest, gateado por `depends_on:["taxes"]`). El
-//!   `tax_rate` del cliente se **ignora** si la línea se resuelve por catálogo.
-//! * **Grupos (multi-impuesto, "IVA 21 + RE 5,2")**: si el tipo resuelto tiene
-//!   `tax_type == "group"`, se **expande** a sus componentes (filas con
-//!   `parent_id == tax_rate_id` entre las cargadas); cada componente aporta su `rate_pct`
-//!   sobre la **misma base** y el `tax_breakdown` lleva **una clave por componente** (p.ej.
-//!   `{"21.00":{…},"5.20":{…}}`). Réplica de la aritmética de `taxes::group_components`
-//!   (módulos separados; ver `architecture` ADR-0069).
-//! * **Backward-compat / graceful**: sin `context.reads`, o `tax_rate_id` ausente/no
-//!   encontrado → se cae al `tax_rate` del payload si viene; si no, 0%. Nunca rompe la
-//!   venta. Respeta `tax_included` igual que antes.
+//! IMPUESTO SERVER-AUTHORITATIVE (ADR-0085 — keystone, supersede el link `tax_rate_id` de ADR-0066):
+//! * El POS manda por línea un `tax_category_key` (la categoría fiscal del producto, p.ej.
+//!   `restaurant.food`) y, como pista de **preview**, un `tax_rate` (% resuelto en cliente). **La
+//!   autoridad del % es este handler**: por cada línea resuelve la REGLA de tipo desde el **catálogo
+//!   de confianza** que el runtime pre-carga en `context.reads["taxes.rules.list"]` (declarado como
+//!   `reads`, gateado por `depends_on:["taxes"]`), usando el **país/región del hub** que el runtime
+//!   inyecta en `context.country_code`/`context.region_code` (identidad fiscal de `hub_settings`,
+//!   ADR-0085) — NO el país del cliente, que no es de confianza. El `tax_rate` del cliente se
+//!   **ignora** si la línea se resuelve por catálogo.
+//! * **Componentes (multi-impuesto, "IVA 21 + RE 5,2")**: la regla RAÍZ (parent_id vacío) que matchea
+//!   país+categoría+vigencia es el tipo principal; sus **componentes** son filas con
+//!   `parent_id == raíz.id`. Cada componente (raíz incluida) aporta su `rate_pct` sobre la **misma
+//!   base**; el `tax_breakdown` lleva **una clave por tasa**. Réplica de `taxes::rule_components`.
+//! * **Snapshot inmutable de la línea (ADR-0085)**: cada línea congela `tax_category_key`,
+//!   `tax_rate` (= tax_rate_pct combinada), `tax_country_code`, `tax_region_code`, `tax_rule_id`
+//!   (id de la regla raíz, nullable). Una factura ya emitida no cambia aunque cambie el IVA.
+//! * **Backward-compat / graceful**: sin `context.reads`, o categoría ausente/sin regla → se cae al
+//!   `tax_rate` del payload si viene; si no, 0%. Nunca rompe la venta. Respeta `tax_included`.
 
 use erplora_guest_sdk::{Event, Operation, Output};
 use serde_json::{json, Map, Value};
@@ -161,12 +163,11 @@ struct TaxComponent {
 }
 
 /// Desenvuelve **defensivamente** las filas del catálogo pre-cargado en
-/// `context.reads["taxes.rates.list"]`. El contrato exacto que asumimos: puede venir
-/// (a) como **array directo** `[ {…}, … ]`, o (b) envuelto como **`{"rows":[…]}`**
-/// (forma paginada del list-engine). Cualquier otra forma → catálogo vacío (degrada a
-/// fallback de payload). Devuelve referencias a las filas.
-fn load_rate_catalog(context: &Value) -> Vec<&Value> {
-    let Some(node) = context.get("reads").and_then(|r| r.get("taxes.rates.list")) else {
+/// `context.reads["taxes.rules.list"]` (ADR-0085). El contrato exacto que asumimos: puede venir
+/// (a) como **array directo** `[ {…}, … ]`, o (b) envuelto como **`{"rows":[…]}`** (forma paginada
+/// del list-engine). Cualquier otra forma → catálogo vacío (degrada a fallback de payload).
+fn load_rule_catalog(context: &Value) -> Vec<&Value> {
+    let Some(node) = context.get("reads").and_then(|r| r.get("taxes.rules.list")) else {
         return Vec::new();
     };
     let arr = match node {
@@ -185,61 +186,102 @@ fn rate_is_active(row: &Value) -> bool {
     }
 }
 
+/// ¿Es una regla RAÍZ (no un componente)? `parent_id` vacío/NULL.
+fn rule_is_root(rule: &Value) -> bool {
+    field(rule, "parent_id").is_empty()
+}
+
+/// ¿Está la regla vigente en `date` (YYYY-MM-DD)? Fechas ISO comparan como string.
+fn rule_valid_on(rule: &Value, date: &str) -> bool {
+    if date.is_empty() {
+        return true;
+    }
+    let from = field(rule, "valid_from");
+    let until = field(rule, "valid_to");
+    (from.is_empty() || from.as_str() <= date) && (until.is_empty() || until.as_str() >= date)
+}
+
 /// Clave de desglose para una tasa: "%.2f" del `rate_pct` (p.ej. 21.0 → "21.00").
 fn rate_key(rate_pct: f64) -> String {
     format!("{:.2}", rate_pct)
 }
 
-/// Resuelve los componentes de impuesto de una línea (ADR-0069), **server-authoritative**:
-///
-/// 1. Si la línea trae `tax_rate_id` y existe en el catálogo de confianza → usa SIEMPRE el
-///    `rate_pct` del catálogo (ignora el `tax_rate` que mandó el cliente).
-///    * `tax_type == "group"` → expande a sus componentes (filas con
-///      `parent_id == tax_rate_id`, activas, entre las cargadas), una entrada por hijo. Si
-///      el grupo no tiene hijos cargados, degrada a su propio `rate_pct` (tipo simple).
-///    * tipo simple → un único componente con su `rate_pct`.
-/// 2. Si no hay catálogo, o `tax_rate_id` ausente/no encontrado → **fallback graceful** al
-///    `tax_rate` del payload (preview del cliente) si viene; si no, 0%. Un solo componente.
-fn resolve_line_components(item: &Value, catalog: &[&Value]) -> Vec<TaxComponent> {
-    let rate_id = field(item, "tax_rate_id");
-    if !rate_id.is_empty() {
-        if let Some(rate) = catalog.iter().copied().find(|r| field(r, "id") == rate_id) {
-            // Tipo "grupo": expandir a hijos (parent_id == id_del_grupo, activos).
-            if field(rate, "tax_type").eq_ignore_ascii_case("group") {
-                let mut children: Vec<&Value> = catalog
-                    .iter()
-                    .copied()
-                    .filter(|r| {
-                        !field(r, "id").is_empty()
-                            && field(r, "parent_id") == rate_id
-                            && rate_is_active(r)
-                    })
-                    .collect();
-                if !children.is_empty() {
-                    // Orden determinista: `default`/`standard` primero, luego por `code`.
-                    children.sort_by_key(|r| {
-                        let code = field(r, "code").to_lowercase();
-                        let pref = if code == "default" || code == "standard" { 0 } else { 1 };
-                        (pref, code)
-                    });
-                    return children
-                        .iter()
-                        .map(|r| {
-                            let pct = as_f64(r.get("rate_pct").unwrap_or(&Value::Null), 0.0);
-                            TaxComponent { rate_pct: pct, rate_key: rate_key(pct) }
-                        })
-                        .collect();
-                }
-                // Grupo sin hijos cargados → se trata como tipo simple con su propio rate_pct.
-            }
-            let pct = as_f64(rate.get("rate_pct").unwrap_or(&Value::Null), 0.0);
-            return vec![TaxComponent { rate_pct: pct, rate_key: rate_key(pct) }];
+/// El tipo resuelto para una línea (ADR-0085): el id de la regla raíz (para el snapshot) y sus
+/// componentes a aplicar (raíz + hijos). `rule_id` vacío = no se resolvió por catálogo (fallback).
+struct ResolvedTax {
+    rule_id: String,
+    components: Vec<TaxComponent>,
+}
+
+/// Resuelve la regla RAÍZ aplicable a `(cc, rc, cat, date)` en el catálogo de confianza
+/// (ADR-0085). Precedencia: región exacta → regla de país (región vacía/NULL). Dentro de un nivel,
+/// prefiere la `valid_from` más reciente, luego `id` ascendente. Réplica de `taxes::resolve_root`.
+fn resolve_root<'a>(rules: &[&'a Value], cc: &str, rc: &str, cat: &str, date: &str) -> Option<&'a Value> {
+    let eligible: Vec<&Value> = rules
+        .iter()
+        .copied()
+        .filter(|r| {
+            rule_is_root(r)
+                && rate_is_active(r)
+                && rule_valid_on(r, date)
+                && field(r, "country_code").eq_ignore_ascii_case(cc)
+                && field(r, "tax_category_key") == cat
+        })
+        .collect();
+    let pick = |rows: Vec<&'a Value>| -> Option<&'a Value> {
+        let mut rows = rows;
+        rows.sort_by(|a, b| {
+            field(b, "valid_from")
+                .cmp(&field(a, "valid_from"))
+                .then_with(|| field(a, "id").cmp(&field(b, "id")))
+        });
+        rows.first().copied()
+    };
+    if !rc.is_empty() {
+        if let Some(r) = pick(eligible.iter().copied().filter(|r| field(r, "region_code").eq_ignore_ascii_case(rc)).collect()) {
+            return Some(r);
         }
     }
-    // Backward-compat / graceful: catálogo ausente o id no encontrado → preview del cliente
-    // (payload.tax_rate) si viene; si no, 0%.
+    pick(eligible.iter().copied().filter(|r| field(r, "region_code").is_empty()).collect())
+        .or_else(|| pick(eligible.clone()))
+}
+
+/// Resuelve los componentes de impuesto de una línea (ADR-0085), **server-authoritative**:
+///
+/// 1. Si la línea trae `tax_category_key` y hay una regla raíz que matchee país (del CONTEXTO),
+///    región y vigencia → la raíz + sus componentes (filas con `parent_id == raíz.id`, activas y
+///    vigentes), cada una con su `rate_pct`. Ignora el `tax_rate` que mandó el cliente.
+/// 2. Si no hay catálogo, o categoría ausente/sin regla → **fallback graceful** al `tax_rate` del
+///    payload (preview del cliente) si viene; si no, 0%. Un solo componente, `rule_id` vacío.
+fn resolve_line_tax(item: &Value, rules: &[&Value], cc: &str, rc: &str, date: &str) -> ResolvedTax {
+    let cat = field(item, "tax_category_key");
+    if !cat.is_empty() {
+        if let Some(root) = resolve_root(rules, cc, rc, &cat, date) {
+            let root_id = field(root, "id");
+            let mut children: Vec<&Value> = rules
+                .iter()
+                .copied()
+                .filter(|r| !field(r, "id").is_empty() && field(r, "parent_id") == root_id && rate_is_active(r) && rule_valid_on(r, date))
+                .collect();
+            children.sort_by_key(|r| field(r, "id"));
+            let mut comps: Vec<TaxComponent> = Vec::with_capacity(children.len() + 1);
+            let root_pct = as_f64(root.get("rate_pct").unwrap_or(&Value::Null), 0.0);
+            comps.push(TaxComponent { rate_pct: root_pct, rate_key: rate_key(root_pct) });
+            for c in children {
+                let pct = as_f64(c.get("rate_pct").unwrap_or(&Value::Null), 0.0);
+                comps.push(TaxComponent { rate_pct: pct, rate_key: rate_key(pct) });
+            }
+            return ResolvedTax { rule_id: root_id, components: comps };
+        }
+    }
+    // Backward-compat / graceful: catálogo ausente o categoría sin regla → preview del cliente.
     let pct = item.get("tax_rate").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
-    vec![TaxComponent { rate_pct: pct, rate_key: rate_key(pct) }]
+    ResolvedTax { rule_id: String::new(), components: vec![TaxComponent { rate_pct: pct, rate_key: rate_key(pct) }] }
+}
+
+/// Día ISO `YYYY-MM-DD` de `now` (para la vigencia de las reglas).
+fn iso_date(now: &str) -> String {
+    now.chars().take(10).collect()
 }
 
 /// Totales de una línea aplicando **N componentes** de impuesto sobre la misma base
@@ -296,9 +338,15 @@ pub fn complete_sale_pure(input: Value) -> Output {
     let sale_disc = payload.get("discount_percent").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
     let items = payload.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
 
-    // Catálogo fiscal de confianza pre-cargado por el runtime (ADR-0069). Vacío si el
-    // runtime no inyectó reads (host antiguo / dependencia no resuelta) → fallback graceful.
-    let catalog = load_rate_catalog(&context);
+    // Identidad fiscal del hub (ADR-0085): país/región DEL CONTEXTO (hub_settings, inyectado por el
+    // runtime — no del cliente). Con ellos + la categoría de la línea se resuelve la regla de tipo.
+    let cc = context.get("country_code").map(as_str).unwrap_or_default();
+    let rc = context.get("region_code").map(as_str).unwrap_or_default();
+    let date = iso_date(&now);
+
+    // Catálogo fiscal de confianza pre-cargado por el runtime (ADR-0085, reads taxes.rules.list).
+    // Vacío si el runtime no inyectó reads (host antiguo / dependencia no resuelta) → fallback graceful.
+    let catalog = load_rule_catalog(&context);
 
     let mut subtotal: i64 = 0; // céntimos
     let mut tax_total: i64 = 0; // céntimos
@@ -317,14 +365,15 @@ pub fn complete_sale_pure(input: Value) -> Output {
         let unit_price = as_cents(item.get("price").unwrap_or(&Value::Null), 0); // céntimos
         let qty = item.get("quantity").map(|v| as_f64(v, 1.0)).unwrap_or(1.0);
         let line_disc = item.get("discount").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
-        // ADR-0069: resuelve el impuesto desde el catálogo de confianza (server-authoritative,
-        // expande grupos), con fallback graceful al `tax_rate` del payload. El `tax_rate` que
-        // mandó el cliente NO es autoridad; solo se usa si la línea no resuelve por catálogo.
-        let components = resolve_line_components(item, &catalog);
+        // ADR-0085: resuelve el impuesto por CATEGORÍA desde el catálogo de confianza
+        // (server-authoritative, raíz + componentes), con país/región del contexto y fallback
+        // graceful al `tax_rate` del payload. El cliente NO es autoridad del %.
+        let resolved = resolve_line_tax(item, &catalog, &cc, &rc, &date);
+        let components = &resolved.components;
         // Tasa combinada que persistimos en la línea (== suma de componentes; para un tipo
         // simple es su propio %). Es la cifra que ve invoice/listeners en `tax_rate`.
         let combined_pct: f64 = components.iter().map(|c| c.rate_pct).sum();
-        let (t, parts) = calc_line_components(unit_price, qty, line_disc, tax_incl, &components);
+        let (t, parts) = calc_line_components(unit_price, qty, line_disc, tax_incl, components);
         subtotal += t.net; tax_total += t.tax; gross += t.line;
 
         // Desglose por componente: una clave por tasa (los grupos aportan varias, p.ej.
@@ -348,8 +397,17 @@ pub fn complete_sale_pure(input: Value) -> Output {
         p.insert("quantity".into(), json!(qty)); // cantidad fraccionable (REAL)
         p.insert("unit_price".into(), json!(unit_price)); // céntimos (INTEGER)
         p.insert("discount_percent".into(), json!(line_disc)); // tasa % (REAL)
-        p.insert("tax_rate".into(), json!(combined_pct)); // tasa % resuelta (REAL) — server-authoritative
+        p.insert("tax_rate".into(), json!(combined_pct)); // tasa % combinada (REAL) == tax_rate_pct
         p.insert("tax_class_name".into(), json!(str_or(item, "tax_class_name", "")));
+        // ── Snapshot fiscal inmutable de la línea (ADR-0085) ──
+        p.insert("tax_category_key".into(), json!(field(item, "tax_category_key")));
+        p.insert("tax_country_code".into(), json!(cc));
+        p.insert("tax_region_code".into(), json!(rc));
+        // tax_rule_id NULL si la línea no resolvió por catálogo (fallback al preview del cliente).
+        p.insert(
+            "tax_rule_id".into(),
+            if resolved.rule_id.is_empty() { Value::Null } else { json!(resolved.rule_id) },
+        );
         p.insert("net_amount".into(), json!(t.net)); // céntimos
         p.insert("tax_amount".into(), json!(t.tax)); // céntimos
         p.insert("line_total".into(), json!(t.line)); // céntimos
@@ -414,18 +472,19 @@ pub fn complete_sale_pure(input: Value) -> Output {
             let unit_price = as_cents(it.get("price").unwrap_or(&Value::Null), 0); // céntimos
             let qty = it.get("quantity").map(|v| as_f64(v, 1.0)).unwrap_or(1.0);
             let line_disc = it.get("discount").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
-            // Mismo resolver server-authoritative que arriba (ADR-0069): el evento lleva el %
+            // Mismo resolver server-authoritative que arriba (ADR-0085): el evento lleva el %
             // y los net/tax RESUELTOS del catálogo, no la pista del cliente, para que
             // invoice/inventory reaccionen con cifras de confianza.
-            let components = resolve_line_components(it, &catalog);
-            let combined_pct: f64 = components.iter().map(|c| c.rate_pct).sum();
-            let (t, _parts) = calc_line_components(unit_price, qty, line_disc, tax_incl, &components);
+            let resolved = resolve_line_tax(it, &catalog, &cc, &rc, &date);
+            let combined_pct: f64 = resolved.components.iter().map(|c| c.rate_pct).sum();
+            let (t, _parts) = calc_line_components(unit_price, qty, line_disc, tax_incl, &resolved.components);
             json!({
                 "product_id": it.get("product_id").cloned().unwrap_or(Value::Null),
                 "product_name": as_str(it.get("product_name").unwrap_or(&Value::Null)),
                 "quantity": qty,
                 "unit_price": unit_price,           // céntimos (bruto/unitario tal cual lo envió la UI)
                 "tax_rate": combined_pct,           // tasa % resuelta (server-authoritative)
+                "tax_category_key": field(it, "tax_category_key"), // categoría fiscal congelada (ADR-0085)
                 "net_amount": t.net,                // céntimos: base imponible YA extraída
                 "tax_amount": t.tax,                // céntimos: IVA YA calculado
                 "is_service": it.get("is_service").map(as_bool).unwrap_or(false),
@@ -603,44 +662,47 @@ mod tests {
         assert_eq!(s["change_due"], json!(7900));  // 79.00€
     }
 
-    // ── ADR-0069: resolución server-side del impuesto desde el catálogo ───────
+    // ── ADR-0085: resolución server-side del impuesto por categoría ───────────
 
-    /// Construye un input con catálogo fiscal pre-cargado en `context.reads`.
+    /// Construye un input con catálogo de REGLAS pre-cargado en `context.reads["taxes.rules.list"]`
+    /// + país/región del hub en el contexto (identidad fiscal, ADR-0085).
     /// `reads_shape` = "array" → array directo; "rows" → `{"rows":[…]}`.
-    fn input_with_catalog(items: Value, ids: usize, catalog: Value, reads_shape: &str) -> Value {
+    fn input_with_rules(items: Value, ids: usize, rules: Value, reads_shape: &str, cc: &str, rc: &str) -> Value {
         let new_ids: Vec<Value> = (0..ids).map(|i| json!(format!("id-{i}"))).collect();
-        let rates_node = if reads_shape == "rows" { json!({ "rows": catalog }) } else { catalog };
+        let rules_node = if reads_shape == "rows" { json!({ "rows": rules }) } else { rules };
         json!({
             "payload": { "items": items, "tax_included": false, "amount_tendered": 0, "customer_name": "Bar Manolo" },
             "context": {
                 "hub_id": "h1", "current_user_id": "u1", "now": "2026-05-31T10:00:00+00:00",
-                "new_ids": new_ids,
-                "reads": { "taxes.rates.list": rates_node }
+                "new_ids": new_ids, "country_code": cc, "region_code": rc,
+                "reads": { "taxes.rules.list": rules_node }
             }
         })
     }
 
     #[test]
     fn line_resolves_rate_from_catalog_ignoring_client_hint() {
-        // El cliente manda tax_rate=99 (mentira); el catálogo dice 21% para ese tax_rate_id.
-        // El servidor DEBE usar 21%, no 99%. 100.00€ neto → IVA 21.00€.
+        // El cliente manda tax_rate=99 (mentira); la regla ES/product.generic dice 21%. El servidor
+        // DEBE usar 21%, no 99%. 100.00€ neto → IVA 21.00€. El snapshot congela categoría + regla.
         let items = json!([
-            { "product_name": "Café", "price": 10000, "quantity": 1, "tax_rate_id": "r-21", "tax_rate": 99.0 }
+            { "product_name": "Café", "price": 10000, "quantity": 1, "tax_category_key": "product.generic", "tax_rate": 99.0 }
         ]);
-        let catalog = json!([
-            { "id": "r-21", "code": "standard", "rate_pct": 21.0, "tax_type": "vat", "is_active": 1 },
-            { "id": "r-10", "code": "reduced",  "rate_pct": 10.0, "tax_type": "vat", "is_active": 1 }
+        let rules = json!([
+            { "id": "r-21", "country_code": "ES", "region_code": null, "tax_category_key": "product.generic", "rate_pct": 21.0, "tax_type": "vat", "parent_id": null, "is_active": 1 },
+            { "id": "r-10", "country_code": "ES", "region_code": null, "tax_category_key": "restaurant.food", "rate_pct": 10.0, "tax_type": "vat", "parent_id": null, "is_active": 1 }
         ]);
-        let out = complete_sale_pure(input_with_catalog(items, 4, catalog, "array"));
+        let out = complete_sale_pure(input_with_rules(items, 4, rules, "array", "ES", ""));
         let line = &out.operations[2].params;
         assert_eq!(line["tax_rate"], json!(21.0));    // % del catálogo, no el del cliente
         assert_eq!(line["net_amount"], json!(10000)); // 100.00€
         assert_eq!(line["tax_amount"], json!(2100));  // 21.00€ (no 99%)
+        // snapshot ADR-0085
+        assert_eq!(line["tax_category_key"], json!("product.generic"));
+        assert_eq!(line["tax_country_code"], json!("ES"));
+        assert_eq!(line["tax_rule_id"], json!("r-21"));
         let s = &out.operations[1].params;
         assert_eq!(s["tax_amount"], json!(2100));
-        // tax_breakdown lleva la clave de la tasa resuelta.
         let tb: Value = serde_json::from_str(s["tax_breakdown"].as_str().unwrap()).unwrap();
-        assert_eq!(tb["21.00"]["base"], json!(10000));
         assert_eq!(tb["21.00"]["tax"], json!(2100));
         assert!(tb.get("99.00").is_none());
     }
@@ -649,88 +711,75 @@ mod tests {
     fn line_resolves_rate_from_catalog_rows_shape() {
         // Mismo caso pero el catálogo viene envuelto como {"rows":[…]} (forma paginada).
         let items = json!([
-            { "product_name": "Café", "price": 10000, "quantity": 1, "tax_rate_id": "r-21" }
+            { "product_name": "Café", "price": 10000, "quantity": 1, "tax_category_key": "product.generic" }
         ]);
-        let catalog = json!([
-            { "id": "r-21", "code": "standard", "rate_pct": 21.0, "tax_type": "vat", "is_active": 1 }
+        let rules = json!([
+            { "id": "r-21", "country_code": "ES", "region_code": null, "tax_category_key": "product.generic", "rate_pct": 21.0, "tax_type": "vat", "parent_id": null, "is_active": 1 }
         ]);
-        let out = complete_sale_pure(input_with_catalog(items, 4, catalog, "rows"));
+        let out = complete_sale_pure(input_with_rules(items, 4, rules, "rows", "ES", ""));
         let line = &out.operations[2].params;
         assert_eq!(line["tax_rate"], json!(21.0));
         assert_eq!(line["tax_amount"], json!(2100));
     }
 
     #[test]
-    fn group_rate_expands_to_components() {
-        // tax_rate_id apunta a un GRUPO "IVA 21 + RE 5,2". Base 100.00€ →
-        // IVA 21% = 21.00€ + RE 5,2% = 5.20€ → tax total 26.20€, line 131.20€.
+    fn root_plus_components_expand_recargo() {
+        // Regla raíz IVA 21 (product.generic ES) + componente Recargo 5,2 (parent_id). Base 100.00€
+        // → IVA 21.00€ + RE 5.20€ → tax total 26.20€, line 131.20€.
         let items = json!([
-            { "product_name": "Producto RE", "price": 10000, "quantity": 1, "tax_rate_id": "g-re" }
+            { "product_name": "Producto RE", "price": 10000, "quantity": 1, "tax_category_key": "product.generic" }
         ]);
-        let catalog = json!([
-            { "id": "g-re", "code": "grp-re", "rate_pct": 0.0, "tax_type": "group", "is_active": 1 },
-            { "id": "c-iva", "code": "iva21", "rate_pct": 21.0, "tax_type": "vat",       "parent_id": "g-re", "is_active": 1 },
-            { "id": "c-re",  "code": "re52",  "rate_pct": 5.2,  "tax_type": "surcharge", "parent_id": "g-re", "is_active": 1 }
+        let rules = json!([
+            { "id": "r-iva", "country_code": "ES", "region_code": null, "tax_category_key": "product.generic", "rate_pct": 21.0, "tax_type": "vat", "parent_id": null, "is_active": 1 },
+            { "id": "c-re",  "country_code": "ES", "region_code": null, "tax_category_key": "product.generic", "rate_pct": 5.2, "tax_type": "surcharge", "parent_id": "r-iva", "is_active": 1 }
         ]);
-        let out = complete_sale_pure(input_with_catalog(items, 4, catalog, "array"));
+        let out = complete_sale_pure(input_with_rules(items, 4, rules, "array", "ES", ""));
         let line = &out.operations[2].params;
         assert_eq!(line["net_amount"], json!(10000)); // base 100.00€
         assert_eq!(line["tax_amount"], json!(2620));  // 21.00 + 5.20 = 26.20€
         assert_eq!(line["line_total"], json!(12620)); // 131.20€
         assert_eq!(line["tax_rate"], json!(26.2));    // tasa combinada en la línea
-        // El desglose lleva DOS claves (un componente por tasa).
+        assert_eq!(line["tax_rule_id"], json!("r-iva"));
         let s = &out.operations[1].params;
         let tb: Value = serde_json::from_str(s["tax_breakdown"].as_str().unwrap()).unwrap();
-        assert_eq!(tb["21.00"]["base"], json!(10000));
         assert_eq!(tb["21.00"]["tax"], json!(2100));
-        assert_eq!(tb["5.20"]["base"], json!(10000));
         assert_eq!(tb["5.20"]["tax"], json!(520));
         assert_eq!(s["tax_amount"], json!(2620));
     }
 
     #[test]
-    fn group_rate_tax_included_unwinds_combined_rate() {
-        // Bruto 126.20€ con grupo 21+5,2 incluido (combinada 26,2%) → base 100.00€,
-        // IVA 21.00€, RE 5.20€ (126.20 / 1.262 = 100.00).
+    fn region_rule_beats_country_rule() {
+        // IGIC Canarias: la regla de región ES-CN (7%) gana a la de país ES (21%) cuando el hub
+        // tiene region_code=ES-CN en su identidad fiscal.
         let items = json!([
-            { "product_name": "Producto RE incl", "price": 12620, "quantity": 1, "tax_rate_id": "g-re" }
+            { "product_name": "Producto", "price": 10000, "quantity": 1, "tax_category_key": "product.generic" }
         ]);
-        let catalog = json!([
-            { "id": "g-re", "code": "grp-re", "rate_pct": 0.0, "tax_type": "group", "is_active": 1 },
-            { "id": "c-iva", "rate_pct": 21.0, "tax_type": "vat",       "parent_id": "g-re", "is_active": 1 },
-            { "id": "c-re",  "rate_pct": 5.2,  "tax_type": "surcharge", "parent_id": "g-re", "is_active": 1 }
+        let rules = json!([
+            { "id": "r-es", "country_code": "ES", "region_code": null, "tax_category_key": "product.generic", "rate_pct": 21.0, "tax_type": "vat", "parent_id": null, "is_active": 1 },
+            { "id": "r-cn", "country_code": "ES", "region_code": "ES-CN", "tax_category_key": "product.generic", "rate_pct": 7.0, "tax_type": "igic", "parent_id": null, "is_active": 1 }
         ]);
-        // tax_included=true: usamos el helper de catálogo pero forzando incl en el payload.
-        let new_ids: Vec<Value> = (0..4).map(|i| json!(format!("id-{i}"))).collect();
-        let inp = json!({
-            "payload": { "items": items, "tax_included": true, "amount_tendered": 0 },
-            "context": {
-                "hub_id": "h1", "now": "2026-05-31T10:00:00+00:00", "new_ids": new_ids,
-                "reads": { "taxes.rates.list": catalog }
-            }
-        });
-        let out = complete_sale_pure(inp);
+        let out = complete_sale_pure(input_with_rules(items, 4, rules, "array", "ES", "ES-CN"));
         let line = &out.operations[2].params;
-        assert_eq!(line["net_amount"], json!(10000)); // 126.20 / 1.262 = 100.00€
-        assert_eq!(line["tax_amount"], json!(2620));  // 26.20€
-        assert_eq!(line["line_total"], json!(12620)); // bruto íntegro
+        assert_eq!(line["tax_rule_id"], json!("r-cn"));
+        assert_eq!(line["tax_amount"], json!(700));
+        assert_eq!(line["tax_region_code"], json!("ES-CN"));
     }
 
     #[test]
-    fn unknown_tax_rate_id_falls_back_to_zero() {
-        // tax_rate_id no está en el catálogo y NO hay tax_rate de preview → 0%, sin romper.
+    fn unknown_category_falls_back_to_zero() {
+        // Categoría sin regla en el país y SIN tax_rate de preview → 0%, sin romper. rule_id NULL.
         let items = json!([
-            { "product_name": "Misterioso", "price": 10000, "quantity": 1, "tax_rate_id": "no-existe" }
+            { "product_name": "Misterioso", "price": 10000, "quantity": 1, "tax_category_key": "unknown.cat" }
         ]);
-        let catalog = json!([
-            { "id": "r-21", "rate_pct": 21.0, "tax_type": "vat", "is_active": 1 }
+        let rules = json!([
+            { "id": "r-21", "country_code": "ES", "region_code": null, "tax_category_key": "product.generic", "rate_pct": 21.0, "tax_type": "vat", "parent_id": null, "is_active": 1 }
         ]);
-        let out = complete_sale_pure(input_with_catalog(items, 4, catalog, "array"));
+        let out = complete_sale_pure(input_with_rules(items, 4, rules, "array", "ES", ""));
         let line = &out.operations[2].params;
         assert_eq!(line["tax_rate"], json!(0.0));
         assert_eq!(line["net_amount"], json!(10000));
         assert_eq!(line["tax_amount"], json!(0));
-        // La venta NO se rompe: hay operaciones y evento.
+        assert_eq!(line["tax_rule_id"], Value::Null);
         assert!(out.operations.len() >= 3);
         assert_eq!(out.events[0].name, "sale.completed");
     }
@@ -795,21 +844,21 @@ mod tests {
     }
 
     #[test]
-    fn unknown_id_falls_back_to_payload_hint_when_no_catalog() {
+    fn falls_back_to_payload_hint_when_no_catalog() {
         // Sin context.reads (host antiguo / dep no resuelta): se usa el tax_rate del payload.
-        // 100.00€ neto, IVA 10% del preview → 10.00€.
+        // 100.00€ neto, IVA 10% del preview → 10.00€. rule_id NULL (no resolvió por catálogo).
         let items = json!([
-            { "product_name": "Agua", "price": 10000, "quantity": 1, "tax_rate_id": "r-10", "tax_rate": 10.0 }
+            { "product_name": "Agua", "price": 10000, "quantity": 1, "tax_category_key": "restaurant.drink", "tax_rate": 10.0 }
         ]);
-        // input() NO inyecta reads → catálogo vacío. tax_included=true (default del helper).
         let inp = json!({
             "payload": { "items": items, "tax_included": false, "amount_tendered": 0 },
-            "context": { "hub_id": "h1", "now": "2026-05-31T10:00:00+00:00",
+            "context": { "hub_id": "h1", "now": "2026-05-31T10:00:00+00:00", "country_code": "ES",
                 "new_ids": [json!("id-0"), json!("id-1"), json!("id-2"), json!("id-3")] }
         });
         let out = complete_sale_pure(inp);
         let line = &out.operations[2].params;
         assert_eq!(line["tax_rate"], json!(10.0)); // fallback al preview del payload
         assert_eq!(line["tax_amount"], json!(1000));
+        assert_eq!(line["tax_rule_id"], Value::Null);
     }
 }

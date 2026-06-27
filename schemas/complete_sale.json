@@ -7,7 +7,7 @@
         "product_id": {"type":["string","null"]}, "product_name": {"type":"string"},
         "product_sku": {"type":"string"}, "is_service": {"type":"boolean"},
         "quantity": {"type":"number"}, "price": {"type":"number"},
-        "discount": {"type":"number"}, "tax_rate_id": {"type":["string","null"]},
+        "discount": {"type":"number"}, "tax_category_key": {"type":["string","null"]},
         "tax_rate": {"type":"number"}, "tax_class_name": {"type":"string"},
         "category_id": {"type":["string","null"]} } } },
     "tax_included": {"type":"boolean"}, "discount_percent": {"type":"number"},

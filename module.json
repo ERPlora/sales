@@ -1,7 +1,7 @@
 {
   "id": "sales",
   "name": "Sales & POS",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "agent": {
     "description": "Manages sales and point-of-sale operations: list and inspect sales, complete new sales transactions, void sales, configure payment methods, and retrieve sales statistics.",
     "keywords": [
@@ -60,7 +60,9 @@
       "label": "Vender",
       "icon": "storefront",
       "component": "erp-pos",
-      "chrome": ["fullscreen"]
+      "chrome": [
+        "fullscreen"
+      ]
     },
     {
       "id": "sales",
@@ -82,7 +84,8 @@
       "migrations/sqlite/002_pos_settings.sql",
       "migrations/sqlite/003_document_type.sql",
       "migrations/sqlite/004_order_link.sql",
-      "migrations/sqlite/005_staff_attribution.sql"
+      "migrations/sqlite/005_staff_attribution.sql",
+      "migrations/sqlite/006_tax_snapshot.sql"
     ]
   },
   "queries": {
@@ -223,7 +226,9 @@
   "commands": {
     "sales.complete_sale": {
       "permission": "sales.add_sale",
-      "reads": ["taxes.rates.list"],
+      "reads": [
+        "taxes.rules.list"
+      ],
       "handler": {
         "type": "wasm",
         "file": "dist/handler.wasm",
@@ -344,12 +349,24 @@
       "category": "Ventas",
       "size": "sm",
       "permission": "sales.view_reports",
-      "sectors": ["hosteleria", "retail", "belleza"],
+      "sectors": [
+        "hosteleria",
+        "retail",
+        "belleza"
+      ],
       "default": true,
       "kind": "kpi",
       "query": "sales.today",
-      "map": { "value": "total" },
-      "options": { "label": "Hoy", "icon": "cash-outline", "format": "currency", "currency": "EUR", "locale": "es-ES" }
+      "map": {
+        "value": "total"
+      },
+      "options": {
+        "label": "Hoy",
+        "icon": "cash-outline",
+        "format": "currency",
+        "currency": "EUR",
+        "locale": "es-ES"
+      }
     },
     "sales.tickets_today": {
       "title": "Tickets hoy",
@@ -357,12 +374,23 @@
       "category": "Ventas",
       "size": "sm",
       "permission": "sales.view_reports",
-      "sectors": ["hosteleria", "retail", "belleza"],
+      "sectors": [
+        "hosteleria",
+        "retail",
+        "belleza"
+      ],
       "default": true,
       "kind": "kpi",
       "query": "sales.today",
-      "map": { "value": "tickets" },
-      "options": { "label": "Tickets", "icon": "receipt-outline", "format": "number", "locale": "es-ES" }
+      "map": {
+        "value": "tickets"
+      },
+      "options": {
+        "label": "Tickets",
+        "icon": "receipt-outline",
+        "format": "number",
+        "locale": "es-ES"
+      }
     },
     "sales.last_7_days": {
       "title": "Ventas últimos 7 días",
@@ -370,12 +398,25 @@
       "category": "Ventas",
       "size": "lg",
       "permission": "sales.view_reports",
-      "sectors": ["hosteleria", "retail", "belleza"],
+      "sectors": [
+        "hosteleria",
+        "retail",
+        "belleza"
+      ],
       "default": false,
       "kind": "chart",
       "query": "sales.last_7_days",
-      "map": { "label": "day", "value": "total" },
-      "options": { "chartType": "bar", "seriesName": "Ventas", "gridlines": true, "format": "currency", "height": 220 }
+      "map": {
+        "label": "day",
+        "value": "total"
+      },
+      "options": {
+        "chartType": "bar",
+        "seriesName": "Ventas",
+        "gridlines": true,
+        "format": "currency",
+        "height": 220
+      }
     },
     "sales.recent_activity": {
       "title": "Actividad reciente",
@@ -383,13 +424,29 @@
       "category": "Ventas",
       "size": "md",
       "permission": "sales.view_sale",
-      "sectors": ["hosteleria", "retail", "belleza"],
+      "sectors": [
+        "hosteleria",
+        "retail",
+        "belleza"
+      ],
       "default": false,
       "kind": "timeline",
       "query": "sales.list",
-      "params": { "limit": 8, "sort": "created_at", "dir": "desc" },
-      "map": { "id": "id", "title": "sale_number", "description": "customer_name", "time": "created_at", "status": "status" },
-      "options": { "align": "left" }
+      "params": {
+        "limit": 8,
+        "sort": "created_at",
+        "dir": "desc"
+      },
+      "map": {
+        "id": "id",
+        "title": "sale_number",
+        "description": "customer_name",
+        "time": "created_at",
+        "status": "status"
+      },
+      "options": {
+        "align": "left"
+      }
     }
   },
   "ui": {
