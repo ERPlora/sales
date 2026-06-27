@@ -9,7 +9,7 @@ var __decorateClass = (decorators, target, key, kind) => {
   return result;
 };
 
-// node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
+// ../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
 var ElementInternalsShim = class ElementInternals {
   get shadowRoot() {
     return this.__host.__shadowRoot;
@@ -88,7 +88,7 @@ var ElementInternalsShim = class ElementInternals {
   }
 };
 
-// node_modules/@lit-labs/ssr-dom-shim/lib/events.js
+// ../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
 var __classPrivateFieldSet = function(receiver, state, value, kind, f3) {
   if (kind === "m") throw new TypeError("Private method is not writable");
   if (kind === "a" && !f3) throw new TypeError("Private accessor was defined without a setter");
@@ -246,7 +246,7 @@ Object.defineProperties(CustomEventShim.prototype, {
 var EventShimWithRealType = EventShim;
 var CustomEventShimWithRealType = CustomEventShim;
 
-// node_modules/@lit-labs/ssr-dom-shim/lib/css.js
+// ../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
 var _a2;
 var CSSRuleShim = (_a2 = class CSSRule {
   constructor() {
@@ -277,7 +277,7 @@ var CSSRuleShim = (_a2 = class CSSRule {
   }
 }, _a2.STYLE_RULE = 1, _a2.CHARSET_RULE = 2, _a2.IMPORT_RULE = 3, _a2.MEDIA_RULE = 4, _a2.FONT_FACE_RULE = 5, _a2.PAGE_RULE = 6, _a2.NAMESPACE_RULE = 10, _a2.KEYFRAMES_RULE = 7, _a2.KEYFRAME_RULE = 8, _a2.SUPPORTS_RULE = 12, _a2.COUNTER_STYLE_RULE = 11, _a2.FONT_FEATURE_VALUES_RULE = 14, _a2.MARGIN_RULE = 9, _a2);
 
-// node_modules/@lit-labs/ssr-dom-shim/index.js
+// ../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/index.js
 globalThis.Event ??= EventShimWithRealType;
 globalThis.CustomEvent ??= CustomEventShimWithRealType;
 var constructionToken = Symbol();
@@ -674,7 +674,7 @@ var CustomElementRegistryShimWithRealType = CustomElementRegistry;
 var customElements2 = new CustomElementRegistryShimWithRealType();
 var windowShim = new WindowShim(constructionToken);
 
-// node_modules/@lit/reactive-element/node/css-tag.js
+// ../../../module-toolkit/node_modules/@lit/reactive-element/node/css-tag.js
 var t = globalThis;
 var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
 var s = Symbol();
@@ -719,7 +719,7 @@ var c = e || void 0 === t.CSSStyleSheet ? (t7) => t7 : (t7) => t7 instanceof CSS
   return r(e6);
 })(t7) : t7;
 
-// node_modules/@lit/reactive-element/node/reactive-element.js
+// ../../../module-toolkit/node_modules/@lit/reactive-element/node/reactive-element.js
 var { is: h, defineProperty: r2, getOwnPropertyDescriptor: o2, getOwnPropertyNames: n2, getOwnPropertySymbols: a, getPrototypeOf: c2 } = Object;
 var l = globalThis;
 l.customElements ??= customElements2;
@@ -942,7 +942,7 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
 };
 g.elementStyles = [], g.shadowRootOptions = { mode: "open" }, g[f("elementProperties")] = /* @__PURE__ */ new Map(), g[f("finalized")] = /* @__PURE__ */ new Map(), u?.({ ReactiveElement: g }), (l.reactiveElementVersions ??= []).push("2.1.2");
 
-// node_modules/lit-html/lit-html.js
+// ../../../module-toolkit/node_modules/lit-html/lit-html.js
 var t2 = globalThis;
 var i2 = (t7) => t7;
 var s2 = t2.trustedTypes;
@@ -1197,7 +1197,7 @@ var D = (t7, i7, s5) => {
   return h4._$AI(t7), h4;
 };
 
-// node_modules/lit-element/lit-element.js
+// ../../../module-toolkit/node_modules/lit-element/lit-element.js
 var s3 = globalThis;
 var i3 = class extends g {
   constructor() {
@@ -1226,7 +1226,7 @@ var o4 = s3.litElementPolyfillSupport;
 o4?.({ LitElement: i3 });
 (s3.litElementVersions ??= []).push("4.2.2");
 
-// node_modules/@lit/reactive-element/node/decorators/property.js
+// ../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
 var r4 = (t7 = o5, e6, r6) => {
   const { kind: n6, metadata: i7 } = r6;
@@ -1256,15 +1256,15 @@ function n4(t7) {
   })(t7, e6, o7);
 }
 
-// node_modules/@lit/reactive-element/node/decorators/state.js
+// ../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/state.js
 function r5(r6) {
   return n4({ ...r6, state: true, attribute: false });
 }
 
-// node_modules/@lit/reactive-element/node/decorators/base.js
+// ../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/base.js
 var e3 = (e6, t7, c5) => (c5.configurable = true, c5.enumerable = true, Reflect.decorate && "object" != typeof t7 && Object.defineProperty(e6, t7, c5), c5);
 
-// node_modules/@lit/reactive-element/node/decorators/query.js
+// ../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/query.js
 function e4(e6, r6) {
   return (n6, s5, i7) => {
     const o7 = (t7) => t7.renderRoot?.querySelector(e6) ?? null;
@@ -1288,14 +1288,14 @@ function e4(e6, r6) {
   };
 }
 
-// ../outfitkit/dist/define.js
+// ../../../outfitkit/dist/define.js
 function define(tag, ctor) {
   if (typeof customElements !== "undefined" && !customElements.get(tag)) {
     customElements.define(tag, ctor);
   }
 }
 
-// ../outfitkit/dist/ok-qr.js
+// ../../../outfitkit/dist/ok-qr.js
 var __defProp2 = Object.defineProperty;
 var __decorateClass2 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -1943,7 +1943,7 @@ __decorateClass2([
 ], OkQr.prototype, "margin");
 define("ok-qr", OkQr);
 
-// ../outfitkit/dist/ok-receipt.js
+// ../../../outfitkit/dist/ok-receipt.js
 var __defProp3 = Object.defineProperty;
 var __decorateClass3 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2121,7 +2121,7 @@ __decorateClass3([
 ], OkReceipt.prototype, "labels");
 define("ok-receipt", OkReceipt);
 
-// ../outfitkit/dist/ok-invoice.js
+// ../../../outfitkit/dist/ok-invoice.js
 var __defProp4 = Object.defineProperty;
 var __decorateClass4 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2345,7 +2345,7 @@ __decorateClass4([
 ], OkInvoice.prototype, "labels");
 define("ok-invoice", OkInvoice);
 
-// ../modules-workspace/modules/sales/ui/lib/document-mappers.ts
+// ui/lib/document-mappers.ts
 function parseTaxes(tax_breakdown) {
   if (!tax_breakdown) return [];
   let obj;
@@ -2421,7 +2421,7 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}) {
   };
 }
 
-// ../modules-workspace/modules/sales/locales/es.json
+// locales/es.json
 var es_default = {
   name: "Ventas / TPV",
   navigation: {
@@ -2533,7 +2533,7 @@ var es_default = {
   }
 };
 
-// ../modules-workspace/modules/sales/locales/en.json
+// locales/en.json
 var en_default = {
   name: "Sales & POS",
   navigation: {
@@ -2645,7 +2645,7 @@ var en_default = {
   }
 };
 
-// ../modules-workspace/modules/sales/ui/components/erp-sales-document/erp-sales-document.ts
+// ui/components/erp-sales-document/erp-sales-document.ts
 var CATALOG = { es: es_default, en: en_default };
 function erplora() {
   const c5 = globalThis.erplora;
@@ -2778,7 +2778,7 @@ __decorateClass([
 ], ErpSalesDocument.prototype, "fiscal", 2);
 define("erp-sales-document", ErpSalesDocument);
 
-// ../outfitkit/dist/ok-qty-stepper.js
+// ../../../outfitkit/dist/ok-qty-stepper.js
 var __defProp5 = Object.defineProperty;
 var __decorateClass5 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2986,7 +2986,7 @@ __decorateClass5([
 ], OkQtyStepper.prototype, "labels");
 define("ok-qty-stepper", OkQtyStepper);
 
-// ../modules-workspace/modules/sales/ui/lib/pos-cart.ts
+// ui/lib/pos-cart.ts
 function rows(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
@@ -3003,9 +3003,9 @@ function parseCartLines(cartData) {
       sku: l3.sku ? String(l3.sku) : void 0,
       price: Number(l3.price) || 0,
       qty: Math.max(1, Number(l3.qty) || 1),
-      // Preserva la referencia fiscal del producto en el round-trip de persistencia/aparcado:
-      // es lo que el servidor usa para resolver el % (ADR-0069). El % es solo preview.
-      tax_rate_id: l3.tax_rate_id != null && String(l3.tax_rate_id) !== "" ? String(l3.tax_rate_id) : void 0,
+      // Preserva la categoría fiscal del producto en el round-trip de persistencia/aparcado:
+      // es lo que el servidor usa para resolver el % por país+categoría (ADR-0085). El % es preview.
+      tax_category_key: l3.tax_category_key != null && String(l3.tax_category_key) !== "" ? String(l3.tax_category_key) : void 0,
       tax_rate: l3.tax_rate != null && Number.isFinite(Number(l3.tax_rate)) ? Number(l3.tax_rate) : void 0
     })).filter((l3) => l3.id && l3.name);
   } catch {
@@ -3059,31 +3059,45 @@ async function retrieveParkedTicket(client, ticket) {
   return lines;
 }
 
-// ../modules-workspace/modules/sales/ui/lib/pos-tax.ts
+// ui/lib/pos-tax.ts
 function rows2(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
   return [];
 }
-async function buildRatesMap(client) {
+function isRoot(r6) {
+  return r6.parent_id == null || String(r6.parent_id) === "";
+}
+async function buildCategoryRatesMap(client) {
   const map = /* @__PURE__ */ new Map();
   try {
-    const r6 = rows2(await client.query("taxes.rates.list", { page_size: 500 }));
-    for (const row of r6) {
-      if (!row || row.id == null) continue;
-      const pct = Number(row.rate_pct);
-      if (Number.isFinite(pct)) map.set(String(row.id), pct);
+    const all = rows2(await client.query("taxes.rules.list", { page_size: 500 }));
+    const rootByCat = /* @__PURE__ */ new Map();
+    for (const r6 of all) {
+      if (!r6 || !r6.tax_category_key || !isRoot(r6)) continue;
+      const cat = String(r6.tax_category_key);
+      const cur = rootByCat.get(cat);
+      if (!cur || String(r6.valid_from ?? "") > String(cur.valid_from ?? "")) rootByCat.set(cat, r6);
+    }
+    for (const [cat, root] of rootByCat) {
+      let pct = Number(root.rate_pct) || 0;
+      for (const r6 of all) {
+        if (r6 && String(r6.parent_id ?? "") === String(root.id ?? "__none__") && root.id != null) {
+          pct += Number(r6.rate_pct) || 0;
+        }
+      }
+      map.set(cat, pct);
     }
   } catch {
   }
   return map;
 }
-function resolveLineTax(ratesMap, taxRateId) {
-  if (!taxRateId) return 0;
-  return ratesMap.get(String(taxRateId)) ?? 0;
+function resolveLineTax(catRatesMap, taxCategoryKey) {
+  if (!taxCategoryKey) return 0;
+  return catRatesMap.get(String(taxCategoryKey)) ?? 0;
 }
 
-// ../modules-workspace/modules/sales/ui/components/erp-pos-touch/erp-pos-touch.ts
+// ui/components/erp-pos-touch/erp-pos-touch.ts
 var CATALOG2 = { es: es_default, en: en_default };
 function erplora2() {
   const c5 = globalThis.erplora;
@@ -3130,7 +3144,7 @@ var ErpPosTouch = class extends i3 {
     this.tableLabel = "";
     this.customerName = "";
     this.prodCats = /* @__PURE__ */ new Map();
-    /** Mapa tax_rate_id → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
+    /** Mapa tax_category_key → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
     this.ratesMap = /* @__PURE__ */ new Map();
     this.cartRestored = false;
     this.slots = [
@@ -3285,7 +3299,7 @@ var ErpPosTouch = class extends i3 {
         listParkedTickets(erplora2()),
         erplora2().query("inventory.categories.list", { page_size: 100, sort: "name", dir: "asc" }).catch(() => []),
         erplora2().query("inventory.product_categories", { page_size: 2e3 }).catch(() => []),
-        buildRatesMap(erplora2())
+        buildCategoryRatesMap(erplora2())
       ]);
       this.ratesMap = ratesMap;
       this.products = rows3(prods).filter((p4) => p4.is_active !== 0);
@@ -3415,8 +3429,8 @@ var ErpPosTouch = class extends i3 {
   }
   add(p4) {
     const ex = this.cart.find((l3) => l3.id === p4.id);
-    const tax_rate = resolveLineTax(this.ratesMap, p4.tax_rate_id);
-    this.cart = ex ? this.cart.map((l3) => l3.id === p4.id ? { ...l3, qty: l3.qty + 1 } : l3) : [...this.cart, { id: p4.id, name: p4.name, sku: p4.sku, price: Number(p4.price), qty: 1, tax_rate_id: p4.tax_rate_id, tax_rate }];
+    const tax_rate = resolveLineTax(this.ratesMap, p4.tax_category_key);
+    this.cart = ex ? this.cart.map((l3) => l3.id === p4.id ? { ...l3, qty: l3.qty + 1 } : l3) : [...this.cart, { id: p4.id, name: p4.name, sku: p4.sku, price: Number(p4.price), qty: 1, tax_category_key: p4.tax_category_key, tax_rate }];
   }
   /** Fija la cantidad de una línea (desde ok-qty-stepper); al llegar a 0 la línea se elimina. */
   setQtyAbs(id, v3) {
@@ -3447,7 +3461,7 @@ var ErpPosTouch = class extends i3 {
     this.busy = true;
     this.error = "";
     try {
-      const items = this.cart.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: l3.qty, tax_rate_id: l3.tax_rate_id ?? null, tax_rate: l3.tax_rate ?? 0, category_id: this.prodCats.get(l3.id)?.values().next().value ?? null }));
+      const items = this.cart.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: l3.qty, tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0, category_id: this.prodCats.get(l3.id)?.values().next().value ?? null }));
       await erplora2().command("sales.complete_sale", {
         items,
         tax_included: this.settings.default_tax_included !== 0,
@@ -3724,7 +3738,7 @@ __decorateClass([
 ], ErpPosTouch.prototype, "customerName", 2);
 define("erp-pos-touch", ErpPosTouch);
 
-// ../modules-workspace/modules/sales/ui/components/erp-pos-desktop/erp-pos-desktop.ts
+// ui/components/erp-pos-desktop/erp-pos-desktop.ts
 var CATALOG3 = { es: es_default, en: en_default };
 function erplora3() {
   const c5 = globalThis.erplora;
@@ -3756,7 +3770,7 @@ var ErpPosDesktop = class extends i3 {
     this.parkedOpen = false;
     this.tableLabel = "";
     this.customerName = "";
-    /** Mapa tax_rate_id → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
+    /** Mapa tax_category_key → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
     this.ratesMap = /* @__PURE__ */ new Map();
     this.cartRestored = false;
     /** Slots de contexto que el POS expone; cada uno lo rellena (o no) un módulo externo. */
@@ -3833,7 +3847,7 @@ var ErpPosDesktop = class extends i3 {
         erplora3().query("sales.settings.get").catch(() => []),
         loadActiveCart(erplora3()),
         listParkedTickets(erplora3()),
-        buildRatesMap(erplora3())
+        buildCategoryRatesMap(erplora3())
       ]);
       this.ratesMap = ratesMap;
       this.products = rows4(prods).filter((p4) => p4.is_active !== 0);
@@ -3951,8 +3965,8 @@ var ErpPosDesktop = class extends i3 {
   }
   add(p4) {
     const ex = this.cart.find((l3) => l3.id === p4.id);
-    const tax_rate = resolveLineTax(this.ratesMap, p4.tax_rate_id);
-    this.cart = ex ? this.cart.map((l3) => l3.id === p4.id ? { ...l3, qty: l3.qty + 1 } : l3) : [...this.cart, { id: p4.id, name: p4.name, sku: p4.sku, price: Number(p4.price), qty: 1, tax_rate_id: p4.tax_rate_id, tax_rate }];
+    const tax_rate = resolveLineTax(this.ratesMap, p4.tax_category_key);
+    this.cart = ex ? this.cart.map((l3) => l3.id === p4.id ? { ...l3, qty: l3.qty + 1 } : l3) : [...this.cart, { id: p4.id, name: p4.name, sku: p4.sku, price: Number(p4.price), qty: 1, tax_category_key: p4.tax_category_key, tax_rate }];
     this.term = "";
     this.scanInput?.focus();
   }
@@ -3987,7 +4001,7 @@ var ErpPosDesktop = class extends i3 {
     this.busy = true;
     this.error = "";
     try {
-      const items = this.cart.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: l3.qty, tax_rate_id: l3.tax_rate_id ?? null, tax_rate: l3.tax_rate ?? 0 }));
+      const items = this.cart.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: l3.qty, tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0 }));
       await erplora3().command("sales.complete_sale", {
         items,
         tax_included: this.settings.default_tax_included !== 0,
@@ -4204,7 +4218,7 @@ __decorateClass([
 ], ErpPosDesktop.prototype, "scanInput", 2);
 define("erp-pos-desktop", ErpPosDesktop);
 
-// ../modules-workspace/modules/sales/ui/components/erp-pos/erp-pos.ts
+// ui/components/erp-pos/erp-pos.ts
 function erplora4() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -4244,7 +4258,7 @@ __decorateClass([
 ], ErpPos.prototype, "ready", 2);
 define("erp-pos", ErpPos);
 
-// node_modules/lit-html/directive.js
+// ../../../module-toolkit/node_modules/lit-html/directive.js
 var t5 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e5 = (t7) => (...e6) => ({ _$litDirective$: t7, values: e6 });
 var i4 = class {
@@ -4264,7 +4278,7 @@ var i4 = class {
   }
 };
 
-// node_modules/lit-html/directive-helpers.js
+// ../../../module-toolkit/node_modules/lit-html/directive-helpers.js
 var { I: t6 } = j;
 var i5 = (o7) => o7;
 var s4 = () => document.createComment("");
@@ -4297,7 +4311,7 @@ var h3 = (o7) => {
   o7._$AR(), o7._$AA.remove();
 };
 
-// node_modules/lit-html/directives/repeat.js
+// ../../../module-toolkit/node_modules/lit-html/directives/repeat.js
 var u4 = (e6, s5, t7) => {
   const r6 = /* @__PURE__ */ new Map();
   for (let l3 = s5; l3 <= t7; l3++) r6.set(e6[l3], l3);
@@ -4350,7 +4364,7 @@ var c4 = e5(class extends i4 {
   }
 });
 
-// node_modules/lit-html/directives/style-map.js
+// ../../../module-toolkit/node_modules/lit-html/directives/style-map.js
 var n5 = "important";
 var i6 = " !" + n5;
 var o6 = e5(class extends i4 {
@@ -4379,7 +4393,7 @@ var o6 = e5(class extends i4 {
   }
 });
 
-// ../outfitkit/dist/ok-data-table.js
+// ../../../outfitkit/dist/ok-data-table.js
 var __defProp6 = Object.defineProperty;
 var __decorateClass6 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -5676,7 +5690,7 @@ __decorateClass6([
 ], OkDataTable.prototype, "menuOpen");
 define("ok-data-table", OkDataTable);
 
-// ../hub/packages/module-sdk/src/index.ts
+// ../../../hub/packages/module-sdk/src/index.ts
 function isEmpty(v3) {
   return v3 === null || v3 === void 0 || v3 === "";
 }
@@ -5794,7 +5808,7 @@ function createListController(client, queryName, onChange = () => {
   return new ListController(client, queryName, onChange, opts);
 }
 
-// ../modules-workspace/modules/sales/ui/components/erp-sales-list/erp-sales-list.ts
+// ui/components/erp-sales-list/erp-sales-list.ts
 var CATALOG4 = { es: es_default, en: en_default };
 function erplora5() {
   const c5 = globalThis.erplora;

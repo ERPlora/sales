@@ -11,13 +11,13 @@ import {
   loadActiveCart, persistActiveCart, listParkedTickets, parkCart, retrieveParkedTicket,
   type CartLine, type ErploraClientLike, type ParkedTicket,
 } from '../../lib/pos-cart.js';
-import { buildRatesMap, resolveLineTax } from '../../lib/pos-tax.js';
+import { buildCategoryRatesMap, resolveLineTax } from '../../lib/pos-tax.js';
 // Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC.
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
-interface Product { id: string; name: string; sku?: string; price: number; is_active?: number; tax_rate_id?: string; }
+interface Product { id: string; name: string; sku?: string; price: number; is_active?: number; tax_category_key?: string; }
 interface PayMethod { id: string; name: string; }
 interface PosSettings { default_document_format?: string; currency?: string; enable_parked_tickets?: number; default_tax_included?: number; }
 
@@ -113,7 +113,7 @@ export class ErpPosDesktop extends LitElement {
 
   @query('#scan') private scanInput?: HTMLInputElement;
 
-  /** Mapa tax_rate_id → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
+  /** Mapa tax_category_key → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
   private ratesMap = new Map<string, number>();
   private cartRestored = false;
   private saveTimer?: ReturnType<typeof setTimeout>;
@@ -144,7 +144,7 @@ export class ErpPosDesktop extends LitElement {
         erplora().query('sales.settings.get').catch(() => []),
         loadActiveCart(erplora()),
         listParkedTickets(erplora()),
-        buildRatesMap(erplora()),
+        buildCategoryRatesMap(erplora()),
       ]);
       this.ratesMap = ratesMap;
       this.products = rows<Product>(prods).filter((p) => p.is_active !== 0);
@@ -262,12 +262,12 @@ export class ErpPosDesktop extends LitElement {
 
   private add(p: Product) {
     const ex = this.cart.find((l) => l.id === p.id);
-    // tax_rate_id = referencia fiscal del producto (autoridad del servidor, ADR-0069).
+    // tax_category_key = referencia fiscal del producto (autoridad del servidor, ADR-0069).
     // tax_rate = % resuelto en cliente SOLO para el preview del total.
-    const tax_rate = resolveLineTax(this.ratesMap, p.tax_rate_id);
+    const tax_rate = resolveLineTax(this.ratesMap, p.tax_category_key);
     this.cart = ex
       ? this.cart.map((l) => (l.id === p.id ? { ...l, qty: l.qty + 1 } : l))
-      : [...this.cart, { id: p.id, name: p.name, sku: p.sku, price: Number(p.price), qty: 1, tax_rate_id: p.tax_rate_id, tax_rate }];
+      : [...this.cart, { id: p.id, name: p.name, sku: p.sku, price: Number(p.price), qty: 1, tax_category_key: p.tax_category_key, tax_rate }];
     this.term = '';
     this.scanInput?.focus();
   }
@@ -297,12 +297,12 @@ export class ErpPosDesktop extends LitElement {
   private async confirm() {
     this.busy = true; this.error = '';
     try {
-      // ADR-0069: la AUTORIDAD del IVA es el servidor. Cada línea manda su `tax_rate_id`
+      // ADR-0069: la AUTORIDAD del IVA es el servidor. Cada línea manda su `tax_category_key`
       // (referencia fiscal del producto) y el handler resuelve `rate_pct` desde el catálogo de
       // confianza (`taxes.rates.list` pre-cargado vía `reads`), expandiendo grupos. Mantenemos
       // `tax_rate` (% resuelto en cliente) SOLO como pista/preview; el handler lo ignora si puede
       // resolver el id (fallback al % solo si no hay catálogo o el id no existe — backward-compat).
-      const items = this.cart.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: l.qty, tax_rate_id: l.tax_rate_id ?? null, tax_rate: l.tax_rate ?? 0 }));
+      const items = this.cart.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: l.qty, tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0 }));
       await erplora().command('sales.complete_sale', {
         items,
         tax_included: this.settings.default_tax_included !== 0,

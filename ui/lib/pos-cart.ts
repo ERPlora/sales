@@ -10,12 +10,12 @@ export interface CartLine {
   sku?: string;
   price: number;
   qty: number;
-  /** Referencia al tipo fiscal del producto (`inventory.products.list`). La AUTORIDAD del % es el
-   *  servidor: `complete_sale` lo envía y el handler resuelve `rate_pct` desde el catálogo de
-   *  confianza (`taxes.rates.list` pre-cargado), expandiendo grupos. ADR-0069 (supera ADR-0066). */
-  tax_rate_id?: string;
-  /** % de IVA resuelto en cliente SOLO para el preview del total; NO es autoridad (el servidor
-   *  recalcula desde `tax_rate_id`). 0 si no se resuelve. ADR-0064/0066/0069. */
+  /** CATEGORÍA fiscal del producto (`inventory.products.list`). La AUTORIDAD del % es el servidor:
+   *  `complete_sale` la envía y el handler resuelve el `rate_pct` por país+categoría desde el
+   *  catálogo de confianza (`taxes.rules.list` pre-cargado), aplicando componentes. ADR-0085. */
+  tax_category_key?: string;
+  /** % de IVA PREVIEW resuelto en cliente SOLO para el total del carrito; NO es autoridad (el
+   *  servidor recalcula por categoría). 0 si no se resuelve. ADR-0085. */
   tax_rate?: number;
 }
 
@@ -47,9 +47,9 @@ export function parseCartLines(cartData: unknown): CartLine[] {
         sku: l.sku ? String(l.sku) : undefined,
         price: Number(l.price) || 0,
         qty: Math.max(1, Number(l.qty) || 1),
-        // Preserva la referencia fiscal del producto en el round-trip de persistencia/aparcado:
-        // es lo que el servidor usa para resolver el % (ADR-0069). El % es solo preview.
-        tax_rate_id: l.tax_rate_id != null && String(l.tax_rate_id) !== '' ? String(l.tax_rate_id) : undefined,
+        // Preserva la categoría fiscal del producto en el round-trip de persistencia/aparcado:
+        // es lo que el servidor usa para resolver el % por país+categoría (ADR-0085). El % es preview.
+        tax_category_key: l.tax_category_key != null && String(l.tax_category_key) !== '' ? String(l.tax_category_key) : undefined,
         tax_rate: l.tax_rate != null && Number.isFinite(Number(l.tax_rate)) ? Number(l.tax_rate) : undefined,
       }))
       .filter((l) => l.id && l.name);

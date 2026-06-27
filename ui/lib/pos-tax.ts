@@ -1,16 +1,25 @@
-// pos-tax — resolución del tipo de IVA de cada línea del POS (fix interino ADR-0064/0066).
+// pos-tax — PREVIEW del IVA de cada línea del POS por CATEGORÍA fiscal (ADR-0085).
 //
-// El producto solo guarda una REFERENCIA al tipo fiscal (`tax_rate_id`); el porcentaje concreto
-// vive en `taxes_rate.rate_pct` (módulo taxes, dependencia). El POS construye un mapa
-// `tax_rate_id → rate_pct` al montar y lo usa para pasar `tax_rate` por línea a
-// `sales.complete_sale` (el handler ya calcula bien si recibe `tax_rate` + `tax_included`).
+// El producto enlaza por `tax_category_key` (categoría fiscal abstracta); el % concreto vive en
+// `taxes_rule` (módulo taxes) y lo resuelve el SERVIDOR al completar la venta (server-authoritative,
+// keystone ADR-0085). Este mapa es solo un PREVIEW para el cliente (mostrar el IVA en el carrito
+// antes de cobrar): agrupa las reglas del hub por categoría y suma la regla raíz + sus componentes
+// (recargo de equivalencia). Como un hub es de UN país (ADR-0085), todas las reglas del hub son de
+// su país → no hace falta filtrar por país en el preview.
 //
-// Best-effort: si `taxes` no responde el mapa queda vacío → tipos sin resolver = 0%; la venta
-// nunca se rompe por esto.
+// Best-effort: si `taxes` no responde, el mapa queda vacío → preview 0%; la venta NUNCA se rompe por
+// esto (el servidor recalcula el % real por categoría al completar).
 
 import type { ErploraClientLike } from './pos-cart.js';
 
-interface TaxRateRow { id?: string; rate_pct?: number | string }
+interface TaxRuleRow {
+  id?: string;
+  tax_category_key?: string;
+  rate_pct?: number | string;
+  parent_id?: string | null;
+  valid_from?: string | null;
+  is_active?: number | string;
+}
 
 function rows<T>(r: unknown): T[] {
   if (Array.isArray(r)) return r as T[];
@@ -18,25 +27,42 @@ function rows<T>(r: unknown): T[] {
   return [];
 }
 
-/** Carga los tipos fiscales activos del hub y construye `tax_rate_id → rate_pct`.
+function isRoot(r: TaxRuleRow): boolean {
+  return r.parent_id == null || String(r.parent_id) === '';
+}
+
+/** Carga las reglas de tipo del hub y construye `tax_category_key → rate_pct` (raíz + componentes).
  *  Nunca lanza: ante cualquier fallo (taxes no instalado/sin responder) devuelve un mapa vacío. */
-export async function buildRatesMap(client: ErploraClientLike): Promise<Map<string, number>> {
+export async function buildCategoryRatesMap(client: ErploraClientLike): Promise<Map<string, number>> {
   const map = new Map<string, number>();
   try {
-    const r = rows<TaxRateRow>(await client.query('taxes.rates.list', { page_size: 500 }));
-    for (const row of r) {
-      if (!row || row.id == null) continue;
-      const pct = Number(row.rate_pct);
-      if (Number.isFinite(pct)) map.set(String(row.id), pct);
+    const all = rows<TaxRuleRow>(await client.query('taxes.rules.list', { page_size: 500 }));
+    // Raíz por categoría: la regla raíz activa con `valid_from` más reciente.
+    const rootByCat = new Map<string, TaxRuleRow>();
+    for (const r of all) {
+      if (!r || !r.tax_category_key || !isRoot(r)) continue;
+      const cat = String(r.tax_category_key);
+      const cur = rootByCat.get(cat);
+      if (!cur || String(r.valid_from ?? '') > String(cur.valid_from ?? '')) rootByCat.set(cat, r);
+    }
+    for (const [cat, root] of rootByCat) {
+      let pct = Number(root.rate_pct) || 0;
+      // Suma los componentes (parent_id == root.id), p.ej. recargo de equivalencia.
+      for (const r of all) {
+        if (r && String(r.parent_id ?? '') === String(root.id ?? '__none__') && root.id != null) {
+          pct += Number(r.rate_pct) || 0;
+        }
+      }
+      map.set(cat, pct);
     }
   } catch {
-    /* taxes puede no responder; los tipos quedan sin resolver (0%) sin romper la venta */
+    /* taxes puede no responder; preview 0% sin romper la venta (el servidor resuelve el % real) */
   }
   return map;
 }
 
-/** Resuelve el % de IVA de un producto desde su `tax_rate_id` usando el mapa (0 si no se resuelve). */
-export function resolveLineTax(ratesMap: Map<string, number>, taxRateId?: string | null): number {
-  if (!taxRateId) return 0;
-  return ratesMap.get(String(taxRateId)) ?? 0;
+/** Preview del % de IVA de un producto desde su `tax_category_key` usando el mapa (0 si no resuelve). */
+export function resolveLineTax(catRatesMap: Map<string, number>, taxCategoryKey?: string | null): number {
+  if (!taxCategoryKey) return 0;
+  return catRatesMap.get(String(taxCategoryKey)) ?? 0;
 }
