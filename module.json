@@ -1,7 +1,7 @@
 {
   "id": "sales",
   "name": "Sales & POS",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "agent": {
     "description": "Manages sales and point-of-sale operations: list and inspect sales, complete new sales transactions, void sales, configure payment methods, and retrieve sales statistics.",
     "keywords": [
@@ -85,7 +85,8 @@
       "migrations/sqlite/003_document_type.sql",
       "migrations/sqlite/004_order_link.sql",
       "migrations/sqlite/005_staff_attribution.sql",
-      "migrations/sqlite/006_tax_snapshot.sql"
+      "migrations/sqlite/006_tax_snapshot.sql",
+      "migrations/sqlite/007_gift_comp.sql"
     ]
   },
   "queries": {

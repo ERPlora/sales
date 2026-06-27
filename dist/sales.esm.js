@@ -2346,6 +2346,9 @@ __decorateClass4([
 define("ok-invoice", OkInvoice);
 
 // ui/lib/document-mappers.ts
+function lineLabel(l3) {
+  return Number(l3.is_gift) ? `${l3.product_name} (Invitaci\xF3n)` : l3.product_name;
+}
 function parseTaxes(tax_breakdown) {
   if (!tax_breakdown) return [];
   let obj;
@@ -2376,7 +2379,7 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}) {
     datetime: sale.created_at,
     customer: fiscal.customer_name || sale.customer_name || void 0,
     lines: lines.map((l3) => ({
-      name: l3.product_name,
+      name: lineLabel(l3),
       qty: Number(l3.quantity),
       unit_price: Number(l3.unit_price),
       total: Number(l3.line_total)
@@ -2394,7 +2397,7 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}) {
 function saleToInvoice(sale, lines, settings = {}, fiscal = {}) {
   const header = (settings.receipt_header || "").trim();
   const invLines = lines.map((l3) => ({
-    description: l3.product_name,
+    description: lineLabel(l3),
     qty: Number(l3.quantity),
     unit_price: Number(l3.unit_price),
     discount_percent: l3.discount_percent ? Number(l3.discount_percent) : void 0,
@@ -2529,7 +2532,9 @@ var es_default = {
     cartEmptyTouch: "Toca un producto para a\xF1adirlo.",
     parkCurrentSale: "Aparcar venta actual",
     closeAction: "Cerrar",
-    fullscreen: "Pantalla completa"
+    fullscreen: "Pantalla completa",
+    giftBadge: "Invitaci\xF3n",
+    giftAction: "Invitar / quitar invitaci\xF3n"
   }
 };
 
@@ -2641,7 +2646,9 @@ var en_default = {
     cartEmptyTouch: "Tap a product to add it.",
     parkCurrentSale: "Park current sale",
     closeAction: "Close",
-    fullscreen: "Fullscreen"
+    fullscreen: "Fullscreen",
+    giftBadge: "Gift",
+    giftAction: "Comp / un-comp line"
   }
 };
 
@@ -3006,7 +3013,10 @@ function parseCartLines(cartData) {
       // Preserva la categoría fiscal del producto en el round-trip de persistencia/aparcado:
       // es lo que el servidor usa para resolver el % por país+categoría (ADR-0085). El % es preview.
       tax_category_key: l3.tax_category_key != null && String(l3.tax_category_key) !== "" ? String(l3.tax_category_key) : void 0,
-      tax_rate: l3.tax_rate != null && Number.isFinite(Number(l3.tax_rate)) ? Number(l3.tax_rate) : void 0
+      tax_rate: l3.tax_rate != null && Number.isFinite(Number(l3.tax_rate)) ? Number(l3.tax_rate) : void 0,
+      cost: l3.cost != null && Number.isFinite(Number(l3.cost)) ? Number(l3.cost) : void 0,
+      is_gift: l3.is_gift === true || l3.is_gift === 1 ? true : void 0,
+      gift_reason: l3.gift_reason ? String(l3.gift_reason) : void 0
     })).filter((l3) => l3.id && l3.name);
   } catch {
     return [];
@@ -3383,7 +3393,7 @@ var ErpPosTouch = class extends i3 {
     return erplora2().formatMoney(Number(n6) || 0);
   }
   get total() {
-    return this.cart.reduce((s5, l3) => s5 + l3.price * l3.qty, 0);
+    return this.cart.reduce((s5, l3) => s5 + (l3.is_gift ? 0 : l3.price * l3.qty), 0);
   }
   get itemCount() {
     return this.cart.reduce((s5, l3) => s5 + l3.qty, 0);
@@ -3428,9 +3438,16 @@ var ErpPosTouch = class extends i3 {
     }
   }
   add(p4) {
-    const ex = this.cart.find((l3) => l3.id === p4.id);
+    const ex = this.cart.find((l3) => l3.id === p4.id && !l3.is_gift);
     const tax_rate = resolveLineTax(this.ratesMap, p4.tax_category_key);
-    this.cart = ex ? this.cart.map((l3) => l3.id === p4.id ? { ...l3, qty: l3.qty + 1 } : l3) : [...this.cart, { id: p4.id, name: p4.name, sku: p4.sku, price: Number(p4.price), qty: 1, tax_category_key: p4.tax_category_key, tax_rate }];
+    this.cart = ex ? this.cart.map((l3) => l3.id === p4.id && !l3.is_gift ? { ...l3, qty: l3.qty + 1 } : l3) : [...this.cart, { id: p4.id, name: p4.name, sku: p4.sku, price: Number(p4.price), qty: 1, tax_category_key: p4.tax_category_key, tax_rate, cost: Number(p4.cost) || 0 }];
+  }
+  /** Invitar/quitar invitación a una línea (comp, ADR-comp): toggle is_gift con un motivo por defecto.
+   *  La línea regalo no se cobra (el servidor pone net/tax/total=0) pero descuenta stock. */
+  toggleGift(id) {
+    this.cart = this.cart.map(
+      (l3) => l3.id === id ? { ...l3, is_gift: !l3.is_gift, gift_reason: !l3.is_gift ? l3.gift_reason || "Invitaci\xF3n" : void 0 } : l3
+    );
   }
   /** Fija la cantidad de una línea (desde ok-qty-stepper); al llegar a 0 la línea se elimina. */
   setQtyAbs(id, v3) {
@@ -3461,7 +3478,7 @@ var ErpPosTouch = class extends i3 {
     this.busy = true;
     this.error = "";
     try {
-      const items = this.cart.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: l3.qty, tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0, category_id: this.prodCats.get(l3.id)?.values().next().value ?? null }));
+      const items = this.cart.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: l3.qty, tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0, category_id: this.prodCats.get(l3.id)?.values().next().value ?? null, is_gift: l3.is_gift ?? false, gift_reason: l3.gift_reason ?? "", cost: l3.cost ?? 0 }));
       await erplora2().command("sales.complete_sale", {
         items,
         tax_included: this.settings.default_tax_included !== 0,
@@ -3567,9 +3584,15 @@ var ErpPosTouch = class extends i3 {
 
       ${this.cart.length ? b2`<ion-list class="lines" lines="full">
             ${this.cart.map((l3) => b2`<ion-item>
-              <ion-label><h3>${l3.name}</h3><p>${this.money(l3.price)}</p></ion-label>
+              <ion-label>
+                <h3>${l3.name}${l3.is_gift ? b2` <ion-badge color="success">${t3("ui.giftBadge")}</ion-badge>` : A}</h3>
+                <p>${this.money(l3.price)}${l3.is_gift && l3.gift_reason ? b2` · ${l3.gift_reason}` : A}</p>
+              </ion-label>
               <div slot="end" class="lineend">
-                <span class="lt">${this.money(l3.price * l3.qty)}</span>
+                <span class="lt" style=${l3.is_gift ? "text-decoration:line-through;opacity:.55" : ""}>${this.money(l3.price * l3.qty)}</span>
+                <ion-button fill="clear" size="small" title=${t3("ui.giftAction")} @click=${() => this.toggleGift(l3.id)}>
+                  <ion-icon name=${l3.is_gift ? "gift" : "gift-outline"} slot="icon-only" color=${l3.is_gift ? "success" : "medium"}></ion-icon>
+                </ion-button>
                 <ok-qty-stepper .value=${l3.qty} .min=${0} .step=${1}
                   @ok-change=${(e6) => this.setQtyAbs(l3.id, e6.detail.value)}></ok-qty-stepper>
               </div>
@@ -3930,7 +3953,7 @@ var ErpPosDesktop = class extends i3 {
     return erplora3().formatMoney(Number(n6) || 0);
   }
   get total() {
-    return this.cart.reduce((s5, l3) => s5 + l3.price * l3.qty, 0);
+    return this.cart.reduce((s5, l3) => s5 + (l3.is_gift ? 0 : l3.price * l3.qty), 0);
   }
   get parkingEnabled() {
     return this.settings.enable_parked_tickets !== 0;
@@ -3964,11 +3987,17 @@ var ErpPosDesktop = class extends i3 {
     return this.products.filter((p4) => (p4.sku || "").toLowerCase().includes(q) || p4.name.toLowerCase().includes(q)).slice(0, 8);
   }
   add(p4) {
-    const ex = this.cart.find((l3) => l3.id === p4.id);
+    const ex = this.cart.find((l3) => l3.id === p4.id && !l3.is_gift);
     const tax_rate = resolveLineTax(this.ratesMap, p4.tax_category_key);
-    this.cart = ex ? this.cart.map((l3) => l3.id === p4.id ? { ...l3, qty: l3.qty + 1 } : l3) : [...this.cart, { id: p4.id, name: p4.name, sku: p4.sku, price: Number(p4.price), qty: 1, tax_category_key: p4.tax_category_key, tax_rate }];
+    this.cart = ex ? this.cart.map((l3) => l3.id === p4.id && !l3.is_gift ? { ...l3, qty: l3.qty + 1 } : l3) : [...this.cart, { id: p4.id, name: p4.name, sku: p4.sku, price: Number(p4.price), qty: 1, tax_category_key: p4.tax_category_key, tax_rate, cost: Number(p4.cost) || 0 }];
     this.term = "";
     this.scanInput?.focus();
+  }
+  /** Invitar/quitar invitación a una línea (comp): toggle is_gift con motivo por defecto. */
+  toggleGift(id) {
+    this.cart = this.cart.map(
+      (l3) => l3.id === id ? { ...l3, is_gift: !l3.is_gift, gift_reason: !l3.is_gift ? l3.gift_reason || "Invitaci\xF3n" : void 0 } : l3
+    );
   }
   onScanKey(e6) {
     if (e6.key !== "Enter") return;
@@ -4001,7 +4030,7 @@ var ErpPosDesktop = class extends i3 {
     this.busy = true;
     this.error = "";
     try {
-      const items = this.cart.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: l3.qty, tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0 }));
+      const items = this.cart.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: l3.qty, tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0, is_gift: l3.is_gift ?? false, gift_reason: l3.gift_reason ?? "", cost: l3.cost ?? 0 }));
       await erplora3().command("sales.complete_sale", {
         items,
         tax_included: this.settings.default_tax_included !== 0,
@@ -4065,12 +4094,12 @@ var ErpPosDesktop = class extends i3 {
         <thead><tr><th>${t4("ui.colProduct")}</th><th class="num">${t4("ui.colPrice")}</th><th class="num">${t4("ui.colQty")}</th><th class="num">${t4("ui.colAmount")}</th><th></th></tr></thead>
         <tbody>
           ${this.cart.length ? this.cart.map((l3) => b2`<tr>
-                <td>${l3.name} ${l3.sku ? b2`<small style="color:#8b897f">· ${l3.sku}</small>` : A}</td>
+                <td>${l3.name} ${l3.sku ? b2`<small style="color:#8b897f">· ${l3.sku}</small>` : A}${l3.is_gift ? b2` <ion-badge color="success">${t4("ui.giftBadge")}</ion-badge>` : A}</td>
                 <td class="num">${this.money(l3.price)}</td>
                 <td class="num"><input class="q" type="number" min="1" .value=${String(l3.qty)}
                   @input=${(e6) => this.setQty(l3.id, Number(e6.target.value))} /></td>
-                <td class="num">${this.money(l3.price * l3.qty)}</td>
-                <td class="num"><button class="rm" @click=${() => this.remove(l3.id)} title=${t4("ui.remove")}>✕</button></td>
+                <td class="num" style=${l3.is_gift ? "text-decoration:line-through;opacity:.55" : ""}>${this.money(l3.price * l3.qty)}</td>
+                <td class="num"><button class="rm" @click=${() => this.toggleGift(l3.id)} title=${t4("ui.giftAction")} style=${l3.is_gift ? "color:var(--ion-color-success,#2dd36f)" : ""}>🎁</button> <button class="rm" @click=${() => this.remove(l3.id)} title=${t4("ui.remove")}>✕</button></td>
               </tr>`) : b2`<tr><td colspan="5"><div class="empty">${t4("ui.cartEmptyDesktop")}</div></td></tr>`}
         </tbody>
       </table>

@@ -21,7 +21,7 @@ const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 // (naranja). En móvil el carrito se recoge a un drawer abierto desde un botón flotante naranja.
 // Quitar línea = cantidad a 0. Al cobrar: `sales.complete_sale` (channel='pos') → documento.
 
-interface Product { id: string; name: string; sku?: string; price: number; is_active?: number; product_type?: string; image?: string; tax_category_key?: string; }
+interface Product { id: string; name: string; sku?: string; price: number; cost?: number; is_active?: number; product_type?: string; image?: string; tax_category_key?: string; }
 interface PayMethod { id: string; name: string; type?: string; }
 interface PosSettings { default_document_format?: string; currency?: string; enable_parked_tickets?: number; default_tax_included?: number; }
 interface Category { id: string; name: string; icon?: string; color?: string; image?: string; product_count?: number; }
@@ -321,7 +321,7 @@ export class ErpPosTouch extends LitElement {
   // FIX QA (2026-06-25): el POS trabaja en CÉNTIMOS → formatMoney (divide /100), NO formatAmount
   // (que mostraba precios ×100).
   private money(n: number) { return erplora().formatMoney(Number(n) || 0); }
-  private get total() { return this.cart.reduce((s, l) => s + l.price * l.qty, 0); }
+  private get total() { return this.cart.reduce((s, l) => s + (l.is_gift ? 0 : l.price * l.qty), 0); }
   private get itemCount() { return this.cart.reduce((s, l) => s + l.qty, 0); }
   private get parkingEnabled() { return this.settings.enable_parked_tickets !== 0; }
   private catCount(id: string) {
@@ -362,13 +362,21 @@ export class ErpPosTouch extends LitElement {
   }
 
   private add(p: Product) {
-    const ex = this.cart.find((l) => l.id === p.id);
-    // tax_category_key = referencia fiscal del producto (autoridad del servidor, ADR-0069).
-    // tax_rate = % resuelto en cliente SOLO para el preview del total.
+    const ex = this.cart.find((l) => l.id === p.id && !l.is_gift);
+    // tax_category_key = referencia fiscal del producto (autoridad del servidor, ADR-0085).
+    // tax_rate = % resuelto en cliente SOLO para el preview del total. cost = para el arqueo de regalos.
     const tax_rate = resolveLineTax(this.ratesMap, p.tax_category_key);
     this.cart = ex
-      ? this.cart.map((l) => (l.id === p.id ? { ...l, qty: l.qty + 1 } : l))
-      : [...this.cart, { id: p.id, name: p.name, sku: p.sku, price: Number(p.price), qty: 1, tax_category_key: p.tax_category_key, tax_rate }];
+      ? this.cart.map((l) => (l.id === p.id && !l.is_gift ? { ...l, qty: l.qty + 1 } : l))
+      : [...this.cart, { id: p.id, name: p.name, sku: p.sku, price: Number(p.price), qty: 1, tax_category_key: p.tax_category_key, tax_rate, cost: Number(p.cost) || 0 }];
+  }
+
+  /** Invitar/quitar invitación a una línea (comp, ADR-comp): toggle is_gift con un motivo por defecto.
+   *  La línea regalo no se cobra (el servidor pone net/tax/total=0) pero descuenta stock. */
+  private toggleGift(id: string) {
+    this.cart = this.cart.map((l) =>
+      l.id === id ? { ...l, is_gift: !l.is_gift, gift_reason: !l.is_gift ? (l.gift_reason || 'Invitación') : undefined } : l,
+    );
   }
   /** Fija la cantidad de una línea (desde ok-qty-stepper); al llegar a 0 la línea se elimina. */
   private setQtyAbs(id: string, v: number) {
@@ -403,7 +411,7 @@ export class ErpPosTouch extends LitElement {
       // category_id por línea (aditivo, QA 2026-06-25): el KDS enruta cada comanda a su estación
       // por la categoría del producto. Se toma la categoría PRIMARIA (primera) del producto desde
       // `prodCats` (Map product_id → Set category_id). null si el producto no está clasificado.
-      const items = this.cart.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: l.qty, tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: this.prodCats.get(l.id)?.values().next().value ?? null }));
+      const items = this.cart.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: l.qty, tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: this.prodCats.get(l.id)?.values().next().value ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0 }));
       await erplora().command('sales.complete_sale', {
         items,
         tax_included: this.settings.default_tax_included !== 0,
@@ -507,9 +515,15 @@ export class ErpPosTouch extends LitElement {
       ${this.cart.length
         ? html`<ion-list class="lines" lines="full">
             ${this.cart.map((l) => html`<ion-item>
-              <ion-label><h3>${l.name}</h3><p>${this.money(l.price)}</p></ion-label>
+              <ion-label>
+                <h3>${l.name}${l.is_gift ? html` <ion-badge color="success">${t('ui.giftBadge')}</ion-badge>` : nothing}</h3>
+                <p>${this.money(l.price)}${l.is_gift && l.gift_reason ? html` · ${l.gift_reason}` : nothing}</p>
+              </ion-label>
               <div slot="end" class="lineend">
-                <span class="lt">${this.money(l.price * l.qty)}</span>
+                <span class="lt" style=${l.is_gift ? 'text-decoration:line-through;opacity:.55' : ''}>${this.money(l.price * l.qty)}</span>
+                <ion-button fill="clear" size="small" title=${t('ui.giftAction')} @click=${() => this.toggleGift(l.id)}>
+                  <ion-icon name=${l.is_gift ? 'gift' : 'gift-outline'} slot="icon-only" color=${l.is_gift ? 'success' : 'medium'}></ion-icon>
+                </ion-button>
                 <ok-qty-stepper .value=${l.qty} .min=${0} .step=${1}
                   @ok-change=${(e: CustomEvent) => this.setQtyAbs(l.id, (e.detail as { value: number }).value)}></ok-qty-stepper>
               </div>

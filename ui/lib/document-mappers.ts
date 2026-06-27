@@ -39,6 +39,13 @@ export interface SaleLineRow {
   net_amount?: number;
   tax_amount?: number;
   line_total: number;
+  is_gift?: number;
+  gift_reason?: string;
+}
+
+/** Etiqueta de línea para el documento: añade "(Invitación)" a una línea regalo (comp). */
+function lineLabel(l: SaleLineRow): string {
+  return Number(l.is_gift) ? `${l.product_name} (Invitación)` : l.product_name;
 }
 
 /** Subconjunto de `sales.settings.get` que afecta al documento. */
@@ -112,7 +119,7 @@ export function saleToReceipt(
     datetime: sale.created_at,
     customer: fiscal.customer_name || sale.customer_name || undefined,
     lines: lines.map((l) => ({
-      name: l.product_name,
+      name: lineLabel(l),
       qty: Number(l.quantity),
       unit_price: Number(l.unit_price),
       total: Number(l.line_total),
@@ -139,7 +146,7 @@ export function saleToInvoice(
 ): InvoiceData {
   const header = (settings.receipt_header || '').trim();
   const invLines: InvoiceLine[] = lines.map((l) => ({
-    description: l.product_name,
+    description: lineLabel(l),
     qty: Number(l.quantity),
     unit_price: Number(l.unit_price),
     discount_percent: l.discount_percent ? Number(l.discount_percent) : undefined,

@@ -9,6 +9,7 @@
         "quantity": {"type":"number"}, "price": {"type":"number"},
         "discount": {"type":"number"}, "tax_category_key": {"type":["string","null"]},
         "tax_rate": {"type":"number"}, "tax_class_name": {"type":"string"},
+        "is_gift": {"type":"boolean"}, "gift_reason": {"type":"string"}, "cost": {"type":"number"},
         "category_id": {"type":["string","null"]} } } },
     "tax_included": {"type":"boolean"}, "discount_percent": {"type":"number"},
     "amount_tendered": {"type":"number"}, "payment_method_id": {"type":["string","null"]},

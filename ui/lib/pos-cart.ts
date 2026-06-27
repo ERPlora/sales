@@ -17,6 +17,13 @@ export interface CartLine {
   /** % de IVA PREVIEW resuelto en cliente SOLO para el total del carrito; NO es autoridad (el
    *  servidor recalcula por categoría). 0 si no se resuelve. ADR-0085. */
   tax_rate?: number;
+  /** Coste unitario del producto (céntimos), del catálogo. Se usa para el arqueo de invitaciones
+   *  (a coste); el servidor lo suma a `gift_total` solo en líneas regalo. */
+  cost?: number;
+  /** INVITACIÓN/REGALO (comp): la línea no se cobra (net/tax/total=0) pero descuenta stock. */
+  is_gift?: boolean;
+  /** Motivo de la invitación (cortesía/error cocina/fidelización…). */
+  gift_reason?: string;
 }
 
 export interface ErploraClientLike {
@@ -51,6 +58,9 @@ export function parseCartLines(cartData: unknown): CartLine[] {
         // es lo que el servidor usa para resolver el % por país+categoría (ADR-0085). El % es preview.
         tax_category_key: l.tax_category_key != null && String(l.tax_category_key) !== '' ? String(l.tax_category_key) : undefined,
         tax_rate: l.tax_rate != null && Number.isFinite(Number(l.tax_rate)) ? Number(l.tax_rate) : undefined,
+        cost: l.cost != null && Number.isFinite(Number(l.cost)) ? Number(l.cost) : undefined,
+        is_gift: l.is_gift === true || l.is_gift === 1 ? true : undefined,
+        gift_reason: l.gift_reason ? String(l.gift_reason) : undefined,
       }))
       .filter((l) => l.id && l.name);
   } catch {

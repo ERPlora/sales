@@ -351,6 +351,7 @@ pub fn complete_sale_pure(input: Value) -> Output {
     let mut subtotal: i64 = 0; // céntimos
     let mut tax_total: i64 = 0; // céntimos
     let mut gross: i64 = 0; // céntimos
+    let mut gift_total: i64 = 0; // céntimos: coste de las invitaciones (para el arqueo, ADR-comp)
     let mut breakdown: Vec<(String, i64, i64)> = Vec::new();
     let mut ops: Vec<Operation> = Vec::new();
 
@@ -373,7 +374,17 @@ pub fn complete_sale_pure(input: Value) -> Output {
         // Tasa combinada que persistimos en la línea (== suma de componentes; para un tipo
         // simple es su propio %). Es la cifra que ve invoice/listeners en `tax_rate`.
         let combined_pct: f64 = components.iter().map(|c| c.rate_pct).sum();
-        let (t, parts) = calc_line_components(unit_price, qty, line_disc, tax_incl, components);
+        // INVITACIÓN/REGALO (comp): una línea marcada `is_gift` NO se cobra (net/tax/total = 0) y no
+        // entra en el desglose de IVA (base 0). Acumula su COSTE (a coste, decisión del humano) en
+        // `gift_total` para el arqueo "Invitaciones". Sigue descontando stock (el evento lleva qty).
+        let is_gift = item.get("is_gift").map(as_bool).unwrap_or(false);
+        let (t, parts) = if is_gift {
+            let cost = as_cents(item.get("cost").unwrap_or(&Value::Null), 0);
+            gift_total += round_cents(cost as f64 * qty);
+            (LineTotals { net: 0, tax: 0, line: 0 }, Vec::<(String, i64, i64)>::new())
+        } else {
+            calc_line_components(unit_price, qty, line_disc, tax_incl, components)
+        };
         subtotal += t.net; tax_total += t.tax; gross += t.line;
 
         // Desglose por componente: una clave por tasa (los grupos aportan varias, p.ej.
@@ -399,6 +410,10 @@ pub fn complete_sale_pure(input: Value) -> Output {
         p.insert("discount_percent".into(), json!(line_disc)); // tasa % (REAL)
         p.insert("tax_rate".into(), json!(combined_pct)); // tasa % combinada (REAL) == tax_rate_pct
         p.insert("tax_class_name".into(), json!(str_or(item, "tax_class_name", "")));
+        // Invitación/regalo (comp): la línea conserva unit_price (display, tachado en el ticket) pero
+        // net/tax/total = 0; `gift_reason` da el motivo (cortesía/error cocina/fidelización…).
+        p.insert("is_gift".into(), json!(is_gift as i64));
+        p.insert("gift_reason".into(), json!(if is_gift { str_or(item, "gift_reason", "") } else { String::new() }));
         // ── Snapshot fiscal inmutable de la línea (ADR-0085) ──
         p.insert("tax_category_key".into(), json!(field(item, "tax_category_key")));
         p.insert("tax_country_code".into(), json!(cc));
@@ -439,6 +454,8 @@ pub fn complete_sale_pure(input: Value) -> Output {
     h.insert("discount_amount".into(), json!(discount_amount));
     h.insert("discount_percent".into(), json!(sale_disc));
     h.insert("total".into(), json!(total));
+    // Invitaciones (comp): coste total de las líneas regalo de esta venta, para el arqueo (a coste).
+    h.insert("gift_total".into(), json!(gift_total));
     h.insert("tax_breakdown".into(), json!(tax_breakdown_json));
     h.insert("payment_method_id".into(), payload.get("payment_method_id").cloned().unwrap_or(Value::Null));
     h.insert("payment_method_name".into(), json!(str_or(&payload, "payment_method_name", "")));
@@ -477,7 +494,14 @@ pub fn complete_sale_pure(input: Value) -> Output {
             // invoice/inventory reaccionen con cifras de confianza.
             let resolved = resolve_line_tax(it, &catalog, &cc, &rc, &date);
             let combined_pct: f64 = resolved.components.iter().map(|c| c.rate_pct).sum();
-            let (t, _parts) = calc_line_components(unit_price, qty, line_disc, tax_incl, &resolved.components);
+            // Invitación: net/tax = 0 en el evento (invoice/customers no facturan la cortesía). Sigue
+            // descontando stock (inventory usa product_id+quantity). Mismo gating que arriba.
+            let it_gift = it.get("is_gift").map(as_bool).unwrap_or(false);
+            let (t, _parts) = if it_gift {
+                (LineTotals { net: 0, tax: 0, line: 0 }, Vec::<(String, i64, i64)>::new())
+            } else {
+                calc_line_components(unit_price, qty, line_disc, tax_incl, &resolved.components)
+            };
             json!({
                 "product_id": it.get("product_id").cloned().unwrap_or(Value::Null),
                 "product_name": as_str(it.get("product_name").unwrap_or(&Value::Null)),
@@ -485,8 +509,9 @@ pub fn complete_sale_pure(input: Value) -> Output {
                 "unit_price": unit_price,           // céntimos (bruto/unitario tal cual lo envió la UI)
                 "tax_rate": combined_pct,           // tasa % resuelta (server-authoritative)
                 "tax_category_key": field(it, "tax_category_key"), // categoría fiscal congelada (ADR-0085)
-                "net_amount": t.net,                // céntimos: base imponible YA extraída
-                "tax_amount": t.tax,                // céntimos: IVA YA calculado
+                "net_amount": t.net,                // céntimos: base imponible YA extraída (0 si invitación)
+                "tax_amount": t.tax,                // céntimos: IVA YA calculado (0 si invitación)
+                "is_gift": it_gift,                 // invitación/regalo (comp)
                 "is_service": it.get("is_service").map(as_bool).unwrap_or(false),
                 // category_id por línea (aditivo, QA 2026-06-25): el KDS enruta la comanda a su
                 // estación (station_id) por la categoría del producto. Sin esto, el KDS recibe
@@ -517,6 +542,8 @@ pub fn complete_sale_pure(input: Value) -> Output {
         "total": total,
         "subtotal": subtotal,
         "tax_amount": tax_total,
+        "gift_total": gift_total, // coste de invitaciones (céntimos) → cash_register lo suma al arqueo
+
         "items_count": items.len(),
         "items": event_items,
         "customer_id": payload.get("customer_id").cloned().unwrap_or(Value::Null),
@@ -860,5 +887,38 @@ mod tests {
         assert_eq!(line["tax_rate"], json!(10.0)); // fallback al preview del payload
         assert_eq!(line["tax_amount"], json!(1000));
         assert_eq!(line["tax_rule_id"], Value::Null);
+    }
+
+    #[test]
+    fn gift_line_is_free_and_accumulates_cost_in_arqueo() {
+        // Invitación: una línea is_gift no se cobra (net/tax/total=0) pero descuenta stock y suma su
+        // COSTE en gift_total (arqueo). La otra línea (normal) sí se cobra.
+        let items = json!([
+            { "product_name": "Café cortesía", "price": 200, "quantity": 1, "tax_category_key": "restaurant.drink",
+              "tax_rate": 10.0, "is_gift": true, "gift_reason": "cortesía", "cost": 60 },
+            { "product_name": "Tarta", "price": 500, "quantity": 1, "tax_category_key": "restaurant.food", "tax_rate": 10.0 }
+        ]);
+        let out = complete_sale_pure(input(items, 8, 1000));
+        // línea 1 (invitación): todo a 0, marcada is_gift + motivo.
+        let l1 = &out.operations[2].params;
+        assert_eq!(l1["is_gift"], json!(1));
+        assert_eq!(l1["gift_reason"], json!("cortesía"));
+        assert_eq!(l1["net_amount"], json!(0));
+        assert_eq!(l1["tax_amount"], json!(0));
+        assert_eq!(l1["line_total"], json!(0));
+        assert_eq!(l1["unit_price"], json!(200)); // conserva el precio para el ticket (tachado)
+        // línea 2 (normal) sí se cobra: 500 bruto, IVA 10% incl → net 455, tax 45.
+        let l2 = &out.operations[3].params;
+        assert_eq!(l2["is_gift"], json!(0));
+        // cabecera: total = solo la línea cobrada (500), gift_total = coste de la invitación (60).
+        let h = &out.operations[1].params;
+        assert_eq!(h["total"], json!(500));
+        assert_eq!(h["gift_total"], json!(60));
+        // evento: la invitación viaja con net/tax 0 e is_gift; gift_total en cabecera del evento.
+        let ev = &out.events[0].payload;
+        assert_eq!(ev["gift_total"], json!(60));
+        assert_eq!(ev["items"][0]["is_gift"], json!(true));
+        assert_eq!(ev["items"][0]["net_amount"], json!(0));
+        assert_eq!(ev["total"], json!(500));
     }
 }

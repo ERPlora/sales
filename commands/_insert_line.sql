@@ -5,11 +5,11 @@
 INSERT INTO sales_sale_item (
     id, hub_id, sale_id, product_id, product_name, product_sku, is_service,
     quantity, unit_price, discount_percent, tax_rate, tax_class_name,
-    tax_category_key, tax_country_code, tax_region_code, tax_rule_id,
+    tax_category_key, tax_country_code, tax_region_code, tax_rule_id, is_gift, gift_reason,
     net_amount, tax_amount, line_total, created_at
 ) VALUES (
     :line_id, :hub_id, :sale_id, :product_id, :product_name, :product_sku, :is_service,
     :quantity, :unit_price, :discount_percent, :tax_rate, :tax_class_name,
-    :tax_category_key, :tax_country_code, :tax_region_code, :tax_rule_id,
+    :tax_category_key, :tax_country_code, :tax_region_code, :tax_rule_id, :is_gift, :gift_reason,
     :net_amount, :tax_amount, :line_total, :now
 );
