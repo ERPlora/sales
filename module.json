@@ -131,7 +131,7 @@
             "op": "eq"
           },
           "customer_name": {
-            "op": "eq"
+            "op": "like"
           },
           "channel": {
             "op": "eq"
