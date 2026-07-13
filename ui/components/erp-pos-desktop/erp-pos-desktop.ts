@@ -218,7 +218,8 @@ export class ErpPosDesktop extends LitElement {
 
   // Dinero formateado con la MONEDA DEL HUB (ADR-0059): el SDK la resuelve de /api/hub/context
   // (misma fuente que dashboard/billing). Antes hardcodeaba '€' / la moneda por-módulo.
-  private money(n: number) { return erplora().formatAmount(Number(n) || 0); }
+  // Céntimos (ADR-0007) → `formatMoney`, que divide entre 100. Ver el mismo helper en erp-pos-touch.
+  private money(n: number) { return erplora().formatMoney(Number(n) || 0); }
   private get total() { return this.cart.reduce((s, l) => s + l.price * l.qty, 0); }
   private get parkingEnabled() { return this.settings.enable_parked_tickets !== 0; }
 

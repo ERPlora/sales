@@ -26,7 +26,7 @@ interface PosSettings { default_document_format?: string; currency?: string; ena
 interface Category { id: string; name: string; icon?: string; color?: string; image?: string; product_count?: number; }
 interface ProdCat { product_id: string; category_id: string; }
 
-/** i18n del módulo (ADR-0055): idioma activo + traducción del catálogo `ui`. */
+/** i18n del módulo (ADR-0055): idioma activo + traducción del catálogo ui. */
 interface I18nClient {
   locale: string;
   t(catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>): string;
@@ -38,7 +38,7 @@ function erplora(): ErploraClientLike {
   return c;
 }
 
-/** Traduce una clave del catálogo `ui` con el idioma activo del shell. */
+/** Traduce una clave del catálogo ui con el idioma activo del shell. */
 function t(key: string, params?: Record<string, unknown>): string {
   return (erplora() as unknown as I18nClient).t(CATALOG, key, params);
 }
@@ -121,14 +121,19 @@ export class ErpPosTouch extends LitElement {
        toolbar. Si ningún módulo provee el slot, el contenedor queda vacío y no ocupa nada. */
     .cart-actions-slot { display:flex; align-items:center; }
     .cart-actions-slot:empty { display:none; }
-    .cart-ctx { display:flex; gap:.4rem; padding:.5rem .6rem; border-bottom:1px solid var(--ion-border-color); }
+    /* 2ª toolbar del header: mesa y cliente, SIEMPRE visibles (no scrollean con las líneas).
+       Si ningún módulo provee esos slots, la toolbar entera desaparece y no ocupa nada. */
+    .ctx-toolbar { --min-height:0; --padding-top:0; --padding-bottom:0; --background:var(--panel); }
+    .ctx-toolbar:has(.order-slot:empty):has(.customer-slot:empty) { display:none; }
+    .cart-ctx { display:flex; gap:.4rem; padding:.35rem .2rem; }
     .cart-ctx .order-slot, .cart-ctx .customer-slot { flex:1; min-width:0; }
     .cart-ctx .order-slot:empty, .cart-ctx .customer-slot:empty { display:none; }
-    .cart-ctx:has(.order-slot:empty):has(.customer-slot:empty) { display:none; }
-    /* La zona de líneas es lo ÚNICO que crece: empuja el pie (COBRAR) al fondo y scrolla por
-       dentro. La regla va en .lines a secas, no en ion-list.lines: con el carrito VACÍO se pinta
-       un div.lines, y sin flex:1 no empujaba nada, así que el pie subía. */
-    .lines { flex:1; overflow:auto; min-height:6rem; padding:0; background:transparent; }
+    /* El CUERPO. Ionic ya resuelve «header fijo · cuerpo con scroll · pie fijo»: ion-content trae
+       su propio scroll, así que aquí solo hay que decirle que ocupe el hueco que queda. Antes esto
+       era flex:1 + overflow:auto a mano sobre ion-list.lines, que no aplicaba al div del carrito
+       vacío: nada empujaba al pie y COBRAR se movía. */
+    .cart ion-content.cart-body { flex:1; min-height:0; --background:var(--panel); --color:var(--tx); }
+    ion-list.lines { padding:0; background:transparent; }
     ion-list.lines ion-item { --background:transparent; --color:var(--tx); --border-color:var(--ion-border-color); --padding-start:.7rem; --inner-padding-end:.5rem; }
     ion-list.lines ion-item h3 { font-weight:600; color:var(--tx); }
     ion-list.lines ion-item p { color:var(--mut); }
@@ -136,8 +141,10 @@ export class ErpPosTouch extends LitElement {
     .lineend .lt { font-weight:700; white-space:nowrap; }
     ok-qty-stepper { --ok-qty-field-width:2.3rem; --ok-surface:var(--tile); --ok-text:var(--tx); --ok-border:var(--ion-border-color); }
     .empty { color:var(--mut); text-align:center; padding:2.5rem 1rem; }
-    /* El pie NUNCA se encoge ni se va de pantalla: por muchas líneas que haya, COBRAR se ve. */
-    .cart-foot { flex:none; padding:.75rem; border-top:1px solid var(--ion-border-color); background:var(--panel); }
+    /* El PIE. ion-footer se queda abajo por su cuenta (es un pie de verdad, no un div con flex). */
+    .cart ion-footer { flex:none; }
+    .cart ion-footer ion-toolbar { --background:var(--panel); }
+    .cart-foot { padding:.75rem; border-top:1px solid var(--ion-border-color); background:var(--panel); }
     .total { display:flex; justify-content:space-between; align-items:baseline; margin:.1rem 0 .65rem; font-size:1rem; color:var(--mut); }
     .total b { font-size:1.7rem; color:var(--tx); }
     .charge { font-size:1.05rem; font-weight:700; }
@@ -323,7 +330,9 @@ export class ErpPosTouch extends LitElement {
 
   // Dinero formateado con la MONEDA DEL HUB (ADR-0059): el SDK la resuelve de /api/hub/context
   // (misma fuente que dashboard/billing). Antes hardcodeaba '€' / la moneda por-módulo.
-  private money(n: number) { return erplora().formatAmount(Number(n) || 0); }
+  // El dinero viaja en CÉNTIMOS (ADR-0007) → `formatMoney` (divide entre 100), NUNCA `formatAmount`
+  // (ese es para importes que ya llegan en euros): con céntimos pintaría 1,80 € como «180,00 €».
+  private money(n: number) { return erplora().formatMoney(Number(n) || 0); }
   private get total() { return this.cart.reduce((s, l) => s + l.price * l.qty, 0); }
   private get itemCount() { return this.cart.reduce((s, l) => s + l.qty, 0); }
   private get parkingEnabled() { return this.settings.enable_parked_tickets !== 0; }
@@ -463,7 +472,7 @@ export class ErpPosTouch extends LitElement {
           </ion-buttons>
           <ion-buttons slot="end">
             <!-- HOOK cross-módulo (ADR-0043): aquí aterrizan los botones que declaran OTROS módulos
-                 (tables, customers…) vía \`provides_slots: sales.pos.cart_actions\`. Cada uno abre su
+                 (tables, customers…) vía provides_slots: sales.pos.cart_actions. Cada uno abre su
                  propio modal; el POS no sabe nada de ellos. Va antes que los botones propios para
                  que las acciones de negocio queden juntas y a la izquierda de las de chrome. -->
             <div class="cart-actions-slot"></div>
@@ -478,12 +487,17 @@ export class ErpPosTouch extends LitElement {
             </ion-button>
           </ion-buttons>
         </ion-toolbar>
-      </ion-header>
 
-      <div class="cart-ctx">
-        <div class="order-slot"></div>
-        <div class="customer-slot"></div>
-      </div>
+        <!-- Contexto de la venta (mesa, cliente) que inyectan otros módulos por slot. Va en una
+             SEGUNDA toolbar del header, no dentro del scroll: en un TPV saber a qué mesa y a qué
+             cliente estás cobrando tiene que verse SIEMPRE, por larga que sea la comanda. -->
+        <ion-toolbar class="ctx-toolbar">
+          <div class="cart-ctx">
+            <div class="order-slot"></div>
+            <div class="customer-slot"></div>
+          </div>
+        </ion-toolbar>
+      </ion-header>
 
       ${this.parkedOpen
         ? html`
@@ -499,25 +513,32 @@ export class ErpPosTouch extends LitElement {
           </div>`
         : nothing}
 
-      ${this.cart.length
-        ? html`<ion-list class="lines" lines="full">
-            ${this.cart.map((l) => html`<ion-item>
-              <ion-label><h3>${l.name}</h3><p>${this.money(l.price)}</p></ion-label>
-              <div slot="end" class="lineend">
-                <span class="lt">${this.money(l.price * l.qty)}</span>
-                <ok-qty-stepper .value=${l.qty} .min=${0} .step=${1}
-                  @ok-change=${(e: CustomEvent) => this.setQtyAbs(l.id, (e.detail as { value: number }).value)}></ok-qty-stepper>
-              </div>
-            </ion-item>`)}
-          </ion-list>`
-        : html`<div class="lines"><div class="empty">${t('ui.cartEmptyTouch')}</div></div>`}
+      <!-- El CUERPO. ion-content ya trae su propio scroll: no hace falta pelearse con
+           flex:1 + overflow:auto a mano (que es lo que fallaba con el carrito vacío). -->
+      <ion-content class="cart-body">
+        ${this.cart.length
+          ? html`<ion-list class="lines" lines="full">
+              ${this.cart.map((l) => html`<ion-item>
+                <ion-label><h3>${l.name}</h3><p>${this.money(l.price)}</p></ion-label>
+                <div slot="end" class="lineend">
+                  <span class="lt">${this.money(l.price * l.qty)}</span>
+                  <ok-qty-stepper .value=${l.qty} .min=${0} .step=${1}
+                    @ok-change=${(e: CustomEvent) => this.setQtyAbs(l.id, (e.detail as { value: number }).value)}></ok-qty-stepper>
+                </div>
+              </ion-item>`)}
+            </ion-list>`
+          : html`<div class="empty">${t('ui.cartEmptyTouch')}</div>`}
+      </ion-content>
 
-      <div class="cart-foot">
-        <div class="total"><span>${t('ui.colTotal')}</span><b>${this.money(this.total)}</b></div>
-        <ion-button class="charge" expand="block" ?disabled=${!this.cart.length} @click=${() => this.openPay()}>
-          ${t('ui.charge')} ${this.money(this.total)}
-        </ion-button>
-      </div>`;
+      <!-- El PIE. ion-footer es un pie de verdad: se queda abajo pase lo que pase. -->
+      <ion-footer class="ion-no-border">
+        <div class="cart-foot">
+          <div class="total"><span>${t('ui.colTotal')}</span><b>${this.money(this.total)}</b></div>
+          <ion-button class="charge" expand="block" ?disabled=${!this.cart.length} @click=${() => this.openPay()}>
+            ${t('ui.charge')} ${this.money(this.total)}
+          </ion-button>
+        </div>
+      </ion-footer>`;
   }
 
   render() {
