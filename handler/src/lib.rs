@@ -9,16 +9,36 @@
 //! new_ids[1..]=líneas. Número atómico YYYYMMDD-NNNN: _bump_counter (upsert) +
 //! _insert_sale leyendo el contador con subquery en la misma transacción.
 //!
-//! UNIDADES (ADR-0007, migración a céntimos):
-//! * **Dinero = céntimos `i64`** en TODO el flujo: el payload entra en céntimos
-//!   (`price`/`amount_tendered`), la aritmética es entera con redondeo half-even,
-//!   los binds van a columnas `INTEGER` (céntimos) y el evento `sale.completed`
-//!   viaja en **céntimos** (contrato inter-módulo). El formateo a decimales vive
-//!   SOLO en la capa UI.
-//! * **Tasas** (`tax_rate`, `discount`) = porcentaje `f64` (no es dinero).
-//! * **Cantidad** (`quantity`) = `f64` fraccionable (no es dinero).
+//! UNIDADES (ADR-0007 + ADR-0123): **la aritmética NO vive aquí**, vive en
+//! [`erplora_guest_sdk::money`] — una sola implementación para todos los handlers. Este módulo
+//! tenía su propio `round_cents` (half-even sobre `f64`), copiado **byte a byte** en otros cuatro.
+//!
+//! * **Dinero** = entero de **unidades mínimas** de la moneda del hub (`Money`). El payload entra
+//!   en enteros (`price`/`amount_tendered`), los binds van a columnas `INTEGER` y el evento
+//!   `sale.completed` viaja igual (contrato inter-módulo). El formateo decimal vive SOLO en la UI.
+//! * **Tasas** (`tax_rate`, `discount`) y **cantidad** (`quantity`) **NO son dinero**: llevan
+//!   decimales (`Rate`/`Qty`), se calculan en `Decimal` y se guardan en columnas `REAL`.
+//!
+//! Los tres son **tipos distintos**: `total + tax_rate` **no compila**. Confundirlos es la familia
+//! de bugs que ADR-0123 vino a matar.
+//!
+//! DOS CAMBIOS DE COMPORTAMIENTO (ADR-0123 §4, decisión del humano 2026-07-13):
+//!
+//! 1. **HALF_UP**, no half-even. Ninguna norma española fija el modo de redondeo de la cuota de IVA
+//!    (LIVA, RD 1619/2012, RD 1007/2023, Orden HAC/1177/2024: cero menciones); la única regla de
+//!    redondeo monetario escrita en Derecho español es half-up (art. 11, Ley 46/1998 del euro).
+//! 2. **La cuota se redondea UNA vez por TIPO IMPOSITIVO**, no por línea. Es lo único que el XML de
+//!    VeriFactu sabe representar (`DetalleDesglose` es por tipo, máx. 12 — no hay detalle por
+//!    artículo) y evita el error acumulado que censura el TEAC (RG 2233/2022).
+//!
+//! Antes, 7 chicles de 0,05 € al 21 % declaraban base 28 / cuota 7 — pero 28 × 21 % = 5,88 → **6**,
+//! no 7: el desglose **no cuadraba** con `cuota = base × tipo`, y solo colaba por la tolerancia de
+//! ±10 € de la AEAT. Ahora declara 29 / 6, que sí cuadra. Lo que paga el cliente no cambia.
 
+use erplora_guest_sdk::money::{Money, Qty, Rate, TaxBreakdown};
 use erplora_guest_sdk::{Event, Operation, Output};
+use rust_decimal::prelude::FromPrimitive;
+use rust_decimal::Decimal;
 use serde_json::{json, Map, Value};
 
 #[cfg(feature = "guest")]
@@ -28,46 +48,6 @@ use extism_pdk::*;
 #[plugin_fn]
 pub fn complete_sale(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
     Ok(Json(complete_sale_pure(input.into_inner().into_value())))
-}
-
-/// Redondea un valor en céntimos (posiblemente fraccionario) a céntimos enteros con
-/// half-even (banker's rounding), equivalente a `Decimal.quantize(0.01)` aplicado en
-/// el espacio de céntimos. `x` está ya escalado a céntimos (p.ej. 8264.46 céntimos).
-fn round_cents(x: f64) -> i64 {
-    let floor = x.floor();
-    let diff = x - floor;
-    let r = if (diff - 0.5).abs() < 1e-9 {
-        if (floor as i64) % 2 == 0 { floor } else { floor + 1.0 }
-    } else {
-        x.round()
-    };
-    r as i64
-}
-
-/// Lee un importe de dinero del payload **en céntimos** (`i64`). Acepta entero JSON,
-/// string de entero, o —por robustez— un decimal que se interpreta como céntimos ya
-/// escalados (se redondea half-even). El contrato es que la UI envía céntimos enteros.
-fn as_cents(v: &Value, d: i64) -> i64 {
-    match v {
-        Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                i
-            } else {
-                n.as_f64().map(round_cents).unwrap_or(d)
-            }
-        }
-        Value::String(s) => {
-            let s = s.trim();
-            if let Ok(i) = s.parse::<i64>() {
-                i
-            } else if let Ok(f) = s.parse::<f64>() {
-                round_cents(f)
-            } else {
-                d
-            }
-        }
-        _ => d,
-    }
 }
 
 fn as_f64(v: &Value, d: f64) -> f64 {
@@ -98,24 +78,36 @@ fn str_or(p: &Value, k: &str, d: &str) -> String {
     if s.is_empty() { d.to_string() } else { s }
 }
 
-/// Totales de línea en **céntimos** (`i64`).
-struct LineTotals { net: i64, tax: i64, line: i64 }
+/// Totales de una línea. Los tres son DINERO — el compilador no deja meter aquí una tasa.
+struct LineTotals { net: Money, tax: Money, line: Money }
 
-/// Calcula los totales de una línea en céntimos. `unit_price_cents` en céntimos;
-/// `qty`, `disc_pct`, `tax_rate` son `f64` (cantidad / porcentajes). El redondeo
-/// half-even se aplica al pasar a céntimos enteros, igual que el Decimal original.
-fn calc_line(unit_price_cents: i64, qty: f64, disc_pct: f64, tax_rate: f64, tax_incl: bool) -> LineTotals {
-    let unit = unit_price_cents as f64;
-    let discounted = unit - unit * (disc_pct / 100.0); // céntimos (fraccionario)
+/// Lo que se lee de una línea del payload, **cada cosa con su tipo**.
+struct LineInput { unit_price: Money, qty: Qty, disc: Rate, rate: Rate }
+
+fn read_line(item: &Value) -> LineInput {
+    LineInput {
+        unit_price: Money::from_json(item.get("price").unwrap_or(&Value::Null), 0),
+        qty: Qty::from_json(item.get("quantity").unwrap_or(&Value::Null), Decimal::ONE),
+        disc: Rate::from_json(item.get("discount").unwrap_or(&Value::Null), Decimal::ZERO),
+        rate: Rate::from_json(item.get("tax_rate").unwrap_or(&Value::Null), Decimal::ZERO),
+    }
+}
+
+/// Los totales **de una línea**, para su fila y para los listeners.
+///
+/// Ojo: la base y la cuota **de la línea** son informativas. Las que se DECLARAN salen del desglose
+/// por TIPO IMPOSITIVO (`TaxBreakdown`), que redondea la cuota una sola vez sobre la base agregada.
+fn calc_line(l: &LineInput, tax_incl: bool) -> LineTotals {
+    // Precio × cantidad − descuento, con UN solo redondeo.
+    let amount = Money::line(l.unit_price, l.qty, l.disc);
     if tax_incl {
-        let divisor = 1.0 + tax_rate / 100.0;
-        let net = round_cents((discounted / divisor) * qty);
-        let line = round_cents(discounted * qty);
-        LineTotals { net, tax: line - net, line }
+        // El precio ya lleva el IVA dentro: `amount` es lo que paga el cliente por esta línea.
+        let (net, tax) = amount.split_tax_included(l.rate);
+        LineTotals { net, tax, line: amount }
     } else {
-        let net = round_cents(discounted * qty);
-        let tax = round_cents((net as f64) * (tax_rate / 100.0));
-        LineTotals { net, tax, line: net + tax }
+        // El precio es la base; el IVA va encima.
+        let tax = amount.percent_of(l.rate);
+        LineTotals { net: amount, tax, line: amount + tax }
     }
 }
 
@@ -139,10 +131,10 @@ pub fn complete_sale_pure(input: Value) -> Output {
     let sale_disc = payload.get("discount_percent").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
     let items = payload.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
 
-    let mut subtotal: i64 = 0; // céntimos
-    let mut tax_total: i64 = 0; // céntimos
-    let mut gross: i64 = 0; // céntimos
-    let mut breakdown: Vec<(String, i64, i64)> = Vec::new();
+    // EL DESGLOSE MANDA: acumula el importe de cada línea por TIPO IMPOSITIVO y calcula la cuota
+    // UNA sola vez por tipo, al cerrar (ADR-0123 §4). Redondear la cuota línea a línea y sumarlas
+    // acumula error, y el XML de VeriFactu ni siquiera puede representarlo.
+    let mut bd = if tax_incl { TaxBreakdown::tax_included() } else { TaxBreakdown::new() };
     let mut ops: Vec<Operation> = Vec::new();
 
     let mut bump = Map::new();
@@ -153,19 +145,10 @@ pub fn complete_sale_pure(input: Value) -> Output {
     ops.push(Operation::sql("sales._insert_sale", Map::new())); // placeholder
 
     for (i, item) in items.iter().enumerate() {
-        let unit_price = as_cents(item.get("price").unwrap_or(&Value::Null), 0); // céntimos
-        let qty = item.get("quantity").map(|v| as_f64(v, 1.0)).unwrap_or(1.0);
-        let line_disc = item.get("discount").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
-        let tax_rate = item.get("tax_rate").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
-        let t = calc_line(unit_price, qty, line_disc, tax_rate, tax_incl);
-        subtotal += t.net; tax_total += t.tax; gross += t.line;
-
-        let rate_key = format!("{:.2}", tax_rate);
-        if let Some(e) = breakdown.iter_mut().find(|(k, _, _)| *k == rate_key) {
-            e.1 += t.net; e.2 += t.tax;
-        } else {
-            breakdown.push((rate_key, t.net, t.tax));
-        }
+        let l = read_line(item);
+        let t = calc_line(&l, tax_incl);
+        // Al desglose va el IMPORTE de la línea, no su cuota ya redondeada.
+        bd.add(l.rate, t.line);
 
         let line_id = new_ids.get(i + 1).map(as_str).unwrap_or_default();
         let mut p = Map::new();
@@ -175,30 +158,43 @@ pub fn complete_sale_pure(input: Value) -> Output {
         p.insert("product_name".into(), json!(as_str(item.get("product_name").unwrap_or(&Value::Null))));
         p.insert("product_sku".into(), json!(str_or(item, "product_sku", "")));
         p.insert("is_service".into(), json!(item.get("is_service").map(as_bool).unwrap_or(false) as i64));
-        p.insert("quantity".into(), json!(qty)); // cantidad fraccionable (REAL)
-        p.insert("unit_price".into(), json!(unit_price)); // céntimos (INTEGER)
-        p.insert("discount_percent".into(), json!(line_disc)); // tasa % (REAL)
-        p.insert("tax_rate".into(), json!(tax_rate)); // tasa % (REAL)
+        p.insert("quantity".into(), json!(l.qty.to_f64())); // cantidad fraccionable (REAL)
+        p.insert("unit_price".into(), json!(l.unit_price.minor())); // unidades mínimas (INTEGER)
+        p.insert("discount_percent".into(), json!(l.disc.to_f64())); // tasa % (REAL)
+        p.insert("tax_rate".into(), json!(l.rate.to_f64())); // tasa % (REAL)
         p.insert("tax_class_name".into(), json!(str_or(item, "tax_class_name", "")));
-        p.insert("net_amount".into(), json!(t.net)); // céntimos
-        p.insert("tax_amount".into(), json!(t.tax)); // céntimos
-        p.insert("line_total".into(), json!(t.line)); // céntimos
+        p.insert("net_amount".into(), json!(t.net.minor())); // informativo: manda el desglose
+        p.insert("tax_amount".into(), json!(t.tax.minor())); // informativo: manda el desglose
+        p.insert("line_total".into(), json!(t.line.minor()));
         ops.push(Operation::sql("sales._insert_line", p));
     }
 
-    let discount_amount: i64 = if sale_disc > 0.0 {
-        round_cents((gross as f64) * (sale_disc / 100.0))
+    // Los totales que se DECLARAN salen del desglose, no de sumar líneas ya redondeadas.
+    let subtotal = bd.total_base();
+    let tax_total = bd.total_tax();
+    let gross = bd.total(); // con IVA incluido, es EXACTAMENTE lo que paga el cliente
+
+    // ⚠️ El descuento de VENTA COMPLETA se resta del bruto DESPUÉS del desglose, así que el desglose
+    // declarado no lo refleja (base + cuota ≠ total). Hoy no lo manda nadie (ni el TPV táctil ni el
+    // de escritorio); hacerlo bien exige decidir cómo reparte un descuento global la base imponible
+    // entre tipos → decisión fiscal del humano. Se conserva el comportamiento anterior.
+    let discount_amount = if sale_disc > 0.0 {
+        gross.percent_of(Rate::from_percent(Decimal::from_f64(sale_disc).unwrap_or(Decimal::ZERO)))
     } else {
-        0
+        Money::ZERO
     };
-    let total = gross - discount_amount; // céntimos
-    let tendered = as_cents(payload.get("amount_tendered").unwrap_or(&Value::Null), 0); // céntimos
-    let change = if tendered - total > 0 { tendered - total } else { 0 };
+    let total = gross - discount_amount;
+    let tendered = Money::from_json(payload.get("amount_tendered").unwrap_or(&Value::Null), 0);
+    let change = if tendered > total { tendered - total } else { Money::ZERO };
 
     let mut tb = Map::new();
-    for (k, base, tax) in &breakdown {
-        // base/tax del desglose de IVA, en céntimos (INTEGER) — contrato inter-módulo.
-        tb.insert(k.clone(), json!({ "base": *base, "tax": *tax }));
+    for (rate, base, tax) in bd.close() {
+        // base/cuota por TIPO, en unidades mínimas (INTEGER) — contrato inter-módulo.
+        // La clave sigue siendo el tipo con 2 decimales ("21.00"), como antes.
+        tb.insert(
+            format!("{:.2}", rate.to_f64()),
+            json!({ "base": base.minor(), "tax": tax.minor() }),
+        );
     }
     let tax_breakdown_json = Value::Object(tb).to_string();
 
@@ -206,16 +202,16 @@ pub fn complete_sale_pure(input: Value) -> Output {
     h.insert("sale_id".into(), json!(sale_id));
     h.insert("day".into(), json!(day));
     h.insert("status".into(), json!(str_or(&payload, "status", "completed")));
-    h.insert("subtotal".into(), json!(subtotal));
-    h.insert("tax_amount".into(), json!(tax_total));
-    h.insert("discount_amount".into(), json!(discount_amount));
+    h.insert("subtotal".into(), json!(subtotal.minor()));
+    h.insert("tax_amount".into(), json!(tax_total.minor()));
+    h.insert("discount_amount".into(), json!(discount_amount.minor()));
     h.insert("discount_percent".into(), json!(sale_disc));
-    h.insert("total".into(), json!(total));
+    h.insert("total".into(), json!(total.minor()));
     h.insert("tax_breakdown".into(), json!(tax_breakdown_json));
     h.insert("payment_method_id".into(), payload.get("payment_method_id").cloned().unwrap_or(Value::Null));
     h.insert("payment_method_name".into(), json!(str_or(&payload, "payment_method_name", "")));
-    h.insert("amount_tendered".into(), json!(tendered));
-    h.insert("change_due".into(), json!(change));
+    h.insert("amount_tendered".into(), json!(tendered.minor()));
+    h.insert("change_due".into(), json!(change.minor()));
     h.insert("customer_id".into(), payload.get("customer_id").cloned().unwrap_or(Value::Null));
     h.insert("customer_name".into(), json!(str_or(&payload, "customer_name", "")));
     h.insert("notes".into(), json!(str_or(&payload, "notes", "")));
@@ -236,19 +232,16 @@ pub fn complete_sale_pure(input: Value) -> Output {
     let event_items: Vec<Value> = items
         .iter()
         .map(|it| {
-            let unit_price = as_cents(it.get("price").unwrap_or(&Value::Null), 0); // céntimos
-            let qty = it.get("quantity").map(|v| as_f64(v, 1.0)).unwrap_or(1.0);
-            let line_disc = it.get("discount").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
-            let tax_rate = it.get("tax_rate").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
-            let t = calc_line(unit_price, qty, line_disc, tax_rate, tax_incl);
+            let l = read_line(it);
+            let t = calc_line(&l, tax_incl);
             json!({
                 "product_id": it.get("product_id").cloned().unwrap_or(Value::Null),
                 "product_name": as_str(it.get("product_name").unwrap_or(&Value::Null)),
-                "quantity": qty,
-                "unit_price": unit_price,           // céntimos (bruto/unitario tal cual lo envió la UI)
-                "tax_rate": tax_rate,               // tasa %
-                "net_amount": t.net,                // céntimos: base imponible YA extraída
-                "tax_amount": t.tax,                // céntimos: IVA YA calculado
+                "quantity": l.qty.to_f64(),
+                "unit_price": l.unit_price.minor(), // unidades mínimas (unitario tal cual lo envió la UI)
+                "tax_rate": l.rate.to_f64(),        // tasa %
+                "net_amount": t.net.minor(),        // base imponible YA extraída
+                "tax_amount": t.tax.minor(),        // IVA YA calculado
                 "is_service": it.get("is_service").map(as_bool).unwrap_or(false),
             })
         })
@@ -271,9 +264,9 @@ pub fn complete_sale_pure(input: Value) -> Output {
         // tax_included indica que unit_price de cada línea es bruto (IVA-incluido).
         // invoice usa net_amount/tax_amount por línea (ya extraídos) y NO re-suma IVA.
         "tax_included": tax_incl,
-        "total": total,
-        "subtotal": subtotal,
-        "tax_amount": tax_total,
+        "total": total.minor(),
+        "subtotal": subtotal.minor(),
+        "tax_amount": tax_total.minor(),
         "items_count": items.len(),
         "items": event_items,
         "customer_id": payload.get("customer_id").cloned().unwrap_or(Value::Null),
@@ -295,32 +288,73 @@ mod tests {
         })
     }
 
+    /// Azúcar: construye la línea con sus tipos correctos (dinero entero, tasas/cantidad Decimal).
+    fn linea(unit: i64, qty: f64, disc: f64, rate: f64) -> LineInput {
+        LineInput {
+            unit_price: Money::from_minor(unit),
+            qty: Qty::from_decimal(Decimal::from_f64(qty).unwrap()),
+            disc: Rate::from_percent(Decimal::from_f64(disc).unwrap()),
+            rate: Rate::from_percent(Decimal::from_f64(rate).unwrap()),
+        }
+    }
+
     #[test]
-    fn round_cents_half_even() {
-        // 12.5 céntimos → 12 (par); 13.5 → 14 (par).
-        assert_eq!(round_cents(12.5), 12);
-        assert_eq!(round_cents(13.5), 14);
-        // 100€ con IVA 21% incl: 10000/1.21 = 8264.46… céntimos → 8264.
-        assert_eq!(round_cents(10000.0 / 1.21), 8264);
+    fn el_redondeo_ahora_es_half_up_y_vive_en_el_SDK() {
+        use erplora_guest_sdk::money;
+        // ANTES: `round_cents` propio, half-even → 12,5 se iba a 12 (al par). AHORA: HALF_UP → 13.
+        // Es la única regla de redondeo monetario escrita en Derecho español (art. 11, Ley 46/1998).
+        assert_eq!(money::round(Decimal::from_f64(12.5).unwrap()), 13);
+        assert_eq!(money::round(Decimal::from_f64(13.5).unwrap()), 14);
+        // 100 € con IVA 21 % incl: 10000/1,21 = 8264,46… → 8264 (sin empate; no cambia).
+        let (base, _) = Money::from_minor(10000).split_tax_included(Rate::from_percent(Decimal::from(21)));
+        assert_eq!(base.minor(), 8264);
     }
 
     #[test]
     fn line_tax_inclusive() {
         // 1.21€ = 121 céntimos, IVA 21% incluido → net 100, tax 21, line 121.
-        let t = calc_line(121, 1.0, 0.0, 21.0, true);
-        assert_eq!(t.net, 100); assert_eq!(t.tax, 21); assert_eq!(t.line, 121);
+        let t = calc_line(&linea(121, 1.0, 0.0, 21.0), true);
+        assert_eq!(t.net.minor(), 100); assert_eq!(t.tax.minor(), 21); assert_eq!(t.line.minor(), 121);
     }
     #[test]
     fn line_tax_exclusive() {
         // 1.00€ = 100 céntimos, IVA 21% excluido → net 100, tax 21, line 121.
-        let t = calc_line(100, 1.0, 0.0, 21.0, false);
-        assert_eq!(t.net, 100); assert_eq!(t.tax, 21); assert_eq!(t.line, 121);
+        let t = calc_line(&linea(100, 1.0, 0.0, 21.0), false);
+        assert_eq!(t.net.minor(), 100); assert_eq!(t.tax.minor(), 21); assert_eq!(t.line.minor(), 121);
     }
     #[test]
     fn line_discount_inclusive() {
         // 1.10€ = 110 céntimos ×2, desc 10%, IVA 21% incl → line 198, net 163.6…→164, tax 34.
-        let t = calc_line(110, 2.0, 10.0, 21.0, true);
-        assert_eq!(t.line, 198); assert_eq!(t.net, 164); assert_eq!(t.tax, 34);
+        let t = calc_line(&linea(110, 2.0, 10.0, 21.0), true);
+        assert_eq!(t.line.minor(), 198); assert_eq!(t.net.minor(), 164); assert_eq!(t.tax.minor(), 34);
+    }
+
+    #[test]
+    fn el_desglose_declara_la_cuota_POR_TIPO_no_sumando_las_de_cada_linea() {
+        // EL CAMBIO DE ADR-0123 §4, con el caso donde de verdad se nota.
+        //
+        // Siete chicles de 0,05 € (IVA 21 % incluido). El cliente paga 0,35 € — eso NO cambia.
+        // Lo que cambia es lo que se DECLARA a la AEAT:
+        //
+        //   · ANTES (redondeando por LÍNEA): base = round(5/1,21) = 4 cts, siete veces → base 28,
+        //     cuota 7. Pero 28 × 21 % = 5,88 → 6, NO 7: el desglose era **incoherente** con
+        //     `cuota = base × tipo` y solo colaba por la tolerancia de ±10 € de la AEAT.
+        //   · AHORA (una vez por TIPO): base = round(35/1,21) = 29 cts, cuota = 35 − 29 = 6.
+        //     Y 29 × 21 % = 6,09 → 6. Cuadra.
+        let items = json!((0..7).map(|_| json!({
+            "product_name": "Chicle", "price": 5, "quantity": 1, "tax_rate": 21.0
+        })).collect::<Vec<_>>());
+        let out = complete_sale_pure(input(items, 9, 100));
+        let h = &out.operations[1].params; // sales._insert_sale
+
+        assert_eq!(h["total"], json!(35), "lo que paga el cliente no se mueve");
+        assert_eq!(h["subtotal"], json!(29), "base declarada: sobre el AGREGADO, no línea a línea");
+        assert_eq!(h["tax_amount"], json!(6), "cuota declarada: 35 − 29, no 7×1");
+
+        // Y el desglose que va al XML: UN solo DetalleDesglose para el 21 %.
+        let bd: Value = serde_json::from_str(h["tax_breakdown"].as_str().unwrap()).unwrap();
+        assert_eq!(bd.as_object().unwrap().len(), 1, "un detalle por TIPO, no por artículo");
+        assert_eq!(bd["21.00"], json!({ "base": 29, "tax": 6 }));
     }
 
     #[test]
