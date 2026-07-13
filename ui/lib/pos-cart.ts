@@ -28,6 +28,10 @@ export interface CartLine {
 
 export interface ErploraClientLike {
   query<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T>;
+  /** TODAS las filas, sin tope (salvo que pases `limit`). Para lo que no es «una página»: la
+   *  rejilla de productos del TPV, un `<ion-select>` de categorías fiscales, el mapa
+   *  producto↔categoría. El viejo `page_size` NO era un parámetro del runtime: truncaba a 50. */
+  queryAll<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T[]>;
   command<T = unknown>(name: string, payload?: Record<string, unknown>): Promise<T>;
   /** Moneda del hub + formateo de dinero (ADR-0059). El POS formatea con la moneda del HUB. */
   currency: string;

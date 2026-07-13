@@ -36,7 +36,7 @@ function isRoot(r: TaxRuleRow): boolean {
 export async function buildCategoryRatesMap(client: ErploraClientLike): Promise<Map<string, number>> {
   const map = new Map<string, number>();
   try {
-    const all = rows<TaxRuleRow>(await client.query('taxes.rules.list', { page_size: 500 }));
+    const all = await client.queryAll<TaxRuleRow>('taxes.rules.list');
     // Raíz por categoría: la regla raíz activa con `valid_from` más reciente.
     const rootByCat = new Map<string, TaxRuleRow>();
     for (const r of all) {

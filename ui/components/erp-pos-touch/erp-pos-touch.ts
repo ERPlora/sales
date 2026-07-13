@@ -119,11 +119,21 @@ export class ErpPosTouch extends LitElement {
     .cart { position:relative; display:flex; flex-direction:column; min-height:0; background:var(--panel); border-left:1px solid var(--ion-border-color); }
     .cart ion-header ion-toolbar { --background:var(--panel); --color:var(--tx); --border-color:var(--ion-border-color); }
     .cart ion-title { font-size:1rem; }
-    .cart-ctx { display:flex; gap:.4rem; padding:.5rem .6rem; border-bottom:1px solid var(--ion-border-color); }
+    .cart-actions-slot { display:flex; align-items:center; }
+    .cart-actions-slot:empty { display:none; }
+    /* 2ª toolbar del header: mesa y cliente, SIEMPRE visibles (no scrollean con las líneas).
+       Si ningún módulo provee esos slots, la toolbar entera desaparece y no ocupa nada. */
+    .ctx-toolbar { --min-height:0; --padding-top:0; --padding-bottom:0; --background:var(--panel); }
+    .ctx-toolbar:has(.order-slot:empty):has(.customer-slot:empty) { display:none; }
+    .cart-ctx { display:flex; gap:.4rem; padding:.35rem .2rem; }
     .cart-ctx .order-slot, .cart-ctx .customer-slot { flex:1; min-width:0; }
     .cart-ctx .order-slot:empty, .cart-ctx .customer-slot:empty { display:none; }
-    .cart-ctx:has(.order-slot:empty):has(.customer-slot:empty) { display:none; }
-    ion-list.lines { flex:1; overflow:auto; min-height:6rem; padding:0; background:transparent; }
+    /* El CUERPO. Ionic ya resuelve «header fijo · cuerpo con scroll · pie fijo»: ion-content trae
+       su propio scroll, así que aquí solo hay que decirle que ocupe el hueco que queda. Antes esto
+       era flex:1 + overflow:auto a mano sobre ion-list.lines, que no aplicaba al div del carrito
+       vacío: nada empujaba al pie y COBRAR se movía. */
+    .cart ion-content.cart-body { flex:1; min-height:0; --background:var(--panel); --color:var(--tx); }
+    ion-list.lines { padding:0; background:transparent; }
     ion-list.lines ion-item { --background:transparent; --color:var(--tx); --border-color:var(--ion-border-color); --padding-start:.7rem; --inner-padding-end:.5rem; }
     ion-list.lines ion-item h3 { font-weight:600; color:var(--tx); }
     ion-list.lines ion-item p { color:var(--mut); }
@@ -131,6 +141,9 @@ export class ErpPosTouch extends LitElement {
     .lineend .lt { font-weight:700; white-space:nowrap; }
     ok-qty-stepper { --ok-qty-field-width:2.3rem; --ok-surface:var(--tile); --ok-text:var(--tx); --ok-border:var(--ion-border-color); }
     .empty { color:var(--mut); text-align:center; padding:2.5rem 1rem; }
+    /* El PIE. ion-footer se queda abajo por su cuenta (es un pie de verdad, no un div con flex). */
+    .cart ion-footer { flex:none; }
+    .cart ion-footer ion-toolbar { --background:var(--panel); }
     .cart-foot { padding:.75rem; border-top:1px solid var(--ion-border-color); background:var(--panel); }
     .total { display:flex; justify-content:space-between; align-items:baseline; margin:.1rem 0 .65rem; font-size:1rem; color:var(--mut); }
     .total b { font-size:1.7rem; color:var(--tx); }
@@ -211,6 +224,7 @@ export class ErpPosTouch extends LitElement {
   private cartRestored = false;
   private saveTimer?: ReturnType<typeof setTimeout>;
   private readonly slots: Array<{ slot: string; container: string; reset: string; resolved?: { component: string }[]; els: HTMLElement[] }> = [
+    { slot: 'sales.pos.cart_actions', container: '.cart-actions-slot', reset: 'erp:cart-actions-reset', els: [] },
     { slot: 'sales.pos.order_context', container: '.order-slot', reset: 'erp:order-context-reset', els: [] },
     { slot: 'sales.pos.customer_context', container: '.customer-slot', reset: 'erp:customer-context-reset', els: [] },
   ];
@@ -233,13 +247,13 @@ export class ErpPosTouch extends LitElement {
     window.addEventListener('erplora:locale-changed', this.onLocaleChange);
     try {
       const [prods, methods, settingsRows, savedCart, parked, cats, prodCats, ratesMap] = await Promise.all([
-        erplora().query('inventory.products.list', { page_size: 200 }).catch(() => []),
+        erplora().queryAll<Product>('inventory.products.list').catch(() => []),
         erplora().query('sales.payment_methods').catch(() => []),
         erplora().query('sales.settings.get').catch(() => []),
         loadActiveCart(erplora()),
         listParkedTickets(erplora()),
-        erplora().query('inventory.categories.list', { page_size: 100, sort: 'name', dir: 'asc' }).catch(() => []),
-        erplora().query('inventory.product_categories', { page_size: 2000 }).catch(() => []),
+        erplora().queryAll<Category>('inventory.categories.list', { sort: 'name', dir: 'asc' }).catch(() => []),
+        erplora().queryAll<ProdCat>('inventory.product_categories').catch(() => []),
         buildCategoryRatesMap(erplora()),
       ]);
       this.ratesMap = ratesMap;
@@ -424,7 +438,7 @@ export class ErpPosTouch extends LitElement {
         customer_id: this.customerId ?? null,
         customer_name: this.customerName,
       });
-      const recent = rows<{ id: string }>(await erplora().query('sales.list', { page_size: 1, sort: 'created_at', dir: 'desc' }));
+      const recent = rows<{ id: string }>(await erplora().query('sales.list', { limit: 1, sort: 'created_at', dir: 'desc' }));
       const saleId = recent[0]?.id;
       if (saleId && this.docFormat === 'invoice') {
         await erplora().command('sales.set_document_type', { sale_id: saleId, document_type: 'invoice' });
@@ -471,7 +485,7 @@ export class ErpPosTouch extends LitElement {
 
   private renderCart() {
     return html`
-      <ion-header>
+      <ion-header class="ion-no-border">
         <ion-toolbar>
           <ion-buttons slot="start">
             <ion-button class="cart-close" title=${t('ui.closeAction')} @click=${() => { this.cartOpen = false; }}>
@@ -480,6 +494,11 @@ export class ErpPosTouch extends LitElement {
           </ion-buttons>
           <ion-title>${this.tableLabel || t('ui.sale')}${this.customerName ? html` · ${this.customerName}` : nothing}</ion-title>
           <ion-buttons slot="end">
+            <!-- HOOK cross-módulo (ADR-0043): aquí aterrizan los botones que declaran OTROS módulos
+                 (tables, customers…) vía provides_slots: sales.pos.cart_actions. Cada uno abre su
+                 propio modal; el POS no sabe nada de ellos. Va antes que los botones propios para
+                 que las acciones de negocio queden juntas y a la izquierda de las de chrome. -->
+            <div class="cart-actions-slot"></div>
             ${this.parkingEnabled
               ? html`<ion-button title=${t('ui.parkedTickets')} style="position:relative" @click=${() => { this.parkedOpen = !this.parkedOpen; }}>
                   <ion-icon slot="icon-only" name="file-tray-stacked-outline"></ion-icon>
@@ -491,12 +510,17 @@ export class ErpPosTouch extends LitElement {
             </ion-button>
           </ion-buttons>
         </ion-toolbar>
-      </ion-header>
 
-      <div class="cart-ctx">
-        <div class="order-slot"></div>
-        <div class="customer-slot"></div>
-      </div>
+        <!-- Contexto de la venta (mesa, cliente) que inyectan otros módulos por slot. Va en una
+             SEGUNDA toolbar del header, no dentro del scroll: en un TPV saber a qué mesa y a qué
+             cliente estás cobrando tiene que verse SIEMPRE, por larga que sea la comanda. -->
+        <ion-toolbar class="ctx-toolbar">
+          <div class="cart-ctx">
+            <div class="order-slot"></div>
+            <div class="customer-slot"></div>
+          </div>
+        </ion-toolbar>
+      </ion-header>
 
       ${this.parkedOpen
         ? html`
@@ -512,31 +536,39 @@ export class ErpPosTouch extends LitElement {
           </div>`
         : nothing}
 
-      ${this.cart.length
-        ? html`<ion-list class="lines" lines="full">
-            ${this.cart.map((l) => html`<ion-item>
-              <ion-label>
-                <h3>${l.name}${l.is_gift ? html` <ion-badge color="success">${t('ui.giftBadge')}</ion-badge>` : nothing}</h3>
-                <p>${this.money(l.price)}${l.is_gift && l.gift_reason ? html` · ${l.gift_reason}` : nothing}</p>
-              </ion-label>
-              <div slot="end" class="lineend">
-                <span class="lt" style=${l.is_gift ? 'text-decoration:line-through;opacity:.55' : ''}>${this.money(l.price * l.qty)}</span>
-                <ion-button fill="clear" size="small" title=${t('ui.giftAction')} @click=${() => this.toggleGift(l.id)}>
-                  <ion-icon name=${l.is_gift ? 'gift' : 'gift-outline'} slot="icon-only" color=${l.is_gift ? 'success' : 'medium'}></ion-icon>
-                </ion-button>
-                <ok-qty-stepper .value=${l.qty} .min=${0} .step=${1}
-                  @ok-change=${(e: CustomEvent) => this.setQtyAbs(l.id, (e.detail as { value: number }).value)}></ok-qty-stepper>
-              </div>
-            </ion-item>`)}
-          </ion-list>`
-        : html`<div class="lines"><div class="empty">${t('ui.cartEmptyTouch')}</div></div>`}
+      <!-- El CUERPO. ion-content es quien scrollea: las líneas crecen aquí dentro y ni el header ni
+           el pie se mueven. Con divs a pelo, una comanda larga empujaba el botón de COBRAR fuera de
+           la pantalla — en un TPV eso es no poder cobrar. -->
+      <ion-content class="cart-body">
+        ${this.cart.length
+          ? html`<ion-list class="lines" lines="full">
+              ${this.cart.map((l) => html`<ion-item>
+                <ion-label>
+                  <h3>${l.name}${l.is_gift ? html` <ion-badge color="success">${t('ui.giftBadge')}</ion-badge>` : nothing}</h3>
+                  <p>${this.money(l.price)}${l.is_gift && l.gift_reason ? html` · ${l.gift_reason}` : nothing}</p>
+                </ion-label>
+                <div slot="end" class="lineend">
+                  <span class="lt" style=${l.is_gift ? 'text-decoration:line-through;opacity:.55' : ''}>${this.money(l.price * l.qty)}</span>
+                  <ion-button fill="clear" size="small" title=${t('ui.giftAction')} @click=${() => this.toggleGift(l.id)}>
+                    <ion-icon name=${l.is_gift ? 'gift' : 'gift-outline'} slot="icon-only" color=${l.is_gift ? 'success' : 'medium'}></ion-icon>
+                  </ion-button>
+                  <ok-qty-stepper .value=${l.qty} .min=${0} .step=${1}
+                    @ok-change=${(e: CustomEvent) => this.setQtyAbs(l.id, (e.detail as { value: number }).value)}></ok-qty-stepper>
+                </div>
+              </ion-item>`)}
+            </ion-list>`
+          : html`<div class="empty">${t('ui.cartEmptyTouch')}</div>`}
+      </ion-content>
 
-      <div class="cart-foot">
-        <div class="total"><span>${t('ui.colTotal')}</span><b>${this.money(this.total)}</b></div>
-        <ion-button class="charge" expand="block" ?disabled=${!this.cart.length} @click=${() => this.openPay()}>
-          ${t('ui.charge')} ${this.money(this.total)}
-        </ion-button>
-      </div>`;
+      <!-- El PIE. ion-footer es un pie de verdad: se queda abajo pase lo que pase. -->
+      <ion-footer class="ion-no-border">
+        <div class="cart-foot">
+          <div class="total"><span>${t('ui.colTotal')}</span><b>${this.money(this.total)}</b></div>
+          <ion-button class="charge" expand="block" ?disabled=${!this.cart.length} @click=${() => this.openPay()}>
+            ${t('ui.charge')} ${this.money(this.total)}
+          </ion-button>
+        </div>
+      </ion-footer>`;
   }
 
   render() {

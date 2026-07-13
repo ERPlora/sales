@@ -19,8 +19,12 @@ import { beforeEach, describe, expect, it } from 'vitest';
 const slotsPedidos: string[] = [];
 beforeEach(() => {
   slotsPedidos.length = 0;
+  // El doble imita el contrato del CLIENTE (`ErploraClient`), no el del transporte: `query()` pasa
+  // por `unwrapPage()` y entrega ya el array; `queryAll()` trae TODAS las filas (el TPV necesita
+  // todo su catálogo, no una página — con `page_size` se quedaba en 50 y no se podía vender más).
   (globalThis as Record<string, unknown>).erplora = {
-    query: async () => ({ rows: [] }),
+    query: async () => [],
+    queryAll: async () => [],
     command: async () => ({}),
     // Moneda del hub + formateo (ADR-0059). Los DOS formateadores del SDK, con su contrato real:
     // `formatMoney` recibe CÉNTIMOS (divide entre 100) y es el que usan los WC porque el dinero es
@@ -117,10 +121,9 @@ describe('precios del TPV (dinero = céntimos, ADR-0007)', () => {
     const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
     sdk.formatMoney = (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`;
     sdk.formatAmount = (units: number) => `${(units || 0).toFixed(2)} €`;
-    sdk.query = async (name: string) =>
-      name === 'inventory.products.list'
-        ? { rows: [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1 }] }
-        : { rows: [] };
+    const productos = [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1 }];
+    sdk.query = async () => [];
+    sdk.queryAll = async (name: string) => (name === 'inventory.products.list' ? productos : []);
   });
 
   it('un café de 180 céntimos se pinta 1,80 € en la rejilla (no 180,00 €)', async () => {

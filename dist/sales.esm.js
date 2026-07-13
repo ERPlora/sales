@@ -9,7 +9,7 @@ var __decorateClass = (decorators, target, key, kind) => {
   return result;
 };
 
-// ../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
+// node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
 var ElementInternalsShim = class ElementInternals {
   get shadowRoot() {
     return this.__host.__shadowRoot;
@@ -88,7 +88,7 @@ var ElementInternalsShim = class ElementInternals {
   }
 };
 
-// ../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
+// node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
 var __classPrivateFieldSet = function(receiver, state, value, kind, f3) {
   if (kind === "m") throw new TypeError("Private method is not writable");
   if (kind === "a" && !f3) throw new TypeError("Private accessor was defined without a setter");
@@ -246,7 +246,7 @@ Object.defineProperties(CustomEventShim.prototype, {
 var EventShimWithRealType = EventShim;
 var CustomEventShimWithRealType = CustomEventShim;
 
-// ../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
+// node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
 var _a2;
 var CSSRuleShim = (_a2 = class CSSRule {
   constructor() {
@@ -277,7 +277,7 @@ var CSSRuleShim = (_a2 = class CSSRule {
   }
 }, _a2.STYLE_RULE = 1, _a2.CHARSET_RULE = 2, _a2.IMPORT_RULE = 3, _a2.MEDIA_RULE = 4, _a2.FONT_FACE_RULE = 5, _a2.PAGE_RULE = 6, _a2.NAMESPACE_RULE = 10, _a2.KEYFRAMES_RULE = 7, _a2.KEYFRAME_RULE = 8, _a2.SUPPORTS_RULE = 12, _a2.COUNTER_STYLE_RULE = 11, _a2.FONT_FEATURE_VALUES_RULE = 14, _a2.MARGIN_RULE = 9, _a2);
 
-// ../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/index.js
+// node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/index.js
 globalThis.Event ??= EventShimWithRealType;
 globalThis.CustomEvent ??= CustomEventShimWithRealType;
 var constructionToken = Symbol();
@@ -674,7 +674,7 @@ var CustomElementRegistryShimWithRealType = CustomElementRegistry;
 var customElements2 = new CustomElementRegistryShimWithRealType();
 var windowShim = new WindowShim(constructionToken);
 
-// ../../module-toolkit/node_modules/@lit/reactive-element/node/css-tag.js
+// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/css-tag.js
 var t = globalThis;
 var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
 var s = Symbol();
@@ -719,7 +719,7 @@ var c = e || void 0 === t.CSSStyleSheet ? (t7) => t7 : (t7) => t7 instanceof CSS
   return r(e6);
 })(t7) : t7;
 
-// ../../module-toolkit/node_modules/@lit/reactive-element/node/reactive-element.js
+// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/reactive-element.js
 var { is: h, defineProperty: r2, getOwnPropertyDescriptor: o2, getOwnPropertyNames: n2, getOwnPropertySymbols: a, getPrototypeOf: c2 } = Object;
 var l = globalThis;
 l.customElements ??= customElements2;
@@ -942,7 +942,7 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
 };
 g.elementStyles = [], g.shadowRootOptions = { mode: "open" }, g[f("elementProperties")] = /* @__PURE__ */ new Map(), g[f("finalized")] = /* @__PURE__ */ new Map(), u?.({ ReactiveElement: g }), (l.reactiveElementVersions ??= []).push("2.1.2");
 
-// ../../module-toolkit/node_modules/lit-html/lit-html.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
 var t2 = globalThis;
 var i2 = (t7) => t7;
 var s2 = t2.trustedTypes;
@@ -1197,7 +1197,7 @@ var D = (t7, i7, s5) => {
   return h4._$AI(t7), h4;
 };
 
-// ../../module-toolkit/node_modules/lit-element/lit-element.js
+// node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
 var s3 = globalThis;
 var i3 = class extends g {
   constructor() {
@@ -1226,7 +1226,7 @@ var o4 = s3.litElementPolyfillSupport;
 o4?.({ LitElement: i3 });
 (s3.litElementVersions ??= []).push("4.2.2");
 
-// ../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/property.js
+// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
 var r4 = (t7 = o5, e6, r6) => {
   const { kind: n6, metadata: i7 } = r6;
@@ -1256,15 +1256,15 @@ function n4(t7) {
   })(t7, e6, o7);
 }
 
-// ../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/state.js
+// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/state.js
 function r5(r6) {
   return n4({ ...r6, state: true, attribute: false });
 }
 
-// ../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/base.js
+// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/base.js
 var e3 = (e6, t7, c5) => (c5.configurable = true, c5.enumerable = true, Reflect.decorate && "object" != typeof t7 && Object.defineProperty(e6, t7, c5), c5);
 
-// ../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/query.js
+// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/query.js
 function e4(e6, r6) {
   return (n6, s5, i7) => {
     const o7 = (t7) => t7.renderRoot?.querySelector(e6) ?? null;
@@ -1288,14 +1288,14 @@ function e4(e6, r6) {
   };
 }
 
-// ../../outfitkit/dist/define.js
+// node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/define.js
 function define(tag, ctor) {
   if (typeof customElements !== "undefined" && !customElements.get(tag)) {
     customElements.define(tag, ctor);
   }
 }
 
-// ../../outfitkit/dist/ok-qr.js
+// node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-qr.js
 var __defProp2 = Object.defineProperty;
 var __decorateClass2 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -1943,7 +1943,7 @@ __decorateClass2([
 ], OkQr.prototype, "margin");
 define("ok-qr", OkQr);
 
-// ../../outfitkit/dist/ok-receipt.js
+// node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-receipt.js
 var __defProp3 = Object.defineProperty;
 var __decorateClass3 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2121,7 +2121,7 @@ __decorateClass3([
 ], OkReceipt.prototype, "labels");
 define("ok-receipt", OkReceipt);
 
-// ../../outfitkit/dist/ok-invoice.js
+// node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-invoice.js
 var __defProp4 = Object.defineProperty;
 var __decorateClass4 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2345,14 +2345,10 @@ __decorateClass4([
 ], OkInvoice.prototype, "labels");
 define("ok-invoice", OkInvoice);
 
-<<<<<<< HEAD
-// sales/ui/lib/document-mappers.ts
-=======
-// ui/lib/document-mappers.ts
+// modules/sales/ui/lib/document-mappers.ts
 function lineLabel(l3) {
   return Number(l3.is_gift) ? `${l3.product_name} (Invitaci\xF3n)` : l3.product_name;
 }
->>>>>>> feat/adr0085-tax-category-key
 function parseTaxes(tax_breakdown) {
   if (!tax_breakdown) return [];
   let obj;
@@ -2428,7 +2424,7 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}) {
   };
 }
 
-// sales/locales/es.json
+// modules/sales/locales/es.json
 var es_default = {
   name: "Ventas / TPV",
   navigation: {
@@ -2542,7 +2538,7 @@ var es_default = {
   }
 };
 
-// sales/locales/en.json
+// modules/sales/locales/en.json
 var en_default = {
   name: "Sales & POS",
   navigation: {
@@ -2656,7 +2652,7 @@ var en_default = {
   }
 };
 
-// sales/ui/components/erp-sales-document/erp-sales-document.ts
+// modules/sales/ui/components/erp-sales-document/erp-sales-document.ts
 var CATALOG = { es: es_default, en: en_default };
 function erplora() {
   const c5 = globalThis.erplora;
@@ -2789,7 +2785,7 @@ __decorateClass([
 ], ErpSalesDocument.prototype, "fiscal", 2);
 define("erp-sales-document", ErpSalesDocument);
 
-// ../../outfitkit/dist/shared/icons.js
+// node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/shared/icons.js
 var rawAdd = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M256 112v288m144-144H112"/></svg>';
 var rawAlertCircle = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="M256 48C141.31 48 48 141.31 48 256s93.31 208 208 208s208-93.31 208-208S370.69 48 256 48m0 319.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20m21.72-201.15l-5.74 122a16 16 0 0 1-32 0l-5.74-121.94v-.05a21.74 21.74 0 1 1 43.44 0Z"/></svg>';
 var rawAlertCircleOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" d="M448 256c0-106-86-192-192-192S64 150 64 256s86 192 192 192s192-86 192-192Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M250.26 166.05L256 288l5.73-121.95a5.74 5.74 0 0 0-5.79-6h0a5.74 5.74 0 0 0-5.68 6"/><path fill="currentColor" d="M256 367.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20"/></svg>';
@@ -2937,7 +2933,7 @@ function okIcon(value) {
   return BY_NAME[value] ?? value;
 }
 
-// ../../outfitkit/dist/ok-qty-stepper.js
+// node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-qty-stepper.js
 var __defProp5 = Object.defineProperty;
 var __decorateClass5 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -3145,7 +3141,7 @@ __decorateClass5([
 ], OkQtyStepper.prototype, "labels");
 define("ok-qty-stepper", OkQtyStepper);
 
-// sales/ui/lib/pos-cart.ts
+// modules/sales/ui/lib/pos-cart.ts
 function rows(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
@@ -3221,22 +3217,14 @@ async function retrieveParkedTicket(client, ticket) {
   return lines;
 }
 
-<<<<<<< HEAD
-// sales/ui/components/erp-pos-touch/erp-pos-touch.ts
-=======
-// ui/lib/pos-tax.ts
-function rows2(r6) {
-  if (Array.isArray(r6)) return r6;
-  if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
-  return [];
-}
+// modules/sales/ui/lib/pos-tax.ts
 function isRoot(r6) {
   return r6.parent_id == null || String(r6.parent_id) === "";
 }
 async function buildCategoryRatesMap(client) {
   const map = /* @__PURE__ */ new Map();
   try {
-    const all = rows2(await client.query("taxes.rules.list", { page_size: 500 }));
+    const all = await client.queryAll("taxes.rules.list");
     const rootByCat = /* @__PURE__ */ new Map();
     for (const r6 of all) {
       if (!r6 || !r6.tax_category_key || !isRoot(r6)) continue;
@@ -3262,8 +3250,7 @@ function resolveLineTax(catRatesMap, taxCategoryKey) {
   return catRatesMap.get(String(taxCategoryKey)) ?? 0;
 }
 
-// ui/components/erp-pos-touch/erp-pos-touch.ts
->>>>>>> feat/adr0085-tax-category-key
+// modules/sales/ui/components/erp-pos-touch/erp-pos-touch.ts
 var CATALOG2 = { es: es_default, en: en_default };
 function erplora2() {
   const c5 = globalThis.erplora;
@@ -3273,7 +3260,7 @@ function erplora2() {
 function t3(key, params) {
   return erplora2().t(CATALOG2, key, params);
 }
-function rows3(r6) {
+function rows2(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
   return [];
@@ -3307,23 +3294,21 @@ var ErpPosTouch = class extends i3 {
     this.parkedOpen = false;
     this.cartOpen = false;
     this.fullscreen = false;
+    this.tableLabel = "";
     this.customerName = "";
     this.prodCats = /* @__PURE__ */ new Map();
     /** Mapa tax_category_key → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
     this.ratesMap = /* @__PURE__ */ new Map();
     this.cartRestored = false;
     this.slots = [
+      { slot: "sales.pos.cart_actions", container: ".cart-actions-slot", reset: "erp:cart-actions-reset", els: [] },
       { slot: "sales.pos.order_context", container: ".order-slot", reset: "erp:order-context-reset", els: [] },
-      { slot: "sales.pos.customer_context", container: ".customer-slot", reset: "erp:customer-context-reset", els: [] },
-      // Botones de otros módulos en la barra del carrito (tables: elegir mesa; customers: elegir
-      // cliente…). Cada módulo pinta su propio ion-button y abre SU modal: el POS no los conoce.
-      { slot: "sales.pos.cart_actions", container: ".cart-actions-slot", reset: "erp:cart-actions-reset", els: [] }
+      { slot: "sales.pos.customer_context", container: ".customer-slot", reset: "erp:customer-context-reset", els: [] }
     ];
-    // La mesa la PINTA el módulo tables en `.order-slot` (slot sales.pos.order_context); aquí solo
-    // guardamos su id, que es lo que viaja en la venta.
     this.onOrderContext = (e6) => {
       const d3 = e6.detail ?? { table_id: null };
       this.tableId = d3.table_id ?? void 0;
+      this.tableLabel = d3.label ?? "";
     };
     this.onCustomerContext = (e6) => {
       const d3 = e6.detail ?? { customer_id: null };
@@ -3391,8 +3376,7 @@ var ErpPosTouch = class extends i3 {
     /* ── Carrito ── */
     .cart { position:relative; display:flex; flex-direction:column; min-height:0; background:var(--panel); border-left:1px solid var(--ion-border-color); }
     .cart ion-header ion-toolbar { --background:var(--panel); --color:var(--tx); --border-color:var(--ion-border-color); }
-    /* Hook del header: los botones que inyectan otros módulos se alinean como uno más de la
-       toolbar. Si ningún módulo provee el slot, el contenedor queda vacío y no ocupa nada. */
+    .cart ion-title { font-size:1rem; }
     .cart-actions-slot { display:flex; align-items:center; }
     .cart-actions-slot:empty { display:none; }
     /* 2ª toolbar del header: mesa y cliente, SIEMPRE visibles (no scrollean con las líneas).
@@ -3475,24 +3459,24 @@ var ErpPosTouch = class extends i3 {
     window.addEventListener("erplora:locale-changed", this.onLocaleChange);
     try {
       const [prods, methods, settingsRows, savedCart, parked, cats, prodCats, ratesMap] = await Promise.all([
-        erplora2().query("inventory.products.list", { page_size: 200 }).catch(() => []),
+        erplora2().queryAll("inventory.products.list").catch(() => []),
         erplora2().query("sales.payment_methods").catch(() => []),
         erplora2().query("sales.settings.get").catch(() => []),
         loadActiveCart(erplora2()),
         listParkedTickets(erplora2()),
-        erplora2().query("inventory.categories.list", { page_size: 100, sort: "name", dir: "asc" }).catch(() => []),
-        erplora2().query("inventory.product_categories", { page_size: 2e3 }).catch(() => []),
+        erplora2().queryAll("inventory.categories.list", { sort: "name", dir: "asc" }).catch(() => []),
+        erplora2().queryAll("inventory.product_categories").catch(() => []),
         buildCategoryRatesMap(erplora2())
       ]);
       this.ratesMap = ratesMap;
-      this.products = rows3(prods).filter((p4) => p4.is_active !== 0);
-      this.methods = rows3(methods);
-      this.settings = rows3(settingsRows)[0] || {};
+      this.products = rows2(prods).filter((p4) => p4.is_active !== 0);
+      this.methods = rows2(methods);
+      this.settings = rows2(settingsRows)[0] || {};
       this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
       this.payMethod = this.methods[0];
       this.parked = parked;
-      this.categories = rows3(cats).filter((c5) => c5.name);
-      for (const pc of rows3(prodCats)) {
+      this.categories = rows2(cats).filter((c5) => c5.name);
+      for (const pc of rows2(prodCats)) {
         if (!this.prodCats.has(pc.product_id)) this.prodCats.set(pc.product_id, /* @__PURE__ */ new Set());
         this.prodCats.get(pc.product_id).add(pc.category_id);
       }
@@ -3560,13 +3544,8 @@ var ErpPosTouch = class extends i3 {
   }
   // Dinero formateado con la MONEDA DEL HUB (ADR-0059): el SDK la resuelve de /api/hub/context
   // (misma fuente que dashboard/billing). Antes hardcodeaba '€' / la moneda por-módulo.
-<<<<<<< HEAD
-  // El dinero viaja en CÉNTIMOS (ADR-0007) → `formatMoney` (divide entre 100), NUNCA `formatAmount`
-  // (ese es para importes que ya llegan en euros): con céntimos pintaría 1,80 € como «180,00 €».
-=======
   // FIX QA (2026-06-25): el POS trabaja en CÉNTIMOS → formatMoney (divide /100), NO formatAmount
   // (que mostraba precios ×100).
->>>>>>> feat/adr0085-tax-category-key
   money(n6) {
     return erplora2().formatMoney(Number(n6) || 0);
   }
@@ -3669,7 +3648,7 @@ var ErpPosTouch = class extends i3 {
         customer_id: this.customerId ?? null,
         customer_name: this.customerName
       });
-      const recent = rows3(await erplora2().query("sales.list", { page_size: 1, sort: "created_at", dir: "desc" }));
+      const recent = rows2(await erplora2().query("sales.list", { limit: 1, sort: "created_at", dir: "desc" }));
       const saleId = recent[0]?.id;
       if (saleId && this.docFormat === "invoice") {
         await erplora2().command("sales.set_document_type", { sale_id: saleId, document_type: "invoice" });
@@ -3677,6 +3656,7 @@ var ErpPosTouch = class extends i3 {
       this.paying = false;
       this.cart = [];
       this.tableId = void 0;
+      this.tableLabel = "";
       this.customerId = void 0;
       this.customerName = "";
       this.resetSlotContexts();
@@ -3725,6 +3705,7 @@ var ErpPosTouch = class extends i3 {
               <ion-icon slot="icon-only" name="chevron-forward-outline"></ion-icon>
             </ion-button>
           </ion-buttons>
+          <ion-title>${this.tableLabel || t3("ui.sale")}${this.customerName ? b2` · ${this.customerName}` : A}</ion-title>
           <ion-buttons slot="end">
             <!-- HOOK cross-módulo (ADR-0043): aquí aterrizan los botones que declaran OTROS módulos
                  (tables, customers…) vía provides_slots: sales.pos.cart_actions. Cada uno abre su
@@ -3768,39 +3749,27 @@ var ErpPosTouch = class extends i3 {
             ${!this.parked.length ? b2`<div class="hint" style="text-align:center">${t3("ui.noParkedTickets")}</div>` : A}
           </div>` : A}
 
-<<<<<<< HEAD
-      <!-- El CUERPO. ion-content ya trae su propio scroll: no hace falta pelearse con
-           flex:1 + overflow:auto a mano (que es lo que fallaba con el carrito vacío). -->
+      <!-- El CUERPO. ion-content es quien scrollea: las líneas crecen aquí dentro y ni el header ni
+           el pie se mueven. Con divs a pelo, una comanda larga empujaba el botón de COBRAR fuera de
+           la pantalla — en un TPV eso es no poder cobrar. -->
       <ion-content class="cart-body">
         ${this.cart.length ? b2`<ion-list class="lines" lines="full">
               ${this.cart.map((l3) => b2`<ion-item>
-                <ion-label><h3>${l3.name}</h3><p>${this.money(l3.price)}</p></ion-label>
+                <ion-label>
+                  <h3>${l3.name}${l3.is_gift ? b2` <ion-badge color="success">${t3("ui.giftBadge")}</ion-badge>` : A}</h3>
+                  <p>${this.money(l3.price)}${l3.is_gift && l3.gift_reason ? b2` · ${l3.gift_reason}` : A}</p>
+                </ion-label>
                 <div slot="end" class="lineend">
-                  <span class="lt">${this.money(l3.price * l3.qty)}</span>
+                  <span class="lt" style=${l3.is_gift ? "text-decoration:line-through;opacity:.55" : ""}>${this.money(l3.price * l3.qty)}</span>
+                  <ion-button fill="clear" size="small" title=${t3("ui.giftAction")} @click=${() => this.toggleGift(l3.id)}>
+                    <ion-icon name=${l3.is_gift ? "gift" : "gift-outline"} slot="icon-only" color=${l3.is_gift ? "success" : "medium"}></ion-icon>
+                  </ion-button>
                   <ok-qty-stepper .value=${l3.qty} .min=${0} .step=${1}
                     @ok-change=${(e6) => this.setQtyAbs(l3.id, e6.detail.value)}></ok-qty-stepper>
                 </div>
               </ion-item>`)}
             </ion-list>` : b2`<div class="empty">${t3("ui.cartEmptyTouch")}</div>`}
       </ion-content>
-=======
-      ${this.cart.length ? b2`<ion-list class="lines" lines="full">
-            ${this.cart.map((l3) => b2`<ion-item>
-              <ion-label>
-                <h3>${l3.name}${l3.is_gift ? b2` <ion-badge color="success">${t3("ui.giftBadge")}</ion-badge>` : A}</h3>
-                <p>${this.money(l3.price)}${l3.is_gift && l3.gift_reason ? b2` · ${l3.gift_reason}` : A}</p>
-              </ion-label>
-              <div slot="end" class="lineend">
-                <span class="lt" style=${l3.is_gift ? "text-decoration:line-through;opacity:.55" : ""}>${this.money(l3.price * l3.qty)}</span>
-                <ion-button fill="clear" size="small" title=${t3("ui.giftAction")} @click=${() => this.toggleGift(l3.id)}>
-                  <ion-icon name=${l3.is_gift ? "gift" : "gift-outline"} slot="icon-only" color=${l3.is_gift ? "success" : "medium"}></ion-icon>
-                </ion-button>
-                <ok-qty-stepper .value=${l3.qty} .min=${0} .step=${1}
-                  @ok-change=${(e6) => this.setQtyAbs(l3.id, e6.detail.value)}></ok-qty-stepper>
-              </div>
-            </ion-item>`)}
-          </ion-list>` : b2`<div class="lines"><div class="empty">${t3("ui.cartEmptyTouch")}</div></div>`}
->>>>>>> feat/adr0085-tax-category-key
 
       <!-- El PIE. ion-footer es un pie de verdad: se queda abajo pase lo que pase. -->
       <ion-footer class="ion-no-border">
@@ -3958,13 +3927,141 @@ __decorateClass([
 ], ErpPosTouch.prototype, "tableId", 2);
 __decorateClass([
   r5()
+], ErpPosTouch.prototype, "tableLabel", 2);
+__decorateClass([
+  r5()
 ], ErpPosTouch.prototype, "customerId", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "customerName", 2);
 define("erp-pos-touch", ErpPosTouch);
 
-// sales/ui/components/erp-pos-desktop/erp-pos-desktop.ts
+// node_modules/.pnpm/@erplora+module-sdk@file+..+hub+packages+module-sdk/node_modules/@erplora/module-sdk/src/index.ts
+function isEmpty(v3) {
+  return v3 === null || v3 === void 0 || v3 === "";
+}
+var ListController = class {
+  constructor(client, queryName, onChange = () => {
+  }, opts = {}) {
+    this.client = client;
+    this.queryName = queryName;
+    this.onChange = onChange;
+    this.rows = [];
+    this.total = 0;
+    this.loading = false;
+    this.error = "";
+    /** Descarta respuestas obsoletas si llegan fuera de orden (race de cargas concurrentes). */
+    this.seq = 0;
+    this.state = {
+      page: 0,
+      pageSize: opts.pageSize ?? 50,
+      search: "",
+      sort: opts.sort,
+      dir: opts.dir ?? "asc",
+      filters: { ...opts.filters ?? {} },
+      context: { ...opts.context ?? {} }
+    };
+  }
+  /** Nº de páginas según el total del servidor (mínimo 1). */
+  get pageCount() {
+    return Math.max(1, Math.ceil(this.total / this.state.pageSize));
+  }
+  /** (Re)carga la página actual desde el servidor. */
+  async load() {
+    const s5 = this.state;
+    const mySeq = ++this.seq;
+    this.loading = true;
+    this.error = "";
+    this.onChange();
+    try {
+      const page = await this.client.queryPage(this.queryName, {
+        limit: s5.pageSize,
+        offset: s5.page * s5.pageSize,
+        search: s5.search,
+        sort: s5.sort,
+        dir: s5.dir,
+        filters: s5.filters,
+        params: s5.context
+      });
+      if (mySeq !== this.seq) return;
+      this.rows = page.rows ?? [];
+      this.total = page.total ?? this.rows.length;
+    } catch (e6) {
+      if (mySeq !== this.seq) return;
+      this.rows = [];
+      this.total = 0;
+      this.error = e6 instanceof Error ? e6.message : "Error cargando datos";
+    } finally {
+      if (mySeq === this.seq) {
+        this.loading = false;
+        this.onChange();
+      }
+    }
+  }
+  setPage(page) {
+    this.state.page = Math.max(0, page);
+    void this.load();
+  }
+  setSort(sort, dir) {
+    this.state.sort = sort;
+    this.state.dir = dir;
+    this.state.page = 0;
+    void this.load();
+  }
+  setSearch(search) {
+    this.state.search = search;
+    this.state.page = 0;
+    void this.load();
+  }
+  /** Cambia el nº de filas por página y recarga desde la página 0. */
+  setPageSize(pageSize) {
+    this.state.pageSize = Math.max(1, pageSize);
+    this.state.page = 0;
+    void this.load();
+  }
+  /** Aplica/quita un filtro de columna; valores vacíos lo eliminan. Vuelve a la página 0. */
+  setFilter(col, value) {
+    if (isEmpty(value)) {
+      delete this.state.filters[col];
+    } else if (typeof value === "object" && value !== null) {
+      const prev = this.state.filters[col] ?? {};
+      const merged = { ...prev, ...value };
+      const cleaned = Object.fromEntries(Object.entries(merged).filter(([, v3]) => !isEmpty(v3)));
+      if (Object.keys(cleaned).length === 0) delete this.state.filters[col];
+      else this.state.filters[col] = cleaned;
+    } else {
+      this.state.filters[col] = value;
+    }
+    this.state.page = 0;
+    void this.load();
+  }
+  /** Fija/actualiza los params de contexto obligatorios (p.ej. al seleccionar el padre).
+   *  Vuelve a la página 0 y recarga. Pasa `{}` o keys con valor vacío para limpiar. */
+  setContext(context) {
+    this.state.context = { ...context };
+    this.state.page = 0;
+    void this.load();
+  }
+  reset() {
+    this.state.page = 0;
+    this.state.search = "";
+    this.state.filters = {};
+    void this.load();
+  }
+};
+function createListController(client, queryName, onChange = () => {
+}, opts = {}) {
+  return new ListController(client, queryName, onChange, opts);
+}
+function majorToMinor(amount, decimals) {
+  const n6 = Number(amount);
+  return Number.isFinite(n6) ? Math.round(n6 * 10 ** decimals) : 0;
+}
+function eurosToCents(euros) {
+  return majorToMinor(euros, 2);
+}
+
+// modules/sales/ui/components/erp-pos-desktop/erp-pos-desktop.ts
 var CATALOG3 = { es: es_default, en: en_default };
 function erplora3() {
   const c5 = globalThis.erplora;
@@ -3974,7 +4071,7 @@ function erplora3() {
 function t4(key, params) {
   return erplora3().t(CATALOG3, key, params);
 }
-function rows4(r6) {
+function rows3(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
   return [];
@@ -4068,7 +4165,7 @@ var ErpPosDesktop = class extends i3 {
     window.addEventListener("erplora:locale-changed", this.onLocaleChange);
     try {
       const [prods, methods, settingsRows, savedCart, parked, ratesMap] = await Promise.all([
-        erplora3().query("inventory.products.list", { page_size: 500 }).catch(() => []),
+        erplora3().queryAll("inventory.products.list").catch(() => []),
         erplora3().query("sales.payment_methods").catch(() => []),
         erplora3().query("sales.settings.get").catch(() => []),
         loadActiveCart(erplora3()),
@@ -4076,9 +4173,9 @@ var ErpPosDesktop = class extends i3 {
         buildCategoryRatesMap(erplora3())
       ]);
       this.ratesMap = ratesMap;
-      this.products = rows4(prods).filter((p4) => p4.is_active !== 0);
-      this.methods = rows4(methods);
-      this.settings = rows4(settingsRows)[0] || {};
+      this.products = rows3(prods).filter((p4) => p4.is_active !== 0);
+      this.methods = rows3(methods);
+      this.settings = rows3(settingsRows)[0] || {};
       this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
       this.payMethod = this.methods[0];
       this.parked = parked;
@@ -4149,13 +4246,9 @@ var ErpPosDesktop = class extends i3 {
   }
   // Dinero formateado con la MONEDA DEL HUB (ADR-0059): el SDK la resuelve de /api/hub/context
   // (misma fuente que dashboard/billing). Antes hardcodeaba '€' / la moneda por-módulo.
-<<<<<<< HEAD
-  // Céntimos (ADR-0007) → `formatMoney`, que divide entre 100. Ver el mismo helper en erp-pos-touch.
-=======
   // FIX QA (2026-06-25): el POS trabaja en CÉNTIMOS (price de inventory.products.list, total del
   // carrito) → debe usar formatMoney (divide /100), NO formatAmount (espera unidades) que mostraba
   // los precios ×100 ("3.500,00 €" por un servicio de 35 €).
->>>>>>> feat/adr0085-tax-category-key
   money(n6) {
     return erplora3().formatMoney(Number(n6) || 0);
   }
@@ -4222,13 +4315,14 @@ var ErpPosDesktop = class extends i3 {
   }
   openPay() {
     if (!this.cart.length) return;
-    this.tendered = String(this.total.toFixed(2));
+    this.tendered = (this.total / 100).toFixed(2);
     this.payMethod = this.methods[0];
     this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
     this.paying = true;
   }
+  /** Lo entregado por el cliente, en CÉNTIMOS (el input está en euros). */
   get tenderedNum() {
-    return Number(this.tendered || "0");
+    return eurosToCents(this.tendered || "0");
   }
   get change() {
     return Math.max(0, this.tenderedNum - this.total);
@@ -4250,7 +4344,7 @@ var ErpPosDesktop = class extends i3 {
         customer_id: this.customerId ?? null,
         customer_name: this.customerName
       });
-      const recent = rows4(await erplora3().query("sales.list", { page_size: 1, sort: "created_at", dir: "desc" }));
+      const recent = rows3(await erplora3().query("sales.list", { limit: 1, sort: "created_at", dir: "desc" }));
       const saleId = recent[0]?.id;
       if (saleId && this.docFormat === "invoice") {
         await erplora3().command("sales.set_document_type", { sale_id: saleId, document_type: "invoice" });
@@ -4454,7 +4548,7 @@ __decorateClass([
 ], ErpPosDesktop.prototype, "scanInput", 2);
 define("erp-pos-desktop", ErpPosDesktop);
 
-// sales/ui/components/erp-pos/erp-pos.ts
+// modules/sales/ui/components/erp-pos/erp-pos.ts
 function erplora4() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -4472,8 +4566,8 @@ var ErpPos = class extends i3 {
   async connectedCallback() {
     super.connectedCallback();
     try {
-      const rows5 = await erplora4().query("sales.settings.get");
-      const row = Array.isArray(rows5) ? rows5[0] : rows5;
+      const rows4 = await erplora4().query("sales.settings.get");
+      const row = Array.isArray(rows4) ? rows4[0] : rows4;
       this.layout = row?.pos_layout === "desktop" ? "desktop" : "touch";
     } catch {
       this.layout = "touch";
@@ -4494,7 +4588,7 @@ __decorateClass([
 ], ErpPos.prototype, "ready", 2);
 define("erp-pos", ErpPos);
 
-// ../../module-toolkit/node_modules/lit-html/directive.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
 var t5 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e5 = (t7) => (...e6) => ({ _$litDirective$: t7, values: e6 });
 var i4 = class {
@@ -4514,7 +4608,7 @@ var i4 = class {
   }
 };
 
-// ../../module-toolkit/node_modules/lit-html/directive-helpers.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
 var { I: t6 } = j;
 var i5 = (o7) => o7;
 var s4 = () => document.createComment("");
@@ -4547,7 +4641,7 @@ var h3 = (o7) => {
   o7._$AR(), o7._$AA.remove();
 };
 
-// ../../module-toolkit/node_modules/lit-html/directives/repeat.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
 var u4 = (e6, s5, t7) => {
   const r6 = /* @__PURE__ */ new Map();
   for (let l3 = s5; l3 <= t7; l3++) r6.set(e6[l3], l3);
@@ -4600,7 +4694,7 @@ var c4 = e5(class extends i4 {
   }
 });
 
-// ../../module-toolkit/node_modules/lit-html/directives/style-map.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
 var n5 = "important";
 var i6 = " !" + n5;
 var o6 = e5(class extends i4 {
@@ -4629,7 +4723,7 @@ var o6 = e5(class extends i4 {
   }
 });
 
-// ../../outfitkit/dist/ok-data-table.js
+// node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-data-table.js
 var __defProp6 = Object.defineProperty;
 var __decorateClass6 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -5075,17 +5169,17 @@ var OkDataTable = class extends i3 {
       out.push(row);
     }
     const headers = out.shift() ?? [];
-    const rows5 = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
-    return { headers, rows: rows5 };
+    const rows4 = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
+    return { headers, rows: rows4 };
   }
   async onImportFile(ev) {
     const input = ev.target;
     const file = input.files?.[0];
     if (!file) return;
     const text = await file.text();
-    const { headers, rows: rows5 } = this.parseCsv(text);
-    this.emit("csvImport", { headers, rows: rows5 });
-    this.emit("import", { headers, rows: rows5 });
+    const { headers, rows: rows4 } = this.parseCsv(text);
+    this.emit("csvImport", { headers, rows: rows4 });
+    this.emit("import", { headers, rows: rows4 });
     input.value = "";
   }
   toggle(p4) {
@@ -5768,11 +5862,7 @@ var OkDataTable = class extends i3 {
               <ion-card class=${`rcard${selected ? " selected" : ""}`}>
                 ${hasHead ? b2`
                       <ion-card-header class="rcard-head">
-<<<<<<< HEAD
                         ${icon != null && icon !== "" ? b2`<span class="rc-icon">${typeof icon === "string" ? b2`<ion-icon .icon=${okIcon(icon)}></ion-icon>` : icon}</span>` : A}
-=======
-                        ${icon != null && icon !== "" ? b2`<span class="rc-icon">${typeof icon === "string" ? b2`<ion-icon name=${icon}></ion-icon>` : icon}</span>` : A}
->>>>>>> feat/adr0085-tax-category-key
                         <span class="rc-title">${this.cardTitle ? this.cardTitle(row) : A}</span>
                         ${this.selectable ? b2`<ion-checkbox .checked=${selected} aria-label=${this.t.select} @ionChange=${() => this.toggleRow(key)}></ion-checkbox>` : A}
                       </ion-card-header>
@@ -5940,125 +6030,7 @@ __decorateClass6([
 ], OkDataTable.prototype, "menuOpen");
 define("ok-data-table", OkDataTable);
 
-// ../../hub/packages/module-sdk/src/index.ts
-function isEmpty(v3) {
-  return v3 === null || v3 === void 0 || v3 === "";
-}
-var ListController = class {
-  constructor(client, queryName, onChange = () => {
-  }, opts = {}) {
-    this.client = client;
-    this.queryName = queryName;
-    this.onChange = onChange;
-    this.rows = [];
-    this.total = 0;
-    this.loading = false;
-    this.error = "";
-    /** Descarta respuestas obsoletas si llegan fuera de orden (race de cargas concurrentes). */
-    this.seq = 0;
-    this.state = {
-      page: 0,
-      pageSize: opts.pageSize ?? 50,
-      search: "",
-      sort: opts.sort,
-      dir: opts.dir ?? "asc",
-      filters: { ...opts.filters ?? {} },
-      context: { ...opts.context ?? {} }
-    };
-  }
-  /** Nº de páginas según el total del servidor (mínimo 1). */
-  get pageCount() {
-    return Math.max(1, Math.ceil(this.total / this.state.pageSize));
-  }
-  /** (Re)carga la página actual desde el servidor. */
-  async load() {
-    const s5 = this.state;
-    const mySeq = ++this.seq;
-    this.loading = true;
-    this.error = "";
-    this.onChange();
-    try {
-      const page = await this.client.queryPage(this.queryName, {
-        limit: s5.pageSize,
-        offset: s5.page * s5.pageSize,
-        search: s5.search,
-        sort: s5.sort,
-        dir: s5.dir,
-        filters: s5.filters,
-        params: s5.context
-      });
-      if (mySeq !== this.seq) return;
-      this.rows = page.rows ?? [];
-      this.total = page.total ?? this.rows.length;
-    } catch (e6) {
-      if (mySeq !== this.seq) return;
-      this.rows = [];
-      this.total = 0;
-      this.error = e6 instanceof Error ? e6.message : "Error cargando datos";
-    } finally {
-      if (mySeq === this.seq) {
-        this.loading = false;
-        this.onChange();
-      }
-    }
-  }
-  setPage(page) {
-    this.state.page = Math.max(0, page);
-    void this.load();
-  }
-  setSort(sort, dir) {
-    this.state.sort = sort;
-    this.state.dir = dir;
-    this.state.page = 0;
-    void this.load();
-  }
-  setSearch(search) {
-    this.state.search = search;
-    this.state.page = 0;
-    void this.load();
-  }
-  /** Cambia el nº de filas por página y recarga desde la página 0. */
-  setPageSize(pageSize) {
-    this.state.pageSize = Math.max(1, pageSize);
-    this.state.page = 0;
-    void this.load();
-  }
-  /** Aplica/quita un filtro de columna; valores vacíos lo eliminan. Vuelve a la página 0. */
-  setFilter(col, value) {
-    if (isEmpty(value)) {
-      delete this.state.filters[col];
-    } else if (typeof value === "object" && value !== null) {
-      const prev = this.state.filters[col] ?? {};
-      const merged = { ...prev, ...value };
-      const cleaned = Object.fromEntries(Object.entries(merged).filter(([, v3]) => !isEmpty(v3)));
-      if (Object.keys(cleaned).length === 0) delete this.state.filters[col];
-      else this.state.filters[col] = cleaned;
-    } else {
-      this.state.filters[col] = value;
-    }
-    this.state.page = 0;
-    void this.load();
-  }
-  /** Fija/actualiza los params de contexto obligatorios (p.ej. al seleccionar el padre).
-   *  Vuelve a la página 0 y recarga. Pasa `{}` o keys con valor vacío para limpiar. */
-  setContext(context) {
-    this.state.context = { ...context };
-    this.state.page = 0;
-    void this.load();
-  }
-  reset() {
-    this.state.page = 0;
-    this.state.search = "";
-    this.state.filters = {};
-    void this.load();
-  }
-};
-function createListController(client, queryName, onChange = () => {
-}, opts = {}) {
-  return new ListController(client, queryName, onChange, opts);
-}
-
-// sales/ui/components/erp-sales-list/erp-sales-list.ts
+// modules/sales/ui/components/erp-sales-list/erp-sales-list.ts
 var CATALOG4 = { es: es_default, en: en_default };
 function erplora5() {
   const c5 = globalThis.erplora;
@@ -6138,8 +6110,8 @@ var ErpSalesList = class extends i3 {
   }
   async loadStats() {
     try {
-      const rows5 = await erplora5().query("sales.stats");
-      this.stats = rows5 && rows5[0] || { count: 0, total_revenue: 0, avg_ticket: 0 };
+      const rows4 = await erplora5().query("sales.stats");
+      this.stats = rows4 && rows4[0] || { count: 0, total_revenue: 0, avg_ticket: 0 };
     } catch (e6) {
       this.statsError = e6 instanceof Error ? e6.message : erplora5().t(CATALOG4, "ui.errorStats");
     }
@@ -6201,212 +6173,3 @@ __decorateClass([
   r5()
 ], ErpSalesList.prototype, "docSaleId", 2);
 define("erp-sales-list", ErpSalesList);
-<<<<<<< HEAD
-
-// sales/ui/components/erp-sales-settings/erp-sales-settings.ts
-var CATALOG5 = { es: es_default, en: en_default };
-var DEFAULTS = {
-  allow_cash: 1,
-  allow_card: 1,
-  allow_transfer: 0,
-  sync_products: 1,
-  sync_services: 0,
-  require_customer: 0,
-  allow_discounts: 1,
-  enable_parked_tickets: 1,
-  default_tax_included: 1,
-  ticket_expiry_hours: 24,
-  receipt_header: "",
-  receipt_footer: "",
-  receipt_footer_image: "",
-  pos_layout: "touch",
-  default_document_format: "ticket",
-  auto_invoice_with_tax_id: 1
-};
-function erplora6() {
-  const c5 = globalThis.erplora;
-  if (!c5) throw new Error("erplora SDK no inicializado por el shell");
-  return c5;
-}
-var ErpSalesSettings = class extends i3 {
-  constructor() {
-    super(...arguments);
-    this.s = { ...DEFAULTS };
-    this.loading = true;
-    this.saving = false;
-    this.message = "";
-    this.error = "";
-    this.onLocaleChange = () => this.requestUpdate();
-  }
-  static {
-    this.styles = i`
-    :host { display:block; height:100%; overflow-y:auto; box-sizing:border-box; padding:1rem 1rem 2rem; font-family: system-ui, sans-serif; color: var(--ion-text-color,#1c1b18); }
-    h2 { margin:0 0 .25rem; font-size:1.15rem; }
-    .sub { color:#8b897f; font-size:.85rem; margin:0 0 1rem; }
-    .group { border:1px solid var(--ion-border-color,#e0ddd4); border-radius:12px; padding:.4rem .9rem; margin-bottom:1rem; }
-    .group > .gh { font-size:.75rem; text-transform:uppercase; letter-spacing:.05em; color:#8b897f; padding:.6rem 0 .2rem; }
-    .row { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:.5rem 0; border-top:1px solid var(--ion-border-color,#eee); }
-    .row:first-of-type { border-top:none; }
-    .row .lbl { font-size:.92rem; }
-    .row .lbl small { display:block; color:#8b897f; font-size:.78rem; }
-    .seg { min-width:14rem; }
-    textarea, input[type=text], input[type=number] {
-      width:100%; box-sizing:border-box; font:inherit; padding:.5rem .6rem;
-      border:1px solid var(--ion-border-color,#d9d6cf); border-radius:8px; background:var(--ion-background-color,#fff); color:inherit;
-    }
-    .field { padding:.5rem 0; }
-    .field label { display:block; font-size:.85rem; margin-bottom:.25rem; }
-    .bar { display:flex; gap:.6rem; align-items:center; margin-top:.5rem; }
-    .msg { font-size:.85rem; }
-    .msg.ok { color:#2f9e44; } .msg.err { color:#d9480f; }
-  `;
-  }
-  async connectedCallback() {
-    super.connectedCallback();
-    window.addEventListener("erplora:locale-changed", this.onLocaleChange);
-    try {
-      const rows4 = await erplora6().query("sales.settings.get");
-      const row = Array.isArray(rows4) ? rows4[0] : rows4;
-      this.s = { ...DEFAULTS, ...row || {} };
-    } catch (e6) {
-      this.error = e6 instanceof Error ? e6.message : erplora6().t(CATALOG5, "ui.errorLoadingSettings");
-    } finally {
-      this.loading = false;
-    }
-  }
-  disconnectedCallback() {
-    window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
-    super.disconnectedCallback();
-  }
-  set(key, value) {
-    this.s = { ...this.s, [key]: value };
-    this.message = "";
-  }
-  async save() {
-    this.saving = true;
-    this.message = "";
-    this.error = "";
-    try {
-      await erplora6().command("sales.settings.update", { ...this.s });
-      this.message = erplora6().t(CATALOG5, "ui.settingsSaved");
-    } catch (e6) {
-      this.error = e6 instanceof Error ? e6.message : erplora6().t(CATALOG5, "ui.errorSaving");
-    } finally {
-      this.saving = false;
-    }
-  }
-  toggle(key, label, hint) {
-    return b2`<div class="row">
-      <div class="lbl">${label}${hint ? b2`<small>${hint}</small>` : A}</div>
-      <ion-toggle
-        .checked=${!!this.s[key]}
-        @ionChange=${(e6) => this.set(key, e6.target.checked ? 1 : 0)}
-      ></ion-toggle>
-    </div>`;
-  }
-  segment(key, opts) {
-    return b2`<ion-segment
-      class="seg"
-      .value=${String(this.s[key])}
-      @ionChange=${(e6) => this.set(key, String(e6.detail.value))}
-    >
-      ${opts.map((o7) => b2`<ion-segment-button value=${o7.value}><ion-label>${o7.label}</ion-label></ion-segment-button>`)}
-    </ion-segment>`;
-  }
-  render() {
-    const t7 = (k2) => erplora6().t(CATALOG5, k2);
-    if (this.loading) return b2`<p class="sub">${t7("ui.loadingSettings")}</p>`;
-    return b2`<div>
-      ${this.error ? b2`<p class="msg err">${this.error}</p>` : A}
-
-      <div class="group">
-        <div class="gh">${t7("ui.groupSaleScreen")}</div>
-        <div class="row">
-          <div class="lbl">${t7("ui.defaultScreen")}<small>${t7("ui.defaultScreenHint")}</small></div>
-          ${this.segment("pos_layout", [
-      { value: "touch", label: t7("ui.screenTouch") },
-      { value: "desktop", label: t7("ui.screenDesktop") }
-    ])}
-        </div>
-      </div>
-
-      <div class="group">
-        <div class="gh">${t7("ui.groupSaleDocument")}</div>
-        <div class="row">
-          <div class="lbl">${t7("ui.defaultFormat")}<small>${t7("ui.defaultFormatHint")}</small></div>
-          ${this.segment("default_document_format", [
-      { value: "ticket", label: t7("ui.formatTicket") },
-      { value: "invoice", label: t7("ui.formatInvoice") }
-    ])}
-        </div>
-        ${this.toggle("auto_invoice_with_tax_id", t7("ui.autoInvoiceTaxId"), t7("ui.autoInvoiceTaxIdHint"))}
-      </div>
-
-      <div class="group">
-        <div class="gh">${t7("ui.groupPaymentMethods")}</div>
-        ${this.toggle("allow_cash", t7("ui.cash"))}
-        ${this.toggle("allow_card", t7("ui.card"))}
-        ${this.toggle("allow_transfer", t7("ui.transfer"))}
-      </div>
-
-      <div class="group">
-        <div class="gh">${t7("ui.groupSale")}</div>
-        ${this.toggle("require_customer", t7("ui.requireCustomer"), t7("ui.requireCustomerHint"))}
-        ${this.toggle("allow_discounts", t7("ui.allowDiscounts"))}
-        ${this.toggle("default_tax_included", t7("ui.taxIncluded"))}
-        ${this.toggle("enable_parked_tickets", t7("ui.parkedTicketsToggle"), t7("ui.parkedTicketsToggleHint"))}
-        ${this.toggle("sync_products", t7("ui.syncProducts"))}
-        ${this.toggle("sync_services", t7("ui.syncServices"))}
-        <div class="field">
-          <label>${t7("ui.parkedExpiryHours")}</label>
-          <input type="number" min="1" .value=${String(this.s.ticket_expiry_hours)}
-            @input=${(e6) => this.set("ticket_expiry_hours", Number(e6.target.value || 0))} />
-        </div>
-      </div>
-
-      <div class="group">
-        <div class="gh">${t7("ui.groupReceipt")}</div>
-        <div class="field">
-          <label>${t7("ui.receiptHeader")}</label>
-          <textarea rows="2" .value=${this.s.receipt_header}
-            @input=${(e6) => this.set("receipt_header", e6.target.value)}></textarea>
-        </div>
-        <div class="field">
-          <label>${t7("ui.receiptFooter")}</label>
-          <textarea rows="2" .value=${this.s.receipt_footer}
-            @input=${(e6) => this.set("receipt_footer", e6.target.value)}></textarea>
-        </div>
-        <div class="field">
-          <label>${t7("ui.receiptFooterImage")}</label>
-          <input type="text" .value=${this.s.receipt_footer_image}
-            @input=${(e6) => this.set("receipt_footer_image", e6.target.value)} />
-        </div>
-      </div>
-
-      <div class="bar">
-        <ion-button @click=${() => this.save()} ?disabled=${this.saving}>
-          ${this.saving ? t7("ui.saving") : t7("ui.saveSettings")}
-        </ion-button>
-        ${this.message ? b2`<span class="msg ok">${this.message}</span>` : A}
-      </div>
-    </div>`;
-  }
-};
-__decorateClass([
-  r5()
-], ErpSalesSettings.prototype, "s", 2);
-__decorateClass([
-  r5()
-], ErpSalesSettings.prototype, "loading", 2);
-__decorateClass([
-  r5()
-], ErpSalesSettings.prototype, "saving", 2);
-__decorateClass([
-  r5()
-], ErpSalesSettings.prototype, "message", 2);
-__decorateClass([
-  r5()
-], ErpSalesSettings.prototype, "error", 2);
-define("erp-sales-settings", ErpSalesSettings);
-=======
->>>>>>> feat/adr0085-tax-category-key

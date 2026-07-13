@@ -142,7 +142,7 @@ export class ErpPosDesktop extends LitElement {
     window.addEventListener('erplora:locale-changed', this.onLocaleChange);
     try {
       const [prods, methods, settingsRows, savedCart, parked, ratesMap] = await Promise.all([
-        erplora().query('inventory.products.list', { page_size: 500 }).catch(() => []),
+        erplora().queryAll('inventory.products.list').catch(() => []),
         erplora().query('sales.payment_methods').catch(() => []),
         erplora().query('sales.settings.get').catch(() => []),
         loadActiveCart(erplora()),
@@ -329,7 +329,7 @@ export class ErpPosDesktop extends LitElement {
         customer_id: this.customerId ?? null,
         customer_name: this.customerName,
       });
-      const recent = rows<{ id: string }>(await erplora().query('sales.list', { page_size: 1, sort: 'created_at', dir: 'desc' }));
+      const recent = rows<{ id: string }>(await erplora().query('sales.list', { limit: 1, sort: 'created_at', dir: 'desc' }));
       const saleId = recent[0]?.id;
       if (saleId && this.docFormat === 'invoice') {
         await erplora().command('sales.set_document_type', { sale_id: saleId, document_type: 'invoice' });
