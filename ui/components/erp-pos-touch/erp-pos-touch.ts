@@ -117,7 +117,6 @@ export class ErpPosTouch extends LitElement {
     /* ── Carrito ── */
     .cart { position:relative; display:flex; flex-direction:column; min-height:0; background:var(--panel); border-left:1px solid var(--ion-border-color); }
     .cart ion-header ion-toolbar { --background:var(--panel); --color:var(--tx); --border-color:var(--ion-border-color); }
-    .cart ion-title { font-size:1rem; }
     .cart-ctx { display:flex; gap:.4rem; padding:.5rem .6rem; border-bottom:1px solid var(--ion-border-color); }
     .cart-ctx .order-slot, .cart-ctx .customer-slot { flex:1; min-width:0; }
     .cart-ctx .order-slot:empty, .cart-ctx .customer-slot:empty { display:none; }
@@ -200,7 +199,6 @@ export class ErpPosTouch extends LitElement {
   @state() private cartOpen = false;
   @state() private fullscreen = false;
   @state() private tableId?: string;
-  @state() private tableLabel = '';
   @state() private customerId?: string;
   @state() private customerName = '';
 
@@ -211,10 +209,11 @@ export class ErpPosTouch extends LitElement {
     { slot: 'sales.pos.order_context', container: '.order-slot', reset: 'erp:order-context-reset', els: [] },
     { slot: 'sales.pos.customer_context', container: '.customer-slot', reset: 'erp:customer-context-reset', els: [] },
   ];
+  // La mesa la PINTA el módulo tables en `.order-slot` (slot sales.pos.order_context); aquí solo
+  // guardamos su id, que es lo que viaja en la venta.
   private readonly onOrderContext = (e: Event) => {
-    const d = (e as CustomEvent<{ table_id: string | null; label?: string }>).detail ?? { table_id: null };
+    const d = (e as CustomEvent<{ table_id: string | null }>).detail ?? { table_id: null };
     this.tableId = d.table_id ?? undefined;
-    this.tableLabel = d.label ?? '';
   };
   private readonly onCustomerContext = (e: Event) => {
     const d = (e as CustomEvent<{ customer_id: string | null; customer_name?: string }>).detail ?? { customer_id: null };
@@ -404,7 +403,7 @@ export class ErpPosTouch extends LitElement {
       }
       this.paying = false;
       this.cart = [];
-      this.tableId = undefined; this.tableLabel = '';
+      this.tableId = undefined;
       this.customerId = undefined; this.customerName = '';
       this.resetSlotContexts();
       if (saleId) this.docSaleId = saleId;
@@ -444,14 +443,13 @@ export class ErpPosTouch extends LitElement {
 
   private renderCart() {
     return html`
-      <ion-header>
+      <ion-header class="ion-no-border">
         <ion-toolbar>
           <ion-buttons slot="start">
             <ion-button class="cart-close" title=${t('ui.closeAction')} @click=${() => { this.cartOpen = false; }}>
               <ion-icon slot="icon-only" name="chevron-forward-outline"></ion-icon>
             </ion-button>
           </ion-buttons>
-          <ion-title>${this.tableLabel || t('ui.sale')}${this.customerName ? html` · ${this.customerName}` : nothing}</ion-title>
           <ion-buttons slot="end">
             ${this.parkingEnabled
               ? html`<ion-button title=${t('ui.parkedTickets')} style="position:relative" @click=${() => { this.parkedOpen = !this.parkedOpen; }}>
