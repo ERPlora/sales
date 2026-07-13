@@ -1,8 +1,8 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { state, query } from 'lit/decorators.js';
 import { define } from '@erplora/outfitkit/define';
-// La frontera EUROS ↔ CÉNTIMOS vive en el SDK (ADR-0123), no copiada en cada WC. Su gemelo Rust es
-// `guest_sdk::money::euros_to_cents`.
+// La frontera EUROS ↔ CÉNTIMOS vive en el SDK (ADR-0123), no copiada en cada WC. Su gemelo Rust
+// es `guest_sdk::money::euros_to_cents`.
 import { eurosToCents } from '@erplora/module-sdk';
 import '../erp-sales-document/erp-sales-document.js';
 
@@ -14,14 +14,15 @@ import {
   loadActiveCart, persistActiveCart, listParkedTickets, parkCart, retrieveParkedTicket,
   type CartLine, type ErploraClientLike, type ParkedTicket,
 } from '../../lib/pos-cart.js';
+import { buildCategoryRatesMap, resolveLineTax } from '../../lib/pos-tax.js';
 // Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC.
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
-interface Product { id: string; name: string; sku?: string; price: number; is_active?: number; }
+interface Product { id: string; name: string; sku?: string; price: number; cost?: number; is_active?: number; tax_category_key?: string; }
 interface PayMethod { id: string; name: string; }
-interface PosSettings { default_document_format?: string; currency?: string; enable_parked_tickets?: number; }
+interface PosSettings { default_document_format?: string; currency?: string; enable_parked_tickets?: number; default_tax_included?: number; }
 
 /** i18n del módulo (ADR-0055): idioma activo + traducción del catálogo `ui`. */
 interface I18nClient {
@@ -115,6 +116,8 @@ export class ErpPosDesktop extends LitElement {
 
   @query('#scan') private scanInput?: HTMLInputElement;
 
+  /** Mapa tax_category_key → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
+  private ratesMap = new Map<string, number>();
   private cartRestored = false;
   private saveTimer?: ReturnType<typeof setTimeout>;
   /** Slots de contexto que el POS expone; cada uno lo rellena (o no) un módulo externo. */
@@ -138,13 +141,15 @@ export class ErpPosDesktop extends LitElement {
     super.connectedCallback();
     window.addEventListener('erplora:locale-changed', this.onLocaleChange);
     try {
-      const [prods, methods, settingsRows, savedCart, parked] = await Promise.all([
+      const [prods, methods, settingsRows, savedCart, parked, ratesMap] = await Promise.all([
         erplora().query('inventory.products.list', { page_size: 500 }).catch(() => []),
         erplora().query('sales.payment_methods').catch(() => []),
         erplora().query('sales.settings.get').catch(() => []),
         loadActiveCart(erplora()),
         listParkedTickets(erplora()),
+        buildCategoryRatesMap(erplora()),
       ]);
+      this.ratesMap = ratesMap;
       this.products = rows<Product>(prods).filter((p) => p.is_active !== 0);
       this.methods = rows<PayMethod>(methods);
       this.settings = rows<PosSettings>(settingsRows)[0] || {};
@@ -221,9 +226,11 @@ export class ErpPosDesktop extends LitElement {
 
   // Dinero formateado con la MONEDA DEL HUB (ADR-0059): el SDK la resuelve de /api/hub/context
   // (misma fuente que dashboard/billing). Antes hardcodeaba '€' / la moneda por-módulo.
-  // Céntimos (ADR-0007) → `formatMoney`, que divide entre 100. Ver el mismo helper en erp-pos-touch.
+  // FIX QA (2026-06-25): el POS trabaja en CÉNTIMOS (price de inventory.products.list, total del
+  // carrito) → debe usar formatMoney (divide /100), NO formatAmount (espera unidades) que mostraba
+  // los precios ×100 ("3.500,00 €" por un servicio de 35 €).
   private money(n: number) { return erplora().formatMoney(Number(n) || 0); }
-  private get total() { return this.cart.reduce((s, l) => s + l.price * l.qty, 0); }
+  private get total() { return this.cart.reduce((s, l) => s + (l.is_gift ? 0 : l.price * l.qty), 0); }
   private get parkingEnabled() { return this.settings.enable_parked_tickets !== 0; }
 
   /** Aparca el carrito actual como ticket y lo deja libre para la siguiente venta. */
@@ -257,12 +264,22 @@ export class ErpPosDesktop extends LitElement {
   }
 
   private add(p: Product) {
-    const ex = this.cart.find((l) => l.id === p.id);
+    const ex = this.cart.find((l) => l.id === p.id && !l.is_gift);
+    // tax_category_key = referencia fiscal del producto (autoridad del servidor, ADR-0085).
+    // tax_rate = % preview; cost = para el arqueo de invitaciones (a coste).
+    const tax_rate = resolveLineTax(this.ratesMap, p.tax_category_key);
     this.cart = ex
-      ? this.cart.map((l) => (l.id === p.id ? { ...l, qty: l.qty + 1 } : l))
-      : [...this.cart, { id: p.id, name: p.name, sku: p.sku, price: Number(p.price), qty: 1 }];
+      ? this.cart.map((l) => (l.id === p.id && !l.is_gift ? { ...l, qty: l.qty + 1 } : l))
+      : [...this.cart, { id: p.id, name: p.name, sku: p.sku, price: Number(p.price), qty: 1, tax_category_key: p.tax_category_key, tax_rate, cost: Number(p.cost) || 0 }];
     this.term = '';
     this.scanInput?.focus();
+  }
+
+  /** Invitar/quitar invitación a una línea (comp): toggle is_gift con motivo por defecto. */
+  private toggleGift(id: string) {
+    this.cart = this.cart.map((l) =>
+      l.id === id ? { ...l, is_gift: !l.is_gift, gift_reason: !l.is_gift ? (l.gift_reason || 'Invitación') : undefined } : l,
+    );
   }
   private onScanKey(e: KeyboardEvent) {
     if (e.key !== 'Enter') return;
@@ -281,7 +298,7 @@ export class ErpPosDesktop extends LitElement {
     if (!this.cart.length) return;
     // `total` son CÉNTIMOS y el campo «entregado» es un `<input step="0.01">`, o sea EUROS. Sin
     // dividir, una venta de 14,93 € prerrellenaba «1493.00»; y teclear «20» (un billete) registraba
-    // 20 CÉNTIMOS entregados → cambio 0 € y arqueo de caja corrupto.
+    // 20 CÉNTIMOS entregados → cambio 0 € y arqueo de caja corrupto (ADR-0123).
     this.tendered = (this.total / 100).toFixed(2);
     this.payMethod = this.methods[0];
     this.docFormat = this.settings.default_document_format === 'invoice' ? 'invoice' : 'ticket';
@@ -294,9 +311,15 @@ export class ErpPosDesktop extends LitElement {
   private async confirm() {
     this.busy = true; this.error = '';
     try {
-      const items = this.cart.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: l.qty }));
+      // ADR-0069: la AUTORIDAD del IVA es el servidor. Cada línea manda su `tax_category_key`
+      // (referencia fiscal del producto) y el handler resuelve `rate_pct` desde el catálogo de
+      // confianza (`taxes.rates.list` pre-cargado vía `reads`), expandiendo grupos. Mantenemos
+      // `tax_rate` (% resuelto en cliente) SOLO como pista/preview; el handler lo ignora si puede
+      // resolver el id (fallback al % solo si no hay catálogo o el id no existe — backward-compat).
+      const items = this.cart.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: l.qty, tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0 }));
       await erplora().command('sales.complete_sale', {
         items,
+        tax_included: this.settings.default_tax_included !== 0,
         payment_method_id: this.payMethod?.id ?? null,
         payment_method_name: this.payMethod?.name ?? 'Efectivo',
         amount_tendered: this.tenderedNum || this.total,
@@ -358,12 +381,12 @@ export class ErpPosDesktop extends LitElement {
         <tbody>
           ${this.cart.length
             ? this.cart.map((l) => html`<tr>
-                <td>${l.name} ${l.sku ? html`<small style="color:#8b897f">· ${l.sku}</small>` : nothing}</td>
+                <td>${l.name} ${l.sku ? html`<small style="color:#8b897f">· ${l.sku}</small>` : nothing}${l.is_gift ? html` <ion-badge color="success">${t('ui.giftBadge')}</ion-badge>` : nothing}</td>
                 <td class="num">${this.money(l.price)}</td>
                 <td class="num"><input class="q" type="number" min="1" .value=${String(l.qty)}
                   @input=${(e: Event) => this.setQty(l.id, Number((e.target as HTMLInputElement).value))} /></td>
-                <td class="num">${this.money(l.price * l.qty)}</td>
-                <td class="num"><button class="rm" @click=${() => this.remove(l.id)} title=${t('ui.remove')}>✕</button></td>
+                <td class="num" style=${l.is_gift ? 'text-decoration:line-through;opacity:.55' : ''}>${this.money(l.price * l.qty)}</td>
+                <td class="num"><button class="rm" @click=${() => this.toggleGift(l.id)} title=${t('ui.giftAction')} style=${l.is_gift ? 'color:var(--ion-color-success,#2dd36f)' : ''}>🎁</button> <button class="rm" @click=${() => this.remove(l.id)} title=${t('ui.remove')}>✕</button></td>
               </tr>`)
             : html`<tr><td colspan="5"><div class="empty">${t('ui.cartEmptyDesktop')}</div></td></tr>`}
         </tbody>

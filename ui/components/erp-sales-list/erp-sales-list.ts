@@ -89,7 +89,7 @@ export class ErpSalesList extends LitElement {
         { value: 'voided', label: t('ui.statusVoided') },
       ],
     },
-    { key: 'total', header: t('ui.colTotal'), align: 'right', sortable: true, filterable: true, filterType: 'range', format: (r) => Number(r.total || 0).toFixed(2) },
+    { key: 'total', header: t('ui.colTotal'), align: 'right', sortable: true, filterable: true, filterType: 'range', format: (r) => erplora().formatMoney(Number(r.total || 0)) },
     ];
   }
 
@@ -133,11 +133,11 @@ export class ErpSalesList extends LitElement {
           </div>
           <div class="card">
             <div class="k">${t('ui.revenue')}</div>
-            <div class="v">${Number(this.stats.total_revenue || 0).toFixed(2)}</div>
+            <div class="v">${erplora().formatMoney(Number(this.stats.total_revenue || 0))}</div>
           </div>
           <div class="card">
             <div class="k">${t('ui.avgTicket')}</div>
-            <div class="v">${Number(this.stats.avg_ticket || 0).toFixed(2)}</div>
+            <div class="v">${erplora().formatMoney(Number(this.stats.avg_ticket || 0))}</div>
           </div>
         </div>
         ${this.statsError ? html`<p class="err">${this.statsError}</p>` : nothing}

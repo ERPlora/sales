@@ -105,6 +105,8 @@
     "cartEmptyTouch": "Toca un producto para añadirlo.",
     "parkCurrentSale": "Aparcar venta actual",
     "closeAction": "Cerrar",
-    "fullscreen": "Pantalla completa"
+    "fullscreen": "Pantalla completa",
+    "giftBadge": "Invitación",
+    "giftAction": "Invitar / quitar invitación"
   }
 }

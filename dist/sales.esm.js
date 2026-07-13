@@ -2345,7 +2345,14 @@ __decorateClass4([
 ], OkInvoice.prototype, "labels");
 define("ok-invoice", OkInvoice);
 
+<<<<<<< HEAD
 // sales/ui/lib/document-mappers.ts
+=======
+// ui/lib/document-mappers.ts
+function lineLabel(l3) {
+  return Number(l3.is_gift) ? `${l3.product_name} (Invitaci\xF3n)` : l3.product_name;
+}
+>>>>>>> feat/adr0085-tax-category-key
 function parseTaxes(tax_breakdown) {
   if (!tax_breakdown) return [];
   let obj;
@@ -2376,7 +2383,7 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}) {
     datetime: sale.created_at,
     customer: fiscal.customer_name || sale.customer_name || void 0,
     lines: lines.map((l3) => ({
-      name: l3.product_name,
+      name: lineLabel(l3),
       qty: Number(l3.quantity),
       unit_price: Number(l3.unit_price),
       total: Number(l3.line_total)
@@ -2394,7 +2401,7 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}) {
 function saleToInvoice(sale, lines, settings = {}, fiscal = {}) {
   const header = (settings.receipt_header || "").trim();
   const invLines = lines.map((l3) => ({
-    description: l3.product_name,
+    description: lineLabel(l3),
     qty: Number(l3.quantity),
     unit_price: Number(l3.unit_price),
     discount_percent: l3.discount_percent ? Number(l3.discount_percent) : void 0,
@@ -2529,7 +2536,9 @@ var es_default = {
     cartEmptyTouch: "Toca un producto para a\xF1adirlo.",
     parkCurrentSale: "Aparcar venta actual",
     closeAction: "Cerrar",
-    fullscreen: "Pantalla completa"
+    fullscreen: "Pantalla completa",
+    giftBadge: "Invitaci\xF3n",
+    giftAction: "Invitar / quitar invitaci\xF3n"
   }
 };
 
@@ -2641,7 +2650,9 @@ var en_default = {
     cartEmptyTouch: "Tap a product to add it.",
     parkCurrentSale: "Park current sale",
     closeAction: "Close",
-    fullscreen: "Fullscreen"
+    fullscreen: "Fullscreen",
+    giftBadge: "Gift",
+    giftAction: "Comp / un-comp line"
   }
 };
 
@@ -3150,7 +3161,14 @@ function parseCartLines(cartData) {
       name: String(l3.name ?? ""),
       sku: l3.sku ? String(l3.sku) : void 0,
       price: Number(l3.price) || 0,
-      qty: Math.max(1, Number(l3.qty) || 1)
+      qty: Math.max(1, Number(l3.qty) || 1),
+      // Preserva la categoría fiscal del producto en el round-trip de persistencia/aparcado:
+      // es lo que el servidor usa para resolver el % por país+categoría (ADR-0085). El % es preview.
+      tax_category_key: l3.tax_category_key != null && String(l3.tax_category_key) !== "" ? String(l3.tax_category_key) : void 0,
+      tax_rate: l3.tax_rate != null && Number.isFinite(Number(l3.tax_rate)) ? Number(l3.tax_rate) : void 0,
+      cost: l3.cost != null && Number.isFinite(Number(l3.cost)) ? Number(l3.cost) : void 0,
+      is_gift: l3.is_gift === true || l3.is_gift === 1 ? true : void 0,
+      gift_reason: l3.gift_reason ? String(l3.gift_reason) : void 0
     })).filter((l3) => l3.id && l3.name);
   } catch {
     return [];
@@ -3203,7 +3221,49 @@ async function retrieveParkedTicket(client, ticket) {
   return lines;
 }
 
+<<<<<<< HEAD
 // sales/ui/components/erp-pos-touch/erp-pos-touch.ts
+=======
+// ui/lib/pos-tax.ts
+function rows2(r6) {
+  if (Array.isArray(r6)) return r6;
+  if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
+  return [];
+}
+function isRoot(r6) {
+  return r6.parent_id == null || String(r6.parent_id) === "";
+}
+async function buildCategoryRatesMap(client) {
+  const map = /* @__PURE__ */ new Map();
+  try {
+    const all = rows2(await client.query("taxes.rules.list", { page_size: 500 }));
+    const rootByCat = /* @__PURE__ */ new Map();
+    for (const r6 of all) {
+      if (!r6 || !r6.tax_category_key || !isRoot(r6)) continue;
+      const cat = String(r6.tax_category_key);
+      const cur = rootByCat.get(cat);
+      if (!cur || String(r6.valid_from ?? "") > String(cur.valid_from ?? "")) rootByCat.set(cat, r6);
+    }
+    for (const [cat, root] of rootByCat) {
+      let pct = Number(root.rate_pct) || 0;
+      for (const r6 of all) {
+        if (r6 && String(r6.parent_id ?? "") === String(root.id ?? "__none__") && root.id != null) {
+          pct += Number(r6.rate_pct) || 0;
+        }
+      }
+      map.set(cat, pct);
+    }
+  } catch {
+  }
+  return map;
+}
+function resolveLineTax(catRatesMap, taxCategoryKey) {
+  if (!taxCategoryKey) return 0;
+  return catRatesMap.get(String(taxCategoryKey)) ?? 0;
+}
+
+// ui/components/erp-pos-touch/erp-pos-touch.ts
+>>>>>>> feat/adr0085-tax-category-key
 var CATALOG2 = { es: es_default, en: en_default };
 function erplora2() {
   const c5 = globalThis.erplora;
@@ -3213,7 +3273,7 @@ function erplora2() {
 function t3(key, params) {
   return erplora2().t(CATALOG2, key, params);
 }
-function rows2(r6) {
+function rows3(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
   return [];
@@ -3249,6 +3309,8 @@ var ErpPosTouch = class extends i3 {
     this.fullscreen = false;
     this.customerName = "";
     this.prodCats = /* @__PURE__ */ new Map();
+    /** Mapa tax_category_key → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
+    this.ratesMap = /* @__PURE__ */ new Map();
     this.cartRestored = false;
     this.slots = [
       { slot: "sales.pos.order_context", container: ".order-slot", reset: "erp:order-context-reset", els: [] },
@@ -3412,23 +3474,25 @@ var ErpPosTouch = class extends i3 {
     document.addEventListener("fullscreenchange", this.onFsChange);
     window.addEventListener("erplora:locale-changed", this.onLocaleChange);
     try {
-      const [prods, methods, settingsRows, savedCart, parked, cats, prodCats] = await Promise.all([
+      const [prods, methods, settingsRows, savedCart, parked, cats, prodCats, ratesMap] = await Promise.all([
         erplora2().query("inventory.products.list", { page_size: 200 }).catch(() => []),
         erplora2().query("sales.payment_methods").catch(() => []),
         erplora2().query("sales.settings.get").catch(() => []),
         loadActiveCart(erplora2()),
         listParkedTickets(erplora2()),
         erplora2().query("inventory.categories.list", { page_size: 100, sort: "name", dir: "asc" }).catch(() => []),
-        erplora2().query("inventory.product_categories", { page_size: 2e3 }).catch(() => [])
+        erplora2().query("inventory.product_categories", { page_size: 2e3 }).catch(() => []),
+        buildCategoryRatesMap(erplora2())
       ]);
-      this.products = rows2(prods).filter((p4) => p4.is_active !== 0);
-      this.methods = rows2(methods);
-      this.settings = rows2(settingsRows)[0] || {};
+      this.ratesMap = ratesMap;
+      this.products = rows3(prods).filter((p4) => p4.is_active !== 0);
+      this.methods = rows3(methods);
+      this.settings = rows3(settingsRows)[0] || {};
       this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
       this.payMethod = this.methods[0];
       this.parked = parked;
-      this.categories = rows2(cats).filter((c5) => c5.name);
-      for (const pc of rows2(prodCats)) {
+      this.categories = rows3(cats).filter((c5) => c5.name);
+      for (const pc of rows3(prodCats)) {
         if (!this.prodCats.has(pc.product_id)) this.prodCats.set(pc.product_id, /* @__PURE__ */ new Set());
         this.prodCats.get(pc.product_id).add(pc.category_id);
       }
@@ -3496,13 +3560,18 @@ var ErpPosTouch = class extends i3 {
   }
   // Dinero formateado con la MONEDA DEL HUB (ADR-0059): el SDK la resuelve de /api/hub/context
   // (misma fuente que dashboard/billing). Antes hardcodeaba '€' / la moneda por-módulo.
+<<<<<<< HEAD
   // El dinero viaja en CÉNTIMOS (ADR-0007) → `formatMoney` (divide entre 100), NUNCA `formatAmount`
   // (ese es para importes que ya llegan en euros): con céntimos pintaría 1,80 € como «180,00 €».
+=======
+  // FIX QA (2026-06-25): el POS trabaja en CÉNTIMOS → formatMoney (divide /100), NO formatAmount
+  // (que mostraba precios ×100).
+>>>>>>> feat/adr0085-tax-category-key
   money(n6) {
     return erplora2().formatMoney(Number(n6) || 0);
   }
   get total() {
-    return this.cart.reduce((s5, l3) => s5 + l3.price * l3.qty, 0);
+    return this.cart.reduce((s5, l3) => s5 + (l3.is_gift ? 0 : l3.price * l3.qty), 0);
   }
   get itemCount() {
     return this.cart.reduce((s5, l3) => s5 + l3.qty, 0);
@@ -3547,8 +3616,16 @@ var ErpPosTouch = class extends i3 {
     }
   }
   add(p4) {
-    const ex = this.cart.find((l3) => l3.id === p4.id);
-    this.cart = ex ? this.cart.map((l3) => l3.id === p4.id ? { ...l3, qty: l3.qty + 1 } : l3) : [...this.cart, { id: p4.id, name: p4.name, sku: p4.sku, price: Number(p4.price), qty: 1 }];
+    const ex = this.cart.find((l3) => l3.id === p4.id && !l3.is_gift);
+    const tax_rate = resolveLineTax(this.ratesMap, p4.tax_category_key);
+    this.cart = ex ? this.cart.map((l3) => l3.id === p4.id && !l3.is_gift ? { ...l3, qty: l3.qty + 1 } : l3) : [...this.cart, { id: p4.id, name: p4.name, sku: p4.sku, price: Number(p4.price), qty: 1, tax_category_key: p4.tax_category_key, tax_rate, cost: Number(p4.cost) || 0 }];
+  }
+  /** Invitar/quitar invitación a una línea (comp, ADR-comp): toggle is_gift con un motivo por defecto.
+   *  La línea regalo no se cobra (el servidor pone net/tax/total=0) pero descuenta stock. */
+  toggleGift(id) {
+    this.cart = this.cart.map(
+      (l3) => l3.id === id ? { ...l3, is_gift: !l3.is_gift, gift_reason: !l3.is_gift ? l3.gift_reason || "Invitaci\xF3n" : void 0 } : l3
+    );
   }
   /** Fija la cantidad de una línea (desde ok-qty-stepper); al llegar a 0 la línea se elimina. */
   setQtyAbs(id, v3) {
@@ -3579,9 +3656,10 @@ var ErpPosTouch = class extends i3 {
     this.busy = true;
     this.error = "";
     try {
-      const items = this.cart.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: l3.qty }));
+      const items = this.cart.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: l3.qty, tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0, category_id: this.prodCats.get(l3.id)?.values().next().value ?? null, is_gift: l3.is_gift ?? false, gift_reason: l3.gift_reason ?? "", cost: l3.cost ?? 0 }));
       await erplora2().command("sales.complete_sale", {
         items,
+        tax_included: this.settings.default_tax_included !== 0,
         payment_method_id: this.payMethod?.id ?? null,
         payment_method_name: this.payMethod?.name ?? "Efectivo",
         amount_tendered: this.tenderedNum || this.total,
@@ -3591,7 +3669,7 @@ var ErpPosTouch = class extends i3 {
         customer_id: this.customerId ?? null,
         customer_name: this.customerName
       });
-      const recent = rows2(await erplora2().query("sales.list", { page_size: 1, sort: "created_at", dir: "desc" }));
+      const recent = rows3(await erplora2().query("sales.list", { page_size: 1, sort: "created_at", dir: "desc" }));
       const saleId = recent[0]?.id;
       if (saleId && this.docFormat === "invoice") {
         await erplora2().command("sales.set_document_type", { sale_id: saleId, document_type: "invoice" });
@@ -3690,6 +3768,7 @@ var ErpPosTouch = class extends i3 {
             ${!this.parked.length ? b2`<div class="hint" style="text-align:center">${t3("ui.noParkedTickets")}</div>` : A}
           </div>` : A}
 
+<<<<<<< HEAD
       <!-- El CUERPO. ion-content ya trae su propio scroll: no hace falta pelearse con
            flex:1 + overflow:auto a mano (que es lo que fallaba con el carrito vacío). -->
       <ion-content class="cart-body">
@@ -3704,6 +3783,24 @@ var ErpPosTouch = class extends i3 {
               </ion-item>`)}
             </ion-list>` : b2`<div class="empty">${t3("ui.cartEmptyTouch")}</div>`}
       </ion-content>
+=======
+      ${this.cart.length ? b2`<ion-list class="lines" lines="full">
+            ${this.cart.map((l3) => b2`<ion-item>
+              <ion-label>
+                <h3>${l3.name}${l3.is_gift ? b2` <ion-badge color="success">${t3("ui.giftBadge")}</ion-badge>` : A}</h3>
+                <p>${this.money(l3.price)}${l3.is_gift && l3.gift_reason ? b2` · ${l3.gift_reason}` : A}</p>
+              </ion-label>
+              <div slot="end" class="lineend">
+                <span class="lt" style=${l3.is_gift ? "text-decoration:line-through;opacity:.55" : ""}>${this.money(l3.price * l3.qty)}</span>
+                <ion-button fill="clear" size="small" title=${t3("ui.giftAction")} @click=${() => this.toggleGift(l3.id)}>
+                  <ion-icon name=${l3.is_gift ? "gift" : "gift-outline"} slot="icon-only" color=${l3.is_gift ? "success" : "medium"}></ion-icon>
+                </ion-button>
+                <ok-qty-stepper .value=${l3.qty} .min=${0} .step=${1}
+                  @ok-change=${(e6) => this.setQtyAbs(l3.id, e6.detail.value)}></ok-qty-stepper>
+              </div>
+            </ion-item>`)}
+          </ion-list>` : b2`<div class="lines"><div class="empty">${t3("ui.cartEmptyTouch")}</div></div>`}
+>>>>>>> feat/adr0085-tax-category-key
 
       <!-- El PIE. ion-footer es un pie de verdad: se queda abajo pase lo que pase. -->
       <ion-footer class="ion-no-border">
@@ -3877,7 +3974,7 @@ function erplora3() {
 function t4(key, params) {
   return erplora3().t(CATALOG3, key, params);
 }
-function rows3(r6) {
+function rows4(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
   return [];
@@ -3899,6 +3996,8 @@ var ErpPosDesktop = class extends i3 {
     this.parkedOpen = false;
     this.tableLabel = "";
     this.customerName = "";
+    /** Mapa tax_category_key → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
+    this.ratesMap = /* @__PURE__ */ new Map();
     this.cartRestored = false;
     /** Slots de contexto que el POS expone; cada uno lo rellena (o no) un módulo externo. */
     this.slots = [
@@ -3968,16 +4067,18 @@ var ErpPosDesktop = class extends i3 {
     super.connectedCallback();
     window.addEventListener("erplora:locale-changed", this.onLocaleChange);
     try {
-      const [prods, methods, settingsRows, savedCart, parked] = await Promise.all([
+      const [prods, methods, settingsRows, savedCart, parked, ratesMap] = await Promise.all([
         erplora3().query("inventory.products.list", { page_size: 500 }).catch(() => []),
         erplora3().query("sales.payment_methods").catch(() => []),
         erplora3().query("sales.settings.get").catch(() => []),
         loadActiveCart(erplora3()),
-        listParkedTickets(erplora3())
+        listParkedTickets(erplora3()),
+        buildCategoryRatesMap(erplora3())
       ]);
-      this.products = rows3(prods).filter((p4) => p4.is_active !== 0);
-      this.methods = rows3(methods);
-      this.settings = rows3(settingsRows)[0] || {};
+      this.ratesMap = ratesMap;
+      this.products = rows4(prods).filter((p4) => p4.is_active !== 0);
+      this.methods = rows4(methods);
+      this.settings = rows4(settingsRows)[0] || {};
       this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
       this.payMethod = this.methods[0];
       this.parked = parked;
@@ -4048,12 +4149,18 @@ var ErpPosDesktop = class extends i3 {
   }
   // Dinero formateado con la MONEDA DEL HUB (ADR-0059): el SDK la resuelve de /api/hub/context
   // (misma fuente que dashboard/billing). Antes hardcodeaba '€' / la moneda por-módulo.
+<<<<<<< HEAD
   // Céntimos (ADR-0007) → `formatMoney`, que divide entre 100. Ver el mismo helper en erp-pos-touch.
+=======
+  // FIX QA (2026-06-25): el POS trabaja en CÉNTIMOS (price de inventory.products.list, total del
+  // carrito) → debe usar formatMoney (divide /100), NO formatAmount (espera unidades) que mostraba
+  // los precios ×100 ("3.500,00 €" por un servicio de 35 €).
+>>>>>>> feat/adr0085-tax-category-key
   money(n6) {
     return erplora3().formatMoney(Number(n6) || 0);
   }
   get total() {
-    return this.cart.reduce((s5, l3) => s5 + l3.price * l3.qty, 0);
+    return this.cart.reduce((s5, l3) => s5 + (l3.is_gift ? 0 : l3.price * l3.qty), 0);
   }
   get parkingEnabled() {
     return this.settings.enable_parked_tickets !== 0;
@@ -4087,10 +4194,17 @@ var ErpPosDesktop = class extends i3 {
     return this.products.filter((p4) => (p4.sku || "").toLowerCase().includes(q) || p4.name.toLowerCase().includes(q)).slice(0, 8);
   }
   add(p4) {
-    const ex = this.cart.find((l3) => l3.id === p4.id);
-    this.cart = ex ? this.cart.map((l3) => l3.id === p4.id ? { ...l3, qty: l3.qty + 1 } : l3) : [...this.cart, { id: p4.id, name: p4.name, sku: p4.sku, price: Number(p4.price), qty: 1 }];
+    const ex = this.cart.find((l3) => l3.id === p4.id && !l3.is_gift);
+    const tax_rate = resolveLineTax(this.ratesMap, p4.tax_category_key);
+    this.cart = ex ? this.cart.map((l3) => l3.id === p4.id && !l3.is_gift ? { ...l3, qty: l3.qty + 1 } : l3) : [...this.cart, { id: p4.id, name: p4.name, sku: p4.sku, price: Number(p4.price), qty: 1, tax_category_key: p4.tax_category_key, tax_rate, cost: Number(p4.cost) || 0 }];
     this.term = "";
     this.scanInput?.focus();
+  }
+  /** Invitar/quitar invitación a una línea (comp): toggle is_gift con motivo por defecto. */
+  toggleGift(id) {
+    this.cart = this.cart.map(
+      (l3) => l3.id === id ? { ...l3, is_gift: !l3.is_gift, gift_reason: !l3.is_gift ? l3.gift_reason || "Invitaci\xF3n" : void 0 } : l3
+    );
   }
   onScanKey(e6) {
     if (e6.key !== "Enter") return;
@@ -4123,9 +4237,10 @@ var ErpPosDesktop = class extends i3 {
     this.busy = true;
     this.error = "";
     try {
-      const items = this.cart.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: l3.qty }));
+      const items = this.cart.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: l3.qty, tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0, is_gift: l3.is_gift ?? false, gift_reason: l3.gift_reason ?? "", cost: l3.cost ?? 0 }));
       await erplora3().command("sales.complete_sale", {
         items,
+        tax_included: this.settings.default_tax_included !== 0,
         payment_method_id: this.payMethod?.id ?? null,
         payment_method_name: this.payMethod?.name ?? "Efectivo",
         amount_tendered: this.tenderedNum || this.total,
@@ -4135,7 +4250,7 @@ var ErpPosDesktop = class extends i3 {
         customer_id: this.customerId ?? null,
         customer_name: this.customerName
       });
-      const recent = rows3(await erplora3().query("sales.list", { page_size: 1, sort: "created_at", dir: "desc" }));
+      const recent = rows4(await erplora3().query("sales.list", { page_size: 1, sort: "created_at", dir: "desc" }));
       const saleId = recent[0]?.id;
       if (saleId && this.docFormat === "invoice") {
         await erplora3().command("sales.set_document_type", { sale_id: saleId, document_type: "invoice" });
@@ -4186,12 +4301,12 @@ var ErpPosDesktop = class extends i3 {
         <thead><tr><th>${t4("ui.colProduct")}</th><th class="num">${t4("ui.colPrice")}</th><th class="num">${t4("ui.colQty")}</th><th class="num">${t4("ui.colAmount")}</th><th></th></tr></thead>
         <tbody>
           ${this.cart.length ? this.cart.map((l3) => b2`<tr>
-                <td>${l3.name} ${l3.sku ? b2`<small style="color:#8b897f">· ${l3.sku}</small>` : A}</td>
+                <td>${l3.name} ${l3.sku ? b2`<small style="color:#8b897f">· ${l3.sku}</small>` : A}${l3.is_gift ? b2` <ion-badge color="success">${t4("ui.giftBadge")}</ion-badge>` : A}</td>
                 <td class="num">${this.money(l3.price)}</td>
                 <td class="num"><input class="q" type="number" min="1" .value=${String(l3.qty)}
                   @input=${(e6) => this.setQty(l3.id, Number(e6.target.value))} /></td>
-                <td class="num">${this.money(l3.price * l3.qty)}</td>
-                <td class="num"><button class="rm" @click=${() => this.remove(l3.id)} title=${t4("ui.remove")}>✕</button></td>
+                <td class="num" style=${l3.is_gift ? "text-decoration:line-through;opacity:.55" : ""}>${this.money(l3.price * l3.qty)}</td>
+                <td class="num"><button class="rm" @click=${() => this.toggleGift(l3.id)} title=${t4("ui.giftAction")} style=${l3.is_gift ? "color:var(--ion-color-success,#2dd36f)" : ""}>🎁</button> <button class="rm" @click=${() => this.remove(l3.id)} title=${t4("ui.remove")}>✕</button></td>
               </tr>`) : b2`<tr><td colspan="5"><div class="empty">${t4("ui.cartEmptyDesktop")}</div></td></tr>`}
         </tbody>
       </table>
@@ -4357,8 +4472,8 @@ var ErpPos = class extends i3 {
   async connectedCallback() {
     super.connectedCallback();
     try {
-      const rows4 = await erplora4().query("sales.settings.get");
-      const row = Array.isArray(rows4) ? rows4[0] : rows4;
+      const rows5 = await erplora4().query("sales.settings.get");
+      const row = Array.isArray(rows5) ? rows5[0] : rows5;
       this.layout = row?.pos_layout === "desktop" ? "desktop" : "touch";
     } catch {
       this.layout = "touch";
@@ -4960,17 +5075,17 @@ var OkDataTable = class extends i3 {
       out.push(row);
     }
     const headers = out.shift() ?? [];
-    const rows4 = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
-    return { headers, rows: rows4 };
+    const rows5 = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
+    return { headers, rows: rows5 };
   }
   async onImportFile(ev) {
     const input = ev.target;
     const file = input.files?.[0];
     if (!file) return;
     const text = await file.text();
-    const { headers, rows: rows4 } = this.parseCsv(text);
-    this.emit("csvImport", { headers, rows: rows4 });
-    this.emit("import", { headers, rows: rows4 });
+    const { headers, rows: rows5 } = this.parseCsv(text);
+    this.emit("csvImport", { headers, rows: rows5 });
+    this.emit("import", { headers, rows: rows5 });
     input.value = "";
   }
   toggle(p4) {
@@ -5653,7 +5768,11 @@ var OkDataTable = class extends i3 {
               <ion-card class=${`rcard${selected ? " selected" : ""}`}>
                 ${hasHead ? b2`
                       <ion-card-header class="rcard-head">
+<<<<<<< HEAD
                         ${icon != null && icon !== "" ? b2`<span class="rc-icon">${typeof icon === "string" ? b2`<ion-icon .icon=${okIcon(icon)}></ion-icon>` : icon}</span>` : A}
+=======
+                        ${icon != null && icon !== "" ? b2`<span class="rc-icon">${typeof icon === "string" ? b2`<ion-icon name=${icon}></ion-icon>` : icon}</span>` : A}
+>>>>>>> feat/adr0085-tax-category-key
                         <span class="rc-title">${this.cardTitle ? this.cardTitle(row) : A}</span>
                         ${this.selectable ? b2`<ion-checkbox .checked=${selected} aria-label=${this.t.select} @ionChange=${() => this.toggleRow(key)}></ion-checkbox>` : A}
                       </ion-card-header>
@@ -5989,7 +6108,7 @@ var ErpSalesList = class extends i3 {
           { value: "voided", label: t7("ui.statusVoided") }
         ]
       },
-      { key: "total", header: t7("ui.colTotal"), align: "right", sortable: true, filterable: true, filterType: "range", format: (r6) => Number(r6.total || 0).toFixed(2) }
+      { key: "total", header: t7("ui.colTotal"), align: "right", sortable: true, filterable: true, filterType: "range", format: (r6) => erplora5().formatMoney(Number(r6.total || 0)) }
     ];
   }
   // TODO-LIT: componentWillLoad → connectedCallback. Recuerda: connectedCallback se dispara
@@ -6019,8 +6138,8 @@ var ErpSalesList = class extends i3 {
   }
   async loadStats() {
     try {
-      const rows4 = await erplora5().query("sales.stats");
-      this.stats = rows4 && rows4[0] || { count: 0, total_revenue: 0, avg_ticket: 0 };
+      const rows5 = await erplora5().query("sales.stats");
+      this.stats = rows5 && rows5[0] || { count: 0, total_revenue: 0, avg_ticket: 0 };
     } catch (e6) {
       this.statsError = e6 instanceof Error ? e6.message : erplora5().t(CATALOG4, "ui.errorStats");
     }
@@ -6036,11 +6155,11 @@ var ErpSalesList = class extends i3 {
           </div>
           <div class="card">
             <div class="k">${t7("ui.revenue")}</div>
-            <div class="v">${Number(this.stats.total_revenue || 0).toFixed(2)}</div>
+            <div class="v">${erplora5().formatMoney(Number(this.stats.total_revenue || 0))}</div>
           </div>
           <div class="card">
             <div class="k">${t7("ui.avgTicket")}</div>
-            <div class="v">${Number(this.stats.avg_ticket || 0).toFixed(2)}</div>
+            <div class="v">${erplora5().formatMoney(Number(this.stats.avg_ticket || 0))}</div>
           </div>
         </div>
         ${this.statsError ? b2`<p class="err">${this.statsError}</p>` : A}
@@ -6082,6 +6201,7 @@ __decorateClass([
   r5()
 ], ErpSalesList.prototype, "docSaleId", 2);
 define("erp-sales-list", ErpSalesList);
+<<<<<<< HEAD
 
 // sales/ui/components/erp-sales-settings/erp-sales-settings.ts
 var CATALOG5 = { es: es_default, en: en_default };
@@ -6288,3 +6408,5 @@ __decorateClass([
   r5()
 ], ErpSalesSettings.prototype, "error", 2);
 define("erp-sales-settings", ErpSalesSettings);
+=======
+>>>>>>> feat/adr0085-tax-category-key

@@ -1,17 +1,150 @@
-{ "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "sales.complete_sale payload", "type": "object", "additionalProperties": true,
-  "description": "DINERO (`price`, `amount_tendered`) = CÉNTIMOS enteros (ADR-0007/0123): un 2.20 aquí serían 2 céntimos. `quantity` (1,5 kg) y las TASAS (`discount`, `tax_rate`, `discount_percent`) NO son dinero y sí llevan decimales.",
-  "required": ["items"],
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sales.complete_sale payload",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "items"
+  ],
   "properties": {
-    "items": { "type": "array", "items": { "type": "object", "required": ["product_name","price","quantity"],
-      "properties": {
-        "product_id": {"type":["string","null"]}, "product_name": {"type":"string"},
-        "product_sku": {"type":"string"}, "is_service": {"type":"boolean"},
-        "quantity": {"type":"number"}, "price": {"type":"integer","minimum":0},
-        "discount": {"type":"number"}, "tax_rate": {"type":"number"}, "tax_class_name": {"type":"string"} } } },
-    "tax_included": {"type":"boolean"}, "discount_percent": {"type":"number"},
-    "amount_tendered": {"type":"integer","minimum":0}, "payment_method_id": {"type":["string","null"]},
-    "payment_method_name": {"type":"string"}, "customer_id": {"type":["string","null"]},
-    "customer_name": {"type":"string"}, "notes": {"type":"string"}, "channel": {"type":"string"},
-    "source_module": {"type":"string"}, "status": {"type":"string"}, "table_id": {"type":["string","null"]},
-    "order_id": {"type":["string","null"]}, "order_number": {"type":["string","null"]} } }
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "product_name",
+          "price",
+          "quantity"
+        ],
+        "properties": {
+          "product_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_name": {
+            "type": "string"
+          },
+          "product_sku": {
+            "type": "string"
+          },
+          "is_service": {
+            "type": "boolean"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "price": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "discount": {
+            "type": "number"
+          },
+          "tax_category_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tax_rate": {
+            "type": "number"
+          },
+          "tax_class_name": {
+            "type": "string"
+          },
+          "is_gift": {
+            "type": "boolean"
+          },
+          "gift_reason": {
+            "type": "string"
+          },
+          "cost": {
+            "type": "number"
+          },
+          "category_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "tax_included": {
+      "type": "boolean"
+    },
+    "discount_percent": {
+      "type": "number"
+    },
+    "amount_tendered": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "payment_method_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "payment_method_name": {
+      "type": "string"
+    },
+    "customer_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "customer_name": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "channel": {
+      "type": "string"
+    },
+    "source_module": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "table_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "order_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "order_number": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "staff_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "staff_name": {
+      "type": "string"
+    },
+    "appointment_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "description": "DINERO (`price`, `amount_tendered`) = UNIDADES MÍNIMAS enteras (ADR-0007/0123): un 2.20 aquí serían 2 céntimos. `quantity` (1,5 kg) y las TASAS (`discount`, `tax_rate`) NO son dinero y sí llevan decimales. El `tax_rate` que mande el cliente es una PISTA: el servidor resuelve el % real desde `tax_category_key` contra el catálogo de confianza (ADR-0085/0069)."
+}

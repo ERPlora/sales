@@ -105,6 +105,8 @@
     "cartEmptyTouch": "Tap a product to add it.",
     "parkCurrentSale": "Park current sale",
     "closeAction": "Close",
-    "fullscreen": "Fullscreen"
+    "fullscreen": "Fullscreen",
+    "giftBadge": "Gift",
+    "giftAction": "Comp / un-comp line"
   }
 }

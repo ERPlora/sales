@@ -1,7 +1,7 @@
 {
   "id": "sales",
   "name": "Sales & POS",
-  "version": "2.4.14",
+  "version": "2.7.0",
   "agent": {
     "description": "Manages sales and point-of-sale operations: list and inspect sales, complete new sales transactions, void sales, configure payment methods, and retrieve sales statistics.",
     "keywords": [
@@ -17,7 +17,8 @@
   },
   "depends_on": [
     "customers",
-    "inventory"
+    "inventory",
+    "taxes"
   ],
   "permissions": [
     "sales.view_sale",
@@ -68,20 +69,24 @@
       "label": "Sales",
       "icon": "cart-outline",
       "component": "erp-sales-list"
-    },
-    {
-      "id": "settings",
-      "label": "POS Settings",
-      "icon": "settings",
-      "component": "erp-sales-settings"
     }
   ],
+  "settings": {
+    "title": "TPV",
+    "icon": "card-outline",
+    "schema": "schemas/settings_update.json",
+    "get": "sales.settings.get",
+    "set": "sales.settings.update"
+  },
   "migrations": {
     "sqlite": [
       "migrations/sqlite/001_init.sql",
       "migrations/sqlite/002_pos_settings.sql",
       "migrations/sqlite/003_document_type.sql",
-      "migrations/sqlite/004_order_link.sql"
+      "migrations/sqlite/004_order_link.sql",
+      "migrations/sqlite/005_staff_attribution.sql",
+      "migrations/sqlite/006_tax_snapshot.sql",
+      "migrations/sqlite/007_gift_comp.sql"
     ]
   },
   "queries": {
@@ -104,6 +109,7 @@
           "payment_method_name",
           "customer_name",
           "channel",
+          "staff_id",
           "created_at"
         ],
         "default_sort": "created_at",
@@ -128,6 +134,9 @@
             "op": "eq"
           },
           "channel": {
+            "op": "eq"
+          },
+          "staff_id": {
             "op": "eq"
           },
           "created_at": {
@@ -205,11 +214,22 @@
       "ai": {
         "description": "Returns the sales amount per day for the last 7 days (one row per day with sales)"
       }
+    },
+    "sales.by_staff": {
+      "permission": "sales.view_reports",
+      "expose_api": true,
+      "sql": "queries/by_staff.sql",
+      "ai": {
+        "description": "Breaks down completed sales attributed to each professional (staff_id) over a date range (date_from..date_to, inclusive): sales_count and gross/net/tax totals in cents. Backs the per-professional day close; combine with staff.commissions.summary to compute commission."
+      }
     }
   },
   "commands": {
     "sales.complete_sale": {
       "permission": "sales.add_sale",
+      "reads": [
+        "taxes.rules.list"
+      ],
       "handler": {
         "type": "wasm",
         "file": "dist/handler.wasm",
@@ -217,7 +237,7 @@
       },
       "schema": "schemas/complete_sale.json",
       "ai": {
-        "description": "Completes and records a sale with its line items and payment"
+        "description": "Completes and records a sale with its line items and payment. Optional staff_id attributes the sale to the professional who performed it; optional appointment_id traces a sale created from an appointment (emits sales.sale.created_from_appointment)."
       }
     },
     "sales.void": {
@@ -264,6 +284,7 @@
     "sales.settings.update": {
       "permission": "sales.manage_settings",
       "transaction": true,
+      "schema": "schemas/settings_update.json",
       "sql": [
         "commands/settings_upsert.sql"
       ],
@@ -331,7 +352,8 @@
       "permission": "sales.view_reports",
       "sectors": [
         "hosteleria",
-        "retail"
+        "retail",
+        "belleza"
       ],
       "default": true,
       "kind": "kpi",
@@ -355,7 +377,8 @@
       "permission": "sales.view_reports",
       "sectors": [
         "hosteleria",
-        "retail"
+        "retail",
+        "belleza"
       ],
       "default": true,
       "kind": "kpi",
@@ -378,7 +401,8 @@
       "permission": "sales.view_reports",
       "sectors": [
         "hosteleria",
-        "retail"
+        "retail",
+        "belleza"
       ],
       "default": false,
       "kind": "chart",
@@ -403,7 +427,8 @@
       "permission": "sales.view_sale",
       "sectors": [
         "hosteleria",
-        "retail"
+        "retail",
+        "belleza"
       ],
       "default": false,
       "kind": "timeline",

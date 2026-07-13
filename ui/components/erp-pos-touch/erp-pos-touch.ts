@@ -7,6 +7,7 @@ import {
   loadActiveCart, persistActiveCart, listParkedTickets, parkCart, retrieveParkedTicket,
   type CartLine, type ErploraClientLike, type ParkedTicket,
 } from '../../lib/pos-cart.js';
+import { buildCategoryRatesMap, resolveLineTax } from '../../lib/pos-tax.js';
 // Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC.
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
@@ -20,13 +21,13 @@ const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 // (naranja). En móvil el carrito se recoge a un drawer abierto desde un botón flotante naranja.
 // Quitar línea = cantidad a 0. Al cobrar: `sales.complete_sale` (channel='pos') → documento.
 
-interface Product { id: string; name: string; sku?: string; price: number; is_active?: number; product_type?: string; image?: string; }
+interface Product { id: string; name: string; sku?: string; price: number; cost?: number; is_active?: number; product_type?: string; image?: string; tax_category_key?: string; }
 interface PayMethod { id: string; name: string; type?: string; }
-interface PosSettings { default_document_format?: string; currency?: string; enable_parked_tickets?: number; }
+interface PosSettings { default_document_format?: string; currency?: string; enable_parked_tickets?: number; default_tax_included?: number; }
 interface Category { id: string; name: string; icon?: string; color?: string; image?: string; product_count?: number; }
 interface ProdCat { product_id: string; category_id: string; }
 
-/** i18n del módulo (ADR-0055): idioma activo + traducción del catálogo ui. */
+/** i18n del módulo (ADR-0055): idioma activo + traducción del catálogo `ui`. */
 interface I18nClient {
   locale: string;
   t(catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>): string;
@@ -38,7 +39,7 @@ function erplora(): ErploraClientLike {
   return c;
 }
 
-/** Traduce una clave del catálogo ui con el idioma activo del shell. */
+/** Traduce una clave del catálogo `ui` con el idioma activo del shell. */
 function t(key: string, params?: Record<string, unknown>): string {
   return (erplora() as unknown as I18nClient).t(CATALOG, key, params);
 }
@@ -117,23 +118,12 @@ export class ErpPosTouch extends LitElement {
     /* ── Carrito ── */
     .cart { position:relative; display:flex; flex-direction:column; min-height:0; background:var(--panel); border-left:1px solid var(--ion-border-color); }
     .cart ion-header ion-toolbar { --background:var(--panel); --color:var(--tx); --border-color:var(--ion-border-color); }
-    /* Hook del header: los botones que inyectan otros módulos se alinean como uno más de la
-       toolbar. Si ningún módulo provee el slot, el contenedor queda vacío y no ocupa nada. */
-    .cart-actions-slot { display:flex; align-items:center; }
-    .cart-actions-slot:empty { display:none; }
-    /* 2ª toolbar del header: mesa y cliente, SIEMPRE visibles (no scrollean con las líneas).
-       Si ningún módulo provee esos slots, la toolbar entera desaparece y no ocupa nada. */
-    .ctx-toolbar { --min-height:0; --padding-top:0; --padding-bottom:0; --background:var(--panel); }
-    .ctx-toolbar:has(.order-slot:empty):has(.customer-slot:empty) { display:none; }
-    .cart-ctx { display:flex; gap:.4rem; padding:.35rem .2rem; }
+    .cart ion-title { font-size:1rem; }
+    .cart-ctx { display:flex; gap:.4rem; padding:.5rem .6rem; border-bottom:1px solid var(--ion-border-color); }
     .cart-ctx .order-slot, .cart-ctx .customer-slot { flex:1; min-width:0; }
     .cart-ctx .order-slot:empty, .cart-ctx .customer-slot:empty { display:none; }
-    /* El CUERPO. Ionic ya resuelve «header fijo · cuerpo con scroll · pie fijo»: ion-content trae
-       su propio scroll, así que aquí solo hay que decirle que ocupe el hueco que queda. Antes esto
-       era flex:1 + overflow:auto a mano sobre ion-list.lines, que no aplicaba al div del carrito
-       vacío: nada empujaba al pie y COBRAR se movía. */
-    .cart ion-content.cart-body { flex:1; min-height:0; --background:var(--panel); --color:var(--tx); }
-    ion-list.lines { padding:0; background:transparent; }
+    .cart-ctx:has(.order-slot:empty):has(.customer-slot:empty) { display:none; }
+    ion-list.lines { flex:1; overflow:auto; min-height:6rem; padding:0; background:transparent; }
     ion-list.lines ion-item { --background:transparent; --color:var(--tx); --border-color:var(--ion-border-color); --padding-start:.7rem; --inner-padding-end:.5rem; }
     ion-list.lines ion-item h3 { font-weight:600; color:var(--tx); }
     ion-list.lines ion-item p { color:var(--mut); }
@@ -141,9 +131,6 @@ export class ErpPosTouch extends LitElement {
     .lineend .lt { font-weight:700; white-space:nowrap; }
     ok-qty-stepper { --ok-qty-field-width:2.3rem; --ok-surface:var(--tile); --ok-text:var(--tx); --ok-border:var(--ion-border-color); }
     .empty { color:var(--mut); text-align:center; padding:2.5rem 1rem; }
-    /* El PIE. ion-footer se queda abajo por su cuenta (es un pie de verdad, no un div con flex). */
-    .cart ion-footer { flex:none; }
-    .cart ion-footer ion-toolbar { --background:var(--panel); }
     .cart-foot { padding:.75rem; border-top:1px solid var(--ion-border-color); background:var(--panel); }
     .total { display:flex; justify-content:space-between; align-items:baseline; margin:.1rem 0 .65rem; font-size:1rem; color:var(--mut); }
     .total b { font-size:1.7rem; color:var(--tx); }
@@ -214,24 +201,23 @@ export class ErpPosTouch extends LitElement {
   @state() private cartOpen = false;
   @state() private fullscreen = false;
   @state() private tableId?: string;
+  @state() private tableLabel = '';
   @state() private customerId?: string;
   @state() private customerName = '';
 
   private prodCats = new Map<string, Set<string>>();
+  /** Mapa tax_category_key → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
+  private ratesMap = new Map<string, number>();
   private cartRestored = false;
   private saveTimer?: ReturnType<typeof setTimeout>;
   private readonly slots: Array<{ slot: string; container: string; reset: string; resolved?: { component: string }[]; els: HTMLElement[] }> = [
     { slot: 'sales.pos.order_context', container: '.order-slot', reset: 'erp:order-context-reset', els: [] },
     { slot: 'sales.pos.customer_context', container: '.customer-slot', reset: 'erp:customer-context-reset', els: [] },
-    // Botones de otros módulos en la barra del carrito (tables: elegir mesa; customers: elegir
-    // cliente…). Cada módulo pinta su propio ion-button y abre SU modal: el POS no los conoce.
-    { slot: 'sales.pos.cart_actions', container: '.cart-actions-slot', reset: 'erp:cart-actions-reset', els: [] },
   ];
-  // La mesa la PINTA el módulo tables en `.order-slot` (slot sales.pos.order_context); aquí solo
-  // guardamos su id, que es lo que viaja en la venta.
   private readonly onOrderContext = (e: Event) => {
-    const d = (e as CustomEvent<{ table_id: string | null }>).detail ?? { table_id: null };
+    const d = (e as CustomEvent<{ table_id: string | null; label?: string }>).detail ?? { table_id: null };
     this.tableId = d.table_id ?? undefined;
+    this.tableLabel = d.label ?? '';
   };
   private readonly onCustomerContext = (e: Event) => {
     const d = (e as CustomEvent<{ customer_id: string | null; customer_name?: string }>).detail ?? { customer_id: null };
@@ -246,7 +232,7 @@ export class ErpPosTouch extends LitElement {
     document.addEventListener('fullscreenchange', this.onFsChange);
     window.addEventListener('erplora:locale-changed', this.onLocaleChange);
     try {
-      const [prods, methods, settingsRows, savedCart, parked, cats, prodCats] = await Promise.all([
+      const [prods, methods, settingsRows, savedCart, parked, cats, prodCats, ratesMap] = await Promise.all([
         erplora().query('inventory.products.list', { page_size: 200 }).catch(() => []),
         erplora().query('sales.payment_methods').catch(() => []),
         erplora().query('sales.settings.get').catch(() => []),
@@ -254,7 +240,9 @@ export class ErpPosTouch extends LitElement {
         listParkedTickets(erplora()),
         erplora().query('inventory.categories.list', { page_size: 100, sort: 'name', dir: 'asc' }).catch(() => []),
         erplora().query('inventory.product_categories', { page_size: 2000 }).catch(() => []),
+        buildCategoryRatesMap(erplora()),
       ]);
+      this.ratesMap = ratesMap;
       this.products = rows<Product>(prods).filter((p) => p.is_active !== 0);
       this.methods = rows<PayMethod>(methods);
       this.settings = rows<PosSettings>(settingsRows)[0] || {};
@@ -330,10 +318,10 @@ export class ErpPosTouch extends LitElement {
 
   // Dinero formateado con la MONEDA DEL HUB (ADR-0059): el SDK la resuelve de /api/hub/context
   // (misma fuente que dashboard/billing). Antes hardcodeaba '€' / la moneda por-módulo.
-  // El dinero viaja en CÉNTIMOS (ADR-0007) → `formatMoney` (divide entre 100), NUNCA `formatAmount`
-  // (ese es para importes que ya llegan en euros): con céntimos pintaría 1,80 € como «180,00 €».
+  // FIX QA (2026-06-25): el POS trabaja en CÉNTIMOS → formatMoney (divide /100), NO formatAmount
+  // (que mostraba precios ×100).
   private money(n: number) { return erplora().formatMoney(Number(n) || 0); }
-  private get total() { return this.cart.reduce((s, l) => s + l.price * l.qty, 0); }
+  private get total() { return this.cart.reduce((s, l) => s + (l.is_gift ? 0 : l.price * l.qty), 0); }
   private get itemCount() { return this.cart.reduce((s, l) => s + l.qty, 0); }
   private get parkingEnabled() { return this.settings.enable_parked_tickets !== 0; }
   private catCount(id: string) {
@@ -374,10 +362,21 @@ export class ErpPosTouch extends LitElement {
   }
 
   private add(p: Product) {
-    const ex = this.cart.find((l) => l.id === p.id);
+    const ex = this.cart.find((l) => l.id === p.id && !l.is_gift);
+    // tax_category_key = referencia fiscal del producto (autoridad del servidor, ADR-0085).
+    // tax_rate = % resuelto en cliente SOLO para el preview del total. cost = para el arqueo de regalos.
+    const tax_rate = resolveLineTax(this.ratesMap, p.tax_category_key);
     this.cart = ex
-      ? this.cart.map((l) => (l.id === p.id ? { ...l, qty: l.qty + 1 } : l))
-      : [...this.cart, { id: p.id, name: p.name, sku: p.sku, price: Number(p.price), qty: 1 }];
+      ? this.cart.map((l) => (l.id === p.id && !l.is_gift ? { ...l, qty: l.qty + 1 } : l))
+      : [...this.cart, { id: p.id, name: p.name, sku: p.sku, price: Number(p.price), qty: 1, tax_category_key: p.tax_category_key, tax_rate, cost: Number(p.cost) || 0 }];
+  }
+
+  /** Invitar/quitar invitación a una línea (comp, ADR-comp): toggle is_gift con un motivo por defecto.
+   *  La línea regalo no se cobra (el servidor pone net/tax/total=0) pero descuenta stock. */
+  private toggleGift(id: string) {
+    this.cart = this.cart.map((l) =>
+      l.id === id ? { ...l, is_gift: !l.is_gift, gift_reason: !l.is_gift ? (l.gift_reason || 'Invitación') : undefined } : l,
+    );
   }
   /** Fija la cantidad de una línea (desde ok-qty-stepper); al llegar a 0 la línea se elimina. */
   private setQtyAbs(id: string, v: number) {
@@ -404,9 +403,18 @@ export class ErpPosTouch extends LitElement {
   private async confirm() {
     this.busy = true; this.error = '';
     try {
-      const items = this.cart.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: l.qty }));
+      // ADR-0069: la AUTORIDAD del IVA es el servidor. Cada línea manda su `tax_category_key`
+      // (referencia fiscal del producto) y el handler resuelve `rate_pct` desde el catálogo de
+      // confianza (`taxes.rates.list` pre-cargado vía `reads`), expandiendo grupos. Mantenemos
+      // `tax_rate` (% resuelto en cliente) SOLO como pista/preview; el handler lo ignora si puede
+      // resolver el id (fallback al % solo si no hay catálogo o el id no existe — backward-compat).
+      // category_id por línea (aditivo, QA 2026-06-25): el KDS enruta cada comanda a su estación
+      // por la categoría del producto. Se toma la categoría PRIMARIA (primera) del producto desde
+      // `prodCats` (Map product_id → Set category_id). null si el producto no está clasificado.
+      const items = this.cart.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: l.qty, tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: this.prodCats.get(l.id)?.values().next().value ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0 }));
       await erplora().command('sales.complete_sale', {
         items,
+        tax_included: this.settings.default_tax_included !== 0,
         payment_method_id: this.payMethod?.id ?? null,
         payment_method_name: this.payMethod?.name ?? 'Efectivo',
         amount_tendered: this.tenderedNum || this.total,
@@ -423,7 +431,7 @@ export class ErpPosTouch extends LitElement {
       }
       this.paying = false;
       this.cart = [];
-      this.tableId = undefined;
+      this.tableId = undefined; this.tableLabel = '';
       this.customerId = undefined; this.customerName = '';
       this.resetSlotContexts();
       if (saleId) this.docSaleId = saleId;
@@ -463,19 +471,15 @@ export class ErpPosTouch extends LitElement {
 
   private renderCart() {
     return html`
-      <ion-header class="ion-no-border">
+      <ion-header>
         <ion-toolbar>
           <ion-buttons slot="start">
             <ion-button class="cart-close" title=${t('ui.closeAction')} @click=${() => { this.cartOpen = false; }}>
               <ion-icon slot="icon-only" name="chevron-forward-outline"></ion-icon>
             </ion-button>
           </ion-buttons>
+          <ion-title>${this.tableLabel || t('ui.sale')}${this.customerName ? html` · ${this.customerName}` : nothing}</ion-title>
           <ion-buttons slot="end">
-            <!-- HOOK cross-módulo (ADR-0043): aquí aterrizan los botones que declaran OTROS módulos
-                 (tables, customers…) vía provides_slots: sales.pos.cart_actions. Cada uno abre su
-                 propio modal; el POS no sabe nada de ellos. Va antes que los botones propios para
-                 que las acciones de negocio queden juntas y a la izquierda de las de chrome. -->
-            <div class="cart-actions-slot"></div>
             ${this.parkingEnabled
               ? html`<ion-button title=${t('ui.parkedTickets')} style="position:relative" @click=${() => { this.parkedOpen = !this.parkedOpen; }}>
                   <ion-icon slot="icon-only" name="file-tray-stacked-outline"></ion-icon>
@@ -487,17 +491,12 @@ export class ErpPosTouch extends LitElement {
             </ion-button>
           </ion-buttons>
         </ion-toolbar>
-
-        <!-- Contexto de la venta (mesa, cliente) que inyectan otros módulos por slot. Va en una
-             SEGUNDA toolbar del header, no dentro del scroll: en un TPV saber a qué mesa y a qué
-             cliente estás cobrando tiene que verse SIEMPRE, por larga que sea la comanda. -->
-        <ion-toolbar class="ctx-toolbar">
-          <div class="cart-ctx">
-            <div class="order-slot"></div>
-            <div class="customer-slot"></div>
-          </div>
-        </ion-toolbar>
       </ion-header>
+
+      <div class="cart-ctx">
+        <div class="order-slot"></div>
+        <div class="customer-slot"></div>
+      </div>
 
       ${this.parkedOpen
         ? html`
@@ -513,32 +512,31 @@ export class ErpPosTouch extends LitElement {
           </div>`
         : nothing}
 
-      <!-- El CUERPO. ion-content ya trae su propio scroll: no hace falta pelearse con
-           flex:1 + overflow:auto a mano (que es lo que fallaba con el carrito vacío). -->
-      <ion-content class="cart-body">
-        ${this.cart.length
-          ? html`<ion-list class="lines" lines="full">
-              ${this.cart.map((l) => html`<ion-item>
-                <ion-label><h3>${l.name}</h3><p>${this.money(l.price)}</p></ion-label>
-                <div slot="end" class="lineend">
-                  <span class="lt">${this.money(l.price * l.qty)}</span>
-                  <ok-qty-stepper .value=${l.qty} .min=${0} .step=${1}
-                    @ok-change=${(e: CustomEvent) => this.setQtyAbs(l.id, (e.detail as { value: number }).value)}></ok-qty-stepper>
-                </div>
-              </ion-item>`)}
-            </ion-list>`
-          : html`<div class="empty">${t('ui.cartEmptyTouch')}</div>`}
-      </ion-content>
+      ${this.cart.length
+        ? html`<ion-list class="lines" lines="full">
+            ${this.cart.map((l) => html`<ion-item>
+              <ion-label>
+                <h3>${l.name}${l.is_gift ? html` <ion-badge color="success">${t('ui.giftBadge')}</ion-badge>` : nothing}</h3>
+                <p>${this.money(l.price)}${l.is_gift && l.gift_reason ? html` · ${l.gift_reason}` : nothing}</p>
+              </ion-label>
+              <div slot="end" class="lineend">
+                <span class="lt" style=${l.is_gift ? 'text-decoration:line-through;opacity:.55' : ''}>${this.money(l.price * l.qty)}</span>
+                <ion-button fill="clear" size="small" title=${t('ui.giftAction')} @click=${() => this.toggleGift(l.id)}>
+                  <ion-icon name=${l.is_gift ? 'gift' : 'gift-outline'} slot="icon-only" color=${l.is_gift ? 'success' : 'medium'}></ion-icon>
+                </ion-button>
+                <ok-qty-stepper .value=${l.qty} .min=${0} .step=${1}
+                  @ok-change=${(e: CustomEvent) => this.setQtyAbs(l.id, (e.detail as { value: number }).value)}></ok-qty-stepper>
+              </div>
+            </ion-item>`)}
+          </ion-list>`
+        : html`<div class="lines"><div class="empty">${t('ui.cartEmptyTouch')}</div></div>`}
 
-      <!-- El PIE. ion-footer es un pie de verdad: se queda abajo pase lo que pase. -->
-      <ion-footer class="ion-no-border">
-        <div class="cart-foot">
-          <div class="total"><span>${t('ui.colTotal')}</span><b>${this.money(this.total)}</b></div>
-          <ion-button class="charge" expand="block" ?disabled=${!this.cart.length} @click=${() => this.openPay()}>
-            ${t('ui.charge')} ${this.money(this.total)}
-          </ion-button>
-        </div>
-      </ion-footer>`;
+      <div class="cart-foot">
+        <div class="total"><span>${t('ui.colTotal')}</span><b>${this.money(this.total)}</b></div>
+        <ion-button class="charge" expand="block" ?disabled=${!this.cart.length} @click=${() => this.openPay()}>
+          ${t('ui.charge')} ${this.money(this.total)}
+        </ion-button>
+      </div>`;
   }
 
   render() {
