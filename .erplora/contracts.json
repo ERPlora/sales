@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "module": "sales",
+  "consumes": {
+    "queries": [
+      "inventory.categories.list",
+      "inventory.product_categories",
+      "inventory.products.list",
+      "sales.cart.get",
+      "sales.get",
+      "sales.lines",
+      "sales.list",
+      "sales.parked_tickets",
+      "sales.payment_methods",
+      "sales.settings.get",
+      "sales.stats",
+      "taxes.rules.list"
+    ],
+    "optional_queries": [
+      "invoice.by_source",
+      "verifactu.records.by_invoice"
+    ],
+    "commands": [
+      "sales.cart.clear",
+      "sales.cart.save",
+      "sales.complete_sale",
+      "sales.park_ticket",
+      "sales.retrieve_ticket",
+      "sales.set_document_type"
+    ],
+    "events": [
+      "sale.completed"
+    ],
+    "slots": []
+  }
+}

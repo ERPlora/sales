@@ -24,6 +24,9 @@ const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
 interface ErploraClientLike {
   query<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T>;
+  /** Integración OPCIONAL (ADR-0127): undefined SOLO si el módulo dueño no está instalado;
+   *  un contrato roto contra un módulo presente EXPLOTA (no es un catch silencioso). */
+  queryOptional<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T | undefined>;
   /** i18n del módulo (ADR-0055): idioma activo + traducción del catálogo `ui`. */
   locale: string;
   t(catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>): string;
@@ -110,11 +113,14 @@ export class ErpSalesDocument extends LitElement {
    *  para obtener el QR de validación AEAT + nº fiscal oficial + CSV. Tolerante a fallos. */
   private async resolveFiscal(saleId: string): Promise<FiscalData> {
     try {
-      const invRows = await erplora().query<Record<string, unknown> | Record<string, unknown>[]>(
+      // `queryOptional` (ADR-0127): ni `invoice` ni `verifactu` son dependencias de sales — un hub
+      // puede cobrar sin módulo de facturación. Ausentes → sin QR fiscal y en paz; contrato ROTO →
+      // explota (lo atrapa el catch tolerante de este método).
+      const invRows = await erplora().queryOptional<Record<string, unknown> | Record<string, unknown>[]>(
         'invoice.by_source', { source_id: saleId });
       const invoice = (Array.isArray(invRows) ? invRows[0] : invRows) as Record<string, unknown> | undefined;
       if (!invoice?.id) return {};
-      const recRows = await erplora().query<Record<string, unknown> | Record<string, unknown>[]>(
+      const recRows = await erplora().queryOptional<Record<string, unknown> | Record<string, unknown>[]>(
         'verifactu.records.by_invoice', { invoice_id: invoice.id });
       const rec = (Array.isArray(recRows) ? recRows[0] : recRows) as Record<string, unknown> | undefined;
       const csv = (rec?.aeat_csv as string) || '';

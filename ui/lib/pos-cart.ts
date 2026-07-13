@@ -28,6 +28,9 @@ export interface CartLine {
 
 export interface ErploraClientLike {
   query<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T>;
+  /** Integración OPCIONAL (ADR-0127): undefined SOLO si el módulo dueño no está instalado;
+   *  un contrato roto contra un módulo presente EXPLOTA (no es un catch silencioso). */
+  queryOptional<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T | undefined>;
   /** TODAS las filas, sin tope (salvo que pases `limit`). Para lo que no es «una página»: la
    *  rejilla de productos del TPV, un `<ion-select>` de categorías fiscales, el mapa
    *  producto↔categoría. El viejo `page_size` NO era un parámetro del runtime: truncaba a 50. */

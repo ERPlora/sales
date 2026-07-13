@@ -2715,13 +2715,13 @@ var ErpSalesDocument = class extends i3 {
    *  para obtener el QR de validación AEAT + nº fiscal oficial + CSV. Tolerante a fallos. */
   async resolveFiscal(saleId) {
     try {
-      const invRows = await erplora().query(
+      const invRows = await erplora().queryOptional(
         "invoice.by_source",
         { source_id: saleId }
       );
       const invoice = Array.isArray(invRows) ? invRows[0] : invRows;
       if (!invoice?.id) return {};
-      const recRows = await erplora().query(
+      const recRows = await erplora().queryOptional(
         "verifactu.records.by_invoice",
         { invoice_id: invoice.id }
       );
@@ -3506,17 +3506,21 @@ var ErpPosTouch = class extends i3 {
   }
   async resolveSlots() {
     const sdk = globalThis.erplora;
+    const load = async (name) => {
+      try {
+        return await sdk.loadSlot(name) ?? [];
+      } catch {
+        return [];
+      }
+    };
+    const resolved = !sdk?.loadSlot ? {} : {
+      "sales.pos.cart_actions": await load("sales.pos.cart_actions"),
+      "sales.pos.order_context": await load("sales.pos.order_context"),
+      "sales.pos.customer_context": await load("sales.pos.customer_context")
+    };
     for (const s5 of this.slots) {
       if (s5.resolved) continue;
-      if (!sdk?.loadSlot) {
-        s5.resolved = [];
-        continue;
-      }
-      try {
-        s5.resolved = await sdk.loadSlot(s5.slot);
-      } catch {
-        s5.resolved = [];
-      }
+      s5.resolved = resolved[s5.slot] ?? [];
       s5.els = s5.resolved.map((f3) => document.createElement(f3.component));
     }
   }
@@ -4205,17 +4209,20 @@ var ErpPosDesktop = class extends i3 {
   /** Resuelve (una vez) los fillers de cada slot de contexto (ADR-0043) y crea sus instancias. */
   async resolveSlots() {
     const sdk = globalThis.erplora;
+    const load = async (name) => {
+      try {
+        return await sdk.loadSlot(name) ?? [];
+      } catch {
+        return [];
+      }
+    };
+    const resolved = !sdk?.loadSlot ? {} : {
+      "sales.pos.order_context": await load("sales.pos.order_context"),
+      "sales.pos.customer_context": await load("sales.pos.customer_context")
+    };
     for (const s5 of this.slots) {
       if (s5.resolved) continue;
-      if (!sdk?.loadSlot) {
-        s5.resolved = [];
-        continue;
-      }
-      try {
-        s5.resolved = await sdk.loadSlot(s5.slot);
-      } catch {
-        s5.resolved = [];
-      }
+      s5.resolved = resolved[s5.slot] ?? [];
       s5.els = s5.resolved.map((f3) => document.createElement(f3.component));
     }
   }

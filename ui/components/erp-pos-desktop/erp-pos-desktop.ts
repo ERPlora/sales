@@ -184,14 +184,19 @@ export class ErpPosDesktop extends LitElement {
   /** Resuelve (una vez) los fillers de cada slot de contexto (ADR-0043) y crea sus instancias. */
   private async resolveSlots() {
     const sdk = (globalThis as { erplora?: { loadSlot?: (s: string) => Promise<{ component: string }[]> } }).erplora;
+    // Hidratación POR LITERAL (ADR-0127): el extractor de contratos solo sigue llamadas al SDK con
+    // el nombre en la propia llamada — `loadSlot(s.slot)` sería un contrato dinámico. El array
+    // `slots` sigue siendo la única config; esto solo trae cada punto de extensión por su nombre.
+    const load = async (name: string) => { try { return (await sdk!.loadSlot!(name)) ?? []; } catch { return []; } };
+    const resolved: Record<string, { component: string }[]> = !sdk?.loadSlot
+      ? {}
+      : {
+          'sales.pos.order_context': await load('sales.pos.order_context'),
+          'sales.pos.customer_context': await load('sales.pos.customer_context'),
+        };
     for (const s of this.slots) {
       if (s.resolved) continue;
-      if (!sdk?.loadSlot) { s.resolved = []; continue; }
-      try {
-        s.resolved = await sdk.loadSlot(s.slot);
-      } catch {
-        s.resolved = [];
-      }
+      s.resolved = resolved[s.slot] ?? [];
       s.els = s.resolved.map((f) => document.createElement(f.component) as HTMLElement);
     }
   }
