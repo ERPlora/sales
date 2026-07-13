@@ -1,6 +1,9 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { state, query } from 'lit/decorators.js';
 import { define } from '@erplora/outfitkit/define';
+// La frontera EUROS ↔ CÉNTIMOS vive en el SDK (ADR-0123), no copiada en cada WC. Su gemelo Rust es
+// `guest_sdk::money::euros_to_cents`.
+import { eurosToCents } from '@erplora/module-sdk';
 import '../erp-sales-document/erp-sales-document.js';
 
 // erp-pos-desktop — pantalla de venta para RETAIL sin táctil: campo de escaneo/SKU (Enter añade),
@@ -276,12 +279,16 @@ export class ErpPosDesktop extends LitElement {
 
   private openPay() {
     if (!this.cart.length) return;
-    this.tendered = String(this.total.toFixed(2));
+    // `total` son CÉNTIMOS y el campo «entregado» es un `<input step="0.01">`, o sea EUROS. Sin
+    // dividir, una venta de 14,93 € prerrellenaba «1493.00»; y teclear «20» (un billete) registraba
+    // 20 CÉNTIMOS entregados → cambio 0 € y arqueo de caja corrupto.
+    this.tendered = (this.total / 100).toFixed(2);
     this.payMethod = this.methods[0];
     this.docFormat = this.settings.default_document_format === 'invoice' ? 'invoice' : 'ticket';
     this.paying = true;
   }
-  private get tenderedNum() { return Number(this.tendered || '0'); }
+  /** Lo entregado por el cliente, en CÉNTIMOS (el input está en euros). */
+  private get tenderedNum() { return eurosToCents(this.tendered || '0'); }
   private get change() { return Math.max(0, this.tenderedNum - this.total); }
 
   private async confirm() {
