@@ -17,6 +17,9 @@ export interface ErploraClientLike {
   command<T = unknown>(name: string, payload?: Record<string, unknown>): Promise<T>;
   /** Moneda del hub + formateo de dinero (ADR-0059). El POS formatea con la moneda del HUB. */
   currency: string;
+  /** Importe en CÉNTIMOS (divide entre 100). El dinero es INTEGER (ADR-0007) → es ESTE el del POS. */
+  formatMoney(cents: number, opts?: { currency?: string; locale?: string }): string;
+  /** Importe ya en EUROS (no divide). No usar con columnas de dinero. */
   formatAmount(units: number, opts?: { currency?: string; locale?: string }): string;
 }
 

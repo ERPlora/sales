@@ -22,9 +22,12 @@ beforeEach(() => {
   (globalThis as Record<string, unknown>).erplora = {
     query: async () => ({ rows: [] }),
     command: async () => ({}),
-    // Moneda del hub + formateo (ADR-0059).
+    // Moneda del hub + formateo (ADR-0059). Los DOS formateadores del SDK, con su contrato real:
+    // `formatMoney` recibe CÉNTIMOS (divide entre 100) y es el que usan los WC porque el dinero es
+    // INTEGER (ADR-0007); `formatAmount` recibe EUROS y no divide.
     currency: 'EUR',
-    formatAmount: (units: number) => `${units.toFixed(2)} €`,
+    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
+    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
     // i18n del módulo (ADR-0055): el WC hace `erplora().t(CATALOG, key)`. Devolvemos la clave: al
     // test le da igual el idioma, lo que mira es la ESTRUCTURA de lo que se pinta.
     t: (_catalog: unknown, key: string) => key,
@@ -49,33 +52,42 @@ async function montarCarrito() {
 }
 
 describe('carrito del TPV', () => {
-  it('el pie con COBRAR es el último elemento, también con el carrito VACÍO', async () => {
+  it('usa los primitivos de Ionic: header + content + footer (no flex a mano)', async () => {
+    // Ionic YA resuelve «cabecera fija · cuerpo con scroll · pie fijo»: `ion-content` trae su propio
+    // scroll y `ion-footer` es un pie de verdad. Pelearse con `flex:1` + `overflow:auto` a mano es
+    // reinventarlo peor (y así estaba: la regla vivía en `ion-list.lines`, y con el carrito VACÍO se
+    // pintaba un `<div class="lines">` al que no aplicaba → nada empujaba al pie y COBRAR se movía).
+    // Regla del proyecto: Ionic primero; los ok-* solo para lo que Ionic NO tiene.
     const el = await montarCarrito();
     const cart = el.shadowRoot!.querySelector('aside.cart')!;
     expect(cart, 'no se pintó el carrito').toBeTruthy();
 
-    const pie = cart.lastElementChild;
-    expect(pie?.className, 'el pie de cobro debe ser el ÚLTIMO hijo del carrito').toContain('cart-foot');
-    expect(pie?.querySelector('ion-button.charge'), 'el botón COBRAR vive en el pie').toBeTruthy();
+    const hijos = [...cart.children].map((c) => c.tagName.toLowerCase());
+    expect(hijos, 'el carrito es header → content → footer, en ese orden').toEqual([
+      'ion-header',
+      'ion-content',
+      'ion-footer',
+    ]);
   });
 
-  it('la zona de líneas es la MISMA (`.lines`) esté vacía o con productos → el pie no se mueve', async () => {
+  it('el botón COBRAR vive en el ion-footer, esté el carrito vacío o lleno', async () => {
     const el = await montarCarrito();
     const cart = el.shadowRoot!.querySelector('aside.cart')!;
 
-    // Vacío: hoy se pinta un <div class="lines">; con productos, un <ion-list class="lines">.
-    const zona = cart.querySelector('.lines');
-    expect(zona, 'la zona de líneas debe existir siempre, llena o vacía').toBeTruthy();
+    const pie = cart.querySelector('ion-footer');
+    expect(pie, 'el pie es un ion-footer').toBeTruthy();
+    expect(pie?.querySelector('ion-button.charge'), 'COBRAR vive en el pie').toBeTruthy();
+    // Y es lo último: nada puede empujarlo fuera de la vista.
+    expect(cart.lastElementChild, 'el pie es el último elemento del carrito').toBe(pie);
+  });
 
-    // Y el CSS tiene que dar el flex:1 + scroll a ESA clase, no solo a `ion-list.lines`: si no, con
-    // el carrito vacío nada empuja al pie hacia abajo y el botón COBRAR sube.
-    const css = (el.constructor as unknown as { styles: { cssText: string } | { cssText: string }[] }).styles;
-    const cssText = Array.isArray(css) ? css.map((s) => s.cssText).join('\n') : css.cssText;
-    const reglaDeLineas = cssText.match(/(^|[\s,}])\.lines\s*\{[^}]*\}/m)?.[0] ?? '';
+  it('las líneas (y el estado vacío) van DENTRO del ion-content, que es quien scrollea', async () => {
+    const el = await montarCarrito();
+    const content = el.shadowRoot!.querySelector('aside.cart > ion-content')!;
+    expect(content, 'falta el ion-content del carrito').toBeTruthy();
 
-    expect(reglaDeLineas, 'falta una regla `.lines` genérica (la de `ion-list.lines` no aplica al div vacío)').toBeTruthy();
-    expect(reglaDeLineas, '`.lines` debe crecer para empujar el pie abajo').toMatch(/flex\s*:\s*1/);
-    expect(reglaDeLineas, '`.lines` debe scrollar por dentro').toMatch(/overflow\s*:\s*auto/);
+    // Carrito vacío: el mensaje va dentro del content, no suelto entre el header y el pie.
+    expect(content.querySelector('.empty'), 'el estado vacío va dentro del ion-content').toBeTruthy();
   });
 
   it('el header ofrece un HOOK para que otros módulos metan su botón', async () => {
@@ -91,5 +103,38 @@ describe('carrito del TPV', () => {
 
     // Se pide por el mismo canal cross-módulo que los otros slots del POS (ADR-0043).
     expect(slotsPedidos, 'el POS debe pedir el slot `sales.pos.cart_actions` al SDK').toContain('sales.pos.cart_actions');
+  });
+});
+
+// El dinero es un INTEGER en CÉNTIMOS (ADR-0007): `price: 180` son 1,80 €. El SDK tiene DOS
+// formateadores y no son intercambiables — `formatMoney(cents)` divide entre 100 y es «la entrada
+// canónica para los Web Components de módulo»; `formatAmount(units)` NO divide (para importes que
+// ya llegan en euros). El TPV llamaba a `formatAmount` con céntimos → todo el dinero salía ×100
+// («Café solo 180,00 €»). Aquí el stub reproduce el contrato REAL de ambos, así que llamar al
+// formateador equivocado se ve.
+describe('precios del TPV (dinero = céntimos, ADR-0007)', () => {
+  beforeEach(() => {
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.formatMoney = (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`;
+    sdk.formatAmount = (units: number) => `${(units || 0).toFixed(2)} €`;
+    sdk.query = async (name: string) =>
+      name === 'inventory.products.list'
+        ? { rows: [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1 }] }
+        : { rows: [] };
+  });
+
+  it('un café de 180 céntimos se pinta 1,80 € en la rejilla (no 180,00 €)', async () => {
+    const el = await montarCarrito();
+    const precio = el.shadowRoot!.querySelector('.tile .tinfo .p')?.textContent?.trim();
+    expect(precio, 'la rejilla del TPV pinta el precio ×100').toBe('1.80 €');
+  });
+
+  it('el total del carrito también va en céntimos', async () => {
+    const el = await montarCarrito();
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    const total = el.shadowRoot!.querySelector('.total b')?.textContent?.trim();
+    expect(total, 'el total del carrito sale ×100').toBe('1.80 €');
   });
 });
