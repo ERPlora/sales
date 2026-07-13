@@ -3252,7 +3252,10 @@ var ErpPosTouch = class extends i3 {
     this.cartRestored = false;
     this.slots = [
       { slot: "sales.pos.order_context", container: ".order-slot", reset: "erp:order-context-reset", els: [] },
-      { slot: "sales.pos.customer_context", container: ".customer-slot", reset: "erp:customer-context-reset", els: [] }
+      { slot: "sales.pos.customer_context", container: ".customer-slot", reset: "erp:customer-context-reset", els: [] },
+      // Botones de otros módulos en la barra del carrito (tables: elegir mesa; customers: elegir
+      // cliente…). Cada módulo pinta su propio ion-button y abre SU modal: el POS no los conoce.
+      { slot: "sales.pos.cart_actions", container: ".cart-actions-slot", reset: "erp:cart-actions-reset", els: [] }
     ];
     // La mesa la PINTA el módulo tables en `.order-slot` (slot sales.pos.order_context); aquí solo
     // guardamos su id, que es lo que viaja en la venta.
@@ -3326,11 +3329,18 @@ var ErpPosTouch = class extends i3 {
     /* ── Carrito ── */
     .cart { position:relative; display:flex; flex-direction:column; min-height:0; background:var(--panel); border-left:1px solid var(--ion-border-color); }
     .cart ion-header ion-toolbar { --background:var(--panel); --color:var(--tx); --border-color:var(--ion-border-color); }
+    /* Hook del header: los botones que inyectan otros módulos se alinean como uno más de la
+       toolbar. Si ningún módulo provee el slot, el contenedor queda vacío y no ocupa nada. */
+    .cart-actions-slot { display:flex; align-items:center; }
+    .cart-actions-slot:empty { display:none; }
     .cart-ctx { display:flex; gap:.4rem; padding:.5rem .6rem; border-bottom:1px solid var(--ion-border-color); }
     .cart-ctx .order-slot, .cart-ctx .customer-slot { flex:1; min-width:0; }
     .cart-ctx .order-slot:empty, .cart-ctx .customer-slot:empty { display:none; }
     .cart-ctx:has(.order-slot:empty):has(.customer-slot:empty) { display:none; }
-    ion-list.lines { flex:1; overflow:auto; min-height:6rem; padding:0; background:transparent; }
+    /* La zona de líneas es lo ÚNICO que crece: empuja el pie (COBRAR) al fondo y scrolla por
+       dentro. La regla va en .lines a secas, no en ion-list.lines: con el carrito VACÍO se pinta
+       un div.lines, y sin flex:1 no empujaba nada, así que el pie subía. */
+    .lines { flex:1; overflow:auto; min-height:6rem; padding:0; background:transparent; }
     ion-list.lines ion-item { --background:transparent; --color:var(--tx); --border-color:var(--ion-border-color); --padding-start:.7rem; --inner-padding-end:.5rem; }
     ion-list.lines ion-item h3 { font-weight:600; color:var(--tx); }
     ion-list.lines ion-item p { color:var(--mut); }
@@ -3338,7 +3348,8 @@ var ErpPosTouch = class extends i3 {
     .lineend .lt { font-weight:700; white-space:nowrap; }
     ok-qty-stepper { --ok-qty-field-width:2.3rem; --ok-surface:var(--tile); --ok-text:var(--tx); --ok-border:var(--ion-border-color); }
     .empty { color:var(--mut); text-align:center; padding:2.5rem 1rem; }
-    .cart-foot { padding:.75rem; border-top:1px solid var(--ion-border-color); background:var(--panel); }
+    /* El pie NUNCA se encoge ni se va de pantalla: por muchas líneas que haya, COBRAR se ve. */
+    .cart-foot { flex:none; padding:.75rem; border-top:1px solid var(--ion-border-color); background:var(--panel); }
     .total { display:flex; justify-content:space-between; align-items:baseline; margin:.1rem 0 .65rem; font-size:1rem; color:var(--mut); }
     .total b { font-size:1.7rem; color:var(--tx); }
     .charge { font-size:1.05rem; font-weight:700; }
@@ -3628,6 +3639,11 @@ var ErpPosTouch = class extends i3 {
             </ion-button>
           </ion-buttons>
           <ion-buttons slot="end">
+            <!-- HOOK cross-módulo (ADR-0043): aquí aterrizan los botones que declaran OTROS módulos
+                 (tables, customers…) vía \`provides_slots: sales.pos.cart_actions\`. Cada uno abre su
+                 propio modal; el POS no sabe nada de ellos. Va antes que los botones propios para
+                 que las acciones de negocio queden juntas y a la izquierda de las de chrome. -->
+            <div class="cart-actions-slot"></div>
             ${this.parkingEnabled ? b2`<ion-button title=${t3("ui.parkedTickets")} style="position:relative" @click=${() => {
       this.parkedOpen = !this.parkedOpen;
     }}>
