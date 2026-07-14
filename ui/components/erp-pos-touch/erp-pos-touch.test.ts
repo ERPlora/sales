@@ -141,3 +141,68 @@ describe('precios del TPV (dinero = céntimos, ADR-0007)', () => {
     expect(total, 'el total del carrito sale ×100').toBe('1.80 €');
   });
 });
+
+// El cliente asignado en el TPV no es solo una etiqueta: es lo que hace que la FACTURA salga con NIF.
+// El slot `customers` emite el snapshot fiscal en `erp:customer-context`; el POS lo guarda y lo manda
+// en `sales.complete_sale`, de ahí viaja en `sale.completed` y `invoice` lo copia al documento
+// (ADR-0132). Si el POS lo tira por el camino, la factura sale sin NIF aunque el cliente lo tenga.
+describe('snapshot fiscal del cliente (ADR-0132)', () => {
+  let comandos: { name: string; payload: Record<string, unknown> }[];
+
+  beforeEach(() => {
+    comandos = [];
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    const productos = [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1 }];
+    sdk.query = async () => [];
+    sdk.queryAll = async (name: string) => (name === 'inventory.products.list' ? productos : []);
+    sdk.command = async (name: string, payload: Record<string, unknown>) => {
+      comandos.push({ name, payload });
+      return {};
+    };
+  });
+
+  it('reenvía NIF y dirección del cliente a sales.complete_sale', async () => {
+    const el = await montarCarrito();
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    el.dispatchEvent(new CustomEvent('erp:customer-context', {
+      detail: {
+        customer_id: 'cus-1',
+        customer_name: 'Ana García',
+        customer_tax_id: '12345678Z',
+        customer_address: 'Calle Mayor 1, 28013 Madrid, ES',
+      },
+      bubbles: true, composed: true,
+    }));
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    await (el as unknown as { confirm(): Promise<void> }).confirm();
+
+    const venta = comandos.find((c) => c.name === 'sales.complete_sale');
+    expect(venta, 'el TPV debe completar la venta').toBeTruthy();
+    expect(venta!.payload.customer_id).toBe('cus-1');
+    expect(venta!.payload.customer_name).toBe('Ana García');
+    expect(venta!.payload.customer_tax_id).toBe('12345678Z');
+    expect(venta!.payload.customer_address).toBe('Calle Mayor 1, 28013 Madrid, ES');
+  });
+
+  it('venta anónima: no arrastra el NIF de la venta anterior', async () => {
+    const el = await montarCarrito();
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    el.dispatchEvent(new CustomEvent('erp:customer-context', {
+      detail: { customer_id: null, customer_name: '', customer_tax_id: '', customer_address: '' },
+      bubbles: true, composed: true,
+    }));
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    await (el as unknown as { confirm(): Promise<void> }).confirm();
+
+    const venta = comandos.find((c) => c.name === 'sales.complete_sale')!;
+    expect(venta.payload.customer_id).toBeNull();
+    expect(venta.payload.customer_tax_id).toBe('');
+    expect(venta.payload.customer_address).toBe('');
+  });
+});

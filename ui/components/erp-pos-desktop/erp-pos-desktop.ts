@@ -113,6 +113,9 @@ export class ErpPosDesktop extends LitElement {
   @state() private tableLabel = '';
   @state() private customerId?: string;
   @state() private customerName = '';
+  /** Snapshot fiscal del cliente asignado (ADR-0132). Copia, no referencia: viaja con la venta. */
+  private customerTaxId = '';
+  private customerAddress = '';
 
   @query('#scan') private scanInput?: HTMLInputElement;
 
@@ -131,9 +134,14 @@ export class ErpPosDesktop extends LitElement {
     this.tableLabel = d.label ?? '';
   };
   private readonly onCustomerContext = (e: Event) => {
-    const d = (e as CustomEvent<{ customer_id: string | null; customer_name?: string }>).detail ?? { customer_id: null };
+    const d = (e as CustomEvent<{
+      customer_id: string | null; customer_name?: string;
+      customer_tax_id?: string; customer_address?: string;
+    }>).detail ?? { customer_id: null };
     this.customerId = d.customer_id ?? undefined;
     this.customerName = d.customer_name ?? '';
+    this.customerTaxId = d.customer_tax_id ?? '';
+    this.customerAddress = d.customer_address ?? '';
   };
   private readonly onLocaleChange = (): void => this.requestUpdate();
 
@@ -333,6 +341,9 @@ export class ErpPosDesktop extends LitElement {
         table_id: this.tableId ?? null,
         customer_id: this.customerId ?? null,
         customer_name: this.customerName,
+        // Snapshot fiscal del cliente (ADR-0132): sin esto la factura del TPV sale sin NIF.
+        customer_tax_id: this.customerTaxId,
+        customer_address: this.customerAddress,
       });
       const recent = rows<{ id: string }>(await erplora().query('sales.list', { limit: 1, sort: 'created_at', dir: 'desc' }));
       const saleId = recent[0]?.id;
@@ -344,6 +355,7 @@ export class ErpPosDesktop extends LitElement {
       // Libera el contexto de venta (mesa/cliente) y avisa a los fillers para que se limpien.
       this.tableId = undefined; this.tableLabel = '';
       this.customerId = undefined; this.customerName = '';
+      this.customerTaxId = ''; this.customerAddress = '';
       this.resetSlotContexts();
       if (saleId) this.docSaleId = saleId;
     } catch (e) {

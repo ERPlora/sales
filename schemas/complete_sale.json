@@ -144,6 +144,14 @@
         "string",
         "null"
       ]
+    },
+    "customer_tax_id": {
+      "type": "string",
+      "description": "NIF/CIF del cliente asignado (snapshot fiscal, ADR-0132). Vacío = venta anónima."
+    },
+    "customer_address": {
+      "type": "string",
+      "description": "Dirección fiscal del cliente en una línea (snapshot, ADR-0132)."
     }
   },
   "description": "DINERO (`price`, `amount_tendered`) = UNIDADES MÍNIMAS enteras (ADR-0007/0123): un 2.20 aquí serían 2 céntimos. `quantity` (1,5 kg) y las TASAS (`discount`, `tax_rate`) NO son dinero y sí llevan decimales. El `tax_rate` que mande el cliente es una PISTA: el servidor resuelve el % real desde `tax_category_key` contra el catálogo de confianza (ADR-0085/0069)."
