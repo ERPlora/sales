@@ -92,6 +92,26 @@ describe('saleToInvoice — mismos contratos', () => {
   });
 });
 
+// QR promocional del tiquet (reseñas Google, redes…): el negocio configura URL + texto en los
+// Ajustes TPV y el mapper los vuelca al contrato `promo_qr`/`promo_note` de ok-receipt. Solo en
+// el TIQUET (la factura A4 es un documento formal, sin marketing).
+describe('saleToReceipt — QR promocional desde ajustes', () => {
+  it('con URL configurada rellena promo_qr y promo_note', () => {
+    const r = saleToReceipt(SALE, LINES, {
+      receipt_marketing_url: 'https://g.page/r/mi-negocio/review',
+      receipt_marketing_text: 'Escanea y déjanos una reseña',
+    });
+    expect(r.promo_qr).toBe('https://g.page/r/mi-negocio/review');
+    expect(r.promo_note).toBe('Escanea y déjanos una reseña');
+  });
+
+  it('sin URL no hay rastro promocional (aunque haya texto)', () => {
+    const r = saleToReceipt(SALE, LINES, { receipt_marketing_text: 'huérfano' });
+    expect(r.promo_qr).toBeUndefined();
+    expect(r.promo_note).toBeUndefined();
+  });
+});
+
 describe('labels i18n para ok-receipt / ok-invoice (ADR-0055)', () => {
   // t() doble: devuelve la clave — el test fija QUÉ claves del catálogo alimentan cada label.
   const t = (key: string): string => key;

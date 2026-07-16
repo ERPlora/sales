@@ -86,7 +86,8 @@
       "migrations/sqlite/004_order_link.sql",
       "migrations/sqlite/005_staff_attribution.sql",
       "migrations/sqlite/006_tax_snapshot.sql",
-      "migrations/sqlite/007_gift_comp.sql"
+      "migrations/sqlite/007_gift_comp.sql",
+      "migrations/sqlite/008_receipt_marketing.sql"
     ]
   },
   "queries": {

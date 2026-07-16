@@ -20,6 +20,8 @@
     "default_document_format": { "type": "string", "enum": ["ticket", "invoice"], "default": "ticket", "title": "Documento por defecto" },
     "receipt_header":        { "type": "string", "default": "", "title": "Cabecera del recibo", "description": "Primera línea = nombre; resto = dirección." },
     "receipt_footer":        { "type": "string", "default": "", "title": "Pie del recibo" },
-    "receipt_footer_image":  { "type": "string", "default": "", "title": "Imagen de pie (URL/base64)" }
+    "receipt_footer_image":  { "type": "string", "default": "", "title": "Imagen de pie (URL/base64)" },
+    "receipt_marketing_url": { "type": "string", "default": "", "title": "URL del QR promocional", "description": "Reseñas de Google, redes sociales, web… Vacío = sin QR promocional." },
+    "receipt_marketing_text": { "type": "string", "default": "", "title": "Texto del QR promocional", "description": "P.ej. «Escanea y déjanos una reseña»." }
   }
 }
