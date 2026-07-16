@@ -540,6 +540,10 @@ pub fn complete_sale_pure(input: Value) -> Output {
         "items": event_items,
         "customer_id": payload.get("customer_id").cloned().unwrap_or(Value::Null),
         "customer_name": str_or(&payload, "customer_name", ""),
+        // Snapshot fiscal del cliente asignado (ADR-0132): `invoice` lo copia a la factura para
+        // que una venta de TPV con cliente salga CON NIF y dirección. Vacío = venta anónima.
+        "customer_tax_id": str_or(&payload, "customer_tax_id", ""),
+        "customer_address": str_or(&payload, "customer_address", ""),
         // staff_id viaja en el evento para que los consumidores (p.ej. cash_register, reporting)
         // puedan atribuir la venta al profesional. NULL si la venta no se atribuye.
         "staff_id": payload.get("staff_id").cloned().unwrap_or(Value::Null),
@@ -859,6 +863,39 @@ mod tests {
         assert_eq!(out.events[0].payload["staff_id"], json!("staff-7"));
         // Sin appointment_id → un solo evento (no se emite created_from_appointment).
         assert_eq!(out.events.len(), 1);
+    }
+
+    #[test]
+    fn event_carries_customer_fiscal_snapshot_for_invoice() {
+        // ADR-0132: si el cajero asigna un cliente en el TPV, sus datos fiscales viajan en
+        // sale.completed para que `invoice` emita la factura CON NIF y dirección. Sin esto la
+        // factura sale vacía aunque el cliente los tenga en su ficha.
+        let new_ids: Vec<Value> = (0..4).map(|i| json!(format!("id-{i}"))).collect();
+        let inp = json!({
+            "payload": {
+                "items": [{ "product_name": "Corte", "price": 2000, "quantity": 1, "tax_rate": 21.0 }],
+                "tax_included": true, "amount_tendered": 0,
+                "customer_id": "cus-1", "customer_name": "Ana García",
+                "customer_tax_id": "12345678Z",
+                "customer_address": "Calle Mayor 1, 28013 Madrid, ES"
+            },
+            "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-05-31T10:00:00+00:00", "new_ids": new_ids }
+        });
+        let out = complete_sale_pure(inp);
+        let ev = &out.events[0].payload;
+        assert_eq!(ev["customer_id"], json!("cus-1"));
+        assert_eq!(ev["customer_name"], json!("Ana García"));
+        assert_eq!(ev["customer_tax_id"], json!("12345678Z"));
+        assert_eq!(ev["customer_address"], json!("Calle Mayor 1, 28013 Madrid, ES"));
+    }
+
+    #[test]
+    fn anonymous_sale_carries_no_fiscal_snapshot() {
+        // Venta de barra sin cliente: los campos fiscales van vacíos, no heredados.
+        let items = json!([{ "product_name": "Café", "price": 121, "quantity": 1, "tax_rate": 21.0 }]);
+        let out = complete_sale_pure(input(items, 4, 200));
+        assert_eq!(out.events[0].payload["customer_tax_id"], json!(""));
+        assert_eq!(out.events[0].payload["customer_address"], json!(""));
     }
 
     #[test]

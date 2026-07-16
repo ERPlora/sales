@@ -6,6 +6,8 @@ import '@erplora/outfitkit/ok-invoice';
 import {
   saleToReceipt,
   saleToInvoice,
+  receiptLabels,
+  invoiceLabels,
   resolveFormat,
   type SaleRow,
   type SaleLineRow,
@@ -18,9 +20,10 @@ import enLocale from '../../../locales/en.json';
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
 // erp-sales-document — visor del documento de una venta (tiquet u factura) en el formato adecuado.
-// Carga `sales.get` + `sales.lines` + `sales.settings.get` por `sale-id`, mapea (document-mappers)
-// y renderiza <ok-receipt> o <ok-invoice>. También acepta inyección directa (.sale/.lines/.settings)
-// para previsualización/test sin SDK. El botón de imprimir usa window.print() + @media print.
+// Carga `sales.get` + `sales.lines` + `sales.settings.get` por `sale-id`, mapea (document-mappers,
+// con el locale del hub y las labels del catálogo ADR-0055) y renderiza <ok-receipt> o <ok-invoice>.
+// También acepta inyección directa (.sale/.lines/.settings) para previsualización/test sin SDK.
+// Pinta SOLO el documento: el botón de imprimir vive en el modal anfitrión (document-modal.ts).
 
 interface ErploraClientLike {
   query<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T>;
@@ -41,13 +44,19 @@ function erplora(): ErploraClientLike {
 export class ErpSalesDocument extends LitElement {
   static styles = css`
     :host { display:block; }
-    .bar { display:flex; gap:.5rem; align-items:center; justify-content:flex-end; margin-bottom:.6rem; }
     .err { color:#d9480f; }
     .muted { color:#8b897f; }
-    /* Al imprimir: solo el documento; se oculta la barra de acciones. */
+    /* Presencia de PAPEL: sombra sutil sobre el fondo gris del modal (tiquet térmico / folio A4). */
+    ok-receipt::part(paper),
+    ok-invoice::part(sheet) {
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 8px 24px rgba(0, 0, 0, 0.08);
+      border-radius: 2px;
+    }
     @media print {
-      .bar { display:none; }
-      :host { background:#fff; }
+      :host { background: #fff; }
+      /* En papel de verdad no hay sombras. */
+      ok-receipt::part(paper),
+      ok-invoice::part(sheet) { box-shadow: none; }
     }
   `;
 
@@ -149,16 +158,14 @@ export class ErpSalesDocument extends LitElement {
     const lines = this.lines || [];
     const fmt = this.format || resolveFormat(this.sale, settings);
 
-    return html`<div>
-      <div class="bar">
-        <ion-button size="small" fill="outline" @click=${() => window.print()}>
-          <ion-icon slot="start" name="print-outline"></ion-icon> ${t('ui.print')}
-        </ion-button>
-      </div>
-      ${fmt === 'invoice'
-        ? html`<ok-invoice .invoice=${saleToInvoice(this.sale, lines, settings, this.fiscal)}></ok-invoice>`
-        : html`<ok-receipt .receipt=${saleToReceipt(this.sale, lines, settings, this.fiscal)}></ok-receipt>`}
-    </div>`;
+    const locale = erplora().locale;
+    return fmt === 'invoice'
+      ? html`<ok-invoice
+          .invoice=${saleToInvoice(this.sale, lines, settings, this.fiscal, locale)}
+          .labels=${invoiceLabels(t)}></ok-invoice>`
+      : html`<ok-receipt
+          .receipt=${saleToReceipt(this.sale, lines, settings, this.fiscal, locale)}
+          .labels=${receiptLabels(t)}></ok-receipt>`;
   }
 }
 

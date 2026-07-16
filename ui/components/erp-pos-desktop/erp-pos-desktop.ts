@@ -4,7 +4,7 @@ import { define } from '@erplora/outfitkit/define';
 // La frontera EUROS ↔ CÉNTIMOS vive en el SDK (ADR-0123), no copiada en cada WC. Su gemelo Rust
 // es `guest_sdk::money::euros_to_cents`.
 import { eurosToCents } from '@erplora/module-sdk';
-import '../erp-sales-document/erp-sales-document.js';
+import { renderDocumentModal } from '../../lib/document-modal.js';
 
 // erp-pos-desktop — pantalla de venta para RETAIL sin táctil: campo de escaneo/SKU (Enter añade),
 // lista compacta de líneas con cantidad editable por teclado, y cobro con importe por teclado.
@@ -113,6 +113,9 @@ export class ErpPosDesktop extends LitElement {
   @state() private tableLabel = '';
   @state() private customerId?: string;
   @state() private customerName = '';
+  /** Snapshot fiscal del cliente asignado (ADR-0132). Copia, no referencia: viaja con la venta. */
+  private customerTaxId = '';
+  private customerAddress = '';
 
   @query('#scan') private scanInput?: HTMLInputElement;
 
@@ -131,9 +134,14 @@ export class ErpPosDesktop extends LitElement {
     this.tableLabel = d.label ?? '';
   };
   private readonly onCustomerContext = (e: Event) => {
-    const d = (e as CustomEvent<{ customer_id: string | null; customer_name?: string }>).detail ?? { customer_id: null };
+    const d = (e as CustomEvent<{
+      customer_id: string | null; customer_name?: string;
+      customer_tax_id?: string; customer_address?: string;
+    }>).detail ?? { customer_id: null };
     this.customerId = d.customer_id ?? undefined;
     this.customerName = d.customer_name ?? '';
+    this.customerTaxId = d.customer_tax_id ?? '';
+    this.customerAddress = d.customer_address ?? '';
   };
   private readonly onLocaleChange = (): void => this.requestUpdate();
 
@@ -333,6 +341,9 @@ export class ErpPosDesktop extends LitElement {
         table_id: this.tableId ?? null,
         customer_id: this.customerId ?? null,
         customer_name: this.customerName,
+        // Snapshot fiscal del cliente (ADR-0132): sin esto la factura del TPV sale sin NIF.
+        customer_tax_id: this.customerTaxId,
+        customer_address: this.customerAddress,
       });
       const recent = rows<{ id: string }>(await erplora().query('sales.list', { limit: 1, sort: 'created_at', dir: 'desc' }));
       const saleId = recent[0]?.id;
@@ -344,6 +355,7 @@ export class ErpPosDesktop extends LitElement {
       // Libera el contexto de venta (mesa/cliente) y avisa a los fillers para que se limpien.
       this.tableId = undefined; this.tableLabel = '';
       this.customerId = undefined; this.customerName = '';
+      this.customerTaxId = ''; this.customerAddress = '';
       this.resetSlotContexts();
       if (saleId) this.docSaleId = saleId;
     } catch (e) {
@@ -456,14 +468,7 @@ export class ErpPosDesktop extends LitElement {
           </div>`
         : nothing}
 
-      <ion-modal .isOpen=${!!this.docSaleId} @ionModalDidDismiss=${() => { this.docSaleId = undefined; }}>
-        <ion-header class="ion-no-border"><ion-toolbar><ion-title>${t('ui.document')}</ion-title>
-          <ion-buttons slot="end"><ion-button aria-label=${t('ui.close')} @click=${() => { this.docSaleId = undefined; }}><ion-icon name="close" slot="icon-only"></ion-icon></ion-button></ion-buttons>
-        </ion-toolbar></ion-header>
-        <ion-content class="ion-padding">
-          ${this.docSaleId ? html`<erp-sales-document .saleId=${this.docSaleId}></erp-sales-document>` : nothing}
-        </ion-content>
-      </ion-modal>
+      ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => { this.docSaleId = undefined; }, t })}
     </div>`;
   }
 }

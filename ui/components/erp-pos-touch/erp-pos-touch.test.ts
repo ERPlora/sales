@@ -110,6 +110,32 @@ describe('carrito del TPV', () => {
   });
 });
 
+// El modal del documento (tiquet/factura tras cobrar) se vio feo en el TPV real (2026-07-16):
+// título «Documento» que no aportaba, IMPRIMIR flotando arriba-derecha y el tiquet perdido en un
+// modal enorme. El contrato nuevo: SIN título (solo la X de cerrar), el documento en el
+// ion-content, e IMPRIMIR en un ion-footer abajo — donde el pulgar lo espera en un TPV táctil.
+// El markup vive en el helper compartido document-modal.ts (touch, desktop y lista pintan el mismo).
+describe('modal del documento de venta', () => {
+  it('sin título, documento en el content, imprimir en el ion-footer', async () => {
+    const el = await montarCarrito();
+    (el as unknown as Record<string, unknown>).docSaleId = 'venta-1';
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    const modal = el.shadowRoot!.querySelector('ion-modal.doc-modal')!;
+    expect(modal, 'el modal del documento lleva la clase doc-modal (tamaño de papel)').toBeTruthy();
+    expect(modal.querySelector('ion-title'), 'sin título «Documento»: no aporta nada').toBeNull();
+    expect(modal.querySelector('ion-content erp-sales-document'), 'el documento va en el content').toBeTruthy();
+
+    const pie = modal.querySelector('ion-footer');
+    expect(pie, 'imprimir vive en un ion-footer').toBeTruthy();
+    expect(pie!.querySelector('ion-button.print'), 'el botón de imprimir va en el pie').toBeTruthy();
+    expect(modal.lastElementChild, 'el pie es lo último del modal').toBe(pie);
+
+    // La X de cerrar sigue existiendo (accesible), aunque ya no haya toolbar con título.
+    expect(modal.querySelector('ion-button.doc-close'), 'la X de cerrar sigue presente').toBeTruthy();
+  });
+});
+
 // El dinero es un INTEGER en CÉNTIMOS (ADR-0007): `price: 180` son 1,80 €. El SDK tiene DOS
 // formateadores y no son intercambiables — `formatMoney(cents)` divide entre 100 y es «la entrada
 // canónica para los Web Components de módulo»; `formatAmount(units)` NO divide (para importes que
@@ -139,5 +165,70 @@ describe('precios del TPV (dinero = céntimos, ADR-0007)', () => {
 
     const total = el.shadowRoot!.querySelector('.total b')?.textContent?.trim();
     expect(total, 'el total del carrito sale ×100').toBe('1.80 €');
+  });
+});
+
+// El cliente asignado en el TPV no es solo una etiqueta: es lo que hace que la FACTURA salga con NIF.
+// El slot `customers` emite el snapshot fiscal en `erp:customer-context`; el POS lo guarda y lo manda
+// en `sales.complete_sale`, de ahí viaja en `sale.completed` y `invoice` lo copia al documento
+// (ADR-0132). Si el POS lo tira por el camino, la factura sale sin NIF aunque el cliente lo tenga.
+describe('snapshot fiscal del cliente (ADR-0132)', () => {
+  let comandos: { name: string; payload: Record<string, unknown> }[];
+
+  beforeEach(() => {
+    comandos = [];
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    const productos = [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1 }];
+    sdk.query = async () => [];
+    sdk.queryAll = async (name: string) => (name === 'inventory.products.list' ? productos : []);
+    sdk.command = async (name: string, payload: Record<string, unknown>) => {
+      comandos.push({ name, payload });
+      return {};
+    };
+  });
+
+  it('reenvía NIF y dirección del cliente a sales.complete_sale', async () => {
+    const el = await montarCarrito();
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    el.dispatchEvent(new CustomEvent('erp:customer-context', {
+      detail: {
+        customer_id: 'cus-1',
+        customer_name: 'Ana García',
+        customer_tax_id: '12345678Z',
+        customer_address: 'Calle Mayor 1, 28013 Madrid, ES',
+      },
+      bubbles: true, composed: true,
+    }));
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    await (el as unknown as { confirm(): Promise<void> }).confirm();
+
+    const venta = comandos.find((c) => c.name === 'sales.complete_sale');
+    expect(venta, 'el TPV debe completar la venta').toBeTruthy();
+    expect(venta!.payload.customer_id).toBe('cus-1');
+    expect(venta!.payload.customer_name).toBe('Ana García');
+    expect(venta!.payload.customer_tax_id).toBe('12345678Z');
+    expect(venta!.payload.customer_address).toBe('Calle Mayor 1, 28013 Madrid, ES');
+  });
+
+  it('venta anónima: no arrastra el NIF de la venta anterior', async () => {
+    const el = await montarCarrito();
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    el.dispatchEvent(new CustomEvent('erp:customer-context', {
+      detail: { customer_id: null, customer_name: '', customer_tax_id: '', customer_address: '' },
+      bubbles: true, composed: true,
+    }));
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    await (el as unknown as { confirm(): Promise<void> }).confirm();
+
+    const venta = comandos.find((c) => c.name === 'sales.complete_sale')!;
+    expect(venta.payload.customer_id).toBeNull();
+    expect(venta.payload.customer_tax_id).toBe('');
+    expect(venta.payload.customer_address).toBe('');
   });
 });
