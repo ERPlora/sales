@@ -2018,6 +2018,8 @@ var OkReceipt = class extends i3 {
     .footer { font-size: 10px; white-space: pre-line; }
     .qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 1mm; margin-top: 2mm; }
     .qr-note { font-size: 8px; text-align: center; word-break: break-word; }
+    .promo-wrap { display: flex; flex-direction: column; align-items: center; gap: 1mm; margin-top: 2mm; }
+    .promo-note { font-size: 9px; text-align: center; word-break: break-word; }
     .empty { padding: 4mm; text-align: center; color: #888; font-style: italic; }
   `;
   }
@@ -2043,6 +2045,7 @@ var OkReceipt = class extends i3 {
       ${this.renderTotals(r6)}
       ${r6.footer ? b2`<hr class="sep" /><div class="center footer">${r6.footer}</div>` : A}
       ${this.renderQr(r6)}
+      ${this.renderPromo(r6)}
     </div>`;
   }
   renderHeader(r6) {
@@ -2107,6 +2110,14 @@ var OkReceipt = class extends i3 {
     return b2`<div class="qr-wrap">
       <ok-qr .value=${r6.qr} .size=${this.qrSize} ec="M" color="#000" background="#fff"></ok-qr>
       ${r6.qr_note ? b2`<div class="qr-note">${r6.qr_note}</div>` : A}
+    </div>`;
+  }
+  /** QR promocional (reseñas/redes): al final del papel y más pequeño que el fiscal. */
+  renderPromo(r6) {
+    if (!r6.promo_qr) return A;
+    return b2`<div class="promo-wrap">
+      ${r6.promo_note ? b2`<div class="promo-note">${r6.promo_note}</div>` : A}
+      <ok-qr .value=${r6.promo_qr} .size=${Math.round(this.qrSize * 0.7)} ec="M" color="#000" background="#fff"></ok-qr>
     </div>`;
   }
 };
@@ -2442,7 +2453,10 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es") {
     currency: settings.currency || "\u20AC",
     footer: settings.receipt_footer || void 0,
     qr: fiscal.qr || void 0,
-    qr_note: fiscal.qr_note || void 0
+    qr_note: fiscal.qr_note || void 0,
+    // QR promocional (solo tiquet; la factura A4 es formal). Sin URL no hay rastro.
+    promo_qr: settings.receipt_marketing_url || void 0,
+    promo_note: settings.receipt_marketing_url ? settings.receipt_marketing_text || void 0 : void 0
   };
 }
 function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es") {
@@ -2766,6 +2780,7 @@ var ErpSalesDocument = class extends i3 {
     this.loading = false;
     this.error = "";
     this.fiscal = {};
+    this.fiscalRetryDelays = [400, 900, 1800];
     this.onLocaleChange = () => this.requestUpdate();
   }
   static {
@@ -2800,6 +2815,8 @@ var ErpSalesDocument = class extends i3 {
     if (changed.has("saleId") && this.saleId && !this.sale) this.load();
   }
   async load() {
+    if (!this.saleId || this.loadedFor === this.saleId) return;
+    this.loadedFor = this.saleId;
     this.loading = true;
     this.error = "";
     try {
@@ -2811,41 +2828,63 @@ var ErpSalesDocument = class extends i3 {
       this.sale = Array.isArray(sale) ? sale[0] : sale;
       this.lines = lines || [];
       this.settings = (Array.isArray(settingsRows) ? settingsRows[0] : settingsRows) || {};
-      this.fiscal = this.saleId ? await this.resolveFiscal(this.saleId) : {};
+      void this.watchFiscal(this.saleId);
     } catch (e6) {
       this.error = e6 instanceof Error ? e6.message : erplora().t(CATALOG, "ui.errorDocument");
     } finally {
       this.loading = false;
     }
   }
+  /** Resuelve lo fiscal con backoff: reintenta SOLO si el módulo está instalado pero el registro
+   *  aún no existe (el race del Outbox). Módulo ausente (`queryOptional` → undefined) = una consulta
+   *  y en paz. Si el usuario cambió de venta, aborta. */
+  async watchFiscal(saleId) {
+    for (const delay of [0, ...this.fiscalRetryDelays]) {
+      if (delay) await new Promise((r6) => setTimeout(r6, delay));
+      if (this.saleId !== saleId || !this.isConnected) return;
+      const { fiscal, retry } = await this.resolveFiscal(saleId);
+      this.fiscal = fiscal;
+      if (fiscal.qr || !retry) return;
+    }
+  }
   /** Resuelve venta → factura (`invoice.by_source`) → registro VeriFactu (`verifactu.records.by_invoice`)
-   *  para obtener el QR de validación AEAT + nº fiscal oficial + CSV. Tolerante a fallos. */
+   *  para obtener el QR de validación AEAT + nº fiscal oficial + CSV. Tolerante a fallos.
+   *  `retry` = merece reintento (módulo presente, registro todavía no). */
   async resolveFiscal(saleId) {
     try {
       const invRows = await erplora().queryOptional(
         "invoice.by_source",
         { source_id: saleId }
       );
+      if (invRows === void 0) return { fiscal: {}, retry: false };
       const invoice = Array.isArray(invRows) ? invRows[0] : invRows;
-      if (!invoice?.id) return {};
-      const recRows = await erplora().queryOptional(
-        "verifactu.records.by_invoice",
-        { invoice_id: invoice.id }
-      );
-      const rec = Array.isArray(recRows) ? recRows[0] : recRows;
-      const csv = rec?.aeat_csv || "";
-      const qr = rec?.qr_url || "";
-      const t7 = (k2) => erplora().t(CATALOG, k2);
-      return {
-        qr: qr || void 0,
-        qr_note: csv ? `CSV: ${csv}` : qr ? t7("ui.qrValidateNote") : void 0,
+      if (!invoice?.id) return { fiscal: {}, retry: true };
+      const base = {
         number: invoice.number || void 0,
         issuer_nif: invoice.issuer_nif || void 0,
         customer_name: invoice.customer_name || void 0,
         customer_tax_id: invoice.customer_tax_id || void 0
       };
+      const recRows = await erplora().queryOptional(
+        "verifactu.records.by_invoice",
+        { invoice_id: invoice.id }
+      );
+      if (recRows === void 0) return { fiscal: base, retry: false };
+      const rec = Array.isArray(recRows) ? recRows[0] : recRows;
+      if (!rec) return { fiscal: base, retry: true };
+      const csv = rec.aeat_csv || "";
+      const qr = rec.qr_url || "";
+      const t7 = (k2) => erplora().t(CATALOG, k2);
+      return {
+        fiscal: {
+          ...base,
+          qr: qr || void 0,
+          qr_note: csv ? `CSV: ${csv}` : qr ? t7("ui.qrValidateNote") : void 0
+        },
+        retry: false
+      };
     } catch {
-      return {};
+      return { fiscal: {}, retry: false };
     }
   }
   render() {
@@ -2888,6 +2927,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpSalesDocument.prototype, "fiscal", 2);
+__decorateClass([
+  n4({ attribute: false })
+], ErpSalesDocument.prototype, "fiscalRetryDelays", 2);
 define("erp-sales-document", ErpSalesDocument);
 
 // ui/lib/document-modal.ts
@@ -4892,6 +4934,16 @@ var o6 = e5(class extends i4 {
 });
 
 // ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-data-table.js
+var CSV_BOM = "\uFEFF";
+function decodeCsvBuffer(buf) {
+  let text;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(buf);
+  } catch {
+    text = new TextDecoder("windows-1252").decode(buf);
+  }
+  return text.charCodeAt(0) === 65279 ? text.slice(1) : text;
+}
 var __defProp6 = Object.defineProperty;
 var __decorateClass6 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -5296,7 +5348,7 @@ var OkDataTable = class extends i3 {
     const head = cols.map((c5) => this.csvEscape(c5.key)).join(",");
     const lines = this.rows.map((r6) => cols.map((c5) => this.csvEscape(r6[c5.key])).join(","));
     const csv = [head, ...lines].join("\r\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const blob = new Blob([CSV_BOM + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a3 = document.createElement("a");
     a3.href = url;
@@ -5344,7 +5396,7 @@ var OkDataTable = class extends i3 {
     const input = ev.target;
     const file = input.files?.[0];
     if (!file) return;
-    const text = await file.text();
+    const text = decodeCsvBuffer(await file.arrayBuffer());
     const { headers, rows: rows4 } = this.parseCsv(text);
     this.emit("csvImport", { headers, rows: rows4 });
     this.emit("import", { headers, rows: rows4 });
@@ -5709,8 +5761,6 @@ var OkDataTable = class extends i3 {
       (a3) => {
         const loading = a3.loading?.(row) === true;
         const disabled = loading || a3.disabled?.(row) === true;
-        const iconOnly = !!a3.icon;
-        const name = iconOnly && a3.label ? a3.label : A;
         return b2`
             <ion-button
               size="small"
@@ -5718,8 +5768,6 @@ var OkDataTable = class extends i3 {
               color=${a3.color ?? "medium"}
               ?disabled=${disabled}
               aria-disabled=${disabled ? "true" : A}
-              title=${name}
-              aria-label=${name}
               @click=${() => this.emit("rowAction", { actionId: a3.id, row })}
             >
               ${loading ? b2`<ion-spinner slot="icon-only" name="dots"></ion-spinner>` : a3.icon ? b2`<ion-icon slot="icon-only" .icon=${okIcon(a3.icon)}></ion-icon>` : a3.label}

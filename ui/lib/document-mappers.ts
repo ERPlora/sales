@@ -117,6 +117,9 @@ export interface SaleSettings {
   receipt_header?: string;
   receipt_footer?: string;
   receipt_footer_image?: string;
+  /** QR promocional del tiquet (reseñas Google, redes…): URL + leyenda configurables. */
+  receipt_marketing_url?: string;
+  receipt_marketing_text?: string;
   default_document_format?: string; // 'ticket' | 'invoice'
   currency?: string;
 }
@@ -199,6 +202,9 @@ export function saleToReceipt(
     footer: settings.receipt_footer || undefined,
     qr: fiscal.qr || undefined,
     qr_note: fiscal.qr_note || undefined,
+    // QR promocional (solo tiquet; la factura A4 es formal). Sin URL no hay rastro.
+    promo_qr: settings.receipt_marketing_url || undefined,
+    promo_note: settings.receipt_marketing_url ? (settings.receipt_marketing_text || undefined) : undefined,
   };
 }
 

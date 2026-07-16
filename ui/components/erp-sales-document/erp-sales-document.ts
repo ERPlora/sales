@@ -80,6 +80,12 @@ export class ErpSalesDocument extends LitElement {
   /** Datos fiscales (VeriFactu) resueltos para el documento: QR de validación AEAT + nº oficial. */
   @state() private fiscal: FiscalData = {};
 
+  /** Backoff del reintento fiscal (ms). Override en tests. */
+  @property({ attribute: false }) fiscalRetryDelays: number[] = [400, 900, 1800];
+
+  /** Venta ya cargada/en curso — evita el doble load (connectedCallback + updated disparan ambos). */
+  private loadedFor?: string;
+
   private readonly onLocaleChange = (): void => this.requestUpdate();
 
   async connectedCallback() {
@@ -98,6 +104,8 @@ export class ErpSalesDocument extends LitElement {
   }
 
   private async load() {
+    if (!this.saleId || this.loadedFor === this.saleId) return;
+    this.loadedFor = this.saleId;
     this.loading = true; this.error = '';
     try {
       const [sale, lines, settingsRows] = await Promise.all([
@@ -108,9 +116,10 @@ export class ErpSalesDocument extends LitElement {
       this.sale = Array.isArray(sale) ? (sale as SaleRow[])[0] : sale;
       this.lines = lines || [];
       this.settings = (Array.isArray(settingsRows) ? settingsRows[0] : settingsRows) || {};
-      // Datos fiscales (QR VeriFactu) — best-effort: si no hay factura/permiso, el documento se
-      // pinta igual sin QR (no rompe el recibo).
-      this.fiscal = this.saleId ? await this.resolveFiscal(this.saleId) : {};
+      // Datos fiscales (QR VeriFactu) — best-effort y SIN bloquear el primer pintado: el Outbox es
+      // asíncrono (la factura/registro se crean unos ms después de cobrar), así que se observa con
+      // reintentos y el QR aparece solo cuando llega.
+      void this.watchFiscal(this.saleId);
     } catch (e) {
       this.error = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errorDocument');
     } finally {
@@ -118,33 +127,56 @@ export class ErpSalesDocument extends LitElement {
     }
   }
 
+  /** Resuelve lo fiscal con backoff: reintenta SOLO si el módulo está instalado pero el registro
+   *  aún no existe (el race del Outbox). Módulo ausente (`queryOptional` → undefined) = una consulta
+   *  y en paz. Si el usuario cambió de venta, aborta. */
+  private async watchFiscal(saleId: string): Promise<void> {
+    for (const delay of [0, ...this.fiscalRetryDelays]) {
+      if (delay) await new Promise((r) => setTimeout(r, delay));
+      if (this.saleId !== saleId || !this.isConnected) return;
+      const { fiscal, retry } = await this.resolveFiscal(saleId);
+      this.fiscal = fiscal;
+      if (fiscal.qr || !retry) return;
+    }
+  }
+
   /** Resuelve venta → factura (`invoice.by_source`) → registro VeriFactu (`verifactu.records.by_invoice`)
-   *  para obtener el QR de validación AEAT + nº fiscal oficial + CSV. Tolerante a fallos. */
-  private async resolveFiscal(saleId: string): Promise<FiscalData> {
+   *  para obtener el QR de validación AEAT + nº fiscal oficial + CSV. Tolerante a fallos.
+   *  `retry` = merece reintento (módulo presente, registro todavía no). */
+  private async resolveFiscal(saleId: string): Promise<{ fiscal: FiscalData; retry: boolean }> {
     try {
       // `queryOptional` (ADR-0127): ni `invoice` ni `verifactu` son dependencias de sales — un hub
       // puede cobrar sin módulo de facturación. Ausentes → sin QR fiscal y en paz; contrato ROTO →
       // explota (lo atrapa el catch tolerante de este método).
       const invRows = await erplora().queryOptional<Record<string, unknown> | Record<string, unknown>[]>(
         'invoice.by_source', { source_id: saleId });
+      if (invRows === undefined) return { fiscal: {}, retry: false }; // módulo invoice ausente
       const invoice = (Array.isArray(invRows) ? invRows[0] : invRows) as Record<string, unknown> | undefined;
-      if (!invoice?.id) return {};
-      const recRows = await erplora().queryOptional<Record<string, unknown> | Record<string, unknown>[]>(
-        'verifactu.records.by_invoice', { invoice_id: invoice.id });
-      const rec = (Array.isArray(recRows) ? recRows[0] : recRows) as Record<string, unknown> | undefined;
-      const csv = (rec?.aeat_csv as string) || '';
-      const qr = (rec?.qr_url as string) || '';
-      const t = (k: string): string => erplora().t(CATALOG, k);
-      return {
-        qr: qr || undefined,
-        qr_note: csv ? `CSV: ${csv}` : (qr ? t('ui.qrValidateNote') : undefined),
+      if (!invoice?.id) return { fiscal: {}, retry: true }; // factura aún no creada (Outbox)
+      const base: FiscalData = {
         number: (invoice.number as string) || undefined,
         issuer_nif: (invoice.issuer_nif as string) || undefined,
         customer_name: (invoice.customer_name as string) || undefined,
         customer_tax_id: (invoice.customer_tax_id as string) || undefined,
       };
+      const recRows = await erplora().queryOptional<Record<string, unknown> | Record<string, unknown>[]>(
+        'verifactu.records.by_invoice', { invoice_id: invoice.id });
+      if (recRows === undefined) return { fiscal: base, retry: false }; // sin módulo verifactu
+      const rec = (Array.isArray(recRows) ? recRows[0] : recRows) as Record<string, unknown> | undefined;
+      if (!rec) return { fiscal: base, retry: true }; // registro fiscal aún no creado (Outbox)
+      const csv = (rec.aeat_csv as string) || '';
+      const qr = (rec.qr_url as string) || '';
+      const t = (k: string): string => erplora().t(CATALOG, k);
+      return {
+        fiscal: {
+          ...base,
+          qr: qr || undefined,
+          qr_note: csv ? `CSV: ${csv}` : (qr ? t('ui.qrValidateNote') : undefined),
+        },
+        retry: false,
+      };
     } catch {
-      return {}; // sin factura aún / sin permiso → documento sin QR
+      return { fiscal: {}, retry: false }; // sin permiso / contrato roto → documento sin QR
     }
   }
 

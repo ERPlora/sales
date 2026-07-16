@@ -67,3 +67,64 @@ describe('visor del documento de venta', () => {
     expect(el.shadowRoot!.querySelector('ion-button'), 'el visor pinta solo el documento').toBeNull();
   });
 });
+
+// El Outbox es ASÍNCRONO: al cobrar, `invoice`/`verifactu` se crean unos ms DESPUÉS de que el modal
+// abra, y resolveFiscal corría UNA vez → tiquet sin QR de VeriFactu (que legalmente debe ir impreso).
+// Contrato: si el módulo está instalado pero el registro aún no existe, se REINTENTA con backoff y
+// el QR aparece solo; si el módulo NO está instalado (queryOptional → undefined), no se insiste.
+describe('QR fiscal: reintento mientras el Outbox termina', () => {
+  const SALE = {
+    id: 's1', sale_number: 'T-1', subtotal: 327, total: 360,
+    payment_method_name: 'Efectivo', created_at: '2026-07-16T19:00:30Z',
+  };
+
+  async function montarPorSaleId(queryOptional: (name: string) => Promise<unknown>) {
+    (globalThis as Record<string, unknown>).erplora = {
+      query: async (name: string) => (name === 'sales.get' ? [SALE]
+        : name === 'sales.lines' ? [{ product_name: 'Cafe', quantity: 1, unit_price: 180, line_total: 180 }]
+        : []),
+      queryOptional: async (name: string) => queryOptional(name),
+      locale: 'es',
+      t: (_c: unknown, k: string) => k,
+    };
+    await import('./erp-sales-document');
+    const el = document.createElement('erp-sales-document') as HTMLElement & {
+      fiscalRetryDelays: number[]; updateComplete: Promise<unknown>;
+    };
+    el.fiscalRetryDelays = [10, 10]; // backoff corto para el test
+    el.setAttribute('sale-id', 's1');
+    document.body.appendChild(el);
+    await el.updateComplete;
+    return el;
+  }
+
+  it('el QR aparece cuando el registro fiscal llega unos ms tarde', async () => {
+    let llamadas = 0;
+    const el = await montarPorSaleId(async (name) => {
+      if (name === 'invoice.by_source') {
+        llamadas += 1;
+        return llamadas < 2 ? [] : [{ id: 'inv1', number: 'F2-1' }]; // 1ª vez: aún no existe
+      }
+      if (name === 'verifactu.records.by_invoice') return [{ qr_url: 'https://aeat/qr', aeat_csv: '' }];
+      return undefined;
+    });
+
+    await new Promise((r) => setTimeout(r, 80)); // deja correr los reintentos
+    await el.updateComplete;
+    const receipt = el.shadowRoot!.querySelector('ok-receipt') as HTMLElement & { receipt: ReceiptData };
+    expect(llamadas, 'debe reintentar (no rendirse a la primera)').toBeGreaterThan(1);
+    expect(receipt.receipt.qr, 'el QR aparece al llegar el registro').toBe('https://aeat/qr');
+  });
+
+  it('sin módulo invoice instalado NO insiste (queryOptional → undefined)', async () => {
+    let llamadas = 0;
+    const el = await montarPorSaleId(async (name) => {
+      if (name === 'invoice.by_source') llamadas += 1;
+      return undefined; // módulo ausente (ADR-0127)
+    });
+
+    await new Promise((r) => setTimeout(r, 80));
+    await el.updateComplete;
+    expect(llamadas, 'módulo ausente = una sola consulta, sin reintentos').toBe(1);
+  });
+});
