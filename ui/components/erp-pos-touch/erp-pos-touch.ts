@@ -1,7 +1,7 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { state } from 'lit/decorators.js';
 import { define } from '@erplora/outfitkit/define';
-import '../erp-sales-document/erp-sales-document.js';
+import { renderDocumentModal } from '../../lib/document-modal.js';
 import '@erplora/outfitkit/ok-qty-stepper';
 import {
   loadActiveCart, persistActiveCart, listParkedTickets, parkCart, retrieveParkedTicket,
@@ -652,15 +652,7 @@ export class ErpPosTouch extends LitElement {
           </div>`
         : nothing}
 
-      <ion-modal .isOpen=${!!this.docSaleId} @ionModalDidDismiss=${() => { this.docSaleId = undefined; }}>
-        <ion-header class="ion-no-border"><ion-toolbar>
-          <ion-title>${t('ui.document')}</ion-title>
-          <ion-buttons slot="end"><ion-button aria-label=${t('ui.close')} @click=${() => { this.docSaleId = undefined; }}><ion-icon name="close" slot="icon-only"></ion-icon></ion-button></ion-buttons>
-        </ion-toolbar></ion-header>
-        <ion-content class="ion-padding">
-          ${this.docSaleId ? html`<erp-sales-document .saleId=${this.docSaleId}></erp-sales-document>` : nothing}
-        </ion-content>
-      </ion-modal>
+      ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => { this.docSaleId = undefined; }, t })}
     </div>`;
   }
 }

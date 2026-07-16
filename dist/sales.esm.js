@@ -9,7 +9,7 @@ var __decorateClass = (decorators, target, key, kind) => {
   return result;
 };
 
-// node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
+// ../../node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
 var ElementInternalsShim = class ElementInternals {
   get shadowRoot() {
     return this.__host.__shadowRoot;
@@ -88,7 +88,7 @@ var ElementInternalsShim = class ElementInternals {
   }
 };
 
-// node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
+// ../../node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
 var __classPrivateFieldSet = function(receiver, state, value, kind, f3) {
   if (kind === "m") throw new TypeError("Private method is not writable");
   if (kind === "a" && !f3) throw new TypeError("Private accessor was defined without a setter");
@@ -246,7 +246,7 @@ Object.defineProperties(CustomEventShim.prototype, {
 var EventShimWithRealType = EventShim;
 var CustomEventShimWithRealType = CustomEventShim;
 
-// node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
+// ../../node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
 var _a2;
 var CSSRuleShim = (_a2 = class CSSRule {
   constructor() {
@@ -277,7 +277,7 @@ var CSSRuleShim = (_a2 = class CSSRule {
   }
 }, _a2.STYLE_RULE = 1, _a2.CHARSET_RULE = 2, _a2.IMPORT_RULE = 3, _a2.MEDIA_RULE = 4, _a2.FONT_FACE_RULE = 5, _a2.PAGE_RULE = 6, _a2.NAMESPACE_RULE = 10, _a2.KEYFRAMES_RULE = 7, _a2.KEYFRAME_RULE = 8, _a2.SUPPORTS_RULE = 12, _a2.COUNTER_STYLE_RULE = 11, _a2.FONT_FEATURE_VALUES_RULE = 14, _a2.MARGIN_RULE = 9, _a2);
 
-// node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/index.js
+// ../../node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/index.js
 globalThis.Event ??= EventShimWithRealType;
 globalThis.CustomEvent ??= CustomEventShimWithRealType;
 var constructionToken = Symbol();
@@ -674,7 +674,7 @@ var CustomElementRegistryShimWithRealType = CustomElementRegistry;
 var customElements2 = new CustomElementRegistryShimWithRealType();
 var windowShim = new WindowShim(constructionToken);
 
-// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/css-tag.js
+// ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/css-tag.js
 var t = globalThis;
 var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
 var s = Symbol();
@@ -719,7 +719,7 @@ var c = e || void 0 === t.CSSStyleSheet ? (t7) => t7 : (t7) => t7 instanceof CSS
   return r(e6);
 })(t7) : t7;
 
-// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/reactive-element.js
+// ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/reactive-element.js
 var { is: h, defineProperty: r2, getOwnPropertyDescriptor: o2, getOwnPropertyNames: n2, getOwnPropertySymbols: a, getPrototypeOf: c2 } = Object;
 var l = globalThis;
 l.customElements ??= customElements2;
@@ -942,7 +942,7 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
 };
 g.elementStyles = [], g.shadowRootOptions = { mode: "open" }, g[f("elementProperties")] = /* @__PURE__ */ new Map(), g[f("finalized")] = /* @__PURE__ */ new Map(), u?.({ ReactiveElement: g }), (l.reactiveElementVersions ??= []).push("2.1.2");
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
+// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
 var t2 = globalThis;
 var i2 = (t7) => t7;
 var s2 = t2.trustedTypes;
@@ -1197,7 +1197,7 @@ var D = (t7, i7, s5) => {
   return h4._$AI(t7), h4;
 };
 
-// node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
+// ../../node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
 var s3 = globalThis;
 var i3 = class extends g {
   constructor() {
@@ -1226,7 +1226,7 @@ var o4 = s3.litElementPolyfillSupport;
 o4?.({ LitElement: i3 });
 (s3.litElementVersions ??= []).push("4.2.2");
 
-// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/property.js
+// ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
 var r4 = (t7 = o5, e6, r6) => {
   const { kind: n6, metadata: i7 } = r6;
@@ -1256,15 +1256,15 @@ function n4(t7) {
   })(t7, e6, o7);
 }
 
-// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/state.js
+// ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/state.js
 function r5(r6) {
   return n4({ ...r6, state: true, attribute: false });
 }
 
-// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/base.js
+// ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/base.js
 var e3 = (e6, t7, c5) => (c5.configurable = true, c5.enumerable = true, Reflect.decorate && "object" != typeof t7 && Object.defineProperty(e6, t7, c5), c5);
 
-// node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/query.js
+// ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/query.js
 function e4(e6, r6) {
   return (n6, s5, i7) => {
     const o7 = (t7) => t7.renderRoot?.querySelector(e6) ?? null;
@@ -1288,14 +1288,14 @@ function e4(e6, r6) {
   };
 }
 
-// node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/define.js
+// ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/define.js
 function define(tag, ctor) {
   if (typeof customElements !== "undefined" && !customElements.get(tag)) {
     customElements.define(tag, ctor);
   }
 }
 
-// node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-qr.js
+// ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-qr.js
 var __defProp2 = Object.defineProperty;
 var __decorateClass2 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -1943,7 +1943,7 @@ __decorateClass2([
 ], OkQr.prototype, "margin");
 define("ok-qr", OkQr);
 
-// node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-receipt.js
+// ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-receipt.js
 var __defProp3 = Object.defineProperty;
 var __decorateClass3 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2121,7 +2121,7 @@ __decorateClass3([
 ], OkReceipt.prototype, "labels");
 define("ok-receipt", OkReceipt);
 
-// node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-invoice.js
+// ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-invoice.js
 var __defProp4 = Object.defineProperty;
 var __decorateClass4 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2345,7 +2345,58 @@ __decorateClass4([
 ], OkInvoice.prototype, "labels");
 define("ok-invoice", OkInvoice);
 
-// modules/sales/ui/lib/document-mappers.ts
+// ui/lib/document-mappers.ts
+function toEuros(cents) {
+  return Number(cents ?? 0) / 100;
+}
+function formatDateTime(iso, locale = "es") {
+  if (!iso) return void 0;
+  const d3 = new Date(iso);
+  if (Number.isNaN(d3.getTime())) return iso;
+  return new Intl.DateTimeFormat(locale, {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(d3);
+}
+function receiptLabels(t7) {
+  return {
+    empty: t7("ui.docEmpty"),
+    phone: t7("ui.docPhone"),
+    receipt: t7("ui.docReceipt"),
+    servedBy: t7("ui.docServedBy"),
+    customer: t7("ui.docCustomer"),
+    item: t7("ui.docItem"),
+    amount: t7("ui.docAmount"),
+    noLines: t7("ui.docNoLines"),
+    subtotal: t7("ui.docSubtotal"),
+    total: t7("ui.docTotal"),
+    change: t7("ui.docChange")
+  };
+}
+function invoiceLabels(t7) {
+  return {
+    empty: t7("ui.docEmptyInvoice"),
+    invoice: t7("ui.docInvoice"),
+    number: t7("ui.docNumber"),
+    date: t7("ui.docDate"),
+    dueDate: t7("ui.docDueDate"),
+    billTo: t7("ui.docBillTo"),
+    description: t7("ui.docDescription"),
+    qty: t7("ui.docQty"),
+    price: t7("ui.docPrice"),
+    discount: t7("ui.docDiscount"),
+    tax: t7("ui.docTax"),
+    amount: t7("ui.docAmount"),
+    noLines: t7("ui.docNoLines"),
+    taxBase: t7("ui.docTaxBase"),
+    discountTotal: t7("ui.docDiscountTotal"),
+    total: t7("ui.docTotal"),
+    paymentMethod: t7("ui.docPaymentMethod")
+  };
+}
 function lineLabel(l3) {
   return Number(l3.is_gift) ? `${l3.product_name} (Invitaci\xF3n)` : l3.product_name;
 }
@@ -2362,8 +2413,8 @@ function parseTaxes(tax_breakdown) {
     return {
       label: `IVA ${Number.isFinite(r6) ? r6.toFixed(0) : rate}%`,
       rate: Number.isFinite(r6) ? r6 : void 0,
-      base: Number(v3?.base ?? 0),
-      amount: Number(v3?.tax ?? 0)
+      base: toEuros(v3?.base),
+      amount: toEuros(v3?.tax)
     };
   }).filter((t7) => t7.amount || t7.base);
 }
@@ -2371,51 +2422,51 @@ function resolveFormat(sale, settings) {
   const v3 = sale.document_type || settings.default_document_format || "ticket";
   return v3 === "invoice" ? "invoice" : "ticket";
 }
-function saleToReceipt(sale, lines, settings = {}, fiscal = {}) {
+function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es") {
   const header = (settings.receipt_header || "").trim();
   return {
     business: { name: header.split("\n")[0] || "Mi negocio", address: header.split("\n").slice(1).join(" ") || void 0, tax_id: fiscal.issuer_nif || void 0 },
     number: fiscal.number || sale.sale_number,
-    datetime: sale.created_at,
+    datetime: formatDateTime(sale.created_at, locale),
     customer: fiscal.customer_name || sale.customer_name || void 0,
     lines: lines.map((l3) => ({
       name: lineLabel(l3),
       qty: Number(l3.quantity),
-      unit_price: Number(l3.unit_price),
-      total: Number(l3.line_total)
+      unit_price: toEuros(l3.unit_price),
+      total: toEuros(l3.line_total)
     })),
-    subtotal: sale.subtotal != null ? Number(sale.subtotal) : void 0,
+    subtotal: sale.subtotal != null ? toEuros(sale.subtotal) : void 0,
     taxes: parseTaxes(sale.tax_breakdown).map((t7) => ({ label: t7.label, base: t7.base, amount: t7.amount })),
-    total: Number(sale.total ?? 0),
-    payment: sale.payment_method_name ? { method: sale.payment_method_name, paid: sale.amount_tendered != null ? Number(sale.amount_tendered) : void 0, change: sale.change_due != null ? Number(sale.change_due) : void 0 } : void 0,
+    total: toEuros(sale.total),
+    payment: sale.payment_method_name ? { method: sale.payment_method_name, paid: sale.amount_tendered != null ? toEuros(sale.amount_tendered) : void 0, change: sale.change_due != null ? toEuros(sale.change_due) : void 0 } : void 0,
     currency: settings.currency || "\u20AC",
     footer: settings.receipt_footer || void 0,
     qr: fiscal.qr || void 0,
     qr_note: fiscal.qr_note || void 0
   };
 }
-function saleToInvoice(sale, lines, settings = {}, fiscal = {}) {
+function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es") {
   const header = (settings.receipt_header || "").trim();
   const invLines = lines.map((l3) => ({
     description: lineLabel(l3),
     qty: Number(l3.quantity),
-    unit_price: Number(l3.unit_price),
+    unit_price: toEuros(l3.unit_price),
     discount_percent: l3.discount_percent ? Number(l3.discount_percent) : void 0,
     tax_rate: l3.tax_rate != null ? Number(l3.tax_rate) : void 0,
-    total: Number(l3.line_total)
+    total: toEuros(l3.line_total)
   }));
   const taxes = parseTaxes(sale.tax_breakdown);
   return {
     issuer: { name: header.split("\n")[0] || "Mi negocio", address: header.split("\n").slice(1).join(" ") || void 0, tax_id: fiscal.issuer_nif || void 0 },
     customer: { name: fiscal.customer_name || sale.customer_name || "Cliente", tax_id: fiscal.customer_tax_id || void 0 },
     number: fiscal.number || sale.sale_number,
-    issue_date: sale.created_at || "",
+    issue_date: formatDateTime(sale.created_at, locale) || "",
     lines: invLines,
-    subtotal: Number(sale.subtotal ?? 0),
-    discount_total: sale.discount_amount ? Number(sale.discount_amount) : void 0,
+    subtotal: toEuros(sale.subtotal),
+    discount_total: sale.discount_amount ? toEuros(sale.discount_amount) : void 0,
     taxes: taxes.map((t7) => ({ label: t7.label, rate: t7.rate, base: t7.base, amount: t7.amount })),
-    tax_total: Number(sale.tax_amount ?? 0),
-    total: Number(sale.total ?? 0),
+    tax_total: toEuros(sale.tax_amount),
+    total: toEuros(sale.total),
     currency: settings.currency || "\u20AC",
     payment_method: sale.payment_method_name || void 0,
     footer: settings.receipt_footer || void 0,
@@ -2424,7 +2475,7 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}) {
   };
 }
 
-// modules/sales/locales/es.json
+// locales/es.json
 var es_default = {
   name: "Ventas / TPV",
   navigation: {
@@ -2459,6 +2510,31 @@ var es_default = {
     errorStats: "Error cargando m\xE9tricas",
     print: "Imprimir",
     qrValidateNote: "Escanea para validar la factura en la AEAT",
+    docEmpty: "Sin datos de tiquet.",
+    docEmptyInvoice: "Sin datos de factura.",
+    docPhone: "Tel.",
+    docReceipt: "Tiquet",
+    docServedBy: "Atendido por",
+    docCustomer: "Cliente",
+    docItem: "Concepto",
+    docAmount: "Importe",
+    docNoLines: "\u2014 Sin l\xEDneas \u2014",
+    docSubtotal: "Subtotal",
+    docTotal: "TOTAL",
+    docChange: "Cambio",
+    docInvoice: "Factura",
+    docNumber: "N\xBA",
+    docDate: "Fecha",
+    docDueDate: "Vencimiento",
+    docBillTo: "Facturar a",
+    docDescription: "Descripci\xF3n",
+    docQty: "Cant.",
+    docPrice: "Precio",
+    docDiscount: "Dto.",
+    docTax: "Impuesto",
+    docTaxBase: "Base imponible",
+    docDiscountTotal: "Descuento",
+    docPaymentMethod: "Forma de pago",
     loadingDocument: "Cargando documento\u2026",
     noSale: "Sin venta.",
     errorDocument: "Error cargando el documento",
@@ -2538,7 +2614,7 @@ var es_default = {
   }
 };
 
-// modules/sales/locales/en.json
+// locales/en.json
 var en_default = {
   name: "Sales & POS",
   navigation: {
@@ -2573,6 +2649,31 @@ var en_default = {
     errorStats: "Error loading metrics",
     print: "Print",
     qrValidateNote: "Scan to validate the invoice at the AEAT",
+    docEmpty: "No receipt data.",
+    docEmptyInvoice: "No invoice data.",
+    docPhone: "Tel.",
+    docReceipt: "Receipt",
+    docServedBy: "Served by",
+    docCustomer: "Customer",
+    docItem: "Item",
+    docAmount: "Amount",
+    docNoLines: "\u2014 No lines \u2014",
+    docSubtotal: "Subtotal",
+    docTotal: "TOTAL",
+    docChange: "Change",
+    docInvoice: "Invoice",
+    docNumber: "No.",
+    docDate: "Date",
+    docDueDate: "Due date",
+    docBillTo: "Bill to",
+    docDescription: "Description",
+    docQty: "Qty",
+    docPrice: "Price",
+    docDiscount: "Disc.",
+    docTax: "Tax",
+    docTaxBase: "Tax base",
+    docDiscountTotal: "Discount",
+    docPaymentMethod: "Payment method",
     loadingDocument: "Loading document\u2026",
     noSale: "No sale.",
     errorDocument: "Error loading the document",
@@ -2652,7 +2753,7 @@ var en_default = {
   }
 };
 
-// modules/sales/ui/components/erp-sales-document/erp-sales-document.ts
+// ui/components/erp-sales-document/erp-sales-document.ts
 var CATALOG = { es: es_default, en: en_default };
 function erplora() {
   const c5 = globalThis.erplora;
@@ -2670,13 +2771,19 @@ var ErpSalesDocument = class extends i3 {
   static {
     this.styles = i`
     :host { display:block; }
-    .bar { display:flex; gap:.5rem; align-items:center; justify-content:flex-end; margin-bottom:.6rem; }
     .err { color:#d9480f; }
     .muted { color:#8b897f; }
-    /* Al imprimir: solo el documento; se oculta la barra de acciones. */
+    /* Presencia de PAPEL: sombra sutil sobre el fondo gris del modal (tiquet térmico / folio A4). */
+    ok-receipt::part(paper),
+    ok-invoice::part(sheet) {
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 8px 24px rgba(0, 0, 0, 0.08);
+      border-radius: 2px;
+    }
     @media print {
-      .bar { display:none; }
-      :host { background:#fff; }
+      :host { background: #fff; }
+      /* En papel de verdad no hay sombras. */
+      ok-receipt::part(paper),
+      ok-invoice::part(sheet) { box-shadow: none; }
     }
   `;
   }
@@ -2749,14 +2856,12 @@ var ErpSalesDocument = class extends i3 {
     const settings = this.settings || {};
     const lines = this.lines || [];
     const fmt = this.format || resolveFormat(this.sale, settings);
-    return b2`<div>
-      <div class="bar">
-        <ion-button size="small" fill="outline" @click=${() => window.print()}>
-          <ion-icon slot="start" name="print-outline"></ion-icon> ${t7("ui.print")}
-        </ion-button>
-      </div>
-      ${fmt === "invoice" ? b2`<ok-invoice .invoice=${saleToInvoice(this.sale, lines, settings, this.fiscal)}></ok-invoice>` : b2`<ok-receipt .receipt=${saleToReceipt(this.sale, lines, settings, this.fiscal)}></ok-receipt>`}
-    </div>`;
+    const locale = erplora().locale;
+    return fmt === "invoice" ? b2`<ok-invoice
+          .invoice=${saleToInvoice(this.sale, lines, settings, this.fiscal, locale)}
+          .labels=${invoiceLabels(t7)}></ok-invoice>` : b2`<ok-receipt
+          .receipt=${saleToReceipt(this.sale, lines, settings, this.fiscal, locale)}
+          .labels=${receiptLabels(t7)}></ok-receipt>`;
   }
 };
 __decorateClass([
@@ -2785,7 +2890,50 @@ __decorateClass([
 ], ErpSalesDocument.prototype, "fiscal", 2);
 define("erp-sales-document", ErpSalesDocument);
 
-// node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/shared/icons.js
+// ui/lib/document-modal.ts
+function renderDocumentModal({ saleId, onClose, t: t7 }) {
+  return b2`<ion-modal class="doc-modal" .isOpen=${!!saleId} @ionModalDidDismiss=${onClose}>
+    <style>
+      ion-modal.doc-modal {
+        --width: min(440px, 100vw);
+        --height: min(720px, 100vh);
+        --border-radius: 14px;
+      }
+      ion-modal.doc-modal ion-content.doc-body {
+        --background: var(--ion-color-light, #f4f5f8);
+      }
+      ion-modal.doc-modal ion-button.doc-close {
+        margin: 6px;
+      }
+      ion-modal.doc-modal ion-footer ion-toolbar {
+        --background: var(--ion-background-color, #fff);
+        padding: 4px 10px calc(4px + var(--ion-safe-area-bottom, 0px));
+      }
+      @media print {
+        ion-modal.doc-modal ion-footer,
+        ion-modal.doc-modal ion-button.doc-close { display: none; }
+      }
+    </style>
+    <ion-content class="doc-body">
+      <ion-button class="doc-close" slot="fixed" style="top:0;right:0" fill="clear" color="medium"
+        aria-label=${t7("ui.close")} @click=${onClose}>
+        <ion-icon name="close" slot="icon-only"></ion-icon>
+      </ion-button>
+      <div class="ion-padding" style="padding-top:44px">
+        ${saleId ? b2`<erp-sales-document .saleId=${saleId}></erp-sales-document>` : A}
+      </div>
+    </ion-content>
+    <ion-footer class="ion-no-border">
+      <ion-toolbar>
+        <ion-button class="print" expand="block" @click=${() => window.print()}>
+          <ion-icon slot="start" name="print-outline"></ion-icon>${t7("ui.print")}
+        </ion-button>
+      </ion-toolbar>
+    </ion-footer>
+  </ion-modal>`;
+}
+
+// ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/shared/icons.js
 var rawAdd = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M256 112v288m144-144H112"/></svg>';
 var rawAlertCircle = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="M256 48C141.31 48 48 141.31 48 256s93.31 208 208 208s208-93.31 208-208S370.69 48 256 48m0 319.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20m21.72-201.15l-5.74 122a16 16 0 0 1-32 0l-5.74-121.94v-.05a21.74 21.74 0 1 1 43.44 0Z"/></svg>';
 var rawAlertCircleOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" d="M448 256c0-106-86-192-192-192S64 150 64 256s86 192 192 192s192-86 192-192Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M250.26 166.05L256 288l5.73-121.95a5.74 5.74 0 0 0-5.79-6h0a5.74 5.74 0 0 0-5.68 6"/><path fill="currentColor" d="M256 367.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20"/></svg>';
@@ -2933,7 +3081,7 @@ function okIcon(value) {
   return BY_NAME[value] ?? value;
 }
 
-// node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-qty-stepper.js
+// ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-qty-stepper.js
 var __defProp5 = Object.defineProperty;
 var __decorateClass5 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -3141,7 +3289,7 @@ __decorateClass5([
 ], OkQtyStepper.prototype, "labels");
 define("ok-qty-stepper", OkQtyStepper);
 
-// modules/sales/ui/lib/pos-cart.ts
+// ui/lib/pos-cart.ts
 function rows(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
@@ -3217,7 +3365,7 @@ async function retrieveParkedTicket(client, ticket) {
   return lines;
 }
 
-// modules/sales/ui/lib/pos-tax.ts
+// ui/lib/pos-tax.ts
 function isRoot(r6) {
   return r6.parent_id == null || String(r6.parent_id) === "";
 }
@@ -3250,7 +3398,7 @@ function resolveLineTax(catRatesMap, taxCategoryKey) {
   return catRatesMap.get(String(taxCategoryKey)) ?? 0;
 }
 
-// modules/sales/ui/components/erp-pos-touch/erp-pos-touch.ts
+// ui/components/erp-pos-touch/erp-pos-touch.ts
 var CATALOG2 = { es: es_default, en: en_default };
 function erplora2() {
   const c5 = globalThis.erplora;
@@ -3867,19 +4015,9 @@ var ErpPosTouch = class extends i3 {
             </div>
           </div>` : A}
 
-      <ion-modal .isOpen=${!!this.docSaleId} @ionModalDidDismiss=${() => {
+      ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => {
       this.docSaleId = void 0;
-    }}>
-        <ion-header class="ion-no-border"><ion-toolbar>
-          <ion-title>${t3("ui.document")}</ion-title>
-          <ion-buttons slot="end"><ion-button aria-label=${t3("ui.close")} @click=${() => {
-      this.docSaleId = void 0;
-    }}><ion-icon name="close" slot="icon-only"></ion-icon></ion-button></ion-buttons>
-        </ion-toolbar></ion-header>
-        <ion-content class="ion-padding">
-          ${this.docSaleId ? b2`<erp-sales-document .saleId=${this.docSaleId}></erp-sales-document>` : A}
-        </ion-content>
-      </ion-modal>
+    }, t: t3 })}
     </div>`;
   }
 };
@@ -3951,7 +4089,7 @@ __decorateClass([
 ], ErpPosTouch.prototype, "customerName", 2);
 define("erp-pos-touch", ErpPosTouch);
 
-// node_modules/.pnpm/@erplora+module-sdk@file+..+hub+packages+module-sdk/node_modules/@erplora/module-sdk/src/index.ts
+// ../../node_modules/.pnpm/@erplora+module-sdk@file+..+hub+packages+module-sdk/node_modules/@erplora/module-sdk/src/index.ts
 function isEmpty(v3) {
   return v3 === null || v3 === void 0 || v3 === "";
 }
@@ -4076,7 +4214,7 @@ function eurosToCents(euros) {
   return majorToMinor(euros, 2);
 }
 
-// modules/sales/ui/components/erp-pos-desktop/erp-pos-desktop.ts
+// ui/components/erp-pos-desktop/erp-pos-desktop.ts
 var CATALOG3 = { es: es_default, en: en_default };
 function erplora3() {
   const c5 = globalThis.erplora;
@@ -4502,18 +4640,9 @@ var ErpPosDesktop = class extends i3 {
             </div>
           </div>` : A}
 
-      <ion-modal .isOpen=${!!this.docSaleId} @ionModalDidDismiss=${() => {
+      ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => {
       this.docSaleId = void 0;
-    }}>
-        <ion-header class="ion-no-border"><ion-toolbar><ion-title>${t4("ui.document")}</ion-title>
-          <ion-buttons slot="end"><ion-button aria-label=${t4("ui.close")} @click=${() => {
-      this.docSaleId = void 0;
-    }}><ion-icon name="close" slot="icon-only"></ion-icon></ion-button></ion-buttons>
-        </ion-toolbar></ion-header>
-        <ion-content class="ion-padding">
-          ${this.docSaleId ? b2`<erp-sales-document .saleId=${this.docSaleId}></erp-sales-document>` : A}
-        </ion-content>
-      </ion-modal>
+    }, t: t4 })}
     </div>`;
   }
 };
@@ -4576,7 +4705,7 @@ __decorateClass([
 ], ErpPosDesktop.prototype, "scanInput", 2);
 define("erp-pos-desktop", ErpPosDesktop);
 
-// modules/sales/ui/components/erp-pos/erp-pos.ts
+// ui/components/erp-pos/erp-pos.ts
 function erplora4() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -4616,7 +4745,7 @@ __decorateClass([
 ], ErpPos.prototype, "ready", 2);
 define("erp-pos", ErpPos);
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
+// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
 var t5 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e5 = (t7) => (...e6) => ({ _$litDirective$: t7, values: e6 });
 var i4 = class {
@@ -4636,7 +4765,7 @@ var i4 = class {
   }
 };
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
+// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
 var { I: t6 } = j;
 var i5 = (o7) => o7;
 var s4 = () => document.createComment("");
@@ -4669,7 +4798,7 @@ var h3 = (o7) => {
   o7._$AR(), o7._$AA.remove();
 };
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
+// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
 var u4 = (e6, s5, t7) => {
   const r6 = /* @__PURE__ */ new Map();
   for (let l3 = s5; l3 <= t7; l3++) r6.set(e6[l3], l3);
@@ -4722,7 +4851,7 @@ var c4 = e5(class extends i4 {
   }
 });
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
+// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
 var n5 = "important";
 var i6 = " !" + n5;
 var o6 = e5(class extends i4 {
@@ -4751,7 +4880,7 @@ var o6 = e5(class extends i4 {
   }
 });
 
-// node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-data-table.js
+// ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-data-table.js
 var __defProp6 = Object.defineProperty;
 var __decorateClass6 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -6062,7 +6191,7 @@ __decorateClass6([
 ], OkDataTable.prototype, "menuOpen");
 define("ok-data-table", OkDataTable);
 
-// modules/sales/ui/components/erp-sales-list/erp-sales-list.ts
+// ui/components/erp-sales-list/erp-sales-list.ts
 var CATALOG4 = { es: es_default, en: en_default };
 function erplora5() {
   const c5 = globalThis.erplora;
@@ -6172,23 +6301,9 @@ var ErpSalesList = class extends i3 {
       if (e6.detail.actionId === "document") this.docSaleId = e6.detail.row.id;
     }} @pageChange=${(e6) => this.ctrl.setPage(e6.detail)} @sortChange=${(e6) => this.ctrl.setSort(e6.detail.sort, e6.detail.dir)} @searchChange=${(e6) => this.ctrl.setSearch(e6.detail)} @filterChange=${(e6) => this.ctrl.setFilter(e6.detail.col, e6.detail.value)}></ok-data-table>
 
-        <ion-modal .isOpen=${!!this.docSaleId} @ionModalDidDismiss=${() => {
+        ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => {
       this.docSaleId = void 0;
-    }}>
-          <ion-header class="ion-no-border">
-            <ion-toolbar>
-              <ion-title>${t7("ui.saleDocument")}</ion-title>
-              <ion-buttons slot="end">
-                <ion-button aria-label=${t7("ui.close")} @click=${() => {
-      this.docSaleId = void 0;
-    }}><ion-icon name="close" slot="icon-only"></ion-icon></ion-button>
-              </ion-buttons>
-            </ion-toolbar>
-          </ion-header>
-          <ion-content class="ion-padding">
-            ${this.docSaleId ? b2`<erp-sales-document .saleId=${this.docSaleId}></erp-sales-document>` : A}
-          </ion-content>
-        </ion-modal>
+    }, t: t7 })}
       </div>`;
   }
 };

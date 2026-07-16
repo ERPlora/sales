@@ -4,7 +4,7 @@ import { define } from '@erplora/outfitkit/define';
 // La frontera EUROS ↔ CÉNTIMOS vive en el SDK (ADR-0123), no copiada en cada WC. Su gemelo Rust
 // es `guest_sdk::money::euros_to_cents`.
 import { eurosToCents } from '@erplora/module-sdk';
-import '../erp-sales-document/erp-sales-document.js';
+import { renderDocumentModal } from '../../lib/document-modal.js';
 
 // erp-pos-desktop — pantalla de venta para RETAIL sin táctil: campo de escaneo/SKU (Enter añade),
 // lista compacta de líneas con cantidad editable por teclado, y cobro con importe por teclado.
@@ -468,14 +468,7 @@ export class ErpPosDesktop extends LitElement {
           </div>`
         : nothing}
 
-      <ion-modal .isOpen=${!!this.docSaleId} @ionModalDidDismiss=${() => { this.docSaleId = undefined; }}>
-        <ion-header class="ion-no-border"><ion-toolbar><ion-title>${t('ui.document')}</ion-title>
-          <ion-buttons slot="end"><ion-button aria-label=${t('ui.close')} @click=${() => { this.docSaleId = undefined; }}><ion-icon name="close" slot="icon-only"></ion-icon></ion-button></ion-buttons>
-        </ion-toolbar></ion-header>
-        <ion-content class="ion-padding">
-          ${this.docSaleId ? html`<erp-sales-document .saleId=${this.docSaleId}></erp-sales-document>` : nothing}
-        </ion-content>
-      </ion-modal>
+      ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => { this.docSaleId = undefined; }, t })}
     </div>`;
   }
 }

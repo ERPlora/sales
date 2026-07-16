@@ -110,6 +110,32 @@ describe('carrito del TPV', () => {
   });
 });
 
+// El modal del documento (tiquet/factura tras cobrar) se vio feo en el TPV real (2026-07-16):
+// título «Documento» que no aportaba, IMPRIMIR flotando arriba-derecha y el tiquet perdido en un
+// modal enorme. El contrato nuevo: SIN título (solo la X de cerrar), el documento en el
+// ion-content, e IMPRIMIR en un ion-footer abajo — donde el pulgar lo espera en un TPV táctil.
+// El markup vive en el helper compartido document-modal.ts (touch, desktop y lista pintan el mismo).
+describe('modal del documento de venta', () => {
+  it('sin título, documento en el content, imprimir en el ion-footer', async () => {
+    const el = await montarCarrito();
+    (el as unknown as Record<string, unknown>).docSaleId = 'venta-1';
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    const modal = el.shadowRoot!.querySelector('ion-modal.doc-modal')!;
+    expect(modal, 'el modal del documento lleva la clase doc-modal (tamaño de papel)').toBeTruthy();
+    expect(modal.querySelector('ion-title'), 'sin título «Documento»: no aporta nada').toBeNull();
+    expect(modal.querySelector('ion-content erp-sales-document'), 'el documento va en el content').toBeTruthy();
+
+    const pie = modal.querySelector('ion-footer');
+    expect(pie, 'imprimir vive en un ion-footer').toBeTruthy();
+    expect(pie!.querySelector('ion-button.print'), 'el botón de imprimir va en el pie').toBeTruthy();
+    expect(modal.lastElementChild, 'el pie es lo último del modal').toBe(pie);
+
+    // La X de cerrar sigue existiendo (accesible), aunque ya no haya toolbar con título.
+    expect(modal.querySelector('ion-button.doc-close'), 'la X de cerrar sigue presente').toBeTruthy();
+  });
+});
+
 // El dinero es un INTEGER en CÉNTIMOS (ADR-0007): `price: 180` son 1,80 €. El SDK tiene DOS
 // formateadores y no son intercambiables — `formatMoney(cents)` divide entre 100 y es «la entrada
 // canónica para los Web Components de módulo»; `formatAmount(units)` NO divide (para importes que
