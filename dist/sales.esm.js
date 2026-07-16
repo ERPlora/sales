@@ -1295,6 +1295,131 @@ function define(tag, ctor) {
   }
 }
 
+// ../../node_modules/.pnpm/@erplora+module-sdk@file+..+hub+packages+module-sdk/node_modules/@erplora/module-sdk/src/index.ts
+function isEmpty(v3) {
+  return v3 === null || v3 === void 0 || v3 === "";
+}
+var ListController = class {
+  constructor(client, queryName, onChange = () => {
+  }, opts = {}) {
+    this.client = client;
+    this.queryName = queryName;
+    this.onChange = onChange;
+    this.rows = [];
+    this.total = 0;
+    this.loading = false;
+    this.error = "";
+    /** Descarta respuestas obsoletas si llegan fuera de orden (race de cargas concurrentes). */
+    this.seq = 0;
+    this.state = {
+      page: 0,
+      pageSize: opts.pageSize ?? 50,
+      search: "",
+      sort: opts.sort,
+      dir: opts.dir ?? "asc",
+      filters: { ...opts.filters ?? {} },
+      context: { ...opts.context ?? {} }
+    };
+  }
+  /** Nº de páginas según el total del servidor (mínimo 1). */
+  get pageCount() {
+    return Math.max(1, Math.ceil(this.total / this.state.pageSize));
+  }
+  /** (Re)carga la página actual desde el servidor. */
+  async load() {
+    const s5 = this.state;
+    const mySeq = ++this.seq;
+    this.loading = true;
+    this.error = "";
+    this.onChange();
+    try {
+      const page = await this.client.queryPage(this.queryName, {
+        limit: s5.pageSize,
+        offset: s5.page * s5.pageSize,
+        search: s5.search,
+        sort: s5.sort,
+        dir: s5.dir,
+        filters: s5.filters,
+        params: s5.context
+      });
+      if (mySeq !== this.seq) return;
+      this.rows = page.rows ?? [];
+      this.total = page.total ?? this.rows.length;
+    } catch (e6) {
+      if (mySeq !== this.seq) return;
+      this.rows = [];
+      this.total = 0;
+      this.error = e6 instanceof Error ? e6.message : "Error cargando datos";
+    } finally {
+      if (mySeq === this.seq) {
+        this.loading = false;
+        this.onChange();
+      }
+    }
+  }
+  setPage(page) {
+    this.state.page = Math.max(0, page);
+    void this.load();
+  }
+  setSort(sort, dir) {
+    this.state.sort = sort;
+    this.state.dir = dir;
+    this.state.page = 0;
+    void this.load();
+  }
+  setSearch(search) {
+    this.state.search = search;
+    this.state.page = 0;
+    void this.load();
+  }
+  /** Cambia el nº de filas por página y recarga desde la página 0. */
+  setPageSize(pageSize) {
+    this.state.pageSize = Math.max(1, pageSize);
+    this.state.page = 0;
+    void this.load();
+  }
+  /** Aplica/quita un filtro de columna; valores vacíos lo eliminan. Vuelve a la página 0. */
+  setFilter(col, value) {
+    if (isEmpty(value)) {
+      delete this.state.filters[col];
+    } else if (typeof value === "object" && value !== null) {
+      const prev = this.state.filters[col] ?? {};
+      const merged = { ...prev, ...value };
+      const cleaned = Object.fromEntries(Object.entries(merged).filter(([, v3]) => !isEmpty(v3)));
+      if (Object.keys(cleaned).length === 0) delete this.state.filters[col];
+      else this.state.filters[col] = cleaned;
+    } else {
+      this.state.filters[col] = value;
+    }
+    this.state.page = 0;
+    void this.load();
+  }
+  /** Fija/actualiza los params de contexto obligatorios (p.ej. al seleccionar el padre).
+   *  Vuelve a la página 0 y recarga. Pasa `{}` o keys con valor vacío para limpiar. */
+  setContext(context) {
+    this.state.context = { ...context };
+    this.state.page = 0;
+    void this.load();
+  }
+  reset() {
+    this.state.page = 0;
+    this.state.search = "";
+    this.state.filters = {};
+    void this.load();
+  }
+};
+function createListController(client, queryName, onChange = () => {
+}, opts = {}) {
+  return new ListController(client, queryName, onChange, opts);
+}
+function majorToMinor(amount, decimals) {
+  const n6 = Number(amount);
+  return Number.isFinite(n6) ? Math.round(n6 * 10 ** decimals) : 0;
+}
+function eurosToCents(euros) {
+  return majorToMinor(euros, 2);
+}
+
 // ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-qr.js
 var __defProp2 = Object.defineProperty;
 var __decorateClass2 = (decorators, target, key, kind) => {
@@ -3835,8 +3960,10 @@ var ErpPosTouch = class extends i3 {
     if (k2 === "." && this.tendered.includes(".")) return;
     this.tendered = (this.tendered + k2).slice(0, 9);
   }
+  // El pinpad teclea EUROS («20» = 20 €); el contrato de la venta es CÉNTIMOS (ADR-0007/0123),
+  // como `total`. Sin esta conversión: «Efectivo 0.20 €» y cambio 0 en el tiquet (QA 2026-07-17).
   get tenderedNum() {
-    return Number(this.tendered || "0");
+    return eurosToCents(this.tendered || "0");
   }
   get change() {
     return Math.max(0, this.tenderedNum - this.total);
@@ -4141,131 +4268,6 @@ __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "customerName", 2);
 define("erp-pos-touch", ErpPosTouch);
-
-// ../../node_modules/.pnpm/@erplora+module-sdk@file+..+hub+packages+module-sdk/node_modules/@erplora/module-sdk/src/index.ts
-function isEmpty(v3) {
-  return v3 === null || v3 === void 0 || v3 === "";
-}
-var ListController = class {
-  constructor(client, queryName, onChange = () => {
-  }, opts = {}) {
-    this.client = client;
-    this.queryName = queryName;
-    this.onChange = onChange;
-    this.rows = [];
-    this.total = 0;
-    this.loading = false;
-    this.error = "";
-    /** Descarta respuestas obsoletas si llegan fuera de orden (race de cargas concurrentes). */
-    this.seq = 0;
-    this.state = {
-      page: 0,
-      pageSize: opts.pageSize ?? 50,
-      search: "",
-      sort: opts.sort,
-      dir: opts.dir ?? "asc",
-      filters: { ...opts.filters ?? {} },
-      context: { ...opts.context ?? {} }
-    };
-  }
-  /** Nº de páginas según el total del servidor (mínimo 1). */
-  get pageCount() {
-    return Math.max(1, Math.ceil(this.total / this.state.pageSize));
-  }
-  /** (Re)carga la página actual desde el servidor. */
-  async load() {
-    const s5 = this.state;
-    const mySeq = ++this.seq;
-    this.loading = true;
-    this.error = "";
-    this.onChange();
-    try {
-      const page = await this.client.queryPage(this.queryName, {
-        limit: s5.pageSize,
-        offset: s5.page * s5.pageSize,
-        search: s5.search,
-        sort: s5.sort,
-        dir: s5.dir,
-        filters: s5.filters,
-        params: s5.context
-      });
-      if (mySeq !== this.seq) return;
-      this.rows = page.rows ?? [];
-      this.total = page.total ?? this.rows.length;
-    } catch (e6) {
-      if (mySeq !== this.seq) return;
-      this.rows = [];
-      this.total = 0;
-      this.error = e6 instanceof Error ? e6.message : "Error cargando datos";
-    } finally {
-      if (mySeq === this.seq) {
-        this.loading = false;
-        this.onChange();
-      }
-    }
-  }
-  setPage(page) {
-    this.state.page = Math.max(0, page);
-    void this.load();
-  }
-  setSort(sort, dir) {
-    this.state.sort = sort;
-    this.state.dir = dir;
-    this.state.page = 0;
-    void this.load();
-  }
-  setSearch(search) {
-    this.state.search = search;
-    this.state.page = 0;
-    void this.load();
-  }
-  /** Cambia el nº de filas por página y recarga desde la página 0. */
-  setPageSize(pageSize) {
-    this.state.pageSize = Math.max(1, pageSize);
-    this.state.page = 0;
-    void this.load();
-  }
-  /** Aplica/quita un filtro de columna; valores vacíos lo eliminan. Vuelve a la página 0. */
-  setFilter(col, value) {
-    if (isEmpty(value)) {
-      delete this.state.filters[col];
-    } else if (typeof value === "object" && value !== null) {
-      const prev = this.state.filters[col] ?? {};
-      const merged = { ...prev, ...value };
-      const cleaned = Object.fromEntries(Object.entries(merged).filter(([, v3]) => !isEmpty(v3)));
-      if (Object.keys(cleaned).length === 0) delete this.state.filters[col];
-      else this.state.filters[col] = cleaned;
-    } else {
-      this.state.filters[col] = value;
-    }
-    this.state.page = 0;
-    void this.load();
-  }
-  /** Fija/actualiza los params de contexto obligatorios (p.ej. al seleccionar el padre).
-   *  Vuelve a la página 0 y recarga. Pasa `{}` o keys con valor vacío para limpiar. */
-  setContext(context) {
-    this.state.context = { ...context };
-    this.state.page = 0;
-    void this.load();
-  }
-  reset() {
-    this.state.page = 0;
-    this.state.search = "";
-    this.state.filters = {};
-    void this.load();
-  }
-};
-function createListController(client, queryName, onChange = () => {
-}, opts = {}) {
-  return new ListController(client, queryName, onChange, opts);
-}
-function majorToMinor(amount, decimals) {
-  const n6 = Number(amount);
-  return Number.isFinite(n6) ? Math.round(n6 * 10 ** decimals) : 0;
-}
-function eurosToCents(euros) {
-  return majorToMinor(euros, 2);
-}
 
 // ui/components/erp-pos-desktop/erp-pos-desktop.ts
 var CATALOG3 = { es: es_default, en: en_default };

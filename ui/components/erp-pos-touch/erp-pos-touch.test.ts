@@ -168,6 +168,40 @@ describe('precios del TPV (dinero = céntimos, ADR-0007)', () => {
   });
 });
 
+// El PINPAD del cobro trabaja en EUROS («20» = 20 €) pero el contrato de sales.complete_sale es
+// CÉNTIMOS (ADR-0007/0123) y `total` ya viaja así. El táctil mandaba `Number('20')` = 20 «céntimos»
+// → el tiquet real salía «Efectivo 0.20 €» y el cambio 0 (20 < 1250). El desktop ya convertía con
+// `eurosToCents` (SDK); aquí se fija el MISMO contrato para el táctil, visto en QA real 2026-07-17.
+describe('cobro táctil: lo entregado viaja en CÉNTIMOS (ADR-0007)', () => {
+  let comandos: { name: string; payload: Record<string, unknown> }[];
+
+  beforeEach(() => {
+    comandos = [];
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    const productos = [{ id: 'p1', name: 'Champú reparador', sku: 'CR', price: 1250, is_active: 1 }];
+    sdk.query = async () => [];
+    sdk.queryAll = async (name: string) => (name === 'inventory.products.list' ? productos : []);
+    sdk.command = async (name: string, payload: Record<string, unknown>) => {
+      comandos.push({ name, payload });
+      return {};
+    };
+  });
+
+  it('teclear «20» en el pinpad manda amount_tendered=2000 (céntimos), no 20', async () => {
+    const el = await montarCarrito();
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    const tap = el as unknown as { tap(k: string): void; confirm(): Promise<void> };
+    tap.tap('2'); tap.tap('0');
+    await tap.confirm();
+
+    const venta = comandos.find((c) => c.name === 'sales.complete_sale');
+    expect(venta, 'el TPV debe completar la venta').toBeTruthy();
+    expect(venta!.payload.amount_tendered, '20 € tecleados = 2000 céntimos').toBe(2000);
+  });
+});
+
 // El cliente asignado en el TPV no es solo una etiqueta: es lo que hace que la FACTURA salga con NIF.
 // El slot `customers` emite el snapshot fiscal en `erp:customer-context`; el POS lo guarda y lo manda
 // en `sales.complete_sale`, de ahí viaja en `sale.completed` y `invoice` lo copia al documento

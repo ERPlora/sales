@@ -1,6 +1,8 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { state } from 'lit/decorators.js';
 import { define } from '@erplora/outfitkit/define';
+// La frontera EUROS ↔ CÉNTIMOS vive en el SDK (ADR-0123), no copiada en cada WC (como el desktop).
+import { eurosToCents } from '@erplora/module-sdk';
 import { renderDocumentModal } from '../../lib/document-modal.js';
 import '@erplora/outfitkit/ok-qty-stepper';
 import {
@@ -428,7 +430,9 @@ export class ErpPosTouch extends LitElement {
     if (k === '.' && this.tendered.includes('.')) return;
     this.tendered = (this.tendered + k).slice(0, 9);
   }
-  private get tenderedNum() { return Number(this.tendered || '0'); }
+  // El pinpad teclea EUROS («20» = 20 €); el contrato de la venta es CÉNTIMOS (ADR-0007/0123),
+  // como `total`. Sin esta conversión: «Efectivo 0.20 €» y cambio 0 en el tiquet (QA 2026-07-17).
+  private get tenderedNum() { return eurosToCents(this.tendered || '0'); }
   private get change() { return Math.max(0, this.tenderedNum - this.total); }
 
   private async confirm() {
