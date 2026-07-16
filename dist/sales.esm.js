@@ -2909,6 +2909,15 @@ function renderDocumentModal({ saleId, onClose, t: t7 }) {
         --background: var(--ion-background-color, #fff);
         padding: 4px 10px calc(4px + var(--ion-safe-area-bottom, 0px));
       }
+      /* Tiquet corto → papel centrado en vertical; largo → scrollea sin recortar arriba
+         (margin:auto en el hijo, no justify-content: el clásico bug de flex + overflow). */
+      ion-modal.doc-modal .doc-wrap {
+        display: flex;
+        flex-direction: column;
+        min-height: 100%;
+        box-sizing: border-box;
+      }
+      ion-modal.doc-modal .doc-wrap > erp-sales-document { margin: auto 0; }
       @media print {
         ion-modal.doc-modal ion-footer,
         ion-modal.doc-modal ion-button.doc-close { display: none; }
@@ -2919,7 +2928,7 @@ function renderDocumentModal({ saleId, onClose, t: t7 }) {
         aria-label=${t7("ui.close")} @click=${onClose}>
         <ion-icon name="close" slot="icon-only"></ion-icon>
       </ion-button>
-      <div class="ion-padding" style="padding-top:44px">
+      <div class="doc-wrap ion-padding" style="padding-top:44px">
         ${saleId ? b2`<erp-sales-document .saleId=${saleId}></erp-sales-document>` : A}
       </div>
     </ion-content>
