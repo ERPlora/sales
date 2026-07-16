@@ -67,8 +67,10 @@ export function renderDocumentModal({ saleId, onClose, t }: DocumentModalOpts): 
     </ion-content>
     <ion-footer class="ion-no-border">
       <ion-toolbar>
-        <ion-button class="print" expand="block" @click=${() => window.print()}>
-          <ion-icon slot="start" name="print-outline"></ion-icon>${t('ui.print')}
+        <!-- Solo-icono (ADR-0133): el nombre va en aria-label, nunca texto visible. A ancho
+             completo igualmente: en el TPV táctil el objetivo grande manda. -->
+        <ion-button class="print" expand="block" aria-label=${t('ui.print')} @click=${() => window.print()}>
+          <ion-icon slot="icon-only" name="print-outline"></ion-icon>
         </ion-button>
       </ion-toolbar>
     </ion-footer>

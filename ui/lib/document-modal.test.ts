@@ -44,10 +44,20 @@ describe('renderDocumentModal', () => {
     const modal = montar('venta-1');
     expect(modal.querySelector('ion-content erp-sales-document'), 'documento en el content').toBeTruthy();
 
+    // ion-content scrollea (tiquet largo) e ion-footer queda SIEMPRE visible: imprimir no se va
+    // con el scroll. Es el mismo contrato header/content/footer del carrito (erp-pos-touch.test.ts).
     const pie = modal.querySelector('ion-footer')!;
     expect(pie, 'hay ion-footer').toBeTruthy();
     expect(pie.querySelector('ion-button.print'), 'imprimir vive en el pie').toBeTruthy();
     expect(modal.lastElementChild, 'el pie es lo último del modal').toBe(pie);
+  });
+
+  it('imprimir es SOLO-ICONO (regla ADR-0133): sin texto visible, label solo en aria', () => {
+    const modal = montar('venta-1');
+    const btn = modal.querySelector<HTMLElement>('ion-footer ion-button.print')!;
+    expect(btn.textContent?.trim(), 'sin texto visible en el botón').toBe('');
+    expect(btn.getAttribute('aria-label'), 'el nombre va en aria-label').toBe('ui.print');
+    expect(btn.querySelector('ion-icon[slot="icon-only"]'), 'icono de impresora en slot icon-only').toBeTruthy();
   });
 
   it('sin venta no monta el documento (modal cerrado)', () => {
