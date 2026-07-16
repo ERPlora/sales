@@ -328,7 +328,8 @@ pub fn complete_sale_pure(input: Value) -> Output {
     let catalog = load_rule_catalog(&context);
 
     let mut subtotal: i64 = 0; // céntimos
-    let mut gross: i64 = 0; // céntimos
+    let mut gross: i64 = 0; // céntimos (CON descuento global ya prorrateado)
+    let mut gross_pre_disc: i64 = 0; // céntimos (sin descuento global → discount_amount)
     let mut gift_total: i64 = 0; // céntimos: coste de las invitaciones (para el arqueo, ADR-comp)
     let mut breakdown: Vec<(String, i64, i64)> = Vec::new();
     let mut ops: Vec<Operation> = Vec::new();
@@ -356,12 +357,26 @@ pub fn complete_sale_pure(input: Value) -> Output {
         // entra en el desglose de IVA (base 0). Acumula su COSTE (a coste, decisión del humano) en
         // `gift_total` para el arqueo "Invitaciones". Sigue descontando stock (el evento lleva qty).
         let is_gift = item.get("is_gift").map(as_bool).unwrap_or(false);
+        // DESCUENTO GLOBAL prorrateado a la LÍNEA (sales#33): factor multiplicativo con el
+        // descuento propio de la línea. Así el snapshot fiscal por línea (net/tax) YA lleva el
+        // descuento y TODO lo que deriva de él —desglose por tipo, evento `sale.completed`,
+        // factura de `invoice`— declara lo COBRADO. Antes el descuento solo tocaba `total` y la
+        // AEAT recibía la base sin descontar (cliente paga 4,50 €, factura decía 5,00 €).
+        // La columna `discount_percent` de la línea conserva SOLO el suyo (el global va en el header).
+        let eff_disc = 100.0 * (1.0 - (1.0 - line_disc / 100.0) * (1.0 - sale_disc / 100.0));
         let (t, parts) = if is_gift {
             let cost = as_cents(item.get("cost").unwrap_or(&Value::Null), 0);
             gift_total += round_cents(cost as f64 * qty);
             (LineTotals { net: 0, tax: 0, line: 0 }, Vec::<(String, i64, i64)>::new())
         } else {
-            calc_line_components(unit_price, qty, line_disc, tax_incl, components)
+            calc_line_components(unit_price, qty, eff_disc, tax_incl, components)
+        };
+        // Bruto SIN descuento global (mismo cálculo con solo el descuento de línea): la resta de
+        // ambos brutos es el `discount_amount` que ve el cliente en el ticket.
+        gross_pre_disc += if is_gift || sale_disc <= 0.0 {
+            t.line
+        } else {
+            calc_line_components(unit_price, qty, line_disc, tax_incl, components).0.line
         };
         // `tax_total` YA NO se acumula por línea: la cuota que se DECLARA sale del desglose, una
         // sola vez por tipo impositivo (ADR-0123 §4). `t.tax` queda como informativo de la línea.
@@ -409,12 +424,10 @@ pub fn complete_sale_pure(input: Value) -> Output {
         ops.push(Operation::sql("sales._insert_line", p));
     }
 
-    let discount_amount: i64 = if sale_disc > 0.0 {
-        round_cents((gross as f64) * (sale_disc / 100.0))
-    } else {
-        0
-    };
-    let total = gross - discount_amount; // céntimos
+    // El descuento global YA está prorrateado en las líneas: `gross` es lo cobrado y el
+    // `discount_amount` (informativo, para el ticket) es la diferencia con el bruto sin descuento.
+    let discount_amount: i64 = gross_pre_disc - gross;
+    let total = gross; // céntimos
     let tendered = as_cents(payload.get("amount_tendered").unwrap_or(&Value::Null), 0); // céntimos
     let change = if tendered - total > 0 { tendered - total } else { 0 };
 
@@ -426,6 +439,9 @@ pub fn complete_sale_pure(input: Value) -> Output {
     // Antes, 7 chicles de 0,05 € al 21 % declaraban base 28 / cuota 7 — pero 28 × 21 % = 5,88 → 6,
     // NO 7: el desglose no cuadraba con `cuota = base × tipo` y solo colaba por la tolerancia de
     // ±10 € de la AEAT. Ahora declara 29 / 6, que sí cuadra.
+    //
+    // (sales#33: las bases del desglose ya llegan CON el descuento global — prorrateado por
+    // línea arriba — así que aquí no hay nada que descontar: solo cerrar la cuota por tipo.)
     let mut tb = Map::new();
     let mut tax_total_declarado: i64 = 0;
     for (k, base, _tax_por_linea) in &breakdown {
@@ -489,10 +505,13 @@ pub fn complete_sale_pure(input: Value) -> Output {
             // Invitación: net/tax = 0 en el evento (invoice/customers no facturan la cortesía). Sigue
             // descontando stock (inventory usa product_id+quantity). Mismo gating que arriba.
             let it_gift = it.get("is_gift").map(as_bool).unwrap_or(false);
+            // El descuento GLOBAL también viaja prorrateado en el evento (sales#33): `invoice`
+            // construye la factura de estos net/tax — sin esto declararía la base sin descontar.
+            let eff_disc = 100.0 * (1.0 - (1.0 - line_disc / 100.0) * (1.0 - sale_disc / 100.0));
             let (t, _parts) = if it_gift {
                 (LineTotals { net: 0, tax: 0, line: 0 }, Vec::<(String, i64, i64)>::new())
             } else {
-                calc_line_components(unit_price, qty, line_disc, tax_incl, &resolved.components)
+                calc_line_components(unit_price, qty, eff_disc, tax_incl, &resolved.components)
             };
             json!({
                 "product_id": it.get("product_id").cloned().unwrap_or(Value::Null),
@@ -624,6 +643,59 @@ mod tests {
         assert_eq!(cuota, (base as f64 * 0.21).round() as i64,
                    "la cuota declarada debe ser coherente con base × tipo");
         assert_eq!(h["tax_amount"], json!(cuota), "el header declara la cuota del desglose");
+    }
+
+    #[test]
+    fn el_descuento_global_baja_la_BASE_declarada_no_solo_el_total() {
+        // sales#33 (QA restaurante 07-16): venta de 5,00 € (IVA 21 % incl) con descuento GLOBAL
+        // del 10 % → el cliente paga 4,50 €, pero el desglose declaraba base 413 + cuota 87
+        // = 5,00 €: se SOBRE-DECLARABA IVA a la AEAT (impuesto por dinero no ingresado).
+        //
+        // El descuento global debe prorratearse a la BASE de cada tipo ANTES de extraer la
+        // cuota (ADR-0123 §4, HALF_UP del SDK):
+        //   base 413 − 10 % (41) = 372 · cuota = 372 × 21 % = 78,12 → 78 · 372 + 78 = 450 ✓
+        let mut inp = input(json!([{ "product_name": "Menú", "price": 500, "quantity": 1, "tax_rate": 21.0 }]), 3, 450);
+        inp["payload"]["discount_percent"] = json!(10.0);
+        let out = complete_sale_pure(inp);
+        let h = &out.operations[1].params;
+
+        assert_eq!(h["total"], json!(450), "lo que paga el cliente no cambia");
+        assert_eq!(h["discount_amount"], json!(50));
+
+        let bd: Value = serde_json::from_str(h["tax_breakdown"].as_str().unwrap()).unwrap();
+        let d = &bd["21.00"];
+        assert_eq!(d["base"], json!(372), "la base declarada lleva el descuento prorrateado");
+        assert_eq!(d["tax"], json!(78), "cuota = base descontada × tipo");
+        // La propiedad que la AEAT puede cotejar: lo declarado suma lo COBRADO.
+        assert_eq!(d["base"].as_i64().unwrap() + d["tax"].as_i64().unwrap(), 450);
+        assert_eq!(h["tax_amount"], json!(78), "el header declara la cuota del desglose");
+        assert_eq!(h["subtotal"], json!(372), "el subtotal declarado también baja");
+
+        // El descuento va PRORRATEADO A LA LÍNEA (la prescripción de la issue): el snapshot
+        // fiscal persistido y el evento `sale.completed` (del que `invoice` construye la
+        // factura) llevan net/tax YA descontados — sin esto la factura seguiría declarando
+        // la base sin descuento aunque el header estuviera bien.
+        let line = &out.operations[2].params;
+        assert_eq!(line["net_amount"], json!(372), "la línea persiste la base descontada");
+        assert_eq!(line["line_total"], json!(450));
+        assert_eq!(line["unit_price"], json!(500), "el unitario sigue siendo el bruto (display)");
+        let ev = &out.events[0];
+        let it = &ev.payload["items"][0];
+        assert_eq!(it["net_amount"], json!(372), "el evento (→ invoice) lleva la base descontada");
+        assert_eq!(it["tax_amount"], json!(78));
+    }
+
+    #[test]
+    fn sin_descuento_global_el_desglose_no_se_mueve() {
+        // Guardarraíl del fix de sales#33: con discount_percent ausente/0 todo queda como estaba.
+        let items = json!([{ "product_name": "Menú", "price": 500, "quantity": 1, "tax_rate": 21.0 }]);
+        let out = complete_sale_pure(input(items, 3, 500));
+        let h = &out.operations[1].params;
+        let bd: Value = serde_json::from_str(h["tax_breakdown"].as_str().unwrap()).unwrap();
+        assert_eq!(bd["21.00"]["base"], json!(413));
+        assert_eq!(bd["21.00"]["tax"], json!(87));
+        assert_eq!(h["subtotal"], json!(413));
+        assert_eq!(h["total"], json!(500));
     }
 
     #[test]
