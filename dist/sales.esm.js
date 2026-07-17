@@ -2752,6 +2752,22 @@ var es_default = {
     fullscreen: "Pantalla completa",
     giftBadge: "Invitaci\xF3n",
     giftAction: "Invitar / quitar invitaci\xF3n"
+  },
+  widgets: {
+    "sales.today": {
+      title: "Ventas hoy",
+      label: "Hoy"
+    },
+    "sales.tickets_today": {
+      title: "Tickets hoy",
+      label: "Tickets"
+    },
+    "sales.last_7_days": {
+      title: "Ventas \xFAltimos 7 d\xEDas"
+    },
+    "sales.recent_activity": {
+      title: "Actividad reciente"
+    }
   }
 };
 
@@ -3706,20 +3722,32 @@ function parseCartLines(cartData) {
     return [];
   }
 }
-async function loadActiveCart(client) {
+function sameCartLine(a3, b3) {
+  return a3.id === b3.id && a3.price === b3.price && a3.sku === b3.sku && a3.tax_category_key === b3.tax_category_key && a3.tax_rate === b3.tax_rate && !!a3.is_gift === !!b3.is_gift && a3.gift_reason === b3.gift_reason;
+}
+function mergeCartLines(base, incoming) {
+  const out = base.map((l3) => ({ ...l3 }));
+  for (const inc of incoming) {
+    const match = out.find((l3) => sameCartLine(l3, inc));
+    if (match) match.qty += inc.qty;
+    else out.push({ ...inc });
+  }
+  return out;
+}
+async function loadActiveCart(client, tableId) {
   try {
-    const r6 = rows(await client.query("sales.cart.get"));
+    const r6 = rows(await client.query("sales.cart.get", { table_id: tableId ?? "" }));
     return r6.length ? parseCartLines(r6[0].cart_data) : [];
   } catch {
     return [];
   }
 }
-async function persistActiveCart(client, cart) {
+async function persistActiveCart(client, cart, tableId) {
   try {
     if (cart.length) {
-      await client.command("sales.cart.save", { cart_data: JSON.stringify({ lines: cart }) });
+      await client.command("sales.cart.save", { cart_data: JSON.stringify({ lines: cart }), table_id: tableId ?? "" });
     } else {
-      await client.command("sales.cart.clear", {});
+      await client.command("sales.cart.clear", { table_id: tableId ?? "" });
     }
   } catch {
   }
@@ -3844,10 +3872,58 @@ var ErpPosTouch = class extends i3 {
     // (mesa, cliente…) en el header. Botones independientes: cada uno abre su propio modal. El POS no
     // conoce a `tables`/`customers`; solo monta sus WC y escucha `erp:order-context`/`erp:customer-context`.
     this.assignFillers = [];
-    this.onOrderContext = (e6) => {
+    // Comanda ATADA a la mesa (puntos 1+2): al cambiar de mesa se GUARDA la comanda de la mesa
+    // actual y se RECUPERA la de la nueva (o el carrito suelto si es null). Así tocar una mesa
+    // ocupada trae su tiquet a la pantalla de venta, como cualquier POS.
+    this.onOrderContext = async (e6) => {
       const d3 = e6.detail ?? { table_id: null };
-      this.tableId = d3.table_id ?? void 0;
+      const nextTable = d3.table_id ?? void 0;
+      if (nextTable === this.tableId) {
+        this.tableLabel = d3.label ?? this.tableLabel;
+        return;
+      }
+      if (this.saveTimer) {
+        clearTimeout(this.saveTimer);
+        this.saveTimer = void 0;
+      }
+      await persistActiveCart(erplora2(), this.cart, this.tableId);
+      this.tableId = nextTable;
       this.tableLabel = d3.label ?? "";
+      this.cart = await loadActiveCart(erplora2(), nextTable);
+    };
+    // Fusionar mesas (punto 3): el filler ya ejecutó tables.sessions.merge; aquí se combinan los
+    // tiquets (sumando líneas idénticas) en la mesa destino y se limpia el origen.
+    this.onOrderMerge = async (e6) => {
+      const d3 = e6.detail;
+      if (!d3?.from_table_id || !d3?.to_table_id || d3.from_table_id === d3.to_table_id) return;
+      const [fromLines, toLines] = await Promise.all([
+        loadActiveCart(erplora2(), d3.from_table_id),
+        loadActiveCart(erplora2(), d3.to_table_id)
+      ]);
+      const merged = mergeCartLines(toLines, fromLines);
+      await persistActiveCart(erplora2(), merged, d3.to_table_id);
+      await persistActiveCart(erplora2(), [], d3.from_table_id);
+      if (this.tableId === d3.from_table_id) {
+        this.tableId = d3.to_table_id;
+        this.tableLabel = d3.to_label ?? this.tableLabel;
+        this.cart = merged;
+      } else if (this.tableId === d3.to_table_id) {
+        this.cart = merged;
+      }
+    };
+    // Transferir mesa (punto 4): el filler ya ejecutó tables.sessions.transfer; aquí se mueve la
+    // comanda de la mesa origen a la destino (libre → sin comanda previa) y se limpia el origen.
+    this.onOrderTransfer = async (e6) => {
+      const d3 = e6.detail;
+      if (!d3?.from_table_id || !d3?.to_table_id || d3.from_table_id === d3.to_table_id) return;
+      const lines = await loadActiveCart(erplora2(), d3.from_table_id);
+      await persistActiveCart(erplora2(), lines, d3.to_table_id);
+      await persistActiveCart(erplora2(), [], d3.from_table_id);
+      if (this.tableId === d3.from_table_id) {
+        this.tableId = d3.to_table_id;
+        this.tableLabel = d3.to_label ?? this.tableLabel;
+        this.cart = lines;
+      }
     };
     this.onCustomerContext = (e6) => {
       const d3 = e6.detail ?? { customer_id: null };
@@ -4026,6 +4102,8 @@ var ErpPosTouch = class extends i3 {
       if (savedCart.length) this.cart = savedCart;
       await this.updateComplete;
       this.addEventListener("erp:order-context", this.onOrderContext);
+      this.addEventListener("erp:order-merge", this.onOrderMerge);
+      this.addEventListener("erp:order-transfer", this.onOrderTransfer);
       this.addEventListener("erp:customer-context", this.onCustomerContext);
       await this.resolveSlots();
       this.ensureSlotsMounted();
@@ -4040,11 +4118,13 @@ var ErpPosTouch = class extends i3 {
     document.removeEventListener("fullscreenchange", this.onFsChange);
     window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
     this.removeEventListener("erp:order-context", this.onOrderContext);
+    this.removeEventListener("erp:order-merge", this.onOrderMerge);
+    this.removeEventListener("erp:order-transfer", this.onOrderTransfer);
     this.removeEventListener("erp:customer-context", this.onCustomerContext);
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = void 0;
-      void persistActiveCart(erplora2(), this.cart);
+      void persistActiveCart(erplora2(), this.cart, this.tableId);
     }
   }
   async resolveSlots() {
@@ -4083,7 +4163,7 @@ var ErpPosTouch = class extends i3 {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
       this.saveTimer = void 0;
-      void persistActiveCart(erplora2(), this.cart);
+      void persistActiveCart(erplora2(), this.cart, this.tableId);
     }, 400);
   }
   // Dinero formateado con la MONEDA DEL HUB (ADR-0059): el SDK la resuelve de /api/hub/context
@@ -4203,6 +4283,11 @@ var ErpPosTouch = class extends i3 {
       if (saleId && this.docFormat === "invoice") {
         await erplora2().command("sales.set_document_type", { sale_id: saleId, document_type: "invoice" });
       }
+      if (this.saveTimer) {
+        clearTimeout(this.saveTimer);
+        this.saveTimer = void 0;
+      }
+      await persistActiveCart(erplora2(), [], this.tableId);
       this.paying = false;
       this.cart = [];
       this.tableId = void 0;
@@ -4552,10 +4637,55 @@ var ErpPosDesktop = class extends i3 {
     // (mesa, cliente…) en las acciones. Botones independientes: cada uno abre su propio modal. El POS
     // no conoce a `tables`/`customers`; solo monta sus WC y escucha sus eventos.
     this.assignFillers = [];
-    this.onOrderContext = (e6) => {
+    // Comanda ATADA a la mesa (puntos 1+2): guarda la comanda de la mesa actual y recupera la de la
+    // nueva (o el carrito suelto si es null), como cualquier POS.
+    this.onOrderContext = async (e6) => {
       const d3 = e6.detail ?? { table_id: null };
-      this.tableId = d3.table_id ?? void 0;
+      const nextTable = d3.table_id ?? void 0;
+      if (nextTable === this.tableId) {
+        this.tableLabel = d3.label ?? this.tableLabel;
+        return;
+      }
+      if (this.saveTimer) {
+        clearTimeout(this.saveTimer);
+        this.saveTimer = void 0;
+      }
+      await persistActiveCart(erplora3(), this.cart, this.tableId);
+      this.tableId = nextTable;
       this.tableLabel = d3.label ?? "";
+      this.cart = await loadActiveCart(erplora3(), nextTable);
+    };
+    // Fusionar mesas (punto 3): combina los tiquets (sumando idénticas) en el destino, limpia origen.
+    this.onOrderMerge = async (e6) => {
+      const d3 = e6.detail;
+      if (!d3?.from_table_id || !d3?.to_table_id || d3.from_table_id === d3.to_table_id) return;
+      const [fromLines, toLines] = await Promise.all([
+        loadActiveCart(erplora3(), d3.from_table_id),
+        loadActiveCart(erplora3(), d3.to_table_id)
+      ]);
+      const merged = mergeCartLines(toLines, fromLines);
+      await persistActiveCart(erplora3(), merged, d3.to_table_id);
+      await persistActiveCart(erplora3(), [], d3.from_table_id);
+      if (this.tableId === d3.from_table_id) {
+        this.tableId = d3.to_table_id;
+        this.tableLabel = d3.to_label ?? this.tableLabel;
+        this.cart = merged;
+      } else if (this.tableId === d3.to_table_id) {
+        this.cart = merged;
+      }
+    };
+    // Transferir mesa (punto 4): mueve la comanda de origen a destino (libre), limpia origen.
+    this.onOrderTransfer = async (e6) => {
+      const d3 = e6.detail;
+      if (!d3?.from_table_id || !d3?.to_table_id || d3.from_table_id === d3.to_table_id) return;
+      const lines = await loadActiveCart(erplora3(), d3.from_table_id);
+      await persistActiveCart(erplora3(), lines, d3.to_table_id);
+      await persistActiveCart(erplora3(), [], d3.from_table_id);
+      if (this.tableId === d3.from_table_id) {
+        this.tableId = d3.to_table_id;
+        this.tableLabel = d3.to_label ?? this.tableLabel;
+        this.cart = lines;
+      }
     };
     this.onCustomerContext = (e6) => {
       const d3 = e6.detail ?? { customer_id: null };
@@ -4633,6 +4763,8 @@ var ErpPosDesktop = class extends i3 {
       if (savedCart.length) this.cart = savedCart;
       await this.updateComplete;
       this.addEventListener("erp:order-context", this.onOrderContext);
+      this.addEventListener("erp:order-merge", this.onOrderMerge);
+      this.addEventListener("erp:order-transfer", this.onOrderTransfer);
       this.addEventListener("erp:customer-context", this.onCustomerContext);
       await this.resolveSlots();
       this.ensureSlotsMounted();
@@ -4646,11 +4778,13 @@ var ErpPosDesktop = class extends i3 {
     super.disconnectedCallback();
     window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
     this.removeEventListener("erp:order-context", this.onOrderContext);
+    this.removeEventListener("erp:order-merge", this.onOrderMerge);
+    this.removeEventListener("erp:order-transfer", this.onOrderTransfer);
     this.removeEventListener("erp:customer-context", this.onCustomerContext);
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = void 0;
-      void persistActiveCart(erplora3(), this.cart);
+      void persistActiveCart(erplora3(), this.cart, this.tableId);
     }
   }
   /** Resuelve (una vez) los fillers del modal Asignar (ADR-0043 B) y crea sus instancias. */
@@ -4691,7 +4825,7 @@ var ErpPosDesktop = class extends i3 {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
       this.saveTimer = void 0;
-      void persistActiveCart(erplora3(), this.cart);
+      void persistActiveCart(erplora3(), this.cart, this.tableId);
     }, 400);
   }
   // Dinero formateado con la MONEDA DEL HUB (ADR-0059): el SDK la resuelve de /api/hub/context
@@ -4802,6 +4936,11 @@ var ErpPosDesktop = class extends i3 {
       if (saleId && this.docFormat === "invoice") {
         await erplora3().command("sales.set_document_type", { sale_id: saleId, document_type: "invoice" });
       }
+      if (this.saveTimer) {
+        clearTimeout(this.saveTimer);
+        this.saveTimer = void 0;
+      }
+      await persistActiveCart(erplora3(), [], this.tableId);
       this.paying = false;
       this.cart = [];
       this.tableId = void 0;

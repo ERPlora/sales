@@ -7,7 +7,7 @@ import { renderDocumentModal } from '../../lib/document-modal.js';
 import '@erplora/outfitkit/ok-qty-stepper';
 import '@erplora/outfitkit/ok-spotlight-search';
 import {
-  loadActiveCart, persistActiveCart, listParkedTickets, parkCart, retrieveParkedTicket,
+  loadActiveCart, persistActiveCart, mergeCartLines, listParkedTickets, parkCart, retrieveParkedTicket,
   type CartLine, type ErploraClientLike, type ParkedTicket,
 } from '../../lib/pos-cart.js';
 import { buildCategoryRatesMap, resolveLineTax } from '../../lib/pos-tax.js';
@@ -237,10 +237,45 @@ export class ErpPosTouch extends LitElement {
   // (mesa, cliente…) en el header. Botones independientes: cada uno abre su propio modal. El POS no
   // conoce a `tables`/`customers`; solo monta sus WC y escucha `erp:order-context`/`erp:customer-context`.
   private assignFillers: Array<{ component: string; el: HTMLElement }> = [];
-  private readonly onOrderContext = (e: Event) => {
+  // Comanda ATADA a la mesa (puntos 1+2): al cambiar de mesa se GUARDA la comanda de la mesa
+  // actual y se RECUPERA la de la nueva (o el carrito suelto si es null). Así tocar una mesa
+  // ocupada trae su tiquet a la pantalla de venta, como cualquier POS.
+  private readonly onOrderContext = async (e: Event) => {
     const d = (e as CustomEvent<{ table_id: string | null; label?: string }>).detail ?? { table_id: null };
-    this.tableId = d.table_id ?? undefined;
+    const nextTable = d.table_id ?? undefined;
+    if (nextTable === this.tableId) { this.tableLabel = d.label ?? this.tableLabel; return; }
+    // Persiste la comanda de la mesa/carrito que dejamos antes de traer la nueva.
+    if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = undefined; }
+    await persistActiveCart(erplora(), this.cart, this.tableId);
+    this.tableId = nextTable;
     this.tableLabel = d.label ?? '';
+    this.cart = await loadActiveCart(erplora(), nextTable);
+  };
+  // Fusionar mesas (punto 3): el filler ya ejecutó tables.sessions.merge; aquí se combinan los
+  // tiquets (sumando líneas idénticas) en la mesa destino y se limpia el origen.
+  private readonly onOrderMerge = async (e: Event) => {
+    const d = (e as CustomEvent<{ from_table_id: string; to_table_id: string; to_label?: string }>).detail;
+    if (!d?.from_table_id || !d?.to_table_id || d.from_table_id === d.to_table_id) return;
+    const [fromLines, toLines] = await Promise.all([
+      loadActiveCart(erplora(), d.from_table_id),
+      loadActiveCart(erplora(), d.to_table_id),
+    ]);
+    const merged = mergeCartLines(toLines, fromLines);
+    await persistActiveCart(erplora(), merged, d.to_table_id);
+    await persistActiveCart(erplora(), [], d.from_table_id);
+    // Si veníamos viendo el origen o el destino, la comanda combinada queda en el DESTINO.
+    if (this.tableId === d.from_table_id) { this.tableId = d.to_table_id; this.tableLabel = d.to_label ?? this.tableLabel; this.cart = merged; }
+    else if (this.tableId === d.to_table_id) { this.cart = merged; }
+  };
+  // Transferir mesa (punto 4): el filler ya ejecutó tables.sessions.transfer; aquí se mueve la
+  // comanda de la mesa origen a la destino (libre → sin comanda previa) y se limpia el origen.
+  private readonly onOrderTransfer = async (e: Event) => {
+    const d = (e as CustomEvent<{ from_table_id: string; to_table_id: string; to_label?: string }>).detail;
+    if (!d?.from_table_id || !d?.to_table_id || d.from_table_id === d.to_table_id) return;
+    const lines = await loadActiveCart(erplora(), d.from_table_id);
+    await persistActiveCart(erplora(), lines, d.to_table_id);
+    await persistActiveCart(erplora(), [], d.from_table_id);
+    if (this.tableId === d.from_table_id) { this.tableId = d.to_table_id; this.tableLabel = d.to_label ?? this.tableLabel; this.cart = lines; }
   };
   private readonly onCustomerContext = (e: Event) => {
     const d = (e as CustomEvent<{
@@ -285,6 +320,8 @@ export class ErpPosTouch extends LitElement {
       if (savedCart.length) this.cart = savedCart;
       await this.updateComplete;
       this.addEventListener('erp:order-context', this.onOrderContext);
+      this.addEventListener('erp:order-merge', this.onOrderMerge);
+      this.addEventListener('erp:order-transfer', this.onOrderTransfer);
       this.addEventListener('erp:customer-context', this.onCustomerContext);
       await this.resolveSlots();
       this.ensureSlotsMounted();
@@ -300,11 +337,13 @@ export class ErpPosTouch extends LitElement {
     document.removeEventListener('fullscreenchange', this.onFsChange);
     window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
     this.removeEventListener('erp:order-context', this.onOrderContext);
+    this.removeEventListener('erp:order-merge', this.onOrderMerge);
+    this.removeEventListener('erp:order-transfer', this.onOrderTransfer);
     this.removeEventListener('erp:customer-context', this.onCustomerContext);
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = undefined;
-      void persistActiveCart(erplora(), this.cart);
+      void persistActiveCart(erplora(), this.cart, this.tableId);
     }
   }
 
@@ -346,7 +385,7 @@ export class ErpPosTouch extends LitElement {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
       this.saveTimer = undefined;
-      void persistActiveCart(erplora(), this.cart);
+      void persistActiveCart(erplora(), this.cart, this.tableId);
     }, 400);
   }
 
@@ -470,6 +509,11 @@ export class ErpPosTouch extends LitElement {
       if (saleId && this.docFormat === 'invoice') {
         await erplora().command('sales.set_document_type', { sale_id: saleId, document_type: 'invoice' });
       }
+      // Cobrada: limpia la comanda de ESA mesa (o el carrito suelto) antes de soltarla, si no la
+      // comanda seguiría recuperándose al volver a tocar la mesa. La sesión la cierra el filler
+      // al recibir el reset de abajo.
+      if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = undefined; }
+      await persistActiveCart(erplora(), [], this.tableId);
       this.paying = false;
       this.cart = [];
       this.tableId = undefined; this.tableLabel = '';

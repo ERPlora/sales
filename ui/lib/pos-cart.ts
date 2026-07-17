@@ -78,23 +78,53 @@ export function parseCartLines(cartData: unknown): CartLine[] {
   }
 }
 
-/** Recupera el carrito activo persistido del empleado actual ([] si no hay o no parsea). */
-export async function loadActiveCart(client: ErploraClientLike): Promise<CartLine[]> {
+/** Dos líneas son "la misma" (fusionables) si coinciden producto, precio, categoría/tipo fiscal,
+ *  condición de invitación y sku. Una invitación (comp) NO se fusiona con una línea normal, ni el
+ *  mismo producto a distinto precio: son unidades de cobro distintas. Los `modifiers` no viven en
+ *  la línea del carrito (se resuelven al vender), por eso no entran en la identidad. */
+function sameCartLine(a: CartLine, b: CartLine): boolean {
+  return a.id === b.id
+    && a.price === b.price
+    && a.sku === b.sku
+    && a.tax_category_key === b.tax_category_key
+    && a.tax_rate === b.tax_rate
+    && !!a.is_gift === !!b.is_gift
+    && a.gift_reason === b.gift_reason;
+}
+
+/** Fusiona dos comandas al FUSIONAR mesas (punto 3): parte de `base` (comanda de la mesa DESTINO,
+ *  la que sobrevive) y añade las líneas de `incoming` (mesa origen) SUMANDO las idénticas y dejando
+ *  separado lo que difiere. Puro: devuelve un array nuevo con líneas nuevas, sin mutar las entradas. */
+export function mergeCartLines(base: CartLine[], incoming: CartLine[]): CartLine[] {
+  const out: CartLine[] = base.map((l) => ({ ...l }));
+  for (const inc of incoming) {
+    const match = out.find((l) => sameCartLine(l, inc));
+    if (match) match.qty += inc.qty;
+    else out.push({ ...inc });
+  }
+  return out;
+}
+
+/** Recupera la comanda persistida de una MESA (`table_id`) o, sin mesa, el carrito suelto de
+ *  mostrador ([] si no hay o no parsea). La clave real (mesa vs `u:<empleado>`) la deriva el SQL;
+ *  la UI solo dice a qué mesa pertenece (cadena vacía = sin mesa). */
+export async function loadActiveCart(client: ErploraClientLike, tableId?: string): Promise<CartLine[]> {
   try {
-    const r = rows<{ cart_data?: string }>(await client.query('sales.cart.get'));
+    const r = rows<{ cart_data?: string }>(await client.query('sales.cart.get', { table_id: tableId ?? '' }));
     return r.length ? parseCartLines(r[0].cart_data) : [];
   } catch {
     return [];
   }
 }
 
-/** Persiste (upsert) el carrito activo; con carrito vacío lo limpia. Best-effort: nunca lanza. */
-export async function persistActiveCart(client: ErploraClientLike, cart: CartLine[]): Promise<void> {
+/** Persiste (upsert) la comanda de una MESA (o el carrito suelto si no hay `table_id`); con carrito
+ *  vacío la limpia. Best-effort: nunca lanza. */
+export async function persistActiveCart(client: ErploraClientLike, cart: CartLine[], tableId?: string): Promise<void> {
   try {
     if (cart.length) {
-      await client.command('sales.cart.save', { cart_data: JSON.stringify({ lines: cart }) });
+      await client.command('sales.cart.save', { cart_data: JSON.stringify({ lines: cart }), table_id: tableId ?? '' });
     } else {
-      await client.command('sales.cart.clear', {});
+      await client.command('sales.cart.clear', { table_id: tableId ?? '' });
     }
   } catch {
     /* la persistencia del carrito nunca debe romper la venta */

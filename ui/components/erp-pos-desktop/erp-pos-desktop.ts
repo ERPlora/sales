@@ -11,7 +11,7 @@ import { renderDocumentModal } from '../../lib/document-modal.js';
 // Mismo backend que la táctil: sales.complete_sale (channel='pos') → set_document_type → documento.
 // El carrito en curso se persiste en sales_active_cart (sales.cart.*) y sobrevive a recargas.
 import {
-  loadActiveCart, persistActiveCart, listParkedTickets, parkCart, retrieveParkedTicket,
+  loadActiveCart, persistActiveCart, mergeCartLines, listParkedTickets, parkCart, retrieveParkedTicket,
   type CartLine, type ErploraClientLike, type ParkedTicket,
 } from '../../lib/pos-cart.js';
 import { buildCategoryRatesMap, resolveLineTax } from '../../lib/pos-tax.js';
@@ -125,10 +125,40 @@ export class ErpPosDesktop extends LitElement {
   // (mesa, cliente…) en las acciones. Botones independientes: cada uno abre su propio modal. El POS
   // no conoce a `tables`/`customers`; solo monta sus WC y escucha sus eventos.
   private assignFillers: Array<{ component: string; el: HTMLElement }> = [];
-  private readonly onOrderContext = (e: Event) => {
+  // Comanda ATADA a la mesa (puntos 1+2): guarda la comanda de la mesa actual y recupera la de la
+  // nueva (o el carrito suelto si es null), como cualquier POS.
+  private readonly onOrderContext = async (e: Event) => {
     const d = (e as CustomEvent<{ table_id: string | null; label?: string }>).detail ?? { table_id: null };
-    this.tableId = d.table_id ?? undefined;
+    const nextTable = d.table_id ?? undefined;
+    if (nextTable === this.tableId) { this.tableLabel = d.label ?? this.tableLabel; return; }
+    if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = undefined; }
+    await persistActiveCart(erplora(), this.cart, this.tableId);
+    this.tableId = nextTable;
     this.tableLabel = d.label ?? '';
+    this.cart = await loadActiveCart(erplora(), nextTable);
+  };
+  // Fusionar mesas (punto 3): combina los tiquets (sumando idénticas) en el destino, limpia origen.
+  private readonly onOrderMerge = async (e: Event) => {
+    const d = (e as CustomEvent<{ from_table_id: string; to_table_id: string; to_label?: string }>).detail;
+    if (!d?.from_table_id || !d?.to_table_id || d.from_table_id === d.to_table_id) return;
+    const [fromLines, toLines] = await Promise.all([
+      loadActiveCart(erplora(), d.from_table_id),
+      loadActiveCart(erplora(), d.to_table_id),
+    ]);
+    const merged = mergeCartLines(toLines, fromLines);
+    await persistActiveCart(erplora(), merged, d.to_table_id);
+    await persistActiveCart(erplora(), [], d.from_table_id);
+    if (this.tableId === d.from_table_id) { this.tableId = d.to_table_id; this.tableLabel = d.to_label ?? this.tableLabel; this.cart = merged; }
+    else if (this.tableId === d.to_table_id) { this.cart = merged; }
+  };
+  // Transferir mesa (punto 4): mueve la comanda de origen a destino (libre), limpia origen.
+  private readonly onOrderTransfer = async (e: Event) => {
+    const d = (e as CustomEvent<{ from_table_id: string; to_table_id: string; to_label?: string }>).detail;
+    if (!d?.from_table_id || !d?.to_table_id || d.from_table_id === d.to_table_id) return;
+    const lines = await loadActiveCart(erplora(), d.from_table_id);
+    await persistActiveCart(erplora(), lines, d.to_table_id);
+    await persistActiveCart(erplora(), [], d.from_table_id);
+    if (this.tableId === d.from_table_id) { this.tableId = d.to_table_id; this.tableLabel = d.to_label ?? this.tableLabel; this.cart = lines; }
   };
   private readonly onCustomerContext = (e: Event) => {
     const d = (e as CustomEvent<{
@@ -164,6 +194,8 @@ export class ErpPosDesktop extends LitElement {
       if (savedCart.length) this.cart = savedCart;
       await this.updateComplete;
       this.addEventListener('erp:order-context', this.onOrderContext);
+      this.addEventListener('erp:order-merge', this.onOrderMerge);
+      this.addEventListener('erp:order-transfer', this.onOrderTransfer);
       this.addEventListener('erp:customer-context', this.onCustomerContext);
       await this.resolveSlots();
       this.ensureSlotsMounted();
@@ -178,11 +210,13 @@ export class ErpPosDesktop extends LitElement {
     super.disconnectedCallback();
     window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
     this.removeEventListener('erp:order-context', this.onOrderContext);
+    this.removeEventListener('erp:order-merge', this.onOrderMerge);
+    this.removeEventListener('erp:order-transfer', this.onOrderTransfer);
     this.removeEventListener('erp:customer-context', this.onCustomerContext);
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = undefined;
-      void persistActiveCart(erplora(), this.cart);
+      void persistActiveCart(erplora(), this.cart, this.tableId);
     }
   }
 
@@ -226,7 +260,7 @@ export class ErpPosDesktop extends LitElement {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
       this.saveTimer = undefined;
-      void persistActiveCart(erplora(), this.cart);
+      void persistActiveCart(erplora(), this.cart, this.tableId);
     }, 400);
   }
 
@@ -343,6 +377,10 @@ export class ErpPosDesktop extends LitElement {
       if (saleId && this.docFormat === 'invoice') {
         await erplora().command('sales.set_document_type', { sale_id: saleId, document_type: 'invoice' });
       }
+      // Cobrada: limpia la comanda de ESA mesa (o el carrito suelto) antes de soltarla, si no
+      // seguiría recuperándose al volver a tocar la mesa. La sesión la cierra el filler (reset).
+      if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = undefined; }
+      await persistActiveCart(erplora(), [], this.tableId);
       this.paying = false;
       this.cart = [];
       // Libera el contexto de venta (mesa/cliente) y avisa a los fillers para que se limpien.
