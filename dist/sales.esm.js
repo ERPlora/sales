@@ -3624,8 +3624,6 @@ var ErpPosTouch = class extends i3 {
     this.parkedOpen = false;
     this.cartOpen = false;
     this.fullscreen = false;
-    this.assignOpen = false;
-    this.assignTab = 0;
     this.searchOpen = false;
     this.tableLabel = "";
     this.customerName = "";
@@ -3636,8 +3634,9 @@ var ErpPosTouch = class extends i3 {
     /** Mapa tax_category_key → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
     this.ratesMap = /* @__PURE__ */ new Map();
     this.cartRestored = false;
-    // Fillers del modal "Asignar" (ADR-0043 B): cada módulo que aporta a `sales.pos.assign` = una
-    // pestaña. El POS no conoce a `tables`/`customers`; monta su WC inline y escucha sus eventos.
+    // Botones de asignación (ADR-0043 B): cada módulo que aporta a `sales.pos.assign` monta SU botón
+    // (mesa, cliente…) en el header. Botones independientes: cada uno abre su propio modal. El POS no
+    // conoce a `tables`/`customers`; solo monta sus WC y escucha `erp:order-context`/`erp:customer-context`.
     this.assignFillers = [];
     this.onOrderContext = (e6) => {
       const d3 = e6.detail ?? { table_id: null };
@@ -3717,9 +3716,9 @@ var ErpPosTouch = class extends i3 {
     .ctx-chips { display:flex; gap:.35rem; flex-wrap:wrap; }
     .ctx-chips .chip { font-size:.8rem; font-weight:700; color:#fff; border-radius:999px; padding:.12rem .55rem; background:var(--accent); white-space:nowrap; }
     .ctx-chips .chip.cust { background:#5c7cfa; }
-    /* Panel de cada pestaña del modal Asignar: el filler del módulo se monta aquí dentro. */
-    .assign-panel[hidden] { display:none; }
-    .assign-tabs { margin-bottom:.7rem; }
+    /* Contenedor donde los módulos montan su botón de asignación (mesa, cliente…) en el header. */
+    .cart-actions-slot { display:flex; align-items:center; }
+    .cart-actions-slot:empty { display:none; }
     /* El CUERPO. Ionic ya resuelve «header fijo · cuerpo con scroll · pie fijo»: ion-content trae
        su propio scroll, así que aquí solo hay que decirle que ocupe el hueco que queda. Antes esto
        era flex:1 + overflow:auto a mano sobre ion-list.lines, que no aplicaba al div del carrito
@@ -3849,18 +3848,16 @@ var ErpPosTouch = class extends i3 {
     }
     this.assignFillers = resolved.map((f3) => ({
       component: f3.component,
-      tab_label: typeof f3.tab_label === "string" ? f3.tab_label : f3.component,
-      tab_icon: typeof f3.tab_icon === "string" ? f3.tab_icon : "ellipse-outline",
       el: document.createElement(f3.component)
     }));
     this.requestUpdate();
   }
-  /** (Re)engancha cada filler en el panel de su pestaña; idempotente, sobrevive a re-renders. */
+  /** (Re)engancha los botones de los fillers en el header; idempotente, sobrevive a re-renders. */
   ensureSlotsMounted() {
-    for (let i7 = 0; i7 < this.assignFillers.length; i7++) {
-      const host = this.renderRoot.querySelector(`.assign-panel[data-i="${i7}"]`);
-      const el = this.assignFillers[i7].el;
-      if (host && el.parentElement !== host) host.appendChild(el);
+    const host = this.renderRoot.querySelector(".cart-actions-slot");
+    if (!host || !this.assignFillers.length) return;
+    for (const f3 of this.assignFillers) {
+      if (f3.el.parentElement !== host) host.appendChild(f3.el);
     }
   }
   /** Tras cobrar: avisa a cada filler para que limpie su selección (mesa/cliente). */
@@ -4068,15 +4065,11 @@ var ErpPosTouch = class extends i3 {
                 </span>` : A}
           </ion-title>
           <ion-buttons slot="end">
-            <!-- Asignar mesa/cliente: UN botón que abre el modal de pestañas (ADR-0043 B). Las
-                 pestañas y su contenido las aportan otros módulos (tables, customers…) vía
-                 provides_slots: sales.pos.assign; el POS no sabe nada de ellos. Solo aparece si
-                 hay al menos un aportante instalado. -->
-            ${this.assignFillers.length ? b2`<ion-button title=${t3("ui.assign")} @click=${() => {
-      this.assignOpen = true;
-    }}>
-                  <ion-icon slot="icon-only" name=${this.tableId || this.customerId ? "people" : "people-outline"}></ion-icon>
-                </ion-button>` : A}
+            <!-- Botones de asignación (ADR-0043 B): cada módulo (tables, customers…) monta AQUÍ su
+                 propio botón-icono vía provides_slots: sales.pos.assign; cada uno abre su modal. El
+                 POS no sabe nada de ellos. Van a la izquierda de aparcar/pantalla completa. Vacío si
+                 no hay aportantes. -->
+            <span class="cart-actions-slot"></span>
             ${this.parkingEnabled ? b2`<ion-button title=${t3("ui.parkedTickets")} style="position:relative" @click=${() => {
       this.parkedOpen = !this.parkedOpen;
     }}>
@@ -4207,28 +4200,6 @@ var ErpPosTouch = class extends i3 {
             </div>
           </div>` : A}
 
-      ${this.assignOpen ? b2`<div class="scrim" @click=${(e6) => {
-      if (e6.target.classList.contains("scrim")) this.assignOpen = false;
-    }}>
-            <div class="sheet" role="dialog" aria-modal="true" aria-label=${t3("ui.assign")}>
-              <div class="sheet-h">
-                <span class="t">${t3("ui.assign")}</span>
-                <button class="x" @click=${() => {
-      this.assignOpen = false;
-    }}>✕</button>
-              </div>
-              ${this.assignFillers.length > 1 ? b2`<ion-segment class="assign-tabs" value=${String(this.assignTab)}
-                    @ionChange=${(e6) => {
-      this.assignTab = Number(e6.detail.value);
-    }}>
-                    ${this.assignFillers.map((f3, i7) => b2`<ion-segment-button value=${String(i7)}>
-                      <ion-icon name=${f3.tab_icon}></ion-icon><ion-label>${f3.tab_label}</ion-label>
-                    </ion-segment-button>`)}
-                  </ion-segment>` : A}
-              ${this.assignFillers.map((_2, i7) => b2`<div class="assign-panel" data-i=${i7} ?hidden=${i7 !== this.assignTab}></div>`)}
-            </div>
-          </div>` : A}
-
       ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => {
       this.docSaleId = void 0;
     }, t: t3 })}
@@ -4291,12 +4262,6 @@ __decorateClass([
 ], ErpPosTouch.prototype, "fullscreen", 2);
 __decorateClass([
   r5()
-], ErpPosTouch.prototype, "assignOpen", 2);
-__decorateClass([
-  r5()
-], ErpPosTouch.prototype, "assignTab", 2);
-__decorateClass([
-  r5()
 ], ErpPosTouch.prototype, "searchOpen", 2);
 __decorateClass([
   r5()
@@ -4342,8 +4307,6 @@ var ErpPosDesktop = class extends i3 {
     this.error = "";
     this.parked = [];
     this.parkedOpen = false;
-    this.assignOpen = false;
-    this.assignTab = 0;
     this.tableLabel = "";
     this.customerName = "";
     /** Snapshot fiscal del cliente asignado (ADR-0132). Copia, no referencia: viaja con la venta. */
@@ -4352,8 +4315,9 @@ var ErpPosDesktop = class extends i3 {
     /** Mapa tax_category_key → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
     this.ratesMap = /* @__PURE__ */ new Map();
     this.cartRestored = false;
-    // Fillers del modal "Asignar" (ADR-0043 B): cada módulo que aporta a `sales.pos.assign` = una
-    // pestaña. El POS no conoce a `tables`/`customers`; monta su WC inline y escucha sus eventos.
+    // Botones de asignación (ADR-0043 B): cada módulo que aporta a `sales.pos.assign` monta SU botón
+    // (mesa, cliente…) en las acciones. Botones independientes: cada uno abre su propio modal. El POS
+    // no conoce a `tables`/`customers`; solo monta sus WC y escucha sus eventos.
     this.assignFillers = [];
     this.onOrderContext = (e6) => {
       const d3 = e6.detail ?? { table_id: null };
@@ -4389,9 +4353,8 @@ var ErpPosDesktop = class extends i3 {
     .table-tag, .customer-tag { font-size:.8rem; font-weight:700; color:#fff; border-radius:999px; padding:.15rem .6rem; }
     .table-tag { background:var(--ion-color-primary,#0091ce); }
     .customer-tag { background:#5c7cfa; }
-    /* Panel de cada pestaña del modal Asignar: el filler del módulo se monta aquí dentro. */
-    .assign-panel[hidden] { display:none; }
-    .assign-tabs { margin-bottom:.8rem; }
+    /* Contenedor donde los módulos montan su botón de asignación (mesa, cliente…) en las acciones. */
+    .cart-actions-slot { display:inline-flex; align-items:center; }
     .empty { color:#8b897f; text-align:center; padding:2rem 0; }
     /* overlay cobro */
     .scrim { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:50; }
@@ -4469,18 +4432,16 @@ var ErpPosDesktop = class extends i3 {
     }
     this.assignFillers = resolved.map((f3) => ({
       component: f3.component,
-      tab_label: typeof f3.tab_label === "string" ? f3.tab_label : f3.component,
-      tab_icon: typeof f3.tab_icon === "string" ? f3.tab_icon : "ellipse-outline",
       el: document.createElement(f3.component)
     }));
     this.requestUpdate();
   }
-  /** (Re)engancha cada filler en el panel de su pestaña; idempotente, sobrevive a re-renders. */
+  /** (Re)engancha los botones de los fillers en las acciones; idempotente, sobrevive a re-renders. */
   ensureSlotsMounted() {
-    for (let i7 = 0; i7 < this.assignFillers.length; i7++) {
-      const host = this.renderRoot.querySelector(`.assign-panel[data-i="${i7}"]`);
-      const el = this.assignFillers[i7].el;
-      if (host && el.parentElement !== host) host.appendChild(el);
+    const host = this.renderRoot.querySelector(".cart-actions-slot");
+    if (!host || !this.assignFillers.length) return;
+    for (const f3 of this.assignFillers) {
+      if (f3.el.parentElement !== host) host.appendChild(f3.el);
     }
   }
   /** Tras cobrar: avisa a cada filler para que limpie su selección (mesa/cliente). */
@@ -4661,12 +4622,9 @@ var ErpPosDesktop = class extends i3 {
       <div class="foot">
         <div class="total">${t4("ui.colTotal")} ${this.money(this.total)}${this.tableLabel ? b2`<span class="table-tag">${this.tableLabel}</span>` : A}${this.customerName ? b2`<span class="customer-tag">${this.customerName}</span>` : A}</div>
         <div class="actions">
-          ${this.assignFillers.length ? b2`<ion-button fill="outline" @click=${() => {
-      this.assignOpen = true;
-    }}>
-                <ion-icon slot="start" name=${this.tableId || this.customerId ? "people" : "people-outline"}></ion-icon>
-                ${t4("ui.assign")}
-              </ion-button>` : A}
+          <!-- Botones de asignación (ADR-0043 B): cada módulo (tables, customers…) monta AQUÍ su
+               propio botón, vía provides_slots: sales.pos.assign; cada uno abre su modal. -->
+          <span class="cart-actions-slot"></span>
           ${this.parkingEnabled ? b2`
                 <ion-button fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>${t4("ui.park")}</ion-button>
                 <ion-button fill="outline" ?disabled=${!this.parked.length} @click=${() => {
@@ -4678,25 +4636,6 @@ var ErpPosDesktop = class extends i3 {
         </div>
       </div>
 
-      ${this.assignOpen ? b2`<div class="scrim" @click=${(e6) => {
-      if (e6.target.classList.contains("scrim")) this.assignOpen = false;
-    }}>
-            <div class="sheet" role="dialog" aria-modal="true" aria-label=${t4("ui.assign")}>
-              <div class="sheet-h"><span class="t">${t4("ui.assign")}</span>
-                <button class="x" @click=${() => {
-      this.assignOpen = false;
-    }}>✕</button></div>
-              ${this.assignFillers.length > 1 ? b2`<ion-segment class="assign-tabs" value=${String(this.assignTab)}
-                    @ionChange=${(e6) => {
-      this.assignTab = Number(e6.detail.value);
-    }}>
-                    ${this.assignFillers.map((f3, i7) => b2`<ion-segment-button value=${String(i7)}>
-                      <ion-icon name=${f3.tab_icon}></ion-icon><ion-label>${f3.tab_label}</ion-label>
-                    </ion-segment-button>`)}
-                  </ion-segment>` : A}
-              ${this.assignFillers.map((_2, i7) => b2`<div class="assign-panel" data-i=${i7} ?hidden=${i7 !== this.assignTab}></div>`)}
-            </div>
-          </div>` : A}
 
       ${this.parkedOpen ? b2`<div class="scrim" @click=${(e6) => {
       if (e6.target.classList.contains("scrim")) this.parkedOpen = false;
@@ -4801,12 +4740,6 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosDesktop.prototype, "parkedOpen", 2);
-__decorateClass([
-  r5()
-], ErpPosDesktop.prototype, "assignOpen", 2);
-__decorateClass([
-  r5()
-], ErpPosDesktop.prototype, "assignTab", 2);
 __decorateClass([
   r5()
 ], ErpPosDesktop.prototype, "tableId", 2);

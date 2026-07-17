@@ -7,9 +7,9 @@
 //    `<div class="lines">` — sin `flex:1` no empuja nada, así que el pie subía y quedaba pegado al
 //    texto de "toca un producto". Con líneas funcionaba; vacío, no.
 //
-// 2. Mesa/cliente = UN botón "Asignar" que abre un modal de pestañas (`sales.pos.assign`, ADR-0043 B).
-//    Cada módulo —tables, customers, o uno que aún no existe— declara su pestaña (component +
-//    tab_label + tab_icon) y el POS la monta inline. Reutiliza el mismo canal cross-módulo
+// 2. Mesa y cliente = un botón INDEPENDIENTE cada uno en el header (`sales.pos.assign`, ADR-0043 B),
+//    sin mezclar funcionalidades: cada módulo —tables, customers, o uno que aún no existe— monta su
+//    propio botón-icono (que abre su propio modal). Reutiliza el mismo canal cross-módulo
 //    (`erplora.loadSlot`, ADR-0043); no inventa otro.
 //
 // happy-dom NO hace layout: aquí se fija el CONTRATO (qué se pinta y con qué clases). Que el pie
@@ -95,35 +95,31 @@ describe('carrito del TPV', () => {
     expect(content.querySelector('.empty'), 'el estado vacío va dentro del ion-content').toBeTruthy();
   });
 
-  it('mesa/cliente = UN botón "Asignar" que abre un modal de pestañas (ADR-0043 B)', async () => {
-    // El POS no conoce a tables/customers: pide el slot `sales.pos.assign` y cada aportante declara
-    // su pestaña (component + tab_label + tab_icon). Aquí un doble aporta una pestaña "Mesa".
+  it('cada módulo monta SU botón de asignación en el header (ADR-0043 B, sin mezclar)', async () => {
+    // El POS no conoce a tables/customers: pide el slot `sales.pos.assign` y monta el WC de cada
+    // aportante como un botón independiente en el header (cada uno abre su propio modal). Aquí dos
+    // dobles aportan sus botones (mesa y cliente).
     (globalThis as Record<string, unknown>).erplora = {
       ...((globalThis as Record<string, unknown>).erplora as object),
       loadSlot: async (slot: string) => {
         slotsPedidos.push(slot);
         return slot === 'sales.pos.assign'
-          ? [{ component: 'erp-fake-picker', tab_label: 'Mesa', tab_icon: 'restaurant-outline' }]
+          ? [{ component: 'erp-fake-mesa' }, { component: 'erp-fake-cliente' }]
           : [];
       },
     };
 
     const el = await montarCarrito();
 
-    // Se pide por el canal cross-módulo (ADR-0043), con el slot único del modal Asignar.
+    // Se pide por el canal cross-módulo (ADR-0043), con el slot único de asignación.
     expect(slotsPedidos, 'el POS debe pedir el slot `sales.pos.assign` al SDK').toContain('sales.pos.assign');
 
-    // El header ofrece UN botón "Asignar" (solo cuando hay al menos un aportante).
-    const header = el.shadowRoot!.querySelector('ion-header')!;
-    const asignar = [...header.querySelectorAll('ion-button')].find((b) => b.getAttribute('title') === 'ui.assign');
-    expect(asignar, 'el header debe ofrecer el botón "Asignar"').toBeTruthy();
-    expect(asignar?.closest('ion-buttons'), 'el botón va dentro de un ion-buttons de la toolbar').toBeTruthy();
-
-    // Al abrir el modal, el WC del aportante se monta inline en el panel de su pestaña.
-    (el as unknown as Record<string, unknown>).assignOpen = true;
-    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
-    const panel = el.shadowRoot!.querySelector('.assign-panel[data-i="0"]');
-    expect(panel?.querySelector('erp-fake-picker'), 'el filler se monta dentro del panel de su pestaña').toBeTruthy();
+    // Los fillers se montan en el contenedor del header, DENTRO del ion-buttons de la toolbar.
+    const host = el.shadowRoot!.querySelector('.cart-actions-slot');
+    expect(host, 'el header expone `.cart-actions-slot` para los botones de los módulos').toBeTruthy();
+    expect(host?.closest('ion-buttons'), 'el contenedor va dentro de un ion-buttons de la toolbar').toBeTruthy();
+    expect(host?.querySelector('erp-fake-mesa'), 'monta el botón de mesa').toBeTruthy();
+    expect(host?.querySelector('erp-fake-cliente'), 'monta el botón de cliente').toBeTruthy();
   });
 });
 

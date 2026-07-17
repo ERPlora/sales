@@ -66,9 +66,8 @@ export class ErpPosDesktop extends LitElement {
     .table-tag, .customer-tag { font-size:.8rem; font-weight:700; color:#fff; border-radius:999px; padding:.15rem .6rem; }
     .table-tag { background:var(--ion-color-primary,#0091ce); }
     .customer-tag { background:#5c7cfa; }
-    /* Panel de cada pestaña del modal Asignar: el filler del módulo se monta aquí dentro. */
-    .assign-panel[hidden] { display:none; }
-    .assign-tabs { margin-bottom:.8rem; }
+    /* Contenedor donde los módulos montan su botón de asignación (mesa, cliente…) en las acciones. */
+    .cart-actions-slot { display:inline-flex; align-items:center; }
     .empty { color:#8b897f; text-align:center; padding:2rem 0; }
     /* overlay cobro */
     .scrim { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:50; }
@@ -106,9 +105,6 @@ export class ErpPosDesktop extends LitElement {
   @state() private docSaleId?: string;
   @state() private parked: ParkedTicket[] = [];
   @state() private parkedOpen = false;
-  /** Modal "Asignar" (mesa/cliente…) y su pestaña activa (ADR-0043 B). */
-  @state() private assignOpen = false;
-  @state() private assignTab = 0;
   // Contexto de venta aportado por slot fillers (ADR-0043): mesa (`tables`) y cliente (`customers`).
   // El POS recibe los datos por evento DOM y los adjunta a la venta; no conoce a esos módulos.
   @state() private tableId?: string;
@@ -125,9 +121,10 @@ export class ErpPosDesktop extends LitElement {
   private ratesMap = new Map<string, number>();
   private cartRestored = false;
   private saveTimer?: ReturnType<typeof setTimeout>;
-  // Fillers del modal "Asignar" (ADR-0043 B): cada módulo que aporta a `sales.pos.assign` = una
-  // pestaña. El POS no conoce a `tables`/`customers`; monta su WC inline y escucha sus eventos.
-  private assignFillers: Array<{ component: string; tab_label: string; tab_icon: string; el: HTMLElement }> = [];
+  // Botones de asignación (ADR-0043 B): cada módulo que aporta a `sales.pos.assign` monta SU botón
+  // (mesa, cliente…) en las acciones. Botones independientes: cada uno abre su propio modal. El POS
+  // no conoce a `tables`/`customers`; solo monta sus WC y escucha sus eventos.
+  private assignFillers: Array<{ component: string; el: HTMLElement }> = [];
   private readonly onOrderContext = (e: Event) => {
     const d = (e as CustomEvent<{ table_id: string | null; label?: string }>).detail ?? { table_id: null };
     this.tableId = d.table_id ?? undefined;
@@ -200,19 +197,17 @@ export class ErpPosDesktop extends LitElement {
     try { resolved = (await sdk.loadSlot('sales.pos.assign')) ?? []; } catch { resolved = []; }
     this.assignFillers = resolved.map((f) => ({
       component: f.component,
-      tab_label: typeof f.tab_label === 'string' ? f.tab_label : f.component,
-      tab_icon: typeof f.tab_icon === 'string' ? f.tab_icon : 'ellipse-outline',
       el: document.createElement(f.component) as HTMLElement,
     }));
     this.requestUpdate();
   }
 
-  /** (Re)engancha cada filler en el panel de su pestaña; idempotente, sobrevive a re-renders. */
+  /** (Re)engancha los botones de los fillers en las acciones; idempotente, sobrevive a re-renders. */
   private ensureSlotsMounted() {
-    for (let i = 0; i < this.assignFillers.length; i++) {
-      const host = this.renderRoot.querySelector(`.assign-panel[data-i="${i}"]`) as HTMLElement | null;
-      const el = this.assignFillers[i].el;
-      if (host && el.parentElement !== host) host.appendChild(el);
+    const host = this.renderRoot.querySelector('.cart-actions-slot') as HTMLElement | null;
+    if (!host || !this.assignFillers.length) return;
+    for (const f of this.assignFillers) {
+      if (f.el.parentElement !== host) host.appendChild(f.el);
     }
   }
 
@@ -402,12 +397,9 @@ export class ErpPosDesktop extends LitElement {
       <div class="foot">
         <div class="total">${t('ui.colTotal')} ${this.money(this.total)}${this.tableLabel ? html`<span class="table-tag">${this.tableLabel}</span>` : nothing}${this.customerName ? html`<span class="customer-tag">${this.customerName}</span>` : nothing}</div>
         <div class="actions">
-          ${this.assignFillers.length
-            ? html`<ion-button fill="outline" @click=${() => { this.assignOpen = true; }}>
-                <ion-icon slot="start" name=${this.tableId || this.customerId ? 'people' : 'people-outline'}></ion-icon>
-                ${t('ui.assign')}
-              </ion-button>`
-            : nothing}
+          <!-- Botones de asignación (ADR-0043 B): cada módulo (tables, customers…) monta AQUÍ su
+               propio botón, vía provides_slots: sales.pos.assign; cada uno abre su modal. -->
+          <span class="cart-actions-slot"></span>
           ${this.parkingEnabled
             ? html`
                 <ion-button fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>${t('ui.park')}</ion-button>
@@ -419,23 +411,6 @@ export class ErpPosDesktop extends LitElement {
         </div>
       </div>
 
-      ${this.assignOpen
-        ? html`<div class="scrim" @click=${(e: Event) => { if ((e.target as HTMLElement).classList.contains('scrim')) this.assignOpen = false; }}>
-            <div class="sheet" role="dialog" aria-modal="true" aria-label=${t('ui.assign')}>
-              <div class="sheet-h"><span class="t">${t('ui.assign')}</span>
-                <button class="x" @click=${() => { this.assignOpen = false; }}>✕</button></div>
-              ${this.assignFillers.length > 1
-                ? html`<ion-segment class="assign-tabs" value=${String(this.assignTab)}
-                    @ionChange=${(e: CustomEvent) => { this.assignTab = Number((e.detail as { value: string }).value); }}>
-                    ${this.assignFillers.map((f, i) => html`<ion-segment-button value=${String(i)}>
-                      <ion-icon name=${f.tab_icon}></ion-icon><ion-label>${f.tab_label}</ion-label>
-                    </ion-segment-button>`)}
-                  </ion-segment>`
-                : nothing}
-              ${this.assignFillers.map((_, i) => html`<div class="assign-panel" data-i=${i} ?hidden=${i !== this.assignTab}></div>`)}
-            </div>
-          </div>`
-        : nothing}
 
       ${this.parkedOpen
         ? html`<div class="scrim" @click=${(e: Event) => { if ((e.target as HTMLElement).classList.contains('scrim')) this.parkedOpen = false; }}>
