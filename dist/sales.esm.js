@@ -3695,7 +3695,21 @@ var ErpPosTouch = class extends i3 {
     .catcard .cc-c { font-size:.72rem; color:#d8d6cf; margin-top:.1rem; }
     .catcard[aria-pressed=true] { border-color:var(--accent); }
 
-    .search { margin-bottom:.7rem; --background:var(--tile); --color:var(--tx); --placeholder-color:var(--mut); --icon-color:var(--mut); --border-radius:12px; }
+    /* Buscador de productos estilo SPOTLIGHT: overlay translúcido flotante (no empuja la rejilla).
+       <dialog> en top layer → conserva este CSS del shadow root. Pendiente ok-* de OutfitKit. */
+    dialog.spotlight { margin:10vh auto auto; width:min(92vw,36rem); max-height:72vh; border:none; border-radius:16px;
+      padding:0; overflow:hidden; color:var(--tx);
+      background:color-mix(in srgb, var(--panel) 80%, transparent);
+      -webkit-backdrop-filter:blur(22px) saturate(180%); backdrop-filter:blur(22px) saturate(180%);
+      box-shadow:0 24px 80px rgba(0,0,0,.4), 0 0 0 1px rgba(128,128,128,.18); }
+    dialog.spotlight::backdrop { background:rgba(0,0,0,.3); -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px); }
+    .sp-top { display:flex; align-items:center; gap:.15rem; padding:.4rem .4rem .1rem; }
+    .sp-search { flex:1; --background:transparent; --box-shadow:none; --border-radius:12px; --color:var(--tx); padding:0; }
+    .sp-close { --color:var(--mut); }
+    .sp-list { max-height:52vh; overflow:auto; padding:0 .35rem .4rem; background:transparent; }
+    ion-list.sp-list { background:transparent; }
+    .sp-list ion-item { --background:transparent; border-radius:10px; }
+    .sp-price { font-weight:800; color:var(--accent); }
     .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap:.7rem; overflow:auto; align-content:start; padding-bottom:.3rem; }
     ion-card.tile { margin:0; border-radius:14px; box-shadow:none; border:1px solid var(--ion-border-color); background:var(--tile);
       overflow:hidden; display:flex; flex-direction:column; transition:border-color .12s, transform .05s; }
@@ -3869,12 +3883,27 @@ var ErpPosTouch = class extends i3 {
   }
   updated(changed) {
     this.ensureSlotsMounted();
+    this.syncSearchDialog();
     if (!changed.has("cart") || !this.cartRestored) return;
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
       this.saveTimer = void 0;
       void persistActiveCart(erplora2(), this.cart);
     }, 400);
+  }
+  /** Sincroniza `searchOpen` ↔ el <dialog> Spotlight (top layer). try/catch por happy-dom. */
+  syncSearchDialog() {
+    const d3 = this.renderRoot.querySelector("dialog.spotlight");
+    if (!d3) return;
+    try {
+      if (this.searchOpen && !d3.open) {
+        d3.showModal();
+        this.renderRoot.querySelector(".sp-search")?.setFocus?.();
+      } else if (!this.searchOpen && d3.open) {
+        d3.close();
+      }
+    } catch {
+    }
   }
   // Dinero formateado con la MONEDA DEL HUB (ADR-0059): el SDK la resuelve de /api/hub/context
   // (misma fuente que dashboard/billing). Antes hardcodeaba '€' / la moneda por-módulo.
@@ -4009,14 +4038,19 @@ var ErpPosTouch = class extends i3 {
       this.busy = false;
     }
   }
+  /** La REJILLA del catálogo: filtra por la categoría activa (la búsqueda por texto vive en el
+   *  Spotlight, no empuja la rejilla). */
   get filtered() {
-    const q = this.q.trim().toLowerCase();
-    let list = this.products;
     if (this.activeCat && this.prodCats.size) {
-      list = list.filter((p4) => this.prodCats.get(p4.id)?.has(this.activeCat));
+      return this.products.filter((p4) => this.prodCats.get(p4.id)?.has(this.activeCat));
     }
-    if (q) list = list.filter((p4) => p4.name.toLowerCase().includes(q) || (p4.sku || "").toLowerCase().includes(q));
-    return list;
+    return this.products;
+  }
+  /** Resultados del buscador SPOTLIGHT: `q` sobre TODO el catálogo (nombre o SKU), sin categoría. */
+  get searchResults() {
+    const q = this.q.trim().toLowerCase();
+    if (!q) return [];
+    return this.products.filter((p4) => p4.name.toLowerCase().includes(q) || (p4.sku || "").toLowerCase().includes(q));
   }
   renderCatBar() {
     const cell = (id, name, count, bg) => b2`
@@ -4038,8 +4072,7 @@ var ErpPosTouch = class extends i3 {
              de búsqueda por voz cuando llegue. -->
         <button class="arrow" title=${t3("ui.searchAction")} aria-pressed=${this.searchOpen}
           @click=${() => {
-      this.searchOpen = !this.searchOpen;
-      if (!this.searchOpen) this.q = "";
+      this.searchOpen = true;
     }}>
           <ion-icon name="search-outline"></ion-icon>
         </button>
@@ -4134,10 +4167,6 @@ var ErpPosTouch = class extends i3 {
       <div class="body">
         <div class="catalog">
           ${this.renderCatBar()}
-          ${this.searchOpen ? b2`<ion-searchbar class="search" placeholder=${t3("ui.searchProductPlaceholder")} value=${this.q}
-                @ionInput=${(e6) => {
-      this.q = e6.target.value || "";
-    }}></ion-searchbar>` : A}
           ${this.error ? b2`<p style="color:var(--ion-color-danger,#d9480f)">${this.error}</p>` : A}
           <div class="grid">
             ${this.filtered.map((p4) => b2`<ion-card button class="tile" @click=${() => this.add(p4)}>
@@ -4199,6 +4228,42 @@ var ErpPosTouch = class extends i3 {
               </div>
             </div>
           </div>` : A}
+
+      <!-- Buscador de productos estilo SPOTLIGHT: overlay translúcido flotante (no empuja la rejilla).
+           <dialog> nativo (top layer). Al pulsar un resultado se añade al carrito y se cierra.
+           NOTA: pendiente extraer a un ok-* reutilizable de OutfitKit (mismo patrón que cliente). -->
+      <dialog class="spotlight" aria-label=${t3("ui.searchProductPlaceholder")}
+        @close=${() => {
+      this.searchOpen = false;
+      this.q = "";
+    }}
+        @click=${(e6) => {
+      if (e6.target === e6.currentTarget) this.searchOpen = false;
+    }}>
+        <div class="sp-top">
+          <ion-searchbar class="sp-search" placeholder=${t3("ui.searchProductPlaceholder")} value=${this.q}
+            @ionInput=${(e6) => {
+      this.q = e6.target.value || "";
+    }}></ion-searchbar>
+          <ion-button class="sp-close" fill="clear" size="small" aria-label=${t3("ui.closeAction")} @click=${() => {
+      this.searchOpen = false;
+    }}>
+            <ion-icon slot="icon-only" name="close-outline"></ion-icon>
+          </ion-button>
+        </div>
+        <ion-list class="sp-list" lines="none">
+          ${this.searchResults.map((p4) => b2`
+            <ion-item button detail="false" @click=${() => {
+      this.add(p4);
+      this.searchOpen = false;
+      this.q = "";
+    }}>
+              <ion-label><h3>${p4.name}</h3>${p4.sku ? b2`<p>${p4.sku}</p>` : A}</ion-label>
+              <span slot="end" class="sp-price">${this.money(Number(p4.price))}</span>
+            </ion-item>`)}
+          ${this.q.trim() && !this.searchResults.length ? b2`<div class="empty">${t3("ui.noProducts")}</div>` : A}
+        </ion-list>
+      </dialog>
 
       ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => {
       this.docSaleId = void 0;
