@@ -1,7 +1,7 @@
 {
   "id": "sales",
   "name": "Sales & POS",
-  "version": "2.7.6",
+  "version": "2.7.7",
   "agent": {
     "description": "Manages sales and point-of-sale operations: list and inspect sales, complete new sales transactions, void sales, configure payment methods, and retrieve sales statistics.",
     "keywords": [
@@ -359,7 +359,10 @@
       "default": true,
       "kind": "kpi",
       "query": "sales.today",
-      "refresh_on": ["sale.completed", "sale.voided"],
+      "refresh_on": [
+        "sale.completed",
+        "sale.voided"
+      ],
       "map": {
         "value": "total"
       },
@@ -385,7 +388,10 @@
       "default": true,
       "kind": "kpi",
       "query": "sales.today",
-      "refresh_on": ["sale.completed", "sale.voided"],
+      "refresh_on": [
+        "sale.completed",
+        "sale.voided"
+      ],
       "map": {
         "value": "tickets"
       },
@@ -410,7 +416,10 @@
       "default": false,
       "kind": "chart",
       "query": "sales.last_7_days",
-      "refresh_on": ["sale.completed", "sale.voided"],
+      "refresh_on": [
+        "sale.completed",
+        "sale.voided"
+      ],
       "map": {
         "label": "day",
         "value": "total"
@@ -437,7 +446,10 @@
       "default": false,
       "kind": "timeline",
       "query": "sales.list",
-      "refresh_on": ["sale.completed", "sale.voided"],
+      "refresh_on": [
+        "sale.completed",
+        "sale.voided"
+      ],
       "params": {
         "limit": 8,
         "sort": "created_at",
