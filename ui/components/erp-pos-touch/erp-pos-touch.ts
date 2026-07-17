@@ -121,15 +121,13 @@ export class ErpPosTouch extends LitElement {
     .cart { position:relative; display:flex; flex-direction:column; min-height:0; background:var(--panel); border-left:1px solid var(--ion-border-color); }
     .cart ion-header ion-toolbar { --background:var(--panel); --color:var(--tx); --border-color:var(--ion-border-color); }
     .cart ion-title { font-size:1rem; }
-    .cart-actions-slot { display:flex; align-items:center; }
-    .cart-actions-slot:empty { display:none; }
-    /* 2ª toolbar del header: mesa y cliente, SIEMPRE visibles (no scrollean con las líneas).
-       Si ningún módulo provee esos slots, la toolbar entera desaparece y no ocupa nada. */
-    .ctx-toolbar { --min-height:0; --padding-top:0; --padding-bottom:0; --background:var(--panel); }
-    .ctx-toolbar:has(.order-slot:empty):has(.customer-slot:empty) { display:none; }
-    .cart-ctx { display:flex; gap:.4rem; padding:.35rem .2rem; }
-    .cart-ctx .order-slot, .cart-ctx .customer-slot { flex:1; min-width:0; }
-    .cart-ctx .order-slot:empty, .cart-ctx .customer-slot:empty { display:none; }
+    /* Contexto asignado (mesa/cliente) como CHIPS en el título — sustituye al texto "Venta". */
+    .ctx-chips { display:flex; gap:.35rem; flex-wrap:wrap; }
+    .ctx-chips .chip { font-size:.8rem; font-weight:700; color:#fff; border-radius:999px; padding:.12rem .55rem; background:var(--accent); white-space:nowrap; }
+    .ctx-chips .chip.cust { background:#5c7cfa; }
+    /* Panel de cada pestaña del modal Asignar: el filler del módulo se monta aquí dentro. */
+    .assign-panel[hidden] { display:none; }
+    .assign-tabs { margin-bottom:.7rem; }
     /* El CUERPO. Ionic ya resuelve «header fijo · cuerpo con scroll · pie fijo»: ion-content trae
        su propio scroll, así que aquí solo hay que decirle que ocupe el hueco que queda. Antes esto
        era flex:1 + overflow:auto a mano sobre ion-list.lines, que no aplicaba al div del carrito
@@ -215,6 +213,11 @@ export class ErpPosTouch extends LitElement {
   @state() private parkedOpen = false;
   @state() private cartOpen = false;
   @state() private fullscreen = false;
+  /** Modal "Asignar" (mesa/cliente…) y su pestaña activa (ADR-0043 B). */
+  @state() private assignOpen = false;
+  @state() private assignTab = 0;
+  /** El search del catálogo se despliega desde una lupa (gana alto para la rejilla). */
+  @state() private searchOpen = false;
   @state() private tableId?: string;
   @state() private tableLabel = '';
   @state() private customerId?: string;
@@ -228,11 +231,9 @@ export class ErpPosTouch extends LitElement {
   private ratesMap = new Map<string, number>();
   private cartRestored = false;
   private saveTimer?: ReturnType<typeof setTimeout>;
-  private readonly slots: Array<{ slot: string; container: string; reset: string; resolved?: { component: string }[]; els: HTMLElement[] }> = [
-    { slot: 'sales.pos.cart_actions', container: '.cart-actions-slot', reset: 'erp:cart-actions-reset', els: [] },
-    { slot: 'sales.pos.order_context', container: '.order-slot', reset: 'erp:order-context-reset', els: [] },
-    { slot: 'sales.pos.customer_context', container: '.customer-slot', reset: 'erp:customer-context-reset', els: [] },
-  ];
+  // Fillers del modal "Asignar" (ADR-0043 B): cada módulo que aporta a `sales.pos.assign` = una
+  // pestaña. El POS no conoce a `tables`/`customers`; monta su WC inline y escucha sus eventos.
+  private assignFillers: Array<{ component: string; tab_label: string; tab_icon: string; el: HTMLElement }> = [];
   private readonly onOrderContext = (e: Event) => {
     const d = (e as CustomEvent<{ table_id: string | null; label?: string }>).detail ?? { table_id: null };
     this.tableId = d.table_id ?? undefined;
@@ -305,37 +306,36 @@ export class ErpPosTouch extends LitElement {
   }
 
   private async resolveSlots() {
-    const sdk = (globalThis as { erplora?: { loadSlot?: (s: string) => Promise<{ component: string }[]> } }).erplora;
-    // Hidratación POR LITERAL (ADR-0127): el extractor de contratos solo sigue llamadas al SDK con
-    // el nombre en la propia llamada — `loadSlot(s.slot)` sería un contrato dinámico. El array
-    // `slots` sigue siendo la única config; esto solo trae cada punto de extensión por su nombre.
-    const load = async (name: string) => { try { return (await sdk!.loadSlot!(name)) ?? []; } catch { return []; } };
-    const resolved: Record<string, { component: string }[]> = !sdk?.loadSlot
-      ? {}
-      : {
-          'sales.pos.cart_actions': await load('sales.pos.cart_actions'),
-          'sales.pos.order_context': await load('sales.pos.order_context'),
-          'sales.pos.customer_context': await load('sales.pos.customer_context'),
-        };
-    for (const s of this.slots) {
-      if (s.resolved) continue;
-      s.resolved = resolved[s.slot] ?? [];
-      s.els = s.resolved.map((f) => document.createElement(f.component) as HTMLElement);
-    }
+    const sdk = (globalThis as {
+      erplora?: { loadSlot?: (s: string) => Promise<Array<Record<string, unknown> & { component: string }>> };
+    }).erplora;
+    if (!sdk?.loadSlot) return;
+    // Hidratación POR LITERAL (ADR-0127): el nombre del slot va en la propia llamada al SDK.
+    let resolved: Array<Record<string, unknown> & { component: string }> = [];
+    try { resolved = (await sdk.loadSlot('sales.pos.assign')) ?? []; } catch { resolved = []; }
+    this.assignFillers = resolved.map((f) => ({
+      component: f.component,
+      tab_label: typeof f.tab_label === 'string' ? f.tab_label : f.component,
+      tab_icon: typeof f.tab_icon === 'string' ? f.tab_icon : 'ellipse-outline',
+      el: document.createElement(f.component) as HTMLElement,
+    }));
+    this.requestUpdate();
   }
 
+  /** (Re)engancha cada filler en el panel de su pestaña; idempotente, sobrevive a re-renders. */
   private ensureSlotsMounted() {
-    for (const s of this.slots) {
-      const host = this.renderRoot.querySelector(s.container) as HTMLElement | null;
-      if (!host || !s.els.length) continue;
-      if (host.firstElementChild) continue;
-      s.els.forEach((el) => host.appendChild(el));
+    for (let i = 0; i < this.assignFillers.length; i++) {
+      const host = this.renderRoot.querySelector(`.assign-panel[data-i="${i}"]`) as HTMLElement | null;
+      const el = this.assignFillers[i].el;
+      if (host && el.parentElement !== host) host.appendChild(el);
     }
   }
 
+  /** Tras cobrar: avisa a cada filler para que limpie su selección (mesa/cliente). */
   private resetSlotContexts() {
-    for (const s of this.slots) {
-      s.els.forEach((el) => el.dispatchEvent(new CustomEvent(s.reset, { bubbles: false })));
+    for (const f of this.assignFillers) {
+      f.el.dispatchEvent(new CustomEvent('erp:order-context-reset', { bubbles: false }));
+      f.el.dispatchEvent(new CustomEvent('erp:customer-context-reset', { bubbles: false }));
     }
   }
 
@@ -506,6 +506,12 @@ export class ErpPosTouch extends LitElement {
           ${this.categories.map((c) => cell(c.id, c.name, this.catCount(c.id), c.image ? `url(${c.image})` : gradient(c.name)))}
         </div>
         <button class="arrow" title=${t('ui.next')} @click=${() => this.scrollCats(1)}><ion-icon name="chevron-forward-outline"></ion-icon></button>
+        <!-- Lupa: despliega el buscador (gana alto para la rejilla). Hueco natural para el micro
+             de búsqueda por voz cuando llegue. -->
+        <button class="arrow" title=${t('ui.searchAction')} aria-pressed=${this.searchOpen}
+          @click=${() => { this.searchOpen = !this.searchOpen; if (!this.searchOpen) this.q = ''; }}>
+          <ion-icon name="search-outline"></ion-icon>
+        </button>
       </div>`;
   }
 
@@ -518,13 +524,26 @@ export class ErpPosTouch extends LitElement {
               <ion-icon slot="icon-only" name="chevron-forward-outline"></ion-icon>
             </ion-button>
           </ion-buttons>
-          <ion-title>${this.tableLabel || t('ui.sale')}${this.customerName ? html` · ${this.customerName}` : nothing}</ion-title>
+          <!-- Contexto asignado como CHIPS (mesa/cliente); sin texto "Venta" (no aportaba). Se ven
+               SIEMPRE en el header, por larga que sea la comanda. -->
+          <ion-title>
+            ${this.tableLabel || this.customerName
+              ? html`<span class="ctx-chips">
+                  ${this.tableLabel ? html`<span class="chip">${this.tableLabel}</span>` : nothing}
+                  ${this.customerName ? html`<span class="chip cust">${this.customerName}</span>` : nothing}
+                </span>`
+              : nothing}
+          </ion-title>
           <ion-buttons slot="end">
-            <!-- HOOK cross-módulo (ADR-0043): aquí aterrizan los botones que declaran OTROS módulos
-                 (tables, customers…) vía provides_slots: sales.pos.cart_actions. Cada uno abre su
-                 propio modal; el POS no sabe nada de ellos. Va antes que los botones propios para
-                 que las acciones de negocio queden juntas y a la izquierda de las de chrome. -->
-            <div class="cart-actions-slot"></div>
+            <!-- Asignar mesa/cliente: UN botón que abre el modal de pestañas (ADR-0043 B). Las
+                 pestañas y su contenido las aportan otros módulos (tables, customers…) vía
+                 provides_slots: sales.pos.assign; el POS no sabe nada de ellos. Solo aparece si
+                 hay al menos un aportante instalado. -->
+            ${this.assignFillers.length
+              ? html`<ion-button title=${t('ui.assign')} @click=${() => { this.assignOpen = true; }}>
+                  <ion-icon slot="icon-only" name=${this.tableId || this.customerId ? 'people' : 'people-outline'}></ion-icon>
+                </ion-button>`
+              : nothing}
             ${this.parkingEnabled
               ? html`<ion-button title=${t('ui.parkedTickets')} style="position:relative" @click=${() => { this.parkedOpen = !this.parkedOpen; }}>
                   <ion-icon slot="icon-only" name="file-tray-stacked-outline"></ion-icon>
@@ -535,16 +554,6 @@ export class ErpPosTouch extends LitElement {
               <ion-icon slot="icon-only" name=${this.fullscreen ? 'contract-outline' : 'expand-outline'}></ion-icon>
             </ion-button>
           </ion-buttons>
-        </ion-toolbar>
-
-        <!-- Contexto de la venta (mesa, cliente) que inyectan otros módulos por slot. Va en una
-             SEGUNDA toolbar del header, no dentro del scroll: en un TPV saber a qué mesa y a qué
-             cliente estás cobrando tiene que verse SIEMPRE, por larga que sea la comanda. -->
-        <ion-toolbar class="ctx-toolbar">
-          <div class="cart-ctx">
-            <div class="order-slot"></div>
-            <div class="customer-slot"></div>
-          </div>
         </ion-toolbar>
       </ion-header>
 
@@ -602,8 +611,10 @@ export class ErpPosTouch extends LitElement {
       <div class="body">
         <div class="catalog">
           ${this.renderCatBar()}
-          <ion-searchbar class="search" placeholder=${t('ui.searchProductPlaceholder')} value=${this.q}
-            @ionInput=${(e: CustomEvent) => { this.q = (e.target as HTMLInputElement).value || ''; }}></ion-searchbar>
+          ${this.searchOpen
+            ? html`<ion-searchbar class="search" placeholder=${t('ui.searchProductPlaceholder')} value=${this.q}
+                @ionInput=${(e: CustomEvent) => { this.q = (e.target as HTMLInputElement).value || ''; }}></ion-searchbar>`
+            : nothing}
           ${this.error ? html`<p style="color:var(--ion-color-danger,#d9480f)">${this.error}</p>` : nothing}
           <div class="grid">
             ${this.filtered.map((p) => html`<ion-card button class="tile" @click=${() => this.add(p)}>
@@ -652,6 +663,26 @@ export class ErpPosTouch extends LitElement {
                   ${this.busy ? t('ui.charging') : t('ui.confirmCharge')}
                 </ion-button>
               </div>
+            </div>
+          </div>`
+        : nothing}
+
+      ${this.assignOpen
+        ? html`<div class="scrim" @click=${(e: Event) => { if ((e.target as HTMLElement).classList.contains('scrim')) this.assignOpen = false; }}>
+            <div class="sheet" role="dialog" aria-modal="true" aria-label=${t('ui.assign')}>
+              <div class="sheet-h">
+                <span class="t">${t('ui.assign')}</span>
+                <button class="x" @click=${() => { this.assignOpen = false; }}>✕</button>
+              </div>
+              ${this.assignFillers.length > 1
+                ? html`<ion-segment class="assign-tabs" value=${String(this.assignTab)}
+                    @ionChange=${(e: CustomEvent) => { this.assignTab = Number((e.detail as { value: string }).value); }}>
+                    ${this.assignFillers.map((f, i) => html`<ion-segment-button value=${String(i)}>
+                      <ion-icon name=${f.tab_icon}></ion-icon><ion-label>${f.tab_label}</ion-label>
+                    </ion-segment-button>`)}
+                  </ion-segment>`
+                : nothing}
+              ${this.assignFillers.map((_, i) => html`<div class="assign-panel" data-i=${i} ?hidden=${i !== this.assignTab}></div>`)}
             </div>
           </div>`
         : nothing}

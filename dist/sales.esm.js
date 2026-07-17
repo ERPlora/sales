@@ -2742,6 +2742,8 @@ var es_default = {
     previous: "Anterior",
     next: "Siguiente",
     searchProductPlaceholder: "Buscar producto\u2026",
+    searchAction: "Buscar",
+    assign: "Asignar",
     noProducts: "Sin productos.",
     sale: "Venta",
     cartEmptyTouch: "Toca un producto para a\xF1adirlo.",
@@ -2881,6 +2883,8 @@ var en_default = {
     previous: "Previous",
     next: "Next",
     searchProductPlaceholder: "Search product\u2026",
+    searchAction: "Search",
+    assign: "Assign",
     noProducts: "No products.",
     sale: "Sale",
     cartEmptyTouch: "Tap a product to add it.",
@@ -3620,6 +3624,9 @@ var ErpPosTouch = class extends i3 {
     this.parkedOpen = false;
     this.cartOpen = false;
     this.fullscreen = false;
+    this.assignOpen = false;
+    this.assignTab = 0;
+    this.searchOpen = false;
     this.tableLabel = "";
     this.customerName = "";
     /** Snapshot fiscal del cliente asignado (ADR-0132). Copia, no referencia: viaja con la venta. */
@@ -3629,11 +3636,9 @@ var ErpPosTouch = class extends i3 {
     /** Mapa tax_category_key → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
     this.ratesMap = /* @__PURE__ */ new Map();
     this.cartRestored = false;
-    this.slots = [
-      { slot: "sales.pos.cart_actions", container: ".cart-actions-slot", reset: "erp:cart-actions-reset", els: [] },
-      { slot: "sales.pos.order_context", container: ".order-slot", reset: "erp:order-context-reset", els: [] },
-      { slot: "sales.pos.customer_context", container: ".customer-slot", reset: "erp:customer-context-reset", els: [] }
-    ];
+    // Fillers del modal "Asignar" (ADR-0043 B): cada módulo que aporta a `sales.pos.assign` = una
+    // pestaña. El POS no conoce a `tables`/`customers`; monta su WC inline y escucha sus eventos.
+    this.assignFillers = [];
     this.onOrderContext = (e6) => {
       const d3 = e6.detail ?? { table_id: null };
       this.tableId = d3.table_id ?? void 0;
@@ -3708,15 +3713,13 @@ var ErpPosTouch = class extends i3 {
     .cart { position:relative; display:flex; flex-direction:column; min-height:0; background:var(--panel); border-left:1px solid var(--ion-border-color); }
     .cart ion-header ion-toolbar { --background:var(--panel); --color:var(--tx); --border-color:var(--ion-border-color); }
     .cart ion-title { font-size:1rem; }
-    .cart-actions-slot { display:flex; align-items:center; }
-    .cart-actions-slot:empty { display:none; }
-    /* 2ª toolbar del header: mesa y cliente, SIEMPRE visibles (no scrollean con las líneas).
-       Si ningún módulo provee esos slots, la toolbar entera desaparece y no ocupa nada. */
-    .ctx-toolbar { --min-height:0; --padding-top:0; --padding-bottom:0; --background:var(--panel); }
-    .ctx-toolbar:has(.order-slot:empty):has(.customer-slot:empty) { display:none; }
-    .cart-ctx { display:flex; gap:.4rem; padding:.35rem .2rem; }
-    .cart-ctx .order-slot, .cart-ctx .customer-slot { flex:1; min-width:0; }
-    .cart-ctx .order-slot:empty, .cart-ctx .customer-slot:empty { display:none; }
+    /* Contexto asignado (mesa/cliente) como CHIPS en el título — sustituye al texto "Venta". */
+    .ctx-chips { display:flex; gap:.35rem; flex-wrap:wrap; }
+    .ctx-chips .chip { font-size:.8rem; font-weight:700; color:#fff; border-radius:999px; padding:.12rem .55rem; background:var(--accent); white-space:nowrap; }
+    .ctx-chips .chip.cust { background:#5c7cfa; }
+    /* Panel de cada pestaña del modal Asignar: el filler del módulo se monta aquí dentro. */
+    .assign-panel[hidden] { display:none; }
+    .assign-tabs { margin-bottom:.7rem; }
     /* El CUERPO. Ionic ya resuelve «header fijo · cuerpo con scroll · pie fijo»: ion-content trae
        su propio scroll, así que aquí solo hay que decirle que ocupe el hueco que queda. Antes esto
        era flex:1 + overflow:auto a mano sobre ion-list.lines, que no aplicaba al div del carrito
@@ -3837,35 +3840,34 @@ var ErpPosTouch = class extends i3 {
   }
   async resolveSlots() {
     const sdk = globalThis.erplora;
-    const load = async (name) => {
-      try {
-        return await sdk.loadSlot(name) ?? [];
-      } catch {
-        return [];
-      }
-    };
-    const resolved = !sdk?.loadSlot ? {} : {
-      "sales.pos.cart_actions": await load("sales.pos.cart_actions"),
-      "sales.pos.order_context": await load("sales.pos.order_context"),
-      "sales.pos.customer_context": await load("sales.pos.customer_context")
-    };
-    for (const s5 of this.slots) {
-      if (s5.resolved) continue;
-      s5.resolved = resolved[s5.slot] ?? [];
-      s5.els = s5.resolved.map((f3) => document.createElement(f3.component));
+    if (!sdk?.loadSlot) return;
+    let resolved = [];
+    try {
+      resolved = await sdk.loadSlot("sales.pos.assign") ?? [];
+    } catch {
+      resolved = [];
     }
+    this.assignFillers = resolved.map((f3) => ({
+      component: f3.component,
+      tab_label: typeof f3.tab_label === "string" ? f3.tab_label : f3.component,
+      tab_icon: typeof f3.tab_icon === "string" ? f3.tab_icon : "ellipse-outline",
+      el: document.createElement(f3.component)
+    }));
+    this.requestUpdate();
   }
+  /** (Re)engancha cada filler en el panel de su pestaña; idempotente, sobrevive a re-renders. */
   ensureSlotsMounted() {
-    for (const s5 of this.slots) {
-      const host = this.renderRoot.querySelector(s5.container);
-      if (!host || !s5.els.length) continue;
-      if (host.firstElementChild) continue;
-      s5.els.forEach((el) => host.appendChild(el));
+    for (let i7 = 0; i7 < this.assignFillers.length; i7++) {
+      const host = this.renderRoot.querySelector(`.assign-panel[data-i="${i7}"]`);
+      const el = this.assignFillers[i7].el;
+      if (host && el.parentElement !== host) host.appendChild(el);
     }
   }
+  /** Tras cobrar: avisa a cada filler para que limpie su selección (mesa/cliente). */
   resetSlotContexts() {
-    for (const s5 of this.slots) {
-      s5.els.forEach((el) => el.dispatchEvent(new CustomEvent(s5.reset, { bubbles: false })));
+    for (const f3 of this.assignFillers) {
+      f3.el.dispatchEvent(new CustomEvent("erp:order-context-reset", { bubbles: false }));
+      f3.el.dispatchEvent(new CustomEvent("erp:customer-context-reset", { bubbles: false }));
     }
   }
   updated(changed) {
@@ -4035,6 +4037,15 @@ var ErpPosTouch = class extends i3 {
           ${this.categories.map((c5) => cell(c5.id, c5.name, this.catCount(c5.id), c5.image ? `url(${c5.image})` : gradient(c5.name)))}
         </div>
         <button class="arrow" title=${t3("ui.next")} @click=${() => this.scrollCats(1)}><ion-icon name="chevron-forward-outline"></ion-icon></button>
+        <!-- Lupa: despliega el buscador (gana alto para la rejilla). Hueco natural para el micro
+             de búsqueda por voz cuando llegue. -->
+        <button class="arrow" title=${t3("ui.searchAction")} aria-pressed=${this.searchOpen}
+          @click=${() => {
+      this.searchOpen = !this.searchOpen;
+      if (!this.searchOpen) this.q = "";
+    }}>
+          <ion-icon name="search-outline"></ion-icon>
+        </button>
       </div>`;
   }
   renderCart() {
@@ -4048,13 +4059,24 @@ var ErpPosTouch = class extends i3 {
               <ion-icon slot="icon-only" name="chevron-forward-outline"></ion-icon>
             </ion-button>
           </ion-buttons>
-          <ion-title>${this.tableLabel || t3("ui.sale")}${this.customerName ? b2` · ${this.customerName}` : A}</ion-title>
+          <!-- Contexto asignado como CHIPS (mesa/cliente); sin texto "Venta" (no aportaba). Se ven
+               SIEMPRE en el header, por larga que sea la comanda. -->
+          <ion-title>
+            ${this.tableLabel || this.customerName ? b2`<span class="ctx-chips">
+                  ${this.tableLabel ? b2`<span class="chip">${this.tableLabel}</span>` : A}
+                  ${this.customerName ? b2`<span class="chip cust">${this.customerName}</span>` : A}
+                </span>` : A}
+          </ion-title>
           <ion-buttons slot="end">
-            <!-- HOOK cross-módulo (ADR-0043): aquí aterrizan los botones que declaran OTROS módulos
-                 (tables, customers…) vía provides_slots: sales.pos.cart_actions. Cada uno abre su
-                 propio modal; el POS no sabe nada de ellos. Va antes que los botones propios para
-                 que las acciones de negocio queden juntas y a la izquierda de las de chrome. -->
-            <div class="cart-actions-slot"></div>
+            <!-- Asignar mesa/cliente: UN botón que abre el modal de pestañas (ADR-0043 B). Las
+                 pestañas y su contenido las aportan otros módulos (tables, customers…) vía
+                 provides_slots: sales.pos.assign; el POS no sabe nada de ellos. Solo aparece si
+                 hay al menos un aportante instalado. -->
+            ${this.assignFillers.length ? b2`<ion-button title=${t3("ui.assign")} @click=${() => {
+      this.assignOpen = true;
+    }}>
+                  <ion-icon slot="icon-only" name=${this.tableId || this.customerId ? "people" : "people-outline"}></ion-icon>
+                </ion-button>` : A}
             ${this.parkingEnabled ? b2`<ion-button title=${t3("ui.parkedTickets")} style="position:relative" @click=${() => {
       this.parkedOpen = !this.parkedOpen;
     }}>
@@ -4065,16 +4087,6 @@ var ErpPosTouch = class extends i3 {
               <ion-icon slot="icon-only" name=${this.fullscreen ? "contract-outline" : "expand-outline"}></ion-icon>
             </ion-button>
           </ion-buttons>
-        </ion-toolbar>
-
-        <!-- Contexto de la venta (mesa, cliente) que inyectan otros módulos por slot. Va en una
-             SEGUNDA toolbar del header, no dentro del scroll: en un TPV saber a qué mesa y a qué
-             cliente estás cobrando tiene que verse SIEMPRE, por larga que sea la comanda. -->
-        <ion-toolbar class="ctx-toolbar">
-          <div class="cart-ctx">
-            <div class="order-slot"></div>
-            <div class="customer-slot"></div>
-          </div>
         </ion-toolbar>
       </ion-header>
 
@@ -4129,10 +4141,10 @@ var ErpPosTouch = class extends i3 {
       <div class="body">
         <div class="catalog">
           ${this.renderCatBar()}
-          <ion-searchbar class="search" placeholder=${t3("ui.searchProductPlaceholder")} value=${this.q}
-            @ionInput=${(e6) => {
+          ${this.searchOpen ? b2`<ion-searchbar class="search" placeholder=${t3("ui.searchProductPlaceholder")} value=${this.q}
+                @ionInput=${(e6) => {
       this.q = e6.target.value || "";
-    }}></ion-searchbar>
+    }}></ion-searchbar>` : A}
           ${this.error ? b2`<p style="color:var(--ion-color-danger,#d9480f)">${this.error}</p>` : A}
           <div class="grid">
             ${this.filtered.map((p4) => b2`<ion-card button class="tile" @click=${() => this.add(p4)}>
@@ -4192,6 +4204,28 @@ var ErpPosTouch = class extends i3 {
                   ${this.busy ? t3("ui.charging") : t3("ui.confirmCharge")}
                 </ion-button>
               </div>
+            </div>
+          </div>` : A}
+
+      ${this.assignOpen ? b2`<div class="scrim" @click=${(e6) => {
+      if (e6.target.classList.contains("scrim")) this.assignOpen = false;
+    }}>
+            <div class="sheet" role="dialog" aria-modal="true" aria-label=${t3("ui.assign")}>
+              <div class="sheet-h">
+                <span class="t">${t3("ui.assign")}</span>
+                <button class="x" @click=${() => {
+      this.assignOpen = false;
+    }}>✕</button>
+              </div>
+              ${this.assignFillers.length > 1 ? b2`<ion-segment class="assign-tabs" value=${String(this.assignTab)}
+                    @ionChange=${(e6) => {
+      this.assignTab = Number(e6.detail.value);
+    }}>
+                    ${this.assignFillers.map((f3, i7) => b2`<ion-segment-button value=${String(i7)}>
+                      <ion-icon name=${f3.tab_icon}></ion-icon><ion-label>${f3.tab_label}</ion-label>
+                    </ion-segment-button>`)}
+                  </ion-segment>` : A}
+              ${this.assignFillers.map((_2, i7) => b2`<div class="assign-panel" data-i=${i7} ?hidden=${i7 !== this.assignTab}></div>`)}
             </div>
           </div>` : A}
 
@@ -4257,6 +4291,15 @@ __decorateClass([
 ], ErpPosTouch.prototype, "fullscreen", 2);
 __decorateClass([
   r5()
+], ErpPosTouch.prototype, "assignOpen", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "assignTab", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "searchOpen", 2);
+__decorateClass([
+  r5()
 ], ErpPosTouch.prototype, "tableId", 2);
 __decorateClass([
   r5()
@@ -4299,6 +4342,8 @@ var ErpPosDesktop = class extends i3 {
     this.error = "";
     this.parked = [];
     this.parkedOpen = false;
+    this.assignOpen = false;
+    this.assignTab = 0;
     this.tableLabel = "";
     this.customerName = "";
     /** Snapshot fiscal del cliente asignado (ADR-0132). Copia, no referencia: viaja con la venta. */
@@ -4307,11 +4352,9 @@ var ErpPosDesktop = class extends i3 {
     /** Mapa tax_category_key → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
     this.ratesMap = /* @__PURE__ */ new Map();
     this.cartRestored = false;
-    /** Slots de contexto que el POS expone; cada uno lo rellena (o no) un módulo externo. */
-    this.slots = [
-      { slot: "sales.pos.order_context", container: ".order-slot", reset: "erp:order-context-reset", els: [] },
-      { slot: "sales.pos.customer_context", container: ".customer-slot", reset: "erp:customer-context-reset", els: [] }
-    ];
+    // Fillers del modal "Asignar" (ADR-0043 B): cada módulo que aporta a `sales.pos.assign` = una
+    // pestaña. El POS no conoce a `tables`/`customers`; monta su WC inline y escucha sus eventos.
+    this.assignFillers = [];
     this.onOrderContext = (e6) => {
       const d3 = e6.detail ?? { table_id: null };
       this.tableId = d3.table_id ?? void 0;
@@ -4346,10 +4389,9 @@ var ErpPosDesktop = class extends i3 {
     .table-tag, .customer-tag { font-size:.8rem; font-weight:700; color:#fff; border-radius:999px; padding:.15rem .6rem; }
     .table-tag { background:var(--ion-color-primary,#0091ce); }
     .customer-tag { background:#5c7cfa; }
-    .ct-ctx { display:flex; gap:.5rem; margin-bottom:.8rem; }
-    .order-slot, .customer-slot { flex:1; min-width:0; }
-    .order-slot:empty, .customer-slot:empty { display:none; }
-    .ct-ctx:empty { display:none; }
+    /* Panel de cada pestaña del modal Asignar: el filler del módulo se monta aquí dentro. */
+    .assign-panel[hidden] { display:none; }
+    .assign-tabs { margin-bottom:.8rem; }
     .empty { color:#8b897f; text-align:center; padding:2rem 0; }
     /* overlay cobro */
     .scrim { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:50; }
@@ -4415,39 +4457,37 @@ var ErpPosDesktop = class extends i3 {
       void persistActiveCart(erplora3(), this.cart);
     }
   }
-  /** Resuelve (una vez) los fillers de cada slot de contexto (ADR-0043) y crea sus instancias. */
+  /** Resuelve (una vez) los fillers del modal Asignar (ADR-0043 B) y crea sus instancias. */
   async resolveSlots() {
     const sdk = globalThis.erplora;
-    const load = async (name) => {
-      try {
-        return await sdk.loadSlot(name) ?? [];
-      } catch {
-        return [];
-      }
-    };
-    const resolved = !sdk?.loadSlot ? {} : {
-      "sales.pos.order_context": await load("sales.pos.order_context"),
-      "sales.pos.customer_context": await load("sales.pos.customer_context")
-    };
-    for (const s5 of this.slots) {
-      if (s5.resolved) continue;
-      s5.resolved = resolved[s5.slot] ?? [];
-      s5.els = s5.resolved.map((f3) => document.createElement(f3.component));
+    if (!sdk?.loadSlot) return;
+    let resolved = [];
+    try {
+      resolved = await sdk.loadSlot("sales.pos.assign") ?? [];
+    } catch {
+      resolved = [];
     }
+    this.assignFillers = resolved.map((f3) => ({
+      component: f3.component,
+      tab_label: typeof f3.tab_label === "string" ? f3.tab_label : f3.component,
+      tab_icon: typeof f3.tab_icon === "string" ? f3.tab_icon : "ellipse-outline",
+      el: document.createElement(f3.component)
+    }));
+    this.requestUpdate();
   }
-  /** (Re)engancha los fillers en sus contenedores; idempotente, sobrevive a re-renders. */
+  /** (Re)engancha cada filler en el panel de su pestaña; idempotente, sobrevive a re-renders. */
   ensureSlotsMounted() {
-    for (const s5 of this.slots) {
-      const host = this.renderRoot.querySelector(s5.container);
-      if (!host || !s5.els.length) continue;
-      if (host.firstElementChild) continue;
-      s5.els.forEach((el) => host.appendChild(el));
+    for (let i7 = 0; i7 < this.assignFillers.length; i7++) {
+      const host = this.renderRoot.querySelector(`.assign-panel[data-i="${i7}"]`);
+      const el = this.assignFillers[i7].el;
+      if (host && el.parentElement !== host) host.appendChild(el);
     }
   }
-  /** Avisa a los fillers para que limpien su selección (tras cobrar). */
+  /** Tras cobrar: avisa a cada filler para que limpie su selección (mesa/cliente). */
   resetSlotContexts() {
-    for (const s5 of this.slots) {
-      s5.els.forEach((el) => el.dispatchEvent(new CustomEvent(s5.reset, { bubbles: false })));
+    for (const f3 of this.assignFillers) {
+      f3.el.dispatchEvent(new CustomEvent("erp:order-context-reset", { bubbles: false }));
+      f3.el.dispatchEvent(new CustomEvent("erp:customer-context-reset", { bubbles: false }));
     }
   }
   /** Persiste el carrito (debounced) y re-engancha los slots tras cada render. */
@@ -4604,14 +4644,6 @@ var ErpPosDesktop = class extends i3 {
       </div>
       ${this.error ? b2`<p style="color:#d9480f">${this.error}</p>` : A}
 
-      <!-- Slots de contexto de venta (ADR-0043): el shell monta aquí los WC de los proveedores
-           (mesa = módulo tables, cliente = módulo customers). Cada contenedor se oculta si nadie
-           rellena su slot. -->
-      <div class="ct-ctx">
-        <div class="order-slot"></div>
-        <div class="customer-slot"></div>
-      </div>
-
       <table>
         <thead><tr><th>${t4("ui.colProduct")}</th><th class="num">${t4("ui.colPrice")}</th><th class="num">${t4("ui.colQty")}</th><th class="num">${t4("ui.colAmount")}</th><th></th></tr></thead>
         <tbody>
@@ -4629,6 +4661,12 @@ var ErpPosDesktop = class extends i3 {
       <div class="foot">
         <div class="total">${t4("ui.colTotal")} ${this.money(this.total)}${this.tableLabel ? b2`<span class="table-tag">${this.tableLabel}</span>` : A}${this.customerName ? b2`<span class="customer-tag">${this.customerName}</span>` : A}</div>
         <div class="actions">
+          ${this.assignFillers.length ? b2`<ion-button fill="outline" @click=${() => {
+      this.assignOpen = true;
+    }}>
+                <ion-icon slot="start" name=${this.tableId || this.customerId ? "people" : "people-outline"}></ion-icon>
+                ${t4("ui.assign")}
+              </ion-button>` : A}
           ${this.parkingEnabled ? b2`
                 <ion-button fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>${t4("ui.park")}</ion-button>
                 <ion-button fill="outline" ?disabled=${!this.parked.length} @click=${() => {
@@ -4639,6 +4677,26 @@ var ErpPosDesktop = class extends i3 {
           <ion-button ?disabled=${!this.cart.length} @click=${() => this.openPay()}>${t4("ui.chargeShortcut")}</ion-button>
         </div>
       </div>
+
+      ${this.assignOpen ? b2`<div class="scrim" @click=${(e6) => {
+      if (e6.target.classList.contains("scrim")) this.assignOpen = false;
+    }}>
+            <div class="sheet" role="dialog" aria-modal="true" aria-label=${t4("ui.assign")}>
+              <div class="sheet-h"><span class="t">${t4("ui.assign")}</span>
+                <button class="x" @click=${() => {
+      this.assignOpen = false;
+    }}>✕</button></div>
+              ${this.assignFillers.length > 1 ? b2`<ion-segment class="assign-tabs" value=${String(this.assignTab)}
+                    @ionChange=${(e6) => {
+      this.assignTab = Number(e6.detail.value);
+    }}>
+                    ${this.assignFillers.map((f3, i7) => b2`<ion-segment-button value=${String(i7)}>
+                      <ion-icon name=${f3.tab_icon}></ion-icon><ion-label>${f3.tab_label}</ion-label>
+                    </ion-segment-button>`)}
+                  </ion-segment>` : A}
+              ${this.assignFillers.map((_2, i7) => b2`<div class="assign-panel" data-i=${i7} ?hidden=${i7 !== this.assignTab}></div>`)}
+            </div>
+          </div>` : A}
 
       ${this.parkedOpen ? b2`<div class="scrim" @click=${(e6) => {
       if (e6.target.classList.contains("scrim")) this.parkedOpen = false;
@@ -4743,6 +4801,12 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosDesktop.prototype, "parkedOpen", 2);
+__decorateClass([
+  r5()
+], ErpPosDesktop.prototype, "assignOpen", 2);
+__decorateClass([
+  r5()
+], ErpPosDesktop.prototype, "assignTab", 2);
 __decorateClass([
   r5()
 ], ErpPosDesktop.prototype, "tableId", 2);

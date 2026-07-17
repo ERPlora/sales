@@ -125,6 +125,8 @@
     "previous": "Previous",
     "next": "Next",
     "searchProductPlaceholder": "Search product…",
+    "searchAction": "Search",
+    "assign": "Assign",
     "noProducts": "No products.",
     "sale": "Sale",
     "cartEmptyTouch": "Tap a product to add it.",

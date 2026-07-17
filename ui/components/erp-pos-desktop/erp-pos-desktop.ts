@@ -66,10 +66,9 @@ export class ErpPosDesktop extends LitElement {
     .table-tag, .customer-tag { font-size:.8rem; font-weight:700; color:#fff; border-radius:999px; padding:.15rem .6rem; }
     .table-tag { background:var(--ion-color-primary,#0091ce); }
     .customer-tag { background:#5c7cfa; }
-    .ct-ctx { display:flex; gap:.5rem; margin-bottom:.8rem; }
-    .order-slot, .customer-slot { flex:1; min-width:0; }
-    .order-slot:empty, .customer-slot:empty { display:none; }
-    .ct-ctx:empty { display:none; }
+    /* Panel de cada pestaña del modal Asignar: el filler del módulo se monta aquí dentro. */
+    .assign-panel[hidden] { display:none; }
+    .assign-tabs { margin-bottom:.8rem; }
     .empty { color:#8b897f; text-align:center; padding:2rem 0; }
     /* overlay cobro */
     .scrim { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:50; }
@@ -107,6 +106,9 @@ export class ErpPosDesktop extends LitElement {
   @state() private docSaleId?: string;
   @state() private parked: ParkedTicket[] = [];
   @state() private parkedOpen = false;
+  /** Modal "Asignar" (mesa/cliente…) y su pestaña activa (ADR-0043 B). */
+  @state() private assignOpen = false;
+  @state() private assignTab = 0;
   // Contexto de venta aportado por slot fillers (ADR-0043): mesa (`tables`) y cliente (`customers`).
   // El POS recibe los datos por evento DOM y los adjunta a la venta; no conoce a esos módulos.
   @state() private tableId?: string;
@@ -123,11 +125,9 @@ export class ErpPosDesktop extends LitElement {
   private ratesMap = new Map<string, number>();
   private cartRestored = false;
   private saveTimer?: ReturnType<typeof setTimeout>;
-  /** Slots de contexto que el POS expone; cada uno lo rellena (o no) un módulo externo. */
-  private readonly slots: Array<{ slot: string; container: string; reset: string; resolved?: { component: string }[]; els: HTMLElement[] }> = [
-    { slot: 'sales.pos.order_context', container: '.order-slot', reset: 'erp:order-context-reset', els: [] },
-    { slot: 'sales.pos.customer_context', container: '.customer-slot', reset: 'erp:customer-context-reset', els: [] },
-  ];
+  // Fillers del modal "Asignar" (ADR-0043 B): cada módulo que aporta a `sales.pos.assign` = una
+  // pestaña. El POS no conoce a `tables`/`customers`; monta su WC inline y escucha sus eventos.
+  private assignFillers: Array<{ component: string; tab_label: string; tab_icon: string; el: HTMLElement }> = [];
   private readonly onOrderContext = (e: Event) => {
     const d = (e as CustomEvent<{ table_id: string | null; label?: string }>).detail ?? { table_id: null };
     this.tableId = d.table_id ?? undefined;
@@ -189,40 +189,38 @@ export class ErpPosDesktop extends LitElement {
     }
   }
 
-  /** Resuelve (una vez) los fillers de cada slot de contexto (ADR-0043) y crea sus instancias. */
+  /** Resuelve (una vez) los fillers del modal Asignar (ADR-0043 B) y crea sus instancias. */
   private async resolveSlots() {
-    const sdk = (globalThis as { erplora?: { loadSlot?: (s: string) => Promise<{ component: string }[]> } }).erplora;
-    // Hidratación POR LITERAL (ADR-0127): el extractor de contratos solo sigue llamadas al SDK con
-    // el nombre en la propia llamada — `loadSlot(s.slot)` sería un contrato dinámico. El array
-    // `slots` sigue siendo la única config; esto solo trae cada punto de extensión por su nombre.
-    const load = async (name: string) => { try { return (await sdk!.loadSlot!(name)) ?? []; } catch { return []; } };
-    const resolved: Record<string, { component: string }[]> = !sdk?.loadSlot
-      ? {}
-      : {
-          'sales.pos.order_context': await load('sales.pos.order_context'),
-          'sales.pos.customer_context': await load('sales.pos.customer_context'),
-        };
-    for (const s of this.slots) {
-      if (s.resolved) continue;
-      s.resolved = resolved[s.slot] ?? [];
-      s.els = s.resolved.map((f) => document.createElement(f.component) as HTMLElement);
-    }
+    const sdk = (globalThis as {
+      erplora?: { loadSlot?: (s: string) => Promise<Array<Record<string, unknown> & { component: string }>> };
+    }).erplora;
+    if (!sdk?.loadSlot) return;
+    // Hidratación POR LITERAL (ADR-0127): el nombre del slot va en la propia llamada al SDK.
+    let resolved: Array<Record<string, unknown> & { component: string }> = [];
+    try { resolved = (await sdk.loadSlot('sales.pos.assign')) ?? []; } catch { resolved = []; }
+    this.assignFillers = resolved.map((f) => ({
+      component: f.component,
+      tab_label: typeof f.tab_label === 'string' ? f.tab_label : f.component,
+      tab_icon: typeof f.tab_icon === 'string' ? f.tab_icon : 'ellipse-outline',
+      el: document.createElement(f.component) as HTMLElement,
+    }));
+    this.requestUpdate();
   }
 
-  /** (Re)engancha los fillers en sus contenedores; idempotente, sobrevive a re-renders. */
+  /** (Re)engancha cada filler en el panel de su pestaña; idempotente, sobrevive a re-renders. */
   private ensureSlotsMounted() {
-    for (const s of this.slots) {
-      const host = this.renderRoot.querySelector(s.container) as HTMLElement | null;
-      if (!host || !s.els.length) continue;
-      if (host.firstElementChild) continue;
-      s.els.forEach((el) => host.appendChild(el));
+    for (let i = 0; i < this.assignFillers.length; i++) {
+      const host = this.renderRoot.querySelector(`.assign-panel[data-i="${i}"]`) as HTMLElement | null;
+      const el = this.assignFillers[i].el;
+      if (host && el.parentElement !== host) host.appendChild(el);
     }
   }
 
-  /** Avisa a los fillers para que limpien su selección (tras cobrar). */
+  /** Tras cobrar: avisa a cada filler para que limpie su selección (mesa/cliente). */
   private resetSlotContexts() {
-    for (const s of this.slots) {
-      s.els.forEach((el) => el.dispatchEvent(new CustomEvent(s.reset, { bubbles: false })));
+    for (const f of this.assignFillers) {
+      f.el.dispatchEvent(new CustomEvent('erp:order-context-reset', { bubbles: false }));
+      f.el.dispatchEvent(new CustomEvent('erp:customer-context-reset', { bubbles: false }));
     }
   }
 
@@ -385,14 +383,6 @@ export class ErpPosDesktop extends LitElement {
       </div>
       ${this.error ? html`<p style="color:#d9480f">${this.error}</p>` : nothing}
 
-      <!-- Slots de contexto de venta (ADR-0043): el shell monta aquí los WC de los proveedores
-           (mesa = módulo tables, cliente = módulo customers). Cada contenedor se oculta si nadie
-           rellena su slot. -->
-      <div class="ct-ctx">
-        <div class="order-slot"></div>
-        <div class="customer-slot"></div>
-      </div>
-
       <table>
         <thead><tr><th>${t('ui.colProduct')}</th><th class="num">${t('ui.colPrice')}</th><th class="num">${t('ui.colQty')}</th><th class="num">${t('ui.colAmount')}</th><th></th></tr></thead>
         <tbody>
@@ -412,6 +402,12 @@ export class ErpPosDesktop extends LitElement {
       <div class="foot">
         <div class="total">${t('ui.colTotal')} ${this.money(this.total)}${this.tableLabel ? html`<span class="table-tag">${this.tableLabel}</span>` : nothing}${this.customerName ? html`<span class="customer-tag">${this.customerName}</span>` : nothing}</div>
         <div class="actions">
+          ${this.assignFillers.length
+            ? html`<ion-button fill="outline" @click=${() => { this.assignOpen = true; }}>
+                <ion-icon slot="start" name=${this.tableId || this.customerId ? 'people' : 'people-outline'}></ion-icon>
+                ${t('ui.assign')}
+              </ion-button>`
+            : nothing}
           ${this.parkingEnabled
             ? html`
                 <ion-button fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>${t('ui.park')}</ion-button>
@@ -422,6 +418,24 @@ export class ErpPosDesktop extends LitElement {
           <ion-button ?disabled=${!this.cart.length} @click=${() => this.openPay()}>${t('ui.chargeShortcut')}</ion-button>
         </div>
       </div>
+
+      ${this.assignOpen
+        ? html`<div class="scrim" @click=${(e: Event) => { if ((e.target as HTMLElement).classList.contains('scrim')) this.assignOpen = false; }}>
+            <div class="sheet" role="dialog" aria-modal="true" aria-label=${t('ui.assign')}>
+              <div class="sheet-h"><span class="t">${t('ui.assign')}</span>
+                <button class="x" @click=${() => { this.assignOpen = false; }}>✕</button></div>
+              ${this.assignFillers.length > 1
+                ? html`<ion-segment class="assign-tabs" value=${String(this.assignTab)}
+                    @ionChange=${(e: CustomEvent) => { this.assignTab = Number((e.detail as { value: string }).value); }}>
+                    ${this.assignFillers.map((f, i) => html`<ion-segment-button value=${String(i)}>
+                      <ion-icon name=${f.tab_icon}></ion-icon><ion-label>${f.tab_label}</ion-label>
+                    </ion-segment-button>`)}
+                  </ion-segment>`
+                : nothing}
+              ${this.assignFillers.map((_, i) => html`<div class="assign-panel" data-i=${i} ?hidden=${i !== this.assignTab}></div>`)}
+            </div>
+          </div>`
+        : nothing}
 
       ${this.parkedOpen
         ? html`<div class="scrim" @click=${(e: Event) => { if ((e.target as HTMLElement).classList.contains('scrim')) this.parkedOpen = false; }}>

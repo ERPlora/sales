@@ -125,6 +125,8 @@
     "previous": "Anterior",
     "next": "Siguiente",
     "searchProductPlaceholder": "Buscar producto…",
+    "searchAction": "Buscar",
+    "assign": "Asignar",
     "noProducts": "Sin productos.",
     "sale": "Venta",
     "cartEmptyTouch": "Toca un producto para añadirlo.",
