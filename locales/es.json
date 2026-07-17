@@ -138,10 +138,12 @@
   },
   "widgets": {
     "sales.today": {
-      "title": "Ventas hoy"
+      "title": "Ventas hoy",
+      "label": "Hoy"
     },
     "sales.tickets_today": {
-      "title": "Tickets hoy"
+      "title": "Tickets hoy",
+      "label": "Tickets"
     },
     "sales.last_7_days": {
       "title": "Ventas últimos 7 días"

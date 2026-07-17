@@ -367,7 +367,7 @@
         "value": "total"
       },
       "options": {
-        "label": "Hoy",
+        "label": "Today",
         "icon": "cash-outline",
         "format": "currency",
         "currency": "EUR",
