@@ -135,5 +135,19 @@
     "fullscreen": "Pantalla completa",
     "giftBadge": "Invitación",
     "giftAction": "Invitar / quitar invitación"
+  },
+  "widgets": {
+    "sales.today": {
+      "title": "Ventas hoy"
+    },
+    "sales.tickets_today": {
+      "title": "Tickets hoy"
+    },
+    "sales.last_7_days": {
+      "title": "Ventas últimos 7 días"
+    },
+    "sales.recent_activity": {
+      "title": "Actividad reciente"
+    }
   }
 }
