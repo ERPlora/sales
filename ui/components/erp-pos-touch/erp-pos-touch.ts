@@ -5,6 +5,7 @@ import { define } from '@erplora/outfitkit/define';
 import { eurosToCents } from '@erplora/module-sdk';
 import { renderDocumentModal } from '../../lib/document-modal.js';
 import '@erplora/outfitkit/ok-qty-stepper';
+import '@erplora/outfitkit/ok-spotlight-search';
 import {
   loadActiveCart, persistActiveCart, listParkedTickets, parkCart, retrieveParkedTicket,
   type CartLine, type ErploraClientLike, type ParkedTicket,
@@ -104,7 +105,11 @@ export class ErpPosTouch extends LitElement {
     .catcard .cc-c { font-size:.72rem; color:#d8d6cf; margin-top:.1rem; }
     .catcard[aria-pressed=true] { border-color:var(--accent); }
 
-    .search { margin-bottom:.7rem; --background:var(--tile); --color:var(--tx); --placeholder-color:var(--mut); --icon-color:var(--mut); --border-radius:12px; }
+    /* Resultados del buscador de productos (proyectados en el slot de ok-spotlight-search). */
+    .sp-list { background:transparent; }
+    ion-list.sp-list { background:transparent; }
+    .sp-list ion-item { --background:transparent; border-radius:10px; }
+    .sp-price { font-weight:800; color:var(--accent); }
     .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap:.7rem; overflow:auto; align-content:start; padding-bottom:.3rem; }
     ion-card.tile { margin:0; border-radius:14px; box-shadow:none; border:1px solid var(--ion-border-color); background:var(--tile);
       overflow:hidden; display:flex; flex-direction:column; transition:border-color .12s, transform .05s; }
@@ -125,9 +130,9 @@ export class ErpPosTouch extends LitElement {
     .ctx-chips { display:flex; gap:.35rem; flex-wrap:wrap; }
     .ctx-chips .chip { font-size:.8rem; font-weight:700; color:#fff; border-radius:999px; padding:.12rem .55rem; background:var(--accent); white-space:nowrap; }
     .ctx-chips .chip.cust { background:#5c7cfa; }
-    /* Panel de cada pestaña del modal Asignar: el filler del módulo se monta aquí dentro. */
-    .assign-panel[hidden] { display:none; }
-    .assign-tabs { margin-bottom:.7rem; }
+    /* Contenedor donde los módulos montan su botón de asignación (mesa, cliente…) en el header. */
+    .cart-actions-slot { display:flex; align-items:center; }
+    .cart-actions-slot:empty { display:none; }
     /* El CUERPO. Ionic ya resuelve «header fijo · cuerpo con scroll · pie fijo»: ion-content trae
        su propio scroll, así que aquí solo hay que decirle que ocupe el hueco que queda. Antes esto
        era flex:1 + overflow:auto a mano sobre ion-list.lines, que no aplicaba al div del carrito
@@ -213,9 +218,6 @@ export class ErpPosTouch extends LitElement {
   @state() private parkedOpen = false;
   @state() private cartOpen = false;
   @state() private fullscreen = false;
-  /** Modal "Asignar" (mesa/cliente…) y su pestaña activa (ADR-0043 B). */
-  @state() private assignOpen = false;
-  @state() private assignTab = 0;
   /** El search del catálogo se despliega desde una lupa (gana alto para la rejilla). */
   @state() private searchOpen = false;
   @state() private tableId?: string;
@@ -231,9 +233,10 @@ export class ErpPosTouch extends LitElement {
   private ratesMap = new Map<string, number>();
   private cartRestored = false;
   private saveTimer?: ReturnType<typeof setTimeout>;
-  // Fillers del modal "Asignar" (ADR-0043 B): cada módulo que aporta a `sales.pos.assign` = una
-  // pestaña. El POS no conoce a `tables`/`customers`; monta su WC inline y escucha sus eventos.
-  private assignFillers: Array<{ component: string; tab_label: string; tab_icon: string; el: HTMLElement }> = [];
+  // Botones de asignación (ADR-0043 B): cada módulo que aporta a `sales.pos.assign` monta SU botón
+  // (mesa, cliente…) en el header. Botones independientes: cada uno abre su propio modal. El POS no
+  // conoce a `tables`/`customers`; solo monta sus WC y escucha `erp:order-context`/`erp:customer-context`.
+  private assignFillers: Array<{ component: string; el: HTMLElement }> = [];
   private readonly onOrderContext = (e: Event) => {
     const d = (e as CustomEvent<{ table_id: string | null; label?: string }>).detail ?? { table_id: null };
     this.tableId = d.table_id ?? undefined;
@@ -315,19 +318,17 @@ export class ErpPosTouch extends LitElement {
     try { resolved = (await sdk.loadSlot('sales.pos.assign')) ?? []; } catch { resolved = []; }
     this.assignFillers = resolved.map((f) => ({
       component: f.component,
-      tab_label: typeof f.tab_label === 'string' ? f.tab_label : f.component,
-      tab_icon: typeof f.tab_icon === 'string' ? f.tab_icon : 'ellipse-outline',
       el: document.createElement(f.component) as HTMLElement,
     }));
     this.requestUpdate();
   }
 
-  /** (Re)engancha cada filler en el panel de su pestaña; idempotente, sobrevive a re-renders. */
+  /** (Re)engancha los botones de los fillers en el header; idempotente, sobrevive a re-renders. */
   private ensureSlotsMounted() {
-    for (let i = 0; i < this.assignFillers.length; i++) {
-      const host = this.renderRoot.querySelector(`.assign-panel[data-i="${i}"]`) as HTMLElement | null;
-      const el = this.assignFillers[i].el;
-      if (host && el.parentElement !== host) host.appendChild(el);
+    const host = this.renderRoot.querySelector('.cart-actions-slot') as HTMLElement | null;
+    if (!host || !this.assignFillers.length) return;
+    for (const f of this.assignFillers) {
+      if (f.el.parentElement !== host) host.appendChild(f.el);
     }
   }
 
@@ -348,6 +349,7 @@ export class ErpPosTouch extends LitElement {
       void persistActiveCart(erplora(), this.cart);
     }, 400);
   }
+
 
   // Dinero formateado con la MONEDA DEL HUB (ADR-0059): el SDK la resuelve de /api/hub/context
   // (misma fuente que dashboard/billing). Antes hardcodeaba '€' / la moneda por-módulo.
@@ -482,14 +484,20 @@ export class ErpPosTouch extends LitElement {
     }
   }
 
+  /** La REJILLA del catálogo: filtra por la categoría activa (la búsqueda por texto vive en el
+   *  Spotlight, no empuja la rejilla). */
   private get filtered() {
-    const q = this.q.trim().toLowerCase();
-    let list = this.products;
     if (this.activeCat && this.prodCats.size) {
-      list = list.filter((p) => this.prodCats.get(p.id)?.has(this.activeCat));
+      return this.products.filter((p) => this.prodCats.get(p.id)?.has(this.activeCat));
     }
-    if (q) list = list.filter((p) => p.name.toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q));
-    return list;
+    return this.products;
+  }
+
+  /** Resultados del buscador SPOTLIGHT: `q` sobre TODO el catálogo (nombre o SKU), sin categoría. */
+  private get searchResults() {
+    const q = this.q.trim().toLowerCase();
+    if (!q) return [];
+    return this.products.filter((p) => p.name.toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q));
   }
 
   private renderCatBar() {
@@ -509,7 +517,7 @@ export class ErpPosTouch extends LitElement {
         <!-- Lupa: despliega el buscador (gana alto para la rejilla). Hueco natural para el micro
              de búsqueda por voz cuando llegue. -->
         <button class="arrow" title=${t('ui.searchAction')} aria-pressed=${this.searchOpen}
-          @click=${() => { this.searchOpen = !this.searchOpen; if (!this.searchOpen) this.q = ''; }}>
+          @click=${() => (this.renderRoot.querySelector('ok-spotlight-search') as { openSearch?: () => void } | null)?.openSearch?.()}>
           <ion-icon name="search-outline"></ion-icon>
         </button>
       </div>`;
@@ -535,15 +543,11 @@ export class ErpPosTouch extends LitElement {
               : nothing}
           </ion-title>
           <ion-buttons slot="end">
-            <!-- Asignar mesa/cliente: UN botón que abre el modal de pestañas (ADR-0043 B). Las
-                 pestañas y su contenido las aportan otros módulos (tables, customers…) vía
-                 provides_slots: sales.pos.assign; el POS no sabe nada de ellos. Solo aparece si
-                 hay al menos un aportante instalado. -->
-            ${this.assignFillers.length
-              ? html`<ion-button title=${t('ui.assign')} @click=${() => { this.assignOpen = true; }}>
-                  <ion-icon slot="icon-only" name=${this.tableId || this.customerId ? 'people' : 'people-outline'}></ion-icon>
-                </ion-button>`
-              : nothing}
+            <!-- Botones de asignación (ADR-0043 B): cada módulo (tables, customers…) monta AQUÍ su
+                 propio botón-icono vía provides_slots: sales.pos.assign; cada uno abre su modal. El
+                 POS no sabe nada de ellos. Van a la izquierda de aparcar/pantalla completa. Vacío si
+                 no hay aportantes. -->
+            <span class="cart-actions-slot"></span>
             ${this.parkingEnabled
               ? html`<ion-button title=${t('ui.parkedTickets')} style="position:relative" @click=${() => { this.parkedOpen = !this.parkedOpen; }}>
                   <ion-icon slot="icon-only" name="file-tray-stacked-outline"></ion-icon>
@@ -611,10 +615,6 @@ export class ErpPosTouch extends LitElement {
       <div class="body">
         <div class="catalog">
           ${this.renderCatBar()}
-          ${this.searchOpen
-            ? html`<ion-searchbar class="search" placeholder=${t('ui.searchProductPlaceholder')} value=${this.q}
-                @ionInput=${(e: CustomEvent) => { this.q = (e.target as HTMLInputElement).value || ''; }}></ion-searchbar>`
-            : nothing}
           ${this.error ? html`<p style="color:var(--ion-color-danger,#d9480f)">${this.error}</p>` : nothing}
           <div class="grid">
             ${this.filtered.map((p) => html`<ion-card button class="tile" @click=${() => this.add(p)}>
@@ -667,25 +667,21 @@ export class ErpPosTouch extends LitElement {
           </div>`
         : nothing}
 
-      ${this.assignOpen
-        ? html`<div class="scrim" @click=${(e: Event) => { if ((e.target as HTMLElement).classList.contains('scrim')) this.assignOpen = false; }}>
-            <div class="sheet" role="dialog" aria-modal="true" aria-label=${t('ui.assign')}>
-              <div class="sheet-h">
-                <span class="t">${t('ui.assign')}</span>
-                <button class="x" @click=${() => { this.assignOpen = false; }}>✕</button>
-              </div>
-              ${this.assignFillers.length > 1
-                ? html`<ion-segment class="assign-tabs" value=${String(this.assignTab)}
-                    @ionChange=${(e: CustomEvent) => { this.assignTab = Number((e.detail as { value: string }).value); }}>
-                    ${this.assignFillers.map((f, i) => html`<ion-segment-button value=${String(i)}>
-                      <ion-icon name=${f.tab_icon}></ion-icon><ion-label>${f.tab_label}</ion-label>
-                    </ion-segment-button>`)}
-                  </ion-segment>`
-                : nothing}
-              ${this.assignFillers.map((_, i) => html`<div class="assign-panel" data-i=${i} ?hidden=${i !== this.assignTab}></div>`)}
-            </div>
-          </div>`
-        : nothing}
+      <!-- Buscador de productos = ok-spotlight-search (OutfitKit): overlay translúcido flotante que
+           NO empuja la rejilla. La lupa del catbar controla su apertura. Al pulsar un resultado se
+           añade al carrito y se cierra. -->
+      <ok-spotlight-search placeholder=${t('ui.searchProductPlaceholder')} .value=${this.q}
+        @ok-open=${(e: CustomEvent) => { this.searchOpen = e.detail.open; if (!e.detail.open) this.q = ''; }}
+        @ok-input=${(e: CustomEvent) => { this.q = e.detail.value; }}>
+        <ion-list class="sp-list" lines="none">
+          ${this.searchResults.map((p) => html`
+            <ion-item button detail="false" @click=${() => { this.add(p); this.q = ''; (this.renderRoot.querySelector('ok-spotlight-search') as { close?: () => void } | null)?.close?.(); }}>
+              <ion-label><h3>${p.name}</h3>${p.sku ? html`<p>${p.sku}</p>` : nothing}</ion-label>
+              <span slot="end" class="sp-price">${this.money(Number(p.price))}</span>
+            </ion-item>`)}
+          ${this.q.trim() && !this.searchResults.length ? html`<div class="empty">${t('ui.noProducts')}</div>` : nothing}
+        </ion-list>
+      </ok-spotlight-search>
 
       ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => { this.docSaleId = undefined; }, t })}
     </div>`;

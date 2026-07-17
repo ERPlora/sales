@@ -3471,6 +3471,212 @@ __decorateClass5([
 ], OkQtyStepper.prototype, "labels");
 define("ok-qty-stepper", OkQtyStepper);
 
+// ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-spotlight-search.js
+var __defProp6 = Object.defineProperty;
+var __decorateClass6 = (decorators, target, key, kind) => {
+  var result = void 0;
+  for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
+    if (decorator = decorators[i7])
+      result = decorator(target, key, result) || result;
+  if (result) __defProp6(target, key, result);
+  return result;
+};
+var OkSpotlightSearch = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.open = false;
+    this.placeholder = "";
+    this.value = "";
+    this.triggerIcon = "";
+    this.triggerLabel = "";
+  }
+  static {
+    this.styles = i`
+    :host {
+      --color: var(--ok-text, var(--ion-text-color, #1c1b17));
+      --color-muted: var(--ok-text-muted, rgba(var(--ion-text-color-rgb, 28, 27, 23), 0.6));
+      --panel-bg: var(--ok-surface, var(--ion-background-color, #ffffff));
+      --scrim-bg: var(--ok-scrim, rgba(0, 0, 0, 0.28));
+      --border-soft: var(--ok-border-soft, rgba(var(--ion-text-color-rgb, 28, 27, 23), 0.1));
+      --radius: var(--ok-radius, 16px);
+      --shadow: var(--ok-shadow, 0 24px 80px rgba(0, 0, 0, 0.35));
+      --font: var(--ok-font, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif);
+      display: contents;
+    }
+
+    /* Botón-trigger opcional (icon-only). */
+    button.trigger {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.4rem;
+      height: 2.4rem;
+      padding: 0;
+      border: 0;
+      border-radius: 10px;
+      background: none;
+      color: var(--color-muted);
+      cursor: pointer;
+    }
+    button.trigger[data-assigned] { color: var(--ok-primary, var(--ion-color-primary, #3880ff)); }
+    button.trigger ion-icon { font-size: 1.35rem; }
+
+    /* El <dialog> flota arriba-centro, translúcido con blur (Spotlight). El top layer lo saca de
+       cualquier containing block. */
+    dialog {
+      margin: 10vh auto auto;
+      width: min(92vw, 36rem);
+      max-height: 72vh;
+      padding: 0;
+      border: none;
+      border-radius: var(--radius);
+      overflow: hidden;
+      color: var(--color);
+      font-family: var(--font);
+      background: color-mix(in srgb, var(--panel-bg) 80%, transparent);
+      -webkit-backdrop-filter: blur(22px) saturate(180%);
+      backdrop-filter: blur(22px) saturate(180%);
+      box-shadow: var(--shadow), 0 0 0 1px rgba(128, 128, 128, 0.18);
+    }
+    dialog::backdrop {
+      background: var(--scrim-bg);
+      -webkit-backdrop-filter: blur(3px);
+      backdrop-filter: blur(3px);
+    }
+
+    /* Fila del input hero + cierre. */
+    .top {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.7rem 0.85rem;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .top .lupa { flex: 0 0 auto; font-size: 1.25rem; color: var(--color-muted); }
+    .top input {
+      flex: 1 1 auto;
+      min-width: 0;
+      border: 0;
+      outline: none;
+      background: none;
+      color: inherit;
+      font: inherit;
+      font-size: 1.05rem;
+    }
+    .top input::placeholder { color: var(--color-muted); }
+    .top .close {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2rem;
+      height: 2rem;
+      padding: 0;
+      border: 0;
+      border-radius: 8px;
+      background: none;
+      color: var(--color-muted);
+      cursor: pointer;
+    }
+    .top .close ion-icon { font-size: 1.2rem; }
+
+    /* Cuerpo scrollable: aquí caen los resultados del consumidor (slot por defecto). */
+    .results { max-height: 56vh; overflow-y: auto; padding: 0.35rem; }
+    .footer:not(:empty) { border-top: 1px solid var(--border-soft); padding: 0.3rem 0.6rem; }
+
+    @media (max-width: 560px) {
+      dialog { margin: 0 auto auto; width: 100vw; max-width: 100vw; max-height: 100vh; height: auto; border-radius: 0; }
+    }
+  `;
+  }
+  // ── API pública ──────────────────────────────────────────────────────────
+  openSearch() {
+    if (this.open) return;
+    this.open = true;
+    this.emitOpen(true);
+  }
+  close() {
+    if (!this.open) return;
+    this.open = false;
+    this.emitOpen(false);
+  }
+  toggle() {
+    this.open ? this.close() : this.openSearch();
+  }
+  emitOpen(open) {
+    this.dispatchEvent(new CustomEvent("ok-open", { detail: { open }, bubbles: true, composed: true }));
+  }
+  onInput(e6) {
+    this.value = e6.target.value;
+    this.dispatchEvent(new CustomEvent("ok-input", { detail: { value: this.value }, bubbles: true, composed: true }));
+  }
+  // Sincroniza `open` ↔ el <dialog> nativo (top layer). try/catch porque happy-dom (tests) no
+  // implementa showModal/close; ahí `open` sigue siendo la verdad.
+  updated() {
+    const d3 = this.renderRoot.querySelector("dialog");
+    if (!d3) return;
+    try {
+      if (this.open && !d3.open) {
+        d3.showModal();
+        this.input?.focus();
+      } else if (!this.open && d3.open) {
+        d3.close();
+      }
+    } catch {
+    }
+  }
+  render() {
+    return b2`
+      ${this.triggerIcon ? b2`<button class="trigger" ?data-assigned=${this.open} aria-label=${this.triggerLabel || this.placeholder}
+            title=${this.triggerLabel || this.placeholder} @click=${() => this.openSearch()}>
+            <ion-icon .icon=${okIcon(this.triggerIcon)}></ion-icon>
+          </button>` : A}
+
+      <dialog aria-label=${this.triggerLabel || this.placeholder}
+        @close=${() => {
+      if (this.open) {
+        this.open = false;
+        this.emitOpen(false);
+      }
+    }}
+        @click=${(e6) => {
+      if (e6.target === e6.currentTarget) this.close();
+    }}>
+        <div class="top">
+          <ion-icon class="lupa" .icon=${iconSearchOutline}></ion-icon>
+          <input type="text" .value=${this.value} placeholder=${this.placeholder}
+            aria-label=${this.placeholder} autocomplete="off" spellcheck="false"
+            @input=${(e6) => this.onInput(e6)} />
+          <button class="close" aria-label="Cerrar" @click=${() => this.close()}>
+            <ion-icon .icon=${iconCloseOutline}></ion-icon>
+          </button>
+        </div>
+        <div class="results"><slot></slot></div>
+        <div class="footer"><slot name="footer"></slot></div>
+      </dialog>
+    `;
+  }
+};
+__decorateClass6([
+  n4({ type: Boolean, reflect: true })
+], OkSpotlightSearch.prototype, "open");
+__decorateClass6([
+  n4()
+], OkSpotlightSearch.prototype, "placeholder");
+__decorateClass6([
+  n4()
+], OkSpotlightSearch.prototype, "value");
+__decorateClass6([
+  n4({ attribute: "trigger-icon" })
+], OkSpotlightSearch.prototype, "triggerIcon");
+__decorateClass6([
+  n4({ attribute: "trigger-label" })
+], OkSpotlightSearch.prototype, "triggerLabel");
+__decorateClass6([
+  e4(".top input")
+], OkSpotlightSearch.prototype, "input");
+define("ok-spotlight-search", OkSpotlightSearch);
+
 // ui/lib/pos-cart.ts
 function rows(r6) {
   if (Array.isArray(r6)) return r6;
@@ -3624,8 +3830,6 @@ var ErpPosTouch = class extends i3 {
     this.parkedOpen = false;
     this.cartOpen = false;
     this.fullscreen = false;
-    this.assignOpen = false;
-    this.assignTab = 0;
     this.searchOpen = false;
     this.tableLabel = "";
     this.customerName = "";
@@ -3636,8 +3840,9 @@ var ErpPosTouch = class extends i3 {
     /** Mapa tax_category_key → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
     this.ratesMap = /* @__PURE__ */ new Map();
     this.cartRestored = false;
-    // Fillers del modal "Asignar" (ADR-0043 B): cada módulo que aporta a `sales.pos.assign` = una
-    // pestaña. El POS no conoce a `tables`/`customers`; monta su WC inline y escucha sus eventos.
+    // Botones de asignación (ADR-0043 B): cada módulo que aporta a `sales.pos.assign` monta SU botón
+    // (mesa, cliente…) en el header. Botones independientes: cada uno abre su propio modal. El POS no
+    // conoce a `tables`/`customers`; solo monta sus WC y escucha `erp:order-context`/`erp:customer-context`.
     this.assignFillers = [];
     this.onOrderContext = (e6) => {
       const d3 = e6.detail ?? { table_id: null };
@@ -3696,7 +3901,11 @@ var ErpPosTouch = class extends i3 {
     .catcard .cc-c { font-size:.72rem; color:#d8d6cf; margin-top:.1rem; }
     .catcard[aria-pressed=true] { border-color:var(--accent); }
 
-    .search { margin-bottom:.7rem; --background:var(--tile); --color:var(--tx); --placeholder-color:var(--mut); --icon-color:var(--mut); --border-radius:12px; }
+    /* Resultados del buscador de productos (proyectados en el slot de ok-spotlight-search). */
+    .sp-list { background:transparent; }
+    ion-list.sp-list { background:transparent; }
+    .sp-list ion-item { --background:transparent; border-radius:10px; }
+    .sp-price { font-weight:800; color:var(--accent); }
     .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap:.7rem; overflow:auto; align-content:start; padding-bottom:.3rem; }
     ion-card.tile { margin:0; border-radius:14px; box-shadow:none; border:1px solid var(--ion-border-color); background:var(--tile);
       overflow:hidden; display:flex; flex-direction:column; transition:border-color .12s, transform .05s; }
@@ -3717,9 +3926,9 @@ var ErpPosTouch = class extends i3 {
     .ctx-chips { display:flex; gap:.35rem; flex-wrap:wrap; }
     .ctx-chips .chip { font-size:.8rem; font-weight:700; color:#fff; border-radius:999px; padding:.12rem .55rem; background:var(--accent); white-space:nowrap; }
     .ctx-chips .chip.cust { background:#5c7cfa; }
-    /* Panel de cada pestaña del modal Asignar: el filler del módulo se monta aquí dentro. */
-    .assign-panel[hidden] { display:none; }
-    .assign-tabs { margin-bottom:.7rem; }
+    /* Contenedor donde los módulos montan su botón de asignación (mesa, cliente…) en el header. */
+    .cart-actions-slot { display:flex; align-items:center; }
+    .cart-actions-slot:empty { display:none; }
     /* El CUERPO. Ionic ya resuelve «header fijo · cuerpo con scroll · pie fijo»: ion-content trae
        su propio scroll, así que aquí solo hay que decirle que ocupe el hueco que queda. Antes esto
        era flex:1 + overflow:auto a mano sobre ion-list.lines, que no aplicaba al div del carrito
@@ -3849,18 +4058,16 @@ var ErpPosTouch = class extends i3 {
     }
     this.assignFillers = resolved.map((f3) => ({
       component: f3.component,
-      tab_label: typeof f3.tab_label === "string" ? f3.tab_label : f3.component,
-      tab_icon: typeof f3.tab_icon === "string" ? f3.tab_icon : "ellipse-outline",
       el: document.createElement(f3.component)
     }));
     this.requestUpdate();
   }
-  /** (Re)engancha cada filler en el panel de su pestaña; idempotente, sobrevive a re-renders. */
+  /** (Re)engancha los botones de los fillers en el header; idempotente, sobrevive a re-renders. */
   ensureSlotsMounted() {
-    for (let i7 = 0; i7 < this.assignFillers.length; i7++) {
-      const host = this.renderRoot.querySelector(`.assign-panel[data-i="${i7}"]`);
-      const el = this.assignFillers[i7].el;
-      if (host && el.parentElement !== host) host.appendChild(el);
+    const host = this.renderRoot.querySelector(".cart-actions-slot");
+    if (!host || !this.assignFillers.length) return;
+    for (const f3 of this.assignFillers) {
+      if (f3.el.parentElement !== host) host.appendChild(f3.el);
     }
   }
   /** Tras cobrar: avisa a cada filler para que limpie su selección (mesa/cliente). */
@@ -4012,14 +4219,19 @@ var ErpPosTouch = class extends i3 {
       this.busy = false;
     }
   }
+  /** La REJILLA del catálogo: filtra por la categoría activa (la búsqueda por texto vive en el
+   *  Spotlight, no empuja la rejilla). */
   get filtered() {
-    const q = this.q.trim().toLowerCase();
-    let list = this.products;
     if (this.activeCat && this.prodCats.size) {
-      list = list.filter((p4) => this.prodCats.get(p4.id)?.has(this.activeCat));
+      return this.products.filter((p4) => this.prodCats.get(p4.id)?.has(this.activeCat));
     }
-    if (q) list = list.filter((p4) => p4.name.toLowerCase().includes(q) || (p4.sku || "").toLowerCase().includes(q));
-    return list;
+    return this.products;
+  }
+  /** Resultados del buscador SPOTLIGHT: `q` sobre TODO el catálogo (nombre o SKU), sin categoría. */
+  get searchResults() {
+    const q = this.q.trim().toLowerCase();
+    if (!q) return [];
+    return this.products.filter((p4) => p4.name.toLowerCase().includes(q) || (p4.sku || "").toLowerCase().includes(q));
   }
   renderCatBar() {
     const cell = (id, name, count, bg) => b2`
@@ -4040,10 +4252,7 @@ var ErpPosTouch = class extends i3 {
         <!-- Lupa: despliega el buscador (gana alto para la rejilla). Hueco natural para el micro
              de búsqueda por voz cuando llegue. -->
         <button class="arrow" title=${t3("ui.searchAction")} aria-pressed=${this.searchOpen}
-          @click=${() => {
-      this.searchOpen = !this.searchOpen;
-      if (!this.searchOpen) this.q = "";
-    }}>
+          @click=${() => this.renderRoot.querySelector("ok-spotlight-search")?.openSearch?.()}>
           <ion-icon name="search-outline"></ion-icon>
         </button>
       </div>`;
@@ -4068,15 +4277,11 @@ var ErpPosTouch = class extends i3 {
                 </span>` : A}
           </ion-title>
           <ion-buttons slot="end">
-            <!-- Asignar mesa/cliente: UN botón que abre el modal de pestañas (ADR-0043 B). Las
-                 pestañas y su contenido las aportan otros módulos (tables, customers…) vía
-                 provides_slots: sales.pos.assign; el POS no sabe nada de ellos. Solo aparece si
-                 hay al menos un aportante instalado. -->
-            ${this.assignFillers.length ? b2`<ion-button title=${t3("ui.assign")} @click=${() => {
-      this.assignOpen = true;
-    }}>
-                  <ion-icon slot="icon-only" name=${this.tableId || this.customerId ? "people" : "people-outline"}></ion-icon>
-                </ion-button>` : A}
+            <!-- Botones de asignación (ADR-0043 B): cada módulo (tables, customers…) monta AQUÍ su
+                 propio botón-icono vía provides_slots: sales.pos.assign; cada uno abre su modal. El
+                 POS no sabe nada de ellos. Van a la izquierda de aparcar/pantalla completa. Vacío si
+                 no hay aportantes. -->
+            <span class="cart-actions-slot"></span>
             ${this.parkingEnabled ? b2`<ion-button title=${t3("ui.parkedTickets")} style="position:relative" @click=${() => {
       this.parkedOpen = !this.parkedOpen;
     }}>
@@ -4141,10 +4346,6 @@ var ErpPosTouch = class extends i3 {
       <div class="body">
         <div class="catalog">
           ${this.renderCatBar()}
-          ${this.searchOpen ? b2`<ion-searchbar class="search" placeholder=${t3("ui.searchProductPlaceholder")} value=${this.q}
-                @ionInput=${(e6) => {
-      this.q = e6.target.value || "";
-    }}></ion-searchbar>` : A}
           ${this.error ? b2`<p style="color:var(--ion-color-danger,#d9480f)">${this.error}</p>` : A}
           <div class="grid">
             ${this.filtered.map((p4) => b2`<ion-card button class="tile" @click=${() => this.add(p4)}>
@@ -4207,27 +4408,30 @@ var ErpPosTouch = class extends i3 {
             </div>
           </div>` : A}
 
-      ${this.assignOpen ? b2`<div class="scrim" @click=${(e6) => {
-      if (e6.target.classList.contains("scrim")) this.assignOpen = false;
+      <!-- Buscador de productos = ok-spotlight-search (OutfitKit): overlay translúcido flotante que
+           NO empuja la rejilla. La lupa del catbar controla su apertura. Al pulsar un resultado se
+           añade al carrito y se cierra. -->
+      <ok-spotlight-search placeholder=${t3("ui.searchProductPlaceholder")} .value=${this.q}
+        @ok-open=${(e6) => {
+      this.searchOpen = e6.detail.open;
+      if (!e6.detail.open) this.q = "";
+    }}
+        @ok-input=${(e6) => {
+      this.q = e6.detail.value;
     }}>
-            <div class="sheet" role="dialog" aria-modal="true" aria-label=${t3("ui.assign")}>
-              <div class="sheet-h">
-                <span class="t">${t3("ui.assign")}</span>
-                <button class="x" @click=${() => {
-      this.assignOpen = false;
-    }}>✕</button>
-              </div>
-              ${this.assignFillers.length > 1 ? b2`<ion-segment class="assign-tabs" value=${String(this.assignTab)}
-                    @ionChange=${(e6) => {
-      this.assignTab = Number(e6.detail.value);
+        <ion-list class="sp-list" lines="none">
+          ${this.searchResults.map((p4) => b2`
+            <ion-item button detail="false" @click=${() => {
+      this.add(p4);
+      this.q = "";
+      this.renderRoot.querySelector("ok-spotlight-search")?.close?.();
     }}>
-                    ${this.assignFillers.map((f3, i7) => b2`<ion-segment-button value=${String(i7)}>
-                      <ion-icon name=${f3.tab_icon}></ion-icon><ion-label>${f3.tab_label}</ion-label>
-                    </ion-segment-button>`)}
-                  </ion-segment>` : A}
-              ${this.assignFillers.map((_2, i7) => b2`<div class="assign-panel" data-i=${i7} ?hidden=${i7 !== this.assignTab}></div>`)}
-            </div>
-          </div>` : A}
+              <ion-label><h3>${p4.name}</h3>${p4.sku ? b2`<p>${p4.sku}</p>` : A}</ion-label>
+              <span slot="end" class="sp-price">${this.money(Number(p4.price))}</span>
+            </ion-item>`)}
+          ${this.q.trim() && !this.searchResults.length ? b2`<div class="empty">${t3("ui.noProducts")}</div>` : A}
+        </ion-list>
+      </ok-spotlight-search>
 
       ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => {
       this.docSaleId = void 0;
@@ -4291,12 +4495,6 @@ __decorateClass([
 ], ErpPosTouch.prototype, "fullscreen", 2);
 __decorateClass([
   r5()
-], ErpPosTouch.prototype, "assignOpen", 2);
-__decorateClass([
-  r5()
-], ErpPosTouch.prototype, "assignTab", 2);
-__decorateClass([
-  r5()
 ], ErpPosTouch.prototype, "searchOpen", 2);
 __decorateClass([
   r5()
@@ -4342,8 +4540,6 @@ var ErpPosDesktop = class extends i3 {
     this.error = "";
     this.parked = [];
     this.parkedOpen = false;
-    this.assignOpen = false;
-    this.assignTab = 0;
     this.tableLabel = "";
     this.customerName = "";
     /** Snapshot fiscal del cliente asignado (ADR-0132). Copia, no referencia: viaja con la venta. */
@@ -4352,8 +4548,9 @@ var ErpPosDesktop = class extends i3 {
     /** Mapa tax_category_key → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
     this.ratesMap = /* @__PURE__ */ new Map();
     this.cartRestored = false;
-    // Fillers del modal "Asignar" (ADR-0043 B): cada módulo que aporta a `sales.pos.assign` = una
-    // pestaña. El POS no conoce a `tables`/`customers`; monta su WC inline y escucha sus eventos.
+    // Botones de asignación (ADR-0043 B): cada módulo que aporta a `sales.pos.assign` monta SU botón
+    // (mesa, cliente…) en las acciones. Botones independientes: cada uno abre su propio modal. El POS
+    // no conoce a `tables`/`customers`; solo monta sus WC y escucha sus eventos.
     this.assignFillers = [];
     this.onOrderContext = (e6) => {
       const d3 = e6.detail ?? { table_id: null };
@@ -4389,9 +4586,8 @@ var ErpPosDesktop = class extends i3 {
     .table-tag, .customer-tag { font-size:.8rem; font-weight:700; color:#fff; border-radius:999px; padding:.15rem .6rem; }
     .table-tag { background:var(--ion-color-primary,#0091ce); }
     .customer-tag { background:#5c7cfa; }
-    /* Panel de cada pestaña del modal Asignar: el filler del módulo se monta aquí dentro. */
-    .assign-panel[hidden] { display:none; }
-    .assign-tabs { margin-bottom:.8rem; }
+    /* Contenedor donde los módulos montan su botón de asignación (mesa, cliente…) en las acciones. */
+    .cart-actions-slot { display:inline-flex; align-items:center; }
     .empty { color:#8b897f; text-align:center; padding:2rem 0; }
     /* overlay cobro */
     .scrim { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:50; }
@@ -4469,18 +4665,16 @@ var ErpPosDesktop = class extends i3 {
     }
     this.assignFillers = resolved.map((f3) => ({
       component: f3.component,
-      tab_label: typeof f3.tab_label === "string" ? f3.tab_label : f3.component,
-      tab_icon: typeof f3.tab_icon === "string" ? f3.tab_icon : "ellipse-outline",
       el: document.createElement(f3.component)
     }));
     this.requestUpdate();
   }
-  /** (Re)engancha cada filler en el panel de su pestaña; idempotente, sobrevive a re-renders. */
+  /** (Re)engancha los botones de los fillers en las acciones; idempotente, sobrevive a re-renders. */
   ensureSlotsMounted() {
-    for (let i7 = 0; i7 < this.assignFillers.length; i7++) {
-      const host = this.renderRoot.querySelector(`.assign-panel[data-i="${i7}"]`);
-      const el = this.assignFillers[i7].el;
-      if (host && el.parentElement !== host) host.appendChild(el);
+    const host = this.renderRoot.querySelector(".cart-actions-slot");
+    if (!host || !this.assignFillers.length) return;
+    for (const f3 of this.assignFillers) {
+      if (f3.el.parentElement !== host) host.appendChild(f3.el);
     }
   }
   /** Tras cobrar: avisa a cada filler para que limpie su selección (mesa/cliente). */
@@ -4661,12 +4855,9 @@ var ErpPosDesktop = class extends i3 {
       <div class="foot">
         <div class="total">${t4("ui.colTotal")} ${this.money(this.total)}${this.tableLabel ? b2`<span class="table-tag">${this.tableLabel}</span>` : A}${this.customerName ? b2`<span class="customer-tag">${this.customerName}</span>` : A}</div>
         <div class="actions">
-          ${this.assignFillers.length ? b2`<ion-button fill="outline" @click=${() => {
-      this.assignOpen = true;
-    }}>
-                <ion-icon slot="start" name=${this.tableId || this.customerId ? "people" : "people-outline"}></ion-icon>
-                ${t4("ui.assign")}
-              </ion-button>` : A}
+          <!-- Botones de asignación (ADR-0043 B): cada módulo (tables, customers…) monta AQUÍ su
+               propio botón, vía provides_slots: sales.pos.assign; cada uno abre su modal. -->
+          <span class="cart-actions-slot"></span>
           ${this.parkingEnabled ? b2`
                 <ion-button fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>${t4("ui.park")}</ion-button>
                 <ion-button fill="outline" ?disabled=${!this.parked.length} @click=${() => {
@@ -4678,25 +4869,6 @@ var ErpPosDesktop = class extends i3 {
         </div>
       </div>
 
-      ${this.assignOpen ? b2`<div class="scrim" @click=${(e6) => {
-      if (e6.target.classList.contains("scrim")) this.assignOpen = false;
-    }}>
-            <div class="sheet" role="dialog" aria-modal="true" aria-label=${t4("ui.assign")}>
-              <div class="sheet-h"><span class="t">${t4("ui.assign")}</span>
-                <button class="x" @click=${() => {
-      this.assignOpen = false;
-    }}>✕</button></div>
-              ${this.assignFillers.length > 1 ? b2`<ion-segment class="assign-tabs" value=${String(this.assignTab)}
-                    @ionChange=${(e6) => {
-      this.assignTab = Number(e6.detail.value);
-    }}>
-                    ${this.assignFillers.map((f3, i7) => b2`<ion-segment-button value=${String(i7)}>
-                      <ion-icon name=${f3.tab_icon}></ion-icon><ion-label>${f3.tab_label}</ion-label>
-                    </ion-segment-button>`)}
-                  </ion-segment>` : A}
-              ${this.assignFillers.map((_2, i7) => b2`<div class="assign-panel" data-i=${i7} ?hidden=${i7 !== this.assignTab}></div>`)}
-            </div>
-          </div>` : A}
 
       ${this.parkedOpen ? b2`<div class="scrim" @click=${(e6) => {
       if (e6.target.classList.contains("scrim")) this.parkedOpen = false;
@@ -4801,12 +4973,6 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosDesktop.prototype, "parkedOpen", 2);
-__decorateClass([
-  r5()
-], ErpPosDesktop.prototype, "assignOpen", 2);
-__decorateClass([
-  r5()
-], ErpPosDesktop.prototype, "assignTab", 2);
 __decorateClass([
   r5()
 ], ErpPosDesktop.prototype, "tableId", 2);
@@ -5010,13 +5176,13 @@ function decodeCsvBuffer(buf) {
   }
   return text.charCodeAt(0) === 65279 ? text.slice(1) : text;
 }
-var __defProp6 = Object.defineProperty;
-var __decorateClass6 = (decorators, target, key, kind) => {
+var __defProp7 = Object.defineProperty;
+var __decorateClass7 = (decorators, target, key, kind) => {
   var result = void 0;
   for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
     if (decorator = decorators[i7])
       result = decorator(target, key, result) || result;
-  if (result) __defProp6(target, key, result);
+  if (result) __defProp7(target, key, result);
   return result;
 };
 var DEFAULT_LABELS4 = {
@@ -6167,151 +6333,151 @@ var OkDataTable = class extends i3 {
     `;
   }
 };
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "columns");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "rows");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "searchKeys");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: "row-key-field" })
 ], OkDataTable.prototype, "rowKeyField");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "rowKey");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Number, attribute: "page-size" })
 ], OkDataTable.prototype, "pageSize");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: "empty-message" })
 ], OkDataTable.prototype, "emptyMessage");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: "search-placeholder" })
 ], OkDataTable.prototype, "searchPlaceholder");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "labels");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "actions");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "addable");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "pageSizeOptions");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Boolean, reflect: true })
 ], OkDataTable.prototype, "fill");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Boolean, attribute: "column-picker" })
 ], OkDataTable.prototype, "columnPicker");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "csv");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: "csv-name" })
 ], OkDataTable.prototype, "csvName");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Boolean, attribute: "server-side" })
 ], OkDataTable.prototype, "serverSide");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Number })
 ], OkDataTable.prototype, "total");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Number })
 ], OkDataTable.prototype, "page");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "searchable");
-__decorateClass6([
+__decorateClass7([
   n4({ type: String })
 ], OkDataTable.prototype, "sort");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: "sort-dir" })
 ], OkDataTable.prototype, "sortDir");
-__decorateClass6([
+__decorateClass7([
   n4()
 ], OkDataTable.prototype, "title");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "views");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: "default-view" })
 ], OkDataTable.prototype, "defaultView");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "exportable");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "importable");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Boolean, attribute: "column-selector" })
 ], OkDataTable.prototype, "columnSelector");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "pageSizes");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "selectable");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "selectedKeys");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "primaryAction");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "inlineFilters");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "menuActions");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "cardTitle");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "cardIcon");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "renderCard");
-__decorateClass6([
+__decorateClass7([
   r5()
 ], OkDataTable.prototype, "q");
-__decorateClass6([
+__decorateClass7([
   r5()
 ], OkDataTable.prototype, "clientPage");
-__decorateClass6([
+__decorateClass7([
   r5()
 ], OkDataTable.prototype, "clientPageSize");
-__decorateClass6([
+__decorateClass7([
   r5()
 ], OkDataTable.prototype, "clientSort");
-__decorateClass6([
+__decorateClass7([
   r5()
 ], OkDataTable.prototype, "clientSortDir");
-__decorateClass6([
+__decorateClass7([
   r5()
 ], OkDataTable.prototype, "clientFilters");
-__decorateClass6([
+__decorateClass7([
   r5()
 ], OkDataTable.prototype, "filterDraft");
-__decorateClass6([
+__decorateClass7([
   r5()
 ], OkDataTable.prototype, "panel");
-__decorateClass6([
+__decorateClass7([
   r5()
 ], OkDataTable.prototype, "viewMode");
-__decorateClass6([
+__decorateClass7([
   r5()
 ], OkDataTable.prototype, "hiddenKeys");
-__decorateClass6([
+__decorateClass7([
   r5()
 ], OkDataTable.prototype, "internalSelection");
-__decorateClass6([
+__decorateClass7([
   r5()
 ], OkDataTable.prototype, "menuOpen");
 define("ok-data-table", OkDataTable);
