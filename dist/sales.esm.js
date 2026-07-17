@@ -3471,6 +3471,212 @@ __decorateClass5([
 ], OkQtyStepper.prototype, "labels");
 define("ok-qty-stepper", OkQtyStepper);
 
+// ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-spotlight-search.js
+var __defProp6 = Object.defineProperty;
+var __decorateClass6 = (decorators, target, key, kind) => {
+  var result = void 0;
+  for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
+    if (decorator = decorators[i7])
+      result = decorator(target, key, result) || result;
+  if (result) __defProp6(target, key, result);
+  return result;
+};
+var OkSpotlightSearch = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.open = false;
+    this.placeholder = "";
+    this.value = "";
+    this.triggerIcon = "";
+    this.triggerLabel = "";
+  }
+  static {
+    this.styles = i`
+    :host {
+      --color: var(--ok-text, var(--ion-text-color, #1c1b17));
+      --color-muted: var(--ok-text-muted, rgba(var(--ion-text-color-rgb, 28, 27, 23), 0.6));
+      --panel-bg: var(--ok-surface, var(--ion-background-color, #ffffff));
+      --scrim-bg: var(--ok-scrim, rgba(0, 0, 0, 0.28));
+      --border-soft: var(--ok-border-soft, rgba(var(--ion-text-color-rgb, 28, 27, 23), 0.1));
+      --radius: var(--ok-radius, 16px);
+      --shadow: var(--ok-shadow, 0 24px 80px rgba(0, 0, 0, 0.35));
+      --font: var(--ok-font, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif);
+      display: contents;
+    }
+
+    /* Botón-trigger opcional (icon-only). */
+    button.trigger {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.4rem;
+      height: 2.4rem;
+      padding: 0;
+      border: 0;
+      border-radius: 10px;
+      background: none;
+      color: var(--color-muted);
+      cursor: pointer;
+    }
+    button.trigger[data-assigned] { color: var(--ok-primary, var(--ion-color-primary, #3880ff)); }
+    button.trigger ion-icon { font-size: 1.35rem; }
+
+    /* El <dialog> flota arriba-centro, translúcido con blur (Spotlight). El top layer lo saca de
+       cualquier containing block. */
+    dialog {
+      margin: 10vh auto auto;
+      width: min(92vw, 36rem);
+      max-height: 72vh;
+      padding: 0;
+      border: none;
+      border-radius: var(--radius);
+      overflow: hidden;
+      color: var(--color);
+      font-family: var(--font);
+      background: color-mix(in srgb, var(--panel-bg) 80%, transparent);
+      -webkit-backdrop-filter: blur(22px) saturate(180%);
+      backdrop-filter: blur(22px) saturate(180%);
+      box-shadow: var(--shadow), 0 0 0 1px rgba(128, 128, 128, 0.18);
+    }
+    dialog::backdrop {
+      background: var(--scrim-bg);
+      -webkit-backdrop-filter: blur(3px);
+      backdrop-filter: blur(3px);
+    }
+
+    /* Fila del input hero + cierre. */
+    .top {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.7rem 0.85rem;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .top .lupa { flex: 0 0 auto; font-size: 1.25rem; color: var(--color-muted); }
+    .top input {
+      flex: 1 1 auto;
+      min-width: 0;
+      border: 0;
+      outline: none;
+      background: none;
+      color: inherit;
+      font: inherit;
+      font-size: 1.05rem;
+    }
+    .top input::placeholder { color: var(--color-muted); }
+    .top .close {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2rem;
+      height: 2rem;
+      padding: 0;
+      border: 0;
+      border-radius: 8px;
+      background: none;
+      color: var(--color-muted);
+      cursor: pointer;
+    }
+    .top .close ion-icon { font-size: 1.2rem; }
+
+    /* Cuerpo scrollable: aquí caen los resultados del consumidor (slot por defecto). */
+    .results { max-height: 56vh; overflow-y: auto; padding: 0.35rem; }
+    .footer:not(:empty) { border-top: 1px solid var(--border-soft); padding: 0.3rem 0.6rem; }
+
+    @media (max-width: 560px) {
+      dialog { margin: 0 auto auto; width: 100vw; max-width: 100vw; max-height: 100vh; height: auto; border-radius: 0; }
+    }
+  `;
+  }
+  // ── API pública ──────────────────────────────────────────────────────────
+  openSearch() {
+    if (this.open) return;
+    this.open = true;
+    this.emitOpen(true);
+  }
+  close() {
+    if (!this.open) return;
+    this.open = false;
+    this.emitOpen(false);
+  }
+  toggle() {
+    this.open ? this.close() : this.openSearch();
+  }
+  emitOpen(open) {
+    this.dispatchEvent(new CustomEvent("ok-open", { detail: { open }, bubbles: true, composed: true }));
+  }
+  onInput(e6) {
+    this.value = e6.target.value;
+    this.dispatchEvent(new CustomEvent("ok-input", { detail: { value: this.value }, bubbles: true, composed: true }));
+  }
+  // Sincroniza `open` ↔ el <dialog> nativo (top layer). try/catch porque happy-dom (tests) no
+  // implementa showModal/close; ahí `open` sigue siendo la verdad.
+  updated() {
+    const d3 = this.renderRoot.querySelector("dialog");
+    if (!d3) return;
+    try {
+      if (this.open && !d3.open) {
+        d3.showModal();
+        this.input?.focus();
+      } else if (!this.open && d3.open) {
+        d3.close();
+      }
+    } catch {
+    }
+  }
+  render() {
+    return b2`
+      ${this.triggerIcon ? b2`<button class="trigger" ?data-assigned=${this.open} aria-label=${this.triggerLabel || this.placeholder}
+            title=${this.triggerLabel || this.placeholder} @click=${() => this.openSearch()}>
+            <ion-icon .icon=${okIcon(this.triggerIcon)}></ion-icon>
+          </button>` : A}
+
+      <dialog aria-label=${this.triggerLabel || this.placeholder}
+        @close=${() => {
+      if (this.open) {
+        this.open = false;
+        this.emitOpen(false);
+      }
+    }}
+        @click=${(e6) => {
+      if (e6.target === e6.currentTarget) this.close();
+    }}>
+        <div class="top">
+          <ion-icon class="lupa" .icon=${iconSearchOutline}></ion-icon>
+          <input type="text" .value=${this.value} placeholder=${this.placeholder}
+            aria-label=${this.placeholder} autocomplete="off" spellcheck="false"
+            @input=${(e6) => this.onInput(e6)} />
+          <button class="close" aria-label="Cerrar" @click=${() => this.close()}>
+            <ion-icon .icon=${iconCloseOutline}></ion-icon>
+          </button>
+        </div>
+        <div class="results"><slot></slot></div>
+        <div class="footer"><slot name="footer"></slot></div>
+      </dialog>
+    `;
+  }
+};
+__decorateClass6([
+  n4({ type: Boolean, reflect: true })
+], OkSpotlightSearch.prototype, "open");
+__decorateClass6([
+  n4()
+], OkSpotlightSearch.prototype, "placeholder");
+__decorateClass6([
+  n4()
+], OkSpotlightSearch.prototype, "value");
+__decorateClass6([
+  n4({ attribute: "trigger-icon" })
+], OkSpotlightSearch.prototype, "triggerIcon");
+__decorateClass6([
+  n4({ attribute: "trigger-label" })
+], OkSpotlightSearch.prototype, "triggerLabel");
+__decorateClass6([
+  e4(".top input")
+], OkSpotlightSearch.prototype, "input");
+define("ok-spotlight-search", OkSpotlightSearch);
+
 // ui/lib/pos-cart.ts
 function rows(r6) {
   if (Array.isArray(r6)) return r6;
@@ -3695,18 +3901,8 @@ var ErpPosTouch = class extends i3 {
     .catcard .cc-c { font-size:.72rem; color:#d8d6cf; margin-top:.1rem; }
     .catcard[aria-pressed=true] { border-color:var(--accent); }
 
-    /* Buscador de productos estilo SPOTLIGHT: overlay translúcido flotante (no empuja la rejilla).
-       <dialog> en top layer → conserva este CSS del shadow root. Pendiente ok-* de OutfitKit. */
-    dialog.spotlight { margin:10vh auto auto; width:min(92vw,36rem); max-height:72vh; border:none; border-radius:16px;
-      padding:0; overflow:hidden; color:var(--tx);
-      background:color-mix(in srgb, var(--panel) 80%, transparent);
-      -webkit-backdrop-filter:blur(22px) saturate(180%); backdrop-filter:blur(22px) saturate(180%);
-      box-shadow:0 24px 80px rgba(0,0,0,.4), 0 0 0 1px rgba(128,128,128,.18); }
-    dialog.spotlight::backdrop { background:rgba(0,0,0,.3); -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px); }
-    .sp-top { display:flex; align-items:center; gap:.15rem; padding:.4rem .4rem .1rem; }
-    .sp-search { flex:1; --background:transparent; --box-shadow:none; --border-radius:12px; --color:var(--tx); padding:0; }
-    .sp-close { --color:var(--mut); }
-    .sp-list { max-height:52vh; overflow:auto; padding:0 .35rem .4rem; background:transparent; }
+    /* Resultados del buscador de productos (proyectados en el slot de ok-spotlight-search). */
+    .sp-list { background:transparent; }
     ion-list.sp-list { background:transparent; }
     .sp-list ion-item { --background:transparent; border-radius:10px; }
     .sp-price { font-weight:800; color:var(--accent); }
@@ -3883,27 +4079,12 @@ var ErpPosTouch = class extends i3 {
   }
   updated(changed) {
     this.ensureSlotsMounted();
-    this.syncSearchDialog();
     if (!changed.has("cart") || !this.cartRestored) return;
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
       this.saveTimer = void 0;
       void persistActiveCart(erplora2(), this.cart);
     }, 400);
-  }
-  /** Sincroniza `searchOpen` ↔ el <dialog> Spotlight (top layer). try/catch por happy-dom. */
-  syncSearchDialog() {
-    const d3 = this.renderRoot.querySelector("dialog.spotlight");
-    if (!d3) return;
-    try {
-      if (this.searchOpen && !d3.open) {
-        d3.showModal();
-        this.renderRoot.querySelector(".sp-search")?.setFocus?.();
-      } else if (!this.searchOpen && d3.open) {
-        d3.close();
-      }
-    } catch {
-    }
   }
   // Dinero formateado con la MONEDA DEL HUB (ADR-0059): el SDK la resuelve de /api/hub/context
   // (misma fuente que dashboard/billing). Antes hardcodeaba '€' / la moneda por-módulo.
@@ -4071,9 +4252,7 @@ var ErpPosTouch = class extends i3 {
         <!-- Lupa: despliega el buscador (gana alto para la rejilla). Hueco natural para el micro
              de búsqueda por voz cuando llegue. -->
         <button class="arrow" title=${t3("ui.searchAction")} aria-pressed=${this.searchOpen}
-          @click=${() => {
-      this.searchOpen = true;
-    }}>
+          @click=${() => this.renderRoot.querySelector("ok-spotlight-search")?.openSearch?.()}>
           <ion-icon name="search-outline"></ion-icon>
         </button>
       </div>`;
@@ -4229,41 +4408,30 @@ var ErpPosTouch = class extends i3 {
             </div>
           </div>` : A}
 
-      <!-- Buscador de productos estilo SPOTLIGHT: overlay translúcido flotante (no empuja la rejilla).
-           <dialog> nativo (top layer). Al pulsar un resultado se añade al carrito y se cierra.
-           NOTA: pendiente extraer a un ok-* reutilizable de OutfitKit (mismo patrón que cliente). -->
-      <dialog class="spotlight" aria-label=${t3("ui.searchProductPlaceholder")}
-        @close=${() => {
-      this.searchOpen = false;
-      this.q = "";
+      <!-- Buscador de productos = ok-spotlight-search (OutfitKit): overlay translúcido flotante que
+           NO empuja la rejilla. La lupa del catbar controla su apertura. Al pulsar un resultado se
+           añade al carrito y se cierra. -->
+      <ok-spotlight-search placeholder=${t3("ui.searchProductPlaceholder")} .value=${this.q}
+        @ok-open=${(e6) => {
+      this.searchOpen = e6.detail.open;
+      if (!e6.detail.open) this.q = "";
     }}
-        @click=${(e6) => {
-      if (e6.target === e6.currentTarget) this.searchOpen = false;
+        @ok-input=${(e6) => {
+      this.q = e6.detail.value;
     }}>
-        <div class="sp-top">
-          <ion-searchbar class="sp-search" placeholder=${t3("ui.searchProductPlaceholder")} value=${this.q}
-            @ionInput=${(e6) => {
-      this.q = e6.target.value || "";
-    }}></ion-searchbar>
-          <ion-button class="sp-close" fill="clear" size="small" aria-label=${t3("ui.closeAction")} @click=${() => {
-      this.searchOpen = false;
-    }}>
-            <ion-icon slot="icon-only" name="close-outline"></ion-icon>
-          </ion-button>
-        </div>
         <ion-list class="sp-list" lines="none">
           ${this.searchResults.map((p4) => b2`
             <ion-item button detail="false" @click=${() => {
       this.add(p4);
-      this.searchOpen = false;
       this.q = "";
+      this.renderRoot.querySelector("ok-spotlight-search")?.close?.();
     }}>
               <ion-label><h3>${p4.name}</h3>${p4.sku ? b2`<p>${p4.sku}</p>` : A}</ion-label>
               <span slot="end" class="sp-price">${this.money(Number(p4.price))}</span>
             </ion-item>`)}
           ${this.q.trim() && !this.searchResults.length ? b2`<div class="empty">${t3("ui.noProducts")}</div>` : A}
         </ion-list>
-      </dialog>
+      </ok-spotlight-search>
 
       ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => {
       this.docSaleId = void 0;
@@ -5008,13 +5176,13 @@ function decodeCsvBuffer(buf) {
   }
   return text.charCodeAt(0) === 65279 ? text.slice(1) : text;
 }
-var __defProp6 = Object.defineProperty;
-var __decorateClass6 = (decorators, target, key, kind) => {
+var __defProp7 = Object.defineProperty;
+var __decorateClass7 = (decorators, target, key, kind) => {
   var result = void 0;
   for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
     if (decorator = decorators[i7])
       result = decorator(target, key, result) || result;
-  if (result) __defProp6(target, key, result);
+  if (result) __defProp7(target, key, result);
   return result;
 };
 var DEFAULT_LABELS4 = {
@@ -6165,151 +6333,151 @@ var OkDataTable = class extends i3 {
     `;
   }
 };
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "columns");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "rows");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "searchKeys");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: "row-key-field" })
 ], OkDataTable.prototype, "rowKeyField");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "rowKey");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Number, attribute: "page-size" })
 ], OkDataTable.prototype, "pageSize");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: "empty-message" })
 ], OkDataTable.prototype, "emptyMessage");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: "search-placeholder" })
 ], OkDataTable.prototype, "searchPlaceholder");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "labels");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "actions");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "addable");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "pageSizeOptions");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Boolean, reflect: true })
 ], OkDataTable.prototype, "fill");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Boolean, attribute: "column-picker" })
 ], OkDataTable.prototype, "columnPicker");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "csv");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: "csv-name" })
 ], OkDataTable.prototype, "csvName");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Boolean, attribute: "server-side" })
 ], OkDataTable.prototype, "serverSide");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Number })
 ], OkDataTable.prototype, "total");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Number })
 ], OkDataTable.prototype, "page");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "searchable");
-__decorateClass6([
+__decorateClass7([
   n4({ type: String })
 ], OkDataTable.prototype, "sort");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: "sort-dir" })
 ], OkDataTable.prototype, "sortDir");
-__decorateClass6([
+__decorateClass7([
   n4()
 ], OkDataTable.prototype, "title");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "views");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: "default-view" })
 ], OkDataTable.prototype, "defaultView");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "exportable");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "importable");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Boolean, attribute: "column-selector" })
 ], OkDataTable.prototype, "columnSelector");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "pageSizes");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "selectable");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "selectedKeys");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "primaryAction");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "inlineFilters");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "menuActions");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "cardTitle");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "cardIcon");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkDataTable.prototype, "renderCard");
-__decorateClass6([
+__decorateClass7([
   r5()
 ], OkDataTable.prototype, "q");
-__decorateClass6([
+__decorateClass7([
   r5()
 ], OkDataTable.prototype, "clientPage");
-__decorateClass6([
+__decorateClass7([
   r5()
 ], OkDataTable.prototype, "clientPageSize");
-__decorateClass6([
+__decorateClass7([
   r5()
 ], OkDataTable.prototype, "clientSort");
-__decorateClass6([
+__decorateClass7([
   r5()
 ], OkDataTable.prototype, "clientSortDir");
-__decorateClass6([
+__decorateClass7([
   r5()
 ], OkDataTable.prototype, "clientFilters");
-__decorateClass6([
+__decorateClass7([
   r5()
 ], OkDataTable.prototype, "filterDraft");
-__decorateClass6([
+__decorateClass7([
   r5()
 ], OkDataTable.prototype, "panel");
-__decorateClass6([
+__decorateClass7([
   r5()
 ], OkDataTable.prototype, "viewMode");
-__decorateClass6([
+__decorateClass7([
   r5()
 ], OkDataTable.prototype, "hiddenKeys");
-__decorateClass6([
+__decorateClass7([
   r5()
 ], OkDataTable.prototype, "internalSelection");
-__decorateClass6([
+__decorateClass7([
   r5()
 ], OkDataTable.prototype, "menuOpen");
 define("ok-data-table", OkDataTable);
