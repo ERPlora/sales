@@ -346,7 +346,7 @@
   },
   "widgets": {
     "sales.today": {
-      "title": "Ventas hoy",
+      "title": "Today's sales",
       "icon": "trending-up-outline",
       "category": "Ventas",
       "size": "sm",
@@ -375,7 +375,7 @@
       }
     },
     "sales.tickets_today": {
-      "title": "Tickets hoy",
+      "title": "Today's tickets",
       "icon": "receipt-outline",
       "category": "Ventas",
       "size": "sm",
@@ -403,7 +403,7 @@
       }
     },
     "sales.last_7_days": {
-      "title": "Ventas últimos 7 días",
+      "title": "Sales, last 7 days",
       "icon": "bar-chart-outline",
       "category": "Ventas",
       "size": "lg",
@@ -433,7 +433,7 @@
       }
     },
     "sales.recent_activity": {
-      "title": "Actividad reciente",
+      "title": "Recent activity",
       "icon": "time-outline",
       "category": "Ventas",
       "size": "md",
