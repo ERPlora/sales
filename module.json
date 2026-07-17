@@ -359,6 +359,7 @@
       "default": true,
       "kind": "kpi",
       "query": "sales.today",
+      "refresh_on": ["sale.completed", "sale.voided"],
       "map": {
         "value": "total"
       },
@@ -384,6 +385,7 @@
       "default": true,
       "kind": "kpi",
       "query": "sales.today",
+      "refresh_on": ["sale.completed", "sale.voided"],
       "map": {
         "value": "tickets"
       },
@@ -408,6 +410,7 @@
       "default": false,
       "kind": "chart",
       "query": "sales.last_7_days",
+      "refresh_on": ["sale.completed", "sale.voided"],
       "map": {
         "label": "day",
         "value": "total"
@@ -434,6 +437,7 @@
       "default": false,
       "kind": "timeline",
       "query": "sales.list",
+      "refresh_on": ["sale.completed", "sale.voided"],
       "params": {
         "limit": 8,
         "sort": "created_at",
