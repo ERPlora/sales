@@ -244,3 +244,54 @@ export function saleToInvoice(
     qr_note: fiscal.qr_note || undefined,
   };
 }
+
+// ── Cuenta previa (pre-bill) — ADR-0141 ──────────────────────────────────────────────────────
+
+/** Línea de la comanda en curso (forma mínima de `CartLine`, sin acoplar los módulos). */
+export interface PrebillLine {
+  name: string;
+  price: number; // céntimos
+  qty: number;
+  is_gift?: boolean;
+}
+
+/**
+ * Comanda ABIERTA → **cuenta** para llevar a la mesa antes de cobrar.
+ *
+ * **No es un documento fiscal** y por eso se construye aparte de `saleToReceipt`:
+ * - **sin número de serie fiscal** (la numeración se consume al COBRAR, no antes),
+ * - **sin QR VeriFactu** (no hay registro de facturación todavía),
+ * - **sin datos de pago** (aún no se ha cobrado),
+ * - con un **aviso impreso** de que no es una factura.
+ *
+ * Emitir un papel que parezca factura sin serlo es un problema legal, no estético: la factura
+ * (simplificada o completa) nace en `complete_sale` y la sella el módulo fiscal (ADR-0140).
+ */
+export function orderToPrebill(
+  lines: PrebillLine[],
+  settings: SaleSettings = {},
+  opts: { tableLabel?: string; datetime?: string; locale?: string; notice?: string } = {},
+): ReceiptData {
+  const header = (settings.receipt_header || '').trim();
+  const cents = (l: PrebillLine) => (l.is_gift ? 0 : Math.round(l.price * l.qty));
+  const total = lines.reduce((s, l) => s + cents(l), 0);
+  return {
+    business: {
+      name: header.split('\n')[0] || 'Mi negocio',
+      address: header.split('\n').slice(1).join(' ') || undefined,
+    },
+    // number/qr/payment AUSENTES a propósito: esto no es una factura (ver doc de la función).
+    datetime: formatDateTime(opts.datetime ?? new Date().toISOString(), opts.locale ?? 'es'),
+    customer: opts.tableLabel || undefined,
+    lines: lines.map((l) => ({
+      name: l.is_gift ? `${l.name} (invitación)` : l.name,
+      qty: l.qty,
+      unit_price: toEuros(l.price),
+      total: toEuros(cents(l)),
+    })),
+    total: toEuros(total),
+    taxes: [],
+    currency: settings.currency || '€',
+    footer: opts.notice ?? 'Cuenta — no es una factura. El tiquet fiscal se entrega al cobrar.',
+  };
+}

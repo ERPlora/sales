@@ -2613,6 +2613,30 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es") {
     qr_note: fiscal.qr_note || void 0
   };
 }
+function orderToPrebill(lines, settings = {}, opts = {}) {
+  const header = (settings.receipt_header || "").trim();
+  const cents = (l3) => l3.is_gift ? 0 : Math.round(l3.price * l3.qty);
+  const total = lines.reduce((s5, l3) => s5 + cents(l3), 0);
+  return {
+    business: {
+      name: header.split("\n")[0] || "Mi negocio",
+      address: header.split("\n").slice(1).join(" ") || void 0
+    },
+    // number/qr/payment AUSENTES a propósito: esto no es una factura (ver doc de la función).
+    datetime: formatDateTime(opts.datetime ?? (/* @__PURE__ */ new Date()).toISOString(), opts.locale ?? "es"),
+    customer: opts.tableLabel || void 0,
+    lines: lines.map((l3) => ({
+      name: l3.is_gift ? `${l3.name} (invitaci\xF3n)` : l3.name,
+      qty: l3.qty,
+      unit_price: toEuros(l3.price),
+      total: toEuros(cents(l3))
+    })),
+    total: toEuros(total),
+    taxes: [],
+    currency: settings.currency || "\u20AC",
+    footer: opts.notice ?? "Cuenta \u2014 no es una factura. El tiquet fiscal se entrega al cobrar."
+  };
+}
 
 // locales/es.json
 var es_default = {
@@ -2751,7 +2775,10 @@ var es_default = {
     closeAction: "Cerrar",
     fullscreen: "Pantalla completa",
     giftBadge: "Invitaci\xF3n",
-    giftAction: "Invitar / quitar invitaci\xF3n"
+    giftAction: "Invitar / quitar invitaci\xF3n",
+    printPrebill: "Imprimir cuenta",
+    prebillTitle: "Cuenta",
+    prebillNotice: "Cuenta \u2014 no es una factura. El tiquet fiscal se entrega al cobrar."
   },
   widgets: {
     "sales.today": {
@@ -2908,7 +2935,10 @@ var en_default = {
     closeAction: "Close",
     fullscreen: "Fullscreen",
     giftBadge: "Gift",
-    giftAction: "Comp / un-comp line"
+    giftAction: "Comp / un-comp line",
+    printPrebill: "Print bill",
+    prebillTitle: "Bill",
+    prebillNotice: "Bill \u2014 this is not an invoice. The fiscal receipt is issued on payment."
   }
 };
 
@@ -3863,6 +3893,14 @@ async function findOpenOrder(client) {
     return "";
   }
 }
+async function mergeOrders(client, fromOrderId, toOrderId) {
+  if (!fromOrderId || !toOrderId || fromOrderId === toOrderId) return;
+  const lines = await loadOrderLines(client, fromOrderId);
+  for (const l3 of lines) {
+    await addOrderLine(client, toOrderId, l3);
+  }
+  await client.command("sales.order.void", { order_id: fromOrderId });
+}
 
 // ui/lib/pos-tax.ts
 function isRoot(r6) {
@@ -3942,6 +3980,7 @@ var ErpPosTouch = class extends i3 {
     this.cartOpen = false;
     this.fullscreen = false;
     this.searchOpen = false;
+    this.prebillOpen = false;
     this.tableLabel = "";
     this.customerName = "";
     /** Snapshot fiscal del cliente asignado (ADR-0132). Copia, no referencia: viaja con la venta. */
@@ -3976,19 +4015,19 @@ var ErpPosTouch = class extends i3 {
     this.onOrderMerge = async (e6) => {
       const d3 = e6.detail;
       if (!d3?.from_table_id || !d3?.to_table_id || d3.from_table_id === d3.to_table_id) return;
-      const [fromLines, toLines] = await Promise.all([
-        loadActiveCart(erplora2(), d3.from_table_id),
-        loadActiveCart(erplora2(), d3.to_table_id)
-      ]);
-      const merged = mergeCartLines(toLines, fromLines);
-      await persistActiveCart(erplora2(), merged, d3.to_table_id);
-      await persistActiveCart(erplora2(), [], d3.from_table_id);
-      if (this.tableId === d3.from_table_id) {
+      const from = d3.from_order_id ?? void 0;
+      let to = d3.to_order_id ?? void 0;
+      if (!from) return;
+      if (!to) {
+        to = from;
+      } else {
+        await mergeOrders(erplora2(), from, to);
+      }
+      if (this.tableId === d3.from_table_id || this.tableId === d3.to_table_id) {
         this.tableId = d3.to_table_id;
         this.tableLabel = d3.to_label ?? this.tableLabel;
-        this.cart = merged;
-      } else if (this.tableId === d3.to_table_id) {
-        this.cart = merged;
+        this.orderId = to;
+        this.cart = await loadOrderLines(erplora2(), to);
       }
     };
     // Transferir mesa (punto 4): el filler ya ejecutó tables.sessions.transfer; aquí se mueve la
@@ -3996,13 +4035,13 @@ var ErpPosTouch = class extends i3 {
     this.onOrderTransfer = async (e6) => {
       const d3 = e6.detail;
       if (!d3?.from_table_id || !d3?.to_table_id || d3.from_table_id === d3.to_table_id) return;
-      const lines = await loadActiveCart(erplora2(), d3.from_table_id);
-      await persistActiveCart(erplora2(), lines, d3.to_table_id);
-      await persistActiveCart(erplora2(), [], d3.from_table_id);
-      if (this.tableId === d3.from_table_id) {
-        this.tableId = d3.to_table_id;
-        this.tableLabel = d3.to_label ?? this.tableLabel;
-        this.cart = lines;
+      if (this.tableId !== d3.from_table_id) return;
+      this.tableId = d3.to_table_id;
+      this.tableLabel = d3.to_label ?? this.tableLabel;
+      const order = d3.to_order_id ?? this.orderId;
+      if (order && order !== this.orderId) {
+        this.orderId = order;
+        this.cart = await loadOrderLines(erplora2(), order);
       }
     };
     this.onCustomerContext = (e6) => {
@@ -4105,6 +4144,11 @@ var ErpPosTouch = class extends i3 {
     .total { display:flex; justify-content:space-between; align-items:baseline; margin:.1rem 0 .65rem; font-size:1rem; color:var(--mut); }
     .total b { font-size:1.7rem; color:var(--tx); }
     .charge { font-size:1.05rem; font-weight:700; }
+    /* Dos acciones solo-icono (ADR-0133): la cuenta ocupa lo justo y cobrar se lleva el resto,
+       porque es la acción primaria y el dedo la busca sin mirar. */
+    .foot-actions { display:flex; gap:.5rem; }
+    .foot-actions .prebill { flex:none; width:56px; }
+    .foot-actions .charge { flex:1; }
 
     /* desplegable tickets aparcados */
     .pdrop-back { position:absolute; inset:0; z-index:40; }
@@ -4373,6 +4417,14 @@ var ErpPosTouch = class extends i3 {
     if (qty > 0) await updateOrderLineQty(erplora2(), this.orderId, ex.line_id, qty, ex.price, ex.is_gift);
     else await removeOrderLine(erplora2(), this.orderId, ex.line_id);
   }
+  /** Imprime la CUENTA (no fiscal). El navegador imprime el nodo del recibo; en Hub Local el
+   *  bridge de impresoras ESC/POS es un paso aparte (no bloquea llevar la cuenta a la mesa). */
+  printPrebill() {
+    try {
+      globalThis.print?.();
+    } catch {
+    }
+  }
   openPay() {
     if (!this.cart.length) return;
     this.tendered = "";
@@ -4563,9 +4615,23 @@ var ErpPosTouch = class extends i3 {
       <ion-footer class="ion-no-border">
         <div class="cart-foot">
           <div class="total"><span>${t3("ui.colTotal")}</span><b>${this.money(this.total)}</b></div>
-          <ion-button class="charge" expand="block" ?disabled=${!this.cart.length} @click=${() => this.openPay()}>
-            ${t3("ui.charge")} ${this.money(this.total)}
-          </ion-button>
+          <!-- Acciones SOLO-ICONO (ADR-0133): imprimir la CUENTA para llevarla a la mesa (no es un
+               documento fiscal) y COBRAR (que sí emite el tiquet fiscal). El importe ya se ve
+               grande arriba, así que el texto sobra; la etiqueta va en aria-label/title. -->
+          <div class="foot-actions">
+            <ion-button class="prebill" fill="outline" ?disabled=${!this.cart.length}
+                        title=${t3("ui.printPrebill")} aria-label=${t3("ui.printPrebill")}
+                        @click=${() => {
+      this.prebillOpen = true;
+    }}>
+              <ion-icon slot="icon-only" name="print-outline"></ion-icon>
+            </ion-button>
+            <ion-button class="charge" ?disabled=${!this.cart.length}
+                        title=${t3("ui.charge")} aria-label=${t3("ui.charge")}
+                        @click=${() => this.openPay()}>
+              <ion-icon slot="icon-only" name="cash-outline"></ion-icon>
+            </ion-button>
+          </div>
         </div>
       </ion-footer>`;
   }
@@ -4664,6 +4730,34 @@ var ErpPosTouch = class extends i3 {
       ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => {
       this.docSaleId = void 0;
     }, t: t3 })}
+      <!-- CUENTA previa (ADR-0141): lo que se lleva a la mesa antes de cobrar. NO es fiscal — sin
+           número de serie ni QR VeriFactu; el tiquet fiscal lo emite el cobro. -->
+      <ion-modal class="doc-modal" .isOpen=${this.prebillOpen}
+                 @ionModalDidDismiss=${() => {
+      this.prebillOpen = false;
+    }}>
+        <ion-header><ion-toolbar>
+          <ion-title>${t3("ui.prebillTitle")}</ion-title>
+          <ion-buttons slot="end">
+            <ion-button title=${t3("ui.print")} aria-label=${t3("ui.print")} @click=${() => this.printPrebill()}>
+              <ion-icon slot="icon-only" name="print-outline"></ion-icon>
+            </ion-button>
+            <ion-button title=${t3("ui.close")} aria-label=${t3("ui.close")}
+                        @click=${() => {
+      this.prebillOpen = false;
+    }}>
+              <ion-icon slot="icon-only" name="close-outline"></ion-icon>
+            </ion-button>
+          </ion-buttons>
+        </ion-toolbar></ion-header>
+        <ion-content class="doc-body ion-padding">
+          <ok-receipt id="prebill-doc" .data=${orderToPrebill(
+      this.cart.map((l3) => ({ name: l3.name, price: l3.price, qty: l3.qty, is_gift: l3.is_gift })),
+      this.settings,
+      { tableLabel: this.tableLabel || void 0, notice: t3("ui.prebillNotice") }
+    )}></ok-receipt>
+        </ion-content>
+      </ion-modal>
     </div>`;
   }
 };
@@ -4730,6 +4824,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "orderId", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "prebillOpen", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "tableLabel", 2);

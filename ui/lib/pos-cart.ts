@@ -289,3 +289,21 @@ export async function findOpenOrder(client: ErploraClientLike): Promise<string> 
     return '';
   }
 }
+
+/**
+ * FUSIONAR comandas (ADR-0141): lleva las líneas del pedido `fromOrderId` al `toOrderId` y **anula**
+ * el origen. Es la operación de "juntar dos mesas en una cuenta".
+ *
+ * Con el modelo de pedido esto es mover FILAS, no reescribir un blob: las cantidades y precios se
+ * conservan tal cual, y el pedido origen queda `voided` (no se borra: rastro de lo que pasó).
+ * TRANSFERIR no pasa por aquí — ahí no se mueve nada, solo cambia a qué mesa apunta el mismo pedido
+ * (lo hace la junction en `tables`), por eso los productos se conservan solos.
+ */
+export async function mergeOrders(client: ErploraClientLike, fromOrderId: string, toOrderId: string): Promise<void> {
+  if (!fromOrderId || !toOrderId || fromOrderId === toOrderId) return;
+  const lines = await loadOrderLines(client, fromOrderId);
+  for (const l of lines) {
+    await addOrderLine(client, toOrderId, l);
+  }
+  await client.command('sales.order.void', { order_id: fromOrderId });
+}

@@ -4,12 +4,13 @@ import { define } from '@erplora/outfitkit/define';
 // La frontera EUROS ↔ CÉNTIMOS vive en el SDK (ADR-0123), no copiada en cada WC (como el desktop).
 import { eurosToCents } from '@erplora/module-sdk';
 import { renderDocumentModal } from '../../lib/document-modal.js';
+import { orderToPrebill } from '../../lib/document-mappers.js';
 import '@erplora/outfitkit/ok-qty-stepper';
 import '@erplora/outfitkit/ok-spotlight-search';
 import {
   loadActiveCart, persistActiveCart, mergeCartLines, listParkedTickets, parkCart, retrieveParkedTicket,
   // ADR-0141: el carrito lo respalda un PEDIDO real (filas), no un blob con debounce.
-  openOrderWithLines, addOrderLine, updateOrderLineQty, removeOrderLine, loadOrderLines, findOpenOrder,
+  openOrderWithLines, addOrderLine, updateOrderLineQty, removeOrderLine, loadOrderLines, findOpenOrder, mergeOrders,
   type CartLine, type ErploraClientLike, type ParkedTicket,
 } from '../../lib/pos-cart.js';
 import { buildCategoryRatesMap, resolveLineTax } from '../../lib/pos-tax.js';
@@ -155,6 +156,11 @@ export class ErpPosTouch extends LitElement {
     .total { display:flex; justify-content:space-between; align-items:baseline; margin:.1rem 0 .65rem; font-size:1rem; color:var(--mut); }
     .total b { font-size:1.7rem; color:var(--tx); }
     .charge { font-size:1.05rem; font-weight:700; }
+    /* Dos acciones solo-icono (ADR-0133): la cuenta ocupa lo justo y cobrar se lleva el resto,
+       porque es la acción primaria y el dedo la busca sin mirar. */
+    .foot-actions { display:flex; gap:.5rem; }
+    .foot-actions .prebill { flex:none; width:56px; }
+    .foot-actions .charge { flex:1; }
 
     /* desplegable tickets aparcados */
     .pdrop-back { position:absolute; inset:0; z-index:40; }
@@ -226,6 +232,8 @@ export class ErpPosTouch extends LitElement {
   /** ADR-0141: pedido MUTABLE que respalda el carrito. Cada artículo se escribe como FILA real al
    *  instante (antes: blob con debounce de 400 ms → un corte de luz perdía el último artículo). */
   @state() private orderId?: string;
+  /** Modal de la CUENTA previa (pre-bill) que se lleva a la mesa antes de cobrar. No es fiscal. */
+  @state() private prebillOpen = false;
   @state() private tableLabel = '';
   @state() private customerId?: string;
   @state() private customerName = '';
@@ -263,28 +271,48 @@ export class ErpPosTouch extends LitElement {
   // Fusionar mesas (punto 3): el filler ya ejecutó tables.sessions.merge; aquí se combinan los
   // tiquets (sumando líneas idénticas) en la mesa destino y se limpia el origen.
   private readonly onOrderMerge = async (e: Event) => {
-    const d = (e as CustomEvent<{ from_table_id: string; to_table_id: string; to_label?: string }>).detail;
+    const d = (e as CustomEvent<{
+      from_table_id: string; to_table_id: string; to_label?: string;
+      from_order_id?: string | null; to_order_id?: string | null;
+    }>).detail;
     if (!d?.from_table_id || !d?.to_table_id || d.from_table_id === d.to_table_id) return;
-    const [fromLines, toLines] = await Promise.all([
-      loadActiveCart(erplora(), d.from_table_id),
-      loadActiveCart(erplora(), d.to_table_id),
-    ]);
-    const merged = mergeCartLines(toLines, fromLines);
-    await persistActiveCart(erplora(), merged, d.to_table_id);
-    await persistActiveCart(erplora(), [], d.from_table_id);
-    // Si veníamos viendo el origen o el destino, la comanda combinada queda en el DESTINO.
-    if (this.tableId === d.from_table_id) { this.tableId = d.to_table_id; this.tableLabel = d.to_label ?? this.tableLabel; this.cart = merged; }
-    else if (this.tableId === d.to_table_id) { this.cart = merged; }
+    // ADR-0141: FUSIONAR = las líneas del pedido ORIGEN se suman al del DESTINO y el origen se
+    // anula → una sola cuenta en una sola mesa. Son filas que se mueven, así que las cantidades y
+    // precios se conservan. (Antes esto reescribía dos blobs; con el pedido ya no hay blob.)
+    const from = d.from_order_id ?? undefined;
+    let to = d.to_order_id ?? undefined;
+    if (!from) return; // el origen no tenía comanda: nada que sumar
+    if (!to) {
+      // La mesa destino aún no tenía pedido: la comanda del origen pasa a ser SU comanda.
+      to = from;
+    } else {
+      await mergeOrders(erplora(), from, to);
+    }
+    if (this.tableId === d.from_table_id || this.tableId === d.to_table_id) {
+      this.tableId = d.to_table_id;
+      this.tableLabel = d.to_label ?? this.tableLabel;
+      this.orderId = to;
+      this.cart = await loadOrderLines(erplora(), to);
+    }
   };
   // Transferir mesa (punto 4): el filler ya ejecutó tables.sessions.transfer; aquí se mueve la
   // comanda de la mesa origen a la destino (libre → sin comanda previa) y se limpia el origen.
   private readonly onOrderTransfer = async (e: Event) => {
-    const d = (e as CustomEvent<{ from_table_id: string; to_table_id: string; to_label?: string }>).detail;
+    const d = (e as CustomEvent<{
+      from_table_id: string; to_table_id: string; to_label?: string; to_order_id?: string | null;
+    }>).detail;
     if (!d?.from_table_id || !d?.to_table_id || d.from_table_id === d.to_table_id) return;
-    const lines = await loadActiveCart(erplora(), d.from_table_id);
-    await persistActiveCart(erplora(), lines, d.to_table_id);
-    await persistActiveCart(erplora(), [], d.from_table_id);
-    if (this.tableId === d.from_table_id) { this.tableId = d.to_table_id; this.tableLabel = d.to_label ?? this.tableLabel; this.cart = lines; }
+    // ADR-0141: TRANSFERIR no mueve la comanda — es el MISMO pedido, que ahora cuelga de otra mesa
+    // (la sesión nueva arrastró el `order_id`). Por eso los productos se conservan sin copiar nada:
+    // aquí solo se actualiza el contexto de la pantalla. Antes había que reescribir dos blobs.
+    if (this.tableId !== d.from_table_id) return;
+    this.tableId = d.to_table_id;
+    this.tableLabel = d.to_label ?? this.tableLabel;
+    const order = d.to_order_id ?? this.orderId;
+    if (order && order !== this.orderId) {
+      this.orderId = order;
+      this.cart = await loadOrderLines(erplora(), order);
+    }
   };
   private readonly onCustomerContext = (e: Event) => {
     const d = (e as CustomEvent<{
@@ -531,6 +559,12 @@ export class ErpPosTouch extends LitElement {
     else await removeOrderLine(erplora(), this.orderId, ex.line_id);
   }
 
+  /** Imprime la CUENTA (no fiscal). El navegador imprime el nodo del recibo; en Hub Local el
+   *  bridge de impresoras ESC/POS es un paso aparte (no bloquea llevar la cuenta a la mesa). */
+  private printPrebill() {
+    try { globalThis.print?.(); } catch { /* sin impresora/entorno: la cuenta sigue visible en pantalla */ }
+  }
+
   private openPay() {
     if (!this.cart.length) return;
     this.tendered = '';
@@ -728,9 +762,21 @@ export class ErpPosTouch extends LitElement {
       <ion-footer class="ion-no-border">
         <div class="cart-foot">
           <div class="total"><span>${t('ui.colTotal')}</span><b>${this.money(this.total)}</b></div>
-          <ion-button class="charge" expand="block" ?disabled=${!this.cart.length} @click=${() => this.openPay()}>
-            ${t('ui.charge')} ${this.money(this.total)}
-          </ion-button>
+          <!-- Acciones SOLO-ICONO (ADR-0133): imprimir la CUENTA para llevarla a la mesa (no es un
+               documento fiscal) y COBRAR (que sí emite el tiquet fiscal). El importe ya se ve
+               grande arriba, así que el texto sobra; la etiqueta va en aria-label/title. -->
+          <div class="foot-actions">
+            <ion-button class="prebill" fill="outline" ?disabled=${!this.cart.length}
+                        title=${t('ui.printPrebill')} aria-label=${t('ui.printPrebill')}
+                        @click=${() => { this.prebillOpen = true; }}>
+              <ion-icon slot="icon-only" name="print-outline"></ion-icon>
+            </ion-button>
+            <ion-button class="charge" ?disabled=${!this.cart.length}
+                        title=${t('ui.charge')} aria-label=${t('ui.charge')}
+                        @click=${() => this.openPay()}>
+              <ion-icon slot="icon-only" name="cash-outline"></ion-icon>
+            </ion-button>
+          </div>
         </div>
       </ion-footer>`;
   }
@@ -809,6 +855,30 @@ export class ErpPosTouch extends LitElement {
       </ok-spotlight-search>
 
       ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => { this.docSaleId = undefined; }, t })}
+      <!-- CUENTA previa (ADR-0141): lo que se lleva a la mesa antes de cobrar. NO es fiscal — sin
+           número de serie ni QR VeriFactu; el tiquet fiscal lo emite el cobro. -->
+      <ion-modal class="doc-modal" .isOpen=${this.prebillOpen}
+                 @ionModalDidDismiss=${() => { this.prebillOpen = false; }}>
+        <ion-header><ion-toolbar>
+          <ion-title>${t('ui.prebillTitle')}</ion-title>
+          <ion-buttons slot="end">
+            <ion-button title=${t('ui.print')} aria-label=${t('ui.print')} @click=${() => this.printPrebill()}>
+              <ion-icon slot="icon-only" name="print-outline"></ion-icon>
+            </ion-button>
+            <ion-button title=${t('ui.close')} aria-label=${t('ui.close')}
+                        @click=${() => { this.prebillOpen = false; }}>
+              <ion-icon slot="icon-only" name="close-outline"></ion-icon>
+            </ion-button>
+          </ion-buttons>
+        </ion-toolbar></ion-header>
+        <ion-content class="doc-body ion-padding">
+          <ok-receipt id="prebill-doc" .data=${orderToPrebill(
+            this.cart.map((l) => ({ name: l.name, price: l.price, qty: l.qty, is_gift: l.is_gift })),
+            this.settings,
+            { tableLabel: this.tableLabel || undefined, notice: t('ui.prebillNotice') },
+          )}></ok-receipt>
+        </ion-content>
+      </ion-modal>
     </div>`;
   }
 }

@@ -167,3 +167,50 @@ describe('carrito respaldado por pedido (ADR-0141)', () => {
     expect(await findOpenOrder(client)).toBe('ord-abierto');
   });
 });
+
+// ── ADR-0141: fusionar/transferir mesas con el modelo de PEDIDO ──────────────────────────────
+// Transferir = la mesa cambia, el pedido NO se toca (los productos se conservan solos).
+// Fusionar   = las líneas del pedido origen se suman al destino y el origen se anula.
+import { mergeOrders } from './pos-cart';
+
+describe('fusionar comandas (mergeOrders)', () => {
+  function mergeClient(lineasOrigen: Record<string, unknown>[]) {
+    const calls: { name: string; params?: Record<string, unknown> }[] = [];
+    const client = {
+      query: async (name: string, params?: Record<string, unknown>) => {
+        calls.push({ name, params });
+        return { rows: name === 'sales.order.lines' ? lineasOrigen : [] };
+      },
+      command: async (name: string, params?: Record<string, unknown>) => {
+        calls.push({ name, params });
+        return { ok: true, new_ids: ['nueva-linea'] };
+      },
+    } as unknown as ErploraClientLike;
+    return { client, calls };
+  }
+
+  it('lleva las líneas del pedido origen al destino y ANULA el origen', async () => {
+    const { client, calls } = mergeClient([
+      { id: 'l1', product_id: 'p1', product_name: 'Cerveza', quantity: 2, unit_price: 250, line_total: 500 },
+      { id: 'l2', product_id: 'p2', product_name: 'Tapa', quantity: 1, unit_price: 350, line_total: 350 },
+    ]);
+    await mergeOrders(client, 'ord-origen', 'ord-destino');
+
+    const añadidas = calls.filter((c) => c.name === 'sales.order.add_line');
+    expect(añadidas, 'las dos líneas viajan al pedido destino').toHaveLength(2);
+    expect(añadidas.every((c) => c.params!.order_id === 'ord-destino')).toBe(true);
+    expect(añadidas.map((c) => c.params!.product_name).sort()).toEqual(['Cerveza', 'Tapa']);
+    // cantidades y precios se conservan (no se pierde nada de la cuenta)
+    expect(añadidas.find((c) => c.params!.product_name === 'Cerveza')!.params).toMatchObject({ quantity: 2, unit_price: 250 });
+
+    const anulado = calls.find((c) => c.name === 'sales.order.void');
+    expect(anulado?.params, 'el pedido origen queda anulado, no duplicado').toMatchObject({ order_id: 'ord-origen' });
+  });
+
+  it('no hace nada si origen y destino son el mismo pedido', async () => {
+    const { client, calls } = mergeClient([{ id: 'l1', product_id: 'p1', product_name: 'X', quantity: 1, unit_price: 100 }]);
+    await mergeOrders(client, 'ord-1', 'ord-1');
+    expect(calls.filter((c) => c.name === 'sales.order.add_line')).toHaveLength(0);
+    expect(calls.filter((c) => c.name === 'sales.order.void')).toHaveLength(0);
+  });
+});

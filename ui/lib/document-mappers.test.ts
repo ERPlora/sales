@@ -154,3 +154,46 @@ describe('labels i18n para ok-receipt / ok-invoice (ADR-0055)', () => {
     });
   });
 });
+
+// ── ADR-0141: la CUENTA previa (pre-bill) que se lleva a la mesa antes de cobrar ──────────────
+// Es un documento OPERATIVO, no fiscal: el tiquet fiscal nace al COBRAR. Por eso NO puede llevar
+// número de serie fiscal ni QR VeriFactu — un papel que parezca factura sin serlo es un problema
+// legal, no un detalle estético.
+import { orderToPrebill } from './document-mappers';
+
+describe('cuenta previa (pre-bill) — NO es un documento fiscal', () => {
+  const lineas = [
+    { id: 'p1', name: 'Cerveza', price: 250, qty: 2 },
+    { id: 'p2', name: 'Tapa', price: 350, qty: 1 },
+  ];
+
+  it('no lleva número fiscal ni QR VeriFactu', () => {
+    const doc = orderToPrebill(lineas, { receipt_header: 'Bar Manolo' });
+    expect(doc.number, 'la cuenta NO tiene número de serie fiscal').toBeUndefined();
+    expect(doc.qr, 'la cuenta NO lleva QR VeriFactu').toBeUndefined();
+    expect(doc.payment, 'aún no se ha cobrado: sin datos de pago').toBeUndefined();
+  });
+
+  it('avisa por escrito de que no es una factura', () => {
+    const doc = orderToPrebill(lineas, {});
+    expect((doc.footer || '').toLowerCase()).toContain('no es una factura');
+  });
+
+  it('suma el total del pedido en euros (el TPV trabaja en céntimos)', () => {
+    const doc = orderToPrebill(lineas, {});
+    // 250*2 + 350 = 850 céntimos = 8,50 €
+    expect(doc.total).toBe(8.5);
+    expect(doc.lines).toHaveLength(2);
+    expect(doc.lines[0]).toMatchObject({ name: 'Cerveza', qty: 2, unit_price: 2.5, total: 5 });
+  });
+
+  it('las invitaciones no se cobran: van a 0', () => {
+    const doc = orderToPrebill([{ id: 'p1', name: 'Cerveza', price: 250, qty: 1, is_gift: true }], {});
+    expect(doc.total).toBe(0);
+  });
+
+  it('identifica la mesa cuando la comanda es de sala', () => {
+    const doc = orderToPrebill(lineas, {}, { tableLabel: 'Mesa 4' });
+    expect(doc.customer).toBe('Mesa 4');
+  });
+});
