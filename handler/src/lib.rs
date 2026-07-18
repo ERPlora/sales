@@ -661,7 +661,13 @@ pub fn open_order_pure(input: Value) -> Output {
         p.insert("quantity".into(), json!(qty)); // cantidad fraccionable (REAL)
         p.insert("unit_price".into(), json!(unit_price)); // céntimos (INTEGER)
         p.insert("is_gift".into(), json!(is_gift as i64));
+        p.insert("gift_reason".into(), json!(if is_gift { str_or(item, "gift_reason", "") } else { String::new() }));
         p.insert("line_total".into(), json!(line_total)); // céntimos, provisional (display)
+        // El COBRO necesita estos dos y no se re-derivan al reanudar el pedido: la categoría fiscal
+        // es la AUTORIDAD del IVA en servidor (ADR-0085) y el coste alimenta el arqueo de
+        // invitaciones (gift_total). Sin ellos, un pedido reanudado facturaría con el IVA erróneo.
+        p.insert("tax_category_key".into(), json!(str_or(item, "tax_category_key", "")));
+        p.insert("cost".into(), json!(as_cents(item.get("cost").unwrap_or(&Value::Null), 0)));
         ops.push(Operation::sql("sales._insert_order_line", p));
     }
 

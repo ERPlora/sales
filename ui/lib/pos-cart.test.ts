@@ -90,3 +90,80 @@ describe('comanda atada a la mesa (table_id)', () => {
     expect(calls[0]).toMatchObject({ kind: 'command', name: 'sales.cart.clear', params: { table_id: 'mesa-7' } });
   });
 });
+
+// ── ADR-0141: el carrito respaldado por un PEDIDO real (sales_order) ─────────────────────────
+// El camino viejo guardaba un blob JSON con debounce de 400 ms → un corte de luz perdía el último
+// artículo. Ahora cada interacción es una escritura transaccional inmediata de una FILA real.
+
+import {
+  openOrderWithLines, addOrderLine, updateOrderLineQty, removeOrderLine, loadOrderLines, findOpenOrder,
+} from './pos-cart';
+
+/** Cliente que devuelve `new_ids` en los commands (el runtime es la autoridad de ids) y filas en queries. */
+function orderClient(newIds: string[] = [], queryRows: Record<string, unknown>[] = []) {
+  const calls: { kind: 'query' | 'command'; name: string; params?: Record<string, unknown> }[] = [];
+  const client = {
+    query: async (name: string, params?: Record<string, unknown>) => {
+      calls.push({ kind: 'query', name, params });
+      return { rows: queryRows };
+    },
+    command: async (name: string, params?: Record<string, unknown>) => {
+      calls.push({ kind: 'command', name, params });
+      return { ok: true, new_ids: newIds };
+    },
+  } as unknown as ErploraClientLike;
+  return { client, calls };
+}
+
+describe('carrito respaldado por pedido (ADR-0141)', () => {
+  it('abre un pedido y devuelve el id que generó el runtime (new_ids[0])', async () => {
+    const { client, calls } = orderClient(['ord-1']);
+    const id = await openOrderWithLines(client, [line({ qty: 2 })]);
+    expect(id).toBe('ord-1');
+    const cmd = calls.find((c) => c.name === 'sales.order.open');
+    expect(cmd).toBeTruthy();
+    expect((cmd!.params!.items as unknown[])).toHaveLength(1);
+  });
+
+  it('añade una línea INMEDIATAMENTE y devuelve su line_id (sin debounce, sin blob)', async () => {
+    const { client, calls } = orderClient(['line-9']);
+    const lineId = await addOrderLine(client, 'ord-1', line({ qty: 3 }));
+    expect(lineId).toBe('line-9');
+    expect(calls.find((c) => c.name === 'sales.order.add_line')!.params).toMatchObject({
+      order_id: 'ord-1', quantity: 3, unit_price: 250, line_total: 750,
+    });
+  });
+
+  it('actualiza la cantidad por line_id recalculando el total provisional', async () => {
+    const { client, calls } = orderClient();
+    await updateOrderLineQty(client, 'ord-1', 'line-9', 4, 250);
+    expect(calls.find((c) => c.name === 'sales.order.update_line')!.params).toMatchObject({
+      order_id: 'ord-1', line_id: 'line-9', quantity: 4, line_total: 1000,
+    });
+  });
+
+  it('elimina una línea por line_id', async () => {
+    const { client, calls } = orderClient();
+    await removeOrderLine(client, 'ord-1', 'line-9');
+    expect(calls.find((c) => c.name === 'sales.order.remove_line')!.params).toMatchObject({
+      order_id: 'ord-1', line_id: 'line-9',
+    });
+  });
+
+  it('carga las líneas del pedido conservando el line_id (para poder mutarlas)', async () => {
+    const { client } = orderClient([], [
+      { id: 'line-1', product_id: 'p1', product_name: 'Cerveza', quantity: 2, unit_price: 250, line_total: 500 },
+    ]);
+    const lines = await loadOrderLines(client, 'ord-1');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ line_id: 'line-1', id: 'p1', name: 'Cerveza', qty: 2, price: 250 });
+  });
+
+  it('encuentra el pedido ABIERTO para reanudarlo tras recargar', async () => {
+    const { client } = orderClient([], [
+      { id: 'ord-viejo', status: 'completed' },
+      { id: 'ord-abierto', status: 'open' },
+    ]);
+    expect(await findOpenOrder(client)).toBe('ord-abierto');
+  });
+});

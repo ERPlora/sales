@@ -10,6 +10,10 @@ export interface CartLine {
   sku?: string;
   price: number;
   qty: number;
+  /** ADR-0141: id de la FILA `sales_order_item` que respalda esta línea. Presente cuando el carrito
+   *  está respaldado por un pedido real; es lo que permite mutarla (update/remove) sin reescribir
+   *  todo el carrito. Ausente en el camino viejo (blob) y en tickets aparcados. */
+  line_id?: string;
   /** CATEGORÍA fiscal del producto (`inventory.products.list`). La AUTORIDAD del % es el servidor:
    *  `complete_sale` la envía y el handler resuelve el `rate_pct` por país+categoría desde el
    *  catálogo de confianza (`taxes.rules.list` pre-cargado), aplicando componentes. ADR-0085. */
@@ -176,4 +180,108 @@ export async function retrieveParkedTicket(client: ErploraClientLike, ticket: Pa
   const lines = parseCartLines(ticket.cart_data);
   await client.command('sales.retrieve_ticket', { ticket_id: ticket.id });
   return lines;
+}
+
+// ── ADR-0141: carrito respaldado por un PEDIDO real (sales_order/sales_order_item) ────────────
+// El camino viejo (`sales_active_cart`) guardaba un BLOB JSON con debounce de 400 ms: un corte de
+// corriente perdía el último artículo. Aquí cada interacción es una escritura TRANSACCIONAL
+// INMEDIATA de una fila real. El runtime es la autoridad de ids y los devuelve en `new_ids`.
+
+/** Primer id del lote que devolvió el runtime (`new_ids[0]` = entidad principal, §5.3). */
+function firstNewId(res: unknown): string {
+  const ids = (res as { new_ids?: unknown[] })?.new_ids;
+  return Array.isArray(ids) && typeof ids[0] === 'string' ? ids[0] : '';
+}
+
+/** Importe provisional de una línea (céntimos). Las invitaciones no se cobran. NO es fiscal: la
+ *  cuota HALF_UP + el desglose por tipo los congela el servidor al COBRAR. */
+function provisionalLineTotal(unitPrice: number, qty: number, isGift?: boolean): number {
+  return isGift ? 0 : Math.round(unitPrice * qty);
+}
+
+function toItemPayload(l: CartLine): Record<string, unknown> {
+  return {
+    product_id: l.id || null,
+    product_name: l.name,
+    product_sku: l.sku ?? '',
+    price: l.price,
+    quantity: l.qty,
+    is_gift: !!l.is_gift,
+    gift_reason: l.gift_reason ?? '',
+    tax_category_key: l.tax_category_key ?? '',
+    cost: l.cost ?? 0,
+  };
+}
+
+/** Abre un pedido MUTABLE con sus primeras líneas. Devuelve el `order_id` que generó el runtime. */
+export async function openOrderWithLines(client: ErploraClientLike, lines: CartLine[]): Promise<string> {
+  const res = await client.command('sales.order.open', { items: lines.map(toItemPayload) });
+  return firstNewId(res);
+}
+
+/** Añade una línea al pedido AHORA (fila real, sin debounce). Devuelve su `line_id`. */
+export async function addOrderLine(client: ErploraClientLike, orderId: string, l: CartLine): Promise<string> {
+  const res = await client.command('sales.order.add_line', {
+    order_id: orderId,
+    product_id: l.id || null,
+    product_name: l.name,
+    product_sku: l.sku ?? '',
+    quantity: l.qty,
+    unit_price: l.price,
+    is_gift: !!l.is_gift,
+    gift_reason: l.gift_reason ?? '',
+    tax_category_key: l.tax_category_key ?? '',
+    cost: l.cost ?? 0,
+    line_total: provisionalLineTotal(l.price, l.qty, l.is_gift),
+  });
+  return firstNewId(res);
+}
+
+/** Cambia la cantidad de una línea por su `line_id`; el servidor recompone el total del pedido. */
+export async function updateOrderLineQty(
+  client: ErploraClientLike, orderId: string, lineId: string, qty: number, unitPrice: number, isGift?: boolean,
+): Promise<void> {
+  await client.command('sales.order.update_line', {
+    order_id: orderId, line_id: lineId, quantity: qty,
+    line_total: provisionalLineTotal(unitPrice, qty, isGift),
+  });
+}
+
+/** Quita una línea del pedido (soft-delete); el servidor recompone el total. */
+export async function removeOrderLine(client: ErploraClientLike, orderId: string, lineId: string): Promise<void> {
+  await client.command('sales.order.remove_line', { order_id: orderId, line_id: lineId });
+}
+
+/** Líneas persistidas de un pedido → líneas de carrito, CONSERVANDO `line_id` para poder mutarlas. */
+export async function loadOrderLines(client: ErploraClientLike, orderId: string): Promise<CartLine[]> {
+  try {
+    const r = rows<Record<string, unknown>>(await client.query('sales.order.lines', { order_id: orderId }));
+    return r.map((x) => ({
+      line_id: String(x.id ?? ''),
+      id: String(x.product_id ?? ''),
+      name: String(x.product_name ?? ''),
+      sku: x.product_sku ? String(x.product_sku) : undefined,
+      price: Number(x.unit_price) || 0,
+      qty: Number(x.quantity) || 1,
+      is_gift: x.is_gift === 1 || x.is_gift === true ? true : undefined,
+      gift_reason: x.gift_reason ? String(x.gift_reason) : undefined,
+      // Autoridad del IVA en servidor (ADR-0085) y coste para el arqueo de invitaciones: se
+      // recuperan para que un pedido REANUDADO cobre con el mismo IVA que si no se hubiera recargado.
+      tax_category_key: x.tax_category_key ? String(x.tax_category_key) : undefined,
+      cost: Number(x.cost) || undefined,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** Pedido ABIERTO del hub para reanudarlo tras recargar (el TPV de mostrador no tiene mesa que lo
+ *  identifique). Devuelve '' si no hay ninguno abierto. */
+export async function findOpenOrder(client: ErploraClientLike): Promise<string> {
+  try {
+    const r = rows<{ id?: string; status?: string }>(await client.query('sales.orders.list'));
+    return r.find((o) => o.status === 'open')?.id ?? '';
+  } catch {
+    return '';
+  }
 }

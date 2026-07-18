@@ -29,7 +29,13 @@ CREATE TABLE IF NOT EXISTS sales_order_item (
     quantity     REAL NOT NULL DEFAULT 1,          -- cantidad fraccionable
     unit_price   INTEGER NOT NULL DEFAULT 0,       -- céntimos (bruto/display)
     is_gift      INTEGER NOT NULL DEFAULT 0,
+    gift_reason  TEXT NOT NULL DEFAULT '',
     line_total   INTEGER NOT NULL DEFAULT 0,       -- céntimos, provisional (display)
+    -- Datos que el COBRO necesita y que no se pueden re-derivar tras recargar: la categoría fiscal
+    -- es la AUTORIDAD del IVA en el servidor (ADR-0085) y el coste alimenta el arqueo de
+    -- invitaciones. Sin esto, un pedido reanudado facturaría con el IVA equivocado.
+    tax_category_key TEXT NOT NULL DEFAULT '',
+    cost         INTEGER NOT NULL DEFAULT 0,       -- céntimos (coste unitario, para gift_total)
     is_deleted INTEGER NOT NULL DEFAULT 0, deleted_at TEXT,
     created_by TEXT, updated_by TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
