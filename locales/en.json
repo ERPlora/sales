@@ -138,6 +138,7 @@
     "printPrebill": "Print bill",
     "prebillTitle": "Bill",
     "prebillNotice": "Bill — this is not an invoice. The fiscal receipt is issued on payment.",
-    "chargeAndPrint": "Charge and print"
+    "chargeAndPrint": "Charge and print",
+    "exactAmount": "Exact amount"
   }
 }

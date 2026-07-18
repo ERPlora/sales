@@ -31,3 +31,32 @@ describe('icono de la forma de pago', () => {
     expect(payMethodIcon('other', 'Bizum')).toBe('phone-portrait-outline');
   });
 });
+
+import { needsTendered } from './pay-icons';
+
+// Con TARJETA se cobra el importe EXACTO: no hay entregado ni cambio, así que el teclado numérico
+// sobra. La regla no se hardcodea a "efectivo": la dice el propio dato `requires_change`, para que
+// una forma de pago creada a mano (Bizum, vale) se comporte como su dueño la definió.
+describe('¿esta forma de pago necesita teclear el importe entregado?', () => {
+  it('efectivo sí: hay que teclear lo que entrega el cliente y devolver cambio', () => {
+    expect(needsTendered({ id: '1', name: 'Efectivo', type: 'cash', requires_change: 1 })).toBe(true);
+  });
+
+  it('tarjeta NO: se cobra el importe exacto', () => {
+    expect(needsTendered({ id: '2', name: 'Tarjeta', type: 'card', requires_change: 0 })).toBe(false);
+    expect(needsTendered({ id: '3', name: 'Bizum', type: 'other', requires_change: 0 })).toBe(false);
+  });
+
+  it('manda el DATO, no el tipo: un efectivo marcado sin cambio no pide teclado', () => {
+    expect(needsTendered({ id: '4', name: 'Efectivo', type: 'cash', requires_change: 0 })).toBe(false);
+  });
+
+  it('sin el dato, cae al tipo (compatibilidad con filas antiguas)', () => {
+    expect(needsTendered({ id: '5', name: 'Efectivo', type: 'cash' })).toBe(true);
+    expect(needsTendered({ id: '6', name: 'Tarjeta', type: 'card' })).toBe(false);
+  });
+
+  it('sin forma de pago seleccionada asume efectivo (el TPV de barra por defecto)', () => {
+    expect(needsTendered(undefined)).toBe(true);
+  });
+});

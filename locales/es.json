@@ -138,7 +138,8 @@
     "printPrebill": "Imprimir cuenta",
     "prebillTitle": "Cuenta",
     "prebillNotice": "Cuenta — no es una factura. El tiquet fiscal se entrega al cobrar.",
-    "chargeAndPrint": "Cobrar e imprimir"
+    "chargeAndPrint": "Cobrar e imprimir",
+    "exactAmount": "Importe exacto"
   },
   "widgets": {
     "sales.today": {

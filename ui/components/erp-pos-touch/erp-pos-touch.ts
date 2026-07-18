@@ -5,7 +5,7 @@ import { define } from '@erplora/outfitkit/define';
 import { eurosToCents } from '@erplora/module-sdk';
 import { renderDocumentModal } from '../../lib/document-modal.js';
 import { orderToPrebill } from '../../lib/document-mappers.js';
-import { payMethodIcon } from '../../lib/pay-icons.js';
+import { payMethodIcon, needsTendered } from '../../lib/pay-icons.js';
 import '@erplora/outfitkit/ok-qty-stepper';
 import '@erplora/outfitkit/ok-spotlight-search';
 import {
@@ -29,7 +29,11 @@ const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 // Quitar línea = cantidad a 0. Al cobrar: `sales.complete_sale` (channel='pos') → documento.
 
 interface Product { id: string; name: string; sku?: string; price: number; cost?: number; is_active?: number; product_type?: string; image?: string; tax_category_key?: string; }
-interface PayMethod { id: string; name: string; type?: string; }
+interface PayMethod {
+  id: string; name: string; type?: string;
+  /** 1 = pide importe entregado y calcula cambio (efectivo); 0 = importe exacto (tarjeta, Bizum…). */
+  requires_change?: number;
+}
 interface PosSettings { default_document_format?: string; currency?: string; enable_parked_tickets?: number; default_tax_included?: number; }
 interface Category { id: string; name: string; icon?: string; color?: string; image?: string; product_count?: number; }
 interface ProdCat { product_id: string; category_id: string; }
@@ -161,6 +165,7 @@ export class ErpPosTouch extends LitElement {
        porque es la acción primaria y el dedo la busca sin mirar. */
     /* Cobro: los segments son la elección (método, formato) y abajo las dos salidas. */
     .pay-methods, .pay-actions { margin:.2rem 0 .6rem; }
+    .amt.exact .v { font-size:1.5rem; font-weight:800; }
     .pay-actions { display:flex; gap:.5rem; }
     .pay-actions .charge { flex:1; }
     .pay-actions .charge-print { flex:none; width:64px; }
@@ -841,6 +846,9 @@ export class ErpPosTouch extends LitElement {
                              @ionChange=${(e: CustomEvent) => {
                                const id = (e.detail as { value: string }).value;
                                this.payMethod = this.methods.find((m) => m.id === id) ?? this.payMethod;
+                               // Cambiar de método limpia lo tecleado: un importe entregado en
+                               // efectivo no debe arrastrarse a un cobro con tarjeta.
+                               if (!needsTendered(this.payMethod)) this.tendered = '';
                              }}>
                   ${this.methods.map((m) => html`
                     <ion-segment-button value=${m.id} title=${m.name} aria-label=${m.name}>
@@ -851,11 +859,17 @@ export class ErpPosTouch extends LitElement {
                       <ion-icon name="cash-outline"></ion-icon>
                     </ion-segment-button>` : nothing}
                 </ion-segment>
-                <div class="amt"><span>${t('ui.tendered')}</span><span class="v">${this.money(this.tenderedNum)}</span></div>
-                <div class="amt"><span>${t('ui.change')}</span><span class="v change">${this.money(this.change)}</span></div>
-                <div class="numpad">
-                  ${['1','2','3','4','5','6','7','8','9','.','0','C'].map((k) => html`<button @click=${() => this.tap(k)}>${k}</button>`)}
-                </div>
+                <!-- Entregado/cambio y teclado SOLO cuando la forma de pago los necesita: con
+                     TARJETA se cobra el importe exacto, así que el teclado sobra y solo estorba en
+                     barra. Lo decide el dato requires_change, no un "si es efectivo" hardcodeado. -->
+                ${needsTendered(this.payMethod)
+                  ? html`
+                    <div class="amt"><span>${t('ui.tendered')}</span><span class="v">${this.money(this.tenderedNum)}</span></div>
+                    <div class="amt"><span>${t('ui.change')}</span><span class="v change">${this.money(this.change)}</span></div>
+                    <div class="numpad">
+                      ${['1','2','3','4','5','6','7','8','9','.','0','C'].map((k) => html`<button @click=${() => this.tap(k)}>${k}</button>`)}
+                    </div>`
+                  : html`<div class="amt exact"><span>${t('ui.exactAmount')}</span><span class="v">${this.money(this.total)}</span></div>`}
                 <ion-segment value=${this.docFormat} @ionChange=${(e: CustomEvent) => { this.docFormat = ((e.detail as { value: string }).value === 'invoice' ? 'invoice' : 'ticket'); }}>
                   <ion-segment-button value="ticket" title=${t('ui.formatTicket')} aria-label=${t('ui.formatTicket')}>
                     <ion-icon name="receipt-outline"></ion-icon>

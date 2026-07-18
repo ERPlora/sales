@@ -44,3 +44,29 @@ export function payMethodIcon(type?: string, name?: string): string {
   }
   return PAY_ICON_FALLBACK;
 }
+
+/** Forma de pago tal y como la devuelve `sales.payment_methods`. */
+export interface PayMethodLike {
+  id: string;
+  name: string;
+  type?: string;
+  /** 1 = hay que teclear el importe entregado y calcular cambio (efectivo). 0 = importe exacto. */
+  requires_change?: number | boolean;
+}
+
+/**
+ * ¿Hay que pedir el importe ENTREGADO (y calcular cambio) para esta forma de pago?
+ *
+ * Con **tarjeta** se cobra el importe exacto: no hay entregado ni cambio, así que el teclado
+ * numérico sobra y solo estorba en barra. La regla NO se hardcodea a "efectivo": la manda el dato
+ * `requires_change` de la propia forma de pago, para que una creada a mano (Bizum, vale restaurante)
+ * se comporte como la definió su dueño. Si el dato falta (filas antiguas), se cae al `type`.
+ * Sin forma de pago seleccionada se asume efectivo, que es el caso por defecto del TPV de barra.
+ */
+export function needsTendered(method?: PayMethodLike): boolean {
+  if (!method) return true;
+  if (method.requires_change !== undefined && method.requires_change !== null) {
+    return method.requires_change === 1 || method.requires_change === true;
+  }
+  return (method.type || '').trim().toLowerCase() === 'cash';
+}

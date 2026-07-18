@@ -2779,7 +2779,8 @@ var es_default = {
     printPrebill: "Imprimir cuenta",
     prebillTitle: "Cuenta",
     prebillNotice: "Cuenta \u2014 no es una factura. El tiquet fiscal se entrega al cobrar.",
-    chargeAndPrint: "Cobrar e imprimir"
+    chargeAndPrint: "Cobrar e imprimir",
+    exactAmount: "Importe exacto"
   },
   widgets: {
     "sales.today": {
@@ -2940,7 +2941,8 @@ var en_default = {
     printPrebill: "Print bill",
     prebillTitle: "Bill",
     prebillNotice: "Bill \u2014 this is not an invoice. The fiscal receipt is issued on payment.",
-    chargeAndPrint: "Charge and print"
+    chargeAndPrint: "Charge and print",
+    exactAmount: "Exact amount"
   }
 };
 
@@ -3193,6 +3195,13 @@ function payMethodIcon(type, name) {
     for (const [re, icon] of BY_NAME) if (re.test(n6)) return icon;
   }
   return PAY_ICON_FALLBACK;
+}
+function needsTendered(method) {
+  if (!method) return true;
+  if (method.requires_change !== void 0 && method.requires_change !== null) {
+    return method.requires_change === 1 || method.requires_change === true;
+  }
+  return (method.type || "").trim().toLowerCase() === "cash";
 }
 
 // ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/shared/icons.js
@@ -4182,6 +4191,7 @@ var ErpPosTouch = class extends i3 {
        porque es la acción primaria y el dedo la busca sin mirar. */
     /* Cobro: los segments son la elección (método, formato) y abajo las dos salidas. */
     .pay-methods, .pay-actions { margin:.2rem 0 .6rem; }
+    .amt.exact .v { font-size:1.5rem; font-weight:800; }
     .pay-actions { display:flex; gap:.5rem; }
     .pay-actions .charge { flex:1; }
     .pay-actions .charge-print { flex:none; width:64px; }
@@ -4736,6 +4746,7 @@ var ErpPosTouch = class extends i3 {
                              @ionChange=${(e6) => {
       const id = e6.detail.value;
       this.payMethod = this.methods.find((m4) => m4.id === id) ?? this.payMethod;
+      if (!needsTendered(this.payMethod)) this.tendered = "";
     }}>
                   ${this.methods.map((m4) => b2`
                     <ion-segment-button value=${m4.id} title=${m4.name} aria-label=${m4.name}>
@@ -4746,11 +4757,15 @@ var ErpPosTouch = class extends i3 {
                       <ion-icon name="cash-outline"></ion-icon>
                     </ion-segment-button>` : A}
                 </ion-segment>
-                <div class="amt"><span>${t3("ui.tendered")}</span><span class="v">${this.money(this.tenderedNum)}</span></div>
-                <div class="amt"><span>${t3("ui.change")}</span><span class="v change">${this.money(this.change)}</span></div>
-                <div class="numpad">
-                  ${["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "C"].map((k2) => b2`<button @click=${() => this.tap(k2)}>${k2}</button>`)}
-                </div>
+                <!-- Entregado/cambio y teclado SOLO cuando la forma de pago los necesita: con
+                     TARJETA se cobra el importe exacto, así que el teclado sobra y solo estorba en
+                     barra. Lo decide el dato requires_change, no un "si es efectivo" hardcodeado. -->
+                ${needsTendered(this.payMethod) ? b2`
+                    <div class="amt"><span>${t3("ui.tendered")}</span><span class="v">${this.money(this.tenderedNum)}</span></div>
+                    <div class="amt"><span>${t3("ui.change")}</span><span class="v change">${this.money(this.change)}</span></div>
+                    <div class="numpad">
+                      ${["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "C"].map((k2) => b2`<button @click=${() => this.tap(k2)}>${k2}</button>`)}
+                    </div>` : b2`<div class="amt exact"><span>${t3("ui.exactAmount")}</span><span class="v">${this.money(this.total)}</span></div>`}
                 <ion-segment value=${this.docFormat} @ionChange=${(e6) => {
       this.docFormat = e6.detail.value === "invoice" ? "invoice" : "ticket";
     }}>
