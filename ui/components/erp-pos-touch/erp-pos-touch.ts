@@ -5,7 +5,7 @@ import { define } from '@erplora/outfitkit/define';
 import { eurosToCents } from '@erplora/module-sdk';
 import { renderDocumentModal } from '../../lib/document-modal.js';
 import { orderToPrebill } from '../../lib/document-mappers.js';
-import { payMethodIcon, needsTendered, enabledPayMethods } from '../../lib/pay-icons.js';
+import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod } from '../../lib/pay-icons.js';
 import '@erplora/outfitkit/ok-qty-stepper';
 import '@erplora/outfitkit/ok-spotlight-search';
 import {
@@ -388,7 +388,7 @@ export class ErpPosTouch extends LitElement {
       this.methods = rows<PayMethod>(methods);
       this.settings = rows<PosSettings>(settingsRows)[0] || {};
       this.docFormat = this.settings.default_document_format === 'invoice' ? 'invoice' : 'ticket';
-      this.payMethod = this.payMethods[0];
+      this.payMethod = defaultPayMethod(this.payMethods);
       this.parked = parked;
       this.categories = rows<Category>(cats).filter((c) => c.name);
       for (const pc of rows<ProdCat>(prodCats)) {
@@ -617,7 +617,7 @@ export class ErpPosTouch extends LitElement {
   private openPay() {
     if (!this.cart.length) return;
     this.tendered = '';
-    this.payMethod = this.payMethods[0];
+    this.payMethod = defaultPayMethod(this.payMethods);
     this.docFormat = this.settings.default_document_format === 'invoice' ? 'invoice' : 'ticket';
     this.paying = true;
   }
@@ -823,6 +823,19 @@ export class ErpPosTouch extends LitElement {
                delante, y el modal de cobro queda limpio. Solo-icono porque son 3-4 opciones fijas
                que el camarero reconoce de un vistazo; el nombre va en title/aria. Solo aparecen
                las ACTIVAS (is_active en la query + los allow_* de Ajustes). -->
+          <!-- Los iconos de forma de pago se eligen en RUNTIME (payMethodIcon), y el empaquetador
+               del módulo solo hornea LITERALES: sin esta lista el icono viaja vacío y el botón sale
+               en blanco (le pasó a Bizum). Oculta, solo para que el build los recoja; hay un test
+               (pay-icons-baked) que vigila que estén todos. -->
+          <span hidden aria-hidden="true">
+            <ion-icon name="cash-outline"></ion-icon>
+            <ion-icon name="card-outline"></ion-icon>
+            <ion-icon name="phone-portrait-outline"></ion-icon>
+            <ion-icon name="swap-horizontal-outline"></ion-icon>
+            <ion-icon name="ticket-outline"></ion-icon>
+            <ion-icon name="gift-outline"></ion-icon>
+            <ion-icon name="ellipsis-horizontal-circle-outline"></ion-icon>
+          </span>
           ${this.payMethods.length > 1 ? html`
             <ion-segment class="pay-methods" value=${this.payMethod?.id ?? ''}
                          @ionChange=${(e: CustomEvent) => {

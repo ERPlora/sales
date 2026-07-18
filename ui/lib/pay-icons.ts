@@ -116,3 +116,22 @@ export function enabledPayMethods<T extends PayMethodLike>(methods: T[], policy:
   const out = methods.filter(allowed);
   return out.length ? out : methods;
 }
+
+/** TODOS los iconos que puede devolver `payMethodIcon`. El empaquetador del módulo solo hornea
+ *  literales, así que estos nombres deben aparecer TAMBIÉN como `<ion-icon name="…">` estáticos en
+ *  el WC (hay un test que lo vigila). Si no, el icono sale VACÍO en producción. */
+export const PAY_ICON_NAMES: string[] = [
+  ...new Set([...Object.values(BY_TYPE), ...BY_NAME.map(([, i]) => i), PAY_ICON_FALLBACK]),
+];
+
+/**
+ * Forma de pago por DEFECTO al abrir el TPV: efectivo si está disponible; si no, la primera según
+ * el orden que haya definido el dueño (`sort_order`). Antes se cogía la primera a secas y con
+ * varios métodos del mismo `sort_order` mandaba el alfabético — el TPV arrancaba en "Bizum" y no
+ * salía el teclado del importe entregado, que es justo lo que se espera en barra.
+ */
+export function defaultPayMethod<T extends PayMethodLike>(methods: T[]): T | undefined {
+  return methods.find((m) => (m.type || '').trim().toLowerCase() === 'cash')
+    ?? methods.find((m) => /efectiv|cash|met[\u00e1a]lico/i.test(m.name || ''))
+    ?? methods[0];
+}

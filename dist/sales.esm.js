@@ -3221,6 +3221,12 @@ function enabledPayMethods(methods, policy = {}) {
   const out = methods.filter(allowed);
   return out.length ? out : methods;
 }
+var PAY_ICON_NAMES = [
+  .../* @__PURE__ */ new Set([...Object.values(BY_TYPE), ...BY_NAME.map(([, i7]) => i7), PAY_ICON_FALLBACK])
+];
+function defaultPayMethod(methods) {
+  return methods.find((m4) => (m4.type || "").trim().toLowerCase() === "cash") ?? methods.find((m4) => /efectiv|cash|met[\u00e1a]lico/i.test(m4.name || "")) ?? methods[0];
+}
 
 // ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/shared/icons.js
 var rawAdd = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M256 112v288m144-144H112"/></svg>';
@@ -4307,7 +4313,7 @@ var ErpPosTouch = class extends i3 {
       this.methods = rows2(methods);
       this.settings = rows2(settingsRows)[0] || {};
       this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
-      this.payMethod = this.payMethods[0];
+      this.payMethod = defaultPayMethod(this.payMethods);
       this.parked = parked;
       this.categories = rows2(cats).filter((c5) => c5.name);
       for (const pc of rows2(prodCats)) {
@@ -4527,7 +4533,7 @@ var ErpPosTouch = class extends i3 {
   openPay() {
     if (!this.cart.length) return;
     this.tendered = "";
-    this.payMethod = this.payMethods[0];
+    this.payMethod = defaultPayMethod(this.payMethods);
     this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
     this.paying = true;
   }
@@ -4721,6 +4727,19 @@ var ErpPosTouch = class extends i3 {
                delante, y el modal de cobro queda limpio. Solo-icono porque son 3-4 opciones fijas
                que el camarero reconoce de un vistazo; el nombre va en title/aria. Solo aparecen
                las ACTIVAS (is_active en la query + los allow_* de Ajustes). -->
+          <!-- Los iconos de forma de pago se eligen en RUNTIME (payMethodIcon), y el empaquetador
+               del módulo solo hornea LITERALES: sin esta lista el icono viaja vacío y el botón sale
+               en blanco (le pasó a Bizum). Oculta, solo para que el build los recoja; hay un test
+               (pay-icons-baked) que vigila que estén todos. -->
+          <span hidden aria-hidden="true">
+            <ion-icon name="cash-outline"></ion-icon>
+            <ion-icon name="card-outline"></ion-icon>
+            <ion-icon name="phone-portrait-outline"></ion-icon>
+            <ion-icon name="swap-horizontal-outline"></ion-icon>
+            <ion-icon name="ticket-outline"></ion-icon>
+            <ion-icon name="gift-outline"></ion-icon>
+            <ion-icon name="ellipsis-horizontal-circle-outline"></ion-icon>
+          </span>
           ${this.payMethods.length > 1 ? b2`
             <ion-segment class="pay-methods" value=${this.payMethod?.id ?? ""}
                          @ionChange=${(e6) => {

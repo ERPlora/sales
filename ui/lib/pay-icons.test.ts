@@ -119,3 +119,24 @@ describe('formas de pago habilitadas', () => {
     expect(r).toHaveLength(1);
   });
 });
+
+import { defaultPayMethod } from './pay-icons';
+
+describe('forma de pago por defecto', () => {
+  it('arranca en EFECTIVO aunque no sea la primera de la lista', () => {
+    const m = defaultPayMethod([
+      { id: '1', name: 'Bizum', type: 'other' },
+      { id: '2', name: 'Efectivo', type: 'cash' },
+      { id: '3', name: 'Tarjeta', type: 'card' },
+    ]);
+    expect(m?.name).toBe('Efectivo');
+  });
+
+  it('lo reconoce por el NOMBRE si el tipo no lo dice', () => {
+    expect(defaultPayMethod([{ id: '1', name: 'Tarjeta', type: 'card' }, { id: '2', name: 'Efectivo', type: 'other' }])?.name).toBe('Efectivo');
+  });
+
+  it('sin efectivo respeta el orden del dueño', () => {
+    expect(defaultPayMethod([{ id: '1', name: 'Tarjeta', type: 'card' }, { id: '2', name: 'Bizum', type: 'other' }])?.name).toBe('Tarjeta');
+  });
+});
