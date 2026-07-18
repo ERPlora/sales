@@ -123,6 +123,84 @@ describe('carrito del TPV', () => {
   });
 });
 
+// ── La mesa se pintaba DOS VECES (visto en el TPV real, 2026-07-18) ───────────────────────────
+// Con una mesa asignada salían dos chips «Mesa 2» solapados en la cabecera del carrito: uno lo
+// pintaba `sales` (`<span class="chip">`, resto de cuando el POS creía saber de mesas) y otro
+// `tables` (`ion-chip` con icono y la X de soltar) desde el slot `sales.pos.assign`.
+//
+// El dueño de la asociación mesa↔comanda es `tables` (ADR-0141/0144), y su chip es el único que
+// lleva la X: el de `sales` sobra. El del CLIENTE se queda, y no es una asimetría caprichosa —
+// `erp-customers-pos-search` monta un `ok-spotlight-search` que pone el nombre solo en
+// `aria-label`/`title`, así que sin este chip el cliente asignado no se vería en ninguna parte.
+describe('contexto en la cabecera del carrito: cada dueño pinta lo suyo, una sola vez', () => {
+  it('la MESA no la pinta el POS: es de `tables`, que ya trae su chip con la X', async () => {
+    const el = await montarCarrito();
+
+    el.dispatchEvent(new CustomEvent('erp:order-context', {
+      detail: { table_id: 'm2', label: 'Mesa 2' }, bubbles: true, composed: true,
+    }));
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    const textos = [...el.shadowRoot!.querySelectorAll('.ctx-chips .chip')].map((c) => c.textContent?.trim());
+    expect(textos, 'el POS no debe repetir la etiqueta de la mesa (la pinta `tables`)').not.toContain('Mesa 2');
+  });
+
+  it('el CLIENTE sí lo pinta el POS: `ok-spotlight-search` solo lo deja en el aria-label', async () => {
+    const el = await montarCarrito();
+
+    el.dispatchEvent(new CustomEvent('erp:customer-context', {
+      detail: { customer_id: 'c1', customer_name: 'Ana Ruiz', customer_tax_id: '', customer_address: '' },
+      bubbles: true, composed: true,
+    }));
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    const cust = el.shadowRoot!.querySelector('.ctx-chips .chip.cust');
+    expect(cust?.textContent?.trim(), 'el nombre del cliente asignado tiene que verse').toBe('Ana Ruiz');
+  });
+
+  it('sin nada asignado no se pinta el contenedor de chips', async () => {
+    const el = await montarCarrito();
+    expect(el.shadowRoot!.querySelector('.ctx-chips')).toBeFalsy();
+  });
+
+  // La mesa deja de PINTARSE, pero `sales` sigue necesitando su etiqueta: viaja OPACA en la comanda
+  // que se manda a cocina (ADR-0144). Borrar el chip no puede llevarse por delante el estado.
+  it('aunque no se pinte, el POS conserva la etiqueta de mesa para la comanda de cocina', async () => {
+    const el = await montarCarrito();
+    el.dispatchEvent(new CustomEvent('erp:order-context', {
+      detail: { table_id: 'm2', label: 'Mesa 2' }, bubbles: true, composed: true,
+    }));
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    expect((el as unknown as { tableLabel: string }).tableLabel).toBe('Mesa 2');
+  });
+});
+
+// ── Tamaño de los iconos de la cabecera ───────────────────────────────────────────────────────
+// En la cabecera conviven iconos de tres dueños distintos (POS, tables, customers) y cada uno traía
+// su tamaño: el del ion-chip de mesa a 20px y los ion-button de al lado a 17px. Y el de mesa es de
+// OTRO set (Material Symbols `ms-table-restaurant`), con viewBox y grosor distintos de Ionicons:
+// con el mismo número se ve más pequeño.
+//
+// El contrato es que el tamaño lo fija UN token que el POS declara en su toolbar y que los módulos
+// heredan (las custom properties cruzan el shadow boundary). Así no hay tamaños sueltos por
+// componente, y quien monte mañana un tercer botón en el slot hereda el mismo.
+describe('iconos de la cabecera del carrito: un único tamaño heredado', () => {
+  it('el POS declara el token de tamaño en la toolbar del carrito', async () => {
+    const el = await montarCarrito();
+    const declaradas = (el.constructor as unknown as { styles: { cssText: string } | Array<{ cssText: string }> }).styles;
+    const css = [declaradas].flat().map((s) => s.cssText).join('\n');
+    expect(css, 'la toolbar del carrito debe declarar --pos-hdr-icon-size').toMatch(/--pos-hdr-icon-size\s*:/);
+  });
+
+  it('los iconos propios del POS toman su tamaño de ese token, no de un número suelto', async () => {
+    const el = await montarCarrito();
+    const declaradas = (el.constructor as unknown as { styles: { cssText: string } | Array<{ cssText: string }> }).styles;
+    const css = [declaradas].flat().map((s) => s.cssText).join('\n');
+    expect(css, 'los ion-icon de la cabecera consumen var(--pos-hdr-icon-size)')
+      .toMatch(/ion-buttons\s+ion-icon\s*\{[^}]*var\(--pos-hdr-icon-size/);
+  });
+});
+
 // El modal del documento (tiquet/factura tras cobrar) se vio feo en el TPV real (2026-07-16):
 // título «Documento» que no aportaba, IMPRIMIR flotando arriba-derecha y el tiquet perdido en un
 // modal enorme. El contrato nuevo: SIN título (solo la X de cerrar), el documento en el
@@ -283,5 +361,69 @@ describe('snapshot fiscal del cliente (ADR-0132)', () => {
     expect(venta.payload.customer_id).toBeNull();
     expect(venta.payload.customer_tax_id).toBe('');
     expect(venta.payload.customer_address).toBe('');
+  });
+});
+
+// ── «Enviado a cocina» salía en ROJO (visto en el TPV real, 2026-07-18) ───────────────────────
+// El aviso de éxito de la comanda se metía por `this.error`, el mismo hueco rojo donde se pintan
+// los fallos, y encima sobre la rejilla de productos: decía que algo había ido BIEN con la pinta
+// de algo que había ido MAL. Le pasaba igual a «Aparcado como …».
+//
+// Causa raíz (más honda que el síntoma): el Hub YA tiene toast global y el SDK YA tiene
+// `notify()`, pero nadie los conectaba — `notifier` no se pasaba nunca al crear el cliente, así
+// que `notify()` era un no-op silencioso y cada módulo acababa colándose por el canal de error.
+// Contrato: los avisos van por `erplora().notify()`; `this.error` queda SOLO para fallos.
+describe('avisos de éxito: van por notify(), no por el hueco rojo de error', () => {
+  let avisos: { type: string; message: string }[];
+  let comandos: string[];
+
+  beforeEach(() => {
+    avisos = [];
+    comandos = [];
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.queryAll = async (name: string) =>
+      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1 }] : []);
+    sdk.command = async (name: string) => {
+      comandos.push(name);
+      return name === 'sales.order.open' ? { ok: true, new_ids: ['o1', 'l1'] } : { ok: true };
+    };
+    sdk.notify = (n: { type: string; message: string }) => { avisos.push(n); };
+  });
+
+  it('mandar la comanda a cocina avisa en verde, no en rojo', async () => {
+    const el = await montarCarrito();
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    // Añadir un artículo pasa por la COLA SERIAL del carrito (ADR-0144), así que no termina dentro
+    // de `updateComplete`. Encolar una tarea vacía espera de forma determinista a las anteriores.
+    await (el as unknown as { queue: <T>(t: () => Promise<T>) => Promise<T> }).queue(async () => undefined);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    await (el as unknown as { fireToKitchen(): Promise<void> }).fireToKitchen();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    expect(comandos, 'debe dispararse la comanda').toContain('sales.order.fire');
+    expect(avisos, 'el éxito se anuncia por el canal de AVISO del shell')
+      .toContainEqual({ type: 'success', message: 'ui.firedToKitchen' });
+    expect((el as unknown as { error: string }).error, 'el hueco rojo se queda vacío: no hubo fallo').toBe('');
+  });
+
+  it('si cocina falla, eso SÍ es un error y va en rojo', async () => {
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.command = async (name: string) => {
+      if (name === 'sales.order.fire') throw new Error('sin kitchen');
+      return name === 'sales.order.open' ? { ok: true, new_ids: ['o1', 'l1'] } : { ok: true };
+    };
+
+    const el = await montarCarrito();
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    // Añadir un artículo pasa por la COLA SERIAL del carrito (ADR-0144), así que no termina dentro
+    // de `updateComplete`. Encolar una tarea vacía espera de forma determinista a las anteriores.
+    await (el as unknown as { queue: <T>(t: () => Promise<T>) => Promise<T> }).queue(async () => undefined);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    await (el as unknown as { fireToKitchen(): Promise<void> }).fireToKitchen();
+
+    expect((el as unknown as { error: string }).error).toBe('ui.fireFailed');
+    expect(avisos, 'un fallo no se anuncia como aviso de éxito').toHaveLength(0);
   });
 });

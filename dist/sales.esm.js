@@ -4431,6 +4431,14 @@ var ErpPosTouch = class extends i3 {
     .cart ion-header ion-toolbar { --background:var(--panel); --color:var(--tx); --border-color:var(--ion-border-color); }
     .cart ion-title { font-size:1rem; }
     /* Contexto asignado (mesa/cliente) como CHIPS en el título — sustituye al texto "Venta". */
+    /* Tamaño ÚNICO de los iconos de la cabecera del carrito. Ahí conviven iconos de tres dueños
+       (TPV, mesas, clientes) y cada uno traía el suyo: el chip de mesa a 20px y los botones de al
+       lado a 17px. Además el de mesa es de otro set (Material Symbols), con viewBox y grosor
+       distintos de Ionicons: con el mismo número se ve MÁS PEQUEÑO, por eso se compensa aquí. Las
+       custom properties cruzan el Shadow DOM, así que los módulos del slot heredan este valor. */
+    ion-toolbar { --pos-hdr-icon-size: 1.75rem; }
+    ion-buttons ion-icon { font-size: var(--pos-hdr-icon-size); }
+    .cart-actions-slot { --pos-hdr-icon-size: 1.75rem; }
     .ctx-chips { display:flex; gap:.35rem; flex-wrap:wrap; }
     .ctx-chips .chip { font-size:.8rem; font-weight:700; color:#fff; border-radius:999px; padding:.12rem .55rem; background:var(--accent); white-space:nowrap; }
     .ctx-chips .chip.cust { background:#5c7cfa; }
@@ -4617,7 +4625,11 @@ var ErpPosTouch = class extends i3 {
     const host = this.renderRoot.querySelector(".cart-actions-slot");
     if (!host || !this.assignFillers.length) return;
     for (const f3 of this.assignFillers) {
-      if (f3.el.parentElement !== host) host.appendChild(f3.el);
+      if (f3.el.parentElement === host) continue;
+      host.appendChild(f3.el);
+      if (this.orderId) {
+        f3.el.dispatchEvent(new CustomEvent("erp:order-restored", { detail: { order_id: this.orderId }, bubbles: false }));
+      }
     }
   }
   /** Tras cobrar: avisa a cada filler para que limpie su selección (mesa/cliente). */
@@ -4729,7 +4741,7 @@ var ErpPosTouch = class extends i3 {
     if (!payload) return;
     try {
       await erplora2().command("sales.order.fire", payload);
-      this.error = t5("ui.firedToKitchen");
+      erplora2().notify?.({ type: "success", message: t5("ui.firedToKitchen") });
     } catch {
       this.error = t5("ui.fireFailed");
     }
@@ -4938,12 +4950,13 @@ var ErpPosTouch = class extends i3 {
               <ion-icon slot="icon-only" name="chevron-forward-outline"></ion-icon>
             </ion-button>
           </ion-buttons>
-          <!-- Contexto asignado como CHIPS (mesa/cliente); sin texto "Venta" (no aportaba). Se ven
-               SIEMPRE en el header, por larga que sea la comanda. -->
+          <!-- Contexto asignado. La MESA no se pinta aquí: la pinta su dueño en el slot, con su X
+               para soltarla — pintarla en los dos sitios sacaba la misma mesa DOS VECES, solapada.
+               El CLIENTE sí, y no es capricho: su buscador monta un ok-spotlight-search que deja el
+               nombre solo en aria-label, así que sin este chip el cliente asignado no se vería. -->
           <ion-title>
-            ${this.tableLabel || this.customerName ? b2`<span class="ctx-chips">
-                  ${this.tableLabel ? b2`<span class="chip">${this.tableLabel}</span>` : A}
-                  ${this.customerName ? b2`<span class="chip cust">${this.customerName}</span>` : A}
+            ${this.customerName ? b2`<span class="ctx-chips">
+                  <span class="chip cust">${this.customerName}</span>
                 </span>` : A}
           </ion-title>
           <ion-buttons slot="end">
