@@ -70,3 +70,27 @@ export function needsTendered(method?: PayMethodLike): boolean {
   }
   return (method.type || '').trim().toLowerCase() === 'cash';
 }
+
+/**
+ * Atajos de importe entregado en EFECTIVO: el importe exacto y los REDONDEOS inmediatamente
+ * superiores (siguiente euro, siguiente 5, siguiente 10). Es el patrón de los TPV —Toast ofrece
+ * 21/25/30 para una cuenta de 20,43—: el cajero pulsa en vez de teclear y el cambio sale solo.
+ * No son "billetes": la gente paga 13 € para una cuenta de 12,50 tanto como con un billete de 20.
+ * Máximo 4 opciones, porque en barra más botones se leen más lento, no más rápido.
+ * Devuelve CÉNTIMOS, con el exacto primero.
+ */
+export function quickCashAmounts(totalCents: number): number[] {
+  if (!totalCents || totalCents <= 0) return [];
+  const out: number[] = [totalCents];
+  // El "siguiente euro" solo tiene sentido si la cuenta lleva céntimos (12,50 → 13). Con una
+  // cuenta redonda (20,00) ofrecerlo daría 21 €, que nadie entrega: ahí saltan los redondeos de 5/10.
+  const steps = totalCents % 100 === 0 ? [500, 1000] : [100, 500, 1000];
+  for (const step of steps) {
+    const prev = out[out.length - 1];
+    // Múltiplo del paso ESTRICTAMENTE mayor que lo anterior (si no, una cuenta redonda repetiría).
+    const v = (Math.floor(prev / step) + 1) * step;
+    out.push(v);
+    if (out.length >= 4) break;
+  }
+  return out;
+}

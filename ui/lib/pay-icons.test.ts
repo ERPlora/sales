@@ -60,3 +60,35 @@ describe('¿esta forma de pago necesita teclear el importe entregado?', () => {
     expect(needsTendered(undefined)).toBe(true);
   });
 });
+
+import { quickCashAmounts } from './pay-icons';
+
+// Atajos de efectivo (patrón de Toast/Square): el cajero teclea menos y el cambio sale solo.
+// Son los billetes con los que la gente paga de verdad, no una progresión matemática.
+describe('importes rápidos en efectivo', () => {
+  it('ofrece el exacto y luego los redondeos de arriba (patrón Toast: 20,43 → 21, 25, 30)', () => {
+    // 12,50 € → exacto · siguiente euro (13) · siguiente 5 (15) · siguiente 10 (20)
+    expect(quickCashAmounts(1250)).toEqual([1250, 1300, 1500, 2000]);
+  });
+
+  it('nunca ofrece importes por debajo del total (no cubrirían la cuenta)', () => {
+    const q = quickCashAmounts(4200); // 42 €
+    expect(q.every((c) => c >= 4200)).toBe(true);
+    expect(q[0]).toBe(4200);
+  });
+
+  it('con cuenta REDONDA no repite ni ofrece "21 €": salta a 25 y 30', () => {
+    // 20,00 € justos → nadie entrega 21 €; lo útil es 25 o 30 (o el exacto).
+    expect(quickCashAmounts(2000)).toEqual([2000, 2500, 3000]);
+  });
+
+  it('no se pasa de 4 opciones: en barra más botones es más lento, no más rápido', () => {
+    for (const total of [100, 1250, 4200, 9900, 15000]) {
+      expect(quickCashAmounts(total).length).toBeLessThanOrEqual(4);
+    }
+  });
+
+  it('con total 0 no ofrece nada', () => {
+    expect(quickCashAmounts(0)).toEqual([]);
+  });
+});

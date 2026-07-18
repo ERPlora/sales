@@ -2634,7 +2634,9 @@ function orderToPrebill(lines, settings = {}, opts = {}) {
     total: toEuros(total),
     taxes: [],
     currency: settings.currency || "\u20AC",
-    footer: opts.notice ?? "Cuenta \u2014 no es una factura. El tiquet fiscal se entrega al cobrar."
+    // Inglés canónico (ADR-0055): la UI pasa el texto ya traducido en `opts.notice`; esto es solo
+    // el respaldo para llamadas sin i18n (tests, integraciones).
+    footer: opts.notice ?? "Bill \u2014 this is not an invoice. The fiscal receipt is issued on payment."
   };
 }
 
@@ -2779,8 +2781,8 @@ var es_default = {
     printPrebill: "Imprimir cuenta",
     prebillTitle: "Cuenta",
     prebillNotice: "Cuenta \u2014 no es una factura. El tiquet fiscal se entrega al cobrar.",
-    chargeAndPrint: "Cobrar e imprimir",
-    exactAmount: "Importe exacto"
+    paymentMethod: "Forma de pago",
+    printReceipt: "Imprimir tiquet"
   },
   widgets: {
     "sales.today": {
@@ -2941,8 +2943,8 @@ var en_default = {
     printPrebill: "Print bill",
     prebillTitle: "Bill",
     prebillNotice: "Bill \u2014 this is not an invoice. The fiscal receipt is issued on payment.",
-    chargeAndPrint: "Charge and print",
-    exactAmount: "Exact amount"
+    paymentMethod: "Payment method",
+    printReceipt: "Print receipt"
   }
 };
 
@@ -3202,6 +3204,18 @@ function needsTendered(method) {
     return method.requires_change === 1 || method.requires_change === true;
   }
   return (method.type || "").trim().toLowerCase() === "cash";
+}
+function quickCashAmounts(totalCents) {
+  if (!totalCents || totalCents <= 0) return [];
+  const out = [totalCents];
+  const steps = totalCents % 100 === 0 ? [500, 1e3] : [100, 500, 1e3];
+  for (const step of steps) {
+    const prev = out[out.length - 1];
+    const v3 = (Math.floor(prev / step) + 1) * step;
+    out.push(v3);
+    if (out.length >= 4) break;
+  }
+  return out;
 }
 
 // ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/shared/icons.js
@@ -4024,6 +4038,7 @@ var ErpPosTouch = class extends i3 {
     this.fullscreen = false;
     this.searchOpen = false;
     this.prebillOpen = false;
+    this.printOnCharge = true;
     this.tableLabel = "";
     this.customerName = "";
     /** Snapshot fiscal del cliente asignado (ADR-0132). Copia, no referencia: viaja con la venta. */
@@ -4190,8 +4205,22 @@ var ErpPosTouch = class extends i3 {
     /* Dos acciones solo-icono (ADR-0133): la cuenta ocupa lo justo y cobrar se lleva el resto,
        porque es la acción primaria y el dedo la busca sin mirar. */
     /* Cobro: los segments son la elección (método, formato) y abajo las dos salidas. */
-    .pay-methods, .pay-actions { margin:.2rem 0 .6rem; }
-    .amt.exact .v { font-size:1.5rem; font-weight:800; }
+    /* El importe manda: grande, centrado y solo. */
+    .pay-total { font-size:2.4rem; font-weight:800; text-align:center; letter-spacing:-.02em;
+      margin:.2rem 0 1rem; color:var(--tx); }
+    /* Etiqueta de sección: dice QUÉ estás eligiendo (antes dos segments iguales sin contexto). */
+    .pay-lbl { margin:.9rem 0 .35rem; font-size:.75rem; font-weight:700; text-transform:uppercase;
+      letter-spacing:.06em; color:var(--mut); }
+    .pay-methods { margin:0 0 .2rem; }
+    /* Atajos de efectivo: el cajero pulsa en vez de teclear. */
+    .quick { display:grid; grid-template-columns:repeat(4,1fr); gap:.4rem; margin:.7rem 0 .5rem; }
+    .qbtn { padding:.55rem .2rem; border-radius:10px; border:1px solid var(--ion-border-color);
+      background:var(--tile); color:var(--tx); font-weight:700; font-size:.9rem; cursor:pointer; }
+    .qbtn[aria-pressed=true] { border-color:var(--accent); color:var(--accent); }
+    /* El cambio es lo que el cajero busca con el ojo al devolver. */
+    .amt.big-change .v { font-size:1.6rem; font-weight:800; color:var(--accent); }
+    .print-row { --background:transparent; --padding-start:0; --inner-padding-end:0; margin:.5rem 0 .2rem; }
+    .pay-err { color:var(--ion-color-danger,#d9480f); margin:.4rem 0 0; }
     .pay-actions { display:flex; gap:.5rem; }
     .pay-actions .charge { flex:1; }
     .pay-actions .charge-print { flex:none; width:64px; }
@@ -4225,10 +4254,19 @@ var ErpPosTouch = class extends i3 {
     .amt { display:flex; justify-content:space-between; font-size:1.1rem; }
     .amt .v { font-weight:700; }
     .change { color:var(--ion-color-success, #2f9e44); }
-    .numpad { display:grid; grid-template-columns: repeat(3, 1fr); gap:.5rem; }
-    .numpad button { font-size:1.3rem; padding:1rem; border-radius:12px; border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); cursor:pointer; }
+    .numpad { display:grid; grid-template-columns: repeat(3, 1fr); gap:.35rem; margin-bottom:.2rem; }
+    .numpad button { font-size:1.15rem; padding:.6rem; border-radius:10px; border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); cursor:pointer; }
     .scrim { position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; z-index:70; }
-    .sheet { background:var(--panel); color:var(--tx); border:1px solid var(--ion-border-color); border-radius:16px; padding:1rem; width:min(92vw,24rem); max-height:90vh; overflow:auto; box-shadow:0 12px 48px rgba(0,0,0,.6); }
+    /* Columna flex: el importe y el botón de cobrar NO se mueven; solo scrollea el centro. Antes
+       el sheet entero scrolleaba y el botón principal quedaba fuera de pantalla — la acción más
+       importante del TPV no puede exigir scroll. */
+    .sheet { background:var(--panel); color:var(--tx); border:1px solid var(--ion-border-color);
+      border-radius:16px; width:min(92vw,24rem); max-height:88vh; display:flex; flex-direction:column;
+      overflow:hidden; box-shadow:0 12px 48px rgba(0,0,0,.6); }
+    .sheet-h, .sheet-top, .sheet-foot { flex:none; padding:0 1rem; }
+    .sheet-h { padding-top:1rem; }
+    .sheet-foot { padding:.75rem 1rem 1rem; border-top:1px solid var(--ion-border-color); }
+    .pay { flex:1; min-height:0; overflow:auto; padding:0 1rem; }
     .sheet-h { display:flex; justify-content:space-between; align-items:center; margin-bottom:.8rem; }
     .sheet-h .t { font-size:1.2rem; font-weight:700; }
     .x { background:none; border:none; font-size:1.3rem; cursor:pointer; color:var(--mut); }
@@ -4732,16 +4770,17 @@ var ErpPosTouch = class extends i3 {
     }}>
             <div class="sheet">
               <div class="sheet-h">
-                <span class="t">${t3("ui.charge")} ${this.money(this.total)}</span>
+                <span class="t">${t3("ui.charge")}</span>
                 <button class="x" @click=${() => {
       this.paying = false;
     }}>✕</button>
               </div>
+              <!-- El IMPORTE manda en esta pantalla: grande, solo y SIEMPRE visible (fuera del
+                   scroll). Antes vivía en letra pequeña del título y el ojo no lo encontraba. -->
+              <div class="sheet-top"><div class="pay-total">${this.money(this.total)}</div></div>
               <div class="pay">
-                <!-- Formas de pago: ion-segment SOLO-ICONO (ADR-0133). El nombre lo pone el usuario
-                     al crear la forma de pago, así que el icono se deduce del tipo y, si no basta,
-                     del nombre; nunca queda vacío. El nombre viaja en title/aria para no perderlo.
-                     (Ojo: nada de backticks dentro de una plantilla Lit — cierran el literal.) -->
+
+                <p class="pay-lbl">${t3("ui.paymentMethod")}</p>
                 <ion-segment class="pay-methods" value=${this.payMethod?.id ?? ""}
                              @ionChange=${(e6) => {
       const id = e6.detail.value;
@@ -4751,46 +4790,66 @@ var ErpPosTouch = class extends i3 {
                   ${this.methods.map((m4) => b2`
                     <ion-segment-button value=${m4.id} title=${m4.name} aria-label=${m4.name}>
                       <ion-icon name=${payMethodIcon(m4.type, m4.name)}></ion-icon>
+                      <ion-label>${m4.name}</ion-label>
                     </ion-segment-button>`)}
                   ${!this.methods.length ? b2`
                     <ion-segment-button value="" title=${t3("ui.cash")} aria-label=${t3("ui.cash")}>
                       <ion-icon name="cash-outline"></ion-icon>
+                      <ion-label>${t3("ui.cash")}</ion-label>
                     </ion-segment-button>` : A}
                 </ion-segment>
-                <!-- Entregado/cambio y teclado SOLO cuando la forma de pago los necesita: con
-                     TARJETA se cobra el importe exacto, así que el teclado sobra y solo estorba en
-                     barra. Lo decide el dato requires_change, no un "si es efectivo" hardcodeado. -->
+
+                <!-- Entregado/cambio/teclado SOLO en efectivo: con tarjeta se cobra el total y no
+                     hay nada que teclear (lo decide requires_change, no un "si es efectivo"). -->
                 ${needsTendered(this.payMethod) ? b2`
+                    <div class="quick">
+                      ${quickCashAmounts(this.total).map((c5) => b2`
+                        <button class="qbtn" aria-pressed=${this.tenderedNum === c5}
+                                @click=${() => {
+      this.tendered = (c5 / 100).toFixed(2);
+    }}>
+                          ${this.money(c5)}
+                        </button>`)}
+                    </div>
                     <div class="amt"><span>${t3("ui.tendered")}</span><span class="v">${this.money(this.tenderedNum)}</span></div>
-                    <div class="amt"><span>${t3("ui.change")}</span><span class="v change">${this.money(this.change)}</span></div>
+                    ${this.change > 0 ? b2`<div class="amt big-change"><span>${t3("ui.change")}</span><span class="v">${this.money(this.change)}</span></div>` : A}
                     <div class="numpad">
                       ${["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "C"].map((k2) => b2`<button @click=${() => this.tap(k2)}>${k2}</button>`)}
-                    </div>` : b2`<div class="amt exact"><span>${t3("ui.exactAmount")}</span><span class="v">${this.money(this.total)}</span></div>`}
+                    </div>` : A}
+
+                <p class="pay-lbl">${t3("ui.document")}</p>
                 <ion-segment value=${this.docFormat} @ionChange=${(e6) => {
       this.docFormat = e6.detail.value === "invoice" ? "invoice" : "ticket";
     }}>
                   <ion-segment-button value="ticket" title=${t3("ui.formatTicket")} aria-label=${t3("ui.formatTicket")}>
                     <ion-icon name="receipt-outline"></ion-icon>
+                    <ion-label>${t3("ui.formatTicket")}</ion-label>
                   </ion-segment-button>
                   <ion-segment-button value="invoice" title=${t3("ui.formatInvoice")} aria-label=${t3("ui.formatInvoice")}>
                     <ion-icon name="document-text-outline"></ion-icon>
+                    <ion-label>${t3("ui.formatInvoice")}</ion-label>
                   </ion-segment-button>
                 </ion-segment>
-                ${this.error ? b2`<p style="color:var(--ion-color-danger,#d9480f)">${this.error}</p>` : A}
-                <!-- Dos salidas, como en cualquier TPV de hostelería: cobrar a secas y cobrar
-                     IMPRIMIENDO el tiquet. Solo-icono (ADR-0133); el importe ya está en la cabecera. -->
-                <div class="pay-actions">
-                  <ion-button class="charge" ?disabled=${this.busy}
-                              title=${t3("ui.confirmCharge")} aria-label=${t3("ui.confirmCharge")}
-                              @click=${() => this.confirm(false)}>
-                    <ion-icon slot="icon-only" name="cash-outline"></ion-icon>
-                  </ion-button>
-                  <ion-button class="charge-print" fill="outline" ?disabled=${this.busy}
-                              title=${t3("ui.chargeAndPrint")} aria-label=${t3("ui.chargeAndPrint")}
-                              @click=${() => this.confirm(true)}>
-                    <ion-icon slot="icon-only" name="print-outline"></ion-icon>
-                  </ion-button>
-                </div>
+
+                <!-- Imprimir deja de ser un botón gemelo del de cobrar (dos botones azules iguales
+                     no dicen cuál hace qué): es una PREFERENCIA del cobro. -->
+                <ion-item lines="none" class="print-row">
+                  <ion-icon slot="start" name="print-outline"></ion-icon>
+                  <ion-label>${t3("ui.printReceipt")}</ion-label>
+                  <ion-toggle slot="end" .checked=${this.printOnCharge}
+                              @ionChange=${(e6) => {
+      this.printOnCharge = !!e6.detail.checked;
+    }}></ion-toggle>
+                </ion-item>
+
+              </div>
+              <div class="sheet-foot">
+                ${this.error ? b2`<p class="pay-err">${this.error}</p>` : A}
+                <!-- UNA acción, dice lo que hace y por cuánto, y no exige scroll para alcanzarla. -->
+                <ion-button class="charge" expand="block" ?disabled=${this.busy}
+                            @click=${() => this.confirm(this.printOnCharge)}>
+                  ${this.busy ? t3("ui.charging") : `${t3("ui.charge")} ${this.money(this.total)}`}
+                </ion-button>
               </div>
             </div>
           </div>` : A}
@@ -4920,6 +4979,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "prebillOpen", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "printOnCharge", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "tableLabel", 2);

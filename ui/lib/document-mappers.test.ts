@@ -174,9 +174,10 @@ describe('cuenta previa (pre-bill) — NO es un documento fiscal', () => {
     expect(doc.payment, 'aún no se ha cobrado: sin datos de pago').toBeUndefined();
   });
 
-  it('avisa por escrito de que no es una factura', () => {
+  it('avisa por escrito de que no es una factura (inglés canónico, ADR-0055)', () => {
     const doc = orderToPrebill(lineas, {});
-    expect((doc.footer || '').toLowerCase()).toContain('no es una factura');
+    // El respaldo del mapper va en INGLÉS canónico (ADR-0055); la UI pasa el texto traducido.
+    expect((doc.footer || '').toLowerCase()).toContain('not an invoice');
   });
 
   it('suma el total del pedido en euros (el TPV trabaja en céntimos)', () => {

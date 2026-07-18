@@ -292,6 +292,8 @@ export function orderToPrebill(
     total: toEuros(total),
     taxes: [],
     currency: settings.currency || '€',
-    footer: opts.notice ?? 'Cuenta — no es una factura. El tiquet fiscal se entrega al cobrar.',
+    // Inglés canónico (ADR-0055): la UI pasa el texto ya traducido en `opts.notice`; esto es solo
+    // el respaldo para llamadas sin i18n (tests, integraciones).
+    footer: opts.notice ?? 'Bill — this is not an invoice. The fiscal receipt is issued on payment.',
   };
 }
