@@ -8,7 +8,7 @@ import { renderDocumentModal } from '../../lib/document-modal.js';
 
 // erp-pos-desktop — pantalla de venta para RETAIL sin táctil: campo de escaneo/SKU (Enter añade),
 // lista compacta de líneas con cantidad editable por teclado, y cobro con importe por teclado.
-// Mismo backend que la táctil: sales.complete_sale (channel='pos') → set_document_type → documento.
+// Mismo backend que la táctil: sales.complete_sale (channel='pos', con document_type atómico) → documento.
 // El carrito en curso se persiste en sales_active_cart (sales.cart.*) y sobrevive a recargas.
 import {
   loadActiveCart, persistActiveCart, mergeCartLines, listParkedTickets, parkCart, retrieveParkedTicket,
@@ -371,12 +371,15 @@ export class ErpPosDesktop extends LitElement {
         // Snapshot fiscal del cliente (ADR-0132): sin esto la factura del TPV sale sin NIF.
         customer_tax_id: this.customerTaxId,
         customer_address: this.customerAddress,
+        // Tipo de documento fiscal (ADR-0140): viaja ATÓMICAMENTE con la venta; `invoice` lo lee del
+        // evento para elegir F1 (completa) vs F2 (simplificada). Reemplaza al `set_document_type` retro.
+        document_type: this.docFormat,
       });
+      // complete_sale (WASM) no devuelve el id de la venta creada, así que re-consultamos la última
+      // para recuperar el `saleId` con el que mostrar el documento. El tipo ya quedó fijado dentro de
+      // complete_sale (ADR-0140) — ya no hay UPDATE retro sales.set_document_type.
       const recent = rows<{ id: string }>(await erplora().query('sales.list', { limit: 1, sort: 'created_at', dir: 'desc' }));
       const saleId = recent[0]?.id;
-      if (saleId && this.docFormat === 'invoice') {
-        await erplora().command('sales.set_document_type', { sale_id: saleId, document_type: 'invoice' });
-      }
       // Cobrada: limpia la comanda de ESA mesa (o el carrito suelto) antes de soltarla, si no
       // seguiría recuperándose al volver a tocar la mesa. La sesión la cierra el filler (reset).
       if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = undefined; }

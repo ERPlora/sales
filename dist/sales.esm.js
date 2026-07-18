@@ -4276,13 +4276,13 @@ var ErpPosTouch = class extends i3 {
         // Snapshot fiscal del cliente (ADR-0132): sin esto la factura emitida desde el TPV sale sin
         // NIF ni dirección aunque el cliente los tenga en su ficha.
         customer_tax_id: this.customerTaxId,
-        customer_address: this.customerAddress
+        customer_address: this.customerAddress,
+        // Tipo de documento fiscal (ADR-0140): viaja ATÓMICAMENTE con la venta; `invoice` lo lee del
+        // evento para elegir F1 (completa) vs F2 (simplificada). Reemplaza al `set_document_type` retro.
+        document_type: this.docFormat
       });
       const recent = rows2(await erplora2().query("sales.list", { limit: 1, sort: "created_at", dir: "desc" }));
       const saleId = recent[0]?.id;
-      if (saleId && this.docFormat === "invoice") {
-        await erplora2().command("sales.set_document_type", { sale_id: saleId, document_type: "invoice" });
-      }
       if (this.saveTimer) {
         clearTimeout(this.saveTimer);
         this.saveTimer = void 0;
@@ -4929,13 +4929,13 @@ var ErpPosDesktop = class extends i3 {
         customer_name: this.customerName,
         // Snapshot fiscal del cliente (ADR-0132): sin esto la factura del TPV sale sin NIF.
         customer_tax_id: this.customerTaxId,
-        customer_address: this.customerAddress
+        customer_address: this.customerAddress,
+        // Tipo de documento fiscal (ADR-0140): viaja ATÓMICAMENTE con la venta; `invoice` lo lee del
+        // evento para elegir F1 (completa) vs F2 (simplificada). Reemplaza al `set_document_type` retro.
+        document_type: this.docFormat
       });
       const recent = rows3(await erplora3().query("sales.list", { limit: 1, sort: "created_at", dir: "desc" }));
       const saleId = recent[0]?.id;
-      if (saleId && this.docFormat === "invoice") {
-        await erplora3().command("sales.set_document_type", { sale_id: saleId, document_type: "invoice" });
-      }
       if (this.saveTimer) {
         clearTimeout(this.saveTimer);
         this.saveTimer = void 0;

@@ -333,16 +333,6 @@
       "ai": {
         "description": "Marks a parked POS ticket as retrieved so it disappears from the parked list"
       }
-    },
-    "sales.set_document_type": {
-      "permission": "sales.add_sale",
-      "transaction": true,
-      "sql": [
-        "commands/set_document_type.sql"
-      ],
-      "ai": {
-        "description": "Sets the document type (ticket or invoice) issued for a sale"
-      }
     }
   },
   "widgets": {

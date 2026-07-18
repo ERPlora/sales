@@ -25,12 +25,13 @@
       "sales.cart.save",
       "sales.complete_sale",
       "sales.park_ticket",
-      "sales.retrieve_ticket",
-      "sales.set_document_type"
+      "sales.retrieve_ticket"
     ],
     "events": [
       "sale.completed"
     ],
-    "slots": []
+    "slots": [
+      "sales.pos.assign"
+    ]
   }
 }

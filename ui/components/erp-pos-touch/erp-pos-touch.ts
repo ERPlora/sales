@@ -503,12 +503,15 @@ export class ErpPosTouch extends LitElement {
         // NIF ni dirección aunque el cliente los tenga en su ficha.
         customer_tax_id: this.customerTaxId,
         customer_address: this.customerAddress,
+        // Tipo de documento fiscal (ADR-0140): viaja ATÓMICAMENTE con la venta; `invoice` lo lee del
+        // evento para elegir F1 (completa) vs F2 (simplificada). Reemplaza al `set_document_type` retro.
+        document_type: this.docFormat,
       });
+      // complete_sale (WASM) no devuelve el id de la venta creada, así que re-consultamos la última
+      // para recuperar el `saleId` con el que mostrar el documento. El tipo ya quedó fijado dentro de
+      // complete_sale (ADR-0140) — ya no hay UPDATE retro sales.set_document_type.
       const recent = rows<{ id: string }>(await erplora().query('sales.list', { limit: 1, sort: 'created_at', dir: 'desc' }));
       const saleId = recent[0]?.id;
-      if (saleId && this.docFormat === 'invoice') {
-        await erplora().command('sales.set_document_type', { sale_id: saleId, document_type: 'invoice' });
-      }
       // Cobrada: limpia la comanda de ESA mesa (o el carrito suelto) antes de soltarla, si no la
       // comanda seguiría recuperándose al volver a tocar la mesa. La sesión la cierra el filler
       // al recibir el reset de abajo.
