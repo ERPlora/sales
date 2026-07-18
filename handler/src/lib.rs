@@ -605,6 +605,73 @@ pub fn complete_sale_pure(input: Value) -> Output {
     Output { operations: ops, events }
 }
 
+/// ADR-0141 (owner: human, en construcción TDD) — abre un `order` **mutable** (estado `open`) con sus
+/// líneas materializadas **temprano** (filas reales, no un blob). Es la entidad canónica del pedido;
+/// al cobrar producirá 1..N `sale` inmutables (split-bill). `sales` es **agnóstico de la mesa**: NO
+/// conoce `table_id` — la asociación mesa↔pedido la OWNea `tables` en `table_session.order_id`.
+pub fn open_order_pure(input: Value) -> Output {
+    let payload = input.get("payload").cloned().unwrap_or(Value::Null);
+    let context = input.get("context").cloned().unwrap_or(Value::Null);
+    let empty: Vec<Value> = Vec::new();
+    let new_ids = context.get("new_ids").and_then(|v| v.as_array()).unwrap_or(&empty);
+    let now = context.get("now").map(as_str).unwrap_or_default();
+    let created_by = context.get("current_user_id").map(as_str).unwrap_or_default();
+    let items = payload.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
+    let order_id = new_ids.first().map(as_str).unwrap_or_default();
+
+    let mut ops: Vec<Operation> = Vec::new();
+    // Cabecera del pedido: placeholder; se rellena el total provisional tras recorrer las líneas.
+    let header_idx = ops.len();
+    ops.push(Operation::sql("sales._insert_order", Map::new()));
+
+    // Líneas materializadas TEMPRANO (filas reales `sales_order_item`). Un `order` es MUTABLE: sus
+    // importes son **provisionales** (display en el TPV). La cuota fiscal HALF_UP + el desglose por
+    // tipo (ADR-0123/0085) se congelan al COBRAR (`complete_sale`), no al abrir el pedido.
+    let mut provisional_total: i64 = 0;
+    for (i, item) in items.iter().enumerate() {
+        let unit_price = as_cents(item.get("price").unwrap_or(&Value::Null), 0); // céntimos
+        let qty = item.get("quantity").map(|v| as_f64(v, 1.0)).unwrap_or(1.0);
+        let is_gift = item.get("is_gift").map(as_bool).unwrap_or(false);
+        let line_total = if is_gift { 0 } else { round_cents(unit_price as f64 * qty) };
+        provisional_total += line_total;
+
+        let line_id = new_ids.get(i + 1).map(as_str).unwrap_or_default();
+        let mut p = Map::new();
+        p.insert("id".into(), json!(line_id));
+        p.insert("order_id".into(), json!(order_id)); // FK al pedido (materialización temprana)
+        p.insert("product_id".into(), item.get("product_id").cloned().unwrap_or(Value::Null));
+        p.insert("product_name".into(), json!(as_str(item.get("product_name").unwrap_or(&Value::Null))));
+        p.insert("product_sku".into(), json!(str_or(item, "product_sku", "")));
+        p.insert("quantity".into(), json!(qty)); // cantidad fraccionable (REAL)
+        p.insert("unit_price".into(), json!(unit_price)); // céntimos (INTEGER)
+        p.insert("is_gift".into(), json!(is_gift as i64));
+        p.insert("line_total".into(), json!(line_total)); // céntimos, provisional (display)
+        ops.push(Operation::sql("sales._insert_order_line", p));
+    }
+
+    let mut h = Map::new();
+    h.insert("id".into(), json!(order_id));
+    h.insert("status".into(), json!("open")); // ciclo de vida: open → completed → voided (ADR-0141)
+    h.insert("provisional_total".into(), json!(provisional_total)); // céntimos, recalculable
+    h.insert("customer_id".into(), payload.get("customer_id").cloned().unwrap_or(Value::Null));
+    h.insert("notes".into(), json!(str_or(&payload, "notes", "")));
+    h.insert("source_module".into(), json!(str_or(&payload, "source_module", "pos")));
+    h.insert("created_by".into(), json!(created_by));
+    h.insert("created_at".into(), json!(now));
+    // NOTA (ADR-0141): NO se persiste `table_id` — `sales` es agnóstico de la mesa. La asociación
+    // mesa↔pedido la OWNea `tables` en su junction `table_session.order_id`.
+    ops[header_idx] = Operation::sql("sales._insert_order", h);
+
+    // Evento para UI en vivo (Outbox → refresh_on): un pedido abierto puede refrescar tickets/KPIs.
+    let event = Event::new("sales.order.opened", json!({
+        "sender": "sales",
+        "order_id": order_id,
+        "items_count": items.len(),
+    }));
+
+    Output { operations: ops, events: vec![event] }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -615,6 +682,42 @@ mod tests {
             "payload": { "items": items, "tax_included": true, "amount_tendered": tendered, "customer_name": "Bar Manolo" },
             "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-05-31T10:00:00+00:00", "new_ids": new_ids }
         })
+    }
+
+    // ── ADR-0141 · entidad `order` mutable → `sale` inmutable (en construcción TDD) ──────────────
+
+    #[test]
+    fn abrir_un_pedido_crea_un_order_open_con_lineas_materializadas() {
+        // ADR-0141: el POS abre un `order` MUTABLE (estado `open`) antes de cobrar. Las líneas se
+        // materializan TEMPRANO (filas reales `sales_order_item`, no un blob). El order es la entidad
+        // canónica del pedido; al cobrar producirá una o varias `sale` inmutables (split-bill).
+        //
+        // INVARIANTE CLAVE (el leak que motivó el ADR): `sales` es AGNÓSTICO de la mesa — abrir un
+        // pedido NO conoce `table_id`. La asociación mesa↔pedido la OWNea `tables` en su junction
+        // `table_session.order_id`, no `sales`.
+        let items = json!([
+            { "product_name": "Café", "price": 121, "quantity": 2, "tax_rate": 21.0 },
+            { "product_name": "Agua", "price": 110, "quantity": 1, "tax_rate": 10.0 }
+        ]);
+        let out = open_order_pure(input(items, 3, 0));
+
+        // 1) cabecera: un `_insert_order` con estado `open` y el id que da el host (new_ids[0]).
+        let header = out.operations.iter().find(|o| o.command == "sales._insert_order")
+            .expect("debe insertar el order");
+        assert_eq!(header.params["status"], json!("open"), "el pedido nace abierto (mutable)");
+        assert_eq!(header.params["id"], json!("id-0"), "id del order = new_ids[0]");
+
+        // 2) líneas materializadas temprano: una fila `_insert_order_line` por artículo, con el FK.
+        let lines: Vec<_> = out.operations.iter()
+            .filter(|o| o.command == "sales._insert_order_line").collect();
+        assert_eq!(lines.len(), 2, "una línea real por artículo (materialización temprana)");
+        assert!(lines.iter().all(|l| l.params["order_id"] == json!("id-0")),
+                "cada línea cuelga del order_id");
+
+        // 3) INVARIANTE: `sales` no habla el idioma 'mesa'. Nada de `table_id` al abrir un pedido.
+        let json_all = serde_json::to_string(&out.operations).unwrap();
+        assert!(!json_all.contains("table_id"),
+                "abrir un pedido no conoce table_id (la mesa la OWNea `tables`, ADR-0141)");
     }
 
     #[test]
