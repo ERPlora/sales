@@ -675,13 +675,13 @@ pub fn open_order_pure(input: Value) -> Output {
     h.insert("id".into(), json!(order_id));
     h.insert("status".into(), json!("open")); // ciclo de vida: open → completed → voided (ADR-0141)
     h.insert("provisional_total".into(), json!(provisional_total)); // céntimos, recalculable
-    h.insert("customer_id".into(), payload.get("customer_id").cloned().unwrap_or(Value::Null));
     h.insert("notes".into(), json!(str_or(&payload, "notes", "")));
     h.insert("source_module".into(), json!(str_or(&payload, "source_module", "pos")));
     // created_by/created_at/hub_id los inyecta el SQL desde el contexto (:current_user_id, :now,
     // :hub_id), igual que `_insert_sale` — el WASM no los pasa.
-    // NOTA (ADR-0141): NO se persiste `table_id` — `sales` es agnóstico de la mesa. La asociación
-    // mesa↔pedido la OWNea `tables` en su junction `table_session.order_id`.
+    // NOTA (ADR-0141): el pedido NO persiste `table_id` NI `customer_id`. Esas asociaciones las
+    // OWNean sus dueños en junctions (`tables.table_session.order_id`, `customers.customer_order`):
+    // una tienda de alimentación vende sin mesas y sin cliente.
     ops[header_idx] = Operation::sql("sales._insert_order", h);
 
     // Evento para UI en vivo (Outbox → refresh_on): un pedido abierto puede refrescar tickets/KPIs.

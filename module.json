@@ -16,7 +16,6 @@
     ]
   },
   "depends_on": [
-    "customers",
     "inventory",
     "taxes"
   ],
@@ -90,6 +89,18 @@
       "migrations/sqlite/008_receipt_marketing.sql",
       "migrations/sqlite/009_cart_per_table.sql",
       "migrations/sqlite/010_orders.sql"
+    ],
+    "postgres": [
+      "migrations/postgres/001_init.sql",
+      "migrations/postgres/002_pos_settings.sql",
+      "migrations/postgres/003_document_type.sql",
+      "migrations/postgres/004_order_link.sql",
+      "migrations/postgres/005_staff_attribution.sql",
+      "migrations/postgres/006_tax_snapshot.sql",
+      "migrations/postgres/007_gift_comp.sql",
+      "migrations/postgres/008_receipt_marketing.sql",
+      "migrations/postgres/009_cart_per_table.sql",
+      "migrations/postgres/010_orders.sql"
     ]
   },
   "queries": {

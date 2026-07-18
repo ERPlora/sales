@@ -4253,11 +4253,7 @@ var ErpPosTouch = class extends i3 {
       if (accion === "assign-to-target") {
         this.tableId = nextTable;
         this.tableLabel = d3.label ?? "";
-        if (this.orderId) {
-          for (const f3 of this.assignFillers) {
-            f3.el.dispatchEvent(new CustomEvent("erp:order-linked", { detail: { order_id: this.orderId }, bubbles: false }));
-          }
-        }
+        this.notifyOrderLinked();
         return;
       }
       if (accion === "park-then-load") await aparcar();
@@ -4307,6 +4303,7 @@ var ErpPosTouch = class extends i3 {
       this.customerName = d3.customer_name ?? "";
       this.customerTaxId = d3.customer_tax_id ?? "";
       this.customerAddress = d3.customer_address ?? "";
+      this.notifyOrderLinked();
     };
     this.onFsChange = () => {
       this.fullscreen = document.fullscreenElement === this;
@@ -4646,17 +4643,21 @@ var ErpPosTouch = class extends i3 {
       return [];
     }
   }
+  /** Avisa a los fillers de que hay pedido abierto para que ENLACEN lo suyo (mesa, cliente…).
+   *  `sales` no escribe junctions ajenas ni conoce a esos módulos: solo publica el `order_id`. */
+  notifyOrderLinked() {
+    if (!this.orderId) return;
+    for (const f3 of this.assignFillers) {
+      f3.el.dispatchEvent(new CustomEvent("erp:order-linked", { detail: { order_id: this.orderId }, bubbles: false }));
+    }
+  }
   /** Asegura que existe un pedido abierto que respalde el carrito; devuelve su id ('' si falla).
    *  Si hay una MESA seleccionada, avisa a los fillers (`tables`) para que escriban la junction
    *  mesa↔pedido — `sales` no toca `tables`: es un contrato por evento (ADR-0043/0141). */
   async ensureOrder(first) {
     if (this.orderId) return this.orderId;
     this.orderId = await openOrderWithLines(erplora2(), [first]);
-    if (this.orderId && this.tableId) {
-      for (const f3 of this.assignFillers) {
-        f3.el.dispatchEvent(new CustomEvent("erp:order-linked", { detail: { order_id: this.orderId }, bubbles: false }));
-      }
-    }
+    this.notifyOrderLinked();
     return this.orderId;
   }
   async add(p4) {

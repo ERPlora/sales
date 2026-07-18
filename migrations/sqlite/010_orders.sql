@@ -4,12 +4,13 @@
 -- mesa↔pedido NO vive aquí — la OWNea `tables` en su junction `table_session.order_id`. Los importes
 -- son PROVISIONALES (display en el TPV); la cuota fiscal HALF_UP + el desglose por tipo (ADR-0123/0085)
 -- se congelan al COBRAR (complete_sale), no al abrir. hub_id lo auto-inyecta el runtime (contrato §2.5).
+-- Tampoco lleva `customer_id`: el pedido NO sabe de clientes (una tienda de alimentación vende sin
+-- cliente). Esa asociación la OWNea `customers` en su junction `customers_customer_order`.
 CREATE TABLE IF NOT EXISTS sales_order (
     id                TEXT PRIMARY KEY,
     hub_id            TEXT NOT NULL,
     status            TEXT NOT NULL DEFAULT 'open',   -- open | completed | voided (ciclo de vida, ADR-0141)
     provisional_total INTEGER NOT NULL DEFAULT 0,     -- céntimos, recalculable (NO fiscal; shim → BIGINT en Postgres)
-    customer_id       TEXT,                            -- asociación cliente (el snapshot fiscal se congela en la venta)
     notes             TEXT NOT NULL DEFAULT '',
     source_module     TEXT NOT NULL DEFAULT 'pos',
     is_deleted INTEGER NOT NULL DEFAULT 0, deleted_at TEXT,

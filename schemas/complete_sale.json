@@ -61,7 +61,7 @@
             "type": "string"
           },
           "cost": {
-            "type": "number"
+            "type": "integer"
           },
           "category_id": {
             "type": [

@@ -335,11 +335,7 @@ export class ErpPosTouch extends LitElement {
     if (accion === 'assign-to-target') {
       // La comanda de delante pasa a SER la de esa mesa: se enlaza la junction, no se mueve nada.
       this.tableId = nextTable; this.tableLabel = d.label ?? '';
-      if (this.orderId) {
-        for (const f of this.assignFillers) {
-          f.el.dispatchEvent(new CustomEvent('erp:order-linked', { detail: { order_id: this.orderId }, bubbles: false }));
-        }
-      }
+      this.notifyOrderLinked();
       return;
     }
 
@@ -407,6 +403,11 @@ export class ErpPosTouch extends LitElement {
     this.customerName = d.customer_name ?? '';
     this.customerTaxId = d.customer_tax_id ?? '';
     this.customerAddress = d.customer_address ?? '';
+    // ADR-0141: el pedido NO guarda el cliente y `sales` NO llama a `customers` (sería depender de
+    // él, y una tienda de alimentación vende sin clientes). La junction la escribe SU dueño al
+    // recibir `erp:order-linked`, igual que hace `tables`. Aquí solo se guarda el SNAPSHOT FISCAL
+    // (nombre/NIF/dirección), que es otra cosa: viaja congelado en la venta al cobrar (ADR-0132).
+    this.notifyOrderLinked();
   };
   private readonly onFsChange = () => { this.fullscreen = document.fullscreenElement === this; };
   private readonly onLocaleChange = (): void => this.requestUpdate();
@@ -575,17 +576,24 @@ export class ErpPosTouch extends LitElement {
     }
   }
 
+  /** Avisa a los fillers de que hay pedido abierto para que ENLACEN lo suyo (mesa, cliente…).
+   *  `sales` no escribe junctions ajenas ni conoce a esos módulos: solo publica el `order_id`. */
+  private notifyOrderLinked(): void {
+    if (!this.orderId) return;
+    for (const f of this.assignFillers) {
+      f.el.dispatchEvent(new CustomEvent('erp:order-linked', { detail: { order_id: this.orderId }, bubbles: false }));
+    }
+  }
+
   /** Asegura que existe un pedido abierto que respalde el carrito; devuelve su id ('' si falla).
    *  Si hay una MESA seleccionada, avisa a los fillers (`tables`) para que escriban la junction
    *  mesa↔pedido — `sales` no toca `tables`: es un contrato por evento (ADR-0043/0141). */
   private async ensureOrder(first: CartLine): Promise<string> {
     if (this.orderId) return this.orderId;
     this.orderId = await openOrderWithLines(erplora(), [first]);
-    if (this.orderId && this.tableId) {
-      for (const f of this.assignFillers) {
-        f.el.dispatchEvent(new CustomEvent('erp:order-linked', { detail: { order_id: this.orderId }, bubbles: false }));
-      }
-    }
+    // Aviso a TODOS los fillers: cada uno enlaza lo suyo si tiene algo seleccionado (la mesa en
+    // `tables`, el cliente en `customers`). `sales` no sabe qué enlazan ni le importa.
+    this.notifyOrderLinked();
     return this.orderId;
   }
 
