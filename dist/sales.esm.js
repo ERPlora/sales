@@ -679,7 +679,7 @@ var t = globalThis;
 var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
 var s = Symbol();
 var o = /* @__PURE__ */ new WeakMap();
-var n = class {
+var n2 = class {
   constructor(t8, e7, o9) {
     if (this._$cssResult$ = true, o9 !== s) throw Error("CSSResult is not constructable. Use `unsafeCSS` or `css` instead.");
     this.cssText = t8, this.t = e7;
@@ -697,20 +697,20 @@ var n = class {
     return this.cssText;
   }
 };
-var r = (t8) => new n("string" == typeof t8 ? t8 : t8 + "", void 0, s);
+var r = (t8) => new n2("string" == typeof t8 ? t8 : t8 + "", void 0, s);
 var i = (t8, ...e7) => {
   const o9 = 1 === t8.length ? t8[0] : e7.reduce((e8, s5, o10) => e8 + ((t9) => {
     if (true === t9._$cssResult$) return t9.cssText;
     if ("number" == typeof t9) return t9;
     throw Error("Value passed to 'css' function must be a 'css' function result: " + t9 + ". Use 'unsafeCSS' to pass non-literal values, but take care to ensure page security.");
   })(s5) + t8[o10 + 1], t8[0]);
-  return new n(o9, t8, s);
+  return new n2(o9, t8, s);
 };
 var S = (s5, o9) => {
   if (e) s5.adoptedStyleSheets = o9.map((t8) => t8 instanceof CSSStyleSheet ? t8 : t8.styleSheet);
   else for (const e7 of o9) {
-    const o10 = document.createElement("style"), n6 = t.litNonce;
-    void 0 !== n6 && o10.setAttribute("nonce", n6), o10.textContent = e7.cssText, s5.appendChild(o10);
+    const o10 = document.createElement("style"), n7 = t.litNonce;
+    void 0 !== n7 && o10.setAttribute("nonce", n7), o10.textContent = e7.cssText, s5.appendChild(o10);
   }
 };
 var c = e || void 0 === t.CSSStyleSheet ? (t8) => t8 : (t8) => t8 instanceof CSSStyleSheet ? ((t9) => {
@@ -720,7 +720,7 @@ var c = e || void 0 === t.CSSStyleSheet ? (t8) => t8 : (t8) => t8 instanceof CSS
 })(t8) : t8;
 
 // ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/reactive-element.js
-var { is: h, defineProperty: r2, getOwnPropertyDescriptor: o2, getOwnPropertyNames: n2, getOwnPropertySymbols: a, getPrototypeOf: c2 } = Object;
+var { is: h, defineProperty: r2, getOwnPropertyDescriptor: o2, getOwnPropertyNames: n3, getOwnPropertySymbols: a, getPrototypeOf: c2 } = Object;
 var l = globalThis;
 l.customElements ??= customElements2;
 var p = l.trustedTypes;
@@ -794,7 +794,7 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
   static finalize() {
     if (this.hasOwnProperty(f("finalized"))) return;
     if (this.finalized = true, this._$Ei(), this.hasOwnProperty(f("properties"))) {
-      const t9 = this.properties, s5 = [...n2(t9), ...a(t9)];
+      const t9 = this.properties, s5 = [...n3(t9), ...a(t9)];
       for (const i7 of s5) this.createProperty(i7, t9[i7]);
     }
     const t8 = this[Symbol.metadata];
@@ -949,8 +949,8 @@ var s2 = t2.trustedTypes;
 var e2 = s2 ? s2.createPolicy("lit-html", { createHTML: (t8) => t8 }) : void 0;
 var h2 = "$lit$";
 var o3 = `lit$${Math.random().toFixed(9).slice(2)}$`;
-var n3 = "?" + o3;
-var r3 = `<${n3}>`;
+var n4 = "?" + o3;
+var r3 = `<${n4}>`;
 var l2 = document;
 var c3 = () => l2.createComment("");
 var a2 = (t8) => null === t8 || "object" != typeof t8 && "function" != typeof t8;
@@ -979,11 +979,11 @@ function V(t8, i7) {
 }
 var N = (t8, i7) => {
   const s5 = t8.length - 1, e7 = [];
-  let n6, l3 = 2 === i7 ? "<svg>" : 3 === i7 ? "<math>" : "", c5 = v;
+  let n7, l3 = 2 === i7 ? "<svg>" : 3 === i7 ? "<math>" : "", c5 = v;
   for (let i8 = 0; i8 < s5; i8++) {
     const s6 = t8[i8];
     let a3, u5, d3 = -1, f3 = 0;
-    for (; f3 < s6.length && (c5.lastIndex = f3, u5 = c5.exec(s6), null !== u5); ) f3 = c5.lastIndex, c5 === v ? "!--" === u5[1] ? c5 = _ : void 0 !== u5[1] ? c5 = m2 : void 0 !== u5[2] ? (y2.test(u5[2]) && (n6 = RegExp("</" + u5[2], "g")), c5 = p2) : void 0 !== u5[3] && (c5 = p2) : c5 === p2 ? ">" === u5[0] ? (c5 = n6 ?? v, d3 = -1) : void 0 === u5[1] ? d3 = -2 : (d3 = c5.lastIndex - u5[2].length, a3 = u5[1], c5 = void 0 === u5[3] ? p2 : '"' === u5[3] ? $ : g2) : c5 === $ || c5 === g2 ? c5 = p2 : c5 === _ || c5 === m2 ? c5 = v : (c5 = p2, n6 = void 0);
+    for (; f3 < s6.length && (c5.lastIndex = f3, u5 = c5.exec(s6), null !== u5); ) f3 = c5.lastIndex, c5 === v ? "!--" === u5[1] ? c5 = _ : void 0 !== u5[1] ? c5 = m2 : void 0 !== u5[2] ? (y2.test(u5[2]) && (n7 = RegExp("</" + u5[2], "g")), c5 = p2) : void 0 !== u5[3] && (c5 = p2) : c5 === p2 ? ">" === u5[0] ? (c5 = n7 ?? v, d3 = -1) : void 0 === u5[1] ? d3 = -2 : (d3 = c5.lastIndex - u5[2].length, a3 = u5[1], c5 = void 0 === u5[3] ? p2 : '"' === u5[3] ? $ : g2) : c5 === $ || c5 === g2 ? c5 = p2 : c5 === _ || c5 === m2 ? c5 = v : (c5 = p2, n7 = void 0);
     const x2 = c5 === p2 && t8[i8 + 1].startsWith("/>") ? " " : "";
     l3 += c5 === v ? s6 + r3 : d3 >= 0 ? (e7.push(a3), s6.slice(0, d3) + h2 + s6.slice(d3) + o3 + x2) : s6 + o3 + (-2 === d3 ? i8 : x2);
   }
@@ -1013,7 +1013,7 @@ var S2 = class _S {
             r6.append(t9[i8], c3());
           }
         }
-      } else if (8 === r6.nodeType) if (r6.data === n3) d3.push({ type: 2, index: l3 });
+      } else if (8 === r6.nodeType) if (r6.data === n4) d3.push({ type: 2, index: l3 });
       else {
         let t9 = -1;
         for (; -1 !== (t9 = r6.data.indexOf(o3, t9 + 1)); ) d3.push({ type: 7, index: l3 }), t9 += o3.length - 1;
@@ -1045,11 +1045,11 @@ var R = class {
   u(t8) {
     const { el: { content: i7 }, parts: s5 } = this._$AD, e7 = (t8?.creationScope ?? l2).importNode(i7, true);
     P.currentNode = e7;
-    let h4 = P.nextNode(), o9 = 0, n6 = 0, r6 = s5[0];
+    let h4 = P.nextNode(), o9 = 0, n7 = 0, r6 = s5[0];
     for (; void 0 !== r6; ) {
       if (o9 === r6.index) {
         let i8;
-        2 === r6.type ? i8 = new k(h4, h4.nextSibling, this, t8) : 1 === r6.type ? i8 = new r6.ctor(h4, r6.name, r6.strings, this, t8) : 6 === r6.type && (i8 = new Z(h4, this, t8)), this._$AV.push(i8), r6 = s5[++n6];
+        2 === r6.type ? i8 = new k(h4, h4.nextSibling, this, t8) : 1 === r6.type ? i8 = new r6.ctor(h4, r6.name, r6.strings, this, t8) : 6 === r6.type && (i8 = new Z(h4, this, t8)), this._$AV.push(i8), r6 = s5[++n7];
       }
       o9 !== r6?.index && (h4 = P.nextNode(), o9++);
     }
@@ -1135,8 +1135,8 @@ var H = class {
     if (void 0 === h4) t8 = M(this, t8, i7, 0), o9 = !a2(t8) || t8 !== this._$AH && t8 !== E, o9 && (this._$AH = t8);
     else {
       const e8 = t8;
-      let n6, r6;
-      for (t8 = h4[0], n6 = 0; n6 < h4.length - 1; n6++) r6 = M(this, e8[s5 + n6], i7, n6), r6 === E && (r6 = this._$AH[n6]), o9 ||= !a2(r6) || r6 !== this._$AH[n6], r6 === A ? t8 = A : t8 !== A && (t8 += (r6 ?? "") + h4[n6 + 1]), this._$AH[n6] = r6;
+      let n7, r6;
+      for (t8 = h4[0], n7 = 0; n7 < h4.length - 1; n7++) r6 = M(this, e8[s5 + n7], i7, n7), r6 === E && (r6 = this._$AH[n7]), o9 ||= !a2(r6) || r6 !== this._$AH[n7], r6 === A ? t8 = A : t8 !== A && (t8 += (r6 ?? "") + h4[n7 + 1]), this._$AH[n7] = r6;
     }
     o9 && !e7 && this.j(t8);
   }
@@ -1184,7 +1184,7 @@ var Z = class {
     M(this, t8);
   }
 };
-var j = { M: h2, P: o3, A: n3, C: 1, L: N, R, D: d2, V: M, I: k, H, N: L, U: z, B: I, F: Z };
+var j = { M: h2, P: o3, A: n4, C: 1, L: N, R, D: d2, V: M, I: k, H, N: L, U: z, B: I, F: Z };
 var B = t2.litHtmlPolyfillSupport;
 B?.(S2, k), (t2.litHtmlVersions ??= []).push("3.3.3");
 var D = (t8, i7, s5) => {
@@ -1229,27 +1229,27 @@ o4?.({ LitElement: i3 });
 // ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
 var r4 = (t8 = o5, e7, r6) => {
-  const { kind: n6, metadata: i7 } = r6;
+  const { kind: n7, metadata: i7 } = r6;
   let s5 = globalThis.litPropertyMetadata.get(i7);
-  if (void 0 === s5 && globalThis.litPropertyMetadata.set(i7, s5 = /* @__PURE__ */ new Map()), "setter" === n6 && ((t8 = Object.create(t8)).wrapped = true), s5.set(r6.name, t8), "accessor" === n6) {
+  if (void 0 === s5 && globalThis.litPropertyMetadata.set(i7, s5 = /* @__PURE__ */ new Map()), "setter" === n7 && ((t8 = Object.create(t8)).wrapped = true), s5.set(r6.name, t8), "accessor" === n7) {
     const { name: o9 } = r6;
     return { set(r7) {
-      const n7 = e7.get.call(this);
-      e7.set.call(this, r7), this.requestUpdate(o9, n7, t8, true, r7);
+      const n8 = e7.get.call(this);
+      e7.set.call(this, r7), this.requestUpdate(o9, n8, t8, true, r7);
     }, init(e8) {
       return void 0 !== e8 && this.C(o9, void 0, t8, e8), e8;
     } };
   }
-  if ("setter" === n6) {
+  if ("setter" === n7) {
     const { name: o9 } = r6;
     return function(r7) {
-      const n7 = this[o9];
-      e7.call(this, r7), this.requestUpdate(o9, n7, t8, true, r7);
+      const n8 = this[o9];
+      e7.call(this, r7), this.requestUpdate(o9, n8, t8, true, r7);
     };
   }
-  throw Error("Unsupported decorator location: " + n6);
+  throw Error("Unsupported decorator location: " + n7);
 };
-function n4(t8) {
+function n5(t8) {
   return (e7, o9) => "object" == typeof o9 ? r4(t8, e7, o9) : ((t9, e8, o10) => {
     const r6 = e8.hasOwnProperty(o10);
     return e8.constructor.createProperty(o10, t9), r6 ? Object.getOwnPropertyDescriptor(e8, o10) : void 0;
@@ -1258,7 +1258,7 @@ function n4(t8) {
 
 // ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/state.js
 function r5(r6) {
-  return n4({ ...r6, state: true, attribute: false });
+  return n5({ ...r6, state: true, attribute: false });
 }
 
 // ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/base.js
@@ -1266,10 +1266,10 @@ var e3 = (e7, t8, c5) => (c5.configurable = true, c5.enumerable = true, Reflect.
 
 // ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/query.js
 function e4(e7, r6) {
-  return (n6, s5, i7) => {
+  return (n7, s5, i7) => {
     const o9 = (t8) => t8.renderRoot?.querySelector(e7) ?? null;
     if (r6) {
-      const { get: e8, set: r7 } = "object" == typeof s5 ? n6 : i7 ?? (() => {
+      const { get: e8, set: r7 } = "object" == typeof s5 ? n7 : i7 ?? (() => {
         const t8 = Symbol();
         return { get() {
           return this[t8];
@@ -1277,12 +1277,12 @@ function e4(e7, r6) {
           this[t8] = e9;
         } };
       })();
-      return e3(n6, s5, { get() {
+      return e3(n7, s5, { get() {
         let t8 = e8.call(this);
         return void 0 === t8 && (t8 = o9(this), (null !== t8 || this.hasUpdated) && r7.call(this, t8)), t8;
       } });
     }
-    return e3(n6, s5, { get() {
+    return e3(n7, s5, { get() {
       return o9(this);
     } });
   };
@@ -1413,8 +1413,8 @@ function createListController(client, queryName, onChange = () => {
   return new ListController(client, queryName, onChange, opts);
 }
 function majorToMinor(amount, decimals) {
-  const n6 = Number(amount);
-  return Number.isFinite(n6) ? Math.round(n6 * 10 ** decimals) : 0;
+  const n7 = Number(amount);
+  return Number.isFinite(n7) ? Math.round(n7 * 10 ** decimals) : 0;
 }
 function eurosToCents(euros) {
   return majorToMinor(euros, 2);
@@ -1425,8 +1425,8 @@ function esc(v3) {
   return String(v3 ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 function money(v3, currency) {
-  const n6 = Number(v3);
-  return `${(Number.isFinite(n6) ? n6 : 0).toFixed(2).replace(".", ",")} ${currency}`;
+  const n7 = Number(v3);
+  return `${(Number.isFinite(n7) ? n7 : 0).toFixed(2).replace(".", ",")} ${currency}`;
 }
 function receiptToPrintableHtml(doc) {
   const cur = doc.currency || "\u20AC";
@@ -1992,13 +1992,13 @@ function applyFormatAndVersion(grid, _reserved, version, ec, mask) {
   }
 }
 function scorePenalty(grid) {
-  const n6 = grid.length;
+  const n7 = grid.length;
   let penalty = 0;
   const lineRun = (get) => {
     let p4 = 0;
     let runColor = get(0);
     let runLen = 1;
-    for (let i7 = 1; i7 < n6; i7++) {
+    for (let i7 = 1; i7 < n7; i7++) {
       const v3 = get(i7);
       if (v3 === runColor) {
         runLen++;
@@ -2011,10 +2011,10 @@ function scorePenalty(grid) {
     if (runLen >= 5) p4 += 3 + (runLen - 5);
     return p4;
   };
-  for (let r6 = 0; r6 < n6; r6++) penalty += lineRun((c5) => grid[r6][c5]);
-  for (let c5 = 0; c5 < n6; c5++) penalty += lineRun((r6) => grid[r6][c5]);
-  for (let r6 = 0; r6 < n6 - 1; r6++) {
-    for (let c5 = 0; c5 < n6 - 1; c5++) {
+  for (let r6 = 0; r6 < n7; r6++) penalty += lineRun((c5) => grid[r6][c5]);
+  for (let c5 = 0; c5 < n7; c5++) penalty += lineRun((r6) => grid[r6][c5]);
+  for (let r6 = 0; r6 < n7 - 1; r6++) {
+    for (let c5 = 0; c5 < n7 - 1; c5++) {
       const v3 = grid[r6][c5];
       if (v3 === grid[r6][c5 + 1] && v3 === grid[r6 + 1][c5] && v3 === grid[r6 + 1][c5 + 1]) penalty += 3;
     }
@@ -2031,19 +2031,19 @@ function scorePenalty(grid) {
     }
     return a3 || b3;
   };
-  for (let r6 = 0; r6 < n6; r6++) {
-    for (let c5 = 0; c5 <= n6 - 11; c5++) {
+  for (let r6 = 0; r6 < n7; r6++) {
+    for (let c5 = 0; c5 <= n7 - 11; c5++) {
       if (matchAt((i7) => grid[r6][i7], c5)) penalty += 40;
     }
   }
-  for (let c5 = 0; c5 < n6; c5++) {
-    for (let r6 = 0; r6 <= n6 - 11; r6++) {
+  for (let c5 = 0; c5 < n7; c5++) {
+    for (let r6 = 0; r6 <= n7 - 11; r6++) {
       if (matchAt((i7) => grid[i7][c5], r6)) penalty += 40;
     }
   }
   let dark = 0;
-  for (let r6 = 0; r6 < n6; r6++) for (let c5 = 0; c5 < n6; c5++) if (grid[r6][c5]) dark++;
-  const ratio = dark * 100 / (n6 * n6);
+  for (let r6 = 0; r6 < n7; r6++) for (let c5 = 0; c5 < n7; c5++) if (grid[r6][c5]) dark++;
+  const ratio = dark * 100 / (n7 * n7);
   const k2 = Math.floor(Math.abs(ratio - 50) / 5);
   penalty += k2 * 10;
   return penalty;
@@ -2130,22 +2130,22 @@ var OkQr = class extends i3 {
   }
 };
 __decorateClass2([
-  n4({ type: String })
+  n5({ type: String })
 ], OkQr.prototype, "value");
 __decorateClass2([
-  n4({ type: String })
+  n5({ type: String })
 ], OkQr.prototype, "ec");
 __decorateClass2([
-  n4({ type: Number })
+  n5({ type: Number })
 ], OkQr.prototype, "size");
 __decorateClass2([
-  n4({ type: String })
+  n5({ type: String })
 ], OkQr.prototype, "color");
 __decorateClass2([
-  n4({ type: String })
+  n5({ type: String })
 ], OkQr.prototype, "background");
 __decorateClass2([
-  n4({ type: Number })
+  n5({ type: Number })
 ], OkQr.prototype, "margin");
 define("ok-qr", OkQr);
 
@@ -2235,8 +2235,8 @@ var OkReceipt = class extends i3 {
   cur() {
     return this.receipt?.currency ?? "\u20AC";
   }
-  money(n6) {
-    return `${Number(n6 ?? 0).toFixed(2)} ${this.cur()}`;
+  money(n7) {
+    return `${Number(n7 ?? 0).toFixed(2)} ${this.cur()}`;
   }
   render() {
     const r6 = this.receipt;
@@ -2328,13 +2328,13 @@ var OkReceipt = class extends i3 {
   }
 };
 __decorateClass3([
-  n4({ attribute: false })
+  n5({ attribute: false })
 ], OkReceipt.prototype, "receipt");
 __decorateClass3([
-  n4({ type: Number, attribute: "qr-size" })
+  n5({ type: Number, attribute: "qr-size" })
 ], OkReceipt.prototype, "qrSize");
 __decorateClass3([
-  n4({ attribute: false })
+  n5({ attribute: false })
 ], OkReceipt.prototype, "labels");
 define("ok-receipt", OkReceipt);
 
@@ -2445,8 +2445,8 @@ var OkInvoice = class extends i3 {
   cur() {
     return this.invoice?.currency ?? "\u20AC";
   }
-  money(n6) {
-    return `${Number(n6 ?? 0).toFixed(2)} ${this.cur()}`;
+  money(n7) {
+    return `${Number(n7 ?? 0).toFixed(2)} ${this.cur()}`;
   }
   render() {
     const inv = this.invoice;
@@ -2552,13 +2552,13 @@ var OkInvoice = class extends i3 {
   }
 };
 __decorateClass4([
-  n4({ attribute: false })
+  n5({ attribute: false })
 ], OkInvoice.prototype, "invoice");
 __decorateClass4([
-  n4({ type: Number, attribute: "qr-size" })
+  n5({ type: Number, attribute: "qr-size" })
 ], OkInvoice.prototype, "qrSize");
 __decorateClass4([
-  n4({ attribute: false })
+  n5({ attribute: false })
 ], OkInvoice.prototype, "labels");
 define("ok-invoice", OkInvoice);
 
@@ -2833,10 +2833,10 @@ var es_default = {
     parked: "Aparcados",
     charge: "Cobrar",
     chargeShortcut: "Cobrar (F2)",
-    parkedTickets: "Tickets aparcados",
+    parkedTickets: "Cuentas abiertas",
     retrieveHint: "Cobra o aparca la venta actual para recuperar un ticket.",
     retrieve: "Recuperar",
-    noParkedTickets: "No hay tickets aparcados.",
+    noParkedTickets: "No hay cuentas abiertas",
     errorPark: "No se pudo aparcar el ticket",
     errorRetrieve: "No se pudo recuperar el ticket",
     tendered: "Entregado",
@@ -2854,7 +2854,7 @@ var es_default = {
     noProducts: "Sin productos.",
     sale: "Venta",
     cartEmptyTouch: "Toca un producto para a\xF1adirlo.",
-    parkCurrentSale: "Aparcar venta actual",
+    parkCurrentSale: "Aparcar esta cuenta",
     closeAction: "Cerrar",
     fullscreen: "Pantalla completa",
     giftBadge: "Invitaci\xF3n",
@@ -3000,10 +3000,10 @@ var en_default = {
     parked: "Parked",
     charge: "Charge",
     chargeShortcut: "Charge (F2)",
-    parkedTickets: "Parked tickets",
+    parkedTickets: "Open checks",
     retrieveHint: "Charge or park the current sale to retrieve a ticket.",
     retrieve: "Retrieve",
-    noParkedTickets: "No parked tickets.",
+    noParkedTickets: "No open checks",
     errorPark: "Could not park the ticket",
     errorRetrieve: "Could not retrieve the ticket",
     tendered: "Tendered",
@@ -3021,7 +3021,7 @@ var en_default = {
     noProducts: "No products.",
     sale: "Sale",
     cartEmptyTouch: "Tap a product to add it.",
-    parkCurrentSale: "Park current sale",
+    parkCurrentSale: "Park this check",
     closeAction: "Close",
     fullscreen: "Fullscreen",
     giftBadge: "Gift",
@@ -3188,19 +3188,19 @@ var ErpSalesDocument = class extends i3 {
   }
 };
 __decorateClass([
-  n4({ attribute: "sale-id" })
+  n5({ attribute: "sale-id" })
 ], ErpSalesDocument.prototype, "saleId", 2);
 __decorateClass([
-  n4({ attribute: false })
+  n5({ attribute: false })
 ], ErpSalesDocument.prototype, "sale", 2);
 __decorateClass([
-  n4({ attribute: false })
+  n5({ attribute: false })
 ], ErpSalesDocument.prototype, "lines", 2);
 __decorateClass([
-  n4({ attribute: false })
+  n5({ attribute: false })
 ], ErpSalesDocument.prototype, "settings", 2);
 __decorateClass([
-  n4()
+  n5()
 ], ErpSalesDocument.prototype, "format", 2);
 __decorateClass([
   r5()
@@ -3212,7 +3212,7 @@ __decorateClass([
   r5()
 ], ErpSalesDocument.prototype, "fiscal", 2);
 __decorateClass([
-  n4({ attribute: false })
+  n5({ attribute: false })
 ], ErpSalesDocument.prototype, "fiscalRetryDelays", 2);
 define("erp-sales-document", ErpSalesDocument);
 
@@ -3319,8 +3319,8 @@ function createSerialQueue() {
 var BIZUM_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 122 36"><path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M59.8625 12.8257c-1.0347 0-1.8704.8358-1.8704 1.8308v13.8113c0 1.0348.8357 1.8707 1.8704 1.8707s1.8704-.8359 1.8704-1.8707V14.6565c0-.995-.8357-1.8308-1.8704-1.8308Zm-.0001-6.88561c-1.154 0-2.1091.95524-2.1091 2.1095 0 1.15425.9551 2.14931 2.1091 2.14931 1.1541 0 2.1092-.95526 2.1092-2.14931 0-1.15426-.9551-2.1095-2.1092-2.1095ZM78.089 14.6566c0-1.1543-.9153-1.5921-1.751-1.5921h-9.2725c-.9153 0-1.6316.7164-1.6316 1.5921 0 .9154.7163 1.6319 1.6316 1.6319h6.0888l-7.8796 10.9853c-.2388.3184-.3581.7562-.3581 1.1144 0 1.1543.9153 1.7911 1.7112 1.7911h9.8296c.9153 0 1.6316-.7164 1.6316-1.6319 0-.9154-.7163-1.6318-1.6316-1.6318h-6.6062l7.7204-10.7466c.398-.5572.5174-1.0348.5174-1.5124Zm-27.3 8.6769c0 2.2687-.9949 3.6618-3.2633 3.6618-2.2683 0-3.2234-1.3931-3.2234-3.6618v-7.045h3.3826c2.7459 0 3.1041 1.5125 3.1041 3.1842v3.8608Zm3.7408-3.9404c0-3.8608-2.0296-6.3683-6.7653-6.3683h-3.4224V7.81078c0-1.03485-.8357-1.87069-1.8306-1.87069-1.0347 0-1.8704.83584-1.8704 1.87069V23.3335c0 3.8608 2.0693 7.0051 6.9642 7.0051 4.8551 0 6.9643-3.1841 6.9643-7.0051v-3.9404h-.0398Zm38.1642-6.5674c-1.0346 0-1.8704.8358-1.8704 1.8706v8.6371c0 2.2687-.9949 3.6617-3.2632 3.6617-2.2684 0-3.2235-1.393-3.2235-3.6617v-8.6371c0-1.0348-.8357-1.8706-1.8306-1.8706-1.0347 0-1.8704.8358-1.8704 1.8706v8.6371c0 3.8607 2.0694 7.0051 6.9643 7.0051 4.8551 0 6.9642-3.1842 6.9642-7.0051v-8.6371c-.0397-1.0348-.8755-1.8706-1.8704-1.8706Zm28.374 7.0451c0-3.8608-1.79-7.0052-6.645-7.0052-2.189 0-3.741.6369-4.816 1.7115-1.074-1.0348-2.626-1.7115-4.815-1.7115-4.8552 0-6.646 3.1842-6.646 7.0052v8.637c0 1.0348.8357 1.8707 1.8306 1.8707 1.0344 0 1.8704-.8359 1.8704-1.8707v-8.637c0-2.2687.716-3.6618 2.945-3.6618 2.268 0 2.945 1.3931 2.945 3.6618v8.637c0 1.0348.836 1.8707 1.83 1.8707 1.035 0 1.871-.8359 1.871-1.8707v-8.637c0-2.2687.716-3.6618 2.945-3.6618 2.268 0 2.945 1.3931 2.945 3.6618v8.637c0 1.0348.835 1.8707 1.83 1.8707 1.035 0 1.871-.8359 1.871-1.8707l.039-8.637ZM6.61567 12.8655c1.31327.9553 3.14387.6767 4.09893-.6368l3.4225-4.73643c.9551-1.31346.6765-3.14434-.6367-4.09959-1.3133-.95524-3.1439-.67663-4.09902.63683L5.93914 8.76593c-.9153 1.31347-.63673 3.14437.67653 4.09957ZM22.2952 6.17881c-1.3133-.95524-3.1439-.67663-4.099.63683L4.42685 25.7613c-.9551 1.3135-.67653 3.1444.63673 4.0996 1.31326.9553 3.14387.6767 4.09897-.6368L22.9319 10.2784c.9949-1.31345.6765-3.14434-.6367-4.09959ZM5.3024 4.66637c.9551-1.31346.67652-3.14435-.63674-4.099591C3.3524-.388466 1.52179-.109853.566693 1.20361c-.9551 1.31346-.676529 3.14435.636737 4.09959 1.31326.95525 3.14387.67663 4.09897-.63683ZM26.1952 30.6968c-1.3132-.9553-3.1438-.6766-4.0989.6368-.9551 1.3135-.6766 3.1444.6367 4.0996 1.3133.9553 3.1439.6766 4.099-.6368.9551-1.3135.6765-3.1444-.6368-4.0996Zm-5.3724-7.5226c-1.3132-.9552-3.1438-.6766-4.0989.6369l-3.4623 4.7364c-.9551 1.3134-.6765 3.1443.6367 4.0996 1.3133.9552 3.1439.6766 4.099-.6369l3.4623-4.7364c.9551-1.3134.6765-3.1443-.6368-4.0996Z"/></svg>';
 function brandSvgFor(type, name) {
   const t8 = (type || "").trim().toLowerCase();
-  const n6 = (name || "").trim().toLowerCase();
-  if (t8 === "bizum" || n6 === "bizum") return BIZUM_SVG;
+  const n7 = (name || "").trim().toLowerCase();
+  if (t8 === "bizum" || n7 === "bizum") return BIZUM_SVG;
   return void 0;
 }
 
@@ -3393,9 +3393,9 @@ var BY_NAME = [
 function payMethodIcon(type, name) {
   const t8 = (type || "").trim().toLowerCase();
   if (BY_TYPE[t8]) return BY_TYPE[t8];
-  const n6 = (name || "").trim();
-  if (n6) {
-    for (const [re, icon] of BY_NAME) if (re.test(n6)) return icon;
+  const n7 = (name || "").trim();
+  if (n7) {
+    for (const [re, icon] of BY_NAME) if (re.test(n7)) return icon;
   }
   return PAY_ICON_FALLBACK;
 }
@@ -3674,8 +3674,8 @@ var OkQtyStepper = class extends i3 {
     return { ...DEFAULT_LABELS3, ...this.labels };
   }
   // Recorta `n` al rango [min, max] respetando los límites definidos.
-  clamp(n6) {
-    let v3 = n6;
+  clamp(n7) {
+    let v3 = n7;
     if (typeof this.min === "number" && v3 < this.min) v3 = this.min;
     if (typeof this.max === "number" && v3 > this.max) v3 = this.max;
     return v3;
@@ -3761,22 +3761,22 @@ var OkQtyStepper = class extends i3 {
   }
 };
 __decorateClass5([
-  n4({ type: Number })
+  n5({ type: Number })
 ], OkQtyStepper.prototype, "value");
 __decorateClass5([
-  n4({ type: Number })
+  n5({ type: Number })
 ], OkQtyStepper.prototype, "min");
 __decorateClass5([
-  n4({ type: Number })
+  n5({ type: Number })
 ], OkQtyStepper.prototype, "max");
 __decorateClass5([
-  n4({ type: Number })
+  n5({ type: Number })
 ], OkQtyStepper.prototype, "step");
 __decorateClass5([
-  n4({ type: Boolean, reflect: true })
+  n5({ type: Boolean, reflect: true })
 ], OkQtyStepper.prototype, "disabled");
 __decorateClass5([
-  n4({ attribute: false })
+  n5({ attribute: false })
 ], OkQtyStepper.prototype, "labels");
 define("ok-qty-stepper", OkQtyStepper);
 
@@ -3967,19 +3967,19 @@ var OkSpotlightSearch = class extends i3 {
   }
 };
 __decorateClass6([
-  n4({ type: Boolean, reflect: true })
+  n5({ type: Boolean, reflect: true })
 ], OkSpotlightSearch.prototype, "open");
 __decorateClass6([
-  n4()
+  n5()
 ], OkSpotlightSearch.prototype, "placeholder");
 __decorateClass6([
-  n4()
+  n5()
 ], OkSpotlightSearch.prototype, "value");
 __decorateClass6([
-  n4({ attribute: "trigger-icon" })
+  n5({ attribute: "trigger-icon" })
 ], OkSpotlightSearch.prototype, "triggerIcon");
 __decorateClass6([
-  n4({ attribute: "trigger-label" })
+  n5({ attribute: "trigger-label" })
 ], OkSpotlightSearch.prototype, "triggerLabel");
 __decorateClass6([
   e4(".top input")
@@ -4055,7 +4055,7 @@ async function listParkedTickets(client) {
 async function parkCart(client, cart, notes = "") {
   if (!cart.length) return null;
   const d3 = /* @__PURE__ */ new Date();
-  const pad = (n6) => String(n6).padStart(2, "0");
+  const pad = (n7) => String(n7).padStart(2, "0");
   const ticketNumber = `P-${pad(d3.getHours())}${pad(d3.getMinutes())}${pad(d3.getSeconds())}`;
   try {
     await client.command("sales.park_ticket", {
@@ -4072,6 +4072,19 @@ async function retrieveParkedTicket(client, ticket) {
   const lines = parseCartLines(ticket.cart_data);
   await client.command("sales.retrieve_ticket", { ticket_id: ticket.id });
   return lines;
+}
+async function listOpenChecks(client, excluir) {
+  try {
+    const r6 = rows(await client.query("sales.orders.list"));
+    return r6.filter((o9) => o9.status === "open" && String(o9.id) !== excluir).map((o9) => ({
+      id: String(o9.id),
+      total: Number(o9.provisional_total) || 0,
+      created_at: String(o9.created_at ?? ""),
+      label: o9.label ? String(o9.label) : void 0
+    })).sort((a3, b3) => b3.created_at.localeCompare(a3.created_at));
+  } catch {
+    return [];
+  }
 }
 function firstNewId(res) {
   const ids = res?.new_ids;
@@ -4286,10 +4299,10 @@ var ErpPosTouch = class extends i3 {
         targetOrderId: d3.order_id ?? void 0
       });
       const aparcar = async () => {
-        const n6 = await parkCart(erplora2(), this.cart);
+        await this.park();
         if (this.orderId) await erplora2().command("sales.order.void", { order_id: this.orderId }).catch(() => void 0);
-        this.parked = await listParkedTickets(erplora2());
-        if (n6) this.error = t5("ui.parkedAs", { number: n6 });
+        this.parked = await listOpenChecks(erplora2(), this.orderId);
+        if (n) this.error = t5("ui.parkedAs", { number: n });
       };
       if (accion === "clear" || accion === "park-then-clear") {
         if (accion === "park-then-clear") await aparcar();
@@ -4560,7 +4573,7 @@ var ErpPosTouch = class extends i3 {
         erplora2().query("sales.payment_methods").catch(() => []),
         erplora2().query("sales.settings.get").catch(() => []),
         this.restoreOpenOrder(),
-        listParkedTickets(erplora2()),
+        listOpenChecks(erplora2()),
         erplora2().queryAll("inventory.categories.list", { sort: "name", dir: "asc" }).catch(() => []),
         erplora2().queryAll("inventory.product_categories").catch(() => []),
         buildCategoryRatesMap(erplora2())
@@ -4646,8 +4659,8 @@ var ErpPosTouch = class extends i3 {
   // (misma fuente que dashboard/billing). Antes hardcodeaba '€' / la moneda por-módulo.
   // FIX QA (2026-06-25): el POS trabaja en CÉNTIMOS → formatMoney (divide /100), NO formatAmount
   // (que mostraba precios ×100).
-  money(n6) {
-    return erplora2().formatMoney(Number(n6) || 0);
+  money(n7) {
+    return erplora2().formatMoney(Number(n7) || 0);
   }
   /** Formas de pago que se ofrecen: activas (query) y permitidas por Ajustes (allow_*). */
   get payMethods() {
@@ -4681,25 +4694,46 @@ var ErpPosTouch = class extends i3 {
     } catch {
     }
   }
+  /** Aparcar (ADR-0146): la cuenta se queda ABIERTA y solo se suelta de la pantalla. Ya no se
+   *  copia a otra entidad —el pedido ya es la cuenta— y por eso no se pierde nada por el camino.
+   *  Si venía de una mesa, su dueño la suelta también: la mesa queda libre para otros. */
   async park() {
     if (!this.cart.length) return;
-    const num = await parkCart(erplora2(), this.cart);
-    if (!num) {
-      this.error = t5("ui.errorPark");
-      return;
-    }
+    this.notifyPark();
+    this.orderId = void 0;
     this.cart = [];
+    this.tableId = void 0;
+    this.tableLabel = "";
     this.parkedOpen = false;
-    this.parked = await listParkedTickets(erplora2());
+    this.parked = await listOpenChecks(erplora2(), this.orderId);
   }
-  async retrieve(t8) {
-    if (this.cart.length) return;
+  /** Recuperar una cuenta abierta = CAMBIAR de cuenta, igual que tocar otra mesa. Antes estaba
+   *  bloqueado si tenías algo marcado; ahora lo de delante se aparca (sigue abierto) y se abre la
+   *  elegida, que es lo que hace cualquier TPV de sala. */
+  async retrieve(c5) {
     try {
-      this.cart = await retrieveParkedTicket(erplora2(), t8);
+      if (this.cart.length && this.orderId !== c5.id) await this.park();
+      this.orderId = c5.id;
+      this.cart = await loadOrderLines(erplora2(), c5.id);
+      this.notifyOrderRestored();
       this.parkedOpen = false;
-      this.parked = await listParkedTickets(erplora2());
+      this.parked = await listOpenChecks(erplora2(), c5.id);
     } catch (e7) {
-      this.error = e7 instanceof Error ? e7.message : t8("ui.errorRetrieve");
+      this.error = e7 instanceof Error ? e7.message : t5("ui.errorRetrieve");
+    }
+  }
+  /** Avisa a los dueños de que la cuenta se aparca, para que suelten lo suyo (la mesa). */
+  notifyPark() {
+    if (!this.orderId) return;
+    for (const f3 of this.assignFillers) {
+      f3.el.dispatchEvent(new CustomEvent("erp:order-parked", { detail: { order_id: this.orderId }, bubbles: false }));
+    }
+  }
+  /** Avisa a los dueños de que se ha reabierto una cuenta, para que recuperen su contexto. */
+  notifyOrderRestored() {
+    if (!this.orderId) return;
+    for (const f3 of this.assignFillers) {
+      f3.el.dispatchEvent(new CustomEvent("erp:order-restored", { detail: { order_id: this.orderId }, bubbles: false }));
     }
   }
   /** ADR-0141: reanuda el pedido ABIERTO (si lo hay) tras recargar. Sus líneas ya traen `line_id`
@@ -4985,9 +5019,14 @@ var ErpPosTouch = class extends i3 {
           <div class="pdrop">
             <ion-button size="small" expand="block" fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>${t5("ui.parkCurrentSale")}</ion-button>
             <p class="hint">${t5("ui.parkedTickets")}</p>
-            ${this.parked.map((pt) => b2`<div class="pitem">
-              <div><div class="pn">${pt.ticket_number}</div><div class="pm">${(pt.created_at || "").replace("T", " ").slice(0, 16)}</div></div>
-              <ion-button size="small" ?disabled=${!!this.cart.length} @click=${() => this.retrieve(pt)}>${t5("ui.retrieve")}</ion-button>
+            ${this.parked.map((oc) => b2`<div class="pitem">
+              <div>
+                <div class="pn">${oc.label || this.money(oc.total)}</div>
+                <div class="pm">${(oc.created_at || "").replace("T", " ").slice(11, 16)}${oc.label ? " \xB7 " + this.money(oc.total) : ""}</div>
+              </div>
+              <!-- Ya NO se bloquea con algo marcado: lo de delante se aparca (sigue abierto) y se
+                   abre la elegida, igual que al cambiar de mesa (ADR-0146). -->
+              <ion-button size="small" @click=${() => this.retrieve(oc)}>${t5("ui.retrieve")}</ion-button>
             </div>`)}
             ${!this.parked.length ? b2`<div class="hint" style="text-align:center">${t5("ui.noParkedTickets")}</div>` : A}
           </div>` : A}
@@ -5530,8 +5569,8 @@ var ErpPosDesktop = class extends i3 {
   // FIX QA (2026-06-25): el POS trabaja en CÉNTIMOS (price de inventory.products.list, total del
   // carrito) → debe usar formatMoney (divide /100), NO formatAmount (espera unidades) que mostraba
   // los precios ×100 ("3.500,00 €" por un servicio de 35 €).
-  money(n6) {
-    return erplora3().formatMoney(Number(n6) || 0);
+  money(n7) {
+    return erplora3().formatMoney(Number(n7) || 0);
   }
   get total() {
     return this.cart.reduce((s5, l3) => s5 + (l3.is_gift ? 0 : l3.price * l3.qty), 0);
@@ -5869,16 +5908,16 @@ define("erp-pos", ErpPos);
 var { I: t7 } = j;
 var i5 = (o9) => o9;
 var s4 = () => document.createComment("");
-var v2 = (o9, n6, e7) => {
-  const l3 = o9._$AA.parentNode, d3 = void 0 === n6 ? o9._$AB : n6._$AA;
+var v2 = (o9, n7, e7) => {
+  const l3 = o9._$AA.parentNode, d3 = void 0 === n7 ? o9._$AB : n7._$AA;
   if (void 0 === e7) {
-    const i7 = l3.insertBefore(s4(), d3), n7 = l3.insertBefore(s4(), d3);
-    e7 = new t7(i7, n7, o9, o9.options);
+    const i7 = l3.insertBefore(s4(), d3), n8 = l3.insertBefore(s4(), d3);
+    e7 = new t7(i7, n8, o9, o9.options);
   } else {
-    const t8 = e7._$AB.nextSibling, n7 = e7._$AM, c5 = n7 !== o9;
+    const t8 = e7._$AB.nextSibling, n8 = e7._$AM, c5 = n8 !== o9;
     if (c5) {
       let t9;
-      e7._$AQ?.(o9), e7._$AM = o9, void 0 !== e7._$AP && (t9 = o9._$AU) !== n7._$AU && e7._$AP(t9);
+      e7._$AQ?.(o9), e7._$AM = o9, void 0 !== e7._$AP && (t9 = o9._$AU) !== n8._$AU && e7._$AP(t9);
     }
     if (t8 !== d3 || c5) {
       let o10 = e7._$AA;
@@ -5952,8 +5991,8 @@ var c4 = e5(class extends i4 {
 });
 
 // ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
-var n5 = "important";
-var i6 = " !" + n5;
+var n6 = "important";
+var i6 = " !" + n6;
 var o8 = e5(class extends i4 {
   constructor(t8) {
     if (super(t8), t8.type !== t3.ATTRIBUTE || "style" !== t8.name || t8.strings?.length > 2) throw Error("The `styleMap` directive must be used in the `style` attribute and must be the only part in the attribute.");
@@ -5973,7 +6012,7 @@ var o8 = e5(class extends i4 {
       if (null != e8) {
         this.ft.add(t8);
         const r7 = "string" == typeof e8 && e8.endsWith(i6);
-        t8.includes("-") || r7 ? s5.setProperty(t8, r7 ? e8.slice(0, -11) : e8, r7 ? n5 : "") : s5[t8] = e8;
+        t8.includes("-") || r7 ? s5.setProperty(t8, r7 ? e8.slice(0, -11) : e8, r7 ? n6 : "") : s5[t8] = e8;
       }
     }
     return E;
@@ -6882,10 +6921,10 @@ var OkDataTable = class extends i3 {
       if (this.serverSide) this.emit("pageChange", p4);
       else this.clientPage = p4;
     };
-    const setPageSize = (n6) => {
-      if (this.serverSide) this.emit("pageSizeChange", n6);
+    const setPageSize = (n7) => {
+      if (this.serverSide) this.emit("pageSizeChange", n7);
       else {
-        this.clientPageSize = n6;
+        this.clientPageSize = n7;
         this.clientPage = 0;
       }
     };
@@ -6922,7 +6961,7 @@ var OkDataTable = class extends i3 {
                             .value=${ps}
                             @ionChange=${(e7) => setPageSize(Number(e7.detail.value))}
                           >
-                            ${this.effPageSizes.map((n6) => b2`<ion-select-option .value=${n6}>${n6}</ion-select-option>`)}
+                            ${this.effPageSizes.map((n7) => b2`<ion-select-option .value=${n7}>${n7}</ion-select-option>`)}
                           </ion-select>
                         ` : A}
                     ${this.viewToggle ? b2`
@@ -6973,7 +7012,7 @@ var OkDataTable = class extends i3 {
                   </span>
                   ${!showTopbar && this.effPageSizes.length ? b2`
                         <select class="psize" @change=${(e7) => setPageSize(Number(e7.target.value))}>
-                          ${this.effPageSizes.map((n6) => b2`<option value=${n6} ?selected=${n6 === ps}>${this.t.perPageShort.replace("{n}", String(n6))}</option>`)}
+                          ${this.effPageSizes.map((n7) => b2`<option value=${n7} ?selected=${n7 === ps}>${this.t.perPageShort.replace("{n}", String(n7))}</option>`)}
                         </select>
                       ` : A}
                 </div>
@@ -7149,115 +7188,115 @@ var OkDataTable = class extends i3 {
   }
 };
 __decorateClass7([
-  n4({ attribute: false })
+  n5({ attribute: false })
 ], OkDataTable.prototype, "columns");
 __decorateClass7([
-  n4({ attribute: false })
+  n5({ attribute: false })
 ], OkDataTable.prototype, "rows");
 __decorateClass7([
-  n4({ attribute: false })
+  n5({ attribute: false })
 ], OkDataTable.prototype, "searchKeys");
 __decorateClass7([
-  n4({ attribute: "row-key-field" })
+  n5({ attribute: "row-key-field" })
 ], OkDataTable.prototype, "rowKeyField");
 __decorateClass7([
-  n4({ attribute: false })
+  n5({ attribute: false })
 ], OkDataTable.prototype, "rowKey");
 __decorateClass7([
-  n4({ type: Number, attribute: "page-size" })
+  n5({ type: Number, attribute: "page-size" })
 ], OkDataTable.prototype, "pageSize");
 __decorateClass7([
-  n4({ attribute: "empty-message" })
+  n5({ attribute: "empty-message" })
 ], OkDataTable.prototype, "emptyMessage");
 __decorateClass7([
-  n4({ attribute: "search-placeholder" })
+  n5({ attribute: "search-placeholder" })
 ], OkDataTable.prototype, "searchPlaceholder");
 __decorateClass7([
-  n4({ attribute: false })
+  n5({ attribute: false })
 ], OkDataTable.prototype, "labels");
 __decorateClass7([
-  n4({ attribute: false })
+  n5({ attribute: false })
 ], OkDataTable.prototype, "actions");
 __decorateClass7([
-  n4({ type: Boolean })
+  n5({ type: Boolean })
 ], OkDataTable.prototype, "addable");
 __decorateClass7([
-  n4({ attribute: false })
+  n5({ attribute: false })
 ], OkDataTable.prototype, "pageSizeOptions");
 __decorateClass7([
-  n4({ type: Boolean, reflect: true })
+  n5({ type: Boolean, reflect: true })
 ], OkDataTable.prototype, "fill");
 __decorateClass7([
-  n4({ type: Boolean, attribute: "column-picker" })
+  n5({ type: Boolean, attribute: "column-picker" })
 ], OkDataTable.prototype, "columnPicker");
 __decorateClass7([
-  n4({ type: Boolean })
+  n5({ type: Boolean })
 ], OkDataTable.prototype, "csv");
 __decorateClass7([
-  n4({ attribute: "csv-name" })
+  n5({ attribute: "csv-name" })
 ], OkDataTable.prototype, "csvName");
 __decorateClass7([
-  n4({ type: Boolean, attribute: "server-side" })
+  n5({ type: Boolean, attribute: "server-side" })
 ], OkDataTable.prototype, "serverSide");
 __decorateClass7([
-  n4({ type: Number })
+  n5({ type: Number })
 ], OkDataTable.prototype, "total");
 __decorateClass7([
-  n4({ type: Number })
+  n5({ type: Number })
 ], OkDataTable.prototype, "page");
 __decorateClass7([
-  n4({ type: Boolean })
+  n5({ type: Boolean })
 ], OkDataTable.prototype, "searchable");
 __decorateClass7([
-  n4({ type: String })
+  n5({ type: String })
 ], OkDataTable.prototype, "sort");
 __decorateClass7([
-  n4({ attribute: "sort-dir" })
+  n5({ attribute: "sort-dir" })
 ], OkDataTable.prototype, "sortDir");
 __decorateClass7([
-  n4()
+  n5()
 ], OkDataTable.prototype, "title");
 __decorateClass7([
-  n4({ attribute: false })
+  n5({ attribute: false })
 ], OkDataTable.prototype, "views");
 __decorateClass7([
-  n4({ attribute: "default-view" })
+  n5({ attribute: "default-view" })
 ], OkDataTable.prototype, "defaultView");
 __decorateClass7([
-  n4({ type: Boolean })
+  n5({ type: Boolean })
 ], OkDataTable.prototype, "exportable");
 __decorateClass7([
-  n4({ type: Boolean })
+  n5({ type: Boolean })
 ], OkDataTable.prototype, "importable");
 __decorateClass7([
-  n4({ type: Boolean, attribute: "column-selector" })
+  n5({ type: Boolean, attribute: "column-selector" })
 ], OkDataTable.prototype, "columnSelector");
 __decorateClass7([
-  n4({ attribute: false })
+  n5({ attribute: false })
 ], OkDataTable.prototype, "pageSizes");
 __decorateClass7([
-  n4({ type: Boolean })
+  n5({ type: Boolean })
 ], OkDataTable.prototype, "selectable");
 __decorateClass7([
-  n4({ attribute: false })
+  n5({ attribute: false })
 ], OkDataTable.prototype, "selectedKeys");
 __decorateClass7([
-  n4({ attribute: false })
+  n5({ attribute: false })
 ], OkDataTable.prototype, "primaryAction");
 __decorateClass7([
-  n4({ type: Boolean })
+  n5({ type: Boolean })
 ], OkDataTable.prototype, "inlineFilters");
 __decorateClass7([
-  n4({ attribute: false })
+  n5({ attribute: false })
 ], OkDataTable.prototype, "menuActions");
 __decorateClass7([
-  n4({ attribute: false })
+  n5({ attribute: false })
 ], OkDataTable.prototype, "cardTitle");
 __decorateClass7([
-  n4({ attribute: false })
+  n5({ attribute: false })
 ], OkDataTable.prototype, "cardIcon");
 __decorateClass7([
-  n4({ attribute: false })
+  n5({ attribute: false })
 ], OkDataTable.prototype, "renderCard");
 __decorateClass7([
   r5()

@@ -15,10 +15,10 @@ import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod } fro
 import '@erplora/outfitkit/ok-qty-stepper';
 import '@erplora/outfitkit/ok-spotlight-search';
 import {
-  loadActiveCart, persistActiveCart, mergeCartLines, listParkedTickets, parkCart, retrieveParkedTicket,
+  loadActiveCart, persistActiveCart, mergeCartLines, listOpenChecks, type OpenCheck,
   // ADR-0141: el carrito lo respalda un PEDIDO real (filas), no un blob con debounce.
   openOrderWithLines, addOrderLine, updateOrderLineQty, persistLineQty, removeOrderLine, loadOrderLines, findOpenOrder, mergeOrders,
-  type CartLine, type ErploraClientLike, type ParkedTicket,
+  type CartLine, type ErploraClientLike,
 } from '../../lib/pos-cart.js';
 import { buildCategoryRatesMap, resolveLineTax } from '../../lib/pos-tax.js';
 // Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC.
@@ -279,7 +279,7 @@ export class ErpPosTouch extends LitElement {
   @state() private busy = false;
   @state() private error = '';
   @state() private docSaleId?: string;
-  @state() private parked: ParkedTicket[] = [];
+  @state() private parked: OpenCheck[] = [];
   @state() private parkedOpen = false;
   @state() private cartOpen = false;
   @state() private fullscreen = false;
@@ -329,9 +329,9 @@ export class ErpPosTouch extends LitElement {
     // Aparca la comanda de delante como ticket recuperable (no se mezcla sola con la de la mesa:
     // juntar dos cuentas es FUSIONAR, una acción explícita).
     const aparcar = async () => {
-      const n = await parkCart(erplora(), this.cart);
+      await this.park();
       if (this.orderId) await erplora().command('sales.order.void', { order_id: this.orderId }).catch(() => undefined);
-      this.parked = await listParkedTickets(erplora());
+      this.parked = await listOpenChecks(erplora(), this.orderId);
       if (n) this.error = t('ui.parkedAs', { number: n });
     };
 
@@ -442,7 +442,7 @@ export class ErpPosTouch extends LitElement {
         erplora().query('sales.payment_methods').catch(() => []),
         erplora().query('sales.settings.get').catch(() => []),
         this.restoreOpenOrder(),
-        listParkedTickets(erplora()),
+        listOpenChecks(erplora()),
         erplora().queryAll<Category>('inventory.categories.list', { sort: 'name', dir: 'asc' }).catch(() => []),
         erplora().queryAll<ProdCat>('inventory.product_categories').catch(() => []),
         buildCategoryRatesMap(erplora()),
@@ -571,23 +571,49 @@ export class ErpPosTouch extends LitElement {
     } catch { /* el navegador puede rechazar fullscreen; se ignora */ }
   }
 
+  /** Aparcar (ADR-0146): la cuenta se queda ABIERTA y solo se suelta de la pantalla. Ya no se
+   *  copia a otra entidad —el pedido ya es la cuenta— y por eso no se pierde nada por el camino.
+   *  Si venía de una mesa, su dueño la suelta también: la mesa queda libre para otros. */
   private async park() {
     if (!this.cart.length) return;
-    const num = await parkCart(erplora(), this.cart);
-    if (!num) { this.error = t('ui.errorPark'); return; }
+    this.notifyPark();
+    this.orderId = undefined;
     this.cart = [];
+    this.tableId = undefined;
+    this.tableLabel = '';
     this.parkedOpen = false;
-    this.parked = await listParkedTickets(erplora());
+    this.parked = await listOpenChecks(erplora(), this.orderId);
   }
 
-  private async retrieve(t: ParkedTicket) {
-    if (this.cart.length) return;
+  /** Recuperar una cuenta abierta = CAMBIAR de cuenta, igual que tocar otra mesa. Antes estaba
+   *  bloqueado si tenías algo marcado; ahora lo de delante se aparca (sigue abierto) y se abre la
+   *  elegida, que es lo que hace cualquier TPV de sala. */
+  private async retrieve(c: OpenCheck) {
     try {
-      this.cart = await retrieveParkedTicket(erplora(), t);
+      if (this.cart.length && this.orderId !== c.id) await this.park();
+      this.orderId = c.id;
+      this.cart = await loadOrderLines(erplora(), c.id);
+      this.notifyOrderRestored();
       this.parkedOpen = false;
-      this.parked = await listParkedTickets(erplora());
+      this.parked = await listOpenChecks(erplora(), c.id);
     } catch (e) {
       this.error = e instanceof Error ? e.message : t('ui.errorRetrieve');
+    }
+  }
+
+  /** Avisa a los dueños de que la cuenta se aparca, para que suelten lo suyo (la mesa). */
+  private notifyPark(): void {
+    if (!this.orderId) return;
+    for (const f of this.assignFillers) {
+      f.el.dispatchEvent(new CustomEvent('erp:order-parked', { detail: { order_id: this.orderId }, bubbles: false }));
+    }
+  }
+
+  /** Avisa a los dueños de que se ha reabierto una cuenta, para que recuperen su contexto. */
+  private notifyOrderRestored(): void {
+    if (!this.orderId) return;
+    for (const f of this.assignFillers) {
+      f.el.dispatchEvent(new CustomEvent('erp:order-restored', { detail: { order_id: this.orderId }, bubbles: false }));
     }
   }
 
@@ -914,9 +940,14 @@ export class ErpPosTouch extends LitElement {
           <div class="pdrop">
             <ion-button size="small" expand="block" fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>${t('ui.parkCurrentSale')}</ion-button>
             <p class="hint">${t('ui.parkedTickets')}</p>
-            ${this.parked.map((pt) => html`<div class="pitem">
-              <div><div class="pn">${pt.ticket_number}</div><div class="pm">${(pt.created_at || '').replace('T', ' ').slice(0, 16)}</div></div>
-              <ion-button size="small" ?disabled=${!!this.cart.length} @click=${() => this.retrieve(pt)}>${t('ui.retrieve')}</ion-button>
+            ${this.parked.map((oc) => html`<div class="pitem">
+              <div>
+                <div class="pn">${oc.label || this.money(oc.total)}</div>
+                <div class="pm">${(oc.created_at || '').replace('T', ' ').slice(11, 16)}${oc.label ? ' · ' + this.money(oc.total) : ''}</div>
+              </div>
+              <!-- Ya NO se bloquea con algo marcado: lo de delante se aparca (sigue abierto) y se
+                   abre la elegida, igual que al cambiar de mesa (ADR-0146). -->
+              <ion-button size="small" @click=${() => this.retrieve(oc)}>${t('ui.retrieve')}</ion-button>
             </div>`)}
             ${!this.parked.length ? html`<div class="hint" style="text-align:center">${t('ui.noParkedTickets')}</div>` : nothing}
           </div>`

@@ -182,6 +182,43 @@ export async function retrieveParkedTicket(client: ErploraClientLike, ticket: Pa
   return lines;
 }
 
+/** Una cuenta sin cobrar, tal y como se ve en la lista del TPV (ADR-0146). */
+export interface OpenCheck {
+  id: string;
+  /** Céntimos. Provisional: el desglose fiscal se congela al cobrar. */
+  total: number;
+  created_at: string;
+  /** Etiqueta de quien la owna (mesa, cliente…), si el TPV la ha resuelto. Vacía = cuenta de barra. */
+  label?: string;
+}
+
+/**
+ * Cuentas ABIERTAS del hub, la más reciente primero (ADR-0146).
+ *
+ * Sustituye a la lista de «tickets aparcados». Había tres formas de decir lo mismo —el pedido de la
+ * mesa, el ticket aparcado y el blob del carrito— y eran la misma cosa: una cuenta sin cobrar. Aquí
+ * salen todas, de mesa y de barra, y recuperar una es cambiar de cuenta.
+ *
+ * `excluir` deja fuera la que se está viendo: salir en su propia lista invita a «recuperar» lo que
+ * ya tienes delante.
+ */
+export async function listOpenChecks(client: ErploraClientLike, excluir?: string): Promise<OpenCheck[]> {
+  try {
+    const r = rows<Record<string, unknown>>(await client.query('sales.orders.list'));
+    return r
+      .filter((o) => o.status === 'open' && String(o.id) !== excluir)
+      .map((o) => ({
+        id: String(o.id),
+        total: Number(o.provisional_total) || 0,
+        created_at: String(o.created_at ?? ''),
+        label: o.label ? String(o.label) : undefined,
+      }))
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  } catch {
+    return [];
+  }
+}
+
 // ── ADR-0141: carrito respaldado por un PEDIDO real (sales_order/sales_order_item) ────────────
 // El camino viejo (`sales_active_cart`) guardaba un BLOB JSON con debounce de 400 ms: un corte de
 // corriente perdía el último artículo. Aquí cada interacción es una escritura TRANSACCIONAL

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mergeCartLines, loadActiveCart, persistActiveCart, persistLineQty, type CartLine, type ErploraClientLike } from './pos-cart';
+import { mergeCartLines, listOpenChecks, loadActiveCart, persistActiveCart, persistLineQty, type CartLine, type ErploraClientLike } from './pos-cart';
 
 // Cliente de prueba que registra las llamadas a query/command (lo único que nos importa aquí:
 // que la comanda se pida/guarde ATADA a la mesa — `table_id`).
@@ -261,5 +261,43 @@ describe('persistLineQty — la pantalla no puede mentir (ADR-0144)', () => {
     const ok = await persistLineQty(client, 'ord-1', { id: 'p1', name: 'Tortilla', price: 750, qty: 5 }, 5);
     expect(ok).toBe(false);
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe('cuentas abiertas: un aparcado es un pedido abierto (ADR-0146)', () => {
+  // Había TRES formas de decir «cuenta sin cobrar»: `sales_order` (la de la mesa),
+  // `sales_parked_ticket` (la aparcada) y `sales_active_cart` (el blob del carrito). Son lo mismo.
+  // Ahora la lista de aparcados es la de CUENTAS ABIERTAS: salen todas —barra y mesa—, y recuperar
+  // una es cambiar de cuenta, igual que tocar otra mesa. Antes estaba bloqueado si tenías algo
+  // marcado, que es justo lo que chirriaba en sala.
+  const cliente = (pedidos: Array<Record<string, unknown>>) => ({
+    query: async (name: string) => (name === 'sales.orders.list' ? pedidos : []),
+    queryAll: async (name: string) => (name === 'sales.orders.list' ? pedidos : []),
+    queryOptional: async () => undefined,
+    command: async () => ({ ok: true }),
+    currency: 'EUR',
+  } as unknown as ErploraClientLike);
+
+  it('lista solo las cuentas ABIERTAS, la más reciente primero', async () => {
+    const abiertas = await listOpenChecks(cliente([
+      { id: 'o1', status: 'open', provisional_total: 1200, created_at: '2026-07-19T20:00:00+00:00' },
+      { id: 'o2', status: 'completed', provisional_total: 500, created_at: '2026-07-19T21:00:00+00:00' },
+      { id: 'o3', status: 'open', provisional_total: 300, created_at: '2026-07-19T21:30:00+00:00' },
+    ]));
+    expect(abiertas.map((o) => o.id)).toEqual(['o3', 'o1']);
+    expect(abiertas[0].total).toBe(300);
+  });
+
+  it('la cuenta que tienes delante NO sale en la lista', async () => {
+    // Salir en su propia lista invita a «recuperar» lo que ya estás viendo.
+    const abiertas = await listOpenChecks(cliente([
+      { id: 'o1', status: 'open', provisional_total: 1200, created_at: '2026-07-19T20:00:00+00:00' },
+      { id: 'o3', status: 'open', provisional_total: 300, created_at: '2026-07-19T21:30:00+00:00' },
+    ]), 'o3');
+    expect(abiertas.map((o) => o.id)).toEqual(['o1']);
+  });
+
+  it('sin cuentas abiertas devuelve vacío, no revienta', async () => {
+    expect(await listOpenChecks(cliente([]))).toEqual([]);
   });
 });
