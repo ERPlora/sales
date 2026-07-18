@@ -5,6 +5,7 @@ import { define } from '@erplora/outfitkit/define';
 import { eurosToCents } from '@erplora/module-sdk';
 import { renderDocumentModal } from '../../lib/document-modal.js';
 import { orderToPrebill } from '../../lib/document-mappers.js';
+import { decideOnTableChange } from '../../lib/table-switch.js';
 import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod } from '../../lib/pay-icons.js';
 import '@erplora/outfitkit/ok-qty-stepper';
 import '@erplora/outfitkit/ok-spotlight-search';
@@ -298,17 +299,52 @@ export class ErpPosTouch extends LitElement {
     const d = (e as CustomEvent<{ table_id: string | null; label?: string; order_id?: string | null }>).detail
       ?? { table_id: null };
     const nextTable = d.table_id ?? undefined;
-    if (nextTable === this.tableId) { this.tableLabel = d.label ?? this.tableLabel; return; }
-    // ADR-0141: cambiar de mesa = cambiar de PEDIDO. Ya no hay que "guardar" la comanda que dejamos:
-    // sus líneas están escritas en su propio `sales_order` desde que se pulsaron. Solo se cambia de
-    // contexto: si la mesa nueva ya tiene pedido (junction), se reanuda; si no, se empieza en blanco
-    // y el primer artículo abrirá uno que se enlazará a la mesa.
-    this.tableId = nextTable;
-    this.tableLabel = d.label ?? '';
+    if (nextTable && nextTable === this.tableId) { this.tableLabel = d.label ?? this.tableLabel; return; }
+
+    // Reglas de sala (ADR-0141): lo que hay marcado NUNCA se pierde al tocar una mesa.
+    const accion = decideOnTableChange({
+      cartHasItems: this.cart.length > 0,
+      currentTableId: this.tableId,
+      targetTableId: nextTable,
+      targetOrderId: d.order_id ?? undefined,
+    });
+
+    // Aparca la comanda de delante como ticket recuperable (no se mezcla sola con la de la mesa:
+    // juntar dos cuentas es FUSIONAR, una acción explícita).
+    const aparcar = async () => {
+      const n = await parkCart(erplora(), this.cart);
+      if (this.orderId) await erplora().command('sales.order.void', { order_id: this.orderId }).catch(() => undefined);
+      this.parked = await listParkedTickets(erplora());
+      if (n) this.error = t('ui.parkedAs', { number: n });
+    };
+
+    if (accion === 'clear' || accion === 'park-then-clear') {
+      if (accion === 'park-then-clear') await aparcar();
+      this.tableId = undefined; this.tableLabel = '';
+      this.orderId = undefined; this.cart = [];
+      return;
+    }
+
+    if (accion === 'assign-to-target') {
+      // La comanda de delante pasa a SER la de esa mesa: se enlaza la junction, no se mueve nada.
+      this.tableId = nextTable; this.tableLabel = d.label ?? '';
+      if (this.orderId) {
+        for (const f of this.assignFillers) {
+          f.el.dispatchEvent(new CustomEvent('erp:order-linked', { detail: { order_id: this.orderId }, bubbles: false }));
+        }
+      }
+      return;
+    }
+
+    if (accion === 'park-then-load') await aparcar();
+
+    // Abrir la comanda de la mesa (o empezar en blanco si no tiene).
+    this.tableId = nextTable; this.tableLabel = d.label ?? '';
     const linked = d.order_id ?? undefined;
     this.orderId = linked;
     this.cart = linked ? await loadOrderLines(erplora(), linked) : [];
   };
+
   // Fusionar mesas (punto 3): el filler ya ejecutó tables.sessions.merge; aquí se combinan los
   // tiquets (sumando líneas idénticas) en la mesa destino y se limpia el origen.
   private readonly onOrderMerge = async (e: Event) => {

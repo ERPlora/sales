@@ -2782,7 +2782,8 @@ var es_default = {
     prebillTitle: "Cuenta",
     prebillNotice: "Cuenta \u2014 no es una factura. El tiquet fiscal se entrega al cobrar.",
     paymentMethod: "Forma de pago",
-    printReceipt: "Imprimir tiquet"
+    printReceipt: "Imprimir tiquet",
+    parkedAs: "Aparcado como {number}"
   },
   widgets: {
     "sales.today": {
@@ -2944,7 +2945,8 @@ var en_default = {
     prebillTitle: "Bill",
     prebillNotice: "Bill \u2014 this is not an invoice. The fiscal receipt is issued on payment.",
     paymentMethod: "Payment method",
-    printReceipt: "Print receipt"
+    printReceipt: "Print receipt",
+    parkedAs: "Parked as {number}"
   }
 };
 
@@ -3170,6 +3172,13 @@ function renderDocumentModal({ saleId, onClose, t: t7 }) {
       </ion-toolbar>
     </ion-footer>
   </ion-modal>`;
+}
+
+// ui/lib/table-switch.ts
+function decideOnTableChange(c5) {
+  if (!c5.targetTableId) return c5.cartHasItems ? "park-then-clear" : "clear";
+  if (!c5.cartHasItems) return "load-target";
+  return c5.targetOrderId ? "park-then-load" : "assign-to-target";
 }
 
 // ui/lib/pay-icons.ts
@@ -4068,10 +4077,41 @@ var ErpPosTouch = class extends i3 {
     this.onOrderContext = async (e6) => {
       const d3 = e6.detail ?? { table_id: null };
       const nextTable = d3.table_id ?? void 0;
-      if (nextTable === this.tableId) {
+      if (nextTable && nextTable === this.tableId) {
         this.tableLabel = d3.label ?? this.tableLabel;
         return;
       }
+      const accion = decideOnTableChange({
+        cartHasItems: this.cart.length > 0,
+        currentTableId: this.tableId,
+        targetTableId: nextTable,
+        targetOrderId: d3.order_id ?? void 0
+      });
+      const aparcar = async () => {
+        const n6 = await parkCart(erplora2(), this.cart);
+        if (this.orderId) await erplora2().command("sales.order.void", { order_id: this.orderId }).catch(() => void 0);
+        this.parked = await listParkedTickets(erplora2());
+        if (n6) this.error = t3("ui.parkedAs", { number: n6 });
+      };
+      if (accion === "clear" || accion === "park-then-clear") {
+        if (accion === "park-then-clear") await aparcar();
+        this.tableId = void 0;
+        this.tableLabel = "";
+        this.orderId = void 0;
+        this.cart = [];
+        return;
+      }
+      if (accion === "assign-to-target") {
+        this.tableId = nextTable;
+        this.tableLabel = d3.label ?? "";
+        if (this.orderId) {
+          for (const f3 of this.assignFillers) {
+            f3.el.dispatchEvent(new CustomEvent("erp:order-linked", { detail: { order_id: this.orderId }, bubbles: false }));
+          }
+        }
+        return;
+      }
+      if (accion === "park-then-load") await aparcar();
       this.tableId = nextTable;
       this.tableLabel = d3.label ?? "";
       const linked = d3.order_id ?? void 0;

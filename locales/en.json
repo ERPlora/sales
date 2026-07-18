@@ -139,6 +139,7 @@
     "prebillTitle": "Bill",
     "prebillNotice": "Bill — this is not an invoice. The fiscal receipt is issued on payment.",
     "paymentMethod": "Payment method",
-    "printReceipt": "Print receipt"
+    "printReceipt": "Print receipt",
+    "parkedAs": "Parked as {number}"
   }
 }

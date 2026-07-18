@@ -139,7 +139,8 @@
     "prebillTitle": "Cuenta",
     "prebillNotice": "Cuenta — no es una factura. El tiquet fiscal se entrega al cobrar.",
     "paymentMethod": "Forma de pago",
-    "printReceipt": "Imprimir tiquet"
+    "printReceipt": "Imprimir tiquet",
+    "parkedAs": "Aparcado como {number}"
   },
   "widgets": {
     "sales.today": {
