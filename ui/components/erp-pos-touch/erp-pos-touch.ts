@@ -7,6 +7,8 @@ import { renderDocumentModal } from '../../lib/document-modal.js';
 import { orderToPrebill } from '../../lib/document-mappers.js';
 import { receiptToPrintableHtml, printHtmlInIframe } from '../../lib/receipt-html.js';
 import { decideOnTableChange } from '../../lib/table-switch.js';
+import { brandSvgFor } from '../../lib/brand-icons.js';
+import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod } from '../../lib/pay-icons.js';
 import '@erplora/outfitkit/ok-qty-stepper';
 import '@erplora/outfitkit/ok-spotlight-search';
@@ -178,6 +180,10 @@ export class ErpPosTouch extends LitElement {
     .pay-lbl { margin:.9rem 0 .35rem; font-size:.75rem; font-weight:700; text-transform:uppercase;
       letter-spacing:.06em; color:var(--mut); }
     .pay-methods { margin:.1rem 0 .55rem; --background:transparent; }
+    /* Logo de marca (Bizum): es un wordmark ANCHO, no un glifo cuadrado como los Ionicons, así que
+       se acota a la altura del icono y se deja crecer a lo ancho sin romper el segment. */
+    .pay-methods .brand { display:inline-flex; align-items:center; height:1.15rem; }
+    .pay-methods .brand svg { height:100%; width:auto; max-width:4.5rem; display:block; }
     /* Atajos de efectivo: el cajero pulsa en vez de teclear. */
     .quick { display:grid; grid-template-columns:repeat(4,1fr); gap:.4rem; margin:.7rem 0 .5rem; }
     .qbtn { padding:.55rem .2rem; border-radius:10px; border:1px solid var(--ion-border-color);
@@ -891,10 +897,17 @@ export class ErpPosTouch extends LitElement {
                            this.payMethod = this.payMethods.find((m) => m.id === id) ?? this.payMethod;
                            if (!needsTendered(this.payMethod)) this.tendered = '';
                          }}>
-              ${this.payMethods.map((m) => html`
+              ${this.payMethods.map((m) => {
+                // Marcas que no existen en Iconify (Bizum) van INLINE desde ui/assets; el resto,
+                // su Ionicon. El SVG usa currentColor, así que se tiñe igual al seleccionarlo.
+                const marca = brandSvgFor(m.type, m.name);
+                return html`
                 <ion-segment-button value=${m.id} title=${m.name} aria-label=${m.name}>
-                  <ion-icon name=${payMethodIcon(m.type, m.name)}></ion-icon>
-                </ion-segment-button>`)}
+                  ${marca
+                    ? html`<span class="brand">${unsafeSVG(marca)}</span>`
+                    : html`<ion-icon name=${payMethodIcon(m.type, m.name)}></ion-icon>`}
+                </ion-segment-button>`;
+              })}
             </ion-segment>` : nothing}
           <!-- Acciones SOLO-ICONO (ADR-0133): imprimir la CUENTA para llevarla a la mesa (no es un
                documento fiscal) y COBRAR (que sí emite el tiquet fiscal). El importe ya se ve
