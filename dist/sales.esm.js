@@ -1420,6 +1420,87 @@ function eurosToCents(euros) {
   return majorToMinor(euros, 2);
 }
 
+// ui/lib/receipt-html.ts
+function esc(v3) {
+  return String(v3 ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function money(v3, currency) {
+  const n6 = Number(v3);
+  return `${(Number.isFinite(n6) ? n6 : 0).toFixed(2).replace(".", ",")} ${currency}`;
+}
+function receiptToPrintableHtml(doc) {
+  const cur = doc.currency || "\u20AC";
+  const lineas = (doc.lines ?? []).map((l3) => `
+      <tr>
+        <td class="n">${esc(l3.name)}<div class="q">${esc(l3.qty)} \xD7 ${money(l3.unit_price, cur)}</div></td>
+        <td class="a">${money(l3.total, cur)}</td>
+      </tr>`).join("");
+  const impuestos = (doc.taxes ?? []).map((t7) => `
+      <tr><td>${esc(t7.label)}</td><td class="a">${money(t7.amount, cur)}</td></tr>`).join("");
+  const pago = doc.payment ? `<tr><td>${esc(doc.payment.method)}</td><td class="a">${money(doc.payment.paid ?? doc.total, cur)}</td></tr>` + (doc.payment.change != null ? `<tr><td>Cambio</td><td class="a">${money(doc.payment.change, cur)}</td></tr>` : "") : "";
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><title>${esc(doc.number || doc.business?.name || "Documento")}</title>
+<style>
+  /* Papel t\xE9rmico de 80 mm: sin m\xE1rgenes de p\xE1gina, el navegador no estampa cabecera ni pie. */
+  @page { size: 80mm auto; margin: 0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 4mm; width: 80mm; background: #fff; color: #000;
+         font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  h1 { font-size: 14px; text-align: center; margin: 0 0 2mm; text-transform: uppercase; }
+  .meta { text-align: center; font-size: 11px; margin-bottom: 2mm; }
+  hr { border: 0; border-top: 1px dashed #000; margin: 2mm 0; }
+  table { width: 100%; border-collapse: collapse; }
+  td { vertical-align: top; padding: .4mm 0; }
+  td.a { text-align: right; white-space: nowrap; padding-left: 2mm; }
+  .q { font-size: 10px; color: #333; }
+  .tot td { font-size: 15px; font-weight: 700; padding-top: 1mm; }
+  .foot { text-align: center; font-size: 10px; margin-top: 3mm; }
+</style></head>
+<body>
+  <h1>${esc(doc.business?.name || "")}</h1>
+  ${doc.business?.address ? `<div class="meta">${esc(doc.business.address)}</div>` : ""}
+  ${doc.business?.tax_id ? `<div class="meta">${esc(doc.business.tax_id)}</div>` : ""}
+  ${doc.number || doc.datetime ? `<div class="meta">${esc(doc.number || "")}${doc.number && doc.datetime ? " \xB7 " : ""}${esc(doc.datetime || "")}</div>` : ""}
+  ${doc.customer ? `<div class="meta">${esc(doc.customer)}</div>` : ""}
+  <hr>
+  <table>${lineas}</table>
+  <hr>
+  <table>
+    ${doc.subtotal != null ? `<tr><td>Subtotal</td><td class="a">${money(doc.subtotal, cur)}</td></tr>` : ""}
+    ${impuestos}
+    <tr class="tot"><td>TOTAL</td><td class="a">${money(doc.total, cur)}</td></tr>
+    ${pago}
+  </table>
+  ${doc.footer ? `<div class="foot">${esc(doc.footer)}</div>` : ""}
+  ${doc.qr_note ? `<div class="foot">${esc(doc.qr_note)}</div>` : ""}
+</body></html>`;
+}
+function printHtmlInIframe(html, doc = document) {
+  const frame = doc.createElement("iframe");
+  frame.setAttribute("aria-hidden", "true");
+  frame.style.cssText = "position:fixed;right:0;bottom:0;width:80mm;height:1px;border:0;visibility:hidden;";
+  doc.body.appendChild(frame);
+  const w2 = frame.contentWindow;
+  const d3 = frame.contentDocument;
+  if (!w2 || !d3) {
+    frame.remove();
+    return;
+  }
+  d3.open();
+  d3.write(html);
+  d3.close();
+  const lanzar = () => {
+    try {
+      w2.focus();
+      w2.print();
+    } finally {
+      setTimeout(() => frame.remove(), 1e3);
+    }
+  };
+  if (d3.readyState === "complete") setTimeout(lanzar, 50);
+  else w2.addEventListener("load", () => setTimeout(lanzar, 50), { once: true });
+}
+
 // ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-qr.js
 var __defProp2 = Object.defineProperty;
 var __decorateClass2 = (decorators, target, key, kind) => {
@@ -3070,6 +3151,18 @@ var ErpSalesDocument = class extends i3 {
       return { fiscal: {}, retry: false };
     }
   }
+  /**
+   * El documento como **HTML plano y autocontenido**, para imprimirlo aislado (iframe) o para
+   * generar el PDF desde Rust. No se imprime el DOM de este componente: vive dentro de un
+   * `ion-modal` reparentado y con shadow DOM, y el navegador acababa sacando la app entera.
+   * Devuelve '' si aún no hay venta cargada.
+   */
+  printableHtml() {
+    if (!this.sale) return "";
+    const t7 = (k2) => erplora().t(CATALOG, k2);
+    const doc = saleToReceipt(this.sale, this.lines || [], this.settings || {}, this.fiscal, erplora().locale);
+    return receiptToPrintableHtml(doc);
+  }
   render() {
     const t7 = (k2) => erplora().t(CATALOG, k2);
     if (this.loading) return b2`<p class="muted">${t7("ui.loadingDocument")}</p>`;
@@ -3163,8 +3256,11 @@ function renderDocumentModal({ saleId, onClose, t: t7 }) {
         <!-- Solo-icono (ADR-0133): el nombre va en aria-label, nunca texto visible. A ancho
              completo igualmente: en el TPV táctil el objetivo grande manda. -->
         <ion-button class="print" expand="block" aria-label=${t7("ui.print")} @click=${() => {
+    const el = document.querySelector("ion-modal.doc-modal")?.querySelector("erp-sales-document");
+    const html = el?.printableHtml?.();
     const sdk = globalThis.erplora;
-    if (sdk?.print) void sdk.print({ role: "receipt", documentType: "receipt", jobId: saleId ? `sale-${saleId}` : void 0 });
+    if (sdk?.print) void sdk.print({ role: "receipt", documentType: "receipt", html, jobId: saleId ? `sale-${saleId}` : void 0 });
+    else if (html) printHtmlInIframe(html);
     else window.print();
   }}>
           <ion-icon slot="icon-only" name="print-outline"></ion-icon>
@@ -4565,10 +4661,15 @@ var ErpPosTouch = class extends i3 {
   /** Imprime la CUENTA (no fiscal). El navegador imprime el nodo del recibo; en Hub Local el
    *  bridge de impresoras ESC/POS es un paso aparte (no bloquea llevar la cuenta a la mesa). */
   printPrebill() {
-    try {
-      globalThis.print?.();
-    } catch {
-    }
+    const doc = orderToPrebill(
+      this.cart.map((l3) => ({ name: l3.name, price: l3.price, qty: l3.qty, is_gift: l3.is_gift })),
+      this.settings,
+      { tableLabel: this.tableLabel || void 0, notice: t3("ui.prebillNotice") }
+    );
+    const sdk = globalThis.erplora;
+    const html = receiptToPrintableHtml(doc);
+    if (sdk?.print) void sdk.print({ role: "receipt", documentType: "prebill", html, data: doc });
+    else printHtmlInIframe(html);
   }
   openPay() {
     if (!this.cart.length) return;

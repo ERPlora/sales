@@ -2,6 +2,7 @@ import { LitElement, html, css, nothing } from 'lit';
 import { state, property } from 'lit/decorators.js';
 import { define } from '@erplora/outfitkit/define';
 import '@erplora/outfitkit/ok-receipt';
+import { receiptToPrintableHtml } from '../../lib/receipt-html.js';
 import '@erplora/outfitkit/ok-invoice';
 import {
   saleToReceipt,
@@ -178,6 +179,20 @@ export class ErpSalesDocument extends LitElement {
     } catch {
       return { fiscal: {}, retry: false }; // sin permiso / contrato roto → documento sin QR
     }
+  }
+
+  /**
+   * El documento como **HTML plano y autocontenido**, para imprimirlo aislado (iframe) o para
+   * generar el PDF desde Rust. No se imprime el DOM de este componente: vive dentro de un
+   * `ion-modal` reparentado y con shadow DOM, y el navegador acababa sacando la app entera.
+   * Devuelve '' si aún no hay venta cargada.
+   */
+  printableHtml(): string {
+    if (!this.sale) return '';
+    const t = (k: string): string => erplora().t(CATALOG, k);
+    void t;
+    const doc = saleToReceipt(this.sale, this.lines || [], this.settings || {}, this.fiscal, erplora().locale);
+    return receiptToPrintableHtml(doc as unknown as Parameters<typeof receiptToPrintableHtml>[0]);
   }
 
   render() {

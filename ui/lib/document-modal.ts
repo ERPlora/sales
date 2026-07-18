@@ -13,6 +13,7 @@
 // (fuera del shadow del componente anfitrión), y al viajar con el modal las reglas aplican igual
 // en ambos escenarios. También oculta pie y X al imprimir (@media print).
 import { html, nothing, type TemplateResult } from 'lit';
+import { printHtmlInIframe } from './receipt-html.js';
 import '../components/erp-sales-document/erp-sales-document.js';
 
 export interface DocumentModalOpts {
@@ -71,10 +72,15 @@ export function renderDocumentModal({ saleId, onClose, t }: DocumentModalOpts): 
         <!-- Solo-icono (ADR-0133): el nombre va en aria-label, nunca texto visible. A ancho
              completo igualmente: en el TPV táctil el objetivo grande manda. -->
         <ion-button class="print" expand="block" aria-label=${t('ui.print')} @click=${() => {
-          // Puerta GLOBAL del Hub: si hay Bridge sale por la impresora con rol `receipt` (ESC/POS);
-          // si no, el diálogo del navegador. El módulo no sabe —ni debe— si hay Bridge.
+          // Se imprime el DOCUMENTO, no la app: se pide su HTML plano al <erp-sales-document> y se
+          // manda por la puerta global (Bridge si lo hay; si no, iframe aislado). Imprimir el DOM
+          // del modal era indomable — ion-modal reparentado + shadow DOM = app entera o hoja blanca.
+          const el = document.querySelector('ion-modal.doc-modal')?.querySelector('erp-sales-document') as
+            (HTMLElement & { printableHtml?: () => string }) | null;
+          const html = el?.printableHtml?.();
           const sdk = (globalThis as { erplora?: { print?: (r: Record<string, unknown>) => Promise<unknown> } }).erplora;
-          if (sdk?.print) void sdk.print({ role: 'receipt', documentType: 'receipt', jobId: saleId ? `sale-${saleId}` : undefined });
+          if (sdk?.print) void sdk.print({ role: 'receipt', documentType: 'receipt', html, jobId: saleId ? `sale-${saleId}` : undefined });
+          else if (html) printHtmlInIframe(html);
           else window.print();
         }}>
           <ion-icon slot="icon-only" name="print-outline"></ion-icon>

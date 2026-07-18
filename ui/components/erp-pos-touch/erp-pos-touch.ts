@@ -5,6 +5,7 @@ import { define } from '@erplora/outfitkit/define';
 import { eurosToCents } from '@erplora/module-sdk';
 import { renderDocumentModal } from '../../lib/document-modal.js';
 import { orderToPrebill } from '../../lib/document-mappers.js';
+import { receiptToPrintableHtml, printHtmlInIframe } from '../../lib/receipt-html.js';
 import { decideOnTableChange } from '../../lib/table-switch.js';
 import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod } from '../../lib/pay-icons.js';
 import '@erplora/outfitkit/ok-qty-stepper';
@@ -647,7 +648,18 @@ export class ErpPosTouch extends LitElement {
   /** Imprime la CUENTA (no fiscal). El navegador imprime el nodo del recibo; en Hub Local el
    *  bridge de impresoras ESC/POS es un paso aparte (no bloquea llevar la cuenta a la mesa). */
   private printPrebill() {
-    try { globalThis.print?.(); } catch { /* sin impresora/entorno: la cuenta sigue visible en pantalla */ }
+    // Puerta GLOBAL del Hub: Bridge si lo hay; si no, se imprime el HTML PLANO de la cuenta en un
+    // iframe aislado. NO se imprime el DOM de la app: el papel vive en un ion-modal reparentado con
+    // shadow DOM y salía la app entera (o una hoja en blanco).
+    const doc = orderToPrebill(
+      this.cart.map((l) => ({ name: l.name, price: l.price, qty: l.qty, is_gift: l.is_gift })),
+      this.settings,
+      { tableLabel: this.tableLabel || undefined, notice: t('ui.prebillNotice') },
+    );
+    const sdk = (globalThis as { erplora?: { print?: (r: Record<string, unknown>) => Promise<unknown> } }).erplora;
+    const html = receiptToPrintableHtml(doc as Parameters<typeof receiptToPrintableHtml>[0]);
+    if (sdk?.print) void sdk.print({ role: 'receipt', documentType: 'prebill', html, data: doc as unknown as Record<string, unknown> });
+    else printHtmlInIframe(html);
   }
 
   private openPay() {
