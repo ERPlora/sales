@@ -246,15 +246,19 @@ export class ErpPosTouch extends LitElement {
   // actual y se RECUPERA la de la nueva (o el carrito suelto si es null). Así tocar una mesa
   // ocupada trae su tiquet a la pantalla de venta, como cualquier POS.
   private readonly onOrderContext = async (e: Event) => {
-    const d = (e as CustomEvent<{ table_id: string | null; label?: string }>).detail ?? { table_id: null };
+    const d = (e as CustomEvent<{ table_id: string | null; label?: string; order_id?: string | null }>).detail
+      ?? { table_id: null };
     const nextTable = d.table_id ?? undefined;
     if (nextTable === this.tableId) { this.tableLabel = d.label ?? this.tableLabel; return; }
-    // Persiste la comanda de la mesa/carrito que dejamos antes de traer la nueva.
-    if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = undefined; }
-    await persistActiveCart(erplora(), this.cart, this.tableId);
+    // ADR-0141: cambiar de mesa = cambiar de PEDIDO. Ya no hay que "guardar" la comanda que dejamos:
+    // sus líneas están escritas en su propio `sales_order` desde que se pulsaron. Solo se cambia de
+    // contexto: si la mesa nueva ya tiene pedido (junction), se reanuda; si no, se empieza en blanco
+    // y el primer artículo abrirá uno que se enlazará a la mesa.
     this.tableId = nextTable;
     this.tableLabel = d.label ?? '';
-    this.cart = await loadActiveCart(erplora(), nextTable);
+    const linked = d.order_id ?? undefined;
+    this.orderId = linked;
+    this.cart = linked ? await loadOrderLines(erplora(), linked) : [];
   };
   // Fusionar mesas (punto 3): el filler ya ejecutó tables.sessions.merge; aquí se combinan los
   // tiquets (sumando líneas idénticas) en la mesa destino y se limpia el origen.
@@ -451,10 +455,17 @@ export class ErpPosTouch extends LitElement {
     }
   }
 
-  /** Asegura que existe un pedido abierto que respalde el carrito; devuelve su id ('' si falla). */
+  /** Asegura que existe un pedido abierto que respalde el carrito; devuelve su id ('' si falla).
+   *  Si hay una MESA seleccionada, avisa a los fillers (`tables`) para que escriban la junction
+   *  mesa↔pedido — `sales` no toca `tables`: es un contrato por evento (ADR-0043/0141). */
   private async ensureOrder(first: CartLine): Promise<string> {
     if (this.orderId) return this.orderId;
     this.orderId = await openOrderWithLines(erplora(), [first]);
+    if (this.orderId && this.tableId) {
+      for (const f of this.assignFillers) {
+        f.el.dispatchEvent(new CustomEvent('erp:order-linked', { detail: { order_id: this.orderId }, bubbles: false }));
+      }
+    }
     return this.orderId;
   }
 

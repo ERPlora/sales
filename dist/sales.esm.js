@@ -3965,14 +3965,11 @@ var ErpPosTouch = class extends i3 {
         this.tableLabel = d3.label ?? this.tableLabel;
         return;
       }
-      if (this.saveTimer) {
-        clearTimeout(this.saveTimer);
-        this.saveTimer = void 0;
-      }
-      await persistActiveCart(erplora2(), this.cart, this.tableId);
       this.tableId = nextTable;
       this.tableLabel = d3.label ?? "";
-      this.cart = await loadActiveCart(erplora2(), nextTable);
+      const linked = d3.order_id ?? void 0;
+      this.orderId = linked;
+      this.cart = linked ? await loadOrderLines(erplora2(), linked) : [];
     };
     // Fusionar mesas (punto 3): el filler ya ejecutó tables.sessions.merge; aquí se combinan los
     // tiquets (sumando líneas idénticas) en la mesa destino y se limpia el origen.
@@ -4307,10 +4304,17 @@ var ErpPosTouch = class extends i3 {
       return [];
     }
   }
-  /** Asegura que existe un pedido abierto que respalde el carrito; devuelve su id ('' si falla). */
+  /** Asegura que existe un pedido abierto que respalde el carrito; devuelve su id ('' si falla).
+   *  Si hay una MESA seleccionada, avisa a los fillers (`tables`) para que escriban la junction
+   *  mesa↔pedido — `sales` no toca `tables`: es un contrato por evento (ADR-0043/0141). */
   async ensureOrder(first) {
     if (this.orderId) return this.orderId;
     this.orderId = await openOrderWithLines(erplora2(), [first]);
+    if (this.orderId && this.tableId) {
+      for (const f3 of this.assignFillers) {
+        f3.el.dispatchEvent(new CustomEvent("erp:order-linked", { detail: { order_id: this.orderId }, bubbles: false }));
+      }
+    }
     return this.orderId;
   }
   async add(p4) {
