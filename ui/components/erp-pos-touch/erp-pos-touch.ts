@@ -334,6 +334,16 @@ export class ErpPosTouch extends LitElement {
       return;
     }
 
+    if (accion === 'start-new-check') {
+      // Ya veníamos de una mesa: la comanda de antes SE QUEDA allí, abierta, y aquí se empieza una
+      // cuenta nueva. Llevarse la cuenta a otra mesa es TRANSFERIR, un botón aparte (igual que en
+      // Toast/Lightspeed). Antes esto arrastraba la comanda y re-enlazaba la junction en cada mesa
+      // tocada: ninguna se liberaba y acabábamos con tres mesas ocupadas por el mismo pedido.
+      this.tableId = nextTable; this.tableLabel = d.label ?? '';
+      this.orderId = undefined; this.cart = [];
+      return;
+    }
+
     if (accion === 'assign-to-target') {
       // La comanda de delante pasa a SER la de esa mesa: se enlaza la junction, no se mueve nada.
       this.tableId = nextTable; this.tableLabel = d.label ?? '';
@@ -572,6 +582,12 @@ export class ErpPosTouch extends LitElement {
       const id = await findOpenOrder(erplora());
       if (!id) return [];
       this.orderId = id;
+      // El pedido vuelve, pero su MESA y su CLIENTE los saben sus dueños, no `sales`. Se les avisa
+      // para que restauren lo suyo (y el de mesas nos devuelva el contexto por `erp:order-context`).
+      // Sin esto, al recargar el TPV la comanda aparecía "sin mesa" aunque la mesa siguiera ocupada.
+      for (const f of this.assignFillers) {
+        f.el.dispatchEvent(new CustomEvent('erp:order-restored', { detail: { order_id: id }, bubbles: false }));
+      }
       return await loadOrderLines(erplora(), id);
     } catch {
       return [];

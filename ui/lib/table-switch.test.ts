@@ -27,8 +27,44 @@ describe('qué hacer con el carrito al cambiar de mesa', () => {
     expect(decideOnTableChange({ cartHasItems: false, targetTableId: undefined })).toBe('clear');
   });
 
-  it('venir YA de una mesa y saltar a otra vacía: la comanda viaja con nosotros', () => {
-    // Es el mismo caso: lo que hay delante se asigna a la mesa nueva.
-    expect(decideOnTableChange({ cartHasItems: true, currentTableId: 'm1', targetTableId: 'm2' })).toBe('assign-to-target');
+  // CORREGIDO (2026-07-18): este test afirmaba que «la comanda viaja con nosotros» al saltar de
+  // una mesa a otra vacía. Era el contrato equivocado, y de él salía un bug real: como la comanda
+  // se re-enlazaba a cada mesa tocada, ninguna se liberaba y acabamos con tres mesas ocupadas por
+  // el mismo pedido. Los TPV de referencia no hacen eso: tocar otra mesa es CAMBIAR de mesa, y
+  // llevarse la cuenta es TRANSFERIR (acción explícita). Ver el bloque de abajo.
+});
+
+describe('la comanda NO se arrastra de mesa (ADR-0144, cómo lo hacen Toast/Lightspeed)', () => {
+  // Regla de sala (Ioan, 2026-07-18): con una mesa ya asignada, tocar otra NO mueve la cuenta.
+  // Mover una cuenta es TRANSFERIR, una acción explícita con su botón. Tocar otra mesa es
+  // "cambiar de mesa": si está libre, empiezas una cuenta NUEVA ahí; si está ocupada, abres LA
+  // SUYA. Verificado en Toast ("Move X Check" es una acción aparte) y en Lightspeed.
+  //
+  // Antes esto arrastraba la comanda a cada mesa que se tocaba, y como la junction quedaba escrita
+  // en todas, ninguna se liberaba nunca: acabamos con TRES mesas ocupadas por el mismo pedido.
+  it('con mesa asignada, tocar una mesa LIBRE abre una cuenta nueva ahí', () => {
+    expect(decideOnTableChange({
+      cartHasItems: true, currentTableId: 'mesa-1', targetTableId: 'mesa-2',
+    })).toBe('start-new-check');
+  });
+
+  it('con mesa asignada, tocar una mesa OCUPADA abre la cuenta de esa mesa', () => {
+    expect(decideOnTableChange({
+      cartHasItems: true, currentTableId: 'mesa-1', targetTableId: 'mesa-2', targetOrderId: 'ord-9',
+    })).toBe('load-target');
+  });
+
+  it('SIN mesa asignada (barra), lo marcado sí se asigna a la mesa que se toca', () => {
+    // Este es el caso que sigue siendo «asignar»: se empieza a marcar en barra y luego se decide
+    // dónde va. No hay ninguna mesa que pueda quedarse la comanda.
+    expect(decideOnTableChange({
+      cartHasItems: true, targetTableId: 'mesa-2',
+    })).toBe('assign-to-target');
+  });
+
+  it('sin mesa asignada y la mesa tocada ya tiene cuenta: se aparca lo de delante', () => {
+    expect(decideOnTableChange({
+      cartHasItems: true, targetTableId: 'mesa-2', targetOrderId: 'ord-9',
+    })).toBe('park-then-load');
   });
 });

@@ -3281,6 +3281,7 @@ function renderDocumentModal({ saleId, onClose, t: t8 }) {
 // ui/lib/table-switch.ts
 function decideOnTableChange(c5) {
   if (!c5.targetTableId) return c5.cartHasItems ? "park-then-clear" : "clear";
+  if (c5.currentTableId) return c5.targetOrderId ? "load-target" : "start-new-check";
   if (!c5.cartHasItems) return "load-target";
   return c5.targetOrderId ? "park-then-load" : "assign-to-target";
 }
@@ -4298,6 +4299,13 @@ var ErpPosTouch = class extends i3 {
         this.cart = [];
         return;
       }
+      if (accion === "start-new-check") {
+        this.tableId = nextTable;
+        this.tableLabel = d3.label ?? "";
+        this.orderId = void 0;
+        this.cart = [];
+        return;
+      }
       if (accion === "assign-to-target") {
         this.tableId = nextTable;
         this.tableLabel = d3.label ?? "";
@@ -4689,6 +4697,9 @@ var ErpPosTouch = class extends i3 {
       const id = await findOpenOrder(erplora2());
       if (!id) return [];
       this.orderId = id;
+      for (const f3 of this.assignFillers) {
+        f3.el.dispatchEvent(new CustomEvent("erp:order-restored", { detail: { order_id: id }, bubbles: false }));
+      }
       return await loadOrderLines(erplora2(), id);
     } catch {
       return [];
