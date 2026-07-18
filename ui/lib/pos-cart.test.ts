@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mergeCartLines, loadActiveCart, persistActiveCart, type CartLine, type ErploraClientLike } from './pos-cart';
+import { mergeCartLines, loadActiveCart, persistActiveCart, persistLineQty, type CartLine, type ErploraClientLike } from './pos-cart';
 
 // Cliente de prueba que registra las llamadas a query/command (lo único que nos importa aquí:
 // que la comanda se pida/guarde ATADA a la mesa — `table_id`).
@@ -212,5 +212,54 @@ describe('fusionar comandas (mergeOrders)', () => {
     await mergeOrders(client, 'ord-1', 'ord-1');
     expect(calls.filter((c) => c.name === 'sales.order.add_line')).toHaveLength(0);
     expect(calls.filter((c) => c.name === 'sales.order.void')).toHaveLength(0);
+  });
+});
+
+describe('persistLineQty — la pantalla no puede mentir (ADR-0144)', () => {
+  // Encontrado en el navegador: 5 toques rápidos a la tortilla → 37,50 € en pantalla, 1 tortilla en
+  // la BD. El POS solo persistía si ya conocía el `line_id`; si no, subía la cantidad EN PANTALLA y
+  // se callaba. La comanda es la fuente de verdad: si no se puede escribir, hay que recuperar el id
+  // (releyendo el pedido) y escribir, o fallar a la vista — nunca fingir.
+  const clientSpy = (lines: Array<Record<string, unknown>>) => {
+    const calls: Array<{ name: string; payload: unknown }> = [];
+    return {
+      calls,
+      client: {
+        query: async () => lines,
+        queryOptional: async () => undefined,
+        queryAll: async () => lines,
+        command: async (name: string, payload?: Record<string, unknown>) => {
+          calls.push({ name, payload });
+          return { ok: true, new_ids: ['nueva-1'] };
+        },
+        currency: 'EUR',
+      } as unknown as ErploraClientLike,
+    };
+  };
+
+  it('con line_id conocido, actualiza esa fila', async () => {
+    const { client, calls } = clientSpy([]);
+    const ok = await persistLineQty(client, 'ord-1', { id: 'p1', name: 'Tortilla', price: 750, qty: 5, line_id: 'l-1' }, 5);
+    expect(ok).toBe(true);
+    expect(calls[0].name).toBe('sales.order.update_line');
+    expect((calls[0].payload as Record<string, unknown>).line_id).toBe('l-1');
+  });
+
+  it('sin line_id lo RECUPERA del pedido y persiste igual', async () => {
+    // Es el caso real: la fila existe en la BD (la creó `add_line`), pero el POS perdió su id.
+    const { client, calls } = clientSpy([
+      { id: 'l-9', product_id: 'p1', product_name: 'Tortilla', quantity: 1, unit_price: 750, line_total: 750 },
+    ]);
+    const ok = await persistLineQty(client, 'ord-1', { id: 'p1', name: 'Tortilla', price: 750, qty: 5 }, 5);
+    expect(ok).toBe(true);
+    expect(calls[0].name).toBe('sales.order.update_line');
+    expect((calls[0].payload as Record<string, unknown>).line_id).toBe('l-9');
+  });
+
+  it('si no hay forma de identificar la fila, AVISA en vez de fingir', async () => {
+    const { client, calls } = clientSpy([]);
+    const ok = await persistLineQty(client, 'ord-1', { id: 'p1', name: 'Tortilla', price: 750, qty: 5 }, 5);
+    expect(ok).toBe(false);
+    expect(calls).toHaveLength(0);
   });
 });

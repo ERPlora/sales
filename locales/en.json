@@ -143,6 +143,7 @@
     "parkedAs": "Parked as {number}",
     "fireToKitchen": "Send to kitchen",
     "firedToKitchen": "Sent to kitchen",
-    "fireFailed": "Couldn't send to kitchen"
+    "fireFailed": "Couldn't send to kitchen",
+    "lineNotSaved": "Couldn't save that item — tap again"
   }
 }

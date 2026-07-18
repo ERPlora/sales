@@ -2867,7 +2867,8 @@ var es_default = {
     parkedAs: "Aparcado como {number}",
     fireToKitchen: "Enviar a cocina",
     firedToKitchen: "Enviado a cocina",
-    fireFailed: "No se pudo enviar a cocina"
+    fireFailed: "No se pudo enviar a cocina",
+    lineNotSaved: "No se pudo guardar ese art\xEDculo \u2014 vuelve a tocarlo"
   },
   widgets: {
     "sales.today": {
@@ -3033,7 +3034,8 @@ var en_default = {
     parkedAs: "Parked as {number}",
     fireToKitchen: "Send to kitchen",
     firedToKitchen: "Sent to kitchen",
-    fireFailed: "Couldn't send to kitchen"
+    fireFailed: "Couldn't send to kitchen",
+    lineNotSaved: "Couldn't save that item \u2014 tap again"
   }
 };
 
@@ -3299,6 +3301,16 @@ function buildFirePayload(orderId, label, lines) {
       // El motivo de una invitación es información de sala que el cocinero necesita ver.
       notes: l3.is_gift ? l3.gift_reason ?? "" : ""
     }))
+  };
+}
+
+// ui/lib/serial-queue.ts
+function createSerialQueue() {
+  let last = Promise.resolve();
+  return (task) => {
+    const run = last.then(task, task);
+    last = run.catch(() => void 0);
+    return run;
   };
 }
 
@@ -4100,6 +4112,17 @@ async function addOrderLine(client, orderId, l3) {
   });
   return firstNewId(res);
 }
+async function persistLineQty(client, orderId, line, qty) {
+  let lineId = line.line_id;
+  if (!lineId) {
+    const persisted = await loadOrderLines(client, orderId);
+    lineId = persisted.find((p4) => p4.id === line.id && !p4.is_gift === !line.is_gift)?.line_id;
+  }
+  if (!lineId) return false;
+  line.line_id = lineId;
+  await updateOrderLineQty(client, orderId, lineId, qty, line.price, line.is_gift, line.gift_reason);
+  return true;
+}
 async function updateOrderLineQty(client, orderId, lineId, qty, unitPrice, isGift, giftReason) {
   await client.command("sales.order.update_line", {
     order_id: orderId,
@@ -4334,6 +4357,9 @@ var ErpPosTouch = class extends i3 {
       this.fullscreen = document.fullscreenElement === this;
     };
     this.onLocaleChange = () => this.requestUpdate();
+    /** Una sola vía para el trabajo del carrito. Sin esto, cinco toques seguidos abrían cinco
+     *  pedidos: cada uno veía «aún no hay pedido» porque el anterior seguía en vuelo (ADR-0144). */
+    this.queue = createSerialQueue();
   }
   static {
     this.styles = i`
@@ -4703,15 +4729,19 @@ var ErpPosTouch = class extends i3 {
     this.notifyOrderLinked();
     return this.orderId;
   }
-  async add(p4) {
+  add(p4) {
+    return this.queue(() => this.addNow(p4));
+  }
+  async addNow(p4) {
     const ex = this.cart.find((l3) => l3.id === p4.id && !l3.is_gift);
     const tax_rate = resolveLineTax(this.ratesMap, p4.tax_category_key);
     try {
       if (ex) {
         const qty = ex.qty + 1;
         this.cart = this.cart.map((l3) => l3 === ex ? { ...l3, qty } : l3);
-        if (this.orderId && ex.line_id) {
-          await updateOrderLineQty(erplora2(), this.orderId, ex.line_id, qty, ex.price, ex.is_gift);
+        if (this.orderId && !await persistLineQty(erplora2(), this.orderId, ex, qty)) {
+          this.cart = this.cart.map((l3) => l3.id === ex.id && !l3.is_gift ? { ...l3, qty: ex.qty } : l3);
+          this.error = t5("ui.lineNotSaved");
         }
         return;
       }

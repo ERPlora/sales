@@ -238,6 +238,33 @@ export async function addOrderLine(client: ErploraClientLike, orderId: string, l
 }
 
 /** Cambia la cantidad de una línea por su `line_id`; el servidor recompone el total del pedido. */
+/**
+ * Persiste la cantidad de una línea, RECUPERANDO su `line_id` si el POS no lo tiene (ADR-0144).
+ *
+ * Encontrado en el navegador: cinco toques rápidos a la tortilla dejaban 37,50 € en pantalla y una
+ * sola tortilla en la BD. El POS solo escribía cuando ya conocía el `line_id`; si no, subía la
+ * cantidad en la vista y se callaba. La fila SÍ existía —la había creado `add_line`—, pero su id se
+ * había perdido, así que nadie volvía a tocarla: la comanda se retomaba en otra tablet con la
+ * cantidad vieja y se servía más de lo que se cobraba.
+ *
+ * @returns `true` si quedó escrita. `false` = no se pudo identificar la fila; el llamador NO debe
+ * dejar la pantalla mostrando algo que no está en la comanda.
+ */
+export async function persistLineQty(
+  client: ErploraClientLike, orderId: string, line: CartLine, qty: number,
+): Promise<boolean> {
+  let lineId = line.line_id;
+  if (!lineId) {
+    // Relee el pedido y busca la fila por producto: es la misma que creó `add_line`.
+    const persisted = await loadOrderLines(client, orderId);
+    lineId = persisted.find((p) => p.id === line.id && !p.is_gift === !line.is_gift)?.line_id;
+  }
+  if (!lineId) return false;
+  line.line_id = lineId;
+  await updateOrderLineQty(client, orderId, lineId, qty, line.price, line.is_gift, line.gift_reason);
+  return true;
+}
+
 export async function updateOrderLineQty(
   client: ErploraClientLike, orderId: string, lineId: string, qty: number, unitPrice: number,
   isGift?: boolean, giftReason?: string,

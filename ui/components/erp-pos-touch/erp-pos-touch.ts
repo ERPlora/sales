@@ -8,6 +8,7 @@ import { orderToPrebill } from '../../lib/document-mappers.js';
 import { receiptToPrintableHtml, printHtmlInIframe } from '../../lib/receipt-html.js';
 import { decideOnTableChange } from '../../lib/table-switch.js';
 import { buildFirePayload } from '../../lib/fire-order.js';
+import { createSerialQueue } from '../../lib/serial-queue.js';
 import { brandSvgFor } from '../../lib/brand-icons.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod } from '../../lib/pay-icons.js';
@@ -16,7 +17,7 @@ import '@erplora/outfitkit/ok-spotlight-search';
 import {
   loadActiveCart, persistActiveCart, mergeCartLines, listParkedTickets, parkCart, retrieveParkedTicket,
   // ADR-0141: el carrito lo respalda un PEDIDO real (filas), no un blob con debounce.
-  openOrderWithLines, addOrderLine, updateOrderLineQty, removeOrderLine, loadOrderLines, findOpenOrder, mergeOrders,
+  openOrderWithLines, addOrderLine, updateOrderLineQty, persistLineQty, removeOrderLine, loadOrderLines, findOpenOrder, mergeOrders,
   type CartLine, type ErploraClientLike, type ParkedTicket,
 } from '../../lib/pos-cart.js';
 import { buildCategoryRatesMap, resolveLineTax } from '../../lib/pos-tax.js';
@@ -619,7 +620,15 @@ export class ErpPosTouch extends LitElement {
     return this.orderId;
   }
 
-  private async add(p: Product) {
+  /** Una sola vía para el trabajo del carrito. Sin esto, cinco toques seguidos abrían cinco
+   *  pedidos: cada uno veía «aún no hay pedido» porque el anterior seguía en vuelo (ADR-0144). */
+  private readonly queue = createSerialQueue();
+
+  private add(p: Product): Promise<void> {
+    return this.queue(() => this.addNow(p));
+  }
+
+  private async addNow(p: Product) {
     const ex = this.cart.find((l) => l.id === p.id && !l.is_gift);
     // tax_category_key = referencia fiscal del producto (autoridad del servidor, ADR-0085).
     // tax_rate = % resuelto en cliente SOLO para el preview del total. cost = para el arqueo de regalos.
@@ -629,8 +638,12 @@ export class ErpPosTouch extends LitElement {
         // Ya está en la comanda: sube la cantidad y PERSISTE YA (una fila, no todo el carrito).
         const qty = ex.qty + 1;
         this.cart = this.cart.map((l) => (l === ex ? { ...l, qty } : l));
-        if (this.orderId && ex.line_id) {
-          await updateOrderLineQty(erplora(), this.orderId, ex.line_id, qty, ex.price, ex.is_gift);
+        // Antes esto solo escribía si YA se conocía el `line_id`; si no, la cantidad subía en
+        // pantalla y no llegaba a la comanda (5 tortillas a la vista, 1 en la BD). `persistLineQty`
+        // recupera el id releyendo el pedido, y si aun así no puede escribir, lo DECIMOS.
+        if (this.orderId && !(await persistLineQty(erplora(), this.orderId, ex, qty))) {
+          this.cart = this.cart.map((l) => (l.id === ex.id && !l.is_gift ? { ...l, qty: ex.qty } : l));
+          this.error = t('ui.lineNotSaved');
         }
         return;
       }
