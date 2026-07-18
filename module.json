@@ -88,7 +88,8 @@
       "migrations/sqlite/007_gift_comp.sql",
       "migrations/sqlite/008_receipt_marketing.sql",
       "migrations/sqlite/009_cart_per_table.sql",
-      "migrations/sqlite/010_orders.sql"
+      "migrations/sqlite/010_orders.sql",
+      "migrations/sqlite/011_sale_forgets_table.sql"
     ],
     "postgres": [
       "migrations/postgres/001_init.sql",
@@ -100,7 +101,8 @@
       "migrations/postgres/007_gift_comp.sql",
       "migrations/postgres/008_receipt_marketing.sql",
       "migrations/postgres/009_cart_per_table.sql",
-      "migrations/postgres/010_orders.sql"
+      "migrations/postgres/010_orders.sql",
+      "migrations/postgres/011_sale_forgets_table.sql"
     ]
   },
   "queries": {

@@ -503,7 +503,6 @@ pub fn complete_sale_pure(input: Value) -> Output {
     h.insert("notes".into(), json!(str_or(&payload, "notes", "")));
     h.insert("channel".into(), json!(str_or(&payload, "channel", "")));
     h.insert("source_module".into(), json!(str_or(&payload, "source_module", "pos")));
-    h.insert("table_id".into(), payload.get("table_id").cloned().unwrap_or(Value::Null));
     h.insert("order_id".into(), payload.get("order_id").cloned().unwrap_or(Value::Null));
     // Atribución por profesional (staff_member) y traza de la cita de origen (opacas; sin FK
     // cross-módulo). `staff_id` distinto de `employee_id` (= :current_user_id, el cajero). NULL
@@ -572,10 +571,6 @@ pub fn complete_sale_pure(input: Value) -> Output {
         "sale_id": sale_id,
         "order_id": payload.get("order_id").cloned().unwrap_or(Value::Null),
         "order_number": payload.get("order_number").cloned().unwrap_or(Value::Null),
-        // table_id viaja en el evento (D3): kitchen.create_order_from_sale lo lee para
-        // decidir order_type=dine_in (con mesa) y enlazar la comanda a la mesa. NULL si
-        // la venta no proviene de una mesa.
-        "table_id": payload.get("table_id").cloned().unwrap_or(Value::Null),
         // tax_included indica que unit_price de cada línea es bruto (IVA-incluido).
         // invoice usa net_amount/tax_amount por línea (ya extraídos) y NO re-suma IVA.
         "tax_included": tax_incl,
@@ -1039,8 +1034,11 @@ mod tests {
     }
 
     #[test]
-    fn event_carries_table_id_for_kitchen() {
-        // D3: table_id debe viajar en sale.completed para que kitchen cree dine_in.
+    fn la_venta_no_sabe_de_mesas() {
+        // ADR-0141: la venta es una TRANSACCIÓN, no un hecho de sala. Antes `table_id` viajaba en
+        // `sale.completed` porque cocina creaba la comanda al COBRAR (D3); ahora la comanda nace
+        // del pedido (`order.fired`) y nadie necesita la mesa aquí. Un ultramarinos no tiene mesas
+        // y vende igual: lo que ata la venta a la sala es la junction que OWNea `tables`.
         let new_ids: Vec<Value> = (0..4).map(|i| json!(format!("id-{i}"))).collect();
         let input = json!({
             "payload": {
@@ -1050,7 +1048,12 @@ mod tests {
             "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-05-31T10:00:00+00:00", "new_ids": new_ids }
         });
         let out = complete_sale_pure(input);
-        assert_eq!(out.events[0].payload["table_id"], json!("table-7"));
+        // Ni en el evento…
+        assert!(out.events[0].payload.get("table_id").is_none(),
+                "sale.completed no lleva la mesa: {}", out.events[0].payload);
+        // …ni en la fila que se persiste: aunque el cliente la mande, `sales` la ignora.
+        let json_all = serde_json::to_string(&out.operations).unwrap();
+        assert!(!json_all.contains("table-7"), "la venta no persiste la mesa: {json_all}");
     }
 
     #[test]

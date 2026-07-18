@@ -738,7 +738,6 @@ export class ErpPosTouch extends LitElement {
         amount_tendered: this.tenderedNum || this.total,
         channel: 'pos',
         source_module: 'pos',
-        table_id: this.tableId ?? null,
         // ADR-0141: la venta nace de este PEDIDO. El servidor lo marca completado (open→completed)
         // en el cobro final; para split-bill se enviaría `keep_order_open: true`.
         order_id: this.orderId ?? null,

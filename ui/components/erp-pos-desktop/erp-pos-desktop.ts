@@ -365,7 +365,6 @@ export class ErpPosDesktop extends LitElement {
         amount_tendered: this.tenderedNum || this.total,
         channel: 'pos',
         source_module: 'pos',
-        table_id: this.tableId ?? null,
         customer_id: this.customerId ?? null,
         customer_name: this.customerName,
         // Snapshot fiscal del cliente (ADR-0132): sin esto la factura del TPV sale sin NIF.
