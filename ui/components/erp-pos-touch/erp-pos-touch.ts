@@ -7,6 +7,7 @@ import { renderDocumentModal } from '../../lib/document-modal.js';
 import { orderToPrebill } from '../../lib/document-mappers.js';
 import { receiptToPrintableHtml, printHtmlInIframe } from '../../lib/receipt-html.js';
 import { decideOnTableChange } from '../../lib/table-switch.js';
+import { buildFirePayload } from '../../lib/fire-order.js';
 import { brandSvgFor } from '../../lib/brand-icons.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod } from '../../lib/pay-icons.js';
@@ -588,6 +589,27 @@ export class ErpPosTouch extends LitElement {
   /** Asegura que existe un pedido abierto que respalde el carrito; devuelve su id ('' si falla).
    *  Si hay una MESA seleccionada, avisa a los fillers (`tables`) para que escriban la junction
    *  mesa↔pedido — `sales` no toca `tables`: es un contrato por evento (ADR-0043/0141). */
+  /** Manda a cocina lo pedido hasta ahora (ADR-0141). La comanda nace del PEDIDO, no del cobro: el
+   *  camarero dispara al tomar nota y el pedido sigue abierto hasta que el cliente pague. Cada
+   *  disparo es una RONDA (bebidas primero, comida después), y `kitchen` las numera.
+   *
+   *  La etiqueta que verá el cocinero es la de la mesa asignada, y viaja OPACA: `sales` no depende
+   *  de `tables`, solo reenvía el texto que el slot de mesas le dejó en `tableLabel`. */
+  private async fireToKitchen(): Promise<void> {
+    if (!this.cart.length) return;
+    const orderId = await this.ensureOrder(this.cart[0]);
+    const payload = buildFirePayload(orderId, this.tableLabel, this.cart);
+    if (!payload) return;
+    try {
+      await erplora().command('sales.order.fire', payload as unknown as Record<string, unknown>);
+      this.error = t('ui.firedToKitchen');
+    } catch {
+      // Sin `kitchen` instalado el evento no lo escucha nadie: el comando de `sales` igual pasa.
+      // Un fallo aquí NO debe bloquear la venta — la comanda se puede repetir.
+      this.error = t('ui.fireFailed');
+    }
+  }
+
   private async ensureOrder(first: CartLine): Promise<string> {
     if (this.orderId) return this.orderId;
     this.orderId = await openOrderWithLines(erplora(), [first]);
@@ -921,6 +943,11 @@ export class ErpPosTouch extends LitElement {
                documento fiscal) y COBRAR (que sí emite el tiquet fiscal). El importe ya se ve
                grande arriba, así que el texto sobra; la etiqueta va en aria-label/title. -->
           <div class="foot-actions">
+            <ion-button class="prebill" fill="outline" ?disabled=${!this.cart.length}
+                        title=${t('ui.fireToKitchen')} aria-label=${t('ui.fireToKitchen')}
+                        @click=${() => void this.fireToKitchen()}>
+              <ion-icon slot="icon-only" name="restaurant-outline"></ion-icon>
+            </ion-button>
             <ion-button class="prebill" fill="outline" ?disabled=${!this.cart.length}
                         title=${t('ui.printPrebill')} aria-label=${t('ui.printPrebill')}
                         @click=${() => { this.prebillOpen = true; }}>

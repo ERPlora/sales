@@ -2864,7 +2864,10 @@ var es_default = {
     prebillNotice: "Cuenta \u2014 no es una factura. El tiquet fiscal se entrega al cobrar.",
     paymentMethod: "Forma de pago",
     printReceipt: "Imprimir tiquet",
-    parkedAs: "Aparcado como {number}"
+    parkedAs: "Aparcado como {number}",
+    fireToKitchen: "Enviar a cocina",
+    firedToKitchen: "Enviado a cocina",
+    fireFailed: "No se pudo enviar a cocina"
   },
   widgets: {
     "sales.today": {
@@ -3027,7 +3030,10 @@ var en_default = {
     prebillNotice: "Bill \u2014 this is not an invoice. The fiscal receipt is issued on payment.",
     paymentMethod: "Payment method",
     printReceipt: "Print receipt",
-    parkedAs: "Parked as {number}"
+    parkedAs: "Parked as {number}",
+    fireToKitchen: "Send to kitchen",
+    firedToKitchen: "Sent to kitchen",
+    fireFailed: "Couldn't send to kitchen"
   }
 };
 
@@ -3275,6 +3281,25 @@ function decideOnTableChange(c5) {
   if (!c5.targetTableId) return c5.cartHasItems ? "park-then-clear" : "clear";
   if (!c5.cartHasItems) return "load-target";
   return c5.targetOrderId ? "park-then-load" : "assign-to-target";
+}
+
+// ui/lib/fire-order.ts
+function buildFirePayload(orderId, label, lines) {
+  if (!orderId || lines.length === 0) return void 0;
+  return {
+    order_id: orderId,
+    label,
+    // Sin mesa no es servicio de sala: barra, mostrador o para llevar.
+    channel: label ? "dine_in" : "takeaway",
+    items: lines.map((l3) => ({
+      product_id: l3.id,
+      product_name: l3.name,
+      quantity: l3.qty,
+      unit_price: l3.price,
+      // El motivo de una invitación es información de sala que el cocinero necesita ver.
+      notes: l3.is_gift ? l3.gift_reason ?? "" : ""
+    }))
+  };
 }
 
 // ui/lib/brand-icons.ts
@@ -4654,6 +4679,24 @@ var ErpPosTouch = class extends i3 {
   /** Asegura que existe un pedido abierto que respalde el carrito; devuelve su id ('' si falla).
    *  Si hay una MESA seleccionada, avisa a los fillers (`tables`) para que escriban la junction
    *  mesa↔pedido — `sales` no toca `tables`: es un contrato por evento (ADR-0043/0141). */
+  /** Manda a cocina lo pedido hasta ahora (ADR-0141). La comanda nace del PEDIDO, no del cobro: el
+   *  camarero dispara al tomar nota y el pedido sigue abierto hasta que el cliente pague. Cada
+   *  disparo es una RONDA (bebidas primero, comida después), y `kitchen` las numera.
+   *
+   *  La etiqueta que verá el cocinero es la de la mesa asignada, y viaja OPACA: `sales` no depende
+   *  de `tables`, solo reenvía el texto que el slot de mesas le dejó en `tableLabel`. */
+  async fireToKitchen() {
+    if (!this.cart.length) return;
+    const orderId = await this.ensureOrder(this.cart[0]);
+    const payload = buildFirePayload(orderId, this.tableLabel, this.cart);
+    if (!payload) return;
+    try {
+      await erplora2().command("sales.order.fire", payload);
+      this.error = t5("ui.firedToKitchen");
+    } catch {
+      this.error = t5("ui.fireFailed");
+    }
+  }
   async ensureOrder(first) {
     if (this.orderId) return this.orderId;
     this.orderId = await openOrderWithLines(erplora2(), [first]);
@@ -4958,6 +5001,11 @@ var ErpPosTouch = class extends i3 {
                documento fiscal) y COBRAR (que sí emite el tiquet fiscal). El importe ya se ve
                grande arriba, así que el texto sobra; la etiqueta va en aria-label/title. -->
           <div class="foot-actions">
+            <ion-button class="prebill" fill="outline" ?disabled=${!this.cart.length}
+                        title=${t5("ui.fireToKitchen")} aria-label=${t5("ui.fireToKitchen")}
+                        @click=${() => void this.fireToKitchen()}>
+              <ion-icon slot="icon-only" name="restaurant-outline"></ion-icon>
+            </ion-button>
             <ion-button class="prebill" fill="outline" ?disabled=${!this.cart.length}
                         title=${t5("ui.printPrebill")} aria-label=${t5("ui.printPrebill")}
                         @click=${() => {

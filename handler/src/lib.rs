@@ -53,6 +53,16 @@ pub fn complete_sale(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Out
     Ok(Json(complete_sale_pure(input.into_inner().into_value())))
 }
 
+/// ADR-0141: dispara a cocina lo pedido hasta ahora. Ver `fire_order_pure`.
+#[cfg(feature = "guest")]
+#[plugin_fn]
+pub fn fire_order(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
+    match fire_order_pure(input.into_inner().into_value()) {
+        Ok(out) => Ok(Json(out)),
+        Err(e) => Err(Error::msg(e).into()),
+    }
+}
+
 /// ADR-0141: abre un pedido MUTABLE (`order`). Ver `open_order_pure`.
 #[cfg(feature = "guest")]
 #[plugin_fn]
@@ -694,6 +704,44 @@ pub fn open_order_pure(input: Value) -> Output {
     Output { operations: ops, events: vec![event] }
 }
 
+/// ADR-0141 — **la comanda nace del pedido, no del cobro**.
+///
+/// Antes cocina colgaba de `sale.completed`: en un restaurante eso manda la comida cuando el
+/// cliente **paga**, o sea al final del servicio. El camarero dispara cuando **toma nota**, y el
+/// pedido sigue abierto una hora sin que exista ninguna venta.
+///
+/// `sales` sigue sin saber qué es una mesa: recibe una **etiqueta opaca** (`label`) que reenvía sin
+/// interpretarla —quien dispara sabe si es "Mesa 4", "Barra" o "Recogida Ana"— y un **canal**
+/// (`dine_in|takeaway|delivery`). Las líneas viajan en el payload porque las `reads` del runtime se
+/// ejecutan **sin parámetros** (no se puede pre-cargar `sales.order.lines` filtrado por `order_id`),
+/// igual que ya hace `complete_sale` con sus items.
+///
+/// No escribe nada: mandar comida a cocina no cambia el pedido. Cada disparo es una **ronda** y de
+/// numerarlas se encarga `kitchen`, que es quien las imprime.
+pub fn fire_order_pure(input: Value) -> Result<Output, String> {
+    let payload = input.get("payload").cloned().unwrap_or(Value::Null);
+    let order_id = as_str(payload.get("order_id").unwrap_or(&Value::Null));
+    if order_id.is_empty() {
+        return Err("missing_order_id".to_string());
+    }
+    let empty: Vec<Value> = Vec::new();
+    let items = payload.get("items").and_then(|v| v.as_array()).unwrap_or(&empty).clone();
+    let channel = match as_str(payload.get("channel").unwrap_or(&Value::Null)).as_str() {
+        "" => "dine_in".to_string(),
+        c => c.to_string(),
+    };
+
+    let event = Event::new("order.fired", json!({
+        "sender": "sales",
+        "order_id": order_id,
+        // Opaca a propósito: `sales` no sabe (ni quiere saber) de dónde sale este texto.
+        "label": str_or(&payload, "label", ""),
+        "channel": channel,
+        "items": items,
+    }));
+    Ok(Output { operations: Vec::new(), events: vec![event] })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -707,6 +755,45 @@ mod tests {
     }
 
     // ── ADR-0141 · entidad `order` mutable → `sale` inmutable (en construcción TDD) ──────────────
+
+    #[test]
+    fn disparar_un_pedido_manda_a_cocina_la_etiqueta_opaca_y_el_canal() {
+        // ADR-0141: la comanda nace del PEDIDO, no del cobro. `sales` no sabe qué es una mesa, así
+        // que la referencia que verá el cocinero es una ETIQUETA OPACA que le pasa quien dispara
+        // ("Mesa 4", "Barra", "Recogida Ana") y que `sales` reenvía sin interpretar.
+        let inp = json!({
+            "payload": {
+                "order_id": "ord-1", "label": "Mesa 4", "channel": "dine_in",
+                "items": [
+                    { "product_name": "Croquetas", "quantity": 2.0, "notes": "sin gluten" },
+                    { "product_name": "Servicio", "quantity": 1.0, "is_service": true }
+                ]
+            },
+            "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-07-18T10:00:00+00:00", "new_ids": [] }
+        });
+        let out = fire_order_pure(inp).expect("disparar el pedido");
+
+        // El disparo NO escribe en `sales`: el pedido no cambia de estado por mandar comida.
+        assert!(out.operations.is_empty(), "disparar no muta el pedido: {:?}", out.operations);
+
+        assert_eq!(out.events.len(), 1);
+        let ev = &out.events[0];
+        assert_eq!(ev.name, "order.fired");
+        assert_eq!(ev.payload["order_id"], json!("ord-1"));
+        assert_eq!(ev.payload["label"], json!("Mesa 4"));
+        assert_eq!(ev.payload["channel"], json!("dine_in"));
+        assert_eq!(ev.payload["items"].as_array().unwrap().len(), 2, "las líneas viajan tal cual");
+        assert_eq!(ev.payload["items"][0]["notes"], json!("sin gluten"), "la nota es para el cocinero");
+    }
+
+    #[test]
+    fn disparar_sin_pedido_es_un_error_no_una_comanda_huerfana() {
+        let inp = json!({
+            "payload": { "label": "Mesa 4", "channel": "dine_in", "items": [] },
+            "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-07-18T10:00:00+00:00", "new_ids": [] }
+        });
+        assert!(fire_order_pure(inp).is_err(), "sin order_id no hay comanda que colgar de nada");
+    }
 
     #[test]
     fn abrir_un_pedido_crea_un_order_open_con_lineas_materializadas() {

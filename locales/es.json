@@ -140,7 +140,10 @@
     "prebillNotice": "Cuenta — no es una factura. El tiquet fiscal se entrega al cobrar.",
     "paymentMethod": "Forma de pago",
     "printReceipt": "Imprimir tiquet",
-    "parkedAs": "Aparcado como {number}"
+    "parkedAs": "Aparcado como {number}",
+    "fireToKitchen": "Enviar a cocina",
+    "firedToKitchen": "Enviado a cocina",
+    "fireFailed": "No se pudo enviar a cocina"
   },
   "widgets": {
     "sales.today": {

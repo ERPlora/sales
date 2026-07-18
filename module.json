@@ -290,6 +290,18 @@
         "description": "Opens a new MUTABLE order (open ticket) with its line items materialized early (ADR-0141). The order is the canonical entity of the sale; on checkout it produces one or more immutable sales (split-bill). Amounts are provisional; the fiscal breakdown is frozen at checkout. Does not accept table_id (sales is table-agnostic; the table link is owned by the tables module)."
       }
     },
+    "sales.order.fire": {
+      "permission": "sales.add_sale",
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "fire_order"
+      },
+      "schema": "schemas/fire_order.json",
+      "ai": {
+        "description": "Fires the current lines of an open order to production (kitchen/bar) — ADR-0141. The kitchen ticket is born from the ORDER, not from the payment: waiters fire when they take the order, long before any sale exists. `label` is an opaque display string (e.g. \"Table 4\", \"Bar\", \"Pickup Ana\") that sales forwards without interpreting, because sales knows nothing about tables or customers. Each call is a new round."
+      }
+    },
     "sales.void": {
       "permission": "sales.void_sale",
       "transaction": true,
