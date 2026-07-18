@@ -92,3 +92,30 @@ describe('importes rápidos en efectivo', () => {
     expect(quickCashAmounts(0)).toEqual([]);
   });
 });
+
+import { enabledPayMethods } from './pay-icons';
+
+// Las formas de pago se ACTIVAN/DESACTIVAN desde Ajustes (allow_cash/allow_card/allow_transfer).
+// La query ya filtra las inactivas; esto aplica además la política del hub.
+describe('formas de pago habilitadas', () => {
+  const todas = [
+    { id: '1', name: 'Efectivo', type: 'cash' },
+    { id: '2', name: 'Tarjeta', type: 'card' },
+    { id: '3', name: 'Transferencia', type: 'transfer' },
+    { id: '4', name: 'Bizum', type: 'other' },
+  ];
+
+  it('sin ajustes las deja todas (hub recién instalado)', () => {
+    expect(enabledPayMethods(todas, {}).map((m) => m.name)).toEqual(['Efectivo','Tarjeta','Transferencia','Bizum']);
+  });
+
+  it('respeta cada allow_* de Ajustes', () => {
+    const r = enabledPayMethods(todas, { allow_cash: 1, allow_card: 0, allow_transfer: 0 });
+    expect(r.map((m) => m.name)).toEqual(['Efectivo','Bizum']); // Bizum no tiene flag propio → se deja
+  });
+
+  it('nunca deja al TPV sin ninguna: si se desactiva todo, queda efectivo', () => {
+    const r = enabledPayMethods([{ id: '1', name: 'Efectivo', type: 'cash' }], { allow_cash: 0 });
+    expect(r).toHaveLength(1);
+  });
+});

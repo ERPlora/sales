@@ -5,7 +5,7 @@ import { define } from '@erplora/outfitkit/define';
 import { eurosToCents } from '@erplora/module-sdk';
 import { renderDocumentModal } from '../../lib/document-modal.js';
 import { orderToPrebill } from '../../lib/document-mappers.js';
-import { payMethodIcon, needsTendered, quickCashAmounts } from '../../lib/pay-icons.js';
+import { payMethodIcon, needsTendered, enabledPayMethods } from '../../lib/pay-icons.js';
 import '@erplora/outfitkit/ok-qty-stepper';
 import '@erplora/outfitkit/ok-spotlight-search';
 import {
@@ -34,7 +34,12 @@ interface PayMethod {
   /** 1 = pide importe entregado y calcula cambio (efectivo); 0 = importe exacto (tarjeta, Bizum…). */
   requires_change?: number;
 }
-interface PosSettings { default_document_format?: string; currency?: string; enable_parked_tickets?: number; default_tax_included?: number; }
+interface PosSettings {
+  default_document_format?: string; currency?: string; enable_parked_tickets?: number;
+  default_tax_included?: number;
+  /** Formas de pago permitidas (Ajustes). 0 = desactivada. */
+  allow_cash?: number; allow_card?: number; allow_transfer?: number;
+}
 interface Category { id: string; name: string; icon?: string; color?: string; image?: string; product_count?: number; }
 interface ProdCat { product_id: string; category_id: string; }
 
@@ -170,7 +175,7 @@ export class ErpPosTouch extends LitElement {
     /* Etiqueta de sección: dice QUÉ estás eligiendo (antes dos segments iguales sin contexto). */
     .pay-lbl { margin:.9rem 0 .35rem; font-size:.75rem; font-weight:700; text-transform:uppercase;
       letter-spacing:.06em; color:var(--mut); }
-    .pay-methods { margin:0 0 .2rem; }
+    .pay-methods { margin:.1rem 0 .55rem; --background:transparent; }
     /* Atajos de efectivo: el cajero pulsa en vez de teclear. */
     .quick { display:grid; grid-template-columns:repeat(4,1fr); gap:.4rem; margin:.7rem 0 .5rem; }
     .qbtn { padding:.55rem .2rem; border-radius:10px; border:1px solid var(--ion-border-color);
@@ -383,7 +388,7 @@ export class ErpPosTouch extends LitElement {
       this.methods = rows<PayMethod>(methods);
       this.settings = rows<PosSettings>(settingsRows)[0] || {};
       this.docFormat = this.settings.default_document_format === 'invoice' ? 'invoice' : 'ticket';
-      this.payMethod = this.methods[0];
+      this.payMethod = this.payMethods[0];
       this.parked = parked;
       this.categories = rows<Category>(cats).filter((c) => c.name);
       for (const pc of rows<ProdCat>(prodCats)) {
@@ -466,6 +471,14 @@ export class ErpPosTouch extends LitElement {
   // FIX QA (2026-06-25): el POS trabaja en CÉNTIMOS → formatMoney (divide /100), NO formatAmount
   // (que mostraba precios ×100).
   private money(n: number) { return erplora().formatMoney(Number(n) || 0); }
+  /** Formas de pago que se ofrecen: activas (query) y permitidas por Ajustes (allow_*). */
+  private get payMethods(): PayMethod[] {
+    return enabledPayMethods(this.methods, {
+      allow_cash: this.settings.allow_cash, allow_card: this.settings.allow_card,
+      allow_transfer: this.settings.allow_transfer,
+    });
+  }
+
   private get total() { return this.cart.reduce((s, l) => s + (l.is_gift ? 0 : l.price * l.qty), 0); }
   private get itemCount() { return this.cart.reduce((s, l) => s + l.qty, 0); }
   private get parkingEnabled() { return this.settings.enable_parked_tickets !== 0; }
@@ -604,7 +617,7 @@ export class ErpPosTouch extends LitElement {
   private openPay() {
     if (!this.cart.length) return;
     this.tendered = '';
-    this.payMethod = this.methods[0];
+    this.payMethod = this.payMethods[0];
     this.docFormat = this.settings.default_document_format === 'invoice' ? 'invoice' : 'ticket';
     this.paying = true;
   }
@@ -618,9 +631,10 @@ export class ErpPosTouch extends LitElement {
   private get tenderedNum() { return eurosToCents(this.tendered || '0'); }
   private get change() { return Math.max(0, this.tenderedNum - this.total); }
 
-  /** Cierra la venta. `print` = cobrar E IMPRIMIR el tiquet fiscal (el flujo normal en barra);
-   *  sin él solo se cobra y el documento queda en pantalla por si se quiere imprimir después. */
-  private async confirm(print = false) {
+  /** Cierra la venta. La IMPRESIÓN no se dispara desde aquí: la hace el shell por el Bridge al
+   *  recibir `sale.completed` (ajuste `auto_print_on_sale`). El toggle de la pantalla de cobro
+   *  refleja esa preferencia; el diálogo del navegador solo aparece como respaldo manual. */
+  private async confirm(_print = false) {
     this.busy = true; this.error = '';
     try {
       // ADR-0069: la AUTORIDAD del IVA es el servidor. Cada línea manda su `tax_category_key`
@@ -673,16 +687,12 @@ export class ErpPosTouch extends LitElement {
       this.customerId = undefined; this.customerName = '';
       this.customerTaxId = ''; this.customerAddress = '';
       this.resetSlotContexts();
-      if (saleId) {
-        this.docSaleId = saleId;
-        // Cobrar E imprimir: se espera a que el documento esté pintado antes de mandar a imprimir,
-        // si no el navegador imprimiría el TPV en vez del tiquet.
-        if (print) {
-          await this.updateComplete;
-          await new Promise((r) => setTimeout(r, 250));
-          try { globalThis.print?.(); } catch { /* sin impresora: el tiquet queda en pantalla */ }
-        }
-      }
+      if (saleId) this.docSaleId = saleId;
+      // NOTA (impresión): aquí NO se llama a window.print(). El tiquet lo imprime el SHELL por el
+      // BRIDGE (ESC/POS, rol `receipt`) escuchando `sale.completed` con el ajuste `auto_print_on_sale`
+      // — ya existía (apps/web/src/lib/print-on-sale.ts) y el runtime no toca hardware (§2.7).
+      // Abrir el diálogo del navegador por nuestra cuenta duplicaba ese camino y se lo comía.
+      // El diálogo del navegador queda SOLO como respaldo manual, desde el botón del documento.
     } catch (e) {
       this.error = e instanceof Error ? e.message : t('ui.errorCharge');
     } finally {
@@ -809,6 +819,22 @@ export class ErpPosTouch extends LitElement {
       <ion-footer class="ion-no-border">
         <div class="cart-foot">
           <div class="total"><span>${t('ui.colTotal')}</span><b>${this.money(this.total)}</b></div>
+          <!-- Forma de pago ANTES de cobrar (decisión de Ioan): se elige aquí, con la comanda
+               delante, y el modal de cobro queda limpio. Solo-icono porque son 3-4 opciones fijas
+               que el camarero reconoce de un vistazo; el nombre va en title/aria. Solo aparecen
+               las ACTIVAS (is_active en la query + los allow_* de Ajustes). -->
+          ${this.payMethods.length > 1 ? html`
+            <ion-segment class="pay-methods" value=${this.payMethod?.id ?? ''}
+                         @ionChange=${(e: CustomEvent) => {
+                           const id = (e.detail as { value: string }).value;
+                           this.payMethod = this.payMethods.find((m) => m.id === id) ?? this.payMethod;
+                           if (!needsTendered(this.payMethod)) this.tendered = '';
+                         }}>
+              ${this.payMethods.map((m) => html`
+                <ion-segment-button value=${m.id} title=${m.name} aria-label=${m.name}>
+                  <ion-icon name=${payMethodIcon(m.type, m.name)}></ion-icon>
+                </ion-segment-button>`)}
+            </ion-segment>` : nothing}
           <!-- Acciones SOLO-ICONO (ADR-0133): imprimir la CUENTA para llevarla a la mesa (no es un
                documento fiscal) y COBRAR (que sí emite el tiquet fiscal). El importe ya se ve
                grande arriba, así que el texto sobra; la etiqueta va en aria-label/title. -->
@@ -867,36 +893,10 @@ export class ErpPosTouch extends LitElement {
               <div class="sheet-top"><div class="pay-total">${this.money(this.total)}</div></div>
               <div class="pay">
 
-                <p class="pay-lbl">${t('ui.paymentMethod')}</p>
-                <ion-segment class="pay-methods" value=${this.payMethod?.id ?? ''}
-                             @ionChange=${(e: CustomEvent) => {
-                               const id = (e.detail as { value: string }).value;
-                               this.payMethod = this.methods.find((m) => m.id === id) ?? this.payMethod;
-                               if (!needsTendered(this.payMethod)) this.tendered = '';
-                             }}>
-                  ${this.methods.map((m) => html`
-                    <ion-segment-button value=${m.id} title=${m.name} aria-label=${m.name}>
-                      <ion-icon name=${payMethodIcon(m.type, m.name)}></ion-icon>
-                      <ion-label>${m.name}</ion-label>
-                    </ion-segment-button>`)}
-                  ${!this.methods.length ? html`
-                    <ion-segment-button value="" title=${t('ui.cash')} aria-label=${t('ui.cash')}>
-                      <ion-icon name="cash-outline"></ion-icon>
-                      <ion-label>${t('ui.cash')}</ion-label>
-                    </ion-segment-button>` : nothing}
-                </ion-segment>
-
                 <!-- Entregado/cambio/teclado SOLO en efectivo: con tarjeta se cobra el total y no
                      hay nada que teclear (lo decide requires_change, no un "si es efectivo"). -->
                 ${needsTendered(this.payMethod)
                   ? html`
-                    <div class="quick">
-                      ${quickCashAmounts(this.total).map((c) => html`
-                        <button class="qbtn" aria-pressed=${this.tenderedNum === c}
-                                @click=${() => { this.tendered = (c / 100).toFixed(2); }}>
-                          ${this.money(c)}
-                        </button>`)}
-                    </div>
                     <div class="amt"><span>${t('ui.tendered')}</span><span class="v">${this.money(this.tenderedNum)}</span></div>
                     ${this.change > 0
                       ? html`<div class="amt big-change"><span>${t('ui.change')}</span><span class="v">${this.money(this.change)}</span></div>`
@@ -905,18 +905,6 @@ export class ErpPosTouch extends LitElement {
                       ${['1','2','3','4','5','6','7','8','9','.','0','C'].map((k) => html`<button @click=${() => this.tap(k)}>${k}</button>`)}
                     </div>`
                   : nothing}
-
-                <p class="pay-lbl">${t('ui.document')}</p>
-                <ion-segment value=${this.docFormat} @ionChange=${(e: CustomEvent) => { this.docFormat = ((e.detail as { value: string }).value === 'invoice' ? 'invoice' : 'ticket'); }}>
-                  <ion-segment-button value="ticket" title=${t('ui.formatTicket')} aria-label=${t('ui.formatTicket')}>
-                    <ion-icon name="receipt-outline"></ion-icon>
-                    <ion-label>${t('ui.formatTicket')}</ion-label>
-                  </ion-segment-button>
-                  <ion-segment-button value="invoice" title=${t('ui.formatInvoice')} aria-label=${t('ui.formatInvoice')}>
-                    <ion-icon name="document-text-outline"></ion-icon>
-                    <ion-label>${t('ui.formatInvoice')}</ion-label>
-                  </ion-segment-button>
-                </ion-segment>
 
                 <!-- Imprimir deja de ser un botón gemelo del de cobrar (dos botones azules iguales
                      no dicen cuál hace qué): es una PREFERENCIA del cobro. -->

@@ -94,3 +94,25 @@ export function quickCashAmounts(totalCents: number): number[] {
   }
   return out;
 }
+
+/** Ajustes del TPV que gobiernan qué formas de pago se ofrecen. */
+export interface PayPolicy { allow_cash?: number; allow_card?: number; allow_transfer?: number }
+
+/**
+ * Filtra las formas de pago por la política del hub (Ajustes → `allow_cash`/`allow_card`/
+ * `allow_transfer`). La query ya excluye las inactivas; esto aplica encima la decisión del dueño.
+ * Las que no tienen flag propio (Bizum, vales…) se dejan: desactivarlas es cosa de `is_active`.
+ * Guardarraíl: si el filtro dejara el TPV SIN ninguna forma de pago, se devuelve la lista tal cual
+ * — un TPV que no puede cobrar es peor que uno que ofrece de más.
+ */
+export function enabledPayMethods<T extends PayMethodLike>(methods: T[], policy: PayPolicy = {}): T[] {
+  const allowed = (m: T): boolean => {
+    const t = (m.type || '').trim().toLowerCase();
+    if (t === 'cash') return policy.allow_cash !== 0;
+    if (t === 'card' || t === 'credit' || t === 'debit') return policy.allow_card !== 0;
+    if (t === 'transfer' || t === 'bank') return policy.allow_transfer !== 0;
+    return true;
+  };
+  const out = methods.filter(allowed);
+  return out.length ? out : methods;
+}

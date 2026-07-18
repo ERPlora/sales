@@ -3142,8 +3142,41 @@ function renderDocumentModal({ saleId, onClose, t: t7 }) {
       }
       ion-modal.doc-modal .doc-wrap > erp-sales-document { margin: auto 0; }
       @media print {
+        /* Sin márgenes de página el navegador deja de estampar su cabecera/pie (fecha, título,
+           URL, 1/1) alrededor del tiquet. */
+        @page { margin: 0; }
         ion-modal.doc-modal ion-footer,
         ion-modal.doc-modal ion-button.doc-close { display: none; }
+        /* Imprimir SOLO el documento.
+           Falla anterior: ocultar los hermanos a nivel de body escondía el div raíz de la app…
+           que es justo quien CONTIENE el modal (Ionic lo reparenta a ion-app, no a body), así que
+           el papel salía EN BLANCO. La técnica correcta no depende de dónde cuelgue el modal: se
+           apaga el pintado de todo y se enciende solo el documento — visibility se HEREDA, así que
+           los ancestros siguen maquetando pero no se ven, y el contenido del modal (incluido su
+           shadow) vuelve a verse.
+           (Recordatorio: NADA de backticks en comentarios dentro de una plantilla Lit.) */
+        /* Ocultar los HERMANOS del modal dentro de ion-app (ahí lo reparenta Ionic).
+           Por qué no valen los intentos obvios:
+             · ocultar hermanos de <body> escondía el div raíz… que CONTIENE el modal → hoja en blanco;
+             · visibility sobre "body *" no entra en el SHADOW DOM, y la app son web components:
+               sus interiores seguían pintando → salía el tiquet Y toda la web.
+           display:none sobre el hermano se lleva su shadow entero, que es justo lo que hace falta. */
+        ion-app > *:not(ion-modal.doc-modal) { display: none !important; }
+        ion-modal.doc-modal {
+          position: absolute !important; inset: 0 auto auto 0; width: 100% !important;
+          height: auto !important; display: block !important;
+          --width: auto; --height: auto; --border-radius: 0; --box-shadow: none; --backdrop-opacity: 0;
+        }
+        ion-modal.doc-modal::part(content) {
+          position: static !important; width: auto !important; height: auto !important;
+          max-height: none !important; box-shadow: none !important; border-radius: 0 !important;
+          contain: none !important; overflow: visible !important;
+        }
+        ion-modal.doc-modal ion-content.doc-body {
+          --background: #fff; --offset-top: 0; --offset-bottom: 0;
+          position: static !important; height: auto !important; overflow: visible !important;
+        }
+        ion-modal.doc-modal .doc-wrap { min-height: 0 !important; padding-top: 0 !important; }
       }
     </style>
     <ion-content class="doc-body">
@@ -3205,17 +3238,16 @@ function needsTendered(method) {
   }
   return (method.type || "").trim().toLowerCase() === "cash";
 }
-function quickCashAmounts(totalCents) {
-  if (!totalCents || totalCents <= 0) return [];
-  const out = [totalCents];
-  const steps = totalCents % 100 === 0 ? [500, 1e3] : [100, 500, 1e3];
-  for (const step of steps) {
-    const prev = out[out.length - 1];
-    const v3 = (Math.floor(prev / step) + 1) * step;
-    out.push(v3);
-    if (out.length >= 4) break;
-  }
-  return out;
+function enabledPayMethods(methods, policy = {}) {
+  const allowed = (m4) => {
+    const t7 = (m4.type || "").trim().toLowerCase();
+    if (t7 === "cash") return policy.allow_cash !== 0;
+    if (t7 === "card" || t7 === "credit" || t7 === "debit") return policy.allow_card !== 0;
+    if (t7 === "transfer" || t7 === "bank") return policy.allow_transfer !== 0;
+    return true;
+  };
+  const out = methods.filter(allowed);
+  return out.length ? out : methods;
 }
 
 // ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/shared/icons.js
@@ -4211,7 +4243,7 @@ var ErpPosTouch = class extends i3 {
     /* Etiqueta de sección: dice QUÉ estás eligiendo (antes dos segments iguales sin contexto). */
     .pay-lbl { margin:.9rem 0 .35rem; font-size:.75rem; font-weight:700; text-transform:uppercase;
       letter-spacing:.06em; color:var(--mut); }
-    .pay-methods { margin:0 0 .2rem; }
+    .pay-methods { margin:.1rem 0 .55rem; --background:transparent; }
     /* Atajos de efectivo: el cajero pulsa en vez de teclear. */
     .quick { display:grid; grid-template-columns:repeat(4,1fr); gap:.4rem; margin:.7rem 0 .5rem; }
     .qbtn { padding:.55rem .2rem; border-radius:10px; border:1px solid var(--ion-border-color);
@@ -4303,7 +4335,7 @@ var ErpPosTouch = class extends i3 {
       this.methods = rows2(methods);
       this.settings = rows2(settingsRows)[0] || {};
       this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
-      this.payMethod = this.methods[0];
+      this.payMethod = this.payMethods[0];
       this.parked = parked;
       this.categories = rows2(cats).filter((c5) => c5.name);
       for (const pc of rows2(prodCats)) {
@@ -4377,6 +4409,14 @@ var ErpPosTouch = class extends i3 {
   // (que mostraba precios ×100).
   money(n6) {
     return erplora2().formatMoney(Number(n6) || 0);
+  }
+  /** Formas de pago que se ofrecen: activas (query) y permitidas por Ajustes (allow_*). */
+  get payMethods() {
+    return enabledPayMethods(this.methods, {
+      allow_cash: this.settings.allow_cash,
+      allow_card: this.settings.allow_card,
+      allow_transfer: this.settings.allow_transfer
+    });
   }
   get total() {
     return this.cart.reduce((s5, l3) => s5 + (l3.is_gift ? 0 : l3.price * l3.qty), 0);
@@ -4515,7 +4555,7 @@ var ErpPosTouch = class extends i3 {
   openPay() {
     if (!this.cart.length) return;
     this.tendered = "";
-    this.payMethod = this.methods[0];
+    this.payMethod = this.payMethods[0];
     this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
     this.paying = true;
   }
@@ -4535,9 +4575,10 @@ var ErpPosTouch = class extends i3 {
   get change() {
     return Math.max(0, this.tenderedNum - this.total);
   }
-  /** Cierra la venta. `print` = cobrar E IMPRIMIR el tiquet fiscal (el flujo normal en barra);
-   *  sin él solo se cobra y el documento queda en pantalla por si se quiere imprimir después. */
-  async confirm(print = false) {
+  /** Cierra la venta. La IMPRESIÓN no se dispara desde aquí: la hace el shell por el Bridge al
+   *  recibir `sale.completed` (ajuste `auto_print_on_sale`). El toggle de la pantalla de cobro
+   *  refleja esa preferencia; el diálogo del navegador solo aparece como respaldo manual. */
+  async confirm(_print = false) {
     this.busy = true;
     this.error = "";
     try {
@@ -4581,17 +4622,7 @@ var ErpPosTouch = class extends i3 {
       this.customerTaxId = "";
       this.customerAddress = "";
       this.resetSlotContexts();
-      if (saleId) {
-        this.docSaleId = saleId;
-        if (print) {
-          await this.updateComplete;
-          await new Promise((r6) => setTimeout(r6, 250));
-          try {
-            globalThis.print?.();
-          } catch {
-          }
-        }
-      }
+      if (saleId) this.docSaleId = saleId;
     } catch (e6) {
       this.error = e6 instanceof Error ? e6.message : t3("ui.errorCharge");
     } finally {
@@ -4714,6 +4745,22 @@ var ErpPosTouch = class extends i3 {
       <ion-footer class="ion-no-border">
         <div class="cart-foot">
           <div class="total"><span>${t3("ui.colTotal")}</span><b>${this.money(this.total)}</b></div>
+          <!-- Forma de pago ANTES de cobrar (decisión de Ioan): se elige aquí, con la comanda
+               delante, y el modal de cobro queda limpio. Solo-icono porque son 3-4 opciones fijas
+               que el camarero reconoce de un vistazo; el nombre va en title/aria. Solo aparecen
+               las ACTIVAS (is_active en la query + los allow_* de Ajustes). -->
+          ${this.payMethods.length > 1 ? b2`
+            <ion-segment class="pay-methods" value=${this.payMethod?.id ?? ""}
+                         @ionChange=${(e6) => {
+      const id = e6.detail.value;
+      this.payMethod = this.payMethods.find((m4) => m4.id === id) ?? this.payMethod;
+      if (!needsTendered(this.payMethod)) this.tendered = "";
+    }}>
+              ${this.payMethods.map((m4) => b2`
+                <ion-segment-button value=${m4.id} title=${m4.name} aria-label=${m4.name}>
+                  <ion-icon name=${payMethodIcon(m4.type, m4.name)}></ion-icon>
+                </ion-segment-button>`)}
+            </ion-segment>` : A}
           <!-- Acciones SOLO-ICONO (ADR-0133): imprimir la CUENTA para llevarla a la mesa (no es un
                documento fiscal) y COBRAR (que sí emite el tiquet fiscal). El importe ya se ve
                grande arriba, así que el texto sobra; la etiqueta va en aria-label/title. -->
@@ -4780,56 +4827,14 @@ var ErpPosTouch = class extends i3 {
               <div class="sheet-top"><div class="pay-total">${this.money(this.total)}</div></div>
               <div class="pay">
 
-                <p class="pay-lbl">${t3("ui.paymentMethod")}</p>
-                <ion-segment class="pay-methods" value=${this.payMethod?.id ?? ""}
-                             @ionChange=${(e6) => {
-      const id = e6.detail.value;
-      this.payMethod = this.methods.find((m4) => m4.id === id) ?? this.payMethod;
-      if (!needsTendered(this.payMethod)) this.tendered = "";
-    }}>
-                  ${this.methods.map((m4) => b2`
-                    <ion-segment-button value=${m4.id} title=${m4.name} aria-label=${m4.name}>
-                      <ion-icon name=${payMethodIcon(m4.type, m4.name)}></ion-icon>
-                      <ion-label>${m4.name}</ion-label>
-                    </ion-segment-button>`)}
-                  ${!this.methods.length ? b2`
-                    <ion-segment-button value="" title=${t3("ui.cash")} aria-label=${t3("ui.cash")}>
-                      <ion-icon name="cash-outline"></ion-icon>
-                      <ion-label>${t3("ui.cash")}</ion-label>
-                    </ion-segment-button>` : A}
-                </ion-segment>
-
                 <!-- Entregado/cambio/teclado SOLO en efectivo: con tarjeta se cobra el total y no
                      hay nada que teclear (lo decide requires_change, no un "si es efectivo"). -->
                 ${needsTendered(this.payMethod) ? b2`
-                    <div class="quick">
-                      ${quickCashAmounts(this.total).map((c5) => b2`
-                        <button class="qbtn" aria-pressed=${this.tenderedNum === c5}
-                                @click=${() => {
-      this.tendered = (c5 / 100).toFixed(2);
-    }}>
-                          ${this.money(c5)}
-                        </button>`)}
-                    </div>
                     <div class="amt"><span>${t3("ui.tendered")}</span><span class="v">${this.money(this.tenderedNum)}</span></div>
                     ${this.change > 0 ? b2`<div class="amt big-change"><span>${t3("ui.change")}</span><span class="v">${this.money(this.change)}</span></div>` : A}
                     <div class="numpad">
                       ${["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "C"].map((k2) => b2`<button @click=${() => this.tap(k2)}>${k2}</button>`)}
                     </div>` : A}
-
-                <p class="pay-lbl">${t3("ui.document")}</p>
-                <ion-segment value=${this.docFormat} @ionChange=${(e6) => {
-      this.docFormat = e6.detail.value === "invoice" ? "invoice" : "ticket";
-    }}>
-                  <ion-segment-button value="ticket" title=${t3("ui.formatTicket")} aria-label=${t3("ui.formatTicket")}>
-                    <ion-icon name="receipt-outline"></ion-icon>
-                    <ion-label>${t3("ui.formatTicket")}</ion-label>
-                  </ion-segment-button>
-                  <ion-segment-button value="invoice" title=${t3("ui.formatInvoice")} aria-label=${t3("ui.formatInvoice")}>
-                    <ion-icon name="document-text-outline"></ion-icon>
-                    <ion-label>${t3("ui.formatInvoice")}</ion-label>
-                  </ion-segment-button>
-                </ion-segment>
 
                 <!-- Imprimir deja de ser un botón gemelo del de cobrar (dos botones azules iguales
                      no dicen cuál hace qué): es una PREFERENCIA del cobro. -->
