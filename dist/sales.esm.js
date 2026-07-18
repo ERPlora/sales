@@ -3141,43 +3141,11 @@ function renderDocumentModal({ saleId, onClose, t: t7 }) {
         box-sizing: border-box;
       }
       ion-modal.doc-modal .doc-wrap > erp-sales-document { margin: auto 0; }
-      @media print {
-        /* Sin márgenes de página el navegador deja de estampar su cabecera/pie (fecha, título,
-           URL, 1/1) alrededor del tiquet. */
-        @page { margin: 0; }
-        ion-modal.doc-modal ion-footer,
-        ion-modal.doc-modal ion-button.doc-close { display: none; }
-        /* Imprimir SOLO el documento.
-           Falla anterior: ocultar los hermanos a nivel de body escondía el div raíz de la app…
-           que es justo quien CONTIENE el modal (Ionic lo reparenta a ion-app, no a body), así que
-           el papel salía EN BLANCO. La técnica correcta no depende de dónde cuelgue el modal: se
-           apaga el pintado de todo y se enciende solo el documento — visibility se HEREDA, así que
-           los ancestros siguen maquetando pero no se ven, y el contenido del modal (incluido su
-           shadow) vuelve a verse.
-           (Recordatorio: NADA de backticks en comentarios dentro de una plantilla Lit.) */
-        /* Ocultar los HERMANOS del modal dentro de ion-app (ahí lo reparenta Ionic).
-           Por qué no valen los intentos obvios:
-             · ocultar hermanos de <body> escondía el div raíz… que CONTIENE el modal → hoja en blanco;
-             · visibility sobre "body *" no entra en el SHADOW DOM, y la app son web components:
-               sus interiores seguían pintando → salía el tiquet Y toda la web.
-           display:none sobre el hermano se lleva su shadow entero, que es justo lo que hace falta. */
-        ion-app > *:not(ion-modal.doc-modal) { display: none !important; }
-        ion-modal.doc-modal {
-          position: absolute !important; inset: 0 auto auto 0; width: 100% !important;
-          height: auto !important; display: block !important;
-          --width: auto; --height: auto; --border-radius: 0; --box-shadow: none; --backdrop-opacity: 0;
-        }
-        ion-modal.doc-modal::part(content) {
-          position: static !important; width: auto !important; height: auto !important;
-          max-height: none !important; box-shadow: none !important; border-radius: 0 !important;
-          contain: none !important; overflow: visible !important;
-        }
-        ion-modal.doc-modal ion-content.doc-body {
-          --background: #fff; --offset-top: 0; --offset-bottom: 0;
-          position: static !important; height: auto !important; overflow: visible !important;
-        }
-        ion-modal.doc-modal .doc-wrap { min-height: 0 !important; padding-top: 0 !important; }
-      }
+      /* Las reglas de IMPRESIÓN viven en el SHELL (apps/web/src/print.css), no aquí: un style
+         dentro del modal solo existe mientras ESE modal está abierto, así que imprimir la cuenta
+         previa —cuyo modal no lo llevaba— sacaba la app entera. La clase doc-modal es el contrato:
+         el shell imprime lo que la lleve.
+         (Y NO metas backticks en comentarios dentro de una plantilla Lit: cierran el literal.) */
     </style>
     <ion-content class="doc-body">
       <ion-button class="doc-close" slot="fixed" style="top:0;right:0" fill="clear" color="medium"
@@ -3192,7 +3160,11 @@ function renderDocumentModal({ saleId, onClose, t: t7 }) {
       <ion-toolbar>
         <!-- Solo-icono (ADR-0133): el nombre va en aria-label, nunca texto visible. A ancho
              completo igualmente: en el TPV táctil el objetivo grande manda. -->
-        <ion-button class="print" expand="block" aria-label=${t7("ui.print")} @click=${() => window.print()}>
+        <ion-button class="print" expand="block" aria-label=${t7("ui.print")} @click=${() => {
+    const sdk = globalThis.erplora;
+    if (sdk?.print) void sdk.print({ role: "receipt", documentType: "receipt", jobId: saleId ? `sale-${saleId}` : void 0 });
+    else window.print();
+  }}>
           <ion-icon slot="icon-only" name="print-outline"></ion-icon>
         </ion-button>
       </ion-toolbar>

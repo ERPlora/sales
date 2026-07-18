@@ -70,6 +70,9 @@ describe('renderDocumentModal', () => {
     const style = modal.querySelector('style');
     expect(style, 'el <style> va dentro del ion-modal').toBeTruthy();
     // Al imprimir, pie y X desaparecen: en papel solo va el documento.
-    expect(style!.textContent).toContain('@media print');
+    // Las reglas de impresión YA NO viven aquí: son globales del shell (apps/web/src/print.css),
+    // porque un style dentro del modal solo existe mientras ESE modal está abierto. Lo que el
+    // módulo debe garantizar es el CONTRATO: el modal lleva la clase que el shell imprime.
+    expect(style!.textContent).not.toContain('@media print');
   });
 });
