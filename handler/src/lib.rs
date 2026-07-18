@@ -453,10 +453,22 @@ pub fn complete_sale_pure(input: Value) -> Output {
     let tax_total = tax_total_declarado;
     let tax_breakdown_json = Value::Object(tb).to_string();
 
+    // Tipo de documento fiscal (ADR-0140): 'invoice' = factura completa (→ F1), 'ticket' =
+    // simplificada (→ F2). Se fija ATÓMICAMENTE aquí (una sola escritura) en vez del UPDATE retro
+    // `sales.set_document_type`, que mutaba la fila ya emitida —violando la inmutabilidad fiscal— y
+    // no llegaba a `sale.completed` (por eso `invoice` hardcodeaba F2). Normalización defensiva:
+    // solo 'invoice' es completa; cualquier otro valor → simplificada.
+    let document_type = if str_or(&payload, "document_type", "ticket") == "invoice" {
+        "invoice"
+    } else {
+        "ticket"
+    };
+
     let mut h = Map::new();
     h.insert("sale_id".into(), json!(sale_id));
     h.insert("day".into(), json!(day));
     h.insert("status".into(), json!(str_or(&payload, "status", "completed")));
+    h.insert("document_type".into(), json!(document_type));
     h.insert("subtotal".into(), json!(subtotal));
     h.insert("tax_amount".into(), json!(tax_total));
     h.insert("discount_amount".into(), json!(discount_amount));
@@ -550,6 +562,10 @@ pub fn complete_sale_pure(input: Value) -> Output {
         // tax_included indica que unit_price de cada línea es bruto (IVA-incluido).
         // invoice usa net_amount/tax_amount por línea (ya extraídos) y NO re-suma IVA.
         "tax_included": tax_incl,
+        // Tipo de documento fiscal (ADR-0140): 'invoice' → factura completa (F1), 'ticket' →
+        // simplificada (F2). `invoice.create_from_sale` lo lee para elegir la serie/tipo en vez de
+        // hardcodear F2. Viaja atómicamente con la venta (ya no hay `set_document_type` retro).
+        "document_type": document_type,
         "total": total,
         "subtotal": subtotal,
         "tax_amount": tax_total,
@@ -696,6 +712,42 @@ mod tests {
         assert_eq!(bd["21.00"]["tax"], json!(87));
         assert_eq!(h["subtotal"], json!(413));
         assert_eq!(h["total"], json!(500));
+    }
+
+    #[test]
+    fn el_tipo_de_documento_es_atomico_y_viaja_en_el_evento() {
+        // ADR-0140: el tipo de documento (ticket|invoice) se fija ATÓMICAMENTE al completar la
+        // venta —no con un UPDATE retro (`sales.set_document_type`) que mutaba la fila ya emitida,
+        // violando la inmutabilidad fiscal— y VIAJA en `sale.completed` para que
+        // `invoice.create_from_sale` decida F1 (completa) vs F2 (simplificada) sin re-consultar la
+        // venta (antes hardcodeaba F2 porque el tipo no llegaba en el evento).
+        let items = json!([{ "product_name": "Menú", "price": 500, "quantity": 1, "tax_rate": 21.0 }]);
+        let mut inp = input(items, 3, 500);
+        inp["payload"]["document_type"] = json!("invoice");
+        let out = complete_sale_pure(inp);
+
+        // 1) la cabecera de la venta persiste el tipo en la MISMA inserción (atómico).
+        assert_eq!(out.operations[1].params["document_type"], json!("invoice"),
+                   "la venta persiste el tipo al insertarse, sin UPDATE posterior");
+        // 2) el evento lo lleva → invoice deja de hardcodear F2.
+        assert_eq!(out.events[0].payload["document_type"], json!("invoice"),
+                   "sale.completed lleva el tipo de documento");
+    }
+
+    #[test]
+    fn el_tipo_de_documento_por_defecto_es_ticket() {
+        // Sin `document_type` explícito → simplificada (ticket/F2), el caso mayoritario del TPV.
+        // Cualquier valor no reconocido cae también a 'ticket' (normalización defensiva fiscal).
+        let items = json!([{ "product_name": "Café", "price": 121, "quantity": 1, "tax_rate": 21.0 }]);
+        let out = complete_sale_pure(input(items, 3, 121));
+        assert_eq!(out.operations[1].params["document_type"], json!("ticket"));
+        assert_eq!(out.events[0].payload["document_type"], json!("ticket"));
+
+        let mut inp = input(json!([{ "product_name": "Té", "price": 100, "quantity": 1, "tax_rate": 10.0 }]), 3, 100);
+        inp["payload"]["document_type"] = json!("garbage");
+        let out2 = complete_sale_pure(inp);
+        assert_eq!(out2.operations[1].params["document_type"], json!("ticket"),
+                   "un valor no reconocido se normaliza a la simplificada");
     }
 
     #[test]
