@@ -621,8 +621,15 @@ pub fn complete_sale_pure(input: Value) -> Output {
     let keep_open = payload.get("keep_order_open").map(as_bool).unwrap_or(false);
     if !order_ref.is_null() && !as_str(&order_ref).is_empty() && !keep_open {
         let mut c = Map::new();
-        c.insert("order_id".into(), order_ref);
+        c.insert("order_id".into(), order_ref.clone());
         ops.push(Operation::sql("sales._complete_order", c));
+        // ADR-0146: el fin del PEDIDO es un hecho distinto del cobro de una venta, y es el que
+        // esperan los satélites (la mesa se libera aquí). `sale.completed` NO sirve: se emite
+        // también en un cobro parcial, donde el pedido sigue abierto y la mesa no debe soltarse.
+        events.push(Event::new("order.completed", json!({
+            "sender": "sales",
+            "order_id": order_ref,
+        })));
     }
 
     Output { operations: ops, events }
