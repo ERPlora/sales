@@ -619,6 +619,20 @@ pub fn complete_sale_pure(input: Value) -> Output {
     // se deja abierto para los siguientes cobros; así 1 order → N sale, ligadas por `order_id`.
     let order_ref = payload.get("order_id").cloned().unwrap_or(Value::Null);
     let keep_open = payload.get("keep_order_open").map(as_bool).unwrap_or(false);
+    // ADR-0146 etapa 5 — «cada uno paga lo suyo»: las líneas que cubre ESTE cobro quedan atadas a
+    // SU venta. Las demás siguen pendientes para el siguiente. Sin esto, al reanudar el pedido
+    // volverían a salir las ya pagadas y se cobrarían dos veces.
+    if let Some(ids) = payload.get("line_ids").and_then(|v| v.as_array()) {
+        for id in ids {
+            let line_id = as_str(id);
+            if line_id.is_empty() { continue; }
+            let mut p = Map::new();
+            p.insert("line_id".into(), json!(line_id));
+            p.insert("sale_id".into(), json!(sale_id));
+            ops.push(Operation::sql("sales._mark_order_line_paid", p));
+        }
+    }
+
     if !order_ref.is_null() && !as_str(&order_ref).is_empty() && !keep_open {
         let mut c = Map::new();
         c.insert("order_id".into(), order_ref.clone());
@@ -757,6 +771,50 @@ mod tests {
     }
 
     // ── ADR-0141 · entidad `order` mutable → `sale` inmutable (en construcción TDD) ──────────────
+
+    #[test]
+    fn un_cobro_por_LINEAS_marca_solo_esas_como_pagadas() {
+        // ADR-0146 etapa 5 — «cada uno paga lo suyo». Al cobrar una parte, esas líneas quedan
+        // atadas a SU venta; las demás siguen pendientes y se cobran después. Sin esto, al reanudar
+        // el pedido volverían a salir las ya pagadas y se cobrarían dos veces.
+        let mut inp = input(
+            json!([{ "product_name": "Menú", "price": 500, "quantity": 1, "tax_rate": 21.0 }]),
+            3,
+            500,
+        );
+        inp["payload"]["order_id"] = json!("ord-1");
+        inp["payload"]["keep_order_open"] = json!(true);
+        inp["payload"]["line_ids"] = json!(["line-3", "line-4"]);
+        let out = complete_sale_pure(inp);
+
+        let marcadas: Vec<&str> = out
+            .operations
+            .iter()
+            .filter(|o| o.command == "sales._mark_order_line_paid")
+            .map(|o| o.params["line_id"].as_str().unwrap_or(""))
+            .collect();
+        assert_eq!(marcadas, vec!["line-3", "line-4"], "solo las líneas cobradas");
+
+        // Y quedan atadas a LA venta que las cobró, que es lo que permite reconstruir quién pagó qué.
+        let sale_id = out.operations.iter()
+            .find(|o| o.command == "sales._insert_sale")
+            .map(|o| o.params["sale_id"].clone())
+            .expect("la venta");
+        for op in out.operations.iter().filter(|o| o.command == "sales._mark_order_line_paid") {
+            assert_eq!(op.params["sale_id"], sale_id);
+        }
+    }
+
+    #[test]
+    fn un_cobro_normal_no_marca_lineas_sueltas() {
+        // Sin `line_ids` se cobra el pedido entero y se cierra: no hay nada que marcar línea a línea.
+        let mut inp = input(json!([{ "product_name": "Menú", "price": 500, "quantity": 1, "tax_rate": 21.0 }]), 3, 500);
+        inp["payload"]["order_id"] = json!("ord-1");
+        let out = complete_sale_pure(inp);
+        assert!(!out.operations.iter().any(|o| o.command == "sales._mark_order_line_paid"));
+        assert!(out.operations.iter().any(|o| o.command == "sales._complete_order"),
+                "el cobro entero SÍ cierra el pedido");
+    }
 
     #[test]
     fn disparar_un_pedido_manda_a_cocina_la_etiqueta_opaca_y_el_canal() {

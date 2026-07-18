@@ -89,7 +89,8 @@
       "migrations/sqlite/008_receipt_marketing.sql",
       "migrations/sqlite/009_cart_per_table.sql",
       "migrations/sqlite/010_orders.sql",
-      "migrations/sqlite/011_sale_forgets_table.sql"
+      "migrations/sqlite/011_sale_forgets_table.sql",
+      "migrations/sqlite/012_line_paid.sql"
     ],
     "postgres": [
       "migrations/postgres/001_init.sql",
@@ -102,7 +103,8 @@
       "migrations/postgres/008_receipt_marketing.sql",
       "migrations/postgres/009_cart_per_table.sql",
       "migrations/postgres/010_orders.sql",
-      "migrations/postgres/011_sale_forgets_table.sql"
+      "migrations/postgres/011_sale_forgets_table.sql",
+      "migrations/postgres/012_line_paid.sql"
     ]
   },
   "queries": {
@@ -455,6 +457,15 @@
       ],
       "ai": {
         "description": "Marks a parked POS ticket as retrieved so it disappears from the parked list"
+      }
+    },
+    "sales._mark_order_line_paid": {
+      "permission": "sales.add_sale",
+      "sql": [
+        "commands/_mark_order_line_paid.sql"
+      ],
+      "ai": {
+        "description": "Internal (ADR-0146): links an order line to the sale that charged it (split-bill). Emitted by complete_sale when it receives line_ids."
       }
     }
   },
