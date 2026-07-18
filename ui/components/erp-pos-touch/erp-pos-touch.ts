@@ -8,6 +8,8 @@ import '@erplora/outfitkit/ok-qty-stepper';
 import '@erplora/outfitkit/ok-spotlight-search';
 import {
   loadActiveCart, persistActiveCart, mergeCartLines, listParkedTickets, parkCart, retrieveParkedTicket,
+  // ADR-0141: el carrito lo respalda un PEDIDO real (filas), no un blob con debounce.
+  openOrderWithLines, addOrderLine, updateOrderLineQty, removeOrderLine, loadOrderLines, findOpenOrder,
   type CartLine, type ErploraClientLike, type ParkedTicket,
 } from '../../lib/pos-cart.js';
 import { buildCategoryRatesMap, resolveLineTax } from '../../lib/pos-tax.js';
@@ -221,6 +223,9 @@ export class ErpPosTouch extends LitElement {
   /** El search del catálogo se despliega desde una lupa (gana alto para la rejilla). */
   @state() private searchOpen = false;
   @state() private tableId?: string;
+  /** ADR-0141: pedido MUTABLE que respalda el carrito. Cada artículo se escribe como FILA real al
+   *  instante (antes: blob con debounce de 400 ms → un corte de luz perdía el último artículo). */
+  @state() private orderId?: string;
   @state() private tableLabel = '';
   @state() private customerId?: string;
   @state() private customerName = '';
@@ -299,7 +304,7 @@ export class ErpPosTouch extends LitElement {
         erplora().queryAll<Product>('inventory.products.list').catch(() => []),
         erplora().query('sales.payment_methods').catch(() => []),
         erplora().query('sales.settings.get').catch(() => []),
-        loadActiveCart(erplora()),
+        this.restoreOpenOrder(),
         listParkedTickets(erplora()),
         erplora().queryAll<Category>('inventory.categories.list', { sort: 'name', dir: 'asc' }).catch(() => []),
         erplora().queryAll<ProdCat>('inventory.product_categories').catch(() => []),
@@ -379,14 +384,12 @@ export class ErpPosTouch extends LitElement {
     }
   }
 
-  protected updated(changed: Map<PropertyKey, unknown>) {
+  protected updated(_changed: Map<PropertyKey, unknown>) {
     this.ensureSlotsMounted();
-    if (!changed.has('cart') || !this.cartRestored) return;
-    if (this.saveTimer) clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => {
-      this.saveTimer = undefined;
-      void persistActiveCart(erplora(), this.cart, this.tableId);
-    }, 400);
+    // ADR-0141: YA NO se guarda el carrito aquí. Antes esto era un debounce de 400 ms que escribía
+    // un blob JSON: si se iba la luz (o moría la tablet) dentro de esa ventana, el último artículo
+    // se perdía. Ahora cada mutación (add/qty/invitación/quitar) escribe su FILA en el pedido de
+    // forma transaccional e inmediata, así que aquí no queda nada pendiente que persistir.
   }
 
 
@@ -435,28 +438,86 @@ export class ErpPosTouch extends LitElement {
     }
   }
 
-  private add(p: Product) {
+  /** ADR-0141: reanuda el pedido ABIERTO (si lo hay) tras recargar. Sus líneas ya traen `line_id`
+   *  (para poder mutarlas) y la categoría fiscal (autoridad del IVA al cobrar, ADR-0085). */
+  private async restoreOpenOrder(): Promise<CartLine[]> {
+    try {
+      const id = await findOpenOrder(erplora());
+      if (!id) return [];
+      this.orderId = id;
+      return await loadOrderLines(erplora(), id);
+    } catch {
+      return [];
+    }
+  }
+
+  /** Asegura que existe un pedido abierto que respalde el carrito; devuelve su id ('' si falla). */
+  private async ensureOrder(first: CartLine): Promise<string> {
+    if (this.orderId) return this.orderId;
+    this.orderId = await openOrderWithLines(erplora(), [first]);
+    return this.orderId;
+  }
+
+  private async add(p: Product) {
     const ex = this.cart.find((l) => l.id === p.id && !l.is_gift);
     // tax_category_key = referencia fiscal del producto (autoridad del servidor, ADR-0085).
     // tax_rate = % resuelto en cliente SOLO para el preview del total. cost = para el arqueo de regalos.
     const tax_rate = resolveLineTax(this.ratesMap, p.tax_category_key);
-    this.cart = ex
-      ? this.cart.map((l) => (l.id === p.id && !l.is_gift ? { ...l, qty: l.qty + 1 } : l))
-      : [...this.cart, { id: p.id, name: p.name, sku: p.sku, price: Number(p.price), qty: 1, tax_category_key: p.tax_category_key, tax_rate, cost: Number(p.cost) || 0 }];
+    try {
+      if (ex) {
+        // Ya está en la comanda: sube la cantidad y PERSISTE YA (una fila, no todo el carrito).
+        const qty = ex.qty + 1;
+        this.cart = this.cart.map((l) => (l === ex ? { ...l, qty } : l));
+        if (this.orderId && ex.line_id) {
+          await updateOrderLineQty(erplora(), this.orderId, ex.line_id, qty, ex.price, ex.is_gift);
+        }
+        return;
+      }
+      const line: CartLine = {
+        id: p.id, name: p.name, sku: p.sku, price: Number(p.price), qty: 1,
+        tax_category_key: p.tax_category_key, tax_rate, cost: Number(p.cost) || 0,
+      };
+      // Abre el pedido con la primera línea, o añádela al ya abierto. En ambos casos la fila queda
+      // escrita ANTES de que la UI siga: un corte de corriente ya no se lleva el artículo.
+      if (!this.orderId) {
+        await this.ensureOrder(line);
+        const persisted = this.orderId ? await loadOrderLines(erplora(), this.orderId) : [];
+        this.cart = persisted.length ? persisted.map((pl) => ({ ...line, ...pl })) : [...this.cart, line];
+        return;
+      }
+      line.line_id = await addOrderLine(erplora(), this.orderId, line);
+      this.cart = [...this.cart, line];
+    } catch (e) {
+      // La comanda es la fuente de verdad: si la escritura falla, NO dejamos la UI mintiendo.
+      this.error = e instanceof Error ? e.message : String(e);
+    }
   }
 
   /** Invitar/quitar invitación a una línea (comp, ADR-comp): toggle is_gift con un motivo por defecto.
    *  La línea regalo no se cobra (el servidor pone net/tax/total=0) pero descuenta stock. */
-  private toggleGift(id: string) {
-    this.cart = this.cart.map((l) =>
-      l.id === id ? { ...l, is_gift: !l.is_gift, gift_reason: !l.is_gift ? (l.gift_reason || 'Invitación') : undefined } : l,
-    );
+  private async toggleGift(id: string) {
+    const ex = this.cart.find((l) => l.id === id);
+    if (!ex) return;
+    const is_gift = !ex.is_gift;
+    const gift_reason = is_gift ? (ex.gift_reason || 'Invitación') : undefined;
+    this.cart = this.cart.map((l) => (l === ex ? { ...l, is_gift, gift_reason } : l));
+    // Cambia el importe de la línea → se persiste YA (ADR-0141).
+    if (this.orderId && ex.line_id) {
+      await updateOrderLineQty(erplora(), this.orderId, ex.line_id, ex.qty, ex.price, is_gift, gift_reason ?? '');
+    }
   }
   /** Fija la cantidad de una línea (desde ok-qty-stepper); al llegar a 0 la línea se elimina. */
-  private setQtyAbs(id: string, v: number) {
-    this.cart = this.cart
-      .map((l) => (l.id === id ? { ...l, qty: Math.max(0, Math.round(v)) } : l))
-      .filter((l) => l.qty > 0);
+  private async setQtyAbs(id: string, v: number) {
+    const ex = this.cart.find((l) => l.id === id);
+    if (!ex) return;
+    const qty = Math.max(0, Math.round(v));
+    this.cart = qty > 0
+      ? this.cart.map((l) => (l === ex ? { ...l, qty } : l))
+      : this.cart.filter((l) => l !== ex);
+    // Persistencia INMEDIATA de la fila (0 → se elimina del pedido).
+    if (!this.orderId || !ex.line_id) return;
+    if (qty > 0) await updateOrderLineQty(erplora(), this.orderId, ex.line_id, qty, ex.price, ex.is_gift);
+    else await removeOrderLine(erplora(), this.orderId, ex.line_id);
   }
 
   private openPay() {
@@ -497,6 +558,9 @@ export class ErpPosTouch extends LitElement {
         channel: 'pos',
         source_module: 'pos',
         table_id: this.tableId ?? null,
+        // ADR-0141: la venta nace de este PEDIDO. El servidor lo marca completado (open→completed)
+        // en el cobro final; para split-bill se enviaría `keep_order_open: true`.
+        order_id: this.orderId ?? null,
         customer_id: this.customerId ?? null,
         customer_name: this.customerName,
         // Snapshot fiscal del cliente (ADR-0132): sin esto la factura emitida desde el TPV sale sin
@@ -519,6 +583,9 @@ export class ErpPosTouch extends LitElement {
       await persistActiveCart(erplora(), [], this.tableId);
       this.paying = false;
       this.cart = [];
+      // El pedido quedó `completed` en el servidor dentro de la misma transacción de la venta: se
+      // suelta para que el siguiente ticket abra uno nuevo (ADR-0141).
+      this.orderId = undefined;
       this.tableId = undefined; this.tableLabel = '';
       this.customerId = undefined; this.customerName = '';
       this.customerTaxId = ''; this.customerAddress = '';

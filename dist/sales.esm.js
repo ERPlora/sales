@@ -3780,6 +3780,89 @@ async function retrieveParkedTicket(client, ticket) {
   await client.command("sales.retrieve_ticket", { ticket_id: ticket.id });
   return lines;
 }
+function firstNewId(res) {
+  const ids = res?.new_ids;
+  return Array.isArray(ids) && typeof ids[0] === "string" ? ids[0] : "";
+}
+function provisionalLineTotal(unitPrice, qty, isGift) {
+  return isGift ? 0 : Math.round(unitPrice * qty);
+}
+function toItemPayload(l3) {
+  return {
+    product_id: l3.id || null,
+    product_name: l3.name,
+    product_sku: l3.sku ?? "",
+    price: l3.price,
+    quantity: l3.qty,
+    is_gift: !!l3.is_gift,
+    gift_reason: l3.gift_reason ?? "",
+    tax_category_key: l3.tax_category_key ?? "",
+    cost: l3.cost ?? 0
+  };
+}
+async function openOrderWithLines(client, lines) {
+  const res = await client.command("sales.order.open", { items: lines.map(toItemPayload) });
+  return firstNewId(res);
+}
+async function addOrderLine(client, orderId, l3) {
+  const res = await client.command("sales.order.add_line", {
+    order_id: orderId,
+    product_id: l3.id || null,
+    product_name: l3.name,
+    product_sku: l3.sku ?? "",
+    quantity: l3.qty,
+    unit_price: l3.price,
+    is_gift: !!l3.is_gift,
+    gift_reason: l3.gift_reason ?? "",
+    tax_category_key: l3.tax_category_key ?? "",
+    cost: l3.cost ?? 0,
+    line_total: provisionalLineTotal(l3.price, l3.qty, l3.is_gift)
+  });
+  return firstNewId(res);
+}
+async function updateOrderLineQty(client, orderId, lineId, qty, unitPrice, isGift, giftReason) {
+  await client.command("sales.order.update_line", {
+    order_id: orderId,
+    line_id: lineId,
+    quantity: qty,
+    line_total: provisionalLineTotal(unitPrice, qty, isGift),
+    // Alternar invitación cambia el importe: viaja junto para que la fila quede coherente.
+    is_gift: isGift === void 0 ? null : isGift ? 1 : 0,
+    gift_reason: giftReason ?? null
+  });
+}
+async function removeOrderLine(client, orderId, lineId) {
+  await client.command("sales.order.remove_line", { order_id: orderId, line_id: lineId });
+}
+async function loadOrderLines(client, orderId) {
+  try {
+    const r6 = rows(await client.query("sales.order.lines", { order_id: orderId }));
+    return r6.map((x2) => ({
+      line_id: String(x2.id ?? ""),
+      id: String(x2.product_id ?? ""),
+      name: String(x2.product_name ?? ""),
+      sku: x2.product_sku ? String(x2.product_sku) : void 0,
+      price: Number(x2.unit_price) || 0,
+      qty: Number(x2.quantity) || 1,
+      is_gift: x2.is_gift === 1 || x2.is_gift === true ? true : void 0,
+      gift_reason: x2.gift_reason ? String(x2.gift_reason) : void 0,
+      // Autoridad del IVA en servidor (ADR-0085) y coste para el arqueo de invitaciones: se
+      // recuperan para que un pedido REANUDADO cobre con el mismo IVA que si no se hubiera recargado.
+      tax_category_key: x2.tax_category_key ? String(x2.tax_category_key) : void 0,
+      cost: Number(x2.cost) || void 0
+    }));
+  } catch {
+    return [];
+  }
+}
+async function findOpenOrder(client) {
+  try {
+    const r6 = rows(await client.query("sales.orders.list"));
+    return r6.find((o7) => o7.status === "open")?.id ?? "";
+  } catch {
+    return "";
+  }
+}
 
 // ui/lib/pos-tax.ts
 function isRoot(r6) {
@@ -4081,7 +4164,7 @@ var ErpPosTouch = class extends i3 {
         erplora2().queryAll("inventory.products.list").catch(() => []),
         erplora2().query("sales.payment_methods").catch(() => []),
         erplora2().query("sales.settings.get").catch(() => []),
-        loadActiveCart(erplora2()),
+        this.restoreOpenOrder(),
         listParkedTickets(erplora2()),
         erplora2().queryAll("inventory.categories.list", { sort: "name", dir: "asc" }).catch(() => []),
         erplora2().queryAll("inventory.product_categories").catch(() => []),
@@ -4157,14 +4240,8 @@ var ErpPosTouch = class extends i3 {
       f3.el.dispatchEvent(new CustomEvent("erp:customer-context-reset", { bubbles: false }));
     }
   }
-  updated(changed) {
+  updated(_changed) {
     this.ensureSlotsMounted();
-    if (!changed.has("cart") || !this.cartRestored) return;
-    if (this.saveTimer) clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => {
-      this.saveTimer = void 0;
-      void persistActiveCart(erplora2(), this.cart, this.tableId);
-    }, 400);
   }
   // Dinero formateado con la MONEDA DEL HUB (ADR-0059): el SDK la resuelve de /api/hub/context
   // (misma fuente que dashboard/billing). Antes hardcodeaba '€' / la moneda por-módulo.
@@ -4218,21 +4295,79 @@ var ErpPosTouch = class extends i3 {
       this.error = e6 instanceof Error ? e6.message : t7("ui.errorRetrieve");
     }
   }
-  add(p4) {
+  /** ADR-0141: reanuda el pedido ABIERTO (si lo hay) tras recargar. Sus líneas ya traen `line_id`
+   *  (para poder mutarlas) y la categoría fiscal (autoridad del IVA al cobrar, ADR-0085). */
+  async restoreOpenOrder() {
+    try {
+      const id = await findOpenOrder(erplora2());
+      if (!id) return [];
+      this.orderId = id;
+      return await loadOrderLines(erplora2(), id);
+    } catch {
+      return [];
+    }
+  }
+  /** Asegura que existe un pedido abierto que respalde el carrito; devuelve su id ('' si falla). */
+  async ensureOrder(first) {
+    if (this.orderId) return this.orderId;
+    this.orderId = await openOrderWithLines(erplora2(), [first]);
+    return this.orderId;
+  }
+  async add(p4) {
     const ex = this.cart.find((l3) => l3.id === p4.id && !l3.is_gift);
     const tax_rate = resolveLineTax(this.ratesMap, p4.tax_category_key);
-    this.cart = ex ? this.cart.map((l3) => l3.id === p4.id && !l3.is_gift ? { ...l3, qty: l3.qty + 1 } : l3) : [...this.cart, { id: p4.id, name: p4.name, sku: p4.sku, price: Number(p4.price), qty: 1, tax_category_key: p4.tax_category_key, tax_rate, cost: Number(p4.cost) || 0 }];
+    try {
+      if (ex) {
+        const qty = ex.qty + 1;
+        this.cart = this.cart.map((l3) => l3 === ex ? { ...l3, qty } : l3);
+        if (this.orderId && ex.line_id) {
+          await updateOrderLineQty(erplora2(), this.orderId, ex.line_id, qty, ex.price, ex.is_gift);
+        }
+        return;
+      }
+      const line = {
+        id: p4.id,
+        name: p4.name,
+        sku: p4.sku,
+        price: Number(p4.price),
+        qty: 1,
+        tax_category_key: p4.tax_category_key,
+        tax_rate,
+        cost: Number(p4.cost) || 0
+      };
+      if (!this.orderId) {
+        await this.ensureOrder(line);
+        const persisted = this.orderId ? await loadOrderLines(erplora2(), this.orderId) : [];
+        this.cart = persisted.length ? persisted.map((pl) => ({ ...line, ...pl })) : [...this.cart, line];
+        return;
+      }
+      line.line_id = await addOrderLine(erplora2(), this.orderId, line);
+      this.cart = [...this.cart, line];
+    } catch (e6) {
+      this.error = e6 instanceof Error ? e6.message : String(e6);
+    }
   }
   /** Invitar/quitar invitación a una línea (comp, ADR-comp): toggle is_gift con un motivo por defecto.
    *  La línea regalo no se cobra (el servidor pone net/tax/total=0) pero descuenta stock. */
-  toggleGift(id) {
-    this.cart = this.cart.map(
-      (l3) => l3.id === id ? { ...l3, is_gift: !l3.is_gift, gift_reason: !l3.is_gift ? l3.gift_reason || "Invitaci\xF3n" : void 0 } : l3
-    );
+  async toggleGift(id) {
+    const ex = this.cart.find((l3) => l3.id === id);
+    if (!ex) return;
+    const is_gift = !ex.is_gift;
+    const gift_reason = is_gift ? ex.gift_reason || "Invitaci\xF3n" : void 0;
+    this.cart = this.cart.map((l3) => l3 === ex ? { ...l3, is_gift, gift_reason } : l3);
+    if (this.orderId && ex.line_id) {
+      await updateOrderLineQty(erplora2(), this.orderId, ex.line_id, ex.qty, ex.price, is_gift, gift_reason ?? "");
+    }
   }
   /** Fija la cantidad de una línea (desde ok-qty-stepper); al llegar a 0 la línea se elimina. */
-  setQtyAbs(id, v3) {
-    this.cart = this.cart.map((l3) => l3.id === id ? { ...l3, qty: Math.max(0, Math.round(v3)) } : l3).filter((l3) => l3.qty > 0);
+  async setQtyAbs(id, v3) {
+    const ex = this.cart.find((l3) => l3.id === id);
+    if (!ex) return;
+    const qty = Math.max(0, Math.round(v3));
+    this.cart = qty > 0 ? this.cart.map((l3) => l3 === ex ? { ...l3, qty } : l3) : this.cart.filter((l3) => l3 !== ex);
+    if (!this.orderId || !ex.line_id) return;
+    if (qty > 0) await updateOrderLineQty(erplora2(), this.orderId, ex.line_id, qty, ex.price, ex.is_gift);
+    else await removeOrderLine(erplora2(), this.orderId, ex.line_id);
   }
   openPay() {
     if (!this.cart.length) return;
@@ -4271,6 +4406,9 @@ var ErpPosTouch = class extends i3 {
         channel: "pos",
         source_module: "pos",
         table_id: this.tableId ?? null,
+        // ADR-0141: la venta nace de este PEDIDO. El servidor lo marca completado (open→completed)
+        // en el cobro final; para split-bill se enviaría `keep_order_open: true`.
+        order_id: this.orderId ?? null,
         customer_id: this.customerId ?? null,
         customer_name: this.customerName,
         // Snapshot fiscal del cliente (ADR-0132): sin esto la factura emitida desde el TPV sale sin
@@ -4290,6 +4428,7 @@ var ErpPosTouch = class extends i3 {
       await persistActiveCart(erplora2(), [], this.tableId);
       this.paying = false;
       this.cart = [];
+      this.orderId = void 0;
       this.tableId = void 0;
       this.tableLabel = "";
       this.customerId = void 0;
@@ -4584,6 +4723,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "tableId", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "orderId", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "tableLabel", 2);

@@ -239,11 +239,15 @@ export async function addOrderLine(client: ErploraClientLike, orderId: string, l
 
 /** Cambia la cantidad de una línea por su `line_id`; el servidor recompone el total del pedido. */
 export async function updateOrderLineQty(
-  client: ErploraClientLike, orderId: string, lineId: string, qty: number, unitPrice: number, isGift?: boolean,
+  client: ErploraClientLike, orderId: string, lineId: string, qty: number, unitPrice: number,
+  isGift?: boolean, giftReason?: string,
 ): Promise<void> {
   await client.command('sales.order.update_line', {
     order_id: orderId, line_id: lineId, quantity: qty,
     line_total: provisionalLineTotal(unitPrice, qty, isGift),
+    // Alternar invitación cambia el importe: viaja junto para que la fila quede coherente.
+    is_gift: isGift === undefined ? null : (isGift ? 1 : 0),
+    gift_reason: giftReason ?? null,
   });
 }
 

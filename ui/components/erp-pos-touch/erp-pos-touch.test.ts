@@ -163,6 +163,9 @@ describe('precios del TPV (dinero = céntimos, ADR-0007)', () => {
     const productos = [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1 }];
     sdk.query = async () => [];
     sdk.queryAll = async (name: string) => (name === 'inventory.products.list' ? productos : []);
+    // ADR-0141: añadir al carrito ya no muta un array en memoria — abre/actualiza un PEDIDO real y
+    // espera a que la fila esté escrita. El runtime devuelve los ids creados en `new_ids`.
+    sdk.command = async () => ({ ok: true, new_ids: ['ord-1', 'line-1'] });
   });
 
   it('un café de 180 céntimos se pinta 1,80 € en la rejilla (no 180,00 €)', async () => {
@@ -174,6 +177,9 @@ describe('precios del TPV (dinero = céntimos, ADR-0007)', () => {
   it('el total del carrito también va en céntimos', async () => {
     const el = await montarCarrito();
     el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    // La línea se PERSISTE antes de pintarse (ADR-0141): hay que drenar la cola de microtareas del
+    // command, no solo esperar al render.
+    await new Promise((r) => setTimeout(r, 0));
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
 
     const total = el.shadowRoot!.querySelector('.total b')?.textContent?.trim();
