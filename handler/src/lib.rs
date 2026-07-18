@@ -609,6 +609,17 @@ pub fn complete_sale_pure(input: Value) -> Output {
         })));
     }
 
+    // ADR-0141: si la venta nace de un pedido (`order_id`) y es el cobro FINAL (no un split
+    // parcial), marca el pedido completado (open → completed). En split-bill (`keep_order_open`)
+    // se deja abierto para los siguientes cobros; así 1 order → N sale, ligadas por `order_id`.
+    let order_ref = payload.get("order_id").cloned().unwrap_or(Value::Null);
+    let keep_open = payload.get("keep_order_open").map(as_bool).unwrap_or(false);
+    if !order_ref.is_null() && !as_str(&order_ref).is_empty() && !keep_open {
+        let mut c = Map::new();
+        c.insert("order_id".into(), order_ref);
+        ops.push(Operation::sql("sales._complete_order", c));
+    }
+
     Output { operations: ops, events }
 }
 
@@ -723,6 +734,36 @@ mod tests {
         let json_all = serde_json::to_string(&out.operations).unwrap();
         assert!(!json_all.contains("table_id"),
                 "abrir un pedido no conoce table_id (la mesa la OWNea `tables`, ADR-0141)");
+    }
+
+    #[test]
+    fn cobrar_un_pedido_lo_marca_completado_salvo_split_parcial() {
+        // ADR-0141 Gate 4: si `complete_sale` nace de un `order_id`, el cobro FINAL marca el pedido
+        // completado (intent `sales._complete_order`). En split-bill (`keep_order_open`) NO se marca,
+        // para permitir más cobros del mismo pedido → 1 order → N sale.
+        let items = json!([{ "product_name": "Menú", "price": 500, "quantity": 1, "tax_rate": 21.0 }]);
+
+        // cobro FINAL de un pedido → aparece el intent de completar, con su order_id.
+        let mut inp = input(items.clone(), 3, 500);
+        inp["payload"]["order_id"] = json!("ord-1");
+        let out = complete_sale_pure(inp);
+        assert!(out.operations.iter().any(|o| o.command == "sales._complete_order"
+                && o.params["order_id"] == json!("ord-1")),
+            "el cobro final marca el pedido completado");
+
+        // SPLIT parcial (keep_order_open) → NO se completa el pedido (queda abierto para más cobros).
+        let mut inp2 = input(items, 3, 500);
+        inp2["payload"]["order_id"] = json!("ord-1");
+        inp2["payload"]["keep_order_open"] = json!(true);
+        let out2 = complete_sale_pure(inp2);
+        assert!(!out2.operations.iter().any(|o| o.command == "sales._complete_order"),
+            "un split parcial deja el pedido abierto");
+
+        // venta sin pedido (TPV suelto) → no toca ningún pedido.
+        let out3 = complete_sale_pure(input(
+            json!([{ "product_name": "X", "price": 100, "quantity": 1, "tax_rate": 21.0 }]), 3, 100));
+        assert!(!out3.operations.iter().any(|o| o.command == "sales._complete_order"),
+            "una venta sin order_id no toca ningún pedido");
     }
 
     #[test]

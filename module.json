@@ -331,6 +331,12 @@
         "commands/_insert_order_line.sql"
       ]
     },
+    "sales._complete_order": {
+      "permission": "sales.add_sale",
+      "sql": [
+        "commands/_complete_order.sql"
+      ]
+    },
     "sales.order.add_line": {
       "permission": "sales.add_sale",
       "transaction": true,
