@@ -137,6 +137,7 @@
     "giftAction": "Comp / un-comp line",
     "printPrebill": "Print bill",
     "prebillTitle": "Bill",
-    "prebillNotice": "Bill — this is not an invoice. The fiscal receipt is issued on payment."
+    "prebillNotice": "Bill — this is not an invoice. The fiscal receipt is issued on payment.",
+    "chargeAndPrint": "Charge and print"
   }
 }

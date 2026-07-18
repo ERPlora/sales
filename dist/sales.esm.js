@@ -2778,7 +2778,8 @@ var es_default = {
     giftAction: "Invitar / quitar invitaci\xF3n",
     printPrebill: "Imprimir cuenta",
     prebillTitle: "Cuenta",
-    prebillNotice: "Cuenta \u2014 no es una factura. El tiquet fiscal se entrega al cobrar."
+    prebillNotice: "Cuenta \u2014 no es una factura. El tiquet fiscal se entrega al cobrar.",
+    chargeAndPrint: "Cobrar e imprimir"
   },
   widgets: {
     "sales.today": {
@@ -2938,7 +2939,8 @@ var en_default = {
     giftAction: "Comp / un-comp line",
     printPrebill: "Print bill",
     prebillTitle: "Bill",
-    prebillNotice: "Bill \u2014 this is not an invoice. The fiscal receipt is issued on payment."
+    prebillNotice: "Bill \u2014 this is not an invoice. The fiscal receipt is issued on payment.",
+    chargeAndPrint: "Charge and print"
   }
 };
 
@@ -3161,6 +3163,38 @@ function renderDocumentModal({ saleId, onClose, t: t7 }) {
   </ion-modal>`;
 }
 
+// ui/lib/pay-icons.ts
+var PAY_ICON_FALLBACK = "ellipsis-horizontal-circle-outline";
+var BY_TYPE = {
+  cash: "cash-outline",
+  card: "card-outline",
+  credit: "card-outline",
+  debit: "card-outline",
+  transfer: "swap-horizontal-outline",
+  bank: "swap-horizontal-outline",
+  mobile: "phone-portrait-outline",
+  wallet: "phone-portrait-outline",
+  voucher: "ticket-outline",
+  gift: "gift-outline"
+};
+var BY_NAME = [
+  [/efectiv|cash|met[áa]lico|caja/i, "cash-outline"],
+  [/tarjet|card|visa|mastercard|cr[ée]dito|d[ée]bito/i, "card-outline"],
+  [/bizum|m[óo]vil|mobile|wallet|apple pay|google pay/i, "phone-portrait-outline"],
+  [/transfer|banc|iban/i, "swap-horizontal-outline"],
+  [/vale|ticket|cheque|restaurante/i, "ticket-outline"],
+  [/regalo|gift/i, "gift-outline"]
+];
+function payMethodIcon(type, name) {
+  const t7 = (type || "").trim().toLowerCase();
+  if (BY_TYPE[t7]) return BY_TYPE[t7];
+  const n6 = (name || "").trim();
+  if (n6) {
+    for (const [re, icon] of BY_NAME) if (re.test(n6)) return icon;
+  }
+  return PAY_ICON_FALLBACK;
+}
+
 // ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/shared/icons.js
 var rawAdd = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M256 112v288m144-144H112"/></svg>';
 var rawAlertCircle = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="M256 48C141.31 48 48 141.31 48 256s93.31 208 208 208s208-93.31 208-208S370.69 48 256 48m0 319.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20m21.72-201.15l-5.74 122a16 16 0 0 1-32 0l-5.74-121.94v-.05a21.74 21.74 0 1 1 43.44 0Z"/></svg>';
@@ -3255,7 +3289,7 @@ var iconVolumeHighOutline = bake(rawVolumeHighOutline);
 var iconVolumeLowOutline = bake(rawVolumeLowOutline);
 var iconVolumeMuteOutline = bake(rawVolumeMuteOutline);
 var iconWarning = bake(rawWarning);
-var BY_NAME = {
+var BY_NAME2 = {
   "add": iconAdd,
   "alert-circle": iconAlertCircle,
   "alert-circle-outline": iconAlertCircleOutline,
@@ -3306,7 +3340,7 @@ function okIcon(value) {
   if (!value) return void 0;
   const trimmed = value.trimStart();
   if (trimmed.startsWith("<svg")) return bake(trimmed);
-  return BY_NAME[value] ?? value;
+  return BY_NAME2[value] ?? value;
 }
 
 // ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-qty-stepper.js
@@ -4146,6 +4180,11 @@ var ErpPosTouch = class extends i3 {
     .charge { font-size:1.05rem; font-weight:700; }
     /* Dos acciones solo-icono (ADR-0133): la cuenta ocupa lo justo y cobrar se lleva el resto,
        porque es la acción primaria y el dedo la busca sin mirar. */
+    /* Cobro: los segments son la elección (método, formato) y abajo las dos salidas. */
+    .pay-methods, .pay-actions { margin:.2rem 0 .6rem; }
+    .pay-actions { display:flex; gap:.5rem; }
+    .pay-actions .charge { flex:1; }
+    .pay-actions .charge-print { flex:none; width:64px; }
     .foot-actions { display:flex; gap:.5rem; }
     .foot-actions .prebill { flex:none; width:56px; }
     .foot-actions .charge { flex:1; }
@@ -4448,7 +4487,9 @@ var ErpPosTouch = class extends i3 {
   get change() {
     return Math.max(0, this.tenderedNum - this.total);
   }
-  async confirm() {
+  /** Cierra la venta. `print` = cobrar E IMPRIMIR el tiquet fiscal (el flujo normal en barra);
+   *  sin él solo se cobra y el documento queda en pantalla por si se quiere imprimir después. */
+  async confirm(print = false) {
     this.busy = true;
     this.error = "";
     try {
@@ -4492,7 +4533,17 @@ var ErpPosTouch = class extends i3 {
       this.customerTaxId = "";
       this.customerAddress = "";
       this.resetSlotContexts();
-      if (saleId) this.docSaleId = saleId;
+      if (saleId) {
+        this.docSaleId = saleId;
+        if (print) {
+          await this.updateComplete;
+          await new Promise((r6) => setTimeout(r6, 250));
+          try {
+            globalThis.print?.();
+          } catch {
+          }
+        }
+      }
     } catch (e6) {
       this.error = e6 instanceof Error ? e6.message : t3("ui.errorCharge");
     } finally {
@@ -4677,12 +4728,24 @@ var ErpPosTouch = class extends i3 {
     }}>✕</button>
               </div>
               <div class="pay">
-                <div class="methods">
-                  ${this.methods.map((m4) => b2`<button class="chip" aria-pressed=${this.payMethod?.id === m4.id} @click=${() => {
-      this.payMethod = m4;
-    }}>${m4.name}</button>`)}
-                  ${!this.methods.length ? b2`<button class="chip" aria-pressed="true">${t3("ui.cash")}</button>` : A}
-                </div>
+                <!-- Formas de pago: ion-segment SOLO-ICONO (ADR-0133). El nombre lo pone el usuario
+                     al crear la forma de pago, así que el icono se deduce del tipo y, si no basta,
+                     del nombre; nunca queda vacío. El nombre viaja en title/aria para no perderlo.
+                     (Ojo: nada de backticks dentro de una plantilla Lit — cierran el literal.) -->
+                <ion-segment class="pay-methods" value=${this.payMethod?.id ?? ""}
+                             @ionChange=${(e6) => {
+      const id = e6.detail.value;
+      this.payMethod = this.methods.find((m4) => m4.id === id) ?? this.payMethod;
+    }}>
+                  ${this.methods.map((m4) => b2`
+                    <ion-segment-button value=${m4.id} title=${m4.name} aria-label=${m4.name}>
+                      <ion-icon name=${payMethodIcon(m4.type, m4.name)}></ion-icon>
+                    </ion-segment-button>`)}
+                  ${!this.methods.length ? b2`
+                    <ion-segment-button value="" title=${t3("ui.cash")} aria-label=${t3("ui.cash")}>
+                      <ion-icon name="cash-outline"></ion-icon>
+                    </ion-segment-button>` : A}
+                </ion-segment>
                 <div class="amt"><span>${t3("ui.tendered")}</span><span class="v">${this.money(this.tenderedNum)}</span></div>
                 <div class="amt"><span>${t3("ui.change")}</span><span class="v change">${this.money(this.change)}</span></div>
                 <div class="numpad">
@@ -4691,13 +4754,28 @@ var ErpPosTouch = class extends i3 {
                 <ion-segment value=${this.docFormat} @ionChange=${(e6) => {
       this.docFormat = e6.detail.value === "invoice" ? "invoice" : "ticket";
     }}>
-                  <ion-segment-button value="ticket"><ion-label>${t3("ui.formatTicket")}</ion-label></ion-segment-button>
-                  <ion-segment-button value="invoice"><ion-label>${t3("ui.formatInvoice")}</ion-label></ion-segment-button>
+                  <ion-segment-button value="ticket" title=${t3("ui.formatTicket")} aria-label=${t3("ui.formatTicket")}>
+                    <ion-icon name="receipt-outline"></ion-icon>
+                  </ion-segment-button>
+                  <ion-segment-button value="invoice" title=${t3("ui.formatInvoice")} aria-label=${t3("ui.formatInvoice")}>
+                    <ion-icon name="document-text-outline"></ion-icon>
+                  </ion-segment-button>
                 </ion-segment>
                 ${this.error ? b2`<p style="color:var(--ion-color-danger,#d9480f)">${this.error}</p>` : A}
-                <ion-button class="charge" expand="block" ?disabled=${this.busy} @click=${() => this.confirm()}>
-                  ${this.busy ? t3("ui.charging") : t3("ui.confirmCharge")}
-                </ion-button>
+                <!-- Dos salidas, como en cualquier TPV de hostelería: cobrar a secas y cobrar
+                     IMPRIMIENDO el tiquet. Solo-icono (ADR-0133); el importe ya está en la cabecera. -->
+                <div class="pay-actions">
+                  <ion-button class="charge" ?disabled=${this.busy}
+                              title=${t3("ui.confirmCharge")} aria-label=${t3("ui.confirmCharge")}
+                              @click=${() => this.confirm(false)}>
+                    <ion-icon slot="icon-only" name="cash-outline"></ion-icon>
+                  </ion-button>
+                  <ion-button class="charge-print" fill="outline" ?disabled=${this.busy}
+                              title=${t3("ui.chargeAndPrint")} aria-label=${t3("ui.chargeAndPrint")}
+                              @click=${() => this.confirm(true)}>
+                    <ion-icon slot="icon-only" name="print-outline"></ion-icon>
+                  </ion-button>
+                </div>
               </div>
             </div>
           </div>` : A}

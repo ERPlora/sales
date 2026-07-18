@@ -137,7 +137,8 @@
     "giftAction": "Invitar / quitar invitación",
     "printPrebill": "Imprimir cuenta",
     "prebillTitle": "Cuenta",
-    "prebillNotice": "Cuenta — no es una factura. El tiquet fiscal se entrega al cobrar."
+    "prebillNotice": "Cuenta — no es una factura. El tiquet fiscal se entrega al cobrar.",
+    "chargeAndPrint": "Cobrar e imprimir"
   },
   "widgets": {
     "sales.today": {

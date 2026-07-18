@@ -5,6 +5,7 @@ import { define } from '@erplora/outfitkit/define';
 import { eurosToCents } from '@erplora/module-sdk';
 import { renderDocumentModal } from '../../lib/document-modal.js';
 import { orderToPrebill } from '../../lib/document-mappers.js';
+import { payMethodIcon } from '../../lib/pay-icons.js';
 import '@erplora/outfitkit/ok-qty-stepper';
 import '@erplora/outfitkit/ok-spotlight-search';
 import {
@@ -158,6 +159,11 @@ export class ErpPosTouch extends LitElement {
     .charge { font-size:1.05rem; font-weight:700; }
     /* Dos acciones solo-icono (ADR-0133): la cuenta ocupa lo justo y cobrar se lleva el resto,
        porque es la acción primaria y el dedo la busca sin mirar. */
+    /* Cobro: los segments son la elección (método, formato) y abajo las dos salidas. */
+    .pay-methods, .pay-actions { margin:.2rem 0 .6rem; }
+    .pay-actions { display:flex; gap:.5rem; }
+    .pay-actions .charge { flex:1; }
+    .pay-actions .charge-print { flex:none; width:64px; }
     .foot-actions { display:flex; gap:.5rem; }
     .foot-actions .prebill { flex:none; width:56px; }
     .foot-actions .charge { flex:1; }
@@ -582,7 +588,9 @@ export class ErpPosTouch extends LitElement {
   private get tenderedNum() { return eurosToCents(this.tendered || '0'); }
   private get change() { return Math.max(0, this.tenderedNum - this.total); }
 
-  private async confirm() {
+  /** Cierra la venta. `print` = cobrar E IMPRIMIR el tiquet fiscal (el flujo normal en barra);
+   *  sin él solo se cobra y el documento queda en pantalla por si se quiere imprimir después. */
+  private async confirm(print = false) {
     this.busy = true; this.error = '';
     try {
       // ADR-0069: la AUTORIDAD del IVA es el servidor. Cada línea manda su `tax_category_key`
@@ -635,7 +643,16 @@ export class ErpPosTouch extends LitElement {
       this.customerId = undefined; this.customerName = '';
       this.customerTaxId = ''; this.customerAddress = '';
       this.resetSlotContexts();
-      if (saleId) this.docSaleId = saleId;
+      if (saleId) {
+        this.docSaleId = saleId;
+        // Cobrar E imprimir: se espera a que el documento esté pintado antes de mandar a imprimir,
+        // si no el navegador imprimiría el TPV en vez del tiquet.
+        if (print) {
+          await this.updateComplete;
+          await new Promise((r) => setTimeout(r, 250));
+          try { globalThis.print?.(); } catch { /* sin impresora: el tiquet queda en pantalla */ }
+        }
+      }
     } catch (e) {
       this.error = e instanceof Error ? e.message : t('ui.errorCharge');
     } finally {
@@ -816,23 +833,52 @@ export class ErpPosTouch extends LitElement {
                 <button class="x" @click=${() => { this.paying = false; }}>✕</button>
               </div>
               <div class="pay">
-                <div class="methods">
-                  ${this.methods.map((m) => html`<button class="chip" aria-pressed=${this.payMethod?.id === m.id} @click=${() => { this.payMethod = m; }}>${m.name}</button>`)}
-                  ${!this.methods.length ? html`<button class="chip" aria-pressed="true">${t('ui.cash')}</button>` : nothing}
-                </div>
+                <!-- Formas de pago: ion-segment SOLO-ICONO (ADR-0133). El nombre lo pone el usuario
+                     al crear la forma de pago, así que el icono se deduce del tipo y, si no basta,
+                     del nombre; nunca queda vacío. El nombre viaja en title/aria para no perderlo.
+                     (Ojo: nada de backticks dentro de una plantilla Lit — cierran el literal.) -->
+                <ion-segment class="pay-methods" value=${this.payMethod?.id ?? ''}
+                             @ionChange=${(e: CustomEvent) => {
+                               const id = (e.detail as { value: string }).value;
+                               this.payMethod = this.methods.find((m) => m.id === id) ?? this.payMethod;
+                             }}>
+                  ${this.methods.map((m) => html`
+                    <ion-segment-button value=${m.id} title=${m.name} aria-label=${m.name}>
+                      <ion-icon name=${payMethodIcon(m.type, m.name)}></ion-icon>
+                    </ion-segment-button>`)}
+                  ${!this.methods.length ? html`
+                    <ion-segment-button value="" title=${t('ui.cash')} aria-label=${t('ui.cash')}>
+                      <ion-icon name="cash-outline"></ion-icon>
+                    </ion-segment-button>` : nothing}
+                </ion-segment>
                 <div class="amt"><span>${t('ui.tendered')}</span><span class="v">${this.money(this.tenderedNum)}</span></div>
                 <div class="amt"><span>${t('ui.change')}</span><span class="v change">${this.money(this.change)}</span></div>
                 <div class="numpad">
                   ${['1','2','3','4','5','6','7','8','9','.','0','C'].map((k) => html`<button @click=${() => this.tap(k)}>${k}</button>`)}
                 </div>
                 <ion-segment value=${this.docFormat} @ionChange=${(e: CustomEvent) => { this.docFormat = ((e.detail as { value: string }).value === 'invoice' ? 'invoice' : 'ticket'); }}>
-                  <ion-segment-button value="ticket"><ion-label>${t('ui.formatTicket')}</ion-label></ion-segment-button>
-                  <ion-segment-button value="invoice"><ion-label>${t('ui.formatInvoice')}</ion-label></ion-segment-button>
+                  <ion-segment-button value="ticket" title=${t('ui.formatTicket')} aria-label=${t('ui.formatTicket')}>
+                    <ion-icon name="receipt-outline"></ion-icon>
+                  </ion-segment-button>
+                  <ion-segment-button value="invoice" title=${t('ui.formatInvoice')} aria-label=${t('ui.formatInvoice')}>
+                    <ion-icon name="document-text-outline"></ion-icon>
+                  </ion-segment-button>
                 </ion-segment>
                 ${this.error ? html`<p style="color:var(--ion-color-danger,#d9480f)">${this.error}</p>` : nothing}
-                <ion-button class="charge" expand="block" ?disabled=${this.busy} @click=${() => this.confirm()}>
-                  ${this.busy ? t('ui.charging') : t('ui.confirmCharge')}
-                </ion-button>
+                <!-- Dos salidas, como en cualquier TPV de hostelería: cobrar a secas y cobrar
+                     IMPRIMIENDO el tiquet. Solo-icono (ADR-0133); el importe ya está en la cabecera. -->
+                <div class="pay-actions">
+                  <ion-button class="charge" ?disabled=${this.busy}
+                              title=${t('ui.confirmCharge')} aria-label=${t('ui.confirmCharge')}
+                              @click=${() => this.confirm(false)}>
+                    <ion-icon slot="icon-only" name="cash-outline"></ion-icon>
+                  </ion-button>
+                  <ion-button class="charge-print" fill="outline" ?disabled=${this.busy}
+                              title=${t('ui.chargeAndPrint')} aria-label=${t('ui.chargeAndPrint')}
+                              @click=${() => this.confirm(true)}>
+                    <ion-icon slot="icon-only" name="print-outline"></ion-icon>
+                  </ion-button>
+                </div>
               </div>
             </div>
           </div>`
