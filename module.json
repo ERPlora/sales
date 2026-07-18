@@ -331,6 +331,49 @@
         "commands/_insert_order_line.sql"
       ]
     },
+    "sales.order.add_line": {
+      "permission": "sales.add_sale",
+      "transaction": true,
+      "sql": [
+        "commands/order_add_line.sql",
+        "commands/order_recompute_total.sql"
+      ],
+      "ai": {
+        "description": "Adds a line item to an open order and recomputes its provisional total (ADR-0141). Provisional amount; the fiscal breakdown is frozen at checkout."
+      }
+    },
+    "sales.order.update_line": {
+      "permission": "sales.add_sale",
+      "transaction": true,
+      "sql": [
+        "commands/order_update_line.sql",
+        "commands/order_recompute_total.sql"
+      ],
+      "ai": {
+        "description": "Updates the quantity of a line in an open order and recomputes its provisional total (ADR-0141)."
+      }
+    },
+    "sales.order.remove_line": {
+      "permission": "sales.add_sale",
+      "transaction": true,
+      "sql": [
+        "commands/order_remove_line.sql",
+        "commands/order_recompute_total.sql"
+      ],
+      "ai": {
+        "description": "Removes (soft-deletes) a line from an open order and recomputes its provisional total (ADR-0141)."
+      }
+    },
+    "sales.order.void": {
+      "permission": "sales.void_sale",
+      "transaction": true,
+      "sql": [
+        "commands/order_void.sql"
+      ],
+      "ai": {
+        "description": "Voids an OPEN order (cancels the ticket before checkout); status open -> voided (ADR-0141)."
+      }
+    },
     "sales.settings.update": {
       "permission": "sales.manage_settings",
       "transaction": true,
