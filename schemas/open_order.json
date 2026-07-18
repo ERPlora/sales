@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sales.order.open payload",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "items"
+  ],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "product_name",
+          "price",
+          "quantity"
+        ],
+        "properties": {
+          "product_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_name": {
+            "type": "string"
+          },
+          "product_sku": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "price": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "is_gift": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "customer_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "notes": {
+      "type": "string"
+    },
+    "source_module": {
+      "type": "string"
+    }
+  },
+  "description": "ADR-0141: abre un pedido MUTABLE (`order`, estado 'open') con sus líneas materializadas temprano. DINERO (`price`) = céntimos enteros (ADR-0007); `quantity` sí lleva decimales. Los importes del pedido abierto son PROVISIONALES (display); la cuota fiscal se congela al cobrar (`complete_sale`). NO acepta `table_id`: `sales` es agnóstico de la mesa (la asociación la OWNea `tables`, ADR-0141)."
+}

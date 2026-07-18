@@ -53,6 +53,13 @@ pub fn complete_sale(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Out
     Ok(Json(complete_sale_pure(input.into_inner().into_value())))
 }
 
+/// ADR-0141: abre un pedido MUTABLE (`order`). Ver `open_order_pure`.
+#[cfg(feature = "guest")]
+#[plugin_fn]
+pub fn open_order(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
+    Ok(Json(open_order_pure(input.into_inner().into_value())))
+}
+
 /// Redondeo a la unidad mínima. **No decide el modo**: delega en `guest_sdk::money::round`, que es
 /// EL redondeo del hub (HALF_UP, ADR-0123 §4 — la única regla de redondeo monetario escrita en
 /// Derecho español: art. 11 de la Ley 46/1998 del euro).
@@ -614,8 +621,6 @@ pub fn open_order_pure(input: Value) -> Output {
     let context = input.get("context").cloned().unwrap_or(Value::Null);
     let empty: Vec<Value> = Vec::new();
     let new_ids = context.get("new_ids").and_then(|v| v.as_array()).unwrap_or(&empty);
-    let now = context.get("now").map(as_str).unwrap_or_default();
-    let created_by = context.get("current_user_id").map(as_str).unwrap_or_default();
     let items = payload.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
     let order_id = new_ids.first().map(as_str).unwrap_or_default();
 
@@ -656,8 +661,8 @@ pub fn open_order_pure(input: Value) -> Output {
     h.insert("customer_id".into(), payload.get("customer_id").cloned().unwrap_or(Value::Null));
     h.insert("notes".into(), json!(str_or(&payload, "notes", "")));
     h.insert("source_module".into(), json!(str_or(&payload, "source_module", "pos")));
-    h.insert("created_by".into(), json!(created_by));
-    h.insert("created_at".into(), json!(now));
+    // created_by/created_at/hub_id los inyecta el SQL desde el contexto (:current_user_id, :now,
+    // :hub_id), igual que `_insert_sale` — el WASM no los pasa.
     // NOTA (ADR-0141): NO se persiste `table_id` — `sales` es agnóstico de la mesa. La asociación
     // mesa↔pedido la OWNea `tables` en su junction `table_session.order_id`.
     ops[header_idx] = Operation::sql("sales._insert_order", h);
