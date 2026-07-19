@@ -265,6 +265,72 @@ describe('precios del TPV (dinero = céntimos, ADR-0007)', () => {
   });
 });
 
+// ── Incidencia 4 (ADR-0147): unidades medibles en la línea del carrito ────────────────────────
+// Dos detalles vistos en el TPV real con productos a peso/volumen (0,5 kg de gamba):
+//
+// 4a) Al RECHAZAR una cantidad fuera de rejilla, el CAMPO del stepper se quedaba pintando lo
+//     tecleado («0.0005»). El estado era correcto; el pixel no. Causa doble: el re-render del POS
+//     pasa `.value=${l.qty}` pero la propiedad no cambió (0,5 → 0,5) → Lit no toca el input; y el
+//     stepper ya había COMMITEADO lo tecleado a su `value` ANTES de emitir `ok-change` (síncrono),
+//     así que restaurar en el mismo tick tampoco repinta (valor neto igual → dirty-check). El
+//     contrato: el POS espera a que el render en vuelo del stepper asiente y ENTONCES restaura la
+//     propiedad — eso SÍ es un cambio y el input vuelve a la cantidad real.
+//
+// 4b) La línea no decía EN QUÉ UNIDAD va la cantidad: «12,00 €» con qty 0,5 parece media docena.
+//     Si la unidad congelada no es la suelta (`ud`), el precio unitario lleva el sufijo del código:
+//     «12,00 € / kg». El código NO se traduce (kg/g/l son códigos, no texto).
+describe('unidades medibles en la línea (incidencia 4, ADR-0147)', () => {
+  /** Línea a peso, congelada en kg con rejilla de 0,5 (increment_value en µ). */
+  const lineaKg = {
+    id: 'p-gamba', name: 'Gamba roja', price: 1200, qty: 0.5,
+    unit_code: 'kg', unit_name: 'kilogramo', increment_value: 500_000,
+  };
+  const lineaUd = { id: 'p-cafe', name: 'Café solo', price: 180, qty: 1, unit_code: 'ud' };
+
+  /** Siembra el carrito directamente (las líneas ya vienen con su contexto congelado). */
+  async function conCarrito(lineas: unknown[]) {
+    const el = await montarCarrito();
+    (el as unknown as { cart: unknown[] }).cart = lineas;
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    return el;
+  }
+
+  it('4b: la línea a peso pinta el precio con su unidad («12.00 € / kg»); la suelta, sin sufijo', async () => {
+    const el = await conCarrito([lineaKg, lineaUd]);
+    const precios = [...el.shadowRoot!.querySelectorAll('ion-list.lines ion-item ion-label p')]
+      .map((p) => p.textContent?.trim());
+    expect(precios, 'kg lleva sufijo; ud no').toEqual(['12.00 € / kg', '1.80 €']);
+  });
+
+  it('4a: al rechazar una cantidad fuera de rejilla, el stepper vuelve a pintar la cantidad real', async () => {
+    const el = await conCarrito([{ ...lineaKg }]);
+    const stepper = el.shadowRoot!.querySelector('ok-qty-stepper') as HTMLElement & {
+      value: number; updateComplete: Promise<unknown>;
+    };
+    expect(stepper, 'la línea tiene su stepper').toBeTruthy();
+    await stepper.updateComplete;
+
+    // El camarero teclea «0.0005» en el campo del stepper (rejilla = 0,5 → fuera de rejilla).
+    const campo = stepper.shadowRoot!.querySelector('input.field') as HTMLInputElement;
+    campo.value = '0.0005';
+    campo.dispatchEvent(new Event('input'));
+
+    // Deja asentar el render en vuelo del stepper y la restauración del POS.
+    await new Promise((r) => setTimeout(r, 0));
+    await stepper.updateComplete;
+    await new Promise((r) => setTimeout(r, 0));
+    await stepper.updateComplete;
+
+    // El estado real no se tocó y el error avisa (eso ya funcionaba)…
+    const pos = el as unknown as { cart: { qty: number }[]; error: string };
+    expect(pos.cart[0].qty, 'el carrito no se altera').toBe(0.5);
+    expect(pos.error, 'se avisa del rechazo').toContain('ui.qtyOffGrid');
+    // …y AHORA también el pixel: la propiedad restaurada y el campo repintado con la cantidad real.
+    expect(stepper.value, 'la propiedad value vuelve a la cantidad persistida').toBe(0.5);
+    expect(campo.value, 'el campo del stepper no se queda con lo rechazado').toBe('0.5');
+  });
+});
+
 // El PINPAD del cobro trabaja en EUROS («20» = 20 €) pero el contrato de sales.complete_sale es
 // CÉNTIMOS (ADR-0007/0123) y `total` ya viaja así. El táctil mandaba `Number('20')` = 20 «céntimos»
 // → el tiquet real salía «Efectivo 0.20 €» y el cambio 0 (20 < 1250). El desktop ya convertía con
