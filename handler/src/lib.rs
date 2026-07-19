@@ -38,6 +38,7 @@
 //!   `tax_rate` del payload si viene; si no, 0%. Nunca rompe la venta. Respeta `tax_included`.
 
 use erplora_guest_sdk::money;
+use erplora_guest_sdk::units::{calculate_line_amount, QuantityValue, QUANTITY_SCALE};
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use std::str::FromStr;
@@ -50,7 +51,10 @@ use extism_pdk::*;
 #[cfg(feature = "guest")]
 #[plugin_fn]
 pub fn complete_sale(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
-    Ok(Json(complete_sale_pure(input.into_inner().into_value())))
+    match complete_sale_pure(input.into_inner().into_value()) {
+        Ok(out) => Ok(Json(out)),
+        Err(e) => Err(Error::msg(e).into()),
+    }
 }
 
 /// ADR-0141: dispara a cocina lo pedido hasta ahora. Ver `fire_order_pure`.
@@ -67,7 +71,10 @@ pub fn fire_order(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output
 #[cfg(feature = "guest")]
 #[plugin_fn]
 pub fn open_order(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
-    Ok(Json(open_order_pure(input.into_inner().into_value())))
+    match open_order_pure(input.into_inner().into_value()) {
+        Ok(out) => Ok(Json(out)),
+        Err(e) => Err(Error::msg(e).into()),
+    }
 }
 
 /// Redondeo a la unidad mínima. **No decide el modo**: delega en `guest_sdk::money::round`, que es
@@ -76,6 +83,9 @@ pub fn open_order(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output
 ///
 /// Este handler traía su propio half-even simulado con un épsilon sobre `f64`
 /// (`(diff - 0.5).abs() < 1e-9`), copiado byte a byte en otros cuatro módulos. Ya no.
+/// Solo tests: referencia f64→céntimos del modo de redondeo. El flujo de producción ya no pasa
+/// por f64 (ADR-0147): las cantidades son punto fijo 10⁶ y los importes van por el SDK.
+#[cfg(test)]
 fn round_cents(x: f64) -> i64 {
     money::round(Decimal::from_f64(x).unwrap_or(Decimal::ZERO))
 }
@@ -91,6 +101,70 @@ fn as_f64(v: &Value, d: f64) -> f64 {
         Value::String(s) => s.trim().parse::<f64>().unwrap_or(d),
         _ => d,
     }
+}
+
+/// Cantidad en PUNTO FIJO, escala global 10⁶ (ADR-0147). Un entero: 0,5 kg es `500000`.
+///
+/// No repesca floats a propósito: un decimal que llegue hasta aquí es un error de quien llama
+/// (la conversión va en la frontera, donde el humano teclea) y el esquema declara `integer`.
+fn as_qty(v: &Value, d: i64) -> i64 {
+    match v {
+        Value::Number(n) => n.as_i64().unwrap_or(d),
+        Value::String(s) => s.trim().parse::<i64>().unwrap_or(d),
+        _ => d,
+    }
+}
+
+/// Lee un i64 de una clave del item, con default (contexto de unidades congelado, ADR-0147 §2.4).
+fn item_i64(item: &Value, key: &str, d: i64) -> i64 {
+    item.get(key).map(|v| as_qty(v, d)).unwrap_or(d)
+}
+
+/// La cantidad de la línea (escala 10⁶) y su validación de rejilla (ADR-0147 §2.2).
+///
+/// El incremento es VALIDACIÓN, no instrucción de redondeo: fuera de rejilla el comando se
+/// RECHAZA — redondear aquí modificaría calladamente lo vendido, el stock y el importe. Solo se
+/// valida si la línea declara su incremento (contexto congelado); sin contexto no se bloquea la
+/// venta (mismo criterio graceful que `inventory::increment_for_product`).
+fn line_qty(item: &Value) -> Result<i64, String> {
+    let qty = item.get("quantity").map(|v| as_qty(v, QUANTITY_SCALE)).unwrap_or(QUANTITY_SCALE);
+    if qty <= 0 {
+        return Err(format!("quantity_not_positive: {qty}"));
+    }
+    let inc = item_i64(item, "increment_value", 0);
+    if inc > 0 && qty % inc != 0 {
+        // El error nombra ambos valores para que la UI pueda decir «0,0005 kg no vale en una
+        // unidad configurada en incrementos de 0,001 kg».
+        return Err(format!("quantity_off_grid: {qty} % {inc} != 0"));
+    }
+    Ok(qty)
+}
+
+/// La cantidad de precio de la línea (KPEIN, ADR-0147 §2.3): «X céntimos por ESTA cantidad».
+/// Default: por 1 unidad (escala 10⁶) — el bar que no configura nada vende «250 por 1 caña».
+fn line_price_qty(item: &Value) -> i64 {
+    let pq = item_i64(item, "price_quantity_value", QUANTITY_SCALE);
+    if pq > 0 { pq } else { QUANTITY_SCALE }
+}
+
+/// Congela el contexto de unidades de la línea (ADR-0147 §2.4, opción A): el cálculo histórico
+/// NUNCA consulta el maestro. El factor va como fracción EXACTA num/den, nunca decimal. Sin
+/// contexto en el payload se congela la unidad suelta (`ud`, factor 1/1, precio por 1 unidad) —
+/// el caso mayoritario no configura nada.
+fn freeze_unit_context(item: &Value, p: &mut Map<String, Value>) {
+    let unit_code = str_or(item, "unit_code", "ud");
+    p.insert("unit_name".into(), json!(str_or(item, "unit_name", "")));
+    p.insert("factor_num".into(), json!(item_i64(item, "factor_num", 1)));
+    p.insert("factor_den".into(), json!(item_i64(item, "factor_den", 1)));
+    p.insert("increment_value".into(), json!(item_i64(item, "increment_value", QUANTITY_SCALE)));
+    p.insert("price_quantity_value".into(), json!(line_price_qty(item)));
+    // Sin unidad de precio explícita, el precio es «por 1 de la unidad de la línea» — no `ud` a
+    // secas: congelar `ud` en una línea de kg sería congelar una mentira.
+    p.insert("pricing_unit_code".into(), json!(str_or(item, "pricing_unit_code", &unit_code)));
+    p.insert("pricing_unit_name".into(), json!(str_or(item, "pricing_unit_name", "")));
+    p.insert("pricing_factor_num".into(), json!(item_i64(item, "pricing_factor_num", 1)));
+    p.insert("pricing_factor_den".into(), json!(item_i64(item, "pricing_factor_den", 1)));
+    p.insert("unit_code".into(), json!(unit_code));
 }
 fn as_str(v: &Value) -> String {
     match v {
@@ -287,27 +361,49 @@ fn iso_date(now: &str) -> String {
 /// componente el resultado es idéntico a `calc_line`.
 fn calc_line_components(
     unit_price_cents: i64,
-    qty: f64,
+    qty_raw: i64,
+    price_qty_raw: i64,
     disc_pct: f64,
     tax_incl: bool,
     components: &[TaxComponent],
 ) -> (LineTotals, Vec<(String, i64, i64)>) {
     let combined_pct: f64 = components.iter().map(|c| c.rate_pct).sum();
-    let unit = unit_price_cents as f64;
-    let discounted = unit - unit * (disc_pct / 100.0); // céntimos (fraccionario)
+    // ADR-0147 §2.3 (KPEIN): dinero ENTERO por una cantidad de precio. Las escalas de `quantity`
+    // y `price_quantity` se cancelan; el descuento entra como factor exacto sobre el precio. El
+    // redondeo es HALF_UP, UNO solo por importe, antes de sumar — nunca al total.
+    let qty = Decimal::from(qty_raw) / Decimal::from(QUANTITY_SCALE);
+    let pq = Decimal::from(if price_qty_raw > 0 { price_qty_raw } else { QUANTITY_SCALE })
+        / Decimal::from(QUANTITY_SCALE);
+    let factor = Decimal::ONE
+        - Decimal::from_f64(disc_pct).unwrap_or(Decimal::ZERO) / Decimal::from(100);
+    // Importe EXACTO de la línea antes del único redondeo (céntimos fraccionarios).
+    let exact = Decimal::from(unit_price_cents) * factor * qty / pq;
+    // Sin descuento, el importe de línea ES la fórmula del SDK (i128, HALF_UP) — mismo resultado
+    // que materializar `exact`, pero pasa por el contrato ejecutable de `units.rs`.
+    let amount = if disc_pct == 0.0 {
+        calculate_line_amount(
+            unit_price_cents,
+            QuantityValue::from_raw(qty_raw),
+            QuantityValue::from_raw(if price_qty_raw > 0 { price_qty_raw } else { QUANTITY_SCALE }),
+        )
+        .unwrap_or_else(|_| money::round(exact))
+    } else {
+        money::round(exact)
+    };
     // Base imponible (común a todos los componentes) y bruto de la línea.
     let (net, line) = if tax_incl {
-        let divisor = 1.0 + combined_pct / 100.0;
-        (round_cents((discounted / divisor) * qty), round_cents(discounted * qty))
+        let divisor = Decimal::ONE + Decimal::from_f64(combined_pct).unwrap_or(Decimal::ZERO) / Decimal::from(100);
+        (money::round(exact / divisor), amount)
     } else {
-        (round_cents(discounted * qty), 0) // line se recompone abajo (net + suma de cuotas)
+        (amount, 0) // line se recompone abajo (net + suma de cuotas)
     };
     // Cuota por componente sobre la misma base; la cuota total = suma de las redondeadas.
-    let net_f = net as f64;
+    let net_dec = Decimal::from(net);
     let mut parts: Vec<(String, i64, i64)> = Vec::with_capacity(components.len());
     let mut tax_total: i64 = 0;
     for c in components {
-        let comp_tax = round_cents(net_f * (c.rate_pct / 100.0));
+        let pct = Decimal::from_f64(c.rate_pct).unwrap_or(Decimal::ZERO) / Decimal::from(100);
+        let comp_tax = money::round(net_dec * pct);
         tax_total += comp_tax;
         // Agrega por clave (dos componentes con la misma tasa se funden en una entrada).
         if let Some(e) = parts.iter_mut().find(|(k, _, _)| *k == c.rate_key) {
@@ -321,7 +417,10 @@ fn calc_line_components(
 }
 
 /// Lógica pura: `{payload, context}` → Output (intenciones).
-pub fn complete_sale_pure(input: Value) -> Output {
+///
+/// Devuelve `Err` si una cantidad es inválida (ADR-0147 §2.2): fuera de la rejilla del incremento
+/// congelado de su línea, o no positiva. El comando entero se RECHAZA — no se redondea en silencio.
+pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
     let context = input.get("context").cloned().unwrap_or(Value::Null);
     let empty: Vec<Value> = Vec::new();
@@ -360,7 +459,10 @@ pub fn complete_sale_pure(input: Value) -> Output {
 
     for (i, item) in items.iter().enumerate() {
         let unit_price = as_cents(item.get("price").unwrap_or(&Value::Null), 0); // céntimos
-        let qty = item.get("quantity").map(|v| as_f64(v, 1.0)).unwrap_or(1.0);
+        // Cantidad en punto fijo 10⁶ (ADR-0147) + rechazo fuera de rejilla; y la cantidad de
+        // precio KPEIN («37 céntimos por 100 ud») que hace exacto el sub-céntimo sin tocar el dinero.
+        let qty = line_qty(item)?;
+        let price_qty = line_price_qty(item);
         let line_disc = item.get("discount").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
         // ADR-0085: resuelve el impuesto por CATEGORÍA desde el catálogo de confianza
         // (server-authoritative, raíz + componentes), con país/región del contexto y fallback
@@ -383,17 +485,23 @@ pub fn complete_sale_pure(input: Value) -> Output {
         let eff_disc = 100.0 * (1.0 - (1.0 - line_disc / 100.0) * (1.0 - sale_disc / 100.0));
         let (t, parts) = if is_gift {
             let cost = as_cents(item.get("cost").unwrap_or(&Value::Null), 0);
-            gift_total += round_cents(cost as f64 * qty);
+            // Coste × cantidad por el SDK (un HALF_UP): 0,5 kg a coste 8,00 €/kg son 4,00 €.
+            gift_total += calculate_line_amount(
+                cost,
+                QuantityValue::from_raw(qty),
+                QuantityValue::from_raw(QUANTITY_SCALE),
+            )
+            .map_err(|e| format!("gift_cost_overflow: {e:?}"))?;
             (LineTotals { net: 0, tax: 0, line: 0 }, Vec::<(String, i64, i64)>::new())
         } else {
-            calc_line_components(unit_price, qty, eff_disc, tax_incl, components)
+            calc_line_components(unit_price, qty, price_qty, eff_disc, tax_incl, components)
         };
         // Bruto SIN descuento global (mismo cálculo con solo el descuento de línea): la resta de
         // ambos brutos es el `discount_amount` que ve el cliente en el ticket.
         gross_pre_disc += if is_gift || sale_disc <= 0.0 {
             t.line
         } else {
-            calc_line_components(unit_price, qty, line_disc, tax_incl, components).0.line
+            calc_line_components(unit_price, qty, price_qty, line_disc, tax_incl, components).0.line
         };
         // `tax_total` YA NO se acumula por línea: la cuota que se DECLARA sale del desglose, una
         // sola vez por tipo impositivo (ADR-0123 §4). `t.tax` queda como informativo de la línea.
@@ -417,7 +525,9 @@ pub fn complete_sale_pure(input: Value) -> Output {
         p.insert("product_name".into(), json!(as_str(item.get("product_name").unwrap_or(&Value::Null))));
         p.insert("product_sku".into(), json!(str_or(item, "product_sku", "")));
         p.insert("is_service".into(), json!(item.get("is_service").map(as_bool).unwrap_or(false) as i64));
-        p.insert("quantity".into(), json!(qty)); // cantidad fraccionable (REAL)
+        p.insert("quantity".into(), json!(qty)); // punto fijo, escala 10⁶ (INTEGER, ADR-0147)
+        // Contexto de unidades CONGELADO en la línea (ADR-0147 §2.4): el histórico no relee el maestro.
+        freeze_unit_context(item, &mut p);
         p.insert("unit_price".into(), json!(unit_price)); // céntimos (INTEGER)
         p.insert("discount_percent".into(), json!(line_disc)); // tasa % (REAL)
         p.insert("tax_rate".into(), json!(combined_pct)); // tasa % combinada (REAL) == tax_rate_pct
@@ -523,7 +633,9 @@ pub fn complete_sale_pure(input: Value) -> Output {
         .iter()
         .map(|it| {
             let unit_price = as_cents(it.get("price").unwrap_or(&Value::Null), 0); // céntimos
-            let qty = it.get("quantity").map(|v| as_f64(v, 1.0)).unwrap_or(1.0);
+            // Ya validada en el bucle de arriba (mismo item): aquí no puede fallar.
+            let qty = line_qty(it).unwrap_or(QUANTITY_SCALE);
+            let price_qty = line_price_qty(it);
             let line_disc = it.get("discount").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
             // Mismo resolver server-authoritative que arriba (ADR-0085): el evento lleva el %
             // y los net/tax RESUELTOS del catálogo, no la pista del cliente, para que
@@ -539,12 +651,15 @@ pub fn complete_sale_pure(input: Value) -> Output {
             let (t, _parts) = if it_gift {
                 (LineTotals { net: 0, tax: 0, line: 0 }, Vec::<(String, i64, i64)>::new())
             } else {
-                calc_line_components(unit_price, qty, eff_disc, tax_incl, &resolved.components)
+                calc_line_components(unit_price, qty, price_qty, eff_disc, tax_incl, &resolved.components)
             };
             json!({
                 "product_id": it.get("product_id").cloned().unwrap_or(Value::Null),
                 "product_name": as_str(it.get("product_name").unwrap_or(&Value::Null)),
+                // ENTERO en escala 10⁶ (ADR-0147): `inventory` hace as_i64 — un float aquí era
+                // 0 → `qty <= 0 → continue` → la venta no descontaba stock, en silencio.
                 "quantity": qty,
+                "unit_code": str_or(it, "unit_code", "ud"), // unidad congelada de la línea
                 "unit_price": unit_price,           // céntimos (bruto/unitario tal cual lo envió la UI)
                 "tax_rate": combined_pct,           // tasa % resuelta (server-authoritative)
                 "tax_category_key": field(it, "tax_category_key"), // categoría fiscal congelada (ADR-0085)
@@ -646,14 +761,14 @@ pub fn complete_sale_pure(input: Value) -> Output {
         })));
     }
 
-    Output { operations: ops, events }
+    Ok(Output { operations: ops, events })
 }
 
 /// ADR-0141 (owner: human, en construcción TDD) — abre un `order` **mutable** (estado `open`) con sus
 /// líneas materializadas **temprano** (filas reales, no un blob). Es la entidad canónica del pedido;
 /// al cobrar producirá 1..N `sale` inmutables (split-bill). `sales` es **agnóstico de la mesa**: NO
 /// conoce `table_id` — la asociación mesa↔pedido la OWNea `tables` en `table_session.order_id`.
-pub fn open_order_pure(input: Value) -> Output {
+pub fn open_order_pure(input: Value) -> Result<Output, String> {
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
     let context = input.get("context").cloned().unwrap_or(Value::Null);
     let empty: Vec<Value> = Vec::new();
@@ -672,9 +787,22 @@ pub fn open_order_pure(input: Value) -> Output {
     let mut provisional_total: i64 = 0;
     for (i, item) in items.iter().enumerate() {
         let unit_price = as_cents(item.get("price").unwrap_or(&Value::Null), 0); // céntimos
-        let qty = item.get("quantity").map(|v| as_f64(v, 1.0)).unwrap_or(1.0);
+        // Punto fijo 10⁶ + rechazo fuera de rejilla (ADR-0147): el pedido habla el mismo idioma
+        // que la venta — abrir con 0,0005 kg y cobrar sería mover el error de sitio.
+        let qty = line_qty(item)?;
         let is_gift = item.get("is_gift").map(as_bool).unwrap_or(false);
-        let line_total = if is_gift { 0 } else { round_cents(unit_price as f64 * qty) };
+        let line_total = if is_gift {
+            0
+        } else {
+            // Provisional (display), pero con la MISMA aritmética del SDK que el cobro: dinero
+            // entero por cantidad de precio, un solo HALF_UP (ADR-0147 §2.3).
+            calculate_line_amount(
+                unit_price,
+                QuantityValue::from_raw(qty),
+                QuantityValue::from_raw(line_price_qty(item)),
+            )
+            .map_err(|e| format!("line_amount_overflow: {e:?}"))?
+        };
         provisional_total += line_total;
 
         let line_id = new_ids.get(i + 1).map(as_str).unwrap_or_default();
@@ -684,7 +812,10 @@ pub fn open_order_pure(input: Value) -> Output {
         p.insert("product_id".into(), item.get("product_id").cloned().unwrap_or(Value::Null));
         p.insert("product_name".into(), json!(as_str(item.get("product_name").unwrap_or(&Value::Null))));
         p.insert("product_sku".into(), json!(str_or(item, "product_sku", "")));
-        p.insert("quantity".into(), json!(qty)); // cantidad fraccionable (REAL)
+        p.insert("quantity".into(), json!(qty)); // punto fijo, escala 10⁶ (INTEGER, ADR-0147)
+        // Contexto de unidades CONGELADO (ADR-0147 §2.4): cerrar y reabrir el pedido no puede
+        // cambiar lo que significa la cantidad.
+        freeze_unit_context(item, &mut p);
         p.insert("unit_price".into(), json!(unit_price)); // céntimos (INTEGER)
         p.insert("is_gift".into(), json!(is_gift as i64));
         p.insert("gift_reason".into(), json!(if is_gift { str_or(item, "gift_reason", "") } else { String::new() }));
@@ -717,7 +848,7 @@ pub fn open_order_pure(input: Value) -> Output {
         "items_count": items.len(),
     }));
 
-    Output { operations: ops, events: vec![event] }
+    Ok(Output { operations: ops, events: vec![event] })
 }
 
 /// ADR-0141 — **la comanda nace del pedido, no del cobro**.
@@ -762,6 +893,11 @@ pub fn fire_order_pure(input: Value) -> Result<Output, String> {
 mod tests {
     use super::*;
 
+    /// Los comandos ahora RECHAZAN cantidades inválidas (ADR-0147 §2.2): los tests del camino
+    /// feliz desenvuelven aquí para no repetir `.expect` en cada uno.
+    fn sale(inp: Value) -> Output { complete_sale_pure(inp).expect("venta válida") }
+    fn orden(inp: Value) -> Output { open_order_pure(inp).expect("pedido válido") }
+
     fn input(items: Value, ids: usize, tendered: i64) -> Value {
         let new_ids: Vec<Value> = (0..ids).map(|i| json!(format!("id-{i}"))).collect();
         json!({
@@ -778,14 +914,14 @@ mod tests {
         // atadas a SU venta; las demás siguen pendientes y se cobran después. Sin esto, al reanudar
         // el pedido volverían a salir las ya pagadas y se cobrarían dos veces.
         let mut inp = input(
-            json!([{ "product_name": "Menú", "price": 500, "quantity": 1, "tax_rate": 21.0 }]),
+            json!([{ "product_name": "Menú", "price": 500, "quantity": 1_000_000, "tax_rate": 21.0 }]),
             3,
             500,
         );
         inp["payload"]["order_id"] = json!("ord-1");
         inp["payload"]["keep_order_open"] = json!(true);
         inp["payload"]["line_ids"] = json!(["line-3", "line-4"]);
-        let out = complete_sale_pure(inp);
+        let out = sale(inp);
 
         let marcadas: Vec<&str> = out
             .operations
@@ -808,9 +944,9 @@ mod tests {
     #[test]
     fn un_cobro_normal_no_marca_lineas_sueltas() {
         // Sin `line_ids` se cobra el pedido entero y se cierra: no hay nada que marcar línea a línea.
-        let mut inp = input(json!([{ "product_name": "Menú", "price": 500, "quantity": 1, "tax_rate": 21.0 }]), 3, 500);
+        let mut inp = input(json!([{ "product_name": "Menú", "price": 500, "quantity": 1_000_000, "tax_rate": 21.0 }]), 3, 500);
         inp["payload"]["order_id"] = json!("ord-1");
-        let out = complete_sale_pure(inp);
+        let out = sale(inp);
         assert!(!out.operations.iter().any(|o| o.command == "sales._mark_order_line_paid"));
         assert!(out.operations.iter().any(|o| o.command == "sales._complete_order"),
                 "el cobro entero SÍ cierra el pedido");
@@ -825,8 +961,8 @@ mod tests {
             "payload": {
                 "order_id": "ord-1", "label": "Mesa 4", "channel": "dine_in",
                 "items": [
-                    { "product_name": "Croquetas", "quantity": 2.0, "notes": "sin gluten" },
-                    { "product_name": "Servicio", "quantity": 1.0, "is_service": true }
+                    { "product_name": "Croquetas", "quantity": 2_000_000, "notes": "sin gluten" },
+                    { "product_name": "Servicio", "quantity": 1_000_000, "is_service": true }
                 ]
             },
             "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-07-18T10:00:00+00:00", "new_ids": [] }
@@ -865,10 +1001,10 @@ mod tests {
         // pedido NO conoce `table_id`. La asociación mesa↔pedido la OWNea `tables` en su junction
         // `table_session.order_id`, no `sales`.
         let items = json!([
-            { "product_name": "Café", "price": 121, "quantity": 2, "tax_rate": 21.0 },
-            { "product_name": "Agua", "price": 110, "quantity": 1, "tax_rate": 10.0 }
+            { "product_name": "Café", "price": 121, "quantity": 2_000_000, "tax_rate": 21.0 },
+            { "product_name": "Agua", "price": 110, "quantity": 1_000_000, "tax_rate": 10.0 }
         ]);
-        let out = open_order_pure(input(items, 3, 0));
+        let out = orden(input(items, 3, 0));
 
         // 1) cabecera: un `_insert_order` con estado `open` y el id que da el host (new_ids[0]).
         let header = out.operations.iter().find(|o| o.command == "sales._insert_order")
@@ -894,12 +1030,12 @@ mod tests {
         // ADR-0141 Gate 4: si `complete_sale` nace de un `order_id`, el cobro FINAL marca el pedido
         // completado (intent `sales._complete_order`). En split-bill (`keep_order_open`) NO se marca,
         // para permitir más cobros del mismo pedido → 1 order → N sale.
-        let items = json!([{ "product_name": "Menú", "price": 500, "quantity": 1, "tax_rate": 21.0 }]);
+        let items = json!([{ "product_name": "Menú", "price": 500, "quantity": 1_000_000, "tax_rate": 21.0 }]);
 
         // cobro FINAL de un pedido → aparece el intent de completar, con su order_id.
         let mut inp = input(items.clone(), 3, 500);
         inp["payload"]["order_id"] = json!("ord-1");
-        let out = complete_sale_pure(inp);
+        let out = sale(inp);
         assert!(out.operations.iter().any(|o| o.command == "sales._complete_order"
                 && o.params["order_id"] == json!("ord-1")),
             "el cobro final marca el pedido completado");
@@ -908,13 +1044,13 @@ mod tests {
         let mut inp2 = input(items, 3, 500);
         inp2["payload"]["order_id"] = json!("ord-1");
         inp2["payload"]["keep_order_open"] = json!(true);
-        let out2 = complete_sale_pure(inp2);
+        let out2 = sale(inp2);
         assert!(!out2.operations.iter().any(|o| o.command == "sales._complete_order"),
             "un split parcial deja el pedido abierto");
 
         // venta sin pedido (TPV suelto) → no toca ningún pedido.
-        let out3 = complete_sale_pure(input(
-            json!([{ "product_name": "X", "price": 100, "quantity": 1, "tax_rate": 21.0 }]), 3, 100));
+        let out3 = sale(input(
+            json!([{ "product_name": "X", "price": 100, "quantity": 1_000_000, "tax_rate": 21.0 }]), 3, 100));
         assert!(!out3.operations.iter().any(|o| o.command == "sales._complete_order"),
             "una venta sin order_id no toca ningún pedido");
     }
@@ -946,9 +1082,9 @@ mod tests {
         //     `cuota = base × tipo` y solo colaba por la tolerancia de ±10 € de la AEAT.
         //   · AHORA (una vez por TIPO, sobre la base agregada): cuota = round(28 × 21 %) = 6.
         let items = json!((0..7).map(|_| json!({
-            "product_name": "Chicle", "price": 5, "quantity": 1, "tax_rate": 21.0
+            "product_name": "Chicle", "price": 5, "quantity": 1_000_000, "tax_rate": 21.0
         })).collect::<Vec<_>>());
-        let out = complete_sale_pure(input(items, 9, 100));
+        let out = sale(input(items, 9, 100));
         let h = &out.operations[1].params;
 
         assert_eq!(h["total"], json!(35), "lo que paga el cliente no se mueve");
@@ -972,9 +1108,9 @@ mod tests {
         // El descuento global debe prorratearse a la BASE de cada tipo ANTES de extraer la
         // cuota (ADR-0123 §4, HALF_UP del SDK):
         //   base 413 − 10 % (41) = 372 · cuota = 372 × 21 % = 78,12 → 78 · 372 + 78 = 450 ✓
-        let mut inp = input(json!([{ "product_name": "Menú", "price": 500, "quantity": 1, "tax_rate": 21.0 }]), 3, 450);
+        let mut inp = input(json!([{ "product_name": "Menú", "price": 500, "quantity": 1_000_000, "tax_rate": 21.0 }]), 3, 450);
         inp["payload"]["discount_percent"] = json!(10.0);
-        let out = complete_sale_pure(inp);
+        let out = sale(inp);
         let h = &out.operations[1].params;
 
         assert_eq!(h["total"], json!(450), "lo que paga el cliente no cambia");
@@ -1006,8 +1142,8 @@ mod tests {
     #[test]
     fn sin_descuento_global_el_desglose_no_se_mueve() {
         // Guardarraíl del fix de sales#33: con discount_percent ausente/0 todo queda como estaba.
-        let items = json!([{ "product_name": "Menú", "price": 500, "quantity": 1, "tax_rate": 21.0 }]);
-        let out = complete_sale_pure(input(items, 3, 500));
+        let items = json!([{ "product_name": "Menú", "price": 500, "quantity": 1_000_000, "tax_rate": 21.0 }]);
+        let out = sale(input(items, 3, 500));
         let h = &out.operations[1].params;
         let bd: Value = serde_json::from_str(h["tax_breakdown"].as_str().unwrap()).unwrap();
         assert_eq!(bd["21.00"]["base"], json!(413));
@@ -1023,10 +1159,10 @@ mod tests {
         // violando la inmutabilidad fiscal— y VIAJA en `sale.completed` para que
         // `invoice.create_from_sale` decida F1 (completa) vs F2 (simplificada) sin re-consultar la
         // venta (antes hardcodeaba F2 porque el tipo no llegaba en el evento).
-        let items = json!([{ "product_name": "Menú", "price": 500, "quantity": 1, "tax_rate": 21.0 }]);
+        let items = json!([{ "product_name": "Menú", "price": 500, "quantity": 1_000_000, "tax_rate": 21.0 }]);
         let mut inp = input(items, 3, 500);
         inp["payload"]["document_type"] = json!("invoice");
-        let out = complete_sale_pure(inp);
+        let out = sale(inp);
 
         // 1) la cabecera de la venta persiste el tipo en la MISMA inserción (atómico).
         assert_eq!(out.operations[1].params["document_type"], json!("invoice"),
@@ -1040,14 +1176,14 @@ mod tests {
     fn el_tipo_de_documento_por_defecto_es_ticket() {
         // Sin `document_type` explícito → simplificada (ticket/F2), el caso mayoritario del TPV.
         // Cualquier valor no reconocido cae también a 'ticket' (normalización defensiva fiscal).
-        let items = json!([{ "product_name": "Café", "price": 121, "quantity": 1, "tax_rate": 21.0 }]);
-        let out = complete_sale_pure(input(items, 3, 121));
+        let items = json!([{ "product_name": "Café", "price": 121, "quantity": 1_000_000, "tax_rate": 21.0 }]);
+        let out = sale(input(items, 3, 121));
         assert_eq!(out.operations[1].params["document_type"], json!("ticket"));
         assert_eq!(out.events[0].payload["document_type"], json!("ticket"));
 
-        let mut inp = input(json!([{ "product_name": "Té", "price": 100, "quantity": 1, "tax_rate": 10.0 }]), 3, 100);
+        let mut inp = input(json!([{ "product_name": "Té", "price": 100, "quantity": 1_000_000, "tax_rate": 10.0 }]), 3, 100);
         inp["payload"]["document_type"] = json!("garbage");
-        let out2 = complete_sale_pure(inp);
+        let out2 = sale(inp);
         assert_eq!(out2.operations[1].params["document_type"], json!("ticket"),
                    "un valor no reconocido se normaliza a la simplificada");
     }
@@ -1074,10 +1210,10 @@ mod tests {
     #[test]
     fn emits_counter_sale_lines_event() {
         let items = json!([
-            { "product_name": "Café", "price": 121, "quantity": 2, "tax_rate": 21.0 },
-            { "product_name": "Agua", "price": 110, "quantity": 1, "tax_rate": 10.0 }
+            { "product_name": "Café", "price": 121, "quantity": 2_000_000, "tax_rate": 21.0 },
+            { "product_name": "Agua", "price": 110, "quantity": 1_000_000, "tax_rate": 10.0 }
         ]);
-        let out = complete_sale_pure(input(items, 8, 2000));
+        let out = sale(input(items, 8, 2000));
         assert_eq!(out.operations.len(), 4); // counter + sale + 2 líneas
         assert_eq!(out.operations[0].command, "sales._bump_counter");
         assert_eq!(out.operations[1].command, "sales._insert_sale");
@@ -1107,12 +1243,12 @@ mod tests {
         let new_ids: Vec<Value> = (0..4).map(|i| json!(format!("id-{i}"))).collect();
         let input = json!({
             "payload": {
-                "items": [{ "product_name": "X", "price": 121, "quantity": 1, "tax_rate": 21.0 }],
+                "items": [{ "product_name": "X", "price": 121, "quantity": 1_000_000, "tax_rate": 21.0 }],
                 "tax_included": true, "amount_tendered": 200, "table_id": "table-7"
             },
             "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-05-31T10:00:00+00:00", "new_ids": new_ids }
         });
-        let out = complete_sale_pure(input);
+        let out = sale(input);
         // Ni en el evento…
         assert!(out.events[0].payload.get("table_id").is_none(),
                 "sale.completed no lleva la mesa: {}", out.events[0].payload);
@@ -1129,14 +1265,14 @@ mod tests {
         let input = json!({
             "payload": {
                 "items": [
-                    { "product_name": "Pollo", "price": 121, "quantity": 1, "tax_rate": 21.0, "category_id": "cat-cocina" },
-                    { "product_name": "Agua",  "price": 110, "quantity": 1, "tax_rate": 10.0 }
+                    { "product_name": "Pollo", "price": 121, "quantity": 1_000_000, "tax_rate": 21.0, "category_id": "cat-cocina" },
+                    { "product_name": "Agua",  "price": 110, "quantity": 1_000_000, "tax_rate": 10.0 }
                 ],
                 "tax_included": true, "amount_tendered": 500
             },
             "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-05-31T10:00:00+00:00", "new_ids": new_ids }
         });
-        let out = complete_sale_pure(input);
+        let out = sale(input);
         // Línea con categoría → category_id presente; sin categoría → null (no rompe el evento).
         assert_eq!(out.events[0].payload["items"][0]["category_id"], json!("cat-cocina"));
         assert_eq!(out.events[0].payload["items"][1]["category_id"], Value::Null);
@@ -1145,8 +1281,8 @@ mod tests {
     #[test]
     fn totals_and_change() {
         // 1.21€×1 = 121 céntimos (IVA 21% incl), pagado 2.00€ = 200 céntimos.
-        let items = json!([{ "product_name": "X", "price": 12100, "quantity": 1, "tax_rate": 21.0 }]);
-        let out = complete_sale_pure(input(items, 4, 20000));
+        let items = json!([{ "product_name": "X", "price": 12100, "quantity": 1_000_000, "tax_rate": 21.0 }]);
+        let out = sale(input(items, 4, 20000));
         let s = &out.operations[1].params;
         assert_eq!(s["subtotal"], json!(10000));   // 100.00€
         assert_eq!(s["tax_amount"], json!(2100));  // 21.00€
@@ -1177,13 +1313,13 @@ mod tests {
         // El cliente manda tax_rate=99 (mentira); la regla ES/product.generic dice 21%. El servidor
         // DEBE usar 21%, no 99%. 100.00€ neto → IVA 21.00€. El snapshot congela categoría + regla.
         let items = json!([
-            { "product_name": "Café", "price": 10000, "quantity": 1, "tax_category_key": "product.generic", "tax_rate": 99.0 }
+            { "product_name": "Café", "price": 10000, "quantity": 1_000_000, "tax_category_key": "product.generic", "tax_rate": 99.0 }
         ]);
         let rules = json!([
             { "id": "r-21", "country_code": "ES", "region_code": null, "tax_category_key": "product.generic", "rate_pct": 21.0, "tax_type": "vat", "parent_id": null, "is_active": 1 },
             { "id": "r-10", "country_code": "ES", "region_code": null, "tax_category_key": "restaurant.food", "rate_pct": 10.0, "tax_type": "vat", "parent_id": null, "is_active": 1 }
         ]);
-        let out = complete_sale_pure(input_with_rules(items, 4, rules, "array", "ES", ""));
+        let out = sale(input_with_rules(items, 4, rules, "array", "ES", ""));
         let line = &out.operations[2].params;
         assert_eq!(line["tax_rate"], json!(21.0));    // % del catálogo, no el del cliente
         assert_eq!(line["net_amount"], json!(10000)); // 100.00€
@@ -1203,12 +1339,12 @@ mod tests {
     fn line_resolves_rate_from_catalog_rows_shape() {
         // Mismo caso pero el catálogo viene envuelto como {"rows":[…]} (forma paginada).
         let items = json!([
-            { "product_name": "Café", "price": 10000, "quantity": 1, "tax_category_key": "product.generic" }
+            { "product_name": "Café", "price": 10000, "quantity": 1_000_000, "tax_category_key": "product.generic" }
         ]);
         let rules = json!([
             { "id": "r-21", "country_code": "ES", "region_code": null, "tax_category_key": "product.generic", "rate_pct": 21.0, "tax_type": "vat", "parent_id": null, "is_active": 1 }
         ]);
-        let out = complete_sale_pure(input_with_rules(items, 4, rules, "rows", "ES", ""));
+        let out = sale(input_with_rules(items, 4, rules, "rows", "ES", ""));
         let line = &out.operations[2].params;
         assert_eq!(line["tax_rate"], json!(21.0));
         assert_eq!(line["tax_amount"], json!(2100));
@@ -1219,13 +1355,13 @@ mod tests {
         // Regla raíz IVA 21 (product.generic ES) + componente Recargo 5,2 (parent_id). Base 100.00€
         // → IVA 21.00€ + RE 5.20€ → tax total 26.20€, line 131.20€.
         let items = json!([
-            { "product_name": "Producto RE", "price": 10000, "quantity": 1, "tax_category_key": "product.generic" }
+            { "product_name": "Producto RE", "price": 10000, "quantity": 1_000_000, "tax_category_key": "product.generic" }
         ]);
         let rules = json!([
             { "id": "r-iva", "country_code": "ES", "region_code": null, "tax_category_key": "product.generic", "rate_pct": 21.0, "tax_type": "vat", "parent_id": null, "is_active": 1 },
             { "id": "c-re",  "country_code": "ES", "region_code": null, "tax_category_key": "product.generic", "rate_pct": 5.2, "tax_type": "surcharge", "parent_id": "r-iva", "is_active": 1 }
         ]);
-        let out = complete_sale_pure(input_with_rules(items, 4, rules, "array", "ES", ""));
+        let out = sale(input_with_rules(items, 4, rules, "array", "ES", ""));
         let line = &out.operations[2].params;
         assert_eq!(line["net_amount"], json!(10000)); // base 100.00€
         assert_eq!(line["tax_amount"], json!(2620));  // 21.00 + 5.20 = 26.20€
@@ -1244,13 +1380,13 @@ mod tests {
         // IGIC Canarias: la regla de región ES-CN (7%) gana a la de país ES (21%) cuando el hub
         // tiene region_code=ES-CN en su identidad fiscal.
         let items = json!([
-            { "product_name": "Producto", "price": 10000, "quantity": 1, "tax_category_key": "product.generic" }
+            { "product_name": "Producto", "price": 10000, "quantity": 1_000_000, "tax_category_key": "product.generic" }
         ]);
         let rules = json!([
             { "id": "r-es", "country_code": "ES", "region_code": null, "tax_category_key": "product.generic", "rate_pct": 21.0, "tax_type": "vat", "parent_id": null, "is_active": 1 },
             { "id": "r-cn", "country_code": "ES", "region_code": "ES-CN", "tax_category_key": "product.generic", "rate_pct": 7.0, "tax_type": "igic", "parent_id": null, "is_active": 1 }
         ]);
-        let out = complete_sale_pure(input_with_rules(items, 4, rules, "array", "ES", "ES-CN"));
+        let out = sale(input_with_rules(items, 4, rules, "array", "ES", "ES-CN"));
         let line = &out.operations[2].params;
         assert_eq!(line["tax_rule_id"], json!("r-cn"));
         assert_eq!(line["tax_amount"], json!(700));
@@ -1261,12 +1397,12 @@ mod tests {
     fn unknown_category_falls_back_to_zero() {
         // Categoría sin regla en el país y SIN tax_rate de preview → 0%, sin romper. rule_id NULL.
         let items = json!([
-            { "product_name": "Misterioso", "price": 10000, "quantity": 1, "tax_category_key": "unknown.cat" }
+            { "product_name": "Misterioso", "price": 10000, "quantity": 1_000_000, "tax_category_key": "unknown.cat" }
         ]);
         let rules = json!([
             { "id": "r-21", "country_code": "ES", "region_code": null, "tax_category_key": "product.generic", "rate_pct": 21.0, "tax_type": "vat", "parent_id": null, "is_active": 1 }
         ]);
-        let out = complete_sale_pure(input_with_rules(items, 4, rules, "array", "ES", ""));
+        let out = sale(input_with_rules(items, 4, rules, "array", "ES", ""));
         let line = &out.operations[2].params;
         assert_eq!(line["tax_rate"], json!(0.0));
         assert_eq!(line["net_amount"], json!(10000));
@@ -1284,12 +1420,12 @@ mod tests {
         let new_ids: Vec<Value> = (0..4).map(|i| json!(format!("id-{i}"))).collect();
         let inp = json!({
             "payload": {
-                "items": [{ "product_name": "Corte", "price": 2000, "quantity": 1, "tax_rate": 21.0 }],
+                "items": [{ "product_name": "Corte", "price": 2000, "quantity": 1_000_000, "tax_rate": 21.0 }],
                 "tax_included": true, "amount_tendered": 0, "staff_id": "staff-7", "is_service": true
             },
             "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-05-31T10:00:00+00:00", "new_ids": new_ids }
         });
-        let out = complete_sale_pure(inp);
+        let out = sale(inp);
         // header (_insert_sale) lleva staff_id; appointment_id NULL (venta TPV normal).
         assert_eq!(out.operations[1].params["staff_id"], json!("staff-7"));
         assert_eq!(out.operations[1].params["appointment_id"], Value::Null);
@@ -1307,7 +1443,7 @@ mod tests {
         let new_ids: Vec<Value> = (0..4).map(|i| json!(format!("id-{i}"))).collect();
         let inp = json!({
             "payload": {
-                "items": [{ "product_name": "Corte", "price": 2000, "quantity": 1, "tax_rate": 21.0 }],
+                "items": [{ "product_name": "Corte", "price": 2000, "quantity": 1_000_000, "tax_rate": 21.0 }],
                 "tax_included": true, "amount_tendered": 0,
                 "customer_id": "cus-1", "customer_name": "Ana García",
                 "customer_tax_id": "12345678Z",
@@ -1315,7 +1451,7 @@ mod tests {
             },
             "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-05-31T10:00:00+00:00", "new_ids": new_ids }
         });
-        let out = complete_sale_pure(inp);
+        let out = sale(inp);
         let ev = &out.events[0].payload;
         assert_eq!(ev["customer_id"], json!("cus-1"));
         assert_eq!(ev["customer_name"], json!("Ana García"));
@@ -1326,8 +1462,8 @@ mod tests {
     #[test]
     fn anonymous_sale_carries_no_fiscal_snapshot() {
         // Venta de barra sin cliente: los campos fiscales van vacíos, no heredados.
-        let items = json!([{ "product_name": "Café", "price": 121, "quantity": 1, "tax_rate": 21.0 }]);
-        let out = complete_sale_pure(input(items, 4, 200));
+        let items = json!([{ "product_name": "Café", "price": 121, "quantity": 1_000_000, "tax_rate": 21.0 }]);
+        let out = sale(input(items, 4, 200));
         assert_eq!(out.events[0].payload["customer_tax_id"], json!(""));
         assert_eq!(out.events[0].payload["customer_address"], json!(""));
     }
@@ -1335,8 +1471,8 @@ mod tests {
     #[test]
     fn sale_without_staff_has_null_attribution() {
         // Venta de TPV sin profesional: staff_id NULL en cabecera y evento; sin evento extra.
-        let items = json!([{ "product_name": "Café", "price": 121, "quantity": 1, "tax_rate": 21.0 }]);
-        let out = complete_sale_pure(input(items, 4, 200));
+        let items = json!([{ "product_name": "Café", "price": 121, "quantity": 1_000_000, "tax_rate": 21.0 }]);
+        let out = sale(input(items, 4, 200));
         assert_eq!(out.operations[1].params["staff_id"], Value::Null);
         assert_eq!(out.events.len(), 1);
         assert_eq!(out.events[0].payload["staff_id"], Value::Null);
@@ -1348,13 +1484,13 @@ mod tests {
         let new_ids: Vec<Value> = (0..4).map(|i| json!(format!("id-{i}"))).collect();
         let inp = json!({
             "payload": {
-                "items": [{ "product_name": "Tinte", "price": 4500, "quantity": 1, "tax_rate": 21.0, "is_service": true }],
+                "items": [{ "product_name": "Tinte", "price": 4500, "quantity": 1_000_000, "tax_rate": 21.0, "is_service": true }],
                 "tax_included": true, "amount_tendered": 0,
                 "staff_id": "staff-3", "appointment_id": "appt-99", "customer_id": "cust-1", "customer_name": "Ana"
             },
             "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-05-31T10:00:00+00:00", "new_ids": new_ids }
         });
-        let out = complete_sale_pure(inp);
+        let out = sale(inp);
         // header guarda appointment_id + staff_id.
         assert_eq!(out.operations[1].params["appointment_id"], json!("appt-99"));
         assert_eq!(out.operations[1].params["staff_id"], json!("staff-3"));
@@ -1373,14 +1509,14 @@ mod tests {
         // Sin context.reads (host antiguo / dep no resuelta): se usa el tax_rate del payload.
         // 100.00€ neto, IVA 10% del preview → 10.00€. rule_id NULL (no resolvió por catálogo).
         let items = json!([
-            { "product_name": "Agua", "price": 10000, "quantity": 1, "tax_category_key": "restaurant.drink", "tax_rate": 10.0 }
+            { "product_name": "Agua", "price": 10000, "quantity": 1_000_000, "tax_category_key": "restaurant.drink", "tax_rate": 10.0 }
         ]);
         let inp = json!({
             "payload": { "items": items, "tax_included": false, "amount_tendered": 0 },
             "context": { "hub_id": "h1", "now": "2026-05-31T10:00:00+00:00", "country_code": "ES",
                 "new_ids": [json!("id-0"), json!("id-1"), json!("id-2"), json!("id-3")] }
         });
-        let out = complete_sale_pure(inp);
+        let out = sale(inp);
         let line = &out.operations[2].params;
         assert_eq!(line["tax_rate"], json!(10.0)); // fallback al preview del payload
         assert_eq!(line["tax_amount"], json!(1000));
@@ -1392,11 +1528,11 @@ mod tests {
         // Invitación: una línea is_gift no se cobra (net/tax/total=0) pero descuenta stock y suma su
         // COSTE en gift_total (arqueo). La otra línea (normal) sí se cobra.
         let items = json!([
-            { "product_name": "Café cortesía", "price": 200, "quantity": 1, "tax_category_key": "restaurant.drink",
+            { "product_name": "Café cortesía", "price": 200, "quantity": 1_000_000, "tax_category_key": "restaurant.drink",
               "tax_rate": 10.0, "is_gift": true, "gift_reason": "cortesía", "cost": 60 },
-            { "product_name": "Tarta", "price": 500, "quantity": 1, "tax_category_key": "restaurant.food", "tax_rate": 10.0 }
+            { "product_name": "Tarta", "price": 500, "quantity": 1_000_000, "tax_category_key": "restaurant.food", "tax_rate": 10.0 }
         ]);
-        let out = complete_sale_pure(input(items, 8, 1000));
+        let out = sale(input(items, 8, 1000));
         // línea 1 (invitación): todo a 0, marcada is_gift + motivo.
         let l1 = &out.operations[2].params;
         assert_eq!(l1["is_gift"], json!(1));
@@ -1418,5 +1554,152 @@ mod tests {
         assert_eq!(ev["items"][0]["is_gift"], json!(true));
         assert_eq!(ev["items"][0]["net_amount"], json!(0));
         assert_eq!(ev["total"], json!(500));
+    }
+
+    // ── ADR-0147 · contrato de la CANTIDAD: punto fijo global 10⁶ ────────────────────────────
+    //
+    // De dónde sale: `sale.completed` emitía `quantity` como f64 (`3.0`); `inventory` lee un
+    // entero → 0 → `qty <= 0 → continue` → vender al peso NO descontaba stock, en silencio.
+
+    /// Escala global (ADR-0147 §2.1). Duplicada a propósito: si cambia en el SDK, esto debe fallar.
+    const SCALE: i64 = 1_000_000;
+
+    #[test]
+    fn media_racion_calcula_el_importe_en_punto_fijo_y_lo_emite_en_escala_10e6() {
+        // 0,5 kg de gambas a 12,00 €/kg (IVA 21 % incl): el importe de línea es UN solo HALF_UP
+        // (600 = 1200 × 500000 ÷ 1000000) y el evento lleva la cantidad EXACTA en escala 10⁶.
+        let items = json!([{
+            "product_name": "Gambas", "product_id": "p-gambas", "price": 1200,
+            "quantity": 500_000, "tax_rate": 21.0
+        }]);
+        let out = sale(input(items, 3, 600));
+
+        let line = &out.operations[2].params;
+        assert_eq!(line["quantity"], json!(500_000), "la línea persiste la representación cruda");
+        assert_eq!(line["line_total"], json!(600), "1200 × 0,5 = 600 céntimos, un solo redondeo");
+        assert_eq!(line["net_amount"], json!(496), "600/1,21 = 495,87 → 496 (HALF_UP)");
+
+        let h = &out.operations[1].params;
+        assert_eq!(h["total"], json!(600));
+
+        // EL CONTRATO DEL EVENTO — lo que desbloquea `sale_decrements_stock_via_event`: la
+        // cantidad viaja como ENTERO en escala 10⁶, no como float. `inventory` hace `as_i64` y
+        // un `500000.0` sería 0 → no descontaría.
+        let ev = &out.events[0].payload;
+        assert_eq!(ev["items"][0]["quantity"].as_i64(), Some(500_000),
+                   "el evento emite la cantidad como entero 10⁶: {:?}", ev["items"][0]["quantity"]);
+    }
+
+    #[test]
+    fn kpein_un_precio_por_100_unidades_cuadra_el_importe_de_linea() {
+        // ADR-0147 §2.3 (modelo KPEIN de SAP): 0,0037 €/ud NO es un entero de céntimos; se expresa
+        // como «0,37 € por 100 ud» (`price` = 37, `price_quantity_value` = 100×10⁶). 250 tornillos:
+        // 37 × 250e6 ÷ 100e6 = 92,5 → HALF_UP → 93 céntimos. El dinero sigue siendo entero.
+        let items = json!([{
+            "product_name": "Tornillo", "price": 37, "quantity": 250 * SCALE,
+            "price_quantity_value": 100 * SCALE, "pricing_unit_code": "ud",
+            "tax_rate": 21.0
+        }]);
+        let out = sale(input(items, 3, 100));
+        let line = &out.operations[2].params;
+        assert_eq!(line["line_total"], json!(93), "92,5 → 93: HALF_UP, uno solo, por línea");
+        assert_eq!(out.operations[1].params["total"], json!(93));
+    }
+
+    #[test]
+    fn la_linea_congela_el_contexto_de_unidades_del_payload() {
+        // ADR-0147 §2.4 (opción A): la línea conserva el contexto con el que fue creada y el
+        // cálculo histórico NUNCA consulta el maestro. Si mañana las gambas pasan de `kg` a `ud`,
+        // una línea de ayer sigue siendo 0,5 kg y se puede reimprimir, recalcular o anular.
+        let items = json!([{
+            "product_name": "Gambas", "price": 1200, "quantity": 500_000, "tax_rate": 21.0,
+            "unit_code": "kg", "unit_name": "Kilogram",
+            "factor_num": 1, "factor_den": 1, "increment_value": 1_000,
+            "price_quantity_value": SCALE, "pricing_unit_code": "kg", "pricing_unit_name": "Kilogram",
+            "pricing_factor_num": 1, "pricing_factor_den": 1
+        }]);
+        let out = sale(input(items, 3, 600));
+        let p = &out.operations[2].params;
+        assert_eq!(p["unit_code"], json!("kg"));
+        assert_eq!(p["unit_name"], json!("Kilogram"));
+        assert_eq!(p["factor_num"], json!(1), "el factor es fracción EXACTA num/den, nunca decimal");
+        assert_eq!(p["factor_den"], json!(1));
+        assert_eq!(p["increment_value"], json!(1_000), "0,001 kg: el escalón de una báscula");
+        assert_eq!(p["price_quantity_value"], json!(SCALE));
+        assert_eq!(p["pricing_unit_code"], json!("kg"));
+        assert_eq!(p["pricing_factor_num"], json!(1));
+        assert_eq!(p["pricing_factor_den"], json!(1));
+    }
+
+    #[test]
+    fn sin_contexto_de_unidades_la_linea_congela_la_unidad_suelta() {
+        // El caso mayoritario no configura nada: un bar vende cañas. La línea congela `ud`,
+        // factor 1/1, incremento 1 ud y precio por 1 unidad — el comportamiento de siempre.
+        let items = json!([{ "product_name": "Caña", "price": 250, "quantity": SCALE, "tax_rate": 21.0 }]);
+        let out = sale(input(items, 3, 250));
+        let p = &out.operations[2].params;
+        assert_eq!(p["unit_code"], json!("ud"));
+        assert_eq!(p["factor_num"], json!(1));
+        assert_eq!(p["factor_den"], json!(1));
+        assert_eq!(p["increment_value"], json!(SCALE), "una pieza no se parte");
+        assert_eq!(p["price_quantity_value"], json!(SCALE), "precio por 1 unidad");
+        assert_eq!(p["line_total"], json!(250), "1 caña × 250 = 250: nada cambia para el bar");
+    }
+
+    #[test]
+    fn abrir_un_pedido_congela_el_contexto_y_calcula_el_provisional_en_punto_fijo() {
+        // El pedido abierto también habla 10⁶: 0,5 kg × 12,00 €/kg = 6,00 € provisionales, y sus
+        // líneas congelan el mismo contexto que las de venta (cerrar y reabrir NO puede cambiar
+        // lo que significa la cantidad).
+        let items = json!([{
+            "product_name": "Gambas", "price": 1200, "quantity": 500_000,
+            "unit_code": "kg", "increment_value": 1_000
+        }]);
+        let out = orden(input(items, 3, 0));
+        let l = out.operations.iter().find(|o| o.command == "sales._insert_order_line").unwrap();
+        assert_eq!(l.params["quantity"], json!(500_000));
+        assert_eq!(l.params["line_total"], json!(600), "1200 × 0,5 = 600, un solo HALF_UP");
+        assert_eq!(l.params["unit_code"], json!("kg"));
+        assert_eq!(l.params["increment_value"], json!(1_000));
+        let h = out.operations.iter().find(|o| o.command == "sales._insert_order").unwrap();
+        assert_eq!(h.params["provisional_total"], json!(600));
+    }
+
+    #[test]
+    fn una_cantidad_fuera_de_la_rejilla_se_RECHAZA_no_se_redondea() {
+        // ADR-0147 §2.2: el incremento es VALIDACIÓN, no instrucción de redondeo. Medio gramo en
+        // una unidad configurada en gramos NO se convierte en 0 g ni en 1 g: se rechaza el comando
+        // entero, con un error que NOMBRA ambos valores (la UI construye su mensaje con ellos).
+        let items = json!([{
+            "product_name": "Gambas", "price": 1200, "quantity": 500, // 0,0005 kg
+            "unit_code": "kg", "increment_value": 1_000, "tax_rate": 21.0
+        }]);
+        let err = complete_sale_pure(input(items.clone(), 3, 0)).expect_err("fuera de rejilla");
+        assert!(err.contains("quantity_off_grid"), "nombra el problema: {err}");
+        assert!(err.contains("500") && err.contains("1000"), "nombra ambos valores: {err}");
+
+        // Y el pedido tampoco lo acepta: abrir con una cantidad inválida y cobrarla después
+        // sería mover el error de sitio.
+        assert!(open_order_pure(input(items, 3, 0)).is_err());
+    }
+
+    #[test]
+    fn una_cantidad_no_positiva_se_rechaza() {
+        // Una línea de 0 unidades no es una venta de nada: es un bug de quien llama.
+        let items = json!([{ "product_name": "X", "price": 100, "quantity": 0, "tax_rate": 21.0 }]);
+        let err = complete_sale_pure(input(items, 3, 0)).expect_err("cantidad 0");
+        assert!(err.contains("quantity_not_positive"), "{err}");
+    }
+
+    #[test]
+    fn el_coste_de_una_invitacion_tambien_va_en_escala_10e6() {
+        // gift_total (arqueo) = coste × cantidad. Con la cantidad en 10⁶, 0,5 kg de coste 8,00 €/kg
+        // son 4,00 € — no 4.000.000 € (el «×un millón» que ya nos comimos en inventario).
+        let items = json!([{
+            "product_name": "Gambas cortesía", "price": 1200, "quantity": 500_000, "tax_rate": 10.0,
+            "is_gift": true, "gift_reason": "cortesía", "cost": 800
+        }]);
+        let out = sale(input(items, 3, 0));
+        assert_eq!(out.operations[1].params["gift_total"], json!(400), "800 × 0,5 = 400 céntimos");
     }
 }
