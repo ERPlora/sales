@@ -365,6 +365,8 @@ export class ErpPosTouch extends LitElement {
   // (mesa, cliente…) en el header. Botones independientes: cada uno abre su propio modal. El POS no
   // conoce a `tables`/`customers`; solo monta sus WC y escucha `erp:order-context`/`erp:customer-context`.
   private assignFillers: Array<{ component: string; el: HTMLElement }> = [];
+  /** Fillers del slot del FOOTER (`sales.pos.actions`): kitchen aporta «Enviar a cocina». */
+  private actionFillers: Array<{ component: string; el: HTMLElement }> = [];
   // Comanda ATADA a la mesa (puntos 1+2): al cambiar de mesa se GUARDA la comanda de la mesa
   // actual y se RECUPERA la de la nueva (o el carrito suelto si es null). Así tocar una mesa
   // ocupada trae su tiquet a la pantalla de venta, como cualquier POS.
@@ -487,6 +489,7 @@ export class ErpPosTouch extends LitElement {
     // (nombre/NIF/dirección), que es otra cosa: viaja congelado en la venta al cobrar (ADR-0132).
     this.notifyOrderLinked();
   };
+  private readonly onOrderFire = () => { void this.fireToKitchen(); };
   private readonly onFsChange = () => { this.fullscreen = document.fullscreenElement === this; };
   private readonly onLocaleChange = (): void => this.requestUpdate();
 
@@ -525,6 +528,9 @@ export class ErpPosTouch extends LitElement {
       this.addEventListener('erp:order-merge', this.onOrderMerge);
       this.addEventListener('erp:order-transfer', this.onOrderTransfer);
       this.addEventListener('erp:customer-context', this.onCustomerContext);
+      // Contrato del slot del footer: el filler emite `erp:order-fire` (bubbles+composed) y el
+      // HOST ejecuta su comando — el estado del carrito vive aquí, al filler no viaja nada.
+      this.addEventListener('erp:order-fire', this.onOrderFire);
       await this.resolveSlots();
       this.ensureSlotsMounted();
     } catch (e) {
@@ -542,6 +548,7 @@ export class ErpPosTouch extends LitElement {
     this.removeEventListener('erp:order-merge', this.onOrderMerge);
     this.removeEventListener('erp:order-transfer', this.onOrderTransfer);
     this.removeEventListener('erp:customer-context', this.onCustomerContext);
+    this.removeEventListener('erp:order-fire', this.onOrderFire);
     if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = undefined; }
   }
 
@@ -557,14 +564,21 @@ export class ErpPosTouch extends LitElement {
       component: f.component,
       el: document.createElement(f.component) as HTMLElement,
     }));
+    // Slot del FOOTER (acciones de la comanda): kitchen aporta aquí su «Enviar a cocina»
+    // (decisión Ioan 2026-07-19 — el botón ya no está hardcodeado; sin fillers, footer limpio).
+    let acciones: Array<Record<string, unknown> & { component: string }> = [];
+    try { acciones = (await sdk.loadSlot('sales.pos.actions')) ?? []; } catch { acciones = []; }
+    this.actionFillers = acciones.map((f) => ({
+      component: f.component,
+      el: document.createElement(f.component) as HTMLElement,
+    }));
     this.requestUpdate();
   }
 
   /** (Re)engancha los botones de los fillers en el header; idempotente, sobrevive a re-renders. */
   private ensureSlotsMounted() {
     const host = this.renderRoot.querySelector('.cart-actions-slot') as HTMLElement | null;
-    if (!host || !this.assignFillers.length) return;
-    for (const f of this.assignFillers) {
+    if (host) for (const f of this.assignFillers) {
       if (f.el.parentElement === host) continue;
       host.appendChild(f.el);
       // Al montarse, si ya hay un pedido reanudado, se le pide que recupere LO SUYO. El aviso de
@@ -574,6 +588,30 @@ export class ErpPosTouch extends LitElement {
       if (this.orderId) {
         f.el.dispatchEvent(new CustomEvent('erp:order-restored', { detail: { order_id: this.orderId }, bubbles: false }));
       }
+    }
+    // Acciones del footer (mismo montaje resiliente que el header): las MISMAS instancias se
+    // re-enganchan si el contenedor se recrea, y al montarse reciben el estado actual.
+    const pie = this.renderRoot.querySelector('.foot-actions') as HTMLElement | null;
+    if (pie) for (const f of this.actionFillers) {
+      if (f.el.parentElement === pie) continue;
+      pie.insertBefore(f.el, pie.firstChild);
+      this.emitPosState([f]);
+    }
+  }
+
+  /** Cuenta a los fillers del footer el estado del carrito (`erp:pos-state`, contrato del slot
+   *  `sales.pos.actions`). Al filler no viaja ninguna línea: solo lo que necesita para pintarse. */
+  private emitPosState(fillers = this.actionFillers): void {
+    for (const f of fillers) {
+      f.el.dispatchEvent(new CustomEvent('erp:pos-state', {
+        detail: {
+          order_id: this.orderId,
+          items_count: this.cart.length,
+          label: this.tableLabel,
+          channel: 'dine_in',
+        },
+        bubbles: false,
+      }));
     }
   }
 
@@ -587,6 +625,9 @@ export class ErpPosTouch extends LitElement {
 
   protected updated(_changed: Map<PropertyKey, unknown>) {
     this.ensureSlotsMounted();
+    // Estado del carrito → fillers del footer (contrato `erp:pos-state`). Barato y sin bucles:
+    // el filler solo guarda el detail (no re-renderiza al host).
+    this.emitPosState();
     // Los <dialog> se abren MODALES (top layer): inmunes al transform del drawer del carrito
     // (gotcha conocido: un overlay fixed dentro de un ancestro con transform queda atrapado).
     // El atributo `open` del markup ya los muestra donde showModal no exista (happy-dom).
@@ -1255,12 +1296,11 @@ export class ErpPosTouch extends LitElement {
           <!-- Acciones SOLO-ICONO (ADR-0133): imprimir la CUENTA para llevarla a la mesa (no es un
                documento fiscal) y COBRAR (que sí emite el tiquet fiscal). El importe ya se ve
                grande arriba, así que el texto sobra; la etiqueta va en aria-label/title. -->
+          <!-- El botón de COCINA ya no vive aquí: entra por el slot sales.pos.actions (lo
+               aporta kitchen si está instalado/activo — decisión Ioan 2026-07-19). Los fillers
+               se insertan al PRINCIPIO de .foot-actions (ensureSlotsMounted); Cobrar siempre es
+               el más grande y el último. Ojo: nada de backticks en comentarios de un html de Lit. -->
           <div class="foot-actions">
-            <ion-button class="prebill" fill="outline" ?disabled=${!this.cart.length}
-                        title=${t('ui.fireToKitchen')} aria-label=${t('ui.fireToKitchen')}
-                        @click=${() => void this.fireToKitchen()}>
-              <ion-icon slot="icon-only" name="restaurant-outline"></ion-icon>
-            </ion-button>
             <ion-button class="prebill" fill="outline" ?disabled=${!this.cart.length}
                         title=${t('ui.printPrebill')} aria-label=${t('ui.printPrebill')}
                         @click=${() => { this.prebillOpen = true; }}>

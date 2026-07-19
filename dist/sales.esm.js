@@ -4376,6 +4376,8 @@ var ErpPosTouch = class extends i3 {
     // (mesa, cliente…) en el header. Botones independientes: cada uno abre su propio modal. El POS no
     // conoce a `tables`/`customers`; solo monta sus WC y escucha `erp:order-context`/`erp:customer-context`.
     this.assignFillers = [];
+    /** Fillers del slot del FOOTER (`sales.pos.actions`): kitchen aporta «Enviar a cocina». */
+    this.actionFillers = [];
     // Comanda ATADA a la mesa (puntos 1+2): al cambiar de mesa se GUARDA la comanda de la mesa
     // actual y se RECUPERA la de la nueva (o el carrito suelto si es null). Así tocar una mesa
     // ocupada trae su tiquet a la pantalla de venta, como cualquier POS.
@@ -4468,6 +4470,9 @@ var ErpPosTouch = class extends i3 {
       this.customerTaxId = d3.customer_tax_id ?? "";
       this.customerAddress = d3.customer_address ?? "";
       this.notifyOrderLinked();
+    };
+    this.onOrderFire = () => {
+      void this.fireToKitchen();
     };
     this.onFsChange = () => {
       this.fullscreen = document.fullscreenElement === this;
@@ -4721,6 +4726,7 @@ var ErpPosTouch = class extends i3 {
       this.addEventListener("erp:order-merge", this.onOrderMerge);
       this.addEventListener("erp:order-transfer", this.onOrderTransfer);
       this.addEventListener("erp:customer-context", this.onCustomerContext);
+      this.addEventListener("erp:order-fire", this.onOrderFire);
       await this.resolveSlots();
       this.ensureSlotsMounted();
     } catch (e7) {
@@ -4737,6 +4743,7 @@ var ErpPosTouch = class extends i3 {
     this.removeEventListener("erp:order-merge", this.onOrderMerge);
     this.removeEventListener("erp:order-transfer", this.onOrderTransfer);
     this.removeEventListener("erp:customer-context", this.onCustomerContext);
+    this.removeEventListener("erp:order-fire", this.onOrderFire);
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = void 0;
@@ -4755,18 +4762,48 @@ var ErpPosTouch = class extends i3 {
       component: f3.component,
       el: document.createElement(f3.component)
     }));
+    let acciones = [];
+    try {
+      acciones = await sdk.loadSlot("sales.pos.actions") ?? [];
+    } catch {
+      acciones = [];
+    }
+    this.actionFillers = acciones.map((f3) => ({
+      component: f3.component,
+      el: document.createElement(f3.component)
+    }));
     this.requestUpdate();
   }
   /** (Re)engancha los botones de los fillers en el header; idempotente, sobrevive a re-renders. */
   ensureSlotsMounted() {
     const host = this.renderRoot.querySelector(".cart-actions-slot");
-    if (!host || !this.assignFillers.length) return;
-    for (const f3 of this.assignFillers) {
+    if (host) for (const f3 of this.assignFillers) {
       if (f3.el.parentElement === host) continue;
       host.appendChild(f3.el);
       if (this.orderId) {
         f3.el.dispatchEvent(new CustomEvent("erp:order-restored", { detail: { order_id: this.orderId }, bubbles: false }));
       }
+    }
+    const pie = this.renderRoot.querySelector(".foot-actions");
+    if (pie) for (const f3 of this.actionFillers) {
+      if (f3.el.parentElement === pie) continue;
+      pie.insertBefore(f3.el, pie.firstChild);
+      this.emitPosState([f3]);
+    }
+  }
+  /** Cuenta a los fillers del footer el estado del carrito (`erp:pos-state`, contrato del slot
+   *  `sales.pos.actions`). Al filler no viaja ninguna línea: solo lo que necesita para pintarse. */
+  emitPosState(fillers = this.actionFillers) {
+    for (const f3 of fillers) {
+      f3.el.dispatchEvent(new CustomEvent("erp:pos-state", {
+        detail: {
+          order_id: this.orderId,
+          items_count: this.cart.length,
+          label: this.tableLabel,
+          channel: "dine_in"
+        },
+        bubbles: false
+      }));
     }
   }
   /** Tras cobrar: avisa a cada filler para que limpie su selección (mesa/cliente). */
@@ -4778,6 +4815,7 @@ var ErpPosTouch = class extends i3 {
   }
   updated(_changed) {
     this.ensureSlotsMounted();
+    this.emitPosState();
     for (const d3 of this.renderRoot.querySelectorAll("dialog.park-dialog, dialog.dirty-dialog")) {
       try {
         if (typeof d3.showModal === "function" && !d3.matches(":modal")) {
@@ -5385,12 +5423,11 @@ var ErpPosTouch = class extends i3 {
           <!-- Acciones SOLO-ICONO (ADR-0133): imprimir la CUENTA para llevarla a la mesa (no es un
                documento fiscal) y COBRAR (que sí emite el tiquet fiscal). El importe ya se ve
                grande arriba, así que el texto sobra; la etiqueta va en aria-label/title. -->
+          <!-- El botón de COCINA ya no vive aquí: entra por el slot sales.pos.actions (lo
+               aporta kitchen si está instalado/activo — decisión Ioan 2026-07-19). Los fillers
+               se insertan al PRINCIPIO de .foot-actions (ensureSlotsMounted); Cobrar siempre es
+               el más grande y el último. Ojo: nada de backticks en comentarios de un html de Lit. -->
           <div class="foot-actions">
-            <ion-button class="prebill" fill="outline" ?disabled=${!this.cart.length}
-                        title=${t5("ui.fireToKitchen")} aria-label=${t5("ui.fireToKitchen")}
-                        @click=${() => void this.fireToKitchen()}>
-              <ion-icon slot="icon-only" name="restaurant-outline"></ion-icon>
-            </ion-button>
             <ion-button class="prebill" fill="outline" ?disabled=${!this.cart.length}
                         title=${t5("ui.printPrebill")} aria-label=${t5("ui.printPrebill")}
                         @click=${() => {
@@ -5998,7 +6035,7 @@ var OkDataTable = class extends i3 {
     .tk-scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.18); z-index: 19; }
     .drawer { position: absolute; top: 0; right: 0; height: 100%; width: 340px; max-width: 88%;
       background: var(--background); border-left: 1px solid var(--border-color);
-      box-shadow: -10px 0 28px rgba(0, 0, 0, 0.10); display: flex; flex-direction: column; z-index: 20;
+      display: flex; flex-direction: column; z-index: 20;
       animation: tk-slide-in 0.18s ease; }
     @keyframes tk-slide-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
     .drawer .dh { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;

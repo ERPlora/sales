@@ -494,6 +494,92 @@ describe('avisos de éxito: van por notify(), no por el hueco rojo de error', ()
   });
 });
 
+// ── El botón de COCINA ya no es del POS: entra por el slot del footer (2026-07-19) ────────────
+// «Enviar a cocina» vivía hardcodeado en el footer y lo veían peluquerías y tiendas sin cocina.
+// Ahora el POS expone un SEGUNDO slot, `sales.pos.actions` (footer), y es `kitchen` quien aporta
+// el botón (erp-kitchen-pos-fire). Contrato por CustomEvents (ADR-0043, decisión Ioan 2026-07-19):
+//   host → filler  `erp:pos-state {order_id?, items_count, label, channel}` al montar y en cada
+//                  cambio de carrito/mesa (sobre el elemento, como `erp:order-restored`).
+//   filler → host  `erp:order-fire {}` → el HOST ejecuta su `sales.order.fire` (el estado del
+//                  carrito vive aquí; al filler no viaja ninguna línea).
+// Sin fillers, el footer queda limpio: ni botón ni hueco.
+describe('slot del footer sales.pos.actions: cocina inyectada, no hardcodeada', () => {
+  let comandos: string[];
+
+  beforeEach(() => {
+    comandos = [];
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.queryAll = async (name: string) =>
+      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1 }] : []);
+    sdk.query = async () => [];
+    sdk.command = async (name: string) => {
+      comandos.push(name);
+      return name === 'sales.order.open' ? { ok: true, new_ids: ['o1', 'l1'] } : { ok: true };
+    };
+    sdk.loadSlot = async (slot: string) => {
+      slotsPedidos.push(slot);
+      return slot === 'sales.pos.actions' ? [{ component: 'erp-fake-fire' }] : [];
+    };
+  });
+
+  async function conCafe() {
+    const el = await montarCarrito();
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    await (el as unknown as { queue: <T>(t: () => Promise<T>) => Promise<T> }).queue(async () => undefined);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    return el;
+  }
+
+  it('pide el slot del footer y monta el filler en .foot-actions; el botón hardcodeado YA NO existe', async () => {
+    const el = await montarCarrito();
+
+    expect(slotsPedidos, 'el POS pide también el slot del footer').toContain('sales.pos.actions');
+    const filler = el.shadowRoot!.querySelector('.foot-actions erp-fake-fire');
+    expect(filler, 'el filler se monta en las acciones del footer').toBeTruthy();
+    const botones = [...el.shadowRoot!.querySelectorAll('ion-footer ion-button')];
+    expect(botones.some((b) => b.getAttribute('title') === 'ui.fireToKitchen'),
+      'el botón de cocina del POS (hardcodeado) desapareció').toBe(false);
+  });
+
+  it('sin fillers, el footer queda limpio: ni botón de cocina ni hueco', async () => {
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.loadSlot = async () => [];
+    const el = await montarCarrito();
+
+    expect(el.shadowRoot!.querySelector('.foot-actions erp-fake-fire')).toBeFalsy();
+    const botones = [...el.shadowRoot!.querySelectorAll('ion-footer ion-button')];
+    expect(botones.some((b) => b.getAttribute('title') === 'ui.fireToKitchen'),
+      'una peluquería no ve cocina').toBe(false);
+  });
+
+  it('el filler recibe erp:pos-state al montarse y al cambiar el carrito', async () => {
+    const estados: Array<{ items_count: number }> = [];
+    const el = await montarCarrito();
+    const filler = el.shadowRoot!.querySelector('.foot-actions erp-fake-fire')!;
+    filler.addEventListener('erp:pos-state', (e) => {
+      estados.push((e as CustomEvent<{ items_count: number }>).detail);
+    });
+
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    await (el as unknown as { queue: <T>(t: () => Promise<T>) => Promise<T> }).queue(async () => undefined);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    expect(estados.length, 'cada cambio del carrito informa al filler').toBeGreaterThan(0);
+    expect(estados[estados.length - 1].items_count, 'el último estado cuenta el café').toBe(1);
+  });
+
+  it('erp:order-fire del filler dispara sales.order.fire del host', async () => {
+    const el = await conCafe();
+    const filler = el.shadowRoot!.querySelector('.foot-actions erp-fake-fire')!;
+
+    filler.dispatchEvent(new CustomEvent('erp:order-fire', { detail: {}, bubbles: true, composed: true }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(comandos, 'el host ejecuta SU comando al recibir el evento del filler')
+      .toContain('sales.order.fire');
+  });
+});
+
 // ── Cuentas abiertas con NOMBRE + recuperar sin perder nada (rediseño TPV 2026-07-19) ─────────
 // Tres males vistos en el TPV real: (1) los aparcados salían ANÓNIMOS (solo total+hora) porque
 // nadie escribía la etiqueta; (2) recuperar/tocar mesa aparcaba EN SILENCIO — o peor: el helper
