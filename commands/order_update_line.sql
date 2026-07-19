@@ -1,5 +1,7 @@
 -- ADR-0141 Gate 3/6: cambia cantidad (y su line_total provisional) de una línea de un pedido
 -- abierto; también permite alternar INVITACIÓN (is_gift/gift_reason), que cambia el importe.
+-- `quantity` en punto fijo 10⁶ (ADR-0147). El contexto de unidades congelado NO se toca aquí:
+-- se fijó al añadir la línea y cambiar la cantidad no cambia lo que significa.
 -- COALESCE deja intacto lo que no se envía. Solo líneas vivas del pedido/hub (aislamiento).
 -- El total del pedido se recompone en la 2ª sentencia (order_recompute_total.sql).
 UPDATE sales_order_item

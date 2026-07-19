@@ -91,7 +91,8 @@
       "migrations/sqlite/010_orders.sql",
       "migrations/sqlite/011_sale_forgets_table.sql",
       "migrations/sqlite/012_line_paid.sql",
-      "migrations/sqlite/013_drop_legacy_cart.sql"
+      "migrations/sqlite/013_drop_legacy_cart.sql",
+      "migrations/sqlite/014_quantity_fixed_point.sql"
     ],
     "postgres": [
       "migrations/postgres/001_init.sql",
@@ -106,7 +107,8 @@
       "migrations/postgres/010_orders.sql",
       "migrations/postgres/011_sale_forgets_table.sql",
       "migrations/postgres/012_line_paid.sql",
-      "migrations/postgres/013_drop_legacy_cart.sql"
+      "migrations/postgres/013_drop_legacy_cart.sql",
+      "migrations/postgres/014_quantity_fixed_point.sql"
     ]
   },
   "queries": {

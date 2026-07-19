@@ -33,7 +33,8 @@
             "type": "boolean"
           },
           "quantity": {
-            "type": "number"
+            "type": "integer",
+            "minimum": 1
           },
           "price": {
             "type": "integer",
@@ -68,6 +69,38 @@
               "string",
               "null"
             ]
+          },
+          "unit_code": {
+            "type": "string"
+          },
+          "unit_name": {
+            "type": "string"
+          },
+          "factor_num": {
+            "type": "integer"
+          },
+          "factor_den": {
+            "type": "integer"
+          },
+          "increment_value": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "price_quantity_value": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pricing_unit_code": {
+            "type": "string"
+          },
+          "pricing_unit_name": {
+            "type": "string"
+          },
+          "pricing_factor_num": {
+            "type": "integer"
+          },
+          "pricing_factor_den": {
+            "type": "integer"
           }
         }
       }
@@ -156,5 +189,5 @@
       "description": "Tipo de documento fiscal (ADR-0140): 'ticket' = factura simplificada (→ F2), 'invoice' = factura completa (→ F1). Se fija atómicamente al completar la venta y viaja en `sale.completed`; por defecto 'ticket'. Reemplaza al comando retro `sales.set_document_type`."
     }
   },
-  "description": "DINERO (`price`, `amount_tendered`) = UNIDADES MÍNIMAS enteras (ADR-0007/0123): un 2.20 aquí serían 2 céntimos. `quantity` (1,5 kg) y las TASAS (`discount`, `tax_rate`) NO son dinero y sí llevan decimales. El `tax_rate` que mande el cliente es una PISTA: el servidor resuelve el % real desde `tax_category_key` contra el catálogo de confianza (ADR-0085/0069)."
+  "description": "DINERO (`price`, `amount_tendered`) = UNIDADES MÍNIMAS enteras (ADR-0007/0123): un 2.20 aquí serían 2 céntimos. `quantity` = PUNTO FIJO entero, escala global 10⁶ (ADR-0147): 0,5 kg es 500000 — nunca un float. `price` es «por price_quantity_value de pricing_unit_code» (KPEIN §2.3; por defecto, por 1 unidad). El contexto de unidades (unit_code, factor num/den, increment_value, pricing_*) se CONGELA en la línea (§2.4). Fuera de la rejilla del incremento el comando se RECHAZA (§2.2). Las TASAS (`discount`, `tax_rate`) sí llevan decimales; el `tax_rate` del cliente es una PISTA: el servidor resuelve el % real desde `tax_category_key` (ADR-0085/0069)."
 }
