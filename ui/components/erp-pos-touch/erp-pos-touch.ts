@@ -12,6 +12,7 @@ import { createSerialQueue } from '../../lib/serial-queue.js';
 import { splitPayload, splitTotal } from '../../lib/split-selection.js';
 import { forgetCurrentCheck, rememberCurrentCheck, resolveCurrentCheck } from '../../lib/current-check.js';
 import { brandSvgFor } from '../../lib/brand-icons.js';
+import { priceLabel } from '../../lib/price-label.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod } from '../../lib/pay-icons.js';
 import '@erplora/outfitkit/ok-qty-stepper';
@@ -785,15 +786,24 @@ export class ErpPosTouch extends LitElement {
   }
 
   /** Fija la cantidad de una línea (desde ok-qty-stepper); al llegar a 0 la línea se elimina. */
-  private async setQtyAbs(id: string, v: number) {
+  private async setQtyAbs(id: string, v: number, stepper?: HTMLElement & { value: number; updateComplete?: Promise<unknown> }) {
     const ex = this.cart.find((l) => l.id === id);
     if (!ex) return;
     // ADR-0147 §2.2: el incremento VALIDA, no redondea. Fuera de rejilla → se RECHAZA y el
-    // pedido no se altera (re-render para que el stepper vuelva al valor persistido).
+    // pedido no se altera.
     const qtyMicro = toMicro(Math.max(0, v));
     if (!onGrid(qtyMicro, ex.increment_value ?? 0)) {
       this.error = `${t('ui.qtyOffGrid')} (${formatQuantity(ex.increment_value ?? 0)} ${ex.unit_code ?? ''})`.trim();
-      this.cart = [...this.cart]; // re-render: el stepper vuelve a la cantidad real
+      // Incidencia 4a: el re-render NO repinta el campo del stepper — `.value=${l.qty}` no cambió
+      // (0,5 → 0,5) y Lit no toca el input, que se queda con lo tecleado. Y el stepper COMMITEÓ lo
+      // tecleado a su `value` antes de emitir `ok-change` (síncrono), así que restaurar en este
+      // mismo tick tampoco repinta (valor neto igual → dirty-check). Se deja asentar su render en
+      // vuelo y ENTONCES se restaura la propiedad: eso SÍ es un cambio → el input vuelve a la
+      // cantidad real.
+      if (stepper) {
+        await stepper.updateComplete;
+        stepper.value = ex.qty;
+      }
       return;
     }
     const qty = fromMicro(qtyMicro);
@@ -1053,7 +1063,7 @@ export class ErpPosTouch extends LitElement {
                   : nothing}
                 <ion-label>
                   <h3>${l.name}${l.is_gift ? html` <ion-badge color="success">${t('ui.giftBadge')}</ion-badge>` : nothing}</h3>
-                  <p>${this.money(l.price)}${l.is_gift && l.gift_reason ? html` · ${l.gift_reason}` : nothing}</p>
+                  <p>${priceLabel(this.money(l.price), l.unit_code)}${l.is_gift && l.gift_reason ? html` · ${l.gift_reason}` : nothing}</p>
                 </ion-label>
                 <div slot="end" class="lineend">
                   <span class="lt" style=${l.is_gift ? 'text-decoration:line-through;opacity:.55' : ''}>${this.money(l.price * l.qty)}</span>
@@ -1061,7 +1071,8 @@ export class ErpPosTouch extends LitElement {
                     <ion-icon name=${l.is_gift ? 'gift' : 'gift-outline'} slot="icon-only" color=${l.is_gift ? 'success' : 'medium'}></ion-icon>
                   </ion-button>
                   <ok-qty-stepper .value=${l.qty} .min=${0} .step=${this.stepOf(l)}
-                    @ok-change=${(e: CustomEvent) => this.setQtyAbs(l.id, (e.detail as { value: number }).value)}></ok-qty-stepper>
+                    @ok-change=${(e: CustomEvent) => this.setQtyAbs(l.id, (e.detail as { value: number }).value,
+                      e.currentTarget as HTMLElement & { value: number; updateComplete?: Promise<unknown> })}></ok-qty-stepper>
                 </div>
               </ion-item>`)}
             </ion-list>`

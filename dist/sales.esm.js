@@ -3400,6 +3400,12 @@ function brandSvgFor(type, name) {
   return void 0;
 }
 
+// ui/lib/price-label.ts
+var UNIT_EACH = "ud";
+function priceLabel(money2, unitCode) {
+  return unitCode && unitCode !== UNIT_EACH ? `${money2} / ${unitCode}` : money2;
+}
+
 // ../../../module-toolkit/node_modules/lit-html/directive.js
 var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e5 = (t7) => (...e7) => ({ _$litDirective$: t7, values: e7 });
@@ -4890,13 +4896,16 @@ var ErpPosTouch = class extends i3 {
     return l3.increment_value ? fromMicro(l3.increment_value) : 1;
   }
   /** Fija la cantidad de una línea (desde ok-qty-stepper); al llegar a 0 la línea se elimina. */
-  async setQtyAbs(id, v3) {
+  async setQtyAbs(id, v3, stepper) {
     const ex = this.cart.find((l3) => l3.id === id);
     if (!ex) return;
     const qtyMicro = toMicro(Math.max(0, v3));
     if (!onGrid(qtyMicro, ex.increment_value ?? 0)) {
       this.error = `${t5("ui.qtyOffGrid")} (${formatQuantity(ex.increment_value ?? 0)} ${ex.unit_code ?? ""})`.trim();
-      this.cart = [...this.cart];
+      if (stepper) {
+        await stepper.updateComplete;
+        stepper.value = ex.qty;
+      }
       return;
     }
     const qty = fromMicro(qtyMicro);
@@ -5125,7 +5134,7 @@ var ErpPosTouch = class extends i3 {
                             color=${this.splitSel.has(l3.line_id) ? "primary" : "medium"}></ion-icon>` : A}
                 <ion-label>
                   <h3>${l3.name}${l3.is_gift ? b2` <ion-badge color="success">${t5("ui.giftBadge")}</ion-badge>` : A}</h3>
-                  <p>${this.money(l3.price)}${l3.is_gift && l3.gift_reason ? b2` · ${l3.gift_reason}` : A}</p>
+                  <p>${priceLabel(this.money(l3.price), l3.unit_code)}${l3.is_gift && l3.gift_reason ? b2` · ${l3.gift_reason}` : A}</p>
                 </ion-label>
                 <div slot="end" class="lineend">
                   <span class="lt" style=${l3.is_gift ? "text-decoration:line-through;opacity:.55" : ""}>${this.money(l3.price * l3.qty)}</span>
@@ -5133,7 +5142,11 @@ var ErpPosTouch = class extends i3 {
                     <ion-icon name=${l3.is_gift ? "gift" : "gift-outline"} slot="icon-only" color=${l3.is_gift ? "success" : "medium"}></ion-icon>
                   </ion-button>
                   <ok-qty-stepper .value=${l3.qty} .min=${0} .step=${this.stepOf(l3)}
-                    @ok-change=${(e7) => this.setQtyAbs(l3.id, e7.detail.value)}></ok-qty-stepper>
+                    @ok-change=${(e7) => this.setQtyAbs(
+      l3.id,
+      e7.detail.value,
+      e7.currentTarget
+    )}></ok-qty-stepper>
                 </div>
               </ion-item>`)}
             </ion-list>` : b2`<div class="empty">${t5("ui.cartEmptyTouch")}</div>`}
