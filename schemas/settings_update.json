@@ -45,6 +45,12 @@
       "default": true,
       "title": "Permitir tiques aparcados"
     },
+    "restaurant_mode": {
+      "type": "boolean",
+      "default": false,
+      "title": "Restaurant mode (courses)",
+      "description": "Adds a Courses tab to the cart to send rounds to the kitchen."
+    },
     "default_tax_included": {
       "type": "boolean",
       "default": true,

@@ -1,7 +1,7 @@
 {
   "id": "sales",
   "name": "Sales & POS",
-  "version": "2.11.0",
+  "version": "2.12.0",
   "agent": {
     "description": "Manages sales and point-of-sale operations: list and inspect sales, complete new sales transactions, void sales, configure payment methods, and retrieve sales statistics.",
     "keywords": [
@@ -93,7 +93,8 @@
       "migrations/sqlite/012_line_paid.sql",
       "migrations/sqlite/013_drop_legacy_cart.sql",
       "migrations/sqlite/014_quantity_fixed_point.sql",
-      "migrations/sqlite/015_order_label.sql"
+      "migrations/sqlite/015_order_label.sql",
+      "migrations/sqlite/016_order_rounds.sql"
     ],
     "postgres": [
       "migrations/postgres/001_init.sql",
@@ -110,7 +111,8 @@
       "migrations/postgres/012_line_paid.sql",
       "migrations/postgres/013_drop_legacy_cart.sql",
       "migrations/postgres/014_quantity_fixed_point.sql",
-      "migrations/postgres/015_order_label.sql"
+      "migrations/postgres/015_order_label.sql",
+      "migrations/postgres/016_order_rounds.sql"
     ]
   },
   "seed": {
@@ -358,6 +360,15 @@
       "sql": [
         "commands/_insert_order_line.sql"
       ]
+    },
+    "sales._mark_lines_fired": {
+      "permission": "sales.add_sale",
+      "sql": [
+        "commands/_mark_lines_fired.sql"
+      ],
+      "ai": {
+        "description": "Internal (courses, 2026-07-19): marks the still-pending lines of an order as fired to the kitchen (round_no + fired_at). Emitted by sales.order.fire when the POS sends round_no; fired_at IS NULL guarantees the next fire only sends new lines."
+      }
     },
     "sales._complete_order": {
       "permission": "sales.add_sale",

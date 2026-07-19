@@ -494,6 +494,91 @@ describe('avisos de éxito: van por notify(), no por el hueco rojo de error', ()
   });
 });
 
+// ── MODO RESTAURANTE: segment Pedido/Tandas en el carrito (decisión Ioan 2026-07-19) ──────────
+// El vertical es un FLAG, no otra pantalla (patrón Odoo «Is a Bar/Restaurant»): el ajuste
+// `restaurant_mode` añade al carrito un segment de dos pestañas — **Pedido** (la lista de
+// siempre, el total a cobrar) y **Tandas** (las rondas: lo ya enviado a cocina en solo-lectura
+// con su hora, y la ronda EN CURSO editable con su CTA de envío). Con el flag apagado, el TPV de
+// tienda/peluquería queda EXACTAMENTE igual que hoy. La pertenencia a la ronda vive en la línea
+// (`round_no`/`fired_at`, migración 016) y disparar manda SOLO lo pendiente.
+describe('modo restaurante: pestañas Pedido/Tandas', () => {
+  let comandos: { name: string; payload: Record<string, unknown> }[];
+
+  const conAjustes = (restaurantMode: number) => {
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    // El stub interpola los params: la cabecera de una ronda enviada DEBE llevar su hora.
+    sdk.t = (_catalog: unknown, key: string, params?: Record<string, unknown>) =>
+      (params ? `${key} ${Object.values(params).join(' ')}` : key);
+    sdk.queryAll = async (name: string) =>
+      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Entrecot', sku: 'ENT', price: 2500, is_active: 1 }] : []);
+    sdk.query = async (name: string) => (name === 'sales.settings.get' ? [{ restaurant_mode: restaurantMode }] : []);
+    sdk.command = async (name: string, payload: Record<string, unknown>) => {
+      comandos.push({ name, payload });
+      return name === 'sales.order.open' ? { ok: true, new_ids: ['o1', 'l1'] } : { ok: true };
+    };
+    // El CTA de enviar tanda solo existe si COCINA está (el slot del footer tiene filler):
+    // sin cocina las tandas no tienen destino.
+    sdk.loadSlot = async (slot: string) => (slot === 'sales.pos.actions' ? [{ component: 'erp-fake-fire' }] : []);
+  };
+
+  beforeEach(() => { comandos = []; conAjustes(1); });
+
+  const disparada = {
+    id: 'p9', name: 'Caña', price: 250, qty: 2, line_id: 'l9',
+    round_no: 1, fired_at: '2026-07-19T14:02:00+00:00',
+  };
+  const pendiente = { id: 'p1', name: 'Entrecot', price: 2500, qty: 1, line_id: 'l1' };
+
+  it('el segment Pedido/Tandas solo existe con restaurant_mode=1', async () => {
+    const el = await montarCarrito();
+    expect(el.shadowRoot!.querySelector('.cart-tabs ion-segment'),
+      'con el flag, el carrito gana sus dos pestañas').toBeTruthy();
+
+    conAjustes(0);
+    const el2 = await montarCarrito();
+    expect(el2.shadowRoot!.querySelector('.cart-tabs'),
+      'sin el flag (tienda/peluquería), el carrito queda plano como hoy').toBeFalsy();
+  });
+
+  it('en Tandas, lo enviado es SOLO LECTURA (con su hora) y la ronda en curso se edita', async () => {
+    const el = await montarCarrito();
+    const pos = el as unknown as { cart: unknown[]; cartTab: string; updateComplete: Promise<unknown> };
+    pos.cart = [disparada, pendiente];
+    pos.cartTab = 'courses';
+    await pos.updateComplete;
+
+    const enviadas = el.shadowRoot!.querySelector('.course.fired')!;
+    expect(enviadas, 'la ronda enviada se agrupa con su cabecera').toBeTruthy();
+    expect(enviadas.textContent, 'la cabecera lleva la hora del envío').toContain('14:02');
+    expect(enviadas.querySelector('ok-qty-stepper'), 'lo que está en fuego no se edita').toBeFalsy();
+
+    const enCurso = el.shadowRoot!.querySelector('.course.current')!;
+    expect(enCurso, 'la ronda en curso existe').toBeTruthy();
+    expect(enCurso.querySelector('ok-qty-stepper'), 'lo pendiente sí se edita').toBeTruthy();
+  });
+
+  it('enviar la tanda dispara SOLO las líneas pendientes, con su round_no local', async () => {
+    const el = await montarCarrito();
+    const pos = el as unknown as {
+      cart: unknown[]; cartTab: string; orderId?: string; updateComplete: Promise<unknown>;
+    };
+    pos.cart = [disparada, pendiente];
+    pos.orderId = 'o1';
+    pos.cartTab = 'courses';
+    await pos.updateComplete;
+
+    (el.shadowRoot!.querySelector('.course.current ion-button.send-round') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const fire = comandos.find((c) => c.name === 'sales.order.fire');
+    expect(fire, 'el CTA de la tanda dispara el comando del host').toBeTruthy();
+    const items = fire!.payload.items as Array<{ product_name: string }>;
+    expect(items.map((i) => i.product_name), 'SOLO lo pendiente — nada de reenviar la caña ya servida')
+      .toEqual(['Entrecot']);
+    expect(fire!.payload.round_no, 'la siguiente ronda local tras la 1').toBe(2);
+  });
+});
+
 // ── El botón de COCINA ya no es del POS: entra por el slot del footer (2026-07-19) ────────────
 // «Enviar a cocina» vivía hardcodeado en el footer y lo veían peluquerías y tiendas sin cocina.
 // Ahora el POS expone un SEGUNDO slot, `sales.pos.actions` (footer), y es `kitchen` quien aporta

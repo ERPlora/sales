@@ -23,6 +23,9 @@ export interface FirePayload {
   label: string;
   channel: 'dine_in' | 'takeaway';
   items: FireItem[];
+  /** Ronda LOCAL del pedido (tandas, 2026-07-19): el handler marca con ella las líneas
+   *  pendientes. Ausente en el camino compat (sin tandas). */
+  round_no?: number;
 }
 
 /** Carga útil de `sales.order.fire`, o `undefined` si no hay nada que mandar (sin pedido abierto o
@@ -31,11 +34,13 @@ export function buildFirePayload(
   orderId: string | undefined,
   label: string,
   lines: CartLine[],
+  roundNo?: number,
 ): FirePayload | undefined {
   if (!orderId || lines.length === 0) return undefined;
   return {
     order_id: orderId,
     label,
+    ...(roundNo && roundNo >= 1 ? { round_no: roundNo } : {}),
     // Sin mesa no es servicio de sala: barra, mostrador o para llevar.
     channel: label ? 'dine_in' : 'takeaway',
     items: lines.map((l) => ({

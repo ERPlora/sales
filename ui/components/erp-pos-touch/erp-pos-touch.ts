@@ -8,6 +8,7 @@ import { orderToPrebill } from '../../lib/document-mappers.js';
 import { receiptToPrintableHtml, printHtmlInIframe } from '../../lib/receipt-html.js';
 import { decideOnTableChange } from '../../lib/table-switch.js';
 import { defaultParkLabel } from '../../lib/park-label.js';
+import { groupByRound, pendingLines, nextRoundNo, isLineLocked } from '../../lib/rounds.js';
 import { buildFirePayload } from '../../lib/fire-order.js';
 import { createSerialQueue } from '../../lib/serial-queue.js';
 import { splitPayload, splitTotal } from '../../lib/split-selection.js';
@@ -59,6 +60,8 @@ interface PosSettings {
   default_tax_included?: number;
   /** Formas de pago permitidas (Ajustes). 0 = desactivada. */
   allow_cash?: number; allow_card?: number; allow_transfer?: number;
+  /** Modo restaurante (tandas): añade el segment Pedido/Tandas al carrito. Solo UI. */
+  restaurant_mode?: number;
 }
 interface Category { id: string; name: string; icon?: string; color?: string; image?: string; product_count?: number; }
 interface ProdCat { product_id: string; category_id: string; }
@@ -248,6 +251,28 @@ export class ErpPosTouch extends LitElement {
     .pm { color:var(--mut); font-size:.78rem; }
     .pdel { margin:0; }
 
+    /* Modo restaurante: segunda toolbar con el segment Pedido/Tandas. width:100% a la fuerza —
+       en mode ios el segment se ENCOGE (width:auto), gotcha conocido de los tabbar. */
+    .cart-tabs ion-segment { width:100%; margin-inline:0; }
+    /* Chip de tanda en la línea (T1, T2…) + llamita de «ya enviada». */
+    .rchip { display:inline-block; font-size:.62rem; font-weight:800; padding:.05rem .3rem;
+      border-radius:6px; background:var(--tile); border:1px solid var(--ion-border-color);
+      color:var(--mut); vertical-align:middle; }
+    .rflame { font-size:.85rem; vertical-align:middle; }
+    .lqty { color:var(--mut); font-weight:700; }
+    /* Pestaña Tandas: grupos por ronda. La EN CURSO lleva el borde de acento (es el destino). */
+    .courses { padding:.4rem .5rem .8rem; display:flex; flex-direction:column; gap:.6rem; }
+    .course { border:1px solid var(--ion-border-color); border-radius:12px; overflow:hidden; }
+    .course.current { border-color:var(--accent); }
+    .course-h { display:flex; align-items:center; gap:.4rem; padding:.5rem .7rem;
+      font-weight:700; font-size:.9rem; background:var(--tile); }
+    .course-h .ctime { margin-left:auto; color:var(--mut); font-weight:400; font-size:.8rem; }
+    .crow { display:flex; align-items:center; gap:.5rem; padding:.4rem .7rem; font-size:.9rem; }
+    .crow .cqty { color:var(--mut); min-width:2.4rem; }
+    .crow .cprod { flex:1; }
+    .crow .ctotal { font-weight:700; }
+    .course .send-round { margin:.5rem .6rem .6rem; }
+
     /* Diálogos nativos (top layer): aparcar-con-nombre y carrito sucio. */
     dialog.park-dialog, dialog.dirty-dialog { border:1px solid var(--ion-border-color); border-radius:14px;
       background:var(--panel); color:var(--tx); padding:1rem 1.1rem; width:min(94vw,24rem);
@@ -345,6 +370,8 @@ export class ErpPosTouch extends LitElement {
   /** Borrado en DOS toques de una cuenta de la lista: el primero arma, el segundo anula. */
   @state() private armedDelete?: string;
   private armedTimer?: ReturnType<typeof setTimeout>;
+  /** Pestaña activa del carrito en modo restaurante: Pedido (cobro) o Tandas (rondas). */
+  @state() private cartTab: 'order' | 'courses' = 'order';
   /** Preferencia del cobro: imprimir el tiquet al confirmar. Sustituye al 2º botón azul gemelo. */
   @state() private printOnCharge = true;
   @state() private tableLabel = '';
@@ -856,13 +883,21 @@ export class ErpPosTouch extends LitElement {
   private async fireToKitchen(): Promise<void> {
     if (!this.cart.length) return;
     const orderId = await this.ensureOrder(this.cart[0]);
-    const payload = buildFirePayload(orderId, this.tableLabel, this.cart);
+    // TANDAS (decisión Ioan 2026-07-19): se dispara SOLO lo pendiente, con su ronda local, y el
+    // handler lo marca (`fired_at`). Antes cada fire reenviaba el carrito ENTERO: dos disparos =
+    // comida duplicada en cocina. Vale para todo el TPV, con o sin modo restaurante — el modo
+    // solo cambia lo que se VE (pestaña Tandas), no lo que se envía.
+    const pendientes = pendingLines(this.cart);
+    const payload = buildFirePayload(orderId, this.tableLabel, pendientes, nextRoundNo(this.cart));
     if (!payload) return;
     try {
       await erplora().command('sales.order.fire', payload as unknown as Record<string, unknown>);
       // Éxito → canal de AVISO del shell (toast verde). El hueco rojo es SOLO para fallos: decía
       // que algo había ido bien con la pinta de algo que había ido mal.
       erplora().notify?.({ type: 'success', message: t('ui.firedToKitchen') });
+      // Las líneas recién marcadas (round_no/fired_at) se releen de la BD: es lo que bloquea su
+      // edición y lo que pinta la ronda como «enviada» en la pestaña Tandas.
+      if (this.orderId) this.cart = await loadOrderLines(erplora(), this.orderId);
     } catch {
       // Sin `kitchen` instalado el evento no lo escucha nadie: el comando de `sales` igual pasa.
       // Un fallo aquí NO debe bloquear la venta — la comanda se puede repetir.
@@ -1208,6 +1243,17 @@ export class ErpPosTouch extends LitElement {
             </ion-button>
           </ion-buttons>
         </ion-toolbar>
+        ${this.restaurantMode ? html`
+          <!-- MODO RESTAURANTE (ajuste restaurant_mode): Pedido = la cuenta a cobrar; Tandas =
+               las rondas a cocina. Segunda toolbar del header (patrón Ionic); el CSS fuerza
+               width:100% al segment — en mode ios se encoge solo (gotcha conocido). -->
+          <ion-toolbar class="cart-tabs">
+            <ion-segment value=${this.cartTab}
+                         @ionChange=${(e: CustomEvent) => { this.cartTab = (e.detail as { value: 'order' | 'courses' }).value ?? 'order'; }}>
+              <ion-segment-button value="order">${t('ui.tabOrder')}</ion-segment-button>
+              <ion-segment-button value="courses">${t('ui.tabCourses')}</ion-segment-button>
+            </ion-segment>
+          </ion-toolbar>` : nothing}
       </ion-header>
 
       ${this.parkedOpen
@@ -1239,31 +1285,9 @@ export class ErpPosTouch extends LitElement {
            el pie se mueven. Con divs a pelo, una comanda larga empujaba el botón de COBRAR fuera de
            la pantalla — en un TPV eso es no poder cobrar. -->
       <ion-content class="cart-body">
-        ${this.cart.length
-          ? html`<ion-list class="lines" lines="full">
-              ${this.cart.map((l) => html`<ion-item class=${l.line_id && this.splitSel.has(l.line_id) ? 'sel' : ''}
-                  button ?detail=${false} @click=${() => this.toggleSplit(l)}>
-                ${this.cart.length > 1 && l.line_id
-                  ? html`<ion-icon slot="start" class="selmark"
-                            name=${this.splitSel.has(l.line_id) ? 'checkmark-circle' : 'ellipse-outline'}
-                            color=${this.splitSel.has(l.line_id) ? 'primary' : 'medium'}></ion-icon>`
-                  : nothing}
-                <ion-label>
-                  <h3>${l.name}${l.is_gift ? html` <ion-badge color="success">${t('ui.giftBadge')}</ion-badge>` : nothing}</h3>
-                  <p>${priceLabel(this.money(l.price), l.unit_code)}${l.is_gift && l.gift_reason ? html` · ${l.gift_reason}` : nothing}</p>
-                </ion-label>
-                <div slot="end" class="lineend">
-                  <span class="lt" style=${l.is_gift ? 'text-decoration:line-through;opacity:.55' : ''}>${this.money(l.price * l.qty)}</span>
-                  <ion-button fill="clear" size="small" title=${t('ui.giftAction')} @click=${() => this.toggleGift(l.id)}>
-                    <ion-icon name=${l.is_gift ? 'gift' : 'gift-outline'} slot="icon-only" color=${l.is_gift ? 'success' : 'medium'}></ion-icon>
-                  </ion-button>
-                  <ok-qty-stepper .value=${l.qty} .min=${0} .step=${this.stepOf(l)}
-                    @ok-change=${(e: CustomEvent) => this.setQtyAbs(l.id, (e.detail as { value: number }).value,
-                      e.currentTarget as HTMLElement & { value: number; updateComplete?: Promise<unknown> })}></ok-qty-stepper>
-                </div>
-              </ion-item>`)}
-            </ion-list>`
-          : html`<div class="empty">${t('ui.cartEmptyTouch')}</div>`}
+        ${this.restaurantMode && this.cartTab === 'courses'
+          ? this.renderCourses()
+          : this.renderOrderList()}
       </ion-content>
 
       <!-- El PIE. ion-footer es un pie de verdad: se queda abajo pase lo que pase. -->
@@ -1314,6 +1338,95 @@ export class ErpPosTouch extends LitElement {
           </div>
         </div>
       </ion-footer>`;
+  }
+
+  /** Modo restaurante activo (ajuste `restaurant_mode`): añade el segment Pedido/Tandas. */
+  private get restaurantMode(): boolean {
+    return this.settings.restaurant_mode === 1;
+  }
+
+  /** La pestaña PEDIDO (y el carrito plano sin modo restaurante): la cuenta a cobrar. */
+  private renderOrderList() {
+    return this.cart.length
+      ? html`<ion-list class="lines" lines="full">
+          ${this.cart.map((l) => this.renderLine(l))}
+        </ion-list>`
+      : html`<div class="empty">${t('ui.cartEmptyTouch')}</div>`;
+  }
+
+  /** Una línea de la cuenta. BLOQUEADA si ya salió a cocina (`fired_at`, tandas 2026-07-19): la
+   *  comida está en fuego — ni stepper ni invitación (el SQL también lo impone); en modo
+   *  restaurante lleva su chip de tanda (T1, T2…) y la llamita de «enviada». */
+  private renderLine(l: CartLine) {
+    const locked = isLineLocked(l);
+    return html`<ion-item class=${l.line_id && this.splitSel.has(l.line_id) ? 'sel' : ''}
+        button ?detail=${false} @click=${() => this.toggleSplit(l)}>
+      ${this.cart.length > 1 && l.line_id
+        ? html`<ion-icon slot="start" class="selmark"
+                  name=${this.splitSel.has(l.line_id) ? 'checkmark-circle' : 'ellipse-outline'}
+                  color=${this.splitSel.has(l.line_id) ? 'primary' : 'medium'}></ion-icon>`
+        : nothing}
+      <ion-label>
+        <h3>${l.name}${this.restaurantMode && l.round_no
+            ? html` <span class="rchip">T${l.round_no}</span>` : nothing}${locked
+            ? html` <ion-icon class="rflame" name="flame" color="warning"></ion-icon>` : nothing}${l.is_gift
+            ? html` <ion-badge color="success">${t('ui.giftBadge')}</ion-badge>` : nothing}</h3>
+        <p>${priceLabel(this.money(l.price), l.unit_code)}${l.is_gift && l.gift_reason ? html` · ${l.gift_reason}` : nothing}</p>
+      </ion-label>
+      <div slot="end" class="lineend">
+        <span class="lt" style=${l.is_gift ? 'text-decoration:line-through;opacity:.55' : ''}>${this.money(l.price * l.qty)}</span>
+        ${locked
+          ? html`<span class="lqty">×${formatQuantity(toMicro(l.qty))}</span>`
+          : html`
+            <ion-button fill="clear" size="small" title=${t('ui.giftAction')} @click=${() => this.toggleGift(l.id)}>
+              <ion-icon name=${l.is_gift ? 'gift' : 'gift-outline'} slot="icon-only" color=${l.is_gift ? 'success' : 'medium'}></ion-icon>
+            </ion-button>
+            <ok-qty-stepper .value=${l.qty} .min=${0} .step=${this.stepOf(l)}
+              @ok-change=${(e: CustomEvent) => this.setQtyAbs(l.id, (e.detail as { value: number }).value,
+                e.currentTarget as HTMLElement & { value: number; updateComplete?: Promise<unknown> })}></ok-qty-stepper>`}
+      </div>
+    </ion-item>`;
+  }
+
+  /** La pestaña TANDAS: las rondas enviadas (solo-lectura, con su hora) y la EN CURSO editable
+   *  con su CTA de envío. El CTA solo existe si cocina está (el slot del footer tiene filler):
+   *  sin cocina, las tandas no tienen destino. */
+  private renderCourses() {
+    const grupos = groupByRound(this.cart);
+    return html`<div class="courses">
+      ${grupos.map((g) => g.round_no >= 1
+        ? html`
+          <div class="course fired">
+            <div class="course-h">
+              <ion-icon name="flame" color="warning"></ion-icon>
+              <span class="cname">${t('ui.course', { n: String(g.round_no) })}</span>
+              <span class="ctime">${t('ui.courseSentAt', { time: (g.fired_at ?? '').replace('T', ' ').slice(11, 16) })}</span>
+            </div>
+            ${g.lines.map((l) => html`<div class="crow">
+              <span class="cqty">${formatQuantity(toMicro(l.qty))}×</span>
+              <span class="cprod">${l.name}${l.is_gift ? html` <ion-badge color="success">${t('ui.giftBadge')}</ion-badge>` : nothing}</span>
+              <span class="ctotal">${this.money(l.price * l.qty)}</span>
+            </div>`)}
+          </div>`
+        : html`
+          <div class="course current">
+            <div class="course-h">
+              <ion-icon name="create-outline" color="primary"></ion-icon>
+              <span class="cname">${t('ui.courseInProgress')}</span>
+            </div>
+            ${g.lines.length
+              ? html`<ion-list class="lines" lines="full">${g.lines.map((l) => this.renderLine(l))}</ion-list>`
+              : html`<div class="empty">${t('ui.courseEmptyHint')}</div>`}
+            ${g.lines.length && this.actionFillers.length
+              ? html`
+                <ion-button class="send-round" expand="block"
+                            @click=${() => void this.fireToKitchen()}>
+                  <ion-icon slot="start" name="flame-outline"></ion-icon>
+                  ${t('ui.sendCourse', { n: String(g.lines.length) })}
+                </ion-button>`
+              : nothing}
+          </div>`)}
+    </div>`;
   }
 
   render() {
