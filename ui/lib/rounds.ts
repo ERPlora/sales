@@ -35,8 +35,10 @@ export function nextRoundNo(lines: CartLine[]): number {
 }
 
 /**
- * Las líneas agrupadas por ronda: las DISPARADAS en orden (1, 2, …) y la EN CURSO al final —
- * SIEMPRE presente aunque esté vacía, porque es el destino de lo que se toque ahora.
+ * Las líneas agrupadas para la vista única (sketch Ioan 2026-07-19): PENDIENTE DE ENVIAR
+ * primero — SIEMPRE presente aunque esté vacía, porque es donde caen los productos y donde vive
+ * el CTA de enviar — y después las comandas enviadas, la MÁS RECIENTE arriba (la que el
+ * camarero consulta; la primera del servicio ya está servida).
  */
 export function groupByRound(lines: CartLine[]): RoundGroup[] {
   const fired = new Map<number, RoundGroup>();
@@ -48,7 +50,5 @@ export function groupByRound(lines: CartLine[]): RoundGroup[] {
     if (!g) { g = { round_no: n, fired_at: l.fired_at, lines: [] }; fired.set(n, g); }
     g.lines.push(l);
   }
-  const out = [...fired.values()].sort((a, b) => a.round_no - b.round_no);
-  out.push(current);
-  return out;
+  return [current, ...[...fired.values()].sort((a, b) => b.round_no - a.round_no)];
 }

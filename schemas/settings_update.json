@@ -48,8 +48,8 @@
     "restaurant_mode": {
       "type": "boolean",
       "default": false,
-      "title": "Restaurant mode (courses)",
-      "description": "Adds a Courses tab to the cart to send rounds to the kitchen."
+      "title": "Modo restaurante (comandas)",
+      "description": "Muestra lo pendiente de enviar y las comandas enviadas en el carrito."
     },
     "default_tax_included": {
       "type": "boolean",

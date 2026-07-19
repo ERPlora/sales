@@ -161,16 +161,16 @@
     "cancel": "Cancelar",
     "deleteCheck": "Eliminar cuenta",
     "deleteCheckConfirm": "Toca otra vez para eliminar — anula la cuenta",
-    "tabOrder": "Pedido",
-    "tabCourses": "Tandas",
-    "course": "Tanda {n}",
-    "courseInProgress": "En curso",
-    "courseSentAt": "Enviada {time}",
-    "sendCourse": "Enviar tanda · {n} artículos",
-    "courseEmptyHint": "Toca un producto para añadirlo a esta tanda.",
-    "restaurantMode": "Modo restaurante (tandas)",
-    "restaurantModeHint": "Añade la pestaña Tandas al carrito para enviar rondas a cocina.",
-    "qtyOffGrid": "La cantidad no encaja con el escalón del producto"
+    "course": "Comanda {n}",
+    "courseInProgress": "Pendiente de enviar",
+    "sendCourse": "Enviar comanda · {n} artículos",
+    "courseEmptyHint": "Toca un producto para añadirlo a la comanda.",
+    "restaurantMode": "Modo restaurante (comandas)",
+    "restaurantModeHint": "Muestra lo pendiente de enviar y las comandas enviadas en el carrito.",
+    "qtyOffGrid": "La cantidad no encaja con el escalón del producto",
+    "courseSent": "Enviada",
+    "sendCourseOne": "Enviar comanda · 1 artículo",
+    "leaveAtTable": "Dejar en la mesa"
   },
   "widgets": {
     "sales.today": {

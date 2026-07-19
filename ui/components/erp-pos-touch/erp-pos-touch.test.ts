@@ -494,14 +494,14 @@ describe('avisos de éxito: van por notify(), no por el hueco rojo de error', ()
   });
 });
 
-// ── MODO RESTAURANTE: segment Pedido/Tandas en el carrito (decisión Ioan 2026-07-19) ──────────
-// El vertical es un FLAG, no otra pantalla (patrón Odoo «Is a Bar/Restaurant»): el ajuste
-// `restaurant_mode` añade al carrito un segment de dos pestañas — **Pedido** (la lista de
-// siempre, el total a cobrar) y **Tandas** (las rondas: lo ya enviado a cocina en solo-lectura
-// con su hora, y la ronda EN CURSO editable con su CTA de envío). Con el flag apagado, el TPV de
-// tienda/peluquería queda EXACTAMENTE igual que hoy. La pertenencia a la ronda vive en la línea
-// (`round_no`/`fired_at`, migración 016) y disparar manda SOLO lo pendiente.
-describe('modo restaurante: pestañas Pedido/Tandas', () => {
+// ── MODO RESTAURANTE: VISTA ÚNICA (debate con Ioan 2026-07-19, su sketch) ─────────────────────
+// Sin pestañas: el carrito de restaurante muestra TODO de una vez, como Toast/Lightspeed —
+// **PENDIENTE DE ENVIAR** arriba (editable, con su CTA «Enviar comanda · N») y debajo las
+// **COMANDAS** enviadas, la más reciente primero, en solo-lectura con su hora y estado. El
+// vertical sigue siendo un FLAG (`restaurant_mode`, patrón Odoo): apagado, el TPV de
+// tienda/peluquería queda EXACTAMENTE igual que hoy (carrito plano). La pertenencia vive en la
+// línea (`round_no`/`fired_at`, migración 016) y enviar manda SOLO lo pendiente.
+describe('modo restaurante: vista única Pendiente de enviar + Comandas', () => {
   let comandos: { name: string; payload: Record<string, unknown> }[];
 
   const conAjustes = (restaurantMode: number) => {
@@ -527,55 +527,70 @@ describe('modo restaurante: pestañas Pedido/Tandas', () => {
     id: 'p9', name: 'Caña', price: 250, qty: 2, line_id: 'l9',
     round_no: 1, fired_at: '2026-07-19T14:02:00+00:00',
   };
+  const disparada2 = {
+    id: 'p8', name: 'Croquetas', price: 700, qty: 1, line_id: 'l8',
+    round_no: 2, fired_at: '2026-07-19T14:25:00+00:00',
+  };
   const pendiente = { id: 'p1', name: 'Entrecot', price: 2500, qty: 1, line_id: 'l1' };
 
-  it('el segment Pedido/Tandas solo existe con restaurant_mode=1', async () => {
+  it('con el flag: Pendiente de enviar ARRIBA y las comandas debajo, la más reciente primero', async () => {
     const el = await montarCarrito();
-    expect(el.shadowRoot!.querySelector('.cart-tabs ion-segment'),
-      'con el flag, el carrito gana sus dos pestañas').toBeTruthy();
+    const pos = el as unknown as { cart: unknown[]; updateComplete: Promise<unknown> };
+    pos.cart = [disparada, disparada2, pendiente];
+    await pos.updateComplete;
 
-    conAjustes(0);
-    const el2 = await montarCarrito();
-    expect(el2.shadowRoot!.querySelector('.cart-tabs'),
-      'sin el flag (tienda/peluquería), el carrito queda plano como hoy').toBeFalsy();
+    const secciones = [...el.shadowRoot!.querySelectorAll('.course')];
+    expect(secciones[0]?.classList.contains('current'),
+      'lo pendiente va arriba: es donde trabaja el camarero').toBe(true);
+    const cabeceras = secciones.slice(1).map((s) => s.querySelector('.course-h')?.textContent ?? '');
+    expect(cabeceras[0], 'la comanda más reciente primero').toContain('14:25');
+    expect(cabeceras[1]).toContain('14:02');
   });
 
-  it('en Tandas, lo enviado es SOLO LECTURA (con su hora) y la ronda en curso se edita', async () => {
+  it('sin el flag (tienda/peluquería), el carrito queda plano como hoy', async () => {
+    conAjustes(0);
     const el = await montarCarrito();
-    const pos = el as unknown as { cart: unknown[]; cartTab: string; updateComplete: Promise<unknown> };
+    const pos = el as unknown as { cart: unknown[]; updateComplete: Promise<unknown> };
+    pos.cart = [pendiente];
+    await pos.updateComplete;
+    expect(el.shadowRoot!.querySelector('.course'), 'sin secciones de comanda').toBeFalsy();
+    expect(el.shadowRoot!.querySelector('ion-list.lines'), 'la lista plana de siempre').toBeTruthy();
+  });
+
+  it('lo enviado es SOLO LECTURA (con su hora) y lo pendiente se edita', async () => {
+    const el = await montarCarrito();
+    const pos = el as unknown as { cart: unknown[]; updateComplete: Promise<unknown> };
     pos.cart = [disparada, pendiente];
-    pos.cartTab = 'courses';
     await pos.updateComplete;
 
     const enviadas = el.shadowRoot!.querySelector('.course.fired')!;
-    expect(enviadas, 'la ronda enviada se agrupa con su cabecera').toBeTruthy();
+    expect(enviadas, 'la comanda enviada se agrupa con su cabecera').toBeTruthy();
     expect(enviadas.textContent, 'la cabecera lleva la hora del envío').toContain('14:02');
     expect(enviadas.querySelector('ok-qty-stepper'), 'lo que está en fuego no se edita').toBeFalsy();
 
-    const enCurso = el.shadowRoot!.querySelector('.course.current')!;
-    expect(enCurso, 'la ronda en curso existe').toBeTruthy();
-    expect(enCurso.querySelector('ok-qty-stepper'), 'lo pendiente sí se edita').toBeTruthy();
+    const pendienteSec = el.shadowRoot!.querySelector('.course.current')!;
+    expect(pendienteSec, 'la sección Pendiente de enviar existe').toBeTruthy();
+    expect(pendienteSec.querySelector('ok-qty-stepper'), 'lo pendiente sí se edita').toBeTruthy();
   });
 
-  it('enviar la tanda dispara SOLO las líneas pendientes, con su round_no local', async () => {
+  it('«Enviar comanda» dispara SOLO las líneas pendientes, con su número local', async () => {
     const el = await montarCarrito();
     const pos = el as unknown as {
-      cart: unknown[]; cartTab: string; orderId?: string; updateComplete: Promise<unknown>;
+      cart: unknown[]; orderId?: string; updateComplete: Promise<unknown>;
     };
     pos.cart = [disparada, pendiente];
     pos.orderId = 'o1';
-    pos.cartTab = 'courses';
     await pos.updateComplete;
 
     (el.shadowRoot!.querySelector('.course.current ion-button.send-round') as HTMLElement).click();
     await new Promise((r) => setTimeout(r, 0));
 
     const fire = comandos.find((c) => c.name === 'sales.order.fire');
-    expect(fire, 'el CTA de la tanda dispara el comando del host').toBeTruthy();
+    expect(fire, 'el CTA dispara el comando del host').toBeTruthy();
     const items = fire!.payload.items as Array<{ product_name: string }>;
     expect(items.map((i) => i.product_name), 'SOLO lo pendiente — nada de reenviar la caña ya servida')
       .toEqual(['Entrecot']);
-    expect(fire!.payload.round_no, 'la siguiente ronda local tras la 1').toBe(2);
+    expect(fire!.payload.round_no, 'la siguiente comanda local tras la 1').toBe(2);
   });
 });
 
@@ -682,11 +697,13 @@ describe('cuentas abiertas: aparcar con nombre, recuperar sin perder nada', () =
   let comandos: { name: string; payload: Record<string, unknown> }[];
   let avisos: { type: string; message: string }[];
   let parqueados: number;
+  let soltados: number;
 
   beforeEach(() => {
     comandos = [];
     avisos = [];
     parqueados = 0;
+    soltados = 0;
     const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
     sdk.queryAll = async (name: string) =>
       (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1 }] : []);
@@ -704,9 +721,10 @@ describe('cuentas abiertas: aparcar con nombre, recuperar sin perder nada', () =
     el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
     await (el as unknown as { queue: <T>(t: () => Promise<T>) => Promise<T> }).queue(async () => undefined);
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
-    // Cuenta los avisos de «se aparca» que reciben los fillers (soltar la mesa es cosa de tables).
+    // Cuenta lo que reciben los fillers: «se aparca» (tables suelta la mesa) vs «se suelta de
+    // PANTALLA» (erp:order-detached: la sesión no se toca, la mesa sigue ocupada).
     (el as unknown as { assignFillers: Array<{ component: string; el: HTMLElement }> }).assignFillers
-      .push({ component: 'erp-fake-mesa', el: (() => { const d = document.createElement('div'); d.addEventListener('erp:order-parked', () => { parqueados += 1; }); return d; })() });
+      .push({ component: 'erp-fake-mesa', el: (() => { const d = document.createElement('div'); d.addEventListener('erp:order-parked', () => { parqueados += 1; }); d.addEventListener('erp:order-detached', () => { soltados += 1; }); return d; })() });
     return el;
   }
 
@@ -743,7 +761,7 @@ describe('cuentas abiertas: aparcar con nombre, recuperar sin perder nada', () =
     expect(comandos.some((c) => c.name === 'sales.order.void'), 'aparcar JAMÁS anula').toBe(false);
   });
 
-  it('aparcar CON mesa no pregunta: el nombre es la mesa (una pulsación)', async () => {
+  it('con mesa: «Dejar en la mesa» — sin diálogo, la mesa NO se suelta (la cuenta vive allí)', async () => {
     const el = await conCafe();
     await asignarMesa(el);
     await (el as unknown as { requestPark(): Promise<void> }).requestPark();
@@ -751,9 +769,33 @@ describe('cuentas abiertas: aparcar con nombre, recuperar sin perder nada', () =
 
     expect(el.shadowRoot!.querySelector('dialog.park-dialog'), 'con mesa no hay diálogo').toBeFalsy();
     const etiqueta = comandos.find((c) => c.name === 'sales.order.set_label');
-    expect(etiqueta!.payload).toMatchObject({ order_id: 'o1', label: 'Mesa 2' });
-    expect(parqueados, 'la mesa se suelta (erp:order-parked a los fillers)').toBeGreaterThan(0);
+    expect(etiqueta!.payload, 'la cuenta queda etiquetada con su mesa').toMatchObject({ order_id: 'o1', label: 'Mesa 2' });
+    expect(parqueados, 'JAMÁS se aparca la sesión: la mesa sigue ocupada con su cuenta').toBe(0);
+    expect(soltados, 'el filler solo suelta la PANTALLA (erp:order-detached)').toBeGreaterThan(0);
+    expect((el as unknown as { cart: unknown[] }).cart, 'la pantalla queda libre').toHaveLength(0);
+    expect(avisos.some((a) => a.message.includes('ui.leftAtTable')), 'se avisa dónde queda').toBe(true);
     expect(comandos.some((c) => c.name === 'sales.order.void')).toBe(false);
+  });
+
+  it('quitar la mesa (X del chip) con carrito: pide NOMBRE y aparca — sin diálogo de eliminar', async () => {
+    // La X = «retirar la asignación de mesa» (el filler ya aparcó SU sesión): la cuenta pasa a
+    // aparcada con nombre. Pedirlo evita cuentas etiquetadas «Mesa 4» cuya mesa quedó libre.
+    const el = await conCafe();
+    await asignarMesa(el);
+    el.dispatchEvent(new CustomEvent('erp:order-context', {
+      detail: { table_id: null }, bubbles: true, composed: true,
+    }));
+    await new Promise((r) => setTimeout(r, 0));
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    const dialogo = el.shadowRoot!.querySelector('dialog.park-dialog');
+    expect(dialogo, 'quitar la mesa pide el nombre del aparcado').toBeTruthy();
+    expect(el.shadowRoot!.querySelector('dialog.dirty-dialog'), 'no es un ¿aparcar o eliminar?').toBeFalsy();
+    (dialogo!.querySelector('ion-button.park-confirm') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(comandos.some((c) => c.name === 'sales.order.set_label'), 'la aparcada queda con nombre').toBe(true);
+    expect(comandos.some((c) => c.name === 'sales.order.void'), 'aparcar JAMÁS anula').toBe(false);
   });
 
   it('recuperar con carrito sucio SIN mesa pregunta: eliminar anula, aparcar no', async () => {

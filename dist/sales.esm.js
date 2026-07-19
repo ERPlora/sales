@@ -2903,16 +2903,16 @@ var es_default = {
     cancel: "Cancelar",
     deleteCheck: "Eliminar cuenta",
     deleteCheckConfirm: "Toca otra vez para eliminar \u2014 anula la cuenta",
-    tabOrder: "Pedido",
-    tabCourses: "Tandas",
-    course: "Tanda {n}",
-    courseInProgress: "En curso",
-    courseSentAt: "Enviada {time}",
-    sendCourse: "Enviar tanda \xB7 {n} art\xEDculos",
-    courseEmptyHint: "Toca un producto para a\xF1adirlo a esta tanda.",
-    restaurantMode: "Modo restaurante (tandas)",
-    restaurantModeHint: "A\xF1ade la pesta\xF1a Tandas al carrito para enviar rondas a cocina.",
-    qtyOffGrid: "La cantidad no encaja con el escal\xF3n del producto"
+    course: "Comanda {n}",
+    courseInProgress: "Pendiente de enviar",
+    sendCourse: "Enviar comanda \xB7 {n} art\xEDculos",
+    courseEmptyHint: "Toca un producto para a\xF1adirlo a la comanda.",
+    restaurantMode: "Modo restaurante (comandas)",
+    restaurantModeHint: "Muestra lo pendiente de enviar y las comandas enviadas en el carrito.",
+    qtyOffGrid: "La cantidad no encaja con el escal\xF3n del producto",
+    courseSent: "Enviada",
+    sendCourseOne: "Enviar comanda \xB7 1 art\xEDculo",
+    leaveAtTable: "Dejar en la mesa"
   },
   widgets: {
     "sales.today": {
@@ -3097,15 +3097,15 @@ var en_default = {
     cancel: "Cancel",
     deleteCheck: "Delete check",
     deleteCheckConfirm: "Tap again to delete \u2014 this voids the check",
-    tabOrder: "Order",
-    tabCourses: "Courses",
-    course: "Course {n}",
-    courseInProgress: "In progress",
-    courseSentAt: "Sent {time}",
-    sendCourse: "Send course \xB7 {n} items",
-    courseEmptyHint: "Tap a product to add it to this course.",
-    restaurantMode: "Restaurant mode (courses)",
-    restaurantModeHint: "Adds a Courses tab to the cart to send rounds to the kitchen."
+    course: "Order ticket {n}",
+    courseInProgress: "Unsent",
+    sendCourse: "Send order \xB7 {n} items",
+    courseEmptyHint: "Tap a product to add it to the order ticket.",
+    restaurantMode: "Restaurant mode (order tickets)",
+    restaurantModeHint: "Shows unsent items and sent order tickets in the cart.",
+    courseSent: "Sent",
+    sendCourseOne: "Send order \xB7 1 item",
+    leaveAtTable: "Leave on the table"
   }
 };
 
@@ -3392,9 +3392,7 @@ function groupByRound(lines) {
     }
     g3.lines.push(l3);
   }
-  const out = [...fired.values()].sort((a3, b3) => a3.round_no - b3.round_no);
-  out.push(current);
-  return out;
+  return [current, ...[...fired.values()].sort((a3, b3) => b3.round_no - a3.round_no)];
 }
 
 // ui/lib/fire-order.ts
@@ -4415,7 +4413,6 @@ var ErpPosTouch = class extends i3 {
     this.parkName = "";
     this.dirtyOpen = false;
     this.dirtyAllowCancel = false;
-    this.cartTab = "order";
     this.printOnCharge = true;
     this.tableLabel = "";
     this.customerName = "";
@@ -4456,9 +4453,19 @@ var ErpPosTouch = class extends i3 {
         else await this.parkWith(defaultParkLabel("", /* @__PURE__ */ new Date()));
       };
       if (accion === "clear" || accion === "park-then-clear") {
-        if (accion === "park-then-clear") await aparcarOEliminar();
+        const habiaMesa = !!this.tableId;
         this.tableId = void 0;
         this.tableLabel = "";
+        if (accion === "park-then-clear") {
+          if (habiaMesa) {
+            this.parkName = defaultParkLabel("", /* @__PURE__ */ new Date());
+            this.parkedOpen = false;
+            this.parkPromptOpen = true;
+          } else {
+            await aparcarOEliminar();
+          }
+          return;
+        }
         this.orderId = void 0;
         this.cart = [];
         return;
@@ -4688,33 +4695,38 @@ var ErpPosTouch = class extends i3 {
     .pm { color:var(--mut); font-size:.78rem; }
     .pdel { margin:0; }
 
-    /* Modo restaurante: segunda toolbar con el segment Pedido/Tandas. width:100% a la fuerza —
-       en mode ios el segment se ENCOGE (width:auto), gotcha conocido de los tabbar. */
-    .cart-tabs ion-segment { width:100%; margin-inline:0; }
-    /* Chip de tanda en la línea (T1, T2…) + llamita de «ya enviada». */
-    .rchip { display:inline-block; font-size:.62rem; font-weight:800; padding:.05rem .3rem;
-      border-radius:6px; background:var(--tile); border:1px solid var(--ion-border-color);
-      color:var(--mut); vertical-align:middle; }
-    .rflame { font-size:.85rem; vertical-align:middle; }
     .lqty { color:var(--mut); font-weight:700; }
-    /* Pestaña Tandas: grupos por ronda. La EN CURSO lleva el borde de acento (es el destino). */
+    /* VISTA ÚNICA de restaurante (sketch Ioan): PENDIENTE DE ENVIAR arriba (borde de acento —
+       es donde trabaja el camarero) y las COMANDAS enviadas debajo, la más reciente primero. */
     .courses { padding:.4rem .5rem .8rem; display:flex; flex-direction:column; gap:.6rem; }
     .course { border:1px solid var(--ion-border-color); border-radius:12px; overflow:hidden; }
     .course.current { border-color:var(--accent); }
     .course-h { display:flex; align-items:center; gap:.4rem; padding:.5rem .7rem;
-      font-weight:700; font-size:.9rem; background:var(--tile); }
-    .course-h .ctime { margin-left:auto; color:var(--mut); font-weight:400; font-size:.8rem; }
-    .crow { display:flex; align-items:center; gap:.5rem; padding:.4rem .7rem; font-size:.9rem; }
-    .crow .cqty { color:var(--mut); min-width:2.4rem; }
-    .crow .cprod { flex:1; }
-    .crow .ctotal { font-weight:700; }
+      font-weight:700; font-size:.82rem; text-transform:uppercase; letter-spacing:.04em;
+      background:var(--tile); }
+    .course-h .ctime { color:var(--mut); font-weight:400; letter-spacing:0; text-transform:none; }
+    .course-h .ccount { color:var(--mut); }
+    /* Estado de la comanda (ENVIADA; mañana PREPARANDO/LISTA/SERVIDA con los eventos de cocina). */
+    .course-h .cstate { margin-left:auto; font-size:.62rem; font-weight:800; padding:.1rem .45rem;
+      border-radius:999px; background:var(--ion-color-warning,#f5a623); color:#1c1b18; }
     .course .send-round { margin:.5rem .6rem .6rem; }
 
-    /* Diálogos nativos (top layer): aparcar-con-nombre y carrito sucio. */
+    /* Diálogos nativos (top layer): aparcar-con-nombre y carrito sucio. En móvil/tablet toman
+       ASPECTO de sheet (suben desde abajo, asa, esquinas solo arriba — pregunta de Ioan
+       2026-07-19): mismo <dialog> nativo, que ion-action-sheet no aloja contenido rico y los
+       overlays de Ionic en shadow Lit se re-parentan al body (ADR-0028). */
     dialog.park-dialog, dialog.dirty-dialog { border:1px solid var(--ion-border-color); border-radius:14px;
       background:var(--panel); color:var(--tx); padding:1rem 1.1rem; width:min(94vw,24rem);
       box-shadow:0 18px 50px rgba(0,0,0,.35); }
     dialog.park-dialog::backdrop, dialog.dirty-dialog::backdrop { background:rgba(0,0,0,.45); }
+    @media (max-width: 820px) {
+      dialog.park-dialog, dialog.dirty-dialog { width:100vw; max-width:100vw; margin:auto 0 0;
+        border-radius:18px 18px 0 0; border-bottom:none; padding-bottom:max(1rem, env(safe-area-inset-bottom)); }
+      dialog.park-dialog::before, dialog.dirty-dialog::before { content:''; display:block;
+        width:2.4rem; height:.3rem; border-radius:999px; background:var(--ion-border-color);
+        margin:0 auto .7rem; }
+      .dlg-actions ion-button { flex:1; }
+    }
     dialog h3 { margin:0 0 .5rem; font-size:1.05rem; }
     dialog p { margin:0 0 .8rem; color:var(--mut); }
     dialog.park-dialog input { width:100%; box-sizing:border-box; font-size:1rem; padding:.6rem .7rem;
@@ -4964,19 +4976,43 @@ var ErpPosTouch = class extends i3 {
     this.parkedOpen = false;
     this.parked = await listOpenChecks(erplora2());
   }
-  /** Punto de entrada de APARCAR (botón «Aparcar esta cuenta»). Con mesa no se pregunta nada: el
-   *  nombre ES la mesa (una pulsación). Sin mesa se pide un nombre, con la hora como default
-   *  (patrón Loyverse) pre-seleccionada para sobreescribirla de un toque. */
+  /** Punto de entrada del botón del desplegable. Con mesa es «DEJAR EN LA MESA» (la cuenta vive
+   *  allí — modelo Toast/Lightspeed, decisión Ioan 2026-07-19): se suelta solo la PANTALLA y la
+   *  mesa sigue ocupada con su cuenta. Sin mesa es APARCAR con nombre (default: la hora, patrón
+   *  Loyverse), pre-seleccionado para sobreescribirlo de un toque. */
   async requestPark() {
     if (!this.cart.length) return;
-    const mesa = this.tableLabel.trim();
-    if (mesa) {
-      await this.parkWith(mesa);
+    if (this.tableLabel.trim()) {
+      await this.leaveOnTable();
       return;
     }
     this.parkName = defaultParkLabel("", /* @__PURE__ */ new Date());
     this.parkedOpen = false;
     this.parkPromptOpen = true;
+  }
+  /** «Dejar en la mesa»: etiqueta la cuenta con su mesa, suelta la PANTALLA y avisa a los
+   *  fillers con `erp:order-detached` — que limpian su selección SIN tocar la sesión. La mesa
+   *  sigue ocupada; la cuenta se recupera tocándola o desde la lista. JAMÁS aparca ni anula. */
+  async leaveOnTable() {
+    const id = this.orderId;
+    const donde = this.tableLabel.trim();
+    if (id && donde) await erplora2().command("sales.order.set_label", { order_id: id, label: donde }).catch(() => void 0);
+    forgetCurrentCheck(localStorage);
+    this.orderId = void 0;
+    this.cart = [];
+    this.tableId = void 0;
+    this.tableLabel = "";
+    this.parkedOpen = false;
+    this.notifyOrderDetached();
+    erplora2().notify?.({ type: "success", message: t5("ui.leftAtTable", { label: donde }) });
+    this.parked = await listOpenChecks(erplora2());
+  }
+  /** Avisa a los fillers de que la cuenta se suelta DE PANTALLA: limpian su selección local y
+   *  nada más (la sesión de mesa no se toca — soltarla es `erp:order-parked`, otra cosa). */
+  notifyOrderDetached() {
+    for (const f3 of this.assignFillers) {
+      f3.el.dispatchEvent(new CustomEvent("erp:order-detached", { detail: {}, bubbles: false }));
+    }
   }
   /** Aparca la cuenta actual CON nombre: persiste la etiqueta y luego suelta la pantalla.
    *  Aparcar JAMÁS anula (`sales.order.void` solo sale de una decisión explícita de eliminar) —
@@ -5041,13 +5077,7 @@ var ErpPosTouch = class extends i3 {
     try {
       if (this.cart.length && this.orderId !== c5.id) {
         if (this.tableId) {
-          const donde = this.tableLabel;
-          if (this.orderId && donde) {
-            await erplora2().command("sales.order.set_label", { order_id: this.orderId, label: donde }).catch(() => void 0);
-          }
-          erplora2().notify?.({ type: "success", message: t5("ui.leftAtTable", { label: donde }) });
-          this.tableId = void 0;
-          this.tableLabel = "";
+          await this.leaveOnTable();
         } else {
           this.parkedOpen = false;
           const eleccion = await this.resolveDirtyCart(true);
@@ -5416,19 +5446,6 @@ var ErpPosTouch = class extends i3 {
             </ion-button>
           </ion-buttons>
         </ion-toolbar>
-        ${this.restaurantMode ? b2`
-          <!-- MODO RESTAURANTE (ajuste restaurant_mode): Pedido = la cuenta a cobrar; Tandas =
-               las rondas a cocina. Segunda toolbar del header (patrón Ionic); el CSS fuerza
-               width:100% al segment — en mode ios se encoge solo (gotcha conocido). -->
-          <ion-toolbar class="cart-tabs">
-            <ion-segment value=${this.cartTab}
-                         @ionChange=${(e7) => {
-      this.cartTab = e7.detail.value ?? "order";
-    }}>
-              <ion-segment-button value="order">${t5("ui.tabOrder")}</ion-segment-button>
-              <ion-segment-button value="courses">${t5("ui.tabCourses")}</ion-segment-button>
-            </ion-segment>
-          </ion-toolbar>` : A}
       </ion-header>
 
       ${this.parkedOpen ? b2`
@@ -5436,7 +5453,7 @@ var ErpPosTouch = class extends i3 {
       this.parkedOpen = false;
     }}></div>
           <div class="pdrop">
-            <ion-button size="small" expand="block" fill="outline" ?disabled=${!this.cart.length} @click=${() => void this.requestPark()}>${t5("ui.parkCurrentSale")}</ion-button>
+            <ion-button size="small" expand="block" fill="outline" ?disabled=${!this.cart.length} @click=${() => void this.requestPark()}>${this.tableLabel.trim() ? t5("ui.leaveAtTable") : t5("ui.parkCurrentSale")}</ion-button>
             <p class="hint">${t5("ui.parkedTickets")}</p>
             ${this.parked.map((oc) => b2`<div class="pitem">
               <!-- La FILA entera recupera (objetivo táctil grande); eliminar es el icono aparte,
@@ -5460,7 +5477,7 @@ var ErpPosTouch = class extends i3 {
            el pie se mueven. Con divs a pelo, una comanda larga empujaba el botón de COBRAR fuera de
            la pantalla — en un TPV eso es no poder cobrar. -->
       <ion-content class="cart-body">
-        ${this.restaurantMode && this.cartTab === "courses" ? this.renderCourses() : this.renderOrderList()}
+        ${this.restaurantMode ? this.renderRestaurantView() : this.renderOrderList()}
       </ion-content>
 
       <!-- El PIE. ion-footer es un pie de verdad: se queda abajo pase lo que pase. -->
@@ -5524,9 +5541,9 @@ var ErpPosTouch = class extends i3 {
           ${this.cart.map((l3) => this.renderLine(l3))}
         </ion-list>` : b2`<div class="empty">${t5("ui.cartEmptyTouch")}</div>`;
   }
-  /** Una línea de la cuenta. BLOQUEADA si ya salió a cocina (`fired_at`, tandas 2026-07-19): la
-   *  comida está en fuego — ni stepper ni invitación (el SQL también lo impone); en modo
-   *  restaurante lleva su chip de tanda (T1, T2…) y la llamita de «enviada». */
+  /** Una línea de la cuenta. BLOQUEADA si ya salió a cocina (`fired_at`): la comida está en
+   *  fuego — ni stepper ni invitación (el SQL también lo impone). Tocarla sigue marcándola para
+   *  el cobro por partes: enviada ≠ no cobrable. */
   renderLine(l3) {
     const locked = isLineLocked(l3);
     return b2`<ion-item class=${l3.line_id && this.splitSel.has(l3.line_id) ? "sel" : ""}
@@ -5535,7 +5552,7 @@ var ErpPosTouch = class extends i3 {
                   name=${this.splitSel.has(l3.line_id) ? "checkmark-circle" : "ellipse-outline"}
                   color=${this.splitSel.has(l3.line_id) ? "primary" : "medium"}></ion-icon>` : A}
       <ion-label>
-        <h3>${l3.name}${this.restaurantMode && l3.round_no ? b2` <span class="rchip">T${l3.round_no}</span>` : A}${locked ? b2` <ion-icon class="rflame" name="flame" color="warning"></ion-icon>` : A}${l3.is_gift ? b2` <ion-badge color="success">${t5("ui.giftBadge")}</ion-badge>` : A}</h3>
+        <h3>${l3.name}${l3.is_gift ? b2` <ion-badge color="success">${t5("ui.giftBadge")}</ion-badge>` : A}</h3>
         <p>${priceLabel(this.money(l3.price), l3.unit_code)}${l3.is_gift && l3.gift_reason ? b2` · ${l3.gift_reason}` : A}</p>
       </ion-label>
       <div slot="end" class="lineend">
@@ -5553,38 +5570,37 @@ var ErpPosTouch = class extends i3 {
       </div>
     </ion-item>`;
   }
-  /** La pestaña TANDAS: las rondas enviadas (solo-lectura, con su hora) y la EN CURSO editable
-   *  con su CTA de envío. El CTA solo existe si cocina está (el slot del footer tiene filler):
-   *  sin cocina, las tandas no tienen destino. */
-  renderCourses() {
-    const grupos = groupByRound(this.cart);
+  /** VISTA ÚNICA de restaurante (sketch de Ioan, 2026-07-19; como Toast/Lightspeed, sin
+   *  pestañas): PENDIENTE DE ENVIAR arriba — editable, con su CTA «Enviar comanda» pegado a lo
+   *  que envía — y debajo las COMANDAS enviadas, la más reciente primero, en solo-lectura con
+   *  su hora y estado. El CTA solo existe si cocina está (el slot del footer tiene filler). */
+  renderRestaurantView() {
+    const [pendiente, ...enviadas] = groupByRound(this.cart);
     return b2`<div class="courses">
-      ${grupos.map((g3) => g3.round_no >= 1 ? b2`
-          <div class="course fired">
-            <div class="course-h">
-              <ion-icon name="flame" color="warning"></ion-icon>
-              <span class="cname">${t5("ui.course", { n: String(g3.round_no) })}</span>
-              <span class="ctime">${t5("ui.courseSentAt", { time: (g3.fired_at ?? "").replace("T", " ").slice(11, 16) })}</span>
-            </div>
-            ${g3.lines.map((l3) => b2`<div class="crow">
-              <span class="cqty">${formatQuantity(toMicro(l3.qty))}×</span>
-              <span class="cprod">${l3.name}${l3.is_gift ? b2` <ion-badge color="success">${t5("ui.giftBadge")}</ion-badge>` : A}</span>
-              <span class="ctotal">${this.money(l3.price * l3.qty)}</span>
-            </div>`)}
-          </div>` : b2`
-          <div class="course current">
-            <div class="course-h">
-              <ion-icon name="create-outline" color="primary"></ion-icon>
-              <span class="cname">${t5("ui.courseInProgress")}</span>
-            </div>
-            ${g3.lines.length ? b2`<ion-list class="lines" lines="full">${g3.lines.map((l3) => this.renderLine(l3))}</ion-list>` : b2`<div class="empty">${t5("ui.courseEmptyHint")}</div>`}
-            ${g3.lines.length && this.actionFillers.length ? b2`
-                <ion-button class="send-round" expand="block"
-                            @click=${() => void this.fireToKitchen()}>
-                  <ion-icon slot="start" name="flame-outline"></ion-icon>
-                  ${t5("ui.sendCourse", { n: String(g3.lines.length) })}
-                </ion-button>` : A}
-          </div>`)}
+      <div class="course current">
+        <div class="course-h">
+          <ion-icon name="create-outline" color="primary"></ion-icon>
+          <span class="cname">${t5("ui.courseInProgress")}</span>
+          ${pendiente.lines.length ? b2`<span class="ccount">· ${pendiente.lines.length}</span>` : A}
+        </div>
+        ${pendiente.lines.length ? b2`<ion-list class="lines" lines="full">${pendiente.lines.map((l3) => this.renderLine(l3))}</ion-list>` : b2`<div class="empty">${t5("ui.courseEmptyHint")}</div>`}
+        ${pendiente.lines.length && this.actionFillers.length ? b2`
+            <ion-button class="send-round" expand="block"
+                        @click=${() => void this.fireToKitchen()}>
+              <ion-icon slot="start" name="flame-outline"></ion-icon>
+              ${pendiente.lines.length === 1 ? t5("ui.sendCourseOne") : t5("ui.sendCourse", { n: String(pendiente.lines.length) })}
+            </ion-button>` : A}
+      </div>
+      ${enviadas.map((g3) => b2`
+        <div class="course fired">
+          <div class="course-h">
+            <ion-icon name="flame" color="warning"></ion-icon>
+            <span class="cname">${t5("ui.course", { n: String(g3.round_no) })}</span>
+            <span class="ctime">· ${(g3.fired_at ?? "").replace("T", " ").slice(11, 16)}</span>
+            <span class="cstate">${t5("ui.courseSent")}</span>
+          </div>
+          <ion-list class="lines" lines="full">${g3.lines.map((l3) => this.renderLine(l3))}</ion-list>
+        </div>`)}
     </div>`;
   }
   render() {
@@ -5890,9 +5906,6 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "armedDelete", 2);
-__decorateClass([
-  r5()
-], ErpPosTouch.prototype, "cartTab", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "printOnCharge", 2);
