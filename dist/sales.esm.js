@@ -2888,6 +2888,9 @@ var es_default = {
     fireFailed: "No se pudo enviar a cocina",
     lineNotSaved: "No se pudo guardar ese art\xEDculo \u2014 vuelve a tocarlo",
     payingPart: "Cobrando {n} l\xEDnea(s) de {total}",
+    payExact: "Importe exacto",
+    payCardHint: "Cobra {amount} en el dat\xE1fono y confirma.",
+    chargeWithCard: "Cobrar {amount} con tarjeta",
     qtyOffGrid: "La cantidad no encaja con el escal\xF3n del producto"
   },
   widgets: {
@@ -3057,7 +3060,10 @@ var en_default = {
     fireFailed: "Couldn't send to kitchen",
     lineNotSaved: "Couldn't save that item \u2014 tap again",
     payingPart: "Paying {n} of {total}",
-    qtyOffGrid: "Quantity doesn't fit the product's step"
+    qtyOffGrid: "Quantity doesn't fit the product's step",
+    payExact: "Exact amount",
+    payCardHint: "Charge {amount} on the card terminal, then confirm.",
+    chargeWithCard: "Charge {amount} by card"
   }
 };
 
@@ -3488,6 +3494,18 @@ function needsTendered(method) {
   }
   return (method.type || "").trim().toLowerCase() === "cash";
 }
+function quickCashAmounts(totalCents) {
+  if (!totalCents || totalCents <= 0) return [];
+  const out = [totalCents];
+  const steps = totalCents % 100 === 0 ? [500, 1e3] : [100, 500, 1e3];
+  for (const step of steps) {
+    const prev = out[out.length - 1];
+    const v3 = (Math.floor(prev / step) + 1) * step;
+    out.push(v3);
+    if (out.length >= 4) break;
+  }
+  return out;
+}
 function enabledPayMethods(methods, policy = {}) {
   const allowed = (m4) => {
     const t7 = (m4.type || "").trim().toLowerCase();
@@ -3502,6 +3520,14 @@ function enabledPayMethods(methods, policy = {}) {
 var PAY_ICON_NAMES = [
   .../* @__PURE__ */ new Set([...Object.values(BY_TYPE), ...BY_NAME.map(([, i7]) => i7), PAY_ICON_FALLBACK])
 ];
+var SEED_NAME_TO_KEY = {
+  Cash: "ui.cash",
+  Card: "ui.card"
+};
+function payMethodDisplayName(method, t7) {
+  const key = SEED_NAME_TO_KEY[(method.name || "").trim()];
+  return key ? t7(key) : method.name || "";
+}
 function defaultPayMethod(methods) {
   return methods.find((m4) => (m4.type || "").trim().toLowerCase() === "cash") ?? methods.find((m4) => /efectiv|cash|met[\u00e1a]lico/i.test(m4.name || "")) ?? methods[0];
 }
@@ -4518,11 +4544,22 @@ var ErpPosTouch = class extends i3 {
     /* Etiqueta de sección: dice QUÉ estás eligiendo (antes dos segments iguales sin contexto). */
     .pay-lbl { margin:.9rem 0 .35rem; font-size:.75rem; font-weight:700; text-transform:uppercase;
       letter-spacing:.06em; color:var(--mut); }
-    .pay-methods { margin:.1rem 0 .55rem; --background:transparent; }
+    /* Selector de MÉTODO dentro del sheet (tender): botones grandes con icono + nombre, objetivo
+       táctil ≥56px. El elegido se marca por borde/acento Y por aria-pressed (no solo color). */
+    .pay-methods { display:grid; grid-template-columns:repeat(2,1fr); gap:.5rem; margin:.1rem 0 .55rem; }
+    .pm-btn { display:flex; align-items:center; justify-content:center; gap:.5rem; min-height:56px;
+      border-radius:12px; border:1px solid var(--ion-border-color); background:var(--tile);
+      color:var(--tx); font-weight:700; font-size:.95rem; cursor:pointer; }
+    .pm-btn ion-icon { font-size:1.3rem; }
+    .pm-btn[aria-pressed=true] { border-color:var(--accent); color:var(--accent);
+      box-shadow:inset 0 0 0 1px var(--accent); }
+    .pm-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     /* Logo de marca (Bizum): es un wordmark ANCHO, no un glifo cuadrado como los Ionicons, así que
-       se acota a la altura del icono y se deja crecer a lo ancho sin romper el segment. */
+       se acota a la altura del icono y se deja crecer a lo ancho sin romper el botón. */
     .pay-methods .brand { display:inline-flex; align-items:center; height:1.15rem; }
     .pay-methods .brand svg { height:100%; width:auto; max-width:4.5rem; display:block; }
+    /* Tarjeta: nada que teclear — el importe exacto y la pista del datáfono. */
+    .pay-hint { margin:.1rem 0 .4rem; color:var(--mut); font-size:.9rem; }
     /* Atajos de efectivo: el cajero pulsa en vez de teclear. */
     .quick { display:grid; grid-template-columns:repeat(4,1fr); gap:.4rem; margin:.7rem 0 .5rem; }
     .qbtn { padding:.55rem .2rem; border-radius:10px; border:1px solid var(--ion-border-color);
@@ -4981,8 +5018,11 @@ var ErpPosTouch = class extends i3 {
         keep_order_open: split.keep_order_open,
         tax_included: this.settings.default_tax_included !== 0,
         payment_method_id: this.payMethod?.id ?? null,
-        payment_method_name: this.payMethod?.name ?? "Efectivo",
-        amount_tendered: this.tenderedNum || this.total,
+        // El nombre viaja al tiquet: el de fábrica va traducido (seed canónico EN → i18n).
+        payment_method_name: this.payMethod ? payMethodDisplayName(this.payMethod, t5) : t5("ui.cash"),
+        // Sin entregado tecleado (tarjeta, importe justo) se cobra el PAYABLE: con split, caer al
+        // total inflaba lo entregado y el cambio del tiquet.
+        amount_tendered: this.tenderedNum || this.payable,
         channel: "pos",
         source_module: "pos",
         // ADR-0141: la venta nace de este PEDIDO. El servidor lo marca completado (open→completed)
@@ -5175,21 +5215,8 @@ var ErpPosTouch = class extends i3 {
             <ion-icon name="gift-outline"></ion-icon>
             <ion-icon name="ellipsis-horizontal-circle-outline"></ion-icon>
           </span>
-          ${this.payMethods.length > 1 ? b2`
-            <ion-segment class="pay-methods" value=${this.payMethod?.id ?? ""}
-                         @ionChange=${(e7) => {
-      const id = e7.detail.value;
-      this.payMethod = this.payMethods.find((m4) => m4.id === id) ?? this.payMethod;
-      if (!needsTendered(this.payMethod)) this.tendered = "";
-    }}>
-              ${this.payMethods.map((m4) => {
-      const marca = brandSvgFor(m4.type, m4.name);
-      return b2`
-                <ion-segment-button value=${m4.id} title=${m4.name} aria-label=${m4.name}>
-                  ${marca ? b2`<span class="brand">${o7(marca)}</span>` : b2`<ion-icon name=${payMethodIcon(m4.type, m4.name)}></ion-icon>`}
-                </ion-segment-button>`;
-    })}
-            </ion-segment>` : A}
+          <!-- El MÉTODO de pago ya no se elige aquí: vive DENTRO del sheet de cobro, como la
+               pantalla de tender de cualquier TPV (rediseño 2026-07-19). El footer solo acciona. -->
           <!-- Acciones SOLO-ICONO (ADR-0133): imprimir la CUENTA para llevarla a la mesa (no es un
                documento fiscal) y COBRAR (que sí emite el tiquet fiscal). El importe ya se ve
                grande arriba, así que el texto sobra; la etiqueta va en aria-label/title. -->
@@ -5264,14 +5291,46 @@ var ErpPosTouch = class extends i3 {
               </div>
               <div class="pay">
 
-                <!-- Entregado/cambio/teclado SOLO en efectivo: con tarjeta se cobra el total y no
-                     hay nada que teclear (lo decide requires_change, no un "si es efectivo"). -->
+                <!-- El MÉTODO se elige AQUÍ, como en la pantalla de tender de cualquier TPV:
+                     botones grandes con icono y NOMBRE (el dueño los renombra a su gusto, así que
+                     un icono mudo no basta). Solo se pinta con más de un método activo. -->
+                ${this.payMethods.length > 1 ? b2`
+                  <div class="pay-methods" role="group" aria-label=${t5("ui.paymentMethod")}>
+                    ${this.payMethods.map((m4) => {
+      const marca = brandSvgFor(m4.type, m4.name);
+      const nombre = payMethodDisplayName(m4, t5);
+      return b2`
+                      <button class="pm-btn" aria-pressed=${this.payMethod?.id === m4.id ? "true" : "false"}
+                              title=${nombre}
+                              @click=${() => {
+        this.payMethod = m4;
+        if (!needsTendered(m4)) this.tendered = "";
+      }}>
+                        ${marca ? b2`<span class="brand">${o7(marca)}</span>` : b2`<ion-icon name=${payMethodIcon(m4.type, m4.name)}></ion-icon>`}
+                        <span class="pm-name">${nombre}</span>
+                      </button>`;
+    })}
+                  </div>` : A}
+
+                <!-- Entregado/cambio/teclado SOLO en efectivo: con tarjeta se cobra el importe
+                     exacto y no hay nada que teclear (lo decide requires_change, no un "si es
+                     efectivo"). Los ATAJOS son el patrón Toast: el exacto y los redondeos por
+                     encima — el cajero toca en vez de teclear y el cambio sale solo. -->
                 ${needsTendered(this.payMethod) ? b2`
                     <div class="amt"><span>${t5("ui.tendered")}</span><span class="v">${this.money(this.tenderedNum)}</span></div>
                     ${this.change > 0 ? b2`<div class="amt big-change"><span>${t5("ui.change")}</span><span class="v">${this.money(this.change)}</span></div>` : A}
+                    <div class="quick">
+                      ${quickCashAmounts(this.payable).map((c5) => b2`
+                        <button class="qbtn" aria-pressed=${this.tenderedNum === c5 ? "true" : "false"}
+                                @click=${() => {
+      this.tendered = String(c5 / 100);
+    }}>${this.money(c5)}</button>`)}
+                    </div>
                     <div class="numpad">
                       ${["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "C"].map((k2) => b2`<button @click=${() => this.tap(k2)}>${k2}</button>`)}
-                    </div>` : A}
+                    </div>` : b2`
+                    <div class="amt pay-exact"><span>${t5("ui.payExact")}</span><span class="v">${this.money(this.payable)}</span></div>
+                    <p class="pay-hint">${t5("ui.payCardHint", { amount: this.money(this.payable) })}</p>`}
 
                 <!-- Imprimir deja de ser un botón gemelo del de cobrar (dos botones azules iguales
                      no dicen cuál hace qué): es una PREFERENCIA del cobro. -->
@@ -5287,10 +5346,11 @@ var ErpPosTouch = class extends i3 {
               </div>
               <div class="sheet-foot">
                 ${this.error ? b2`<p class="pay-err">${this.error}</p>` : A}
-                <!-- UNA acción, dice lo que hace y por cuánto, y no exige scroll para alcanzarla. -->
+                <!-- UNA acción, dice lo que hace y por cuánto, y no exige scroll para alcanzarla.
+                     El importe es el PAYABLE: con split decía «Cobrar 3,60 €» para cobrar 1,80 €. -->
                 <ion-button class="charge" expand="block" ?disabled=${this.busy}
                             @click=${() => this.confirm(this.printOnCharge)}>
-                  ${this.busy ? t5("ui.charging") : `${t5("ui.charge")} ${this.money(this.total)}`}
+                  ${this.busy ? t5("ui.charging") : needsTendered(this.payMethod) ? `${t5("ui.charge")} ${this.money(this.payable)}` : t5("ui.chargeWithCard", { amount: this.money(this.payable) })}
                 </ion-button>
               </div>
             </div>

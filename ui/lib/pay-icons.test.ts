@@ -140,3 +140,27 @@ describe('forma de pago por defecto', () => {
     expect(defaultPayMethod([{ id: '1', name: 'Tarjeta', type: 'card' }, { id: '2', name: 'Bizum', type: 'other' }])?.name).toBe('Tarjeta');
   });
 });
+
+import { payMethodDisplayName } from './pay-icons';
+
+// El SEED de fábrica siembra los nombres en inglés canónico ('Cash', 'Card' — ADR-0055, mismo
+// patrón que las unidades de inventory). Pero el nombre se VE: en los botones del cobro y en el
+// tiquet. El contrato: mientras la fila conserve su nombre de fábrica se muestra TRADUCIDO por
+// i18n (`ui.cash`/`ui.card`); en cuanto el dueño la renombra («BBVA TPV»), manda su texto tal cual.
+describe('nombre visible de la forma de pago (seed canónico → i18n)', () => {
+  const t = (key: string) => ({ 'ui.cash': 'Efectivo', 'ui.card': 'Tarjeta' }[key] ?? key);
+
+  it('las filas de fábrica se muestran traducidas', () => {
+    expect(payMethodDisplayName({ id: '1', name: 'Cash', type: 'cash' }, t)).toBe('Efectivo');
+    expect(payMethodDisplayName({ id: '2', name: 'Card', type: 'card' }, t)).toBe('Tarjeta');
+  });
+
+  it('una fila renombrada por el dueño manda: se muestra tal cual', () => {
+    expect(payMethodDisplayName({ id: '1', name: 'BBVA TPV', type: 'card' }, t)).toBe('BBVA TPV');
+    expect(payMethodDisplayName({ id: '2', name: 'Efectivo caja 2', type: 'cash' }, t)).toBe('Efectivo caja 2');
+  });
+
+  it('sin nombre no inventa: cadena vacía', () => {
+    expect(payMethodDisplayName({ id: '1', name: '', type: 'cash' }, t)).toBe('');
+  });
+});

@@ -146,6 +146,9 @@
     "fireFailed": "No se pudo enviar a cocina",
     "lineNotSaved": "No se pudo guardar ese artículo — vuelve a tocarlo",
     "payingPart": "Cobrando {n} línea(s) de {total}",
+    "payExact": "Importe exacto",
+    "payCardHint": "Cobra {amount} en el datáfono y confirma.",
+    "chargeWithCard": "Cobrar {amount} con tarjeta",
     "qtyOffGrid": "La cantidad no encaja con el escalón del producto"
   },
   "widgets": {

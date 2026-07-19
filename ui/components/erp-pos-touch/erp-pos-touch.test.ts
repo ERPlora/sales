@@ -493,3 +493,136 @@ describe('avisos de éxito: van por notify(), no por el hueco rojo de error', ()
     expect(avisos, 'un fallo no se anuncia como aviso de éxito').toHaveLength(0);
   });
 });
+
+// ── Sheet de cobro = pantalla de TENDER (rediseño TPV 2026-07-19) ─────────────────────────────
+// Todos los TPV del mercado (Loyverse, Square, Toast, Lightspeed…) cobran igual: UN botón Cobrar
+// que abre la pantalla de tender, y AHÍ se elige el método (efectivo/tarjeta), se teclea lo
+// entregado y se ve el cambio. Aquí el selector vivía FUERA, en un segment del footer del carrito
+// — con la BD sin métodos sembrados ni siquiera se pintaba, y el cobro caía a efectivo a secas:
+// «no hay pago con tarjeta». El contrato nuevo:
+//
+//   1. El selector de método vive DENTRO del sheet (botones grandes icono+NOMBRE, no un segment
+//      mudo); el footer del carrito ya no lo pinta.
+//   2. Efectivo (`requires_change=1`): atajos de entregado (`quickCashAmounts`, exacto primero)
+//      + numpad + cambio. Los atajos existían con tests y estaban SIN cablear (estilos huérfanos).
+//   3. Tarjeta (`requires_change=0`): ni numpad ni entregado — fila de importe exacto, pista del
+//      datáfono y CTA que dice que se cobra con tarjeta.
+//   4. El CTA y `amount_tendered` usan el PAYABLE (lo seleccionado en split), no el total: el
+//      botón decía «Cobrar 3,60 €» cuando ibas a cobrar 1,80 € de una línea marcada.
+describe('sheet de cobro (tender): método dentro, tarjeta sin numpad, atajos de efectivo', () => {
+  const METODOS = [
+    { id: 'pm-cash', name: 'Efectivo', type: 'cash', requires_change: 1, sort_order: 10 },
+    { id: 'pm-card', name: 'Tarjeta', type: 'card', requires_change: 0, sort_order: 20 },
+  ];
+  let comandos: { name: string; payload: Record<string, unknown> }[];
+
+  beforeEach(() => {
+    comandos = [];
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.query = async (name: string) => (name === 'sales.payment_methods' ? METODOS : []);
+    sdk.queryAll = async (name: string) =>
+      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1 }] : []);
+    sdk.command = async (name: string, payload: Record<string, unknown>) => {
+      comandos.push({ name, payload });
+      return { ok: true, new_ids: ['o1', 'l1'] };
+    };
+  });
+
+  /** Un carrito con un café y el sheet de cobro abierto. */
+  async function conCobroAbierto() {
+    const el = await montarCarrito();
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    await (el as unknown as { queue: <T>(t: () => Promise<T>) => Promise<T> }).queue(async () => undefined);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    (el as unknown as { openPay(): void }).openPay();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    return el;
+  }
+
+  it('el selector de método vive DENTRO del sheet, con nombre visible; el footer ya no lo pinta', async () => {
+    const el = await conCobroAbierto();
+
+    expect(el.shadowRoot!.querySelector('ion-footer .pay-methods'),
+      'el footer del carrito ya no elige el método').toBeFalsy();
+
+    const selector = el.shadowRoot!.querySelector('.sheet .pay-methods');
+    expect(selector, 'el sheet de cobro contiene el selector de método').toBeTruthy();
+    const nombres = [...selector!.querySelectorAll('button.pm-btn')].map((b) => b.textContent?.trim());
+    expect(nombres, 'cada método es un botón grande con su NOMBRE (no un icono mudo)')
+      .toEqual(['Efectivo', 'Tarjeta']);
+    // El elegido se anuncia también a la accesibilidad, no solo con color.
+    const activo = selector!.querySelector('button.pm-btn[aria-pressed="true"]');
+    expect(activo?.textContent?.trim(), 'por defecto manda efectivo (defaultPayMethod)').toBe('Efectivo');
+  });
+
+  it('efectivo: los atajos de entregado (quickCashAmounts) fijan lo entregado y el cambio sale solo', async () => {
+    const el = await conCobroAbierto();
+
+    const atajos = [...el.shadowRoot!.querySelectorAll('.sheet .quick button.qbtn')]
+      .map((b) => b.textContent?.trim());
+    expect(atajos, 'atajos para 1,80 €: exacto primero y los redondeos por encima')
+      .toEqual(['1.80 €', '2.00 €', '5.00 €', '10.00 €']);
+
+    // El camarero toca «2.00 €» en vez de teclear.
+    const dos = [...el.shadowRoot!.querySelectorAll<HTMLButtonElement>('.sheet .quick button.qbtn')]
+      .find((b) => b.textContent?.trim() === '2.00 €')!;
+    dos.click();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    const cambio = el.shadowRoot!.querySelector('.sheet .big-change .v')?.textContent?.trim();
+    expect(cambio, 'el cambio se calcula del atajo tocado').toBe('0.20 €');
+
+    await (el as unknown as { confirm(): Promise<void> }).confirm();
+    const venta = comandos.find((c) => c.name === 'sales.complete_sale')!;
+    expect(venta.payload.amount_tendered, 'lo entregado viaja en céntimos').toBe(200);
+    expect(venta.payload.payment_method_id).toBe('pm-cash');
+  });
+
+  it('tarjeta: sin numpad ni entregado — importe exacto, pista del datáfono y CTA propio', async () => {
+    const el = await conCobroAbierto();
+
+    const botonTarjeta = [...el.shadowRoot!.querySelectorAll<HTMLButtonElement>('.sheet button.pm-btn')]
+      .find((b) => b.textContent?.trim() === 'Tarjeta')!;
+    botonTarjeta.click();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    expect(el.shadowRoot!.querySelector('.sheet .numpad'), 'con tarjeta el numpad sobra').toBeFalsy();
+    expect(el.shadowRoot!.querySelector('.sheet .quick'), 'y los atajos de efectivo también').toBeFalsy();
+    // En su lugar: el importe exacto y la pista de qué hacer con el datáfono.
+    expect(el.shadowRoot!.querySelector('.sheet .pay-exact')?.textContent, 'fila de importe exacto')
+      .toContain('ui.payExact');
+    expect(el.shadowRoot!.querySelector('.sheet .pay-hint')?.textContent, 'pista del datáfono')
+      .toContain('ui.payCardHint');
+    expect(el.shadowRoot!.querySelector('.sheet-foot ion-button.charge')?.textContent,
+      'el CTA dice que se cobra con tarjeta').toContain('ui.chargeWithCard');
+
+    await (el as unknown as { confirm(): Promise<void> }).confirm();
+    const venta = comandos.find((c) => c.name === 'sales.complete_sale')!;
+    expect(venta.payload.payment_method_id).toBe('pm-card');
+    expect(venta.payload.amount_tendered, 'tarjeta = importe exacto (el payable), sin inventar entregado').toBe(180);
+  });
+
+  it('con split activo, el CTA y amount_tendered usan el PAYABLE, no el total', async () => {
+    const el = await conCobroAbierto();
+    // Dos líneas persistidas; el camarero marca solo la primera (cobro por partes, ADR-0146).
+    (el as unknown as { cart: unknown[] }).cart = [
+      { id: 'p1', name: 'Café solo', price: 180, qty: 1, line_id: 'l1' },
+      { id: 'p2', name: 'Tostada', price: 180, qty: 1, line_id: 'l2' },
+    ];
+    (el as unknown as { splitSel: Set<string> }).splitSel = new Set(['l1']);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    const cta = el.shadowRoot!.querySelector('.sheet-foot ion-button.charge')?.textContent ?? '';
+    expect(cta, 'el CTA cobra lo seleccionado (1,80 €), no la cuenta entera (3,60 €)').toContain('1.80 €');
+    expect(cta).not.toContain('3.60 €');
+
+    // Con tarjeta (importe exacto) el fallback de entregado también es el payable, no el total.
+    const botonTarjeta = [...el.shadowRoot!.querySelectorAll<HTMLButtonElement>('.sheet button.pm-btn')]
+      .find((b) => b.textContent?.trim() === 'Tarjeta')!;
+    botonTarjeta.click();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    await (el as unknown as { confirm(): Promise<void> }).confirm();
+    const venta = comandos.find((c) => c.name === 'sales.complete_sale')!;
+    expect(venta.payload.amount_tendered, 'split + tarjeta: se cobra el payable').toBe(180);
+  });
+});

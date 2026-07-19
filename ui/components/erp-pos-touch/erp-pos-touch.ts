@@ -14,7 +14,7 @@ import { forgetCurrentCheck, rememberCurrentCheck, resolveCurrentCheck } from '.
 import { brandSvgFor } from '../../lib/brand-icons.js';
 import { priceLabel } from '../../lib/price-label.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
-import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod } from '../../lib/pay-icons.js';
+import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod, quickCashAmounts, payMethodDisplayName } from '../../lib/pay-icons.js';
 import '@erplora/outfitkit/ok-qty-stepper';
 import '@erplora/outfitkit/ok-spotlight-search';
 import {
@@ -202,11 +202,22 @@ export class ErpPosTouch extends LitElement {
     /* Etiqueta de sección: dice QUÉ estás eligiendo (antes dos segments iguales sin contexto). */
     .pay-lbl { margin:.9rem 0 .35rem; font-size:.75rem; font-weight:700; text-transform:uppercase;
       letter-spacing:.06em; color:var(--mut); }
-    .pay-methods { margin:.1rem 0 .55rem; --background:transparent; }
+    /* Selector de MÉTODO dentro del sheet (tender): botones grandes con icono + nombre, objetivo
+       táctil ≥56px. El elegido se marca por borde/acento Y por aria-pressed (no solo color). */
+    .pay-methods { display:grid; grid-template-columns:repeat(2,1fr); gap:.5rem; margin:.1rem 0 .55rem; }
+    .pm-btn { display:flex; align-items:center; justify-content:center; gap:.5rem; min-height:56px;
+      border-radius:12px; border:1px solid var(--ion-border-color); background:var(--tile);
+      color:var(--tx); font-weight:700; font-size:.95rem; cursor:pointer; }
+    .pm-btn ion-icon { font-size:1.3rem; }
+    .pm-btn[aria-pressed=true] { border-color:var(--accent); color:var(--accent);
+      box-shadow:inset 0 0 0 1px var(--accent); }
+    .pm-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     /* Logo de marca (Bizum): es un wordmark ANCHO, no un glifo cuadrado como los Ionicons, así que
-       se acota a la altura del icono y se deja crecer a lo ancho sin romper el segment. */
+       se acota a la altura del icono y se deja crecer a lo ancho sin romper el botón. */
     .pay-methods .brand { display:inline-flex; align-items:center; height:1.15rem; }
     .pay-methods .brand svg { height:100%; width:auto; max-width:4.5rem; display:block; }
+    /* Tarjeta: nada que teclear — el importe exacto y la pista del datáfono. */
+    .pay-hint { margin:.1rem 0 .4rem; color:var(--mut); font-size:.9rem; }
     /* Atajos de efectivo: el cajero pulsa en vez de teclear. */
     .quick { display:grid; grid-template-columns:repeat(4,1fr); gap:.4rem; margin:.7rem 0 .5rem; }
     .qbtn { padding:.55rem .2rem; border-radius:10px; border:1px solid var(--ion-border-color);
@@ -892,8 +903,11 @@ export class ErpPosTouch extends LitElement {
         keep_order_open: split.keep_order_open,
         tax_included: this.settings.default_tax_included !== 0,
         payment_method_id: this.payMethod?.id ?? null,
-        payment_method_name: this.payMethod?.name ?? 'Efectivo',
-        amount_tendered: this.tenderedNum || this.total,
+        // El nombre viaja al tiquet: el de fábrica va traducido (seed canónico EN → i18n).
+        payment_method_name: this.payMethod ? payMethodDisplayName(this.payMethod, t) : t('ui.cash'),
+        // Sin entregado tecleado (tarjeta, importe justo) se cobra el PAYABLE: con split, caer al
+        // total inflaba lo entregado y el cambio del tiquet.
+        amount_tendered: this.tenderedNum || this.payable,
         channel: 'pos',
         source_module: 'pos',
         // ADR-0141: la venta nace de este PEDIDO. El servidor lo marca completado (open→completed)
@@ -1102,25 +1116,8 @@ export class ErpPosTouch extends LitElement {
             <ion-icon name="gift-outline"></ion-icon>
             <ion-icon name="ellipsis-horizontal-circle-outline"></ion-icon>
           </span>
-          ${this.payMethods.length > 1 ? html`
-            <ion-segment class="pay-methods" value=${this.payMethod?.id ?? ''}
-                         @ionChange=${(e: CustomEvent) => {
-                           const id = (e.detail as { value: string }).value;
-                           this.payMethod = this.payMethods.find((m) => m.id === id) ?? this.payMethod;
-                           if (!needsTendered(this.payMethod)) this.tendered = '';
-                         }}>
-              ${this.payMethods.map((m) => {
-                // Marcas que no existen en Iconify (Bizum) van INLINE desde ui/assets; el resto,
-                // su Ionicon. El SVG usa currentColor, así que se tiñe igual al seleccionarlo.
-                const marca = brandSvgFor(m.type, m.name);
-                return html`
-                <ion-segment-button value=${m.id} title=${m.name} aria-label=${m.name}>
-                  ${marca
-                    ? html`<span class="brand">${unsafeSVG(marca)}</span>`
-                    : html`<ion-icon name=${payMethodIcon(m.type, m.name)}></ion-icon>`}
-                </ion-segment-button>`;
-              })}
-            </ion-segment>` : nothing}
+          <!-- El MÉTODO de pago ya no se elige aquí: vive DENTRO del sheet de cobro, como la
+               pantalla de tender de cualquier TPV (rediseño 2026-07-19). El footer solo acciona. -->
           <!-- Acciones SOLO-ICONO (ADR-0133): imprimir la CUENTA para llevarla a la mesa (no es un
                documento fiscal) y COBRAR (que sí emite el tiquet fiscal). El importe ya se ve
                grande arriba, así que el texto sobra; la etiqueta va en aria-label/title. -->
@@ -1189,18 +1186,49 @@ export class ErpPosTouch extends LitElement {
               </div>
               <div class="pay">
 
-                <!-- Entregado/cambio/teclado SOLO en efectivo: con tarjeta se cobra el total y no
-                     hay nada que teclear (lo decide requires_change, no un "si es efectivo"). -->
+                <!-- El MÉTODO se elige AQUÍ, como en la pantalla de tender de cualquier TPV:
+                     botones grandes con icono y NOMBRE (el dueño los renombra a su gusto, así que
+                     un icono mudo no basta). Solo se pinta con más de un método activo. -->
+                ${this.payMethods.length > 1 ? html`
+                  <div class="pay-methods" role="group" aria-label=${t('ui.paymentMethod')}>
+                    ${this.payMethods.map((m) => {
+                      // Marcas que no existen en Iconify (Bizum) van INLINE desde ui/assets; el
+                      // resto, su Ionicon. currentColor tiñe igual el SVG al seleccionar.
+                      const marca = brandSvgFor(m.type, m.name);
+                      const nombre = payMethodDisplayName(m, t);
+                      return html`
+                      <button class="pm-btn" aria-pressed=${this.payMethod?.id === m.id ? 'true' : 'false'}
+                              title=${nombre}
+                              @click=${() => { this.payMethod = m; if (!needsTendered(m)) this.tendered = ''; }}>
+                        ${marca
+                          ? html`<span class="brand">${unsafeSVG(marca)}</span>`
+                          : html`<ion-icon name=${payMethodIcon(m.type, m.name)}></ion-icon>`}
+                        <span class="pm-name">${nombre}</span>
+                      </button>`;
+                    })}
+                  </div>` : nothing}
+
+                <!-- Entregado/cambio/teclado SOLO en efectivo: con tarjeta se cobra el importe
+                     exacto y no hay nada que teclear (lo decide requires_change, no un "si es
+                     efectivo"). Los ATAJOS son el patrón Toast: el exacto y los redondeos por
+                     encima — el cajero toca en vez de teclear y el cambio sale solo. -->
                 ${needsTendered(this.payMethod)
                   ? html`
                     <div class="amt"><span>${t('ui.tendered')}</span><span class="v">${this.money(this.tenderedNum)}</span></div>
                     ${this.change > 0
                       ? html`<div class="amt big-change"><span>${t('ui.change')}</span><span class="v">${this.money(this.change)}</span></div>`
                       : nothing}
+                    <div class="quick">
+                      ${quickCashAmounts(this.payable).map((c) => html`
+                        <button class="qbtn" aria-pressed=${this.tenderedNum === c ? 'true' : 'false'}
+                                @click=${() => { this.tendered = String(c / 100); }}>${this.money(c)}</button>`)}
+                    </div>
                     <div class="numpad">
                       ${['1','2','3','4','5','6','7','8','9','.','0','C'].map((k) => html`<button @click=${() => this.tap(k)}>${k}</button>`)}
                     </div>`
-                  : nothing}
+                  : html`
+                    <div class="amt pay-exact"><span>${t('ui.payExact')}</span><span class="v">${this.money(this.payable)}</span></div>
+                    <p class="pay-hint">${t('ui.payCardHint', { amount: this.money(this.payable) })}</p>`}
 
                 <!-- Imprimir deja de ser un botón gemelo del de cobrar (dos botones azules iguales
                      no dicen cuál hace qué): es una PREFERENCIA del cobro. -->
@@ -1214,10 +1242,15 @@ export class ErpPosTouch extends LitElement {
               </div>
               <div class="sheet-foot">
                 ${this.error ? html`<p class="pay-err">${this.error}</p>` : nothing}
-                <!-- UNA acción, dice lo que hace y por cuánto, y no exige scroll para alcanzarla. -->
+                <!-- UNA acción, dice lo que hace y por cuánto, y no exige scroll para alcanzarla.
+                     El importe es el PAYABLE: con split decía «Cobrar 3,60 €» para cobrar 1,80 €. -->
                 <ion-button class="charge" expand="block" ?disabled=${this.busy}
                             @click=${() => this.confirm(this.printOnCharge)}>
-                  ${this.busy ? t('ui.charging') : `${t('ui.charge')} ${this.money(this.total)}`}
+                  ${this.busy
+                    ? t('ui.charging')
+                    : needsTendered(this.payMethod)
+                      ? `${t('ui.charge')} ${this.money(this.payable)}`
+                      : t('ui.chargeWithCard', { amount: this.money(this.payable) })}
                 </ion-button>
               </div>
             </div>

@@ -146,6 +146,9 @@
     "fireFailed": "Couldn't send to kitchen",
     "lineNotSaved": "Couldn't save that item — tap again",
     "payingPart": "Paying {n} of {total}",
-    "qtyOffGrid": "Quantity doesn't fit the product's step"
+    "qtyOffGrid": "Quantity doesn't fit the product's step",
+    "payExact": "Exact amount",
+    "payCardHint": "Charge {amount} on the card terminal, then confirm.",
+    "chargeWithCard": "Charge {amount} by card"
   }
 }
