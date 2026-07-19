@@ -1,7 +1,7 @@
 {
   "id": "sales",
   "name": "Sales & POS",
-  "version": "2.7.10",
+  "version": "2.8.0",
   "agent": {
     "description": "Manages sales and point-of-sale operations: list and inspect sales, complete new sales transactions, void sales, configure payment methods, and retrieve sales statistics.",
     "keywords": [
@@ -16,7 +16,6 @@
     ]
   },
   "depends_on": [
-    "customers",
     "inventory",
     "taxes"
   ],
@@ -87,7 +86,29 @@
       "migrations/sqlite/005_staff_attribution.sql",
       "migrations/sqlite/006_tax_snapshot.sql",
       "migrations/sqlite/007_gift_comp.sql",
-      "migrations/sqlite/008_receipt_marketing.sql"
+      "migrations/sqlite/008_receipt_marketing.sql",
+      "migrations/sqlite/009_cart_per_table.sql",
+      "migrations/sqlite/010_orders.sql",
+      "migrations/sqlite/011_sale_forgets_table.sql",
+      "migrations/sqlite/012_line_paid.sql",
+      "migrations/sqlite/013_drop_legacy_cart.sql",
+      "migrations/sqlite/014_quantity_fixed_point.sql"
+    ],
+    "postgres": [
+      "migrations/postgres/001_init.sql",
+      "migrations/postgres/002_pos_settings.sql",
+      "migrations/postgres/003_document_type.sql",
+      "migrations/postgres/004_order_link.sql",
+      "migrations/postgres/005_staff_attribution.sql",
+      "migrations/postgres/006_tax_snapshot.sql",
+      "migrations/postgres/007_gift_comp.sql",
+      "migrations/postgres/008_receipt_marketing.sql",
+      "migrations/postgres/009_cart_per_table.sql",
+      "migrations/postgres/010_orders.sql",
+      "migrations/postgres/011_sale_forgets_table.sql",
+      "migrations/postgres/012_line_paid.sql",
+      "migrations/postgres/013_drop_legacy_cart.sql",
+      "migrations/postgres/014_quantity_fixed_point.sql"
     ]
   },
   "queries": {
@@ -166,6 +187,30 @@
         "description": "Lists the product lines (items) belonging to a sale"
       }
     },
+    "sales.orders.list": {
+      "permission": "sales.view_sale",
+      "expose_api": true,
+      "sql": "queries/orders_list.sql",
+      "ai": {
+        "description": "Lists orders (ADR-0141). Serves both open tickets (status=open) and the cross-module read 'orders by customer/table' where satellite modules pass the order ids they own."
+      }
+    },
+    "sales.order.get": {
+      "permission": "sales.view_sale",
+      "expose_api": true,
+      "sql": "queries/order_get.sql",
+      "ai": {
+        "description": "Retrieves a single order (header) by its identifier (ADR-0141)"
+      }
+    },
+    "sales.order.lines": {
+      "permission": "sales.view_sale",
+      "expose_api": true,
+      "sql": "queries/order_lines.sql",
+      "ai": {
+        "description": "Lists the line items of an order (ADR-0141)"
+      }
+    },
     "sales.stats": {
       "permission": "sales.view_reports",
       "sql": "queries/stats.sql",
@@ -186,20 +231,6 @@
       "sql": "queries/settings_get.sql",
       "ai": {
         "description": "Retrieves the point-of-sale configuration settings (payment methods allowed, default sell screen, default document format)"
-      }
-    },
-    "sales.cart.get": {
-      "permission": "sales.view_sale",
-      "sql": "queries/cart_get.sql",
-      "ai": {
-        "description": "Retrieves the active (in-progress) POS cart of the current employee, if any"
-      }
-    },
-    "sales.parked_tickets": {
-      "permission": "sales.view_sale",
-      "sql": "queries/parked_tickets.sql",
-      "ai": {
-        "description": "Lists the parked (on-hold) POS tickets that have not expired yet, newest first"
       }
     },
     "sales.today": {
@@ -239,6 +270,30 @@
       "schema": "schemas/complete_sale.json",
       "ai": {
         "description": "Completes and records a sale with its line items and payment. Optional staff_id attributes the sale to the professional who performed it; optional appointment_id traces a sale created from an appointment (emits sales.sale.created_from_appointment)."
+      }
+    },
+    "sales.order.open": {
+      "permission": "sales.add_sale",
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "open_order"
+      },
+      "schema": "schemas/open_order.json",
+      "ai": {
+        "description": "Opens a new MUTABLE order (open ticket) with its line items materialized early (ADR-0141). The order is the canonical entity of the sale; on checkout it produces one or more immutable sales (split-bill). Amounts are provisional; the fiscal breakdown is frozen at checkout. Does not accept table_id (sales is table-agnostic; the table link is owned by the tables module)."
+      }
+    },
+    "sales.order.fire": {
+      "permission": "sales.add_sale",
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "fire_order"
+      },
+      "schema": "schemas/fire_order.json",
+      "ai": {
+        "description": "Fires the current lines of an open order to production (kitchen/bar) — ADR-0141. The kitchen ticket is born from the ORDER, not from the payment: waiters fire when they take the order, long before any sale exists. `label` is an opaque display string (e.g. \"Table 4\", \"Bar\", \"Pickup Ana\") that sales forwards without interpreting, because sales knows nothing about tables or customers. Each call is a new round."
       }
     },
     "sales.void": {
@@ -282,6 +337,67 @@
         "commands/_insert_line.sql"
       ]
     },
+    "sales._insert_order": {
+      "permission": "sales.add_sale",
+      "sql": [
+        "commands/_insert_order.sql"
+      ]
+    },
+    "sales._insert_order_line": {
+      "permission": "sales.add_sale",
+      "sql": [
+        "commands/_insert_order_line.sql"
+      ]
+    },
+    "sales._complete_order": {
+      "permission": "sales.add_sale",
+      "sql": [
+        "commands/_complete_order.sql"
+      ]
+    },
+    "sales.order.add_line": {
+      "permission": "sales.add_sale",
+      "transaction": true,
+      "sql": [
+        "commands/order_add_line.sql",
+        "commands/order_recompute_total.sql"
+      ],
+      "ai": {
+        "description": "Adds a line item to an open order and recomputes its provisional total (ADR-0141). Provisional amount; the fiscal breakdown is frozen at checkout."
+      }
+    },
+    "sales.order.update_line": {
+      "permission": "sales.add_sale",
+      "transaction": true,
+      "sql": [
+        "commands/order_update_line.sql",
+        "commands/order_recompute_total.sql"
+      ],
+      "ai": {
+        "description": "Updates the quantity of a line in an open order and recomputes its provisional total (ADR-0141)."
+      }
+    },
+    "sales.order.remove_line": {
+      "permission": "sales.add_sale",
+      "transaction": true,
+      "sql": [
+        "commands/order_remove_line.sql",
+        "commands/order_recompute_total.sql"
+      ],
+      "ai": {
+        "description": "Removes (soft-deletes) a line from an open order and recomputes its provisional total (ADR-0141)."
+      }
+    },
+    "sales.order.void": {
+      "permission": "sales.void_sale",
+      "transaction": true,
+      "sql": [
+        "commands/order_void.sql"
+      ],
+      "ai": {
+        "description": "Voids an OPEN order (cancels the ticket before checkout); status open -> voided (ADR-0141)."
+      }
+    },
     "sales.settings.update": {
       "permission": "sales.manage_settings",
       "transaction": true,
@@ -293,54 +409,13 @@
         "description": "Updates the point-of-sale configuration settings of the sales module"
       }
     },
-    "sales.cart.save": {
+    "sales._mark_order_line_paid": {
       "permission": "sales.add_sale",
-      "transaction": true,
       "sql": [
-        "commands/cart_save.sql"
+        "commands/_mark_order_line_paid.sql"
       ],
       "ai": {
-        "description": "Saves (upserts) the active POS cart of the current employee so it survives reloads"
-      }
-    },
-    "sales.cart.clear": {
-      "permission": "sales.add_sale",
-      "transaction": true,
-      "sql": [
-        "commands/cart_clear.sql"
-      ],
-      "ai": {
-        "description": "Clears the active POS cart of the current employee"
-      }
-    },
-    "sales.park_ticket": {
-      "permission": "sales.add_sale",
-      "transaction": true,
-      "sql": [
-        "commands/park_ticket.sql"
-      ],
-      "ai": {
-        "description": "Parks (puts on hold) the current POS cart as a retrievable ticket with an expiry"
-      }
-    },
-    "sales.retrieve_ticket": {
-      "permission": "sales.add_sale",
-      "transaction": true,
-      "sql": [
-        "commands/retrieve_ticket.sql"
-      ],
-      "ai": {
-        "description": "Marks a parked POS ticket as retrieved so it disappears from the parked list"
-      }
-    },
-    "sales.set_document_type": {
-      "permission": "sales.add_sale",
-      "transaction": true,
-      "sql": [
-        "commands/set_document_type.sql"
-      ],
-      "ai": {
-        "description": "Sets the document type (ticket or invoice) issued for a sale"
+        "description": "Internal (ADR-0146): links an order line to the sale that charged it (split-bill). Emitted by complete_sale when it receives line_ids."
       }
     }
   },

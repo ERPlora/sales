@@ -5,6 +5,7 @@
 // el módulo sales; de momento usamos `receipt_header`/`receipt_footer` de los ajustes y dejamos
 // NIF/dirección/QR vacíos (se rellenan cuando se cablee el perfil del negocio + verifactu).
 
+import { fromMicro } from './quantity';
 import type {
   ReceiptData,
   InvoiceData,
@@ -188,7 +189,7 @@ export function saleToReceipt(
     customer: fiscal.customer_name || sale.customer_name || undefined,
     lines: lines.map((l) => ({
       name: lineLabel(l),
-      qty: Number(l.quantity),
+      qty: fromMicro(Number(l.quantity)), // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
       unit_price: toEuros(l.unit_price),
       total: toEuros(l.line_total),
     })),
@@ -219,7 +220,7 @@ export function saleToInvoice(
   const header = (settings.receipt_header || '').trim();
   const invLines: InvoiceLine[] = lines.map((l) => ({
     description: lineLabel(l),
-    qty: Number(l.quantity),
+    qty: fromMicro(Number(l.quantity)), // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
     unit_price: toEuros(l.unit_price),
     discount_percent: l.discount_percent ? Number(l.discount_percent) : undefined,
     tax_rate: l.tax_rate != null ? Number(l.tax_rate) : undefined,
@@ -242,5 +243,58 @@ export function saleToInvoice(
     footer: settings.receipt_footer || undefined,
     qr: fiscal.qr || undefined,
     qr_note: fiscal.qr_note || undefined,
+  };
+}
+
+// ── Cuenta previa (pre-bill) — ADR-0141 ──────────────────────────────────────────────────────
+
+/** Línea de la comanda en curso (forma mínima de `CartLine`, sin acoplar los módulos). */
+export interface PrebillLine {
+  name: string;
+  price: number; // céntimos
+  qty: number;
+  is_gift?: boolean;
+}
+
+/**
+ * Comanda ABIERTA → **cuenta** para llevar a la mesa antes de cobrar.
+ *
+ * **No es un documento fiscal** y por eso se construye aparte de `saleToReceipt`:
+ * - **sin número de serie fiscal** (la numeración se consume al COBRAR, no antes),
+ * - **sin QR VeriFactu** (no hay registro de facturación todavía),
+ * - **sin datos de pago** (aún no se ha cobrado),
+ * - con un **aviso impreso** de que no es una factura.
+ *
+ * Emitir un papel que parezca factura sin serlo es un problema legal, no estético: la factura
+ * (simplificada o completa) nace en `complete_sale` y la sella el módulo fiscal (ADR-0140).
+ */
+export function orderToPrebill(
+  lines: PrebillLine[],
+  settings: SaleSettings = {},
+  opts: { tableLabel?: string; datetime?: string; locale?: string; notice?: string } = {},
+): ReceiptData {
+  const header = (settings.receipt_header || '').trim();
+  const cents = (l: PrebillLine) => (l.is_gift ? 0 : Math.round(l.price * l.qty));
+  const total = lines.reduce((s, l) => s + cents(l), 0);
+  return {
+    business: {
+      name: header.split('\n')[0] || 'Mi negocio',
+      address: header.split('\n').slice(1).join(' ') || undefined,
+    },
+    // number/qr/payment AUSENTES a propósito: esto no es una factura (ver doc de la función).
+    datetime: formatDateTime(opts.datetime ?? new Date().toISOString(), opts.locale ?? 'es'),
+    customer: opts.tableLabel || undefined,
+    lines: lines.map((l) => ({
+      name: l.is_gift ? `${l.name} (invitación)` : l.name,
+      qty: l.qty,
+      unit_price: toEuros(l.price),
+      total: toEuros(cents(l)),
+    })),
+    total: toEuros(total),
+    taxes: [],
+    currency: settings.currency || '€',
+    // Inglés canónico (ADR-0055): la UI pasa el texto ya traducido en `opts.notice`; esto es solo
+    // el respaldo para llamadas sin i18n (tests, integraciones).
+    footer: opts.notice ?? 'Bill — this is not an invoice. The fiscal receipt is issued on payment.',
   };
 }

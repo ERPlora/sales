@@ -4,13 +4,27 @@ import { define } from '@erplora/outfitkit/define';
 // La frontera EUROS ↔ CÉNTIMOS vive en el SDK (ADR-0123), no copiada en cada WC (como el desktop).
 import { eurosToCents } from '@erplora/module-sdk';
 import { renderDocumentModal } from '../../lib/document-modal.js';
+import { orderToPrebill } from '../../lib/document-mappers.js';
+import { receiptToPrintableHtml, printHtmlInIframe } from '../../lib/receipt-html.js';
+import { decideOnTableChange } from '../../lib/table-switch.js';
+import { buildFirePayload } from '../../lib/fire-order.js';
+import { createSerialQueue } from '../../lib/serial-queue.js';
+import { splitPayload, splitTotal } from '../../lib/split-selection.js';
+import { forgetCurrentCheck, rememberCurrentCheck, resolveCurrentCheck } from '../../lib/current-check.js';
+import { brandSvgFor } from '../../lib/brand-icons.js';
+import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
+import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod } from '../../lib/pay-icons.js';
 import '@erplora/outfitkit/ok-qty-stepper';
 import '@erplora/outfitkit/ok-spotlight-search';
 import {
-  loadActiveCart, persistActiveCart, listParkedTickets, parkCart, retrieveParkedTicket,
-  type CartLine, type ErploraClientLike, type ParkedTicket,
+  mergeCartLines, listOpenChecks, type OpenCheck,
+  // ADR-0141: el carrito lo respalda un PEDIDO real (filas), no un blob con debounce.
+  openOrderWithLines, addOrderLine, updateOrderLineQty, persistLineQty, removeOrderLine, loadOrderLines, mergeOrders,
+  unitContextPayload, type CartLine, type ErploraClientLike,
 } from '../../lib/pos-cart.js';
 import { buildCategoryRatesMap, resolveLineTax } from '../../lib/pos-tax.js';
+// La frontera de la ESCALA de cantidades (ADR-0147): la UI trabaja en lógico (0,5), el cable en 10⁶.
+import { toMicro, fromMicro, onGrid, formatQuantity } from '../../lib/quantity.js';
 // Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC.
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
@@ -24,9 +38,26 @@ const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 // (naranja). En móvil el carrito se recoge a un drawer abierto desde un botón flotante naranja.
 // Quitar línea = cantidad a 0. Al cobrar: `sales.complete_sale` (channel='pos') → documento.
 
-interface Product { id: string; name: string; sku?: string; price: number; cost?: number; is_active?: number; product_type?: string; image?: string; tax_category_key?: string; }
-interface PayMethod { id: string; name: string; type?: string; }
-interface PosSettings { default_document_format?: string; currency?: string; enable_parked_tickets?: number; default_tax_included?: number; }
+interface Product {
+  id: string; name: string; sku?: string; price: number; cost?: number; is_active?: number;
+  product_type?: string; image?: string; tax_category_key?: string;
+  // ADR-0147: unidad base + cantidad de precio del maestro (inventory/006). El POS los CONGELA
+  // en la línea al añadirla — el histórico nunca relee el maestro.
+  unit_code?: string; price_quantity_value?: number; pricing_unit_code?: string;
+}
+/** Fila de `inventory.units.list` (registro de unidades, ADR-0147). */
+interface UnitRow { code: string; name?: string; increment_value?: number; factor_num?: number; factor_den?: number; }
+interface PayMethod {
+  id: string; name: string; type?: string;
+  /** 1 = pide importe entregado y calcula cambio (efectivo); 0 = importe exacto (tarjeta, Bizum…). */
+  requires_change?: number;
+}
+interface PosSettings {
+  default_document_format?: string; currency?: string; enable_parked_tickets?: number;
+  default_tax_included?: number;
+  /** Formas de pago permitidas (Ajustes). 0 = desactivada. */
+  allow_cash?: number; allow_card?: number; allow_transfer?: number;
+}
 interface Category { id: string; name: string; icon?: string; color?: string; image?: string; product_count?: number; }
 interface ProdCat { product_id: string; category_id: string; }
 
@@ -127,6 +158,14 @@ export class ErpPosTouch extends LitElement {
     .cart ion-header ion-toolbar { --background:var(--panel); --color:var(--tx); --border-color:var(--ion-border-color); }
     .cart ion-title { font-size:1rem; }
     /* Contexto asignado (mesa/cliente) como CHIPS en el título — sustituye al texto "Venta". */
+    /* Tamaño ÚNICO de los iconos de la cabecera del carrito. Ahí conviven iconos de tres dueños
+       (TPV, mesas, clientes) y cada uno traía el suyo: el chip de mesa a 20px y los botones de al
+       lado a 17px. Además el de mesa es de otro set (Material Symbols), con viewBox y grosor
+       distintos de Ionicons: con el mismo número se ve MÁS PEQUEÑO, por eso se compensa aquí. Las
+       custom properties cruzan el Shadow DOM, así que los módulos del slot heredan este valor. */
+    ion-toolbar { --pos-hdr-icon-size: 1.75rem; }
+    ion-buttons ion-icon { font-size: var(--pos-hdr-icon-size); }
+    .cart-actions-slot { --pos-hdr-icon-size: 1.75rem; }
     .ctx-chips { display:flex; gap:.35rem; flex-wrap:wrap; }
     .ctx-chips .chip { font-size:.8rem; font-weight:700; color:#fff; border-radius:999px; padding:.12rem .55rem; background:var(--accent); white-space:nowrap; }
     .ctx-chips .chip.cust { background:#5c7cfa; }
@@ -153,6 +192,35 @@ export class ErpPosTouch extends LitElement {
     .total { display:flex; justify-content:space-between; align-items:baseline; margin:.1rem 0 .65rem; font-size:1rem; color:var(--mut); }
     .total b { font-size:1.7rem; color:var(--tx); }
     .charge { font-size:1.05rem; font-weight:700; }
+    /* Dos acciones solo-icono (ADR-0133): la cuenta ocupa lo justo y cobrar se lleva el resto,
+       porque es la acción primaria y el dedo la busca sin mirar. */
+    /* Cobro: los segments son la elección (método, formato) y abajo las dos salidas. */
+    /* El importe manda: grande, centrado y solo. */
+    .pay-total { font-size:2.4rem; font-weight:800; text-align:center; letter-spacing:-.02em;
+      margin:.2rem 0 1rem; color:var(--tx); }
+    /* Etiqueta de sección: dice QUÉ estás eligiendo (antes dos segments iguales sin contexto). */
+    .pay-lbl { margin:.9rem 0 .35rem; font-size:.75rem; font-weight:700; text-transform:uppercase;
+      letter-spacing:.06em; color:var(--mut); }
+    .pay-methods { margin:.1rem 0 .55rem; --background:transparent; }
+    /* Logo de marca (Bizum): es un wordmark ANCHO, no un glifo cuadrado como los Ionicons, así que
+       se acota a la altura del icono y se deja crecer a lo ancho sin romper el segment. */
+    .pay-methods .brand { display:inline-flex; align-items:center; height:1.15rem; }
+    .pay-methods .brand svg { height:100%; width:auto; max-width:4.5rem; display:block; }
+    /* Atajos de efectivo: el cajero pulsa en vez de teclear. */
+    .quick { display:grid; grid-template-columns:repeat(4,1fr); gap:.4rem; margin:.7rem 0 .5rem; }
+    .qbtn { padding:.55rem .2rem; border-radius:10px; border:1px solid var(--ion-border-color);
+      background:var(--tile); color:var(--tx); font-weight:700; font-size:.9rem; cursor:pointer; }
+    .qbtn[aria-pressed=true] { border-color:var(--accent); color:var(--accent); }
+    /* El cambio es lo que el cajero busca con el ojo al devolver. */
+    .amt.big-change .v { font-size:1.6rem; font-weight:800; color:var(--accent); }
+    .print-row { --background:transparent; --padding-start:0; --inner-padding-end:0; margin:.5rem 0 .2rem; }
+    .pay-err { color:var(--ion-color-danger,#d9480f); margin:.4rem 0 0; }
+    .pay-actions { display:flex; gap:.5rem; }
+    .pay-actions .charge { flex:1; }
+    .pay-actions .charge-print { flex:none; width:64px; }
+    .foot-actions { display:flex; gap:.5rem; }
+    .foot-actions .prebill { flex:none; width:56px; }
+    .foot-actions .charge { flex:1; }
 
     /* desplegable tickets aparcados */
     .pdrop-back { position:absolute; inset:0; z-index:40; }
@@ -180,10 +248,19 @@ export class ErpPosTouch extends LitElement {
     .amt { display:flex; justify-content:space-between; font-size:1.1rem; }
     .amt .v { font-weight:700; }
     .change { color:var(--ion-color-success, #2f9e44); }
-    .numpad { display:grid; grid-template-columns: repeat(3, 1fr); gap:.5rem; }
-    .numpad button { font-size:1.3rem; padding:1rem; border-radius:12px; border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); cursor:pointer; }
+    .numpad { display:grid; grid-template-columns: repeat(3, 1fr); gap:.35rem; margin-bottom:.2rem; }
+    .numpad button { font-size:1.15rem; padding:.6rem; border-radius:10px; border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); cursor:pointer; }
     .scrim { position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; z-index:70; }
-    .sheet { background:var(--panel); color:var(--tx); border:1px solid var(--ion-border-color); border-radius:16px; padding:1rem; width:min(92vw,24rem); max-height:90vh; overflow:auto; box-shadow:0 12px 48px rgba(0,0,0,.6); }
+    /* Columna flex: el importe y el botón de cobrar NO se mueven; solo scrollea el centro. Antes
+       el sheet entero scrolleaba y el botón principal quedaba fuera de pantalla — la acción más
+       importante del TPV no puede exigir scroll. */
+    .sheet { background:var(--panel); color:var(--tx); border:1px solid var(--ion-border-color);
+      border-radius:16px; width:min(92vw,24rem); max-height:88vh; display:flex; flex-direction:column;
+      overflow:hidden; box-shadow:0 12px 48px rgba(0,0,0,.6); }
+    .sheet-h, .sheet-top, .sheet-foot { flex:none; padding:0 1rem; }
+    .sheet-h { padding-top:1rem; }
+    .sheet-foot { padding:.75rem 1rem 1rem; border-top:1px solid var(--ion-border-color); }
+    .pay { flex:1; min-height:0; overflow:auto; padding:0 1rem; }
     .sheet-h { display:flex; justify-content:space-between; align-items:center; margin-bottom:.8rem; }
     .sheet-h .t { font-size:1.2rem; font-weight:700; }
     .x { background:none; border:none; font-size:1.3rem; cursor:pointer; color:var(--mut); }
@@ -214,13 +291,22 @@ export class ErpPosTouch extends LitElement {
   @state() private busy = false;
   @state() private error = '';
   @state() private docSaleId?: string;
-  @state() private parked: ParkedTicket[] = [];
+  @state() private parked: OpenCheck[] = [];
+  /** Líneas marcadas para cobrar por separado (ADR-0146). Vacío = se cobra la cuenta entera. */
+  @state() private splitSel = new Set<string>();
   @state() private parkedOpen = false;
   @state() private cartOpen = false;
   @state() private fullscreen = false;
   /** El search del catálogo se despliega desde una lupa (gana alto para la rejilla). */
   @state() private searchOpen = false;
   @state() private tableId?: string;
+  /** ADR-0141: pedido MUTABLE que respalda el carrito. Cada artículo se escribe como FILA real al
+   *  instante (antes: blob con debounce de 400 ms → un corte de luz perdía el último artículo). */
+  @state() private orderId?: string;
+  /** Modal de la CUENTA previa (pre-bill) que se lleva a la mesa antes de cobrar. No es fiscal. */
+  @state() private prebillOpen = false;
+  /** Preferencia del cobro: imprimir el tiquet al confirmar. Sustituye al 2º botón azul gemelo. */
+  @state() private printOnCharge = true;
   @state() private tableLabel = '';
   @state() private customerId?: string;
   @state() private customerName = '';
@@ -229,6 +315,8 @@ export class ErpPosTouch extends LitElement {
   private customerAddress = '';
 
   private prodCats = new Map<string, Set<string>>();
+  /** Registro de unidades (ADR-0147): code → fila, para congelar el contexto al añadir línea. */
+  private units = new Map<string, UnitRow>();
   /** Mapa tax_category_key → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
   private ratesMap = new Map<string, number>();
   private cartRestored = false;
@@ -237,10 +325,111 @@ export class ErpPosTouch extends LitElement {
   // (mesa, cliente…) en el header. Botones independientes: cada uno abre su propio modal. El POS no
   // conoce a `tables`/`customers`; solo monta sus WC y escucha `erp:order-context`/`erp:customer-context`.
   private assignFillers: Array<{ component: string; el: HTMLElement }> = [];
-  private readonly onOrderContext = (e: Event) => {
-    const d = (e as CustomEvent<{ table_id: string | null; label?: string }>).detail ?? { table_id: null };
-    this.tableId = d.table_id ?? undefined;
-    this.tableLabel = d.label ?? '';
+  // Comanda ATADA a la mesa (puntos 1+2): al cambiar de mesa se GUARDA la comanda de la mesa
+  // actual y se RECUPERA la de la nueva (o el carrito suelto si es null). Así tocar una mesa
+  // ocupada trae su tiquet a la pantalla de venta, como cualquier POS.
+  private readonly onOrderContext = async (e: Event) => {
+    const d = (e as CustomEvent<{ table_id: string | null; label?: string; order_id?: string | null }>).detail
+      ?? { table_id: null };
+    const nextTable = d.table_id ?? undefined;
+    if (nextTable && nextTable === this.tableId) { this.tableLabel = d.label ?? this.tableLabel; return; }
+
+    // Reglas de sala (ADR-0141): lo que hay marcado NUNCA se pierde al tocar una mesa.
+    const accion = decideOnTableChange({
+      cartHasItems: this.cart.length > 0,
+      currentTableId: this.tableId,
+      targetTableId: nextTable,
+      targetOrderId: d.order_id ?? undefined,
+    });
+
+    // Aparca la comanda de delante como ticket recuperable (no se mezcla sola con la de la mesa:
+    // juntar dos cuentas es FUSIONAR, una acción explícita).
+    const aparcar = async () => {
+      await this.park();
+      if (this.orderId) await erplora().command('sales.order.void', { order_id: this.orderId }).catch(() => undefined);
+      this.parked = await listOpenChecks(erplora(), this.orderId);
+      if (n) this.error = t('ui.parkedAs', { number: n });
+    };
+
+    if (accion === 'clear' || accion === 'park-then-clear') {
+      if (accion === 'park-then-clear') await aparcar();
+      this.tableId = undefined; this.tableLabel = '';
+      this.orderId = undefined; this.cart = [];
+      return;
+    }
+
+    if (accion === 'start-new-check') {
+      // Ya veníamos de una mesa: la comanda de antes SE QUEDA allí, abierta, y aquí se empieza una
+      // cuenta nueva. Llevarse la cuenta a otra mesa es TRANSFERIR, un botón aparte (igual que en
+      // Toast/Lightspeed). Antes esto arrastraba la comanda y re-enlazaba la junction en cada mesa
+      // tocada: ninguna se liberaba y acabábamos con tres mesas ocupadas por el mismo pedido.
+      this.tableId = nextTable; this.tableLabel = d.label ?? '';
+      this.orderId = undefined; this.cart = [];
+      return;
+    }
+
+    if (accion === 'assign-to-target') {
+      // La comanda de delante pasa a SER la de esa mesa: se enlaza la junction, no se mueve nada.
+      this.tableId = nextTable; this.tableLabel = d.label ?? '';
+      this.notifyOrderLinked();
+      return;
+    }
+
+    if (accion === 'park-then-load') await aparcar();
+
+    // Abrir la comanda de la mesa (o empezar en blanco si no tiene).
+    this.tableId = nextTable; this.tableLabel = d.label ?? '';
+    const linked = d.order_id ?? undefined;
+    this.orderId = linked;
+    if (linked) rememberCurrentCheck(localStorage, linked); else forgetCurrentCheck(localStorage);
+    this.cart = linked ? await loadOrderLines(erplora(), linked) : [];
+  };
+
+  // Fusionar mesas (punto 3): el filler ya ejecutó tables.sessions.merge; aquí se combinan los
+  // tiquets (sumando líneas idénticas) en la mesa destino y se limpia el origen.
+  private readonly onOrderMerge = async (e: Event) => {
+    const d = (e as CustomEvent<{
+      from_table_id: string; to_table_id: string; to_label?: string;
+      from_order_id?: string | null; to_order_id?: string | null;
+    }>).detail;
+    if (!d?.from_table_id || !d?.to_table_id || d.from_table_id === d.to_table_id) return;
+    // ADR-0141: FUSIONAR = las líneas del pedido ORIGEN se suman al del DESTINO y el origen se
+    // anula → una sola cuenta en una sola mesa. Son filas que se mueven, así que las cantidades y
+    // precios se conservan. (Antes esto reescribía dos blobs; con el pedido ya no hay blob.)
+    const from = d.from_order_id ?? undefined;
+    let to = d.to_order_id ?? undefined;
+    if (!from) return; // el origen no tenía comanda: nada que sumar
+    if (!to) {
+      // La mesa destino aún no tenía pedido: la comanda del origen pasa a ser SU comanda.
+      to = from;
+    } else {
+      await mergeOrders(erplora(), from, to);
+    }
+    if (this.tableId === d.from_table_id || this.tableId === d.to_table_id) {
+      this.tableId = d.to_table_id;
+      this.tableLabel = d.to_label ?? this.tableLabel;
+      this.orderId = to;
+      this.cart = await loadOrderLines(erplora(), to);
+    }
+  };
+  // Transferir mesa (punto 4): el filler ya ejecutó tables.sessions.transfer; aquí se mueve la
+  // comanda de la mesa origen a la destino (libre → sin comanda previa) y se limpia el origen.
+  private readonly onOrderTransfer = async (e: Event) => {
+    const d = (e as CustomEvent<{
+      from_table_id: string; to_table_id: string; to_label?: string; to_order_id?: string | null;
+    }>).detail;
+    if (!d?.from_table_id || !d?.to_table_id || d.from_table_id === d.to_table_id) return;
+    // ADR-0141: TRANSFERIR no mueve la comanda — es el MISMO pedido, que ahora cuelga de otra mesa
+    // (la sesión nueva arrastró el `order_id`). Por eso los productos se conservan sin copiar nada:
+    // aquí solo se actualiza el contexto de la pantalla. Antes había que reescribir dos blobs.
+    if (this.tableId !== d.from_table_id) return;
+    this.tableId = d.to_table_id;
+    this.tableLabel = d.to_label ?? this.tableLabel;
+    const order = d.to_order_id ?? this.orderId;
+    if (order && order !== this.orderId) {
+      this.orderId = order;
+      this.cart = await loadOrderLines(erplora(), order);
+    }
   };
   private readonly onCustomerContext = (e: Event) => {
     const d = (e as CustomEvent<{
@@ -251,6 +440,11 @@ export class ErpPosTouch extends LitElement {
     this.customerName = d.customer_name ?? '';
     this.customerTaxId = d.customer_tax_id ?? '';
     this.customerAddress = d.customer_address ?? '';
+    // ADR-0141: el pedido NO guarda el cliente y `sales` NO llama a `customers` (sería depender de
+    // él, y una tienda de alimentación vende sin clientes). La junction la escribe SU dueño al
+    // recibir `erp:order-linked`, igual que hace `tables`. Aquí solo se guarda el SNAPSHOT FISCAL
+    // (nombre/NIF/dirección), que es otra cosa: viaja congelado en la venta al cobrar (ADR-0132).
+    this.notifyOrderLinked();
   };
   private readonly onFsChange = () => { this.fullscreen = document.fullscreenElement === this; };
   private readonly onLocaleChange = (): void => this.requestUpdate();
@@ -260,22 +454,24 @@ export class ErpPosTouch extends LitElement {
     document.addEventListener('fullscreenchange', this.onFsChange);
     window.addEventListener('erplora:locale-changed', this.onLocaleChange);
     try {
-      const [prods, methods, settingsRows, savedCart, parked, cats, prodCats, ratesMap] = await Promise.all([
+      const [prods, methods, settingsRows, savedCart, parked, cats, prodCats, ratesMap, unitRows] = await Promise.all([
         erplora().queryAll<Product>('inventory.products.list').catch(() => []),
         erplora().query('sales.payment_methods').catch(() => []),
         erplora().query('sales.settings.get').catch(() => []),
-        loadActiveCart(erplora()),
-        listParkedTickets(erplora()),
+        this.restoreOpenOrder(),
+        listOpenChecks(erplora()),
         erplora().queryAll<Category>('inventory.categories.list', { sort: 'name', dir: 'asc' }).catch(() => []),
         erplora().queryAll<ProdCat>('inventory.product_categories').catch(() => []),
         buildCategoryRatesMap(erplora()),
+        erplora().queryAll<UnitRow>('inventory.units.list').catch(() => [] as UnitRow[]),
       ]);
       this.ratesMap = ratesMap;
+      for (const u of rows<UnitRow>(unitRows)) if (u.code) this.units.set(u.code, u);
       this.products = rows<Product>(prods).filter((p) => p.is_active !== 0);
       this.methods = rows<PayMethod>(methods);
       this.settings = rows<PosSettings>(settingsRows)[0] || {};
       this.docFormat = this.settings.default_document_format === 'invoice' ? 'invoice' : 'ticket';
-      this.payMethod = this.methods[0];
+      this.payMethod = defaultPayMethod(this.payMethods);
       this.parked = parked;
       this.categories = rows<Category>(cats).filter((c) => c.name);
       for (const pc of rows<ProdCat>(prodCats)) {
@@ -285,6 +481,8 @@ export class ErpPosTouch extends LitElement {
       if (savedCart.length) this.cart = savedCart;
       await this.updateComplete;
       this.addEventListener('erp:order-context', this.onOrderContext);
+      this.addEventListener('erp:order-merge', this.onOrderMerge);
+      this.addEventListener('erp:order-transfer', this.onOrderTransfer);
       this.addEventListener('erp:customer-context', this.onCustomerContext);
       await this.resolveSlots();
       this.ensureSlotsMounted();
@@ -300,12 +498,10 @@ export class ErpPosTouch extends LitElement {
     document.removeEventListener('fullscreenchange', this.onFsChange);
     window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
     this.removeEventListener('erp:order-context', this.onOrderContext);
+    this.removeEventListener('erp:order-merge', this.onOrderMerge);
+    this.removeEventListener('erp:order-transfer', this.onOrderTransfer);
     this.removeEventListener('erp:customer-context', this.onCustomerContext);
-    if (this.saveTimer) {
-      clearTimeout(this.saveTimer);
-      this.saveTimer = undefined;
-      void persistActiveCart(erplora(), this.cart);
-    }
+    if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = undefined; }
   }
 
   private async resolveSlots() {
@@ -328,7 +524,15 @@ export class ErpPosTouch extends LitElement {
     const host = this.renderRoot.querySelector('.cart-actions-slot') as HTMLElement | null;
     if (!host || !this.assignFillers.length) return;
     for (const f of this.assignFillers) {
-      if (f.el.parentElement !== host) host.appendChild(f.el);
+      if (f.el.parentElement === host) continue;
+      host.appendChild(f.el);
+      // Al montarse, si ya hay un pedido reanudado, se le pide que recupere LO SUYO. El aviso de
+      // `restoreOpenOrder` puede llegar ANTES de que los fillers existan (los resuelve el SDK de
+      // forma asíncrona), y entonces no lo recibía nadie: la comanda salía «sin mesa» aunque la
+      // mesa siguiera ocupada. Aquí el orden ya da igual.
+      if (this.orderId) {
+        f.el.dispatchEvent(new CustomEvent('erp:order-restored', { detail: { order_id: this.orderId }, bubbles: false }));
+      }
     }
   }
 
@@ -340,14 +544,12 @@ export class ErpPosTouch extends LitElement {
     }
   }
 
-  protected updated(changed: Map<PropertyKey, unknown>) {
+  protected updated(_changed: Map<PropertyKey, unknown>) {
     this.ensureSlotsMounted();
-    if (!changed.has('cart') || !this.cartRestored) return;
-    if (this.saveTimer) clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => {
-      this.saveTimer = undefined;
-      void persistActiveCart(erplora(), this.cart);
-    }, 400);
+    // ADR-0141: YA NO se guarda el carrito aquí. Antes esto era un debounce de 400 ms que escribía
+    // un blob JSON: si se iba la luz (o moría la tablet) dentro de esa ventana, el último artículo
+    // se perdía. Ahora cada mutación (add/qty/invitación/quitar) escribe su FILA en el pedido de
+    // forma transaccional e inmediata, así que aquí no queda nada pendiente que persistir.
   }
 
 
@@ -356,6 +558,14 @@ export class ErpPosTouch extends LitElement {
   // FIX QA (2026-06-25): el POS trabaja en CÉNTIMOS → formatMoney (divide /100), NO formatAmount
   // (que mostraba precios ×100).
   private money(n: number) { return erplora().formatMoney(Number(n) || 0); }
+  /** Formas de pago que se ofrecen: activas (query) y permitidas por Ajustes (allow_*). */
+  private get payMethods(): PayMethod[] {
+    return enabledPayMethods(this.methods, {
+      allow_cash: this.settings.allow_cash, allow_card: this.settings.allow_card,
+      allow_transfer: this.settings.allow_transfer,
+    });
+  }
+
   private get total() { return this.cart.reduce((s, l) => s + (l.is_gift ? 0 : l.price * l.qty), 0); }
   private get itemCount() { return this.cart.reduce((s, l) => s + l.qty, 0); }
   private get parkingEnabled() { return this.settings.enable_parked_tickets !== 0; }
@@ -376,54 +586,256 @@ export class ErpPosTouch extends LitElement {
     } catch { /* el navegador puede rechazar fullscreen; se ignora */ }
   }
 
+  /** Aparcar (ADR-0146): la cuenta se queda ABIERTA y solo se suelta de la pantalla. Ya no se
+   *  copia a otra entidad —el pedido ya es la cuenta— y por eso no se pierde nada por el camino.
+   *  Si venía de una mesa, su dueño la suelta también: la mesa queda libre para otros. */
   private async park() {
     if (!this.cart.length) return;
-    const num = await parkCart(erplora(), this.cart);
-    if (!num) { this.error = t('ui.errorPark'); return; }
+    this.notifyPark();
+    forgetCurrentCheck(localStorage);
+    this.orderId = undefined;
     this.cart = [];
+    this.tableId = undefined;
+    this.tableLabel = '';
     this.parkedOpen = false;
-    this.parked = await listParkedTickets(erplora());
+    this.parked = await listOpenChecks(erplora(), this.orderId);
   }
 
-  private async retrieve(t: ParkedTicket) {
-    if (this.cart.length) return;
+  /** Recuperar una cuenta abierta = CAMBIAR de cuenta, igual que tocar otra mesa. Antes estaba
+   *  bloqueado si tenías algo marcado; ahora lo de delante se aparca (sigue abierto) y se abre la
+   *  elegida, que es lo que hace cualquier TPV de sala. */
+  private async retrieve(c: OpenCheck) {
     try {
-      this.cart = await retrieveParkedTicket(erplora(), t);
+      if (this.cart.length && this.orderId !== c.id) await this.park();
+      this.orderId = c.id;
+      rememberCurrentCheck(localStorage, c.id);
+      this.cart = await loadOrderLines(erplora(), c.id);
+      this.notifyOrderRestored();
       this.parkedOpen = false;
-      this.parked = await listParkedTickets(erplora());
+      this.parked = await listOpenChecks(erplora(), c.id);
     } catch (e) {
       this.error = e instanceof Error ? e.message : t('ui.errorRetrieve');
     }
   }
 
-  private add(p: Product) {
+  /** Avisa a los dueños de que la cuenta se aparca, para que suelten lo suyo (la mesa). */
+  private notifyPark(): void {
+    if (!this.orderId) return;
+    for (const f of this.assignFillers) {
+      f.el.dispatchEvent(new CustomEvent('erp:order-parked', { detail: { order_id: this.orderId }, bubbles: false }));
+    }
+  }
+
+  /** Avisa a los dueños de que se ha reabierto una cuenta, para que recuperen su contexto. */
+  private notifyOrderRestored(): void {
+    if (!this.orderId) return;
+    for (const f of this.assignFillers) {
+      f.el.dispatchEvent(new CustomEvent('erp:order-restored', { detail: { order_id: this.orderId }, bubbles: false }));
+    }
+  }
+
+  /** Reanuda LA CUENTA QUE TENÍA ESTE TERMINAL tras recargar (ADR-0141/0146).
+   *
+   *  Antes se cogía «el primer pedido abierto»: con varias cuentas abiertas eso es aterrizar en la
+   *  de otro camarero. La cuenta en curso es estado del DISPOSITIVO, así que se recuerda ahí; si ya
+   *  se cobró, se empieza en blanco y el camarero elige — no se cae a otra cualquiera. */
+  private async restoreOpenOrder(): Promise<CartLine[]> {
+    try {
+      const abiertas = (await listOpenChecks(erplora())).map((c) => c.id);
+      const id = resolveCurrentCheck(localStorage, abiertas);
+      if (!id) return [];
+      this.orderId = id;
+      // El pedido vuelve, pero su MESA y su CLIENTE los saben sus dueños, no `sales`. Se les avisa
+      // para que restauren lo suyo (y el de mesas nos devuelva el contexto por `erp:order-context`).
+      // Sin esto, al recargar el TPV la comanda aparecía "sin mesa" aunque la mesa siguiera ocupada.
+      for (const f of this.assignFillers) {
+        f.el.dispatchEvent(new CustomEvent('erp:order-restored', { detail: { order_id: id }, bubbles: false }));
+      }
+      return await loadOrderLines(erplora(), id);
+    } catch {
+      return [];
+    }
+  }
+
+  /** Avisa a los fillers de que hay pedido abierto para que ENLACEN lo suyo (mesa, cliente…).
+   *  `sales` no escribe junctions ajenas ni conoce a esos módulos: solo publica el `order_id`. */
+  private notifyOrderLinked(): void {
+    if (!this.orderId) return;
+    for (const f of this.assignFillers) {
+      f.el.dispatchEvent(new CustomEvent('erp:order-linked', { detail: { order_id: this.orderId }, bubbles: false }));
+    }
+  }
+
+  /** Asegura que existe un pedido abierto que respalde el carrito; devuelve su id ('' si falla).
+   *  Si hay una MESA seleccionada, avisa a los fillers (`tables`) para que escriban la junction
+   *  mesa↔pedido — `sales` no toca `tables`: es un contrato por evento (ADR-0043/0141). */
+  /** Manda a cocina lo pedido hasta ahora (ADR-0141). La comanda nace del PEDIDO, no del cobro: el
+   *  camarero dispara al tomar nota y el pedido sigue abierto hasta que el cliente pague. Cada
+   *  disparo es una RONDA (bebidas primero, comida después), y `kitchen` las numera.
+   *
+   *  La etiqueta que verá el cocinero es la de la mesa asignada, y viaja OPACA: `sales` no depende
+   *  de `tables`, solo reenvía el texto que el slot de mesas le dejó en `tableLabel`. */
+  private async fireToKitchen(): Promise<void> {
+    if (!this.cart.length) return;
+    const orderId = await this.ensureOrder(this.cart[0]);
+    const payload = buildFirePayload(orderId, this.tableLabel, this.cart);
+    if (!payload) return;
+    try {
+      await erplora().command('sales.order.fire', payload as unknown as Record<string, unknown>);
+      // Éxito → canal de AVISO del shell (toast verde). El hueco rojo es SOLO para fallos: decía
+      // que algo había ido bien con la pinta de algo que había ido mal.
+      erplora().notify?.({ type: 'success', message: t('ui.firedToKitchen') });
+    } catch {
+      // Sin `kitchen` instalado el evento no lo escucha nadie: el comando de `sales` igual pasa.
+      // Un fallo aquí NO debe bloquear la venta — la comanda se puede repetir.
+      this.error = t('ui.fireFailed');
+    }
+  }
+
+  private async ensureOrder(first: CartLine): Promise<string> {
+    if (this.orderId) return this.orderId;
+    this.orderId = await openOrderWithLines(erplora(), [first]);
+    rememberCurrentCheck(localStorage, this.orderId);
+    // Aviso a TODOS los fillers: cada uno enlaza lo suyo si tiene algo seleccionado (la mesa en
+    // `tables`, el cliente en `customers`). `sales` no sabe qué enlazan ni le importa.
+    this.notifyOrderLinked();
+    return this.orderId;
+  }
+
+  /** Una sola vía para el trabajo del carrito. Sin esto, cinco toques seguidos abrían cinco
+   *  pedidos: cada uno veía «aún no hay pedido» porque el anterior seguía en vuelo (ADR-0144). */
+  private readonly queue = createSerialQueue();
+
+  private add(p: Product): Promise<void> {
+    return this.queue(() => this.addNow(p));
+  }
+
+  private async addNow(p: Product) {
     const ex = this.cart.find((l) => l.id === p.id && !l.is_gift);
     // tax_category_key = referencia fiscal del producto (autoridad del servidor, ADR-0085).
     // tax_rate = % resuelto en cliente SOLO para el preview del total. cost = para el arqueo de regalos.
     const tax_rate = resolveLineTax(this.ratesMap, p.tax_category_key);
-    this.cart = ex
-      ? this.cart.map((l) => (l.id === p.id && !l.is_gift ? { ...l, qty: l.qty + 1 } : l))
-      : [...this.cart, { id: p.id, name: p.name, sku: p.sku, price: Number(p.price), qty: 1, tax_category_key: p.tax_category_key, tax_rate, cost: Number(p.cost) || 0 }];
+    try {
+      if (ex) {
+        // Ya está en la comanda: sube la cantidad y PERSISTE YA (una fila, no todo el carrito).
+        const qty = ex.qty + 1;
+        this.cart = this.cart.map((l) => (l === ex ? { ...l, qty } : l));
+        // Antes esto solo escribía si YA se conocía el `line_id`; si no, la cantidad subía en
+        // pantalla y no llegaba a la comanda (5 tortillas a la vista, 1 en la BD). `persistLineQty`
+        // recupera el id releyendo el pedido, y si aun así no puede escribir, lo DECIMOS.
+        if (this.orderId && !(await persistLineQty(erplora(), this.orderId, ex, qty))) {
+          this.cart = this.cart.map((l) => (l.id === ex.id && !l.is_gift ? { ...l, qty: ex.qty } : l));
+          this.error = t('ui.lineNotSaved');
+        }
+        return;
+      }
+      const line: CartLine = {
+        id: p.id, name: p.name, sku: p.sku, price: Number(p.price), qty: 1,
+        tax_category_key: p.tax_category_key, tax_rate, cost: Number(p.cost) || 0,
+        ...this.frozenUnitContext(p),
+      };
+      // Abre el pedido con la primera línea, o añádela al ya abierto. En ambos casos la fila queda
+      // escrita ANTES de que la UI siga: un corte de corriente ya no se lleva el artículo.
+      if (!this.orderId) {
+        await this.ensureOrder(line);
+        const persisted = this.orderId ? await loadOrderLines(erplora(), this.orderId) : [];
+        this.cart = persisted.length ? persisted.map((pl) => ({ ...line, ...pl })) : [...this.cart, line];
+        return;
+      }
+      line.line_id = await addOrderLine(erplora(), this.orderId, line);
+      this.cart = [...this.cart, line];
+    } catch (e) {
+      // La comanda es la fuente de verdad: si la escritura falla, NO dejamos la UI mintiendo.
+      this.error = e instanceof Error ? e.message : String(e);
+    }
   }
 
   /** Invitar/quitar invitación a una línea (comp, ADR-comp): toggle is_gift con un motivo por defecto.
    *  La línea regalo no se cobra (el servidor pone net/tax/total=0) pero descuenta stock. */
-  private toggleGift(id: string) {
-    this.cart = this.cart.map((l) =>
-      l.id === id ? { ...l, is_gift: !l.is_gift, gift_reason: !l.is_gift ? (l.gift_reason || 'Invitación') : undefined } : l,
-    );
+  private async toggleGift(id: string) {
+    const ex = this.cart.find((l) => l.id === id);
+    if (!ex) return;
+    const is_gift = !ex.is_gift;
+    const gift_reason = is_gift ? (ex.gift_reason || 'Invitación') : undefined;
+    this.cart = this.cart.map((l) => (l === ex ? { ...l, is_gift, gift_reason } : l));
+    // Cambia el importe de la línea → se persiste YA (ADR-0141).
+    if (this.orderId && ex.line_id) {
+      await updateOrderLineQty(erplora(), this.orderId, ex.line_id, ex.qty, ex.price, is_gift, gift_reason ?? '');
+    }
   }
+  /** Contexto de unidades CONGELADO desde el maestro (ADR-0147 §2.4): unidad de la línea, su
+   *  incremento y la cantidad de precio (KPEIN). Sin registro/unidad → unidad suelta implícita. */
+  private frozenUnitContext(p: Product): Partial<CartLine> {
+    const u = p.unit_code ? this.units.get(p.unit_code) : undefined;
+    if (!u) return {};
+    return {
+      unit_code: u.code,
+      unit_name: u.name || '',
+      factor_num: Number(u.factor_num) || 1,
+      factor_den: Number(u.factor_den) || 1,
+      increment_value: Number(u.increment_value) || undefined,
+      price_quantity_value: Number(p.price_quantity_value) || undefined,
+      pricing_unit_code: p.pricing_unit_code || u.code,
+    };
+  }
+
+  /** Paso del stepper de una línea: el incremento congelado de su unidad (1 para `ud`). */
+  private stepOf(l: CartLine): number {
+    return l.increment_value ? fromMicro(l.increment_value) : 1;
+  }
+
   /** Fija la cantidad de una línea (desde ok-qty-stepper); al llegar a 0 la línea se elimina. */
-  private setQtyAbs(id: string, v: number) {
-    this.cart = this.cart
-      .map((l) => (l.id === id ? { ...l, qty: Math.max(0, Math.round(v)) } : l))
-      .filter((l) => l.qty > 0);
+  private async setQtyAbs(id: string, v: number) {
+    const ex = this.cart.find((l) => l.id === id);
+    if (!ex) return;
+    // ADR-0147 §2.2: el incremento VALIDA, no redondea. Fuera de rejilla → se RECHAZA y el
+    // pedido no se altera (re-render para que el stepper vuelva al valor persistido).
+    const qtyMicro = toMicro(Math.max(0, v));
+    if (!onGrid(qtyMicro, ex.increment_value ?? 0)) {
+      this.error = `${t('ui.qtyOffGrid')} (${formatQuantity(ex.increment_value ?? 0)} ${ex.unit_code ?? ''})`.trim();
+      this.cart = [...this.cart]; // re-render: el stepper vuelve a la cantidad real
+      return;
+    }
+    const qty = fromMicro(qtyMicro);
+    this.cart = qty > 0
+      ? this.cart.map((l) => (l === ex ? { ...l, qty } : l))
+      : this.cart.filter((l) => l !== ex);
+    // Persistencia INMEDIATA de la fila (0 → se elimina del pedido).
+    if (!this.orderId || !ex.line_id) return;
+    if (qty > 0) await updateOrderLineQty(erplora(), this.orderId, ex.line_id, qty, ex.price, ex.is_gift);
+    else await removeOrderLine(erplora(), this.orderId, ex.line_id);
+  }
+
+  /** Imprime la CUENTA (no fiscal). El navegador imprime el nodo del recibo; en Hub Local el
+   *  bridge de impresoras ESC/POS es un paso aparte (no bloquea llevar la cuenta a la mesa). */
+  private printPrebill() {
+    // Puerta GLOBAL del Hub: Bridge si lo hay; si no, se imprime el HTML PLANO de la cuenta en un
+    // iframe aislado. NO se imprime el DOM de la app: el papel vive en un ion-modal reparentado con
+    // shadow DOM y salía la app entera (o una hoja en blanco).
+    const doc = orderToPrebill(
+      this.cart.map((l) => ({ name: l.name, price: l.price, qty: l.qty, is_gift: l.is_gift })),
+      this.settings,
+      { tableLabel: this.tableLabel || undefined, notice: t('ui.prebillNotice') },
+    );
+    const sdk = (globalThis as { erplora?: { print?: (r: Record<string, unknown>) => Promise<unknown> } }).erplora;
+    const html = receiptToPrintableHtml(doc as Parameters<typeof receiptToPrintableHtml>[0]);
+    if (sdk?.print) void sdk.print({ role: 'receipt', documentType: 'prebill', html, data: doc as unknown as Record<string, unknown> });
+    else printHtmlInIframe(html);
+  }
+
+  /** Marca/desmarca una línea para el cobro por partes. Solo tiene sentido con más de una línea:
+   *  con una sola, «lo suyo» y «la cuenta» son lo mismo. */
+  private toggleSplit(l: CartLine) {
+    if (!l.line_id || this.cart.length < 2) return;
+    const s = new Set(this.splitSel);
+    if (s.has(l.line_id)) s.delete(l.line_id); else s.add(l.line_id);
+    this.splitSel = s;
   }
 
   private openPay() {
     if (!this.cart.length) return;
     this.tendered = '';
-    this.payMethod = this.methods[0];
+    this.payMethod = defaultPayMethod(this.payMethods);
     this.docFormat = this.settings.default_document_format === 'invoice' ? 'invoice' : 'ticket';
     this.paying = true;
   }
@@ -435,9 +847,14 @@ export class ErpPosTouch extends LitElement {
   // El pinpad teclea EUROS («20» = 20 €); el contrato de la venta es CÉNTIMOS (ADR-0007/0123),
   // como `total`. Sin esta conversión: «Efectivo 0.20 €» y cambio 0 en el tiquet (QA 2026-07-17).
   private get tenderedNum() { return eurosToCents(this.tendered || '0'); }
-  private get change() { return Math.max(0, this.tenderedNum - this.total); }
+  private get change() { return Math.max(0, this.tenderedNum - this.payable); }
+  /** Lo que se cobra AHORA: la selección si la hay, o la cuenta entera (ADR-0146). */
+  private get payable() { return splitTotal(this.cart, this.splitSel); }
 
-  private async confirm() {
+  /** Cierra la venta. La IMPRESIÓN no se dispara desde aquí: la hace el shell por el Bridge al
+   *  recibir `sale.completed` (ajuste `auto_print_on_sale`). El toggle de la pantalla de cobro
+   *  refleja esa preferencia; el diálogo del navegador solo aparece como respaldo manual. */
+  private async confirm(_print = false) {
     this.busy = true; this.error = '';
     try {
       // ADR-0069: la AUTORIDAD del IVA es el servidor. Cada línea manda su `tax_category_key`
@@ -448,35 +865,75 @@ export class ErpPosTouch extends LitElement {
       // category_id por línea (aditivo, QA 2026-06-25): el KDS enruta cada comanda a su estación
       // por la categoría del producto. Se toma la categoría PRIMARIA (primera) del producto desde
       // `prodCats` (Map product_id → Set category_id). null si el producto no está clasificado.
-      const items = this.cart.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: l.qty, tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: this.prodCats.get(l.id)?.values().next().value ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0 }));
+      // ADR-0146 — «cada uno paga lo suyo»: si hay líneas marcadas, este cobro cubre SOLO esas y el
+      // pedido sigue abierto para los demás. Marcarlas todas equivale a cobrar la cuenta entera.
+      const split = splitPayload(this.cart, this.splitSel);
+      const cobradas = split.line_ids
+        ? this.cart.filter((l) => l.line_id && this.splitSel.has(l.line_id))
+        : this.cart;
+      // `quantity` viaja en punto fijo 10⁶ y la línea lleva su contexto de unidades congelado
+      // (ADR-0147): el servidor valida la rejilla y calcula el importe por el SDK (KPEIN).
+      const items = cobradas.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: toMicro(l.qty), tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: this.prodCats.get(l.id)?.values().next().value ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0, ...unitContextPayload(l) }));
       await erplora().command('sales.complete_sale', {
         items,
+        line_ids: split.line_ids ?? null,
+        keep_order_open: split.keep_order_open,
         tax_included: this.settings.default_tax_included !== 0,
         payment_method_id: this.payMethod?.id ?? null,
         payment_method_name: this.payMethod?.name ?? 'Efectivo',
         amount_tendered: this.tenderedNum || this.total,
         channel: 'pos',
         source_module: 'pos',
-        table_id: this.tableId ?? null,
+        // ADR-0141: la venta nace de este PEDIDO. El servidor lo marca completado (open→completed)
+        // en el cobro final; para split-bill se enviaría `keep_order_open: true`.
+        order_id: this.orderId ?? null,
         customer_id: this.customerId ?? null,
         customer_name: this.customerName,
         // Snapshot fiscal del cliente (ADR-0132): sin esto la factura emitida desde el TPV sale sin
         // NIF ni dirección aunque el cliente los tenga en su ficha.
         customer_tax_id: this.customerTaxId,
         customer_address: this.customerAddress,
+        // Tipo de documento fiscal (ADR-0140): viaja ATÓMICAMENTE con la venta; `invoice` lo lee del
+        // evento para elegir F1 (completa) vs F2 (simplificada). Reemplaza al `set_document_type` retro.
+        document_type: this.docFormat,
       });
+      // complete_sale (WASM) no devuelve el id de la venta creada, así que re-consultamos la última
+      // para recuperar el `saleId` con el que mostrar el documento. El tipo ya quedó fijado dentro de
+      // complete_sale (ADR-0140) — ya no hay UPDATE retro sales.set_document_type.
       const recent = rows<{ id: string }>(await erplora().query('sales.list', { limit: 1, sort: 'created_at', dir: 'desc' }));
       const saleId = recent[0]?.id;
-      if (saleId && this.docFormat === 'invoice') {
-        await erplora().command('sales.set_document_type', { sale_id: saleId, document_type: 'invoice' });
-      }
+      // Cobrada: limpia la comanda de ESA mesa (o el carrito suelto) antes de soltarla, si no la
+      // comanda seguiría recuperándose al volver a tocar la mesa. La sesión la cierra el filler
+      // al recibir el reset de abajo.
+      if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = undefined; }
       this.paying = false;
+      this.splitSel = new Set();
+
+      // COBRO PARCIAL (ADR-0146): el pedido sigue abierto y en pantalla queda lo que falta por
+      // pagar. Las líneas cobradas ya no vuelven —la query solo devuelve lo pendiente—, así que no
+      // se pueden cobrar dos veces. La mesa tampoco se suelta: los demás siguen sentados.
+      if (split.keep_order_open && this.orderId) {
+        this.cart = await loadOrderLines(erplora(), this.orderId);
+        if (saleId) this.docSaleId = saleId;
+        return;
+      }
+
+      // Cobro de la cuenta entera: se limpia y se sueltan mesa y cliente.
       this.cart = [];
+      // El pedido quedó `completed` en el servidor dentro de la misma transacción de la venta: se
+      // suelta para que el siguiente ticket abra uno nuevo (ADR-0141).
+      forgetCurrentCheck(localStorage);
+      this.orderId = undefined;
       this.tableId = undefined; this.tableLabel = '';
       this.customerId = undefined; this.customerName = '';
       this.customerTaxId = ''; this.customerAddress = '';
       this.resetSlotContexts();
       if (saleId) this.docSaleId = saleId;
+      // NOTA (impresión): aquí NO se llama a window.print(). El tiquet lo imprime el SHELL por el
+      // BRIDGE (ESC/POS, rol `receipt`) escuchando `sale.completed` con el ajuste `auto_print_on_sale`
+      // — ya existía (apps/web/src/lib/print-on-sale.ts) y el runtime no toca hardware (§2.7).
+      // Abrir el diálogo del navegador por nuestra cuenta duplicaba ese camino y se lo comía.
+      // El diálogo del navegador queda SOLO como respaldo manual, desde el botón del documento.
     } catch (e) {
       this.error = e instanceof Error ? e.message : t('ui.errorCharge');
     } finally {
@@ -532,13 +989,14 @@ export class ErpPosTouch extends LitElement {
               <ion-icon slot="icon-only" name="chevron-forward-outline"></ion-icon>
             </ion-button>
           </ion-buttons>
-          <!-- Contexto asignado como CHIPS (mesa/cliente); sin texto "Venta" (no aportaba). Se ven
-               SIEMPRE en el header, por larga que sea la comanda. -->
+          <!-- Contexto asignado. La MESA no se pinta aquí: la pinta su dueño en el slot, con su X
+               para soltarla — pintarla en los dos sitios sacaba la misma mesa DOS VECES, solapada.
+               El CLIENTE sí, y no es capricho: su buscador monta un ok-spotlight-search que deja el
+               nombre solo en aria-label, así que sin este chip el cliente asignado no se vería. -->
           <ion-title>
-            ${this.tableLabel || this.customerName
+            ${this.customerName
               ? html`<span class="ctx-chips">
-                  ${this.tableLabel ? html`<span class="chip">${this.tableLabel}</span>` : nothing}
-                  ${this.customerName ? html`<span class="chip cust">${this.customerName}</span>` : nothing}
+                  <span class="chip cust">${this.customerName}</span>
                 </span>`
               : nothing}
           </ion-title>
@@ -567,9 +1025,14 @@ export class ErpPosTouch extends LitElement {
           <div class="pdrop">
             <ion-button size="small" expand="block" fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>${t('ui.parkCurrentSale')}</ion-button>
             <p class="hint">${t('ui.parkedTickets')}</p>
-            ${this.parked.map((pt) => html`<div class="pitem">
-              <div><div class="pn">${pt.ticket_number}</div><div class="pm">${(pt.created_at || '').replace('T', ' ').slice(0, 16)}</div></div>
-              <ion-button size="small" ?disabled=${!!this.cart.length} @click=${() => this.retrieve(pt)}>${t('ui.retrieve')}</ion-button>
+            ${this.parked.map((oc) => html`<div class="pitem">
+              <div>
+                <div class="pn">${oc.label || this.money(oc.total)}</div>
+                <div class="pm">${(oc.created_at || '').replace('T', ' ').slice(11, 16)}${oc.label ? ' · ' + this.money(oc.total) : ''}</div>
+              </div>
+              <!-- Ya NO se bloquea con algo marcado: lo de delante se aparca (sigue abierto) y se
+                   abre la elegida, igual que al cambiar de mesa (ADR-0146). -->
+              <ion-button size="small" @click=${() => this.retrieve(oc)}>${t('ui.retrieve')}</ion-button>
             </div>`)}
             ${!this.parked.length ? html`<div class="hint" style="text-align:center">${t('ui.noParkedTickets')}</div>` : nothing}
           </div>`
@@ -581,7 +1044,13 @@ export class ErpPosTouch extends LitElement {
       <ion-content class="cart-body">
         ${this.cart.length
           ? html`<ion-list class="lines" lines="full">
-              ${this.cart.map((l) => html`<ion-item>
+              ${this.cart.map((l) => html`<ion-item class=${l.line_id && this.splitSel.has(l.line_id) ? 'sel' : ''}
+                  button ?detail=${false} @click=${() => this.toggleSplit(l)}>
+                ${this.cart.length > 1 && l.line_id
+                  ? html`<ion-icon slot="start" class="selmark"
+                            name=${this.splitSel.has(l.line_id) ? 'checkmark-circle' : 'ellipse-outline'}
+                            color=${this.splitSel.has(l.line_id) ? 'primary' : 'medium'}></ion-icon>`
+                  : nothing}
                 <ion-label>
                   <h3>${l.name}${l.is_gift ? html` <ion-badge color="success">${t('ui.giftBadge')}</ion-badge>` : nothing}</h3>
                   <p>${this.money(l.price)}${l.is_gift && l.gift_reason ? html` · ${l.gift_reason}` : nothing}</p>
@@ -591,7 +1060,7 @@ export class ErpPosTouch extends LitElement {
                   <ion-button fill="clear" size="small" title=${t('ui.giftAction')} @click=${() => this.toggleGift(l.id)}>
                     <ion-icon name=${l.is_gift ? 'gift' : 'gift-outline'} slot="icon-only" color=${l.is_gift ? 'success' : 'medium'}></ion-icon>
                   </ion-button>
-                  <ok-qty-stepper .value=${l.qty} .min=${0} .step=${1}
+                  <ok-qty-stepper .value=${l.qty} .min=${0} .step=${this.stepOf(l)}
                     @ok-change=${(e: CustomEvent) => this.setQtyAbs(l.id, (e.detail as { value: number }).value)}></ok-qty-stepper>
                 </div>
               </ion-item>`)}
@@ -603,9 +1072,62 @@ export class ErpPosTouch extends LitElement {
       <ion-footer class="ion-no-border">
         <div class="cart-foot">
           <div class="total"><span>${t('ui.colTotal')}</span><b>${this.money(this.total)}</b></div>
-          <ion-button class="charge" expand="block" ?disabled=${!this.cart.length} @click=${() => this.openPay()}>
-            ${t('ui.charge')} ${this.money(this.total)}
-          </ion-button>
+          <!-- Forma de pago ANTES de cobrar (decisión de Ioan): se elige aquí, con la comanda
+               delante, y el modal de cobro queda limpio. Solo-icono porque son 3-4 opciones fijas
+               que el camarero reconoce de un vistazo; el nombre va en title/aria. Solo aparecen
+               las ACTIVAS (is_active en la query + los allow_* de Ajustes). -->
+          <!-- Los iconos de forma de pago se eligen en RUNTIME (payMethodIcon), y el empaquetador
+               del módulo solo hornea LITERALES: sin esta lista el icono viaja vacío y el botón sale
+               en blanco (le pasó a Bizum). Oculta, solo para que el build los recoja; hay un test
+               (pay-icons-baked) que vigila que estén todos. -->
+          <span hidden aria-hidden="true">
+            <ion-icon name="cash-outline"></ion-icon>
+            <ion-icon name="card-outline"></ion-icon>
+            <ion-icon name="phone-portrait-outline"></ion-icon>
+            <ion-icon name="swap-horizontal-outline"></ion-icon>
+            <ion-icon name="ticket-outline"></ion-icon>
+            <ion-icon name="gift-outline"></ion-icon>
+            <ion-icon name="ellipsis-horizontal-circle-outline"></ion-icon>
+          </span>
+          ${this.payMethods.length > 1 ? html`
+            <ion-segment class="pay-methods" value=${this.payMethod?.id ?? ''}
+                         @ionChange=${(e: CustomEvent) => {
+                           const id = (e.detail as { value: string }).value;
+                           this.payMethod = this.payMethods.find((m) => m.id === id) ?? this.payMethod;
+                           if (!needsTendered(this.payMethod)) this.tendered = '';
+                         }}>
+              ${this.payMethods.map((m) => {
+                // Marcas que no existen en Iconify (Bizum) van INLINE desde ui/assets; el resto,
+                // su Ionicon. El SVG usa currentColor, así que se tiñe igual al seleccionarlo.
+                const marca = brandSvgFor(m.type, m.name);
+                return html`
+                <ion-segment-button value=${m.id} title=${m.name} aria-label=${m.name}>
+                  ${marca
+                    ? html`<span class="brand">${unsafeSVG(marca)}</span>`
+                    : html`<ion-icon name=${payMethodIcon(m.type, m.name)}></ion-icon>`}
+                </ion-segment-button>`;
+              })}
+            </ion-segment>` : nothing}
+          <!-- Acciones SOLO-ICONO (ADR-0133): imprimir la CUENTA para llevarla a la mesa (no es un
+               documento fiscal) y COBRAR (que sí emite el tiquet fiscal). El importe ya se ve
+               grande arriba, así que el texto sobra; la etiqueta va en aria-label/title. -->
+          <div class="foot-actions">
+            <ion-button class="prebill" fill="outline" ?disabled=${!this.cart.length}
+                        title=${t('ui.fireToKitchen')} aria-label=${t('ui.fireToKitchen')}
+                        @click=${() => void this.fireToKitchen()}>
+              <ion-icon slot="icon-only" name="restaurant-outline"></ion-icon>
+            </ion-button>
+            <ion-button class="prebill" fill="outline" ?disabled=${!this.cart.length}
+                        title=${t('ui.printPrebill')} aria-label=${t('ui.printPrebill')}
+                        @click=${() => { this.prebillOpen = true; }}>
+              <ion-icon slot="icon-only" name="print-outline"></ion-icon>
+            </ion-button>
+            <ion-button class="charge" ?disabled=${!this.cart.length}
+                        title=${t('ui.charge')} aria-label=${t('ui.charge')}
+                        @click=${() => this.openPay()}>
+              <ion-icon slot="icon-only" name="cash-outline"></ion-icon>
+            </ion-button>
+          </div>
         </div>
       </ion-footer>`;
   }
@@ -641,26 +1163,48 @@ export class ErpPosTouch extends LitElement {
         ? html`<div class="scrim" @click=${(e: Event) => { if ((e.target as HTMLElement).classList.contains('scrim')) this.paying = false; }}>
             <div class="sheet">
               <div class="sheet-h">
-                <span class="t">${t('ui.charge')} ${this.money(this.total)}</span>
+                <span class="t">${t('ui.charge')}</span>
                 <button class="x" @click=${() => { this.paying = false; }}>✕</button>
               </div>
+              <!-- El IMPORTE manda en esta pantalla: grande, solo y SIEMPRE visible (fuera del
+                   scroll). Antes vivía en letra pequeña del título y el ojo no lo encontraba. -->
+              <div class="sheet-top">
+                <div class="pay-total">${this.money(this.payable)}</div>
+                ${this.splitSel.size
+                  ? html`<div class="pay-split">${t('ui.payingPart', { n: String(this.splitSel.size), total: this.money(this.total) })}</div>`
+                  : nothing}
+              </div>
               <div class="pay">
-                <div class="methods">
-                  ${this.methods.map((m) => html`<button class="chip" aria-pressed=${this.payMethod?.id === m.id} @click=${() => { this.payMethod = m; }}>${m.name}</button>`)}
-                  ${!this.methods.length ? html`<button class="chip" aria-pressed="true">${t('ui.cash')}</button>` : nothing}
-                </div>
-                <div class="amt"><span>${t('ui.tendered')}</span><span class="v">${this.money(this.tenderedNum)}</span></div>
-                <div class="amt"><span>${t('ui.change')}</span><span class="v change">${this.money(this.change)}</span></div>
-                <div class="numpad">
-                  ${['1','2','3','4','5','6','7','8','9','.','0','C'].map((k) => html`<button @click=${() => this.tap(k)}>${k}</button>`)}
-                </div>
-                <ion-segment value=${this.docFormat} @ionChange=${(e: CustomEvent) => { this.docFormat = ((e.detail as { value: string }).value === 'invoice' ? 'invoice' : 'ticket'); }}>
-                  <ion-segment-button value="ticket"><ion-label>${t('ui.formatTicket')}</ion-label></ion-segment-button>
-                  <ion-segment-button value="invoice"><ion-label>${t('ui.formatInvoice')}</ion-label></ion-segment-button>
-                </ion-segment>
-                ${this.error ? html`<p style="color:var(--ion-color-danger,#d9480f)">${this.error}</p>` : nothing}
-                <ion-button class="charge" expand="block" ?disabled=${this.busy} @click=${() => this.confirm()}>
-                  ${this.busy ? t('ui.charging') : t('ui.confirmCharge')}
+
+                <!-- Entregado/cambio/teclado SOLO en efectivo: con tarjeta se cobra el total y no
+                     hay nada que teclear (lo decide requires_change, no un "si es efectivo"). -->
+                ${needsTendered(this.payMethod)
+                  ? html`
+                    <div class="amt"><span>${t('ui.tendered')}</span><span class="v">${this.money(this.tenderedNum)}</span></div>
+                    ${this.change > 0
+                      ? html`<div class="amt big-change"><span>${t('ui.change')}</span><span class="v">${this.money(this.change)}</span></div>`
+                      : nothing}
+                    <div class="numpad">
+                      ${['1','2','3','4','5','6','7','8','9','.','0','C'].map((k) => html`<button @click=${() => this.tap(k)}>${k}</button>`)}
+                    </div>`
+                  : nothing}
+
+                <!-- Imprimir deja de ser un botón gemelo del de cobrar (dos botones azules iguales
+                     no dicen cuál hace qué): es una PREFERENCIA del cobro. -->
+                <ion-item lines="none" class="print-row">
+                  <ion-icon slot="start" name="print-outline"></ion-icon>
+                  <ion-label>${t('ui.printReceipt')}</ion-label>
+                  <ion-toggle slot="end" .checked=${this.printOnCharge}
+                              @ionChange=${(e: CustomEvent) => { this.printOnCharge = !!(e.detail as { checked: boolean }).checked; }}></ion-toggle>
+                </ion-item>
+
+              </div>
+              <div class="sheet-foot">
+                ${this.error ? html`<p class="pay-err">${this.error}</p>` : nothing}
+                <!-- UNA acción, dice lo que hace y por cuánto, y no exige scroll para alcanzarla. -->
+                <ion-button class="charge" expand="block" ?disabled=${this.busy}
+                            @click=${() => this.confirm(this.printOnCharge)}>
+                  ${this.busy ? t('ui.charging') : `${t('ui.charge')} ${this.money(this.total)}`}
                 </ion-button>
               </div>
             </div>
@@ -684,6 +1228,30 @@ export class ErpPosTouch extends LitElement {
       </ok-spotlight-search>
 
       ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => { this.docSaleId = undefined; }, t })}
+      <!-- CUENTA previa (ADR-0141): lo que se lleva a la mesa antes de cobrar. NO es fiscal — sin
+           número de serie ni QR VeriFactu; el tiquet fiscal lo emite el cobro. -->
+      <ion-modal class="doc-modal" .isOpen=${this.prebillOpen}
+                 @ionModalDidDismiss=${() => { this.prebillOpen = false; }}>
+        <ion-header><ion-toolbar>
+          <ion-title>${t('ui.prebillTitle')}</ion-title>
+          <ion-buttons slot="end">
+            <ion-button title=${t('ui.print')} aria-label=${t('ui.print')} @click=${() => this.printPrebill()}>
+              <ion-icon slot="icon-only" name="print-outline"></ion-icon>
+            </ion-button>
+            <ion-button title=${t('ui.close')} aria-label=${t('ui.close')}
+                        @click=${() => { this.prebillOpen = false; }}>
+              <ion-icon slot="icon-only" name="close-outline"></ion-icon>
+            </ion-button>
+          </ion-buttons>
+        </ion-toolbar></ion-header>
+        <ion-content class="doc-body ion-padding">
+          <ok-receipt id="prebill-doc" .data=${orderToPrebill(
+            this.cart.map((l) => ({ name: l.name, price: l.price, qty: l.qty, is_gift: l.is_gift })),
+            this.settings,
+            { tableLabel: this.tableLabel || undefined, notice: t('ui.prebillNotice') },
+          )}></ok-receipt>
+        </ion-content>
+      </ion-modal>
     </div>`;
   }
 }

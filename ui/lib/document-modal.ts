@@ -13,6 +13,7 @@
 // (fuera del shadow del componente anfitrión), y al viajar con el modal las reglas aplican igual
 // en ambos escenarios. También oculta pie y X al imprimir (@media print).
 import { html, nothing, type TemplateResult } from 'lit';
+import { printHtmlInIframe } from './receipt-html.js';
 import '../components/erp-sales-document/erp-sales-document.js';
 
 export interface DocumentModalOpts {
@@ -51,10 +52,11 @@ export function renderDocumentModal({ saleId, onClose, t }: DocumentModalOpts): 
         box-sizing: border-box;
       }
       ion-modal.doc-modal .doc-wrap > erp-sales-document { margin: auto 0; }
-      @media print {
-        ion-modal.doc-modal ion-footer,
-        ion-modal.doc-modal ion-button.doc-close { display: none; }
-      }
+      /* Las reglas de IMPRESIÓN viven en el SHELL (apps/web/src/print.css), no aquí: un style
+         dentro del modal solo existe mientras ESE modal está abierto, así que imprimir la cuenta
+         previa —cuyo modal no lo llevaba— sacaba la app entera. La clase doc-modal es el contrato:
+         el shell imprime lo que la lleve.
+         (Y NO metas backticks en comentarios dentro de una plantilla Lit: cierran el literal.) */
     </style>
     <ion-content class="doc-body">
       <ion-button class="doc-close" slot="fixed" style="top:0;right:0" fill="clear" color="medium"
@@ -69,7 +71,18 @@ export function renderDocumentModal({ saleId, onClose, t }: DocumentModalOpts): 
       <ion-toolbar>
         <!-- Solo-icono (ADR-0133): el nombre va en aria-label, nunca texto visible. A ancho
              completo igualmente: en el TPV táctil el objetivo grande manda. -->
-        <ion-button class="print" expand="block" aria-label=${t('ui.print')} @click=${() => window.print()}>
+        <ion-button class="print" expand="block" aria-label=${t('ui.print')} @click=${() => {
+          // Se imprime el DOCUMENTO, no la app: se pide su HTML plano al <erp-sales-document> y se
+          // manda por la puerta global (Bridge si lo hay; si no, iframe aislado). Imprimir el DOM
+          // del modal era indomable — ion-modal reparentado + shadow DOM = app entera o hoja blanca.
+          const el = document.querySelector('ion-modal.doc-modal')?.querySelector('erp-sales-document') as
+            (HTMLElement & { printableHtml?: () => string }) | null;
+          const html = el?.printableHtml?.();
+          const sdk = (globalThis as { erplora?: { print?: (r: Record<string, unknown>) => Promise<unknown> } }).erplora;
+          if (sdk?.print) void sdk.print({ role: 'receipt', documentType: 'receipt', html, jobId: saleId ? `sale-${saleId}` : undefined });
+          else if (html) printHtmlInIframe(html);
+          else window.print();
+        }}>
           <ion-icon slot="icon-only" name="print-outline"></ion-icon>
         </ion-button>
       </ion-toolbar>
