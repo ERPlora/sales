@@ -20,9 +20,11 @@ import {
   mergeCartLines, listOpenChecks, type OpenCheck,
   // ADR-0141: el carrito lo respalda un PEDIDO real (filas), no un blob con debounce.
   openOrderWithLines, addOrderLine, updateOrderLineQty, persistLineQty, removeOrderLine, loadOrderLines, mergeOrders,
-  type CartLine, type ErploraClientLike,
+  unitContextPayload, type CartLine, type ErploraClientLike,
 } from '../../lib/pos-cart.js';
 import { buildCategoryRatesMap, resolveLineTax } from '../../lib/pos-tax.js';
+// La frontera de la ESCALA de cantidades (ADR-0147): la UI trabaja en lógico (0,5), el cable en 10⁶.
+import { toMicro, fromMicro, onGrid, formatQuantity } from '../../lib/quantity.js';
 // Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC.
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
@@ -36,7 +38,15 @@ const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 // (naranja). En móvil el carrito se recoge a un drawer abierto desde un botón flotante naranja.
 // Quitar línea = cantidad a 0. Al cobrar: `sales.complete_sale` (channel='pos') → documento.
 
-interface Product { id: string; name: string; sku?: string; price: number; cost?: number; is_active?: number; product_type?: string; image?: string; tax_category_key?: string; }
+interface Product {
+  id: string; name: string; sku?: string; price: number; cost?: number; is_active?: number;
+  product_type?: string; image?: string; tax_category_key?: string;
+  // ADR-0147: unidad base + cantidad de precio del maestro (inventory/006). El POS los CONGELA
+  // en la línea al añadirla — el histórico nunca relee el maestro.
+  unit_code?: string; price_quantity_value?: number; pricing_unit_code?: string;
+}
+/** Fila de `inventory.units.list` (registro de unidades, ADR-0147). */
+interface UnitRow { code: string; name?: string; increment_value?: number; factor_num?: number; factor_den?: number; }
 interface PayMethod {
   id: string; name: string; type?: string;
   /** 1 = pide importe entregado y calcula cambio (efectivo); 0 = importe exacto (tarjeta, Bizum…). */
@@ -305,6 +315,8 @@ export class ErpPosTouch extends LitElement {
   private customerAddress = '';
 
   private prodCats = new Map<string, Set<string>>();
+  /** Registro de unidades (ADR-0147): code → fila, para congelar el contexto al añadir línea. */
+  private units = new Map<string, UnitRow>();
   /** Mapa tax_category_key → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
   private ratesMap = new Map<string, number>();
   private cartRestored = false;
@@ -442,7 +454,7 @@ export class ErpPosTouch extends LitElement {
     document.addEventListener('fullscreenchange', this.onFsChange);
     window.addEventListener('erplora:locale-changed', this.onLocaleChange);
     try {
-      const [prods, methods, settingsRows, savedCart, parked, cats, prodCats, ratesMap] = await Promise.all([
+      const [prods, methods, settingsRows, savedCart, parked, cats, prodCats, ratesMap, unitRows] = await Promise.all([
         erplora().queryAll<Product>('inventory.products.list').catch(() => []),
         erplora().query('sales.payment_methods').catch(() => []),
         erplora().query('sales.settings.get').catch(() => []),
@@ -451,8 +463,10 @@ export class ErpPosTouch extends LitElement {
         erplora().queryAll<Category>('inventory.categories.list', { sort: 'name', dir: 'asc' }).catch(() => []),
         erplora().queryAll<ProdCat>('inventory.product_categories').catch(() => []),
         buildCategoryRatesMap(erplora()),
+        erplora().queryAll<UnitRow>('inventory.units.list').catch(() => [] as UnitRow[]),
       ]);
       this.ratesMap = ratesMap;
+      for (const u of rows<UnitRow>(unitRows)) if (u.code) this.units.set(u.code, u);
       this.products = rows<Product>(prods).filter((p) => p.is_active !== 0);
       this.methods = rows<PayMethod>(methods);
       this.settings = rows<PosSettings>(settingsRows)[0] || {};
@@ -718,6 +732,7 @@ export class ErpPosTouch extends LitElement {
       const line: CartLine = {
         id: p.id, name: p.name, sku: p.sku, price: Number(p.price), qty: 1,
         tax_category_key: p.tax_category_key, tax_rate, cost: Number(p.cost) || 0,
+        ...this.frozenUnitContext(p),
       };
       // Abre el pedido con la primera línea, o añádela al ya abierto. En ambos casos la fila queda
       // escrita ANTES de que la UI siga: un corte de corriente ya no se lleva el artículo.
@@ -748,11 +763,40 @@ export class ErpPosTouch extends LitElement {
       await updateOrderLineQty(erplora(), this.orderId, ex.line_id, ex.qty, ex.price, is_gift, gift_reason ?? '');
     }
   }
+  /** Contexto de unidades CONGELADO desde el maestro (ADR-0147 §2.4): unidad de la línea, su
+   *  incremento y la cantidad de precio (KPEIN). Sin registro/unidad → unidad suelta implícita. */
+  private frozenUnitContext(p: Product): Partial<CartLine> {
+    const u = p.unit_code ? this.units.get(p.unit_code) : undefined;
+    if (!u) return {};
+    return {
+      unit_code: u.code,
+      unit_name: u.name || '',
+      factor_num: Number(u.factor_num) || 1,
+      factor_den: Number(u.factor_den) || 1,
+      increment_value: Number(u.increment_value) || undefined,
+      price_quantity_value: Number(p.price_quantity_value) || undefined,
+      pricing_unit_code: p.pricing_unit_code || u.code,
+    };
+  }
+
+  /** Paso del stepper de una línea: el incremento congelado de su unidad (1 para `ud`). */
+  private stepOf(l: CartLine): number {
+    return l.increment_value ? fromMicro(l.increment_value) : 1;
+  }
+
   /** Fija la cantidad de una línea (desde ok-qty-stepper); al llegar a 0 la línea se elimina. */
   private async setQtyAbs(id: string, v: number) {
     const ex = this.cart.find((l) => l.id === id);
     if (!ex) return;
-    const qty = Math.max(0, Math.round(v));
+    // ADR-0147 §2.2: el incremento VALIDA, no redondea. Fuera de rejilla → se RECHAZA y el
+    // pedido no se altera (re-render para que el stepper vuelva al valor persistido).
+    const qtyMicro = toMicro(Math.max(0, v));
+    if (!onGrid(qtyMicro, ex.increment_value ?? 0)) {
+      this.error = `${t('ui.qtyOffGrid')} (${formatQuantity(ex.increment_value ?? 0)} ${ex.unit_code ?? ''})`.trim();
+      this.cart = [...this.cart]; // re-render: el stepper vuelve a la cantidad real
+      return;
+    }
+    const qty = fromMicro(qtyMicro);
     this.cart = qty > 0
       ? this.cart.map((l) => (l === ex ? { ...l, qty } : l))
       : this.cart.filter((l) => l !== ex);
@@ -827,7 +871,9 @@ export class ErpPosTouch extends LitElement {
       const cobradas = split.line_ids
         ? this.cart.filter((l) => l.line_id && this.splitSel.has(l.line_id))
         : this.cart;
-      const items = cobradas.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: l.qty, tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: this.prodCats.get(l.id)?.values().next().value ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0 }));
+      // `quantity` viaja en punto fijo 10⁶ y la línea lleva su contexto de unidades congelado
+      // (ADR-0147): el servidor valida la rejilla y calcula el importe por el SDK (KPEIN).
+      const items = cobradas.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: toMicro(l.qty), tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: this.prodCats.get(l.id)?.values().next().value ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0, ...unitContextPayload(l) }));
       await erplora().command('sales.complete_sale', {
         items,
         line_ids: split.line_ids ?? null,
@@ -1014,7 +1060,7 @@ export class ErpPosTouch extends LitElement {
                   <ion-button fill="clear" size="small" title=${t('ui.giftAction')} @click=${() => this.toggleGift(l.id)}>
                     <ion-icon name=${l.is_gift ? 'gift' : 'gift-outline'} slot="icon-only" color=${l.is_gift ? 'success' : 'medium'}></ion-icon>
                   </ion-button>
-                  <ok-qty-stepper .value=${l.qty} .min=${0} .step=${1}
+                  <ok-qty-stepper .value=${l.qty} .min=${0} .step=${this.stepOf(l)}
                     @ok-change=${(e: CustomEvent) => this.setQtyAbs(l.id, (e.detail as { value: number }).value)}></ok-qty-stepper>
                 </div>
               </ion-item>`)}

@@ -106,7 +106,7 @@ describe('carrito respaldado por pedido (ADR-0141)', () => {
     const lineId = await addOrderLine(client, 'ord-1', line({ qty: 3 }));
     expect(lineId).toBe('line-9');
     expect(calls.find((c) => c.name === 'sales.order.add_line')!.params).toMatchObject({
-      order_id: 'ord-1', quantity: 3, unit_price: 250, line_total: 750,
+      order_id: 'ord-1', quantity: 3_000_000, unit_price: 250, line_total: 750, // cable en 10⁶ (ADR-0147); el dinero NO se reescala
     });
   });
 
@@ -114,7 +114,7 @@ describe('carrito respaldado por pedido (ADR-0141)', () => {
     const { client, calls } = orderClient();
     await updateOrderLineQty(client, 'ord-1', 'line-9', 4, 250);
     expect(calls.find((c) => c.name === 'sales.order.update_line')!.params).toMatchObject({
-      order_id: 'ord-1', line_id: 'line-9', quantity: 4, line_total: 1000,
+      order_id: 'ord-1', line_id: 'line-9', quantity: 4_000_000, line_total: 1000,
     });
   });
 
@@ -128,7 +128,7 @@ describe('carrito respaldado por pedido (ADR-0141)', () => {
 
   it('carga las líneas del pedido conservando el line_id (para poder mutarlas)', async () => {
     const { client } = orderClient([], [
-      { id: 'line-1', product_id: 'p1', product_name: 'Cerveza', quantity: 2, unit_price: 250, line_total: 500 },
+      { id: 'line-1', product_id: 'p1', product_name: 'Cerveza', quantity: 2_000_000, unit_price: 250, line_total: 500 },
     ]);
     const lines = await loadOrderLines(client, 'ord-1');
     expect(lines).toHaveLength(1);
@@ -167,8 +167,8 @@ describe('fusionar comandas (mergeOrders)', () => {
 
   it('lleva las líneas del pedido origen al destino y ANULA el origen', async () => {
     const { client, calls } = mergeClient([
-      { id: 'l1', product_id: 'p1', product_name: 'Cerveza', quantity: 2, unit_price: 250, line_total: 500 },
-      { id: 'l2', product_id: 'p2', product_name: 'Tapa', quantity: 1, unit_price: 350, line_total: 350 },
+      { id: 'l1', product_id: 'p1', product_name: 'Cerveza', quantity: 2_000_000, unit_price: 250, line_total: 500 },
+      { id: 'l2', product_id: 'p2', product_name: 'Tapa', quantity: 1_000_000, unit_price: 350, line_total: 350 },
     ]);
     await mergeOrders(client, 'ord-origen', 'ord-destino');
 
@@ -177,14 +177,14 @@ describe('fusionar comandas (mergeOrders)', () => {
     expect(añadidas.every((c) => c.params!.order_id === 'ord-destino')).toBe(true);
     expect(añadidas.map((c) => c.params!.product_name).sort()).toEqual(['Cerveza', 'Tapa']);
     // cantidades y precios se conservan (no se pierde nada de la cuenta)
-    expect(añadidas.find((c) => c.params!.product_name === 'Cerveza')!.params).toMatchObject({ quantity: 2, unit_price: 250 });
+    expect(añadidas.find((c) => c.params!.product_name === 'Cerveza')!.params).toMatchObject({ quantity: 2_000_000, unit_price: 250 });
 
     const anulado = calls.find((c) => c.name === 'sales.order.void');
     expect(anulado?.params, 'el pedido origen queda anulado, no duplicado').toMatchObject({ order_id: 'ord-origen' });
   });
 
   it('no hace nada si origen y destino son el mismo pedido', async () => {
-    const { client, calls } = mergeClient([{ id: 'l1', product_id: 'p1', product_name: 'X', quantity: 1, unit_price: 100 }]);
+    const { client, calls } = mergeClient([{ id: 'l1', product_id: 'p1', product_name: 'X', quantity: 1_000_000, unit_price: 100 }]);
     await mergeOrders(client, 'ord-1', 'ord-1');
     expect(calls.filter((c) => c.name === 'sales.order.add_line')).toHaveLength(0);
     expect(calls.filter((c) => c.name === 'sales.order.void')).toHaveLength(0);

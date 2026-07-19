@@ -5,6 +5,7 @@
 // el módulo sales; de momento usamos `receipt_header`/`receipt_footer` de los ajustes y dejamos
 // NIF/dirección/QR vacíos (se rellenan cuando se cablee el perfil del negocio + verifactu).
 
+import { fromMicro } from './quantity';
 import type {
   ReceiptData,
   InvoiceData,
@@ -188,7 +189,7 @@ export function saleToReceipt(
     customer: fiscal.customer_name || sale.customer_name || undefined,
     lines: lines.map((l) => ({
       name: lineLabel(l),
-      qty: Number(l.quantity),
+      qty: fromMicro(Number(l.quantity)), // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
       unit_price: toEuros(l.unit_price),
       total: toEuros(l.line_total),
     })),
@@ -219,7 +220,7 @@ export function saleToInvoice(
   const header = (settings.receipt_header || '').trim();
   const invLines: InvoiceLine[] = lines.map((l) => ({
     description: lineLabel(l),
-    qty: Number(l.quantity),
+    qty: fromMicro(Number(l.quantity)), // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
     unit_price: toEuros(l.unit_price),
     discount_percent: l.discount_percent ? Number(l.discount_percent) : undefined,
     tax_rate: l.tax_rate != null ? Number(l.tax_rate) : undefined,

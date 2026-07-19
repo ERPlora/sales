@@ -29,8 +29,9 @@ describe('buildFirePayload (ADR-0141: la comanda nace del pedido)', () => {
       line({ id: 'p2', name: 'Vino', qty: 1, price: 250 }),
     ]);
     expect(p.items).toEqual([
-      { product_id: 'p1', product_name: 'Croquetas', quantity: 2, unit_price: 350, notes: '' },
-      { product_id: 'p2', product_name: 'Vino', quantity: 1, unit_price: 250, notes: '' },
+      // El CABLE habla punto fijo 10⁶ (ADR-0147): 2 croquetas son 2000000. La UI sigue en lógico.
+      { product_id: 'p1', product_name: 'Croquetas', quantity: 2_000_000, unit_price: 350, notes: '' },
+      { product_id: 'p2', product_name: 'Vino', quantity: 1_000_000, unit_price: 250, notes: '' },
     ]);
   });
 

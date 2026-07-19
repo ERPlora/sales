@@ -145,6 +145,7 @@
     "firedToKitchen": "Sent to kitchen",
     "fireFailed": "Couldn't send to kitchen",
     "lineNotSaved": "Couldn't save that item — tap again",
-    "payingPart": "Paying {n} of {total}"
+    "payingPart": "Paying {n} of {total}",
+    "qtyOffGrid": "Quantity doesn't fit the product's step"
   }
 }

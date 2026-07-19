@@ -9,7 +9,7 @@ var __decorateClass = (decorators, target, key, kind) => {
   return result;
 };
 
-// ../../node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
+// ../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
 var ElementInternalsShim = class ElementInternals {
   get shadowRoot() {
     return this.__host.__shadowRoot;
@@ -88,7 +88,7 @@ var ElementInternalsShim = class ElementInternals {
   }
 };
 
-// ../../node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
+// ../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
 var __classPrivateFieldSet = function(receiver, state, value, kind, f3) {
   if (kind === "m") throw new TypeError("Private method is not writable");
   if (kind === "a" && !f3) throw new TypeError("Private accessor was defined without a setter");
@@ -246,7 +246,7 @@ Object.defineProperties(CustomEventShim.prototype, {
 var EventShimWithRealType = EventShim;
 var CustomEventShimWithRealType = CustomEventShim;
 
-// ../../node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
+// ../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
 var _a2;
 var CSSRuleShim = (_a2 = class CSSRule {
   constructor() {
@@ -277,7 +277,7 @@ var CSSRuleShim = (_a2 = class CSSRule {
   }
 }, _a2.STYLE_RULE = 1, _a2.CHARSET_RULE = 2, _a2.IMPORT_RULE = 3, _a2.MEDIA_RULE = 4, _a2.FONT_FACE_RULE = 5, _a2.PAGE_RULE = 6, _a2.NAMESPACE_RULE = 10, _a2.KEYFRAMES_RULE = 7, _a2.KEYFRAME_RULE = 8, _a2.SUPPORTS_RULE = 12, _a2.COUNTER_STYLE_RULE = 11, _a2.FONT_FEATURE_VALUES_RULE = 14, _a2.MARGIN_RULE = 9, _a2);
 
-// ../../node_modules/.pnpm/@lit-labs+ssr-dom-shim@1.6.0/node_modules/@lit-labs/ssr-dom-shim/index.js
+// ../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/index.js
 globalThis.Event ??= EventShimWithRealType;
 globalThis.CustomEvent ??= CustomEventShimWithRealType;
 var constructionToken = Symbol();
@@ -674,7 +674,7 @@ var CustomElementRegistryShimWithRealType = CustomElementRegistry;
 var customElements2 = new CustomElementRegistryShimWithRealType();
 var windowShim = new WindowShim(constructionToken);
 
-// ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/css-tag.js
+// ../../../module-toolkit/node_modules/@lit/reactive-element/node/css-tag.js
 var t = globalThis;
 var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
 var s = Symbol();
@@ -719,7 +719,7 @@ var c = e || void 0 === t.CSSStyleSheet ? (t7) => t7 : (t7) => t7 instanceof CSS
   return r(e7);
 })(t7) : t7;
 
-// ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/reactive-element.js
+// ../../../module-toolkit/node_modules/@lit/reactive-element/node/reactive-element.js
 var { is: h, defineProperty: r2, getOwnPropertyDescriptor: o2, getOwnPropertyNames: n3, getOwnPropertySymbols: a, getPrototypeOf: c2 } = Object;
 var l = globalThis;
 l.customElements ??= customElements2;
@@ -942,7 +942,7 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
 };
 g.elementStyles = [], g.shadowRootOptions = { mode: "open" }, g[f("elementProperties")] = /* @__PURE__ */ new Map(), g[f("finalized")] = /* @__PURE__ */ new Map(), u?.({ ReactiveElement: g }), (l.reactiveElementVersions ??= []).push("2.1.2");
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
+// ../../../module-toolkit/node_modules/lit-html/lit-html.js
 var t2 = globalThis;
 var i2 = (t7) => t7;
 var s2 = t2.trustedTypes;
@@ -1197,7 +1197,7 @@ var D = (t7, i7, s5) => {
   return h4._$AI(t7), h4;
 };
 
-// ../../node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
+// ../../../module-toolkit/node_modules/lit-element/lit-element.js
 var s3 = globalThis;
 var i3 = class extends g {
   constructor() {
@@ -1226,14 +1226,14 @@ var o4 = s3.litElementPolyfillSupport;
 o4?.({ LitElement: i3 });
 (s3.litElementVersions ??= []).push("4.2.2");
 
-// ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/define.js
+// ../../../outfitkit/dist/define.js
 function define(tag, ctor) {
   if (typeof customElements !== "undefined" && !customElements.get(tag)) {
     customElements.define(tag, ctor);
   }
 }
 
-// ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/property.js
+// ../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
 var r4 = (t7 = o5, e7, r6) => {
   const { kind: n7, metadata: i7 } = r6;
@@ -1263,15 +1263,15 @@ function n5(t7) {
   })(t7, e7, o9);
 }
 
-// ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/state.js
+// ../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/state.js
 function r5(r6) {
   return n5({ ...r6, state: true, attribute: false });
 }
 
-// ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/base.js
+// ../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/base.js
 var e3 = (e7, t7, c5) => (c5.configurable = true, c5.enumerable = true, Reflect.decorate && "object" != typeof t7 && Object.defineProperty(e7, t7, c5), c5);
 
-// ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/query.js
+// ../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/query.js
 function e4(e7, r6) {
   return (n7, s5, i7) => {
     const o9 = (t7) => t7.renderRoot?.querySelector(e7) ?? null;
@@ -1295,7 +1295,7 @@ function e4(e7, r6) {
   };
 }
 
-// ../../node_modules/.pnpm/@erplora+module-sdk@file+..+hub+packages+module-sdk/node_modules/@erplora/module-sdk/src/index.ts
+// ../../../hub/packages/module-sdk/src/index.ts
 function isEmpty(v3) {
   return v3 === null || v3 === void 0 || v3 === "";
 }
@@ -1501,7 +1501,7 @@ function printHtmlInIframe(html, doc = document) {
   else w2.addEventListener("load", () => setTimeout(lanzar, 50), { once: true });
 }
 
-// ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-qr.js
+// ../../../outfitkit/dist/ok-qr.js
 var __defProp2 = Object.defineProperty;
 var __decorateClass2 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2149,7 +2149,7 @@ __decorateClass2([
 ], OkQr.prototype, "margin");
 define("ok-qr", OkQr);
 
-// ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-receipt.js
+// ../../../outfitkit/dist/ok-receipt.js
 var __defProp3 = Object.defineProperty;
 var __decorateClass3 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2338,7 +2338,7 @@ __decorateClass3([
 ], OkReceipt.prototype, "labels");
 define("ok-receipt", OkReceipt);
 
-// ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-invoice.js
+// ../../../outfitkit/dist/ok-invoice.js
 var __defProp4 = Object.defineProperty;
 var __decorateClass4 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2562,6 +2562,22 @@ __decorateClass4([
 ], OkInvoice.prototype, "labels");
 define("ok-invoice", OkInvoice);
 
+// ui/lib/quantity.ts
+var QUANTITY_SCALE = 1e6;
+function toMicro(qty) {
+  return Math.round(qty * QUANTITY_SCALE);
+}
+function fromMicro(raw) {
+  return raw / QUANTITY_SCALE;
+}
+function formatQuantity(raw) {
+  return String(fromMicro(raw));
+}
+function onGrid(raw, increment) {
+  if (!Number.isFinite(increment) || increment <= 0) return true;
+  return raw % increment === 0;
+}
+
 // ui/lib/document-mappers.ts
 function toEuros(cents) {
   return Number(cents ?? 0) / 100;
@@ -2648,7 +2664,8 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es") {
     customer: fiscal.customer_name || sale.customer_name || void 0,
     lines: lines.map((l3) => ({
       name: lineLabel(l3),
-      qty: Number(l3.quantity),
+      qty: fromMicro(Number(l3.quantity)),
+      // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
       unit_price: toEuros(l3.unit_price),
       total: toEuros(l3.line_total)
     })),
@@ -2669,7 +2686,8 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es") {
   const header = (settings.receipt_header || "").trim();
   const invLines = lines.map((l3) => ({
     description: lineLabel(l3),
-    qty: Number(l3.quantity),
+    qty: fromMicro(Number(l3.quantity)),
+    // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
     unit_price: toEuros(l3.unit_price),
     discount_percent: l3.discount_percent ? Number(l3.discount_percent) : void 0,
     tax_rate: l3.tax_rate != null ? Number(l3.tax_rate) : void 0,
@@ -2869,7 +2887,8 @@ var es_default = {
     firedToKitchen: "Enviado a cocina",
     fireFailed: "No se pudo enviar a cocina",
     lineNotSaved: "No se pudo guardar ese art\xEDculo \u2014 vuelve a tocarlo",
-    payingPart: "Cobrando {n} l\xEDnea(s) de {total}"
+    payingPart: "Cobrando {n} l\xEDnea(s) de {total}",
+    qtyOffGrid: "La cantidad no encaja con el escal\xF3n del producto"
   },
   widgets: {
     "sales.today": {
@@ -3037,7 +3056,8 @@ var en_default = {
     firedToKitchen: "Sent to kitchen",
     fireFailed: "Couldn't send to kitchen",
     lineNotSaved: "Couldn't save that item \u2014 tap again",
-    payingPart: "Paying {n} of {total}"
+    payingPart: "Paying {n} of {total}",
+    qtyOffGrid: "Quantity doesn't fit the product's step"
   }
 };
 
@@ -3299,7 +3319,8 @@ function buildFirePayload(orderId, label, lines) {
     items: lines.map((l3) => ({
       product_id: l3.id,
       product_name: l3.name,
-      quantity: l3.qty,
+      // Punto fijo 10⁶ (ADR-0147): cocina recibe 500000 y pinta 0,5 — su frontera, su formato.
+      quantity: toMicro(l3.qty),
       unit_price: l3.price,
       // El motivo de una invitación es información de sala que el cocinero necesita ver.
       notes: l3.is_gift ? l3.gift_reason ?? "" : ""
@@ -3379,7 +3400,7 @@ function brandSvgFor(type, name) {
   return void 0;
 }
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
+// ../../../module-toolkit/node_modules/lit-html/directive.js
 var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e5 = (t7) => (...e7) => ({ _$litDirective$: t7, values: e7 });
 var i4 = class {
@@ -3399,7 +3420,7 @@ var i4 = class {
   }
 };
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-html.js
+// ../../../module-toolkit/node_modules/lit-html/directives/unsafe-html.js
 var e6 = class extends i4 {
   constructor(i7) {
     if (super(i7), this.it = A, i7.type !== t3.CHILD) throw Error(this.constructor.directiveName + "() can only be used in child bindings");
@@ -3417,7 +3438,7 @@ var e6 = class extends i4 {
 e6.directiveName = "unsafeHTML", e6.resultType = 1;
 var o6 = e5(e6);
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-svg.js
+// ../../../module-toolkit/node_modules/lit-html/directives/unsafe-svg.js
 var t4 = class extends e6 {
 };
 t4.directiveName = "unsafeSVG", t4.resultType = 2;
@@ -3479,7 +3500,7 @@ function defaultPayMethod(methods) {
   return methods.find((m4) => (m4.type || "").trim().toLowerCase() === "cash") ?? methods.find((m4) => /efectiv|cash|met[\u00e1a]lico/i.test(m4.name || "")) ?? methods[0];
 }
 
-// ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/shared/icons.js
+// ../../../outfitkit/dist/shared/icons.js
 var rawAdd = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M256 112v288m144-144H112"/></svg>';
 var rawAlertCircle = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="M256 48C141.31 48 48 141.31 48 256s93.31 208 208 208s208-93.31 208-208S370.69 48 256 48m0 319.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20m21.72-201.15l-5.74 122a16 16 0 0 1-32 0l-5.74-121.94v-.05a21.74 21.74 0 1 1 43.44 0Z"/></svg>';
 var rawAlertCircleOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" d="M448 256c0-106-86-192-192-192S64 150 64 256s86 192 192 192s192-86 192-192Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M250.26 166.05L256 288l5.73-121.95a5.74 5.74 0 0 0-5.79-6h0a5.74 5.74 0 0 0-5.68 6"/><path fill="currentColor" d="M256 367.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20"/></svg>';
@@ -3627,7 +3648,7 @@ function okIcon(value) {
   return BY_NAME2[value] ?? value;
 }
 
-// ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-qty-stepper.js
+// ../../../outfitkit/dist/ok-qty-stepper.js
 var __defProp5 = Object.defineProperty;
 var __decorateClass5 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -3835,7 +3856,7 @@ __decorateClass5([
 ], OkQtyStepper.prototype, "labels");
 define("ok-qty-stepper", OkQtyStepper);
 
-// ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-spotlight-search.js
+// ../../../outfitkit/dist/ok-spotlight-search.js
 var __defProp6 = Object.defineProperty;
 var __decorateClass6 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -4067,17 +4088,33 @@ function firstNewId(res) {
 function provisionalLineTotal(unitPrice, qty, isGift) {
   return isGift ? 0 : Math.round(unitPrice * qty);
 }
+function unitContextPayload(l3) {
+  const ctx = {};
+  if (l3.unit_code) ctx.unit_code = l3.unit_code;
+  if (l3.unit_name) ctx.unit_name = l3.unit_name;
+  if (l3.factor_num) ctx.factor_num = l3.factor_num;
+  if (l3.factor_den) ctx.factor_den = l3.factor_den;
+  if (l3.increment_value) ctx.increment_value = l3.increment_value;
+  if (l3.price_quantity_value) ctx.price_quantity_value = l3.price_quantity_value;
+  if (l3.pricing_unit_code) ctx.pricing_unit_code = l3.pricing_unit_code;
+  if (l3.pricing_unit_name) ctx.pricing_unit_name = l3.pricing_unit_name;
+  if (l3.pricing_factor_num) ctx.pricing_factor_num = l3.pricing_factor_num;
+  if (l3.pricing_factor_den) ctx.pricing_factor_den = l3.pricing_factor_den;
+  return ctx;
+}
 function toItemPayload(l3) {
   return {
     product_id: l3.id || null,
     product_name: l3.name,
     product_sku: l3.sku ?? "",
     price: l3.price,
-    quantity: l3.qty,
+    quantity: toMicro(l3.qty),
+    // punto fijo 10⁶ (ADR-0147)
     is_gift: !!l3.is_gift,
     gift_reason: l3.gift_reason ?? "",
     tax_category_key: l3.tax_category_key ?? "",
-    cost: l3.cost ?? 0
+    cost: l3.cost ?? 0,
+    ...unitContextPayload(l3)
   };
 }
 async function openOrderWithLines(client, lines) {
@@ -4090,13 +4127,15 @@ async function addOrderLine(client, orderId, l3) {
     product_id: l3.id || null,
     product_name: l3.name,
     product_sku: l3.sku ?? "",
-    quantity: l3.qty,
+    quantity: toMicro(l3.qty),
+    // punto fijo 10⁶ (ADR-0147)
     unit_price: l3.price,
     is_gift: !!l3.is_gift,
     gift_reason: l3.gift_reason ?? "",
     tax_category_key: l3.tax_category_key ?? "",
     cost: l3.cost ?? 0,
-    line_total: provisionalLineTotal(l3.price, l3.qty, l3.is_gift)
+    line_total: provisionalLineTotal(l3.price, l3.qty, l3.is_gift),
+    ...unitContextPayload(l3)
   });
   return firstNewId(res);
 }
@@ -4115,7 +4154,8 @@ async function updateOrderLineQty(client, orderId, lineId, qty, unitPrice, isGif
   await client.command("sales.order.update_line", {
     order_id: orderId,
     line_id: lineId,
-    quantity: qty,
+    quantity: toMicro(qty),
+    // punto fijo 10⁶ (ADR-0147)
     line_total: provisionalLineTotal(unitPrice, qty, isGift),
     // Alternar invitación cambia el importe: viaja junto para que la fila quede coherente.
     is_gift: isGift === void 0 ? null : isGift ? 1 : 0,
@@ -4134,13 +4174,27 @@ async function loadOrderLines(client, orderId) {
       name: String(x2.product_name ?? ""),
       sku: x2.product_sku ? String(x2.product_sku) : void 0,
       price: Number(x2.unit_price) || 0,
-      qty: Number(x2.quantity) || 1,
+      // La fila trae punto fijo 10⁶ (ADR-0147); la UI trabaja en lógico. Cerrar y reabrir el
+      // pedido debe seguir mostrando 0,5 kg — no 500000 ni 1.
+      qty: fromMicro(Number(x2.quantity) || 1e6),
       is_gift: x2.is_gift === 1 || x2.is_gift === true ? true : void 0,
       gift_reason: x2.gift_reason ? String(x2.gift_reason) : void 0,
       // Autoridad del IVA en servidor (ADR-0085) y coste para el arqueo de invitaciones: se
       // recuperan para que un pedido REANUDADO cobre con el mismo IVA que si no se hubiera recargado.
       tax_category_key: x2.tax_category_key ? String(x2.tax_category_key) : void 0,
-      cost: Number(x2.cost) || void 0
+      cost: Number(x2.cost) || void 0,
+      // Contexto de unidades CONGELADO (ADR-0147 §2.4): vuelve con la línea para que el pedido
+      // reanudado valide la misma rejilla y cobre con el mismo contexto.
+      unit_code: x2.unit_code ? String(x2.unit_code) : void 0,
+      unit_name: x2.unit_name ? String(x2.unit_name) : void 0,
+      factor_num: Number(x2.factor_num) || void 0,
+      factor_den: Number(x2.factor_den) || void 0,
+      increment_value: Number(x2.increment_value) || void 0,
+      price_quantity_value: Number(x2.price_quantity_value) || void 0,
+      pricing_unit_code: x2.pricing_unit_code ? String(x2.pricing_unit_code) : void 0,
+      pricing_unit_name: x2.pricing_unit_name ? String(x2.pricing_unit_name) : void 0,
+      pricing_factor_num: Number(x2.pricing_factor_num) || void 0,
+      pricing_factor_den: Number(x2.pricing_factor_den) || void 0
     }));
   } catch {
     return [];
@@ -4242,6 +4296,8 @@ var ErpPosTouch = class extends i3 {
     this.customerTaxId = "";
     this.customerAddress = "";
     this.prodCats = /* @__PURE__ */ new Map();
+    /** Registro de unidades (ADR-0147): code → fila, para congelar el contexto al añadir línea. */
+    this.units = /* @__PURE__ */ new Map();
     /** Mapa tax_category_key → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
     this.ratesMap = /* @__PURE__ */ new Map();
     this.cartRestored = false;
@@ -4537,7 +4593,7 @@ var ErpPosTouch = class extends i3 {
     document.addEventListener("fullscreenchange", this.onFsChange);
     window.addEventListener("erplora:locale-changed", this.onLocaleChange);
     try {
-      const [prods, methods, settingsRows, savedCart, parked, cats, prodCats, ratesMap] = await Promise.all([
+      const [prods, methods, settingsRows, savedCart, parked, cats, prodCats, ratesMap, unitRows] = await Promise.all([
         erplora2().queryAll("inventory.products.list").catch(() => []),
         erplora2().query("sales.payment_methods").catch(() => []),
         erplora2().query("sales.settings.get").catch(() => []),
@@ -4545,9 +4601,11 @@ var ErpPosTouch = class extends i3 {
         listOpenChecks(erplora2()),
         erplora2().queryAll("inventory.categories.list", { sort: "name", dir: "asc" }).catch(() => []),
         erplora2().queryAll("inventory.product_categories").catch(() => []),
-        buildCategoryRatesMap(erplora2())
+        buildCategoryRatesMap(erplora2()),
+        erplora2().queryAll("inventory.units.list").catch(() => [])
       ]);
       this.ratesMap = ratesMap;
+      for (const u5 of rows2(unitRows)) if (u5.code) this.units.set(u5.code, u5);
       this.products = rows2(prods).filter((p4) => p4.is_active !== 0);
       this.methods = rows2(methods);
       this.settings = rows2(settingsRows)[0] || {};
@@ -4785,7 +4843,8 @@ var ErpPosTouch = class extends i3 {
         qty: 1,
         tax_category_key: p4.tax_category_key,
         tax_rate,
-        cost: Number(p4.cost) || 0
+        cost: Number(p4.cost) || 0,
+        ...this.frozenUnitContext(p4)
       };
       if (!this.orderId) {
         await this.ensureOrder(line);
@@ -4811,11 +4870,36 @@ var ErpPosTouch = class extends i3 {
       await updateOrderLineQty(erplora2(), this.orderId, ex.line_id, ex.qty, ex.price, is_gift, gift_reason ?? "");
     }
   }
+  /** Contexto de unidades CONGELADO desde el maestro (ADR-0147 §2.4): unidad de la línea, su
+   *  incremento y la cantidad de precio (KPEIN). Sin registro/unidad → unidad suelta implícita. */
+  frozenUnitContext(p4) {
+    const u5 = p4.unit_code ? this.units.get(p4.unit_code) : void 0;
+    if (!u5) return {};
+    return {
+      unit_code: u5.code,
+      unit_name: u5.name || "",
+      factor_num: Number(u5.factor_num) || 1,
+      factor_den: Number(u5.factor_den) || 1,
+      increment_value: Number(u5.increment_value) || void 0,
+      price_quantity_value: Number(p4.price_quantity_value) || void 0,
+      pricing_unit_code: p4.pricing_unit_code || u5.code
+    };
+  }
+  /** Paso del stepper de una línea: el incremento congelado de su unidad (1 para `ud`). */
+  stepOf(l3) {
+    return l3.increment_value ? fromMicro(l3.increment_value) : 1;
+  }
   /** Fija la cantidad de una línea (desde ok-qty-stepper); al llegar a 0 la línea se elimina. */
   async setQtyAbs(id, v3) {
     const ex = this.cart.find((l3) => l3.id === id);
     if (!ex) return;
-    const qty = Math.max(0, Math.round(v3));
+    const qtyMicro = toMicro(Math.max(0, v3));
+    if (!onGrid(qtyMicro, ex.increment_value ?? 0)) {
+      this.error = `${t5("ui.qtyOffGrid")} (${formatQuantity(ex.increment_value ?? 0)} ${ex.unit_code ?? ""})`.trim();
+      this.cart = [...this.cart];
+      return;
+    }
+    const qty = fromMicro(qtyMicro);
     this.cart = qty > 0 ? this.cart.map((l3) => l3 === ex ? { ...l3, qty } : l3) : this.cart.filter((l3) => l3 !== ex);
     if (!this.orderId || !ex.line_id) return;
     if (qty > 0) await updateOrderLineQty(erplora2(), this.orderId, ex.line_id, qty, ex.price, ex.is_gift);
@@ -4879,7 +4963,7 @@ var ErpPosTouch = class extends i3 {
     try {
       const split = splitPayload(this.cart, this.splitSel);
       const cobradas = split.line_ids ? this.cart.filter((l3) => l3.line_id && this.splitSel.has(l3.line_id)) : this.cart;
-      const items = cobradas.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: l3.qty, tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0, category_id: this.prodCats.get(l3.id)?.values().next().value ?? null, is_gift: l3.is_gift ?? false, gift_reason: l3.gift_reason ?? "", cost: l3.cost ?? 0 }));
+      const items = cobradas.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: toMicro(l3.qty), tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0, category_id: this.prodCats.get(l3.id)?.values().next().value ?? null, is_gift: l3.is_gift ?? false, gift_reason: l3.gift_reason ?? "", cost: l3.cost ?? 0, ...unitContextPayload(l3) }));
       await erplora2().command("sales.complete_sale", {
         items,
         line_ids: split.line_ids ?? null,
@@ -5048,7 +5132,7 @@ var ErpPosTouch = class extends i3 {
                   <ion-button fill="clear" size="small" title=${t5("ui.giftAction")} @click=${() => this.toggleGift(l3.id)}>
                     <ion-icon name=${l3.is_gift ? "gift" : "gift-outline"} slot="icon-only" color=${l3.is_gift ? "success" : "medium"}></ion-icon>
                   </ion-button>
-                  <ok-qty-stepper .value=${l3.qty} .min=${0} .step=${1}
+                  <ok-qty-stepper .value=${l3.qty} .min=${0} .step=${this.stepOf(l3)}
                     @ok-change=${(e7) => this.setQtyAbs(l3.id, e7.detail.value)}></ok-qty-stepper>
                 </div>
               </ion-item>`)}
@@ -5350,7 +5434,7 @@ var ErpPos = class extends i3 {
 };
 define("erp-pos", ErpPos);
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
+// ../../../module-toolkit/node_modules/lit-html/directive-helpers.js
 var { I: t6 } = j;
 var i5 = (o9) => o9;
 var s4 = () => document.createComment("");
@@ -5383,7 +5467,7 @@ var h3 = (o9) => {
   o9._$AR(), o9._$AA.remove();
 };
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
+// ../../../module-toolkit/node_modules/lit-html/directives/repeat.js
 var u4 = (e7, s5, t7) => {
   const r6 = /* @__PURE__ */ new Map();
   for (let l3 = s5; l3 <= t7; l3++) r6.set(e7[l3], l3);
@@ -5436,7 +5520,7 @@ var c4 = e5(class extends i4 {
   }
 });
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
+// ../../../module-toolkit/node_modules/lit-html/directives/style-map.js
 var n6 = "important";
 var i6 = " !" + n6;
 var o8 = e5(class extends i4 {
@@ -5465,7 +5549,7 @@ var o8 = e5(class extends i4 {
   }
 });
 
-// ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-data-table.js
+// ../../../outfitkit/dist/ok-data-table.js
 var CSV_BOM = "\uFEFF";
 function decodeCsvBuffer(buf) {
   let text;

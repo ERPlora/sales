@@ -145,7 +145,8 @@
     "firedToKitchen": "Enviado a cocina",
     "fireFailed": "No se pudo enviar a cocina",
     "lineNotSaved": "No se pudo guardar ese artículo — vuelve a tocarlo",
-    "payingPart": "Cobrando {n} línea(s) de {total}"
+    "payingPart": "Cobrando {n} línea(s) de {total}",
+    "qtyOffGrid": "La cantidad no encaja con el escalón del producto"
   },
   "widgets": {
     "sales.today": {

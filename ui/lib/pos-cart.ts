@@ -9,12 +9,29 @@
 // Lo que NO vive aquí: aparcar y soltar la mesa son de `tables` (ADR-0146), y qué cuenta mira este
 // terminal es estado del dispositivo (`current-check.ts`).
 
+import { toMicro, fromMicro } from './quantity';
+
 export interface CartLine {
   id: string;
   name: string;
   sku?: string;
   price: number;
+  /** Cantidad LÓGICA (0,5 = medio kilo). El cable habla punto fijo 10⁶ (ADR-0147): la conversión
+   *  vive SOLO en las funciones de este fichero (toMicro al enviar, fromMicro al cargar). */
   qty: number;
+  /** ── Contexto de unidades CONGELADO de la línea (ADR-0147 §2.4, del maestro al añadir) ──
+   *  El histórico nunca relee el maestro: si mañana las gambas pasan de kg a ud, esta línea
+   *  sigue siendo 0,5 kg. `increment_value` (µ) es además la rejilla que valida la UI. */
+  unit_code?: string;
+  unit_name?: string;
+  factor_num?: number;
+  factor_den?: number;
+  increment_value?: number;
+  price_quantity_value?: number;
+  pricing_unit_code?: string;
+  pricing_unit_name?: string;
+  pricing_factor_num?: number;
+  pricing_factor_den?: number;
   /** ADR-0141: id de la FILA `sales_order_item` que respalda esta línea. Presente cuando el carrito
    *  está respaldado por un pedido real; es lo que permite mutarla (update/remove) sin reescribir
    *  todo el carrito. Ausente en el camino viejo (blob) y en tickets aparcados. */
@@ -149,17 +166,34 @@ function provisionalLineTotal(unitPrice: number, qty: number, isGift?: boolean):
   return isGift ? 0 : Math.round(unitPrice * qty);
 }
 
+/** El contexto de unidades congelado, tal y como viaja en los payloads (solo claves presentes). */
+export function unitContextPayload(l: CartLine): Record<string, unknown> {
+  const ctx: Record<string, unknown> = {};
+  if (l.unit_code) ctx.unit_code = l.unit_code;
+  if (l.unit_name) ctx.unit_name = l.unit_name;
+  if (l.factor_num) ctx.factor_num = l.factor_num;
+  if (l.factor_den) ctx.factor_den = l.factor_den;
+  if (l.increment_value) ctx.increment_value = l.increment_value;
+  if (l.price_quantity_value) ctx.price_quantity_value = l.price_quantity_value;
+  if (l.pricing_unit_code) ctx.pricing_unit_code = l.pricing_unit_code;
+  if (l.pricing_unit_name) ctx.pricing_unit_name = l.pricing_unit_name;
+  if (l.pricing_factor_num) ctx.pricing_factor_num = l.pricing_factor_num;
+  if (l.pricing_factor_den) ctx.pricing_factor_den = l.pricing_factor_den;
+  return ctx;
+}
+
 function toItemPayload(l: CartLine): Record<string, unknown> {
   return {
     product_id: l.id || null,
     product_name: l.name,
     product_sku: l.sku ?? '',
     price: l.price,
-    quantity: l.qty,
+    quantity: toMicro(l.qty), // punto fijo 10⁶ (ADR-0147)
     is_gift: !!l.is_gift,
     gift_reason: l.gift_reason ?? '',
     tax_category_key: l.tax_category_key ?? '',
     cost: l.cost ?? 0,
+    ...unitContextPayload(l),
   };
 }
 
@@ -176,13 +210,14 @@ export async function addOrderLine(client: ErploraClientLike, orderId: string, l
     product_id: l.id || null,
     product_name: l.name,
     product_sku: l.sku ?? '',
-    quantity: l.qty,
+    quantity: toMicro(l.qty), // punto fijo 10⁶ (ADR-0147)
     unit_price: l.price,
     is_gift: !!l.is_gift,
     gift_reason: l.gift_reason ?? '',
     tax_category_key: l.tax_category_key ?? '',
     cost: l.cost ?? 0,
     line_total: provisionalLineTotal(l.price, l.qty, l.is_gift),
+    ...unitContextPayload(l),
   });
   return firstNewId(res);
 }
@@ -220,7 +255,7 @@ export async function updateOrderLineQty(
   isGift?: boolean, giftReason?: string,
 ): Promise<void> {
   await client.command('sales.order.update_line', {
-    order_id: orderId, line_id: lineId, quantity: qty,
+    order_id: orderId, line_id: lineId, quantity: toMicro(qty), // punto fijo 10⁶ (ADR-0147)
     line_total: provisionalLineTotal(unitPrice, qty, isGift),
     // Alternar invitación cambia el importe: viaja junto para que la fila quede coherente.
     is_gift: isGift === undefined ? null : (isGift ? 1 : 0),
@@ -243,13 +278,27 @@ export async function loadOrderLines(client: ErploraClientLike, orderId: string)
       name: String(x.product_name ?? ''),
       sku: x.product_sku ? String(x.product_sku) : undefined,
       price: Number(x.unit_price) || 0,
-      qty: Number(x.quantity) || 1,
+      // La fila trae punto fijo 10⁶ (ADR-0147); la UI trabaja en lógico. Cerrar y reabrir el
+      // pedido debe seguir mostrando 0,5 kg — no 500000 ni 1.
+      qty: fromMicro(Number(x.quantity) || 1_000_000),
       is_gift: x.is_gift === 1 || x.is_gift === true ? true : undefined,
       gift_reason: x.gift_reason ? String(x.gift_reason) : undefined,
       // Autoridad del IVA en servidor (ADR-0085) y coste para el arqueo de invitaciones: se
       // recuperan para que un pedido REANUDADO cobre con el mismo IVA que si no se hubiera recargado.
       tax_category_key: x.tax_category_key ? String(x.tax_category_key) : undefined,
       cost: Number(x.cost) || undefined,
+      // Contexto de unidades CONGELADO (ADR-0147 §2.4): vuelve con la línea para que el pedido
+      // reanudado valide la misma rejilla y cobre con el mismo contexto.
+      unit_code: x.unit_code ? String(x.unit_code) : undefined,
+      unit_name: x.unit_name ? String(x.unit_name) : undefined,
+      factor_num: Number(x.factor_num) || undefined,
+      factor_den: Number(x.factor_den) || undefined,
+      increment_value: Number(x.increment_value) || undefined,
+      price_quantity_value: Number(x.price_quantity_value) || undefined,
+      pricing_unit_code: x.pricing_unit_code ? String(x.pricing_unit_code) : undefined,
+      pricing_unit_name: x.pricing_unit_name ? String(x.pricing_unit_name) : undefined,
+      pricing_factor_num: Number(x.pricing_factor_num) || undefined,
+      pricing_factor_den: Number(x.pricing_factor_den) || undefined,
     }));
   } catch {
     return [];

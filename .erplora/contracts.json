@@ -6,6 +6,7 @@
       "inventory.categories.list",
       "inventory.product_categories",
       "inventory.products.list",
+      "inventory.units.list",
       "sales.get",
       "sales.lines",
       "sales.list",

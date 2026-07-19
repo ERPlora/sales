@@ -8,6 +8,7 @@
 // rellena es el POS, que sí tiene a mano el nombre de la mesa asignada (o nada, si es barra).
 
 import type { CartLine } from './pos-cart';
+import { toMicro } from './quantity';
 
 export interface FireItem {
   product_id: string;
@@ -40,7 +41,8 @@ export function buildFirePayload(
     items: lines.map((l) => ({
       product_id: l.id,
       product_name: l.name,
-      quantity: l.qty,
+      // Punto fijo 10⁶ (ADR-0147): cocina recibe 500000 y pinta 0,5 — su frontera, su formato.
+      quantity: toMicro(l.qty),
       unit_price: l.price,
       // El motivo de una invitación es información de sala que el cocinero necesita ver.
       notes: l.is_gift ? (l.gift_reason ?? '') : '',
