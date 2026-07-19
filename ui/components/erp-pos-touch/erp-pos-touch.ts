@@ -268,8 +268,10 @@ export class ErpPosTouch extends LitElement {
 
     @media (max-width: 820px) {
       .body { grid-template-columns: 1fr; }
+      /* Sin sombra: aun cerrado (translateX(100%)) su box-shadow se derramaba ~30px hacia dentro
+         por el borde derecho de la tarjeta; la separación al abrir la dan el backdrop y el borde. */
       .cart { position:absolute; top:0; right:0; bottom:0; width:min(92%,26rem); z-index:60;
-        box-shadow:-8px 0 32px rgba(0,0,0,.5); transform:translateX(100%); transition:transform .25s ease; }
+        transform:translateX(100%); transition:transform .25s ease; }
       .cart[data-open] { transform:translateX(0); }
       .cart-close { display:inline-flex; }
       .cart-backdrop[data-open] { display:block; position:absolute; inset:0; background:rgba(0,0,0,.5); z-index:55; }
