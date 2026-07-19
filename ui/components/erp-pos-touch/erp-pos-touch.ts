@@ -8,7 +8,7 @@ import { orderToPrebill } from '../../lib/document-mappers.js';
 import { receiptToPrintableHtml, printHtmlInIframe } from '../../lib/receipt-html.js';
 import { decideOnTableChange } from '../../lib/table-switch.js';
 import { defaultParkLabel } from '../../lib/park-label.js';
-import { groupByRound, pendingLines, nextRoundNo, isLineLocked } from '../../lib/rounds.js';
+import { pendingLines, nextRoundNo, isLineLocked } from '../../lib/rounds.js';
 import { buildFirePayload } from '../../lib/fire-order.js';
 import { createSerialQueue } from '../../lib/serial-queue.js';
 import { splitPayload, splitTotal } from '../../lib/split-selection.js';
@@ -16,7 +16,7 @@ import { forgetCurrentCheck, rememberCurrentCheck, resolveCurrentCheck } from '.
 import { brandSvgFor } from '../../lib/brand-icons.js';
 import { priceLabel } from '../../lib/price-label.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
-import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod, quickCashAmounts, payMethodDisplayName } from '../../lib/pay-icons.js';
+import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod, payMethodDisplayName } from '../../lib/pay-icons.js';
 import '@erplora/outfitkit/ok-qty-stepper';
 import '@erplora/outfitkit/ok-spotlight-search';
 import {
@@ -60,8 +60,6 @@ interface PosSettings {
   default_tax_included?: number;
   /** Formas de pago permitidas (Ajustes). 0 = desactivada. */
   allow_cash?: number; allow_card?: number; allow_transfer?: number;
-  /** Modo restaurante (tandas): añade el segment Pedido/Tandas al carrito. Solo UI. */
-  restaurant_mode?: number;
 }
 interface Category { id: string; name: string; icon?: string; color?: string; image?: string; product_count?: number; }
 interface ProdCat { product_id: string; category_id: string; }
@@ -222,11 +220,6 @@ export class ErpPosTouch extends LitElement {
     .pay-methods .brand svg { height:100%; width:auto; max-width:4.5rem; display:block; }
     /* Tarjeta: nada que teclear — el importe exacto y la pista del datáfono. */
     .pay-hint { margin:.1rem 0 .4rem; color:var(--mut); font-size:.9rem; }
-    /* Atajos de efectivo: el cajero pulsa en vez de teclear. */
-    .quick { display:grid; grid-template-columns:repeat(4,1fr); gap:.4rem; margin:.7rem 0 .5rem; }
-    .qbtn { padding:.55rem .2rem; border-radius:10px; border:1px solid var(--ion-border-color);
-      background:var(--tile); color:var(--tx); font-weight:700; font-size:.9rem; cursor:pointer; }
-    .qbtn[aria-pressed=true] { border-color:var(--accent); color:var(--accent); }
     /* El cambio es lo que el cajero busca con el ojo al devolver. */
     .amt.big-change .v { font-size:1.6rem; font-weight:800; color:var(--accent); }
     .print-row { --background:transparent; --padding-start:0; --inner-padding-end:0; margin:.5rem 0 .2rem; }
@@ -252,20 +245,18 @@ export class ErpPosTouch extends LitElement {
     .pdel { margin:0; }
 
     .lqty { color:var(--mut); font-weight:700; }
-    /* VISTA ÚNICA de restaurante (sketch Ioan): PENDIENTE DE ENVIAR arriba (borde de acento —
-       es donde trabaja el camarero) y las COMANDAS enviadas debajo, la más reciente primero. */
-    .courses { padding:.4rem .5rem .8rem; display:flex; flex-direction:column; gap:.6rem; }
-    .course { border:1px solid var(--ion-border-color); border-radius:12px; overflow:hidden; }
-    .course.current { border-color:var(--accent); }
-    .course-h { display:flex; align-items:center; gap:.4rem; padding:.5rem .7rem;
+    /* Secciones POR DATO: PENDIENTE DE ENVIAR arriba (borde de acento — donde trabaja el
+       camarero) y ENVIADO debajo. El detalle por comanda es del chip+modal de kitchen, que se
+       monta en .sec-slot de la cabecera de ENVIADO. */
+    .secs { padding:.4rem .5rem .8rem; display:flex; flex-direction:column; gap:.6rem; }
+    .sec { border:1px solid var(--ion-border-color); border-radius:12px; overflow:hidden; }
+    .sec.sec-pending { border-color:var(--accent); }
+    .sec-h { display:flex; align-items:center; gap:.4rem; padding:.5rem .7rem;
       font-weight:700; font-size:.82rem; text-transform:uppercase; letter-spacing:.04em;
       background:var(--tile); }
-    .course-h .ctime { color:var(--mut); font-weight:400; letter-spacing:0; text-transform:none; }
-    .course-h .ccount { color:var(--mut); }
-    /* Estado de la comanda (ENVIADA; mañana PREPARANDO/LISTA/SERVIDA con los eventos de cocina). */
-    .course-h .cstate { margin-left:auto; font-size:.62rem; font-weight:800; padding:.1rem .45rem;
-      border-radius:999px; background:var(--ion-color-warning,#f5a623); color:#1c1b18; }
-    .course .send-round { margin:.5rem .6rem .6rem; }
+    .sec-h .ccount { color:var(--mut); }
+    .sec-h .sec-slot { margin-left:auto; display:inline-flex; align-items:center;
+      text-transform:none; letter-spacing:0; }
 
     /* Diálogos nativos (top layer): aparcar-con-nombre y carrito sucio. En móvil/tablet toman
        ASPECTO de sheet (suben desde abajo, asa, esquinas solo arriba — pregunta de Ioan
@@ -397,6 +388,9 @@ export class ErpPosTouch extends LitElement {
   private assignFillers: Array<{ component: string; el: HTMLElement }> = [];
   /** Fillers del slot del FOOTER (`sales.pos.actions`): kitchen aporta «Enviar a cocina». */
   private actionFillers: Array<{ component: string; el: HTMLElement }> = [];
+  /** Fillers del slot de INFO del pedido (`sales.pos.order_info`, cabecera de ENVIADO):
+   *  kitchen aporta su chip «Comandas · N» que abre el modal con estados en vivo. */
+  private infoFillers: Array<{ component: string; el: HTMLElement }> = [];
   // Comanda ATADA a la mesa (puntos 1+2): al cambiar de mesa se GUARDA la comanda de la mesa
   // actual y se RECUPERA la de la nueva (o el carrito suelto si es null). Así tocar una mesa
   // ocupada trae su tiquet a la pantalla de venta, como cualquier POS.
@@ -614,6 +608,13 @@ export class ErpPosTouch extends LitElement {
       component: f.component,
       el: document.createElement(f.component) as HTMLElement,
     }));
+    // Slot de INFO del pedido: kitchen cuelga aquí su chip de comandas (modal con estados).
+    let info: Array<Record<string, unknown> & { component: string }> = [];
+    try { info = (await sdk.loadSlot('sales.pos.order_info')) ?? []; } catch { info = []; }
+    this.infoFillers = info.map((f) => ({
+      component: f.component,
+      el: document.createElement(f.component) as HTMLElement,
+    }));
     this.requestUpdate();
   }
 
@@ -639,16 +640,26 @@ export class ErpPosTouch extends LitElement {
       pie.insertBefore(f.el, pie.firstChild);
       this.emitPosState([f]);
     }
+    // Info del pedido: el chip de comandas de kitchen vive en la cabecera de ENVIADO (solo se
+    // pinta cuando hay líneas enviadas; el montaje resiliente lo re-engancha al reaparecer).
+    const infoHost = this.renderRoot.querySelector('.sec-slot') as HTMLElement | null;
+    if (infoHost) for (const f of this.infoFillers) {
+      if (f.el.parentElement === infoHost) continue;
+      infoHost.appendChild(f.el);
+      this.emitPosState([f]);
+    }
   }
 
-  /** Cuenta a los fillers del footer el estado del carrito (`erp:pos-state`, contrato del slot
-   *  `sales.pos.actions`). Al filler no viaja ninguna línea: solo lo que necesita para pintarse. */
-  private emitPosState(fillers = this.actionFillers): void {
+  /** Cuenta a los fillers (footer + info) el estado del carrito (`erp:pos-state`). Al filler no
+   *  viaja ninguna línea: solo lo que necesita para pintarse — incluido `pending_count`, el
+   *  badge del botón de cocina («cuánto queda sin enviar»). */
+  private emitPosState(fillers = [...this.actionFillers, ...this.infoFillers]): void {
     for (const f of fillers) {
       f.el.dispatchEvent(new CustomEvent('erp:pos-state', {
         detail: {
           order_id: this.orderId,
           items_count: this.cart.length,
+          pending_count: pendingLines(this.cart).length,
           label: this.tableLabel,
           channel: 'dine_in',
         },
@@ -1310,7 +1321,7 @@ export class ErpPosTouch extends LitElement {
            el pie se mueven. Con divs a pelo, una comanda larga empujaba el botón de COBRAR fuera de
            la pantalla — en un TPV eso es no poder cobrar. -->
       <ion-content class="cart-body">
-        ${this.restaurantMode ? this.renderRestaurantView() : this.renderOrderList()}
+        ${this.hasFired ? this.renderSections() : this.renderOrderList()}
       </ion-content>
 
       <!-- El PIE. ion-footer es un pie de verdad: se queda abajo pase lo que pase. -->
@@ -1363,9 +1374,11 @@ export class ErpPosTouch extends LitElement {
       </ion-footer>`;
   }
 
-  /** Modo restaurante activo (ajuste `restaurant_mode`): añade el segment Pedido/Tandas. */
-  private get restaurantMode(): boolean {
-    return this.settings.restaurant_mode === 1;
+  /** ¿Hay líneas ya ENVIADAS a producción? El carrito se parte en secciones cuando el DATO lo
+   *  dice — no hay toggle: la funcionalidad llega instalando módulos (kitchen dispara; una
+   *  tienda jamás dispara y jamás ve secciones). Composición de lo básico a lo complejo. */
+  private get hasFired(): boolean {
+    return this.cart.some((l) => !!l.fired_at);
   }
 
   /** La pestaña PEDIDO (y el carrito plano sin modo restaurante): la cuenta a cobrar. */
@@ -1409,43 +1422,34 @@ export class ErpPosTouch extends LitElement {
     </ion-item>`;
   }
 
-  /** VISTA ÚNICA de restaurante (sketch de Ioan, 2026-07-19; como Toast/Lightspeed, sin
-   *  pestañas): PENDIENTE DE ENVIAR arriba — editable, con su CTA «Enviar comanda» pegado a lo
-   *  que envía — y debajo las COMANDAS enviadas, la más reciente primero, en solo-lectura con
-   *  su hora y estado. El CTA solo existe si cocina está (el slot del footer tiene filler). */
-  private renderRestaurantView() {
-    const [pendiente, ...enviadas] = groupByRound(this.cart);
-    return html`<div class="courses">
-      <div class="course current">
-        <div class="course-h">
+  /** Secciones POR DATO (debate Ioan 2026-07-19, 2ª ronda): PENDIENTE DE ENVIAR arriba
+   *  (editable — donde trabaja el camarero) y ENVIADO debajo (bloqueado, cobrable). El detalle
+   *  por comanda — números, horas, ESTADOS EN VIVO del KDS — no vive aquí: lo aporta kitchen
+   *  con su chip+modal por el slot `sales.pos.order_info` (montado en la cabecera de ENVIADO).
+   *  El envío es el botón de kitchen del footer (uno solo, con badge de pendientes). */
+  private renderSections() {
+    const pendientes = pendingLines(this.cart);
+    const enviadas = this.cart.filter((l) => !!l.fired_at);
+    return html`<div class="secs">
+      <div class="sec sec-pending">
+        <div class="sec-h">
           <ion-icon name="create-outline" color="primary"></ion-icon>
-          <span class="cname">${t('ui.courseInProgress')}</span>
-          ${pendiente.lines.length ? html`<span class="ccount">· ${pendiente.lines.length}</span>` : nothing}
+          <span>${t('ui.courseInProgress')}</span>
+          ${pendientes.length ? html`<span class="ccount">· ${pendientes.length}</span>` : nothing}
         </div>
-        ${pendiente.lines.length
-          ? html`<ion-list class="lines" lines="full">${pendiente.lines.map((l) => this.renderLine(l))}</ion-list>`
-          : html`<div class="empty">${t('ui.courseEmptyHint')}</div>`}
-        ${pendiente.lines.length && this.actionFillers.length
-          ? html`
-            <ion-button class="send-round" expand="block"
-                        @click=${() => void this.fireToKitchen()}>
-              <ion-icon slot="start" name="flame-outline"></ion-icon>
-              ${pendiente.lines.length === 1
-                ? t('ui.sendCourseOne')
-                : t('ui.sendCourse', { n: String(pendiente.lines.length) })}
-            </ion-button>`
-          : nothing}
+        ${pendientes.length
+          ? html`<ion-list class="lines" lines="full">${pendientes.map((l) => this.renderLine(l))}</ion-list>`
+          : html`<div class="empty">${t('ui.cartEmptyTouch')}</div>`}
       </div>
-      ${enviadas.map((g) => html`
-        <div class="course fired">
-          <div class="course-h">
-            <ion-icon name="flame" color="warning"></ion-icon>
-            <span class="cname">${t('ui.course', { n: String(g.round_no) })}</span>
-            <span class="ctime">· ${(g.fired_at ?? '').replace('T', ' ').slice(11, 16)}</span>
-            <span class="cstate">${t('ui.courseSent')}</span>
-          </div>
-          <ion-list class="lines" lines="full">${g.lines.map((l) => this.renderLine(l))}</ion-list>
-        </div>`)}
+      <div class="sec sec-sent">
+        <div class="sec-h">
+          <ion-icon name="flame" color="warning"></ion-icon>
+          <span>${t('ui.sentHeader')}</span>
+          <span class="ccount">· ${enviadas.length}</span>
+          <span class="sec-slot"></span>
+        </div>
+        <ion-list class="lines" lines="full">${enviadas.map((l) => this.renderLine(l))}</ion-list>
+      </div>
     </div>`;
   }
 
@@ -1525,11 +1529,8 @@ export class ErpPosTouch extends LitElement {
                     ${this.change > 0
                       ? html`<div class="amt big-change"><span>${t('ui.change')}</span><span class="v">${this.money(this.change)}</span></div>`
                       : nothing}
-                    <div class="quick">
-                      ${quickCashAmounts(this.payable).map((c) => html`
-                        <button class="qbtn" aria-pressed=${this.tenderedNum === c ? 'true' : 'false'}
-                                @click=${() => { this.tendered = String(c / 100); }}>${this.money(c)}</button>`)}
-                    </div>
+                    <!-- SIN atajos de importe (73/75/80…): Ioan los eliminó el 2026-07-19 y pidió
+                         NO volver a añadirlos. El entregado se teclea en el numpad, punto. -->
                     <div class="numpad">
                       ${['1','2','3','4','5','6','7','8','9','.','0','C'].map((k) => html`<button @click=${() => this.tap(k)}>${k}</button>`)}
                     </div>`

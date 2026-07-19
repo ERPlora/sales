@@ -494,34 +494,35 @@ describe('avisos de éxito: van por notify(), no por el hueco rojo de error', ()
   });
 });
 
-// ── MODO RESTAURANTE: VISTA ÚNICA (debate con Ioan 2026-07-19, su sketch) ─────────────────────
-// Sin pestañas: el carrito de restaurante muestra TODO de una vez, como Toast/Lightspeed —
-// **PENDIENTE DE ENVIAR** arriba (editable, con su CTA «Enviar comanda · N») y debajo las
-// **COMANDAS** enviadas, la más reciente primero, en solo-lectura con su hora y estado. El
-// vertical sigue siendo un FLAG (`restaurant_mode`, patrón Odoo): apagado, el TPV de
-// tienda/peluquería queda EXACTAMENTE igual que hoy (carrito plano). La pertenencia vive en la
-// línea (`round_no`/`fired_at`, migración 016) y enviar manda SOLO lo pendiente.
-describe('modo restaurante: vista única Pendiente de enviar + Comandas', () => {
+// ── Secciones por DATO, sin toggle (debate con Ioan 2026-07-19, 2ª ronda) ─────────────────────
+// El vertical NO es un ajuste: la funcionalidad se pone y se quita INSTALANDO MÓDULOS
+// (composición de lo básico a lo complejo). El carrito de sales es UNIVERSAL: plano mientras
+// nada se haya enviado a producción; en cuanto alguna línea lleva `fired_at` (alguien disparó
+// — sales no sabe quién), se parte solo en **PENDIENTE DE ENVIAR** (editable) y **ENVIADO**
+// (bloqueado, cobrable). El detalle de comandas con estados vivos NO vive aquí: lo aporta
+// kitchen con su chip+modal por el slot `sales.pos.order_info` (montado en la cabecera de
+// ENVIADO). Una tienda jamás dispara → jamás ve secciones. Cero configuración.
+describe('carrito universal: secciones Pendiente/Enviado emergen del dato', () => {
   let comandos: { name: string; payload: Record<string, unknown> }[];
 
-  const conAjustes = (restaurantMode: number) => {
+  beforeEach(() => {
+    comandos = [];
     const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
-    // El stub interpola los params: la cabecera de una ronda enviada DEBE llevar su hora.
     sdk.t = (_catalog: unknown, key: string, params?: Record<string, unknown>) =>
       (params ? `${key} ${Object.values(params).join(' ')}` : key);
     sdk.queryAll = async (name: string) =>
       (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Entrecot', sku: 'ENT', price: 2500, is_active: 1 }] : []);
-    sdk.query = async (name: string) => (name === 'sales.settings.get' ? [{ restaurant_mode: restaurantMode }] : []);
+    sdk.query = async () => [];
     sdk.command = async (name: string, payload: Record<string, unknown>) => {
       comandos.push({ name, payload });
       return name === 'sales.order.open' ? { ok: true, new_ids: ['o1', 'l1'] } : { ok: true };
     };
-    // El CTA de enviar tanda solo existe si COCINA está (el slot del footer tiene filler):
-    // sin cocina las tandas no tienen destino.
-    sdk.loadSlot = async (slot: string) => (slot === 'sales.pos.actions' ? [{ component: 'erp-fake-fire' }] : []);
-  };
-
-  beforeEach(() => { comandos = []; conAjustes(1); });
+    sdk.loadSlot = async (slot: string) => {
+      slotsPedidos.push(slot);
+      return slot === 'sales.pos.actions' ? [{ component: 'erp-fake-fire' }]
+        : slot === 'sales.pos.order_info' ? [{ component: 'erp-fake-comandas' }] : [];
+    };
+  });
 
   const disparada = {
     id: 'p9', name: 'Caña', price: 250, qty: 2, line_id: 'l9',
@@ -533,60 +534,58 @@ describe('modo restaurante: vista única Pendiente de enviar + Comandas', () => 
   };
   const pendiente = { id: 'p1', name: 'Entrecot', price: 2500, qty: 1, line_id: 'l1' };
 
-  it('con el flag: Pendiente de enviar ARRIBA y las comandas debajo, la más reciente primero', async () => {
+  it('con líneas enviadas: PENDIENTE DE ENVIAR arriba (editable) y ENVIADO debajo (bloqueado)', async () => {
     const el = await montarCarrito();
     const pos = el as unknown as { cart: unknown[]; updateComplete: Promise<unknown> };
     pos.cart = [disparada, disparada2, pendiente];
     await pos.updateComplete;
 
-    const secciones = [...el.shadowRoot!.querySelectorAll('.course')];
-    expect(secciones[0]?.classList.contains('current'),
+    const secciones = [...el.shadowRoot!.querySelectorAll('.sec')];
+    expect(secciones[0]?.classList.contains('sec-pending'),
       'lo pendiente va arriba: es donde trabaja el camarero').toBe(true);
-    const cabeceras = secciones.slice(1).map((s) => s.querySelector('.course-h')?.textContent ?? '');
-    expect(cabeceras[0], 'la comanda más reciente primero').toContain('14:25');
-    expect(cabeceras[1]).toContain('14:02');
+    expect(secciones[1]?.classList.contains('sec-sent')).toBe(true);
+    expect(secciones[0].querySelector('ok-qty-stepper'), 'lo pendiente se edita').toBeTruthy();
+    expect(secciones[1].querySelector('ok-qty-stepper'), 'lo que está en fuego no se edita').toBeFalsy();
+    // El detalle por comanda (números, horas, estados) NO vive aquí: es del modal de kitchen.
+    expect(el.shadowRoot!.querySelector('.course'), 'sin grupos de comanda inline').toBeFalsy();
   });
 
-  it('sin el flag (tienda/peluquería), el carrito queda plano como hoy', async () => {
-    conAjustes(0);
+  it('sin nada enviado (tienda, peluquería, bar sin cocina): carrito plano, cero secciones', async () => {
     const el = await montarCarrito();
     const pos = el as unknown as { cart: unknown[]; updateComplete: Promise<unknown> };
     pos.cart = [pendiente];
     await pos.updateComplete;
-    expect(el.shadowRoot!.querySelector('.course'), 'sin secciones de comanda').toBeFalsy();
+    expect(el.shadowRoot!.querySelector('.sec'), 'sin secciones').toBeFalsy();
     expect(el.shadowRoot!.querySelector('ion-list.lines'), 'la lista plana de siempre').toBeTruthy();
   });
 
-  it('lo enviado es SOLO LECTURA (con su hora) y lo pendiente se edita', async () => {
+  it('el slot sales.pos.order_info se monta en la cabecera de ENVIADO (ahí vive el chip de kitchen)', async () => {
     const el = await montarCarrito();
     const pos = el as unknown as { cart: unknown[]; updateComplete: Promise<unknown> };
     pos.cart = [disparada, pendiente];
     await pos.updateComplete;
+    await new Promise((r) => setTimeout(r, 0));
+    await pos.updateComplete;
 
-    const enviadas = el.shadowRoot!.querySelector('.course.fired')!;
-    expect(enviadas, 'la comanda enviada se agrupa con su cabecera').toBeTruthy();
-    expect(enviadas.textContent, 'la cabecera lleva la hora del envío').toContain('14:02');
-    expect(enviadas.querySelector('ok-qty-stepper'), 'lo que está en fuego no se edita').toBeFalsy();
-
-    const pendienteSec = el.shadowRoot!.querySelector('.course.current')!;
-    expect(pendienteSec, 'la sección Pendiente de enviar existe').toBeTruthy();
-    expect(pendienteSec.querySelector('ok-qty-stepper'), 'lo pendiente sí se edita').toBeTruthy();
+    expect(slotsPedidos, 'el POS pide el slot de info del pedido').toContain('sales.pos.order_info');
+    const filler = el.shadowRoot!.querySelector('.sec-sent .sec-slot erp-fake-comandas');
+    expect(filler, 'el filler se monta en la cabecera de ENVIADO').toBeTruthy();
   });
 
-  it('«Enviar comanda» dispara SOLO las líneas pendientes, con su número local', async () => {
+  it('disparar manda SOLO las líneas pendientes, con su número local', async () => {
     const el = await montarCarrito();
     const pos = el as unknown as {
       cart: unknown[]; orderId?: string; updateComplete: Promise<unknown>;
+      fireToKitchen(): Promise<void>;
     };
     pos.cart = [disparada, pendiente];
     pos.orderId = 'o1';
     await pos.updateComplete;
 
-    (el.shadowRoot!.querySelector('.course.current ion-button.send-round') as HTMLElement).click();
-    await new Promise((r) => setTimeout(r, 0));
+    await pos.fireToKitchen();
 
     const fire = comandos.find((c) => c.name === 'sales.order.fire');
-    expect(fire, 'el CTA dispara el comando del host').toBeTruthy();
+    expect(fire, 'se dispara el comando del host').toBeTruthy();
     const items = fire!.payload.items as Array<{ product_name: string }>;
     expect(items.map((i) => i.product_name), 'SOLO lo pendiente — nada de reenviar la caña ya servida')
       .toEqual(['Entrecot']);
@@ -652,12 +651,12 @@ describe('slot del footer sales.pos.actions: cocina inyectada, no hardcodeada', 
       'una peluquería no ve cocina').toBe(false);
   });
 
-  it('el filler recibe erp:pos-state al montarse y al cambiar el carrito', async () => {
-    const estados: Array<{ items_count: number }> = [];
+  it('el filler recibe erp:pos-state al montarse y al cambiar el carrito (con pending_count)', async () => {
+    const estados: Array<{ items_count: number; pending_count: number }> = [];
     const el = await montarCarrito();
     const filler = el.shadowRoot!.querySelector('.foot-actions erp-fake-fire')!;
     filler.addEventListener('erp:pos-state', (e) => {
-      estados.push((e as CustomEvent<{ items_count: number }>).detail);
+      estados.push((e as CustomEvent<{ items_count: number; pending_count: number }>).detail);
     });
 
     el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
@@ -665,7 +664,9 @@ describe('slot del footer sales.pos.actions: cocina inyectada, no hardcodeada', 
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
 
     expect(estados.length, 'cada cambio del carrito informa al filler').toBeGreaterThan(0);
-    expect(estados[estados.length - 1].items_count, 'el último estado cuenta el café').toBe(1);
+    const ultimo = estados[estados.length - 1];
+    expect(ultimo.items_count, 'el último estado cuenta el café').toBe(1);
+    expect(ultimo.pending_count, 'y cuánto queda SIN enviar (el badge del botón de cocina)').toBe(1);
   });
 
   it('erp:order-fire del filler dispara sales.order.fire del host', async () => {
@@ -925,24 +926,20 @@ describe('sheet de cobro (tender): método dentro, tarjeta sin numpad, atajos de
     expect(activo?.textContent?.trim(), 'por defecto manda efectivo (defaultPayMethod)').toBe('Efectivo');
   });
 
-  it('efectivo: los atajos de entregado (quickCashAmounts) fijan lo entregado y el cambio sale solo', async () => {
+  it('efectivo: numpad y cambio — SIN atajos de importe (Ioan los eliminó, no volver a añadirlos)', async () => {
+    // GUARDA de una decisión explícita (2026-07-19): los botones de atajo (73/75/80 €) fuera
+    // del sheet de cobro, y NO vuelven. El entregado se teclea en el numpad.
     const el = await conCobroAbierto();
+    expect(el.shadowRoot!.querySelector('.sheet .quick'), 'sin bloque de atajos').toBeFalsy();
+    expect(el.shadowRoot!.querySelector('.sheet .numpad'), 'el numpad sí').toBeTruthy();
 
-    const atajos = [...el.shadowRoot!.querySelectorAll('.sheet .quick button.qbtn')]
-      .map((b) => b.textContent?.trim());
-    expect(atajos, 'atajos para 1,80 €: exacto primero y los redondeos por encima')
-      .toEqual(['1.80 €', '2.00 €', '5.00 €', '10.00 €']);
-
-    // El camarero toca «2.00 €» en vez de teclear.
-    const dos = [...el.shadowRoot!.querySelectorAll<HTMLButtonElement>('.sheet .quick button.qbtn')]
-      .find((b) => b.textContent?.trim() === '2.00 €')!;
-    dos.click();
+    const tap = el as unknown as { tap(k: string): void; confirm(): Promise<void> };
+    tap.tap('2');
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
-
     const cambio = el.shadowRoot!.querySelector('.sheet .big-change .v')?.textContent?.trim();
-    expect(cambio, 'el cambio se calcula del atajo tocado').toBe('0.20 €');
+    expect(cambio, 'el cambio sale de lo tecleado').toBe('0.20 €');
 
-    await (el as unknown as { confirm(): Promise<void> }).confirm();
+    await tap.confirm();
     const venta = comandos.find((c) => c.name === 'sales.complete_sale')!;
     expect(venta.payload.amount_tendered, 'lo entregado viaja en céntimos').toBe(200);
     expect(venta.payload.payment_method_id).toBe('pm-cash');

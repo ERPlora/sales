@@ -36,7 +36,8 @@
     ],
     "slots": [
       "sales.pos.actions",
-      "sales.pos.assign"
+      "sales.pos.assign",
+      "sales.pos.order_info"
     ]
   }
 }

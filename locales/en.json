@@ -162,14 +162,8 @@
     "cancel": "Cancel",
     "deleteCheck": "Delete check",
     "deleteCheckConfirm": "Tap again to delete — this voids the check",
-    "course": "Order ticket {n}",
     "courseInProgress": "Unsent",
-    "sendCourse": "Send order · {n} items",
-    "courseEmptyHint": "Tap a product to add it to the order ticket.",
-    "restaurantMode": "Restaurant mode (order tickets)",
-    "restaurantModeHint": "Shows unsent items and sent order tickets in the cart.",
-    "courseSent": "Sent",
-    "sendCourseOne": "Send order · 1 item",
-    "leaveAtTable": "Leave on the table"
+    "leaveAtTable": "Leave on the table",
+    "sentHeader": "Sent"
   }
 }

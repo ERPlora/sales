@@ -161,16 +161,10 @@
     "cancel": "Cancelar",
     "deleteCheck": "Eliminar cuenta",
     "deleteCheckConfirm": "Toca otra vez para eliminar — anula la cuenta",
-    "course": "Comanda {n}",
     "courseInProgress": "Pendiente de enviar",
-    "sendCourse": "Enviar comanda · {n} artículos",
-    "courseEmptyHint": "Toca un producto para añadirlo a la comanda.",
-    "restaurantMode": "Modo restaurante (comandas)",
-    "restaurantModeHint": "Muestra lo pendiente de enviar y las comandas enviadas en el carrito.",
     "qtyOffGrid": "La cantidad no encaja con el escalón del producto",
-    "courseSent": "Enviada",
-    "sendCourseOne": "Enviar comanda · 1 artículo",
-    "leaveAtTable": "Dejar en la mesa"
+    "leaveAtTable": "Dejar en la mesa",
+    "sentHeader": "Enviado"
   },
   "widgets": {
     "sales.today": {

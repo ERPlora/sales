@@ -45,12 +45,6 @@
       "default": true,
       "title": "Permitir tiques aparcados"
     },
-    "restaurant_mode": {
-      "type": "boolean",
-      "default": false,
-      "title": "Modo restaurante (comandas)",
-      "description": "Muestra lo pendiente de enviar y las comandas enviadas en el carrito."
-    },
     "default_tax_included": {
       "type": "boolean",
       "default": true,
