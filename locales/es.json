@@ -144,7 +144,8 @@
     "fireToKitchen": "Enviar a cocina",
     "firedToKitchen": "Enviado a cocina",
     "fireFailed": "No se pudo enviar a cocina",
-    "lineNotSaved": "No se pudo guardar ese artículo — vuelve a tocarlo"
+    "lineNotSaved": "No se pudo guardar ese artículo — vuelve a tocarlo",
+    "payingPart": "Cobrando {n} línea(s) de {total}"
   },
   "widgets": {
     "sales.today": {

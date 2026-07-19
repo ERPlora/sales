@@ -144,6 +144,7 @@
     "fireToKitchen": "Send to kitchen",
     "firedToKitchen": "Sent to kitchen",
     "fireFailed": "Couldn't send to kitchen",
-    "lineNotSaved": "Couldn't save that item — tap again"
+    "lineNotSaved": "Couldn't save that item — tap again",
+    "payingPart": "Paying {n} of {total}"
   }
 }

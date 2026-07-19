@@ -2868,7 +2868,8 @@ var es_default = {
     fireToKitchen: "Enviar a cocina",
     firedToKitchen: "Enviado a cocina",
     fireFailed: "No se pudo enviar a cocina",
-    lineNotSaved: "No se pudo guardar ese art\xEDculo \u2014 vuelve a tocarlo"
+    lineNotSaved: "No se pudo guardar ese art\xEDculo \u2014 vuelve a tocarlo",
+    payingPart: "Cobrando {n} l\xEDnea(s) de {total}"
   },
   widgets: {
     "sales.today": {
@@ -3035,7 +3036,8 @@ var en_default = {
     fireToKitchen: "Send to kitchen",
     firedToKitchen: "Sent to kitchen",
     fireFailed: "Couldn't send to kitchen",
-    lineNotSaved: "Couldn't save that item \u2014 tap again"
+    lineNotSaved: "Couldn't save that item \u2014 tap again",
+    payingPart: "Paying {n} of {total}"
   }
 };
 
@@ -3312,6 +3314,35 @@ function createSerialQueue() {
     const run = last.then(task, task);
     last = run.catch(() => void 0);
     return run;
+  };
+}
+
+// ui/lib/split-selection.ts
+function esParcial(cart, sel) {
+  const conId = cart.filter((l3) => l3.line_id);
+  return sel.size > 0 && sel.size < conId.length;
+}
+function splitTotal(cart, sel) {
+  const lineas = sel.size ? cart.filter((l3) => l3.line_id && sel.has(l3.line_id)) : cart;
+  return lineas.reduce((s5, l3) => s5 + (l3.is_gift ? 0 : l3.price * l3.qty), 0);
+}
+function splitPayload(cart, sel) {
+  const parcial = esParcial(cart, sel);
+  const lineas = parcial ? cart.filter((l3) => l3.line_id && sel.has(l3.line_id)) : cart;
+  return {
+    line_ids: parcial ? lineas.map((l3) => l3.line_id) : void 0,
+    keep_order_open: parcial,
+    items: lineas.map((l3) => ({
+      product_id: l3.id || null,
+      product_name: l3.name,
+      price: l3.price,
+      quantity: l3.qty,
+      tax_rate: l3.tax_rate ?? 0,
+      tax_category_key: l3.tax_category_key ?? "",
+      cost: l3.cost ?? 0,
+      is_gift: !!l3.is_gift,
+      gift_reason: l3.gift_reason ?? ""
+    }))
   };
 }
 
@@ -4263,6 +4294,7 @@ var ErpPosTouch = class extends i3 {
     this.busy = false;
     this.error = "";
     this.parked = [];
+    this.splitSel = /* @__PURE__ */ new Set();
     this.parkedOpen = false;
     this.cartOpen = false;
     this.fullscreen = false;
@@ -4859,6 +4891,15 @@ var ErpPosTouch = class extends i3 {
     if (sdk?.print) void sdk.print({ role: "receipt", documentType: "prebill", html, data: doc });
     else printHtmlInIframe(html);
   }
+  /** Marca/desmarca una línea para el cobro por partes. Solo tiene sentido con más de una línea:
+   *  con una sola, «lo suyo» y «la cuenta» son lo mismo. */
+  toggleSplit(l3) {
+    if (!l3.line_id || this.cart.length < 2) return;
+    const s5 = new Set(this.splitSel);
+    if (s5.has(l3.line_id)) s5.delete(l3.line_id);
+    else s5.add(l3.line_id);
+    this.splitSel = s5;
+  }
   openPay() {
     if (!this.cart.length) return;
     this.tendered = "";
@@ -4880,7 +4921,11 @@ var ErpPosTouch = class extends i3 {
     return eurosToCents(this.tendered || "0");
   }
   get change() {
-    return Math.max(0, this.tenderedNum - this.total);
+    return Math.max(0, this.tenderedNum - this.payable);
+  }
+  /** Lo que se cobra AHORA: la selección si la hay, o la cuenta entera (ADR-0146). */
+  get payable() {
+    return splitTotal(this.cart, this.splitSel);
   }
   /** Cierra la venta. La IMPRESIÓN no se dispara desde aquí: la hace el shell por el Bridge al
    *  recibir `sale.completed` (ajuste `auto_print_on_sale`). El toggle de la pantalla de cobro
@@ -4889,9 +4934,13 @@ var ErpPosTouch = class extends i3 {
     this.busy = true;
     this.error = "";
     try {
-      const items = this.cart.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: l3.qty, tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0, category_id: this.prodCats.get(l3.id)?.values().next().value ?? null, is_gift: l3.is_gift ?? false, gift_reason: l3.gift_reason ?? "", cost: l3.cost ?? 0 }));
+      const split = splitPayload(this.cart, this.splitSel);
+      const cobradas = split.line_ids ? this.cart.filter((l3) => l3.line_id && this.splitSel.has(l3.line_id)) : this.cart;
+      const items = cobradas.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: l3.qty, tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0, category_id: this.prodCats.get(l3.id)?.values().next().value ?? null, is_gift: l3.is_gift ?? false, gift_reason: l3.gift_reason ?? "", cost: l3.cost ?? 0 }));
       await erplora2().command("sales.complete_sale", {
         items,
+        line_ids: split.line_ids ?? null,
+        keep_order_open: split.keep_order_open,
         tax_included: this.settings.default_tax_included !== 0,
         payment_method_id: this.payMethod?.id ?? null,
         payment_method_name: this.payMethod?.name ?? "Efectivo",
@@ -4917,8 +4966,14 @@ var ErpPosTouch = class extends i3 {
         clearTimeout(this.saveTimer);
         this.saveTimer = void 0;
       }
-      await persistActiveCart(erplora2(), [], this.tableId);
       this.paying = false;
+      this.splitSel = /* @__PURE__ */ new Set();
+      if (split.keep_order_open && this.orderId) {
+        this.cart = await loadOrderLines(erplora2(), this.orderId);
+        if (saleId) this.docSaleId = saleId;
+        return;
+      }
+      await persistActiveCart(erplora2(), [], this.tableId);
       this.cart = [];
       this.orderId = void 0;
       this.tableId = void 0;
@@ -5036,7 +5091,11 @@ var ErpPosTouch = class extends i3 {
            la pantalla — en un TPV eso es no poder cobrar. -->
       <ion-content class="cart-body">
         ${this.cart.length ? b2`<ion-list class="lines" lines="full">
-              ${this.cart.map((l3) => b2`<ion-item>
+              ${this.cart.map((l3) => b2`<ion-item class=${l3.line_id && this.splitSel.has(l3.line_id) ? "sel" : ""}
+                  button ?detail=${false} @click=${() => this.toggleSplit(l3)}>
+                ${this.cart.length > 1 && l3.line_id ? b2`<ion-icon slot="start" class="selmark"
+                            name=${this.splitSel.has(l3.line_id) ? "checkmark-circle" : "ellipse-outline"}
+                            color=${this.splitSel.has(l3.line_id) ? "primary" : "medium"}></ion-icon>` : A}
                 <ion-label>
                   <h3>${l3.name}${l3.is_gift ? b2` <ion-badge color="success">${t5("ui.giftBadge")}</ion-badge>` : A}</h3>
                   <p>${this.money(l3.price)}${l3.is_gift && l3.gift_reason ? b2` · ${l3.gift_reason}` : A}</p>
@@ -5157,7 +5216,10 @@ var ErpPosTouch = class extends i3 {
               </div>
               <!-- El IMPORTE manda en esta pantalla: grande, solo y SIEMPRE visible (fuera del
                    scroll). Antes vivía en letra pequeña del título y el ojo no lo encontraba. -->
-              <div class="sheet-top"><div class="pay-total">${this.money(this.total)}</div></div>
+              <div class="sheet-top">
+                <div class="pay-total">${this.money(this.payable)}</div>
+                ${this.splitSel.size ? b2`<div class="pay-split">${t5("ui.payingPart", { n: String(this.splitSel.size), total: this.money(this.total) })}</div>` : A}
+              </div>
               <div class="pay">
 
                 <!-- Entregado/cambio/teclado SOLO en efectivo: con tarjeta se cobra el total y no
@@ -5296,6 +5358,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "parked", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "splitSel", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "parkedOpen", 2);

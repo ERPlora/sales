@@ -9,6 +9,7 @@ import { receiptToPrintableHtml, printHtmlInIframe } from '../../lib/receipt-htm
 import { decideOnTableChange } from '../../lib/table-switch.js';
 import { buildFirePayload } from '../../lib/fire-order.js';
 import { createSerialQueue } from '../../lib/serial-queue.js';
+import { splitPayload, splitTotal } from '../../lib/split-selection.js';
 import { brandSvgFor } from '../../lib/brand-icons.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod } from '../../lib/pay-icons.js';
@@ -280,6 +281,8 @@ export class ErpPosTouch extends LitElement {
   @state() private error = '';
   @state() private docSaleId?: string;
   @state() private parked: OpenCheck[] = [];
+  /** Líneas marcadas para cobrar por separado (ADR-0146). Vacío = se cobra la cuenta entera. */
+  @state() private splitSel = new Set<string>();
   @state() private parkedOpen = false;
   @state() private cartOpen = false;
   @state() private fullscreen = false;
@@ -771,6 +774,15 @@ export class ErpPosTouch extends LitElement {
     else printHtmlInIframe(html);
   }
 
+  /** Marca/desmarca una línea para el cobro por partes. Solo tiene sentido con más de una línea:
+   *  con una sola, «lo suyo» y «la cuenta» son lo mismo. */
+  private toggleSplit(l: CartLine) {
+    if (!l.line_id || this.cart.length < 2) return;
+    const s = new Set(this.splitSel);
+    if (s.has(l.line_id)) s.delete(l.line_id); else s.add(l.line_id);
+    this.splitSel = s;
+  }
+
   private openPay() {
     if (!this.cart.length) return;
     this.tendered = '';
@@ -786,7 +798,9 @@ export class ErpPosTouch extends LitElement {
   // El pinpad teclea EUROS («20» = 20 €); el contrato de la venta es CÉNTIMOS (ADR-0007/0123),
   // como `total`. Sin esta conversión: «Efectivo 0.20 €» y cambio 0 en el tiquet (QA 2026-07-17).
   private get tenderedNum() { return eurosToCents(this.tendered || '0'); }
-  private get change() { return Math.max(0, this.tenderedNum - this.total); }
+  private get change() { return Math.max(0, this.tenderedNum - this.payable); }
+  /** Lo que se cobra AHORA: la selección si la hay, o la cuenta entera (ADR-0146). */
+  private get payable() { return splitTotal(this.cart, this.splitSel); }
 
   /** Cierra la venta. La IMPRESIÓN no se dispara desde aquí: la hace el shell por el Bridge al
    *  recibir `sale.completed` (ajuste `auto_print_on_sale`). El toggle de la pantalla de cobro
@@ -802,9 +816,17 @@ export class ErpPosTouch extends LitElement {
       // category_id por línea (aditivo, QA 2026-06-25): el KDS enruta cada comanda a su estación
       // por la categoría del producto. Se toma la categoría PRIMARIA (primera) del producto desde
       // `prodCats` (Map product_id → Set category_id). null si el producto no está clasificado.
-      const items = this.cart.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: l.qty, tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: this.prodCats.get(l.id)?.values().next().value ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0 }));
+      // ADR-0146 — «cada uno paga lo suyo»: si hay líneas marcadas, este cobro cubre SOLO esas y el
+      // pedido sigue abierto para los demás. Marcarlas todas equivale a cobrar la cuenta entera.
+      const split = splitPayload(this.cart, this.splitSel);
+      const cobradas = split.line_ids
+        ? this.cart.filter((l) => l.line_id && this.splitSel.has(l.line_id))
+        : this.cart;
+      const items = cobradas.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: l.qty, tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: this.prodCats.get(l.id)?.values().next().value ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0 }));
       await erplora().command('sales.complete_sale', {
         items,
+        line_ids: split.line_ids ?? null,
+        keep_order_open: split.keep_order_open,
         tax_included: this.settings.default_tax_included !== 0,
         payment_method_id: this.payMethod?.id ?? null,
         payment_method_name: this.payMethod?.name ?? 'Efectivo',
@@ -833,8 +855,20 @@ export class ErpPosTouch extends LitElement {
       // comanda seguiría recuperándose al volver a tocar la mesa. La sesión la cierra el filler
       // al recibir el reset de abajo.
       if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = undefined; }
-      await persistActiveCart(erplora(), [], this.tableId);
       this.paying = false;
+      this.splitSel = new Set();
+
+      // COBRO PARCIAL (ADR-0146): el pedido sigue abierto y en pantalla queda lo que falta por
+      // pagar. Las líneas cobradas ya no vuelven —la query solo devuelve lo pendiente—, así que no
+      // se pueden cobrar dos veces. La mesa tampoco se suelta: los demás siguen sentados.
+      if (split.keep_order_open && this.orderId) {
+        this.cart = await loadOrderLines(erplora(), this.orderId);
+        if (saleId) this.docSaleId = saleId;
+        return;
+      }
+
+      // Cobro de la cuenta entera: se limpia y se sueltan mesa y cliente.
+      await persistActiveCart(erplora(), [], this.tableId);
       this.cart = [];
       // El pedido quedó `completed` en el servidor dentro de la misma transacción de la venta: se
       // suelta para que el siguiente ticket abra uno nuevo (ADR-0141).
@@ -959,7 +993,13 @@ export class ErpPosTouch extends LitElement {
       <ion-content class="cart-body">
         ${this.cart.length
           ? html`<ion-list class="lines" lines="full">
-              ${this.cart.map((l) => html`<ion-item>
+              ${this.cart.map((l) => html`<ion-item class=${l.line_id && this.splitSel.has(l.line_id) ? 'sel' : ''}
+                  button ?detail=${false} @click=${() => this.toggleSplit(l)}>
+                ${this.cart.length > 1 && l.line_id
+                  ? html`<ion-icon slot="start" class="selmark"
+                            name=${this.splitSel.has(l.line_id) ? 'checkmark-circle' : 'ellipse-outline'}
+                            color=${this.splitSel.has(l.line_id) ? 'primary' : 'medium'}></ion-icon>`
+                  : nothing}
                 <ion-label>
                   <h3>${l.name}${l.is_gift ? html` <ion-badge color="success">${t('ui.giftBadge')}</ion-badge>` : nothing}</h3>
                   <p>${this.money(l.price)}${l.is_gift && l.gift_reason ? html` · ${l.gift_reason}` : nothing}</p>
@@ -1077,7 +1117,12 @@ export class ErpPosTouch extends LitElement {
               </div>
               <!-- El IMPORTE manda en esta pantalla: grande, solo y SIEMPRE visible (fuera del
                    scroll). Antes vivía en letra pequeña del título y el ojo no lo encontraba. -->
-              <div class="sheet-top"><div class="pay-total">${this.money(this.total)}</div></div>
+              <div class="sheet-top">
+                <div class="pay-total">${this.money(this.payable)}</div>
+                ${this.splitSel.size
+                  ? html`<div class="pay-split">${t('ui.payingPart', { n: String(this.splitSel.size), total: this.money(this.total) })}</div>`
+                  : nothing}
+              </div>
               <div class="pay">
 
                 <!-- Entregado/cambio/teclado SOLO en efectivo: con tarjeta se cobra el total y no
