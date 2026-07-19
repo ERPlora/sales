@@ -9,7 +9,7 @@ INSERT INTO sales_settings
    enable_parked_tickets, default_tax_included, ticket_expiry_hours,
    receipt_header, receipt_footer, receipt_footer_image,
    receipt_marketing_url, receipt_marketing_text,
-   pos_layout, default_document_format, auto_invoice_with_tax_id,
+   default_document_format, auto_invoice_with_tax_id,
    is_deleted, created_by, updated_by, created_at, updated_at)
 VALUES
   (:new_id, :hub_id,
@@ -19,7 +19,7 @@ VALUES
    :enable_parked_tickets, :default_tax_included, :ticket_expiry_hours,
    :receipt_header, :receipt_footer, :receipt_footer_image,
    :receipt_marketing_url, :receipt_marketing_text,
-   :pos_layout, :default_document_format, :auto_invoice_with_tax_id,
+   :default_document_format, :auto_invoice_with_tax_id,
    0, :current_user_id, :current_user_id, :now, :now)
 ON CONFLICT (hub_id) DO UPDATE SET
   allow_cash               = :allow_cash,
@@ -37,7 +37,6 @@ ON CONFLICT (hub_id) DO UPDATE SET
   receipt_footer_image     = :receipt_footer_image,
   receipt_marketing_url    = :receipt_marketing_url,
   receipt_marketing_text   = :receipt_marketing_text,
-  pos_layout               = :pos_layout,
   default_document_format  = :default_document_format,
   auto_invoice_with_tax_id = :auto_invoice_with_tax_id,
   updated_by               = :current_user_id,

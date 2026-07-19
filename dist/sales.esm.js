@@ -680,44 +680,44 @@ var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "a
 var s = Symbol();
 var o = /* @__PURE__ */ new WeakMap();
 var n2 = class {
-  constructor(t8, e7, o9) {
+  constructor(t7, e7, o9) {
     if (this._$cssResult$ = true, o9 !== s) throw Error("CSSResult is not constructable. Use `unsafeCSS` or `css` instead.");
-    this.cssText = t8, this.t = e7;
+    this.cssText = t7, this.t = e7;
   }
   get styleSheet() {
-    let t8 = this.o;
+    let t7 = this.o;
     const s5 = this.t;
-    if (e && void 0 === t8) {
+    if (e && void 0 === t7) {
       const e7 = void 0 !== s5 && 1 === s5.length;
-      e7 && (t8 = o.get(s5)), void 0 === t8 && ((this.o = t8 = new CSSStyleSheet()).replaceSync(this.cssText), e7 && o.set(s5, t8));
+      e7 && (t7 = o.get(s5)), void 0 === t7 && ((this.o = t7 = new CSSStyleSheet()).replaceSync(this.cssText), e7 && o.set(s5, t7));
     }
-    return t8;
+    return t7;
   }
   toString() {
     return this.cssText;
   }
 };
-var r = (t8) => new n2("string" == typeof t8 ? t8 : t8 + "", void 0, s);
-var i = (t8, ...e7) => {
-  const o9 = 1 === t8.length ? t8[0] : e7.reduce((e8, s5, o10) => e8 + ((t9) => {
-    if (true === t9._$cssResult$) return t9.cssText;
-    if ("number" == typeof t9) return t9;
-    throw Error("Value passed to 'css' function must be a 'css' function result: " + t9 + ". Use 'unsafeCSS' to pass non-literal values, but take care to ensure page security.");
-  })(s5) + t8[o10 + 1], t8[0]);
-  return new n2(o9, t8, s);
+var r = (t7) => new n2("string" == typeof t7 ? t7 : t7 + "", void 0, s);
+var i = (t7, ...e7) => {
+  const o9 = 1 === t7.length ? t7[0] : e7.reduce((e8, s5, o10) => e8 + ((t8) => {
+    if (true === t8._$cssResult$) return t8.cssText;
+    if ("number" == typeof t8) return t8;
+    throw Error("Value passed to 'css' function must be a 'css' function result: " + t8 + ". Use 'unsafeCSS' to pass non-literal values, but take care to ensure page security.");
+  })(s5) + t7[o10 + 1], t7[0]);
+  return new n2(o9, t7, s);
 };
 var S = (s5, o9) => {
-  if (e) s5.adoptedStyleSheets = o9.map((t8) => t8 instanceof CSSStyleSheet ? t8 : t8.styleSheet);
+  if (e) s5.adoptedStyleSheets = o9.map((t7) => t7 instanceof CSSStyleSheet ? t7 : t7.styleSheet);
   else for (const e7 of o9) {
     const o10 = document.createElement("style"), n7 = t.litNonce;
     void 0 !== n7 && o10.setAttribute("nonce", n7), o10.textContent = e7.cssText, s5.appendChild(o10);
   }
 };
-var c = e || void 0 === t.CSSStyleSheet ? (t8) => t8 : (t8) => t8 instanceof CSSStyleSheet ? ((t9) => {
+var c = e || void 0 === t.CSSStyleSheet ? (t7) => t7 : (t7) => t7 instanceof CSSStyleSheet ? ((t8) => {
   let e7 = "";
-  for (const s5 of t9.cssRules) e7 += s5.cssText;
+  for (const s5 of t8.cssRules) e7 += s5.cssText;
   return r(e7);
-})(t8) : t8;
+})(t7) : t7;
 
 // ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/reactive-element.js
 var { is: h, defineProperty: r2, getOwnPropertyDescriptor: o2, getOwnPropertyNames: n3, getOwnPropertySymbols: a, getPrototypeOf: c2 } = Object;
@@ -726,169 +726,169 @@ l.customElements ??= customElements2;
 var p = l.trustedTypes;
 var d = p ? p.emptyScript : "";
 var u = l.reactiveElementPolyfillSupport;
-var f = (t8, s5) => t8;
-var b = { toAttribute(t8, s5) {
+var f = (t7, s5) => t7;
+var b = { toAttribute(t7, s5) {
   switch (s5) {
     case Boolean:
-      t8 = t8 ? d : null;
+      t7 = t7 ? d : null;
       break;
     case Object:
     case Array:
-      t8 = null == t8 ? t8 : JSON.stringify(t8);
+      t7 = null == t7 ? t7 : JSON.stringify(t7);
   }
-  return t8;
-}, fromAttribute(t8, s5) {
-  let i7 = t8;
+  return t7;
+}, fromAttribute(t7, s5) {
+  let i7 = t7;
   switch (s5) {
     case Boolean:
-      i7 = null !== t8;
+      i7 = null !== t7;
       break;
     case Number:
-      i7 = null === t8 ? null : Number(t8);
+      i7 = null === t7 ? null : Number(t7);
       break;
     case Object:
     case Array:
       try {
-        i7 = JSON.parse(t8);
-      } catch (t9) {
+        i7 = JSON.parse(t7);
+      } catch (t8) {
         i7 = null;
       }
   }
   return i7;
 } };
-var m = (t8, s5) => !h(t8, s5);
+var m = (t7, s5) => !h(t7, s5);
 var y = { attribute: true, type: String, converter: b, reflect: false, useDefault: false, hasChanged: m };
 Symbol.metadata ??= Symbol("metadata"), l.litPropertyMetadata ??= /* @__PURE__ */ new WeakMap();
 var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
-  static addInitializer(t8) {
-    this._$Ei(), (this.l ??= []).push(t8);
+  static addInitializer(t7) {
+    this._$Ei(), (this.l ??= []).push(t7);
   }
   static get observedAttributes() {
     return this.finalize(), this._$Eh && [...this._$Eh.keys()];
   }
-  static createProperty(t8, s5 = y) {
-    if (s5.state && (s5.attribute = false), this._$Ei(), this.prototype.hasOwnProperty(t8) && ((s5 = Object.create(s5)).wrapped = true), this.elementProperties.set(t8, s5), !s5.noAccessor) {
-      const i7 = Symbol(), e7 = this.getPropertyDescriptor(t8, i7, s5);
-      void 0 !== e7 && r2(this.prototype, t8, e7);
+  static createProperty(t7, s5 = y) {
+    if (s5.state && (s5.attribute = false), this._$Ei(), this.prototype.hasOwnProperty(t7) && ((s5 = Object.create(s5)).wrapped = true), this.elementProperties.set(t7, s5), !s5.noAccessor) {
+      const i7 = Symbol(), e7 = this.getPropertyDescriptor(t7, i7, s5);
+      void 0 !== e7 && r2(this.prototype, t7, e7);
     }
   }
-  static getPropertyDescriptor(t8, s5, i7) {
-    const { get: e7, set: h4 } = o2(this.prototype, t8) ?? { get() {
+  static getPropertyDescriptor(t7, s5, i7) {
+    const { get: e7, set: h4 } = o2(this.prototype, t7) ?? { get() {
       return this[s5];
-    }, set(t9) {
-      this[s5] = t9;
+    }, set(t8) {
+      this[s5] = t8;
     } };
     return { get: e7, set(s6) {
       const r6 = e7?.call(this);
-      h4?.call(this, s6), this.requestUpdate(t8, r6, i7);
+      h4?.call(this, s6), this.requestUpdate(t7, r6, i7);
     }, configurable: true, enumerable: true };
   }
-  static getPropertyOptions(t8) {
-    return this.elementProperties.get(t8) ?? y;
+  static getPropertyOptions(t7) {
+    return this.elementProperties.get(t7) ?? y;
   }
   static _$Ei() {
     if (this.hasOwnProperty(f("elementProperties"))) return;
-    const t8 = c2(this);
-    t8.finalize(), void 0 !== t8.l && (this.l = [...t8.l]), this.elementProperties = new Map(t8.elementProperties);
+    const t7 = c2(this);
+    t7.finalize(), void 0 !== t7.l && (this.l = [...t7.l]), this.elementProperties = new Map(t7.elementProperties);
   }
   static finalize() {
     if (this.hasOwnProperty(f("finalized"))) return;
     if (this.finalized = true, this._$Ei(), this.hasOwnProperty(f("properties"))) {
-      const t9 = this.properties, s5 = [...n3(t9), ...a(t9)];
-      for (const i7 of s5) this.createProperty(i7, t9[i7]);
+      const t8 = this.properties, s5 = [...n3(t8), ...a(t8)];
+      for (const i7 of s5) this.createProperty(i7, t8[i7]);
     }
-    const t8 = this[Symbol.metadata];
-    if (null !== t8) {
-      const s5 = litPropertyMetadata.get(t8);
-      if (void 0 !== s5) for (const [t9, i7] of s5) this.elementProperties.set(t9, i7);
+    const t7 = this[Symbol.metadata];
+    if (null !== t7) {
+      const s5 = litPropertyMetadata.get(t7);
+      if (void 0 !== s5) for (const [t8, i7] of s5) this.elementProperties.set(t8, i7);
     }
     this._$Eh = /* @__PURE__ */ new Map();
-    for (const [t9, s5] of this.elementProperties) {
-      const i7 = this._$Eu(t9, s5);
-      void 0 !== i7 && this._$Eh.set(i7, t9);
+    for (const [t8, s5] of this.elementProperties) {
+      const i7 = this._$Eu(t8, s5);
+      void 0 !== i7 && this._$Eh.set(i7, t8);
     }
     this.elementStyles = this.finalizeStyles(this.styles);
   }
-  static finalizeStyles(t8) {
+  static finalizeStyles(t7) {
     const s5 = [];
-    if (Array.isArray(t8)) {
-      const e7 = new Set(t8.flat(1 / 0).reverse());
-      for (const t9 of e7) s5.unshift(c(t9));
-    } else void 0 !== t8 && s5.push(c(t8));
+    if (Array.isArray(t7)) {
+      const e7 = new Set(t7.flat(1 / 0).reverse());
+      for (const t8 of e7) s5.unshift(c(t8));
+    } else void 0 !== t7 && s5.push(c(t7));
     return s5;
   }
-  static _$Eu(t8, s5) {
+  static _$Eu(t7, s5) {
     const i7 = s5.attribute;
-    return false === i7 ? void 0 : "string" == typeof i7 ? i7 : "string" == typeof t8 ? t8.toLowerCase() : void 0;
+    return false === i7 ? void 0 : "string" == typeof i7 ? i7 : "string" == typeof t7 ? t7.toLowerCase() : void 0;
   }
   constructor() {
     super(), this._$Ep = void 0, this.isUpdatePending = false, this.hasUpdated = false, this._$Em = null, this._$Ev();
   }
   _$Ev() {
-    this._$ES = new Promise((t8) => this.enableUpdating = t8), this._$AL = /* @__PURE__ */ new Map(), this._$E_(), this.requestUpdate(), this.constructor.l?.forEach((t8) => t8(this));
+    this._$ES = new Promise((t7) => this.enableUpdating = t7), this._$AL = /* @__PURE__ */ new Map(), this._$E_(), this.requestUpdate(), this.constructor.l?.forEach((t7) => t7(this));
   }
-  addController(t8) {
-    (this._$EO ??= /* @__PURE__ */ new Set()).add(t8), void 0 !== this.renderRoot && this.isConnected && t8.hostConnected?.();
+  addController(t7) {
+    (this._$EO ??= /* @__PURE__ */ new Set()).add(t7), void 0 !== this.renderRoot && this.isConnected && t7.hostConnected?.();
   }
-  removeController(t8) {
-    this._$EO?.delete(t8);
+  removeController(t7) {
+    this._$EO?.delete(t7);
   }
   _$E_() {
-    const t8 = /* @__PURE__ */ new Map(), s5 = this.constructor.elementProperties;
-    for (const i7 of s5.keys()) this.hasOwnProperty(i7) && (t8.set(i7, this[i7]), delete this[i7]);
-    t8.size > 0 && (this._$Ep = t8);
+    const t7 = /* @__PURE__ */ new Map(), s5 = this.constructor.elementProperties;
+    for (const i7 of s5.keys()) this.hasOwnProperty(i7) && (t7.set(i7, this[i7]), delete this[i7]);
+    t7.size > 0 && (this._$Ep = t7);
   }
   createRenderRoot() {
-    const t8 = this.shadowRoot ?? this.attachShadow(this.constructor.shadowRootOptions);
-    return S(t8, this.constructor.elementStyles), t8;
+    const t7 = this.shadowRoot ?? this.attachShadow(this.constructor.shadowRootOptions);
+    return S(t7, this.constructor.elementStyles), t7;
   }
   connectedCallback() {
-    this.renderRoot ??= this.createRenderRoot(), this.enableUpdating(true), this._$EO?.forEach((t8) => t8.hostConnected?.());
+    this.renderRoot ??= this.createRenderRoot(), this.enableUpdating(true), this._$EO?.forEach((t7) => t7.hostConnected?.());
   }
-  enableUpdating(t8) {
+  enableUpdating(t7) {
   }
   disconnectedCallback() {
-    this._$EO?.forEach((t8) => t8.hostDisconnected?.());
+    this._$EO?.forEach((t7) => t7.hostDisconnected?.());
   }
-  attributeChangedCallback(t8, s5, i7) {
-    this._$AK(t8, i7);
+  attributeChangedCallback(t7, s5, i7) {
+    this._$AK(t7, i7);
   }
-  _$ET(t8, s5) {
-    const i7 = this.constructor.elementProperties.get(t8), e7 = this.constructor._$Eu(t8, i7);
+  _$ET(t7, s5) {
+    const i7 = this.constructor.elementProperties.get(t7), e7 = this.constructor._$Eu(t7, i7);
     if (void 0 !== e7 && true === i7.reflect) {
       const h4 = (void 0 !== i7.converter?.toAttribute ? i7.converter : b).toAttribute(s5, i7.type);
-      this._$Em = t8, null == h4 ? this.removeAttribute(e7) : this.setAttribute(e7, h4), this._$Em = null;
+      this._$Em = t7, null == h4 ? this.removeAttribute(e7) : this.setAttribute(e7, h4), this._$Em = null;
     }
   }
-  _$AK(t8, s5) {
-    const i7 = this.constructor, e7 = i7._$Eh.get(t8);
+  _$AK(t7, s5) {
+    const i7 = this.constructor, e7 = i7._$Eh.get(t7);
     if (void 0 !== e7 && this._$Em !== e7) {
-      const t9 = i7.getPropertyOptions(e7), h4 = "function" == typeof t9.converter ? { fromAttribute: t9.converter } : void 0 !== t9.converter?.fromAttribute ? t9.converter : b;
+      const t8 = i7.getPropertyOptions(e7), h4 = "function" == typeof t8.converter ? { fromAttribute: t8.converter } : void 0 !== t8.converter?.fromAttribute ? t8.converter : b;
       this._$Em = e7;
-      const r6 = h4.fromAttribute(s5, t9.type);
+      const r6 = h4.fromAttribute(s5, t8.type);
       this[e7] = r6 ?? this._$Ej?.get(e7) ?? r6, this._$Em = null;
     }
   }
-  requestUpdate(t8, s5, i7, e7 = false, h4) {
-    if (void 0 !== t8) {
+  requestUpdate(t7, s5, i7, e7 = false, h4) {
+    if (void 0 !== t7) {
       const r6 = this.constructor;
-      if (false === e7 && (h4 = this[t8]), i7 ??= r6.getPropertyOptions(t8), !((i7.hasChanged ?? m)(h4, s5) || i7.useDefault && i7.reflect && h4 === this._$Ej?.get(t8) && !this.hasAttribute(r6._$Eu(t8, i7)))) return;
-      this.C(t8, s5, i7);
+      if (false === e7 && (h4 = this[t7]), i7 ??= r6.getPropertyOptions(t7), !((i7.hasChanged ?? m)(h4, s5) || i7.useDefault && i7.reflect && h4 === this._$Ej?.get(t7) && !this.hasAttribute(r6._$Eu(t7, i7)))) return;
+      this.C(t7, s5, i7);
     }
     false === this.isUpdatePending && (this._$ES = this._$EP());
   }
-  C(t8, s5, { useDefault: i7, reflect: e7, wrapped: h4 }, r6) {
-    i7 && !(this._$Ej ??= /* @__PURE__ */ new Map()).has(t8) && (this._$Ej.set(t8, r6 ?? s5 ?? this[t8]), true !== h4 || void 0 !== r6) || (this._$AL.has(t8) || (this.hasUpdated || i7 || (s5 = void 0), this._$AL.set(t8, s5)), true === e7 && this._$Em !== t8 && (this._$Eq ??= /* @__PURE__ */ new Set()).add(t8));
+  C(t7, s5, { useDefault: i7, reflect: e7, wrapped: h4 }, r6) {
+    i7 && !(this._$Ej ??= /* @__PURE__ */ new Map()).has(t7) && (this._$Ej.set(t7, r6 ?? s5 ?? this[t7]), true !== h4 || void 0 !== r6) || (this._$AL.has(t7) || (this.hasUpdated || i7 || (s5 = void 0), this._$AL.set(t7, s5)), true === e7 && this._$Em !== t7 && (this._$Eq ??= /* @__PURE__ */ new Set()).add(t7));
   }
   async _$EP() {
     this.isUpdatePending = true;
     try {
       await this._$ES;
-    } catch (t9) {
-      Promise.reject(t9);
+    } catch (t8) {
+      Promise.reject(t8);
     }
-    const t8 = this.scheduleUpdate();
-    return null != t8 && await t8, !this.isUpdatePending;
+    const t7 = this.scheduleUpdate();
+    return null != t7 && await t7, !this.isUpdatePending;
   }
   scheduleUpdate() {
     return this.performUpdate();
@@ -897,28 +897,28 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
     if (!this.isUpdatePending) return;
     if (!this.hasUpdated) {
       if (this.renderRoot ??= this.createRenderRoot(), this._$Ep) {
-        for (const [t10, s6] of this._$Ep) this[t10] = s6;
+        for (const [t9, s6] of this._$Ep) this[t9] = s6;
         this._$Ep = void 0;
       }
-      const t9 = this.constructor.elementProperties;
-      if (t9.size > 0) for (const [s6, i7] of t9) {
-        const { wrapped: t10 } = i7, e7 = this[s6];
-        true !== t10 || this._$AL.has(s6) || void 0 === e7 || this.C(s6, void 0, i7, e7);
+      const t8 = this.constructor.elementProperties;
+      if (t8.size > 0) for (const [s6, i7] of t8) {
+        const { wrapped: t9 } = i7, e7 = this[s6];
+        true !== t9 || this._$AL.has(s6) || void 0 === e7 || this.C(s6, void 0, i7, e7);
       }
     }
-    let t8 = false;
+    let t7 = false;
     const s5 = this._$AL;
     try {
-      t8 = this.shouldUpdate(s5), t8 ? (this.willUpdate(s5), this._$EO?.forEach((t9) => t9.hostUpdate?.()), this.update(s5)) : this._$EM();
+      t7 = this.shouldUpdate(s5), t7 ? (this.willUpdate(s5), this._$EO?.forEach((t8) => t8.hostUpdate?.()), this.update(s5)) : this._$EM();
     } catch (s6) {
-      throw t8 = false, this._$EM(), s6;
+      throw t7 = false, this._$EM(), s6;
     }
-    t8 && this._$AE(s5);
+    t7 && this._$AE(s5);
   }
-  willUpdate(t8) {
+  willUpdate(t7) {
   }
-  _$AE(t8) {
-    this._$EO?.forEach((t9) => t9.hostUpdated?.()), this.hasUpdated || (this.hasUpdated = true, this.firstUpdated(t8)), this.updated(t8);
+  _$AE(t7) {
+    this._$EO?.forEach((t8) => t8.hostUpdated?.()), this.hasUpdated || (this.hasUpdated = true, this.firstUpdated(t7)), this.updated(t7);
   }
   _$EM() {
     this._$AL = /* @__PURE__ */ new Map(), this.isUpdatePending = false;
@@ -929,33 +929,33 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
   getUpdateComplete() {
     return this._$ES;
   }
-  shouldUpdate(t8) {
+  shouldUpdate(t7) {
     return true;
   }
-  update(t8) {
-    this._$Eq &&= this._$Eq.forEach((t9) => this._$ET(t9, this[t9])), this._$EM();
+  update(t7) {
+    this._$Eq &&= this._$Eq.forEach((t8) => this._$ET(t8, this[t8])), this._$EM();
   }
-  updated(t8) {
+  updated(t7) {
   }
-  firstUpdated(t8) {
+  firstUpdated(t7) {
   }
 };
 g.elementStyles = [], g.shadowRootOptions = { mode: "open" }, g[f("elementProperties")] = /* @__PURE__ */ new Map(), g[f("finalized")] = /* @__PURE__ */ new Map(), u?.({ ReactiveElement: g }), (l.reactiveElementVersions ??= []).push("2.1.2");
 
 // ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
 var t2 = globalThis;
-var i2 = (t8) => t8;
+var i2 = (t7) => t7;
 var s2 = t2.trustedTypes;
-var e2 = s2 ? s2.createPolicy("lit-html", { createHTML: (t8) => t8 }) : void 0;
+var e2 = s2 ? s2.createPolicy("lit-html", { createHTML: (t7) => t7 }) : void 0;
 var h2 = "$lit$";
 var o3 = `lit$${Math.random().toFixed(9).slice(2)}$`;
 var n4 = "?" + o3;
 var r3 = `<${n4}>`;
 var l2 = document;
 var c3 = () => l2.createComment("");
-var a2 = (t8) => null === t8 || "object" != typeof t8 && "function" != typeof t8;
+var a2 = (t7) => null === t7 || "object" != typeof t7 && "function" != typeof t7;
 var u2 = Array.isArray;
-var d2 = (t8) => u2(t8) || "function" == typeof t8?.[Symbol.iterator];
+var d2 = (t7) => u2(t7) || "function" == typeof t7?.[Symbol.iterator];
 var f2 = "[ 	\n\f\r]";
 var v = /<(?:(!--|\/[^a-zA-Z])|(\/?[a-zA-Z][^>\s]*)|(\/?$))/g;
 var _ = /-->/g;
@@ -965,7 +965,7 @@ var p2 = RegExp(`>|${f2}(?:([^\\s"'>=/]+)(${f2}*=${f2}*(?:[^
 var g2 = /'/g;
 var $ = /"/g;
 var y2 = /^(?:script|style|textarea|title)$/i;
-var x = (t8) => (i7, ...s5) => ({ _$litType$: t8, strings: i7, values: s5 });
+var x = (t7) => (i7, ...s5) => ({ _$litType$: t7, strings: i7, values: s5 });
 var b2 = x(1);
 var w = x(2);
 var T = x(3);
@@ -973,68 +973,68 @@ var E = Symbol.for("lit-noChange");
 var A = Symbol.for("lit-nothing");
 var C = /* @__PURE__ */ new WeakMap();
 var P = l2.createTreeWalker(l2, 129);
-function V(t8, i7) {
-  if (!u2(t8) || !t8.hasOwnProperty("raw")) throw Error("invalid template strings array");
+function V(t7, i7) {
+  if (!u2(t7) || !t7.hasOwnProperty("raw")) throw Error("invalid template strings array");
   return void 0 !== e2 ? e2.createHTML(i7) : i7;
 }
-var N = (t8, i7) => {
-  const s5 = t8.length - 1, e7 = [];
+var N = (t7, i7) => {
+  const s5 = t7.length - 1, e7 = [];
   let n7, l3 = 2 === i7 ? "<svg>" : 3 === i7 ? "<math>" : "", c5 = v;
   for (let i8 = 0; i8 < s5; i8++) {
-    const s6 = t8[i8];
+    const s6 = t7[i8];
     let a3, u5, d3 = -1, f3 = 0;
     for (; f3 < s6.length && (c5.lastIndex = f3, u5 = c5.exec(s6), null !== u5); ) f3 = c5.lastIndex, c5 === v ? "!--" === u5[1] ? c5 = _ : void 0 !== u5[1] ? c5 = m2 : void 0 !== u5[2] ? (y2.test(u5[2]) && (n7 = RegExp("</" + u5[2], "g")), c5 = p2) : void 0 !== u5[3] && (c5 = p2) : c5 === p2 ? ">" === u5[0] ? (c5 = n7 ?? v, d3 = -1) : void 0 === u5[1] ? d3 = -2 : (d3 = c5.lastIndex - u5[2].length, a3 = u5[1], c5 = void 0 === u5[3] ? p2 : '"' === u5[3] ? $ : g2) : c5 === $ || c5 === g2 ? c5 = p2 : c5 === _ || c5 === m2 ? c5 = v : (c5 = p2, n7 = void 0);
-    const x2 = c5 === p2 && t8[i8 + 1].startsWith("/>") ? " " : "";
+    const x2 = c5 === p2 && t7[i8 + 1].startsWith("/>") ? " " : "";
     l3 += c5 === v ? s6 + r3 : d3 >= 0 ? (e7.push(a3), s6.slice(0, d3) + h2 + s6.slice(d3) + o3 + x2) : s6 + o3 + (-2 === d3 ? i8 : x2);
   }
-  return [V(t8, l3 + (t8[s5] || "<?>") + (2 === i7 ? "</svg>" : 3 === i7 ? "</math>" : "")), e7];
+  return [V(t7, l3 + (t7[s5] || "<?>") + (2 === i7 ? "</svg>" : 3 === i7 ? "</math>" : "")), e7];
 };
 var S2 = class _S {
-  constructor({ strings: t8, _$litType$: i7 }, e7) {
+  constructor({ strings: t7, _$litType$: i7 }, e7) {
     let r6;
     this.parts = [];
     let l3 = 0, a3 = 0;
-    const u5 = t8.length - 1, d3 = this.parts, [f3, v3] = N(t8, i7);
+    const u5 = t7.length - 1, d3 = this.parts, [f3, v3] = N(t7, i7);
     if (this.el = _S.createElement(f3, e7), P.currentNode = this.el.content, 2 === i7 || 3 === i7) {
-      const t9 = this.el.content.firstChild;
-      t9.replaceWith(...t9.childNodes);
+      const t8 = this.el.content.firstChild;
+      t8.replaceWith(...t8.childNodes);
     }
     for (; null !== (r6 = P.nextNode()) && d3.length < u5; ) {
       if (1 === r6.nodeType) {
-        if (r6.hasAttributes()) for (const t9 of r6.getAttributeNames()) if (t9.endsWith(h2)) {
-          const i8 = v3[a3++], s5 = r6.getAttribute(t9).split(o3), e8 = /([.?@])?(.*)/.exec(i8);
-          d3.push({ type: 1, index: l3, name: e8[2], strings: s5, ctor: "." === e8[1] ? I : "?" === e8[1] ? L : "@" === e8[1] ? z : H }), r6.removeAttribute(t9);
-        } else t9.startsWith(o3) && (d3.push({ type: 6, index: l3 }), r6.removeAttribute(t9));
+        if (r6.hasAttributes()) for (const t8 of r6.getAttributeNames()) if (t8.endsWith(h2)) {
+          const i8 = v3[a3++], s5 = r6.getAttribute(t8).split(o3), e8 = /([.?@])?(.*)/.exec(i8);
+          d3.push({ type: 1, index: l3, name: e8[2], strings: s5, ctor: "." === e8[1] ? I : "?" === e8[1] ? L : "@" === e8[1] ? z : H }), r6.removeAttribute(t8);
+        } else t8.startsWith(o3) && (d3.push({ type: 6, index: l3 }), r6.removeAttribute(t8));
         if (y2.test(r6.tagName)) {
-          const t9 = r6.textContent.split(o3), i8 = t9.length - 1;
+          const t8 = r6.textContent.split(o3), i8 = t8.length - 1;
           if (i8 > 0) {
             r6.textContent = s2 ? s2.emptyScript : "";
-            for (let s5 = 0; s5 < i8; s5++) r6.append(t9[s5], c3()), P.nextNode(), d3.push({ type: 2, index: ++l3 });
-            r6.append(t9[i8], c3());
+            for (let s5 = 0; s5 < i8; s5++) r6.append(t8[s5], c3()), P.nextNode(), d3.push({ type: 2, index: ++l3 });
+            r6.append(t8[i8], c3());
           }
         }
       } else if (8 === r6.nodeType) if (r6.data === n4) d3.push({ type: 2, index: l3 });
       else {
-        let t9 = -1;
-        for (; -1 !== (t9 = r6.data.indexOf(o3, t9 + 1)); ) d3.push({ type: 7, index: l3 }), t9 += o3.length - 1;
+        let t8 = -1;
+        for (; -1 !== (t8 = r6.data.indexOf(o3, t8 + 1)); ) d3.push({ type: 7, index: l3 }), t8 += o3.length - 1;
       }
       l3++;
     }
   }
-  static createElement(t8, i7) {
+  static createElement(t7, i7) {
     const s5 = l2.createElement("template");
-    return s5.innerHTML = t8, s5;
+    return s5.innerHTML = t7, s5;
   }
 };
-function M(t8, i7, s5 = t8, e7) {
+function M(t7, i7, s5 = t7, e7) {
   if (i7 === E) return i7;
   let h4 = void 0 !== e7 ? s5._$Co?.[e7] : s5._$Cl;
   const o9 = a2(i7) ? void 0 : i7._$litDirective$;
-  return h4?.constructor !== o9 && (h4?._$AO?.(false), void 0 === o9 ? h4 = void 0 : (h4 = new o9(t8), h4._$AT(t8, s5, e7)), void 0 !== e7 ? (s5._$Co ??= [])[e7] = h4 : s5._$Cl = h4), void 0 !== h4 && (i7 = M(t8, h4._$AS(t8, i7.values), h4, e7)), i7;
+  return h4?.constructor !== o9 && (h4?._$AO?.(false), void 0 === o9 ? h4 = void 0 : (h4 = new o9(t7), h4._$AT(t7, s5, e7)), void 0 !== e7 ? (s5._$Co ??= [])[e7] = h4 : s5._$Cl = h4), void 0 !== h4 && (i7 = M(t7, h4._$AS(t7, i7.values), h4, e7)), i7;
 }
 var R = class {
-  constructor(t8, i7) {
-    this._$AV = [], this._$AN = void 0, this._$AD = t8, this._$AM = i7;
+  constructor(t7, i7) {
+    this._$AV = [], this._$AN = void 0, this._$AD = t7, this._$AM = i7;
   }
   get parentNode() {
     return this._$AM.parentNode;
@@ -1042,35 +1042,35 @@ var R = class {
   get _$AU() {
     return this._$AM._$AU;
   }
-  u(t8) {
-    const { el: { content: i7 }, parts: s5 } = this._$AD, e7 = (t8?.creationScope ?? l2).importNode(i7, true);
+  u(t7) {
+    const { el: { content: i7 }, parts: s5 } = this._$AD, e7 = (t7?.creationScope ?? l2).importNode(i7, true);
     P.currentNode = e7;
     let h4 = P.nextNode(), o9 = 0, n7 = 0, r6 = s5[0];
     for (; void 0 !== r6; ) {
       if (o9 === r6.index) {
         let i8;
-        2 === r6.type ? i8 = new k(h4, h4.nextSibling, this, t8) : 1 === r6.type ? i8 = new r6.ctor(h4, r6.name, r6.strings, this, t8) : 6 === r6.type && (i8 = new Z(h4, this, t8)), this._$AV.push(i8), r6 = s5[++n7];
+        2 === r6.type ? i8 = new k(h4, h4.nextSibling, this, t7) : 1 === r6.type ? i8 = new r6.ctor(h4, r6.name, r6.strings, this, t7) : 6 === r6.type && (i8 = new Z(h4, this, t7)), this._$AV.push(i8), r6 = s5[++n7];
       }
       o9 !== r6?.index && (h4 = P.nextNode(), o9++);
     }
     return P.currentNode = l2, e7;
   }
-  p(t8) {
+  p(t7) {
     let i7 = 0;
-    for (const s5 of this._$AV) void 0 !== s5 && (void 0 !== s5.strings ? (s5._$AI(t8, s5, i7), i7 += s5.strings.length - 2) : s5._$AI(t8[i7])), i7++;
+    for (const s5 of this._$AV) void 0 !== s5 && (void 0 !== s5.strings ? (s5._$AI(t7, s5, i7), i7 += s5.strings.length - 2) : s5._$AI(t7[i7])), i7++;
   }
 };
 var k = class _k {
   get _$AU() {
     return this._$AM?._$AU ?? this._$Cv;
   }
-  constructor(t8, i7, s5, e7) {
-    this.type = 2, this._$AH = A, this._$AN = void 0, this._$AA = t8, this._$AB = i7, this._$AM = s5, this.options = e7, this._$Cv = e7?.isConnected ?? true;
+  constructor(t7, i7, s5, e7) {
+    this.type = 2, this._$AH = A, this._$AN = void 0, this._$AA = t7, this._$AB = i7, this._$AM = s5, this.options = e7, this._$Cv = e7?.isConnected ?? true;
   }
   get parentNode() {
-    let t8 = this._$AA.parentNode;
+    let t7 = this._$AA.parentNode;
     const i7 = this._$AM;
-    return void 0 !== i7 && 11 === t8?.nodeType && (t8 = i7.parentNode), t8;
+    return void 0 !== i7 && 11 === t7?.nodeType && (t7 = i7.parentNode), t7;
   }
   get startNode() {
     return this._$AA;
@@ -1078,45 +1078,45 @@ var k = class _k {
   get endNode() {
     return this._$AB;
   }
-  _$AI(t8, i7 = this) {
-    t8 = M(this, t8, i7), a2(t8) ? t8 === A || null == t8 || "" === t8 ? (this._$AH !== A && this._$AR(), this._$AH = A) : t8 !== this._$AH && t8 !== E && this._(t8) : void 0 !== t8._$litType$ ? this.$(t8) : void 0 !== t8.nodeType ? this.T(t8) : d2(t8) ? this.k(t8) : this._(t8);
+  _$AI(t7, i7 = this) {
+    t7 = M(this, t7, i7), a2(t7) ? t7 === A || null == t7 || "" === t7 ? (this._$AH !== A && this._$AR(), this._$AH = A) : t7 !== this._$AH && t7 !== E && this._(t7) : void 0 !== t7._$litType$ ? this.$(t7) : void 0 !== t7.nodeType ? this.T(t7) : d2(t7) ? this.k(t7) : this._(t7);
   }
-  O(t8) {
-    return this._$AA.parentNode.insertBefore(t8, this._$AB);
+  O(t7) {
+    return this._$AA.parentNode.insertBefore(t7, this._$AB);
   }
-  T(t8) {
-    this._$AH !== t8 && (this._$AR(), this._$AH = this.O(t8));
+  T(t7) {
+    this._$AH !== t7 && (this._$AR(), this._$AH = this.O(t7));
   }
-  _(t8) {
-    this._$AH !== A && a2(this._$AH) ? this._$AA.nextSibling.data = t8 : this.T(l2.createTextNode(t8)), this._$AH = t8;
+  _(t7) {
+    this._$AH !== A && a2(this._$AH) ? this._$AA.nextSibling.data = t7 : this.T(l2.createTextNode(t7)), this._$AH = t7;
   }
-  $(t8) {
-    const { values: i7, _$litType$: s5 } = t8, e7 = "number" == typeof s5 ? this._$AC(t8) : (void 0 === s5.el && (s5.el = S2.createElement(V(s5.h, s5.h[0]), this.options)), s5);
+  $(t7) {
+    const { values: i7, _$litType$: s5 } = t7, e7 = "number" == typeof s5 ? this._$AC(t7) : (void 0 === s5.el && (s5.el = S2.createElement(V(s5.h, s5.h[0]), this.options)), s5);
     if (this._$AH?._$AD === e7) this._$AH.p(i7);
     else {
-      const t9 = new R(e7, this), s6 = t9.u(this.options);
-      t9.p(i7), this.T(s6), this._$AH = t9;
+      const t8 = new R(e7, this), s6 = t8.u(this.options);
+      t8.p(i7), this.T(s6), this._$AH = t8;
     }
   }
-  _$AC(t8) {
-    let i7 = C.get(t8.strings);
-    return void 0 === i7 && C.set(t8.strings, i7 = new S2(t8)), i7;
+  _$AC(t7) {
+    let i7 = C.get(t7.strings);
+    return void 0 === i7 && C.set(t7.strings, i7 = new S2(t7)), i7;
   }
-  k(t8) {
+  k(t7) {
     u2(this._$AH) || (this._$AH = [], this._$AR());
     const i7 = this._$AH;
     let s5, e7 = 0;
-    for (const h4 of t8) e7 === i7.length ? i7.push(s5 = new _k(this.O(c3()), this.O(c3()), this, this.options)) : s5 = i7[e7], s5._$AI(h4), e7++;
+    for (const h4 of t7) e7 === i7.length ? i7.push(s5 = new _k(this.O(c3()), this.O(c3()), this, this.options)) : s5 = i7[e7], s5._$AI(h4), e7++;
     e7 < i7.length && (this._$AR(s5 && s5._$AB.nextSibling, e7), i7.length = e7);
   }
-  _$AR(t8 = this._$AA.nextSibling, s5) {
-    for (this._$AP?.(false, true, s5); t8 !== this._$AB; ) {
-      const s6 = i2(t8).nextSibling;
-      i2(t8).remove(), t8 = s6;
+  _$AR(t7 = this._$AA.nextSibling, s5) {
+    for (this._$AP?.(false, true, s5); t7 !== this._$AB; ) {
+      const s6 = i2(t7).nextSibling;
+      i2(t7).remove(), t7 = s6;
     }
   }
-  setConnected(t8) {
-    void 0 === this._$AM && (this._$Cv = t8, this._$AP?.(t8));
+  setConnected(t7) {
+    void 0 === this._$AM && (this._$Cv = t7, this._$AP?.(t7));
   }
 };
 var H = class {
@@ -1126,75 +1126,75 @@ var H = class {
   get _$AU() {
     return this._$AM._$AU;
   }
-  constructor(t8, i7, s5, e7, h4) {
-    this.type = 1, this._$AH = A, this._$AN = void 0, this.element = t8, this.name = i7, this._$AM = e7, this.options = h4, s5.length > 2 || "" !== s5[0] || "" !== s5[1] ? (this._$AH = Array(s5.length - 1).fill(new String()), this.strings = s5) : this._$AH = A;
+  constructor(t7, i7, s5, e7, h4) {
+    this.type = 1, this._$AH = A, this._$AN = void 0, this.element = t7, this.name = i7, this._$AM = e7, this.options = h4, s5.length > 2 || "" !== s5[0] || "" !== s5[1] ? (this._$AH = Array(s5.length - 1).fill(new String()), this.strings = s5) : this._$AH = A;
   }
-  _$AI(t8, i7 = this, s5, e7) {
+  _$AI(t7, i7 = this, s5, e7) {
     const h4 = this.strings;
     let o9 = false;
-    if (void 0 === h4) t8 = M(this, t8, i7, 0), o9 = !a2(t8) || t8 !== this._$AH && t8 !== E, o9 && (this._$AH = t8);
+    if (void 0 === h4) t7 = M(this, t7, i7, 0), o9 = !a2(t7) || t7 !== this._$AH && t7 !== E, o9 && (this._$AH = t7);
     else {
-      const e8 = t8;
+      const e8 = t7;
       let n7, r6;
-      for (t8 = h4[0], n7 = 0; n7 < h4.length - 1; n7++) r6 = M(this, e8[s5 + n7], i7, n7), r6 === E && (r6 = this._$AH[n7]), o9 ||= !a2(r6) || r6 !== this._$AH[n7], r6 === A ? t8 = A : t8 !== A && (t8 += (r6 ?? "") + h4[n7 + 1]), this._$AH[n7] = r6;
+      for (t7 = h4[0], n7 = 0; n7 < h4.length - 1; n7++) r6 = M(this, e8[s5 + n7], i7, n7), r6 === E && (r6 = this._$AH[n7]), o9 ||= !a2(r6) || r6 !== this._$AH[n7], r6 === A ? t7 = A : t7 !== A && (t7 += (r6 ?? "") + h4[n7 + 1]), this._$AH[n7] = r6;
     }
-    o9 && !e7 && this.j(t8);
+    o9 && !e7 && this.j(t7);
   }
-  j(t8) {
-    t8 === A ? this.element.removeAttribute(this.name) : this.element.setAttribute(this.name, t8 ?? "");
+  j(t7) {
+    t7 === A ? this.element.removeAttribute(this.name) : this.element.setAttribute(this.name, t7 ?? "");
   }
 };
 var I = class extends H {
   constructor() {
     super(...arguments), this.type = 3;
   }
-  j(t8) {
-    this.element[this.name] = t8 === A ? void 0 : t8;
+  j(t7) {
+    this.element[this.name] = t7 === A ? void 0 : t7;
   }
 };
 var L = class extends H {
   constructor() {
     super(...arguments), this.type = 4;
   }
-  j(t8) {
-    this.element.toggleAttribute(this.name, !!t8 && t8 !== A);
+  j(t7) {
+    this.element.toggleAttribute(this.name, !!t7 && t7 !== A);
   }
 };
 var z = class extends H {
-  constructor(t8, i7, s5, e7, h4) {
-    super(t8, i7, s5, e7, h4), this.type = 5;
+  constructor(t7, i7, s5, e7, h4) {
+    super(t7, i7, s5, e7, h4), this.type = 5;
   }
-  _$AI(t8, i7 = this) {
-    if ((t8 = M(this, t8, i7, 0) ?? A) === E) return;
-    const s5 = this._$AH, e7 = t8 === A && s5 !== A || t8.capture !== s5.capture || t8.once !== s5.once || t8.passive !== s5.passive, h4 = t8 !== A && (s5 === A || e7);
-    e7 && this.element.removeEventListener(this.name, this, s5), h4 && this.element.addEventListener(this.name, this, t8), this._$AH = t8;
+  _$AI(t7, i7 = this) {
+    if ((t7 = M(this, t7, i7, 0) ?? A) === E) return;
+    const s5 = this._$AH, e7 = t7 === A && s5 !== A || t7.capture !== s5.capture || t7.once !== s5.once || t7.passive !== s5.passive, h4 = t7 !== A && (s5 === A || e7);
+    e7 && this.element.removeEventListener(this.name, this, s5), h4 && this.element.addEventListener(this.name, this, t7), this._$AH = t7;
   }
-  handleEvent(t8) {
-    "function" == typeof this._$AH ? this._$AH.call(this.options?.host ?? this.element, t8) : this._$AH.handleEvent(t8);
+  handleEvent(t7) {
+    "function" == typeof this._$AH ? this._$AH.call(this.options?.host ?? this.element, t7) : this._$AH.handleEvent(t7);
   }
 };
 var Z = class {
-  constructor(t8, i7, s5) {
-    this.element = t8, this.type = 6, this._$AN = void 0, this._$AM = i7, this.options = s5;
+  constructor(t7, i7, s5) {
+    this.element = t7, this.type = 6, this._$AN = void 0, this._$AM = i7, this.options = s5;
   }
   get _$AU() {
     return this._$AM._$AU;
   }
-  _$AI(t8) {
-    M(this, t8);
+  _$AI(t7) {
+    M(this, t7);
   }
 };
 var j = { M: h2, P: o3, A: n4, C: 1, L: N, R, D: d2, V: M, I: k, H, N: L, U: z, B: I, F: Z };
 var B = t2.litHtmlPolyfillSupport;
 B?.(S2, k), (t2.litHtmlVersions ??= []).push("3.3.3");
-var D = (t8, i7, s5) => {
+var D = (t7, i7, s5) => {
   const e7 = s5?.renderBefore ?? i7;
   let h4 = e7._$litPart$;
   if (void 0 === h4) {
-    const t9 = s5?.renderBefore ?? null;
-    e7._$litPart$ = h4 = new k(i7.insertBefore(c3(), t9), t9, void 0, s5 ?? {});
+    const t8 = s5?.renderBefore ?? null;
+    e7._$litPart$ = h4 = new k(i7.insertBefore(c3(), t8), t8, void 0, s5 ?? {});
   }
-  return h4._$AI(t8), h4;
+  return h4._$AI(t7), h4;
 };
 
 // ../../node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
@@ -1204,12 +1204,12 @@ var i3 = class extends g {
     super(...arguments), this.renderOptions = { host: this }, this._$Do = void 0;
   }
   createRenderRoot() {
-    const t8 = super.createRenderRoot();
-    return this.renderOptions.renderBefore ??= t8.firstChild, t8;
+    const t7 = super.createRenderRoot();
+    return this.renderOptions.renderBefore ??= t7.firstChild, t7;
   }
-  update(t8) {
+  update(t7) {
     const r6 = this.render();
-    this.hasUpdated || (this.renderOptions.isConnected = this.isConnected), super.update(t8), this._$Do = D(r6, this.renderRoot, this.renderOptions);
+    this.hasUpdated || (this.renderOptions.isConnected = this.isConnected), super.update(t7), this._$Do = D(r6, this.renderRoot, this.renderOptions);
   }
   connectedCallback() {
     super.connectedCallback(), this._$Do?.setConnected(true);
@@ -1226,34 +1226,41 @@ var o4 = s3.litElementPolyfillSupport;
 o4?.({ LitElement: i3 });
 (s3.litElementVersions ??= []).push("4.2.2");
 
+// ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/define.js
+function define(tag, ctor) {
+  if (typeof customElements !== "undefined" && !customElements.get(tag)) {
+    customElements.define(tag, ctor);
+  }
+}
+
 // ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
-var r4 = (t8 = o5, e7, r6) => {
+var r4 = (t7 = o5, e7, r6) => {
   const { kind: n7, metadata: i7 } = r6;
   let s5 = globalThis.litPropertyMetadata.get(i7);
-  if (void 0 === s5 && globalThis.litPropertyMetadata.set(i7, s5 = /* @__PURE__ */ new Map()), "setter" === n7 && ((t8 = Object.create(t8)).wrapped = true), s5.set(r6.name, t8), "accessor" === n7) {
+  if (void 0 === s5 && globalThis.litPropertyMetadata.set(i7, s5 = /* @__PURE__ */ new Map()), "setter" === n7 && ((t7 = Object.create(t7)).wrapped = true), s5.set(r6.name, t7), "accessor" === n7) {
     const { name: o9 } = r6;
     return { set(r7) {
       const n8 = e7.get.call(this);
-      e7.set.call(this, r7), this.requestUpdate(o9, n8, t8, true, r7);
+      e7.set.call(this, r7), this.requestUpdate(o9, n8, t7, true, r7);
     }, init(e8) {
-      return void 0 !== e8 && this.C(o9, void 0, t8, e8), e8;
+      return void 0 !== e8 && this.C(o9, void 0, t7, e8), e8;
     } };
   }
   if ("setter" === n7) {
     const { name: o9 } = r6;
     return function(r7) {
       const n8 = this[o9];
-      e7.call(this, r7), this.requestUpdate(o9, n8, t8, true, r7);
+      e7.call(this, r7), this.requestUpdate(o9, n8, t7, true, r7);
     };
   }
   throw Error("Unsupported decorator location: " + n7);
 };
-function n5(t8) {
-  return (e7, o9) => "object" == typeof o9 ? r4(t8, e7, o9) : ((t9, e8, o10) => {
+function n5(t7) {
+  return (e7, o9) => "object" == typeof o9 ? r4(t7, e7, o9) : ((t8, e8, o10) => {
     const r6 = e8.hasOwnProperty(o10);
-    return e8.constructor.createProperty(o10, t9), r6 ? Object.getOwnPropertyDescriptor(e8, o10) : void 0;
-  })(t8, e7, o9);
+    return e8.constructor.createProperty(o10, t8), r6 ? Object.getOwnPropertyDescriptor(e8, o10) : void 0;
+  })(t7, e7, o9);
 }
 
 // ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/state.js
@@ -1262,37 +1269,30 @@ function r5(r6) {
 }
 
 // ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/base.js
-var e3 = (e7, t8, c5) => (c5.configurable = true, c5.enumerable = true, Reflect.decorate && "object" != typeof t8 && Object.defineProperty(e7, t8, c5), c5);
+var e3 = (e7, t7, c5) => (c5.configurable = true, c5.enumerable = true, Reflect.decorate && "object" != typeof t7 && Object.defineProperty(e7, t7, c5), c5);
 
 // ../../node_modules/.pnpm/@lit+reactive-element@2.1.2/node_modules/@lit/reactive-element/node/decorators/query.js
 function e4(e7, r6) {
   return (n7, s5, i7) => {
-    const o9 = (t8) => t8.renderRoot?.querySelector(e7) ?? null;
+    const o9 = (t7) => t7.renderRoot?.querySelector(e7) ?? null;
     if (r6) {
       const { get: e8, set: r7 } = "object" == typeof s5 ? n7 : i7 ?? (() => {
-        const t8 = Symbol();
+        const t7 = Symbol();
         return { get() {
-          return this[t8];
+          return this[t7];
         }, set(e9) {
-          this[t8] = e9;
+          this[t7] = e9;
         } };
       })();
       return e3(n7, s5, { get() {
-        let t8 = e8.call(this);
-        return void 0 === t8 && (t8 = o9(this), (null !== t8 || this.hasUpdated) && r7.call(this, t8)), t8;
+        let t7 = e8.call(this);
+        return void 0 === t7 && (t7 = o9(this), (null !== t7 || this.hasUpdated) && r7.call(this, t7)), t7;
       } });
     }
     return e3(n7, s5, { get() {
       return o9(this);
     } });
   };
-}
-
-// ../../node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/define.js
-function define(tag, ctor) {
-  if (typeof customElements !== "undefined" && !customElements.get(tag)) {
-    customElements.define(tag, ctor);
-  }
 }
 
 // ../../node_modules/.pnpm/@erplora+module-sdk@file+..+hub+packages+module-sdk/node_modules/@erplora/module-sdk/src/index.ts
@@ -1435,8 +1435,8 @@ function receiptToPrintableHtml(doc) {
         <td class="n">${esc(l3.name)}<div class="q">${esc(l3.qty)} \xD7 ${money(l3.unit_price, cur)}</div></td>
         <td class="a">${money(l3.total, cur)}</td>
       </tr>`).join("");
-  const impuestos = (doc.taxes ?? []).map((t8) => `
-      <tr><td>${esc(t8.label)}</td><td class="a">${money(t8.amount, cur)}</td></tr>`).join("");
+  const impuestos = (doc.taxes ?? []).map((t7) => `
+      <tr><td>${esc(t7.label)}</td><td class="a">${money(t7.amount, cur)}</td></tr>`).join("");
   const pago = doc.payment ? `<tr><td>${esc(doc.payment.method)}</td><td class="a">${money(doc.payment.paid ?? doc.total, cur)}</td></tr>` + (doc.payment.change != null ? `<tr><td>Cambio</td><td class="a">${money(doc.payment.change, cur)}</td></tr>` : "") : "";
   return `<!doctype html>
 <html><head><meta charset="utf-8"><title>${esc(doc.number || doc.business?.name || "Documento")}</title>
@@ -2300,7 +2300,7 @@ var OkReceipt = class extends i3 {
     return b2`<table class="totals">
       ${r6.subtotal != null ? b2`<tr><td>${this.t.subtotal}</td><td class="num">${this.money(r6.subtotal)}</td></tr>` : A}
       ${taxes.map(
-      (t8) => b2`<tr><td>${t8.label}</td><td class="num">${this.money(t8.amount)}</td></tr>`
+      (t7) => b2`<tr><td>${t7.label}</td><td class="num">${this.money(t7.amount)}</td></tr>`
     )}
       <tr class="grand"><td>${this.t.total}</td><td class="num">${this.money(r6.total)}</td></tr>
       ${r6.payment ? b2`<tr class="pay"><td>${r6.payment.method}</td><td class="num">${this.money(
@@ -2529,7 +2529,7 @@ var OkInvoice = class extends i3 {
         <tr><td class="muted">${this.t.taxBase}</td><td class="num">${this.money(inv.subtotal)}</td></tr>
         ${inv.discount_total ? b2`<tr><td class="muted">${this.t.discountTotal}</td><td class="num">−${this.money(inv.discount_total)}</td></tr>` : A}
         ${taxes.map(
-      (t8) => b2`<tr><td class="muted">${t8.label}${t8.base != null ? b2` <span class="muted">(${this.money(t8.base)})</span>` : A}</td><td class="num">${this.money(t8.amount)}</td></tr>`
+      (t7) => b2`<tr><td class="muted">${t7.label}${t7.base != null ? b2` <span class="muted">(${this.money(t7.base)})</span>` : A}</td><td class="num">${this.money(t7.amount)}</td></tr>`
     )}
         <tr class="grand"><td>${this.t.total}</td><td class="num">${this.money(inv.total)}</td></tr>
       </table>
@@ -2578,40 +2578,40 @@ function formatDateTime(iso, locale = "es") {
     minute: "2-digit"
   }).format(d3);
 }
-function receiptLabels(t8) {
+function receiptLabels(t7) {
   return {
-    empty: t8("ui.docEmpty"),
-    phone: t8("ui.docPhone"),
-    receipt: t8("ui.docReceipt"),
-    servedBy: t8("ui.docServedBy"),
-    customer: t8("ui.docCustomer"),
-    item: t8("ui.docItem"),
-    amount: t8("ui.docAmount"),
-    noLines: t8("ui.docNoLines"),
-    subtotal: t8("ui.docSubtotal"),
-    total: t8("ui.docTotal"),
-    change: t8("ui.docChange")
+    empty: t7("ui.docEmpty"),
+    phone: t7("ui.docPhone"),
+    receipt: t7("ui.docReceipt"),
+    servedBy: t7("ui.docServedBy"),
+    customer: t7("ui.docCustomer"),
+    item: t7("ui.docItem"),
+    amount: t7("ui.docAmount"),
+    noLines: t7("ui.docNoLines"),
+    subtotal: t7("ui.docSubtotal"),
+    total: t7("ui.docTotal"),
+    change: t7("ui.docChange")
   };
 }
-function invoiceLabels(t8) {
+function invoiceLabels(t7) {
   return {
-    empty: t8("ui.docEmptyInvoice"),
-    invoice: t8("ui.docInvoice"),
-    number: t8("ui.docNumber"),
-    date: t8("ui.docDate"),
-    dueDate: t8("ui.docDueDate"),
-    billTo: t8("ui.docBillTo"),
-    description: t8("ui.docDescription"),
-    qty: t8("ui.docQty"),
-    price: t8("ui.docPrice"),
-    discount: t8("ui.docDiscount"),
-    tax: t8("ui.docTax"),
-    amount: t8("ui.docAmount"),
-    noLines: t8("ui.docNoLines"),
-    taxBase: t8("ui.docTaxBase"),
-    discountTotal: t8("ui.docDiscountTotal"),
-    total: t8("ui.docTotal"),
-    paymentMethod: t8("ui.docPaymentMethod")
+    empty: t7("ui.docEmptyInvoice"),
+    invoice: t7("ui.docInvoice"),
+    number: t7("ui.docNumber"),
+    date: t7("ui.docDate"),
+    dueDate: t7("ui.docDueDate"),
+    billTo: t7("ui.docBillTo"),
+    description: t7("ui.docDescription"),
+    qty: t7("ui.docQty"),
+    price: t7("ui.docPrice"),
+    discount: t7("ui.docDiscount"),
+    tax: t7("ui.docTax"),
+    amount: t7("ui.docAmount"),
+    noLines: t7("ui.docNoLines"),
+    taxBase: t7("ui.docTaxBase"),
+    discountTotal: t7("ui.docDiscountTotal"),
+    total: t7("ui.docTotal"),
+    paymentMethod: t7("ui.docPaymentMethod")
   };
 }
 function lineLabel(l3) {
@@ -2633,7 +2633,7 @@ function parseTaxes(tax_breakdown) {
       base: toEuros(v3?.base),
       amount: toEuros(v3?.tax)
     };
-  }).filter((t8) => t8.amount || t8.base);
+  }).filter((t7) => t7.amount || t7.base);
 }
 function resolveFormat(sale, settings) {
   const v3 = sale.document_type || settings.default_document_format || "ticket";
@@ -2653,7 +2653,7 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es") {
       total: toEuros(l3.line_total)
     })),
     subtotal: sale.subtotal != null ? toEuros(sale.subtotal) : void 0,
-    taxes: parseTaxes(sale.tax_breakdown).map((t8) => ({ label: t8.label, base: t8.base, amount: t8.amount })),
+    taxes: parseTaxes(sale.tax_breakdown).map((t7) => ({ label: t7.label, base: t7.base, amount: t7.amount })),
     total: toEuros(sale.total),
     payment: sale.payment_method_name ? { method: sale.payment_method_name, paid: sale.amount_tendered != null ? toEuros(sale.amount_tendered) : void 0, change: sale.change_due != null ? toEuros(sale.change_due) : void 0 } : void 0,
     currency: settings.currency || "\u20AC",
@@ -2684,7 +2684,7 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es") {
     lines: invLines,
     subtotal: toEuros(sale.subtotal),
     discount_total: sale.discount_amount ? toEuros(sale.discount_amount) : void 0,
-    taxes: taxes.map((t8) => ({ label: t8.label, rate: t8.rate, base: t8.base, amount: t8.amount })),
+    taxes: taxes.map((t7) => ({ label: t7.label, rate: t7.rate, base: t7.base, amount: t7.amount })),
     tax_total: toEuros(sale.tax_amount),
     total: toEuros(sale.total),
     currency: settings.currency || "\u20AC",
@@ -3148,12 +3148,12 @@ var ErpSalesDocument = class extends i3 {
       if (!rec) return { fiscal: base, retry: true };
       const csv = rec.aeat_csv || "";
       const qr = rec.qr_url || "";
-      const t8 = (k2) => erplora().t(CATALOG, k2);
+      const t7 = (k2) => erplora().t(CATALOG, k2);
       return {
         fiscal: {
           ...base,
           qr: qr || void 0,
-          qr_note: csv ? `CSV: ${csv}` : qr ? t8("ui.qrValidateNote") : void 0
+          qr_note: csv ? `CSV: ${csv}` : qr ? t7("ui.qrValidateNote") : void 0
         },
         retry: false
       };
@@ -3169,24 +3169,24 @@ var ErpSalesDocument = class extends i3 {
    */
   printableHtml() {
     if (!this.sale) return "";
-    const t8 = (k2) => erplora().t(CATALOG, k2);
+    const t7 = (k2) => erplora().t(CATALOG, k2);
     const doc = saleToReceipt(this.sale, this.lines || [], this.settings || {}, this.fiscal, erplora().locale);
     return receiptToPrintableHtml(doc);
   }
   render() {
-    const t8 = (k2) => erplora().t(CATALOG, k2);
-    if (this.loading) return b2`<p class="muted">${t8("ui.loadingDocument")}</p>`;
+    const t7 = (k2) => erplora().t(CATALOG, k2);
+    if (this.loading) return b2`<p class="muted">${t7("ui.loadingDocument")}</p>`;
     if (this.error) return b2`<p class="err">${this.error}</p>`;
-    if (!this.sale) return b2`<p class="muted">${t8("ui.noSale")}</p>`;
+    if (!this.sale) return b2`<p class="muted">${t7("ui.noSale")}</p>`;
     const settings = this.settings || {};
     const lines = this.lines || [];
     const fmt = this.format || resolveFormat(this.sale, settings);
     const locale = erplora().locale;
     return fmt === "invoice" ? b2`<ok-invoice
           .invoice=${saleToInvoice(this.sale, lines, settings, this.fiscal, locale)}
-          .labels=${invoiceLabels(t8)}></ok-invoice>` : b2`<ok-receipt
+          .labels=${invoiceLabels(t7)}></ok-invoice>` : b2`<ok-receipt
           .receipt=${saleToReceipt(this.sale, lines, settings, this.fiscal, locale)}
-          .labels=${receiptLabels(t8)}></ok-receipt>`;
+          .labels=${receiptLabels(t7)}></ok-receipt>`;
   }
 };
 __decorateClass([
@@ -3219,7 +3219,7 @@ __decorateClass([
 define("erp-sales-document", ErpSalesDocument);
 
 // ui/lib/document-modal.ts
-function renderDocumentModal({ saleId, onClose, t: t8 }) {
+function renderDocumentModal({ saleId, onClose, t: t7 }) {
   return b2`<ion-modal class="doc-modal" .isOpen=${!!saleId} @ionModalDidDismiss=${onClose}>
     <style>
       ion-modal.doc-modal {
@@ -3254,7 +3254,7 @@ function renderDocumentModal({ saleId, onClose, t: t8 }) {
     </style>
     <ion-content class="doc-body">
       <ion-button class="doc-close" slot="fixed" style="top:0;right:0" fill="clear" color="medium"
-        aria-label=${t8("ui.close")} @click=${onClose}>
+        aria-label=${t7("ui.close")} @click=${onClose}>
         <ion-icon name="close" slot="icon-only"></ion-icon>
       </ion-button>
       <div class="doc-wrap ion-padding" style="padding-top:44px">
@@ -3265,7 +3265,7 @@ function renderDocumentModal({ saleId, onClose, t: t8 }) {
       <ion-toolbar>
         <!-- Solo-icono (ADR-0133): el nombre va en aria-label, nunca texto visible. A ancho
              completo igualmente: en el TPV táctil el objetivo grande manda. -->
-        <ion-button class="print" expand="block" aria-label=${t8("ui.print")} @click=${() => {
+        <ion-button class="print" expand="block" aria-label=${t7("ui.print")} @click=${() => {
     const el = document.querySelector("ion-modal.doc-modal")?.querySelector("erp-sales-document");
     const html = el?.printableHtml?.();
     const sdk = globalThis.erplora;
@@ -3346,31 +3346,55 @@ function splitPayload(cart, sel) {
   };
 }
 
+// ui/lib/current-check.ts
+var CLAVE = "erplora.pos.currentCheck";
+function rememberCurrentCheck(store, orderId) {
+  try {
+    store.setItem(CLAVE, orderId);
+  } catch {
+  }
+}
+function forgetCurrentCheck(store) {
+  try {
+    store.removeItem(CLAVE);
+  } catch {
+  }
+}
+function resolveCurrentCheck(store, abiertas) {
+  let recordada = null;
+  try {
+    recordada = store.getItem(CLAVE);
+  } catch {
+    return void 0;
+  }
+  return recordada && abiertas.includes(recordada) ? recordada : void 0;
+}
+
 // ui/lib/brand-icons.ts
 var BIZUM_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 122 36"><path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M59.8625 12.8257c-1.0347 0-1.8704.8358-1.8704 1.8308v13.8113c0 1.0348.8357 1.8707 1.8704 1.8707s1.8704-.8359 1.8704-1.8707V14.6565c0-.995-.8357-1.8308-1.8704-1.8308Zm-.0001-6.88561c-1.154 0-2.1091.95524-2.1091 2.1095 0 1.15425.9551 2.14931 2.1091 2.14931 1.1541 0 2.1092-.95526 2.1092-2.14931 0-1.15426-.9551-2.1095-2.1092-2.1095ZM78.089 14.6566c0-1.1543-.9153-1.5921-1.751-1.5921h-9.2725c-.9153 0-1.6316.7164-1.6316 1.5921 0 .9154.7163 1.6319 1.6316 1.6319h6.0888l-7.8796 10.9853c-.2388.3184-.3581.7562-.3581 1.1144 0 1.1543.9153 1.7911 1.7112 1.7911h9.8296c.9153 0 1.6316-.7164 1.6316-1.6319 0-.9154-.7163-1.6318-1.6316-1.6318h-6.6062l7.7204-10.7466c.398-.5572.5174-1.0348.5174-1.5124Zm-27.3 8.6769c0 2.2687-.9949 3.6618-3.2633 3.6618-2.2683 0-3.2234-1.3931-3.2234-3.6618v-7.045h3.3826c2.7459 0 3.1041 1.5125 3.1041 3.1842v3.8608Zm3.7408-3.9404c0-3.8608-2.0296-6.3683-6.7653-6.3683h-3.4224V7.81078c0-1.03485-.8357-1.87069-1.8306-1.87069-1.0347 0-1.8704.83584-1.8704 1.87069V23.3335c0 3.8608 2.0693 7.0051 6.9642 7.0051 4.8551 0 6.9643-3.1841 6.9643-7.0051v-3.9404h-.0398Zm38.1642-6.5674c-1.0346 0-1.8704.8358-1.8704 1.8706v8.6371c0 2.2687-.9949 3.6617-3.2632 3.6617-2.2684 0-3.2235-1.393-3.2235-3.6617v-8.6371c0-1.0348-.8357-1.8706-1.8306-1.8706-1.0347 0-1.8704.8358-1.8704 1.8706v8.6371c0 3.8607 2.0694 7.0051 6.9643 7.0051 4.8551 0 6.9642-3.1842 6.9642-7.0051v-8.6371c-.0397-1.0348-.8755-1.8706-1.8704-1.8706Zm28.374 7.0451c0-3.8608-1.79-7.0052-6.645-7.0052-2.189 0-3.741.6369-4.816 1.7115-1.074-1.0348-2.626-1.7115-4.815-1.7115-4.8552 0-6.646 3.1842-6.646 7.0052v8.637c0 1.0348.8357 1.8707 1.8306 1.8707 1.0344 0 1.8704-.8359 1.8704-1.8707v-8.637c0-2.2687.716-3.6618 2.945-3.6618 2.268 0 2.945 1.3931 2.945 3.6618v8.637c0 1.0348.836 1.8707 1.83 1.8707 1.035 0 1.871-.8359 1.871-1.8707v-8.637c0-2.2687.716-3.6618 2.945-3.6618 2.268 0 2.945 1.3931 2.945 3.6618v8.637c0 1.0348.835 1.8707 1.83 1.8707 1.035 0 1.871-.8359 1.871-1.8707l.039-8.637ZM6.61567 12.8655c1.31327.9553 3.14387.6767 4.09893-.6368l3.4225-4.73643c.9551-1.31346.6765-3.14434-.6367-4.09959-1.3133-.95524-3.1439-.67663-4.09902.63683L5.93914 8.76593c-.9153 1.31347-.63673 3.14437.67653 4.09957ZM22.2952 6.17881c-1.3133-.95524-3.1439-.67663-4.099.63683L4.42685 25.7613c-.9551 1.3135-.67653 3.1444.63673 4.0996 1.31326.9553 3.14387.6767 4.09897-.6368L22.9319 10.2784c.9949-1.31345.6765-3.14434-.6367-4.09959ZM5.3024 4.66637c.9551-1.31346.67652-3.14435-.63674-4.099591C3.3524-.388466 1.52179-.109853.566693 1.20361c-.9551 1.31346-.676529 3.14435.636737 4.09959 1.31326.95525 3.14387.67663 4.09897-.63683ZM26.1952 30.6968c-1.3132-.9553-3.1438-.6766-4.0989.6368-.9551 1.3135-.6766 3.1444.6367 4.0996 1.3133.9553 3.1439.6766 4.099-.6368.9551-1.3135.6765-3.1444-.6368-4.0996Zm-5.3724-7.5226c-1.3132-.9552-3.1438-.6766-4.0989.6369l-3.4623 4.7364c-.9551 1.3134-.6765 3.1443.6367 4.0996 1.3133.9552 3.1439.6766 4.099-.6369l3.4623-4.7364c.9551-1.3134.6765-3.1443-.6368-4.0996Z"/></svg>';
 function brandSvgFor(type, name) {
-  const t8 = (type || "").trim().toLowerCase();
+  const t7 = (type || "").trim().toLowerCase();
   const n7 = (name || "").trim().toLowerCase();
-  if (t8 === "bizum" || n7 === "bizum") return BIZUM_SVG;
+  if (t7 === "bizum" || n7 === "bizum") return BIZUM_SVG;
   return void 0;
 }
 
 // ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
 var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
-var e5 = (t8) => (...e7) => ({ _$litDirective$: t8, values: e7 });
+var e5 = (t7) => (...e7) => ({ _$litDirective$: t7, values: e7 });
 var i4 = class {
-  constructor(t8) {
+  constructor(t7) {
   }
   get _$AU() {
     return this._$AM._$AU;
   }
-  _$AT(t8, e7, i7) {
-    this._$Ct = t8, this._$AM = e7, this._$Ci = i7;
+  _$AT(t7, e7, i7) {
+    this._$Ct = t7, this._$AM = e7, this._$Ci = i7;
   }
-  _$AS(t8, e7) {
-    return this.update(t8, e7);
+  _$AS(t7, e7) {
+    return this.update(t7, e7);
   }
-  update(t8, e7) {
+  update(t7, e7) {
     return this.render(...e7);
   }
 };
@@ -3422,8 +3446,8 @@ var BY_NAME = [
   [/regalo|gift/i, "gift-outline"]
 ];
 function payMethodIcon(type, name) {
-  const t8 = (type || "").trim().toLowerCase();
-  if (BY_TYPE[t8]) return BY_TYPE[t8];
+  const t7 = (type || "").trim().toLowerCase();
+  if (BY_TYPE[t7]) return BY_TYPE[t7];
   const n7 = (name || "").trim();
   if (n7) {
     for (const [re, icon] of BY_NAME) if (re.test(n7)) return icon;
@@ -3439,10 +3463,10 @@ function needsTendered(method) {
 }
 function enabledPayMethods(methods, policy = {}) {
   const allowed = (m4) => {
-    const t8 = (m4.type || "").trim().toLowerCase();
-    if (t8 === "cash") return policy.allow_cash !== 0;
-    if (t8 === "card" || t8 === "credit" || t8 === "debit") return policy.allow_card !== 0;
-    if (t8 === "transfer" || t8 === "bank") return policy.allow_transfer !== 0;
+    const t7 = (m4.type || "").trim().toLowerCase();
+    if (t7 === "cash") return policy.allow_cash !== 0;
+    if (t7 === "card" || t7 === "credit" || t7 === "debit") return policy.allow_card !== 0;
+    if (t7 === "transfer" || t7 === "bank") return policy.allow_transfer !== 0;
     return true;
   };
   const out = methods.filter(allowed);
@@ -4023,87 +4047,6 @@ function rows(r6) {
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
   return [];
 }
-function parseCartLines(cartData) {
-  try {
-    const parsed = typeof cartData === "string" ? JSON.parse(cartData) : cartData;
-    const lines = Array.isArray(parsed) ? parsed : parsed?.lines;
-    if (!Array.isArray(lines)) return [];
-    return lines.filter((l3) => !!l3 && typeof l3 === "object").map((l3) => ({
-      id: String(l3.id ?? ""),
-      name: String(l3.name ?? ""),
-      sku: l3.sku ? String(l3.sku) : void 0,
-      price: Number(l3.price) || 0,
-      qty: Math.max(1, Number(l3.qty) || 1),
-      // Preserva la categoría fiscal del producto en el round-trip de persistencia/aparcado:
-      // es lo que el servidor usa para resolver el % por país+categoría (ADR-0085). El % es preview.
-      tax_category_key: l3.tax_category_key != null && String(l3.tax_category_key) !== "" ? String(l3.tax_category_key) : void 0,
-      tax_rate: l3.tax_rate != null && Number.isFinite(Number(l3.tax_rate)) ? Number(l3.tax_rate) : void 0,
-      cost: l3.cost != null && Number.isFinite(Number(l3.cost)) ? Number(l3.cost) : void 0,
-      is_gift: l3.is_gift === true || l3.is_gift === 1 ? true : void 0,
-      gift_reason: l3.gift_reason ? String(l3.gift_reason) : void 0
-    })).filter((l3) => l3.id && l3.name);
-  } catch {
-    return [];
-  }
-}
-function sameCartLine(a3, b3) {
-  return a3.id === b3.id && a3.price === b3.price && a3.sku === b3.sku && a3.tax_category_key === b3.tax_category_key && a3.tax_rate === b3.tax_rate && !!a3.is_gift === !!b3.is_gift && a3.gift_reason === b3.gift_reason;
-}
-function mergeCartLines(base, incoming) {
-  const out = base.map((l3) => ({ ...l3 }));
-  for (const inc of incoming) {
-    const match = out.find((l3) => sameCartLine(l3, inc));
-    if (match) match.qty += inc.qty;
-    else out.push({ ...inc });
-  }
-  return out;
-}
-async function loadActiveCart(client, tableId) {
-  try {
-    const r6 = rows(await client.query("sales.cart.get", { table_id: tableId ?? "" }));
-    return r6.length ? parseCartLines(r6[0].cart_data) : [];
-  } catch {
-    return [];
-  }
-}
-async function persistActiveCart(client, cart, tableId) {
-  try {
-    if (cart.length) {
-      await client.command("sales.cart.save", { cart_data: JSON.stringify({ lines: cart }), table_id: tableId ?? "" });
-    } else {
-      await client.command("sales.cart.clear", { table_id: tableId ?? "" });
-    }
-  } catch {
-  }
-}
-async function listParkedTickets(client) {
-  try {
-    return rows(await client.query("sales.parked_tickets"));
-  } catch {
-    return [];
-  }
-}
-async function parkCart(client, cart, notes = "") {
-  if (!cart.length) return null;
-  const d3 = /* @__PURE__ */ new Date();
-  const pad = (n7) => String(n7).padStart(2, "0");
-  const ticketNumber = `P-${pad(d3.getHours())}${pad(d3.getMinutes())}${pad(d3.getSeconds())}`;
-  try {
-    await client.command("sales.park_ticket", {
-      ticket_number: ticketNumber,
-      cart_data: JSON.stringify({ lines: cart }),
-      notes
-    });
-    return ticketNumber;
-  } catch {
-    return null;
-  }
-}
-async function retrieveParkedTicket(client, ticket) {
-  const lines = parseCartLines(ticket.cart_data);
-  await client.command("sales.retrieve_ticket", { ticket_id: ticket.id });
-  return lines;
-}
 async function listOpenChecks(client, excluir) {
   try {
     const r6 = rows(await client.query("sales.orders.list"));
@@ -4201,14 +4144,6 @@ async function loadOrderLines(client, orderId) {
     }));
   } catch {
     return [];
-  }
-}
-async function findOpenOrder(client) {
-  try {
-    const r6 = rows(await client.query("sales.orders.list"));
-    return r6.find((o9) => o9.status === "open")?.id ?? "";
-  } catch {
-    return "";
   }
 }
 async function mergeOrders(client, fromOrderId, toOrderId) {
@@ -4362,6 +4297,8 @@ var ErpPosTouch = class extends i3 {
       this.tableLabel = d3.label ?? "";
       const linked = d3.order_id ?? void 0;
       this.orderId = linked;
+      if (linked) rememberCurrentCheck(localStorage, linked);
+      else forgetCurrentCheck(localStorage);
       this.cart = linked ? await loadOrderLines(erplora2(), linked) : [];
     };
     // Fusionar mesas (punto 3): el filler ya ejecutó tables.sessions.merge; aquí se combinan los
@@ -4647,7 +4584,6 @@ var ErpPosTouch = class extends i3 {
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = void 0;
-      void persistActiveCart(erplora2(), this.cart, this.tableId);
     }
   }
   async resolveSlots() {
@@ -4732,6 +4668,7 @@ var ErpPosTouch = class extends i3 {
   async park() {
     if (!this.cart.length) return;
     this.notifyPark();
+    forgetCurrentCheck(localStorage);
     this.orderId = void 0;
     this.cart = [];
     this.tableId = void 0;
@@ -4746,6 +4683,7 @@ var ErpPosTouch = class extends i3 {
     try {
       if (this.cart.length && this.orderId !== c5.id) await this.park();
       this.orderId = c5.id;
+      rememberCurrentCheck(localStorage, c5.id);
       this.cart = await loadOrderLines(erplora2(), c5.id);
       this.notifyOrderRestored();
       this.parkedOpen = false;
@@ -4768,11 +4706,15 @@ var ErpPosTouch = class extends i3 {
       f3.el.dispatchEvent(new CustomEvent("erp:order-restored", { detail: { order_id: this.orderId }, bubbles: false }));
     }
   }
-  /** ADR-0141: reanuda el pedido ABIERTO (si lo hay) tras recargar. Sus líneas ya traen `line_id`
-   *  (para poder mutarlas) y la categoría fiscal (autoridad del IVA al cobrar, ADR-0085). */
+  /** Reanuda LA CUENTA QUE TENÍA ESTE TERMINAL tras recargar (ADR-0141/0146).
+   *
+   *  Antes se cogía «el primer pedido abierto»: con varias cuentas abiertas eso es aterrizar en la
+   *  de otro camarero. La cuenta en curso es estado del DISPOSITIVO, así que se recuerda ahí; si ya
+   *  se cobró, se empieza en blanco y el camarero elige — no se cae a otra cualquiera. */
   async restoreOpenOrder() {
     try {
-      const id = await findOpenOrder(erplora2());
+      const abiertas = (await listOpenChecks(erplora2())).map((c5) => c5.id);
+      const id = resolveCurrentCheck(localStorage, abiertas);
       if (!id) return [];
       this.orderId = id;
       for (const f3 of this.assignFillers) {
@@ -4815,6 +4757,7 @@ var ErpPosTouch = class extends i3 {
   async ensureOrder(first) {
     if (this.orderId) return this.orderId;
     this.orderId = await openOrderWithLines(erplora2(), [first]);
+    rememberCurrentCheck(localStorage, this.orderId);
     this.notifyOrderLinked();
     return this.orderId;
   }
@@ -4973,8 +4916,8 @@ var ErpPosTouch = class extends i3 {
         if (saleId) this.docSaleId = saleId;
         return;
       }
-      await persistActiveCart(erplora2(), [], this.tableId);
       this.cart = [];
+      forgetCurrentCheck(localStorage);
       this.orderId = void 0;
       this.tableId = void 0;
       this.tableLabel = "";
@@ -5396,635 +5339,73 @@ __decorateClass([
 ], ErpPosTouch.prototype, "customerName", 2);
 define("erp-pos-touch", ErpPosTouch);
 
-// ui/components/erp-pos-desktop/erp-pos-desktop.ts
-var CATALOG3 = { es: es_default, en: en_default };
-function erplora3() {
-  const c5 = globalThis.erplora;
-  if (!c5) throw new Error("erplora SDK no inicializado por el shell");
-  return c5;
-}
-function t6(key, params) {
-  return erplora3().t(CATALOG3, key, params);
-}
-function rows3(r6) {
-  if (Array.isArray(r6)) return r6;
-  if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
-  return [];
-}
-var ErpPosDesktop = class extends i3 {
-  constructor() {
-    super(...arguments);
-    this.products = [];
-    this.cart = [];
-    this.methods = [];
-    this.settings = {};
-    this.term = "";
-    this.paying = false;
-    this.tendered = "";
-    this.docFormat = "ticket";
-    this.busy = false;
-    this.error = "";
-    this.parked = [];
-    this.parkedOpen = false;
-    this.tableLabel = "";
-    this.customerName = "";
-    /** Snapshot fiscal del cliente asignado (ADR-0132). Copia, no referencia: viaja con la venta. */
-    this.customerTaxId = "";
-    this.customerAddress = "";
-    /** Mapa tax_category_key → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
-    this.ratesMap = /* @__PURE__ */ new Map();
-    this.cartRestored = false;
-    // Botones de asignación (ADR-0043 B): cada módulo que aporta a `sales.pos.assign` monta SU botón
-    // (mesa, cliente…) en las acciones. Botones independientes: cada uno abre su propio modal. El POS
-    // no conoce a `tables`/`customers`; solo monta sus WC y escucha sus eventos.
-    this.assignFillers = [];
-    // Comanda ATADA a la mesa (puntos 1+2): guarda la comanda de la mesa actual y recupera la de la
-    // nueva (o el carrito suelto si es null), como cualquier POS.
-    this.onOrderContext = async (e7) => {
-      const d3 = e7.detail ?? { table_id: null };
-      const nextTable = d3.table_id ?? void 0;
-      if (nextTable === this.tableId) {
-        this.tableLabel = d3.label ?? this.tableLabel;
-        return;
-      }
-      if (this.saveTimer) {
-        clearTimeout(this.saveTimer);
-        this.saveTimer = void 0;
-      }
-      await persistActiveCart(erplora3(), this.cart, this.tableId);
-      this.tableId = nextTable;
-      this.tableLabel = d3.label ?? "";
-      this.cart = await loadActiveCart(erplora3(), nextTable);
-    };
-    // Fusionar mesas (punto 3): combina los tiquets (sumando idénticas) en el destino, limpia origen.
-    this.onOrderMerge = async (e7) => {
-      const d3 = e7.detail;
-      if (!d3?.from_table_id || !d3?.to_table_id || d3.from_table_id === d3.to_table_id) return;
-      const [fromLines, toLines] = await Promise.all([
-        loadActiveCart(erplora3(), d3.from_table_id),
-        loadActiveCart(erplora3(), d3.to_table_id)
-      ]);
-      const merged = mergeCartLines(toLines, fromLines);
-      await persistActiveCart(erplora3(), merged, d3.to_table_id);
-      await persistActiveCart(erplora3(), [], d3.from_table_id);
-      if (this.tableId === d3.from_table_id) {
-        this.tableId = d3.to_table_id;
-        this.tableLabel = d3.to_label ?? this.tableLabel;
-        this.cart = merged;
-      } else if (this.tableId === d3.to_table_id) {
-        this.cart = merged;
-      }
-    };
-    // Transferir mesa (punto 4): mueve la comanda de origen a destino (libre), limpia origen.
-    this.onOrderTransfer = async (e7) => {
-      const d3 = e7.detail;
-      if (!d3?.from_table_id || !d3?.to_table_id || d3.from_table_id === d3.to_table_id) return;
-      const lines = await loadActiveCart(erplora3(), d3.from_table_id);
-      await persistActiveCart(erplora3(), lines, d3.to_table_id);
-      await persistActiveCart(erplora3(), [], d3.from_table_id);
-      if (this.tableId === d3.from_table_id) {
-        this.tableId = d3.to_table_id;
-        this.tableLabel = d3.to_label ?? this.tableLabel;
-        this.cart = lines;
-      }
-    };
-    this.onCustomerContext = (e7) => {
-      const d3 = e7.detail ?? { customer_id: null };
-      this.customerId = d3.customer_id ?? void 0;
-      this.customerName = d3.customer_name ?? "";
-      this.customerTaxId = d3.customer_tax_id ?? "";
-      this.customerAddress = d3.customer_address ?? "";
-    };
-    this.onLocaleChange = () => this.requestUpdate();
-  }
-  static {
-    this.styles = i`
-    :host { display:block; font-family: system-ui, sans-serif; color: var(--ion-text-color,#1c1b18); }
-    .scan { display:flex; gap:.5rem; margin-bottom:.8rem; }
-    .scan input { flex:1; font-size:1.1rem; padding:.7rem .9rem; border:2px solid var(--ion-color-primary,#0091ce); border-radius:10px; background:var(--ion-background-color,#fff); color:inherit; }
-    .sugg { position:relative; }
-    .drop { position:absolute; z-index:5; left:0; right:0; background:var(--ion-background-color,#fff); border:1px solid var(--ion-border-color,#d9d6cf); border-radius:0 0 10px 10px; max-height:14rem; overflow:auto; box-shadow:0 8px 24px rgba(0,0,0,.12); }
-    .drop button { display:flex; justify-content:space-between; width:100%; border:none; background:none; padding:.5rem .8rem; cursor:pointer; font:inherit; }
-    .drop button:hover { background:var(--ion-color-light,#f2f1ed); }
-    table { width:100%; border-collapse:collapse; }
-    th, td { padding:.5rem .4rem; border-bottom:1px solid var(--ion-border-color,#eee); text-align:left; }
-    th { font-size:.75rem; text-transform:uppercase; color:#8b897f; }
-    td.num, th.num { text-align:right; white-space:nowrap; }
-    td input.q { width:3.5rem; text-align:center; font:inherit; padding:.3rem; border:1px solid var(--ion-border-color,#d9d6cf); border-radius:6px; background:var(--ion-background-color,#fff); color:inherit; }
-    .rm { background:none; border:none; color:#d9480f; cursor:pointer; }
-    .foot { display:flex; justify-content:space-between; align-items:center; margin-top:1rem; gap:1rem; }
-    .total { font-size:1.4rem; font-weight:800; display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; }
-    .table-tag, .customer-tag { font-size:.8rem; font-weight:700; color:#fff; border-radius:999px; padding:.15rem .6rem; }
-    .table-tag { background:var(--ion-color-primary,#0091ce); }
-    .customer-tag { background:#5c7cfa; }
-    /* Contenedor donde los módulos montan su botón de asignación (mesa, cliente…) en las acciones. */
-    .cart-actions-slot { display:inline-flex; align-items:center; }
-    .empty { color:#8b897f; text-align:center; padding:2rem 0; }
-    /* overlay cobro */
-    .scrim { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:50; }
-    .sheet { background:var(--ion-background-color,#fff); border-radius:16px; padding:1rem; width:min(92vw,24rem); box-shadow:0 12px 48px rgba(0,0,0,.35); }
-    .sheet-h { display:flex; justify-content:space-between; align-items:center; margin-bottom:.8rem; }
-    .sheet-h .t { font-size:1.2rem; font-weight:700; }
-    .x { background:none; border:none; font-size:1.3rem; cursor:pointer; color:#8b897f; }
-    .pay { display:flex; flex-direction:column; gap:.8rem; }
-    .methods { display:flex; gap:.4rem; flex-wrap:wrap; }
-    .chip { padding:.5rem .9rem; border-radius:999px; border:1px solid var(--ion-border-color,#d9d6cf); background:var(--ion-background-color,#fff); cursor:pointer; }
-    .chip[aria-pressed=true] { background:var(--ion-color-primary,#0091ce); color:#fff; border-color:transparent; }
-    .field label { font-size:.85rem; color:#8b897f; }
-    .field input { width:100%; box-sizing:border-box; font-size:1.3rem; padding:.6rem; border:1px solid var(--ion-border-color,#d9d6cf); border-radius:10px; background:var(--ion-background-color,#fff); color:inherit; }
-    .change { color:#2f9e44; font-weight:700; }
-    /* tickets aparcados */
-    .actions { display:flex; gap:.4rem; flex-wrap:wrap; }
-    .plist { display:flex; flex-direction:column; gap:.4rem; max-height:50vh; overflow:auto; }
-    .pitem { display:flex; justify-content:space-between; align-items:center; gap:.6rem; border:1px solid var(--ion-border-color,#e0ddd4); border-radius:10px; padding:.5rem .7rem; }
-    .pn { font-weight:700; }
-    .pm { color:#8b897f; }
-    .hint { color:#8b897f; font-size:.85rem; margin:.2rem 0 .6rem; }
-  `;
-  }
-  async connectedCallback() {
-    super.connectedCallback();
-    window.addEventListener("erplora:locale-changed", this.onLocaleChange);
-    try {
-      const [prods, methods, settingsRows, savedCart, parked, ratesMap] = await Promise.all([
-        erplora3().queryAll("inventory.products.list").catch(() => []),
-        erplora3().query("sales.payment_methods").catch(() => []),
-        erplora3().query("sales.settings.get").catch(() => []),
-        loadActiveCart(erplora3()),
-        listParkedTickets(erplora3()),
-        buildCategoryRatesMap(erplora3())
-      ]);
-      this.ratesMap = ratesMap;
-      this.products = rows3(prods).filter((p4) => p4.is_active !== 0);
-      this.methods = rows3(methods);
-      this.settings = rows3(settingsRows)[0] || {};
-      this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
-      this.payMethod = this.methods[0];
-      this.parked = parked;
-      if (savedCart.length) this.cart = savedCart;
-      await this.updateComplete;
-      this.addEventListener("erp:order-context", this.onOrderContext);
-      this.addEventListener("erp:order-merge", this.onOrderMerge);
-      this.addEventListener("erp:order-transfer", this.onOrderTransfer);
-      this.addEventListener("erp:customer-context", this.onCustomerContext);
-      await this.resolveSlots();
-      this.ensureSlotsMounted();
-    } catch (e7) {
-      this.error = e7 instanceof Error ? e7.message : t6("ui.errorLoadingPos");
-    } finally {
-      this.cartRestored = true;
-    }
-  }
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
-    this.removeEventListener("erp:order-context", this.onOrderContext);
-    this.removeEventListener("erp:order-merge", this.onOrderMerge);
-    this.removeEventListener("erp:order-transfer", this.onOrderTransfer);
-    this.removeEventListener("erp:customer-context", this.onCustomerContext);
-    if (this.saveTimer) {
-      clearTimeout(this.saveTimer);
-      this.saveTimer = void 0;
-      void persistActiveCart(erplora3(), this.cart, this.tableId);
-    }
-  }
-  /** Resuelve (una vez) los fillers del modal Asignar (ADR-0043 B) y crea sus instancias. */
-  async resolveSlots() {
-    const sdk = globalThis.erplora;
-    if (!sdk?.loadSlot) return;
-    let resolved = [];
-    try {
-      resolved = await sdk.loadSlot("sales.pos.assign") ?? [];
-    } catch {
-      resolved = [];
-    }
-    this.assignFillers = resolved.map((f3) => ({
-      component: f3.component,
-      el: document.createElement(f3.component)
-    }));
-    this.requestUpdate();
-  }
-  /** (Re)engancha los botones de los fillers en las acciones; idempotente, sobrevive a re-renders. */
-  ensureSlotsMounted() {
-    const host = this.renderRoot.querySelector(".cart-actions-slot");
-    if (!host || !this.assignFillers.length) return;
-    for (const f3 of this.assignFillers) {
-      if (f3.el.parentElement !== host) host.appendChild(f3.el);
-    }
-  }
-  /** Tras cobrar: avisa a cada filler para que limpie su selección (mesa/cliente). */
-  resetSlotContexts() {
-    for (const f3 of this.assignFillers) {
-      f3.el.dispatchEvent(new CustomEvent("erp:order-context-reset", { bubbles: false }));
-      f3.el.dispatchEvent(new CustomEvent("erp:customer-context-reset", { bubbles: false }));
-    }
-  }
-  /** Persiste el carrito (debounced) y re-engancha los slots tras cada render. */
-  updated(changed) {
-    this.ensureSlotsMounted();
-    if (!changed.has("cart") || !this.cartRestored) return;
-    if (this.saveTimer) clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => {
-      this.saveTimer = void 0;
-      void persistActiveCart(erplora3(), this.cart, this.tableId);
-    }, 400);
-  }
-  // Dinero formateado con la MONEDA DEL HUB (ADR-0059): el SDK la resuelve de /api/hub/context
-  // (misma fuente que dashboard/billing). Antes hardcodeaba '€' / la moneda por-módulo.
-  // FIX QA (2026-06-25): el POS trabaja en CÉNTIMOS (price de inventory.products.list, total del
-  // carrito) → debe usar formatMoney (divide /100), NO formatAmount (espera unidades) que mostraba
-  // los precios ×100 ("3.500,00 €" por un servicio de 35 €).
-  money(n7) {
-    return erplora3().formatMoney(Number(n7) || 0);
-  }
-  get total() {
-    return this.cart.reduce((s5, l3) => s5 + (l3.is_gift ? 0 : l3.price * l3.qty), 0);
-  }
-  get parkingEnabled() {
-    return this.settings.enable_parked_tickets !== 0;
-  }
-  /** Aparca el carrito actual como ticket y lo deja libre para la siguiente venta. */
-  async park() {
-    if (!this.cart.length) return;
-    const num = await parkCart(erplora3(), this.cart);
-    if (!num) {
-      this.error = t6("ui.errorPark");
-      return;
-    }
-    this.cart = [];
-    this.parked = await listParkedTickets(erplora3());
-    this.scanInput?.focus();
-  }
-  /** Recupera un ticket aparcado al carrito (solo con el carrito vacío). */
-  async retrieve(t8) {
-    if (this.cart.length) return;
-    try {
-      this.cart = await retrieveParkedTicket(erplora3(), t8);
-      this.parkedOpen = false;
-      this.parked = await listParkedTickets(erplora3());
-    } catch (e7) {
-      this.error = e7 instanceof Error ? e7.message : t8("ui.errorRetrieve");
-    }
-  }
-  get matches() {
-    const q = this.term.trim().toLowerCase();
-    if (!q) return [];
-    return this.products.filter((p4) => (p4.sku || "").toLowerCase().includes(q) || p4.name.toLowerCase().includes(q)).slice(0, 8);
-  }
-  add(p4) {
-    const ex = this.cart.find((l3) => l3.id === p4.id && !l3.is_gift);
-    const tax_rate = resolveLineTax(this.ratesMap, p4.tax_category_key);
-    this.cart = ex ? this.cart.map((l3) => l3.id === p4.id && !l3.is_gift ? { ...l3, qty: l3.qty + 1 } : l3) : [...this.cart, { id: p4.id, name: p4.name, sku: p4.sku, price: Number(p4.price), qty: 1, tax_category_key: p4.tax_category_key, tax_rate, cost: Number(p4.cost) || 0 }];
-    this.term = "";
-    this.scanInput?.focus();
-  }
-  /** Invitar/quitar invitación a una línea (comp): toggle is_gift con motivo por defecto. */
-  toggleGift(id) {
-    this.cart = this.cart.map(
-      (l3) => l3.id === id ? { ...l3, is_gift: !l3.is_gift, gift_reason: !l3.is_gift ? l3.gift_reason || "Invitaci\xF3n" : void 0 } : l3
-    );
-  }
-  onScanKey(e7) {
-    if (e7.key !== "Enter") return;
-    const q = this.term.trim().toLowerCase();
-    if (!q) return;
-    const exact = this.products.find((p4) => (p4.sku || "").toLowerCase() === q);
-    const pick = exact || this.matches[0];
-    if (pick) this.add(pick);
-  }
-  setQty(id, qty) {
-    this.cart = this.cart.map((l3) => l3.id === id ? { ...l3, qty: Math.max(1, qty || 1) } : l3);
-  }
-  remove(id) {
-    this.cart = this.cart.filter((l3) => l3.id !== id);
-  }
-  openPay() {
-    if (!this.cart.length) return;
-    this.tendered = (this.total / 100).toFixed(2);
-    this.payMethod = this.methods[0];
-    this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
-    this.paying = true;
-  }
-  /** Lo entregado por el cliente, en CÉNTIMOS (el input está en euros). */
-  get tenderedNum() {
-    return eurosToCents(this.tendered || "0");
-  }
-  get change() {
-    return Math.max(0, this.tenderedNum - this.total);
-  }
-  async confirm() {
-    this.busy = true;
-    this.error = "";
-    try {
-      const items = this.cart.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: l3.qty, tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0, is_gift: l3.is_gift ?? false, gift_reason: l3.gift_reason ?? "", cost: l3.cost ?? 0 }));
-      await erplora3().command("sales.complete_sale", {
-        items,
-        tax_included: this.settings.default_tax_included !== 0,
-        payment_method_id: this.payMethod?.id ?? null,
-        payment_method_name: this.payMethod?.name ?? "Efectivo",
-        amount_tendered: this.tenderedNum || this.total,
-        channel: "pos",
-        source_module: "pos",
-        customer_id: this.customerId ?? null,
-        customer_name: this.customerName,
-        // Snapshot fiscal del cliente (ADR-0132): sin esto la factura del TPV sale sin NIF.
-        customer_tax_id: this.customerTaxId,
-        customer_address: this.customerAddress,
-        // Tipo de documento fiscal (ADR-0140): viaja ATÓMICAMENTE con la venta; `invoice` lo lee del
-        // evento para elegir F1 (completa) vs F2 (simplificada). Reemplaza al `set_document_type` retro.
-        document_type: this.docFormat
-      });
-      const recent = rows3(await erplora3().query("sales.list", { limit: 1, sort: "created_at", dir: "desc" }));
-      const saleId = recent[0]?.id;
-      if (this.saveTimer) {
-        clearTimeout(this.saveTimer);
-        this.saveTimer = void 0;
-      }
-      await persistActiveCart(erplora3(), [], this.tableId);
-      this.paying = false;
-      this.cart = [];
-      this.tableId = void 0;
-      this.tableLabel = "";
-      this.customerId = void 0;
-      this.customerName = "";
-      this.customerTaxId = "";
-      this.customerAddress = "";
-      this.resetSlotContexts();
-      if (saleId) this.docSaleId = saleId;
-    } catch (e7) {
-      this.error = e7 instanceof Error ? e7.message : t6("ui.errorCharge");
-    } finally {
-      this.busy = false;
-    }
-  }
-  render() {
-    return b2`<div>
-      <div class="scan">
-        <div class="sugg" style="flex:1">
-          <input id="scan" placeholder=${t6("ui.scanPlaceholder")}
-            .value=${this.term}
-            @input=${(e7) => {
-      this.term = e7.target.value;
-    }}
-            @keydown=${(e7) => this.onScanKey(e7)} />
-          ${this.matches.length ? b2`<div class="drop">
-                ${this.matches.map((p4) => b2`<button @click=${() => this.add(p4)}>
-                  <span>${p4.name} ${p4.sku ? b2`<small style="color:#8b897f">· ${p4.sku}</small>` : A}</span>
-                  <span>${this.money(Number(p4.price))}</span>
-                </button>`)}
-              </div>` : A}
-        </div>
-      </div>
-      ${this.error ? b2`<p style="color:#d9480f">${this.error}</p>` : A}
-
-      <table>
-        <thead><tr><th>${t6("ui.colProduct")}</th><th class="num">${t6("ui.colPrice")}</th><th class="num">${t6("ui.colQty")}</th><th class="num">${t6("ui.colAmount")}</th><th></th></tr></thead>
-        <tbody>
-          ${this.cart.length ? this.cart.map((l3) => b2`<tr>
-                <td>${l3.name} ${l3.sku ? b2`<small style="color:#8b897f">· ${l3.sku}</small>` : A}${l3.is_gift ? b2` <ion-badge color="success">${t6("ui.giftBadge")}</ion-badge>` : A}</td>
-                <td class="num">${this.money(l3.price)}</td>
-                <td class="num"><input class="q" type="number" min="1" .value=${String(l3.qty)}
-                  @input=${(e7) => this.setQty(l3.id, Number(e7.target.value))} /></td>
-                <td class="num" style=${l3.is_gift ? "text-decoration:line-through;opacity:.55" : ""}>${this.money(l3.price * l3.qty)}</td>
-                <td class="num"><button class="rm" @click=${() => this.toggleGift(l3.id)} title=${t6("ui.giftAction")} style=${l3.is_gift ? "color:var(--ion-color-success,#2dd36f)" : ""}>🎁</button> <button class="rm" @click=${() => this.remove(l3.id)} title=${t6("ui.remove")}>✕</button></td>
-              </tr>`) : b2`<tr><td colspan="5"><div class="empty">${t6("ui.cartEmptyDesktop")}</div></td></tr>`}
-        </tbody>
-      </table>
-
-      <div class="foot">
-        <div class="total">${t6("ui.colTotal")} ${this.money(this.total)}${this.tableLabel ? b2`<span class="table-tag">${this.tableLabel}</span>` : A}${this.customerName ? b2`<span class="customer-tag">${this.customerName}</span>` : A}</div>
-        <div class="actions">
-          <!-- Botones de asignación (ADR-0043 B): cada módulo (tables, customers…) monta AQUÍ su
-               propio botón, vía provides_slots: sales.pos.assign; cada uno abre su modal. -->
-          <span class="cart-actions-slot"></span>
-          ${this.parkingEnabled ? b2`
-                <ion-button fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>${t6("ui.park")}</ion-button>
-                <ion-button fill="outline" ?disabled=${!this.parked.length} @click=${() => {
-      this.parkedOpen = true;
-    }}>
-                  ${t6("ui.parked")} (${this.parked.length})
-                </ion-button>` : A}
-          <ion-button ?disabled=${!this.cart.length} @click=${() => this.openPay()}>${t6("ui.chargeShortcut")}</ion-button>
-        </div>
-      </div>
-
-
-      ${this.parkedOpen ? b2`<div class="scrim" @click=${(e7) => {
-      if (e7.target.classList.contains("scrim")) this.parkedOpen = false;
-    }}>
-            <div class="sheet">
-              <div class="sheet-h"><span class="t">${t6("ui.parkedTickets")}</span>
-                <button class="x" @click=${() => {
-      this.parkedOpen = false;
-    }}>✕</button></div>
-              ${this.cart.length ? b2`<p class="hint">${t6("ui.retrieveHint")}</p>` : A}
-              <div class="plist">
-                ${this.parked.map((pt) => b2`<div class="pitem">
-                  <div>
-                    <div class="pn">${pt.ticket_number}</div>
-                    <small class="pm">${(pt.created_at || "").replace("T", " ").slice(0, 16)}</small>
-                  </div>
-                  <ion-button size="small" ?disabled=${!!this.cart.length} @click=${() => this.retrieve(pt)}>${t6("ui.retrieve")}</ion-button>
-                </div>`)}
-                ${!this.parked.length ? b2`<div class="empty">${t6("ui.noParkedTickets")}</div>` : A}
-              </div>
-            </div>
-          </div>` : A}
-
-      ${this.paying ? b2`<div class="scrim" @click=${(e7) => {
-      if (e7.target.classList.contains("scrim")) this.paying = false;
-    }}>
-            <div class="sheet">
-              <div class="sheet-h"><span class="t">${t6("ui.charge")} ${this.money(this.total)}</span>
-                <button class="x" @click=${() => {
-      this.paying = false;
-    }}>✕</button></div>
-              <div class="pay">
-                <div class="methods">
-                  ${this.methods.map((m4) => b2`<button class="chip" aria-pressed=${this.payMethod?.id === m4.id} @click=${() => {
-      this.payMethod = m4;
-    }}>${m4.name}</button>`)}
-                  ${!this.methods.length ? b2`<button class="chip" aria-pressed="true">${t6("ui.cash")}</button>` : A}
-                </div>
-                <div class="field"><label>${t6("ui.tendered")}</label>
-                  <input type="number" step="0.01" .value=${this.tendered}
-                    @input=${(e7) => {
-      this.tendered = e7.target.value;
-    }} /></div>
-                <div>${t6("ui.change")}: <span class="change">${this.money(this.change)}</span></div>
-                <ion-segment value=${this.docFormat} @ionChange=${(e7) => {
-      this.docFormat = e7.detail.value === "invoice" ? "invoice" : "ticket";
-    }}>
-                  <ion-segment-button value="ticket"><ion-label>${t6("ui.formatTicket")}</ion-label></ion-segment-button>
-                  <ion-segment-button value="invoice"><ion-label>${t6("ui.formatInvoice")}</ion-label></ion-segment-button>
-                </ion-segment>
-                ${this.error ? b2`<p style="color:#d9480f">${this.error}</p>` : A}
-                <ion-button expand="block" ?disabled=${this.busy} @click=${() => this.confirm()}>${this.busy ? t6("ui.charging") : t6("ui.confirmCharge")}</ion-button>
-              </div>
-            </div>
-          </div>` : A}
-
-      ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => {
-      this.docSaleId = void 0;
-    }, t: t6 })}
-    </div>`;
-  }
-};
-__decorateClass([
-  r5()
-], ErpPosDesktop.prototype, "products", 2);
-__decorateClass([
-  r5()
-], ErpPosDesktop.prototype, "cart", 2);
-__decorateClass([
-  r5()
-], ErpPosDesktop.prototype, "methods", 2);
-__decorateClass([
-  r5()
-], ErpPosDesktop.prototype, "settings", 2);
-__decorateClass([
-  r5()
-], ErpPosDesktop.prototype, "term", 2);
-__decorateClass([
-  r5()
-], ErpPosDesktop.prototype, "paying", 2);
-__decorateClass([
-  r5()
-], ErpPosDesktop.prototype, "tendered", 2);
-__decorateClass([
-  r5()
-], ErpPosDesktop.prototype, "payMethod", 2);
-__decorateClass([
-  r5()
-], ErpPosDesktop.prototype, "docFormat", 2);
-__decorateClass([
-  r5()
-], ErpPosDesktop.prototype, "busy", 2);
-__decorateClass([
-  r5()
-], ErpPosDesktop.prototype, "error", 2);
-__decorateClass([
-  r5()
-], ErpPosDesktop.prototype, "docSaleId", 2);
-__decorateClass([
-  r5()
-], ErpPosDesktop.prototype, "parked", 2);
-__decorateClass([
-  r5()
-], ErpPosDesktop.prototype, "parkedOpen", 2);
-__decorateClass([
-  r5()
-], ErpPosDesktop.prototype, "tableId", 2);
-__decorateClass([
-  r5()
-], ErpPosDesktop.prototype, "tableLabel", 2);
-__decorateClass([
-  r5()
-], ErpPosDesktop.prototype, "customerId", 2);
-__decorateClass([
-  r5()
-], ErpPosDesktop.prototype, "customerName", 2);
-__decorateClass([
-  e4("#scan")
-], ErpPosDesktop.prototype, "scanInput", 2);
-define("erp-pos-desktop", ErpPosDesktop);
-
 // ui/components/erp-pos/erp-pos.ts
-function erplora4() {
-  const c5 = globalThis.erplora;
-  if (!c5) throw new Error("erplora SDK no inicializado por el shell");
-  return c5;
-}
 var ErpPos = class extends i3 {
-  constructor() {
-    super(...arguments);
-    this.layout = "touch";
-    this.ready = false;
-  }
   static {
     this.styles = i`:host { display:block; height:100%; }`;
   }
-  async connectedCallback() {
-    super.connectedCallback();
-    try {
-      const rows4 = await erplora4().query("sales.settings.get");
-      const row = Array.isArray(rows4) ? rows4[0] : rows4;
-      this.layout = row?.pos_layout === "desktop" ? "desktop" : "touch";
-    } catch {
-      this.layout = "touch";
-    } finally {
-      this.ready = true;
-    }
-  }
   render() {
-    if (!this.ready) return b2``;
-    return this.layout === "desktop" ? b2`<erp-pos-desktop></erp-pos-desktop>` : b2`<erp-pos-touch></erp-pos-touch>`;
+    return b2`<erp-pos-touch></erp-pos-touch>`;
   }
 };
-__decorateClass([
-  r5()
-], ErpPos.prototype, "layout", 2);
-__decorateClass([
-  r5()
-], ErpPos.prototype, "ready", 2);
 define("erp-pos", ErpPos);
 
 // ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
-var { I: t7 } = j;
+var { I: t6 } = j;
 var i5 = (o9) => o9;
 var s4 = () => document.createComment("");
 var v2 = (o9, n7, e7) => {
   const l3 = o9._$AA.parentNode, d3 = void 0 === n7 ? o9._$AB : n7._$AA;
   if (void 0 === e7) {
     const i7 = l3.insertBefore(s4(), d3), n8 = l3.insertBefore(s4(), d3);
-    e7 = new t7(i7, n8, o9, o9.options);
+    e7 = new t6(i7, n8, o9, o9.options);
   } else {
-    const t8 = e7._$AB.nextSibling, n8 = e7._$AM, c5 = n8 !== o9;
+    const t7 = e7._$AB.nextSibling, n8 = e7._$AM, c5 = n8 !== o9;
     if (c5) {
-      let t9;
-      e7._$AQ?.(o9), e7._$AM = o9, void 0 !== e7._$AP && (t9 = o9._$AU) !== n8._$AU && e7._$AP(t9);
+      let t8;
+      e7._$AQ?.(o9), e7._$AM = o9, void 0 !== e7._$AP && (t8 = o9._$AU) !== n8._$AU && e7._$AP(t8);
     }
-    if (t8 !== d3 || c5) {
+    if (t7 !== d3 || c5) {
       let o10 = e7._$AA;
-      for (; o10 !== t8; ) {
-        const t9 = i5(o10).nextSibling;
-        i5(l3).insertBefore(o10, d3), o10 = t9;
+      for (; o10 !== t7; ) {
+        const t8 = i5(o10).nextSibling;
+        i5(l3).insertBefore(o10, d3), o10 = t8;
       }
     }
   }
   return e7;
 };
-var u3 = (o9, t8, i7 = o9) => (o9._$AI(t8, i7), o9);
+var u3 = (o9, t7, i7 = o9) => (o9._$AI(t7, i7), o9);
 var m3 = {};
-var p3 = (o9, t8 = m3) => o9._$AH = t8;
+var p3 = (o9, t7 = m3) => o9._$AH = t7;
 var M2 = (o9) => o9._$AH;
 var h3 = (o9) => {
   o9._$AR(), o9._$AA.remove();
 };
 
 // ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
-var u4 = (e7, s5, t8) => {
+var u4 = (e7, s5, t7) => {
   const r6 = /* @__PURE__ */ new Map();
-  for (let l3 = s5; l3 <= t8; l3++) r6.set(e7[l3], l3);
+  for (let l3 = s5; l3 <= t7; l3++) r6.set(e7[l3], l3);
   return r6;
 };
 var c4 = e5(class extends i4 {
   constructor(e7) {
     if (super(e7), e7.type !== t3.CHILD) throw Error("repeat() can only be used in text expressions");
   }
-  dt(e7, s5, t8) {
+  dt(e7, s5, t7) {
     let r6;
-    void 0 === t8 ? t8 = s5 : void 0 !== s5 && (r6 = s5);
+    void 0 === t7 ? t7 = s5 : void 0 !== s5 && (r6 = s5);
     const l3 = [], o9 = [];
     let i7 = 0;
-    for (const s6 of e7) l3[i7] = r6 ? r6(s6, i7) : i7, o9[i7] = t8(s6, i7), i7++;
+    for (const s6 of e7) l3[i7] = r6 ? r6(s6, i7) : i7, o9[i7] = t7(s6, i7), i7++;
     return { values: o9, keys: l3 };
   }
-  render(e7, s5, t8) {
-    return this.dt(e7, s5, t8).values;
+  render(e7, s5, t7) {
+    return this.dt(e7, s5, t7).values;
   }
-  update(s5, [t8, r6, c5]) {
-    const d3 = M2(s5), { values: p4, keys: a3 } = this.dt(t8, r6, c5);
+  update(s5, [t7, r6, c5]) {
+    const d3 = M2(s5), { values: p4, keys: a3 } = this.dt(t7, r6, c5);
     if (!Array.isArray(d3)) return this.ut = a3, p4;
     const h4 = this.ut ??= [], v3 = [];
     let m4, y3, x2 = 0, j2 = d3.length - 1, k2 = 0, w2 = p4.length - 1;
@@ -6035,11 +5416,11 @@ var c4 = e5(class extends i4 {
     else if (h4[x2] === a3[w2]) v3[w2] = u3(d3[x2], p4[w2]), v2(s5, v3[w2 + 1], d3[x2]), x2++, w2--;
     else if (h4[j2] === a3[k2]) v3[k2] = u3(d3[j2], p4[k2]), v2(s5, d3[x2], d3[j2]), j2--, k2++;
     else if (void 0 === m4 && (m4 = u4(a3, k2, w2), y3 = u4(h4, x2, j2)), m4.has(h4[x2])) if (m4.has(h4[j2])) {
-      const e7 = y3.get(a3[k2]), t9 = void 0 !== e7 ? d3[e7] : null;
-      if (null === t9) {
+      const e7 = y3.get(a3[k2]), t8 = void 0 !== e7 ? d3[e7] : null;
+      if (null === t8) {
         const e8 = v2(s5, d3[x2]);
         u3(e8, p4[k2]), v3[k2] = e8;
-      } else v3[k2] = u3(t9, p4[k2]), v2(s5, d3[x2], t9), d3[e7] = null;
+      } else v3[k2] = u3(t8, p4[k2]), v2(s5, d3[x2], t8), d3[e7] = null;
       k2++;
     } else h3(d3[j2]), j2--;
     else h3(d3[x2]), x2++;
@@ -6059,25 +5440,25 @@ var c4 = e5(class extends i4 {
 var n6 = "important";
 var i6 = " !" + n6;
 var o8 = e5(class extends i4 {
-  constructor(t8) {
-    if (super(t8), t8.type !== t3.ATTRIBUTE || "style" !== t8.name || t8.strings?.length > 2) throw Error("The `styleMap` directive must be used in the `style` attribute and must be the only part in the attribute.");
+  constructor(t7) {
+    if (super(t7), t7.type !== t3.ATTRIBUTE || "style" !== t7.name || t7.strings?.length > 2) throw Error("The `styleMap` directive must be used in the `style` attribute and must be the only part in the attribute.");
   }
-  render(t8) {
-    return Object.keys(t8).reduce((e7, r6) => {
-      const s5 = t8[r6];
+  render(t7) {
+    return Object.keys(t7).reduce((e7, r6) => {
+      const s5 = t7[r6];
       return null == s5 ? e7 : e7 + `${r6 = r6.includes("-") ? r6 : r6.replace(/(?:^(webkit|moz|ms|o)|)(?=[A-Z])/g, "-$&").toLowerCase()}:${s5};`;
     }, "");
   }
   update(e7, [r6]) {
     const { style: s5 } = e7.element;
     if (void 0 === this.ft) return this.ft = new Set(Object.keys(r6)), this.render(r6);
-    for (const t8 of this.ft) null == r6[t8] && (this.ft.delete(t8), t8.includes("-") ? s5.removeProperty(t8) : s5[t8] = null);
-    for (const t8 in r6) {
-      const e8 = r6[t8];
+    for (const t7 of this.ft) null == r6[t7] && (this.ft.delete(t7), t7.includes("-") ? s5.removeProperty(t7) : s5[t7] = null);
+    for (const t7 in r6) {
+      const e8 = r6[t7];
       if (null != e8) {
-        this.ft.add(t8);
+        this.ft.add(t7);
         const r7 = "string" == typeof e8 && e8.endsWith(i6);
-        t8.includes("-") || r7 ? s5.setProperty(t8, r7 ? e8.slice(0, -11) : e8, r7 ? n6 : "") : s5[t8] = e8;
+        t7.includes("-") || r7 ? s5.setProperty(t7, r7 ? e8.slice(0, -11) : e8, r7 ? n6 : "") : s5[t7] = e8;
       }
     }
     return E;
@@ -6540,17 +5921,17 @@ var OkDataTable = class extends i3 {
       out.push(row);
     }
     const headers = out.shift() ?? [];
-    const rows4 = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
-    return { headers, rows: rows4 };
+    const rows3 = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
+    return { headers, rows: rows3 };
   }
   async onImportFile(ev) {
     const input = ev.target;
     const file = input.files?.[0];
     if (!file) return;
     const text = decodeCsvBuffer(await file.arrayBuffer());
-    const { headers, rows: rows4 } = this.parseCsv(text);
-    this.emit("csvImport", { headers, rows: rows4 });
-    this.emit("import", { headers, rows: rows4 });
+    const { headers, rows: rows3 } = this.parseCsv(text);
+    this.emit("csvImport", { headers, rows: rows3 });
+    this.emit("import", { headers, rows: rows3 });
     input.value = "";
   }
   toggle(p4) {
@@ -6664,10 +6045,10 @@ var OkDataTable = class extends i3 {
           }
           if (f3.from || f3.to) {
             const raw = this.rawValue(col, row);
-            const t8 = raw == null ? NaN : new Date(raw).getTime();
+            const t7 = raw == null ? NaN : new Date(raw).getTime();
             const from = f3.from ? new Date(f3.from).getTime() : -Infinity;
             const to = f3.to ? new Date(f3.to).getTime() + 864e5 - 1 : Infinity;
-            return !Number.isNaN(t8) && t8 >= from && t8 <= to;
+            return !Number.isNaN(t7) && t7 >= from && t7 <= to;
           }
           return true;
         })
@@ -6803,15 +6184,15 @@ var OkDataTable = class extends i3 {
       `;
     }
     if (type === "range" || type === "daterange") {
-      const t8 = type === "daterange" ? "date" : "number";
+      const t7 = type === "daterange" ? "date" : "number";
       const onEdge = type === "daterange" ? this.onDateRangeInput.bind(this) : this.onRangeInput.bind(this);
       return b2`
         <div class="fblock">
           <span class="flabel">${col.header}</span>
           <div class="frange">
-            <ion-input type=${t8} fill="outline" placeholder=${type === "daterange" ? this.t.from : this.t.gte}
+            <ion-input type=${t7} fill="outline" placeholder=${type === "daterange" ? this.t.from : this.t.gte}
               @ionInput=${(e7) => onEdge(col, "from", e7)}></ion-input>
-            <ion-input type=${t8} fill="outline" placeholder=${type === "daterange" ? this.t.to : this.t.lte}
+            <ion-input type=${t7} fill="outline" placeholder=${type === "daterange" ? this.t.to : this.t.lte}
               @ionInput=${(e7) => onEdge(col, "to", e7)}></ion-input>
           </div>
         </div>
@@ -6834,8 +6215,8 @@ var OkDataTable = class extends i3 {
   // `inlineFilters`. Look: «Todos los Estados» (placeholder) / «01/10/25 → 18/10/25».
   renderInlineFilters() {
     const cols = this.filterColumns.filter((c5) => {
-      const t8 = c5.filterType ?? "text";
-      return t8 === "select" || t8 === "multiselect" || t8 === "date" || t8 === "daterange";
+      const t7 = c5.filterType ?? "text";
+      return t7 === "select" || t7 === "multiselect" || t7 === "date" || t7 === "daterange";
     });
     if (!cols.length) return A;
     return b2`${cols.map((c5) => this.renderInlineFilter(c5))}`;
@@ -7402,8 +6783,8 @@ __decorateClass7([
 define("ok-data-table", OkDataTable);
 
 // ui/components/erp-sales-list/erp-sales-list.ts
-var CATALOG4 = { es: es_default, en: en_default };
-function erplora5() {
+var CATALOG3 = { es: es_default, en: en_default };
+function erplora3() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
   return c5;
@@ -7431,27 +6812,27 @@ var ErpSalesList = class extends i3 {
   // (ADR-0055). El listener `erplora:locale-changed` re-renderiza.
   get documentActions() {
     return [
-      { id: "document", label: erplora5().t(CATALOG4, "ui.actionDocument"), icon: "receipt-outline" }
+      { id: "document", label: erplora3().t(CATALOG3, "ui.actionDocument"), icon: "receipt-outline" }
     ];
   }
   get columns() {
-    const t8 = (k2) => erplora5().t(CATALOG4, k2);
+    const t7 = (k2) => erplora3().t(CATALOG3, k2);
     return [
-      { key: "sale_number", header: t8("ui.colNumber"), sortable: true, filterable: true, filterType: "text" },
-      { key: "customer_name", header: t8("ui.colCustomer"), sortable: true, filterable: true, filterType: "text", format: (r6) => r6.customer_name || "\u2014" },
-      { key: "payment_method_name", header: t8("ui.colPayment"), sortable: true, filterable: true, filterType: "text", format: (r6) => r6.payment_method_name || "\u2014" },
+      { key: "sale_number", header: t7("ui.colNumber"), sortable: true, filterable: true, filterType: "text" },
+      { key: "customer_name", header: t7("ui.colCustomer"), sortable: true, filterable: true, filterType: "text", format: (r6) => r6.customer_name || "\u2014" },
+      { key: "payment_method_name", header: t7("ui.colPayment"), sortable: true, filterable: true, filterType: "text", format: (r6) => r6.payment_method_name || "\u2014" },
       {
         key: "status",
-        header: t8("ui.colStatus"),
+        header: t7("ui.colStatus"),
         sortable: true,
         filterable: true,
         filterType: "select",
         options: [
-          { value: "completed", label: t8("ui.statusCompleted") },
-          { value: "voided", label: t8("ui.statusVoided") }
+          { value: "completed", label: t7("ui.statusCompleted") },
+          { value: "voided", label: t7("ui.statusVoided") }
         ]
       },
-      { key: "total", header: t8("ui.colTotal"), align: "right", sortable: true, filterable: true, filterType: "range", format: (r6) => erplora5().formatMoney(Number(r6.total || 0)) }
+      { key: "total", header: t7("ui.colTotal"), align: "right", sortable: true, filterable: true, filterType: "range", format: (r6) => erplora3().formatMoney(Number(r6.total || 0)) }
     ];
   }
   // TODO-LIT: componentWillLoad → connectedCallback. Recuerda: connectedCallback se dispara
@@ -7460,14 +6841,14 @@ var ErpSalesList = class extends i3 {
   async connectedCallback() {
     super.connectedCallback();
     window.addEventListener("erplora:locale-changed", this.onLocaleChange);
-    this.ctrl = createListController(erplora5(), "sales.list", () => this.requestUpdate(), {
+    this.ctrl = createListController(erplora3(), "sales.list", () => this.requestUpdate(), {
       pageSize: 50,
       sort: "created_at",
       dir: "desc"
     });
     await Promise.all([this.ctrl.load(), this.loadStats()]);
     try {
-      this.unsub = erplora5().on("sale.completed", () => {
+      this.unsub = erplora3().on("sale.completed", () => {
         this.ctrl.load();
         this.loadStats();
       });
@@ -7481,39 +6862,39 @@ var ErpSalesList = class extends i3 {
   }
   async loadStats() {
     try {
-      const rows4 = await erplora5().query("sales.stats");
-      this.stats = rows4 && rows4[0] || { count: 0, total_revenue: 0, avg_ticket: 0 };
+      const rows3 = await erplora3().query("sales.stats");
+      this.stats = rows3 && rows3[0] || { count: 0, total_revenue: 0, avg_ticket: 0 };
     } catch (e7) {
-      this.statsError = e7 instanceof Error ? e7.message : erplora5().t(CATALOG4, "ui.errorStats");
+      this.statsError = e7 instanceof Error ? e7.message : erplora3().t(CATALOG3, "ui.errorStats");
     }
   }
   render() {
-    const t8 = (k2) => erplora5().t(CATALOG4, k2);
+    const t7 = (k2) => erplora3().t(CATALOG3, k2);
     return b2`<div>
-        <h2>${t8("ui.sales")}</h2>
+        <h2>${t7("ui.sales")}</h2>
         <div class="cards">
           <div class="card">
-            <div class="k">${t8("ui.tickets")}</div>
+            <div class="k">${t7("ui.tickets")}</div>
             <div class="v">${this.stats.count}</div>
           </div>
           <div class="card">
-            <div class="k">${t8("ui.revenue")}</div>
-            <div class="v">${erplora5().formatMoney(Number(this.stats.total_revenue || 0))}</div>
+            <div class="k">${t7("ui.revenue")}</div>
+            <div class="v">${erplora3().formatMoney(Number(this.stats.total_revenue || 0))}</div>
           </div>
           <div class="card">
-            <div class="k">${t8("ui.avgTicket")}</div>
-            <div class="v">${erplora5().formatMoney(Number(this.stats.avg_ticket || 0))}</div>
+            <div class="k">${t7("ui.avgTicket")}</div>
+            <div class="v">${erplora3().formatMoney(Number(this.stats.avg_ticket || 0))}</div>
           </div>
         </div>
         ${this.statsError ? b2`<p class="err">${this.statsError}</p>` : A}
         ${this.ctrl?.error ? b2`<p class="err">${this.ctrl.error}</p>` : A}
-        <ok-data-table .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r6) => String(r6.sale_number ?? "\u2014")} .cardIcon=${() => "receipt-outline"} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.ctrl?.state.sort} .sortDir=${this.ctrl?.state.dir ?? "desc"} .searchable=${true} .searchPlaceholder=${t8("ui.searchSalePlaceholder")} .emptyMessage=${this.ctrl?.loading ? t8("ui.loading") : t8("ui.noSales")} .actions=${this.documentActions} @rowAction=${(e7) => {
+        <ok-data-table .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r6) => String(r6.sale_number ?? "\u2014")} .cardIcon=${() => "receipt-outline"} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.ctrl?.state.sort} .sortDir=${this.ctrl?.state.dir ?? "desc"} .searchable=${true} .searchPlaceholder=${t7("ui.searchSalePlaceholder")} .emptyMessage=${this.ctrl?.loading ? t7("ui.loading") : t7("ui.noSales")} .actions=${this.documentActions} @rowAction=${(e7) => {
       if (e7.detail.actionId === "document") this.docSaleId = e7.detail.row.id;
     }} @pageChange=${(e7) => this.ctrl.setPage(e7.detail)} @sortChange=${(e7) => this.ctrl.setSort(e7.detail.sort, e7.detail.dir)} @searchChange=${(e7) => this.ctrl.setSearch(e7.detail)} @filterChange=${(e7) => this.ctrl.setFilter(e7.detail.col, e7.detail.value)}></ok-data-table>
 
         ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => {
       this.docSaleId = void 0;
-    }, t: t8 })}
+    }, t: t7 })}
       </div>`;
   }
 };

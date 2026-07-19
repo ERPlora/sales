@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mergeCartLines, listOpenChecks, loadActiveCart, persistActiveCart, persistLineQty, type CartLine, type ErploraClientLike } from './pos-cart';
+import { mergeCartLines, listOpenChecks, persistLineQty, type CartLine, type ErploraClientLike } from './pos-cart';
 
 // Cliente de prueba que registra las llamadas a query/command (lo único que nos importa aquí:
 // que la comanda se pida/guarde ATADA a la mesa — `table_id`).
@@ -64,32 +64,8 @@ describe('mergeCartLines', () => {
   });
 });
 
-describe('comanda atada a la mesa (table_id)', () => {
-  it('loadActiveCart pide la comanda de ESA mesa', async () => {
-    const { client, calls } = recordingClient(JSON.stringify({ lines: [line()] }));
-    const cart = await loadActiveCart(client, 'mesa-7');
-    expect(cart).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ kind: 'query', name: 'sales.cart.get', params: { table_id: 'mesa-7' } });
-  });
-
-  it('sin mesa, loadActiveCart pide el carrito suelto (table_id vacío)', async () => {
-    const { client, calls } = recordingClient();
-    await loadActiveCart(client);
-    expect(calls[0].params).toMatchObject({ table_id: '' });
-  });
-
-  it('persistActiveCart guarda la comanda ATADA a la mesa', async () => {
-    const { client, calls } = recordingClient();
-    await persistActiveCart(client, [line()], 'mesa-7');
-    expect(calls[0]).toMatchObject({ kind: 'command', name: 'sales.cart.save', params: { table_id: 'mesa-7' } });
-  });
-
-  it('persistActiveCart con carrito vacío LIMPIA la comanda de esa mesa', async () => {
-    const { client, calls } = recordingClient();
-    await persistActiveCart(client, [], 'mesa-7');
-    expect(calls[0]).toMatchObject({ kind: 'command', name: 'sales.cart.clear', params: { table_id: 'mesa-7' } });
-  });
-});
+// El carrito-blob por mesa (ADR-0139) se retiró: la comanda ES el pedido, con sus líneas como filas
+// reales, y aparcar pertenece a `tables` (ADR-0146). Sus tests se van con él.
 
 // ── ADR-0141: el carrito respaldado por un PEDIDO real (sales_order) ─────────────────────────
 // El camino viejo guardaba un blob JSON con debounce de 400 ms → un corte de luz perdía el último

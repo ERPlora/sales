@@ -90,7 +90,8 @@
       "migrations/sqlite/009_cart_per_table.sql",
       "migrations/sqlite/010_orders.sql",
       "migrations/sqlite/011_sale_forgets_table.sql",
-      "migrations/sqlite/012_line_paid.sql"
+      "migrations/sqlite/012_line_paid.sql",
+      "migrations/sqlite/013_drop_legacy_cart.sql"
     ],
     "postgres": [
       "migrations/postgres/001_init.sql",
@@ -104,7 +105,8 @@
       "migrations/postgres/009_cart_per_table.sql",
       "migrations/postgres/010_orders.sql",
       "migrations/postgres/011_sale_forgets_table.sql",
-      "migrations/postgres/012_line_paid.sql"
+      "migrations/postgres/012_line_paid.sql",
+      "migrations/postgres/013_drop_legacy_cart.sql"
     ]
   },
   "queries": {
@@ -227,20 +229,6 @@
       "sql": "queries/settings_get.sql",
       "ai": {
         "description": "Retrieves the point-of-sale configuration settings (payment methods allowed, default sell screen, default document format)"
-      }
-    },
-    "sales.cart.get": {
-      "permission": "sales.view_sale",
-      "sql": "queries/cart_get.sql",
-      "ai": {
-        "description": "Retrieves the active (in-progress) POS cart of the current employee, if any"
-      }
-    },
-    "sales.parked_tickets": {
-      "permission": "sales.view_sale",
-      "sql": "queries/parked_tickets.sql",
-      "ai": {
-        "description": "Lists the parked (on-hold) POS tickets that have not expired yet, newest first"
       }
     },
     "sales.today": {
@@ -417,46 +405,6 @@
       ],
       "ai": {
         "description": "Updates the point-of-sale configuration settings of the sales module"
-      }
-    },
-    "sales.cart.save": {
-      "permission": "sales.add_sale",
-      "transaction": true,
-      "sql": [
-        "commands/cart_save.sql"
-      ],
-      "ai": {
-        "description": "Saves (upserts) the active POS cart of the current employee so it survives reloads"
-      }
-    },
-    "sales.cart.clear": {
-      "permission": "sales.add_sale",
-      "transaction": true,
-      "sql": [
-        "commands/cart_clear.sql"
-      ],
-      "ai": {
-        "description": "Clears the active POS cart of the current employee"
-      }
-    },
-    "sales.park_ticket": {
-      "permission": "sales.add_sale",
-      "transaction": true,
-      "sql": [
-        "commands/park_ticket.sql"
-      ],
-      "ai": {
-        "description": "Parks (puts on hold) the current POS cart as a retrievable ticket with an expiry"
-      }
-    },
-    "sales.retrieve_ticket": {
-      "permission": "sales.add_sale",
-      "transaction": true,
-      "sql": [
-        "commands/retrieve_ticket.sql"
-      ],
-      "ai": {
-        "description": "Marks a parked POS ticket as retrieved so it disappears from the parked list"
       }
     },
     "sales._mark_order_line_paid": {

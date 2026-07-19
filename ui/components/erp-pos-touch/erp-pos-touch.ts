@@ -10,15 +10,16 @@ import { decideOnTableChange } from '../../lib/table-switch.js';
 import { buildFirePayload } from '../../lib/fire-order.js';
 import { createSerialQueue } from '../../lib/serial-queue.js';
 import { splitPayload, splitTotal } from '../../lib/split-selection.js';
+import { forgetCurrentCheck, rememberCurrentCheck, resolveCurrentCheck } from '../../lib/current-check.js';
 import { brandSvgFor } from '../../lib/brand-icons.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod } from '../../lib/pay-icons.js';
 import '@erplora/outfitkit/ok-qty-stepper';
 import '@erplora/outfitkit/ok-spotlight-search';
 import {
-  loadActiveCart, persistActiveCart, mergeCartLines, listOpenChecks, type OpenCheck,
+  mergeCartLines, listOpenChecks, type OpenCheck,
   // ADR-0141: el carrito lo respalda un PEDIDO real (filas), no un blob con debounce.
-  openOrderWithLines, addOrderLine, updateOrderLineQty, persistLineQty, removeOrderLine, loadOrderLines, findOpenOrder, mergeOrders,
+  openOrderWithLines, addOrderLine, updateOrderLineQty, persistLineQty, removeOrderLine, loadOrderLines, mergeOrders,
   type CartLine, type ErploraClientLike,
 } from '../../lib/pos-cart.js';
 import { buildCategoryRatesMap, resolveLineTax } from '../../lib/pos-tax.js';
@@ -368,6 +369,7 @@ export class ErpPosTouch extends LitElement {
     this.tableId = nextTable; this.tableLabel = d.label ?? '';
     const linked = d.order_id ?? undefined;
     this.orderId = linked;
+    if (linked) rememberCurrentCheck(localStorage, linked); else forgetCurrentCheck(localStorage);
     this.cart = linked ? await loadOrderLines(erplora(), linked) : [];
   };
 
@@ -485,11 +487,7 @@ export class ErpPosTouch extends LitElement {
     this.removeEventListener('erp:order-merge', this.onOrderMerge);
     this.removeEventListener('erp:order-transfer', this.onOrderTransfer);
     this.removeEventListener('erp:customer-context', this.onCustomerContext);
-    if (this.saveTimer) {
-      clearTimeout(this.saveTimer);
-      this.saveTimer = undefined;
-      void persistActiveCart(erplora(), this.cart, this.tableId);
-    }
+    if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = undefined; }
   }
 
   private async resolveSlots() {
@@ -580,6 +578,7 @@ export class ErpPosTouch extends LitElement {
   private async park() {
     if (!this.cart.length) return;
     this.notifyPark();
+    forgetCurrentCheck(localStorage);
     this.orderId = undefined;
     this.cart = [];
     this.tableId = undefined;
@@ -595,6 +594,7 @@ export class ErpPosTouch extends LitElement {
     try {
       if (this.cart.length && this.orderId !== c.id) await this.park();
       this.orderId = c.id;
+      rememberCurrentCheck(localStorage, c.id);
       this.cart = await loadOrderLines(erplora(), c.id);
       this.notifyOrderRestored();
       this.parkedOpen = false;
@@ -620,11 +620,15 @@ export class ErpPosTouch extends LitElement {
     }
   }
 
-  /** ADR-0141: reanuda el pedido ABIERTO (si lo hay) tras recargar. Sus líneas ya traen `line_id`
-   *  (para poder mutarlas) y la categoría fiscal (autoridad del IVA al cobrar, ADR-0085). */
+  /** Reanuda LA CUENTA QUE TENÍA ESTE TERMINAL tras recargar (ADR-0141/0146).
+   *
+   *  Antes se cogía «el primer pedido abierto»: con varias cuentas abiertas eso es aterrizar en la
+   *  de otro camarero. La cuenta en curso es estado del DISPOSITIVO, así que se recuerda ahí; si ya
+   *  se cobró, se empieza en blanco y el camarero elige — no se cae a otra cualquiera. */
   private async restoreOpenOrder(): Promise<CartLine[]> {
     try {
-      const id = await findOpenOrder(erplora());
+      const abiertas = (await listOpenChecks(erplora())).map((c) => c.id);
+      const id = resolveCurrentCheck(localStorage, abiertas);
       if (!id) return [];
       this.orderId = id;
       // El pedido vuelve, pero su MESA y su CLIENTE los saben sus dueños, no `sales`. Se les avisa
@@ -677,6 +681,7 @@ export class ErpPosTouch extends LitElement {
   private async ensureOrder(first: CartLine): Promise<string> {
     if (this.orderId) return this.orderId;
     this.orderId = await openOrderWithLines(erplora(), [first]);
+    rememberCurrentCheck(localStorage, this.orderId);
     // Aviso a TODOS los fillers: cada uno enlaza lo suyo si tiene algo seleccionado (la mesa en
     // `tables`, el cliente en `customers`). `sales` no sabe qué enlazan ni le importa.
     this.notifyOrderLinked();
@@ -868,10 +873,10 @@ export class ErpPosTouch extends LitElement {
       }
 
       // Cobro de la cuenta entera: se limpia y se sueltan mesa y cliente.
-      await persistActiveCart(erplora(), [], this.tableId);
       this.cart = [];
       // El pedido quedó `completed` en el servidor dentro de la misma transacción de la venta: se
       // suelta para que el siguiente ticket abra uno nuevo (ADR-0141).
+      forgetCurrentCheck(localStorage);
       this.orderId = undefined;
       this.tableId = undefined; this.tableLabel = '';
       this.customerId = undefined; this.customerName = '';
