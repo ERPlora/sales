@@ -27,6 +27,7 @@
       "sales.order.fire",
       "sales.order.open",
       "sales.order.remove_line",
+      "sales.order.set_label",
       "sales.order.update_line",
       "sales.order.void"
     ],
@@ -34,6 +35,7 @@
       "sale.completed"
     ],
     "slots": [
+      "sales.pos.actions",
       "sales.pos.assign"
     ]
   }

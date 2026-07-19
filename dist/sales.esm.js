@@ -2903,6 +2903,15 @@ var es_default = {
     cancel: "Cancelar",
     deleteCheck: "Eliminar cuenta",
     deleteCheckConfirm: "Toca otra vez para eliminar \u2014 anula la cuenta",
+    tabOrder: "Pedido",
+    tabCourses: "Tandas",
+    course: "Tanda {n}",
+    courseInProgress: "En curso",
+    courseSentAt: "Enviada {time}",
+    sendCourse: "Enviar tanda \xB7 {n} art\xEDculos",
+    courseEmptyHint: "Toca un producto para a\xF1adirlo a esta tanda.",
+    restaurantMode: "Modo restaurante (tandas)",
+    restaurantModeHint: "A\xF1ade la pesta\xF1a Tandas al carrito para enviar rondas a cocina.",
     qtyOffGrid: "La cantidad no encaja con el escal\xF3n del producto"
   },
   widgets: {
@@ -3087,7 +3096,16 @@ var en_default = {
     discardAndOpen: "Delete it and open",
     cancel: "Cancel",
     deleteCheck: "Delete check",
-    deleteCheckConfirm: "Tap again to delete \u2014 this voids the check"
+    deleteCheckConfirm: "Tap again to delete \u2014 this voids the check",
+    tabOrder: "Order",
+    tabCourses: "Courses",
+    course: "Course {n}",
+    courseInProgress: "In progress",
+    courseSentAt: "Sent {time}",
+    sendCourse: "Send course \xB7 {n} items",
+    courseEmptyHint: "Tap a product to add it to this course.",
+    restaurantMode: "Restaurant mode (courses)",
+    restaurantModeHint: "Adds a Courses tab to the cart to send rounds to the kitchen."
   }
 };
 
@@ -3347,12 +3365,45 @@ function defaultParkLabel(tableLabel, now) {
   return `${hh}:${mm}`;
 }
 
+// ui/lib/rounds.ts
+function pendingLines(lines) {
+  return lines.filter((l3) => !l3.fired_at);
+}
+function isLineLocked(l3) {
+  return !!l3.fired_at;
+}
+function nextRoundNo(lines) {
+  const max = lines.reduce((m4, l3) => l3.fired_at && (l3.round_no ?? 0) > m4 ? l3.round_no ?? 0 : m4, 0);
+  return max + 1;
+}
+function groupByRound(lines) {
+  const fired = /* @__PURE__ */ new Map();
+  const current = { round_no: 0, lines: [] };
+  for (const l3 of lines) {
+    if (!l3.fired_at) {
+      current.lines.push(l3);
+      continue;
+    }
+    const n6 = l3.round_no ?? 0;
+    let g3 = fired.get(n6);
+    if (!g3) {
+      g3 = { round_no: n6, fired_at: l3.fired_at, lines: [] };
+      fired.set(n6, g3);
+    }
+    g3.lines.push(l3);
+  }
+  const out = [...fired.values()].sort((a3, b3) => a3.round_no - b3.round_no);
+  out.push(current);
+  return out;
+}
+
 // ui/lib/fire-order.ts
-function buildFirePayload(orderId, label, lines) {
+function buildFirePayload(orderId, label, lines, roundNo) {
   if (!orderId || lines.length === 0) return void 0;
   return {
     order_id: orderId,
     label,
+    ...roundNo && roundNo >= 1 ? { round_no: roundNo } : {},
     // Sin mesa no es servicio de sala: barra, mostrador o para llevar.
     channel: label ? "dine_in" : "takeaway",
     items: lines.map((l3) => ({
@@ -4261,7 +4312,11 @@ async function loadOrderLines(client, orderId) {
       pricing_unit_code: x2.pricing_unit_code ? String(x2.pricing_unit_code) : void 0,
       pricing_unit_name: x2.pricing_unit_name ? String(x2.pricing_unit_name) : void 0,
       pricing_factor_num: Number(x2.pricing_factor_num) || void 0,
-      pricing_factor_den: Number(x2.pricing_factor_den) || void 0
+      pricing_factor_den: Number(x2.pricing_factor_den) || void 0,
+      // Tandas (2026-07-19): la ronda vuelve con la línea para que un pedido REANUDADO siga
+      // sabiendo qué salió ya a cocina (y no lo re-envíe ni lo deje editar).
+      round_no: Number(x2.round_no) || void 0,
+      fired_at: x2.fired_at ? String(x2.fired_at) : void 0
     }));
   } catch {
     return [];
@@ -4360,6 +4415,7 @@ var ErpPosTouch = class extends i3 {
     this.parkName = "";
     this.dirtyOpen = false;
     this.dirtyAllowCancel = false;
+    this.cartTab = "order";
     this.printOnCharge = true;
     this.tableLabel = "";
     this.customerName = "";
@@ -4631,6 +4687,28 @@ var ErpPosTouch = class extends i3 {
     .pn { font-weight:700; font-size:.9rem; }
     .pm { color:var(--mut); font-size:.78rem; }
     .pdel { margin:0; }
+
+    /* Modo restaurante: segunda toolbar con el segment Pedido/Tandas. width:100% a la fuerza —
+       en mode ios el segment se ENCOGE (width:auto), gotcha conocido de los tabbar. */
+    .cart-tabs ion-segment { width:100%; margin-inline:0; }
+    /* Chip de tanda en la línea (T1, T2…) + llamita de «ya enviada». */
+    .rchip { display:inline-block; font-size:.62rem; font-weight:800; padding:.05rem .3rem;
+      border-radius:6px; background:var(--tile); border:1px solid var(--ion-border-color);
+      color:var(--mut); vertical-align:middle; }
+    .rflame { font-size:.85rem; vertical-align:middle; }
+    .lqty { color:var(--mut); font-weight:700; }
+    /* Pestaña Tandas: grupos por ronda. La EN CURSO lleva el borde de acento (es el destino). */
+    .courses { padding:.4rem .5rem .8rem; display:flex; flex-direction:column; gap:.6rem; }
+    .course { border:1px solid var(--ion-border-color); border-radius:12px; overflow:hidden; }
+    .course.current { border-color:var(--accent); }
+    .course-h { display:flex; align-items:center; gap:.4rem; padding:.5rem .7rem;
+      font-weight:700; font-size:.9rem; background:var(--tile); }
+    .course-h .ctime { margin-left:auto; color:var(--mut); font-weight:400; font-size:.8rem; }
+    .crow { display:flex; align-items:center; gap:.5rem; padding:.4rem .7rem; font-size:.9rem; }
+    .crow .cqty { color:var(--mut); min-width:2.4rem; }
+    .crow .cprod { flex:1; }
+    .crow .ctotal { font-weight:700; }
+    .course .send-round { margin:.5rem .6rem .6rem; }
 
     /* Diálogos nativos (top layer): aparcar-con-nombre y carrito sucio. */
     dialog.park-dialog, dialog.dirty-dialog { border:1px solid var(--ion-border-color); border-radius:14px;
@@ -5041,11 +5119,13 @@ var ErpPosTouch = class extends i3 {
   async fireToKitchen() {
     if (!this.cart.length) return;
     const orderId = await this.ensureOrder(this.cart[0]);
-    const payload = buildFirePayload(orderId, this.tableLabel, this.cart);
+    const pendientes = pendingLines(this.cart);
+    const payload = buildFirePayload(orderId, this.tableLabel, pendientes, nextRoundNo(this.cart));
     if (!payload) return;
     try {
       await erplora2().command("sales.order.fire", payload);
       erplora2().notify?.({ type: "success", message: t5("ui.firedToKitchen") });
+      if (this.orderId) this.cart = await loadOrderLines(erplora2(), this.orderId);
     } catch {
       this.error = t5("ui.fireFailed");
     }
@@ -5336,6 +5416,19 @@ var ErpPosTouch = class extends i3 {
             </ion-button>
           </ion-buttons>
         </ion-toolbar>
+        ${this.restaurantMode ? b2`
+          <!-- MODO RESTAURANTE (ajuste restaurant_mode): Pedido = la cuenta a cobrar; Tandas =
+               las rondas a cocina. Segunda toolbar del header (patrón Ionic); el CSS fuerza
+               width:100% al segment — en mode ios se encoge solo (gotcha conocido). -->
+          <ion-toolbar class="cart-tabs">
+            <ion-segment value=${this.cartTab}
+                         @ionChange=${(e7) => {
+      this.cartTab = e7.detail.value ?? "order";
+    }}>
+              <ion-segment-button value="order">${t5("ui.tabOrder")}</ion-segment-button>
+              <ion-segment-button value="courses">${t5("ui.tabCourses")}</ion-segment-button>
+            </ion-segment>
+          </ion-toolbar>` : A}
       </ion-header>
 
       ${this.parkedOpen ? b2`
@@ -5367,30 +5460,7 @@ var ErpPosTouch = class extends i3 {
            el pie se mueven. Con divs a pelo, una comanda larga empujaba el botón de COBRAR fuera de
            la pantalla — en un TPV eso es no poder cobrar. -->
       <ion-content class="cart-body">
-        ${this.cart.length ? b2`<ion-list class="lines" lines="full">
-              ${this.cart.map((l3) => b2`<ion-item class=${l3.line_id && this.splitSel.has(l3.line_id) ? "sel" : ""}
-                  button ?detail=${false} @click=${() => this.toggleSplit(l3)}>
-                ${this.cart.length > 1 && l3.line_id ? b2`<ion-icon slot="start" class="selmark"
-                            name=${this.splitSel.has(l3.line_id) ? "checkmark-circle" : "ellipse-outline"}
-                            color=${this.splitSel.has(l3.line_id) ? "primary" : "medium"}></ion-icon>` : A}
-                <ion-label>
-                  <h3>${l3.name}${l3.is_gift ? b2` <ion-badge color="success">${t5("ui.giftBadge")}</ion-badge>` : A}</h3>
-                  <p>${priceLabel(this.money(l3.price), l3.unit_code)}${l3.is_gift && l3.gift_reason ? b2` · ${l3.gift_reason}` : A}</p>
-                </ion-label>
-                <div slot="end" class="lineend">
-                  <span class="lt" style=${l3.is_gift ? "text-decoration:line-through;opacity:.55" : ""}>${this.money(l3.price * l3.qty)}</span>
-                  <ion-button fill="clear" size="small" title=${t5("ui.giftAction")} @click=${() => this.toggleGift(l3.id)}>
-                    <ion-icon name=${l3.is_gift ? "gift" : "gift-outline"} slot="icon-only" color=${l3.is_gift ? "success" : "medium"}></ion-icon>
-                  </ion-button>
-                  <ok-qty-stepper .value=${l3.qty} .min=${0} .step=${this.stepOf(l3)}
-                    @ok-change=${(e7) => this.setQtyAbs(
-      l3.id,
-      e7.detail.value,
-      e7.currentTarget
-    )}></ok-qty-stepper>
-                </div>
-              </ion-item>`)}
-            </ion-list>` : b2`<div class="empty">${t5("ui.cartEmptyTouch")}</div>`}
+        ${this.restaurantMode && this.cartTab === "courses" ? this.renderCourses() : this.renderOrderList()}
       </ion-content>
 
       <!-- El PIE. ion-footer es un pie de verdad: se queda abajo pase lo que pase. -->
@@ -5443,6 +5513,79 @@ var ErpPosTouch = class extends i3 {
           </div>
         </div>
       </ion-footer>`;
+  }
+  /** Modo restaurante activo (ajuste `restaurant_mode`): añade el segment Pedido/Tandas. */
+  get restaurantMode() {
+    return this.settings.restaurant_mode === 1;
+  }
+  /** La pestaña PEDIDO (y el carrito plano sin modo restaurante): la cuenta a cobrar. */
+  renderOrderList() {
+    return this.cart.length ? b2`<ion-list class="lines" lines="full">
+          ${this.cart.map((l3) => this.renderLine(l3))}
+        </ion-list>` : b2`<div class="empty">${t5("ui.cartEmptyTouch")}</div>`;
+  }
+  /** Una línea de la cuenta. BLOQUEADA si ya salió a cocina (`fired_at`, tandas 2026-07-19): la
+   *  comida está en fuego — ni stepper ni invitación (el SQL también lo impone); en modo
+   *  restaurante lleva su chip de tanda (T1, T2…) y la llamita de «enviada». */
+  renderLine(l3) {
+    const locked = isLineLocked(l3);
+    return b2`<ion-item class=${l3.line_id && this.splitSel.has(l3.line_id) ? "sel" : ""}
+        button ?detail=${false} @click=${() => this.toggleSplit(l3)}>
+      ${this.cart.length > 1 && l3.line_id ? b2`<ion-icon slot="start" class="selmark"
+                  name=${this.splitSel.has(l3.line_id) ? "checkmark-circle" : "ellipse-outline"}
+                  color=${this.splitSel.has(l3.line_id) ? "primary" : "medium"}></ion-icon>` : A}
+      <ion-label>
+        <h3>${l3.name}${this.restaurantMode && l3.round_no ? b2` <span class="rchip">T${l3.round_no}</span>` : A}${locked ? b2` <ion-icon class="rflame" name="flame" color="warning"></ion-icon>` : A}${l3.is_gift ? b2` <ion-badge color="success">${t5("ui.giftBadge")}</ion-badge>` : A}</h3>
+        <p>${priceLabel(this.money(l3.price), l3.unit_code)}${l3.is_gift && l3.gift_reason ? b2` · ${l3.gift_reason}` : A}</p>
+      </ion-label>
+      <div slot="end" class="lineend">
+        <span class="lt" style=${l3.is_gift ? "text-decoration:line-through;opacity:.55" : ""}>${this.money(l3.price * l3.qty)}</span>
+        ${locked ? b2`<span class="lqty">×${formatQuantity(toMicro(l3.qty))}</span>` : b2`
+            <ion-button fill="clear" size="small" title=${t5("ui.giftAction")} @click=${() => this.toggleGift(l3.id)}>
+              <ion-icon name=${l3.is_gift ? "gift" : "gift-outline"} slot="icon-only" color=${l3.is_gift ? "success" : "medium"}></ion-icon>
+            </ion-button>
+            <ok-qty-stepper .value=${l3.qty} .min=${0} .step=${this.stepOf(l3)}
+              @ok-change=${(e7) => this.setQtyAbs(
+      l3.id,
+      e7.detail.value,
+      e7.currentTarget
+    )}></ok-qty-stepper>`}
+      </div>
+    </ion-item>`;
+  }
+  /** La pestaña TANDAS: las rondas enviadas (solo-lectura, con su hora) y la EN CURSO editable
+   *  con su CTA de envío. El CTA solo existe si cocina está (el slot del footer tiene filler):
+   *  sin cocina, las tandas no tienen destino. */
+  renderCourses() {
+    const grupos = groupByRound(this.cart);
+    return b2`<div class="courses">
+      ${grupos.map((g3) => g3.round_no >= 1 ? b2`
+          <div class="course fired">
+            <div class="course-h">
+              <ion-icon name="flame" color="warning"></ion-icon>
+              <span class="cname">${t5("ui.course", { n: String(g3.round_no) })}</span>
+              <span class="ctime">${t5("ui.courseSentAt", { time: (g3.fired_at ?? "").replace("T", " ").slice(11, 16) })}</span>
+            </div>
+            ${g3.lines.map((l3) => b2`<div class="crow">
+              <span class="cqty">${formatQuantity(toMicro(l3.qty))}×</span>
+              <span class="cprod">${l3.name}${l3.is_gift ? b2` <ion-badge color="success">${t5("ui.giftBadge")}</ion-badge>` : A}</span>
+              <span class="ctotal">${this.money(l3.price * l3.qty)}</span>
+            </div>`)}
+          </div>` : b2`
+          <div class="course current">
+            <div class="course-h">
+              <ion-icon name="create-outline" color="primary"></ion-icon>
+              <span class="cname">${t5("ui.courseInProgress")}</span>
+            </div>
+            ${g3.lines.length ? b2`<ion-list class="lines" lines="full">${g3.lines.map((l3) => this.renderLine(l3))}</ion-list>` : b2`<div class="empty">${t5("ui.courseEmptyHint")}</div>`}
+            ${g3.lines.length && this.actionFillers.length ? b2`
+                <ion-button class="send-round" expand="block"
+                            @click=${() => void this.fireToKitchen()}>
+                  <ion-icon slot="start" name="flame-outline"></ion-icon>
+                  ${t5("ui.sendCourse", { n: String(g3.lines.length) })}
+                </ion-button>` : A}
+          </div>`)}
+    </div>`;
   }
   render() {
     return b2`<div class="card">
@@ -5747,6 +5890,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "armedDelete", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "cartTab", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "printOnCharge", 2);
