@@ -1,7 +1,7 @@
 {
   "id": "sales",
   "name": "Sales & POS",
-  "version": "2.9.0",
+  "version": "2.10.0",
   "agent": {
     "description": "Manages sales and point-of-sale operations: list and inspect sales, complete new sales transactions, void sales, configure payment methods, and retrieve sales statistics.",
     "keywords": [
@@ -92,7 +92,8 @@
       "migrations/sqlite/011_sale_forgets_table.sql",
       "migrations/sqlite/012_line_paid.sql",
       "migrations/sqlite/013_drop_legacy_cart.sql",
-      "migrations/sqlite/014_quantity_fixed_point.sql"
+      "migrations/sqlite/014_quantity_fixed_point.sql",
+      "migrations/sqlite/015_order_label.sql"
     ],
     "postgres": [
       "migrations/postgres/001_init.sql",
@@ -108,7 +109,8 @@
       "migrations/postgres/011_sale_forgets_table.sql",
       "migrations/postgres/012_line_paid.sql",
       "migrations/postgres/013_drop_legacy_cart.sql",
-      "migrations/postgres/014_quantity_fixed_point.sql"
+      "migrations/postgres/014_quantity_fixed_point.sql",
+      "migrations/postgres/015_order_label.sql"
     ]
   },
   "seed": {
@@ -404,6 +406,16 @@
       ],
       "ai": {
         "description": "Voids an OPEN order (cancels the ticket before checkout); status open -> voided (ADR-0141)."
+      }
+    },
+    "sales.order.set_label": {
+      "permission": "sales.add_sale",
+      "transaction": true,
+      "sql": [
+        "commands/order_set_label.sql"
+      ],
+      "ai": {
+        "description": "Sets the opaque display label of an OPEN order (\"Mesa 4\", a customer name, a time). The label makes an open check recognizable in the open-checks list; sales does not interpret it (ADR-0144)."
       }
     },
     "sales.settings.update": {

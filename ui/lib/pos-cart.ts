@@ -197,9 +197,13 @@ function toItemPayload(l: CartLine): Record<string, unknown> {
   };
 }
 
-/** Abre un pedido MUTABLE con sus primeras líneas. Devuelve el `order_id` que generó el runtime. */
-export async function openOrderWithLines(client: ErploraClientLike, lines: CartLine[]): Promise<string> {
-  const res = await client.command('sales.order.open', { items: lines.map(toItemPayload) });
+/** Abre un pedido MUTABLE con sus primeras líneas. Devuelve el `order_id` que generó el runtime.
+ *  `label` (opcional): etiqueta OPACA de la cuenta («Mesa 4») — si ya se sabe, el pedido nace
+ *  etiquetado y la lista de cuentas abiertas lo muestra bien desde el primer segundo. */
+export async function openOrderWithLines(client: ErploraClientLike, lines: CartLine[], label?: string): Promise<string> {
+  const payload: Record<string, unknown> = { items: lines.map(toItemPayload) };
+  if (label?.trim()) payload.label = label.trim();
+  const res = await client.command('sales.order.open', payload);
   return firstNewId(res);
 }
 

@@ -4,7 +4,7 @@ SELECT id,
        allow_cash, allow_card, allow_transfer,
        sync_products, sync_services,
        require_customer, allow_discounts,
-       enable_parked_tickets, default_tax_included, ticket_expiry_hours,
+       enable_parked_tickets, default_tax_included,
        receipt_header, receipt_footer, receipt_footer_image,
        receipt_marketing_url, receipt_marketing_text,
        default_document_format, auto_invoice_with_tax_id

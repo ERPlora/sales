@@ -84,6 +84,11 @@
     "notes": {
       "type": "string"
     },
+    "label": {
+      "type": "string",
+      "maxLength": 120,
+      "description": "Etiqueta OPACA de la cuenta («Mesa 4», «Ana — terraza», «15:07»): la hace reconocible en la lista de cuentas abiertas. `sales` no la interpreta (ADR-0144)."
+    },
     "source_module": {
       "type": "string"
     }

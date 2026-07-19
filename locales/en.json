@@ -149,6 +149,18 @@
     "qtyOffGrid": "Quantity doesn't fit the product's step",
     "payExact": "Exact amount",
     "payCardHint": "Charge {amount} on the card terminal, then confirm.",
-    "chargeWithCard": "Charge {amount} by card"
+    "chargeWithCard": "Charge {amount} by card",
+    "parkTitle": "Park check",
+    "parkNameLabel": "Name",
+    "parkNamePlaceholder": "e.g. Ana — terrace",
+    "parkedToast": "Parked as “{name}”",
+    "leftAtTable": "Check stays on {label}",
+    "dirtyCartTitle": "You have a check in progress",
+    "dirtyCartBody": "What should we do with the current check?",
+    "parkAndOpen": "Park it and open",
+    "discardAndOpen": "Delete it and open",
+    "cancel": "Cancel",
+    "deleteCheck": "Delete check",
+    "deleteCheckConfirm": "Tap again to delete — this voids the check"
   }
 }

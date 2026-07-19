@@ -149,6 +149,18 @@
     "payExact": "Importe exacto",
     "payCardHint": "Cobra {amount} en el datáfono y confirma.",
     "chargeWithCard": "Cobrar {amount} con tarjeta",
+    "parkTitle": "Aparcar cuenta",
+    "parkNameLabel": "Nombre",
+    "parkNamePlaceholder": "p. ej. Ana — terraza",
+    "parkedToast": "Aparcada como «{name}»",
+    "leftAtTable": "La cuenta se queda en {label}",
+    "dirtyCartTitle": "Tienes una cuenta a medias",
+    "dirtyCartBody": "¿Qué hacemos con la cuenta actual?",
+    "parkAndOpen": "Aparcarla y abrir",
+    "discardAndOpen": "Eliminarla y abrir",
+    "cancel": "Cancelar",
+    "deleteCheck": "Eliminar cuenta",
+    "deleteCheckConfirm": "Toca otra vez para eliminar — anula la cuenta",
     "qtyOffGrid": "La cantidad no encaja con el escalón del producto"
   },
   "widgets": {

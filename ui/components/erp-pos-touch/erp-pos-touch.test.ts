@@ -494,6 +494,163 @@ describe('avisos de éxito: van por notify(), no por el hueco rojo de error', ()
   });
 });
 
+// ── Cuentas abiertas con NOMBRE + recuperar sin perder nada (rediseño TPV 2026-07-19) ─────────
+// Tres males vistos en el TPV real: (1) los aparcados salían ANÓNIMOS (solo total+hora) porque
+// nadie escribía la etiqueta; (2) recuperar/tocar mesa aparcaba EN SILENCIO — o peor: el helper
+// `aparcar` de onOrderContext ANULABA (`sales.order.void`) la cuenta recién aparcada, la causa de
+// «los tiquets aparcados desaparecen»; (3) la cuenta de una mesa se soltaba de su mesa al cambiar
+// de tiquet. El contrato nuevo (decisiones Ioan 2026-07-19):
+//
+//   - Aparcar SIN mesa pide un nombre (default: la hora, patrón Loyverse) y lo persiste
+//     (`sales.order.set_label`). Con MESA no pregunta: el nombre ES la mesa, una pulsación.
+//   - Recuperar otro tiquet con carrito a medias: si la cuenta actual NO tiene mesa → diálogo
+//     «¿aparcar o eliminar?»; si tiene mesa → SE QUEDA EN SU MESA (ni se aparca ni se suelta la
+//     sesión) y se avisa con toast.
+//   - Aparcar NUNCA anula: `sales.order.void` solo sale de una decisión explícita de eliminar.
+describe('cuentas abiertas: aparcar con nombre, recuperar sin perder nada', () => {
+  let comandos: { name: string; payload: Record<string, unknown> }[];
+  let avisos: { type: string; message: string }[];
+  let parqueados: number;
+
+  beforeEach(() => {
+    comandos = [];
+    avisos = [];
+    parqueados = 0;
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.queryAll = async (name: string) =>
+      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1 }] : []);
+    sdk.query = async () => [];
+    sdk.command = async (name: string, payload: Record<string, unknown>) => {
+      comandos.push({ name, payload });
+      return name === 'sales.order.open' ? { ok: true, new_ids: ['o1', 'l1'] } : { ok: true };
+    };
+    sdk.notify = (n: { type: string; message: string }) => { avisos.push(n); };
+  });
+
+  /** Carrito con un café persistido (pedido o1 abierto). */
+  async function conCafe() {
+    const el = await montarCarrito();
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    await (el as unknown as { queue: <T>(t: () => Promise<T>) => Promise<T> }).queue(async () => undefined);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    // Cuenta los avisos de «se aparca» que reciben los fillers (soltar la mesa es cosa de tables).
+    (el as unknown as { assignFillers: Array<{ component: string; el: HTMLElement }> }).assignFillers
+      .push({ component: 'erp-fake-mesa', el: (() => { const d = document.createElement('div'); d.addEventListener('erp:order-parked', () => { parqueados += 1; }); return d; })() });
+    return el;
+  }
+
+  const asignarMesa = async (el: HTMLElement, label = 'Mesa 2') => {
+    // Mesa LIBRE (sin order_id): lo marcado pasa a ser su comanda (assign-to-target), sin diálogo.
+    el.dispatchEvent(new CustomEvent('erp:order-context', {
+      detail: { table_id: 'm2', label }, bubbles: true, composed: true,
+    }));
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+  };
+
+  it('aparcar SIN mesa pide nombre (default: la hora) y lo persiste con set_label', async () => {
+    const el = await conCafe();
+    await (el as unknown as { requestPark(): Promise<void> }).requestPark();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    const dialogo = el.shadowRoot!.querySelector('dialog.park-dialog');
+    expect(dialogo, 'sin mesa se pregunta el nombre').toBeTruthy();
+    const campo = dialogo!.querySelector('input') as HTMLInputElement;
+    expect(campo.value, 'el default es la hora HH:MM (Loyverse)').toMatch(/^\d{2}:\d{2}$/);
+
+    campo.value = 'Ana — terraza';
+    campo.dispatchEvent(new Event('input'));
+    (dialogo!.querySelector('ion-button.park-confirm') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    const etiqueta = comandos.find((c) => c.name === 'sales.order.set_label');
+    expect(etiqueta, 'la etiqueta se persiste en el pedido').toBeTruthy();
+    expect(etiqueta!.payload).toMatchObject({ order_id: 'o1', label: 'Ana — terraza' });
+    expect((el as unknown as { cart: unknown[] }).cart, 'la pantalla queda libre').toHaveLength(0);
+    expect(avisos.some((a) => a.type === 'success' && a.message.includes('ui.parkedToast')),
+      'se avisa en VERDE, no por el hueco rojo').toBe(true);
+    expect(comandos.some((c) => c.name === 'sales.order.void'), 'aparcar JAMÁS anula').toBe(false);
+  });
+
+  it('aparcar CON mesa no pregunta: el nombre es la mesa (una pulsación)', async () => {
+    const el = await conCafe();
+    await asignarMesa(el);
+    await (el as unknown as { requestPark(): Promise<void> }).requestPark();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    expect(el.shadowRoot!.querySelector('dialog.park-dialog'), 'con mesa no hay diálogo').toBeFalsy();
+    const etiqueta = comandos.find((c) => c.name === 'sales.order.set_label');
+    expect(etiqueta!.payload).toMatchObject({ order_id: 'o1', label: 'Mesa 2' });
+    expect(parqueados, 'la mesa se suelta (erp:order-parked a los fillers)').toBeGreaterThan(0);
+    expect(comandos.some((c) => c.name === 'sales.order.void')).toBe(false);
+  });
+
+  it('recuperar con carrito sucio SIN mesa pregunta: eliminar anula, aparcar no', async () => {
+    const el = await conCafe();
+    const pos = el as unknown as {
+      retrieve(c: { id: string; total: number; created_at: string }): Promise<void>;
+      updateComplete: Promise<unknown>; orderId?: string;
+    };
+    const otra = { id: 'o2', total: 500, created_at: '2026-07-19T14:00:00+00:00' };
+
+    const recuperando = pos.retrieve(otra);
+    await new Promise((r) => setTimeout(r, 0));
+    await pos.updateComplete;
+
+    const dialogo = el.shadowRoot!.querySelector('dialog.dirty-dialog');
+    expect(dialogo, 'con algo a medias se pregunta qué hacer').toBeTruthy();
+    (dialogo!.querySelector('ion-button.discard-opt') as HTMLElement).click();
+    await recuperando;
+
+    expect(comandos.find((c) => c.name === 'sales.order.void')?.payload,
+      'eliminar = anular LA CUENTA VIEJA (o1), no la recuperada').toMatchObject({ order_id: 'o1' });
+    expect(pos.orderId, 'y se abre la elegida').toBe('o2');
+  });
+
+  it('recuperar con carrito CON mesa: la cuenta se queda en su mesa, sin diálogo ni void', async () => {
+    const el = await conCafe();
+    await asignarMesa(el);
+    const pos = el as unknown as {
+      retrieve(c: { id: string; total: number; created_at: string }): Promise<void>;
+      updateComplete: Promise<unknown>; orderId?: string; tableId?: string;
+    };
+
+    await pos.retrieve({ id: 'o2', total: 500, created_at: '2026-07-19T14:00:00+00:00' });
+    await pos.updateComplete;
+
+    expect(el.shadowRoot!.querySelector('dialog.dirty-dialog'), 'con mesa no se pregunta').toBeFalsy();
+    expect(comandos.some((c) => c.name === 'sales.order.void'), 'nada se anula').toBe(false);
+    expect(parqueados, 'la mesa NO se suelta: la cuenta se queda allí, recuperable tocándola').toBe(0);
+    expect(pos.orderId).toBe('o2');
+    expect(pos.tableId, 'la pantalla ya no está en aquella mesa').toBeUndefined();
+    expect(avisos.some((a) => a.message.includes('ui.leftAtTable')), 'se avisa dónde quedó').toBe(true);
+  });
+
+  it('tocar una mesa ocupada con carrito de barra pregunta — y aparcar JAMÁS anula (regresión)', async () => {
+    // La causa de «los tiquets aparcados desaparecen»: el helper `aparcar` de onOrderContext
+    // llamaba a `sales.order.void` tras aparcar (y usaba una variable `n` fantasma).
+    const el = await conCafe();
+    const pos = el as unknown as { updateComplete: Promise<unknown>; orderId?: string };
+
+    el.dispatchEvent(new CustomEvent('erp:order-context', {
+      detail: { table_id: 'm9', label: 'Mesa 9', order_id: 'o9' }, bubbles: true, composed: true,
+    }));
+    await new Promise((r) => setTimeout(r, 0));
+    await pos.updateComplete;
+
+    const dialogo = el.shadowRoot!.querySelector('dialog.dirty-dialog');
+    expect(dialogo, 'carrito de barra a medias → se pregunta').toBeTruthy();
+    (dialogo!.querySelector('ion-button.park-opt') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    await pos.updateComplete;
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(comandos.some((c) => c.name === 'sales.order.void'), 'aparcar JAMÁS anula').toBe(false);
+    expect(comandos.some((c) => c.name === 'sales.order.set_label'), 'la aparcada queda con nombre').toBe(true);
+    expect(pos.orderId, 'y se abre la comanda de la mesa tocada').toBe('o9');
+  });
+});
+
 // ── Sheet de cobro = pantalla de TENDER (rediseño TPV 2026-07-19) ─────────────────────────────
 // Todos los TPV del mercado (Loyverse, Square, Toast, Lightspeed…) cobran igual: UN botón Cobrar
 // que abre la pantalla de tender, y AHÍ se elige el método (efectivo/tarjeta), se teclea lo

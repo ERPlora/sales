@@ -833,6 +833,9 @@ pub fn open_order_pure(input: Value) -> Result<Output, String> {
     h.insert("status".into(), json!("open")); // ciclo de vida: open → completed → voided (ADR-0141)
     h.insert("provisional_total".into(), json!(provisional_total)); // céntimos, recalculable
     h.insert("notes".into(), json!(str_or(&payload, "notes", "")));
+    // Etiqueta OPACA de la cuenta («Mesa 4», «Ana — terraza», «15:07»): es lo que la hace
+    // reconocible en la lista de cuentas abiertas. `sales` no la interpreta (ADR-0144).
+    h.insert("label".into(), json!(str_or(&payload, "label", "")));
     h.insert("source_module".into(), json!(str_or(&payload, "source_module", "pos")));
     // created_by/created_at/hub_id los inyecta el SQL desde el contexto (:current_user_id, :now,
     // :hub_id), igual que `_insert_sale` — el WASM no los pasa.
@@ -950,6 +953,27 @@ mod tests {
         assert!(!out.operations.iter().any(|o| o.command == "sales._mark_order_line_paid"));
         assert!(out.operations.iter().any(|o| o.command == "sales._complete_order"),
                 "el cobro entero SÍ cierra el pedido");
+    }
+
+    #[test]
+    fn abrir_un_pedido_persiste_su_etiqueta_opaca() {
+        // La etiqueta («Mesa 4», «Ana — terraza», «15:07») es lo que hace RECUPERABLE una cuenta
+        // abierta: sin ella la lista de aparcados salía anónima (solo total+hora) y los tiquets
+        // «desaparecían» a la vista. Opaca como la del disparo a cocina (ADR-0144): `sales` no
+        // sabe si es una mesa o un nombre — la escribe quien la conoce.
+        let mut inp = input(json!([{ "product_name": "Menú", "price": 500, "quantity": 1_000_000 }]), 2, 0);
+        inp["payload"]["label"] = json!("Mesa 4");
+        let out = orden(inp);
+        let header = out.operations.iter().find(|o| o.command == "sales._insert_order").expect("cabecera");
+        assert_eq!(header.params["label"], json!("Mesa 4"));
+    }
+
+    #[test]
+    fn abrir_sin_etiqueta_deja_cadena_vacia() {
+        // Cuenta de barra sin nombre: etiqueta vacía, nunca NULL ni ausente — el SQL bindea :label.
+        let out = orden(input(json!([{ "product_name": "Menú", "price": 500, "quantity": 1_000_000 }]), 2, 0));
+        let header = out.operations.iter().find(|o| o.command == "sales._insert_order").expect("cabecera");
+        assert_eq!(header.params["label"], json!(""));
     }
 
     #[test]

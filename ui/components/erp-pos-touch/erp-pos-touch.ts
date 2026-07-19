@@ -7,6 +7,7 @@ import { renderDocumentModal } from '../../lib/document-modal.js';
 import { orderToPrebill } from '../../lib/document-mappers.js';
 import { receiptToPrintableHtml, printHtmlInIframe } from '../../lib/receipt-html.js';
 import { decideOnTableChange } from '../../lib/table-switch.js';
+import { defaultParkLabel } from '../../lib/park-label.js';
 import { buildFirePayload } from '../../lib/fire-order.js';
 import { createSerialQueue } from '../../lib/serial-queue.js';
 import { splitPayload, splitTotal } from '../../lib/split-selection.js';
@@ -239,9 +240,24 @@ export class ErpPosTouch extends LitElement {
     .pdrop { position:absolute; top:2.9rem; right:.5rem; z-index:41; width:min(20rem,90%); background:var(--tile);
       border:1px solid var(--ion-border-color); border-radius:12px; box-shadow:0 12px 32px rgba(0,0,0,.5); padding:.5rem; max-height:60%; overflow:auto; }
     .pdrop .hint { color:var(--mut); font-size:.82rem; margin:.3rem .2rem .5rem; }
-    .pitem { display:flex; justify-content:space-between; align-items:center; gap:.6rem; border:1px solid var(--ion-border-color); border-radius:10px; padding:.45rem .6rem; margin-bottom:.35rem; }
+    .pitem { display:flex; justify-content:space-between; align-items:center; gap:.3rem; border:1px solid var(--ion-border-color); border-radius:10px; padding:.2rem .3rem .2rem .6rem; margin-bottom:.35rem; }
+    /* La FILA entera recupera: botón de verdad (accesible), sin pintas de botón. */
+    .prow { flex:1; display:flex; flex-direction:column; align-items:flex-start; gap:.1rem;
+      background:none; border:none; padding:.3rem 0; text-align:left; cursor:pointer; color:var(--tx); }
     .pn { font-weight:700; font-size:.9rem; }
     .pm { color:var(--mut); font-size:.78rem; }
+    .pdel { margin:0; }
+
+    /* Diálogos nativos (top layer): aparcar-con-nombre y carrito sucio. */
+    dialog.park-dialog, dialog.dirty-dialog { border:1px solid var(--ion-border-color); border-radius:14px;
+      background:var(--panel); color:var(--tx); padding:1rem 1.1rem; width:min(94vw,24rem);
+      box-shadow:0 18px 50px rgba(0,0,0,.35); }
+    dialog.park-dialog::backdrop, dialog.dirty-dialog::backdrop { background:rgba(0,0,0,.45); }
+    dialog h3 { margin:0 0 .5rem; font-size:1.05rem; }
+    dialog p { margin:0 0 .8rem; color:var(--mut); }
+    dialog.park-dialog input { width:100%; box-sizing:border-box; font-size:1rem; padding:.6rem .7rem;
+      border-radius:10px; border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); }
+    .dlg-actions { display:flex; justify-content:flex-end; gap:.4rem; margin-top:.9rem; flex-wrap:wrap; }
     .badge-num { font-size:.62rem; min-width:1rem; height:1rem; padding:0 .2rem; border-radius:999px; background:var(--accent); color:#fff; display:inline-flex; align-items:center; justify-content:center; position:absolute; top:.2rem; right:.2rem; }
 
     /* botón flotante de carrito (solo móvil) */
@@ -319,6 +335,16 @@ export class ErpPosTouch extends LitElement {
   @state() private orderId?: string;
   /** Modal de la CUENTA previa (pre-bill) que se lleva a la mesa antes de cobrar. No es fiscal. */
   @state() private prebillOpen = false;
+  /** Diálogo del NOMBRE al aparcar sin mesa (default: la hora, editable de un toque). */
+  @state() private parkPromptOpen = false;
+  @state() private parkName = '';
+  /** Diálogo «¿aparcar o eliminar la cuenta actual?» (solo con carrito sucio SIN mesa). */
+  @state() private dirtyOpen = false;
+  @state() private dirtyAllowCancel = false;
+  private dirtyResolve?: (c: 'park' | 'discard' | 'cancel') => void;
+  /** Borrado en DOS toques de una cuenta de la lista: el primero arma, el segundo anula. */
+  @state() private armedDelete?: string;
+  private armedTimer?: ReturnType<typeof setTimeout>;
   /** Preferencia del cobro: imprimir el tiquet al confirmar. Sustituye al 2º botón azul gemelo. */
   @state() private printOnCharge = true;
   @state() private tableLabel = '';
@@ -356,17 +382,18 @@ export class ErpPosTouch extends LitElement {
       targetOrderId: d.order_id ?? undefined,
     });
 
-    // Aparca la comanda de delante como ticket recuperable (no se mezcla sola con la de la mesa:
-    // juntar dos cuentas es FUSIONAR, una acción explícita).
-    const aparcar = async () => {
-      await this.park();
-      if (this.orderId) await erplora().command('sales.order.void', { order_id: this.orderId }).catch(() => undefined);
-      this.parked = await listOpenChecks(erplora(), this.orderId);
-      if (n) this.error = t('ui.parkedAs', { number: n });
+    // La comanda de delante no se mezcla sola con la de la mesa (juntar dos cuentas es FUSIONAR,
+    // una acción explícita). `park-then-*` solo ocurre con carrito de BARRA (sin mesa): se
+    // PREGUNTA qué hacer — aparcar con nombre o eliminar (decisión Ioan 2026-07-19). Aparcar
+    // JAMÁS anula: el `sales.order.void` que vivía aquí hacía «desaparecer» los aparcados.
+    const aparcarOEliminar = async () => {
+      const eleccion = await this.resolveDirtyCart(false);
+      if (eleccion === 'discard') await this.discardCurrent();
+      else await this.parkWith(defaultParkLabel('', new Date()));
     };
 
     if (accion === 'clear' || accion === 'park-then-clear') {
-      if (accion === 'park-then-clear') await aparcar();
+      if (accion === 'park-then-clear') await aparcarOEliminar();
       this.tableId = undefined; this.tableLabel = '';
       this.orderId = undefined; this.cart = [];
       return;
@@ -389,7 +416,7 @@ export class ErpPosTouch extends LitElement {
       return;
     }
 
-    if (accion === 'park-then-load') await aparcar();
+    if (accion === 'park-then-load') await aparcarOEliminar();
 
     // Abrir la comanda de la mesa (o empezar en blanco si no tiene).
     this.tableId = nextTable; this.tableLabel = d.label ?? '';
@@ -560,6 +587,19 @@ export class ErpPosTouch extends LitElement {
 
   protected updated(_changed: Map<PropertyKey, unknown>) {
     this.ensureSlotsMounted();
+    // Los <dialog> se abren MODALES (top layer): inmunes al transform del drawer del carrito
+    // (gotcha conocido: un overlay fixed dentro de un ancestro con transform queda atrapado).
+    // El atributo `open` del markup ya los muestra donde showModal no exista (happy-dom).
+    for (const d of this.renderRoot.querySelectorAll<HTMLDialogElement>('dialog.park-dialog, dialog.dirty-dialog')) {
+      try {
+        if (typeof d.showModal === 'function' && !d.matches(':modal')) { d.close(); d.showModal(); }
+      } catch { /* sin soporte (happy-dom) o pseudo-clase desconocida: el atributo open basta */ }
+    }
+    if (this.parkPromptOpen) {
+      const campo = this.renderRoot.querySelector<HTMLInputElement>('dialog.park-dialog input');
+      // El default (la hora) va PRE-SELECCIONADO: teclear lo sobreescribe de un toque.
+      if (campo && document.activeElement !== campo) { campo.focus(); campo.select(); }
+    }
     // ADR-0141: YA NO se guarda el carrito aquí. Antes esto era un debounce de 400 ms que escribía
     // un blob JSON: si se iba la luz (o moría la tablet) dentro de esa ventana, el último artículo
     // se perdía. Ahora cada mutación (add/qty/invitación/quitar) escribe su FILA en el pedido de
@@ -612,15 +652,98 @@ export class ErpPosTouch extends LitElement {
     this.tableId = undefined;
     this.tableLabel = '';
     this.parkedOpen = false;
+    // Ya no hay cuenta delante: la recién aparcada SÍ debe salir en la lista.
+    this.parked = await listOpenChecks(erplora());
+  }
+
+  /** Punto de entrada de APARCAR (botón «Aparcar esta cuenta»). Con mesa no se pregunta nada: el
+   *  nombre ES la mesa (una pulsación). Sin mesa se pide un nombre, con la hora como default
+   *  (patrón Loyverse) pre-seleccionada para sobreescribirla de un toque. */
+  private async requestPark(): Promise<void> {
+    if (!this.cart.length) return;
+    const mesa = this.tableLabel.trim();
+    if (mesa) { await this.parkWith(mesa); return; }
+    this.parkName = defaultParkLabel('', new Date());
+    this.parkedOpen = false;
+    this.parkPromptOpen = true;
+  }
+
+  /** Aparca la cuenta actual CON nombre: persiste la etiqueta y luego suelta la pantalla.
+   *  Aparcar JAMÁS anula (`sales.order.void` solo sale de una decisión explícita de eliminar) —
+   *  el void que vivía aquí era la causa de «los tiquets aparcados desaparecen». */
+  private async parkWith(label: string): Promise<void> {
+    const id = this.orderId;
+    const nombre = label.trim() || defaultParkLabel('', new Date());
+    if (id) await erplora().command('sales.order.set_label', { order_id: id, label: nombre }).catch(() => undefined);
+    await this.park();
+    erplora().notify?.({ type: 'success', message: t('ui.parkedToast', { name: nombre }) });
+  }
+
+  /** ELIMINAR la cuenta actual (decisión explícita del diálogo de carrito sucio): anula el pedido
+   *  y limpia la pantalla. El rastro queda (`voided`), no se borra nada. */
+  private async discardCurrent(): Promise<void> {
+    const id = this.orderId;
+    if (id) await erplora().command('sales.order.void', { order_id: id }).catch(() => undefined);
+    forgetCurrentCheck(localStorage);
+    this.orderId = undefined;
+    this.cart = [];
+    this.resetSlotContexts();
+  }
+
+  /** Abre el diálogo «¿aparcar o eliminar?» y espera la decisión. `allowCancel` solo al recuperar
+   *  desde la lista (al tocar una mesa el filler ya cambió su selección: cancelar dejaría a los
+   *  dos descoordinados, así que ahí solo hay aparcar/eliminar y cerrar equivale a aparcar). */
+  private resolveDirtyCart(allowCancel: boolean): Promise<'park' | 'discard' | 'cancel'> {
+    this.dirtyAllowCancel = allowCancel;
+    this.dirtyOpen = true;
+    return new Promise((res) => { this.dirtyResolve = res; });
+  }
+
+  private answerDirty(c: 'park' | 'discard' | 'cancel'): void {
+    this.dirtyOpen = false;
+    const res = this.dirtyResolve;
+    this.dirtyResolve = undefined;
+    res?.(c);
+  }
+
+  /** Eliminar una cuenta DE LA LISTA, en dos toques (armar → confirmar). Anula el pedido
+   *  (`voided`, con rastro) — nunca de un roce: el primer toque solo cambia el icono. */
+  private async deleteCheck(oc: OpenCheck): Promise<void> {
+    if (this.armedDelete !== oc.id) {
+      this.armedDelete = oc.id;
+      if (this.armedTimer) clearTimeout(this.armedTimer);
+      this.armedTimer = setTimeout(() => { this.armedDelete = undefined; }, 3000);
+      return;
+    }
+    if (this.armedTimer) { clearTimeout(this.armedTimer); this.armedTimer = undefined; }
+    this.armedDelete = undefined;
+    await erplora().command('sales.order.void', { order_id: oc.id }).catch(() => undefined);
     this.parked = await listOpenChecks(erplora(), this.orderId);
   }
 
-  /** Recuperar una cuenta abierta = CAMBIAR de cuenta, igual que tocar otra mesa. Antes estaba
-   *  bloqueado si tenías algo marcado; ahora lo de delante se aparca (sigue abierto) y se abre la
-   *  elegida, que es lo que hace cualquier TPV de sala. */
+  /** Recuperar una cuenta abierta = CAMBIAR de cuenta, igual que tocar otra mesa. Qué pasa con lo
+   *  de delante (decisión Ioan 2026-07-19): si tiene MESA, se queda EN SU MESA — ni se aparca ni
+   *  se suelta la sesión, recuperable tocándola (patrón Toast/Lightspeed) — y se avisa con toast;
+   *  sin mesa, se PREGUNTA: aparcar (con la hora de nombre) o eliminar. */
   private async retrieve(c: OpenCheck) {
     try {
-      if (this.cart.length && this.orderId !== c.id) await this.park();
+      if (this.cart.length && this.orderId !== c.id) {
+        if (this.tableId) {
+          const donde = this.tableLabel;
+          // La etiqueta de la cuenta que se queda = su mesa, para que la lista la muestre bien.
+          if (this.orderId && donde) {
+            await erplora().command('sales.order.set_label', { order_id: this.orderId, label: donde }).catch(() => undefined);
+          }
+          erplora().notify?.({ type: 'success', message: t('ui.leftAtTable', { label: donde }) });
+          this.tableId = undefined; this.tableLabel = '';
+        } else {
+          this.parkedOpen = false;
+          const eleccion = await this.resolveDirtyCart(true);
+          if (eleccion === 'cancel') return;
+          if (eleccion === 'discard') await this.discardCurrent();
+          else await this.parkWith(defaultParkLabel('', new Date()));
+        }
+      }
       this.orderId = c.id;
       rememberCurrentCheck(localStorage, c.id);
       this.cart = await loadOrderLines(erplora(), c.id);
@@ -708,7 +831,8 @@ export class ErpPosTouch extends LitElement {
 
   private async ensureOrder(first: CartLine): Promise<string> {
     if (this.orderId) return this.orderId;
-    this.orderId = await openOrderWithLines(erplora(), [first]);
+    // Si ya hay mesa elegida, el pedido nace ETIQUETADO con ella (lista de cuentas legible).
+    this.orderId = await openOrderWithLines(erplora(), [first], this.tableLabel);
     rememberCurrentCheck(localStorage, this.orderId);
     // Aviso a TODOS los fillers: cada uno enlaza lo suyo si tiene algo seleccionado (la mesa en
     // `tables`, el cliente en `customers`). `sales` no sabe qué enlazan ni le importa.
@@ -1049,16 +1173,22 @@ export class ErpPosTouch extends LitElement {
         ? html`
           <div class="pdrop-back" @click=${() => { this.parkedOpen = false; }}></div>
           <div class="pdrop">
-            <ion-button size="small" expand="block" fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>${t('ui.parkCurrentSale')}</ion-button>
+            <ion-button size="small" expand="block" fill="outline" ?disabled=${!this.cart.length} @click=${() => void this.requestPark()}>${t('ui.parkCurrentSale')}</ion-button>
             <p class="hint">${t('ui.parkedTickets')}</p>
             ${this.parked.map((oc) => html`<div class="pitem">
-              <div>
-                <div class="pn">${oc.label || this.money(oc.total)}</div>
-                <div class="pm">${(oc.created_at || '').replace('T', ' ').slice(11, 16)}${oc.label ? ' · ' + this.money(oc.total) : ''}</div>
-              </div>
-              <!-- Ya NO se bloquea con algo marcado: lo de delante se aparca (sigue abierto) y se
-                   abre la elegida, igual que al cambiar de mesa (ADR-0146). -->
-              <ion-button size="small" @click=${() => this.retrieve(oc)}>${t('ui.retrieve')}</ion-button>
+              <!-- La FILA entera recupera (objetivo táctil grande); eliminar es el icono aparte,
+                   armado en dos toques para no borrar cuentas de un roce. Ya NO se bloquea con
+                   algo marcado: lo de delante se aparca o se queda en su mesa (ADR-0146). -->
+              <button class="prow" @click=${() => this.retrieve(oc)}>
+                <span class="pn">${oc.label || this.money(oc.total)}</span>
+                <span class="pm">${(oc.created_at || '').replace('T', ' ').slice(11, 16)}${oc.label ? ' · ' + this.money(oc.total) : ''}</span>
+              </button>
+              <ion-button size="small" fill="clear" color="danger" class="pdel"
+                          title=${this.armedDelete === oc.id ? t('ui.deleteCheckConfirm') : t('ui.deleteCheck')}
+                          aria-label=${this.armedDelete === oc.id ? t('ui.deleteCheckConfirm') : t('ui.deleteCheck')}
+                          @click=${() => void this.deleteCheck(oc)}>
+                <ion-icon slot="icon-only" name=${this.armedDelete === oc.id ? 'alert-circle-outline' : 'trash-outline'}></ion-icon>
+              </ion-button>
             </div>`)}
             ${!this.parked.length ? html`<div class="hint" style="text-align:center">${t('ui.noParkedTickets')}</div>` : nothing}
           </div>`
@@ -1115,6 +1245,10 @@ export class ErpPosTouch extends LitElement {
             <ion-icon name="ticket-outline"></ion-icon>
             <ion-icon name="gift-outline"></ion-icon>
             <ion-icon name="ellipsis-horizontal-circle-outline"></ion-icon>
+            <!-- Borrado en dos toques de la lista de cuentas: el nombre del icono es DINÁMICO
+                 (trash → alert al armar), y el empaquetador solo hornea literales. -->
+            <ion-icon name="trash-outline"></ion-icon>
+            <ion-icon name="alert-circle-outline"></ion-icon>
           </span>
           <!-- El MÉTODO de pago ya no se elige aquí: vive DENTRO del sheet de cobro, como la
                pantalla de tender de cualquier TPV (rediseño 2026-07-19). El footer solo acciona. -->
@@ -1256,6 +1390,42 @@ export class ErpPosTouch extends LitElement {
             </div>
           </div>`
         : nothing}
+
+      <!-- APARCAR sin mesa: se pide un NOMBRE (default: la hora, patrón Loyverse) pre-seleccionado
+           para sobreescribirlo de un toque. <dialog> nativo: top layer, inmune al transform del
+           drawer del carrito (gotcha conocido de overlays en ancestros con transform). -->
+      ${this.parkPromptOpen ? html`
+        <dialog class="park-dialog" open>
+          <h3>${t('ui.parkTitle')}</h3>
+          <input type="text" .value=${this.parkName} placeholder=${t('ui.parkNamePlaceholder')}
+                 aria-label=${t('ui.parkNameLabel')}
+                 @input=${(e: Event) => { this.parkName = (e.target as HTMLInputElement).value; }}
+                 @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') { this.parkPromptOpen = false; void this.parkWith(this.parkName); } }} />
+          <div class="dlg-actions">
+            <ion-button fill="clear" @click=${() => { this.parkPromptOpen = false; }}>${t('ui.cancel')}</ion-button>
+            <ion-button class="park-confirm"
+                        @click=${() => { this.parkPromptOpen = false; void this.parkWith(this.parkName); }}>
+              ${t('ui.parkCurrentSale')}
+            </ion-button>
+          </div>
+        </dialog>` : nothing}
+
+      <!-- CARRITO SUCIO al recuperar/tocar mesa: ¿qué hacemos con la cuenta actual? Aparcar es la
+           salida segura (primario); eliminar anula con rastro (danger). Cancelar solo desde la
+           lista — al tocar una mesa el filler ya cambió su selección y cancelar los descoordina. -->
+      ${this.dirtyOpen ? html`
+        <dialog class="dirty-dialog" open>
+          <h3>${t('ui.dirtyCartTitle')}</h3>
+          <p>${t('ui.dirtyCartBody')}</p>
+          <div class="dlg-actions">
+            ${this.dirtyAllowCancel
+              ? html`<ion-button fill="clear" @click=${() => this.answerDirty('cancel')}>${t('ui.cancel')}</ion-button>`
+              : nothing}
+            <ion-button class="discard-opt" color="danger" fill="outline"
+                        @click=${() => this.answerDirty('discard')}>${t('ui.discardAndOpen')}</ion-button>
+            <ion-button class="park-opt" @click=${() => this.answerDirty('park')}>${t('ui.parkAndOpen')}</ion-button>
+          </div>
+        </dialog>` : nothing}
 
       <!-- Buscador de productos = ok-spotlight-search (OutfitKit): overlay translúcido flotante que
            NO empuja la rejilla. La lupa del catbar controla su apertura. Al pulsar un resultado se
