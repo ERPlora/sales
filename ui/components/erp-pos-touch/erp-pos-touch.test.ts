@@ -15,6 +15,7 @@
 // happy-dom NO hace layout: aquí se fija el CONTRATO (qué se pinta y con qué clases). Que el pie
 // quede visualmente abajo se verifica en un navegador real.
 import { beforeEach, describe, expect, it } from 'vitest';
+import esCatalog from '../../../locales/es.json';
 
 // El WC llama al SDK en cuanto se monta. Sin esto, `connectedCallback` peta y no pinta nada.
 const slotsPedidos: string[] = [];
@@ -86,6 +87,29 @@ describe('carrito del TPV', () => {
     expect(cart.lastElementChild, 'el pie es el último elemento del carrito').toBe(pie);
   });
 
+  it('Aparcar usa un icono de pausa y no una X que parezca cerrar o eliminar', async () => {
+    const el = await montarCarrito();
+    const boton = el.shadowRoot!.querySelector<HTMLElement>(
+      'ion-button.header-action[aria-label="ui.parkCurrentSale"]',
+    );
+
+    expect(boton, 'falta la acción Aparcar').toBeTruthy();
+    expect(boton?.querySelector('ion-icon[slot="icon-only"]')?.getAttribute('name')).toBe('pause-circle-outline');
+    expect(boton?.querySelector('small'), 'no mezcla icono y texto en el espacio de un icon-only').toBeNull();
+  });
+
+  it('Cuentas abiertas usa el mismo patrón icon-only y conserva su nombre accesible', async () => {
+    const el = await montarCarrito();
+    const boton = el.shadowRoot!.querySelector<HTMLElement>(
+      'ion-button.open-checks-action[aria-label="ui.parkedTickets"]',
+    );
+
+    expect(boton, 'falta la acción Cuentas abiertas').toBeTruthy();
+    expect(boton?.querySelector('ion-icon[slot="icon-only"]')?.getAttribute('name')).toBe('receipt-outline');
+    expect(boton?.querySelector('small'), 'el nombre no debe quedar truncado dentro del botón').toBeNull();
+    expect(boton?.getAttribute('title')).toBe('ui.parkedTickets');
+  });
+
   it('las líneas (y el estado vacío) van DENTRO del ion-content, que es quien scrollea', async () => {
     const el = await montarCarrito();
     const content = el.shadowRoot!.querySelector('aside.cart > ion-content')!;
@@ -114,26 +138,21 @@ describe('carrito del TPV', () => {
     // Se pide por el canal cross-módulo (ADR-0043), con el slot único de asignación.
     expect(slotsPedidos, 'el POS debe pedir el slot `sales.pos.assign` al SDK').toContain('sales.pos.assign');
 
-    // Los fillers se montan en el contenedor del header, DENTRO del ion-buttons de la toolbar.
+    // Los fillers se montan en la barra de acciones del header.
     const host = el.shadowRoot!.querySelector('.cart-actions-slot');
     expect(host, 'el header expone `.cart-actions-slot` para los botones de los módulos').toBeTruthy();
-    expect(host?.closest('ion-buttons'), 'el contenedor va dentro de un ion-buttons de la toolbar').toBeTruthy();
+    expect(host?.closest('.order-toolbar'), 'el contenedor vive en la barra de acciones').toBeTruthy();
     expect(host?.querySelector('erp-fake-mesa'), 'monta el botón de mesa').toBeTruthy();
     expect(host?.querySelector('erp-fake-cliente'), 'monta el botón de cliente').toBeTruthy();
   });
 });
 
-// ── La mesa se pintaba DOS VECES (visto en el TPV real, 2026-07-18) ───────────────────────────
-// Con una mesa asignada salían dos chips «Mesa 2» solapados en la cabecera del carrito: uno lo
-// pintaba `sales` (`<span class="chip">`, resto de cuando el POS creía saber de mesas) y otro
-// `tables` (`ion-chip` con icono y la X de soltar) desde el slot `sales.pos.assign`.
-//
-// El dueño de la asociación mesa↔comanda es `tables` (ADR-0141/0144), y su chip es el único que
-// lleva la X: el de `sales` sobra. El del CLIENTE se queda, y no es una asimetría caprichosa —
-// `erp-customers-pos-search` monta un `ok-spotlight-search` que pone el nombre solo en
-// `aria-label`/`title`, así que sin este chip el cliente asignado no se vería en ninguna parte.
-describe('contexto en la cabecera del carrito: cada dueño pinta lo suyo, una sola vez', () => {
-  it('la MESA no la pinta el POS: es de `tables`, que ya trae su chip con la X', async () => {
+// ── Mesa y cliente aparecen como CONTEXTO; sus botones quedan libres (decisión Ioan 2026-07-20) ─
+// Los módulos son dueños de las asociaciones y los selectores. Sales recibe solo etiquetas opacas
+// y las muestra juntas bajo el título: así el botón de Mesa no desaparece al asignar Mesa 2 y se
+// puede usar inmediatamente para cambiar/asignar otra. Tables ya no aporta un segundo chip.
+describe('contexto de la cuenta: mesa y cliente visibles con sus selectores libres', () => {
+  it('la MESA se muestra una sola vez en el bloque de contexto de la cuenta', async () => {
     const el = await montarCarrito();
 
     el.dispatchEvent(new CustomEvent('erp:order-context', {
@@ -141,8 +160,31 @@ describe('contexto en la cabecera del carrito: cada dueño pinta lo suyo, una so
     }));
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
 
-    const textos = [...el.shadowRoot!.querySelectorAll('.ctx-chips .chip')].map((c) => c.textContent?.trim());
-    expect(textos, 'el POS no debe repetir la etiqueta de la mesa (la pinta `tables`)').not.toContain('Mesa 2');
+    const textos = [...el.shadowRoot!.querySelectorAll('.order-context ion-chip')].map((c) => c.textContent?.trim());
+    expect(textos.filter((x) => x === 'Mesa 2'), 'la etiqueta opaca aparece exactamente una vez')
+      .toHaveLength(1);
+  });
+
+  it('al restaurar la mesa del mismo pedido adopta su contexto sin abrir cuenta a medias', async () => {
+    const el = await montarCarrito();
+    const pos = el as unknown as {
+      orderId?: string; orderLabel: string; cart: Array<Record<string, unknown>>;
+      tableId?: string; tableLabel: string; dirtyOpen: boolean;
+      updateComplete: Promise<unknown>;
+    };
+    pos.orderId = 'o1';
+    pos.orderLabel = 'Cena terraza';
+    pos.cart = [{ id: 'l1', product_id: 'p1', name: 'Café', qty: 1, price: 180 }];
+
+    el.dispatchEvent(new CustomEvent('erp:order-context', {
+      detail: { table_id: 'm6', label: 'Mesa 6', order_id: 'o1' }, bubbles: true, composed: true,
+    }));
+    await pos.updateComplete;
+
+    expect(pos.tableId).toBe('m6');
+    expect(pos.tableLabel).toBe('Mesa 6');
+    expect(pos.orderLabel, 'el título editado del ticket se conserva').toBe('Cena terraza');
+    expect(pos.dirtyOpen, 'no es otra cuenta: no se pide aparcar ni descartar').toBe(false);
   });
 
   it('el CLIENTE sí lo pinta el POS: `ok-spotlight-search` solo lo deja en el aria-label', async () => {
@@ -154,24 +196,82 @@ describe('contexto en la cabecera del carrito: cada dueño pinta lo suyo, una so
     }));
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
 
-    const cust = el.shadowRoot!.querySelector('.ctx-chips .chip.cust');
+    const cust = el.shadowRoot!.querySelector('.order-context ion-chip');
     expect(cust?.textContent?.trim(), 'el nombre del cliente asignado tiene que verse').toBe('Ana Ruiz');
   });
 
-  it('sin nada asignado no se pinta el contenedor de chips', async () => {
+  it('sin nada asignado muestra que la cuenta no tiene contexto', async () => {
     const el = await montarCarrito();
-    expect(el.shadowRoot!.querySelector('.ctx-chips')).toBeFalsy();
+    expect(el.shadowRoot!.querySelector('.order-context .context-empty')?.textContent?.trim())
+      .toBe('ui.noCheckContext');
   });
 
-  // La mesa deja de PINTARSE, pero `sales` sigue necesitando su etiqueta: viaja OPACA en la comanda
-  // que se manda a cocina (ADR-0144). Borrar el chip no puede llevarse por delante el estado.
-  it('aunque no se pinte, el POS conserva la etiqueta de mesa para la comanda de cocina', async () => {
+  it('el lápiz es un botón real y lleva el foco al título editable', async () => {
+    const el = await montarCarrito();
+    const editar = el.shadowRoot!.querySelector<HTMLButtonElement>('button.title-edit')!;
+    const titulo = el.shadowRoot!.querySelector<HTMLInputElement>('input.order-title')!;
+
+    expect(editar.getAttribute('aria-label')).toBe('ui.editCheckTitle');
+    editar.click();
+
+    expect(el.shadowRoot!.activeElement, 'el título queda listo para escribir, no parece bloqueado').toBe(titulo);
+    expect((esCatalog as { ui: Record<string, string> }).ui.parkNameHint)
+      .toContain('opcional');
+  });
+
+  // La etiqueta también viaja OPACA en la comanda que se manda a cocina (ADR-0144).
+  it('el POS conserva la etiqueta de mesa para la comanda de cocina', async () => {
     const el = await montarCarrito();
     el.dispatchEvent(new CustomEvent('erp:order-context', {
       detail: { table_id: 'm2', label: 'Mesa 2' }, bubbles: true, composed: true,
     }));
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
     expect((el as unknown as { tableLabel: string }).tableLabel).toBe('Mesa 2');
+  });
+});
+
+describe('categorías: desbordamiento horizontal', () => {
+  it('usa el ion-segment scrollable de Ionic en lugar de botones sueltos', async () => {
+    const el = await montarCarrito();
+    const seg = el.shadowRoot!.querySelector<HTMLElement>('ion-segment.category-segment');
+
+    expect(seg, 'falta el segmento de categorías').toBeTruthy();
+    expect(seg?.hasAttribute('scrollable'), 'Ionic debe gestionar el desplazamiento horizontal').toBe(true);
+    expect(seg?.classList.contains('ok-tabbar'), 'reutiliza la pista de overflow de la bottom bar').toBe(true);
+    expect(seg?.querySelector('ion-segment-button[value=""]'), 'Todos también es una opción del segmento').toBeTruthy();
+    expect(el.shadowRoot!.querySelector('.catcard'), 'no quedan los botones de categoría antiguos').toBeNull();
+  });
+
+  it('indica en qué borde quedan categorías ocultas, igual que la bottom bar', async () => {
+    const el = await montarCarrito();
+    const seg = el.shadowRoot!.querySelector<HTMLElement>('ion-segment.category-segment')!;
+    Object.defineProperty(seg, 'clientWidth', { configurable: true, value: 400 });
+    Object.defineProperty(seg, 'scrollWidth', { configurable: true, value: 1200 });
+
+    seg.scrollLeft = 0;
+    seg.dispatchEvent(new Event('scroll'));
+    expect(seg.dataset.overflow).toBe('end');
+
+    seg.scrollLeft = 200;
+    seg.dispatchEvent(new Event('scroll'));
+    expect(seg.dataset.overflow).toBe('both');
+
+    seg.scrollLeft = 800;
+    seg.dispatchEvent(new Event('scroll'));
+    expect(seg.dataset.overflow).toBe('start');
+    el.remove();
+  });
+
+  it('convierte la rueda vertical en desplazamiento horizontal cuando las categorías no caben', async () => {
+    const el = await montarCarrito();
+    const seg = el.shadowRoot!.querySelector<HTMLElement>('ion-segment.category-segment')!;
+    Object.defineProperty(seg, 'clientWidth', { configurable: true, value: 400 });
+    Object.defineProperty(seg, 'scrollWidth', { configurable: true, value: 1200 });
+    seg.scrollLeft = 0;
+
+    seg.dispatchEvent(new WheelEvent('wheel', { deltaY: 160, cancelable: true, bubbles: true }));
+
+    expect(seg.scrollLeft, 'rueda/trackpad descubre las categorías que quedan a la derecha').toBe(160);
   });
 });
 
@@ -494,7 +594,7 @@ describe('avisos de éxito: van por notify(), no por el hueco rojo de error', ()
   });
 });
 
-// ── Secciones por DATO, sin toggle (debate con Ioan 2026-07-19, 2ª ronda) ─────────────────────
+// ── Cuenta + Comanda actual cuando Cocina aporta sus slots ───────────────────────────────────
 // El vertical NO es un ajuste: la funcionalidad se pone y se quita INSTALANDO MÓDULOS
 // (composición de lo básico a lo complejo). El carrito de sales es UNIVERSAL: plano mientras
 // nada se haya enviado a producción; en cuanto alguna línea lleva `fired_at` (alguien disparó
@@ -550,13 +650,14 @@ describe('carrito universal: secciones Pendiente/Enviado emergen del dato', () =
     expect(el.shadowRoot!.querySelector('.course'), 'sin grupos de comanda inline').toBeFalsy();
   });
 
-  it('sin nada enviado (tienda, peluquería, bar sin cocina): carrito plano, cero secciones', async () => {
+  it('con Cocina activa pero sin envíos, Cuenta sigue limpia y plana; el segmento sí aparece', async () => {
     const el = await montarCarrito();
     const pos = el as unknown as { cart: unknown[]; updateComplete: Promise<unknown> };
     pos.cart = [pendiente];
     await pos.updateComplete;
-    expect(el.shadowRoot!.querySelector('.sec'), 'sin secciones').toBeFalsy();
-    expect(el.shadowRoot!.querySelector('ion-list.lines'), 'la lista plana de siempre').toBeTruthy();
+    expect(el.shadowRoot!.querySelector('.sec'), 'las secciones nacen cuando hay datos enviados').toBeFalsy();
+    expect(el.shadowRoot!.querySelector('ion-list.lines'), 'la cuenta muestra sus líneas').toBeTruthy();
+    expect(el.shadowRoot!.querySelector('ion-segment.view-tabs'), 'Cocina añade Cuenta/Comanda actual').toBeTruthy();
   });
 
   it('el slot sales.pos.order_info se monta en la cabecera de ENVIADO (ahí vive el chip de kitchen)', async () => {
@@ -593,16 +694,16 @@ describe('carrito universal: secciones Pendiente/Enviado emergen del dato', () =
   });
 });
 
-// ── El botón de COCINA ya no es del POS: entra por el slot del footer (2026-07-19) ────────────
+// ── Cocina entra por slot dentro de Comanda actual ───────────────────────────────────────────
 // «Enviar a cocina» vivía hardcodeado en el footer y lo veían peluquerías y tiendas sin cocina.
-// Ahora el POS expone un SEGUNDO slot, `sales.pos.actions` (footer), y es `kitchen` quien aporta
-// el botón (erp-kitchen-pos-fire). Contrato por CustomEvents (ADR-0043, decisión Ioan 2026-07-19):
+// `kitchen` aporta el botón por `sales.pos.actions`, y sales lo coloca dentro de la vista temporal
+// Comanda actual. Contrato por CustomEvents (ADR-0043, decisión Ioan 2026-07-19):
 //   host → filler  `erp:pos-state {order_id?, items_count, label, channel}` al montar y en cada
 //                  cambio de carrito/mesa (sobre el elemento, como `erp:order-restored`).
 //   filler → host  `erp:order-fire {}` → el HOST ejecuta su `sales.order.fire` (el estado del
 //                  carrito vive aquí; al filler no viaja ninguna línea).
-// Sin fillers, el footer queda limpio: ni botón ni hueco.
-describe('slot del footer sales.pos.actions: cocina inyectada, no hardcodeada', () => {
+// Sin fillers desaparecen tanto la acción como la segunda vista.
+describe('slot sales.pos.actions: cocina inyectada dentro de Comanda actual', () => {
   let comandos: string[];
 
   beforeEach(() => {
@@ -623,38 +724,66 @@ describe('slot del footer sales.pos.actions: cocina inyectada, no hardcodeada', 
 
   async function conCafe() {
     const el = await montarCarrito();
+    (el as unknown as { orderView: 'draft' }).orderView = 'draft';
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
     el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
     await (el as unknown as { queue: <T>(t: () => Promise<T>) => Promise<T> }).queue(async () => undefined);
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
     return el;
   }
 
-  it('pide el slot del footer y monta el filler en .foot-actions; el botón hardcodeado YA NO existe', async () => {
+  it('pide el slot y monta el filler en .draft-actions-slot; el footer queda solo para cobrar', async () => {
     const el = await montarCarrito();
+    (el as unknown as { orderView: 'draft' }).orderView = 'draft';
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
 
-    expect(slotsPedidos, 'el POS pide también el slot del footer').toContain('sales.pos.actions');
-    const filler = el.shadowRoot!.querySelector('.foot-actions erp-fake-fire');
-    expect(filler, 'el filler se monta en las acciones del footer').toBeTruthy();
+    expect(slotsPedidos, 'el POS pide el slot de acciones').toContain('sales.pos.actions');
+    const filler = el.shadowRoot!.querySelector('.draft-actions-slot erp-fake-fire');
+    expect(filler, 'el filler se monta dentro de Comanda actual').toBeTruthy();
     const botones = [...el.shadowRoot!.querySelectorAll('ion-footer ion-button')];
     expect(botones.some((b) => b.getAttribute('title') === 'ui.fireToKitchen'),
       'el botón de cocina del POS (hardcodeado) desapareció').toBe(false);
   });
 
-  it('sin fillers, el footer queda limpio: ni botón de cocina ni hueco', async () => {
+  it('sin fillers desaparecen Cocina, su segmento y su hueco', async () => {
     const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
     sdk.loadSlot = async () => [];
     const el = await montarCarrito();
 
-    expect(el.shadowRoot!.querySelector('.foot-actions erp-fake-fire')).toBeFalsy();
+    expect(el.shadowRoot!.querySelector('.draft-actions-slot erp-fake-fire')).toBeFalsy();
+    expect(el.shadowRoot!.querySelector('ion-segment.view-tabs')).toBeFalsy();
     const botones = [...el.shadowRoot!.querySelectorAll('ion-footer ion-button')];
     expect(botones.some((b) => b.getAttribute('title') === 'ui.fireToKitchen'),
       'una peluquería no ve cocina').toBe(false);
   });
 
+  it('con Cocina no permite aparcar/cambiar de cuenta mientras haya productos sin enviar', async () => {
+    const el = await conCafe();
+    await (el as unknown as { requestPark(): Promise<void> }).requestPark();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    expect((el as unknown as { orderView: string }).orderView).toBe('draft');
+    const aviso = document.body.querySelector('ion-alert') as HTMLElement & {
+      isOpen: boolean; header: string; message: string;
+    };
+    expect(el.shadowRoot!.querySelector('ion-alert'),
+      'el overlay no se declara dentro del Shadow DOM: ahí se convertía en una ventana negra').toBeNull();
+    expect(aviso.isOpen, 'el bloqueo se explica en un alert de Ionic montado en body').toBe(true);
+    expect(aviso.header).toBe('ui.pendingSwitchTitle');
+    expect(aviso.message).toBe('ui.pendingBeforeSwitch');
+    expect((esCatalog as { ui: Record<string, string> }).ui.pendingBeforeSwitch)
+      .toBe('Hay productos en la comanda actual sin enviar ({count}). Envíalos o elimínalos antes de cambiar de cuenta.');
+    expect((el as unknown as { error: string }).error,
+      'no es un fallo: no debe ocupar el mensaje rojo del catálogo').toBe('');
+    expect(comandos).not.toContain('sales.order.set_label');
+  });
+
   it('el filler recibe erp:pos-state al montarse y al cambiar el carrito (con pending_count)', async () => {
     const estados: Array<{ items_count: number; pending_count: number }> = [];
     const el = await montarCarrito();
-    const filler = el.shadowRoot!.querySelector('.foot-actions erp-fake-fire')!;
+    (el as unknown as { orderView: 'draft' }).orderView = 'draft';
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    const filler = el.shadowRoot!.querySelector('.draft-actions-slot erp-fake-fire')!;
     filler.addEventListener('erp:pos-state', (e) => {
       estados.push((e as CustomEvent<{ items_count: number; pending_count: number }>).detail);
     });
@@ -671,7 +800,7 @@ describe('slot del footer sales.pos.actions: cocina inyectada, no hardcodeada', 
 
   it('erp:order-fire del filler dispara sales.order.fire del host', async () => {
     const el = await conCafe();
-    const filler = el.shadowRoot!.querySelector('.foot-actions erp-fake-fire')!;
+    const filler = el.shadowRoot!.querySelector('.draft-actions-slot erp-fake-fire')!;
 
     filler.dispatchEvent(new CustomEvent('erp:order-fire', { detail: {}, bubbles: true, composed: true }));
     await new Promise((r) => setTimeout(r, 0));
@@ -736,6 +865,18 @@ describe('cuentas abiertas: aparcar con nombre, recuperar sin perder nada', () =
     }));
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
   };
+
+  it('el título de una cuenta abierta se edita y persiste sobre el pedido real', async () => {
+    const el = await conCafe();
+    const input = el.shadowRoot!.querySelector<HTMLInputElement>('input.order-title')!;
+    input.value = 'Cumpleaños de Ana';
+    input.dispatchEvent(new Event('input'));
+    input.dispatchEvent(new Event('change'));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(comandos.find((c) => c.name === 'sales.order.set_label')?.payload)
+      .toMatchObject({ order_id: 'o1', label: 'Cumpleaños de Ana' });
+  });
 
   it('aparcar SIN mesa pide nombre (default: la hora) y lo persiste con set_label', async () => {
     const el = await conCafe();
