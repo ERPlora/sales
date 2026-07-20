@@ -1,12 +1,15 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { state } from 'lit/decorators.js';
 import { define } from '@erplora/outfitkit/define';
+import { bindTabbar } from '@erplora/outfitkit/tabbar';
 // La frontera EUROS ↔ CÉNTIMOS vive en el SDK (ADR-0123), no copiada en cada WC (como el desktop).
 import { eurosToCents } from '@erplora/module-sdk';
 import { renderDocumentModal } from '../../lib/document-modal.js';
 import { orderToPrebill } from '../../lib/document-mappers.js';
 import { receiptToPrintableHtml, printHtmlInIframe } from '../../lib/receipt-html.js';
 import { decideOnTableChange } from '../../lib/table-switch.js';
+import { defaultParkLabel } from '../../lib/park-label.js';
+import { pendingLines, nextRoundNo, isLineLocked } from '../../lib/rounds.js';
 import { buildFirePayload } from '../../lib/fire-order.js';
 import { createSerialQueue } from '../../lib/serial-queue.js';
 import { splitPayload, splitTotal } from '../../lib/split-selection.js';
@@ -14,9 +17,11 @@ import { forgetCurrentCheck, rememberCurrentCheck, resolveCurrentCheck } from '.
 import { brandSvgFor } from '../../lib/brand-icons.js';
 import { priceLabel } from '../../lib/price-label.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
-import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod } from '../../lib/pay-icons.js';
+import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod, payMethodDisplayName } from '../../lib/pay-icons.js';
 import '@erplora/outfitkit/ok-qty-stepper';
 import '@erplora/outfitkit/ok-spotlight-search';
+import '@erplora/outfitkit/ok-empty-state';
+import '@erplora/outfitkit/ok-status-pill';
 import {
   mergeCartLines, listOpenChecks, type OpenCheck,
   // ADR-0141: el carrito lo respalda un PEDIDO real (filas), no un blob con debounce.
@@ -31,13 +36,11 @@ import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
-// erp-pos-touch — pantalla de venta TÁCTIL: un "canvas" oscuro de TPV. A la izquierda el catálogo
-// con su carrusel de CATEGORÍAS (tarjetas con imagen/gradiente + nº de productos, flechas ‹ ›) y la
-// rejilla de PRODUCTOS (ion-card con foto destacada). A la derecha el carrito: cabecera con los
-// "hooks" de contexto (mesa `tables` / cliente `customers`, ADR-0043) + desplegable de tickets
-// aparcados + pantalla completa, la lista (ion-list + ok-qty-stepper) y el pie con Total + Cobrar
-// (naranja). En móvil el carrito se recoge a un drawer abierto desde un botón flotante naranja.
-// Quitar línea = cantidad a 0. Al cobrar: `sales.complete_sale` (channel='pos') → documento.
+// erp-pos-touch — pantalla de venta TÁCTIL. A la izquierda conserva el catálogo del Hub con un
+// segmento horizontal de categorías y tarjetas de producto; a la derecha, la cuenta. Los módulos
+// externos añaden sus controles por slots (mesa/cliente/cocina), sin imports ni dependencias desde
+// sales. En móvil la cuenta se recoge a un drawer. Quitar línea = cantidad a 0. Al cobrar:
+// `sales.complete_sale` (channel='pos') → documento.
 
 interface Product {
   id: string; name: string; sku?: string; price: number; cost?: number; is_active?: number;
@@ -61,6 +64,14 @@ interface PosSettings {
 }
 interface Category { id: string; name: string; icon?: string; color?: string; image?: string; product_count?: number; }
 interface ProdCat { product_id: string; category_id: string; }
+interface IonicAlertElement extends HTMLElement {
+  header: string;
+  message: string;
+  buttons: Array<{ text: string; role: string }>;
+  isOpen: boolean;
+  present?: () => Promise<void>;
+  dismiss?: () => Promise<boolean>;
+}
 
 /** i18n del módulo (ADR-0055): idioma activo + traducción del catálogo `ui`. */
 interface I18nClient {
@@ -126,16 +137,37 @@ export class ErpPosTouch extends LitElement {
       background:var(--tile); color:var(--mut); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
     .arrow:hover { background:var(--tile-hi); color:var(--tx); }
     .arrow ion-icon { font-size:1.1rem; }
-    .seg { flex:1; min-width:0; display:flex; gap:.55rem; overflow-x:auto; scroll-behavior:smooth; padding:.15rem; scrollbar-width:none; }
-    .seg::-webkit-scrollbar { display:none; }
-    .catcard { flex:none; width:9.5rem; height:4.4rem; border-radius:12px; overflow:hidden; position:relative; cursor:pointer;
-      border:2px solid transparent; background:var(--tile); padding:0; text-align:left; color:#fff; }
-    .catcard .cc-img { position:absolute; inset:0; background-size:cover; background-position:center; }
-    .catcard .cc-img::after { content:''; position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,.15), rgba(0,0,0,.72)); }
-    .catcard .cc-meta { position:absolute; left:.6rem; right:.6rem; bottom:.45rem; }
-    .catcard .cc-n { font-weight:700; font-size:.92rem; line-height:1.1; }
-    .catcard .cc-c { font-size:.72rem; color:#d8d6cf; margin-top:.1rem; }
-    .catcard[aria-pressed=true] { border-color:var(--accent); }
+    ion-segment.category-segment { flex:1; min-width:0; width:auto; justify-content:flex-start;
+      overflow-x:auto; scroll-behavior:smooth;
+      overscroll-behavior-x:contain; padding:.15rem; scrollbar-width:none; --background:transparent; }
+    ion-segment.category-segment::-webkit-scrollbar { display:none; }
+    /* Mismo indicio de overflow que la bottom bar de OutfitKit. bindTabbar() publica qué borde
+       esconde opciones y estas máscaras viven aquí porque el CSS global no cruza el Shadow DOM. */
+    ion-segment.category-segment.ok-tabbar[data-overflow='end'] {
+      -webkit-mask-image:linear-gradient(to right,#000 calc(100% - var(--ok-tabbar-fade,36px)),transparent 100%);
+      mask-image:linear-gradient(to right,#000 calc(100% - var(--ok-tabbar-fade,36px)),transparent 100%);
+    }
+    ion-segment.category-segment.ok-tabbar[data-overflow='start'] {
+      -webkit-mask-image:linear-gradient(to left,#000 calc(100% - var(--ok-tabbar-fade,36px)),transparent 100%);
+      mask-image:linear-gradient(to left,#000 calc(100% - var(--ok-tabbar-fade,36px)),transparent 100%);
+    }
+    ion-segment.category-segment.ok-tabbar[data-overflow='both'] {
+      -webkit-mask-image:linear-gradient(to right,transparent 0,#000 var(--ok-tabbar-fade,36px),
+        #000 calc(100% - var(--ok-tabbar-fade,36px)),transparent 100%);
+      mask-image:linear-gradient(to right,transparent 0,#000 var(--ok-tabbar-fade,36px),
+        #000 calc(100% - var(--ok-tabbar-fade,36px)),transparent 100%);
+    }
+    ion-segment-button.cat-segment-button { flex:0 0 9.5rem; min-width:9.5rem; min-height:4.4rem;
+      margin:0 .275rem; border:1px solid transparent; border-radius:12px;
+      text-transform:none; --background:var(--tile); --background-checked:var(--tile-hi);
+      --color:var(--tx); --color-checked:var(--tx); --indicator-color:transparent;
+      --indicator-box-shadow:none; --padding-start:.65rem; --padding-end:.65rem; }
+    ion-segment-button.cat-segment-button.segment-button-checked { border-color:var(--accent); }
+    .cat-segment-label { display:flex; width:100%; height:100%; flex-direction:column;
+      justify-content:center; align-items:flex-start; min-width:0; margin:0; text-align:left; }
+    .cat-segment-label .cc-n { width:100%; font-weight:700; font-size:.92rem; line-height:1.1;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .cat-segment-label .cc-c { font-size:.72rem; color:var(--mut); margin-top:.1rem; }
 
     /* Resultados del buscador de productos (proyectados en el slot de ok-spotlight-search). */
     .sp-list { background:transparent; }
@@ -202,16 +234,22 @@ export class ErpPosTouch extends LitElement {
     /* Etiqueta de sección: dice QUÉ estás eligiendo (antes dos segments iguales sin contexto). */
     .pay-lbl { margin:.9rem 0 .35rem; font-size:.75rem; font-weight:700; text-transform:uppercase;
       letter-spacing:.06em; color:var(--mut); }
-    .pay-methods { margin:.1rem 0 .55rem; --background:transparent; }
+    /* Selector de MÉTODO dentro del sheet (tender): botones grandes con icono + nombre, objetivo
+       táctil ≥56px. El elegido se marca por borde/acento Y por aria-pressed (no solo color). */
+    .pay-methods { display:grid; grid-template-columns:repeat(2,1fr); gap:.5rem; margin:.1rem 0 .55rem; }
+    .pm-btn { display:flex; align-items:center; justify-content:center; gap:.5rem; min-height:56px;
+      border-radius:12px; border:1px solid var(--ion-border-color); background:var(--tile);
+      color:var(--tx); font-weight:700; font-size:.95rem; cursor:pointer; }
+    .pm-btn ion-icon { font-size:1.3rem; }
+    .pm-btn[aria-pressed=true] { border-color:var(--accent); color:var(--accent);
+      box-shadow:inset 0 0 0 1px var(--accent); }
+    .pm-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     /* Logo de marca (Bizum): es un wordmark ANCHO, no un glifo cuadrado como los Ionicons, así que
-       se acota a la altura del icono y se deja crecer a lo ancho sin romper el segment. */
+       se acota a la altura del icono y se deja crecer a lo ancho sin romper el botón. */
     .pay-methods .brand { display:inline-flex; align-items:center; height:1.15rem; }
     .pay-methods .brand svg { height:100%; width:auto; max-width:4.5rem; display:block; }
-    /* Atajos de efectivo: el cajero pulsa en vez de teclear. */
-    .quick { display:grid; grid-template-columns:repeat(4,1fr); gap:.4rem; margin:.7rem 0 .5rem; }
-    .qbtn { padding:.55rem .2rem; border-radius:10px; border:1px solid var(--ion-border-color);
-      background:var(--tile); color:var(--tx); font-weight:700; font-size:.9rem; cursor:pointer; }
-    .qbtn[aria-pressed=true] { border-color:var(--accent); color:var(--accent); }
+    /* Tarjeta: nada que teclear — el importe exacto y la pista del datáfono. */
+    .pay-hint { margin:.1rem 0 .4rem; color:var(--mut); font-size:.9rem; }
     /* El cambio es lo que el cajero busca con el ojo al devolver. */
     .amt.big-change .v { font-size:1.6rem; font-weight:800; color:var(--accent); }
     .print-row { --background:transparent; --padding-start:0; --inner-padding-end:0; margin:.5rem 0 .2rem; }
@@ -228,9 +266,50 @@ export class ErpPosTouch extends LitElement {
     .pdrop { position:absolute; top:2.9rem; right:.5rem; z-index:41; width:min(20rem,90%); background:var(--tile);
       border:1px solid var(--ion-border-color); border-radius:12px; box-shadow:0 12px 32px rgba(0,0,0,.5); padding:.5rem; max-height:60%; overflow:auto; }
     .pdrop .hint { color:var(--mut); font-size:.82rem; margin:.3rem .2rem .5rem; }
-    .pitem { display:flex; justify-content:space-between; align-items:center; gap:.6rem; border:1px solid var(--ion-border-color); border-radius:10px; padding:.45rem .6rem; margin-bottom:.35rem; }
+    .pdrop .hint strong { color:var(--tx); }
+    .pitem { display:flex; justify-content:space-between; align-items:center; gap:.3rem; border:1px solid var(--ion-border-color); border-radius:10px; padding:.2rem .3rem .2rem .6rem; margin-bottom:.35rem; }
+    /* La FILA entera recupera: botón de verdad (accesible), sin pintas de botón. */
+    .prow { flex:1; display:flex; flex-direction:column; align-items:flex-start; gap:.1rem;
+      background:none; border:none; padding:.3rem 0; text-align:left; cursor:pointer; color:var(--tx); }
     .pn { font-weight:700; font-size:.9rem; }
     .pm { color:var(--mut); font-size:.78rem; }
+    .pdel { margin:0; }
+
+    .lqty { color:var(--mut); font-weight:700; }
+    /* Secciones POR DATO: PENDIENTE DE ENVIAR arriba (borde de acento — donde trabaja el
+       camarero) y ENVIADO debajo. El detalle por comanda es del chip+modal de kitchen, que se
+       monta en .sec-slot de la cabecera de ENVIADO. */
+    .secs { padding:.4rem .5rem .8rem; display:flex; flex-direction:column; gap:.6rem; }
+    .sec { border:1px solid var(--ion-border-color); border-radius:12px; overflow:hidden; }
+    .sec.sec-pending { border-color:var(--accent); }
+    .sec-h { display:flex; align-items:center; gap:.4rem; padding:.5rem .7rem;
+      font-weight:700; font-size:.82rem; text-transform:uppercase; letter-spacing:.04em;
+      background:var(--tile); }
+    .sec-h .ccount { color:var(--mut); }
+    .sec-h .sec-slot { margin-left:auto; display:inline-flex; align-items:center;
+      text-transform:none; letter-spacing:0; }
+
+    /* Diálogos nativos (top layer): aparcar-con-nombre y carrito sucio. En móvil/tablet toman
+       ASPECTO de sheet (suben desde abajo, asa, esquinas solo arriba — pregunta de Ioan
+       2026-07-19): mismo <dialog> nativo, que ion-action-sheet no aloja contenido rico y los
+       overlays de Ionic en shadow Lit se re-parentan al body (ADR-0028). */
+    dialog.park-dialog, dialog.dirty-dialog { border:1px solid var(--ion-border-color); border-radius:14px;
+      background:var(--panel); color:var(--tx); padding:1rem 1.1rem; width:min(94vw,24rem);
+      box-shadow:0 18px 50px rgba(0,0,0,.35); }
+    dialog.park-dialog::backdrop, dialog.dirty-dialog::backdrop { background:rgba(0,0,0,.45); }
+    @media (max-width: 820px) {
+      dialog.park-dialog, dialog.dirty-dialog { width:100vw; max-width:100vw; margin:auto 0 0;
+        border-radius:18px 18px 0 0; border-bottom:none; padding-bottom:max(1rem, env(safe-area-inset-bottom)); }
+      dialog.park-dialog::before, dialog.dirty-dialog::before { content:''; display:block;
+        width:2.4rem; height:.3rem; border-radius:999px; background:var(--ion-border-color);
+        margin:0 auto .7rem; }
+      .dlg-actions ion-button { flex:1; }
+    }
+    dialog h3 { margin:0 0 .5rem; font-size:1.05rem; }
+    dialog p { margin:0 0 .8rem; color:var(--mut); }
+    dialog.park-dialog input { width:100%; box-sizing:border-box; font-size:1rem; padding:.6rem .7rem;
+      border-radius:10px; border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); }
+    .dlg-actions { display:flex; justify-content:flex-end; gap:.4rem; margin-top:.9rem; flex-wrap:wrap; }
     .badge-num { font-size:.62rem; min-width:1rem; height:1rem; padding:0 .2rem; border-radius:999px; background:var(--accent); color:#fff; display:inline-flex; align-items:center; justify-content:center; position:absolute; top:.2rem; right:.2rem; }
 
     /* botón flotante de carrito (solo móvil) */
@@ -278,6 +357,123 @@ export class ErpPosTouch extends LitElement {
       .fab { display:inline-flex; }
     }
     .cart-backdrop { display:none; }
+
+    /* ── Pulido visual 2026-07: conserva la estructura modular y acerca el POS al prototipo. ── */
+    .card { border-radius:var(--ok-radius-lg,16px); box-shadow:var(--ok-shadow-card,none); }
+    .body { grid-template-columns:minmax(0,1fr) minmax(23rem,24.5rem); }
+    .catalog { padding:.72rem; }
+    .catbar { gap:.5rem; margin-bottom:.68rem; }
+    ion-segment.category-segment { padding:.05rem; }
+    ion-segment-button.cat-segment-button { flex-basis:8.7rem; min-width:8.7rem; min-height:3.65rem;
+      margin:0 .24rem; border-color:var(--line); --background:var(--tile);
+      --background-checked:color-mix(in srgb,var(--accent) 10%,var(--tile)); }
+    ion-segment-button.cat-segment-button:hover { --background:var(--tile-hi); }
+    ion-segment-button.cat-segment-button.segment-button-checked { border-color:var(--accent);
+      box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 45%,transparent); }
+    .cat-segment-label .cc-n { font-size:.88rem; }
+    .cat-segment-label .cc-c { font-size:.7rem; }
+    .arrow.search-trigger { width:3rem; height:3.65rem; border-radius:12px; color:var(--accent); }
+
+    .grid { grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr)); gap:.62rem; }
+    ion-card.tile { min-height:8.4rem; border-radius:14px; cursor:pointer; }
+    .thumb { height:4.85rem; flex:none; }
+    .tinfo { flex:1; display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto auto;
+      gap:.15rem .5rem; align-content:center; padding:.52rem .62rem .58rem; }
+    .tile .n { grid-column:1 / -1; font-size:.86rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .tile .sku { color:var(--mut); font-size:.66rem; align-self:end; }
+    .tile .p { margin:0; color:var(--tx); font-size:.9rem; align-self:end; white-space:nowrap; }
+
+    .cart { border-left:1px solid var(--line); }
+    .cart ion-header { flex:none; border-bottom:1px solid var(--line); }
+    .cart ion-toolbar { --min-height:3.6rem; }
+    .order-toolbar { min-height:3.6rem; display:flex; align-items:stretch; gap:.12rem; padding:.24rem .35rem; }
+    ion-button.header-action { width:3.25rem; height:3.05rem; margin:0; font-size:1.05rem;
+      --padding-start:.2rem; --padding-end:.2rem; --border-radius:10px; --color:var(--mut); }
+    ion-button.header-action::part(native) { display:flex; flex-direction:column; gap:.08rem; }
+    ion-button.header-action ion-icon { font-size:1.2rem; }
+    ion-button.header-action small { display:block; max-width:3rem; font-size:.56rem; line-height:1;
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    /* Aparcar y Cuentas abiertas comparten fila con selectores icon-only aportados por otros
+       módulos. Sus etiquetas viven en title/aria-label: pintarlas dentro de 52 px producía textos
+       truncados y hacía que pareciesen acciones de otro nivel. */
+    ion-button.header-action.icon-action { width:2.4rem; height:2.4rem; margin:auto 0;
+      --padding-start:0; --padding-end:0; }
+    ion-button.header-action.icon-action::part(native) { flex-direction:row; gap:0; }
+    ion-button.header-action.icon-action ion-icon { font-size:var(--pos-hdr-icon-size,1.75rem); }
+    ion-button.header-action.assigned { --color:var(--accent); --background:color-mix(in srgb,var(--accent) 12%,transparent); }
+    .cart-actions-slot { display:flex; align-items:center; min-width:0; }
+    .actions-spacer { flex:1; min-width:.2rem; }
+    .order-heading { padding:.62rem .8rem .58rem; border-bottom:1px solid var(--line); }
+    .order-title-row { display:flex; align-items:center; gap:.35rem; }
+    .order-title { flex:1; min-width:0; border:0; outline:0; padding:.08rem 0; background:transparent;
+      color:var(--tx); font:inherit; font-size:1rem; font-weight:750; }
+    .order-title::placeholder { color:var(--mut); }
+    .title-edit { flex:none; width:2rem; height:2rem; display:inline-grid; place-items:center; padding:0;
+      border:0; border-radius:8px; background:transparent; color:var(--mut); cursor:pointer; }
+    .title-edit:hover, .title-edit:focus-visible { color:var(--accent); background:var(--tile-hi); outline:none; }
+    .title-edit ion-icon { font-size:1rem; }
+    .order-context { display:flex; gap:.3rem; flex-wrap:wrap; min-height:1.55rem; margin-top:.32rem; }
+    .order-context ion-chip { height:1.55rem; margin:0; font-size:.68rem; --background:var(--tile); color:var(--mut); }
+    .context-empty { color:var(--mut); font-size:.72rem; align-self:center; }
+
+    ion-segment.view-tabs { margin:.62rem .72rem .28rem; width:auto; border:1px solid var(--line);
+      border-radius:11px; background:var(--tile); }
+    ion-segment.view-tabs ion-segment-button { min-height:2.85rem; --indicator-color:var(--tile-hi);
+      --color:var(--mut); --color-checked:var(--tx); font-weight:700; text-transform:none; }
+    .view-tab-label { display:inline-flex; align-items:center; justify-content:center; gap:.38rem; }
+    .pending-dot { display:inline-grid; place-items:center; min-width:1.18rem; height:1.18rem; padding:0 .25rem;
+      border-radius:999px; background:var(--ion-color-warning,#f5a623); color:#241700; font-size:.65rem; font-weight:850; }
+
+    .cart ion-content.cart-body { --padding-top:.15rem; }
+    ion-list.lines { padding:.28rem .48rem .45rem; }
+    ion-list.lines ion-item { margin:.35rem 0; --background:var(--tile); --border-color:transparent;
+      --border-radius:12px; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+    ion-list.lines ion-item.sel { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 7%,var(--tile)); }
+    ion-list.lines ion-item h3 { display:flex; align-items:center; gap:.35rem; margin-bottom:.12rem; font-size:.85rem; }
+    ion-list.lines ion-item p { font-size:.7rem; }
+    ok-status-pill { vertical-align:middle; }
+    .lineend .lt { font-size:.84rem; }
+    .secs { padding:.32rem .48rem .65rem; gap:.52rem; }
+    .sec { border-radius:12px; }
+    .sec-h { padding:.48rem .58rem; font-size:.7rem; background:transparent; border-bottom:1px solid var(--line); }
+    .sec.sec-pending { border-color:color-mix(in srgb,var(--accent) 55%,var(--line)); }
+    .sec-slot { min-width:0; }
+    .draft-pane { padding:.28rem .48rem .7rem; }
+    .draft-hint { margin:.2rem .18rem .52rem; color:var(--mut); font-size:.76rem; line-height:1.35; }
+    .draft-actions-slot { display:flex; margin:.65rem 0 0; }
+    .draft-actions-slot:empty { display:none; }
+    .draft-empty { min-height:10rem; display:grid; place-items:center; }
+
+    .cart-foot { padding:.62rem .72rem .7rem; }
+    .total { margin:0 0 .5rem; font-size:.78rem; }
+    .total b { font-size:1.55rem; }
+    .foot-actions .prebill { width:3.25rem; }
+    .foot-actions .charge { min-height:3rem; font-size:.98rem; }
+    .pdrop { top:3.5rem; right:.45rem; width:min(22rem,calc(100% - .9rem)); max-height:72%; }
+    .pitem { padding:.35rem .35rem .35rem .65rem; }
+
+    @media (min-width:821px) and (max-width:1100px) {
+      .body { grid-template-columns:minmax(0,1fr) 22rem; }
+      .grid { grid-template-columns:repeat(auto-fill,minmax(8.8rem,1fr)); }
+      ion-segment-button.cat-segment-button { flex-basis:8rem; min-width:8rem; }
+    }
+    @media (max-width:820px) {
+      .body { grid-template-columns:1fr; }
+      .catalog { padding:.58rem; }
+      .grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:.5rem; }
+      ion-card.tile { min-height:8rem; }
+      ion-segment-button.cat-segment-button { flex-basis:7.8rem; min-width:7.8rem; }
+      .cart { width:min(100%,27rem); }
+      .order-toolbar { padding-left:.2rem; padding-right:.2rem; }
+      .memory-only { display:none; }
+    }
+    @media (max-width:340px) {
+      .catalog { padding:.45rem; }
+      .grid { gap:.42rem; }
+      ion-segment-button.cat-segment-button { flex-basis:7rem; min-width:7rem; }
+      ion-card.tile { min-height:7.7rem; }
+      .thumb { height:4.5rem; }
+    }
   `;
 
   @state() private products: Product[] = [];
@@ -299,7 +495,10 @@ export class ErpPosTouch extends LitElement {
   @state() private splitSel = new Set<string>();
   @state() private parkedOpen = false;
   @state() private cartOpen = false;
-  @state() private fullscreen = false;
+  /** Etiqueta visible de la cuenta. Se persiste en el pedido existente con sales.order.set_label. */
+  @state() private orderLabel = '';
+  /** Cocina aporta la segunda vista; sin su slot el POS queda en una única cuenta universal. */
+  @state() private orderView: 'account' | 'draft' = 'account';
   /** El search del catálogo se despliega desde una lupa (gana alto para la rejilla). */
   @state() private searchOpen = false;
   @state() private tableId?: string;
@@ -308,6 +507,19 @@ export class ErpPosTouch extends LitElement {
   @state() private orderId?: string;
   /** Modal de la CUENTA previa (pre-bill) que se lleva a la mesa antes de cobrar. No es fiscal. */
   @state() private prebillOpen = false;
+  /** Diálogo del NOMBRE al aparcar sin mesa (default: la hora, editable de un toque). */
+  @state() private parkPromptOpen = false;
+  @state() private parkName = '';
+  /** Diálogo «¿aparcar o eliminar la cuenta actual?» (solo con carrito sucio SIN mesa). */
+  @state() private dirtyOpen = false;
+  @state() private dirtyAllowCancel = false;
+  private dirtyResolve?: (c: 'park' | 'discard' | 'cancel') => void;
+  /** Overlay de Ionic montado en document.body. Los overlays declarados dentro del Shadow DOM
+   *  son reubicados por Ionic y pierden el contexto visual del Hub (la «ventana negra»). */
+  private pendingSwitchAlert?: IonicAlertElement;
+  /** Borrado en DOS toques de una cuenta de la lista: el primero arma, el segundo anula. */
+  @state() private armedDelete?: string;
+  private armedTimer?: ReturnType<typeof setTimeout>;
   /** Preferencia del cobro: imprimir el tiquet al confirmar. Sustituye al 2º botón azul gemelo. */
   @state() private printOnCharge = true;
   @state() private tableLabel = '';
@@ -322,12 +534,20 @@ export class ErpPosTouch extends LitElement {
   private units = new Map<string, UnitRow>();
   /** Mapa tax_category_key → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
   private ratesMap = new Map<string, number>();
+  /** Pista de overflow compartida con la bottom bar (fade dinámico + pequeño gesto inicial). */
+  private categorySegment?: HTMLElement;
+  private categorySegmentCleanup?: () => void;
   private cartRestored = false;
   private saveTimer?: ReturnType<typeof setTimeout>;
   // Botones de asignación (ADR-0043 B): cada módulo que aporta a `sales.pos.assign` monta SU botón
   // (mesa, cliente…) en el header. Botones independientes: cada uno abre su propio modal. El POS no
   // conoce a `tables`/`customers`; solo monta sus WC y escucha `erp:order-context`/`erp:customer-context`.
   private assignFillers: Array<{ component: string; el: HTMLElement }> = [];
+  /** Fillers de acciones (`sales.pos.actions`): Cocina aporta «Enviar comanda» dentro del borrador. */
+  private actionFillers: Array<{ component: string; el: HTMLElement }> = [];
+  /** Fillers del slot de INFO del pedido (`sales.pos.order_info`, cabecera de ENVIADO):
+   *  kitchen aporta su chip «Comandas · N» que abre el modal con estados en vivo. */
+  private infoFillers: Array<{ component: string; el: HTMLElement }> = [];
   // Comanda ATADA a la mesa (puntos 1+2): al cambiar de mesa se GUARDA la comanda de la mesa
   // actual y se RECUPERA la de la nueva (o el carrito suelto si es null). Así tocar una mesa
   // ocupada trae su tiquet a la pantalla de venta, como cualquier POS.
@@ -335,7 +555,23 @@ export class ErpPosTouch extends LitElement {
     const d = (e as CustomEvent<{ table_id: string | null; label?: string; order_id?: string | null }>).detail
       ?? { table_id: null };
     const nextTable = d.table_id ?? undefined;
-    if (nextTable && nextTable === this.tableId) { this.tableLabel = d.label ?? this.tableLabel; return; }
+
+    // Restauración modular: Tables puede resolver la junction después de que Sales ya haya
+    // reabierto el pedido y sus líneas. No es un cambio de cuenta, sino el contexto que faltaba
+    // para ESE MISMO pedido; adoptarlo directamente evita el falso diálogo «cuenta a medias».
+    if (nextTable && d.order_id && d.order_id === this.orderId) {
+      const previousTableLabel = this.tableLabel;
+      this.tableId = nextTable;
+      this.tableLabel = d.label ?? this.tableLabel;
+      if (!this.orderLabel || this.orderLabel === previousTableLabel) this.orderLabel = this.tableLabel;
+      return;
+    }
+    if (nextTable && nextTable === this.tableId) {
+      const previousTableLabel = this.tableLabel;
+      this.tableLabel = d.label ?? this.tableLabel;
+      if (!this.orderLabel || this.orderLabel === previousTableLabel) this.orderLabel = this.tableLabel;
+      return;
+    }
 
     // Reglas de sala (ADR-0141): lo que hay marcado NUNCA se pierde al tocar una mesa.
     const accion = decideOnTableChange({
@@ -345,19 +581,32 @@ export class ErpPosTouch extends LitElement {
       targetOrderId: d.order_id ?? undefined,
     });
 
-    // Aparca la comanda de delante como ticket recuperable (no se mezcla sola con la de la mesa:
-    // juntar dos cuentas es FUSIONAR, una acción explícita).
-    const aparcar = async () => {
-      await this.park();
-      if (this.orderId) await erplora().command('sales.order.void', { order_id: this.orderId }).catch(() => undefined);
-      this.parked = await listOpenChecks(erplora(), this.orderId);
-      if (n) this.error = t('ui.parkedAs', { number: n });
+    // La comanda de delante no se mezcla sola con la de la mesa (juntar dos cuentas es FUSIONAR,
+    // una acción explícita). `park-then-*` solo ocurre con carrito de BARRA (sin mesa): se
+    // PREGUNTA qué hacer — aparcar con nombre o eliminar (decisión Ioan 2026-07-19). Aparcar
+    // JAMÁS anula: el `sales.order.void` que vivía aquí hacía «desaparecer» los aparcados.
+    const aparcarOEliminar = async () => {
+      const eleccion = await this.resolveDirtyCart(false);
+      if (eleccion === 'discard') await this.discardCurrent();
+      else await this.parkWith(defaultParkLabel('', new Date()));
     };
 
     if (accion === 'clear' || accion === 'park-then-clear') {
-      if (accion === 'park-then-clear') await aparcar();
+      const habiaMesa = !!this.tableId;
       this.tableId = undefined; this.tableLabel = '';
-      this.orderId = undefined; this.cart = [];
+      if (accion === 'park-then-clear') {
+        if (habiaMesa) {
+          // La X del chip = QUITAR la mesa (el filler ya aparcó SU sesión): la cuenta pasa a
+          // aparcada CON NOMBRE — se pide, para no dejar cuentas «Mesa 4» cuya mesa quedó libre.
+          this.parkName = defaultParkLabel('', new Date());
+          this.parkedOpen = false;
+          this.parkPromptOpen = true;
+        } else {
+          await aparcarOEliminar();
+        }
+        return;
+      }
+      this.orderId = undefined; this.orderLabel = ''; this.cart = [];
       return;
     }
 
@@ -367,23 +616,25 @@ export class ErpPosTouch extends LitElement {
       // Toast/Lightspeed). Antes esto arrastraba la comanda y re-enlazaba la junction en cada mesa
       // tocada: ninguna se liberaba y acabábamos con tres mesas ocupadas por el mismo pedido.
       this.tableId = nextTable; this.tableLabel = d.label ?? '';
-      this.orderId = undefined; this.cart = [];
+      this.orderId = undefined; this.orderLabel = this.tableLabel; this.cart = [];
       return;
     }
 
     if (accion === 'assign-to-target') {
       // La comanda de delante pasa a SER la de esa mesa: se enlaza la junction, no se mueve nada.
       this.tableId = nextTable; this.tableLabel = d.label ?? '';
+      if (!this.orderLabel) this.orderLabel = this.tableLabel;
       this.notifyOrderLinked();
       return;
     }
 
-    if (accion === 'park-then-load') await aparcar();
+    if (accion === 'park-then-load') await aparcarOEliminar();
 
     // Abrir la comanda de la mesa (o empezar en blanco si no tiene).
     this.tableId = nextTable; this.tableLabel = d.label ?? '';
     const linked = d.order_id ?? undefined;
     this.orderId = linked;
+    this.orderLabel = this.tableLabel;
     if (linked) rememberCurrentCheck(localStorage, linked); else forgetCurrentCheck(localStorage);
     this.cart = linked ? await loadOrderLines(erplora(), linked) : [];
   };
@@ -409,8 +660,10 @@ export class ErpPosTouch extends LitElement {
       await mergeOrders(erplora(), from, to);
     }
     if (this.tableId === d.from_table_id || this.tableId === d.to_table_id) {
+      const previousTableLabel = this.tableLabel;
       this.tableId = d.to_table_id;
       this.tableLabel = d.to_label ?? this.tableLabel;
+      if (!this.orderLabel || this.orderLabel === previousTableLabel) this.orderLabel = this.tableLabel;
       this.orderId = to;
       this.cart = await loadOrderLines(erplora(), to);
     }
@@ -426,8 +679,10 @@ export class ErpPosTouch extends LitElement {
     // (la sesión nueva arrastró el `order_id`). Por eso los productos se conservan sin copiar nada:
     // aquí solo se actualiza el contexto de la pantalla. Antes había que reescribir dos blobs.
     if (this.tableId !== d.from_table_id) return;
+    const previousTableLabel = this.tableLabel;
     this.tableId = d.to_table_id;
     this.tableLabel = d.to_label ?? this.tableLabel;
+    if (!this.orderLabel || this.orderLabel === previousTableLabel) this.orderLabel = this.tableLabel;
     const order = d.to_order_id ?? this.orderId;
     if (order && order !== this.orderId) {
       this.orderId = order;
@@ -449,12 +704,11 @@ export class ErpPosTouch extends LitElement {
     // (nombre/NIF/dirección), que es otra cosa: viaja congelado en la venta al cobrar (ADR-0132).
     this.notifyOrderLinked();
   };
-  private readonly onFsChange = () => { this.fullscreen = document.fullscreenElement === this; };
+  private readonly onOrderFire = () => { void this.fireToKitchen(); };
   private readonly onLocaleChange = (): void => this.requestUpdate();
 
   async connectedCallback() {
     super.connectedCallback();
-    document.addEventListener('fullscreenchange', this.onFsChange);
     window.addEventListener('erplora:locale-changed', this.onLocaleChange);
     try {
       const [prods, methods, settingsRows, savedCart, parked, cats, prodCats, ratesMap, unitRows] = await Promise.all([
@@ -487,6 +741,9 @@ export class ErpPosTouch extends LitElement {
       this.addEventListener('erp:order-merge', this.onOrderMerge);
       this.addEventListener('erp:order-transfer', this.onOrderTransfer);
       this.addEventListener('erp:customer-context', this.onCustomerContext);
+      // Contrato del slot del footer: el filler emite `erp:order-fire` (bubbles+composed) y el
+      // HOST ejecuta su comando — el estado del carrito vive aquí, al filler no viaja nada.
+      this.addEventListener('erp:order-fire', this.onOrderFire);
       await this.resolveSlots();
       this.ensureSlotsMounted();
     } catch (e) {
@@ -498,13 +755,21 @@ export class ErpPosTouch extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    document.removeEventListener('fullscreenchange', this.onFsChange);
     window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
     this.removeEventListener('erp:order-context', this.onOrderContext);
     this.removeEventListener('erp:order-merge', this.onOrderMerge);
     this.removeEventListener('erp:order-transfer', this.onOrderTransfer);
     this.removeEventListener('erp:customer-context', this.onCustomerContext);
+    this.removeEventListener('erp:order-fire', this.onOrderFire);
     if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = undefined; }
+    if (this.pendingSwitchAlert) {
+      void this.pendingSwitchAlert.dismiss?.();
+      this.pendingSwitchAlert.remove();
+      this.pendingSwitchAlert = undefined;
+    }
+    this.categorySegmentCleanup?.();
+    this.categorySegmentCleanup = undefined;
+    this.categorySegment = undefined;
   }
 
   private async resolveSlots() {
@@ -519,14 +784,28 @@ export class ErpPosTouch extends LitElement {
       component: f.component,
       el: document.createElement(f.component) as HTMLElement,
     }));
+    // Acciones de la comanda: kitchen aporta aquí su «Enviar a cocina». El host lo monta dentro
+    // de la vista Comanda actual; sin filler no existe esa vista ni queda hueco vacío.
+    let acciones: Array<Record<string, unknown> & { component: string }> = [];
+    try { acciones = (await sdk.loadSlot('sales.pos.actions')) ?? []; } catch { acciones = []; }
+    this.actionFillers = acciones.map((f) => ({
+      component: f.component,
+      el: document.createElement(f.component) as HTMLElement,
+    }));
+    // Slot de INFO del pedido: kitchen cuelga aquí su chip de comandas (modal con estados).
+    let info: Array<Record<string, unknown> & { component: string }> = [];
+    try { info = (await sdk.loadSlot('sales.pos.order_info')) ?? []; } catch { info = []; }
+    this.infoFillers = info.map((f) => ({
+      component: f.component,
+      el: document.createElement(f.component) as HTMLElement,
+    }));
     this.requestUpdate();
   }
 
   /** (Re)engancha los botones de los fillers en el header; idempotente, sobrevive a re-renders. */
   private ensureSlotsMounted() {
     const host = this.renderRoot.querySelector('.cart-actions-slot') as HTMLElement | null;
-    if (!host || !this.assignFillers.length) return;
-    for (const f of this.assignFillers) {
+    if (host) for (const f of this.assignFillers) {
       if (f.el.parentElement === host) continue;
       host.appendChild(f.el);
       // Al montarse, si ya hay un pedido reanudado, se le pide que recupere LO SUYO. El aviso de
@@ -536,6 +815,41 @@ export class ErpPosTouch extends LitElement {
       if (this.orderId) {
         f.el.dispatchEvent(new CustomEvent('erp:order-restored', { detail: { order_id: this.orderId }, bubbles: false }));
       }
+    }
+    // Acción de Cocina dentro de «Comanda actual»: las MISMAS instancias se reenganchan cuando
+    // el usuario entra en esa vista, sin duplicar ni importar código del módulo proveedor.
+    const draftActions = this.renderRoot.querySelector('.draft-actions-slot') as HTMLElement | null;
+    if (draftActions) for (const f of this.actionFillers) {
+      if (f.el.parentElement === draftActions) continue;
+      draftActions.appendChild(f.el);
+      this.emitPosState([f]);
+    }
+    // Info del pedido: el chip de comandas de kitchen vive en la cabecera de ENVIADO (solo se
+    // pinta cuando hay líneas enviadas; el montaje resiliente lo re-engancha al reaparecer).
+    const infoHost = this.renderRoot.querySelector('.sec-slot') as HTMLElement | null;
+    if (infoHost) for (const f of this.infoFillers) {
+      if (f.el.parentElement === infoHost) continue;
+      infoHost.appendChild(f.el);
+      this.emitPosState([f]);
+    }
+  }
+
+  /** Cuenta a los fillers el estado mínimo del carrito (`erp:pos-state`). No viaja ninguna línea:
+   *  `pending_count` permite que Mesas impida cambiar de cuenta antes de enviar la comanda y que
+   *  Cocina pinte su acción/badge, sin acoplar esos módulos a los datos de sales. */
+  private emitPosState(fillers = [...this.assignFillers, ...this.actionFillers, ...this.infoFillers]): void {
+    for (const f of fillers) {
+      f.el.dispatchEvent(new CustomEvent('erp:pos-state', {
+        detail: {
+          order_id: this.orderId,
+          items_count: this.cart.length,
+          pending_count: pendingLines(this.cart).length,
+          kitchen_enabled: this.hasKitchen,
+          label: this.tableLabel,
+          channel: 'dine_in',
+        },
+        bubbles: false,
+      }));
     }
   }
 
@@ -549,6 +863,28 @@ export class ErpPosTouch extends LitElement {
 
   protected updated(_changed: Map<PropertyKey, unknown>) {
     this.ensureSlotsMounted();
+    const categorySegment = this.renderRoot.querySelector<HTMLElement>('ion-segment.category-segment') ?? undefined;
+    if (categorySegment !== this.categorySegment) {
+      this.categorySegmentCleanup?.();
+      this.categorySegment = categorySegment;
+      this.categorySegmentCleanup = bindTabbar(categorySegment ?? null);
+    }
+    // Estado del carrito → fillers del footer (contrato `erp:pos-state`). Barato y sin bucles:
+    // el filler solo guarda el detail (no re-renderiza al host).
+    this.emitPosState();
+    // Los <dialog> se abren MODALES (top layer): inmunes al transform del drawer del carrito
+    // (gotcha conocido: un overlay fixed dentro de un ancestro con transform queda atrapado).
+    // El atributo `open` del markup ya los muestra donde showModal no exista (happy-dom).
+    for (const d of this.renderRoot.querySelectorAll<HTMLDialogElement>('dialog.park-dialog, dialog.dirty-dialog')) {
+      try {
+        if (typeof d.showModal === 'function' && !d.matches(':modal')) { d.close(); d.showModal(); }
+      } catch { /* sin soporte (happy-dom) o pseudo-clase desconocida: el atributo open basta */ }
+    }
+    if (this.parkPromptOpen) {
+      const campo = this.renderRoot.querySelector<HTMLInputElement>('dialog.park-dialog input');
+      // El default (la hora) va PRE-SELECCIONADO: teclear lo sobreescribe de un toque.
+      if (campo && document.activeElement !== campo) { campo.focus(); campo.select(); }
+    }
     // ADR-0141: YA NO se guarda el carrito aquí. Antes esto era un debounce de 400 ms que escribía
     // un blob JSON: si se iba la luz (o moría la tablet) dentro de esa ventana, el último artículo
     // se perdía. Ahora cada mutación (add/qty/invitación/quitar) escribe su FILA en el pedido de
@@ -572,21 +908,77 @@ export class ErpPosTouch extends LitElement {
   private get total() { return this.cart.reduce((s, l) => s + (l.is_gift ? 0 : l.price * l.qty), 0); }
   private get itemCount() { return this.cart.reduce((s, l) => s + l.qty, 0); }
   private get parkingEnabled() { return this.settings.enable_parked_tickets !== 0; }
+  /** La capacidad Cocina existe solo si el registro de slots ha montado alguno de sus fillers. */
+  private get hasKitchen() { return this.actionFillers.length > 0 || this.infoFillers.length > 0; }
+  private get pendingCount() { return pendingLines(this.cart).length; }
+  private get visibleOrderLabel() { return this.orderLabel || this.tableLabel; }
+
+  /** Guarda el título en el pedido abierto. Antes de la primera línea queda preparado en memoria y
+   *  `ensureOrder` lo usa al abrir el pedido, sin inventar otra entidad ni almacenamiento local. */
+  private async saveOrderLabel(value: string): Promise<void> {
+    const label = value.trim();
+    this.orderLabel = label;
+    if (!this.orderId) return;
+    try {
+      await erplora().command('sales.order.set_label', { order_id: this.orderId, label });
+      this.parked = await listOpenChecks(erplora(), this.orderId);
+    } catch (e) {
+      this.error = e instanceof Error ? e.message : t('ui.errorSavingTitle');
+    }
+  }
+
+  private focusOrderTitle(): void {
+    const input = this.renderRoot.querySelector<HTMLInputElement>('.order-title');
+    input?.focus();
+    input?.select();
+  }
+
+  /** Presenta el aviso como overlay GLOBAL de Ionic. Declararlo en el template del WC lo deja
+   *  dentro de su Shadow DOM y, al portalizarlo Ionic, puede aparecer como una superficie negra
+   *  sin contenido. En body hereda correctamente el modo y los colores claro/oscuro del Hub. */
+  private async showPendingSwitchAlert(count: number): Promise<void> {
+    if (this.pendingSwitchAlert) return;
+    const alert = document.createElement('ion-alert') as IonicAlertElement;
+    alert.header = t('ui.pendingSwitchTitle');
+    alert.message = t('ui.pendingBeforeSwitch', { count: String(count) });
+    alert.buttons = [{ text: t('ui.close'), role: 'cancel' }];
+    const cleanup = () => {
+      if (this.pendingSwitchAlert === alert) this.pendingSwitchAlert = undefined;
+      alert.remove();
+    };
+    alert.addEventListener('ionAlertDidDismiss', cleanup, { once: true });
+    document.body.appendChild(alert);
+    this.pendingSwitchAlert = alert;
+    try {
+      if (typeof alert.present === 'function') await alert.present();
+      else alert.isOpen = true; // happy-dom/test: conserva el contrato aun sin runtime de Ionic.
+    } catch {
+      cleanup();
+    }
+  }
+
+  /** En un TPV con Cocina no se cambia de cuenta desde el almacén mientras haya una comanda sin
+   *  enviar. Sin Cocina no aplica: retail/peluquería pueden aparcar y recuperar con normalidad. */
+  private blockPendingAccountSwitch(): boolean {
+    if (!this.hasKitchen || this.pendingCount === 0) return false;
+    this.orderView = 'draft';
+    this.parkedOpen = false;
+    this.cartOpen = true;
+    void this.showPendingSwitchAlert(this.pendingCount);
+    return true;
+  }
   private catCount(id: string) {
     const c = this.categories.find((x) => x.id === id);
     return c?.product_count ?? this.products.filter((p) => this.prodCats.get(p.id)?.has(id)).length;
   }
 
-  private scrollCats(dir: number) {
-    const seg = this.renderRoot.querySelector('.seg') as HTMLElement | null;
-    seg?.scrollBy({ left: dir * 220, behavior: 'smooth' });
-  }
-
-  private async toggleFullscreen() {
-    try {
-      if (document.fullscreenElement) await document.exitFullscreen();
-      else await this.requestFullscreen();
-    } catch { /* el navegador puede rechazar fullscreen; se ignora */ }
+  /** Un ratón convencional no tiene gesto horizontal: sobre el segmento, su rueda desplaza las
+   *  categorías lateralmente. Trackpad y táctil conservan su scroll nativo. */
+  private onCategoryWheel(e: WheelEvent): void {
+    const seg = e.currentTarget as HTMLElement;
+    if (seg.scrollWidth <= seg.clientWidth || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+    e.preventDefault();
+    seg.scrollLeft += e.deltaY;
   }
 
   /** Aparcar (ADR-0146): la cuenta se queda ABIERTA y solo se suelta de la pantalla. Ya no se
@@ -597,20 +989,131 @@ export class ErpPosTouch extends LitElement {
     this.notifyPark();
     forgetCurrentCheck(localStorage);
     this.orderId = undefined;
+    this.orderLabel = '';
     this.cart = [];
     this.tableId = undefined;
     this.tableLabel = '';
     this.parkedOpen = false;
+    // Ya no hay cuenta delante: la recién aparcada SÍ debe salir en la lista.
+    this.parked = await listOpenChecks(erplora());
+  }
+
+  /** Punto de entrada del botón del desplegable. Con mesa es «DEJAR EN LA MESA» (la cuenta vive
+   *  allí — modelo Toast/Lightspeed, decisión Ioan 2026-07-19): se suelta solo la PANTALLA y la
+   *  mesa sigue ocupada con su cuenta. Sin mesa es APARCAR con nombre (default: la hora, patrón
+   *  Loyverse), pre-seleccionado para sobreescribirlo de un toque. */
+  private async requestPark(): Promise<void> {
+    if (!this.cart.length) return;
+    if (this.blockPendingAccountSwitch()) return;
+    if (this.tableLabel.trim()) { await this.leaveOnTable(); return; }
+    this.parkName = defaultParkLabel('', new Date());
+    this.parkedOpen = false;
+    this.parkPromptOpen = true;
+  }
+
+  /** «Dejar en la mesa»: etiqueta la cuenta con su mesa, suelta la PANTALLA y avisa a los
+   *  fillers con `erp:order-detached` — que limpian su selección SIN tocar la sesión. La mesa
+   *  sigue ocupada; la cuenta se recupera tocándola o desde la lista. JAMÁS aparca ni anula. */
+  private async leaveOnTable(): Promise<void> {
+    const id = this.orderId;
+    const donde = this.tableLabel.trim();
+    if (id && donde) await erplora().command('sales.order.set_label', { order_id: id, label: donde }).catch(() => undefined);
+    forgetCurrentCheck(localStorage);
+    this.orderId = undefined;
+    this.orderLabel = '';
+    this.cart = [];
+    this.tableId = undefined;
+    this.tableLabel = '';
+    this.parkedOpen = false;
+    this.notifyOrderDetached();
+    erplora().notify?.({ type: 'success', message: t('ui.leftAtTable', { label: donde }) });
+    this.parked = await listOpenChecks(erplora());
+  }
+
+  /** Avisa a los fillers de que la cuenta se suelta DE PANTALLA: limpian su selección local y
+   *  nada más (la sesión de mesa no se toca — soltarla es `erp:order-parked`, otra cosa). */
+  private notifyOrderDetached(): void {
+    for (const f of this.assignFillers) {
+      f.el.dispatchEvent(new CustomEvent('erp:order-detached', { detail: {}, bubbles: false }));
+    }
+  }
+
+  /** Aparca la cuenta actual CON nombre: persiste la etiqueta y luego suelta la pantalla.
+   *  Aparcar JAMÁS anula (`sales.order.void` solo sale de una decisión explícita de eliminar) —
+   *  el void que vivía aquí era la causa de «los tiquets aparcados desaparecen». */
+  private async parkWith(label: string): Promise<void> {
+    const id = this.orderId;
+    const nombre = label.trim() || defaultParkLabel('', new Date());
+    this.orderLabel = nombre;
+    if (id) await erplora().command('sales.order.set_label', { order_id: id, label: nombre }).catch(() => undefined);
+    await this.park();
+    erplora().notify?.({ type: 'success', message: t('ui.parkedToast', { name: nombre }) });
+  }
+
+  /** ELIMINAR la cuenta actual (decisión explícita del diálogo de carrito sucio): anula el pedido
+   *  y limpia la pantalla. El rastro queda (`voided`), no se borra nada. */
+  private async discardCurrent(): Promise<void> {
+    const id = this.orderId;
+    if (id) await erplora().command('sales.order.void', { order_id: id }).catch(() => undefined);
+    forgetCurrentCheck(localStorage);
+    this.orderId = undefined;
+    this.orderLabel = '';
+    this.cart = [];
+    this.resetSlotContexts();
+  }
+
+  /** Abre el diálogo «¿aparcar o eliminar?» y espera la decisión. `allowCancel` solo al recuperar
+   *  desde la lista (al tocar una mesa el filler ya cambió su selección: cancelar dejaría a los
+   *  dos descoordinados, así que ahí solo hay aparcar/eliminar y cerrar equivale a aparcar). */
+  private resolveDirtyCart(allowCancel: boolean): Promise<'park' | 'discard' | 'cancel'> {
+    this.dirtyAllowCancel = allowCancel;
+    this.dirtyOpen = true;
+    return new Promise((res) => { this.dirtyResolve = res; });
+  }
+
+  private answerDirty(c: 'park' | 'discard' | 'cancel'): void {
+    this.dirtyOpen = false;
+    const res = this.dirtyResolve;
+    this.dirtyResolve = undefined;
+    res?.(c);
+  }
+
+  /** Eliminar una cuenta DE LA LISTA, en dos toques (armar → confirmar). Anula el pedido
+   *  (`voided`, con rastro) — nunca de un roce: el primer toque solo cambia el icono. */
+  private async deleteCheck(oc: OpenCheck): Promise<void> {
+    if (this.armedDelete !== oc.id) {
+      this.armedDelete = oc.id;
+      if (this.armedTimer) clearTimeout(this.armedTimer);
+      this.armedTimer = setTimeout(() => { this.armedDelete = undefined; }, 3000);
+      return;
+    }
+    if (this.armedTimer) { clearTimeout(this.armedTimer); this.armedTimer = undefined; }
+    this.armedDelete = undefined;
+    await erplora().command('sales.order.void', { order_id: oc.id }).catch(() => undefined);
     this.parked = await listOpenChecks(erplora(), this.orderId);
   }
 
-  /** Recuperar una cuenta abierta = CAMBIAR de cuenta, igual que tocar otra mesa. Antes estaba
-   *  bloqueado si tenías algo marcado; ahora lo de delante se aparca (sigue abierto) y se abre la
-   *  elegida, que es lo que hace cualquier TPV de sala. */
+  /** Recuperar una cuenta abierta = CAMBIAR de cuenta, igual que tocar otra mesa. Qué pasa con lo
+   *  de delante (decisión Ioan 2026-07-19): si tiene MESA, se queda EN SU MESA — ni se aparca ni
+   *  se suelta la sesión, recuperable tocándola (patrón Toast/Lightspeed) — y se avisa con toast;
+   *  sin mesa, se PREGUNTA: aparcar (con la hora de nombre) o eliminar. */
   private async retrieve(c: OpenCheck) {
     try {
-      if (this.cart.length && this.orderId !== c.id) await this.park();
+      if (this.orderId !== c.id && this.blockPendingAccountSwitch()) return;
+      if (this.cart.length && this.orderId !== c.id) {
+        if (this.tableId) {
+          // La cuenta de delante SE QUEDA EN SU MESA (los fillers sueltan solo la pantalla).
+          await this.leaveOnTable();
+        } else {
+          this.parkedOpen = false;
+          const eleccion = await this.resolveDirtyCart(true);
+          if (eleccion === 'cancel') return;
+          if (eleccion === 'discard') await this.discardCurrent();
+          else await this.parkWith(defaultParkLabel('', new Date()));
+        }
+      }
       this.orderId = c.id;
+      this.orderLabel = c.label ?? '';
       rememberCurrentCheck(localStorage, c.id);
       this.cart = await loadOrderLines(erplora(), c.id);
       this.notifyOrderRestored();
@@ -644,10 +1147,11 @@ export class ErpPosTouch extends LitElement {
    *  se cobró, se empieza en blanco y el camarero elige — no se cae a otra cualquiera. */
   private async restoreOpenOrder(): Promise<CartLine[]> {
     try {
-      const abiertas = (await listOpenChecks(erplora())).map((c) => c.id);
-      const id = resolveCurrentCheck(localStorage, abiertas);
+      const cuentas = await listOpenChecks(erplora());
+      const id = resolveCurrentCheck(localStorage, cuentas.map((c) => c.id));
       if (!id) return [];
       this.orderId = id;
+      this.orderLabel = cuentas.find((c) => c.id === id)?.label ?? '';
       // El pedido vuelve, pero su MESA y su CLIENTE los saben sus dueños, no `sales`. Se les avisa
       // para que restauren lo suyo (y el de mesas nos devuelva el contexto por `erp:order-context`).
       // Sin esto, al recargar el TPV la comanda aparecía "sin mesa" aunque la mesa siguiera ocupada.
@@ -681,13 +1185,21 @@ export class ErpPosTouch extends LitElement {
   private async fireToKitchen(): Promise<void> {
     if (!this.cart.length) return;
     const orderId = await this.ensureOrder(this.cart[0]);
-    const payload = buildFirePayload(orderId, this.tableLabel, this.cart);
+    // TANDAS (decisión Ioan 2026-07-19): se dispara SOLO lo pendiente, con su ronda local, y el
+    // handler lo marca (`fired_at`). Antes cada fire reenviaba el carrito ENTERO: dos disparos =
+    // comida duplicada en cocina. Vale para todo el TPV, con o sin modo restaurante — el modo
+    // solo cambia lo que se VE (pestaña Tandas), no lo que se envía.
+    const pendientes = pendingLines(this.cart);
+    const payload = buildFirePayload(orderId, this.tableLabel, pendientes, nextRoundNo(this.cart));
     if (!payload) return;
     try {
       await erplora().command('sales.order.fire', payload as unknown as Record<string, unknown>);
       // Éxito → canal de AVISO del shell (toast verde). El hueco rojo es SOLO para fallos: decía
       // que algo había ido bien con la pinta de algo que había ido mal.
       erplora().notify?.({ type: 'success', message: t('ui.firedToKitchen') });
+      // Las líneas recién marcadas (round_no/fired_at) se releen de la BD: es lo que bloquea su
+      // edición y lo que pinta la ronda como «enviada» en la pestaña Tandas.
+      if (this.orderId) this.cart = await loadOrderLines(erplora(), this.orderId);
     } catch {
       // Sin `kitchen` instalado el evento no lo escucha nadie: el comando de `sales` igual pasa.
       // Un fallo aquí NO debe bloquear la venta — la comanda se puede repetir.
@@ -697,7 +1209,9 @@ export class ErpPosTouch extends LitElement {
 
   private async ensureOrder(first: CartLine): Promise<string> {
     if (this.orderId) return this.orderId;
-    this.orderId = await openOrderWithLines(erplora(), [first]);
+    // Si el usuario escribió un título antes de añadir la primera línea, nace ya etiquetado;
+    // si no, la mesa sigue siendo el fallback legible del pedido.
+    this.orderId = await openOrderWithLines(erplora(), [first], this.visibleOrderLabel);
     rememberCurrentCheck(localStorage, this.orderId);
     // Aviso a TODOS los fillers: cada uno enlaza lo suyo si tiene algo seleccionado (la mesa en
     // `tables`, el cliente en `customers`). `sales` no sabe qué enlazan ni le importa.
@@ -892,8 +1406,11 @@ export class ErpPosTouch extends LitElement {
         keep_order_open: split.keep_order_open,
         tax_included: this.settings.default_tax_included !== 0,
         payment_method_id: this.payMethod?.id ?? null,
-        payment_method_name: this.payMethod?.name ?? 'Efectivo',
-        amount_tendered: this.tenderedNum || this.total,
+        // El nombre viaja al tiquet: el de fábrica va traducido (seed canónico EN → i18n).
+        payment_method_name: this.payMethod ? payMethodDisplayName(this.payMethod, t) : t('ui.cash'),
+        // Sin entregado tecleado (tarjeta, importe justo) se cobra el PAYABLE: con split, caer al
+        // total inflaba lo entregado y el cambio del tiquet.
+        amount_tendered: this.tenderedNum || this.payable,
         channel: 'pos',
         source_module: 'pos',
         // ADR-0141: la venta nace de este PEDIDO. El servidor lo marca completado (open→completed)
@@ -936,6 +1453,8 @@ export class ErpPosTouch extends LitElement {
       // suelta para que el siguiente ticket abra uno nuevo (ADR-0141).
       forgetCurrentCheck(localStorage);
       this.orderId = undefined;
+      this.orderLabel = '';
+      this.orderView = 'account';
       this.tableId = undefined; this.tableLabel = '';
       this.customerId = undefined; this.customerName = '';
       this.customerTaxId = ''; this.customerAddress = '';
@@ -970,22 +1489,23 @@ export class ErpPosTouch extends LitElement {
   }
 
   private renderCatBar() {
-    const cell = (id: string, name: string, count: number, bg: string) => html`
-      <button class="catcard" aria-pressed=${this.activeCat === id} @click=${() => { this.activeCat = id; }}>
-        <span class="cc-img" style=${`background-image:${bg}`}></span>
-        <span class="cc-meta"><span class="cc-n">${name}</span><span class="cc-c">${count} ${t('ui.products')}</span></span>
-      </button>`;
+    const cell = (id: string, name: string, count: number) => html`
+      <ion-segment-button class="cat-segment-button" value=${id}>
+        <ion-label class="cat-segment-label">
+          <span class="cc-n">${name}</span><span class="cc-c">${count} ${t('ui.products')}</span>
+        </ion-label>
+      </ion-segment-button>`;
     return html`
       <div class="catbar">
-        <button class="arrow" title=${t('ui.previous')} @click=${() => this.scrollCats(-1)}><ion-icon name="chevron-back-outline"></ion-icon></button>
-        <div class="seg">
-          ${cell('', t('ui.all'), this.products.length, gradient('Todos'))}
-          ${this.categories.map((c) => cell(c.id, c.name, this.catCount(c.id), c.image ? `url(${c.image})` : gradient(c.name)))}
-        </div>
-        <button class="arrow" title=${t('ui.next')} @click=${() => this.scrollCats(1)}><ion-icon name="chevron-forward-outline"></ion-icon></button>
+        <ion-segment class="category-segment" scrollable value=${this.activeCat}
+          aria-label=${t('ui.categoryFilter')} @wheel=${this.onCategoryWheel}
+          @ionChange=${(e: CustomEvent<{ value?: string }>) => { this.activeCat = e.detail.value ?? ''; }}>
+          ${cell('', t('ui.all'), this.products.length)}
+          ${this.categories.map((c) => cell(c.id, c.name, this.catCount(c.id)))}
+        </ion-segment>
         <!-- Lupa: despliega el buscador (gana alto para la rejilla). Hueco natural para el micro
              de búsqueda por voz cuando llegue. -->
-        <button class="arrow" title=${t('ui.searchAction')} aria-pressed=${this.searchOpen}
+        <button class="arrow search-trigger" title=${t('ui.searchAction')} aria-pressed=${this.searchOpen}
           @click=${() => (this.renderRoot.querySelector('ok-spotlight-search') as { openSearch?: () => void } | null)?.openSearch?.()}>
           <ion-icon name="search-outline"></ion-icon>
         </button>
@@ -996,55 +1516,90 @@ export class ErpPosTouch extends LitElement {
     return html`
       <ion-header class="ion-no-border">
         <ion-toolbar>
-          <ion-buttons slot="start">
-            <ion-button class="cart-close" title=${t('ui.closeAction')} @click=${() => { this.cartOpen = false; }}>
-              <ion-icon slot="icon-only" name="chevron-forward-outline"></ion-icon>
-            </ion-button>
-          </ion-buttons>
-          <!-- Contexto asignado. La MESA no se pinta aquí: la pinta su dueño en el slot, con su X
-               para soltarla — pintarla en los dos sitios sacaba la misma mesa DOS VECES, solapada.
-               El CLIENTE sí, y no es capricho: su buscador monta un ok-spotlight-search que deja el
-               nombre solo en aria-label, así que sin este chip el cliente asignado no se vería. -->
-          <ion-title>
-            ${this.customerName
-              ? html`<span class="ctx-chips">
-                  <span class="chip cust">${this.customerName}</span>
-                </span>`
-              : nothing}
-          </ion-title>
-          <ion-buttons slot="end">
-            <!-- Botones de asignación (ADR-0043 B): cada módulo (tables, customers…) monta AQUÍ su
-                 propio botón-icono vía provides_slots: sales.pos.assign; cada uno abre su modal. El
-                 POS no sabe nada de ellos. Van a la izquierda de aparcar/pantalla completa. Vacío si
-                 no hay aportantes. -->
-            <span class="cart-actions-slot"></span>
+          <div class="order-toolbar">
             ${this.parkingEnabled
-              ? html`<ion-button title=${t('ui.parkedTickets')} style="position:relative" @click=${() => { this.parkedOpen = !this.parkedOpen; }}>
-                  <ion-icon slot="icon-only" name="file-tray-stacked-outline"></ion-icon>
-                  ${this.parked.length ? html`<span class="badge-num">${this.parked.length}</span>` : nothing}
+              ? html`<ion-button class="header-action icon-action park-action" fill="clear" ?disabled=${!this.cart.length}
+                    title=${t('ui.parkCurrentSale')} aria-label=${t('ui.parkCurrentSale')}
+                    @click=${() => void this.requestPark()}>
+                  <ion-icon slot="icon-only" name="pause-circle-outline"></ion-icon>
                 </ion-button>`
               : nothing}
-            <ion-button title=${t('ui.fullscreen')} @click=${() => this.toggleFullscreen()}>
-              <ion-icon slot="icon-only" name=${this.fullscreen ? 'contract-outline' : 'expand-outline'}></ion-icon>
+            <!-- Cada módulo sigue siendo dueño de su botón y modal. Sales solo ofrece el hueco. -->
+            <span class="cart-actions-slot"></span>
+            <span class="actions-spacer"></span>
+            <ion-button class="header-action icon-action open-checks-action" fill="clear" style="position:relative"
+                        title=${t('ui.parkedTickets')} aria-label=${t('ui.parkedTickets')}
+                        @click=${() => { this.parkedOpen = !this.parkedOpen; }}>
+              <ion-icon slot="icon-only" name="receipt-outline"></ion-icon>
+              ${this.parked.length ? html`<span class="badge-num">${this.parked.length}</span>` : nothing}
             </ion-button>
-          </ion-buttons>
+            <ion-button class="header-action cart-close" fill="clear" title=${t('ui.closeAction')}
+                        aria-label=${t('ui.closeAction')} @click=${() => { this.cartOpen = false; }}>
+              <ion-icon name="chevron-forward-outline"></ion-icon><small>${t('ui.closeAction')}</small>
+            </ion-button>
+          </div>
         </ion-toolbar>
+
+        <div class="order-heading">
+          <div class="order-title-row">
+            <input class="order-title" .value=${this.visibleOrderLabel}
+                   placeholder=${t('ui.newCheckTitle')} aria-label=${t('ui.checkTitleLabel')}
+                   @input=${(e: Event) => { this.orderLabel = (e.target as HTMLInputElement).value; }}
+                   @change=${(e: Event) => void this.saveOrderLabel((e.target as HTMLInputElement).value)} />
+            <button class="title-edit" type="button" title=${t('ui.editCheckTitle')}
+                    aria-label=${t('ui.editCheckTitle')} @click=${() => this.focusOrderTitle()}>
+              <ion-icon name="create-outline"></ion-icon>
+            </button>
+          </div>
+          <div class="order-context">
+            <!-- Los módulos siguen siendo dueños de la asociación y del selector; sales solo
+                 muestra las etiquetas opacas que recibe, iguales para Mesa y Cliente. Sus
+                 botones permanecen libres arriba para asignar/cambiar cada contexto. -->
+            ${this.tableLabel
+              ? html`<ion-chip><ion-icon name="grid-outline"></ion-icon><ion-label>${this.tableLabel}</ion-label></ion-chip>`
+              : nothing}
+            ${this.customerName
+              ? html`<ion-chip><ion-icon name="person-outline"></ion-icon><ion-label>${this.customerName}</ion-label></ion-chip>`
+              : nothing}
+            ${!this.tableLabel && !this.customerName
+              ? html`<span class="context-empty">${t('ui.noCheckContext')}</span>` : nothing}
+          </div>
+        </div>
+
+        ${this.hasKitchen ? html`
+          <ion-segment class="view-tabs" .value=${this.orderView}
+            @ionChange=${(e: CustomEvent) => { this.orderView = (e.detail as { value: 'account' | 'draft' }).value; }}>
+            <ion-segment-button value="account"><ion-label>${t('ui.accountTab')}</ion-label></ion-segment-button>
+            <ion-segment-button value="draft"><ion-label><span class="view-tab-label">
+              ${t('ui.currentCommandTab')}
+              ${this.pendingCount ? html`<span class="pending-dot">${this.pendingCount}</span>` : nothing}
+            </span></ion-label></ion-segment-button>
+          </ion-segment>` : nothing}
       </ion-header>
 
       ${this.parkedOpen
         ? html`
           <div class="pdrop-back" @click=${() => { this.parkedOpen = false; }}></div>
           <div class="pdrop">
-            <ion-button size="small" expand="block" fill="outline" ?disabled=${!this.cart.length} @click=${() => this.park()}>${t('ui.parkCurrentSale')}</ion-button>
-            <p class="hint">${t('ui.parkedTickets')}</p>
+            <ion-button size="small" expand="block" fill="outline" ?disabled=${!this.cart.length} @click=${() => void this.requestPark()}>${this.tableLabel.trim() ? t('ui.leaveAtTable') : t('ui.parkCurrentSale')}</ion-button>
+            <p class="hint">${this.tableLabel.trim()
+              ? t('ui.leaveAtTableHint', { label: this.tableLabel })
+              : t('ui.parkForLaterHint')}</p>
+            <p class="hint"><strong>${t('ui.parkedTickets')}</strong><br>${t('ui.openChecksHint')}</p>
             ${this.parked.map((oc) => html`<div class="pitem">
-              <div>
-                <div class="pn">${oc.label || this.money(oc.total)}</div>
-                <div class="pm">${(oc.created_at || '').replace('T', ' ').slice(11, 16)}${oc.label ? ' · ' + this.money(oc.total) : ''}</div>
-              </div>
-              <!-- Ya NO se bloquea con algo marcado: lo de delante se aparca (sigue abierto) y se
-                   abre la elegida, igual que al cambiar de mesa (ADR-0146). -->
-              <ion-button size="small" @click=${() => this.retrieve(oc)}>${t('ui.retrieve')}</ion-button>
+              <!-- La FILA entera recupera (objetivo táctil grande); eliminar es el icono aparte,
+                   armado en dos toques para no borrar cuentas de un roce. Ya NO se bloquea con
+                   algo marcado: lo de delante se aparca o se queda en su mesa (ADR-0146). -->
+              <button class="prow" @click=${() => this.retrieve(oc)}>
+                <span class="pn">${oc.label || this.money(oc.total)}</span>
+                <span class="pm">${(oc.created_at || '').replace('T', ' ').slice(11, 16)}${oc.label ? ' · ' + this.money(oc.total) : ''}</span>
+              </button>
+              <ion-button size="small" fill="clear" color="danger" class="pdel"
+                          title=${this.armedDelete === oc.id ? t('ui.deleteCheckConfirm') : t('ui.deleteCheck')}
+                          aria-label=${this.armedDelete === oc.id ? t('ui.deleteCheckConfirm') : t('ui.deleteCheck')}
+                          @click=${() => void this.deleteCheck(oc)}>
+                <ion-icon slot="icon-only" name=${this.armedDelete === oc.id ? 'alert-circle-outline' : 'trash-outline'}></ion-icon>
+              </ion-button>
             </div>`)}
             ${!this.parked.length ? html`<div class="hint" style="text-align:center">${t('ui.noParkedTickets')}</div>` : nothing}
           </div>`
@@ -1054,31 +1609,9 @@ export class ErpPosTouch extends LitElement {
            el pie se mueven. Con divs a pelo, una comanda larga empujaba el botón de COBRAR fuera de
            la pantalla — en un TPV eso es no poder cobrar. -->
       <ion-content class="cart-body">
-        ${this.cart.length
-          ? html`<ion-list class="lines" lines="full">
-              ${this.cart.map((l) => html`<ion-item class=${l.line_id && this.splitSel.has(l.line_id) ? 'sel' : ''}
-                  button ?detail=${false} @click=${() => this.toggleSplit(l)}>
-                ${this.cart.length > 1 && l.line_id
-                  ? html`<ion-icon slot="start" class="selmark"
-                            name=${this.splitSel.has(l.line_id) ? 'checkmark-circle' : 'ellipse-outline'}
-                            color=${this.splitSel.has(l.line_id) ? 'primary' : 'medium'}></ion-icon>`
-                  : nothing}
-                <ion-label>
-                  <h3>${l.name}${l.is_gift ? html` <ion-badge color="success">${t('ui.giftBadge')}</ion-badge>` : nothing}</h3>
-                  <p>${priceLabel(this.money(l.price), l.unit_code)}${l.is_gift && l.gift_reason ? html` · ${l.gift_reason}` : nothing}</p>
-                </ion-label>
-                <div slot="end" class="lineend">
-                  <span class="lt" style=${l.is_gift ? 'text-decoration:line-through;opacity:.55' : ''}>${this.money(l.price * l.qty)}</span>
-                  <ion-button fill="clear" size="small" title=${t('ui.giftAction')} @click=${() => this.toggleGift(l.id)}>
-                    <ion-icon name=${l.is_gift ? 'gift' : 'gift-outline'} slot="icon-only" color=${l.is_gift ? 'success' : 'medium'}></ion-icon>
-                  </ion-button>
-                  <ok-qty-stepper .value=${l.qty} .min=${0} .step=${this.stepOf(l)}
-                    @ok-change=${(e: CustomEvent) => this.setQtyAbs(l.id, (e.detail as { value: number }).value,
-                      e.currentTarget as HTMLElement & { value: number; updateComplete?: Promise<unknown> })}></ok-qty-stepper>
-                </div>
-              </ion-item>`)}
-            </ion-list>`
-          : html`<div class="empty">${t('ui.cartEmptyTouch')}</div>`}
+        ${this.hasKitchen && this.orderView === 'draft'
+          ? this.renderDraft()
+          : this.hasFired ? this.renderSections() : this.renderOrderList()}
       </ion-content>
 
       <!-- El PIE. ion-footer es un pie de verdad: se queda abajo pase lo que pase. -->
@@ -1101,35 +1634,19 @@ export class ErpPosTouch extends LitElement {
             <ion-icon name="ticket-outline"></ion-icon>
             <ion-icon name="gift-outline"></ion-icon>
             <ion-icon name="ellipsis-horizontal-circle-outline"></ion-icon>
+            <!-- Borrado en dos toques de la lista de cuentas: el nombre del icono es DINÁMICO
+                 (trash → alert al armar), y el empaquetador solo hornea literales. -->
+            <ion-icon name="trash-outline"></ion-icon>
+            <ion-icon name="alert-circle-outline"></ion-icon>
           </span>
-          ${this.payMethods.length > 1 ? html`
-            <ion-segment class="pay-methods" value=${this.payMethod?.id ?? ''}
-                         @ionChange=${(e: CustomEvent) => {
-                           const id = (e.detail as { value: string }).value;
-                           this.payMethod = this.payMethods.find((m) => m.id === id) ?? this.payMethod;
-                           if (!needsTendered(this.payMethod)) this.tendered = '';
-                         }}>
-              ${this.payMethods.map((m) => {
-                // Marcas que no existen en Iconify (Bizum) van INLINE desde ui/assets; el resto,
-                // su Ionicon. El SVG usa currentColor, así que se tiñe igual al seleccionarlo.
-                const marca = brandSvgFor(m.type, m.name);
-                return html`
-                <ion-segment-button value=${m.id} title=${m.name} aria-label=${m.name}>
-                  ${marca
-                    ? html`<span class="brand">${unsafeSVG(marca)}</span>`
-                    : html`<ion-icon name=${payMethodIcon(m.type, m.name)}></ion-icon>`}
-                </ion-segment-button>`;
-              })}
-            </ion-segment>` : nothing}
+          <!-- El MÉTODO de pago ya no se elige aquí: vive DENTRO del sheet de cobro, como la
+               pantalla de tender de cualquier TPV (rediseño 2026-07-19). El footer solo acciona. -->
           <!-- Acciones SOLO-ICONO (ADR-0133): imprimir la CUENTA para llevarla a la mesa (no es un
                documento fiscal) y COBRAR (que sí emite el tiquet fiscal). El importe ya se ve
                grande arriba, así que el texto sobra; la etiqueta va en aria-label/title. -->
+          <!-- El botón de COCINA ya no vive aquí: entra por el slot sales.pos.actions (lo
+               aporta kitchen si está instalado/activo) y se monta dentro de Comanda actual. -->
           <div class="foot-actions">
-            <ion-button class="prebill" fill="outline" ?disabled=${!this.cart.length}
-                        title=${t('ui.fireToKitchen')} aria-label=${t('ui.fireToKitchen')}
-                        @click=${() => void this.fireToKitchen()}>
-              <ion-icon slot="icon-only" name="restaurant-outline"></ion-icon>
-            </ion-button>
             <ion-button class="prebill" fill="outline" ?disabled=${!this.cart.length}
                         title=${t('ui.printPrebill')} aria-label=${t('ui.printPrebill')}
                         @click=${() => { this.prebillOpen = true; }}>
@@ -1138,11 +1655,109 @@ export class ErpPosTouch extends LitElement {
             <ion-button class="charge" ?disabled=${!this.cart.length}
                         title=${t('ui.charge')} aria-label=${t('ui.charge')}
                         @click=${() => this.openPay()}>
-              <ion-icon slot="icon-only" name="cash-outline"></ion-icon>
+              <ion-icon slot="start" name="card-outline"></ion-icon>
+              ${t('ui.charge')} · ${this.money(this.total)}
             </ion-button>
           </div>
         </div>
       </ion-footer>`;
+  }
+
+  /** Vista temporal que existe únicamente cuando Cocina rellena sales.pos.actions. El botón
+   *  sigue siendo propiedad de kitchen: sales solo lo coloca debajo de las líneas pendientes. */
+  private renderDraft() {
+    const pendientes = pendingLines(this.cart);
+    return html`<div class="draft-pane">
+      <p class="draft-hint">${t('ui.currentCommandHint')}</p>
+      ${pendientes.length
+        ? html`<ion-list class="lines" lines="none">${pendientes.map((l) => this.renderLine(l))}</ion-list>`
+        : html`<div class="draft-empty"><ok-empty-state icon="checkmark-done-outline"
+            heading=${t('ui.noPendingCommand')} message=${t('ui.noPendingCommandHint')}></ok-empty-state></div>`}
+      <div class="draft-actions-slot"></div>
+    </div>`;
+  }
+
+  /** ¿Hay líneas ya ENVIADAS a producción? El carrito se parte en secciones cuando el DATO lo
+   *  dice — no hay toggle: la funcionalidad llega instalando módulos (kitchen dispara; una
+   *  tienda jamás dispara y jamás ve secciones). Composición de lo básico a lo complejo. */
+  private get hasFired(): boolean {
+    return this.cart.some((l) => !!l.fired_at);
+  }
+
+  /** La pestaña PEDIDO (y el carrito plano sin modo restaurante): la cuenta a cobrar. */
+  private renderOrderList() {
+    return this.cart.length
+      ? html`<ion-list class="lines" lines="full">
+          ${this.cart.map((l) => this.renderLine(l))}
+        </ion-list>`
+      : html`<div class="empty">${t('ui.cartEmptyTouch')}</div>`;
+  }
+
+  /** Una línea de la cuenta. BLOQUEADA si ya salió a cocina (`fired_at`): la comida está en
+   *  fuego — ni stepper ni invitación (el SQL también lo impone). Tocarla sigue marcándola para
+   *  el cobro por partes: enviada ≠ no cobrable. */
+  private renderLine(l: CartLine) {
+    const locked = isLineLocked(l);
+    return html`<ion-item class=${l.line_id && this.splitSel.has(l.line_id) ? 'sel' : ''}
+        button ?detail=${false} @click=${() => this.toggleSplit(l)}>
+      ${this.cart.length > 1 && l.line_id
+        ? html`<ion-icon slot="start" class="selmark"
+                  name=${this.splitSel.has(l.line_id) ? 'checkmark-circle' : 'ellipse-outline'}
+                  color=${this.splitSel.has(l.line_id) ? 'primary' : 'medium'}></ion-icon>`
+        : nothing}
+      <ion-label>
+        <h3>
+          ${this.hasKitchen
+            ? locked
+              ? html`<ok-status-pill tone="success" size="sm" dot>${t('ui.commandRound', { n: String(l.round_no ?? '') })}</ok-status-pill>`
+              : html`<ok-status-pill tone="warning" size="sm" dot>${t('ui.pendingStatus')}</ok-status-pill>`
+            : nothing}
+          <span>${l.name}</span>${l.is_gift
+            ? html` <ion-badge color="success">${t('ui.giftBadge')}</ion-badge>` : nothing}</h3>
+        <p>${priceLabel(this.money(l.price), l.unit_code)}${l.is_gift && l.gift_reason ? html` · ${l.gift_reason}` : nothing}</p>
+      </ion-label>
+      <div slot="end" class="lineend">
+        <span class="lt" style=${l.is_gift ? 'text-decoration:line-through;opacity:.55' : ''}>${this.money(l.price * l.qty)}</span>
+        ${locked
+          ? html`<span class="lqty">×${formatQuantity(toMicro(l.qty))}</span>`
+          : html`
+            <ion-button fill="clear" size="small" title=${t('ui.giftAction')} @click=${() => this.toggleGift(l.id)}>
+              <ion-icon name=${l.is_gift ? 'gift' : 'gift-outline'} slot="icon-only" color=${l.is_gift ? 'success' : 'medium'}></ion-icon>
+            </ion-button>
+            <ok-qty-stepper .value=${l.qty} .min=${0} .step=${this.stepOf(l)}
+              @ok-change=${(e: CustomEvent) => this.setQtyAbs(l.id, (e.detail as { value: number }).value,
+                e.currentTarget as HTMLElement & { value: number; updateComplete?: Promise<unknown> })}></ok-qty-stepper>`}
+      </div>
+    </ion-item>`;
+  }
+
+  /** Secciones POR DATO (debate Ioan 2026-07-19, 2ª ronda): PENDIENTE DE ENVIAR arriba
+   *  (editable — donde trabaja el camarero) y ENVIADO debajo (bloqueado, cobrable). El detalle
+   *  por comanda — números, horas, ESTADOS EN VIVO del KDS — no vive aquí: lo aporta kitchen
+   *  con su chip+modal por el slot `sales.pos.order_info` (montado en la cabecera de ENVIADO).
+   *  El envío es el botón de kitchen dentro de «Comanda actual» (uno solo, con badge). */
+  private renderSections() {
+    const pendientes = pendingLines(this.cart);
+    const enviadas = this.cart.filter((l) => !!l.fired_at);
+    return html`<div class="secs">
+      ${pendientes.length ? html`<div class="sec sec-pending">
+        <div class="sec-h">
+          <ion-icon name="create-outline" color="primary"></ion-icon>
+          <span>${t('ui.courseInProgress')}</span>
+          <span class="ccount">· ${pendientes.length}</span>
+        </div>
+        <ion-list class="lines" lines="full">${pendientes.map((l) => this.renderLine(l))}</ion-list>
+      </div>` : nothing}
+      ${enviadas.length ? html`<div class="sec sec-sent">
+        <div class="sec-h">
+          <ion-icon name="flame" color="warning"></ion-icon>
+          <span>${t('ui.sentHeader')}</span>
+          <span class="ccount">· ${enviadas.length}</span>
+          <span class="sec-slot"></span>
+        </div>
+        <ion-list class="lines" lines="full">${enviadas.map((l) => this.renderLine(l))}</ion-list>
+      </div>` : nothing}
+    </div>`;
   }
 
   render() {
@@ -1156,7 +1771,7 @@ export class ErpPosTouch extends LitElement {
               <div class="thumb" style=${p.image ? `background-image:url(${p.image})` : `background:${gradient(p.name)}`}>
                 ${p.image ? nothing : initials(p.name)}
               </div>
-              <div class="tinfo"><div class="n">${p.name}</div><div class="p">${this.money(Number(p.price))}</div></div>
+              <div class="tinfo"><div class="n">${p.name}</div><div class="sku">${p.sku || p.unit_code || ''}</div><div class="p">${this.money(Number(p.price))}</div></div>
             </ion-card>`)}
             ${!this.filtered.length ? html`<div class="empty">${t('ui.noProducts')}</div>` : nothing}
           </div>
@@ -1189,18 +1804,46 @@ export class ErpPosTouch extends LitElement {
               </div>
               <div class="pay">
 
-                <!-- Entregado/cambio/teclado SOLO en efectivo: con tarjeta se cobra el total y no
-                     hay nada que teclear (lo decide requires_change, no un "si es efectivo"). -->
+                <!-- El MÉTODO se elige AQUÍ, como en la pantalla de tender de cualquier TPV:
+                     botones grandes con icono y NOMBRE (el dueño los renombra a su gusto, así que
+                     un icono mudo no basta). Solo se pinta con más de un método activo. -->
+                ${this.payMethods.length > 1 ? html`
+                  <div class="pay-methods" role="group" aria-label=${t('ui.paymentMethod')}>
+                    ${this.payMethods.map((m) => {
+                      // Marcas que no existen en Iconify (Bizum) van INLINE desde ui/assets; el
+                      // resto, su Ionicon. currentColor tiñe igual el SVG al seleccionar.
+                      const marca = brandSvgFor(m.type, m.name);
+                      const nombre = payMethodDisplayName(m, t);
+                      return html`
+                      <button class="pm-btn" aria-pressed=${this.payMethod?.id === m.id ? 'true' : 'false'}
+                              title=${nombre}
+                              @click=${() => { this.payMethod = m; if (!needsTendered(m)) this.tendered = ''; }}>
+                        ${marca
+                          ? html`<span class="brand">${unsafeSVG(marca)}</span>`
+                          : html`<ion-icon name=${payMethodIcon(m.type, m.name)}></ion-icon>`}
+                        <span class="pm-name">${nombre}</span>
+                      </button>`;
+                    })}
+                  </div>` : nothing}
+
+                <!-- Entregado/cambio/teclado SOLO en efectivo: con tarjeta se cobra el importe
+                     exacto y no hay nada que teclear (lo decide requires_change, no un "si es
+                     efectivo"). Los ATAJOS son el patrón Toast: el exacto y los redondeos por
+                     encima — el cajero toca en vez de teclear y el cambio sale solo. -->
                 ${needsTendered(this.payMethod)
                   ? html`
                     <div class="amt"><span>${t('ui.tendered')}</span><span class="v">${this.money(this.tenderedNum)}</span></div>
                     ${this.change > 0
                       ? html`<div class="amt big-change"><span>${t('ui.change')}</span><span class="v">${this.money(this.change)}</span></div>`
                       : nothing}
+                    <!-- SIN atajos de importe (73/75/80…): Ioan los eliminó el 2026-07-19 y pidió
+                         NO volver a añadirlos. El entregado se teclea en el numpad, punto. -->
                     <div class="numpad">
                       ${['1','2','3','4','5','6','7','8','9','.','0','C'].map((k) => html`<button @click=${() => this.tap(k)}>${k}</button>`)}
                     </div>`
-                  : nothing}
+                  : html`
+                    <div class="amt pay-exact"><span>${t('ui.payExact')}</span><span class="v">${this.money(this.payable)}</span></div>
+                    <p class="pay-hint">${t('ui.payCardHint', { amount: this.money(this.payable) })}</p>`}
 
                 <!-- Imprimir deja de ser un botón gemelo del de cobrar (dos botones azules iguales
                      no dicen cuál hace qué): es una PREFERENCIA del cobro. -->
@@ -1214,15 +1857,57 @@ export class ErpPosTouch extends LitElement {
               </div>
               <div class="sheet-foot">
                 ${this.error ? html`<p class="pay-err">${this.error}</p>` : nothing}
-                <!-- UNA acción, dice lo que hace y por cuánto, y no exige scroll para alcanzarla. -->
+                <!-- UNA acción, dice lo que hace y por cuánto, y no exige scroll para alcanzarla.
+                     El importe es el PAYABLE: con split decía «Cobrar 3,60 €» para cobrar 1,80 €. -->
                 <ion-button class="charge" expand="block" ?disabled=${this.busy}
                             @click=${() => this.confirm(this.printOnCharge)}>
-                  ${this.busy ? t('ui.charging') : `${t('ui.charge')} ${this.money(this.total)}`}
+                  ${this.busy
+                    ? t('ui.charging')
+                    : needsTendered(this.payMethod)
+                      ? `${t('ui.charge')} ${this.money(this.payable)}`
+                      : t('ui.chargeWithCard', { amount: this.money(this.payable) })}
                 </ion-button>
               </div>
             </div>
           </div>`
         : nothing}
+
+      <!-- APARCAR sin mesa: se pide un NOMBRE (default: la hora, patrón Loyverse) pre-seleccionado
+           para sobreescribirlo de un toque. <dialog> nativo: top layer, inmune al transform del
+           drawer del carrito (gotcha conocido de overlays en ancestros con transform). -->
+      ${this.parkPromptOpen ? html`
+        <dialog class="park-dialog" open>
+          <h3>${t('ui.parkTitle')}</h3>
+          <p>${t('ui.parkNameHint')}</p>
+          <input type="text" .value=${this.parkName} placeholder=${t('ui.parkNamePlaceholder')}
+                 aria-label=${t('ui.parkNameLabel')}
+                 @input=${(e: Event) => { this.parkName = (e.target as HTMLInputElement).value; }}
+                 @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') { this.parkPromptOpen = false; void this.parkWith(this.parkName); } }} />
+          <div class="dlg-actions">
+            <ion-button fill="clear" @click=${() => { this.parkPromptOpen = false; }}>${t('ui.cancel')}</ion-button>
+            <ion-button class="park-confirm"
+                        @click=${() => { this.parkPromptOpen = false; void this.parkWith(this.parkName); }}>
+              ${t('ui.parkCurrentSale')}
+            </ion-button>
+          </div>
+        </dialog>` : nothing}
+
+      <!-- CARRITO SUCIO al recuperar/tocar mesa: ¿qué hacemos con la cuenta actual? Aparcar es la
+           salida segura (primario); eliminar anula con rastro (danger). Cancelar solo desde la
+           lista — al tocar una mesa el filler ya cambió su selección y cancelar los descoordina. -->
+      ${this.dirtyOpen ? html`
+        <dialog class="dirty-dialog" open>
+          <h3>${t('ui.dirtyCartTitle')}</h3>
+          <p>${t('ui.dirtyCartBody')}</p>
+          <div class="dlg-actions">
+            ${this.dirtyAllowCancel
+              ? html`<ion-button fill="clear" @click=${() => this.answerDirty('cancel')}>${t('ui.cancel')}</ion-button>`
+              : nothing}
+            <ion-button class="discard-opt" color="danger" fill="outline"
+                        @click=${() => this.answerDirty('discard')}>${t('ui.discardAndOpen')}</ion-button>
+            <ion-button class="park-opt" @click=${() => this.answerDirty('park')}>${t('ui.parkAndOpen')}</ion-button>
+          </div>
+        </dialog>` : nothing}
 
       <!-- Buscador de productos = ok-spotlight-search (OutfitKit): overlay translúcido flotante que
            NO empuja la rejilla. La lupa del catbar controla su apertura. Al pulsar un resultado se

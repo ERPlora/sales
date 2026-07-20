@@ -11,4 +11,8 @@ SET quantity    = :quantity,
     gift_reason = COALESCE(:gift_reason, gift_reason),
     updated_by  = :current_user_id,
     updated_at  = :now
-WHERE id = :line_id AND order_id = :order_id AND hub_id = :hub_id AND is_deleted = 0;
+-- `fired_at IS NULL`: una línea YA ENVIADA a cocina no se edita desde el TPV (tandas,
+-- 2026-07-19) — la comida está en fuego; corregirla = ronda nueva o invitación. ⚠️ A CONFIRMAR
+-- EN REVIEW (recomendación aplicada).
+WHERE id = :line_id AND order_id = :order_id AND hub_id = :hub_id AND is_deleted = 0
+  AND fired_at IS NULL;

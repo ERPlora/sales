@@ -4,9 +4,9 @@
 -- agnóstico de la mesa Y del cliente: esas asociaciones las OWNean `tables` y `customers` en sus
 -- junctions. `provisional_total` NO es fiscal.
 INSERT INTO sales_order (
-    id, hub_id, status, provisional_total, notes, source_module,
+    id, hub_id, status, provisional_total, notes, label, source_module,
     is_deleted, created_by, updated_by, created_at, updated_at
 ) VALUES (
-    :id, :hub_id, :status, :provisional_total, :notes, :source_module,
+    :id, :hub_id, :status, :provisional_total, :notes, :label, :source_module,
     0, :current_user_id, :current_user_id, :now, :now
 );

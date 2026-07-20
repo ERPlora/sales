@@ -124,6 +124,23 @@ export const PAY_ICON_NAMES: string[] = [
   ...new Set([...Object.values(BY_TYPE), ...BY_NAME.map(([, i]) => i), PAY_ICON_FALLBACK]),
 ];
 
+/** Nombres que siembra el SEED de fábrica (ADR-0055: datos en inglés canónico) → su clave i18n. */
+const SEED_NAME_TO_KEY: Record<string, string> = {
+  Cash: 'ui.cash',
+  Card: 'ui.card',
+};
+
+/**
+ * Nombre VISIBLE de una forma de pago (botones del cobro, tiquet). El seed de fábrica siembra
+ * `Cash`/`Card` en inglés canónico (ADR-0055, patrón de las unidades de inventory): mientras la
+ * fila conserve ese nombre se muestra traducido por i18n; en cuanto el dueño la renombra
+ * («BBVA TPV»), su texto manda tal cual.
+ */
+export function payMethodDisplayName(method: PayMethodLike, t: (key: string) => string): string {
+  const key = SEED_NAME_TO_KEY[(method.name || '').trim()];
+  return key ? t(key) : (method.name || '');
+}
+
 /**
  * Forma de pago por DEFECTO al abrir el TPV: efectivo si está disponible; si no, la primera según
  * el orden que haya definido el dueño (`sort_order`). Antes se cogía la primera a secas y con

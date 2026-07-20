@@ -833,6 +833,9 @@ pub fn open_order_pure(input: Value) -> Result<Output, String> {
     h.insert("status".into(), json!("open")); // ciclo de vida: open → completed → voided (ADR-0141)
     h.insert("provisional_total".into(), json!(provisional_total)); // céntimos, recalculable
     h.insert("notes".into(), json!(str_or(&payload, "notes", "")));
+    // Etiqueta OPACA de la cuenta («Mesa 4», «Ana — terraza», «15:07»): es lo que la hace
+    // reconocible en la lista de cuentas abiertas. `sales` no la interpreta (ADR-0144).
+    h.insert("label".into(), json!(str_or(&payload, "label", "")));
     h.insert("source_module".into(), json!(str_or(&payload, "source_module", "pos")));
     // created_by/created_at/hub_id los inyecta el SQL desde el contexto (:current_user_id, :now,
     // :hub_id), igual que `_insert_sale` — el WASM no los pasa.
@@ -878,15 +881,34 @@ pub fn fire_order_pure(input: Value) -> Result<Output, String> {
         c => c.to_string(),
     };
 
-    let event = Event::new("order.fired", json!({
+    // TANDAS (decisión Ioan 2026-07-19): si el POS manda `round_no` (≥1), las líneas aún sin
+    // enviar quedan marcadas con esa ronda (`fired_at IS NULL` filtra en el SQL) — es lo que
+    // permite que el siguiente disparo mande SOLO lo nuevo (antes cada fire reenviaba el carrito
+    // entero: comida duplicada en cocina). El número es la vista LOCAL del pedido; `kitchen`
+    // sigue numerando sus rondas (ADR-0144) y ambos coinciden porque cuentan los mismos disparos.
+    // Sin `round_no` (POS viejo, integraciones): comportamiento de siempre, no se escribe nada.
+    let round_no = payload.get("round_no").and_then(|v| v.as_i64()).unwrap_or(0);
+    let mut ops: Vec<Operation> = Vec::new();
+    if round_no >= 1 {
+        let mut p = Map::new();
+        p.insert("order_id".into(), json!(order_id));
+        p.insert("round_no".into(), json!(round_no));
+        ops.push(Operation::sql("sales._mark_lines_fired", p));
+    }
+
+    let mut ev = json!({
         "sender": "sales",
         "order_id": order_id,
         // Opaca a propósito: `sales` no sabe (ni quiere saber) de dónde sale este texto.
         "label": str_or(&payload, "label", ""),
         "channel": channel,
         "items": items,
-    }));
-    Ok(Output { operations: Vec::new(), events: vec![event] })
+    });
+    if round_no >= 1 {
+        ev["round_no"] = json!(round_no); // informativo: kitchen numera lo suyo (ADR-0144)
+    }
+    let event = Event::new("order.fired", ev);
+    Ok(Output { operations: ops, events: vec![event] })
 }
 
 #[cfg(test)]
@@ -950,6 +972,65 @@ mod tests {
         assert!(!out.operations.iter().any(|o| o.command == "sales._mark_order_line_paid"));
         assert!(out.operations.iter().any(|o| o.command == "sales._complete_order"),
                 "el cobro entero SÍ cierra el pedido");
+    }
+
+    #[test]
+    fn abrir_un_pedido_persiste_su_etiqueta_opaca() {
+        // La etiqueta («Mesa 4», «Ana — terraza», «15:07») es lo que hace RECUPERABLE una cuenta
+        // abierta: sin ella la lista de aparcados salía anónima (solo total+hora) y los tiquets
+        // «desaparecían» a la vista. Opaca como la del disparo a cocina (ADR-0144): `sales` no
+        // sabe si es una mesa o un nombre — la escribe quien la conoce.
+        let mut inp = input(json!([{ "product_name": "Menú", "price": 500, "quantity": 1_000_000 }]), 2, 0);
+        inp["payload"]["label"] = json!("Mesa 4");
+        let out = orden(inp);
+        let header = out.operations.iter().find(|o| o.command == "sales._insert_order").expect("cabecera");
+        assert_eq!(header.params["label"], json!("Mesa 4"));
+    }
+
+    #[test]
+    fn abrir_sin_etiqueta_deja_cadena_vacia() {
+        // Cuenta de barra sin nombre: etiqueta vacía, nunca NULL ni ausente — el SQL bindea :label.
+        let out = orden(input(json!([{ "product_name": "Menú", "price": 500, "quantity": 1_000_000 }]), 2, 0));
+        let header = out.operations.iter().find(|o| o.command == "sales._insert_order").expect("cabecera");
+        assert_eq!(header.params["label"], json!(""));
+    }
+
+    #[test]
+    fn disparar_con_ronda_marca_las_lineas_pendientes_del_pedido() {
+        // Tandas (decisión Ioan 2026-07-19): al disparar, las líneas aún sin enviar quedan
+        // MARCADAS con su ronda (`sales._mark_lines_fired` filtra fired_at IS NULL). Es lo que
+        // permite que el siguiente disparo mande SOLO lo nuevo — antes cada fire reenviaba el
+        // carrito entero y cocina recibía comida duplicada. `kitchen` sigue numerando lo suyo
+        // (ADR-0144); este número es la vista local del pedido y viaja informativo.
+        let inp = json!({
+            "payload": {
+                "order_id": "ord-1", "label": "Mesa 4", "channel": "dine_in", "round_no": 2,
+                "items": [{ "product_name": "Entrecot", "quantity": 1_000_000 }]
+            },
+            "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-07-19T14:25:00+00:00", "new_ids": [] }
+        });
+        let out = fire_order_pure(inp).expect("disparar la ronda");
+
+        let marca = out.operations.iter().find(|o| o.command == "sales._mark_lines_fired")
+            .expect("el disparo con ronda marca las líneas pendientes");
+        assert_eq!(marca.params["order_id"], json!("ord-1"));
+        assert_eq!(marca.params["round_no"], json!(2));
+
+        // Y el evento sigue saliendo UNA vez, con la ronda informativa para kitchen.
+        assert_eq!(out.events.len(), 1);
+        assert_eq!(out.events[0].payload["round_no"], json!(2));
+    }
+
+    #[test]
+    fn disparar_sin_ronda_sigue_sin_escribir_nada() {
+        // Compat: un fire sin round_no (POS viejo, integraciones) se comporta como siempre —
+        // solo emite el evento, no muta el pedido.
+        let inp = json!({
+            "payload": { "order_id": "ord-1", "label": "", "items": [{ "product_name": "Café", "quantity": 1_000_000 }] },
+            "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-07-19T10:00:00+00:00", "new_ids": [] }
+        });
+        let out = fire_order_pure(inp).expect("disparo compat");
+        assert!(out.operations.is_empty(), "sin ronda no se marca nada: {:?}", out.operations);
     }
 
     #[test]

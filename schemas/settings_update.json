@@ -55,12 +55,6 @@
       "default": false,
       "title": "Emitir factura si el cliente tiene NIF"
     },
-    "ticket_expiry_hours": {
-      "type": "integer",
-      "default": 24,
-      "minimum": 1,
-      "title": "Caducidad del tique aparcado (horas)"
-    },
     "default_document_format": {
       "type": "string",
       "enum": [

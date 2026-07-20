@@ -50,6 +50,11 @@ export interface CartLine {
   is_gift?: boolean;
   /** Motivo de la invitación (cortesía/error cocina/fidelización…). */
   gift_reason?: string;
+  /** TANDAS (2026-07-19): ronda LOCAL en la que la línea salió a cocina (≥1). Ausente/0 = aún
+   *  sin enviar (la ronda en curso, editable). `kitchen` numera lo suyo (ADR-0144). */
+  round_no?: number;
+  /** Cuándo salió a cocina. Presente = línea BLOQUEADA en el TPV (el SQL también lo impone). */
+  fired_at?: string;
 }
 
 export interface ErploraClientLike {
@@ -197,9 +202,13 @@ function toItemPayload(l: CartLine): Record<string, unknown> {
   };
 }
 
-/** Abre un pedido MUTABLE con sus primeras líneas. Devuelve el `order_id` que generó el runtime. */
-export async function openOrderWithLines(client: ErploraClientLike, lines: CartLine[]): Promise<string> {
-  const res = await client.command('sales.order.open', { items: lines.map(toItemPayload) });
+/** Abre un pedido MUTABLE con sus primeras líneas. Devuelve el `order_id` que generó el runtime.
+ *  `label` (opcional): etiqueta OPACA de la cuenta («Mesa 4») — si ya se sabe, el pedido nace
+ *  etiquetado y la lista de cuentas abiertas lo muestra bien desde el primer segundo. */
+export async function openOrderWithLines(client: ErploraClientLike, lines: CartLine[], label?: string): Promise<string> {
+  const payload: Record<string, unknown> = { items: lines.map(toItemPayload) };
+  if (label?.trim()) payload.label = label.trim();
+  const res = await client.command('sales.order.open', payload);
   return firstNewId(res);
 }
 
@@ -299,6 +308,10 @@ export async function loadOrderLines(client: ErploraClientLike, orderId: string)
       pricing_unit_name: x.pricing_unit_name ? String(x.pricing_unit_name) : undefined,
       pricing_factor_num: Number(x.pricing_factor_num) || undefined,
       pricing_factor_den: Number(x.pricing_factor_den) || undefined,
+      // Tandas (2026-07-19): la ronda vuelve con la línea para que un pedido REANUDADO siga
+      // sabiendo qué salió ya a cocina (y no lo re-envíe ni lo deje editar).
+      round_no: Number(x.round_no) || undefined,
+      fired_at: x.fired_at ? String(x.fired_at) : undefined,
     }));
   } catch {
     return [];

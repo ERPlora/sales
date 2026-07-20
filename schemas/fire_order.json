@@ -53,6 +53,11 @@
           }
         }
       }
+    },
+    "round_no": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Ronda LOCAL del pedido (tandas): al dispararla se marcan las líneas pendientes (round_no+fired_at) y el siguiente disparo manda solo lo nuevo. kitchen sigue numerando lo suyo (ADR-0144)."
     }
   }
 }

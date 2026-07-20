@@ -52,3 +52,19 @@ describe('buildFirePayload (ADR-0141: la comanda nace del pedido)', () => {
     expect(buildFirePayload(undefined, 'Mesa 4', [line()])).toBeUndefined();
   });
 });
+
+// Tandas (2026-07-19): el POS dispara la RONDA EN CURSO y manda su número local para que el
+// handler marque las líneas pendientes. Sin número (compat) el payload no lo lleva.
+describe('ronda local en el payload del disparo', () => {
+  const linea = { id: 'p1', name: 'Entrecot', price: 2500, qty: 1 };
+
+  it('con round_no, viaja en el payload', () => {
+    const p = buildFirePayload('ord-1', 'Mesa 4', [linea], 2);
+    expect(p?.round_no).toBe(2);
+  });
+
+  it('sin round_no, el payload no lo inventa (compat)', () => {
+    const p = buildFirePayload('ord-1', 'Mesa 4', [linea]);
+    expect(p && 'round_no' in p && p.round_no !== undefined).toBe(false);
+  });
+});
