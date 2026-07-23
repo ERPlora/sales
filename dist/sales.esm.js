@@ -1559,7 +1559,155 @@ function printHtmlInIframe(html, doc = document) {
   else w2.addEventListener("load", () => setTimeout(lanzar, 50), { once: true });
 }
 
-// node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-qr.js
+// node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/shared/icons.js
+var rawAdd = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M256 112v288m144-144H112"/></svg>';
+var rawAlertCircle = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="M256 48C141.31 48 48 141.31 48 256s93.31 208 208 208s208-93.31 208-208S370.69 48 256 48m0 319.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20m21.72-201.15l-5.74 122a16 16 0 0 1-32 0l-5.74-121.94v-.05a21.74 21.74 0 1 1 43.44 0Z"/></svg>';
+var rawAlertCircleOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" d="M448 256c0-106-86-192-192-192S64 150 64 256s86 192 192 192s192-86 192-192Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M250.26 166.05L256 288l5.73-121.95a5.74 5.74 0 0 0-5.79-6h0a5.74 5.74 0 0 0-5.68 6"/><path fill="currentColor" d="M256 367.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20"/></svg>';
+var rawAppsOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><rect width="80" height="80" x="64" y="64" fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" rx="40" ry="40"/><rect width="80" height="80" x="216" y="64" fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" rx="40" ry="40"/><rect width="80" height="80" x="368" y="64" fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" rx="40" ry="40"/><rect width="80" height="80" x="64" y="216" fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" rx="40" ry="40"/><rect width="80" height="80" x="216" y="216" fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" rx="40" ry="40"/><rect width="80" height="80" x="368" y="216" fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" rx="40" ry="40"/><rect width="80" height="80" x="64" y="368" fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" rx="40" ry="40"/><rect width="80" height="80" x="216" y="368" fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" rx="40" ry="40"/><rect width="80" height="80" x="368" y="368" fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" rx="40" ry="40"/></svg>';
+var rawArchiveOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M80 152v256a40.12 40.12 0 0 0 40 40h272a40.12 40.12 0 0 0 40-40V152"/><rect width="416" height="80" x="48" y="64" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="32" rx="28" ry="28"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="m320 304l-64 64l-64-64m64 41.89V224"/></svg>';
+var rawArrowRedoOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="32" d="M448 256L272 88v96C103.57 184 64 304.77 64 424c48.61-62.24 91.6-96 208-96v96Z"/></svg>';
+var rawArrowUndoOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="32" d="M240 424v-96c116.4 0 159.39 33.76 208 96c0-119.23-39.57-240-208-240V88L64 256Z"/></svg>';
+var rawBackspaceOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="32" d="M135.19 390.14a28.8 28.8 0 0 0 21.68 9.86h246.26A29 29 0 0 0 432 371.13V140.87A29 29 0 0 0 403.13 112H156.87a28.84 28.84 0 0 0-21.67 9.84L46.33 256l88.86 134.11Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M336.67 192.33L206.66 322.34m130.01 0L206.66 192.33m130.01 0L206.66 322.34m130.01 0L206.66 192.33"/></svg>';
+var rawCalendarOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><rect width="416" height="384" x="48" y="80" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="32" rx="48"/><circle cx="296" cy="232" r="24" fill="currentColor"/><circle cx="376" cy="232" r="24" fill="currentColor"/><circle cx="296" cy="312" r="24" fill="currentColor"/><circle cx="376" cy="312" r="24" fill="currentColor"/><circle cx="136" cy="312" r="24" fill="currentColor"/><circle cx="216" cy="312" r="24" fill="currentColor"/><circle cx="136" cy="392" r="24" fill="currentColor"/><circle cx="216" cy="392" r="24" fill="currentColor"/><circle cx="296" cy="392" r="24" fill="currentColor"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M128 48v32m256-32v32"/><path fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="32" d="M464 160H48"/></svg>';
+var rawCheckmarkCircle = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="M256 48C141.31 48 48 141.31 48 256s93.31 208 208 208s208-93.31 208-208S370.69 48 256 48m108.25 138.29l-134.4 160a16 16 0 0 1-12 5.71h-.27a16 16 0 0 1-11.89-5.3l-57.6-64a16 16 0 1 1 23.78-21.4l45.29 50.32l122.59-145.91a16 16 0 0 1 24.5 20.58"/></svg>';
+var rawCheckmarkOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M416 128L192 384l-96-96"/></svg>';
+var rawChevronBack = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="48" d="M328 112L184 256l144 144"/></svg>';
+var rawChevronBackOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="48" d="M328 112L184 256l144 144"/></svg>';
+var rawChevronDownOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="48" d="m112 184l144 144l144-144"/></svg>';
+var rawChevronForward = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="48" d="m184 112l144 144l-144 144"/></svg>';
+var rawChevronForwardOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="48" d="m184 112l144 144l-144 144"/></svg>';
+var rawChevronUpOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="48" d="m112 328l144-144l144 144"/></svg>';
+var rawClose = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="m289.94 256l95-95A24 24 0 0 0 351 127l-95 95l-95-95a24 24 0 0 0-34 34l95 95l-95 95a24 24 0 1 0 34 34l95-95l95 95a24 24 0 0 0 34-34Z"/></svg>';
+var rawCloseOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M368 368L144 144m224 0L144 368"/></svg>';
+var rawCloudUploadOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M320 367.79h76c55 0 100-29.21 100-83.6s-53-81.47-96-83.6c-8.89-85.06-71-136.8-144-136.8c-69 0-113.44 45.79-128 91.2c-60 5.7-112 43.88-112 106.4s54 106.4 120 106.4h56"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="m320 255.79l-64-64l-64 64m64 192.42V207.79"/></svg>';
+var rawCreateOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M384 224v184a40 40 0 0 1-40 40H104a40 40 0 0 1-40-40V168a40 40 0 0 1 40-40h167.48"/><path fill="currentColor" d="M459.94 53.25a16.06 16.06 0 0 0-23.22-.56L424.35 65a8 8 0 0 0 0 11.31l11.34 11.32a8 8 0 0 0 11.34 0l12.06-12c6.1-6.09 6.67-16.01.85-22.38M399.34 90L218.82 270.2a9 9 0 0 0-2.31 3.93L208.16 299a3.91 3.91 0 0 0 4.86 4.86l24.85-8.35a9 9 0 0 0 3.93-2.31L422 112.66a9 9 0 0 0 0-12.66l-9.95-10a9 9 0 0 0-12.71 0"/></svg>';
+var rawDocumentAttachOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M208 64h66.75a32 32 0 0 1 22.62 9.37l141.26 141.26a32 32 0 0 1 9.37 22.62V432a48 48 0 0 1-48 48H192a48 48 0 0 1-48-48V304"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M288 72v120a32 32 0 0 0 32 32h120"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="32" d="M160 80v152a23.69 23.69 0 0 1-24 24c-12 0-24-9.1-24-24V88c0-30.59 16.57-56 48-56s48 24.8 48 55.38v138.75c0 43-27.82 77.87-72 77.87s-72-34.86-72-77.87V144"/></svg>';
+var rawDocumentOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="32" d="M416 221.25V416a48 48 0 0 1-48 48H144a48 48 0 0 1-48-48V96a48 48 0 0 1 48-48h98.75a32 32 0 0 1 22.62 9.37l141.26 141.26a32 32 0 0 1 9.37 22.62Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M256 56v120a32 32 0 0 0 32 32h120"/></svg>';
+var rawDocumentTextOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="32" d="M416 221.25V416a48 48 0 0 1-48 48H144a48 48 0 0 1-48-48V96a48 48 0 0 1 48-48h98.75a32 32 0 0 1 22.62 9.37l141.26 141.26a32 32 0 0 1 9.37 22.62Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M256 56v120a32 32 0 0 0 32 32h120m-232 80h160m-160 80h160"/></svg>';
+var rawDownloadOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M336 176h40a40 40 0 0 1 40 40v208a40 40 0 0 1-40 40H136a40 40 0 0 1-40-40V216a40 40 0 0 1 40-40h40"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="m176 272l80 80l80-80M256 48v288"/></svg>';
+var rawEllipsisVertical = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><circle cx="256" cy="256" r="48" fill="currentColor"/><circle cx="256" cy="416" r="48" fill="currentColor"/><circle cx="256" cy="96" r="48" fill="currentColor"/></svg>';
+var rawExpandOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M432 320v112H320m101.8-10.23L304 304M80 192V80h112M90.2 90.23L208 208M320 80h112v112M421.77 90.2L304 208M192 432H80V320m10.23 101.8L208 304"/></svg>';
+var rawFileTrayOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="32" d="M384 80H128c-26 0-43 14-48 40L48 272v112a48.14 48.14 0 0 0 48 48h320a48.14 48.14 0 0 0 48-48V272l-32-152c-5-27-23-40-48-40Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M48 272h144m128 0h144m-272 0a64 64 0 0 0 128 0"/></svg>';
+var rawFolderOpenOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M64 192v-72a40 40 0 0 1 40-40h75.89a40 40 0 0 1 22.19 6.72l27.84 18.56a40 40 0 0 0 22.19 6.72H408a40 40 0 0 1 40 40v40"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M479.9 226.55L463.68 392a40 40 0 0 1-39.93 40H88.25a40 40 0 0 1-39.93-40L32.1 226.55A32 32 0 0 1 64 192h384.1a32 32 0 0 1 31.8 34.55"/></svg>';
+var rawInformationCircle = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="M256 56C145.72 56 56 145.72 56 256s89.72 200 200 200s200-89.72 200-200S366.28 56 256 56m0 82a26 26 0 1 1-26 26a26 26 0 0 1 26-26m48 226h-88a16 16 0 0 1 0-32h28v-88h-16a16 16 0 0 1 0-32h32a16 16 0 0 1 16 16v104h28a16 16 0 0 1 0 32"/></svg>';
+var rawMenuOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="32" d="M80 160h352M80 256h352M80 352h352"/></svg>';
+var rawNotificationsOffOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M128.51 204.59q-.37 6.15-.37 12.76C128.14 304 110 320 84.33 351.43C73.69 364.45 83 384 101.62 384H320m94.5-48.7c-18.48-23.45-30.62-47.05-30.62-118c0-79.3-40.52-107.57-73.88-121.3c-4.43-1.82-8.6-6-9.95-10.55C294.21 65.54 277.82 48 256 48s-38.2 17.55-44 37.47c-1.35 4.6-5.52 8.71-10 10.53a150 150 0 0 0-18 8.79M320 384v16a64 64 0 0 1-128 0v-16"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="32" d="M448 448L64 64"/></svg>';
+var rawOpenOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M384 224v184a40 40 0 0 1-40 40H104a40 40 0 0 1-40-40V168a40 40 0 0 1 40-40h167.48M336 64h112v112M224 288L440 72"/></svg>';
+var rawPlayOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" d="M112 111v290c0 17.44 17 28.52 31 20.16l247.9-148.37c12.12-7.25 12.12-26.33 0-33.58L143 90.84c-14-8.36-31 2.72-31 20.16Z"/></svg>';
+var rawRemove = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M400 256H112"/></svg>';
+var rawSearchOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" d="M221.09 64a157.09 157.09 0 1 0 157.09 157.09A157.1 157.1 0 0 0 221.09 64Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="32" d="M338.29 338.29L448 448"/></svg>';
+var rawSend = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="m476.59 227.05l-.16-.07L49.35 49.84A23.56 23.56 0 0 0 27.14 52A24.65 24.65 0 0 0 16 72.59v113.29a24 24 0 0 0 19.52 23.57l232.93 43.07a4 4 0 0 1 0 7.86L35.53 303.45A24 24 0 0 0 16 327v113.31A23.57 23.57 0 0 0 26.59 460a23.94 23.94 0 0 0 13.22 4a24.55 24.55 0 0 0 9.52-1.93L476.4 285.94l.19-.09a32 32 0 0 0 0-58.8"/></svg>';
+var rawSwapVerticalOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M464 208L352 96L240 208m112-94.87V416M48 304l112 112l112-112m-112 94V96"/></svg>';
+var rawTrashOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="m112 112l20 320c.95 18.49 14.4 32 32 32h184c17.67 0 30.87-13.51 32-32l20-320"/><path fill="currentColor" stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="32" d="M80 112h352"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M192 112V72h0a23.93 23.93 0 0 1 24-24h80a23.93 23.93 0 0 1 24 24h0v40m-64 64v224m-72-224l8 224m136-224l-8 224"/></svg>';
+var rawTrendingDown = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M352 368h112V256"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="m48 144l121.37 121.37a32 32 0 0 0 45.26 0l50.74-50.74a32 32 0 0 1 45.26 0L448 352"/></svg>';
+var rawTrendingUp = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M352 144h112v112"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="m48 368l121.37-121.37a32 32 0 0 1 45.26 0l50.74 50.74a32 32 0 0 0 45.26 0L448 160"/></svg>';
+var rawVolumeHighOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M126 192H56a8 8 0 0 0-8 8v112a8 8 0 0 0 8 8h69.65a15.93 15.93 0 0 1 10.14 3.54l91.47 74.89A8 8 0 0 0 240 392V120a8 8 0 0 0-12.74-6.43l-91.47 74.89A15 15 0 0 1 126 192m194 128c9.74-19.38 16-40.84 16-64c0-23.48-6-44.42-16-64m48 176c19.48-33.92 32-64.06 32-112s-12-77.74-32-112m48 272c30-46 48-91.43 48-160s-18-113-48-160"/></svg>';
+var rawVolumeLowOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M189.65 192H120a8 8 0 0 0-8 8v112a8 8 0 0 0 8 8h69.65a16 16 0 0 1 10.14 3.63l91.47 75a8 8 0 0 0 12.74-6.46V119.83a8 8 0 0 0-12.74-6.44l-91.47 75a16 16 0 0 1-10.14 3.61M384 320c9.74-19.41 16-40.81 16-64c0-23.51-6-44.4-16-64"/></svg>';
+var rawVolumeMuteOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="32" d="M416 432L64 80"/><path fill="currentColor" d="M224 136.92v33.8a4 4 0 0 0 1.17 2.82l24 24a4 4 0 0 0 6.83-2.82v-74.15a24.53 24.53 0 0 0-12.67-21.72a23.91 23.91 0 0 0-25.55 1.83a8 8 0 0 0-.66.51l-31.94 26.15a4 4 0 0 0-.29 5.92l17.05 17.06a4 4 0 0 0 5.37.26Zm0 238.16l-78.07-63.92a32 32 0 0 0-20.28-7.16H64v-96h50.72a4 4 0 0 0 2.82-6.83l-24-24a4 4 0 0 0-2.82-1.17H56a24 24 0 0 0-24 24v112a24 24 0 0 0 24 24h69.76l91.36 74.8a8 8 0 0 0 .66.51a23.93 23.93 0 0 0 25.85 1.69A24.49 24.49 0 0 0 256 391.45v-50.17a4 4 0 0 0-1.17-2.82l-24-24a4 4 0 0 0-6.83 2.82ZM352 256c0-24.56-5.81-47.88-17.75-71.27a16 16 0 0 0-28.5 14.54C315.34 218.06 320 236.62 320 256q0 4-.31 8.13a8 8 0 0 0 2.32 6.25l19.66 19.67a4 4 0 0 0 6.75-2A147 147 0 0 0 352 256m64 0c0-51.19-13.08-83.89-34.18-120.06a16 16 0 0 0-27.64 16.12C373.07 184.44 384 211.83 384 256c0 23.83-3.29 42.88-9.37 60.65a8 8 0 0 0 1.9 8.26l16.77 16.76a4 4 0 0 0 6.52-1.27C410.09 315.88 416 289.91 416 256"/><path fill="currentColor" d="M480 256c0-74.26-20.19-121.11-50.51-168.61a16 16 0 1 0-27 17.22C429.82 147.38 448 189.5 448 256c0 47.45-8.9 82.12-23.59 113a4 4 0 0 0 .77 4.55L443 391.39a4 4 0 0 0 6.4-1C470.88 348.22 480 307 480 256"/></svg>';
+var rawWarning = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="M449.07 399.08L278.64 82.58c-12.08-22.44-44.26-22.44-56.35 0L51.87 399.08A32 32 0 0 0 80 446.25h340.89a32 32 0 0 0 28.18-47.17m-198.6-1.83a20 20 0 1 1 20-20a20 20 0 0 1-20 20m21.72-201.15l-5.74 122a16 16 0 0 1-32 0l-5.74-121.95a21.73 21.73 0 0 1 21.5-22.69h.21a21.74 21.74 0 0 1 21.73 22.7Z"/></svg>';
+function bake(svg) {
+  return `data:image/svg+xml;utf8,${svg}`;
+}
+var iconAdd = bake(rawAdd);
+var iconAlertCircle = bake(rawAlertCircle);
+var iconAlertCircleOutline = bake(rawAlertCircleOutline);
+var iconAppsOutline = bake(rawAppsOutline);
+var iconArchiveOutline = bake(rawArchiveOutline);
+var iconArrowRedoOutline = bake(rawArrowRedoOutline);
+var iconArrowUndoOutline = bake(rawArrowUndoOutline);
+var iconBackspaceOutline = bake(rawBackspaceOutline);
+var iconCalendarOutline = bake(rawCalendarOutline);
+var iconCheckmarkCircle = bake(rawCheckmarkCircle);
+var iconCheckmarkOutline = bake(rawCheckmarkOutline);
+var iconChevronBack = bake(rawChevronBack);
+var iconChevronBackOutline = bake(rawChevronBackOutline);
+var iconChevronDownOutline = bake(rawChevronDownOutline);
+var iconChevronForward = bake(rawChevronForward);
+var iconChevronForwardOutline = bake(rawChevronForwardOutline);
+var iconChevronUpOutline = bake(rawChevronUpOutline);
+var iconClose = bake(rawClose);
+var iconCloseOutline = bake(rawCloseOutline);
+var iconCloudUploadOutline = bake(rawCloudUploadOutline);
+var iconCreateOutline = bake(rawCreateOutline);
+var iconDocumentAttachOutline = bake(rawDocumentAttachOutline);
+var iconDocumentOutline = bake(rawDocumentOutline);
+var iconDocumentTextOutline = bake(rawDocumentTextOutline);
+var iconDownloadOutline = bake(rawDownloadOutline);
+var iconEllipsisVertical = bake(rawEllipsisVertical);
+var iconExpandOutline = bake(rawExpandOutline);
+var iconFileTrayOutline = bake(rawFileTrayOutline);
+var iconFolderOpenOutline = bake(rawFolderOpenOutline);
+var iconInformationCircle = bake(rawInformationCircle);
+var iconMenuOutline = bake(rawMenuOutline);
+var iconNotificationsOffOutline = bake(rawNotificationsOffOutline);
+var iconOpenOutline = bake(rawOpenOutline);
+var iconPlayOutline = bake(rawPlayOutline);
+var iconRemove = bake(rawRemove);
+var iconSearchOutline = bake(rawSearchOutline);
+var iconSend = bake(rawSend);
+var iconSwapVerticalOutline = bake(rawSwapVerticalOutline);
+var iconTrashOutline = bake(rawTrashOutline);
+var iconTrendingDown = bake(rawTrendingDown);
+var iconTrendingUp = bake(rawTrendingUp);
+var iconVolumeHighOutline = bake(rawVolumeHighOutline);
+var iconVolumeLowOutline = bake(rawVolumeLowOutline);
+var iconVolumeMuteOutline = bake(rawVolumeMuteOutline);
+var iconWarning = bake(rawWarning);
+var BY_NAME = {
+  "add": iconAdd,
+  "alert-circle": iconAlertCircle,
+  "alert-circle-outline": iconAlertCircleOutline,
+  "apps-outline": iconAppsOutline,
+  "archive-outline": iconArchiveOutline,
+  "arrow-redo-outline": iconArrowRedoOutline,
+  "arrow-undo-outline": iconArrowUndoOutline,
+  "backspace-outline": iconBackspaceOutline,
+  "calendar-outline": iconCalendarOutline,
+  "checkmark-circle": iconCheckmarkCircle,
+  "checkmark-outline": iconCheckmarkOutline,
+  "chevron-back": iconChevronBack,
+  "chevron-back-outline": iconChevronBackOutline,
+  "chevron-down-outline": iconChevronDownOutline,
+  "chevron-forward": iconChevronForward,
+  "chevron-forward-outline": iconChevronForwardOutline,
+  "chevron-up-outline": iconChevronUpOutline,
+  "close": iconClose,
+  "close-outline": iconCloseOutline,
+  "cloud-upload-outline": iconCloudUploadOutline,
+  "create-outline": iconCreateOutline,
+  "document-attach-outline": iconDocumentAttachOutline,
+  "document-outline": iconDocumentOutline,
+  "document-text-outline": iconDocumentTextOutline,
+  "download-outline": iconDownloadOutline,
+  "ellipsis-vertical": iconEllipsisVertical,
+  "expand-outline": iconExpandOutline,
+  "file-tray-outline": iconFileTrayOutline,
+  "folder-open-outline": iconFolderOpenOutline,
+  "information-circle": iconInformationCircle,
+  "menu-outline": iconMenuOutline,
+  "notifications-off-outline": iconNotificationsOffOutline,
+  "open-outline": iconOpenOutline,
+  "play-outline": iconPlayOutline,
+  "remove": iconRemove,
+  "search-outline": iconSearchOutline,
+  "send": iconSend,
+  "swap-vertical-outline": iconSwapVerticalOutline,
+  "trash-outline": iconTrashOutline,
+  "trending-down": iconTrendingDown,
+  "trending-up": iconTrendingUp,
+  "volume-high-outline": iconVolumeHighOutline,
+  "volume-low-outline": iconVolumeLowOutline,
+  "volume-mute-outline": iconVolumeMuteOutline,
+  "warning": iconWarning
+};
+function okIcon(value) {
+  if (!value) return void 0;
+  const trimmed = value.trimStart();
+  if (trimmed.startsWith("<svg")) return bake(trimmed);
+  return BY_NAME[value] ?? value;
+}
+
+// node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-inline-feedback.js
 var __defProp2 = Object.defineProperty;
 var __decorateClass2 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -1567,6 +1715,223 @@ var __decorateClass2 = (decorators, target, key, kind) => {
     if (decorator = decorators[i7])
       result = decorator(target, key, result) || result;
   if (result) __defProp2(target, key, result);
+  return result;
+};
+var DEFAULT_LABELS = {
+  dismiss: "Dismiss"
+};
+var OkInlineFeedback = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.tone = "info";
+    this.dismissible = false;
+    this.hidden = false;
+    this.labels = {};
+    this.hasActions = false;
+    this.onActionsSlotChange = (e7) => {
+      const slot = e7.target;
+      this.hasActions = slot.assignedNodes({ flatten: true }).length > 0;
+    };
+  }
+  static {
+    this.styles = i`
+    :host {
+      /* Vars overridable (estilo Ionic), default = cadena --ok-* → --ion-* → hex.
+         --tone-color y --tone-icon se reasignan por tone abajo. */
+      --tone-color: var(--ok-primary, var(--ion-color-primary, #3880ff));
+      --background-opacity: 0.1;
+      --color: var(--ok-text, var(--ion-text-color, #1c1b17));
+      --border-radius: var(--ok-radius, var(--ion-border-radius, 8px));
+      --padding: var(--ok-spacing, var(--ion-padding, 16px));
+      --accent-width: 4px;
+      --font: var(--ok-font, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif);
+
+      /* Responsive: el banner ocupa el ancho del contenedor. */
+      display: block;
+      width: 100%;
+      font-family: var(--font);
+      box-sizing: border-box;
+    }
+    :host([hidden]) { display: none; }
+
+    /* Mapa de tonos → color Ionic + icono por defecto. */
+    :host([tone='success']) { --tone-color: var(--ok-success, var(--ion-color-success, #2dd55b)); }
+    :host([tone='warning']) { --tone-color: var(--ok-warning, var(--ion-color-warning, #ffc409)); }
+    :host([tone='danger'])  { --tone-color: var(--ok-danger, var(--ion-color-danger, #c5000f)); }
+    :host([tone='neutral']) { --tone-color: var(--ok-medium, var(--ion-color-medium, #5f5f5f)); }
+    /* info / sin tono → primary (default ya aplicado en :host). */
+
+    .box {
+      position: relative;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      padding: var(--padding);
+      border-radius: var(--border-radius);
+      border-inline-start: var(--accent-width) solid var(--tone-color);
+      /* Fondo tonal: el color del tono con baja opacidad (color-mix con fallback al borde fino). */
+      background: color-mix(in srgb, var(--tone-color) calc(var(--background-opacity) * 100%), transparent);
+      color: var(--color);
+    }
+
+    .icon {
+      flex: 0 0 auto;
+      font-size: 1.4rem;
+      line-height: 1;
+      color: var(--tone-color);
+      margin-top: 0.05rem;
+    }
+
+    .content {
+      flex: 1 1 auto;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .row {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+    .text {
+      flex: 1 1 auto;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+    .heading {
+      font-weight: 700;
+      font-size: 0.98rem;
+      line-height: 1.3;
+    }
+    .body {
+      font-size: 0.92rem;
+      line-height: 1.45;
+    }
+    .actions {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    /* Si no hay actions, el slot queda vacío y no ocupa espacio. */
+    .actions.empty { display: none; }
+
+    .close {
+      flex: 0 0 auto;
+      background: none;
+      border: 0;
+      cursor: pointer;
+      padding: 0.15rem;
+      margin: -0.15rem -0.15rem 0 0;
+      color: inherit;
+      opacity: 0.6;
+      font-size: 1.2rem;
+      line-height: 1;
+      border-radius: 4px;
+      transition: background-color var(--ok-transition, 150ms ease), color var(--ok-transition, 150ms ease),
+        border-color var(--ok-transition, 150ms ease), box-shadow var(--ok-transition, 150ms ease),
+        opacity 0.15s ease, transform 120ms ease;
+    }
+    @media (hover: hover) {
+      .close:hover { opacity: 1; background: rgba(var(--ion-text-color-rgb, 24, 24, 27), 0.07); }
+    }
+    .close:active { transform: scale(var(--ok-press-scale, 0.97)); }
+
+    /* Móvil: las actions bajan bajo el texto (apiladas a ancho completo). */
+    @media (max-width: 640px) {
+      .row { flex-direction: column; align-items: stretch; }
+      .actions { width: 100%; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .close:hover,
+      .close:active { transform: none; }
+    }
+  `;
+  }
+  // Textos efectivos: defaults en inglés + overrides del consumidor.
+  get t() {
+    return { ...DEFAULT_LABELS, ...this.labels };
+  }
+  // Icono por defecto según el tono (overridable por la prop `icon`).
+  defaultIcon() {
+    switch (this.tone) {
+      case "success":
+        return iconCheckmarkCircle;
+      case "warning":
+        return iconWarning;
+      case "danger":
+        return iconAlertCircle;
+      case "neutral":
+        return iconInformationCircle;
+      case "info":
+      default:
+        return iconInformationCircle;
+    }
+  }
+  // Oculta el banner y avisa al consumidor; éste puede revertir restaurando `hidden=false`.
+  dismiss() {
+    this.hidden = true;
+    this.dispatchEvent(new CustomEvent("ok-dismiss", { bubbles: true, composed: true }));
+  }
+  render() {
+    const iconName = this.icon ?? this.defaultIcon();
+    return b2`
+      <div class="box" role="status">
+        <ion-icon class="icon" .icon=${okIcon(iconName)} aria-hidden="true"></ion-icon>
+        <div class="content">
+          <div class="row">
+            <div class="text">
+              ${this.heading ? b2`<div class="heading">${this.heading}</div>` : null}
+              <div class="body"><slot></slot></div>
+            </div>
+            <div class="actions ${this.hasActions ? "" : "empty"}">
+              <slot name="actions" @slotchange=${this.onActionsSlotChange}></slot>
+            </div>
+          </div>
+        </div>
+        ${this.dismissible ? b2`
+              <button class="close" aria-label=${this.t.dismiss} @click=${this.dismiss}>
+                <ion-icon .icon=${iconClose} aria-hidden="true"></ion-icon>
+              </button>
+            ` : null}
+      </div>
+    `;
+  }
+};
+__decorateClass2([
+  n4({ type: String, reflect: true })
+], OkInlineFeedback.prototype, "tone");
+__decorateClass2([
+  n4({ type: String })
+], OkInlineFeedback.prototype, "heading");
+__decorateClass2([
+  n4({ type: String })
+], OkInlineFeedback.prototype, "icon");
+__decorateClass2([
+  n4({ type: Boolean, reflect: true })
+], OkInlineFeedback.prototype, "dismissible");
+__decorateClass2([
+  n4({ type: Boolean, reflect: true })
+], OkInlineFeedback.prototype, "hidden");
+__decorateClass2([
+  n4({ attribute: false })
+], OkInlineFeedback.prototype, "labels");
+__decorateClass2([
+  r5()
+], OkInlineFeedback.prototype, "hasActions");
+define("ok-inline-feedback", OkInlineFeedback);
+
+// node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-qr.js
+var __defProp3 = Object.defineProperty;
+var __decorateClass3 = (decorators, target, key, kind) => {
+  var result = void 0;
+  for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
+    if (decorator = decorators[i7])
+      result = decorator(target, key, result) || result;
+  if (result) __defProp3(target, key, result);
   return result;
 };
 var GF_EXP = new Uint8Array(512);
@@ -2187,37 +2552,37 @@ var OkQr = class extends i3 {
     `;
   }
 };
-__decorateClass2([
+__decorateClass3([
   n4({ type: String })
 ], OkQr.prototype, "value");
-__decorateClass2([
+__decorateClass3([
   n4({ type: String })
 ], OkQr.prototype, "ec");
-__decorateClass2([
+__decorateClass3([
   n4({ type: Number })
 ], OkQr.prototype, "size");
-__decorateClass2([
+__decorateClass3([
   n4({ type: String })
 ], OkQr.prototype, "color");
-__decorateClass2([
+__decorateClass3([
   n4({ type: String })
 ], OkQr.prototype, "background");
-__decorateClass2([
+__decorateClass3([
   n4({ type: Number })
 ], OkQr.prototype, "margin");
 define("ok-qr", OkQr);
 
 // node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-receipt.js
-var __defProp3 = Object.defineProperty;
-var __decorateClass3 = (decorators, target, key, kind) => {
+var __defProp4 = Object.defineProperty;
+var __decorateClass4 = (decorators, target, key, kind) => {
   var result = void 0;
   for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
     if (decorator = decorators[i7])
       result = decorator(target, key, result) || result;
-  if (result) __defProp3(target, key, result);
+  if (result) __defProp4(target, key, result);
   return result;
 };
-var DEFAULT_LABELS = {
+var DEFAULT_LABELS2 = {
   empty: "No receipt data.",
   phone: "Tel.",
   receipt: "Receipt",
@@ -2288,7 +2653,7 @@ var OkReceipt = class extends i3 {
   `;
   }
   get t() {
-    return { ...DEFAULT_LABELS, ...this.labels };
+    return { ...DEFAULT_LABELS2, ...this.labels };
   }
   cur() {
     return this.receipt?.currency ?? "\u20AC";
@@ -2385,28 +2750,28 @@ var OkReceipt = class extends i3 {
     </div>`;
   }
 };
-__decorateClass3([
+__decorateClass4([
   n4({ attribute: false })
 ], OkReceipt.prototype, "receipt");
-__decorateClass3([
+__decorateClass4([
   n4({ type: Number, attribute: "qr-size" })
 ], OkReceipt.prototype, "qrSize");
-__decorateClass3([
+__decorateClass4([
   n4({ attribute: false })
 ], OkReceipt.prototype, "labels");
 define("ok-receipt", OkReceipt);
 
 // node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-invoice.js
-var __defProp4 = Object.defineProperty;
-var __decorateClass4 = (decorators, target, key, kind) => {
+var __defProp5 = Object.defineProperty;
+var __decorateClass5 = (decorators, target, key, kind) => {
   var result = void 0;
   for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
     if (decorator = decorators[i7])
       result = decorator(target, key, result) || result;
-  if (result) __defProp4(target, key, result);
+  if (result) __defProp5(target, key, result);
   return result;
 };
-var DEFAULT_LABELS2 = {
+var DEFAULT_LABELS3 = {
   empty: "No invoice data.",
   invoice: "Invoice",
   number: "No.",
@@ -2498,7 +2863,7 @@ var OkInvoice = class extends i3 {
   `;
   }
   get t() {
-    return { ...DEFAULT_LABELS2, ...this.labels };
+    return { ...DEFAULT_LABELS3, ...this.labels };
   }
   cur() {
     return this.invoice?.currency ?? "\u20AC";
@@ -2609,13 +2974,13 @@ var OkInvoice = class extends i3 {
     </div>`;
   }
 };
-__decorateClass4([
+__decorateClass5([
   n4({ attribute: false })
 ], OkInvoice.prototype, "invoice");
-__decorateClass4([
+__decorateClass5([
   n4({ type: Number, attribute: "qr-size" })
 ], OkInvoice.prototype, "qrSize");
-__decorateClass4([
+__decorateClass5([
   n4({ attribute: false })
 ], OkInvoice.prototype, "labels");
 define("ok-invoice", OkInvoice);
@@ -3330,7 +3695,7 @@ var ErpSalesDocument = class extends i3 {
   render() {
     const t7 = (k2) => erplora().t(CATALOG, k2);
     if (this.loading) return b2`<p class="muted">${t7("ui.loadingDocument")}</p>`;
-    if (this.error) return b2`<p class="err">${this.error}</p>`;
+    if (this.error) return b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>`;
     if (!this.sale) return b2`<p class="muted">${t7("ui.noSale")}</p>`;
     const settings = this.settings || {};
     const lines = this.lines || [];
@@ -3620,7 +3985,7 @@ var BY_TYPE = {
   voucher: "ticket-outline",
   gift: "gift-outline"
 };
-var BY_NAME = [
+var BY_NAME2 = [
   [/efectiv|cash|met[áa]lico|caja/i, "cash-outline"],
   [/tarjet|card|visa|mastercard|cr[ée]dito|d[ée]bito/i, "card-outline"],
   [/bizum|m[óo]vil|mobile|wallet|apple pay|google pay/i, "phone-portrait-outline"],
@@ -3633,7 +3998,7 @@ function payMethodIcon(type, name) {
   if (BY_TYPE[t7]) return BY_TYPE[t7];
   const n6 = (name || "").trim();
   if (n6) {
-    for (const [re, icon] of BY_NAME) if (re.test(n6)) return icon;
+    for (const [re, icon] of BY_NAME2) if (re.test(n6)) return icon;
   }
   return PAY_ICON_FALLBACK;
 }
@@ -3656,7 +4021,7 @@ function enabledPayMethods(methods, policy = {}) {
   return out.length ? out : methods;
 }
 var PAY_ICON_NAMES = [
-  .../* @__PURE__ */ new Set([...Object.values(BY_TYPE), ...BY_NAME.map(([, i7]) => i7), PAY_ICON_FALLBACK])
+  .../* @__PURE__ */ new Set([...Object.values(BY_TYPE), ...BY_NAME2.map(([, i7]) => i7), PAY_ICON_FALLBACK])
 ];
 var SEED_NAME_TO_KEY = {
   Cash: "ui.cash",
@@ -3670,165 +4035,17 @@ function defaultPayMethod(methods) {
   return methods.find((m4) => (m4.type || "").trim().toLowerCase() === "cash") ?? methods.find((m4) => /efectiv|cash|met[\u00e1a]lico/i.test(m4.name || "")) ?? methods[0];
 }
 
-// node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/shared/icons.js
-var rawAdd = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M256 112v288m144-144H112"/></svg>';
-var rawAlertCircle = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="M256 48C141.31 48 48 141.31 48 256s93.31 208 208 208s208-93.31 208-208S370.69 48 256 48m0 319.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20m21.72-201.15l-5.74 122a16 16 0 0 1-32 0l-5.74-121.94v-.05a21.74 21.74 0 1 1 43.44 0Z"/></svg>';
-var rawAlertCircleOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" d="M448 256c0-106-86-192-192-192S64 150 64 256s86 192 192 192s192-86 192-192Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M250.26 166.05L256 288l5.73-121.95a5.74 5.74 0 0 0-5.79-6h0a5.74 5.74 0 0 0-5.68 6"/><path fill="currentColor" d="M256 367.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20"/></svg>';
-var rawAppsOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><rect width="80" height="80" x="64" y="64" fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" rx="40" ry="40"/><rect width="80" height="80" x="216" y="64" fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" rx="40" ry="40"/><rect width="80" height="80" x="368" y="64" fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" rx="40" ry="40"/><rect width="80" height="80" x="64" y="216" fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" rx="40" ry="40"/><rect width="80" height="80" x="216" y="216" fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" rx="40" ry="40"/><rect width="80" height="80" x="368" y="216" fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" rx="40" ry="40"/><rect width="80" height="80" x="64" y="368" fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" rx="40" ry="40"/><rect width="80" height="80" x="216" y="368" fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" rx="40" ry="40"/><rect width="80" height="80" x="368" y="368" fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" rx="40" ry="40"/></svg>';
-var rawArchiveOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M80 152v256a40.12 40.12 0 0 0 40 40h272a40.12 40.12 0 0 0 40-40V152"/><rect width="416" height="80" x="48" y="64" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="32" rx="28" ry="28"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="m320 304l-64 64l-64-64m64 41.89V224"/></svg>';
-var rawArrowRedoOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="32" d="M448 256L272 88v96C103.57 184 64 304.77 64 424c48.61-62.24 91.6-96 208-96v96Z"/></svg>';
-var rawArrowUndoOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="32" d="M240 424v-96c116.4 0 159.39 33.76 208 96c0-119.23-39.57-240-208-240V88L64 256Z"/></svg>';
-var rawBackspaceOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="32" d="M135.19 390.14a28.8 28.8 0 0 0 21.68 9.86h246.26A29 29 0 0 0 432 371.13V140.87A29 29 0 0 0 403.13 112H156.87a28.84 28.84 0 0 0-21.67 9.84L46.33 256l88.86 134.11Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M336.67 192.33L206.66 322.34m130.01 0L206.66 192.33m130.01 0L206.66 322.34m130.01 0L206.66 192.33"/></svg>';
-var rawCalendarOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><rect width="416" height="384" x="48" y="80" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="32" rx="48"/><circle cx="296" cy="232" r="24" fill="currentColor"/><circle cx="376" cy="232" r="24" fill="currentColor"/><circle cx="296" cy="312" r="24" fill="currentColor"/><circle cx="376" cy="312" r="24" fill="currentColor"/><circle cx="136" cy="312" r="24" fill="currentColor"/><circle cx="216" cy="312" r="24" fill="currentColor"/><circle cx="136" cy="392" r="24" fill="currentColor"/><circle cx="216" cy="392" r="24" fill="currentColor"/><circle cx="296" cy="392" r="24" fill="currentColor"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M128 48v32m256-32v32"/><path fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="32" d="M464 160H48"/></svg>';
-var rawCheckmarkCircle = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="M256 48C141.31 48 48 141.31 48 256s93.31 208 208 208s208-93.31 208-208S370.69 48 256 48m108.25 138.29l-134.4 160a16 16 0 0 1-12 5.71h-.27a16 16 0 0 1-11.89-5.3l-57.6-64a16 16 0 1 1 23.78-21.4l45.29 50.32l122.59-145.91a16 16 0 0 1 24.5 20.58"/></svg>';
-var rawCheckmarkOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M416 128L192 384l-96-96"/></svg>';
-var rawChevronBack = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="48" d="M328 112L184 256l144 144"/></svg>';
-var rawChevronBackOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="48" d="M328 112L184 256l144 144"/></svg>';
-var rawChevronDownOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="48" d="m112 184l144 144l144-144"/></svg>';
-var rawChevronForward = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="48" d="m184 112l144 144l-144 144"/></svg>';
-var rawChevronForwardOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="48" d="m184 112l144 144l-144 144"/></svg>';
-var rawChevronUpOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="48" d="m112 328l144-144l144 144"/></svg>';
-var rawClose = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="m289.94 256l95-95A24 24 0 0 0 351 127l-95 95l-95-95a24 24 0 0 0-34 34l95 95l-95 95a24 24 0 1 0 34 34l95-95l95 95a24 24 0 0 0 34-34Z"/></svg>';
-var rawCloseOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M368 368L144 144m224 0L144 368"/></svg>';
-var rawCloudUploadOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M320 367.79h76c55 0 100-29.21 100-83.6s-53-81.47-96-83.6c-8.89-85.06-71-136.8-144-136.8c-69 0-113.44 45.79-128 91.2c-60 5.7-112 43.88-112 106.4s54 106.4 120 106.4h56"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="m320 255.79l-64-64l-64 64m64 192.42V207.79"/></svg>';
-var rawCreateOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M384 224v184a40 40 0 0 1-40 40H104a40 40 0 0 1-40-40V168a40 40 0 0 1 40-40h167.48"/><path fill="currentColor" d="M459.94 53.25a16.06 16.06 0 0 0-23.22-.56L424.35 65a8 8 0 0 0 0 11.31l11.34 11.32a8 8 0 0 0 11.34 0l12.06-12c6.1-6.09 6.67-16.01.85-22.38M399.34 90L218.82 270.2a9 9 0 0 0-2.31 3.93L208.16 299a3.91 3.91 0 0 0 4.86 4.86l24.85-8.35a9 9 0 0 0 3.93-2.31L422 112.66a9 9 0 0 0 0-12.66l-9.95-10a9 9 0 0 0-12.71 0"/></svg>';
-var rawDocumentAttachOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M208 64h66.75a32 32 0 0 1 22.62 9.37l141.26 141.26a32 32 0 0 1 9.37 22.62V432a48 48 0 0 1-48 48H192a48 48 0 0 1-48-48V304"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M288 72v120a32 32 0 0 0 32 32h120"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="32" d="M160 80v152a23.69 23.69 0 0 1-24 24c-12 0-24-9.1-24-24V88c0-30.59 16.57-56 48-56s48 24.8 48 55.38v138.75c0 43-27.82 77.87-72 77.87s-72-34.86-72-77.87V144"/></svg>';
-var rawDocumentOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="32" d="M416 221.25V416a48 48 0 0 1-48 48H144a48 48 0 0 1-48-48V96a48 48 0 0 1 48-48h98.75a32 32 0 0 1 22.62 9.37l141.26 141.26a32 32 0 0 1 9.37 22.62Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M256 56v120a32 32 0 0 0 32 32h120"/></svg>';
-var rawDocumentTextOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="32" d="M416 221.25V416a48 48 0 0 1-48 48H144a48 48 0 0 1-48-48V96a48 48 0 0 1 48-48h98.75a32 32 0 0 1 22.62 9.37l141.26 141.26a32 32 0 0 1 9.37 22.62Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M256 56v120a32 32 0 0 0 32 32h120m-232 80h160m-160 80h160"/></svg>';
-var rawDownloadOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M336 176h40a40 40 0 0 1 40 40v208a40 40 0 0 1-40 40H136a40 40 0 0 1-40-40V216a40 40 0 0 1 40-40h40"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="m176 272l80 80l80-80M256 48v288"/></svg>';
-var rawEllipsisVertical = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><circle cx="256" cy="256" r="48" fill="currentColor"/><circle cx="256" cy="416" r="48" fill="currentColor"/><circle cx="256" cy="96" r="48" fill="currentColor"/></svg>';
-var rawExpandOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M432 320v112H320m101.8-10.23L304 304M80 192V80h112M90.2 90.23L208 208M320 80h112v112M421.77 90.2L304 208M192 432H80V320m10.23 101.8L208 304"/></svg>';
-var rawFileTrayOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="32" d="M384 80H128c-26 0-43 14-48 40L48 272v112a48.14 48.14 0 0 0 48 48h320a48.14 48.14 0 0 0 48-48V272l-32-152c-5-27-23-40-48-40Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M48 272h144m128 0h144m-272 0a64 64 0 0 0 128 0"/></svg>';
-var rawFolderOpenOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M64 192v-72a40 40 0 0 1 40-40h75.89a40 40 0 0 1 22.19 6.72l27.84 18.56a40 40 0 0 0 22.19 6.72H408a40 40 0 0 1 40 40v40"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M479.9 226.55L463.68 392a40 40 0 0 1-39.93 40H88.25a40 40 0 0 1-39.93-40L32.1 226.55A32 32 0 0 1 64 192h384.1a32 32 0 0 1 31.8 34.55"/></svg>';
-var rawInformationCircle = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="M256 56C145.72 56 56 145.72 56 256s89.72 200 200 200s200-89.72 200-200S366.28 56 256 56m0 82a26 26 0 1 1-26 26a26 26 0 0 1 26-26m48 226h-88a16 16 0 0 1 0-32h28v-88h-16a16 16 0 0 1 0-32h32a16 16 0 0 1 16 16v104h28a16 16 0 0 1 0 32"/></svg>';
-var rawMenuOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="32" d="M80 160h352M80 256h352M80 352h352"/></svg>';
-var rawNotificationsOffOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M128.51 204.59q-.37 6.15-.37 12.76C128.14 304 110 320 84.33 351.43C73.69 364.45 83 384 101.62 384H320m94.5-48.7c-18.48-23.45-30.62-47.05-30.62-118c0-79.3-40.52-107.57-73.88-121.3c-4.43-1.82-8.6-6-9.95-10.55C294.21 65.54 277.82 48 256 48s-38.2 17.55-44 37.47c-1.35 4.6-5.52 8.71-10 10.53a150 150 0 0 0-18 8.79M320 384v16a64 64 0 0 1-128 0v-16"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="32" d="M448 448L64 64"/></svg>';
-var rawOpenOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M384 224v184a40 40 0 0 1-40 40H104a40 40 0 0 1-40-40V168a40 40 0 0 1 40-40h167.48M336 64h112v112M224 288L440 72"/></svg>';
-var rawPlayOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" d="M112 111v290c0 17.44 17 28.52 31 20.16l247.9-148.37c12.12-7.25 12.12-26.33 0-33.58L143 90.84c-14-8.36-31 2.72-31 20.16Z"/></svg>';
-var rawRemove = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M400 256H112"/></svg>';
-var rawSearchOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" d="M221.09 64a157.09 157.09 0 1 0 157.09 157.09A157.1 157.1 0 0 0 221.09 64Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="32" d="M338.29 338.29L448 448"/></svg>';
-var rawSend = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="m476.59 227.05l-.16-.07L49.35 49.84A23.56 23.56 0 0 0 27.14 52A24.65 24.65 0 0 0 16 72.59v113.29a24 24 0 0 0 19.52 23.57l232.93 43.07a4 4 0 0 1 0 7.86L35.53 303.45A24 24 0 0 0 16 327v113.31A23.57 23.57 0 0 0 26.59 460a23.94 23.94 0 0 0 13.22 4a24.55 24.55 0 0 0 9.52-1.93L476.4 285.94l.19-.09a32 32 0 0 0 0-58.8"/></svg>';
-var rawSwapVerticalOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M464 208L352 96L240 208m112-94.87V416M48 304l112 112l112-112m-112 94V96"/></svg>';
-var rawTrashOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="m112 112l20 320c.95 18.49 14.4 32 32 32h184c17.67 0 30.87-13.51 32-32l20-320"/><path fill="currentColor" stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="32" d="M80 112h352"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M192 112V72h0a23.93 23.93 0 0 1 24-24h80a23.93 23.93 0 0 1 24 24h0v40m-64 64v224m-72-224l8 224m136-224l-8 224"/></svg>';
-var rawTrendingDown = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M352 368h112V256"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="m48 144l121.37 121.37a32 32 0 0 0 45.26 0l50.74-50.74a32 32 0 0 1 45.26 0L448 352"/></svg>';
-var rawTrendingUp = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M352 144h112v112"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="m48 368l121.37-121.37a32 32 0 0 1 45.26 0l50.74 50.74a32 32 0 0 0 45.26 0L448 160"/></svg>';
-var rawVolumeHighOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M126 192H56a8 8 0 0 0-8 8v112a8 8 0 0 0 8 8h69.65a15.93 15.93 0 0 1 10.14 3.54l91.47 74.89A8 8 0 0 0 240 392V120a8 8 0 0 0-12.74-6.43l-91.47 74.89A15 15 0 0 1 126 192m194 128c9.74-19.38 16-40.84 16-64c0-23.48-6-44.42-16-64m48 176c19.48-33.92 32-64.06 32-112s-12-77.74-32-112m48 272c30-46 48-91.43 48-160s-18-113-48-160"/></svg>';
-var rawVolumeLowOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M189.65 192H120a8 8 0 0 0-8 8v112a8 8 0 0 0 8 8h69.65a16 16 0 0 1 10.14 3.63l91.47 75a8 8 0 0 0 12.74-6.46V119.83a8 8 0 0 0-12.74-6.44l-91.47 75a16 16 0 0 1-10.14 3.61M384 320c9.74-19.41 16-40.81 16-64c0-23.51-6-44.4-16-64"/></svg>';
-var rawVolumeMuteOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="32" d="M416 432L64 80"/><path fill="currentColor" d="M224 136.92v33.8a4 4 0 0 0 1.17 2.82l24 24a4 4 0 0 0 6.83-2.82v-74.15a24.53 24.53 0 0 0-12.67-21.72a23.91 23.91 0 0 0-25.55 1.83a8 8 0 0 0-.66.51l-31.94 26.15a4 4 0 0 0-.29 5.92l17.05 17.06a4 4 0 0 0 5.37.26Zm0 238.16l-78.07-63.92a32 32 0 0 0-20.28-7.16H64v-96h50.72a4 4 0 0 0 2.82-6.83l-24-24a4 4 0 0 0-2.82-1.17H56a24 24 0 0 0-24 24v112a24 24 0 0 0 24 24h69.76l91.36 74.8a8 8 0 0 0 .66.51a23.93 23.93 0 0 0 25.85 1.69A24.49 24.49 0 0 0 256 391.45v-50.17a4 4 0 0 0-1.17-2.82l-24-24a4 4 0 0 0-6.83 2.82ZM352 256c0-24.56-5.81-47.88-17.75-71.27a16 16 0 0 0-28.5 14.54C315.34 218.06 320 236.62 320 256q0 4-.31 8.13a8 8 0 0 0 2.32 6.25l19.66 19.67a4 4 0 0 0 6.75-2A147 147 0 0 0 352 256m64 0c0-51.19-13.08-83.89-34.18-120.06a16 16 0 0 0-27.64 16.12C373.07 184.44 384 211.83 384 256c0 23.83-3.29 42.88-9.37 60.65a8 8 0 0 0 1.9 8.26l16.77 16.76a4 4 0 0 0 6.52-1.27C410.09 315.88 416 289.91 416 256"/><path fill="currentColor" d="M480 256c0-74.26-20.19-121.11-50.51-168.61a16 16 0 1 0-27 17.22C429.82 147.38 448 189.5 448 256c0 47.45-8.9 82.12-23.59 113a4 4 0 0 0 .77 4.55L443 391.39a4 4 0 0 0 6.4-1C470.88 348.22 480 307 480 256"/></svg>';
-var rawWarning = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="M449.07 399.08L278.64 82.58c-12.08-22.44-44.26-22.44-56.35 0L51.87 399.08A32 32 0 0 0 80 446.25h340.89a32 32 0 0 0 28.18-47.17m-198.6-1.83a20 20 0 1 1 20-20a20 20 0 0 1-20 20m21.72-201.15l-5.74 122a16 16 0 0 1-32 0l-5.74-121.95a21.73 21.73 0 0 1 21.5-22.69h.21a21.74 21.74 0 0 1 21.73 22.7Z"/></svg>';
-function bake(svg) {
-  return `data:image/svg+xml;utf8,${svg}`;
-}
-var iconAdd = bake(rawAdd);
-var iconAlertCircle = bake(rawAlertCircle);
-var iconAlertCircleOutline = bake(rawAlertCircleOutline);
-var iconAppsOutline = bake(rawAppsOutline);
-var iconArchiveOutline = bake(rawArchiveOutline);
-var iconArrowRedoOutline = bake(rawArrowRedoOutline);
-var iconArrowUndoOutline = bake(rawArrowUndoOutline);
-var iconBackspaceOutline = bake(rawBackspaceOutline);
-var iconCalendarOutline = bake(rawCalendarOutline);
-var iconCheckmarkCircle = bake(rawCheckmarkCircle);
-var iconCheckmarkOutline = bake(rawCheckmarkOutline);
-var iconChevronBack = bake(rawChevronBack);
-var iconChevronBackOutline = bake(rawChevronBackOutline);
-var iconChevronDownOutline = bake(rawChevronDownOutline);
-var iconChevronForward = bake(rawChevronForward);
-var iconChevronForwardOutline = bake(rawChevronForwardOutline);
-var iconChevronUpOutline = bake(rawChevronUpOutline);
-var iconClose = bake(rawClose);
-var iconCloseOutline = bake(rawCloseOutline);
-var iconCloudUploadOutline = bake(rawCloudUploadOutline);
-var iconCreateOutline = bake(rawCreateOutline);
-var iconDocumentAttachOutline = bake(rawDocumentAttachOutline);
-var iconDocumentOutline = bake(rawDocumentOutline);
-var iconDocumentTextOutline = bake(rawDocumentTextOutline);
-var iconDownloadOutline = bake(rawDownloadOutline);
-var iconEllipsisVertical = bake(rawEllipsisVertical);
-var iconExpandOutline = bake(rawExpandOutline);
-var iconFileTrayOutline = bake(rawFileTrayOutline);
-var iconFolderOpenOutline = bake(rawFolderOpenOutline);
-var iconInformationCircle = bake(rawInformationCircle);
-var iconMenuOutline = bake(rawMenuOutline);
-var iconNotificationsOffOutline = bake(rawNotificationsOffOutline);
-var iconOpenOutline = bake(rawOpenOutline);
-var iconPlayOutline = bake(rawPlayOutline);
-var iconRemove = bake(rawRemove);
-var iconSearchOutline = bake(rawSearchOutline);
-var iconSend = bake(rawSend);
-var iconSwapVerticalOutline = bake(rawSwapVerticalOutline);
-var iconTrashOutline = bake(rawTrashOutline);
-var iconTrendingDown = bake(rawTrendingDown);
-var iconTrendingUp = bake(rawTrendingUp);
-var iconVolumeHighOutline = bake(rawVolumeHighOutline);
-var iconVolumeLowOutline = bake(rawVolumeLowOutline);
-var iconVolumeMuteOutline = bake(rawVolumeMuteOutline);
-var iconWarning = bake(rawWarning);
-var BY_NAME2 = {
-  "add": iconAdd,
-  "alert-circle": iconAlertCircle,
-  "alert-circle-outline": iconAlertCircleOutline,
-  "apps-outline": iconAppsOutline,
-  "archive-outline": iconArchiveOutline,
-  "arrow-redo-outline": iconArrowRedoOutline,
-  "arrow-undo-outline": iconArrowUndoOutline,
-  "backspace-outline": iconBackspaceOutline,
-  "calendar-outline": iconCalendarOutline,
-  "checkmark-circle": iconCheckmarkCircle,
-  "checkmark-outline": iconCheckmarkOutline,
-  "chevron-back": iconChevronBack,
-  "chevron-back-outline": iconChevronBackOutline,
-  "chevron-down-outline": iconChevronDownOutline,
-  "chevron-forward": iconChevronForward,
-  "chevron-forward-outline": iconChevronForwardOutline,
-  "chevron-up-outline": iconChevronUpOutline,
-  "close": iconClose,
-  "close-outline": iconCloseOutline,
-  "cloud-upload-outline": iconCloudUploadOutline,
-  "create-outline": iconCreateOutline,
-  "document-attach-outline": iconDocumentAttachOutline,
-  "document-outline": iconDocumentOutline,
-  "document-text-outline": iconDocumentTextOutline,
-  "download-outline": iconDownloadOutline,
-  "ellipsis-vertical": iconEllipsisVertical,
-  "expand-outline": iconExpandOutline,
-  "file-tray-outline": iconFileTrayOutline,
-  "folder-open-outline": iconFolderOpenOutline,
-  "information-circle": iconInformationCircle,
-  "menu-outline": iconMenuOutline,
-  "notifications-off-outline": iconNotificationsOffOutline,
-  "open-outline": iconOpenOutline,
-  "play-outline": iconPlayOutline,
-  "remove": iconRemove,
-  "search-outline": iconSearchOutline,
-  "send": iconSend,
-  "swap-vertical-outline": iconSwapVerticalOutline,
-  "trash-outline": iconTrashOutline,
-  "trending-down": iconTrendingDown,
-  "trending-up": iconTrendingUp,
-  "volume-high-outline": iconVolumeHighOutline,
-  "volume-low-outline": iconVolumeLowOutline,
-  "volume-mute-outline": iconVolumeMuteOutline,
-  "warning": iconWarning
-};
-function okIcon(value) {
-  if (!value) return void 0;
-  const trimmed = value.trimStart();
-  if (trimmed.startsWith("<svg")) return bake(trimmed);
-  return BY_NAME2[value] ?? value;
-}
-
 // node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-qty-stepper.js
-var __defProp5 = Object.defineProperty;
-var __decorateClass5 = (decorators, target, key, kind) => {
+var __defProp6 = Object.defineProperty;
+var __decorateClass6 = (decorators, target, key, kind) => {
   var result = void 0;
   for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
     if (decorator = decorators[i7])
       result = decorator(target, key, result) || result;
-  if (result) __defProp5(target, key, result);
+  if (result) __defProp6(target, key, result);
   return result;
 };
-var DEFAULT_LABELS3 = {
+var DEFAULT_LABELS4 = {
   decrement: "Decrease",
   increment: "Increase"
 };
@@ -3917,7 +4134,7 @@ var OkQtyStepper = class extends i3 {
   }
   // Textos efectivos: defaults en inglés + overrides del consumidor.
   get t() {
-    return { ...DEFAULT_LABELS3, ...this.labels };
+    return { ...DEFAULT_LABELS4, ...this.labels };
   }
   // Recorta `n` al rango [min, max] respetando los límites definidos.
   clamp(n6) {
@@ -4006,34 +4223,34 @@ var OkQtyStepper = class extends i3 {
     </div>`;
   }
 };
-__decorateClass5([
+__decorateClass6([
   n4({ type: Number })
 ], OkQtyStepper.prototype, "value");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Number })
 ], OkQtyStepper.prototype, "min");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Number })
 ], OkQtyStepper.prototype, "max");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Number })
 ], OkQtyStepper.prototype, "step");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Boolean, reflect: true })
 ], OkQtyStepper.prototype, "disabled");
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: false })
 ], OkQtyStepper.prototype, "labels");
 define("ok-qty-stepper", OkQtyStepper);
 
 // node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-spotlight-search.js
-var __defProp6 = Object.defineProperty;
-var __decorateClass6 = (decorators, target, key, kind) => {
+var __defProp7 = Object.defineProperty;
+var __decorateClass7 = (decorators, target, key, kind) => {
   var result = void 0;
   for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
     if (decorator = decorators[i7])
       result = decorator(target, key, result) || result;
-  if (result) __defProp6(target, key, result);
+  if (result) __defProp7(target, key, result);
   return result;
 };
 var OkSpotlightSearch = class extends i3 {
@@ -4212,34 +4429,34 @@ var OkSpotlightSearch = class extends i3 {
     `;
   }
 };
-__decorateClass6([
+__decorateClass7([
   n4({ type: Boolean, reflect: true })
 ], OkSpotlightSearch.prototype, "open");
-__decorateClass6([
+__decorateClass7([
   n4()
 ], OkSpotlightSearch.prototype, "placeholder");
-__decorateClass6([
+__decorateClass7([
   n4()
 ], OkSpotlightSearch.prototype, "value");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: "trigger-icon" })
 ], OkSpotlightSearch.prototype, "triggerIcon");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: "trigger-label" })
 ], OkSpotlightSearch.prototype, "triggerLabel");
-__decorateClass6([
+__decorateClass7([
   e4(".top input")
 ], OkSpotlightSearch.prototype, "input");
 define("ok-spotlight-search", OkSpotlightSearch);
 
 // node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-empty-state.js
-var __defProp7 = Object.defineProperty;
-var __decorateClass7 = (decorators, target, key, kind) => {
+var __defProp8 = Object.defineProperty;
+var __decorateClass8 = (decorators, target, key, kind) => {
   var result = void 0;
   for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
     if (decorator = decorators[i7])
       result = decorator(target, key, result) || result;
-  if (result) __defProp7(target, key, result);
+  if (result) __defProp8(target, key, result);
   return result;
 };
 var OkEmptyState = class extends i3 {
@@ -4321,25 +4538,25 @@ var OkEmptyState = class extends i3 {
     `;
   }
 };
-__decorateClass7([
+__decorateClass8([
   n4()
 ], OkEmptyState.prototype, "icon");
-__decorateClass7([
+__decorateClass8([
   n4()
 ], OkEmptyState.prototype, "heading");
-__decorateClass7([
+__decorateClass8([
   n4()
 ], OkEmptyState.prototype, "message");
 define("ok-empty-state", OkEmptyState);
 
 // node_modules/.pnpm/@erplora+outfitkit@file+..+outfitkit/node_modules/@erplora/outfitkit/dist/ok-status-pill.js
-var __defProp8 = Object.defineProperty;
-var __decorateClass8 = (decorators, target, key, kind) => {
+var __defProp9 = Object.defineProperty;
+var __decorateClass9 = (decorators, target, key, kind) => {
   var result = void 0;
   for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
     if (decorator = decorators[i7])
       result = decorator(target, key, result) || result;
-  if (result) __defProp8(target, key, result);
+  if (result) __defProp9(target, key, result);
   return result;
 };
 var OkStatusPill = class extends i3 {
@@ -4434,19 +4651,19 @@ var OkStatusPill = class extends i3 {
     `;
   }
 };
-__decorateClass8([
+__decorateClass9([
   n4({ type: String, reflect: true })
 ], OkStatusPill.prototype, "tone");
-__decorateClass8([
+__decorateClass9([
   n4({ type: String })
 ], OkStatusPill.prototype, "label");
-__decorateClass8([
+__decorateClass9([
   n4({ type: String })
 ], OkStatusPill.prototype, "icon");
-__decorateClass8([
+__decorateClass9([
   n4({ type: Boolean, reflect: true })
 ], OkStatusPill.prototype, "dot");
-__decorateClass8([
+__decorateClass9([
   n4({ type: String, reflect: true })
 ], OkStatusPill.prototype, "size");
 define("ok-status-pill", OkStatusPill);
@@ -4851,7 +5068,6 @@ var ErpPosTouch = class extends i3 {
       --tx: var(--ion-text-color, #1c1b18);
       --mut: var(--ion-color-medium, #8b897f);
       --accent: var(--ion-color-primary, #0091ce);
-      --accent-2: var(--ion-color-primary-shade, #0081b9);
       display:block; height:100%; box-sizing:border-box; font-family: system-ui, sans-serif; color:var(--tx);
     }
     *, *::before, *::after { box-sizing:border-box; }
@@ -4863,7 +5079,7 @@ var ErpPosTouch = class extends i3 {
     /* ── Catálogo ── */
     .catalog { display:flex; flex-direction:column; min-width:0; padding:.8rem; }
     .catbar { display:flex; align-items:center; gap:.4rem; margin-bottom:.7rem; }
-    .arrow { flex:none; width:2.1rem; height:2.1rem; border-radius:10px; border:1px solid var(--ion-border-color);
+    .arrow { flex:none; width:2.1rem; height:2.1rem; border-radius:var(--ok-radius-sm,10px); border:1px solid var(--ion-border-color);
       background:var(--tile); color:var(--mut); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
     .arrow:hover { background:var(--tile-hi); color:var(--tx); }
     .arrow ion-icon { font-size:1.1rem; }
@@ -4888,7 +5104,7 @@ var ErpPosTouch = class extends i3 {
         #000 calc(100% - var(--ok-tabbar-fade,36px)),transparent 100%);
     }
     ion-segment-button.cat-segment-button { flex:0 0 9.5rem; min-width:9.5rem; min-height:4.4rem;
-      margin:0 .275rem; border:1px solid transparent; border-radius:12px;
+      margin:0 .275rem; border:1px solid transparent; border-radius:var(--ok-radius,12px);
       text-transform:none; --background:var(--tile); --background-checked:var(--tile-hi);
       --color:var(--tx); --color-checked:var(--tx); --indicator-color:transparent;
       --indicator-box-shadow:none; --padding-start:.65rem; --padding-end:.65rem; }
@@ -4902,10 +5118,10 @@ var ErpPosTouch = class extends i3 {
     /* Resultados del buscador de productos (proyectados en el slot de ok-spotlight-search). */
     .sp-list { background:transparent; }
     ion-list.sp-list { background:transparent; }
-    .sp-list ion-item { --background:transparent; border-radius:10px; }
+    .sp-list ion-item { --background:transparent; border-radius:var(--ok-radius-sm,10px); }
     .sp-price { font-weight:800; color:var(--accent); }
     .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap:.7rem; overflow:auto; align-content:start; padding-bottom:.3rem; }
-    ion-card.tile { margin:0; border-radius:14px; box-shadow:none; border:1px solid var(--ion-border-color); background:var(--tile);
+    ion-card.tile { margin:0; border-radius:var(--ok-radius,14px); box-shadow:none; border:1px solid var(--ion-border-color); background:var(--tile);
       overflow:hidden; display:flex; flex-direction:column; transition:border-color .12s, transform .05s; }
     ion-card.tile:hover { border-color:var(--accent); }
     ion-card.tile:active { transform:scale(.98); }
@@ -4930,8 +5146,8 @@ var ErpPosTouch = class extends i3 {
     ion-buttons ion-icon { font-size: var(--pos-hdr-icon-size); }
     .cart-actions-slot { --pos-hdr-icon-size: 1.75rem; }
     .ctx-chips { display:flex; gap:.35rem; flex-wrap:wrap; }
-    .ctx-chips .chip { font-size:.8rem; font-weight:700; color:#fff; border-radius:999px; padding:.12rem .55rem; background:var(--accent); white-space:nowrap; }
-    .ctx-chips .chip.cust { background:#5c7cfa; }
+    .ctx-chips .chip { font-size:.8rem; font-weight:700; color:var(--ok-on-accent, #fff); border-radius:var(--ok-radius-pill,999px); padding:.12rem .55rem; background:var(--accent); white-space:nowrap; }
+    .ctx-chips .chip.cust { background:var(--ion-color-secondary, #5c7cfa); }
     /* Contenedor donde los módulos montan su botón de asignación (mesa, cliente…) en el header. */
     .cart-actions-slot { display:flex; align-items:center; }
     .cart-actions-slot:empty { display:none; }
@@ -4972,7 +5188,7 @@ var ErpPosTouch = class extends i3 {
       color:var(--tx); font-weight:700; font-size:.95rem; cursor:pointer; }
     .pm-btn ion-icon { font-size:1.3rem; }
     .pm-btn[aria-pressed=true] { border-color:var(--accent); color:var(--accent);
-      box-shadow:inset 0 0 0 1px var(--accent); }
+      box-shadow:var(--ok-ring-accent, inset 0 0 0 1px var(--accent)); }
     .pm-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     /* Logo de marca (Bizum): es un wordmark ANCHO, no un glifo cuadrado como los Ionicons, así que
        se acota a la altura del icono y se deja crecer a lo ancho sin romper el botón. */
@@ -4984,6 +5200,7 @@ var ErpPosTouch = class extends i3 {
     .amt.big-change .v { font-size:1.6rem; font-weight:800; color:var(--accent); }
     .print-row { --background:transparent; --padding-start:0; --inner-padding-end:0; margin:.5rem 0 .2rem; }
     .pay-err { color:var(--ion-color-danger,#d9480f); margin:.4rem 0 0; }
+    .err { color:var(--ion-color-danger,#d9480f); }
     .pay-actions { display:flex; gap:.5rem; }
     .pay-actions .charge { flex:1; }
     .pay-actions .charge-print { flex:none; width:64px; }
@@ -4994,10 +5211,11 @@ var ErpPosTouch = class extends i3 {
     /* desplegable tickets aparcados */
     .pdrop-back { position:absolute; inset:0; z-index:40; }
     .pdrop { position:absolute; top:2.9rem; right:.5rem; z-index:41; width:min(20rem,90%); background:var(--tile);
-      border:1px solid var(--ion-border-color); border-radius:12px; box-shadow:0 12px 32px rgba(0,0,0,.5); padding:.5rem; max-height:60%; overflow:auto; }
+      border:1px solid var(--ion-border-color); border-radius:var(--ok-radius,12px); box-shadow:var(--ok-shadow-pop, 0 12px 32px rgba(0,0,0,.5)); padding:.5rem; max-height:60%; overflow:auto; }
     .pdrop .hint { color:var(--mut); font-size:.82rem; margin:.3rem .2rem .5rem; }
+    .pdrop .hint.hint--center { text-align:center; }
     .pdrop .hint strong { color:var(--tx); }
-    .pitem { display:flex; justify-content:space-between; align-items:center; gap:.3rem; border:1px solid var(--ion-border-color); border-radius:10px; padding:.2rem .3rem .2rem .6rem; margin-bottom:.35rem; }
+    .pitem { display:flex; justify-content:space-between; align-items:center; gap:.3rem; border:1px solid var(--ion-border-color); border-radius:var(--ok-radius-sm,10px); padding:.2rem .3rem .2rem .6rem; margin-bottom:.35rem; }
     /* La FILA entera recupera: botón de verdad (accesible), sin pintas de botón. */
     .prow { flex:1; display:flex; flex-direction:column; align-items:flex-start; gap:.1rem;
       background:none; border:none; padding:.3rem 0; text-align:left; cursor:pointer; color:var(--tx); }
@@ -5010,7 +5228,7 @@ var ErpPosTouch = class extends i3 {
        camarero) y ENVIADO debajo. El detalle por comanda es del chip+modal de kitchen, que se
        monta en .sec-slot de la cabecera de ENVIADO. */
     .secs { padding:.4rem .5rem .8rem; display:flex; flex-direction:column; gap:.6rem; }
-    .sec { border:1px solid var(--ion-border-color); border-radius:12px; overflow:hidden; }
+    .sec { border:1px solid var(--ion-border-color); border-radius:var(--ok-radius,12px); overflow:hidden; }
     .sec.sec-pending { border-color:var(--accent); }
     .sec-h { display:flex; align-items:center; gap:.4rem; padding:.5rem .7rem;
       font-weight:700; font-size:.82rem; text-transform:uppercase; letter-spacing:.04em;
@@ -5023,50 +5241,50 @@ var ErpPosTouch = class extends i3 {
        ASPECTO de sheet (suben desde abajo, asa, esquinas solo arriba — pregunta de Ioan
        2026-07-19): mismo <dialog> nativo, que ion-action-sheet no aloja contenido rico y los
        overlays de Ionic en shadow Lit se re-parentan al body (ADR-0028). */
-    dialog.park-dialog, dialog.dirty-dialog { border:1px solid var(--ion-border-color); border-radius:14px;
+    dialog.park-dialog, dialog.dirty-dialog { border:1px solid var(--ion-border-color); border-radius:var(--ok-radius,14px);
       background:var(--panel); color:var(--tx); padding:1rem 1.1rem; width:min(94vw,24rem);
-      box-shadow:0 18px 50px rgba(0,0,0,.35); }
-    dialog.park-dialog::backdrop, dialog.dirty-dialog::backdrop { background:rgba(0,0,0,.45); }
+      box-shadow:var(--ok-shadow-modal, 0 18px 50px rgba(0,0,0,.35)); }
+    dialog.park-dialog::backdrop, dialog.dirty-dialog::backdrop { background:var(--ok-scrim, rgba(0,0,0,.45)); }
     @media (max-width: 820px) {
       dialog.park-dialog, dialog.dirty-dialog { width:100vw; max-width:100vw; margin:auto 0 0;
-        border-radius:18px 18px 0 0; border-bottom:none; padding-bottom:max(1rem, env(safe-area-inset-bottom)); }
+        border-radius:var(--ok-radius-sheet-top, 18px 18px 0 0); border-bottom:none; padding-bottom:max(1rem, env(safe-area-inset-bottom)); }
       dialog.park-dialog::before, dialog.dirty-dialog::before { content:''; display:block;
-        width:2.4rem; height:.3rem; border-radius:999px; background:var(--ion-border-color);
+        width:2.4rem; height:.3rem; border-radius:var(--ok-radius-pill,999px); background:var(--ion-border-color);
         margin:0 auto .7rem; }
       .dlg-actions ion-button { flex:1; }
     }
     dialog h3 { margin:0 0 .5rem; font-size:1.05rem; }
     dialog p { margin:0 0 .8rem; color:var(--mut); }
     dialog.park-dialog input { width:100%; box-sizing:border-box; font-size:1rem; padding:.6rem .7rem;
-      border-radius:10px; border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); }
+      border-radius:var(--ok-radius-sm,10px); border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); }
     .dlg-actions { display:flex; justify-content:flex-end; gap:.4rem; margin-top:.9rem; flex-wrap:wrap; }
-    .badge-num { font-size:.62rem; min-width:1rem; height:1rem; padding:0 .2rem; border-radius:999px; background:var(--accent); color:#fff; display:inline-flex; align-items:center; justify-content:center; position:absolute; top:.2rem; right:.2rem; }
+    .badge-num { font-size:.62rem; min-width:1rem; height:1rem; padding:0 .2rem; border-radius:var(--ok-radius-pill,999px); background:var(--accent); color:var(--ok-on-accent,#fff); display:inline-flex; align-items:center; justify-content:center; position:absolute; top:.2rem; right:.2rem; }
 
     /* botón flotante de carrito (solo móvil) */
     .fab { display:none; position:absolute; right:1rem; bottom:1rem; z-index:50; width:3.6rem; height:3.6rem; border-radius:50%;
-      border:none; background:var(--accent); color:#fff; cursor:pointer; box-shadow:0 10px 26px rgba(0,0,0,.45); align-items:center; justify-content:center; }
+      border:none; background:var(--accent); color:var(--ok-on-accent,#fff); cursor:pointer; box-shadow:var(--ok-shadow-modal, 0 10px 26px rgba(0,0,0,.45)); align-items:center; justify-content:center; }
     .fab ion-icon { font-size:1.6rem; }
-    .fab .badge { position:absolute; top:-.2rem; right:-.2rem; min-width:1.3rem; height:1.3rem; padding:0 .25rem; border-radius:999px;
-      background:#fff; color:var(--accent); font-size:.72rem; font-weight:800; display:inline-flex; align-items:center; justify-content:center; }
+    .fab .badge { position:absolute; top:-.2rem; right:-.2rem; min-width:1.3rem; height:1.3rem; padding:0 .25rem; border-radius:var(--ok-radius-pill,999px);
+      background:var(--ok-on-accent,#fff); color:var(--accent); font-size:.72rem; font-weight:800; display:inline-flex; align-items:center; justify-content:center; }
     .cart-close { display:none; }
 
     /* cobro / numpad (sheet oscuro) */
     .pay { display:flex; flex-direction:column; gap:.8rem; }
     .methods { display:flex; gap:.4rem; flex-wrap:wrap; }
-    .chip { padding:.5rem .9rem; border-radius:999px; border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); cursor:pointer; }
-    .chip[aria-pressed=true] { background:var(--accent); color:#fff; border-color:transparent; }
+    .chip { padding:.5rem .9rem; border-radius:var(--ok-radius-pill,999px); border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); cursor:pointer; }
+    .chip[aria-pressed=true] { background:var(--accent); color:var(--ok-on-accent,#fff); border-color:transparent; }
     .amt { display:flex; justify-content:space-between; font-size:1.1rem; }
     .amt .v { font-weight:700; }
     .change { color:var(--ion-color-success, #2f9e44); }
     .numpad { display:grid; grid-template-columns: repeat(3, 1fr); gap:.35rem; margin-bottom:.2rem; }
-    .numpad button { font-size:1.15rem; padding:.6rem; border-radius:10px; border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); cursor:pointer; }
-    .scrim { position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; z-index:70; }
+    .numpad button { font-size:1.15rem; padding:.6rem; border-radius:var(--ok-radius-sm,10px); border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); cursor:pointer; }
+    .scrim { position:fixed; inset:0; background:var(--ok-scrim, rgba(0,0,0,.6)); display:flex; align-items:center; justify-content:center; z-index:70; }
     /* Columna flex: el importe y el botón de cobrar NO se mueven; solo scrollea el centro. Antes
        el sheet entero scrolleaba y el botón principal quedaba fuera de pantalla — la acción más
        importante del TPV no puede exigir scroll. */
     .sheet { background:var(--panel); color:var(--tx); border:1px solid var(--ion-border-color);
-      border-radius:16px; width:min(92vw,24rem); max-height:88vh; display:flex; flex-direction:column;
-      overflow:hidden; box-shadow:0 12px 48px rgba(0,0,0,.6); }
+      border-radius:var(--ok-radius-lg,16px); width:min(92vw,24rem); max-height:88vh; display:flex; flex-direction:column;
+      overflow:hidden; box-shadow:var(--ok-shadow-modal, 0 12px 48px rgba(0,0,0,.6)); }
     .sheet-h, .sheet-top, .sheet-foot { flex:none; padding:0 1rem; }
     .sheet-h { padding-top:1rem; }
     .sheet-foot { padding:.75rem 1rem 1rem; border-top:1px solid var(--ion-border-color); }
@@ -5083,7 +5301,7 @@ var ErpPosTouch = class extends i3 {
         transform:translateX(100%); transition:transform .25s ease; }
       .cart[data-open] { transform:translateX(0); }
       .cart-close { display:inline-flex; }
-      .cart-backdrop[data-open] { display:block; position:absolute; inset:0; background:rgba(0,0,0,.5); z-index:55; }
+      .cart-backdrop[data-open] { display:block; position:absolute; inset:0; background:var(--ok-scrim, rgba(0,0,0,.5)); z-index:55; }
       .fab { display:inline-flex; }
     }
     .cart-backdrop { display:none; }
@@ -5102,10 +5320,10 @@ var ErpPosTouch = class extends i3 {
       box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 45%,transparent); }
     .cat-segment-label .cc-n { font-size:.88rem; }
     .cat-segment-label .cc-c { font-size:.7rem; }
-    .arrow.search-trigger { width:3rem; height:3.65rem; border-radius:12px; color:var(--accent); }
+    .arrow.search-trigger { width:3rem; height:3.65rem; border-radius:var(--ok-radius,12px); color:var(--accent); }
 
     .grid { grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr)); gap:.62rem; }
-    ion-card.tile { min-height:8.4rem; border-radius:14px; cursor:pointer; }
+    ion-card.tile { min-height:8.4rem; border-radius:var(--ok-radius,14px); cursor:pointer; }
     .thumb { height:4.85rem; flex:none; }
     .tinfo { flex:1; display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto auto;
       gap:.15rem .5rem; align-content:center; padding:.52rem .62rem .58rem; }
@@ -5118,7 +5336,7 @@ var ErpPosTouch = class extends i3 {
     .cart ion-toolbar { --min-height:3.6rem; }
     .order-toolbar { min-height:3.6rem; display:flex; align-items:stretch; gap:.12rem; padding:.24rem .35rem; }
     ion-button.header-action { width:3.25rem; height:3.05rem; margin:0; font-size:1.05rem;
-      --padding-start:.2rem; --padding-end:.2rem; --border-radius:10px; --color:var(--mut); }
+      --padding-start:.2rem; --padding-end:.2rem; --border-radius:var(--ok-radius-sm,10px); --color:var(--mut); }
     ion-button.header-action::part(native) { display:flex; flex-direction:column; gap:.08rem; }
     ion-button.header-action ion-icon { font-size:1.2rem; }
     ion-button.header-action small { display:block; max-width:3rem; font-size:.56rem; line-height:1;
@@ -5130,6 +5348,8 @@ var ErpPosTouch = class extends i3 {
       --padding-start:0; --padding-end:0; }
     ion-button.header-action.icon-action::part(native) { flex-direction:row; gap:0; }
     ion-button.header-action.icon-action ion-icon { font-size:var(--pos-hdr-icon-size,1.75rem); }
+    /* El badge .badge-num (absoluto) se ancla a este botón: necesita un contexto de posicionamiento. */
+    .open-checks-action { position:relative; }
     ion-button.header-action.assigned { --color:var(--accent); --background:color-mix(in srgb,var(--accent) 12%,transparent); }
     .cart-actions-slot { display:flex; align-items:center; min-width:0; }
     .actions-spacer { flex:1; min-width:.2rem; }
@@ -5139,7 +5359,7 @@ var ErpPosTouch = class extends i3 {
       color:var(--tx); font:inherit; font-size:1rem; font-weight:750; }
     .order-title::placeholder { color:var(--mut); }
     .title-edit { flex:none; width:2rem; height:2rem; display:inline-grid; place-items:center; padding:0;
-      border:0; border-radius:8px; background:transparent; color:var(--mut); cursor:pointer; }
+      border:0; border-radius:var(--ok-radius-sm,8px); background:transparent; color:var(--mut); cursor:pointer; }
     .title-edit:hover, .title-edit:focus-visible { color:var(--accent); background:var(--tile-hi); outline:none; }
     .title-edit ion-icon { font-size:1rem; }
     .order-context { display:flex; gap:.3rem; flex-wrap:wrap; min-height:1.55rem; margin-top:.32rem; }
@@ -5147,24 +5367,25 @@ var ErpPosTouch = class extends i3 {
     .context-empty { color:var(--mut); font-size:.72rem; align-self:center; }
 
     ion-segment.view-tabs { margin:.62rem .72rem .28rem; width:auto; border:1px solid var(--line);
-      border-radius:11px; background:var(--tile); }
+      border-radius:var(--ok-radius-sm,11px); background:var(--tile); }
     ion-segment.view-tabs ion-segment-button { min-height:2.85rem; --indicator-color:var(--tile-hi);
       --color:var(--mut); --color-checked:var(--tx); font-weight:700; text-transform:none; }
     .view-tab-label { display:inline-flex; align-items:center; justify-content:center; gap:.38rem; }
     .pending-dot { display:inline-grid; place-items:center; min-width:1.18rem; height:1.18rem; padding:0 .25rem;
-      border-radius:999px; background:var(--ion-color-warning,#f5a623); color:#241700; font-size:.65rem; font-weight:850; }
+      border-radius:var(--ok-radius-pill,999px); background:var(--ion-color-warning,#f5a623); color:var(--ion-color-warning-contrast,#241700); font-size:.65rem; font-weight:850; }
 
     .cart ion-content.cart-body { --padding-top:.15rem; }
     ion-list.lines { padding:.28rem .48rem .45rem; }
     ion-list.lines ion-item { margin:.35rem 0; --background:var(--tile); --border-color:transparent;
-      --border-radius:12px; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+      --border-radius:var(--ok-radius,12px); border:1px solid var(--line); border-radius:var(--ok-radius,12px); overflow:hidden; }
     ion-list.lines ion-item.sel { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 7%,var(--tile)); }
     ion-list.lines ion-item h3 { display:flex; align-items:center; gap:.35rem; margin-bottom:.12rem; font-size:.85rem; }
     ion-list.lines ion-item p { font-size:.7rem; }
     ok-status-pill { vertical-align:middle; }
     .lineend .lt { font-size:.84rem; }
+    .lineend .lt.is-gift { text-decoration:line-through; opacity:.55; }
     .secs { padding:.32rem .48rem .65rem; gap:.52rem; }
-    .sec { border-radius:12px; }
+    .sec { border-radius:var(--ok-radius,12px); }
     .sec-h { padding:.48rem .58rem; font-size:.7rem; background:transparent; border-bottom:1px solid var(--line); }
     .sec.sec-pending { border-color:color-mix(in srgb,var(--accent) 55%,var(--line)); }
     .sec-slot { min-width:0; }
@@ -5947,7 +6168,7 @@ var ErpPosTouch = class extends i3 {
             <!-- Cada módulo sigue siendo dueño de su botón y modal. Sales solo ofrece el hueco. -->
             <span class="cart-actions-slot"></span>
             <span class="actions-spacer"></span>
-            <ion-button class="header-action icon-action open-checks-action" fill="clear" style="position:relative"
+            <ion-button class="header-action icon-action open-checks-action" fill="clear"
                         title=${t5("ui.parkedTickets")} aria-label=${t5("ui.parkedTickets")}
                         @click=${() => {
       this.parkedOpen = !this.parkedOpen;
@@ -6023,7 +6244,7 @@ var ErpPosTouch = class extends i3 {
                 <ion-icon slot="icon-only" name=${this.armedDelete === oc.id ? "alert-circle-outline" : "trash-outline"}></ion-icon>
               </ion-button>
             </div>`)}
-            ${!this.parked.length ? b2`<div class="hint" style="text-align:center">${t5("ui.noParkedTickets")}</div>` : A}
+            ${!this.parked.length ? b2`<div class="hint hint--center">${t5("ui.noParkedTickets")}</div>` : A}
           </div>` : A}
 
       <!-- El CUERPO. ion-content es quien scrollea: las líneas crecen aquí dentro y ni el header ni
@@ -6123,7 +6344,7 @@ var ErpPosTouch = class extends i3 {
         <p>${priceLabel(this.money(l3.price), l3.unit_code)}${l3.is_gift && l3.gift_reason ? b2` · ${l3.gift_reason}` : A}</p>
       </ion-label>
       <div slot="end" class="lineend">
-        <span class="lt" style=${l3.is_gift ? "text-decoration:line-through;opacity:.55" : ""}>${this.money(l3.price * l3.qty)}</span>
+        <span class="lt ${l3.is_gift ? "is-gift" : ""}">${this.money(l3.price * l3.qty)}</span>
         ${locked ? b2`<span class="lqty">×${formatQuantity(toMicro(l3.qty))}</span>` : b2`
             <ion-button fill="clear" size="small" title=${t5("ui.giftAction")} @click=${() => this.toggleGift(l3.id)}>
               <ion-icon name=${l3.is_gift ? "gift" : "gift-outline"} slot="icon-only" color=${l3.is_gift ? "success" : "medium"}></ion-icon>
@@ -6170,7 +6391,7 @@ var ErpPosTouch = class extends i3 {
       <div class="body">
         <div class="catalog">
           ${this.renderCatBar()}
-          ${this.error ? b2`<p style="color:var(--ion-color-danger,#d9480f)">${this.error}</p>` : A}
+          ${this.error ? b2`<p class="err">${this.error}</p>` : A}
           <div class="grid">
             ${this.filtered.map((p4) => b2`<ion-card button class="tile" @click=${() => this.add(p4)}>
               <div class="thumb" style=${p4.image ? `background-image:url(${p4.image})` : `background:${gradient(p4.name)}`}>
@@ -6618,16 +6839,16 @@ function decodeCsvBuffer(buf) {
   }
   return text.charCodeAt(0) === 65279 ? text.slice(1) : text;
 }
-var __defProp9 = Object.defineProperty;
-var __decorateClass9 = (decorators, target, key, kind) => {
+var __defProp10 = Object.defineProperty;
+var __decorateClass10 = (decorators, target, key, kind) => {
   var result = void 0;
   for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
     if (decorator = decorators[i7])
       result = decorator(target, key, result) || result;
-  if (result) __defProp9(target, key, result);
+  if (result) __defProp10(target, key, result);
   return result;
 };
-var DEFAULT_LABELS4 = {
+var DEFAULT_LABELS5 = {
   search: "Search\u2026",
   empty: "No results",
   filters: "Filters",
@@ -6941,7 +7162,7 @@ var OkDataTable = class extends i3 {
   }
   // ── i18n: textos efectivos (default inglés ← overrides de `.labels`) ──────────────────────
   get t() {
-    return { ...DEFAULT_LABELS4, ...this.labels };
+    return { ...DEFAULT_LABELS5, ...this.labels };
   }
   /** Placeholder efectivo del buscador (prop explícita → label i18n → default inglés). */
   get effSearchPlaceholder() {
@@ -7775,151 +7996,151 @@ var OkDataTable = class extends i3 {
     `;
   }
 };
-__decorateClass9([
+__decorateClass10([
   n4({ attribute: false })
 ], OkDataTable.prototype, "columns");
-__decorateClass9([
+__decorateClass10([
   n4({ attribute: false })
 ], OkDataTable.prototype, "rows");
-__decorateClass9([
+__decorateClass10([
   n4({ attribute: false })
 ], OkDataTable.prototype, "searchKeys");
-__decorateClass9([
+__decorateClass10([
   n4({ attribute: "row-key-field" })
 ], OkDataTable.prototype, "rowKeyField");
-__decorateClass9([
+__decorateClass10([
   n4({ attribute: false })
 ], OkDataTable.prototype, "rowKey");
-__decorateClass9([
+__decorateClass10([
   n4({ type: Number, attribute: "page-size" })
 ], OkDataTable.prototype, "pageSize");
-__decorateClass9([
+__decorateClass10([
   n4({ attribute: "empty-message" })
 ], OkDataTable.prototype, "emptyMessage");
-__decorateClass9([
+__decorateClass10([
   n4({ attribute: "search-placeholder" })
 ], OkDataTable.prototype, "searchPlaceholder");
-__decorateClass9([
+__decorateClass10([
   n4({ attribute: false })
 ], OkDataTable.prototype, "labels");
-__decorateClass9([
+__decorateClass10([
   n4({ attribute: false })
 ], OkDataTable.prototype, "actions");
-__decorateClass9([
+__decorateClass10([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "addable");
-__decorateClass9([
+__decorateClass10([
   n4({ attribute: false })
 ], OkDataTable.prototype, "pageSizeOptions");
-__decorateClass9([
+__decorateClass10([
   n4({ type: Boolean, reflect: true })
 ], OkDataTable.prototype, "fill");
-__decorateClass9([
+__decorateClass10([
   n4({ type: Boolean, attribute: "column-picker" })
 ], OkDataTable.prototype, "columnPicker");
-__decorateClass9([
+__decorateClass10([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "csv");
-__decorateClass9([
+__decorateClass10([
   n4({ attribute: "csv-name" })
 ], OkDataTable.prototype, "csvName");
-__decorateClass9([
+__decorateClass10([
   n4({ type: Boolean, attribute: "server-side" })
 ], OkDataTable.prototype, "serverSide");
-__decorateClass9([
+__decorateClass10([
   n4({ type: Number })
 ], OkDataTable.prototype, "total");
-__decorateClass9([
+__decorateClass10([
   n4({ type: Number })
 ], OkDataTable.prototype, "page");
-__decorateClass9([
+__decorateClass10([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "searchable");
-__decorateClass9([
+__decorateClass10([
   n4({ type: String })
 ], OkDataTable.prototype, "sort");
-__decorateClass9([
+__decorateClass10([
   n4({ attribute: "sort-dir" })
 ], OkDataTable.prototype, "sortDir");
-__decorateClass9([
+__decorateClass10([
   n4()
 ], OkDataTable.prototype, "title");
-__decorateClass9([
+__decorateClass10([
   n4({ attribute: false })
 ], OkDataTable.prototype, "views");
-__decorateClass9([
+__decorateClass10([
   n4({ attribute: "default-view" })
 ], OkDataTable.prototype, "defaultView");
-__decorateClass9([
+__decorateClass10([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "exportable");
-__decorateClass9([
+__decorateClass10([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "importable");
-__decorateClass9([
+__decorateClass10([
   n4({ type: Boolean, attribute: "column-selector" })
 ], OkDataTable.prototype, "columnSelector");
-__decorateClass9([
+__decorateClass10([
   n4({ attribute: false })
 ], OkDataTable.prototype, "pageSizes");
-__decorateClass9([
+__decorateClass10([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "selectable");
-__decorateClass9([
+__decorateClass10([
   n4({ attribute: false })
 ], OkDataTable.prototype, "selectedKeys");
-__decorateClass9([
+__decorateClass10([
   n4({ attribute: false })
 ], OkDataTable.prototype, "primaryAction");
-__decorateClass9([
+__decorateClass10([
   n4({ type: Boolean })
 ], OkDataTable.prototype, "inlineFilters");
-__decorateClass9([
+__decorateClass10([
   n4({ attribute: false })
 ], OkDataTable.prototype, "menuActions");
-__decorateClass9([
+__decorateClass10([
   n4({ attribute: false })
 ], OkDataTable.prototype, "cardTitle");
-__decorateClass9([
+__decorateClass10([
   n4({ attribute: false })
 ], OkDataTable.prototype, "cardIcon");
-__decorateClass9([
+__decorateClass10([
   n4({ attribute: false })
 ], OkDataTable.prototype, "renderCard");
-__decorateClass9([
+__decorateClass10([
   r5()
 ], OkDataTable.prototype, "q");
-__decorateClass9([
+__decorateClass10([
   r5()
 ], OkDataTable.prototype, "clientPage");
-__decorateClass9([
+__decorateClass10([
   r5()
 ], OkDataTable.prototype, "clientPageSize");
-__decorateClass9([
+__decorateClass10([
   r5()
 ], OkDataTable.prototype, "clientSort");
-__decorateClass9([
+__decorateClass10([
   r5()
 ], OkDataTable.prototype, "clientSortDir");
-__decorateClass9([
+__decorateClass10([
   r5()
 ], OkDataTable.prototype, "clientFilters");
-__decorateClass9([
+__decorateClass10([
   r5()
 ], OkDataTable.prototype, "filterDraft");
-__decorateClass9([
+__decorateClass10([
   r5()
 ], OkDataTable.prototype, "panel");
-__decorateClass9([
+__decorateClass10([
   r5()
 ], OkDataTable.prototype, "viewMode");
-__decorateClass9([
+__decorateClass10([
   r5()
 ], OkDataTable.prototype, "hiddenKeys");
-__decorateClass9([
+__decorateClass10([
   r5()
 ], OkDataTable.prototype, "internalSelection");
-__decorateClass9([
+__decorateClass10([
   r5()
 ], OkDataTable.prototype, "menuOpen");
 define("ok-data-table", OkDataTable);
@@ -7944,7 +8165,7 @@ var ErpSalesList = class extends i3 {
     :host { display:block; font-family: system-ui, sans-serif; color: var(--ion-text-color,#1c1b18); }
     h2 { margin:0 0 .75rem; font-size:1.15rem; }
     .cards { display:flex; gap:.6rem; margin-bottom:1rem; flex-wrap:wrap; }
-    .card { flex:1; min-width:8rem; padding:.7rem .9rem; border:1px solid var(--ion-border-color,#e0ddd4); border-radius:12px; }
+    .card { flex:1; min-width:8rem; padding:.7rem .9rem; border:1px solid var(--ion-border-color,#e0ddd4); border-radius: var(--ok-radius, 12px); }
     .card .k { color:#8b897f; font-size:.75rem; text-transform:uppercase; }
     .card .v { font-size:1.3rem; font-weight:700; }
     .err { color:#d9480f; }
@@ -8028,8 +8249,8 @@ var ErpSalesList = class extends i3 {
             <div class="v">${erplora3().formatMoney(Number(this.stats.avg_ticket || 0))}</div>
           </div>
         </div>
-        ${this.statsError ? b2`<p class="err">${this.statsError}</p>` : A}
-        ${this.ctrl?.error ? b2`<p class="err">${this.ctrl.error}</p>` : A}
+        ${this.statsError ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.statsError}</ok-inline-feedback>` : A}
+        ${this.ctrl?.error ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : A}
         <ok-data-table .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r6) => String(r6.sale_number ?? "\u2014")} .cardIcon=${() => "receipt-outline"} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.ctrl?.state.sort} .sortDir=${this.ctrl?.state.dir ?? "desc"} .searchable=${true} .searchPlaceholder=${t7("ui.searchSalePlaceholder")} .emptyMessage=${this.ctrl?.loading ? t7("ui.loading") : t7("ui.noSales")} .actions=${this.documentActions} @rowAction=${(e7) => {
       if (e7.detail.actionId === "document") this.docSaleId = e7.detail.row.id;
     }} @pageChange=${(e7) => this.ctrl.setPage(e7.detail)} @sortChange=${(e7) => this.ctrl.setSort(e7.detail.sort, e7.detail.dir)} @searchChange=${(e7) => this.ctrl.setSearch(e7.detail)} @filterChange=${(e7) => this.ctrl.setFilter(e7.detail.col, e7.detail.value)}></ok-data-table>

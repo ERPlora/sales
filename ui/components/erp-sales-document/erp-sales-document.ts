@@ -1,6 +1,7 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { state, property } from 'lit/decorators.js';
 import { define } from '@erplora/outfitkit/define';
+import '@erplora/outfitkit/ok-inline-feedback';
 import '@erplora/outfitkit/ok-receipt';
 import { receiptToPrintableHtml } from '../../lib/receipt-html.js';
 import '@erplora/outfitkit/ok-invoice';
@@ -198,7 +199,7 @@ export class ErpSalesDocument extends LitElement {
   render() {
     const t = (k: string): string => erplora().t(CATALOG, k);
     if (this.loading) return html`<p class="muted">${t('ui.loadingDocument')}</p>`;
-    if (this.error) return html`<p class="err">${this.error}</p>`;
+    if (this.error) return html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>`;
     if (!this.sale) return html`<p class="muted">${t('ui.noSale')}</p>`;
 
     const settings = this.settings || {};

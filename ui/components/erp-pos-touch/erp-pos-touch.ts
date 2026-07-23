@@ -121,7 +121,6 @@ export class ErpPosTouch extends LitElement {
       --tx: var(--ion-text-color, #1c1b18);
       --mut: var(--ion-color-medium, #8b897f);
       --accent: var(--ion-color-primary, #0091ce);
-      --accent-2: var(--ion-color-primary-shade, #0081b9);
       display:block; height:100%; box-sizing:border-box; font-family: system-ui, sans-serif; color:var(--tx);
     }
     *, *::before, *::after { box-sizing:border-box; }
@@ -133,7 +132,7 @@ export class ErpPosTouch extends LitElement {
     /* ── Catálogo ── */
     .catalog { display:flex; flex-direction:column; min-width:0; padding:.8rem; }
     .catbar { display:flex; align-items:center; gap:.4rem; margin-bottom:.7rem; }
-    .arrow { flex:none; width:2.1rem; height:2.1rem; border-radius:10px; border:1px solid var(--ion-border-color);
+    .arrow { flex:none; width:2.1rem; height:2.1rem; border-radius:var(--ok-radius-sm,10px); border:1px solid var(--ion-border-color);
       background:var(--tile); color:var(--mut); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
     .arrow:hover { background:var(--tile-hi); color:var(--tx); }
     .arrow ion-icon { font-size:1.1rem; }
@@ -158,7 +157,7 @@ export class ErpPosTouch extends LitElement {
         #000 calc(100% - var(--ok-tabbar-fade,36px)),transparent 100%);
     }
     ion-segment-button.cat-segment-button { flex:0 0 9.5rem; min-width:9.5rem; min-height:4.4rem;
-      margin:0 .275rem; border:1px solid transparent; border-radius:12px;
+      margin:0 .275rem; border:1px solid transparent; border-radius:var(--ok-radius,12px);
       text-transform:none; --background:var(--tile); --background-checked:var(--tile-hi);
       --color:var(--tx); --color-checked:var(--tx); --indicator-color:transparent;
       --indicator-box-shadow:none; --padding-start:.65rem; --padding-end:.65rem; }
@@ -172,10 +171,10 @@ export class ErpPosTouch extends LitElement {
     /* Resultados del buscador de productos (proyectados en el slot de ok-spotlight-search). */
     .sp-list { background:transparent; }
     ion-list.sp-list { background:transparent; }
-    .sp-list ion-item { --background:transparent; border-radius:10px; }
+    .sp-list ion-item { --background:transparent; border-radius:var(--ok-radius-sm,10px); }
     .sp-price { font-weight:800; color:var(--accent); }
     .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap:.7rem; overflow:auto; align-content:start; padding-bottom:.3rem; }
-    ion-card.tile { margin:0; border-radius:14px; box-shadow:none; border:1px solid var(--ion-border-color); background:var(--tile);
+    ion-card.tile { margin:0; border-radius:var(--ok-radius,14px); box-shadow:none; border:1px solid var(--ion-border-color); background:var(--tile);
       overflow:hidden; display:flex; flex-direction:column; transition:border-color .12s, transform .05s; }
     ion-card.tile:hover { border-color:var(--accent); }
     ion-card.tile:active { transform:scale(.98); }
@@ -200,8 +199,8 @@ export class ErpPosTouch extends LitElement {
     ion-buttons ion-icon { font-size: var(--pos-hdr-icon-size); }
     .cart-actions-slot { --pos-hdr-icon-size: 1.75rem; }
     .ctx-chips { display:flex; gap:.35rem; flex-wrap:wrap; }
-    .ctx-chips .chip { font-size:.8rem; font-weight:700; color:#fff; border-radius:999px; padding:.12rem .55rem; background:var(--accent); white-space:nowrap; }
-    .ctx-chips .chip.cust { background:#5c7cfa; }
+    .ctx-chips .chip { font-size:.8rem; font-weight:700; color:var(--ok-on-accent, #fff); border-radius:var(--ok-radius-pill,999px); padding:.12rem .55rem; background:var(--accent); white-space:nowrap; }
+    .ctx-chips .chip.cust { background:var(--ion-color-secondary, #5c7cfa); }
     /* Contenedor donde los módulos montan su botón de asignación (mesa, cliente…) en el header. */
     .cart-actions-slot { display:flex; align-items:center; }
     .cart-actions-slot:empty { display:none; }
@@ -242,7 +241,7 @@ export class ErpPosTouch extends LitElement {
       color:var(--tx); font-weight:700; font-size:.95rem; cursor:pointer; }
     .pm-btn ion-icon { font-size:1.3rem; }
     .pm-btn[aria-pressed=true] { border-color:var(--accent); color:var(--accent);
-      box-shadow:inset 0 0 0 1px var(--accent); }
+      box-shadow:var(--ok-ring-accent, inset 0 0 0 1px var(--accent)); }
     .pm-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     /* Logo de marca (Bizum): es un wordmark ANCHO, no un glifo cuadrado como los Ionicons, así que
        se acota a la altura del icono y se deja crecer a lo ancho sin romper el botón. */
@@ -254,6 +253,7 @@ export class ErpPosTouch extends LitElement {
     .amt.big-change .v { font-size:1.6rem; font-weight:800; color:var(--accent); }
     .print-row { --background:transparent; --padding-start:0; --inner-padding-end:0; margin:.5rem 0 .2rem; }
     .pay-err { color:var(--ion-color-danger,#d9480f); margin:.4rem 0 0; }
+    .err { color:var(--ion-color-danger,#d9480f); }
     .pay-actions { display:flex; gap:.5rem; }
     .pay-actions .charge { flex:1; }
     .pay-actions .charge-print { flex:none; width:64px; }
@@ -264,10 +264,11 @@ export class ErpPosTouch extends LitElement {
     /* desplegable tickets aparcados */
     .pdrop-back { position:absolute; inset:0; z-index:40; }
     .pdrop { position:absolute; top:2.9rem; right:.5rem; z-index:41; width:min(20rem,90%); background:var(--tile);
-      border:1px solid var(--ion-border-color); border-radius:12px; box-shadow:0 12px 32px rgba(0,0,0,.5); padding:.5rem; max-height:60%; overflow:auto; }
+      border:1px solid var(--ion-border-color); border-radius:var(--ok-radius,12px); box-shadow:var(--ok-shadow-pop, 0 12px 32px rgba(0,0,0,.5)); padding:.5rem; max-height:60%; overflow:auto; }
     .pdrop .hint { color:var(--mut); font-size:.82rem; margin:.3rem .2rem .5rem; }
+    .pdrop .hint.hint--center { text-align:center; }
     .pdrop .hint strong { color:var(--tx); }
-    .pitem { display:flex; justify-content:space-between; align-items:center; gap:.3rem; border:1px solid var(--ion-border-color); border-radius:10px; padding:.2rem .3rem .2rem .6rem; margin-bottom:.35rem; }
+    .pitem { display:flex; justify-content:space-between; align-items:center; gap:.3rem; border:1px solid var(--ion-border-color); border-radius:var(--ok-radius-sm,10px); padding:.2rem .3rem .2rem .6rem; margin-bottom:.35rem; }
     /* La FILA entera recupera: botón de verdad (accesible), sin pintas de botón. */
     .prow { flex:1; display:flex; flex-direction:column; align-items:flex-start; gap:.1rem;
       background:none; border:none; padding:.3rem 0; text-align:left; cursor:pointer; color:var(--tx); }
@@ -280,7 +281,7 @@ export class ErpPosTouch extends LitElement {
        camarero) y ENVIADO debajo. El detalle por comanda es del chip+modal de kitchen, que se
        monta en .sec-slot de la cabecera de ENVIADO. */
     .secs { padding:.4rem .5rem .8rem; display:flex; flex-direction:column; gap:.6rem; }
-    .sec { border:1px solid var(--ion-border-color); border-radius:12px; overflow:hidden; }
+    .sec { border:1px solid var(--ion-border-color); border-radius:var(--ok-radius,12px); overflow:hidden; }
     .sec.sec-pending { border-color:var(--accent); }
     .sec-h { display:flex; align-items:center; gap:.4rem; padding:.5rem .7rem;
       font-weight:700; font-size:.82rem; text-transform:uppercase; letter-spacing:.04em;
@@ -293,50 +294,50 @@ export class ErpPosTouch extends LitElement {
        ASPECTO de sheet (suben desde abajo, asa, esquinas solo arriba — pregunta de Ioan
        2026-07-19): mismo <dialog> nativo, que ion-action-sheet no aloja contenido rico y los
        overlays de Ionic en shadow Lit se re-parentan al body (ADR-0028). */
-    dialog.park-dialog, dialog.dirty-dialog { border:1px solid var(--ion-border-color); border-radius:14px;
+    dialog.park-dialog, dialog.dirty-dialog { border:1px solid var(--ion-border-color); border-radius:var(--ok-radius,14px);
       background:var(--panel); color:var(--tx); padding:1rem 1.1rem; width:min(94vw,24rem);
-      box-shadow:0 18px 50px rgba(0,0,0,.35); }
-    dialog.park-dialog::backdrop, dialog.dirty-dialog::backdrop { background:rgba(0,0,0,.45); }
+      box-shadow:var(--ok-shadow-modal, 0 18px 50px rgba(0,0,0,.35)); }
+    dialog.park-dialog::backdrop, dialog.dirty-dialog::backdrop { background:var(--ok-scrim, rgba(0,0,0,.45)); }
     @media (max-width: 820px) {
       dialog.park-dialog, dialog.dirty-dialog { width:100vw; max-width:100vw; margin:auto 0 0;
-        border-radius:18px 18px 0 0; border-bottom:none; padding-bottom:max(1rem, env(safe-area-inset-bottom)); }
+        border-radius:var(--ok-radius-sheet-top, 18px 18px 0 0); border-bottom:none; padding-bottom:max(1rem, env(safe-area-inset-bottom)); }
       dialog.park-dialog::before, dialog.dirty-dialog::before { content:''; display:block;
-        width:2.4rem; height:.3rem; border-radius:999px; background:var(--ion-border-color);
+        width:2.4rem; height:.3rem; border-radius:var(--ok-radius-pill,999px); background:var(--ion-border-color);
         margin:0 auto .7rem; }
       .dlg-actions ion-button { flex:1; }
     }
     dialog h3 { margin:0 0 .5rem; font-size:1.05rem; }
     dialog p { margin:0 0 .8rem; color:var(--mut); }
     dialog.park-dialog input { width:100%; box-sizing:border-box; font-size:1rem; padding:.6rem .7rem;
-      border-radius:10px; border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); }
+      border-radius:var(--ok-radius-sm,10px); border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); }
     .dlg-actions { display:flex; justify-content:flex-end; gap:.4rem; margin-top:.9rem; flex-wrap:wrap; }
-    .badge-num { font-size:.62rem; min-width:1rem; height:1rem; padding:0 .2rem; border-radius:999px; background:var(--accent); color:#fff; display:inline-flex; align-items:center; justify-content:center; position:absolute; top:.2rem; right:.2rem; }
+    .badge-num { font-size:.62rem; min-width:1rem; height:1rem; padding:0 .2rem; border-radius:var(--ok-radius-pill,999px); background:var(--accent); color:var(--ok-on-accent,#fff); display:inline-flex; align-items:center; justify-content:center; position:absolute; top:.2rem; right:.2rem; }
 
     /* botón flotante de carrito (solo móvil) */
     .fab { display:none; position:absolute; right:1rem; bottom:1rem; z-index:50; width:3.6rem; height:3.6rem; border-radius:50%;
-      border:none; background:var(--accent); color:#fff; cursor:pointer; box-shadow:0 10px 26px rgba(0,0,0,.45); align-items:center; justify-content:center; }
+      border:none; background:var(--accent); color:var(--ok-on-accent,#fff); cursor:pointer; box-shadow:var(--ok-shadow-modal, 0 10px 26px rgba(0,0,0,.45)); align-items:center; justify-content:center; }
     .fab ion-icon { font-size:1.6rem; }
-    .fab .badge { position:absolute; top:-.2rem; right:-.2rem; min-width:1.3rem; height:1.3rem; padding:0 .25rem; border-radius:999px;
-      background:#fff; color:var(--accent); font-size:.72rem; font-weight:800; display:inline-flex; align-items:center; justify-content:center; }
+    .fab .badge { position:absolute; top:-.2rem; right:-.2rem; min-width:1.3rem; height:1.3rem; padding:0 .25rem; border-radius:var(--ok-radius-pill,999px);
+      background:var(--ok-on-accent,#fff); color:var(--accent); font-size:.72rem; font-weight:800; display:inline-flex; align-items:center; justify-content:center; }
     .cart-close { display:none; }
 
     /* cobro / numpad (sheet oscuro) */
     .pay { display:flex; flex-direction:column; gap:.8rem; }
     .methods { display:flex; gap:.4rem; flex-wrap:wrap; }
-    .chip { padding:.5rem .9rem; border-radius:999px; border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); cursor:pointer; }
-    .chip[aria-pressed=true] { background:var(--accent); color:#fff; border-color:transparent; }
+    .chip { padding:.5rem .9rem; border-radius:var(--ok-radius-pill,999px); border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); cursor:pointer; }
+    .chip[aria-pressed=true] { background:var(--accent); color:var(--ok-on-accent,#fff); border-color:transparent; }
     .amt { display:flex; justify-content:space-between; font-size:1.1rem; }
     .amt .v { font-weight:700; }
     .change { color:var(--ion-color-success, #2f9e44); }
     .numpad { display:grid; grid-template-columns: repeat(3, 1fr); gap:.35rem; margin-bottom:.2rem; }
-    .numpad button { font-size:1.15rem; padding:.6rem; border-radius:10px; border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); cursor:pointer; }
-    .scrim { position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; z-index:70; }
+    .numpad button { font-size:1.15rem; padding:.6rem; border-radius:var(--ok-radius-sm,10px); border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); cursor:pointer; }
+    .scrim { position:fixed; inset:0; background:var(--ok-scrim, rgba(0,0,0,.6)); display:flex; align-items:center; justify-content:center; z-index:70; }
     /* Columna flex: el importe y el botón de cobrar NO se mueven; solo scrollea el centro. Antes
        el sheet entero scrolleaba y el botón principal quedaba fuera de pantalla — la acción más
        importante del TPV no puede exigir scroll. */
     .sheet { background:var(--panel); color:var(--tx); border:1px solid var(--ion-border-color);
-      border-radius:16px; width:min(92vw,24rem); max-height:88vh; display:flex; flex-direction:column;
-      overflow:hidden; box-shadow:0 12px 48px rgba(0,0,0,.6); }
+      border-radius:var(--ok-radius-lg,16px); width:min(92vw,24rem); max-height:88vh; display:flex; flex-direction:column;
+      overflow:hidden; box-shadow:var(--ok-shadow-modal, 0 12px 48px rgba(0,0,0,.6)); }
     .sheet-h, .sheet-top, .sheet-foot { flex:none; padding:0 1rem; }
     .sheet-h { padding-top:1rem; }
     .sheet-foot { padding:.75rem 1rem 1rem; border-top:1px solid var(--ion-border-color); }
@@ -353,7 +354,7 @@ export class ErpPosTouch extends LitElement {
         transform:translateX(100%); transition:transform .25s ease; }
       .cart[data-open] { transform:translateX(0); }
       .cart-close { display:inline-flex; }
-      .cart-backdrop[data-open] { display:block; position:absolute; inset:0; background:rgba(0,0,0,.5); z-index:55; }
+      .cart-backdrop[data-open] { display:block; position:absolute; inset:0; background:var(--ok-scrim, rgba(0,0,0,.5)); z-index:55; }
       .fab { display:inline-flex; }
     }
     .cart-backdrop { display:none; }
@@ -372,10 +373,10 @@ export class ErpPosTouch extends LitElement {
       box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 45%,transparent); }
     .cat-segment-label .cc-n { font-size:.88rem; }
     .cat-segment-label .cc-c { font-size:.7rem; }
-    .arrow.search-trigger { width:3rem; height:3.65rem; border-radius:12px; color:var(--accent); }
+    .arrow.search-trigger { width:3rem; height:3.65rem; border-radius:var(--ok-radius,12px); color:var(--accent); }
 
     .grid { grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr)); gap:.62rem; }
-    ion-card.tile { min-height:8.4rem; border-radius:14px; cursor:pointer; }
+    ion-card.tile { min-height:8.4rem; border-radius:var(--ok-radius,14px); cursor:pointer; }
     .thumb { height:4.85rem; flex:none; }
     .tinfo { flex:1; display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto auto;
       gap:.15rem .5rem; align-content:center; padding:.52rem .62rem .58rem; }
@@ -388,7 +389,7 @@ export class ErpPosTouch extends LitElement {
     .cart ion-toolbar { --min-height:3.6rem; }
     .order-toolbar { min-height:3.6rem; display:flex; align-items:stretch; gap:.12rem; padding:.24rem .35rem; }
     ion-button.header-action { width:3.25rem; height:3.05rem; margin:0; font-size:1.05rem;
-      --padding-start:.2rem; --padding-end:.2rem; --border-radius:10px; --color:var(--mut); }
+      --padding-start:.2rem; --padding-end:.2rem; --border-radius:var(--ok-radius-sm,10px); --color:var(--mut); }
     ion-button.header-action::part(native) { display:flex; flex-direction:column; gap:.08rem; }
     ion-button.header-action ion-icon { font-size:1.2rem; }
     ion-button.header-action small { display:block; max-width:3rem; font-size:.56rem; line-height:1;
@@ -400,6 +401,8 @@ export class ErpPosTouch extends LitElement {
       --padding-start:0; --padding-end:0; }
     ion-button.header-action.icon-action::part(native) { flex-direction:row; gap:0; }
     ion-button.header-action.icon-action ion-icon { font-size:var(--pos-hdr-icon-size,1.75rem); }
+    /* El badge .badge-num (absoluto) se ancla a este botón: necesita un contexto de posicionamiento. */
+    .open-checks-action { position:relative; }
     ion-button.header-action.assigned { --color:var(--accent); --background:color-mix(in srgb,var(--accent) 12%,transparent); }
     .cart-actions-slot { display:flex; align-items:center; min-width:0; }
     .actions-spacer { flex:1; min-width:.2rem; }
@@ -409,7 +412,7 @@ export class ErpPosTouch extends LitElement {
       color:var(--tx); font:inherit; font-size:1rem; font-weight:750; }
     .order-title::placeholder { color:var(--mut); }
     .title-edit { flex:none; width:2rem; height:2rem; display:inline-grid; place-items:center; padding:0;
-      border:0; border-radius:8px; background:transparent; color:var(--mut); cursor:pointer; }
+      border:0; border-radius:var(--ok-radius-sm,8px); background:transparent; color:var(--mut); cursor:pointer; }
     .title-edit:hover, .title-edit:focus-visible { color:var(--accent); background:var(--tile-hi); outline:none; }
     .title-edit ion-icon { font-size:1rem; }
     .order-context { display:flex; gap:.3rem; flex-wrap:wrap; min-height:1.55rem; margin-top:.32rem; }
@@ -417,24 +420,25 @@ export class ErpPosTouch extends LitElement {
     .context-empty { color:var(--mut); font-size:.72rem; align-self:center; }
 
     ion-segment.view-tabs { margin:.62rem .72rem .28rem; width:auto; border:1px solid var(--line);
-      border-radius:11px; background:var(--tile); }
+      border-radius:var(--ok-radius-sm,11px); background:var(--tile); }
     ion-segment.view-tabs ion-segment-button { min-height:2.85rem; --indicator-color:var(--tile-hi);
       --color:var(--mut); --color-checked:var(--tx); font-weight:700; text-transform:none; }
     .view-tab-label { display:inline-flex; align-items:center; justify-content:center; gap:.38rem; }
     .pending-dot { display:inline-grid; place-items:center; min-width:1.18rem; height:1.18rem; padding:0 .25rem;
-      border-radius:999px; background:var(--ion-color-warning,#f5a623); color:#241700; font-size:.65rem; font-weight:850; }
+      border-radius:var(--ok-radius-pill,999px); background:var(--ion-color-warning,#f5a623); color:var(--ion-color-warning-contrast,#241700); font-size:.65rem; font-weight:850; }
 
     .cart ion-content.cart-body { --padding-top:.15rem; }
     ion-list.lines { padding:.28rem .48rem .45rem; }
     ion-list.lines ion-item { margin:.35rem 0; --background:var(--tile); --border-color:transparent;
-      --border-radius:12px; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+      --border-radius:var(--ok-radius,12px); border:1px solid var(--line); border-radius:var(--ok-radius,12px); overflow:hidden; }
     ion-list.lines ion-item.sel { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 7%,var(--tile)); }
     ion-list.lines ion-item h3 { display:flex; align-items:center; gap:.35rem; margin-bottom:.12rem; font-size:.85rem; }
     ion-list.lines ion-item p { font-size:.7rem; }
     ok-status-pill { vertical-align:middle; }
     .lineend .lt { font-size:.84rem; }
+    .lineend .lt.is-gift { text-decoration:line-through; opacity:.55; }
     .secs { padding:.32rem .48rem .65rem; gap:.52rem; }
-    .sec { border-radius:12px; }
+    .sec { border-radius:var(--ok-radius,12px); }
     .sec-h { padding:.48rem .58rem; font-size:.7rem; background:transparent; border-bottom:1px solid var(--line); }
     .sec.sec-pending { border-color:color-mix(in srgb,var(--accent) 55%,var(--line)); }
     .sec-slot { min-width:0; }
@@ -1527,7 +1531,7 @@ export class ErpPosTouch extends LitElement {
             <!-- Cada módulo sigue siendo dueño de su botón y modal. Sales solo ofrece el hueco. -->
             <span class="cart-actions-slot"></span>
             <span class="actions-spacer"></span>
-            <ion-button class="header-action icon-action open-checks-action" fill="clear" style="position:relative"
+            <ion-button class="header-action icon-action open-checks-action" fill="clear"
                         title=${t('ui.parkedTickets')} aria-label=${t('ui.parkedTickets')}
                         @click=${() => { this.parkedOpen = !this.parkedOpen; }}>
               <ion-icon slot="icon-only" name="receipt-outline"></ion-icon>
@@ -1601,7 +1605,7 @@ export class ErpPosTouch extends LitElement {
                 <ion-icon slot="icon-only" name=${this.armedDelete === oc.id ? 'alert-circle-outline' : 'trash-outline'}></ion-icon>
               </ion-button>
             </div>`)}
-            ${!this.parked.length ? html`<div class="hint" style="text-align:center">${t('ui.noParkedTickets')}</div>` : nothing}
+            ${!this.parked.length ? html`<div class="hint hint--center">${t('ui.noParkedTickets')}</div>` : nothing}
           </div>`
         : nothing}
 
@@ -1717,7 +1721,7 @@ export class ErpPosTouch extends LitElement {
         <p>${priceLabel(this.money(l.price), l.unit_code)}${l.is_gift && l.gift_reason ? html` · ${l.gift_reason}` : nothing}</p>
       </ion-label>
       <div slot="end" class="lineend">
-        <span class="lt" style=${l.is_gift ? 'text-decoration:line-through;opacity:.55' : ''}>${this.money(l.price * l.qty)}</span>
+        <span class="lt ${l.is_gift ? 'is-gift' : ''}">${this.money(l.price * l.qty)}</span>
         ${locked
           ? html`<span class="lqty">×${formatQuantity(toMicro(l.qty))}</span>`
           : html`
@@ -1765,7 +1769,7 @@ export class ErpPosTouch extends LitElement {
       <div class="body">
         <div class="catalog">
           ${this.renderCatBar()}
-          ${this.error ? html`<p style="color:var(--ion-color-danger,#d9480f)">${this.error}</p>` : nothing}
+          ${this.error ? html`<p class="err">${this.error}</p>` : nothing}
           <div class="grid">
             ${this.filtered.map((p) => html`<ion-card button class="tile" @click=${() => this.add(p)}>
               <div class="thumb" style=${p.image ? `background-image:url(${p.image})` : `background:${gradient(p.name)}`}>
