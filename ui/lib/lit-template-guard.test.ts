@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 // GUARD: un backtick dentro de una plantilla Lit (incluidos sus COMENTARIOS) cierra el template
 // literal y rompe el build con errores crípticos ("Expected ; but found body"). Me mordió tres
@@ -31,7 +31,10 @@ function backticksEnComentariosDePlantilla(src: string): string[] {
 describe('plantillas Lit sin backticks en comentarios', () => {
   it('ningún comentario dentro de html`…` usa backticks', () => {
     const malos: string[] = [];
-    for (const f of tsFiles(join(process.cwd(), 'ui'))) {
+    const salesRoot = basename(process.cwd()) === 'sales'
+      ? process.cwd()
+      : join(process.cwd(), 'modules', 'sales');
+    for (const f of tsFiles(join(salesRoot, 'ui'))) {
       for (const h of backticksEnComentariosDePlantilla(readFileSync(f, 'utf8'))) {
         malos.push(`${f.split('/ui/')[1]}: ${h}`);
       }
