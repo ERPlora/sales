@@ -36,6 +36,7 @@ import {
   unitContextPayload, type CartLine, type ErploraClientLike,
 } from '../../lib/pos-cart.js';
 import { loadTaxCatalog, productSellability, resolveLineTax, type TaxCatalog } from '../../lib/pos-tax.js';
+import { buildOpenPriceLine } from '../../lib/pos-open-price.js';
 // La frontera de la ESCALA de cantidades (ADR-0147): la UI trabaja en lógico (0,5), el cable en 10⁶.
 import { toMicro, fromMicro, onGrid, formatQuantity } from '../../lib/quantity.js';
 import { checkoutErrorKey, newIdempotencyKey } from '../../lib/checkout-key.js';
@@ -103,6 +104,17 @@ interface PosSettings {
 }
 interface Category { id: string; name: string; icon?: string; color?: string; image?: string; product_count?: number; }
 interface ProdCat { product_id: string; category_id: string; }
+/** Categoría fiscal (`taxes.categories.list`, ADR-0085) = el "departamento" de la venta por precio
+ *  libre: lleva su IVA (el % lo resuelve el servidor; el ratesMap solo es preview). */
+interface TaxCategory { key: string; name: string; is_active?: number; }
+
+/** Acumulador de dígitos del numpad (euros como texto): 'C' limpia, un solo separador decimal, tope
+ *  9 chars. Puro para poder compartirlo entre el numpad de COBRO y el de PRECIO LIBRE sin duplicar. */
+function pushDigit(cur: string, k: string): string {
+  if (k === 'C') return '';
+  if (k === '.' && cur.includes('.')) return cur;
+  return (cur + k).slice(0, 9);
+}
 interface IonicAlertElement extends HTMLElement {
   header: string;
   message: string;
@@ -403,6 +415,15 @@ export class ErpPosTouch extends LitElement {
     .change { color:var(--ion-color-success, #2f9e44); }
     .numpad { display:grid; grid-template-columns: repeat(3, 1fr); gap:.35rem; margin-bottom:.2rem; }
     .numpad button { font-size:1.15rem; padding:.6rem; border-radius:var(--ok-radius-sm,10px); border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); cursor:pointer; }
+    /* Precio libre: el tile fijo del catálogo + los botones de DEPARTAMENTO dentro del sheet. */
+    .tile.open-price .op-thumb { display:flex; align-items:center; justify-content:center; font-size:2rem; color:var(--ion-color-primary,#3880ff); background:var(--ion-color-primary-tint,rgba(56,128,255,.14)); }
+    .dept-label { margin:.5rem 0 .3rem; font-size:.8rem; opacity:.7; }
+    .dept-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:.4rem; }
+    .dept-btn { display:flex; flex-direction:column; align-items:flex-start; gap:.1rem; padding:.55rem .7rem; border-radius:var(--ok-radius-sm,10px); border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); cursor:pointer; text-align:left; }
+    .dept-btn[aria-pressed='true'] { border-color:var(--ion-color-primary,#3880ff); background:var(--ion-color-primary-tint,rgba(56,128,255,.16)); }
+    .dept-btn .dn { font-size:1rem; }
+    .dept-btn .dr { font-size:.8rem; opacity:.7; }
+    .dept-empty { grid-column:1/-1; opacity:.6; font-size:.85rem; padding:.5rem; }
     .scrim { position:fixed; inset:0; background:var(--ok-scrim, rgba(0,0,0,.6)); display:flex; align-items:center; justify-content:center; z-index:70; }
     /* Columna flex: el importe y el botón de cobrar NO se mueven; solo scrollea el centro. Antes
        el sheet entero scrolleaba y el botón principal quedaba fuera de pantalla — la acción más
@@ -568,6 +589,7 @@ export class ErpPosTouch extends LitElement {
 
   @state() private products: Product[] = [];
   @state() private categories: Category[] = [];
+  @state() private taxCategories: TaxCategory[] = [];
   @state() private activeCat = '';
   @state() private q = '';
   @state() private cart: CartLine[] = [];
@@ -575,6 +597,11 @@ export class ErpPosTouch extends LitElement {
   @state() private settings: PosSettings = {};
   @state() private paying = false;
   @state() private tendered = '';
+  // Precio libre / venta por departamento (fuera de catálogo): sheet propio con su importe tecleado
+  // y el departamento (categoría fiscal) elegido.
+  @state() private openPriceOpen = false;
+  @state() private openAmount = '';
+  @state() private openDept = '';
   @state() private payMethod?: PayMethod;
   @state() private docFormat: 'ticket' | 'invoice' = 'ticket';
   @state() private busy = false;
@@ -865,7 +892,7 @@ export class ErpPosTouch extends LitElement {
     window.addEventListener('erplora:locale-changed', this.onLocaleChange);
     try {
       const [prods, methods, settingsRows, savedCart, parked, cats, prodCats, taxCatalog, unitRows,
-             svcRows, svcCats] = await Promise.all([
+             svcRows, svcCats, taxCats] = await Promise.all([
         erplora().queryAll<Product>('inventory.products.list').catch(() => []),
         erplora().query('sales.payment_methods').catch(() => []),
         erplora().query('sales.settings.get').catch(() => []),
@@ -881,6 +908,9 @@ export class ErpPosTouch extends LitElement {
         // hub sin `services` recibe `undefined` y el TPV sigue siendo exactamente el de antes.
         this.loadServices(),
         this.loadServiceCategories(),
+        // Departamentos para la venta por precio libre (ADR-0085). Best-effort: si taxes no responde,
+        // el sheet queda sin departamentos y avisa (no rompe el TPV).
+        erplora().queryAll<TaxCategory>('taxes.categories.list').catch(() => [] as TaxCategory[]),
       ]);
       this.taxCatalog = taxCatalog;
       for (const u of rows<UnitRow>(unitRows)) if (u.code) this.units.set(u.code, u);
@@ -898,6 +928,8 @@ export class ErpPosTouch extends LitElement {
       this.payMethod = defaultPayMethod(this.payMethods);
       this.parked = parked;
       this.categories = [...rows<Category>(cats).filter((c) => c.name), ...svcCats];
+      // Departamentos = categorías fiscales ACTIVAS (el inactivo no se ofrece para vender).
+      this.taxCategories = rows<TaxCategory>(taxCats).filter((c) => c.key && c.is_active !== 0);
       for (const pc of rows<ProdCat>(prodCats)) {
         if (!this.prodCats.has(pc.product_id)) this.prodCats.set(pc.product_id, new Set());
         this.prodCats.get(pc.product_id)!.add(pc.category_id);
@@ -1403,6 +1435,21 @@ export class ErpPosTouch extends LitElement {
     return this.orderId;
   }
 
+  /** Empuja una línea NUEVA al carrito (sin fusionar), persistiéndola YA: abre el pedido con ella si
+   *  no hay ninguno, o la añade al abierto. La fila queda escrita ANTES de que la UI siga (un corte de
+   *  corriente ya no se lleva el artículo). Compartido por `addNow` (producto de catálogo) y la venta
+   *  por PRECIO LIBRE, que nunca fusiona: todas sus líneas llevan `id: ''`. */
+  private async pushNewLine(line: CartLine): Promise<void> {
+    if (!this.orderId) {
+      await this.ensureOrder(line);
+      const persisted = this.orderId ? await loadOrderLines(erplora(), this.orderId) : [];
+      this.cart = persisted.length ? persisted.map((pl) => ({ ...line, ...pl })) : [...this.cart, line];
+      return;
+    }
+    line.line_id = await addOrderLine(erplora(), this.orderId, line);
+    this.cart = [...this.cart, line];
+  }
+
   /** Una sola vía para el trabajo del carrito. Sin esto, cinco toques seguidos abrían cinco
    *  pedidos: cada uno veía «aún no hay pedido» porque el anterior seguía en vuelo (ADR-0144). */
   private readonly queue = createSerialQueue();
@@ -1538,16 +1585,7 @@ export class ErpPosTouch extends LitElement {
         ...(p.is_service ? { is_service: true } : {}),
         ...this.frozenUnitContext(p),
       };
-      // Abre el pedido con la primera línea, o añádela al ya abierto. En ambos casos la fila queda
-      // escrita ANTES de que la UI siga: un corte de corriente ya no se lleva el artículo.
-      if (!this.orderId) {
-        await this.ensureOrder(line);
-        const persisted = this.orderId ? await loadOrderLines(erplora(), this.orderId) : [];
-        this.cart = persisted.length ? persisted.map((pl) => ({ ...line, ...pl })) : [...this.cart, line];
-        return;
-      }
-      line.line_id = await addOrderLine(erplora(), this.orderId, line);
-      this.cart = [...this.cart, line];
+      await this.pushNewLine(line);
     } catch (e) {
       // La comanda es la fuente de verdad: si la escritura falla, NO dejamos la UI mintiendo.
       // sales#81: si el error es del TRANSPORTE (el proxy devolvió HTML 502 porque el contenedor
@@ -1697,17 +1735,40 @@ export class ErpPosTouch extends LitElement {
     this.docFormat = this.settings.default_document_format === 'invoice' ? 'invoice' : 'ticket';
     this.paying = true;
   }
-  private tap(k: string) {
-    if (k === 'C') { this.tendered = ''; return; }
-    if (k === '.' && this.tendered.includes('.')) return;
-    this.tendered = (this.tendered + k).slice(0, 9);
-  }
+  private tap(k: string) { this.tendered = pushDigit(this.tendered, k); }
   // El pinpad teclea EUROS («20» = 20 €); el contrato de la venta es CÉNTIMOS (ADR-0007/0123),
   // como `total`. Sin esta conversión: «Efectivo 0.20 €» y cambio 0 en el tiquet (QA 2026-07-17).
   private get tenderedNum() { return eurosToCents(this.tendered || '0'); }
   private get change() { return Math.max(0, this.tenderedNum - this.payable); }
   /** Lo que se cobra AHORA: la selección si la hay, o la cuenta entera (ADR-0146). */
   private get payable() { return splitTotal(this.cart, this.splitSel); }
+
+  // ── Precio libre / venta por DEPARTAMENTO (fuera de catálogo) ──────────────────────────────
+  private openOpenPrice() { this.openAmount = ''; this.openDept = ''; this.openPriceOpen = true; }
+  private tapOpen(k: string) { this.openAmount = pushDigit(this.openAmount, k); }
+  /** El numpad teclea EUROS; el contrato es CÉNTIMOS (ADR-0007), igual que en el cobro. */
+  private get openAmountCents() { return eurosToCents(this.openAmount || '0'); }
+  /** El % del departamento para pintarlo junto a su nombre; vacío si taxes no dio reglas (preview). */
+  private deptRateLabel(key: string): string {
+    // sales#74 cambió `ratesMap` suelto por el catálogo con su mapa dentro; el preview es el mismo.
+    const rates = this.taxCatalog.rates;
+    return rates.has(key) ? `${rates.get(key)}%` : '';
+  }
+  /** Añade la venta libre: nombre = el del DEPARTAMENTO (estilo frutería, sin teclear), precio
+   *  tecleado y su categoría fiscal. Nunca fusiona → siempre línea nueva (`pushNewLine`, serializada
+   *  por `queue` como el resto del carrito). `buildOpenPriceLine` valida que no sea línea desnuda. */
+  private async addOpenPrice(): Promise<void> {
+    const dept = this.taxCategories.find((c) => c.key === this.openDept);
+    if (!dept || this.openAmountCents <= 0) return;
+    const line = buildOpenPriceLine({ name: dept.name, priceCents: this.openAmountCents, taxCategoryKey: dept.key });
+    line.tax_rate = resolveLineTax(this.taxCatalog.rates, dept.key); // % SOLO para el preview del total
+    this.openPriceOpen = false;
+    try {
+      await this.queue(() => this.pushNewLine(line));
+    } catch (e) {
+      this.error = e instanceof Error ? e.message : String(e);
+    }
+  }
 
   /** Cierra la venta. La IMPRESIÓN no se dispara desde aquí: la hace el shell por el Bridge al
    *  recibir `sale.completed` (ajuste `auto_print_on_sale`). El toggle de la pantalla de cobro
@@ -2203,6 +2264,13 @@ export class ErpPosTouch extends LitElement {
               <div class="tinfo"><div class="n">${p.name}</div><div class="sku">${p.sku || p.unit_code || ''}</div><div class="p">${this.money(Number(p.price))}</div></div>
             </ion-card>`;
             })}
+            <!-- PRECIO LIBRE: vender género suelto que no está fichado (fruta a ojo). Va al FINAL de la
+                 rejilla para no interceptar el "primer producto" (que es lo que tocan los tests y el
+                 flujo normal); es una acción aparte, no un producto de catálogo. -->
+            <ion-card button class="tile open-price" @click=${() => this.openOpenPrice()}>
+              <div class="thumb op-thumb"><ion-icon name="pricetag-outline"></ion-icon></div>
+              <div class="tinfo"><div class="n">${t('ui.openPrice')}</div><div class="sku"></div><div class="p">+ €</div></div>
+            </ion-card>
             ${!this.filtered.length ? html`<div class="empty">${t('ui.noProducts')}</div>` : nothing}
           </div>
         </div>
@@ -2296,6 +2364,43 @@ export class ErpPosTouch extends LitElement {
                     : needsTendered(this.payMethod)
                       ? `${t('ui.charge')} ${this.money(this.payable)}`
                       : t('ui.chargeWithCard', { amount: this.money(this.payable) })}
+                </ion-button>
+              </div>
+            </div>
+          </div>`
+        : nothing}
+
+      <!-- PRECIO LIBRE: reutiliza el sheet del cobro (.scrim/.sheet/.numpad). Tecleas el importe y
+           eliges el DEPARTAMENTO (categoría fiscal, que lleva su IVA); "Añadir" queda deshabilitado
+           hasta tener importe > 0 y departamento (nunca una línea desnuda). -->
+      ${this.openPriceOpen
+        ? html`<div class="scrim" @click=${(e: Event) => { if ((e.target as HTMLElement).classList.contains('scrim')) this.openPriceOpen = false; }}>
+            <div class="sheet">
+              <div class="sheet-h">
+                <span class="t">${t('ui.openPrice')}</span>
+                <button class="x" @click=${() => { this.openPriceOpen = false; }}>✕</button>
+              </div>
+              <div class="sheet-top"><div class="pay-total">${this.money(this.openAmountCents)}</div></div>
+              <div class="pay">
+                <div class="numpad">
+                  ${['1','2','3','4','5','6','7','8','9','.','0','C'].map((k) => html`<button @click=${() => this.tapOpen(k)}>${k}</button>`)}
+                </div>
+                <div class="dept-label">${t('ui.department')}</div>
+                <div class="dept-grid" role="group" aria-label=${t('ui.department')}>
+                  ${this.taxCategories.map((c) => html`
+                    <button class="dept-btn" aria-pressed=${this.openDept === c.key ? 'true' : 'false'}
+                            @click=${() => { this.openDept = c.key; }}>
+                      <span class="dn">${c.name}</span>
+                      <span class="dr">${this.deptRateLabel(c.key)}</span>
+                    </button>`)}
+                  ${!this.taxCategories.length ? html`<div class="dept-empty">${t('ui.noDepartments')}</div>` : nothing}
+                </div>
+              </div>
+              <div class="sheet-foot">
+                <ion-button class="charge" expand="block"
+                            ?disabled=${!(this.openAmountCents > 0 && this.openDept)}
+                            @click=${() => this.addOpenPrice()}>
+                  ${t('ui.add')}${this.openAmountCents > 0 ? ` ${this.money(this.openAmountCents)}` : ''}
                 </ion-button>
               </div>
             </div>

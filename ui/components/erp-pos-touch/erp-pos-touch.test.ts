@@ -1544,3 +1544,80 @@ describe('el cobro pierde la respuesta: la caja nunca deja al cajero sin saber (
     expect(ui.checkSales, 'falta la traducción del enlace a Ventas').toBeTruthy();
   });
 });
+
+describe('venta por precio libre (fuera de catálogo)', () => {
+  // El frutero vende género suelto que no está fichado: teclea el importe y elige el "departamento"
+  // (categoría fiscal, ADR-0085), que lleva su IVA. La línea viaja sin producto de catálogo
+  // (`id: ''` → `toItemPayload` manda `product_id: null` → no descuenta stock).
+
+  it('el TPV pinta un disparador de "Precio libre"', async () => {
+    const el = await montarCarrito();
+    expect(el.shadowRoot!.querySelector('.tile.open-price'), 'falta el botón de precio libre').toBeTruthy();
+  });
+
+  it('el sheet lista un departamento por categoría fiscal ACTIVA, con su %', async () => {
+    (globalThis as Record<string, unknown>).erplora = {
+      query: async () => [],
+      queryAll: async (name: string) => {
+        if (name === 'taxes.categories.list') return [
+          { key: 'product.generic', name: 'General', is_active: 1 },
+          { key: 'restaurant.food', name: 'Comida', is_active: 1 },
+          { key: 'old.zero', name: 'Antiguo', is_active: 0 }, // inactivo → NO sale
+        ];
+        if (name === 'taxes.rules.list') return [
+          { id: 'r1', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, valid_from: '2020-01-01', is_active: 1 },
+          { id: 'r2', tax_category_key: 'restaurant.food', rate_pct: 10, parent_id: null, valid_from: '2020-01-01', is_active: 1 },
+        ];
+        return [];
+      },
+      command: async () => ({}),
+      currency: 'EUR',
+      formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
+      formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
+      t: (_c: unknown, k: string) => k,
+      loadSlot: async () => [],
+    };
+    const el = await montarCarrito();
+    (el.shadowRoot!.querySelector('.tile.open-price') as HTMLElement).click();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    const depts = [...el.shadowRoot!.querySelectorAll('.dept-btn')];
+    expect(depts, 'un botón por departamento activo (el inactivo no sale)').toHaveLength(2);
+    const txt = depts.map((d) => d.textContent ?? '');
+    expect(txt.some((s) => s.includes('General') && s.includes('21')), 'General 21%').toBe(true);
+    expect(txt.some((s) => s.includes('Comida') && s.includes('10')), 'Comida 10%').toBe(true);
+  });
+
+  it('añadir crea una línea libre (id vacío → product_id null) con el nombre del departamento', async () => {
+    (globalThis as Record<string, unknown>).erplora = {
+      query: async () => [],
+      queryAll: async (name: string) =>
+        name === 'taxes.categories.list' ? [{ key: 'product.generic', name: 'General', is_active: 1 }]
+        : name === 'taxes.rules.list' ? [{ id: 'r1', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, valid_from: '2020-01-01', is_active: 1 }]
+        : [],
+      command: async () => ({}), // abrir pedido sin id → la línea cae al carrito local, suficiente aquí
+      currency: 'EUR',
+      formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
+      formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
+      t: (_c: unknown, k: string) => k,
+      loadSlot: async () => [],
+    };
+    const el = await montarCarrito();
+    const c = el as unknown as {
+      openPriceOpen: boolean; openDept: string; openAmount: string;
+      updateComplete: Promise<unknown>; addOpenPrice(): Promise<void>;
+      cart: Array<Record<string, unknown>>;
+    };
+    c.openPriceOpen = true;
+    c.openDept = 'product.generic';
+    c.openAmount = '3.5';
+    await c.updateComplete;
+    await c.addOpenPrice();
+
+    expect(c.cart, 'una línea en el carrito').toHaveLength(1);
+    expect(c.cart[0].id, 'id vacío → product_id null').toBe('');
+    expect(c.cart[0].name, 'la línea toma el nombre del departamento').toBe('General');
+    expect(c.cart[0].price, 'importe en céntimos').toBe(350);
+    expect(c.cart[0].tax_category_key).toBe('product.generic');
+  });
+});
