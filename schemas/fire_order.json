@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "sales.order.fire",
+  "description": "Manda a producción (cocina/barra) lo pedido hasta ahora en un pedido abierto (ADR-0141). `label` es una ETIQUETA OPACA que `sales` reenvía sin interpretar —quien dispara sabe si es una mesa, la barra o una recogida—, porque `sales` no depende de `tables` ni de `customers`. Las líneas viajan en el payload: las `reads` del runtime se ejecutan sin parámetros y no pueden pre-cargar las del pedido. Cada disparo es una ronda; numerarlas es cosa de `kitchen`. `quantity` = punto fijo entero, escala global 10⁶ (ADR-0147): 0,5 kg es 500000.",
+  "type": "object",
+  "required": [
+    "order_id"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "order_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "label": {
+      "type": "string",
+      "default": ""
+    },
+    "channel": {
+      "type": "string",
+      "enum": [
+        "dine_in",
+        "takeaway",
+        "delivery"
+      ],
+      "default": "dine_in"
+    },
+    "items": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "product_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_name": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "notes": {
+            "type": "string"
+          },
+          "is_service": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "round_no": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Ronda LOCAL del pedido (tandas): al dispararla se marcan las líneas pendientes (round_no+fired_at) y el siguiente disparo manda solo lo nuevo. kitchen sigue numerando lo suyo (ADR-0144)."
+    }
+  }
+}

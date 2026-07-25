@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sales.order.open payload",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "items"
+  ],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "product_name",
+          "price",
+          "quantity"
+        ],
+        "properties": {
+          "product_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_name": {
+            "type": "string"
+          },
+          "product_sku": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "price": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "is_gift": {
+            "type": "boolean"
+          },
+          "unit_code": {
+            "type": "string"
+          },
+          "unit_name": {
+            "type": "string"
+          },
+          "factor_num": {
+            "type": "integer"
+          },
+          "factor_den": {
+            "type": "integer"
+          },
+          "increment_value": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "price_quantity_value": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pricing_unit_code": {
+            "type": "string"
+          },
+          "pricing_unit_name": {
+            "type": "string"
+          },
+          "pricing_factor_num": {
+            "type": "integer"
+          },
+          "pricing_factor_den": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "customer_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "notes": {
+      "type": "string"
+    },
+    "label": {
+      "type": "string",
+      "maxLength": 120,
+      "description": "Etiqueta OPACA de la cuenta («Mesa 4», «Ana — terraza», «15:07»): la hace reconocible en la lista de cuentas abiertas. `sales` no la interpreta (ADR-0144)."
+    },
+    "source_module": {
+      "type": "string"
+    }
+  },
+  "description": "ADR-0141: abre un pedido MUTABLE (`order`, estado 'open') con sus líneas materializadas temprano. DINERO (`price`) = céntimos enteros (ADR-0007); `quantity` = PUNTO FIJO entero, escala global 10⁶ (ADR-0147): 0,5 kg es 500000. El contexto de unidades se CONGELA en la línea (§2.4) y fuera de la rejilla del incremento se RECHAZA (§2.2). Los importes del pedido abierto son PROVISIONALES (display); la cuota fiscal se congela al cobrar (`complete_sale`). NO acepta `table_id`: `sales` es agnóstico de la mesa (ADR-0141)."
+}

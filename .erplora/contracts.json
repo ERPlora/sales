@@ -6,11 +6,12 @@
       "inventory.categories.list",
       "inventory.product_categories",
       "inventory.products.list",
-      "sales.cart.get",
+      "inventory.units.list",
       "sales.get",
       "sales.lines",
       "sales.list",
-      "sales.parked_tickets",
+      "sales.order.lines",
+      "sales.orders.list",
       "sales.payment_methods",
       "sales.settings.get",
       "sales.stats",
@@ -21,16 +22,22 @@
       "verifactu.records.by_invoice"
     ],
     "commands": [
-      "sales.cart.clear",
-      "sales.cart.save",
       "sales.complete_sale",
-      "sales.park_ticket",
-      "sales.retrieve_ticket",
-      "sales.set_document_type"
+      "sales.order.add_line",
+      "sales.order.fire",
+      "sales.order.open",
+      "sales.order.remove_line",
+      "sales.order.set_label",
+      "sales.order.update_line",
+      "sales.order.void"
     ],
     "events": [
       "sale.completed"
     ],
-    "slots": []
+    "slots": [
+      "sales.pos.actions",
+      "sales.pos.assign",
+      "sales.pos.order_info"
+    ]
   }
 }
