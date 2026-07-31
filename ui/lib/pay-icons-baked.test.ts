@@ -1,13 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { PAY_ICON_NAMES, payMethodIcon } from './pay-icons';
 
 // GUARD: `name=${payMethodIcon(...)}` es DINÁMICO y el empaquetador del módulo solo hornea
 // literales — el propio extractor lo dice: "un nombre que solo existe en runtime no es horneable".
 // Resultado en producción: el botón de Bizum salía VACÍO. Para que viajen, los nombres tienen que
 // aparecer además como <ion-icon name="…"> estáticos en el WC. Este test lo vigila.
-const fuente = readFileSync(join(process.cwd(), 'ui/components/erp-pos-touch/erp-pos-touch.ts'), 'utf8');
+const salesRoot = basename(process.cwd()) === 'sales'
+  ? process.cwd()
+  : join(process.cwd(), 'modules', 'sales');
+const fuente = readFileSync(join(salesRoot, 'ui/components/erp-pos-touch/erp-pos-touch.ts'), 'utf8');
 
 describe('iconos de formas de pago horneados', () => {
   it('cada icono que puede devolver payMethodIcon aparece como literal en el WC', () => {

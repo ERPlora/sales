@@ -709,6 +709,11 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         // staff_id viaja en el evento para que los consumidores (p.ej. cash_register, reporting)
         // puedan atribuir la venta al profesional. NULL si la venta no se atribuye.
         "staff_id": payload.get("staff_id").cloned().unwrap_or(Value::Null),
+        // El MÉTODO DE PAGO viaja en el evento (QA restaurante 07-16, P0 del arqueo):
+        // cash_register.record_sale decidía con default 'cash' → las ventas con TARJETA
+        // se sumaban al efectivo esperado del cajón y el arqueo nunca cuadraba.
+        "payment_method_id": payload.get("payment_method_id").cloned().unwrap_or(Value::Null),
+        "payment_method_name": str_or(&payload, "payment_method_name", ""),
     }));
 
     let mut events = vec![event];
@@ -923,7 +928,8 @@ mod tests {
     fn input(items: Value, ids: usize, tendered: i64) -> Value {
         let new_ids: Vec<Value> = (0..ids).map(|i| json!(format!("id-{i}"))).collect();
         json!({
-            "payload": { "items": items, "tax_included": true, "amount_tendered": tendered, "customer_name": "Bar Manolo" },
+            "payload": { "items": items, "tax_included": true, "amount_tendered": tendered, "customer_name": "Bar Manolo",
+                         "payment_method_id": "pm-1", "payment_method_name": "Efectivo" },
             "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-05-31T10:00:00+00:00", "new_ids": new_ids }
         })
     }
@@ -1304,6 +1310,11 @@ mod tests {
         assert_eq!(out.operations[2].params["line_id"], json!("id-1"));
         assert_eq!(out.events[0].name, "sale.completed");
         assert_eq!(out.events[0].payload["items_count"], json!(2));
+        // El MÉTODO DE PAGO viaja en el evento (QA restaurante, P0 del arqueo):
+        // sin él, cash_register.record_sale defaultea 'cash' y suma la TARJETA al
+        // cajón → el arqueo nunca cuadra en un día mixto.
+        assert_eq!(out.events[0].payload["payment_method_name"], json!("Efectivo"));
+        assert_eq!(out.events[0].payload["payment_method_id"], json!("pm-1"));
         // El evento viaja en céntimos.
         assert_eq!(out.events[0].payload["total"], json!(352)); // 242 + 110
         // tax_included viaja en el evento (default true en el helper input()).
