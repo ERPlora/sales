@@ -1267,7 +1267,12 @@ export class ErpPosTouch extends LitElement {
       this.cart = [...this.cart, line];
     } catch (e) {
       // La comanda es la fuente de verdad: si la escritura falla, NO dejamos la UI mintiendo.
-      this.error = e instanceof Error ? e.message : String(e);
+      const msg = e instanceof Error ? e.message : String(e);
+      this.error = msg;
+      // #270 — el banner `this.error` es discreto y en un TPV táctil se pierde → el rechazo del
+      // backend parecía "no pasa nada" al tocar un producto. Avisamos además por el canal de toasts
+      // del shell (mismo `notify` que los avisos de éxito) para feedback visible e inmediato.
+      erplora().notify?.({ type: 'error', message: msg });
     }
   }
 
