@@ -942,7 +942,7 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
 };
 g.elementStyles = [], g.shadowRootOptions = { mode: "open" }, g[f("elementProperties")] = /* @__PURE__ */ new Map(), g[f("finalized")] = /* @__PURE__ */ new Map(), u?.({ ReactiveElement: g }), (l.reactiveElementVersions ??= []).push("2.1.2");
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
+// ../module-toolkit/node_modules/lit-html/lit-html.js
 var t2 = globalThis;
 var i2 = (t7) => t7;
 var s2 = t2.trustedTypes;
@@ -1197,7 +1197,7 @@ var D = (t7, i7, s5) => {
   return h4._$AI(t7), h4;
 };
 
-// node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
+// ../module-toolkit/node_modules/lit-element/lit-element.js
 var s3 = globalThis;
 var i3 = class extends g {
   constructor() {
@@ -3927,7 +3927,7 @@ function priceLabel(money2, unitCode) {
   return unitCode && unitCode !== UNIT_EACH ? `${money2} / ${unitCode}` : money2;
 }
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
+// ../module-toolkit/node_modules/lit-html/directive.js
 var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e5 = (t7) => (...e7) => ({ _$litDirective$: t7, values: e7 });
 var i4 = class {
@@ -3947,7 +3947,7 @@ var i4 = class {
   }
 };
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-html.js
+// ../module-toolkit/node_modules/lit-html/directives/unsafe-html.js
 var e6 = class extends i4 {
   constructor(i7) {
     if (super(i7), this.it = A, i7.type !== t3.CHILD) throw Error(this.constructor.directiveName + "() can only be used in child bindings");
@@ -3965,7 +3965,7 @@ var e6 = class extends i4 {
 e6.directiveName = "unsafeHTML", e6.resultType = 1;
 var o6 = e5(e6);
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-svg.js
+// ../module-toolkit/node_modules/lit-html/directives/unsafe-svg.js
 var t4 = class extends e6 {
 };
 t4.directiveName = "unsafeSVG", t4.resultType = 2;
@@ -5946,7 +5946,9 @@ var ErpPosTouch = class extends i3 {
       line.line_id = await addOrderLine(erplora2(), this.orderId, line);
       this.cart = [...this.cart, line];
     } catch (e7) {
-      this.error = e7 instanceof Error ? e7.message : String(e7);
+      const msg = e7 instanceof Error ? e7.message : String(e7);
+      this.error = msg;
+      erplora2().notify?.({ type: "error", message: msg });
     }
   }
   /** Invitar/quitar invitación a una línea (comp, ADR-comp): toggle is_gift con un motivo por defecto.
@@ -6713,7 +6715,7 @@ var ErpPos = class extends i3 {
 };
 define("erp-pos", ErpPos);
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
+// ../module-toolkit/node_modules/lit-html/directive-helpers.js
 var { I: t6 } = j;
 var i5 = (o9) => o9;
 var s4 = () => document.createComment("");
@@ -6746,7 +6748,7 @@ var h3 = (o9) => {
   o9._$AR(), o9._$AA.remove();
 };
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
+// ../module-toolkit/node_modules/lit-html/directives/repeat.js
 var u4 = (e7, s5, t7) => {
   const r6 = /* @__PURE__ */ new Map();
   for (let l3 = s5; l3 <= t7; l3++) r6.set(e7[l3], l3);
@@ -6799,7 +6801,7 @@ var c4 = e5(class extends i4 {
   }
 });
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
+// ../module-toolkit/node_modules/lit-html/directives/style-map.js
 var n5 = "important";
 var i6 = " !" + n5;
 var o8 = e5(class extends i4 {
@@ -6920,7 +6922,7 @@ var ES_LABELS = {
   recordSingular: "registro",
   recordPlural: "registros"
 };
-var OkDataTable = class extends i3 {
+var _OkDataTable = class _OkDataTable2 extends i3 {
   constructor() {
     super(...arguments);
     this.columns = [];
@@ -6958,6 +6960,7 @@ var OkDataTable = class extends i3 {
     this.filterDraft = {};
     this.panel = "none";
     this.viewMode = "table";
+    this.isMobile = false;
     this.hiddenKeys = /* @__PURE__ */ new Set();
     this.internalSelection = /* @__PURE__ */ new Set();
     this.menuOpen = false;
@@ -7177,6 +7180,13 @@ var OkDataTable = class extends i3 {
     .empty .empty-ic { display: grid; place-items: center; width: 3.25rem; height: 3.25rem; border-radius: 999px; background: var(--header-background); font-size: 26px; }
 
     .actions { display: flex; gap: 0.25rem; justify-content: flex-end; }
+    /* Las acciones de fila son icon-only y de tamaño small en escritorio. En tablet/móvil se
+     * amplía el host completo (no solo el icono) para que el área táctil alcance 44×44 px. */
+    @media (pointer: coarse), (max-width: 834px) {
+      .actions ion-button { min-width: 44px; min-height: 44px; margin: 0; }
+      .toolbtn { width: 44px; height: 44px; }
+      .pager .nav ion-button { min-width: 44px; min-height: 44px; margin: 0; }
+    }
     /* Spinner de acción en curso (loading): contenido dentro del ion-button small (Ionic lo fija
      * a 28px en el :host, por eso width/height y no font-size). Cubre tabla y tarjetas: los
      * botones de fila siempre van dentro de .actions. */
@@ -7197,15 +7207,37 @@ var OkDataTable = class extends i3 {
     ion-button { --box-shadow: none; }
   `;
   }
+  static {
+    this.MOBILE_BREAKPOINT = 640;
+  }
   connectedCallback() {
     super.connectedCallback();
     if (typeof window !== "undefined") {
       window.addEventListener("erplora:locale-changed", this.onLocaleChanged);
     }
+    if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+      this.mq = window.matchMedia(`(max-width: ${_OkDataTable2.MOBILE_BREAKPOINT}px)`);
+      this.isMobile = this.mq.matches;
+      if (this.isMobile && this.cardViewEnabled) this.viewMode = "cards";
+      const handler = (e7) => {
+        const matches = "matches" in e7 ? e7.matches : this.mq?.matches ?? false;
+        if (this.isMobile === matches) return;
+        this.isMobile = matches;
+        if (matches && this.cardViewEnabled) this.viewMode = "cards";
+        else if (!matches && this.viewMode === "cards") this.viewMode = "table";
+      };
+      this.mq.addEventListener("change", handler);
+      this._mqHandler = handler;
+    }
   }
   disconnectedCallback() {
     if (typeof window !== "undefined") {
       window.removeEventListener("erplora:locale-changed", this.onLocaleChanged);
+    }
+    if (this.mq) {
+      const handler = this._mqHandler;
+      if (handler) this.mq.removeEventListener("change", handler);
+      this.mq = void 0;
     }
     super.disconnectedCallback();
   }
@@ -8050,151 +8082,155 @@ var OkDataTable = class extends i3 {
 };
 __decorateClass10([
   n4({ attribute: false })
-], OkDataTable.prototype, "columns");
+], _OkDataTable.prototype, "columns");
 __decorateClass10([
   n4({ attribute: false })
-], OkDataTable.prototype, "rows");
+], _OkDataTable.prototype, "rows");
 __decorateClass10([
   n4({ attribute: false })
-], OkDataTable.prototype, "searchKeys");
+], _OkDataTable.prototype, "searchKeys");
 __decorateClass10([
   n4({ attribute: "row-key-field" })
-], OkDataTable.prototype, "rowKeyField");
+], _OkDataTable.prototype, "rowKeyField");
 __decorateClass10([
   n4({ attribute: false })
-], OkDataTable.prototype, "rowKey");
+], _OkDataTable.prototype, "rowKey");
 __decorateClass10([
   n4({ type: Number, attribute: "page-size" })
-], OkDataTable.prototype, "pageSize");
+], _OkDataTable.prototype, "pageSize");
 __decorateClass10([
   n4({ attribute: "empty-message" })
-], OkDataTable.prototype, "emptyMessage");
+], _OkDataTable.prototype, "emptyMessage");
 __decorateClass10([
   n4({ attribute: "search-placeholder" })
-], OkDataTable.prototype, "searchPlaceholder");
+], _OkDataTable.prototype, "searchPlaceholder");
 __decorateClass10([
   n4({ attribute: false })
-], OkDataTable.prototype, "labels");
+], _OkDataTable.prototype, "labels");
 __decorateClass10([
   n4({ attribute: false })
-], OkDataTable.prototype, "actions");
+], _OkDataTable.prototype, "actions");
 __decorateClass10([
   n4({ type: Boolean })
-], OkDataTable.prototype, "addable");
+], _OkDataTable.prototype, "addable");
 __decorateClass10([
   n4({ attribute: false })
-], OkDataTable.prototype, "pageSizeOptions");
+], _OkDataTable.prototype, "pageSizeOptions");
 __decorateClass10([
   n4({ type: Boolean, reflect: true })
-], OkDataTable.prototype, "fill");
+], _OkDataTable.prototype, "fill");
 __decorateClass10([
   n4({ type: Boolean, attribute: "column-picker" })
-], OkDataTable.prototype, "columnPicker");
+], _OkDataTable.prototype, "columnPicker");
 __decorateClass10([
   n4({ type: Boolean })
-], OkDataTable.prototype, "csv");
+], _OkDataTable.prototype, "csv");
 __decorateClass10([
   n4({ attribute: "csv-name" })
-], OkDataTable.prototype, "csvName");
+], _OkDataTable.prototype, "csvName");
 __decorateClass10([
   n4({ type: Boolean, attribute: "server-side" })
-], OkDataTable.prototype, "serverSide");
+], _OkDataTable.prototype, "serverSide");
 __decorateClass10([
   n4({ type: Number })
-], OkDataTable.prototype, "total");
+], _OkDataTable.prototype, "total");
 __decorateClass10([
   n4({ type: Number })
-], OkDataTable.prototype, "page");
+], _OkDataTable.prototype, "page");
 __decorateClass10([
   n4({ type: Boolean })
-], OkDataTable.prototype, "searchable");
+], _OkDataTable.prototype, "searchable");
 __decorateClass10([
   n4({ type: String })
-], OkDataTable.prototype, "sort");
+], _OkDataTable.prototype, "sort");
 __decorateClass10([
   n4({ attribute: "sort-dir" })
-], OkDataTable.prototype, "sortDir");
+], _OkDataTable.prototype, "sortDir");
 __decorateClass10([
   n4()
-], OkDataTable.prototype, "title");
+], _OkDataTable.prototype, "title");
 __decorateClass10([
   n4({ attribute: false })
-], OkDataTable.prototype, "views");
+], _OkDataTable.prototype, "views");
 __decorateClass10([
   n4({ attribute: "default-view" })
-], OkDataTable.prototype, "defaultView");
+], _OkDataTable.prototype, "defaultView");
 __decorateClass10([
   n4({ type: Boolean })
-], OkDataTable.prototype, "exportable");
+], _OkDataTable.prototype, "exportable");
 __decorateClass10([
   n4({ type: Boolean })
-], OkDataTable.prototype, "importable");
+], _OkDataTable.prototype, "importable");
 __decorateClass10([
   n4({ type: Boolean, attribute: "column-selector" })
-], OkDataTable.prototype, "columnSelector");
+], _OkDataTable.prototype, "columnSelector");
 __decorateClass10([
   n4({ attribute: false })
-], OkDataTable.prototype, "pageSizes");
+], _OkDataTable.prototype, "pageSizes");
 __decorateClass10([
   n4({ type: Boolean })
-], OkDataTable.prototype, "selectable");
+], _OkDataTable.prototype, "selectable");
 __decorateClass10([
   n4({ attribute: false })
-], OkDataTable.prototype, "selectedKeys");
+], _OkDataTable.prototype, "selectedKeys");
 __decorateClass10([
   n4({ attribute: false })
-], OkDataTable.prototype, "primaryAction");
+], _OkDataTable.prototype, "primaryAction");
 __decorateClass10([
   n4({ type: Boolean })
-], OkDataTable.prototype, "inlineFilters");
+], _OkDataTable.prototype, "inlineFilters");
 __decorateClass10([
   n4({ attribute: false })
-], OkDataTable.prototype, "menuActions");
+], _OkDataTable.prototype, "menuActions");
 __decorateClass10([
   n4({ attribute: false })
-], OkDataTable.prototype, "cardTitle");
+], _OkDataTable.prototype, "cardTitle");
 __decorateClass10([
   n4({ attribute: false })
-], OkDataTable.prototype, "cardIcon");
+], _OkDataTable.prototype, "cardIcon");
 __decorateClass10([
   n4({ attribute: false })
-], OkDataTable.prototype, "renderCard");
+], _OkDataTable.prototype, "renderCard");
 __decorateClass10([
   r5()
-], OkDataTable.prototype, "q");
+], _OkDataTable.prototype, "q");
 __decorateClass10([
   r5()
-], OkDataTable.prototype, "clientPage");
+], _OkDataTable.prototype, "clientPage");
 __decorateClass10([
   r5()
-], OkDataTable.prototype, "clientPageSize");
+], _OkDataTable.prototype, "clientPageSize");
 __decorateClass10([
   r5()
-], OkDataTable.prototype, "clientSort");
+], _OkDataTable.prototype, "clientSort");
 __decorateClass10([
   r5()
-], OkDataTable.prototype, "clientSortDir");
+], _OkDataTable.prototype, "clientSortDir");
 __decorateClass10([
   r5()
-], OkDataTable.prototype, "clientFilters");
+], _OkDataTable.prototype, "clientFilters");
 __decorateClass10([
   r5()
-], OkDataTable.prototype, "filterDraft");
+], _OkDataTable.prototype, "filterDraft");
 __decorateClass10([
   r5()
-], OkDataTable.prototype, "panel");
+], _OkDataTable.prototype, "panel");
 __decorateClass10([
   r5()
-], OkDataTable.prototype, "viewMode");
+], _OkDataTable.prototype, "viewMode");
 __decorateClass10([
   r5()
-], OkDataTable.prototype, "hiddenKeys");
+], _OkDataTable.prototype, "isMobile");
 __decorateClass10([
   r5()
-], OkDataTable.prototype, "internalSelection");
+], _OkDataTable.prototype, "hiddenKeys");
 __decorateClass10([
   r5()
-], OkDataTable.prototype, "menuOpen");
+], _OkDataTable.prototype, "internalSelection");
+__decorateClass10([
+  r5()
+], _OkDataTable.prototype, "menuOpen");
+var OkDataTable = _OkDataTable;
 define("ok-data-table", OkDataTable);
 
 // modules/sales/ui/components/erp-sales-list/erp-sales-list.ts
