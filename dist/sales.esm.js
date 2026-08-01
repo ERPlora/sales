@@ -5329,7 +5329,9 @@ var ErpPosTouch = class extends i3 {
       gap:.15rem .5rem; align-content:center; padding:.52rem .62rem .58rem; }
     .tile .n { grid-column:1 / -1; font-size:.86rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .tile .sku { color:var(--mut); font-size:.66rem; align-self:end; }
-    .tile .p { margin:0; color:var(--tx); font-size:.9rem; align-self:end; white-space:nowrap; }
+    /* #277 — el precio («1,50 €») con white-space:nowrap desbordaba la celda auto del grid y la
+       tarjeta overflow:hidden recortaba el «€». Se asegura espacio a la derecha del precio. */
+    .tile .p { margin:0; padding-right:.15rem; color:var(--tx); font-size:.9rem; align-self:end; white-space:nowrap; }
 
     .cart { border-left:1px solid var(--line); }
     .cart ion-header { flex:none; border-bottom:1px solid var(--line); }
@@ -5417,6 +5419,9 @@ var ErpPosTouch = class extends i3 {
       .cart { width:min(100%,27rem); }
       .order-toolbar { padding-left:.2rem; padding-right:.2rem; }
       .memory-only { display:none; }
+      /* #277 — en tiles de 2 columnas el precio «1,50 €» se recortaba por la derecha (overflow:hidden
+         de la tarjeta + white-space:nowrap). Un font-size algo menor lo hace caber sin recortar el «€». */
+      .tile .p { font-size:.82rem; }
     }
     @media (max-width:340px) {
       .catalog { padding:.45rem; }
@@ -7218,7 +7223,6 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
       this.mq = window.matchMedia(`(max-width: ${_OkDataTable2.MOBILE_BREAKPOINT}px)`);
       this.isMobile = this.mq.matches;
-      if (this.isMobile && this.cardViewEnabled) this.viewMode = "cards";
       const handler = (e7) => {
         const matches = "matches" in e7 ? e7.matches : this.mq?.matches ?? false;
         if (this.isMobile === matches) return;
@@ -7597,8 +7601,13 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   // forma robusta de arrancar en tarjetas sin depender de fijar `viewMode` por referencia (que
   // falla si la tabla monta detrás de un `v-if`/loading y el ref aún es null).
   firstUpdated() {
-    if (this.defaultView === "cards" && this.cardViewEnabled) this.viewMode = "cards";
-    else if (this.defaultView === "table") this.viewMode = "table";
+    if (this.isMobile && this.cardViewEnabled) {
+      this.viewMode = "cards";
+    } else if (this.defaultView === "cards" && this.cardViewEnabled) {
+      this.viewMode = "cards";
+    } else if (this.defaultView === "table") {
+      this.viewMode = "table";
+    }
   }
   setViewMode(mode) {
     if (this.viewMode === mode) return;
