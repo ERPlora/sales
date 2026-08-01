@@ -382,7 +382,9 @@ export class ErpPosTouch extends LitElement {
       gap:.15rem .5rem; align-content:center; padding:.52rem .62rem .58rem; }
     .tile .n { grid-column:1 / -1; font-size:.86rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .tile .sku { color:var(--mut); font-size:.66rem; align-self:end; }
-    .tile .p { margin:0; color:var(--tx); font-size:.9rem; align-self:end; white-space:nowrap; }
+    /* #277 — el precio («1,50 €») con white-space:nowrap desbordaba la celda auto del grid y la
+       tarjeta overflow:hidden recortaba el «€». Se asegura espacio a la derecha del precio. */
+    .tile .p { margin:0; padding-right:.15rem; color:var(--tx); font-size:.9rem; align-self:end; white-space:nowrap; }
 
     .cart { border-left:1px solid var(--line); }
     .cart ion-header { flex:none; border-bottom:1px solid var(--line); }
@@ -470,6 +472,9 @@ export class ErpPosTouch extends LitElement {
       .cart { width:min(100%,27rem); }
       .order-toolbar { padding-left:.2rem; padding-right:.2rem; }
       .memory-only { display:none; }
+      /* #277 — en tiles de 2 columnas el precio «1,50 €» se recortaba por la derecha (overflow:hidden
+         de la tarjeta + white-space:nowrap). Un font-size algo menor lo hace caber sin recortar el «€». */
+      .tile .p { font-size:.82rem; }
     }
     @media (max-width:340px) {
       .catalog { padding:.45rem; }
