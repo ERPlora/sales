@@ -252,7 +252,10 @@
     "sales.complete_sale": {
       "permission": "sales.add_sale",
       "reads": [
-        "taxes.rules.list"
+        {
+          "query": "taxes.rules.list",
+          "required": true
+        }
       ],
       "handler": {
         "type": "wasm",
