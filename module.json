@@ -1,7 +1,7 @@
 {
   "id": "sales",
   "name": "Sales & POS",
-  "version": "2.12.8",
+  "version": "2.13.0",
   "description": "Point of sale: complete and void sales, and review sales history and metrics.",
   "agent": {
     "description": "Manages sales and point-of-sale operations: list and inspect sales, complete new sales transactions, void sales, configure payment methods, and retrieve sales statistics.",
@@ -24,6 +24,7 @@
     "sales.view_sale",
     "sales.add_sale",
     "sales.change_sale",
+    "sales.take_payment",
     "sales.delete_sale",
     "sales.void_sale",
     "sales.view_paymentmethod",
@@ -41,6 +42,7 @@
       "sales.view_sale",
       "sales.add_sale",
       "sales.change_sale",
+      "sales.take_payment",
       "sales.void_sale",
       "sales.view_paymentmethod",
       "sales.add_paymentmethod",
@@ -250,7 +252,7 @@
   },
   "commands": {
     "sales.complete_sale": {
-      "permission": "sales.add_sale",
+      "permission": "sales.take_payment",
       "reads": [
         "taxes.rules.list"
       ],
