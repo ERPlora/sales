@@ -158,6 +158,9 @@ export class ErpSalesDocument extends LitElement {
       const base: FiscalData = {
         number: (invoice.number as string) || undefined,
         issuer_nif: (invoice.issuer_nif as string) || undefined,
+        // Issuer legal name resolved by the runtime from hub_settings.business_legal_name
+        // (ADR-0061) — the document header must honor the business profile (#32).
+        issuer_name: (invoice.issuer_name as string) || undefined,
         customer_name: (invoice.customer_name as string) || undefined,
         customer_tax_id: (invoice.customer_tax_id as string) || undefined,
       };
@@ -191,8 +194,10 @@ export class ErpSalesDocument extends LitElement {
   printableHtml(): string {
     if (!this.sale) return '';
     const t = (k: string): string => erplora().t(CATALOG, k);
-    void t;
-    const doc = saleToReceipt(this.sale, this.lines || [], this.settings || {}, this.fiscal, erplora().locale);
+    const doc = saleToReceipt(
+      this.sale, this.lines || [], this.settings || {}, this.fiscal, erplora().locale,
+      t('ui.docDefaultBusiness'),
+    );
     return receiptToPrintableHtml(doc as unknown as Parameters<typeof receiptToPrintableHtml>[0]);
   }
 
@@ -207,12 +212,15 @@ export class ErpSalesDocument extends LitElement {
     const fmt = this.format || resolveFormat(this.sale, settings);
 
     const locale = erplora().locale;
+    // Translated last-resort business name (ADR-0055): the mapper's bare fallback is English
+    // canonical; the UI always hands over the hub-language default (#32).
+    const fallbackName = t('ui.docDefaultBusiness');
     return fmt === 'invoice'
       ? html`<ok-invoice
-          .invoice=${saleToInvoice(this.sale, lines, settings, this.fiscal, locale)}
+          .invoice=${saleToInvoice(this.sale, lines, settings, this.fiscal, locale, fallbackName)}
           .labels=${invoiceLabels(t)}></ok-invoice>`
       : html`<ok-receipt
-          .receipt=${saleToReceipt(this.sale, lines, settings, this.fiscal, locale)}
+          .receipt=${saleToReceipt(this.sale, lines, settings, this.fiscal, locale, fallbackName)}
           .labels=${receiptLabels(t)}></ok-receipt>`;
   }
 }

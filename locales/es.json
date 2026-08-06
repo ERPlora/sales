@@ -34,6 +34,7 @@
     "qrValidateNote": "Escanea para validar la factura en la AEAT",
     "docEmpty": "Sin datos de tiquet.",
     "docEmptyInvoice": "Sin datos de factura.",
+    "docDefaultBusiness": "Mi negocio",
     "docPhone": "Tel.",
     "docReceipt": "Tiquet",
     "docServedBy": "Atendido por",

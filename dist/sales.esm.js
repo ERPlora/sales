@@ -2986,17 +2986,17 @@ __decorateClass5([
 define("ok-invoice", OkInvoice);
 
 // modules/sales/ui/lib/quantity.ts
-var QUANTITY_SCALE = 1e6;
-function toMicro(qty) {
-  return Math.round(qty * QUANTITY_SCALE);
+var QUANTITY_SCALE2 = 1e6;
+function toMicro2(qty) {
+  return Math.round(qty * QUANTITY_SCALE2);
 }
-function fromMicro(raw) {
-  return raw / QUANTITY_SCALE;
+function fromMicro2(raw) {
+  return raw / QUANTITY_SCALE2;
 }
-function formatQuantity(raw) {
-  return String(fromMicro(raw));
+function formatQuantity2(raw) {
+  return String(fromMicro2(raw));
 }
-function onGrid(raw, increment) {
+function onGrid2(raw, increment) {
   if (!Number.isFinite(increment) || increment <= 0) return true;
   return raw % increment === 0;
 }
@@ -3056,6 +3056,14 @@ function invoiceLabels(t7) {
 function lineLabel(l3) {
   return Number(l3.is_gift) ? `${l3.product_name} (Invitaci\xF3n)` : l3.product_name;
 }
+var DEFAULT_BUSINESS_NAME = "My business";
+function splitHeader(raw) {
+  const header = (raw || "").trim();
+  return {
+    name: header.split("\n")[0] || void 0,
+    address: header.split("\n").slice(1).join(" ") || void 0
+  };
+}
 function parseTaxes(tax_breakdown) {
   if (!tax_breakdown) return [];
   let obj;
@@ -3078,16 +3086,16 @@ function resolveFormat(sale, settings) {
   const v3 = sale.document_type || settings.default_document_format || "ticket";
   return v3 === "invoice" ? "invoice" : "ticket";
 }
-function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es") {
-  const header = (settings.receipt_header || "").trim();
+function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName = DEFAULT_BUSINESS_NAME) {
+  const header = splitHeader(settings.receipt_header);
   return {
-    business: { name: header.split("\n")[0] || "Mi negocio", address: header.split("\n").slice(1).join(" ") || void 0, tax_id: fiscal.issuer_nif || void 0 },
+    business: { name: header.name || fiscal.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || void 0 },
     number: fiscal.number || sale.sale_number,
     datetime: formatDateTime(sale.created_at, locale),
     customer: fiscal.customer_name || sale.customer_name || void 0,
     lines: lines.map((l3) => ({
       name: lineLabel(l3),
-      qty: fromMicro(Number(l3.quantity)),
+      qty: fromMicro2(Number(l3.quantity)),
       // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
       unit_price: toEuros(l3.unit_price),
       total: toEuros(l3.line_total)
@@ -3105,11 +3113,11 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es") {
     promo_note: settings.receipt_marketing_url ? settings.receipt_marketing_text || void 0 : void 0
   };
 }
-function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es") {
-  const header = (settings.receipt_header || "").trim();
+function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName = DEFAULT_BUSINESS_NAME) {
+  const header = splitHeader(settings.receipt_header);
   const invLines = lines.map((l3) => ({
     description: lineLabel(l3),
-    qty: fromMicro(Number(l3.quantity)),
+    qty: fromMicro2(Number(l3.quantity)),
     // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
     unit_price: toEuros(l3.unit_price),
     discount_percent: l3.discount_percent ? Number(l3.discount_percent) : void 0,
@@ -3118,7 +3126,7 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es") {
   }));
   const taxes = parseTaxes(sale.tax_breakdown);
   return {
-    issuer: { name: header.split("\n")[0] || "Mi negocio", address: header.split("\n").slice(1).join(" ") || void 0, tax_id: fiscal.issuer_nif || void 0 },
+    issuer: { name: fiscal.issuer_name || header.name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || void 0 },
     customer: { name: fiscal.customer_name || sale.customer_name || "Cliente", tax_id: fiscal.customer_tax_id || void 0 },
     number: fiscal.number || sale.sale_number,
     issue_date: formatDateTime(sale.created_at, locale) || "",
@@ -3136,13 +3144,13 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es") {
   };
 }
 function orderToPrebill(lines, settings = {}, opts = {}) {
-  const header = (settings.receipt_header || "").trim();
+  const header = splitHeader(settings.receipt_header);
   const cents = (l3) => l3.is_gift ? 0 : Math.round(l3.price * l3.qty);
   const total = lines.reduce((s5, l3) => s5 + cents(l3), 0);
   return {
     business: {
-      name: header.split("\n")[0] || "Mi negocio",
-      address: header.split("\n").slice(1).join(" ") || void 0
+      name: header.name || opts.fallbackName || DEFAULT_BUSINESS_NAME,
+      address: header.address
     },
     // number/qr/payment AUSENTES a propósito: esto no es una factura (ver doc de la función).
     datetime: formatDateTime(opts.datetime ?? (/* @__PURE__ */ new Date()).toISOString(), opts.locale ?? "es"),
@@ -3199,6 +3207,7 @@ var es_default = {
     qrValidateNote: "Escanea para validar la factura en la AEAT",
     docEmpty: "Sin datos de tiquet.",
     docEmptyInvoice: "Sin datos de factura.",
+    docDefaultBusiness: "Mi negocio",
     docPhone: "Tel.",
     docReceipt: "Tiquet",
     docServedBy: "Atendido por",
@@ -3406,6 +3415,7 @@ var en_default = {
     qrValidateNote: "Scan to validate the invoice at the AEAT",
     docEmpty: "No receipt data.",
     docEmptyInvoice: "No invoice data.",
+    docDefaultBusiness: "My business",
     docPhone: "Tel.",
     docReceipt: "Receipt",
     docServedBy: "Served by",
@@ -3655,6 +3665,9 @@ var ErpSalesDocument = class extends i3 {
       const base = {
         number: invoice.number || void 0,
         issuer_nif: invoice.issuer_nif || void 0,
+        // Issuer legal name resolved by the runtime from hub_settings.business_legal_name
+        // (ADR-0061) — the document header must honor the business profile (#32).
+        issuer_name: invoice.issuer_name || void 0,
         customer_name: invoice.customer_name || void 0,
         customer_tax_id: invoice.customer_tax_id || void 0
       };
@@ -3689,7 +3702,14 @@ var ErpSalesDocument = class extends i3 {
   printableHtml() {
     if (!this.sale) return "";
     const t7 = (k2) => erplora().t(CATALOG, k2);
-    const doc = saleToReceipt(this.sale, this.lines || [], this.settings || {}, this.fiscal, erplora().locale);
+    const doc = saleToReceipt(
+      this.sale,
+      this.lines || [],
+      this.settings || {},
+      this.fiscal,
+      erplora().locale,
+      t7("ui.docDefaultBusiness")
+    );
     return receiptToPrintableHtml(doc);
   }
   render() {
@@ -3701,10 +3721,11 @@ var ErpSalesDocument = class extends i3 {
     const lines = this.lines || [];
     const fmt = this.format || resolveFormat(this.sale, settings);
     const locale = erplora().locale;
+    const fallbackName = t7("ui.docDefaultBusiness");
     return fmt === "invoice" ? b2`<ok-invoice
-          .invoice=${saleToInvoice(this.sale, lines, settings, this.fiscal, locale)}
+          .invoice=${saleToInvoice(this.sale, lines, settings, this.fiscal, locale, fallbackName)}
           .labels=${invoiceLabels(t7)}></ok-invoice>` : b2`<ok-receipt
-          .receipt=${saleToReceipt(this.sale, lines, settings, this.fiscal, locale)}
+          .receipt=${saleToReceipt(this.sale, lines, settings, this.fiscal, locale, fallbackName)}
           .labels=${receiptLabels(t7)}></ok-receipt>`;
   }
 };
@@ -3841,7 +3862,7 @@ function buildFirePayload(orderId, label, lines, roundNo) {
       product_id: l3.id,
       product_name: l3.name,
       // Punto fijo 10⁶ (ADR-0147): cocina recibe 500000 y pinta 0,5 — su frontera, su formato.
-      quantity: toMicro(l3.qty),
+      quantity: toMicro2(l3.qty),
       unit_price: l3.price,
       // El motivo de una invitación es información de sala que el cocinero necesita ver.
       notes: l3.is_gift ? l3.gift_reason ?? "" : ""
@@ -4714,7 +4735,7 @@ function toItemPayload(l3) {
     product_name: l3.name,
     product_sku: l3.sku ?? "",
     price: l3.price,
-    quantity: toMicro(l3.qty),
+    quantity: toMicro2(l3.qty),
     // punto fijo 10⁶ (ADR-0147)
     is_gift: !!l3.is_gift,
     gift_reason: l3.gift_reason ?? "",
@@ -4735,7 +4756,7 @@ async function addOrderLine(client, orderId, l3) {
     product_id: l3.id || null,
     product_name: l3.name,
     product_sku: l3.sku ?? "",
-    quantity: toMicro(l3.qty),
+    quantity: toMicro2(l3.qty),
     // punto fijo 10⁶ (ADR-0147)
     unit_price: l3.price,
     is_gift: !!l3.is_gift,
@@ -4762,7 +4783,7 @@ async function updateOrderLineQty(client, orderId, lineId, qty, unitPrice, isGif
   await client.command("sales.order.update_line", {
     order_id: orderId,
     line_id: lineId,
-    quantity: toMicro(qty),
+    quantity: toMicro2(qty),
     // punto fijo 10⁶ (ADR-0147)
     line_total: provisionalLineTotal(unitPrice, qty, isGift),
     // Alternar invitación cambia el importe: viaja junto para que la fila quede coherente.
@@ -4784,7 +4805,7 @@ async function loadOrderLines(client, orderId) {
       price: Number(x2.unit_price) || 0,
       // La fila trae punto fijo 10⁶ (ADR-0147); la UI trabaja en lógico. Cerrar y reabrir el
       // pedido debe seguir mostrando 0,5 kg — no 500000 ni 1.
-      qty: fromMicro(Number(x2.quantity) || 1e6),
+      qty: fromMicro2(Number(x2.quantity) || 1e6),
       is_gift: x2.is_gift === 1 || x2.is_gift === true ? true : void 0,
       gift_reason: x2.gift_reason ? String(x2.gift_reason) : void 0,
       // Autoridad del IVA en servidor (ADR-0085) y coste para el arqueo de invitaciones: se
@@ -5985,22 +6006,22 @@ var ErpPosTouch = class extends i3 {
   }
   /** Paso del stepper de una línea: el incremento congelado de su unidad (1 para `ud`). */
   stepOf(l3) {
-    return l3.increment_value ? fromMicro(l3.increment_value) : 1;
+    return l3.increment_value ? fromMicro2(l3.increment_value) : 1;
   }
   /** Fija la cantidad de una línea (desde ok-qty-stepper); al llegar a 0 la línea se elimina. */
   async setQtyAbs(id, v3, stepper) {
     const ex = this.cart.find((l3) => l3.id === id);
     if (!ex) return;
-    const qtyMicro = toMicro(Math.max(0, v3));
-    if (!onGrid(qtyMicro, ex.increment_value ?? 0)) {
-      this.error = `${t5("ui.qtyOffGrid")} (${formatQuantity(ex.increment_value ?? 0)} ${ex.unit_code ?? ""})`.trim();
+    const qtyMicro = toMicro2(Math.max(0, v3));
+    if (!onGrid2(qtyMicro, ex.increment_value ?? 0)) {
+      this.error = `${t5("ui.qtyOffGrid")} (${formatQuantity2(ex.increment_value ?? 0)} ${ex.unit_code ?? ""})`.trim();
       if (stepper) {
         await stepper.updateComplete;
         stepper.value = ex.qty;
       }
       return;
     }
-    const qty = fromMicro(qtyMicro);
+    const qty = fromMicro2(qtyMicro);
     this.cart = qty > 0 ? this.cart.map((l3) => l3 === ex ? { ...l3, qty } : l3) : this.cart.filter((l3) => l3 !== ex);
     if (!this.orderId || !ex.line_id) return;
     if (qty > 0) await updateOrderLineQty(erplora2(), this.orderId, ex.line_id, qty, ex.price, ex.is_gift);
@@ -6012,7 +6033,7 @@ var ErpPosTouch = class extends i3 {
     const doc = orderToPrebill(
       this.cart.map((l3) => ({ name: l3.name, price: l3.price, qty: l3.qty, is_gift: l3.is_gift })),
       this.settings,
-      { tableLabel: this.tableLabel || void 0, notice: t5("ui.prebillNotice") }
+      { tableLabel: this.tableLabel || void 0, notice: t5("ui.prebillNotice"), fallbackName: t5("ui.docDefaultBusiness") }
     );
     const sdk = globalThis.erplora;
     const html = receiptToPrintableHtml(doc);
@@ -6064,7 +6085,7 @@ var ErpPosTouch = class extends i3 {
     try {
       const split = splitPayload(this.cart, this.splitSel);
       const cobradas = split.line_ids ? this.cart.filter((l3) => l3.line_id && this.splitSel.has(l3.line_id)) : this.cart;
-      const items = cobradas.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: toMicro(l3.qty), tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0, category_id: this.prodCats.get(l3.id)?.values().next().value ?? null, is_gift: l3.is_gift ?? false, gift_reason: l3.gift_reason ?? "", cost: l3.cost ?? 0, ...unitContextPayload(l3) }));
+      const items = cobradas.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: toMicro2(l3.qty), tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0, category_id: this.prodCats.get(l3.id)?.values().next().value ?? null, is_gift: l3.is_gift ?? false, gift_reason: l3.gift_reason ?? "", cost: l3.cost ?? 0, ...unitContextPayload(l3) }));
       await erplora2().command("sales.complete_sale", {
         items,
         line_ids: split.line_ids ?? null,
@@ -6352,7 +6373,7 @@ var ErpPosTouch = class extends i3 {
       </ion-label>
       <div slot="end" class="lineend">
         <span class="lt ${l3.is_gift ? "is-gift" : ""}">${this.money(l3.price * l3.qty)}</span>
-        ${locked ? b2`<span class="lqty">×${formatQuantity(toMicro(l3.qty))}</span>` : b2`
+        ${locked ? b2`<span class="lqty">×${formatQuantity2(toMicro2(l3.qty))}</span>` : b2`
             <ion-button fill="clear" size="small" title=${t5("ui.giftAction")} @click=${() => this.toggleGift(l3.id)}>
               <ion-icon name=${l3.is_gift ? "gift" : "gift-outline"} slot="icon-only" color=${l3.is_gift ? "success" : "medium"}></ion-icon>
             </ion-button>
@@ -6601,7 +6622,7 @@ var ErpPosTouch = class extends i3 {
           <ok-receipt id="prebill-doc" .data=${orderToPrebill(
       this.cart.map((l3) => ({ name: l3.name, price: l3.price, qty: l3.qty, is_gift: l3.is_gift })),
       this.settings,
-      { tableLabel: this.tableLabel || void 0, notice: t5("ui.prebillNotice") }
+      { tableLabel: this.tableLabel || void 0, notice: t5("ui.prebillNotice"), fallbackName: t5("ui.docDefaultBusiness") }
     )}></ok-receipt>
         </ion-content>
       </ion-modal>

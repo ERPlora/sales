@@ -1,9 +1,11 @@
-// Mappers puros: venta (`sales.get`) + líneas (`sales.lines`) + ajustes (`sales.settings.get`)
-// → contrato de documento de OutfitKit (`ReceiptData` / `InvoiceData`). Sin efectos, testeable.
+// Pure mappers: sale (`sales.get`) + lines (`sales.lines`) + settings (`sales.settings.get`)
+// → OutfitKit document contract (`ReceiptData` / `InvoiceData`). No side effects, testable.
 //
-// La cabecera de negocio (nombre/NIF/dirección estructurados) y el QR de VeriFactu NO viven en
-// el módulo sales; de momento usamos `receipt_header`/`receipt_footer` de los ajustes y dejamos
-// NIF/dirección/QR vacíos (se rellenan cuando se cablee el perfil del negocio + verifactu).
+// Business identity does NOT live in the sales module: the runtime resolves the issuer from
+// `hub_settings.business_legal_name`/`business_tax_id` (single source, ADR-0061) onto the invoice
+// row, and `invoice.by_source` hands it back here as `FiscalData.issuer_name`/`issuer_nif` (#32).
+// `receipt_header` stays as the merchant's deliberate ticket branding (first line = name, rest =
+// address); the VeriFactu QR comes from `verifactu.records.by_invoice` (ADR-0140/0184).
 
 import { fromMicro } from './quantity';
 import type {
@@ -130,12 +132,28 @@ export interface SaleSettings {
  *  opcional: si no hay registro fiscal (p.ej. venta sin factura aún), el documento se pinta igual
  *  pero sin QR. */
 export interface FiscalData {
-  qr?: string;          // qr_url del registro VeriFactu (URL de validación en la AEAT)
-  qr_note?: string;     // leyenda bajo el QR (p.ej. CSV de la AEAT o "Validar en la AEAT")
-  number?: string;      // número fiscal oficial (puede diferir del sale_number)
+  qr?: string;          // qr_url of the VeriFactu record (AEAT validation URL)
+  qr_note?: string;     // caption under the QR (e.g. AEAT CSV or "Validate at the AEAT")
+  number?: string;      // official fiscal number (may differ from sale_number)
   issuer_nif?: string;
+  /** Issuer legal name, snapshotted on the invoice from `hub_settings.business_legal_name`
+   *  (single source ADR-0061) — the business profile the ticket header must honor (#32). */
+  issuer_name?: string;
   customer_name?: string;
   customer_tax_id?: string;
+}
+
+/** Canonical English fallback for the business name (ADR-0055): the UI passes the translated
+ *  default (`ui.docDefaultBusiness`); bare mapper calls (tests, integrations) get this one. */
+const DEFAULT_BUSINESS_NAME = 'My business';
+
+/** `receipt_header` contract: first line = display name, remaining lines = address. */
+function splitHeader(raw: string | undefined): { name?: string; address?: string } {
+  const header = (raw || '').trim();
+  return {
+    name: header.split('\n')[0] || undefined,
+    address: header.split('\n').slice(1).join(' ') || undefined,
+  };
 }
 
 interface TaxLine {
@@ -173,17 +191,20 @@ export function resolveFormat(sale: SaleRow, settings: SaleSettings): 'ticket' |
   return v === 'invoice' ? 'invoice' : 'ticket';
 }
 
-/** Venta → tiquet térmico 80mm (`<ok-receipt>`). */
+/** Sale → 80mm thermal ticket (`<ok-receipt>`). Header: explicit `receipt_header` wins
+ *  (deliberate branding); empty → the fiscal issuer name (business profile, #32); last resort
+ *  → the translated default passed by the UI. */
 export function saleToReceipt(
   sale: SaleRow,
   lines: SaleLineRow[],
   settings: SaleSettings = {},
   fiscal: FiscalData = {},
   locale = 'es',
+  fallbackName = DEFAULT_BUSINESS_NAME,
 ): ReceiptData {
-  const header = (settings.receipt_header || '').trim();
+  const header = splitHeader(settings.receipt_header);
   return {
-    business: { name: header.split('\n')[0] || 'Mi negocio', address: header.split('\n').slice(1).join(' ') || undefined, tax_id: fiscal.issuer_nif || undefined },
+    business: { name: header.name || fiscal.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || undefined },
     number: fiscal.number || sale.sale_number,
     datetime: formatDateTime(sale.created_at, locale),
     customer: fiscal.customer_name || sale.customer_name || undefined,
@@ -209,15 +230,18 @@ export function saleToReceipt(
   };
 }
 
-/** Venta → factura A4 (`<ok-invoice>`). */
+/** Sale → A4 invoice (`<ok-invoice>`). Formal fiscal document: the issuer is the legal name
+ *  snapshotted on the invoice (#32); `receipt_header` only fills the gaps (name fallback +
+ *  address, the invoice row carries no issuer address). */
 export function saleToInvoice(
   sale: SaleRow,
   lines: SaleLineRow[],
   settings: SaleSettings = {},
   fiscal: FiscalData = {},
   locale = 'es',
+  fallbackName = DEFAULT_BUSINESS_NAME,
 ): InvoiceData {
-  const header = (settings.receipt_header || '').trim();
+  const header = splitHeader(settings.receipt_header);
   const invLines: InvoiceLine[] = lines.map((l) => ({
     description: lineLabel(l),
     qty: fromMicro(Number(l.quantity)), // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
@@ -228,7 +252,7 @@ export function saleToInvoice(
   }));
   const taxes = parseTaxes(sale.tax_breakdown);
   return {
-    issuer: { name: header.split('\n')[0] || 'Mi negocio', address: header.split('\n').slice(1).join(' ') || undefined, tax_id: fiscal.issuer_nif || undefined },
+    issuer: { name: fiscal.issuer_name || header.name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || undefined },
     customer: { name: fiscal.customer_name || sale.customer_name || 'Cliente', tax_id: fiscal.customer_tax_id || undefined },
     number: fiscal.number || sale.sale_number,
     issue_date: formatDateTime(sale.created_at, locale) || '',
@@ -271,15 +295,15 @@ export interface PrebillLine {
 export function orderToPrebill(
   lines: PrebillLine[],
   settings: SaleSettings = {},
-  opts: { tableLabel?: string; datetime?: string; locale?: string; notice?: string } = {},
+  opts: { tableLabel?: string; datetime?: string; locale?: string; notice?: string; fallbackName?: string } = {},
 ): ReceiptData {
-  const header = (settings.receipt_header || '').trim();
+  const header = splitHeader(settings.receipt_header);
   const cents = (l: PrebillLine) => (l.is_gift ? 0 : Math.round(l.price * l.qty));
   const total = lines.reduce((s, l) => s + cents(l), 0);
   return {
     business: {
-      name: header.split('\n')[0] || 'Mi negocio',
-      address: header.split('\n').slice(1).join(' ') || undefined,
+      name: header.name || opts.fallbackName || DEFAULT_BUSINESS_NAME,
+      address: header.address,
     },
     // number/qr/payment AUSENTES a propósito: esto no es una factura (ver doc de la función).
     datetime: formatDateTime(opts.datetime ?? new Date().toISOString(), opts.locale ?? 'es'),
