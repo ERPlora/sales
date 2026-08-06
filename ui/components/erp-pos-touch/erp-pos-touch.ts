@@ -31,6 +31,7 @@ import {
 import { buildCategoryRatesMap, resolveLineTax } from '../../lib/pos-tax.js';
 // La frontera de la ESCALA de cantidades (ADR-0147): la UI trabaja en lógico (0,5), el cable en 10⁶.
 import { toMicro, fromMicro, onGrid, formatQuantity } from '../../lib/quantity.js';
+import { checkoutErrorKey, newIdempotencyKey } from '../../lib/checkout-key.js';
 // Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC.
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
@@ -508,6 +509,10 @@ export class ErpPosTouch extends LitElement {
   @state() private busy = false;
   @state() private error = '';
   @state() private docSaleId?: string;
+  /** Clave del INTENTO de cobro en curso (sales#20): se genera al abrir la pantalla de cobro, se
+   *  REUTILIZA en cada reintento —por eso un timeout no crea una segunda venta— y se descarta en
+   *  cuanto la venta consta. Vacía = no hay cobro en curso. */
+  private checkoutKey = '';
   @state() private parked: OpenCheck[] = [];
   /** Líneas marcadas para cobrar por separado (ADR-0146). Vacío = se cobra la cuenta entera. */
   @state() private splitSel = new Set<string>();
@@ -1383,6 +1388,9 @@ export class ErpPosTouch extends LitElement {
 
   private openPay() {
     if (!this.cart.length) return;
+    // Una clave por INTENTO de cobro (sales#20): todos los reintentos de ESTA pantalla comparten
+    // clave, así que el servidor los resuelve a la misma venta en vez de duplicarla.
+    this.checkoutKey = newIdempotencyKey();
     this.tendered = '';
     this.payMethod = defaultPayMethod(this.payMethods);
     this.docFormat = this.settings.default_document_format === 'invoice' ? 'invoice' : 'ticket';
@@ -1423,8 +1431,15 @@ export class ErpPosTouch extends LitElement {
       // `quantity` viaja en punto fijo 10⁶ y la línea lleva su contexto de unidades congelado
       // (ADR-0147): el servidor valida la rejilla y calcula el importe por el SDK (KPEIN).
       const items = cobradas.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: toMicro(l.qty), tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: this.prodCats.get(l.id)?.values().next().value ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0, ...unitContextPayload(l) }));
+      // Reintento tras un fallo: se conserva la clave del intento. Solo se genera una nueva si
+      // llegamos aquí sin ninguna (cobro disparado por atajo, sin pasar por `openPay`).
+      if (!this.checkoutKey) this.checkoutKey = newIdempotencyKey();
+      const checkoutKey = this.checkoutKey;
       await erplora().command('sales.complete_sale', {
         items,
+        // sales#20: el servidor no cierra una venta sin clave, y con la misma clave dos veces
+        // registra UNA. Es lo que hace seguro reintentar cuando el wifi del local parpadea.
+        idempotency_key: checkoutKey,
         line_ids: split.line_ids ?? null,
         keep_order_open: split.keep_order_open,
         tax_included: this.settings.default_tax_included !== 0,
@@ -1449,11 +1464,14 @@ export class ErpPosTouch extends LitElement {
         // evento para elegir F1 (completa) vs F2 (simplificada). Reemplaza al `set_document_type` retro.
         document_type: this.docFormat,
       });
-      // complete_sale (WASM) no devuelve el id de la venta creada, así que re-consultamos la última
-      // para recuperar el `saleId` con el que mostrar el documento. El tipo ya quedó fijado dentro de
-      // complete_sale (ADR-0140) — ya no hay UPDATE retro sales.set_document_type.
-      const recent = rows<{ id: string }>(await erplora().query('sales.list', { limit: 1, sort: 'created_at', dir: 'desc' }));
-      const saleId = recent[0]?.id;
+      // complete_sale (WASM) no devuelve el id de la venta creada, así que la re-consultamos POR SU
+      // CLAVE de idempotencia (sales#20). Antes se pedía «la última venta» (`sales.list` limit 1),
+      // que con dos cajas cobrando a la vez devolvía la del compañero — y en un reintento devolvía
+      // una venta que no era esta. El tipo ya quedó fijado dentro de complete_sale (ADR-0140).
+      const recorded = rows<{ id: string }>(await erplora().query('sales.by_idempotency_key', { idempotency_key: checkoutKey }));
+      const saleId = recorded[0]?.id;
+      // El intento terminó: la próxima venta estrena clave.
+      this.checkoutKey = '';
       // Cobrada: limpia la comanda de ESA mesa (o el carrito suelto) antes de soltarla, si no la
       // comanda seguiría recuperándose al volver a tocar la mesa. La sesión la cierra el filler
       // al recibir el reset de abajo.
@@ -1489,7 +1507,15 @@ export class ErpPosTouch extends LitElement {
       // Abrir el diálogo del navegador por nuestra cuenta duplicaba ese camino y se lo comía.
       // El diálogo del navegador queda SOLO como respaldo manual, desde el botón del documento.
     } catch (e) {
-      this.error = e instanceof Error ? e.message : t('ui.errorCharge');
+      // El servidor rechaza el cierre con un código de dominio estable (`sales.empty_sale`,
+      // `sales.payment_method_not_available`, …). Se traduce el CÓDIGO, no la frase: el mensaje del
+      // servidor va en inglés y con detalle interno. Lo que no reconocemos se enseña tal cual —
+      // «Failed to fetch» le dice más al cajero que un «no se pudo cobrar» genérico.
+      const raw = e instanceof Error ? e.message : String(e ?? '');
+      const key = checkoutErrorKey(raw);
+      this.error = key === 'ui.errorCharge' && raw ? raw : t(key);
+      // OJO: `this.checkoutKey` NO se limpia aquí. Reintentar con la MISMA clave es justo lo que
+      // impide que un timeout (la venta pudo entrar) acabe cobrando dos veces.
     } finally {
       this.busy = false;
     }

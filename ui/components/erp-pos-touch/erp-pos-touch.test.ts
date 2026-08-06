@@ -1184,3 +1184,97 @@ describe('carrito cerrado en móvil: ni puntero ni árbol accesible (sales#58)',
       .toMatch(/transition\s*:[^;]*visibility[^;]*\.25s/);
   });
 });
+
+// sales#20 — the POS side of the server-authoritative checkout.
+//
+// The server refuses to close a sale without an idempotency key and, given the same key twice,
+// records ONE sale. That only saves a cashier if the key belongs to the CHECKOUT ATTEMPT: the
+// retry after a dropped wifi has to carry the very same key, and the sale that was recorded has to
+// be found back by that key — not by "the most recent sale", which on a second till is somebody
+// else's ticket.
+describe('checkout idempotency (sales#20)', () => {
+  let comandos: { name: string; payload: Record<string, unknown> }[];
+  let consultas: { name: string; params: Record<string, unknown> }[];
+  let fallaElProximoCobro: string | null;
+
+  beforeEach(() => {
+    comandos = [];
+    consultas = [];
+    fallaElProximoCobro = null;
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    const productos = [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1 }];
+    sdk.query = async (name: string, params: Record<string, unknown>) => {
+      consultas.push({ name, params });
+      return name === 'sales.by_idempotency_key' ? [{ id: 'sale-7' }] : [];
+    };
+    sdk.queryAll = async (name: string) => (name === 'inventory.products.list' ? productos : []);
+    sdk.command = async (name: string, payload: Record<string, unknown>) => {
+      comandos.push({ name, payload });
+      if (name === 'sales.complete_sale' && fallaElProximoCobro) {
+        const boom = fallaElProximoCobro;
+        fallaElProximoCobro = null;
+        throw new Error(boom);
+      }
+      return {};
+    };
+  });
+
+  async function posConUnaLinea() {
+    const el = await montarCarrito();
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    return el as unknown as { confirm(): Promise<void>; error: string };
+  }
+
+  const ventas = () => comandos.filter((c) => c.name === 'sales.complete_sale');
+
+  it('every checkout carries a key the payload schema accepts', async () => {
+    const pos = await posConUnaLinea();
+    await pos.confirm();
+    expect(ventas()[0].payload.idempotency_key).toMatch(/^[A-Za-z0-9_.:-]{8,128}$/);
+  });
+
+  it('retrying after a failure repeats the SAME key — a timeout never charges twice', async () => {
+    const pos = await posConUnaLinea();
+    fallaElProximoCobro = 'Failed to fetch';
+    await pos.confirm();
+    await pos.confirm();
+
+    const [primero, reintento] = ventas();
+    expect(reintento, 'the cashier pressed charge again').toBeTruthy();
+    expect(reintento.payload.idempotency_key).toBe(primero.payload.idempotency_key);
+  });
+
+  it('the next sale starts a new key — two sales are two keys', async () => {
+    const pos = await posConUnaLinea();
+    await pos.confirm();
+    await pos.confirm();
+
+    const [primera, segunda] = ventas();
+    expect(segunda.payload.idempotency_key).not.toBe(primera.payload.idempotency_key);
+  });
+
+  it('finds the recorded sale by its key, not by "the latest sale"', async () => {
+    const pos = await posConUnaLinea();
+    await pos.confirm();
+
+    const sonda = consultas.find((q) => q.name === 'sales.by_idempotency_key');
+    expect(sonda, 'the POS resolves its own sale').toBeTruthy();
+    expect(sonda!.params.idempotency_key).toBe(ventas()[0].payload.idempotency_key);
+    expect(consultas.some((q) => q.name === 'sales.list'), 'no racy "last sale" lookup').toBe(false);
+  });
+
+  it('shows a domain rejection in the cashier own words', async () => {
+    const pos = await posConUnaLinea();
+    fallaElProximoCobro = 'sales.payment_method_not_available: pm-ghost';
+    await pos.confirm();
+    expect(pos.error).toBe('ui.errorPaymentMethod');
+  });
+
+  it('shows an unknown failure verbatim — it says more than a generic message', async () => {
+    const pos = await posConUnaLinea();
+    fallaElProximoCobro = 'Failed to fetch';
+    await pos.confirm();
+    expect(pos.error).toBe('Failed to fetch');
+  });
+});
