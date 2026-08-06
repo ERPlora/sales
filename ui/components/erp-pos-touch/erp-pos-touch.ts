@@ -350,9 +350,18 @@ export class ErpPosTouch extends LitElement {
       .body { grid-template-columns: 1fr; }
       /* Sin sombra: aun cerrado (translateX(100%)) su box-shadow se derramaba ~30px hacia dentro
          por el borde derecho de la tarjeta; la separación al abrir la dan el backdrop y el borde. */
+      /* Cerrado = INEXISTENTE, no solo «fuera de pantalla» (sales#58). Con únicamente el transform,
+         sus botones —asignar mesa, asignar cliente, cobrar, cuentas abiertas— seguían anunciados en
+         el árbol accesible y aceptaban clicks sin que ocurriera nada visible: controles fantasma,
+         para un lector de pantalla igual que para Playwright. La propiedad visibility se hereda a
+         todo el subárbol, así que este único punto cubre TODOS los controles de la cuenta, incluidos
+         los que montan otros módulos en el slot. La transición retrasa el ocultado hasta que termina
+         el deslizamiento; al abrir es inmediata. */
       .cart { position:absolute; top:0; right:0; bottom:0; width:min(92%,26rem); z-index:60;
-        transform:translateX(100%); transition:transform .25s ease; }
-      .cart[data-open] { transform:translateX(0); }
+        transform:translateX(100%); visibility:hidden;
+        transition:transform .25s ease, visibility 0s linear .25s; }
+      .cart[data-open] { transform:translateX(0); visibility:visible;
+        transition:transform .25s ease, visibility 0s; }
       .cart-close { display:inline-flex; }
       .cart-backdrop[data-open] { display:block; position:absolute; inset:0; background:var(--ok-scrim, rgba(0,0,0,.5)); z-index:55; }
       .fab { display:inline-flex; }

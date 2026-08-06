@@ -1134,3 +1134,53 @@ describe('sheet de cobro (tender): método dentro, tarjeta sin numpad, atajos de
     expect(venta.payload.amount_tendered, 'split + tarjeta: se cobra el payable').toBe(180);
   });
 });
+
+// ── El carrito CERRADO no existe para el puntero ni para el lector de pantalla (sales#58) ─────
+// Bajo 820 px la cuenta es un cajón que se esconde con `transform: translateX(100%)`. Estar fuera
+// de pantalla NO la retira del árbol accesible: sus botones (asignar mesa, asignar cliente, cobrar,
+// cuentas abiertas) seguían anunciándose y aceptando clicks, sin nada visible ocurriendo. Ése es el
+// síntoma de #58 — «aparecen en el árbol accesible pero no responden al click» — y afecta igual a
+// un lector de pantalla que a un test de Playwright.
+//
+// El contrato se fija en UN sitio: `visibility` se hereda al subárbol entero, así que ocultar el
+// contenedor cubre todos sus controles a la vez (hoy y los que monten mañana los módulos por el
+// slot). Un parche por botón no valdría: el problema es la CAPA, no cada control.
+//
+// happy-dom no evalúa media queries ni layout, así que aquí se comprueba la REGLA declarada; que el
+// cajón se deslice bien se verifica en un navegador real.
+describe('carrito cerrado en móvil: ni puntero ni árbol accesible (sales#58)', () => {
+  /** CSS declarado por el componente, como en los demás contratos de estilo de este fichero. */
+  async function cssDelPos(): Promise<string> {
+    const el = await montarCarrito();
+    const declaradas = (el.constructor as unknown as { styles: { cssText: string } | Array<{ cssText: string }> }).styles;
+    return [declaradas].flat().map((s) => s.cssText).join('\n');
+  }
+
+  /** El bloque `@media (max-width: 820px)` que convierte la cuenta en cajón. */
+  function bloqueMovil(css: string): string {
+    const bloques = css.split(/@media[^{]*\(max-width:\s*820px\)\s*\{/).slice(1);
+    return bloques.join('\n');
+  }
+
+  it('el cajón cerrado se oculta (visibility), no solo se desplaza fuera de pantalla', async () => {
+    const movil = bloqueMovil(await cssDelPos());
+    const cajonCerrado = movil.match(/\.cart\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(cajonCerrado, 'el cajón cerrado declara transform (se desplaza)').toMatch(/transform\s*:\s*translateX\(100%\)/);
+    expect(cajonCerrado, 'y además visibility:hidden — desplazar no lo retira del árbol accesible')
+      .toMatch(/visibility\s*:\s*hidden/);
+  });
+
+  it('abierto vuelve a ser visible, para que sus controles funcionen', async () => {
+    const movil = bloqueMovil(await cssDelPos());
+    const cajonAbierto = movil.match(/\.cart\[data-open\]\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(cajonAbierto, 'abierto se coloca en pantalla').toMatch(/transform\s*:\s*translateX\(0\)/);
+    expect(cajonAbierto, 'abierto vuelve a ser visible').toMatch(/visibility\s*:\s*visible/);
+  });
+
+  it('el ocultado espera al final del deslizamiento (no corta la animación)', async () => {
+    const movil = bloqueMovil(await cssDelPos());
+    const cajonCerrado = movil.match(/\.cart\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(cajonCerrado, 'la transición de visibility se retrasa hasta que termina el transform')
+      .toMatch(/transition\s*:[^;]*visibility[^;]*\.25s/);
+  });
+});
