@@ -112,6 +112,49 @@ describe('saleToReceipt — QR promocional desde ajustes', () => {
   });
 });
 
+// Business header on sale documents (#32): the QA hub had its business profile configured
+// (hub_settings.business_legal_name, single source ADR-0061) and the printed ticket still said
+// the hardcoded default «Mi negocio» — the mappers ignored the issuer the runtime had already
+// resolved onto the invoice snapshot (invoice.by_source → issuer_name). Contract:
+// - TICKET: an explicit `receipt_header` wins (deliberate branding, first line = name); empty →
+//   the fiscal issuer name fills in; last resort = the translated default passed by the UI.
+// - A4 INVOICE: formal fiscal document → the legal name from the fiscal snapshot wins.
+describe('business header from the business profile (#32)', () => {
+  it('receipt: empty receipt_header falls back to the fiscal issuer name', () => {
+    const r = saleToReceipt(SALE, LINES, {}, { issuer_name: 'Manolo García SL', issuer_nif: 'B12345678' });
+    expect(r.business.name).toBe('Manolo García SL');
+    expect(r.business.tax_id).toBe('B12345678');
+  });
+
+  it('receipt: an explicit receipt_header wins over the profile (deliberate branding)', () => {
+    const r = saleToReceipt(
+      SALE, LINES,
+      { receipt_header: 'Bar Manolo\nCalle Mayor 1' },
+      { issuer_name: 'Manolo García SL' },
+    );
+    expect(r.business.name).toBe('Bar Manolo');
+    expect(r.business.address).toBe('Calle Mayor 1');
+  });
+
+  it('invoice: the legal name from the fiscal snapshot wins (formal document)', () => {
+    const inv = saleToInvoice(SALE, LINES, { receipt_header: 'Bar Manolo' }, { issuer_name: 'Manolo García SL' });
+    expect(inv.issuer.name).toBe('Manolo García SL');
+  });
+
+  it('invoice: without fiscal data the receipt_header still names the issuer', () => {
+    const inv = saleToInvoice(SALE, LINES, { receipt_header: 'Bar Manolo' }, {});
+    expect(inv.issuer.name).toBe('Bar Manolo');
+  });
+
+  it('last resort is the translated default passed by the UI (English canonical in the mapper)', () => {
+    // English canonical fallback (ADR-0055), same pattern as the pre-bill notice: the UI passes
+    // the translated text; the bare mapper keeps a canonical English default.
+    expect(saleToReceipt(SALE, LINES).business.name).toBe('My business');
+    expect(saleToReceipt(SALE, LINES, {}, {}, 'es', 'Mi negocio').business.name).toBe('Mi negocio');
+    expect(saleToInvoice(SALE, LINES, {}, {}, 'es', 'Mi negocio').issuer.name).toBe('Mi negocio');
+  });
+});
+
 describe('labels i18n para ok-receipt / ok-invoice (ADR-0055)', () => {
   // t() doble: devuelve la clave — el test fija QUÉ claves del catálogo alimentan cada label.
   const t = (key: string): string => key;
@@ -196,5 +239,12 @@ describe('cuenta previa (pre-bill) — NO es un documento fiscal', () => {
   it('identifica la mesa cuando la comanda es de sala', () => {
     const doc = orderToPrebill(lineas, {}, { tableLabel: 'Mesa 4' });
     expect(doc.customer).toBe('Mesa 4');
+  });
+
+  it('accepts the translated fallback business name (English canonical default)', () => {
+    // Same #32 contract as the ticket: the UI passes the translated default; without it the
+    // mapper keeps the canonical English fallback (ADR-0055).
+    expect(orderToPrebill(lineas, {}).business.name).toBe('My business');
+    expect(orderToPrebill(lineas, {}, { fallbackName: 'Mi negocio' }).business.name).toBe('Mi negocio');
   });
 });

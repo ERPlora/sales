@@ -34,6 +34,7 @@
     "qrValidateNote": "Scan to validate the invoice at the AEAT",
     "docEmpty": "No receipt data.",
     "docEmptyInvoice": "No invoice data.",
+    "docDefaultBusiness": "My business",
     "docPhone": "Tel.",
     "docReceipt": "Receipt",
     "docServedBy": "Served by",

@@ -66,6 +66,16 @@ describe('visor del documento de venta', () => {
     const el = await montarVisor();
     expect(el.shadowRoot!.querySelector('ion-button'), 'el visor pinta solo el documento').toBeNull();
   });
+
+  it('without profile or header the default business name goes through i18n (#32)', async () => {
+    // t() returns the key: proves the viewer passes the TRANSLATED default to the mapper
+    // instead of the mapper's hardcoded fallback.
+    const el = await montarVisor();
+    const receipt = el.shadowRoot!.querySelector('ok-receipt') as HTMLElement & {
+      receipt: ReceiptData;
+    };
+    expect(receipt.receipt.business.name).toBe('ui.docDefaultBusiness');
+  });
 });
 
 // El Outbox es ASÍNCRONO: al cobrar, `invoice`/`verifactu` se crean unos ms DESPUÉS de que el modal
@@ -126,5 +136,24 @@ describe('QR fiscal: reintento mientras el Outbox termina', () => {
     await new Promise((r) => setTimeout(r, 80));
     await el.updateComplete;
     expect(llamadas, 'módulo ausente = una sola consulta, sin reintentos').toBe(1);
+  });
+
+  it('the ticket header shows the legal name from the invoice snapshot (#32)', async () => {
+    // The runtime resolves the issuer from hub_settings.business_legal_name (ADR-0061) onto the
+    // invoice row; `invoice.by_source` already returns `issuer_name` — the viewer must use it
+    // instead of printing the default header.
+    const el = await montarPorSaleId(async (name) => {
+      if (name === 'invoice.by_source') {
+        return [{ id: 'inv1', number: 'F2-1', issuer_name: 'Manolo García SL', issuer_nif: 'B12345678' }];
+      }
+      if (name === 'verifactu.records.by_invoice') return [{ qr_url: 'https://aeat/qr', aeat_csv: '' }];
+      return undefined;
+    });
+
+    await new Promise((r) => setTimeout(r, 80));
+    await el.updateComplete;
+    const receipt = el.shadowRoot!.querySelector('ok-receipt') as HTMLElement & { receipt: ReceiptData };
+    expect(receipt.receipt.business.name).toBe('Manolo García SL');
+    expect(receipt.receipt.business.tax_id).toBe('B12345678');
   });
 });
