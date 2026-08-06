@@ -929,7 +929,10 @@ mod tests {
         let new_ids: Vec<Value> = (0..ids).map(|i| json!(format!("id-{i}"))).collect();
         json!({
             "payload": { "items": items, "tax_included": true, "amount_tendered": tendered, "customer_name": "Bar Manolo",
-                         "payment_method_id": "pm-1", "payment_method_name": "Efectivo" },
+                         "payment_method_id": "pm-1", "payment_method_name": "Efectivo",
+                         // sales#20: the checkout is server-authoritative and every attempt carries
+                         // its own idempotency key, so a retry can never become a second sale.
+                         "idempotency_key": "idem-test-0001" },
             "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-05-31T10:00:00+00:00", "new_ids": new_ids }
         })
     }
@@ -1793,5 +1796,221 @@ mod tests {
         }]);
         let out = sale(input(items, 3, 0));
         assert_eq!(out.operations[1].params["gift_total"], json!(400), "800 × 0,5 = 400 céntimos");
+    }
+
+    // ── sales#20 · the SERVER closes the sale, the client only proposes ───────────────────────
+    //
+    // Everything below states the same rule from a different angle: what the browser sends is an
+    // OFFER. The server validates it against its own sources of truth (the sale settings and the
+    // payment-method catalog the runtime pre-loads via `reads`) and either closes the sale itself
+    // or rejects it LOUDLY — a rejection returns `Err`, so the runtime never persists an operation
+    // nor writes a single row into the outbox.
+
+    /// Builds an input with the trusted catalogs the runtime pre-loads for `complete_sale`
+    /// (ADR-0069 `reads`): `sales.payment_methods`, `sales.settings.get` and the idempotency probe
+    /// `sales.by_idempotency_key`. `Value::Null` for any of them means "the runtime did not deliver
+    /// that read" — the key is simply absent, which is how an old runtime behaves.
+    fn input_with_catalogs(
+        items: Value,
+        ids: usize,
+        methods: Value,
+        settings: Value,
+        already_recorded: Value,
+    ) -> Value {
+        let mut inp = input(items, ids, 0);
+        let mut reads = Map::new();
+        if !methods.is_null() {
+            reads.insert("sales.payment_methods".into(), methods);
+        }
+        if !settings.is_null() {
+            reads.insert("sales.settings.get".into(), settings);
+        }
+        if !already_recorded.is_null() {
+            reads.insert("sales.by_idempotency_key".into(), already_recorded);
+        }
+        inp["context"]["reads"] = Value::Object(reads);
+        inp
+    }
+
+    /// The catalog a hub really has: one active cash method.
+    fn cash_catalog() -> Value {
+        json!([{ "id": "pm-1", "name": "Cash", "type": "cash" }])
+    }
+
+    fn one_line() -> Value {
+        json!([{ "product_name": "Menú", "price": 500, "quantity": 1_000_000, "tax_rate": 21.0 }])
+    }
+
+    #[test]
+    fn a_sale_with_no_lines_is_rejected() {
+        // An empty basket is not a sale: it used to be accepted and it still fired inventory,
+        // cash register and invoice with a 0,00 € document.
+        let err = complete_sale_pure(input(json!([]), 3, 0)).expect_err("a sale needs lines");
+        assert!(err.contains("sales.empty_sale"), "{err}");
+    }
+
+    #[test]
+    fn a_line_discount_out_of_range_is_rejected() {
+        // 120 % off turns the line into a refund the cashier never authorised.
+        let items = json!([{ "product_name": "Menú", "price": 500, "quantity": 1_000_000, "discount": 120.0 }]);
+        let err = complete_sale_pure(input(items, 3, 0)).expect_err("discount > 100");
+        assert!(err.contains("sales.discount_out_of_range"), "{err}");
+
+        let items = json!([{ "product_name": "Menú", "price": 500, "quantity": 1_000_000, "discount": -5.0 }]);
+        let err = complete_sale_pure(input(items, 3, 0)).expect_err("negative discount");
+        assert!(err.contains("sales.discount_out_of_range"), "{err}");
+    }
+
+    #[test]
+    fn a_sale_discount_out_of_range_is_rejected() {
+        let mut inp = input(one_line(), 3, 0);
+        inp["payload"]["discount_percent"] = json!(101.0);
+        let err = complete_sale_pure(inp).expect_err("global discount > 100");
+        assert!(err.contains("sales.discount_out_of_range"), "{err}");
+    }
+
+    #[test]
+    fn a_negative_amount_is_rejected() {
+        // Money is unsigned in a sale: a negative price or cost is a refund, and refunds have
+        // their own flow. Belt and braces with the JSON Schema (`minimum: 0`).
+        let items = json!([{ "product_name": "Menú", "price": -500, "quantity": 1_000_000 }]);
+        let err = complete_sale_pure(input(items, 3, 0)).expect_err("negative price");
+        assert!(err.contains("sales.amount_negative"), "{err}");
+
+        let items = json!([{ "product_name": "Menú", "price": 500, "quantity": 1_000_000, "cost": -1 }]);
+        let err = complete_sale_pure(input(items, 3, 0)).expect_err("negative cost");
+        assert!(err.contains("sales.amount_negative"), "{err}");
+
+        let mut inp = input(one_line(), 3, 0);
+        inp["payload"]["amount_tendered"] = json!(-100);
+        let err = complete_sale_pure(inp).expect_err("negative tendered");
+        assert!(err.contains("sales.amount_negative"), "{err}");
+    }
+
+    #[test]
+    fn the_server_stamps_the_status_and_ignores_the_one_sent_by_the_caller() {
+        // The caller used to pick the status while the handler always emitted `sale.completed`:
+        // a sale could sit in the ledger as `draft` and still move stock, cash and invoicing.
+        let mut inp = input(one_line(), 3, 500);
+        inp["payload"]["status"] = json!("draft");
+        let out = sale(inp);
+        let header = out.operations.iter().find(|o| o.command == "sales._insert_sale").expect("header");
+        assert_eq!(header.params["status"], json!("completed"));
+    }
+
+    #[test]
+    fn a_payment_method_outside_the_trusted_catalog_is_rejected() {
+        // The browser could name any id — including a deleted or deactivated method, or one
+        // belonging to another hub. The catalog the runtime pre-loads is the only authority.
+        let mut inp = input_with_catalogs(one_line(), 3, cash_catalog(), Value::Null, Value::Null);
+        inp["payload"]["payment_method_id"] = json!("pm-ghost");
+        let err = complete_sale_pure(inp).expect_err("unknown payment method");
+        assert!(err.contains("sales.payment_method_not_available"), "{err}");
+    }
+
+    #[test]
+    fn a_sale_without_payment_method_is_rejected_when_the_hub_has_a_catalog() {
+        let mut inp = input_with_catalogs(one_line(), 3, cash_catalog(), Value::Null, Value::Null);
+        inp["payload"]["payment_method_id"] = Value::Null;
+        let err = complete_sale_pure(inp).expect_err("no payment method");
+        assert!(err.contains("sales.payment_method_required"), "{err}");
+    }
+
+    #[test]
+    fn the_payment_method_name_is_taken_from_the_catalog_not_from_the_payload() {
+        // The receipt (and the cash-register breakdown) must say what the hub configured, not
+        // whatever label the browser felt like sending.
+        let mut inp = input_with_catalogs(one_line(), 3, cash_catalog(), Value::Null, Value::Null);
+        inp["payload"]["payment_method_name"] = json!("Free beer");
+        let out = sale(inp);
+        let header = out.operations.iter().find(|o| o.command == "sales._insert_sale").expect("header");
+        assert_eq!(header.params["payment_method_name"], json!("Cash"));
+        let event = out.events.iter().find(|e| e.name == "sale.completed").expect("event");
+        assert_eq!(event.payload["payment_method_name"], json!("Cash"));
+    }
+
+    #[test]
+    fn without_a_catalog_the_payload_name_still_works() {
+        // Graceful degradation (same rule as the tax catalog): a runtime that does not deliver
+        // `reads`, or a hub with no payment methods yet, must still be able to charge.
+        let out = sale(input(one_line(), 3, 500));
+        let header = out.operations.iter().find(|o| o.command == "sales._insert_sale").expect("header");
+        assert_eq!(header.params["payment_method_name"], json!("Efectivo"));
+    }
+
+    #[test]
+    fn discounts_are_rejected_when_the_hub_switched_them_off() {
+        // `allow_discounts` was enforced in the UI only: hiding the button is not a rule.
+        let settings = json!([{ "allow_discounts": 0, "require_customer": 0 }]);
+        let items = json!([{ "product_name": "Menú", "price": 500, "quantity": 1_000_000, "discount": 10.0 }]);
+        let inp = input_with_catalogs(items, 3, cash_catalog(), settings, Value::Null);
+        let err = complete_sale_pure(inp).expect_err("discounts disabled");
+        assert!(err.contains("sales.discounts_not_allowed"), "{err}");
+    }
+
+    #[test]
+    fn a_sale_without_customer_is_rejected_when_the_hub_requires_one() {
+        let settings = json!([{ "allow_discounts": 1, "require_customer": 1 }]);
+        let inp = input_with_catalogs(one_line(), 3, cash_catalog(), settings, Value::Null);
+        let err = complete_sale_pure(inp).expect_err("customer required");
+        assert!(err.contains("sales.customer_required"), "{err}");
+    }
+
+    #[test]
+    fn the_settings_gate_lets_a_compliant_sale_through() {
+        let settings = json!([{ "allow_discounts": 1, "require_customer": 1 }]);
+        let mut inp = input_with_catalogs(one_line(), 3, cash_catalog(), settings, Value::Null);
+        inp["payload"]["customer_id"] = json!("c-1");
+        let out = sale(inp);
+        assert!(out.operations.iter().any(|o| o.command == "sales._insert_sale"));
+        assert!(out.events.iter().any(|e| e.name == "sale.completed"));
+    }
+
+    #[test]
+    fn the_idempotency_key_is_mandatory() {
+        let mut inp = input(one_line(), 3, 0);
+        inp["payload"]["idempotency_key"] = json!("");
+        let err = complete_sale_pure(inp).expect_err("no idempotency key");
+        assert!(err.contains("sales.idempotency_key_required"), "{err}");
+    }
+
+    #[test]
+    fn the_idempotency_key_is_frozen_on_the_sale_header() {
+        // The unique index on (hub_id, idempotency_key) is what makes a concurrent double submit
+        // impossible; the key has to reach the row for that index to mean anything.
+        let out = sale(input(one_line(), 3, 500));
+        let header = out.operations.iter().find(|o| o.command == "sales._insert_sale").expect("header");
+        assert_eq!(header.params["idempotency_key"], json!("idem-test-0001"));
+    }
+
+    #[test]
+    fn replaying_an_idempotency_key_writes_nothing_and_emits_nothing() {
+        // A network retry of a checkout that DID land must not duplicate the sale, the stock
+        // movement, the cash entry or the invoice. The probe read tells the handler it already
+        // happened, so it returns an empty output: no operations, no events.
+        let already = json!([{ "id": "sale-existing", "sale_number": "20260531-0001" }]);
+        let inp = input_with_catalogs(one_line(), 3, cash_catalog(), Value::Null, already);
+        let out = sale(inp);
+        assert!(out.operations.is_empty(), "a replay writes nothing: {:?}", out.operations);
+        assert!(out.events.is_empty(), "a replay emits nothing: {:?}", out.events.len());
+    }
+
+    #[test]
+    fn a_first_attempt_with_an_unused_key_goes_through() {
+        // The probe read exists but comes back empty: this key has never been charged.
+        let inp = input_with_catalogs(one_line(), 3, cash_catalog(), Value::Null, json!([]));
+        let out = sale(inp);
+        assert!(out.operations.iter().any(|o| o.command == "sales._insert_sale"));
+        assert!(out.events.iter().any(|e| e.name == "sale.completed"));
+    }
+
+    #[test]
+    fn the_probe_read_is_also_understood_in_its_paginated_shape() {
+        // Same defensive unwrapping as the tax catalog: `[…]` or `{"rows": […]}`.
+        let already = json!({ "rows": [{ "id": "sale-existing" }] });
+        let inp = input_with_catalogs(one_line(), 3, cash_catalog(), Value::Null, already);
+        let out = sale(inp);
+        assert!(out.operations.is_empty());
+        assert!(out.events.is_empty());
     }
 }
