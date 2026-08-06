@@ -3312,6 +3312,12 @@ var es_default = {
     confirmCharge: "Confirmar cobro",
     charging: "Cobrando\u2026",
     errorCharge: "Error al cobrar",
+    errorEmptySale: "A\xF1ade al menos una l\xEDnea antes de cobrar",
+    errorPaymentMethod: "Elige un m\xE9todo de pago v\xE1lido",
+    errorDiscountsOff: "Este negocio no permite descuentos",
+    errorDiscountRange: "El descuento debe estar entre 0 % y 100 %",
+    errorCustomerRequired: "Este negocio exige un cliente en cada venta",
+    errorAmountNegative: "La venta no puede llevar importes negativos",
     all: "Todos",
     categoryFilter: "Categor\xEDas",
     products: "productos",
@@ -3520,6 +3526,12 @@ var en_default = {
     confirmCharge: "Confirm charge",
     charging: "Charging\u2026",
     errorCharge: "Error charging",
+    errorEmptySale: "Add at least one line before charging",
+    errorPaymentMethod: "Pick a valid payment method",
+    errorDiscountsOff: "This business does not allow discounts",
+    errorDiscountRange: "The discount must be between 0 % and 100 %",
+    errorCustomerRequired: "This business requires a customer on every sale",
+    errorAmountNegative: "The sale cannot carry negative amounts",
     all: "All",
     categoryFilter: "Categories",
     products: "products",
@@ -4875,6 +4887,40 @@ function resolveLineTax(catRatesMap, taxCategoryKey) {
   return catRatesMap.get(String(taxCategoryKey)) ?? 0;
 }
 
+// ui/lib/checkout-key.ts
+var KEY_PREFIX = "sale";
+function newIdempotencyKey(source = globalThis.crypto) {
+  const uuid = source?.randomUUID?.();
+  if (uuid) return `${KEY_PREFIX}-${uuid}`;
+  const bytes = new Uint8Array(16);
+  if (source?.getRandomValues) {
+    source.getRandomValues(bytes);
+  } else {
+    for (let i7 = 0; i7 < bytes.length; i7 += 1) bytes[i7] = Math.floor(Math.random() * 256);
+  }
+  const hex = Array.from(bytes, (b3) => b3.toString(16).padStart(2, "0")).join("");
+  seq = (seq + 1) % 1e6;
+  return `${KEY_PREFIX}-${Date.now().toString(36)}-${seq.toString(36)}-${hex}`;
+}
+var seq = 0;
+var MESSAGES = {
+  "sales.empty_sale": "ui.errorEmptySale",
+  "sales.payment_method_required": "ui.errorPaymentMethod",
+  "sales.payment_method_not_available": "ui.errorPaymentMethod",
+  "sales.discounts_not_allowed": "ui.errorDiscountsOff",
+  "sales.discount_out_of_range": "ui.errorDiscountRange",
+  "sales.tax_rate_out_of_range": "ui.errorDiscountRange",
+  "sales.customer_required": "ui.errorCustomerRequired",
+  "sales.amount_negative": "ui.errorAmountNegative",
+  "sales.idempotency_key_required": "ui.errorCharge"
+};
+function checkoutErrorKey(message) {
+  for (const [code, key] of Object.entries(MESSAGES)) {
+    if (message.includes(code)) return key;
+  }
+  return "ui.errorCharge";
+}
+
 // ui/components/erp-pos-touch/erp-pos-touch.ts
 var CATALOG2 = { es: es_default, en: en_default };
 function erplora2() {
@@ -4915,6 +4961,10 @@ var ErpPosTouch = class extends i3 {
     this.docFormat = "ticket";
     this.busy = false;
     this.error = "";
+    /** Clave del INTENTO de cobro en curso (sales#20): se genera al abrir la pantalla de cobro, se
+     *  REUTILIZA en cada reintento —por eso un timeout no crea una segunda venta— y se descarta en
+     *  cuanto la venta consta. Vacía = no hay cobro en curso. */
+    this.checkoutKey = "";
     this.parked = [];
     this.splitSel = /* @__PURE__ */ new Set();
     this.parkedOpen = false;
@@ -6060,6 +6110,7 @@ var ErpPosTouch = class extends i3 {
   }
   openPay() {
     if (!this.cart.length) return;
+    this.checkoutKey = newIdempotencyKey();
     this.tendered = "";
     this.payMethod = defaultPayMethod(this.payMethods);
     this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
@@ -6095,8 +6146,13 @@ var ErpPosTouch = class extends i3 {
       const split = splitPayload(this.cart, this.splitSel);
       const cobradas = split.line_ids ? this.cart.filter((l3) => l3.line_id && this.splitSel.has(l3.line_id)) : this.cart;
       const items = cobradas.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: toMicro2(l3.qty), tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0, category_id: this.prodCats.get(l3.id)?.values().next().value ?? null, is_gift: l3.is_gift ?? false, gift_reason: l3.gift_reason ?? "", cost: l3.cost ?? 0, ...unitContextPayload(l3) }));
+      if (!this.checkoutKey) this.checkoutKey = newIdempotencyKey();
+      const checkoutKey = this.checkoutKey;
       await erplora2().command("sales.complete_sale", {
         items,
+        // sales#20: el servidor no cierra una venta sin clave, y con la misma clave dos veces
+        // registra UNA. Es lo que hace seguro reintentar cuando el wifi del local parpadea.
+        idempotency_key: checkoutKey,
         line_ids: split.line_ids ?? null,
         keep_order_open: split.keep_order_open,
         tax_included: this.settings.default_tax_included !== 0,
@@ -6121,8 +6177,9 @@ var ErpPosTouch = class extends i3 {
         // evento para elegir F1 (completa) vs F2 (simplificada). Reemplaza al `set_document_type` retro.
         document_type: this.docFormat
       });
-      const recent = rows2(await erplora2().query("sales.list", { limit: 1, sort: "created_at", dir: "desc" }));
-      const saleId = recent[0]?.id;
+      const recorded = rows2(await erplora2().query("sales.by_idempotency_key", { idempotency_key: checkoutKey }));
+      const saleId = recorded[0]?.id;
+      this.checkoutKey = "";
       if (this.saveTimer) {
         clearTimeout(this.saveTimer);
         this.saveTimer = void 0;
@@ -6148,7 +6205,9 @@ var ErpPosTouch = class extends i3 {
       this.resetSlotContexts();
       if (saleId) this.docSaleId = saleId;
     } catch (e7) {
-      this.error = e7 instanceof Error ? e7.message : t5("ui.errorCharge");
+      const raw = e7 instanceof Error ? e7.message : String(e7 ?? "");
+      const key = checkoutErrorKey(raw);
+      this.error = key === "ui.errorCharge" && raw ? raw : t5(key);
     } finally {
       this.busy = false;
     }

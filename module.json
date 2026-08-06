@@ -97,7 +97,8 @@
       "migrations/postgres/013_drop_legacy_cart.sql",
       "migrations/postgres/014_quantity_fixed_point.sql",
       "migrations/postgres/015_order_label.sql",
-      "migrations/postgres/016_order_rounds.sql"
+      "migrations/postgres/016_order_rounds.sql",
+      "migrations/postgres/017_idempotency_key.sql"
     ]
   },
   "seed": {
@@ -241,6 +242,13 @@
         "description": "Returns the sales amount per day for the last 7 days (one row per day with sales)"
       }
     },
+    "sales.by_idempotency_key": {
+      "permission": "sales.view_sale",
+      "sql": "queries/by_idempotency_key.sql",
+      "ai": {
+        "description": "Finds the sale recorded under a given idempotency key, if any. Used to make a retried checkout resolve to the very sale it already created instead of a second one."
+      }
+    },
     "sales.by_staff": {
       "permission": "sales.view_reports",
       "expose_api": true,
@@ -254,7 +262,15 @@
     "sales.complete_sale": {
       "permission": "sales.take_payment",
       "reads": [
-        "taxes.rules.list"
+        "taxes.rules.list",
+        "sales.payment_methods",
+        "sales.settings.get",
+        {
+          "query": "sales.by_idempotency_key",
+          "params": {
+            "idempotency_key": "payload.idempotency_key"
+          }
+        }
       ],
       "handler": {
         "type": "wasm",

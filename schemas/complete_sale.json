@@ -2,15 +2,25 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "sales.complete_sale payload",
   "type": "object",
-  "additionalProperties": true,
+  "additionalProperties": false,
   "required": [
-    "items"
+    "items",
+    "idempotency_key"
   ],
   "properties": {
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "description": "Clave del INTENTO de cobro (sales#20), no de la petición: se genera al abrir la pantalla de cobro y se REUTILIZA en cada reintento. Dos peticiones con la misma clave producen UNA sola venta — la sonda pre-cargada convierte el reintento en un no-op limpio y el índice único (hub_id, idempotency_key) resuelve la carrera. Para recuperar la venta creada, consulta `sales.by_idempotency_key`."
+    },
     "items": {
       "type": "array",
+      "minItems": 1,
       "items": {
         "type": "object",
+        "additionalProperties": false,
         "required": [
           "product_name",
           "price",
@@ -24,7 +34,8 @@
             ]
           },
           "product_name": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "product_sku": {
             "type": "string"
@@ -41,7 +52,9 @@
             "minimum": 0
           },
           "discount": {
-            "type": "number"
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
           },
           "tax_category_key": {
             "type": [
@@ -50,7 +63,9 @@
             ]
           },
           "tax_rate": {
-            "type": "number"
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
           },
           "tax_class_name": {
             "type": "string"
@@ -62,7 +77,8 @@
             "type": "string"
           },
           "cost": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 0
           },
           "category_id": {
             "type": [
@@ -77,10 +93,12 @@
             "type": "string"
           },
           "factor_num": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 1
           },
           "factor_den": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 1
           },
           "increment_value": {
             "type": "integer",
@@ -97,19 +115,38 @@
             "type": "string"
           },
           "pricing_factor_num": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 1
           },
           "pricing_factor_den": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 1
           }
         }
       }
     },
+    "line_ids": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      },
+      "description": "ADR-0146 «cada uno paga lo suyo»: líneas del pedido que cubre ESTE cobro. Ausente/null = la cuenta entera."
+    },
+    "keep_order_open": {
+      "type": "boolean",
+      "description": "Split-bill: el pedido sigue abierto para los siguientes cobros (1 order → N sale)."
+    },
     "tax_included": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "Base fiscal de los precios (ADR-0210): true = brutos (IVA incluido), false = base imponible. Solo se usa como FALLBACK: si el hub tiene ajustes de TPV, manda su `default_tax_included` — la base decide lo que se declara y no la elige una petición. La autoridad última pasa a la lista de precios de `pricing` (herencia lista → hub → inclusive), pendiente en sales#23."
     },
     "discount_percent": {
-      "type": "number"
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
     },
     "amount_tendered": {
       "type": "integer",
@@ -119,10 +156,12 @@
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "description": "Id del método de pago. El servidor lo valida contra el catálogo del hub (activo, no borrado, de este hub): un id ausente de ese catálogo RECHAZA la venta."
     },
     "payment_method_name": {
-      "type": "string"
+      "type": "string",
+      "description": "Solo FALLBACK (sales#20): el servidor resuelve el nombre desde el catálogo del hub y este valor se ignora. Se sigue aceptando para el caso degradado en que el runtime no entregue el catálogo."
     },
     "customer_id": {
       "type": [
@@ -140,9 +179,6 @@
       "type": "string"
     },
     "source_module": {
-      "type": "string"
-    },
-    "status": {
       "type": "string"
     },
     "order_id": {
@@ -189,5 +225,5 @@
       "description": "Tipo de documento fiscal (ADR-0140): 'ticket' = factura simplificada (→ F2), 'invoice' = factura completa (→ F1). Se fija atómicamente al completar la venta y viaja en `sale.completed`; por defecto 'ticket'. Reemplaza al comando retro `sales.set_document_type`."
     }
   },
-  "description": "DINERO (`price`, `amount_tendered`) = UNIDADES MÍNIMAS enteras (ADR-0007/0123): un 2.20 aquí serían 2 céntimos. `quantity` = PUNTO FIJO entero, escala global 10⁶ (ADR-0147): 0,5 kg es 500000 — nunca un float. `price` es «por price_quantity_value de pricing_unit_code» (KPEIN §2.3; por defecto, por 1 unidad). El contexto de unidades (unit_code, factor num/den, increment_value, pricing_*) se CONGELA en la línea (§2.4). Fuera de la rejilla del incremento el comando se RECHAZA (§2.2). Las TASAS (`discount`, `tax_rate`) sí llevan decimales; el `tax_rate` del cliente es una PISTA: el servidor resuelve el % real desde `tax_category_key` (ADR-0085/0069)."
+  "description": "EL CLIENTE PROPONE, EL SERVIDOR DISPONE (sales#20). Este payload es una OFERTA cerrada: `additionalProperties:false` a los dos niveles, al menos una línea, importes no negativos y tasas acotadas a 0..100. El `status` de la venta YA NO se acepta — lo estampa el servidor (`completed`), que es quien emite `sale.completed`. El método de pago se valida contra el catálogo del hub y su NOMBRE se resuelve ahí. Los ajustes del TPV (`allow_discounts`, `require_customer`) se comprueban también en servidor. DINERO (`price`, `cost`, `amount_tendered`) = UNIDADES MÍNIMAS enteras (ADR-0007/0123): un 2.20 aquí serían 2 céntimos. `quantity` = PUNTO FIJO entero, escala global 10⁶ (ADR-0147): 0,5 kg es 500000 — nunca un float. `price` es «por price_quantity_value de pricing_unit_code» (KPEIN §2.3; por defecto, por 1 unidad). El contexto de unidades (unit_code, factor num/den, increment_value, pricing_*) se CONGELA en la línea (§2.4). Fuera de la rejilla del incremento el comando se RECHAZA (§2.2). Las TASAS (`discount`, `tax_rate`) sí llevan decimales; el `tax_rate` del cliente es una PISTA: el servidor resuelve el % real desde `tax_category_key` (ADR-0085/0069)."
 }
