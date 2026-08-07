@@ -1,7 +1,7 @@
 {
   "id": "sales",
   "name": "Sales & POS",
-  "version": "2.13.4",
+  "version": "2.13.5",
   "description": "Point of sale: complete and void sales, and review sales history and metrics.",
   "agent": {
     "description": "Manages sales and point-of-sale operations: list and inspect sales, complete new sales transactions, void sales, configure payment methods, and retrieve sales statistics.",
