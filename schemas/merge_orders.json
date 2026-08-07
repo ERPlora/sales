@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sales.order.merge",
+  "description": "Joins two open orders: every unpaid line of the source moves to the destination and the source is voided. Both must be open and different; a replay is a clean no-op.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["from_order_id", "to_order_id"],
+  "properties": {
+    "from_order_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Order being absorbed. Ends up voided and empty."
+    },
+    "to_order_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Surviving order. Ends up holding every line of both."
+    }
+  }
+}

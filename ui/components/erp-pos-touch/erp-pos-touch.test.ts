@@ -1382,3 +1382,46 @@ describe('sales#61 — dividir la cuenta desde el plano de sala', () => {
     expect(enlace?.session_id, 'se cuelga de la cuenta que abrió la división').toBe('s-4');
   });
 });
+
+// Dividir se pide desde el ⋮ de una mesa del plano, y el plano se abre mires la cuenta que mires:
+// la mesa que se divide NO tiene por qué ser la que hay en pantalla. Lo marcado en el carrito son
+// líneas de OTRA cuenta, así que no puede viajar — si se mandara, el servidor no encontraría
+// ninguna línea que mover y la división se quedaría sin hacer (y con un error a la vista).
+describe('sales#61 — dividir una mesa que no es la que hay en pantalla', () => {
+  let comandos: { name: string; payload: Record<string, unknown> }[];
+
+  beforeEach(() => {
+    comandos = [];
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.queryAll = async (name: string) =>
+      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1 }] : []);
+    sdk.query = async () => [];
+    sdk.command = async (name: string, payload: Record<string, unknown>) => {
+      comandos.push({ name, payload });
+      if (name === 'sales.order.open') return { ok: true, new_ids: ['o1', 'l1'] };
+      if (name === 'sales.order.split') return { ok: true, new_ids: ['o9'] };
+      return { ok: true };
+    };
+  });
+
+  it('la segunda cuenta de OTRA mesa nace en blanco, no con lo marcado aquí', async () => {
+    const el = await montarCarrito();
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    await (el as unknown as { queue: <T>(t: () => Promise<T>) => Promise<T> }).queue(async () => undefined);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    (el as unknown as { splitSel: Set<string> }).splitSel = new Set(['l1']);
+
+    el.dispatchEvent(new CustomEvent('erp:order-split', {
+      detail: { table_id: 'm7', from_order_id: 'o-otra', session_id: 's-7', label: 'Mesa 7' },
+      bubbles: true, composed: true,
+    }));
+    await new Promise((r) => setTimeout(r, 0));
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    const division = comandos.find((c) => c.name === 'sales.order.split');
+    expect(division!.payload, 'lo marcado es de otra cuenta: no viaja').toMatchObject({
+      order_id: 'o-otra', line_ids: [],
+    });
+    expect((el as unknown as { error: string }).error, 'y no se avisa de un fallo que no existe').toBeFalsy();
+  });
+});

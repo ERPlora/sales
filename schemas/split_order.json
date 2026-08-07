@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sales.order.split",
+  "description": "Splits an open order in two: the listed lines move to a brand-new order. `line_ids` absent or empty opens the second check blank. `label` is an opaque display string sales forwards without interpreting (ADR-0144); the link between the new order and the floor check is written by whoever owns that junction.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["order_id"],
+  "properties": {
+    "order_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The open order being split."
+    },
+    "line_ids": {
+      "type": "array",
+      "description": "Lines that move to the new order. Only unpaid lines of this very order travel; anything else is ignored.",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "label": {
+      "type": "string",
+      "description": "Opaque display label for the new check (\"Table 4 · 2\")."
+    }
+  }
+}

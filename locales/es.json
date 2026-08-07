@@ -170,6 +170,7 @@
     "fireToKitchen": "Enviar a cocina",
     "firedToKitchen": "Enviado a cocina",
     "fireFailed": "No se pudo enviar a cocina",
+    "splitFailed": "No se pudo dividir la cuenta",
     "lineNotSaved": "No se pudo guardar ese artículo — vuelve a tocarlo",
     "payingPart": "Cobrando {n} línea(s) de {total}",
     "payExact": "Importe exacto",

@@ -26,9 +26,11 @@
       "sales.complete_sale",
       "sales.order.add_line",
       "sales.order.fire",
+      "sales.order.merge",
       "sales.order.open",
       "sales.order.remove_line",
       "sales.order.set_label",
+      "sales.order.split",
       "sales.order.update_line",
       "sales.order.void"
     ],

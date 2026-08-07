@@ -333,16 +333,38 @@ export async function findOpenOrder(client: ErploraClientLike): Promise<string> 
  * FUSIONAR comandas (ADR-0141): lleva las líneas del pedido `fromOrderId` al `toOrderId` y **anula**
  * el origen. Es la operación de "juntar dos mesas en una cuenta".
  *
- * Con el modelo de pedido esto es mover FILAS, no reescribir un blob: las cantidades y precios se
- * conservan tal cual, y el pedido origen queda `voided` (no se borra: rastro de lo que pasó).
+ * Un solo comando: la transacción la cierra el SERVIDOR (sales#61). Antes esto era un bucle aquí
+ * —leer las líneas del origen, re-añadirlas una a una, anular— y traía tres males: se caía a la
+ * mitad y la cuenta quedaba partida en dos, el mismo clic dos veces la duplicaba, y re-añadir una
+ * línea la creaba NUEVA (sin `fired_at`), así que lo ya enviado volvía a cocina.
+ *
  * TRANSFERIR no pasa por aquí — ahí no se mueve nada, solo cambia a qué mesa apunta el mismo pedido
  * (lo hace la junction en `tables`), por eso los productos se conservan solos.
  */
 export async function mergeOrders(client: ErploraClientLike, fromOrderId: string, toOrderId: string): Promise<void> {
   if (!fromOrderId || !toOrderId || fromOrderId === toOrderId) return;
-  const lines = await loadOrderLines(client, fromOrderId);
-  for (const l of lines) {
-    await addOrderLine(client, toOrderId, l);
-  }
-  await client.command('sales.order.void', { order_id: fromOrderId });
+  await client.command('sales.order.merge', { from_order_id: fromOrderId, to_order_id: toOrderId });
+}
+
+/**
+ * DIVIDIR la cuenta (sales#61): abre un SEGUNDO pedido con las líneas marcadas y devuelve su id.
+ *
+ * `tables` ya abrió la segunda cuenta de sala y la dejó sin pedido a propósito (tables#12): las
+ * líneas y los importes son de `sales`. Sin `lineIds` la cuenta nueva nace en blanco, que es una
+ * petición legítima («ábreme la segunda y voy pasando»).
+ *
+ * También un solo comando, por lo mismo que fusionar: mover N líneas con N peticiones no es
+ * atómico. El servidor mueve las filas —importe, categoría fiscal y estado de cocina intactos— y
+ * recompone los dos totales desde sus líneas vivas, así que las dos mitades suman el original.
+ */
+export async function splitOrder(
+  client: ErploraClientLike, orderId: string, lineIds: Iterable<string>, label: string,
+): Promise<string> {
+  if (!orderId) return '';
+  const res = await client.command('sales.order.split', {
+    order_id: orderId,
+    line_ids: [...lineIds],
+    label: label ?? '',
+  });
+  return firstNewId(res);
 }

@@ -25,7 +25,7 @@ import '@erplora/outfitkit/ok-status-pill';
 import {
   mergeCartLines, listOpenChecks, type OpenCheck,
   // ADR-0141: el carrito lo respalda un PEDIDO real (filas), no un blob con debounce.
-  openOrderWithLines, addOrderLine, updateOrderLineQty, persistLineQty, removeOrderLine, loadOrderLines, mergeOrders,
+  openOrderWithLines, addOrderLine, updateOrderLineQty, persistLineQty, removeOrderLine, loadOrderLines, mergeOrders, splitOrder,
   unitContextPayload, type CartLine, type ErploraClientLike,
 } from '../../lib/pos-cart.js';
 import { buildCategoryRatesMap, resolveLineTax } from '../../lib/pos-tax.js';
@@ -528,6 +528,9 @@ export class ErpPosTouch extends LitElement {
   /** ADR-0141: pedido MUTABLE que respalda el carrito. Cada artículo se escribe como FILA real al
    *  instante (antes: blob con debounce de 400 ms → un corte de luz perdía el último artículo). */
   @state() private orderId?: string;
+  /** Cuenta de sala (sales#61) que espera pedido tras dividir. OPACA: `sales` no la interpreta,
+   *  solo la reenvía en `erp:order-linked` para que el segundo pedido cuelgue de ELLA. */
+  private pendingSplitSession?: string;
   /** Modal de la CUENTA previa (pre-bill) que se lleva a la mesa antes de cobrar. No es fiscal. */
   @state() private prebillOpen = false;
   /** Diálogo del NOMBRE al aparcar sin mesa (default: la hora, editable de un toque). */
@@ -691,6 +694,52 @@ export class ErpPosTouch extends LitElement {
       this.cart = await loadOrderLines(erplora(), to);
     }
   };
+  // Dividir la cuenta (sales#61): el filler ya ejecutó `tables.sessions.split`, así que la mesa
+  // tiene una SEGUNDA cuenta viva — y nace sin pedido a propósito, porque las líneas y los importes
+  // son de `sales`. Aquí se materializa ese segundo pedido con lo que el camarero haya MARCADO en
+  // el carrito (la misma marca que ya sirve para cobrar por partes: se toca lo de quien se va) y se
+  // publica para que la sala lo cuelgue de ESA cuenta, no de "la mesa".
+  private readonly onOrderSplit = async (e: Event) => {
+    const d = (e as CustomEvent<{
+      table_id?: string | null; from_order_id?: string | null;
+      session_id?: string | null; label?: string;
+    }>).detail;
+    if (!d) return;
+    // El id de la cuenta nueva es OPACO: se guarda para el `erp:order-linked` y no se interpreta.
+    this.pendingSplitSession = d.session_id ?? undefined;
+
+    const source = d.from_order_id ?? this.orderId;
+    if (!source) {
+      // La mesa aún no había pedido nada: no hay nada que repartir. La cuenta nueva queda esperando
+      // y el primer producto abrirá su pedido — que ya se enganchará a ella (`pendingSplitSession`).
+      this.orderId = undefined; this.cart = []; this.splitSel = new Set();
+      this.orderLabel = d.label ?? this.orderLabel;
+      forgetCurrentCheck(localStorage);
+      return;
+    }
+
+    // Lo marcado solo vale si lo marcado ES de esta cuenta: el ⋮ del plano se abre mires lo que
+    // mires, y dividir la mesa 7 con las líneas de la 4 seleccionadas no movería nada.
+    const marcadas = source === this.orderId ? this.splitSel : new Set<string>();
+    let nuevo = '';
+    try {
+      nuevo = await splitOrder(erplora(), source, marcadas, d.label ?? '');
+    } catch {
+      this.error = t('ui.splitFailed');
+      return;
+    }
+    if (!nuevo) { this.error = t('ui.splitFailed'); return; }
+
+    // La pantalla se queda en la SEGUNDA cuenta: dividir se hace para cobrarla, no para mirarla.
+    this.splitSel = new Set();
+    this.orderId = nuevo;
+    this.orderLabel = d.label ?? this.orderLabel;
+    if (d.table_id) this.tableId = d.table_id;
+    rememberCurrentCheck(localStorage, nuevo);
+    this.notifyOrderLinked();
+    this.cart = await loadOrderLines(erplora(), nuevo);
+    this.parked = await listOpenChecks(erplora(), nuevo);
+  };
   // Transferir mesa (punto 4): el filler ya ejecutó tables.sessions.transfer; aquí se mueve la
   // comanda de la mesa origen a la destino (libre → sin comanda previa) y se limpia el origen.
   private readonly onOrderTransfer = async (e: Event) => {
@@ -762,6 +811,7 @@ export class ErpPosTouch extends LitElement {
       await this.updateComplete;
       this.addEventListener('erp:order-context', this.onOrderContext);
       this.addEventListener('erp:order-merge', this.onOrderMerge);
+      this.addEventListener('erp:order-split', this.onOrderSplit);
       this.addEventListener('erp:order-transfer', this.onOrderTransfer);
       this.addEventListener('erp:customer-context', this.onCustomerContext);
       // Contrato del slot del footer: el filler emite `erp:order-fire` (bubbles+composed) y el
@@ -781,6 +831,7 @@ export class ErpPosTouch extends LitElement {
     window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
     this.removeEventListener('erp:order-context', this.onOrderContext);
     this.removeEventListener('erp:order-merge', this.onOrderMerge);
+    this.removeEventListener('erp:order-split', this.onOrderSplit);
     this.removeEventListener('erp:order-transfer', this.onOrderTransfer);
     this.removeEventListener('erp:customer-context', this.onCustomerContext);
     this.removeEventListener('erp:order-fire', this.onOrderFire);
@@ -1188,12 +1239,23 @@ export class ErpPosTouch extends LitElement {
   }
 
   /** Avisa a los fillers de que hay pedido abierto para que ENLACEN lo suyo (mesa, cliente…).
-   *  `sales` no escribe junctions ajenas ni conoce a esos módulos: solo publica el `order_id`. */
+   *  `sales` no escribe junctions ajenas ni conoce a esos módulos: solo publica el `order_id`.
+   *
+   *  Viaja también la CUENTA a la que engancharlo cuando se sabe (`pendingSplitSession`, sales#61).
+   *  Una mesa dividida tiene varias cuentas vivas: sin ese id el dueño de la junction resuelve a la
+   *  más antigua y el segundo pedido aterriza en la primera cuenta — las dos mitades acabarían
+   *  cobrando la misma comanda. El id es OPACO para `sales`: se recibió en el evento y se reenvía. */
   private notifyOrderLinked(): void {
     if (!this.orderId) return;
+    const session = this.pendingSplitSession;
     for (const f of this.assignFillers) {
-      f.el.dispatchEvent(new CustomEvent('erp:order-linked', { detail: { order_id: this.orderId }, bubbles: false }));
+      f.el.dispatchEvent(new CustomEvent('erp:order-linked', {
+        detail: session ? { order_id: this.orderId, session_id: session } : { order_id: this.orderId },
+        bubbles: false,
+      }));
     }
+    // De un solo uso: la cuenta ya tiene su pedido, y lo siguiente que se abra no es suyo.
+    this.pendingSplitSession = undefined;
   }
 
   /** Asegura que existe un pedido abierto que respalde el carrito; devuelve su id ('' si falla).
