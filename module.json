@@ -407,6 +407,32 @@
         "description": "Removes (soft-deletes) a line from an open order and recomputes its provisional total (ADR-0141)."
       }
     },
+    "sales.order.split": {
+      "permission": "sales.add_sale",
+      "transaction": true,
+      "schema": "schemas/split_order.json",
+      "sql": [
+        "commands/order_split_create.sql",
+        "commands/order_split_move_lines.sql",
+        "commands/order_split_recompute_totals.sql"
+      ],
+      "ai": {
+        "description": "Splits an open order in two (sales#61): the listed lines move to a NEW order, whose id comes back as new_ids[0]. Called when the floor opens a second check on a table (tables.sessions.split): tables owns the seating, sales owns the lines and the amounts. With no line_ids the second check opens blank. Nothing is prorated here — whole rows travel with their line_total, tax_category_key, round_no and fired_at intact, and BOTH totals are recomputed from their live lines, so the two halves add up to the original to the cent."
+      }
+    },
+    "sales.order.merge": {
+      "permission": "sales.add_sale",
+      "transaction": true,
+      "schema": "schemas/merge_orders.json",
+      "sql": [
+        "commands/order_merge_lines.sql",
+        "commands/order_merge_void_source.sql",
+        "commands/order_merge_recompute_totals.sql"
+      ],
+      "ai": {
+        "description": "Joins two open orders into one (sales#61): every unpaid line of from_order_id moves to to_order_id and the source is voided. Called when two tables that BOTH ordered are merged (tables.sessions.merged) — tables cannot resolve that case because it does not know the lines. Lines are MOVED, not re-created, so what was already fired to the kitchen is not sent twice; both totals are recomputed from their live lines. Replaying it is a no-op."
+      }
+    },
     "sales.order.void": {
       "permission": "sales.void_sale",
       "transaction": true,

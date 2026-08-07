@@ -1278,3 +1278,150 @@ describe('checkout idempotency (sales#20)', () => {
     expect(pos.error).toBe('Failed to fetch');
   });
 });
+
+// ── sales#61 · dividir la cuenta: el SEGUNDO pedido y la cuenta a la que se cuelga ────────────
+// `tables` abre la segunda cuenta de sala y avisa con `erp:order-split {table_id, from_order_id,
+// session_id, label}`. La cuenta nueva nace SIN pedido a propósito: quien tiene las líneas y los
+// importes es `sales`, así que el TPV materializa el segundo pedido con lo que el camarero haya
+// marcado y lo cuelga de ESA cuenta — no de «la mesa». Sin el `session_id` el pedido aterriza en
+// la cuenta más antigua de la mesa y las dos mitades acaban cobrando la misma comanda.
+describe('sales#61 — dividir la cuenta desde el plano de sala', () => {
+  let comandos: { name: string; payload: Record<string, unknown> }[];
+  let enlaces: Array<{ order_id?: string; session_id?: string }>;
+
+  beforeEach(() => {
+    comandos = [];
+    enlaces = [];
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.queryAll = async (name: string) =>
+      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1 }] : []);
+    sdk.query = async () => [];
+    sdk.command = async (name: string, payload: Record<string, unknown>) => {
+      comandos.push({ name, payload });
+      if (name === 'sales.order.open') return { ok: true, new_ids: ['o1', 'l1'] };
+      if (name === 'sales.order.split') return { ok: true, new_ids: ['o2'] };
+      return { ok: true };
+    };
+  });
+
+  /** TPV con un café ya persistido (pedido `o1`, línea `l1`) y un filler de sala que escucha. */
+  async function conCuenta() {
+    const el = await montarCarrito();
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    await (el as unknown as { queue: <T>(t: () => Promise<T>) => Promise<T> }).queue(async () => undefined);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    const filler = document.createElement('div');
+    filler.addEventListener('erp:order-linked', (e) => {
+      enlaces.push((e as CustomEvent<{ order_id?: string; session_id?: string }>).detail);
+    });
+    (el as unknown as { assignFillers: Array<{ component: string; el: HTMLElement }> })
+      .assignFillers.push({ component: 'erp-fake-mesa', el: filler });
+    return el;
+  }
+
+  const dividir = async (el: HTMLElement, detail: Record<string, unknown>) => {
+    el.dispatchEvent(new CustomEvent('erp:order-split', { detail, bubbles: true, composed: true }));
+    await new Promise((r) => setTimeout(r, 0));
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+  };
+
+  it('las líneas marcadas se van al segundo pedido y este se cuelga de la cuenta NUEVA', async () => {
+    const el = await conCuenta();
+    (el as unknown as { splitSel: Set<string> }).splitSel = new Set(['l1']);
+
+    await dividir(el, { table_id: 'm2', from_order_id: 'o1', session_id: 's-2', label: 'Mesa 2' });
+
+    const division = comandos.find((c) => c.name === 'sales.order.split');
+    expect(division, 'se divide el pedido de origen').toBeTruthy();
+    expect(division!.payload).toMatchObject({ order_id: 'o1', line_ids: ['l1'], label: 'Mesa 2' });
+
+    const enlace = enlaces[enlaces.length - 1];
+    expect(enlace?.order_id, 'se enlaza el pedido NUEVO').toBe('o2');
+    expect(enlace?.session_id, 'y a la CUENTA que abrió la sala, no a la mesa').toBe('s-2');
+  });
+
+  it('el TPV se queda en la cuenta nueva, con lo marcado y la marca limpia', async () => {
+    const el = await conCuenta();
+    (el as unknown as { splitSel: Set<string> }).splitSel = new Set(['l1']);
+
+    await dividir(el, { table_id: 'm2', from_order_id: 'o1', session_id: 's-2', label: 'Mesa 2' });
+
+    const pos = el as unknown as { orderId?: string; splitSel: Set<string> };
+    expect(pos.orderId, 'la pantalla pasa a la segunda cuenta (es la que se va a cobrar)').toBe('o2');
+    expect(pos.splitSel.size, 'la selección se consume al dividir').toBe(0);
+  });
+
+  it('sin nada marcado la segunda cuenta nace en blanco (y sigue enlazada)', async () => {
+    const el = await conCuenta();
+    await dividir(el, { table_id: 'm2', from_order_id: 'o1', session_id: 's-3', label: 'Mesa 2' });
+
+    expect(comandos.find((c) => c.name === 'sales.order.split')!.payload)
+      .toMatchObject({ order_id: 'o1', line_ids: [] });
+    expect(enlaces[enlaces.length - 1]?.session_id).toBe('s-3');
+  });
+
+  it('sin pedido en la mesa no se divide nada: la cuenta nueva espera al primer producto', async () => {
+    const el = await montarCarrito();
+    const filler = document.createElement('div');
+    filler.addEventListener('erp:order-linked', (e) => {
+      enlaces.push((e as CustomEvent<{ order_id?: string; session_id?: string }>).detail);
+    });
+    (el as unknown as { assignFillers: Array<{ component: string; el: HTMLElement }> })
+      .assignFillers.push({ component: 'erp-fake-mesa', el: filler });
+
+    await dividir(el, { table_id: 'm2', from_order_id: null, session_id: 's-4', label: 'Mesa 2' });
+    expect(comandos.some((c) => c.name === 'sales.order.split'), 'no hay nada que repartir').toBe(false);
+
+    // El primer producto abre el pedido — y ese pedido debe colgar de la cuenta reciÉn abierta.
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    await (el as unknown as { queue: <T>(t: () => Promise<T>) => Promise<T> }).queue(async () => undefined);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    const enlace = enlaces[enlaces.length - 1];
+    expect(enlace?.order_id, 'el pedido recién abierto').toBe('o1');
+    expect(enlace?.session_id, 'se cuelga de la cuenta que abrió la división').toBe('s-4');
+  });
+});
+
+// Dividir se pide desde el ⋮ de una mesa del plano, y el plano se abre mires la cuenta que mires:
+// la mesa que se divide NO tiene por qué ser la que hay en pantalla. Lo marcado en el carrito son
+// líneas de OTRA cuenta, así que no puede viajar — si se mandara, el servidor no encontraría
+// ninguna línea que mover y la división se quedaría sin hacer (y con un error a la vista).
+describe('sales#61 — dividir una mesa que no es la que hay en pantalla', () => {
+  let comandos: { name: string; payload: Record<string, unknown> }[];
+
+  beforeEach(() => {
+    comandos = [];
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.queryAll = async (name: string) =>
+      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1 }] : []);
+    sdk.query = async () => [];
+    sdk.command = async (name: string, payload: Record<string, unknown>) => {
+      comandos.push({ name, payload });
+      if (name === 'sales.order.open') return { ok: true, new_ids: ['o1', 'l1'] };
+      if (name === 'sales.order.split') return { ok: true, new_ids: ['o9'] };
+      return { ok: true };
+    };
+  });
+
+  it('la segunda cuenta de OTRA mesa nace en blanco, no con lo marcado aquí', async () => {
+    const el = await montarCarrito();
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    await (el as unknown as { queue: <T>(t: () => Promise<T>) => Promise<T> }).queue(async () => undefined);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    (el as unknown as { splitSel: Set<string> }).splitSel = new Set(['l1']);
+
+    el.dispatchEvent(new CustomEvent('erp:order-split', {
+      detail: { table_id: 'm7', from_order_id: 'o-otra', session_id: 's-7', label: 'Mesa 7' },
+      bubbles: true, composed: true,
+    }));
+    await new Promise((r) => setTimeout(r, 0));
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    const division = comandos.find((c) => c.name === 'sales.order.split');
+    expect(division!.payload, 'lo marcado es de otra cuenta: no viaja').toMatchObject({
+      order_id: 'o-otra', line_ids: [],
+    });
+    expect((el as unknown as { error: string }).error, 'y no se avisa de un fallo que no existe').toBeFalsy();
+  });
+});

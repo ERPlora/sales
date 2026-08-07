@@ -3343,6 +3343,7 @@ var es_default = {
     fireToKitchen: "Enviar a cocina",
     firedToKitchen: "Enviado a cocina",
     fireFailed: "No se pudo enviar a cocina",
+    splitFailed: "No se pudo dividir la cuenta",
     lineNotSaved: "No se pudo guardar ese art\xEDculo \u2014 vuelve a tocarlo",
     payingPart: "Cobrando {n} l\xEDnea(s) de {total}",
     payExact: "Importe exacto",
@@ -3557,6 +3558,7 @@ var en_default = {
     fireToKitchen: "Send to kitchen",
     firedToKitchen: "Sent to kitchen",
     fireFailed: "Couldn't send to kitchen",
+    splitFailed: "Couldn't split the check",
     lineNotSaved: "Couldn't save that item \u2014 tap again",
     payingPart: "Paying {n} of {total}",
     qtyOffGrid: "Quantity doesn't fit the product's step",
@@ -4847,11 +4849,16 @@ async function loadOrderLines(client, orderId) {
 }
 async function mergeOrders(client, fromOrderId, toOrderId) {
   if (!fromOrderId || !toOrderId || fromOrderId === toOrderId) return;
-  const lines = await loadOrderLines(client, fromOrderId);
-  for (const l3 of lines) {
-    await addOrderLine(client, toOrderId, l3);
-  }
-  await client.command("sales.order.void", { order_id: fromOrderId });
+  await client.command("sales.order.merge", { from_order_id: fromOrderId, to_order_id: toOrderId });
+}
+async function splitOrder(client, orderId, lineIds, label) {
+  if (!orderId) return "";
+  const res = await client.command("sales.order.split", {
+    order_id: orderId,
+    line_ids: [...lineIds],
+    label: label ?? ""
+  });
+  return firstNewId(res);
 }
 
 // ui/lib/pos-tax.ts
@@ -5093,6 +5100,45 @@ var ErpPosTouch = class extends i3 {
         this.orderId = to;
         this.cart = await loadOrderLines(erplora2(), to);
       }
+    };
+    // Dividir la cuenta (sales#61): el filler ya ejecutó `tables.sessions.split`, así que la mesa
+    // tiene una SEGUNDA cuenta viva — y nace sin pedido a propósito, porque las líneas y los importes
+    // son de `sales`. Aquí se materializa ese segundo pedido con lo que el camarero haya MARCADO en
+    // el carrito (la misma marca que ya sirve para cobrar por partes: se toca lo de quien se va) y se
+    // publica para que la sala lo cuelgue de ESA cuenta, no de "la mesa".
+    this.onOrderSplit = async (e7) => {
+      const d3 = e7.detail;
+      if (!d3) return;
+      this.pendingSplitSession = d3.session_id ?? void 0;
+      const source = d3.from_order_id ?? this.orderId;
+      if (!source) {
+        this.orderId = void 0;
+        this.cart = [];
+        this.splitSel = /* @__PURE__ */ new Set();
+        this.orderLabel = d3.label ?? this.orderLabel;
+        forgetCurrentCheck(localStorage);
+        return;
+      }
+      const marcadas = source === this.orderId ? this.splitSel : /* @__PURE__ */ new Set();
+      let nuevo = "";
+      try {
+        nuevo = await splitOrder(erplora2(), source, marcadas, d3.label ?? "");
+      } catch {
+        this.error = t5("ui.splitFailed");
+        return;
+      }
+      if (!nuevo) {
+        this.error = t5("ui.splitFailed");
+        return;
+      }
+      this.splitSel = /* @__PURE__ */ new Set();
+      this.orderId = nuevo;
+      this.orderLabel = d3.label ?? this.orderLabel;
+      if (d3.table_id) this.tableId = d3.table_id;
+      rememberCurrentCheck(localStorage, nuevo);
+      this.notifyOrderLinked();
+      this.cart = await loadOrderLines(erplora2(), nuevo);
+      this.parked = await listOpenChecks(erplora2(), nuevo);
     };
     // Transferir mesa (punto 4): el filler ya ejecutó tables.sessions.transfer; aquí se mueve la
     // comanda de la mesa origen a la destino (libre → sin comanda previa) y se limpia el origen.
@@ -5544,6 +5590,7 @@ var ErpPosTouch = class extends i3 {
       await this.updateComplete;
       this.addEventListener("erp:order-context", this.onOrderContext);
       this.addEventListener("erp:order-merge", this.onOrderMerge);
+      this.addEventListener("erp:order-split", this.onOrderSplit);
       this.addEventListener("erp:order-transfer", this.onOrderTransfer);
       this.addEventListener("erp:customer-context", this.onCustomerContext);
       this.addEventListener("erp:order-fire", this.onOrderFire);
@@ -5560,6 +5607,7 @@ var ErpPosTouch = class extends i3 {
     window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
     this.removeEventListener("erp:order-context", this.onOrderContext);
     this.removeEventListener("erp:order-merge", this.onOrderMerge);
+    this.removeEventListener("erp:order-split", this.onOrderSplit);
     this.removeEventListener("erp:order-transfer", this.onOrderTransfer);
     this.removeEventListener("erp:customer-context", this.onCustomerContext);
     this.removeEventListener("erp:order-fire", this.onOrderFire);
@@ -5958,12 +6006,22 @@ var ErpPosTouch = class extends i3 {
     }
   }
   /** Avisa a los fillers de que hay pedido abierto para que ENLACEN lo suyo (mesa, cliente…).
-   *  `sales` no escribe junctions ajenas ni conoce a esos módulos: solo publica el `order_id`. */
+   *  `sales` no escribe junctions ajenas ni conoce a esos módulos: solo publica el `order_id`.
+   *
+   *  Viaja también la CUENTA a la que engancharlo cuando se sabe (`pendingSplitSession`, sales#61).
+   *  Una mesa dividida tiene varias cuentas vivas: sin ese id el dueño de la junction resuelve a la
+   *  más antigua y el segundo pedido aterriza en la primera cuenta — las dos mitades acabarían
+   *  cobrando la misma comanda. El id es OPACO para `sales`: se recibió en el evento y se reenvía. */
   notifyOrderLinked() {
     if (!this.orderId) return;
+    const session = this.pendingSplitSession;
     for (const f3 of this.assignFillers) {
-      f3.el.dispatchEvent(new CustomEvent("erp:order-linked", { detail: { order_id: this.orderId }, bubbles: false }));
+      f3.el.dispatchEvent(new CustomEvent("erp:order-linked", {
+        detail: session ? { order_id: this.orderId, session_id: session } : { order_id: this.orderId },
+        bubbles: false
+      }));
     }
+    this.pendingSplitSession = void 0;
   }
   /** Asegura que existe un pedido abierto que respalde el carrito; devuelve su id ('' si falla).
    *  Si hay una MESA seleccionada, avisa a los fillers (`tables`) para que escriban la junction

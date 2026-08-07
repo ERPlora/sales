@@ -147,49 +147,15 @@ describe('carrito respaldado por pedido (ADR-0141)', () => {
 // ── ADR-0141: fusionar/transferir mesas con el modelo de PEDIDO ──────────────────────────────
 // Transferir = la mesa cambia, el pedido NO se toca (los productos se conservan solos).
 // Fusionar   = las líneas del pedido origen se suman al destino y el origen se anula.
+//
+// El CÓMO cambia en sales#61: el contrato que había aquí (leer las líneas del origen y re-añadirlas
+// una a una al destino con `sales.order.add_line`, y luego `sales.order.void`) describía un bucle
+// de CLIENTE, y eso es justo lo que no puede ser. Se cae a la mitad → la cuenta queda partida en
+// dos; llega el mismo clic dos veces → líneas duplicadas; y re-añadir una línea la crea NUEVA, sin
+// `fired_at`, así que lo que ya estaba en fuego volvía a cocina. El QUÉ (todas las líneas acaban en
+// el destino, el origen queda anulado) no cambia: se comprueba abajo, y sobre todo en
+// `tests/split_merge.postgres.test.py`, que es donde vive de verdad desde ahora.
 import { mergeOrders } from './pos-cart';
-
-describe('fusionar comandas (mergeOrders)', () => {
-  function mergeClient(lineasOrigen: Record<string, unknown>[]) {
-    const calls: { name: string; params?: Record<string, unknown> }[] = [];
-    const client = {
-      query: async (name: string, params?: Record<string, unknown>) => {
-        calls.push({ name, params });
-        return { rows: name === 'sales.order.lines' ? lineasOrigen : [] };
-      },
-      command: async (name: string, params?: Record<string, unknown>) => {
-        calls.push({ name, params });
-        return { ok: true, new_ids: ['nueva-linea'] };
-      },
-    } as unknown as ErploraClientLike;
-    return { client, calls };
-  }
-
-  it('lleva las líneas del pedido origen al destino y ANULA el origen', async () => {
-    const { client, calls } = mergeClient([
-      { id: 'l1', product_id: 'p1', product_name: 'Cerveza', quantity: 2_000_000, unit_price: 250, line_total: 500 },
-      { id: 'l2', product_id: 'p2', product_name: 'Tapa', quantity: 1_000_000, unit_price: 350, line_total: 350 },
-    ]);
-    await mergeOrders(client, 'ord-origen', 'ord-destino');
-
-    const añadidas = calls.filter((c) => c.name === 'sales.order.add_line');
-    expect(añadidas, 'las dos líneas viajan al pedido destino').toHaveLength(2);
-    expect(añadidas.every((c) => c.params!.order_id === 'ord-destino')).toBe(true);
-    expect(añadidas.map((c) => c.params!.product_name).sort()).toEqual(['Cerveza', 'Tapa']);
-    // cantidades y precios se conservan (no se pierde nada de la cuenta)
-    expect(añadidas.find((c) => c.params!.product_name === 'Cerveza')!.params).toMatchObject({ quantity: 2_000_000, unit_price: 250 });
-
-    const anulado = calls.find((c) => c.name === 'sales.order.void');
-    expect(anulado?.params, 'el pedido origen queda anulado, no duplicado').toMatchObject({ order_id: 'ord-origen' });
-  });
-
-  it('no hace nada si origen y destino son el mismo pedido', async () => {
-    const { client, calls } = mergeClient([{ id: 'l1', product_id: 'p1', product_name: 'X', quantity: 1_000_000, unit_price: 100 }]);
-    await mergeOrders(client, 'ord-1', 'ord-1');
-    expect(calls.filter((c) => c.name === 'sales.order.add_line')).toHaveLength(0);
-    expect(calls.filter((c) => c.name === 'sales.order.void')).toHaveLength(0);
-  });
-});
 
 describe('persistLineQty — la pantalla no puede mentir (ADR-0144)', () => {
   // Encontrado en el navegador: 5 toques rápidos a la tortilla → 37,50 € en pantalla, 1 tortilla en
@@ -275,5 +241,75 @@ describe('cuentas abiertas: un aparcado es un pedido abierto (ADR-0146)', () => 
 
   it('sin cuentas abiertas devuelve vacío, no revienta', async () => {
     expect(await listOpenChecks(cliente([]))).toEqual([]);
+  });
+});
+
+// ── sales#61 · split and merge a check, in ONE server-side command ───────────────────────────
+// `tables` already splits and joins the checks of the FLOOR (tables#12), but it does not own the
+// lines or the money, so the other half is here. And it cannot be a client-side loop: moving N
+// lines with N round-trips is not atomic (a dropped connection halfway duplicates or loses a
+// course) and it is not replayable (the same click landing twice doubles the check).
+import { splitOrder } from './pos-cart';
+
+describe('sales#61 — dividir y juntar cuentas', () => {
+  function spyClient(lines: Record<string, unknown>[] = [], newId = 'ord-nuevo') {
+    const calls: { name: string; params?: Record<string, unknown> }[] = [];
+    const client = {
+      query: async (name: string, params?: Record<string, unknown>) => {
+        calls.push({ name, params });
+        return { rows: name === 'sales.order.lines' ? lines : [] };
+      },
+      command: async (name: string, params?: Record<string, unknown>) => {
+        calls.push({ name, params });
+        return { ok: true, new_ids: [newId] };
+      },
+    } as unknown as ErploraClientLike;
+    return { client, calls };
+  }
+
+  it('fusionar es UN comando atómico del servidor, no un bucle de líneas', async () => {
+    const { client, calls } = spyClient([
+      { id: 'l1', product_name: 'Cerveza', quantity: 2_000_000, unit_price: 250, line_total: 500 },
+      { id: 'l2', product_name: 'Tapa', quantity: 1_000_000, unit_price: 350, line_total: 350 },
+    ]);
+    await mergeOrders(client, 'ord-origen', 'ord-destino');
+
+    expect(calls.map((c) => c.name), 'una sola escritura: la transacción la cierra el servidor')
+      .toEqual(['sales.order.merge']);
+    expect(calls[0].params).toMatchObject({ from_order_id: 'ord-origen', to_order_id: 'ord-destino' });
+    // Las líneas se MUEVEN (filas), no se re-añaden: re-añadirlas les borra `fired_at` y la comanda
+    // ya enviada volvería a cocina.
+    expect(calls.some((c) => c.name === 'sales.order.add_line'), 'nada se re-añade').toBe(false);
+    expect(calls.some((c) => c.name === 'sales.order.void'), 'anular el origen es parte del comando').toBe(false);
+  });
+
+  it('no fusiona una cuenta consigo misma', async () => {
+    const { client, calls } = spyClient();
+    await mergeOrders(client, 'ord-1', 'ord-1');
+    expect(calls).toHaveLength(0);
+  });
+
+  it('dividir crea el SEGUNDO pedido con las líneas marcadas y devuelve su id', async () => {
+    const { client, calls } = spyClient([], 'ord-2');
+    const nuevo = await splitOrder(client, 'ord-1', ['l1', 'l3'], 'Mesa 4 · 2');
+
+    expect(nuevo, 'el id del pedido nuevo sale del servidor (new_ids[0])').toBe('ord-2');
+    expect(calls.map((c) => c.name)).toEqual(['sales.order.split']);
+    expect(calls[0].params).toMatchObject({
+      order_id: 'ord-1', line_ids: ['l1', 'l3'], label: 'Mesa 4 · 2',
+    });
+  });
+
+  it('dividir sin marcar nada abre la segunda cuenta EN BLANCO', async () => {
+    const { client, calls } = spyClient([], 'ord-3');
+    const nuevo = await splitOrder(client, 'ord-1', [], '');
+    expect(nuevo).toBe('ord-3');
+    expect(calls[0].params).toMatchObject({ order_id: 'ord-1', line_ids: [] });
+  });
+
+  it('sin pedido de origen no hay nada que dividir', async () => {
+    const { client, calls } = spyClient();
+    expect(await splitOrder(client, '', ['l1'], '')).toBe('');
+    expect(calls).toHaveLength(0);
   });
 });

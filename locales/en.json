@@ -170,6 +170,7 @@
     "fireToKitchen": "Send to kitchen",
     "firedToKitchen": "Sent to kitchen",
     "fireFailed": "Couldn't send to kitchen",
+    "splitFailed": "Couldn't split the check",
     "lineNotSaved": "Couldn't save that item — tap again",
     "payingPart": "Paying {n} of {total}",
     "qtyOffGrid": "Quantity doesn't fit the product's step",
