@@ -38,6 +38,7 @@
 //!   `tax_rate` del payload si viene; si no, 0%. Nunca rompe la venta. Respeta `tax_included`.
 
 use erplora_guest_sdk::money;
+use erplora_guest_sdk::tax;
 use erplora_guest_sdk::units::{calculate_line_amount, QuantityValue, QUANTITY_SCALE};
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
@@ -232,57 +233,6 @@ struct TaxComponent {
     rate_key: String,
 }
 
-/// Desenvuelve **defensivamente** las filas del catálogo pre-cargado en
-/// `context.reads["taxes.rules.list"]` (ADR-0085). El contrato exacto que asumimos: puede venir
-/// (a) como **array directo** `[ {…}, … ]`, o (b) envuelto como **`{"rows":[…]}`** (forma paginada
-/// del list-engine). Cualquier otra forma → catálogo vacío (degrada a fallback de payload).
-fn load_rule_catalog(context: &Value) -> Vec<&Value> {
-    read_rows(context, "taxes.rules.list").unwrap_or_default()
-}
-
-/// Unwraps the rows of a read the runtime pre-loaded in `context.reads["<query>"]` (ADR-0069).
-///
-/// `None` means the runtime did NOT deliver that read: the query failed, the manifest does not
-/// declare it, or the hub runs a runtime without `reads`. That is a very different thing from
-/// `Some(vec![])` — "the query ran and the hub has nothing to say". The first degrades to the
-/// client's hint (charging is the last thing that may break in a POS); the second is authority.
-/// Both shapes are tolerated on purpose: a plain array and the paginated `{"rows": […]}` the
-/// list engine composes.
-fn read_rows<'a>(context: &'a Value, query: &str) -> Option<Vec<&'a Value>> {
-    let node = context.get("reads").and_then(|r| r.get(query))?;
-    match node {
-        Value::Array(a) => Some(a.iter().collect()),
-        Value::Object(_) => node
-            .get("rows")
-            .and_then(|v| v.as_array())
-            .map(|a| a.iter().collect()),
-        _ => None,
-    }
-}
-
-/// ¿Está activa la fila? Si la columna no viene (la query ya filtra), se asume activa.
-fn rate_is_active(row: &Value) -> bool {
-    match row.get("is_active") {
-        None | Some(Value::Null) => true,
-        Some(v) => as_bool(v),
-    }
-}
-
-/// ¿Es una regla RAÍZ (no un componente)? `parent_id` vacío/NULL.
-fn rule_is_root(rule: &Value) -> bool {
-    field(rule, "parent_id").is_empty()
-}
-
-/// ¿Está la regla vigente en `date` (YYYY-MM-DD)? Fechas ISO comparan como string.
-fn rule_valid_on(rule: &Value, date: &str) -> bool {
-    if date.is_empty() {
-        return true;
-    }
-    let from = field(rule, "valid_from");
-    let until = field(rule, "valid_to");
-    (from.is_empty() || from.as_str() <= date) && (until.is_empty() || until.as_str() >= date)
-}
-
 /// Clave de desglose para una tasa: "%.2f" del `rate_pct` (p.ej. 21.0 → "21.00").
 fn rate_key(rate_pct: f64) -> String {
     format!("{:.2}", rate_pct)
@@ -295,39 +245,6 @@ struct ResolvedTax {
     components: Vec<TaxComponent>,
 }
 
-/// Resuelve la regla RAÍZ aplicable a `(cc, rc, cat, date)` en el catálogo de confianza
-/// (ADR-0085). Precedencia: región exacta → regla de país (región vacía/NULL). Dentro de un nivel,
-/// prefiere la `valid_from` más reciente, luego `id` ascendente. Réplica de `taxes::resolve_root`.
-fn resolve_root<'a>(rules: &[&'a Value], cc: &str, rc: &str, cat: &str, date: &str) -> Option<&'a Value> {
-    let eligible: Vec<&Value> = rules
-        .iter()
-        .copied()
-        .filter(|r| {
-            rule_is_root(r)
-                && rate_is_active(r)
-                && rule_valid_on(r, date)
-                && field(r, "country_code").eq_ignore_ascii_case(cc)
-                && field(r, "tax_category_key") == cat
-        })
-        .collect();
-    let pick = |rows: Vec<&'a Value>| -> Option<&'a Value> {
-        let mut rows = rows;
-        rows.sort_by(|a, b| {
-            field(b, "valid_from")
-                .cmp(&field(a, "valid_from"))
-                .then_with(|| field(a, "id").cmp(&field(b, "id")))
-        });
-        rows.first().copied()
-    };
-    if !rc.is_empty() {
-        if let Some(r) = pick(eligible.iter().copied().filter(|r| field(r, "region_code").eq_ignore_ascii_case(rc)).collect()) {
-            return Some(r);
-        }
-    }
-    pick(eligible.iter().copied().filter(|r| field(r, "region_code").is_empty()).collect())
-        .or_else(|| pick(eligible.clone()))
-}
-
 /// Resuelve los componentes de impuesto de una línea (ADR-0085), **server-authoritative**:
 ///
 /// 1. Si la línea trae `tax_category_key` y hay una regla raíz que matchee país (del CONTEXTO),
@@ -338,22 +255,12 @@ fn resolve_root<'a>(rules: &[&'a Value], cc: &str, rc: &str, cat: &str, date: &s
 fn resolve_line_tax(item: &Value, rules: &[&Value], cc: &str, rc: &str, date: &str) -> ResolvedTax {
     let cat = field(item, "tax_category_key");
     if !cat.is_empty() {
-        if let Some(root) = resolve_root(rules, cc, rc, &cat, date) {
-            let root_id = field(root, "id");
-            let mut children: Vec<&Value> = rules
-                .iter()
-                .copied()
-                .filter(|r| !field(r, "id").is_empty() && field(r, "parent_id") == root_id && rate_is_active(r) && rule_valid_on(r, date))
+        if let Some(root) = tax::resolve_root(rules, cc, rc, &cat, date) {
+            let components = tax::rule_components(root, rules, date)
+                .into_iter()
+                .map(|c| TaxComponent { rate_pct: c.rate_pct, rate_key: rate_key(c.rate_pct) })
                 .collect();
-            children.sort_by_key(|r| field(r, "id"));
-            let mut comps: Vec<TaxComponent> = Vec::with_capacity(children.len() + 1);
-            let root_pct = as_f64(root.get("rate_pct").unwrap_or(&Value::Null), 0.0);
-            comps.push(TaxComponent { rate_pct: root_pct, rate_key: rate_key(root_pct) });
-            for c in children {
-                let pct = as_f64(c.get("rate_pct").unwrap_or(&Value::Null), 0.0);
-                comps.push(TaxComponent { rate_pct: pct, rate_key: rate_key(pct) });
-            }
-            return ResolvedTax { rule_id: root_id, components: comps };
+            return ResolvedTax { rule_id: tax::rule_field(root, "id"), components };
         }
     }
     // Backward-compat / graceful: catálogo ausente o categoría sin regla → preview del cliente.
@@ -519,7 +426,7 @@ fn decide_checkout(payload: &Value, context: &Value, items: &[Value]) -> Result<
     // ── Ajustes del TPV: la regla vive en el servidor, no en el botón ──
     // Sin fila de ajustes valen los defaults del esquema (`allow_discounts` sí, `require_customer`
     // no), que es justo lo que hace un hub recién instalado.
-    let settings = read_rows(context, "sales.settings.get").unwrap_or_default();
+    let settings = tax::read_rows(context, "sales.settings.get").unwrap_or_default();
     let setting = |key: &str, default: bool| -> bool {
         settings
             .first()
@@ -548,7 +455,7 @@ fn decide_checkout(payload: &Value, context: &Value, items: &[Value]) -> Result<
 
     // ── Método de pago: del catálogo del hub o de ningún sitio ──
     let method_id = field(payload, "payment_method_id");
-    let payment_method_name = match read_rows(context, "sales.payment_methods") {
+    let payment_method_name = match tax::read_rows(context, "sales.payment_methods") {
         Some(catalog) if !catalog.is_empty() => {
             if method_id.is_empty() {
                 return Err(reject("sales.payment_method_required", "the sale has no payment method"));
@@ -591,7 +498,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     // La sonda que el runtime pre-carga (`reads`, filtrada por la clave del payload) dice si ESTA
     // clave ya se cobró. Si ya está, el reintento es un no-op LIMPIO: cero operaciones, cero
     // eventos. El cliente recupera la venta consultando `sales.by_idempotency_key` con su clave.
-    if read_rows(&context, "sales.by_idempotency_key").is_some_and(|rows| !rows.is_empty()) {
+    if tax::read_rows(&context, "sales.by_idempotency_key").is_some_and(|rows| !rows.is_empty()) {
         return Ok(Output::new());
     }
 
@@ -609,7 +516,10 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
 
     // Catálogo fiscal de confianza pre-cargado por el runtime (ADR-0085, reads taxes.rules.list).
     // Vacío si el runtime no inyectó reads (host antiguo / dependencia no resuelta) → fallback graceful.
-    let catalog = load_rule_catalog(&context);
+    // `&Value::Null` as the payload fallback ON PURPOSE: in `taxes.calculate` the caller may hand
+    // its own catalog for an ad-hoc calculation, but here the payload IS the browser — a client
+    // able to inject `rules` would price its own VAT.
+    let catalog = tax::rule_catalog(&context, &Value::Null);
 
     let mut subtotal: i64 = 0; // céntimos
     let mut gross: i64 = 0; // céntimos (CON descuento global ya prorrateado)
@@ -941,7 +851,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         })));
     }
 
-    Ok(Output { operations: ops, events })
+    Ok(Output { operations: ops, events, ..Default::default() })
 }
 
 /// ADR-0141 (owner: human, en construcción TDD) — abre un `order` **mutable** (estado `open`) con sus
@@ -1031,7 +941,7 @@ pub fn open_order_pure(input: Value) -> Result<Output, String> {
         "items_count": items.len(),
     }));
 
-    Ok(Output { operations: ops, events: vec![event] })
+    Ok(Output { operations: ops, events: vec![event], ..Default::default() })
 }
 
 /// ADR-0141 — **la comanda nace del pedido, no del cobro**.
@@ -1088,7 +998,7 @@ pub fn fire_order_pure(input: Value) -> Result<Output, String> {
         ev["round_no"] = json!(round_no); // informativo: kitchen numera lo suyo (ADR-0144)
     }
     let event = Event::new("order.fired", ev);
-    Ok(Output { operations: ops, events: vec![event] })
+    Ok(Output { operations: ops, events: vec![event], ..Default::default() })
 }
 
 #[cfg(test)]
@@ -2221,5 +2131,82 @@ mod tests {
         let out = sale(inp);
         assert!(out.operations.is_empty());
         assert!(out.events.is_empty());
+    }
+
+    // ── El contrato COMPARTIDO de la regla (hub#295) ──────────────────────────
+    //
+    // The same fixture is replayed by `taxes` (the `taxes.calculate` contract) and by `invoice`
+    // (what is DECLARED). The three entry points resolve it through `erplora_guest_sdk::tax`, so
+    // what is CHARGED here and what is declared there cannot drift apart any more.
+
+    /// The catalog the three entry points share in their tests (hub#295).
+    fn shared_fixture_rules() -> Value {
+        json!([
+            {"id": "es-vat-21", "country_code": "ES", "region_code": null, "tax_category_key": "standard",
+             "rate_pct": 21.0, "tax_type": "vat", "parent_id": null, "valid_from": "2012-09-01"},
+            {"id": "es-vat-21-surcharge", "parent_id": "es-vat-21", "country_code": "ES", "region_code": null,
+             "tax_category_key": "standard", "rate_pct": 5.2, "tax_type": "surcharge"},
+            {"id": "es-cn-igic-7", "country_code": "ES", "region_code": "CN", "tax_category_key": "standard",
+             "rate_pct": 7.0, "tax_type": "IGIC", "parent_id": null},
+            {"id": "es-vat-10", "country_code": "ES", "region_code": null, "tax_category_key": "restaurant.food",
+             "rate_pct": 10.0, "tax_type": "vat", "parent_id": null},
+            {"id": "es-exempt-health", "country_code": "ES", "region_code": null,
+             "tax_category_key": "health.treatment", "rate_pct": 0.0, "tax_type": "vat", "parent_id": null,
+             "operation_class": "exempt", "exempt_reason": "e1"},
+            {"id": "es-broken-class", "country_code": "ES", "region_code": null,
+             "tax_category_key": "broken.class", "rate_pct": 21.0, "tax_type": "vat", "parent_id": null,
+             "operation_class": "exent"}
+        ])
+    }
+
+    /// Charges one 100,00 € net line of `category` in `region` against the shared fixture and
+    /// returns the line params (`tax_rate`, `tax_amount`, `tax_rule_id`, …).
+    fn shared_charge(category: &str, region: &str) -> Value {
+        let items = json!([
+            { "product_name": "Item", "price": 10000, "quantity": 1_000_000,
+              "tax_category_key": category, "tax_rate": 99.0 }
+        ]);
+        let out = sale(input_with_rules(items, 4, shared_fixture_rules(), "array", "ES", region));
+        out.operations[2].params.clone().into()
+    }
+
+    #[test]
+    fn the_shared_fixture_charges_what_the_other_entry_points_declare() {
+        let peninsula = shared_charge("standard", "MD");
+        assert_eq!(peninsula["tax_rate"], json!(26.2), "the surcharge rides on the root rule");
+        assert_eq!(peninsula["tax_amount"], json!(2620));
+        assert_eq!(peninsula["tax_rule_id"], json!("es-vat-21"));
+
+        let canaries = shared_charge("standard", "CN");
+        assert_eq!(canaries["tax_rate"], json!(7.0), "the region rule wins");
+        assert_eq!(canaries["tax_rule_id"], json!("es-cn-igic-7"));
+
+        let reduced = shared_charge("restaurant.food", "MD");
+        assert_eq!(reduced["tax_rate"], json!(10.0));
+        assert_eq!(reduced["tax_amount"], json!(1000));
+
+        let exempt = shared_charge("health.treatment", "MD");
+        assert_eq!(exempt["tax_rate"], json!(0.0));
+        assert_eq!(exempt["tax_amount"], json!(0));
+
+        let broken = shared_charge("broken.class", "MD");
+        assert_eq!(broken["tax_rate"], json!(21.0), "a broken qualification still charges its rate");
+    }
+
+    #[test]
+    fn a_rule_catalog_delivered_under_the_alias_read_is_honoured() {
+        // `taxes.rules.by_country` is a real query of the `taxes` module. `taxes.calculate` read
+        // it; `sales` only looked at `taxes.rules.list`, so the very same pre-load left the
+        // checkout charging the client's hint while `taxes.calculate` charged the rule.
+        let items = json!([
+            { "product_name": "Item", "price": 10000, "quantity": 1_000_000,
+              "tax_category_key": "standard", "tax_rate": 99.0 }
+        ]);
+        let mut inp = input_with_rules(items, 4, json!([]), "array", "ES", "MD");
+        inp["context"]["reads"] = json!({ "taxes.rules.by_country": shared_fixture_rules() });
+        let out = sale(inp);
+        let line = &out.operations[2].params;
+        assert_eq!(line["tax_rule_id"], json!("es-vat-21"));
+        assert_eq!(line["tax_rate"], json!(26.2));
     }
 }
