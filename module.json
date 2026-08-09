@@ -263,6 +263,7 @@
       "permission": "sales.take_payment",
       "reads": [
         "taxes.rules.list",
+        "inventory.products.for_sale",
         "sales.payment_methods",
         "sales.settings.get",
         {
