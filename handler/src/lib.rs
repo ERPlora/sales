@@ -335,6 +335,57 @@ fn calc_line_components(
     (LineTotals { net, tax: tax_total, line }, parts)
 }
 
+
+// ── sales#68 · el PRECIO lo pone el catálogo, no el navegador ────────────────────────────────
+//
+// `complete_sale` tomaba el `price` de la línea DEL PAYLOAD y solo comprobaba que no fuese
+// negativo. Un artículo de 50 € se vendía por un céntimo y el hub lo aceptaba entero: movía stock,
+// movía caja y emitía factura. Todo consistente, todo mal — y sin mala fe hace falta poco: un bug
+// en la UI, una integración por la API, una tablet con el bundle viejo.
+//
+// La vía ya estaba inventada aquí mismo: el método de pago se contrasta contra su catálogo
+// pre-cargado y el NOMBRE del recibo sale de la fila. Esto hace lo mismo con el precio.
+//
+// La regla, en una frase: **si la línea dice ser de catálogo, manda el catálogo**.
+//
+// Tres casos, y los tres a propósito:
+//
+//   * línea CON `product_id` y sin `is_service` → es una línea de catálogo. Su precio y su coste
+//     salen de la fila. Un id que no esté en el catálogo se RECHAZA (`sales.product_not_available`).
+//   * línea SIN `product_id` → venta por departamento / precio libre. No dice ser de catálogo, así
+//     que el catálogo no tiene nada que decir de ella. Es la única puerta que queda abierta y es
+//     su propia issue (sales#63): cerrarla pide un permiso que el handler hoy no recibe.
+//   * línea con `is_service` → `sales` no puede leer `services.*` (no está en su `depends_on`), así
+//     que no hay catálogo contra el que contrastarla. Rechazarla dejaría a la peluquería sin
+//     cobrar. Fuera de alcance, dicho en voz alta.
+//
+// Y **sin catálogo no se cierra una venta de catálogo**. La degradación graceful que vale para el
+// método de pago —«cobrar es lo último que puede romperse»— aquí ES el agujero: sería aceptar el
+// precio que propone el caller para algo que dice ser un producto del hub.
+fn is_catalog_line(item: &Value) -> bool {
+    !field(item, "product_id").is_empty() && !item.get("is_service").map(as_bool).unwrap_or(false)
+}
+
+/// Precio y coste AUTORITATIVOS de una línea de catálogo. `Err` con código de dominio si la línea
+/// dice ser de catálogo y no se puede sostener.
+fn authoritative_price(item: &Value, catalog: Option<&Vec<&Value>>) -> Result<Option<(i64, i64)>, String> {
+    if !is_catalog_line(item) {
+        return Ok(None);
+    }
+    let rows = catalog.ok_or_else(|| {
+        reject("sales.catalog_unavailable", "the product catalogue was not available to price this sale")
+    })?;
+    let id = field(item, "product_id");
+    let row = rows
+        .iter()
+        .find(|r| field(r, "id") == id)
+        .ok_or_else(|| reject("sales.product_not_available", &id))?;
+    Ok(Some((
+        as_cents(row.get("price").unwrap_or(&Value::Null), 0),
+        as_cents(row.get("cost").unwrap_or(&Value::Null), 0),
+    )))
+}
+
 /// Lógica pura: `{payload, context}` → Output (intenciones).
 ///
 /// Devuelve `Err` si una cantidad es inválida (ADR-0147 §2.2): fuera de la rejilla del incremento
@@ -535,8 +586,20 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     let header_idx = ops.len();
     ops.push(Operation::sql("sales._insert_sale", Map::new())); // placeholder
 
+    // El catálogo de venta que el runtime pre-carga (`inventory.products.for_sale`, sales#68). Sin
+    // bloque `list` a propósito: una read paginada entregaría solo 50 filas, en silencio (hub#650).
+    let product_catalog = tax::read_rows(&context, "inventory.products.for_sale");
+
     for (i, item) in items.iter().enumerate() {
-        let unit_price = as_cents(item.get("price").unwrap_or(&Value::Null), 0); // céntimos
+        // El precio SALE DEL CATÁLOGO si la línea dice ser de catálogo. El del payload es una
+        // propuesta, no un hecho.
+        let (unit_price, item_cost) = match authoritative_price(item, product_catalog.as_ref())? {
+            Some((price, cost)) => (price, cost),
+            None => (
+                as_cents(item.get("price").unwrap_or(&Value::Null), 0), // céntimos
+                as_cents(item.get("cost").unwrap_or(&Value::Null), 0),
+            ),
+        };
         // Cantidad en punto fijo 10⁶ (ADR-0147) + rechazo fuera de rejilla; y la cantidad de
         // precio KPEIN («37 céntimos por 100 ud») que hace exacto el sub-céntimo sin tocar el dinero.
         let qty = line_qty(item)?;
@@ -562,7 +625,9 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         // La columna `discount_percent` de la línea conserva SOLO el suyo (el global va en el header).
         let eff_disc = 100.0 * (1.0 - (1.0 - line_disc / 100.0) * (1.0 - sale_disc / 100.0));
         let (t, parts) = if is_gift {
-            let cost = as_cents(item.get("cost").unwrap_or(&Value::Null), 0);
+            // El coste de una invitación va al arqueo (`gift_total`), así que también es un número
+            // que decide dinero: sale del catálogo cuando la línea es de catálogo (sales#68).
+            let cost = item_cost;
             // Coste × cantidad por el SDK (un HALF_UP): 0,5 kg a coste 8,00 €/kg son 4,00 €.
             gift_total += calculate_line_amount(
                 cost,
@@ -1758,7 +1823,14 @@ mod tests {
             "product_name": "Gambas", "product_id": "p-gambas", "price": 1200,
             "quantity": 500_000, "tax_rate": 21.0
         }]);
-        let out = sale(input(items, 3, 600));
+        // La línea dice ser de catálogo (`product_id`), así que desde sales#68 necesita catálogo:
+        // sin él la venta se rechaza a propósito. El precio del catálogo es el MISMO que traía el
+        // payload, para que este test siga midiendo lo que medía — la aritmética de la cantidad.
+        let mut inp = input(items, 3, 600);
+        inp["context"]["reads"] = json!({
+            "inventory.products.for_sale": [{ "id": "p-gambas", "price": 1200, "cost": 0 }]
+        });
+        let out = sale(inp);
 
         let line = &out.operations[2].params;
         assert_eq!(line["quantity"], json!(500_000), "la línea persiste la representación cruda");
@@ -1926,6 +1998,93 @@ mod tests {
     /// The catalog a hub really has: one active cash method.
     fn cash_catalog() -> Value {
         json!([{ "id": "pm-1", "name": "Cash", "type": "cash" }])
+    }
+
+    /// The sale catalogue the runtime pre-loads from `inventory.products.for_sale` (sales#68):
+    /// one product that really costs 50,00 €.
+    fn product_catalog() -> Value {
+        json!([{ "id": "p-wine", "price": 5000, "cost": 3000, "tax_category_key": "product.generic" }])
+    }
+
+    /// An input carrying BOTH trusted catalogues: payment methods and products.
+    fn input_with_products(items: Value, ids: usize, products: Value) -> Value {
+        let mut inp = input_with_catalogs(items, ids, cash_catalog(), Value::Null, Value::Null);
+        if !products.is_null() {
+            inp["context"]["reads"]["inventory.products.for_sale"] = products;
+        }
+        inp
+    }
+
+    /// The line a manipulated caller sends: the real product, at one cent.
+    fn underpriced_line() -> Value {
+        json!([{ "product_id": "p-wine", "product_name": "Botella de vino", "price": 1,
+                 "quantity": 1_000_000, "tax_rate": 21.0 }])
+    }
+
+    // ── sales#68 · el PRECIO lo pone el catálogo, no el navegador ──────────────────────────────
+    //
+    // `complete_sale` cerraba la venta con el `price` del payload y solo comprobaba que no fuese
+    // negativo. Una botella de 50 € se vendía por un céntimo y el hub la aceptaba entera: movía
+    // stock, movía caja y emitía factura. El propio doc del handler decía «el cliente solo
+    // PROPONE» — para el método de pago era verdad; para el precio, disponía.
+
+    #[test]
+    fn the_catalogue_price_wins_over_the_one_the_caller_sent() {
+        let out = complete_sale_pure(input_with_products(underpriced_line(), 4, product_catalog()))
+            .expect("la venta se cierra");
+        let line = out
+            .operations
+            .iter()
+            .find(|o| o.command == "sales._insert_line")
+            .expect("hay línea");
+        assert_eq!(
+            line.params["unit_price"], json!(5000),
+            "el precio salió del payload (1 céntimo) en vez del catálogo (50,00 €)"
+        );
+    }
+
+    #[test]
+    fn a_line_naming_a_product_that_is_not_in_the_catalogue_is_refused() {
+        let items = json!([{ "product_id": "p-inventado", "product_name": "X", "price": 100,
+                             "quantity": 1_000_000, "tax_rate": 21.0 }]);
+        let err = complete_sale_pure(input_with_products(items, 4, product_catalog()))
+            .expect_err("un producto que no está en el catálogo no se vende");
+        assert!(err.starts_with("sales.product_not_available"), "código inesperado: {err}");
+    }
+
+    #[test]
+    fn without_the_catalogue_a_product_line_does_not_close_the_sale() {
+        // La degradación que vale para el método de pago —«cobrar es lo último que puede
+        // romperse»— aquí ES el agujero: aceptar el precio del caller para un producto que dice
+        // ser del catálogo. Sin catálogo no hay nada contra lo que contrastar, así que no se cierra.
+        let err = complete_sale_pure(input_with_products(underpriced_line(), 4, Value::Null))
+            .expect_err("sin catálogo no se cierra una venta de catálogo");
+        assert!(err.starts_with("sales.catalog_unavailable"), "código inesperado: {err}");
+    }
+
+    #[test]
+    fn a_free_line_without_a_product_still_goes_through() {
+        // Venta por departamento / precio libre: no dice ser de catálogo, así que el catálogo no
+        // tiene nada que decir de ella. Es la única puerta que queda abierta, y es sales#63.
+        let items = json!([{ "product_name": "Varios", "price": 250, "quantity": 1_000_000,
+                             "tax_rate": 21.0 }]);
+        let out = complete_sale_pure(input_with_products(items, 4, product_catalog()))
+            .expect("una línea libre se sigue pudiendo vender");
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").unwrap();
+        assert_eq!(line.params["unit_price"], json!(250));
+    }
+
+    #[test]
+    fn a_service_line_is_not_measured_against_the_product_catalogue() {
+        // `sales` no puede leer `services.*` (no está en su `depends_on`), así que una línea de
+        // servicio no tiene catálogo contra el que contrastarse. Rechazarla dejaría a la peluquería
+        // sin poder cobrar. Queda fuera del alcance de esta issue, dicho a propósito.
+        let items = json!([{ "product_id": "svc-1", "product_name": "Tinte", "price": 4500,
+                             "quantity": 1_000_000, "tax_rate": 21.0, "is_service": true }]);
+        let out = complete_sale_pure(input_with_products(items, 4, product_catalog()))
+            .expect("un servicio se cobra aunque no esté en el catálogo de productos");
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").unwrap();
+        assert_eq!(line.params["unit_price"], json!(4500));
     }
 
     fn one_line() -> Value {
