@@ -475,6 +475,17 @@
       }
     }
   },
+  "events": {
+    "listen": {},
+    "emits": [
+      "order.completed",
+      "order.fired",
+      "sale.completed",
+      "sale.voided",
+      "sales.order.opened",
+      "sales.sale.created_from_appointment"
+    ]
+  },
   "widgets": {
     "sales.today": {
       "title": "Today's sales",
