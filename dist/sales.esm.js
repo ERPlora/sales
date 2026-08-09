@@ -3358,6 +3358,8 @@ var es_default = {
     searchAction: "Buscar",
     assign: "Asignar",
     noProducts: "Sin productos.",
+    notSellableNoTaxCategory: "No se puede vender: sin categor\xEDa fiscal. Falta configurar el IVA.",
+    notSellableNoTaxRule: "No se puede vender: su categor\xEDa fiscal no tiene tipo. Falta configurar el IVA.",
     sale: "Venta",
     cartEmptyTouch: "Toca un producto para a\xF1adirlo.",
     parkCurrentSale: "Aparcar esta cuenta",
@@ -3573,6 +3575,8 @@ var en_default = {
     searchAction: "Search",
     assign: "Assign",
     noProducts: "No products.",
+    notSellableNoTaxCategory: "Cannot be sold: no tax category. VAT needs to be set up.",
+    notSellableNoTaxRule: "Cannot be sold: its tax category has no rate. VAT needs to be set up.",
     sale: "Sale",
     cartEmptyTouch: "Tap a product to add it.",
     parkCurrentSale: "Park this check",
@@ -4896,10 +4900,17 @@ async function splitOrder(client, orderId, lineIds, label) {
 function isRoot(r6) {
   return r6.parent_id == null || String(r6.parent_id) === "";
 }
-async function buildCategoryRatesMap(client) {
+function productSellability(catalog, taxCategoryKey) {
+  if (!taxCategoryKey) return "no_tax_category";
+  if (!catalog.available) return "unknown";
+  return catalog.rates.has(String(taxCategoryKey)) ? "sellable" : "no_tax_rule";
+}
+async function loadTaxCatalog(client) {
   const map = /* @__PURE__ */ new Map();
+  let available = false;
   try {
     const all = await client.queryAll("taxes.rules.list");
+    available = Array.isArray(all) && all.length > 0;
     const rootByCat = /* @__PURE__ */ new Map();
     for (const r6 of all) {
       if (!r6 || !r6.tax_category_key || !isRoot(r6)) continue;
@@ -4917,8 +4928,9 @@ async function buildCategoryRatesMap(client) {
       map.set(cat, pct);
     }
   } catch {
+    available = false;
   }
-  return map;
+  return { rates: map, available };
 }
 function resolveLineTax(catRatesMap, taxCategoryKey) {
   if (!taxCategoryKey) return 0;
@@ -5024,8 +5036,9 @@ var ErpPosTouch = class extends i3 {
     this.prodCats = /* @__PURE__ */ new Map();
     /** Registro de unidades (ADR-0147): code → fila, para congelar el contexto al añadir línea. */
     this.units = /* @__PURE__ */ new Map();
-    /** Mapa tax_category_key → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
-    this.ratesMap = /* @__PURE__ */ new Map();
+    /** Catálogo fiscal del hub: mapa tax_category_key → rate_pct (preview del IVA) + si LLEGÓ.
+     *  Vacío y `available:false` mientras carga o si `taxes` no responde. ADR-0064/0066/0085. */
+    this.taxCatalog = { rates: /* @__PURE__ */ new Map(), available: false };
     this.cartRestored = false;
     // Botones de asignación (ADR-0043 B): cada módulo que aporta a `sales.pos.assign` monta SU botón
     // (mesa, cliente…) en el header. Botones independientes: cada uno abre su propio modal. El POS no
@@ -5268,14 +5281,23 @@ var ErpPosTouch = class extends i3 {
     ion-list.sp-list { background:transparent; }
     .sp-list ion-item { --background:transparent; border-radius:var(--ok-radius-sm,10px); }
     .sp-price { font-weight:800; color:var(--accent); }
+    .sp-list ion-item[disabled] .sp-warn { color:var(--ion-color-warning-shade,#b26a00); white-space:normal; }
     .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap:.7rem; overflow:auto; align-content:start; padding-bottom:.3rem; }
     ion-card.tile { margin:0; border-radius:var(--ok-radius,14px); box-shadow:none; border:1px solid var(--ion-border-color); background:var(--tile);
       overflow:hidden; display:flex; flex-direction:column; transition:border-color .12s, transform .05s; }
     ion-card.tile:hover { border-color:var(--accent); }
     ion-card.tile:active { transform:scale(.98); }
+    /* sales#74 — producto que el cobro rechazaría: se ve, pero no se puede pulsar. Ni el color ni
+       la opacidad son el mensaje (hay daltonismo y hay pantallas malas): el motivo va en el
+       title / aria-label de la tarjeta y la marca es un icono, no un tono. */
+    ion-card.tile[disabled] { opacity:.62; border-style:dashed; cursor:not-allowed; }
+    ion-card.tile[disabled]:hover { border-color:var(--ion-border-color); }
     .thumb { height:5.6rem; background-size:cover; background-position:center; display:flex; align-items:center; justify-content:center;
-      font-weight:800; font-size:1.4rem; color:rgba(255,255,255,.85); }
+      font-weight:800; font-size:1.4rem; color:rgba(255,255,255,.85); position:relative; }
     .thumb img { width:100%; height:100%; object-fit:cover; }
+    .thumb .warn { position:absolute; top:.28rem; right:.28rem; display:flex; align-items:center; justify-content:center;
+      width:1.5rem; height:1.5rem; border-radius:50%; background:var(--ion-color-warning,#ffc409);
+      color:var(--ion-color-warning-contrast,#000); font-size:1.05rem; }
     .tinfo { padding:.5rem .6rem .65rem; }
     .tile .n { font-weight:600; font-size:.9rem; line-height:1.2; color:var(--tx); }
     .tile .p { font-weight:800; color:var(--accent); margin-top:.25rem; }
@@ -5593,7 +5615,7 @@ var ErpPosTouch = class extends i3 {
     super.connectedCallback();
     window.addEventListener("erplora:locale-changed", this.onLocaleChange);
     try {
-      const [prods, methods, settingsRows, savedCart, parked, cats, prodCats, ratesMap, unitRows] = await Promise.all([
+      const [prods, methods, settingsRows, savedCart, parked, cats, prodCats, taxCatalog, unitRows] = await Promise.all([
         erplora2().queryAll("inventory.products.list").catch(() => []),
         erplora2().query("sales.payment_methods").catch(() => []),
         erplora2().query("sales.settings.get").catch(() => []),
@@ -5601,10 +5623,10 @@ var ErpPosTouch = class extends i3 {
         listOpenChecks(erplora2()),
         erplora2().queryAll("inventory.categories.list", { sort: "name", dir: "asc" }).catch(() => []),
         erplora2().queryAll("inventory.product_categories").catch(() => []),
-        buildCategoryRatesMap(erplora2()),
+        loadTaxCatalog(erplora2()),
         erplora2().queryAll("inventory.units.list").catch(() => [])
       ]);
-      this.ratesMap = ratesMap;
+      this.taxCatalog = taxCatalog;
       for (const u5 of rows2(unitRows)) if (u5.code) this.units.set(u5.code, u5);
       this.products = rows2(prods).filter((p4) => p4.is_active !== 0);
       this.methods = rows2(methods);
@@ -6084,12 +6106,26 @@ var ErpPosTouch = class extends i3 {
     this.notifyOrderLinked();
     return this.orderId;
   }
+  /** Motivo por el que este producto NO se puede cobrar, ya traducido; `undefined` si se puede
+   *  (o si no hay catálogo fiscal con el que juzgarlo: eso es un incidente de `taxes`, no del
+   *  producto, y cobrar es lo último que puede romperse). sales#74. */
+  blockedReason(p4) {
+    switch (productSellability(this.taxCatalog, p4.tax_category_key)) {
+      case "no_tax_category":
+        return t5("ui.notSellableNoTaxCategory");
+      case "no_tax_rule":
+        return t5("ui.notSellableNoTaxRule");
+      default:
+        return void 0;
+    }
+  }
   add(p4) {
+    if (this.blockedReason(p4)) return Promise.resolve();
     return this.queue(() => this.addNow(p4));
   }
   async addNow(p4) {
     const ex = this.cart.find((l3) => l3.id === p4.id && !l3.is_gift);
-    const tax_rate = resolveLineTax(this.ratesMap, p4.tax_category_key);
+    const tax_rate = resolveLineTax(this.taxCatalog.rates, p4.tax_category_key);
     try {
       if (ex) {
         const qty = ex.qty + 1;
@@ -6578,12 +6614,18 @@ var ErpPosTouch = class extends i3 {
           ${this.renderCatBar()}
           ${this.error ? b2`<p class="err">${this.error}</p>` : A}
           <div class="grid">
-            ${this.filtered.map((p4) => b2`<ion-card button class="tile" @click=${() => this.add(p4)}>
+            ${this.filtered.map((p4) => {
+      const blocked = this.blockedReason(p4);
+      return b2`<ion-card button class="tile" ?disabled=${!!blocked}
+                title=${blocked ?? A} aria-label=${blocked ? `${p4.name} \xB7 ${blocked}` : A}
+                @click=${() => this.add(p4)}>
               <div class="thumb" style=${p4.image ? `background-image:url(${p4.image})` : `background:${gradient(p4.name)}`}>
                 ${p4.image ? A : initials(p4.name)}
+                ${blocked ? b2`<span class="warn"><ion-icon name="alert-circle"></ion-icon></span>` : A}
               </div>
               <div class="tinfo"><div class="n">${p4.name}</div><div class="sku">${p4.sku || p4.unit_code || ""}</div><div class="p">${this.money(Number(p4.price))}</div></div>
-            </ion-card>`)}
+            </ion-card>`;
+    })}
             ${!this.filtered.length ? b2`<div class="empty">${t5("ui.noProducts")}</div>` : A}
           </div>
         </div>
@@ -6739,15 +6781,19 @@ var ErpPosTouch = class extends i3 {
       this.q = e7.detail.value;
     }}>
         <ion-list class="sp-list" lines="none">
-          ${this.searchResults.map((p4) => b2`
-            <ion-item button detail="false" @click=${() => {
-      this.add(p4);
-      this.q = "";
-      this.renderRoot.querySelector("ok-spotlight-search")?.close?.();
-    }}>
-              <ion-label><h3>${p4.name}</h3>${p4.sku ? b2`<p>${p4.sku}</p>` : A}</ion-label>
+          ${this.searchResults.map((p4) => {
+      const blocked = this.blockedReason(p4);
+      return b2`
+            <ion-item button detail="false" ?disabled=${!!blocked} title=${blocked ?? A}
+              @click=${() => {
+        this.add(p4);
+        this.q = "";
+        this.renderRoot.querySelector("ok-spotlight-search")?.close?.();
+      }}>
+              <ion-label><h3>${p4.name}</h3>${blocked ? b2`<p class="sp-warn">${blocked}</p>` : p4.sku ? b2`<p>${p4.sku}</p>` : A}</ion-label>
               <span slot="end" class="sp-price">${this.money(Number(p4.price))}</span>
-            </ion-item>`)}
+            </ion-item>`;
+    })}
           ${this.q.trim() && !this.searchResults.length ? b2`<div class="empty">${t5("ui.noProducts")}</div>` : A}
         </ion-list>
       </ok-spotlight-search>

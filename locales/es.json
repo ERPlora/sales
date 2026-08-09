@@ -154,6 +154,8 @@
     "searchAction": "Buscar",
     "assign": "Asignar",
     "noProducts": "Sin productos.",
+    "notSellableNoTaxCategory": "No se puede vender: sin categoría fiscal. Falta configurar el IVA.",
+    "notSellableNoTaxRule": "No se puede vender: su categoría fiscal no tiene tipo. Falta configurar el IVA.",
     "sale": "Venta",
     "cartEmptyTouch": "Toca un producto para añadirlo.",
     "parkCurrentSale": "Aparcar esta cuenta",
