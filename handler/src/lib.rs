@@ -252,20 +252,55 @@ struct ResolvedTax {
 ///    vigentes), cada una con su `rate_pct`. Ignora el `tax_rate` que mandó el cliente.
 /// 2. Si no hay catálogo, o categoría ausente/sin regla → **fallback graceful** al `tax_rate` del
 ///    payload (preview del cliente) si viene; si no, 0%. Un solo componente, `rule_id` vacío.
-fn resolve_line_tax(item: &Value, rules: &[&Value], cc: &str, rc: &str, date: &str) -> ResolvedTax {
-    let cat = field(item, "tax_category_key");
+/// Impuesto de una línea. `catalog_cat` es la categoría que dice el CATÁLOGO cuando la línea es de
+/// catálogo (sales#68): manda sobre la del payload.
+///
+/// sales#67: si la línea es de catálogo, su categoría sale de la fila y la regla TIENE que resolver.
+/// Antes se caía al `tax_rate` del payload —el comentario lo llamaba «preview del cliente»— y con
+/// eso los DOS números que deciden lo que se cobra y lo que se declara a la AEAT los proponía quien
+/// llama: se podía cobrar el 21 % y declarar una categoría exenta, y `CuotaTotal` dejaba de cuadrar
+/// con la suma de cuotas repercutidas (justo la comprobación cruzada que hace la AEAT).
+///
+/// El fallback SOLO sobrevive donde no hay nada que resolver: una línea sin producto (venta por
+/// departamento) o de servicio, que no traen categoría de catálogo. Es la misma puerta que deja
+/// abierta sales#68 y tiene su issue (sales#63): cerrarla pide un permiso que el handler no recibe.
+fn resolve_line_tax(
+    item: &Value,
+    catalog_cat: Option<&str>,
+    rules: &[&Value],
+    cc: &str,
+    rc: &str,
+    date: &str,
+) -> Result<ResolvedTax, String> {
+    // La categoría de una línea de catálogo la pone el catálogo; si no, la que venga.
+    let cat = catalog_cat
+        .map(|c| c.to_string())
+        .unwrap_or_else(|| field(item, "tax_category_key"));
+
     if !cat.is_empty() {
         if let Some(root) = tax::resolve_root(rules, cc, rc, &cat, date) {
             let components = tax::rule_components(root, rules, date)
                 .into_iter()
                 .map(|c| TaxComponent { rate_pct: c.rate_pct, rate_key: rate_key(c.rate_pct) })
                 .collect();
-            return ResolvedTax { rule_id: tax::rule_field(root, "id"), components };
+            return Ok(ResolvedTax { rule_id: tax::rule_field(root, "id"), components });
+        }
+        // Es de catálogo, HAY catálogo fiscal y su categoría no resuelve regla: el hub está sin
+        // configurar para esa categoría. Cobrar el tipo que propone el cliente sería inventarse el
+        // impuesto — se cobraría una cosa y se declararía otra.
+        //
+        // ⚠️ La condición `!rules.is_empty()` no es un detalle: distingue «esta categoría no tiene
+        // regla» de «el catálogo fiscal no ha llegado». Sin ella, un `taxes` caído o una `read`
+        // omitida (que el runtime omite EN SILENCIO, hub#650) convertiría un fallo del módulo de
+        // impuestos en un TPV que no puede cobrar nada. Ahí sí manda la regla de la casa: cobrar es
+        // lo último que puede romperse.
+        if catalog_cat.is_some() && !rules.is_empty() {
+            return Err(reject("sales.no_tax_rule", format!("no tax rule for category `{cat}`")));
         }
     }
-    // Backward-compat / graceful: catálogo ausente o categoría sin regla → preview del cliente.
+    // Sin categoría que resolver (línea libre o servicio): preview del cliente. Puerta conocida.
     let pct = item.get("tax_rate").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
-    ResolvedTax { rule_id: String::new(), components: vec![TaxComponent { rate_pct: pct, rate_key: rate_key(pct) }] }
+    Ok(ResolvedTax { rule_id: String::new(), components: vec![TaxComponent { rate_pct: pct, rate_key: rate_key(pct) }] })
 }
 
 /// Día ISO `YYYY-MM-DD` de `now` (para la vigencia de las reglas).
@@ -368,7 +403,7 @@ fn is_catalog_line(item: &Value) -> bool {
 
 /// Precio y coste AUTORITATIVOS de una línea de catálogo. `Err` con código de dominio si la línea
 /// dice ser de catálogo y no se puede sostener.
-fn authoritative_price(item: &Value, catalog: Option<&Vec<&Value>>) -> Result<Option<(i64, i64)>, String> {
+fn authoritative_price(item: &Value, catalog: Option<&Vec<&Value>>) -> Result<Option<(i64, i64, String)>, String> {
     if !is_catalog_line(item) {
         return Ok(None);
     }
@@ -383,6 +418,7 @@ fn authoritative_price(item: &Value, catalog: Option<&Vec<&Value>>) -> Result<Op
     Ok(Some((
         as_cents(row.get("price").unwrap_or(&Value::Null), 0),
         as_cents(row.get("cost").unwrap_or(&Value::Null), 0),
+        field(row, "tax_category_key"),
     )))
 }
 
@@ -593,13 +629,15 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     for (i, item) in items.iter().enumerate() {
         // El precio SALE DEL CATÁLOGO si la línea dice ser de catálogo. El del payload es una
         // propuesta, no un hecho.
-        let (unit_price, item_cost) = match authoritative_price(item, product_catalog.as_ref())? {
-            Some((price, cost)) => (price, cost),
+        let from_catalog = authoritative_price(item, product_catalog.as_ref())?;
+        let (unit_price, item_cost) = match &from_catalog {
+            Some((price, cost, _)) => (*price, *cost),
             None => (
                 as_cents(item.get("price").unwrap_or(&Value::Null), 0), // céntimos
                 as_cents(item.get("cost").unwrap_or(&Value::Null), 0),
             ),
         };
+        let catalog_cat = from_catalog.as_ref().map(|(_, _, cat)| cat.as_str());
         // Cantidad en punto fijo 10⁶ (ADR-0147) + rechazo fuera de rejilla; y la cantidad de
         // precio KPEIN («37 céntimos por 100 ud») que hace exacto el sub-céntimo sin tocar el dinero.
         let qty = line_qty(item)?;
@@ -608,7 +646,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         // ADR-0085: resuelve el impuesto por CATEGORÍA desde el catálogo de confianza
         // (server-authoritative, raíz + componentes), con país/región del contexto y fallback
         // graceful al `tax_rate` del payload. El cliente NO es autoridad del %.
-        let resolved = resolve_line_tax(item, &catalog, &cc, &rc, &date);
+        let resolved = resolve_line_tax(item, catalog_cat, &catalog, &cc, &rc, &date)?;
         let components = &resolved.components;
         // Tasa combinada que persistimos en la línea (== suma de componentes; para un tipo
         // simple es su propio %). Es la cifra que ve invoice/listeners en `tax_rate`.
@@ -781,15 +819,23 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     let event_items: Vec<Value> = items
         .iter()
         .map(|it| {
-            let unit_price = as_cents(it.get("price").unwrap_or(&Value::Null), 0); // céntimos
-            // Ya validada en el bucle de arriba (mismo item): aquí no puede fallar.
+            // MISMAS cifras de confianza que la línea que se persiste (sales#67/#68): si el evento
+            // llevara el precio o la categoría del payload, `invoice` facturaría una cosa y la venta
+            // guardaría otra. Ya validado en el bucle de arriba (mismo item), así que aquí no falla.
+            let it_from_catalog = authoritative_price(it, product_catalog.as_ref()).unwrap_or(None);
+            let unit_price = match &it_from_catalog {
+                Some((price, _, _)) => *price,
+                None => as_cents(it.get("price").unwrap_or(&Value::Null), 0), // céntimos
+            };
+            let it_catalog_cat = it_from_catalog.as_ref().map(|(_, _, cat)| cat.as_str());
             let qty = line_qty(it).unwrap_or(QUANTITY_SCALE);
             let price_qty = line_price_qty(it);
             let line_disc = it.get("discount").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
             // Mismo resolver server-authoritative que arriba (ADR-0085): el evento lleva el %
             // y los net/tax RESUELTOS del catálogo, no la pista del cliente, para que
             // invoice/inventory reaccionen con cifras de confianza.
-            let resolved = resolve_line_tax(it, &catalog, &cc, &rc, &date);
+            let resolved = resolve_line_tax(it, it_catalog_cat, &catalog, &cc, &rc, &date)
+                .unwrap_or_else(|_| ResolvedTax { rule_id: String::new(), components: vec![] });
             let combined_pct: f64 = resolved.components.iter().map(|c| c.rate_pct).sum();
             // Invitación: net/tax = 0 en el evento (invoice/customers no facturan la cortesía). Sigue
             // descontando stock (inventory usa product_id+quantity). Mismo gating que arriba.
@@ -2015,6 +2061,86 @@ mod tests {
         inp
     }
 
+    /// A trusted tax catalogue: one ES root rule at 21 % for `product.generic`.
+    fn tax_catalog() -> Value {
+        json!([{ "id": "r-es-21", "country_code": "ES", "region_code": null,
+                 "tax_category_key": "product.generic", "rate_pct": 21.0, "tax_type": "vat" }])
+    }
+
+    /// Input with BOTH catalogues plus the fiscal one, and a hub in ES.
+    fn input_fiscal(items: Value, products: Value, rules: Value) -> Value {
+        let mut inp = input_with_products(items, 4, products);
+        if !rules.is_null() {
+            inp["context"]["reads"]["taxes.rules.list"] = rules;
+        }
+        inp["context"]["country_code"] = json!("ES");
+        inp
+    }
+
+    // ── sales#67 · el IMPUESTO tampoco lo pone el navegador ────────────────────────────────────
+    //
+    // `resolve_line_tax` caía al `tax_rate` del payload cuando la categoría no resolvía regla —su
+    // propio comentario lo llamaba «preview del cliente»—. Con eso, los DOS números que deciden lo
+    // que se cobra y lo que se declara a la AEAT los proponía quien llama.
+
+    #[test]
+    fn the_tax_category_comes_from_the_catalogue_too() {
+        // El payload miente sobre la categoría para caer en una regla más barata; la fila manda.
+        let items = json!([{ "product_id": "p-wine", "product_name": "Vino", "price": 5000,
+                             "quantity": 1_000_000, "tax_category_key": "restaurant.food",
+                             "tax_rate": 10.0 }]);
+        let out = complete_sale_pure(input_fiscal(items, product_catalog(), tax_catalog()))
+            .expect("la venta se cierra");
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").unwrap();
+        assert_eq!(
+            line.params["tax_rate"], json!(21.0),
+            "se aplicó la categoría del payload en vez de la del catálogo"
+        );
+    }
+
+    #[test]
+    fn a_catalogue_line_whose_category_has_no_rule_is_refused() {
+        // Hub sin regla para esa categoría: cobrar el tipo que propone el cliente es exactamente
+        // lo que hace que se cobre una cosa y se declare otra.
+        let items = json!([{ "product_id": "p-wine", "product_name": "Vino", "price": 5000,
+                             "quantity": 1_000_000, "tax_rate": 21.0 }]);
+        // El catálogo fiscal EXISTE pero no cubre `product.generic` — que es el caso real: el hub
+        // tiene sus reglas y a alguien le falta la de una categoría. Un catálogo VACÍO significa
+        // otra cosa (que no ha llegado) y ahí se degrada a propósito.
+        let otras_reglas = json!([{ "id": "r-es-food", "country_code": "ES", "region_code": null,
+                                    "tax_category_key": "restaurant.food", "rate_pct": 10.0,
+                                    "tax_type": "vat" }]);
+        let err = complete_sale_pure(input_fiscal(items, product_catalog(), otras_reglas))
+            .expect_err("sin regla aplicable no se cierra la venta");
+        assert!(err.starts_with("sales.no_tax_rule"), "código inesperado: {err}");
+    }
+
+    #[test]
+    fn without_a_tax_catalogue_at_all_the_sale_still_closes() {
+        // Distinción deliberada: «esta categoría no tiene regla» es un hub mal configurado y se
+        // rechaza; «el catálogo fiscal no ha llegado» es `taxes` caído o una read omitida en
+        // silencio (hub#650), y ahí manda la regla de la casa — cobrar es lo último que puede
+        // romperse. Sin ella, un fallo de `taxes` dejaría al TPV sin poder cobrar nada.
+        let items = json!([{ "product_id": "p-wine", "product_name": "Vino", "price": 5000,
+                             "quantity": 1_000_000, "tax_rate": 21.0 }]);
+        let out = complete_sale_pure(input_fiscal(items, product_catalog(), Value::Null))
+            .expect("sin catálogo fiscal la venta se cierra con la pista del cliente");
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").unwrap();
+        assert_eq!(line.params["tax_rate"], json!(21.0));
+    }
+
+    #[test]
+    fn a_free_line_still_falls_back_to_the_rate_it_was_given() {
+        // Una línea sin producto no tiene categoría de catálogo que resolver. Sigue siendo la
+        // puerta abierta (sales#63) y se deja explícita, no tapada.
+        let items = json!([{ "product_name": "Varios", "price": 250, "quantity": 1_000_000,
+                             "tax_rate": 21.0 }]);
+        let out = complete_sale_pure(input_fiscal(items, product_catalog(), tax_catalog()))
+            .expect("una línea libre se sigue cobrando");
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").unwrap();
+        assert_eq!(line.params["tax_rate"], json!(21.0));
+    }
+
     /// The line a manipulated caller sends: the real product, at one cent.
     fn underpriced_line() -> Value {
         json!([{ "product_id": "p-wine", "product_name": "Botella de vino", "price": 1,
@@ -2030,7 +2156,8 @@ mod tests {
 
     #[test]
     fn the_catalogue_price_wins_over_the_one_the_caller_sent() {
-        let out = complete_sale_pure(input_with_products(underpriced_line(), 4, product_catalog()))
+        // Con catálogo fiscal, porque desde sales#67 una línea de catálogo exige regla resuelta.
+        let out = complete_sale_pure(input_fiscal(underpriced_line(), product_catalog(), tax_catalog()))
             .expect("la venta se cierra");
         let line = out
             .operations
