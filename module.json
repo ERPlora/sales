@@ -1,7 +1,7 @@
 {
   "id": "sales",
   "name": "Sales & POS",
-  "version": "2.13.8",
+  "version": "2.13.10",
   "description": "Point of sale: complete and void sales, and review sales history and metrics.",
   "agent": {
     "description": "Manages sales and point-of-sale operations: list and inspect sales, complete new sales transactions, void sales, configure payment methods, and retrieve sales statistics.",
@@ -474,6 +474,17 @@
         "description": "Internal (ADR-0146): links an order line to the sale that charged it (split-bill). Emitted by complete_sale when it receives line_ids."
       }
     }
+  },
+  "events": {
+    "listen": {},
+    "emits": [
+      "order.completed",
+      "order.fired",
+      "sale.completed",
+      "sale.voided",
+      "sales.order.opened",
+      "sales.sale.created_from_appointment"
+    ]
   },
   "widgets": {
     "sales.today": {

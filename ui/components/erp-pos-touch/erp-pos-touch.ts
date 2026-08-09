@@ -28,7 +28,7 @@ import {
   openOrderWithLines, addOrderLine, updateOrderLineQty, persistLineQty, removeOrderLine, loadOrderLines, mergeOrders, splitOrder,
   unitContextPayload, type CartLine, type ErploraClientLike,
 } from '../../lib/pos-cart.js';
-import { buildCategoryRatesMap, resolveLineTax } from '../../lib/pos-tax.js';
+import { loadTaxCatalog, productSellability, resolveLineTax, type TaxCatalog } from '../../lib/pos-tax.js';
 // La frontera de la ESCALA de cantidades (ADR-0147): la UI trabaja en lógico (0,5), el cable en 10⁶.
 import { toMicro, fromMicro, onGrid, formatQuantity } from '../../lib/quantity.js';
 import { checkoutErrorKey, newIdempotencyKey } from '../../lib/checkout-key.js';
@@ -174,14 +174,23 @@ export class ErpPosTouch extends LitElement {
     ion-list.sp-list { background:transparent; }
     .sp-list ion-item { --background:transparent; border-radius:var(--ok-radius-sm,10px); }
     .sp-price { font-weight:800; color:var(--accent); }
+    .sp-list ion-item[disabled] .sp-warn { color:var(--ion-color-warning-shade,#b26a00); white-space:normal; }
     .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap:.7rem; overflow:auto; align-content:start; padding-bottom:.3rem; }
     ion-card.tile { margin:0; border-radius:var(--ok-radius,14px); box-shadow:none; border:1px solid var(--ion-border-color); background:var(--tile);
       overflow:hidden; display:flex; flex-direction:column; transition:border-color .12s, transform .05s; }
     ion-card.tile:hover { border-color:var(--accent); }
     ion-card.tile:active { transform:scale(.98); }
+    /* sales#74 — producto que el cobro rechazaría: se ve, pero no se puede pulsar. Ni el color ni
+       la opacidad son el mensaje (hay daltonismo y hay pantallas malas): el motivo va en el
+       title / aria-label de la tarjeta y la marca es un icono, no un tono. */
+    ion-card.tile[disabled] { opacity:.62; border-style:dashed; cursor:not-allowed; }
+    ion-card.tile[disabled]:hover { border-color:var(--ion-border-color); }
     .thumb { height:5.6rem; background-size:cover; background-position:center; display:flex; align-items:center; justify-content:center;
-      font-weight:800; font-size:1.4rem; color:rgba(255,255,255,.85); }
+      font-weight:800; font-size:1.4rem; color:rgba(255,255,255,.85); position:relative; }
     .thumb img { width:100%; height:100%; object-fit:cover; }
+    .thumb .warn { position:absolute; top:.28rem; right:.28rem; display:flex; align-items:center; justify-content:center;
+      width:1.5rem; height:1.5rem; border-radius:50%; background:var(--ion-color-warning,#ffc409);
+      color:var(--ion-color-warning-contrast,#000); font-size:1.05rem; }
     .tinfo { padding:.5rem .6rem .65rem; }
     .tile .n { font-weight:600; font-size:.9rem; line-height:1.2; color:var(--tx); }
     .tile .p { font-weight:800; color:var(--accent); margin-top:.25rem; }
@@ -558,8 +567,9 @@ export class ErpPosTouch extends LitElement {
   private prodCats = new Map<string, Set<string>>();
   /** Registro de unidades (ADR-0147): code → fila, para congelar el contexto al añadir línea. */
   private units = new Map<string, UnitRow>();
-  /** Mapa tax_category_key → rate_pct (vía taxes.rates.list); vacío si taxes no responde. ADR-0064/0066. */
-  private ratesMap = new Map<string, number>();
+  /** Catálogo fiscal del hub: mapa tax_category_key → rate_pct (preview del IVA) + si LLEGÓ.
+   *  Vacío y `available:false` mientras carga o si `taxes` no responde. ADR-0064/0066/0085. */
+  private taxCatalog: TaxCatalog = { rates: new Map<string, number>(), available: false };
   /** Pista de overflow compartida con la bottom bar (fade dinámico + pequeño gesto inicial). */
   private categorySegment?: HTMLElement;
   private categorySegmentCleanup?: () => void;
@@ -783,7 +793,7 @@ export class ErpPosTouch extends LitElement {
     super.connectedCallback();
     window.addEventListener('erplora:locale-changed', this.onLocaleChange);
     try {
-      const [prods, methods, settingsRows, savedCart, parked, cats, prodCats, ratesMap, unitRows] = await Promise.all([
+      const [prods, methods, settingsRows, savedCart, parked, cats, prodCats, taxCatalog, unitRows] = await Promise.all([
         erplora().queryAll<Product>('inventory.products.list').catch(() => []),
         erplora().query('sales.payment_methods').catch(() => []),
         erplora().query('sales.settings.get').catch(() => []),
@@ -791,10 +801,10 @@ export class ErpPosTouch extends LitElement {
         listOpenChecks(erplora()),
         erplora().queryAll<Category>('inventory.categories.list', { sort: 'name', dir: 'asc' }).catch(() => []),
         erplora().queryAll<ProdCat>('inventory.product_categories').catch(() => []),
-        buildCategoryRatesMap(erplora()),
+        loadTaxCatalog(erplora()),
         erplora().queryAll<UnitRow>('inventory.units.list').catch(() => [] as UnitRow[]),
       ]);
-      this.ratesMap = ratesMap;
+      this.taxCatalog = taxCatalog;
       for (const u of rows<UnitRow>(unitRows)) if (u.code) this.units.set(u.code, u);
       this.products = rows<Product>(prods).filter((p) => p.is_active !== 0);
       this.methods = rows<PayMethod>(methods);
@@ -1308,7 +1318,22 @@ export class ErpPosTouch extends LitElement {
    *  pedidos: cada uno veía «aún no hay pedido» porque el anterior seguía en vuelo (ADR-0144). */
   private readonly queue = createSerialQueue();
 
+  /** Motivo por el que este producto NO se puede cobrar, ya traducido; `undefined` si se puede
+   *  (o si no hay catálogo fiscal con el que juzgarlo: eso es un incidente de `taxes`, no del
+   *  producto, y cobrar es lo último que puede romperse). sales#74. */
+  private blockedReason(p: Product): string | undefined {
+    switch (productSellability(this.taxCatalog, p.tax_category_key)) {
+      case 'no_tax_category': return t('ui.notSellableNoTaxCategory');
+      case 'no_tax_rule': return t('ui.notSellableNoTaxRule');
+      default: return undefined;
+    }
+  }
+
   private add(p: Product): Promise<void> {
+    // Red de seguridad: la tarjeta ya se pinta `disabled` (Ionic corta el toque), así que llegar
+    // aquí con un producto bloqueado sería un camino nuevo. No añadimos en silencio lo que el cobro
+    // va a rechazar: el motivo ya está escrito en la propia tarjeta.
+    if (this.blockedReason(p)) return Promise.resolve();
     return this.queue(() => this.addNow(p));
   }
 
@@ -1316,7 +1341,7 @@ export class ErpPosTouch extends LitElement {
     const ex = this.cart.find((l) => l.id === p.id && !l.is_gift);
     // tax_category_key = referencia fiscal del producto (autoridad del servidor, ADR-0085).
     // tax_rate = % resuelto en cliente SOLO para el preview del total. cost = para el arqueo de regalos.
-    const tax_rate = resolveLineTax(this.ratesMap, p.tax_category_key);
+    const tax_rate = resolveLineTax(this.taxCatalog.rates, p.tax_category_key);
     try {
       if (ex) {
         // Ya está en la comanda: sube la cantidad y PERSISTE YA (una fila, no todo el carrito).
@@ -1878,12 +1903,22 @@ export class ErpPosTouch extends LitElement {
           ${this.renderCatBar()}
           ${this.error ? html`<p class="err">${this.error}</p>` : nothing}
           <div class="grid">
-            ${this.filtered.map((p) => html`<ion-card button class="tile" @click=${() => this.add(p)}>
+            ${this.filtered.map((p) => {
+              // sales#74 — lo que el cobro va a rechazar (sin categoría fiscal, o con una que no
+              // resuelve tipo) se pinta DESHABILITADO, no se esconde: escondiéndolo el negocio
+              // nunca se entera de que tiene el catálogo a medio configurar. El motivo viaja en
+              // `title`/`aria-label` y con una marca visible — no solo por color.
+              const blocked = this.blockedReason(p);
+              return html`<ion-card button class="tile" ?disabled=${!!blocked}
+                title=${blocked ?? nothing} aria-label=${blocked ? `${p.name} · ${blocked}` : nothing}
+                @click=${() => this.add(p)}>
               <div class="thumb" style=${p.image ? `background-image:url(${p.image})` : `background:${gradient(p.name)}`}>
                 ${p.image ? nothing : initials(p.name)}
+                ${blocked ? html`<span class="warn"><ion-icon name="alert-circle"></ion-icon></span>` : nothing}
               </div>
               <div class="tinfo"><div class="n">${p.name}</div><div class="sku">${p.sku || p.unit_code || ''}</div><div class="p">${this.money(Number(p.price))}</div></div>
-            </ion-card>`)}
+            </ion-card>`;
+            })}
             ${!this.filtered.length ? html`<div class="empty">${t('ui.noProducts')}</div>` : nothing}
           </div>
         </div>
@@ -2027,11 +2062,17 @@ export class ErpPosTouch extends LitElement {
         @ok-open=${(e: CustomEvent) => { this.searchOpen = e.detail.open; if (!e.detail.open) this.q = ''; }}
         @ok-input=${(e: CustomEvent) => { this.q = e.detail.value; }}>
         <ion-list class="sp-list" lines="none">
-          ${this.searchResults.map((p) => html`
-            <ion-item button detail="false" @click=${() => { this.add(p); this.q = ''; (this.renderRoot.querySelector('ok-spotlight-search') as { close?: () => void } | null)?.close?.(); }}>
-              <ion-label><h3>${p.name}</h3>${p.sku ? html`<p>${p.sku}</p>` : nothing}</ion-label>
+          ${this.searchResults.map((p) => {
+            // Misma regla que la rejilla: buscar un producto no es otra puerta para colar en la
+            // cuenta lo que no se puede cobrar (sales#74).
+            const blocked = this.blockedReason(p);
+            return html`
+            <ion-item button detail="false" ?disabled=${!!blocked} title=${blocked ?? nothing}
+              @click=${() => { this.add(p); this.q = ''; (this.renderRoot.querySelector('ok-spotlight-search') as { close?: () => void } | null)?.close?.(); }}>
+              <ion-label><h3>${p.name}</h3>${blocked ? html`<p class="sp-warn">${blocked}</p>` : p.sku ? html`<p>${p.sku}</p>` : nothing}</ion-label>
               <span slot="end" class="sp-price">${this.money(Number(p.price))}</span>
-            </ion-item>`)}
+            </ion-item>`;
+          })}
           ${this.q.trim() && !this.searchResults.length ? html`<div class="empty">${t('ui.noProducts')}</div>` : nothing}
         </ion-list>
       </ok-spotlight-search>

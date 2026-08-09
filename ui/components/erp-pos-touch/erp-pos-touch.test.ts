@@ -17,6 +17,16 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import esCatalog from '../../../locales/es.json';
 
+// sales#74 — la rejilla ya no deja añadir lo que el cobro rechazaría: un producto es vendible si
+// tiene categoría fiscal Y esa categoría resuelve tipo. Los dobles de este fichero describen un hub
+// CONFIGURADO (producto con categoría + catálogo fiscal servido) porque lo que prueban es otra cosa
+// —carrito, aparcados, cobro, split—. El contrato de vendibilidad tiene su propio fichero,
+// `erp-pos-sellable.test.ts`.
+const CATEGORIA_IVA = 'product.generic';
+const REGLAS_IVA = [{ id: 'r-21', tax_category_key: CATEGORIA_IVA, rate_pct: 21, parent_id: null, is_active: 1 }];
+/** Respuesta por defecto de `queryAll` para lo que un doble no contemple: el catálogo fiscal. */
+const catalogoFiscal = (name: string) => (name === 'taxes.rules.list' ? REGLAS_IVA : []);
+
 // El WC llama al SDK en cuanto se monta. Sin esto, `connectedCallback` peta y no pinta nada.
 const slotsPedidos: string[] = [];
 beforeEach(() => {
@@ -26,7 +36,7 @@ beforeEach(() => {
   // todo su catálogo, no una página — con `page_size` se quedaba en 50 y no se podía vender más).
   (globalThis as Record<string, unknown>).erplora = {
     query: async () => [],
-    queryAll: async () => [],
+    queryAll: async (name: string) => catalogoFiscal(name),
     command: async () => ({}),
     // Moneda del hub + formateo (ADR-0059). Los DOS formateadores del SDK, con su contrato real:
     // `formatMoney` recibe CÉNTIMOS (divide entre 100) y es el que usan los WC porque el dinero es
@@ -338,9 +348,9 @@ describe('precios del TPV (dinero = céntimos, ADR-0007)', () => {
     const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
     sdk.formatMoney = (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`;
     sdk.formatAmount = (units: number) => `${(units || 0).toFixed(2)} €`;
-    const productos = [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1 }];
+    const productos = [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }];
     sdk.query = async () => [];
-    sdk.queryAll = async (name: string) => (name === 'inventory.products.list' ? productos : []);
+    sdk.queryAll = async (name: string) => (name === 'inventory.products.list' ? productos : catalogoFiscal(name));
     // ADR-0141: añadir al carrito ya no muta un array en memoria — abre/actualiza un PEDIDO real y
     // espera a que la fila esté escrita. El runtime devuelve los ids creados en `new_ids`.
     sdk.command = async () => ({ ok: true, new_ids: ['ord-1', 'line-1'] });
@@ -441,9 +451,9 @@ describe('cobro táctil: lo entregado viaja en CÉNTIMOS (ADR-0007)', () => {
   beforeEach(() => {
     comandos = [];
     const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
-    const productos = [{ id: 'p1', name: 'Champú reparador', sku: 'CR', price: 1250, is_active: 1 }];
+    const productos = [{ id: 'p1', name: 'Champú reparador', sku: 'CR', price: 1250, is_active: 1, tax_category_key: CATEGORIA_IVA }];
     sdk.query = async () => [];
-    sdk.queryAll = async (name: string) => (name === 'inventory.products.list' ? productos : []);
+    sdk.queryAll = async (name: string) => (name === 'inventory.products.list' ? productos : catalogoFiscal(name));
     sdk.command = async (name: string, payload: Record<string, unknown>) => {
       comandos.push({ name, payload });
       return {};
@@ -475,9 +485,9 @@ describe('snapshot fiscal del cliente (ADR-0132)', () => {
   beforeEach(() => {
     comandos = [];
     const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
-    const productos = [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1 }];
+    const productos = [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }];
     sdk.query = async () => [];
-    sdk.queryAll = async (name: string) => (name === 'inventory.products.list' ? productos : []);
+    sdk.queryAll = async (name: string) => (name === 'inventory.products.list' ? productos : catalogoFiscal(name));
     sdk.command = async (name: string, payload: Record<string, unknown>) => {
       comandos.push({ name, payload });
       return {};
@@ -548,7 +558,7 @@ describe('avisos de éxito: van por notify(), no por el hueco rojo de error', ()
     comandos = [];
     const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
     sdk.queryAll = async (name: string) =>
-      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1 }] : []);
+      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }] : catalogoFiscal(name));
     sdk.command = async (name: string) => {
       comandos.push(name);
       return name === 'sales.order.open' ? { ok: true, new_ids: ['o1', 'l1'] } : { ok: true };
@@ -611,7 +621,7 @@ describe('carrito universal: secciones Pendiente/Enviado emergen del dato', () =
     sdk.t = (_catalog: unknown, key: string, params?: Record<string, unknown>) =>
       (params ? `${key} ${Object.values(params).join(' ')}` : key);
     sdk.queryAll = async (name: string) =>
-      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Entrecot', sku: 'ENT', price: 2500, is_active: 1 }] : []);
+      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Entrecot', sku: 'ENT', price: 2500, is_active: 1, tax_category_key: CATEGORIA_IVA }] : catalogoFiscal(name));
     sdk.query = async () => [];
     sdk.command = async (name: string, payload: Record<string, unknown>) => {
       comandos.push({ name, payload });
@@ -710,7 +720,7 @@ describe('slot sales.pos.actions: cocina inyectada dentro de Comanda actual', ()
     comandos = [];
     const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
     sdk.queryAll = async (name: string) =>
-      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1 }] : []);
+      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }] : catalogoFiscal(name));
     sdk.query = async () => [];
     sdk.command = async (name: string) => {
       comandos.push(name);
@@ -836,7 +846,7 @@ describe('cuentas abiertas: aparcar con nombre, recuperar sin perder nada', () =
     soltados = 0;
     const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
     sdk.queryAll = async (name: string) =>
-      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1 }] : []);
+      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }] : catalogoFiscal(name));
     sdk.query = async () => [];
     sdk.command = async (name: string, payload: Record<string, unknown>) => {
       comandos.push({ name, payload });
@@ -1033,7 +1043,7 @@ describe('sheet de cobro (tender): método dentro, tarjeta sin numpad, atajos de
     const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
     sdk.query = async (name: string) => (name === 'sales.payment_methods' ? METODOS : []);
     sdk.queryAll = async (name: string) =>
-      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1 }] : []);
+      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }] : catalogoFiscal(name));
     sdk.command = async (name: string, payload: Record<string, unknown>) => {
       comandos.push({ name, payload });
       return { ok: true, new_ids: ['o1', 'l1'] };
@@ -1202,12 +1212,12 @@ describe('checkout idempotency (sales#20)', () => {
     consultas = [];
     fallaElProximoCobro = null;
     const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
-    const productos = [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1 }];
+    const productos = [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }];
     sdk.query = async (name: string, params: Record<string, unknown>) => {
       consultas.push({ name, params });
       return name === 'sales.by_idempotency_key' ? [{ id: 'sale-7' }] : [];
     };
-    sdk.queryAll = async (name: string) => (name === 'inventory.products.list' ? productos : []);
+    sdk.queryAll = async (name: string) => (name === 'inventory.products.list' ? productos : catalogoFiscal(name));
     sdk.command = async (name: string, payload: Record<string, unknown>) => {
       comandos.push({ name, payload });
       if (name === 'sales.complete_sale' && fallaElProximoCobro) {
@@ -1294,7 +1304,7 @@ describe('sales#61 — dividir la cuenta desde el plano de sala', () => {
     enlaces = [];
     const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
     sdk.queryAll = async (name: string) =>
-      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1 }] : []);
+      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }] : catalogoFiscal(name));
     sdk.query = async () => [];
     sdk.command = async (name: string, payload: Record<string, unknown>) => {
       comandos.push({ name, payload });
@@ -1394,7 +1404,7 @@ describe('sales#61 — dividir una mesa que no es la que hay en pantalla', () =>
     comandos = [];
     const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
     sdk.queryAll = async (name: string) =>
-      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1 }] : []);
+      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }] : catalogoFiscal(name));
     sdk.query = async () => [];
     sdk.command = async (name: string, payload: Record<string, unknown>) => {
       comandos.push({ name, payload });
