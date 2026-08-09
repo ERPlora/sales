@@ -9,6 +9,11 @@
 //
 // Best-effort: si `taxes` no responde, el mapa queda vacío → preview 0%; la venta NUNCA se rompe por
 // esto (el servidor recalcula el % real por categoría al completar).
+//
+// El mismo catálogo responde además a la pregunta de la REJILLA (sales#74): ¿se puede cobrar este
+// producto? Por eso `loadTaxCatalog` devuelve, junto al mapa, si el catálogo LLEGÓ: un mapa vacío
+// significa a la vez «taxes caído» y «no hay reglas», y confundirlos apagaría el TPV entero cuando
+// el caído es `taxes`. `productSellability` es el veredicto por producto.
 
 import type { ErploraClientLike } from './pos-cart.js';
 
@@ -31,12 +36,43 @@ function isRoot(r: TaxRuleRow): boolean {
   return r.parent_id == null || String(r.parent_id) === '';
 }
 
-/** Carga las reglas de tipo del hub y construye `tax_category_key → rate_pct` (raíz + componentes).
- *  Nunca lanza: ante cualquier fallo (taxes no instalado/sin responder) devuelve un mapa vacío. */
-export async function buildCategoryRatesMap(client: ErploraClientLike): Promise<Map<string, number>> {
+/** El catálogo fiscal del hub tal y como lo ve el navegador. */
+export interface TaxCatalog {
+  /** `tax_category_key → rate_pct` (raíz + componentes). Solo PREVIEW: el % lo pone el servidor. */
+  rates: Map<string, number>;
+  /** ¿Sabemos algo de impuestos? `false` = el catálogo NO llegó (taxes caído, `read` omitida) o vino
+   *  vacío. Un mapa vacío significa las dos cosas a la vez, y NO son la misma: sin este flag, un
+   *  fallo de `taxes` se convertiría en un TPV que no deja vender nada. Es la misma distinción que
+   *  hace el handler con `!rules.is_empty()` antes de rechazar por `sales.no_tax_rule`. */
+  available: boolean;
+}
+
+/** Veredicto de una línea de catálogo ANTES de tocarla (sales#74):
+ *  - `sellable`         → tiene categoría y esa categoría resuelve regla;
+ *  - `no_tax_category`  → el producto no tiene `tax_category_key` (defecto del propio producto);
+ *  - `no_tax_rule`      → tiene categoría, hay catálogo fiscal y no resuelve → el cobro la rechaza;
+ *  - `unknown`          → tiene categoría pero NO hay catálogo con el que juzgar. No se bloquea. */
+export type Sellability = 'sellable' | 'no_tax_category' | 'no_tax_rule' | 'unknown';
+
+/** ¿Puede el TPV añadir este producto a la cesta? Función pura sobre el catálogo ya cargado.
+ *
+ *  Que el producto no traiga categoría se sabe SIN el catálogo fiscal (está en su propia fila), así
+ *  que se bloquea siempre: venderlo emitiría un documento con 0 % de IVA sin haberlo decidido nadie.
+ *  Lo que sí depende del catálogo es «esta categoría no tiene tipo»: sin catálogo no se juzga. */
+export function productSellability(catalog: TaxCatalog, taxCategoryKey?: string | null): Sellability {
+  if (!taxCategoryKey) return 'no_tax_category';
+  if (!catalog.available) return 'unknown';
+  return catalog.rates.has(String(taxCategoryKey)) ? 'sellable' : 'no_tax_rule';
+}
+
+/** Carga el catálogo fiscal del hub: el mapa de tipos por categoría + si el catálogo llegó siquiera.
+ *  Nunca lanza: ante cualquier fallo (taxes no instalado/sin responder) devuelve `available:false`. */
+export async function loadTaxCatalog(client: ErploraClientLike): Promise<TaxCatalog> {
   const map = new Map<string, number>();
+  let available = false;
   try {
     const all = await client.queryAll<TaxRuleRow>('taxes.rules.list');
+    available = Array.isArray(all) && all.length > 0;
     // Raíz por categoría: la regla raíz activa con `valid_from` más reciente.
     const rootByCat = new Map<string, TaxRuleRow>();
     for (const r of all) {
@@ -57,8 +93,9 @@ export async function buildCategoryRatesMap(client: ErploraClientLike): Promise<
     }
   } catch {
     /* taxes puede no responder; preview 0% sin romper la venta (el servidor resuelve el % real) */
+    available = false;
   }
-  return map;
+  return { rates: map, available };
 }
 
 /** Preview del % de IVA de un producto desde su `tax_category_key` usando el mapa (0 si no resuelve). */
