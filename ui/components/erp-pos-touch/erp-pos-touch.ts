@@ -32,6 +32,10 @@ import { loadTaxCatalog, productSellability, resolveLineTax, type TaxCatalog } f
 // La frontera de la ESCALA de cantidades (ADR-0147): la UI trabaja en lógico (0,5), el cable en 10⁶.
 import { toMicro, fromMicro, onGrid, formatQuantity } from '../../lib/quantity.js';
 import { checkoutErrorKey, newIdempotencyKey } from '../../lib/checkout-key.js';
+// sales#81: el transporte del SDK filtra el HTML del 502 del proxy como un SyntaxError crudo
+// («<!DOCTYPE … is not valid JSON»). Esta es la frontera del módulo: traducirlo a un mensaje de
+// negocio para el cajero (la guarda `res.ok` del SDK se persigue aparte, en el hub).
+import { transportErrorKey, SERVER_UNAVAILABLE_KEY } from '../../lib/transport-error.js';
 // Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC.
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
@@ -1373,7 +1377,12 @@ export class ErpPosTouch extends LitElement {
       this.cart = [...this.cart, line];
     } catch (e) {
       // La comanda es la fuente de verdad: si la escritura falla, NO dejamos la UI mintiendo.
-      const msg = e instanceof Error ? e.message : String(e);
+      // sales#81: si el error es del TRANSPORTE (el proxy devolvió HTML 502 porque el contenedor
+      // del hub murió, o el fetch no llegó), el mensaje crudo del parser («<!DOCTYPE … is not
+      // valid JSON») no le sirve al cajero: lo traducimos a un aviso de negocio. Los errores de
+      // dominio pasan tal cual — su frase sí es útil.
+      const transportKey = transportErrorKey(e);
+      const msg = transportKey ? t(transportKey) : (e instanceof Error ? e.message : String(e));
       this.error = msg;
       // #270 — el banner `this.error` es discreto y en un TPV táctil se pierde → el rechazo del
       // backend parecía "no pasa nada" al tocar un producto. Avisamos además por el canal de toasts
@@ -1596,11 +1605,21 @@ export class ErpPosTouch extends LitElement {
     } catch (e) {
       // El servidor rechaza el cierre con un código de dominio estable (`sales.empty_sale`,
       // `sales.payment_method_not_available`, …). Se traduce el CÓDIGO, no la frase: el mensaje del
-      // servidor va en inglés y con detalle interno. Lo que no reconocemos se enseña tal cual —
-      // «Failed to fetch» le dice más al cajero que un «no se pudo cobrar» genérico.
-      const raw = e instanceof Error ? e.message : String(e ?? '');
-      const key = checkoutErrorKey(raw);
-      this.error = key === 'ui.errorCharge' && raw ? raw : t(key);
+      // servidor va en inglés y con detalle interno.
+      // sales#81: si el error es del TRANSPORTE (el proxy devolvió HTML 502 porque el contenedor
+      // del hub murió, o el fetch no llegó — `Failed to fetch`), el mensaje crudo NO le sirve al
+      // cajero: un navegador dice «Failed to fetch» y un parser HTML revienta con
+      // «<!DOCTYPE … is not valid JSON». Ninguno de los dos dice «el servidor está caído». Se
+      // traduce a un aviso de negocio ANTES de caer al fallback. Un rechazo de dominio desconocido
+      // sigue enseñándose tal cual: su frase lleva el código que el encargado necesita.
+      const transportKey = transportErrorKey(e);
+      if (transportKey === SERVER_UNAVAILABLE_KEY) {
+        this.error = t(transportKey);
+      } else {
+        const raw = e instanceof Error ? e.message : String(e ?? '');
+        const key = checkoutErrorKey(raw);
+        this.error = key === 'ui.errorCharge' && raw ? raw : t(key);
+      }
       // OJO: `this.checkoutKey` NO se limpia aquí. Reintentar con la MISMA clave es justo lo que
       // impide que un timeout (la venta pudo entrar) acabe cobrando dos veces.
     } finally {
