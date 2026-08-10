@@ -76,3 +76,64 @@ describe('renderDocumentModal', () => {
     expect(style!.textContent).not.toContain('@media print');
   });
 });
+
+// Lo que se manda a IMPRIMIR (sales#79). Van dos documentos: el `html` que imprime un navegador y
+// el `data` ESTRUCTURADO que lee la impresora térmica. Solo se mandaba el primero, así que con una
+// impresora asignada salía papel con todos los valores por defecto: «ERPlora», sin líneas y TOTAL
+// 0,00 — y sin error, porque el renderizador busca por clave y no encuentra nada.
+describe('imprimir el documento', () => {
+  interface PrintReq { documentType?: string; jobId?: string; data?: Record<string, unknown>; html?: string }
+  let enviados: PrintReq[];
+  let avisos: { type?: string; message?: string }[];
+  let resultado: { via: string; error?: string };
+
+  /** Modal con una venta CARGADA (el visor la trae por SDK; aquí se inyecta) y el SDK doblado. */
+  function montarConVenta() {
+    const modal = montar('venta-1');
+    const visor = modal.querySelector('erp-sales-document') as unknown as Record<string, unknown>;
+    visor.sale = { id: 'venta-1', sale_number: 'T-42', subtotal: 327, tax_amount: 33, total: 360, payment_method_name: 'Efectivo' };
+    visor.lines = [{ product_name: 'Cafe solo', quantity: 2, unit_price: 180, line_total: 360 }];
+    visor.settings = {};
+    return modal;
+  }
+
+  beforeEach(() => {
+    enviados = [];
+    avisos = [];
+    resultado = { via: 'bridge' };
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.print = async (req: PrintReq) => { enviados.push(req); return resultado; };
+    sdk.notify = (n: { type?: string; message?: string }) => avisos.push(n);
+  });
+
+  it('manda el documento ESTRUCTURADO, no solo el HTML', async () => {
+    const modal = montarConVenta();
+    modal.querySelector<HTMLElement>('ion-footer ion-button.print')!.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(enviados, 'una petición de impresión').toHaveLength(1);
+    expect(enviados[0].documentType).toBe('receipt');
+    expect(enviados[0].data, 'sin `data` la impresora saca un tique en blanco').toBeTruthy();
+    expect(enviados[0].data!.items, 'las líneas que se vendieron').toHaveLength(1);
+    expect(enviados[0].data!.receipt_id).toBe('T-42');
+    expect(enviados[0].data!.total, 'céntimos en la fila, euros en el papel').toBe(3.6);
+    expect(enviados[0].html, 'y el HTML sigue yendo, para el respaldo del navegador').toBeTruthy();
+  });
+
+  it('avisa cuando el tique no salió por ninguna impresora', async () => {
+    resultado = { via: 'browser', error: 'sin impresora con rol receipt' };
+    const modal = montarConVenta();
+    modal.querySelector<HTMLElement>('ion-footer ion-button.print')!.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(avisos, 'un fallo de impresión no se traga').toHaveLength(1);
+    expect(avisos[0].type).toBe('error');
+  });
+
+  it('no molesta cuando el papel salió', async () => {
+    const modal = montarConVenta();
+    modal.querySelector<HTMLElement>('ion-footer ion-button.print')!.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(avisos).toHaveLength(0);
+  });
+});

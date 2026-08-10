@@ -9,7 +9,7 @@ var __decorateClass = (decorators, target, key, kind) => {
   return result;
 };
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
+// ../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
 var ElementInternalsShim = class ElementInternals {
   get shadowRoot() {
     return this.__host.__shadowRoot;
@@ -88,7 +88,7 @@ var ElementInternalsShim = class ElementInternals {
   }
 };
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
+// ../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
 var __classPrivateFieldSet = function(receiver, state, value, kind, f3) {
   if (kind === "m") throw new TypeError("Private method is not writable");
   if (kind === "a" && !f3) throw new TypeError("Private accessor was defined without a setter");
@@ -246,7 +246,7 @@ Object.defineProperties(CustomEventShim.prototype, {
 var EventShimWithRealType = EventShim;
 var CustomEventShimWithRealType = CustomEventShim;
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
+// ../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
 var _a2;
 var CSSRuleShim = (_a2 = class CSSRule {
   constructor() {
@@ -277,7 +277,7 @@ var CSSRuleShim = (_a2 = class CSSRule {
   }
 }, _a2.STYLE_RULE = 1, _a2.CHARSET_RULE = 2, _a2.IMPORT_RULE = 3, _a2.MEDIA_RULE = 4, _a2.FONT_FACE_RULE = 5, _a2.PAGE_RULE = 6, _a2.NAMESPACE_RULE = 10, _a2.KEYFRAMES_RULE = 7, _a2.KEYFRAME_RULE = 8, _a2.SUPPORTS_RULE = 12, _a2.COUNTER_STYLE_RULE = 11, _a2.FONT_FEATURE_VALUES_RULE = 14, _a2.MARGIN_RULE = 9, _a2);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit-labs/ssr-dom-shim/index.js
+// ../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/index.js
 globalThis.Event ??= EventShimWithRealType;
 globalThis.CustomEvent ??= CustomEventShimWithRealType;
 var constructionToken = Symbol();
@@ -674,7 +674,7 @@ var CustomElementRegistryShimWithRealType = CustomElementRegistry;
 var customElements2 = new CustomElementRegistryShimWithRealType();
 var windowShim = new WindowShim(constructionToken);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit/reactive-element/node/css-tag.js
+// ../module-toolkit/node_modules/@lit/reactive-element/node/css-tag.js
 var t = globalThis;
 var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
 var s = Symbol();
@@ -719,7 +719,7 @@ var c = e || void 0 === t.CSSStyleSheet ? (t7) => t7 : (t7) => t7 instanceof CSS
   return r(e7);
 })(t7) : t7;
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit/reactive-element/node/reactive-element.js
+// ../module-toolkit/node_modules/@lit/reactive-element/node/reactive-element.js
 var { is: h, defineProperty: r2, getOwnPropertyDescriptor: o2, getOwnPropertyNames: n2, getOwnPropertySymbols: a, getPrototypeOf: c2 } = Object;
 var l = globalThis;
 l.customElements ??= customElements2;
@@ -942,7 +942,7 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
 };
 g.elementStyles = [], g.shadowRootOptions = { mode: "open" }, g[f("elementProperties")] = /* @__PURE__ */ new Map(), g[f("finalized")] = /* @__PURE__ */ new Map(), u?.({ ReactiveElement: g }), (l.reactiveElementVersions ??= []).push("2.1.2");
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
 var t2 = globalThis;
 var i2 = (t7) => t7;
 var s2 = t2.trustedTypes;
@@ -1197,7 +1197,7 @@ var D = (t7, i7, s5) => {
   return h4._$AI(t7), h4;
 };
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
+// node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
 var s3 = globalThis;
 var i3 = class extends g {
   constructor() {
@@ -1226,14 +1226,14 @@ var o4 = s3.litElementPolyfillSupport;
 o4?.({ LitElement: i3 });
 (s3.litElementVersions ??= []).push("4.2.2");
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/define.js
+// ../outfitkit/dist/define.js
 function define(tag, ctor) {
   if (typeof customElements !== "undefined" && !customElements.get(tag)) {
     customElements.define(tag, ctor);
   }
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit/reactive-element/node/decorators/property.js
+// ../module-toolkit/node_modules/@lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
 var r4 = (t7 = o5, e7, r6) => {
   const { kind: n6, metadata: i7 } = r6;
@@ -1263,15 +1263,15 @@ function n4(t7) {
   })(t7, e7, o9);
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit/reactive-element/node/decorators/state.js
+// ../module-toolkit/node_modules/@lit/reactive-element/node/decorators/state.js
 function r5(r6) {
   return n4({ ...r6, state: true, attribute: false });
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit/reactive-element/node/decorators/base.js
+// ../module-toolkit/node_modules/@lit/reactive-element/node/decorators/base.js
 var e3 = (e7, t7, c5) => (c5.configurable = true, c5.enumerable = true, Reflect.decorate && "object" != typeof t7 && Object.defineProperty(e7, t7, c5), c5);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit/reactive-element/node/decorators/query.js
+// ../module-toolkit/node_modules/@lit/reactive-element/node/decorators/query.js
 function e4(e7, r6) {
   return (n6, s5, i7) => {
     const o9 = (t7) => t7.renderRoot?.querySelector(e7) ?? null;
@@ -1295,7 +1295,7 @@ function e4(e7, r6) {
   };
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/tabbar.js
+// ../outfitkit/dist/tabbar.js
 var EPSILON = 1;
 var HINT_PX = 28;
 var HINT_VUELTA_MS = 420;
@@ -1353,7 +1353,7 @@ function bindTabbar(segment, opts = {}) {
   };
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/hub/packages/module-sdk/src/index.ts
+// ../hub/packages/module-sdk/src/index.ts
 function isEmpty(v3) {
   return v3 === null || v3 === void 0 || v3 === "";
 }
@@ -1474,11 +1474,11 @@ function majorToMinor(amount, decimals) {
   const n6 = Number(amount);
   return Number.isFinite(n6) ? Math.round(n6 * 10 ** decimals) : 0;
 }
-function eurosToCents(euros) {
-  return majorToMinor(euros, 2);
+function eurosToCents(euros2) {
+  return majorToMinor(euros2, 2);
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/modules/sales/ui/lib/receipt-html.ts
+// modules/sales/ui/lib/receipt-html.ts
 function esc(v3) {
   return String(v3 ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
@@ -1559,7 +1559,7 @@ function printHtmlInIframe(html, doc = document) {
   else w2.addEventListener("load", () => setTimeout(lanzar, 50), { once: true });
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/shared/icons.js
+// ../outfitkit/dist/shared/icons.js
 var rawAdd = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M256 112v288m144-144H112"/></svg>';
 var rawAlertCircle = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="M256 48C141.31 48 48 141.31 48 256s93.31 208 208 208s208-93.31 208-208S370.69 48 256 48m0 319.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20m21.72-201.15l-5.74 122a16 16 0 0 1-32 0l-5.74-121.94v-.05a21.74 21.74 0 1 1 43.44 0Z"/></svg>';
 var rawAlertCircleOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" d="M448 256c0-106-86-192-192-192S64 150 64 256s86 192 192 192s192-86 192-192Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M250.26 166.05L256 288l5.73-121.95a5.74 5.74 0 0 0-5.79-6h0a5.74 5.74 0 0 0-5.68 6"/><path fill="currentColor" d="M256 367.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20"/></svg>';
@@ -1707,7 +1707,7 @@ function okIcon(value) {
   return BY_NAME[value] ?? value;
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-inline-feedback.js
+// ../outfitkit/dist/ok-inline-feedback.js
 var __defProp2 = Object.defineProperty;
 var __decorateClass2 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -1924,7 +1924,7 @@ __decorateClass2([
 ], OkInlineFeedback.prototype, "hasActions");
 define("ok-inline-feedback", OkInlineFeedback);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-qr.js
+// ../outfitkit/dist/ok-qr.js
 var __defProp3 = Object.defineProperty;
 var __decorateClass3 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2572,7 +2572,7 @@ __decorateClass3([
 ], OkQr.prototype, "margin");
 define("ok-qr", OkQr);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-receipt.js
+// ../outfitkit/dist/ok-receipt.js
 var __defProp4 = Object.defineProperty;
 var __decorateClass4 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2761,7 +2761,244 @@ __decorateClass4([
 ], OkReceipt.prototype, "labels");
 define("ok-receipt", OkReceipt);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-invoice.js
+// modules/sales/ui/lib/quantity.ts
+var QUANTITY_SCALE2 = 1e6;
+function toMicro2(qty) {
+  return Math.round(qty * QUANTITY_SCALE2);
+}
+function fromMicro2(raw) {
+  return raw / QUANTITY_SCALE2;
+}
+function formatQuantity2(raw) {
+  return String(fromMicro2(raw));
+}
+function onGrid2(raw, increment) {
+  if (!Number.isFinite(increment) || increment <= 0) return true;
+  return raw % increment === 0;
+}
+
+// modules/sales/ui/lib/document-mappers.ts
+function toEuros(cents) {
+  return Number(cents ?? 0) / 100;
+}
+function formatDateTime(iso, locale = "es") {
+  if (!iso) return void 0;
+  const d3 = new Date(iso);
+  if (Number.isNaN(d3.getTime())) return iso;
+  return new Intl.DateTimeFormat(locale, {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(d3);
+}
+function receiptLabels(t7) {
+  return {
+    empty: t7("ui.docEmpty"),
+    phone: t7("ui.docPhone"),
+    receipt: t7("ui.docReceipt"),
+    servedBy: t7("ui.docServedBy"),
+    customer: t7("ui.docCustomer"),
+    item: t7("ui.docItem"),
+    amount: t7("ui.docAmount"),
+    noLines: t7("ui.docNoLines"),
+    subtotal: t7("ui.docSubtotal"),
+    total: t7("ui.docTotal"),
+    change: t7("ui.docChange")
+  };
+}
+function invoiceLabels(t7) {
+  return {
+    empty: t7("ui.docEmptyInvoice"),
+    invoice: t7("ui.docInvoice"),
+    number: t7("ui.docNumber"),
+    date: t7("ui.docDate"),
+    dueDate: t7("ui.docDueDate"),
+    billTo: t7("ui.docBillTo"),
+    description: t7("ui.docDescription"),
+    qty: t7("ui.docQty"),
+    price: t7("ui.docPrice"),
+    discount: t7("ui.docDiscount"),
+    tax: t7("ui.docTax"),
+    amount: t7("ui.docAmount"),
+    noLines: t7("ui.docNoLines"),
+    taxBase: t7("ui.docTaxBase"),
+    discountTotal: t7("ui.docDiscountTotal"),
+    total: t7("ui.docTotal"),
+    paymentMethod: t7("ui.docPaymentMethod")
+  };
+}
+function lineLabel(l3) {
+  return Number(l3.is_gift) ? `${l3.product_name} (Invitaci\xF3n)` : l3.product_name;
+}
+var DEFAULT_BUSINESS_NAME = "My business";
+function splitHeader(raw) {
+  const header = (raw || "").trim();
+  return {
+    name: header.split("\n")[0] || void 0,
+    address: header.split("\n").slice(1).join(" ") || void 0
+  };
+}
+function parseTaxes(tax_breakdown) {
+  if (!tax_breakdown) return [];
+  let obj;
+  try {
+    obj = JSON.parse(tax_breakdown);
+  } catch {
+    return [];
+  }
+  return Object.entries(obj).map(([rate, v3]) => {
+    const r6 = Number(rate);
+    return {
+      label: `IVA ${Number.isFinite(r6) ? r6.toFixed(0) : rate}%`,
+      rate: Number.isFinite(r6) ? r6 : void 0,
+      base: toEuros(v3?.base),
+      amount: toEuros(v3?.tax)
+    };
+  }).filter((t7) => t7.amount || t7.base);
+}
+function resolveFormat(sale, settings) {
+  const v3 = sale.document_type || settings.default_document_format || "ticket";
+  return v3 === "invoice" ? "invoice" : "ticket";
+}
+function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName = DEFAULT_BUSINESS_NAME) {
+  const header = splitHeader(settings.receipt_header);
+  return {
+    business: { name: header.name || fiscal.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || void 0 },
+    number: fiscal.number || sale.sale_number,
+    datetime: formatDateTime(sale.created_at, locale),
+    customer: fiscal.customer_name || sale.customer_name || void 0,
+    lines: lines.map((l3) => ({
+      name: lineLabel(l3),
+      qty: fromMicro2(Number(l3.quantity)),
+      // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
+      unit_price: toEuros(l3.unit_price),
+      total: toEuros(l3.line_total)
+    })),
+    subtotal: sale.subtotal != null ? toEuros(sale.subtotal) : void 0,
+    taxes: parseTaxes(sale.tax_breakdown).map((t7) => ({ label: t7.label, base: t7.base, amount: t7.amount })),
+    total: toEuros(sale.total),
+    payment: sale.payment_method_name ? { method: sale.payment_method_name, paid: sale.amount_tendered != null ? toEuros(sale.amount_tendered) : void 0, change: sale.change_due != null ? toEuros(sale.change_due) : void 0 } : void 0,
+    currency: settings.currency || "\u20AC",
+    footer: settings.receipt_footer || void 0,
+    qr: fiscal.qr || void 0,
+    qr_note: fiscal.qr_note || void 0,
+    // QR promocional (solo tiquet; la factura A4 es formal). Sin URL no hay rastro.
+    promo_qr: settings.receipt_marketing_url || void 0,
+    promo_note: settings.receipt_marketing_url ? settings.receipt_marketing_text || void 0 : void 0
+  };
+}
+function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName = DEFAULT_BUSINESS_NAME) {
+  const header = splitHeader(settings.receipt_header);
+  const invLines = lines.map((l3) => ({
+    description: lineLabel(l3),
+    qty: fromMicro2(Number(l3.quantity)),
+    // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
+    unit_price: toEuros(l3.unit_price),
+    discount_percent: l3.discount_percent ? Number(l3.discount_percent) : void 0,
+    tax_rate: l3.tax_rate != null ? Number(l3.tax_rate) : void 0,
+    total: toEuros(l3.line_total)
+  }));
+  const taxes = parseTaxes(sale.tax_breakdown);
+  return {
+    issuer: { name: fiscal.issuer_name || header.name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || void 0 },
+    customer: { name: fiscal.customer_name || sale.customer_name || "Cliente", tax_id: fiscal.customer_tax_id || void 0 },
+    number: fiscal.number || sale.sale_number,
+    issue_date: formatDateTime(sale.created_at, locale) || "",
+    lines: invLines,
+    subtotal: toEuros(sale.subtotal),
+    discount_total: sale.discount_amount ? toEuros(sale.discount_amount) : void 0,
+    taxes: taxes.map((t7) => ({ label: t7.label, rate: t7.rate, base: t7.base, amount: t7.amount })),
+    tax_total: toEuros(sale.tax_amount),
+    total: toEuros(sale.total),
+    currency: settings.currency || "\u20AC",
+    payment_method: sale.payment_method_name || void 0,
+    footer: settings.receipt_footer || void 0,
+    qr: fiscal.qr || void 0,
+    qr_note: fiscal.qr_note || void 0
+  };
+}
+function orderToPrebill(lines, settings = {}, opts = {}) {
+  const header = splitHeader(settings.receipt_header);
+  const cents = (l3) => l3.is_gift ? 0 : Math.round(l3.price * l3.qty);
+  const total = lines.reduce((s5, l3) => s5 + cents(l3), 0);
+  return {
+    business: {
+      name: header.name || opts.fallbackName || DEFAULT_BUSINESS_NAME,
+      address: header.address
+    },
+    // number/qr/payment AUSENTES a propósito: esto no es una factura (ver doc de la función).
+    datetime: formatDateTime(opts.datetime ?? (/* @__PURE__ */ new Date()).toISOString(), opts.locale ?? "es"),
+    customer: opts.tableLabel || void 0,
+    lines: lines.map((l3) => ({
+      name: l3.is_gift ? `${l3.name} (invitaci\xF3n)` : l3.name,
+      qty: l3.qty,
+      unit_price: toEuros(l3.price),
+      total: toEuros(cents(l3))
+    })),
+    total: toEuros(total),
+    taxes: [],
+    currency: settings.currency || "\u20AC",
+    // Inglés canónico (ADR-0055): la UI pasa el texto ya traducido en `opts.notice`; esto es solo
+    // el respaldo para llamadas sin i18n (tests, integraciones).
+    footer: opts.notice ?? "Bill \u2014 this is not an invoice. The fiscal receipt is issued on payment."
+  };
+}
+
+// modules/sales/ui/lib/print-document.ts
+function euros(cents) {
+  return cents == null ? void 0 : Number(cents) / 100;
+}
+function prebillToPrintDocument(lines, settings = {}, opts = {}) {
+  const screen = orderToPrebill(lines, settings, opts);
+  return {
+    business_name: screen.business.name,
+    business_address: screen.business.address,
+    // The renderer prints this as «Mesa/Cliente»: on a bill it is the table, which is what the
+    // waiter needs to know which paper goes where.
+    customer_name: screen.customer,
+    items: screen.lines.map((l3) => ({ name: l3.name, quantity: l3.qty, total: l3.total })),
+    total: screen.total,
+    notice: screen.footer
+  };
+}
+function saleToPrintDocument(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName) {
+  const screen = saleToReceipt(sale, lines, settings, fiscal, locale, fallbackName);
+  return {
+    business_name: screen.business.name,
+    business_address: screen.business.address,
+    vat_number: screen.business.tax_id,
+    receipt_id: screen.number,
+    customer_name: screen.customer,
+    items: screen.lines.map((l3) => ({ name: l3.name, quantity: l3.qty, total: l3.total })),
+    subtotal: screen.subtotal,
+    // The tax total comes from the sale row, not from the breakdown: a sale without
+    // `tax_breakdown` still has `tax_amount`, and the paper must not lose it.
+    tax_amount: euros(sale.tax_amount),
+    discount: euros(sale.discount_amount),
+    total: screen.total,
+    payment_method: screen.payment?.method,
+    paid: screen.payment?.paid,
+    change: screen.payment?.change,
+    qr_data: screen.qr,
+    receipt_footer: screen.footer
+  };
+}
+function prebillJobId(orderId, lines) {
+  const fingerprint = (lines || []).map((l3) => `${l3.name}${l3.qty}${l3.price}${l3.is_gift ? 1 : 0}`).join("");
+  return `prebill-${orderId || "open"}-${hash(fingerprint)}`;
+}
+function hash(s5) {
+  let h4 = 2166136261;
+  for (let i7 = 0; i7 < s5.length; i7++) {
+    h4 ^= s5.charCodeAt(i7);
+    h4 = Math.imul(h4, 16777619) >>> 0;
+  }
+  return h4.toString(36);
+}
+
+// ../outfitkit/dist/ok-invoice.js
 var __defProp5 = Object.defineProperty;
 var __decorateClass5 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -3016,192 +3253,7 @@ __decorateClass5([
 ], OkInvoice.prototype, "labels");
 define("ok-invoice", OkInvoice);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/modules/sales/ui/lib/quantity.ts
-var QUANTITY_SCALE2 = 1e6;
-function toMicro2(qty) {
-  return Math.round(qty * QUANTITY_SCALE2);
-}
-function fromMicro2(raw) {
-  return raw / QUANTITY_SCALE2;
-}
-function formatQuantity2(raw) {
-  return String(fromMicro2(raw));
-}
-function onGrid2(raw, increment) {
-  if (!Number.isFinite(increment) || increment <= 0) return true;
-  return raw % increment === 0;
-}
-
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/modules/sales/ui/lib/document-mappers.ts
-function toEuros(cents) {
-  return Number(cents ?? 0) / 100;
-}
-function formatDateTime(iso, locale = "es") {
-  if (!iso) return void 0;
-  const d3 = new Date(iso);
-  if (Number.isNaN(d3.getTime())) return iso;
-  return new Intl.DateTimeFormat(locale, {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(d3);
-}
-function receiptLabels(t7) {
-  return {
-    empty: t7("ui.docEmpty"),
-    phone: t7("ui.docPhone"),
-    receipt: t7("ui.docReceipt"),
-    servedBy: t7("ui.docServedBy"),
-    customer: t7("ui.docCustomer"),
-    item: t7("ui.docItem"),
-    amount: t7("ui.docAmount"),
-    noLines: t7("ui.docNoLines"),
-    subtotal: t7("ui.docSubtotal"),
-    total: t7("ui.docTotal"),
-    change: t7("ui.docChange")
-  };
-}
-function invoiceLabels(t7) {
-  return {
-    empty: t7("ui.docEmptyInvoice"),
-    invoice: t7("ui.docInvoice"),
-    number: t7("ui.docNumber"),
-    date: t7("ui.docDate"),
-    dueDate: t7("ui.docDueDate"),
-    billTo: t7("ui.docBillTo"),
-    description: t7("ui.docDescription"),
-    qty: t7("ui.docQty"),
-    price: t7("ui.docPrice"),
-    discount: t7("ui.docDiscount"),
-    tax: t7("ui.docTax"),
-    amount: t7("ui.docAmount"),
-    noLines: t7("ui.docNoLines"),
-    taxBase: t7("ui.docTaxBase"),
-    discountTotal: t7("ui.docDiscountTotal"),
-    total: t7("ui.docTotal"),
-    paymentMethod: t7("ui.docPaymentMethod")
-  };
-}
-function lineLabel(l3) {
-  return Number(l3.is_gift) ? `${l3.product_name} (Invitaci\xF3n)` : l3.product_name;
-}
-var DEFAULT_BUSINESS_NAME = "My business";
-function splitHeader(raw) {
-  const header = (raw || "").trim();
-  return {
-    name: header.split("\n")[0] || void 0,
-    address: header.split("\n").slice(1).join(" ") || void 0
-  };
-}
-function parseTaxes(tax_breakdown) {
-  if (!tax_breakdown) return [];
-  let obj;
-  try {
-    obj = JSON.parse(tax_breakdown);
-  } catch {
-    return [];
-  }
-  return Object.entries(obj).map(([rate, v3]) => {
-    const r6 = Number(rate);
-    return {
-      label: `IVA ${Number.isFinite(r6) ? r6.toFixed(0) : rate}%`,
-      rate: Number.isFinite(r6) ? r6 : void 0,
-      base: toEuros(v3?.base),
-      amount: toEuros(v3?.tax)
-    };
-  }).filter((t7) => t7.amount || t7.base);
-}
-function resolveFormat(sale, settings) {
-  const v3 = sale.document_type || settings.default_document_format || "ticket";
-  return v3 === "invoice" ? "invoice" : "ticket";
-}
-function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName = DEFAULT_BUSINESS_NAME) {
-  const header = splitHeader(settings.receipt_header);
-  return {
-    business: { name: header.name || fiscal.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || void 0 },
-    number: fiscal.number || sale.sale_number,
-    datetime: formatDateTime(sale.created_at, locale),
-    customer: fiscal.customer_name || sale.customer_name || void 0,
-    lines: lines.map((l3) => ({
-      name: lineLabel(l3),
-      qty: fromMicro2(Number(l3.quantity)),
-      // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
-      unit_price: toEuros(l3.unit_price),
-      total: toEuros(l3.line_total)
-    })),
-    subtotal: sale.subtotal != null ? toEuros(sale.subtotal) : void 0,
-    taxes: parseTaxes(sale.tax_breakdown).map((t7) => ({ label: t7.label, base: t7.base, amount: t7.amount })),
-    total: toEuros(sale.total),
-    payment: sale.payment_method_name ? { method: sale.payment_method_name, paid: sale.amount_tendered != null ? toEuros(sale.amount_tendered) : void 0, change: sale.change_due != null ? toEuros(sale.change_due) : void 0 } : void 0,
-    currency: settings.currency || "\u20AC",
-    footer: settings.receipt_footer || void 0,
-    qr: fiscal.qr || void 0,
-    qr_note: fiscal.qr_note || void 0,
-    // QR promocional (solo tiquet; la factura A4 es formal). Sin URL no hay rastro.
-    promo_qr: settings.receipt_marketing_url || void 0,
-    promo_note: settings.receipt_marketing_url ? settings.receipt_marketing_text || void 0 : void 0
-  };
-}
-function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName = DEFAULT_BUSINESS_NAME) {
-  const header = splitHeader(settings.receipt_header);
-  const invLines = lines.map((l3) => ({
-    description: lineLabel(l3),
-    qty: fromMicro2(Number(l3.quantity)),
-    // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
-    unit_price: toEuros(l3.unit_price),
-    discount_percent: l3.discount_percent ? Number(l3.discount_percent) : void 0,
-    tax_rate: l3.tax_rate != null ? Number(l3.tax_rate) : void 0,
-    total: toEuros(l3.line_total)
-  }));
-  const taxes = parseTaxes(sale.tax_breakdown);
-  return {
-    issuer: { name: fiscal.issuer_name || header.name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || void 0 },
-    customer: { name: fiscal.customer_name || sale.customer_name || "Cliente", tax_id: fiscal.customer_tax_id || void 0 },
-    number: fiscal.number || sale.sale_number,
-    issue_date: formatDateTime(sale.created_at, locale) || "",
-    lines: invLines,
-    subtotal: toEuros(sale.subtotal),
-    discount_total: sale.discount_amount ? toEuros(sale.discount_amount) : void 0,
-    taxes: taxes.map((t7) => ({ label: t7.label, rate: t7.rate, base: t7.base, amount: t7.amount })),
-    tax_total: toEuros(sale.tax_amount),
-    total: toEuros(sale.total),
-    currency: settings.currency || "\u20AC",
-    payment_method: sale.payment_method_name || void 0,
-    footer: settings.receipt_footer || void 0,
-    qr: fiscal.qr || void 0,
-    qr_note: fiscal.qr_note || void 0
-  };
-}
-function orderToPrebill(lines, settings = {}, opts = {}) {
-  const header = splitHeader(settings.receipt_header);
-  const cents = (l3) => l3.is_gift ? 0 : Math.round(l3.price * l3.qty);
-  const total = lines.reduce((s5, l3) => s5 + cents(l3), 0);
-  return {
-    business: {
-      name: header.name || opts.fallbackName || DEFAULT_BUSINESS_NAME,
-      address: header.address
-    },
-    // number/qr/payment AUSENTES a propósito: esto no es una factura (ver doc de la función).
-    datetime: formatDateTime(opts.datetime ?? (/* @__PURE__ */ new Date()).toISOString(), opts.locale ?? "es"),
-    customer: opts.tableLabel || void 0,
-    lines: lines.map((l3) => ({
-      name: l3.is_gift ? `${l3.name} (invitaci\xF3n)` : l3.name,
-      qty: l3.qty,
-      unit_price: toEuros(l3.price),
-      total: toEuros(cents(l3))
-    })),
-    total: toEuros(total),
-    taxes: [],
-    currency: settings.currency || "\u20AC",
-    // Inglés canónico (ADR-0055): la UI pasa el texto ya traducido en `opts.notice`; esto es solo
-    // el respaldo para llamadas sin i18n (tests, integraciones).
-    footer: opts.notice ?? "Bill \u2014 this is not an invoice. The fiscal receipt is issued on payment."
-  };
-}
-
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/modules/sales/locales/es.json
+// modules/sales/locales/es.json
 var es_default = {
   name: "Ventas / TPV",
   navigation: {
@@ -3235,6 +3287,7 @@ var es_default = {
     close: "Cerrar",
     errorStats: "Error cargando m\xE9tricas",
     print: "Imprimir",
+    printFailed: "No se pudo imprimir",
     qrValidateNote: "Escanea para validar la factura en la AEAT",
     docEmpty: "Sin datos de tiquet.",
     docEmptyInvoice: "Sin datos de factura.",
@@ -3370,6 +3423,7 @@ var es_default = {
     printPrebill: "Imprimir cuenta",
     prebillTitle: "Cuenta",
     prebillNotice: "Cuenta \u2014 no es una factura. El tiquet fiscal se entrega al cobrar.",
+    prebillPrintFailed: "No se pudo imprimir la cuenta",
     paymentMethod: "Forma de pago",
     printReceipt: "Imprimir tiquet",
     parkedAs: "Aparcado como {number}",
@@ -3418,7 +3472,7 @@ var es_default = {
   }
 };
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/modules/sales/locales/en.json
+// modules/sales/locales/en.json
 var en_default = {
   name: "Sales & POS",
   navigation: {
@@ -3452,6 +3506,7 @@ var en_default = {
     close: "Close",
     errorStats: "Error loading metrics",
     print: "Print",
+    printFailed: "Could not print",
     qrValidateNote: "Scan to validate the invoice at the AEAT",
     docEmpty: "No receipt data.",
     docEmptyInvoice: "No invoice data.",
@@ -3587,6 +3642,7 @@ var en_default = {
     printPrebill: "Print bill",
     prebillTitle: "Bill",
     prebillNotice: "Bill \u2014 this is not an invoice. The fiscal receipt is issued on payment.",
+    prebillPrintFailed: "Bill could not be printed",
     paymentMethod: "Payment method",
     printReceipt: "Print receipt",
     parkedAs: "Parked as {number}",
@@ -3619,7 +3675,7 @@ var en_default = {
   }
 };
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/modules/sales/ui/components/erp-sales-document/erp-sales-document.ts
+// modules/sales/ui/components/erp-sales-document/erp-sales-document.ts
 var CATALOG = { es: es_default, en: en_default };
 function erplora() {
   const c5 = globalThis.erplora;
@@ -3761,6 +3817,26 @@ var ErpSalesDocument = class extends i3 {
     );
     return receiptToPrintableHtml(doc);
   }
+  /**
+   * El documento **estructurado** que lee el renderizador ESC/POS (`escpos::render_receipt`).
+   *
+   * No es lo mismo que `printableHtml()`: aquel es para un navegador, este para una impresora
+   * térmica, que busca POR CLAVE (`items`, `total`, `receipt_id`). Reimprimir mandaba `data` vacío
+   * y el papel salía con todos los valores por defecto —«ERPlora», sin líneas, TOTAL 0,00— sin dar
+   * ningún error (sales#79). `undefined` si aún no hay venta: nada que imprimir es mejor que un
+   * tique en blanco.
+   */
+  printableDocument() {
+    if (!this.sale) return void 0;
+    return saleToPrintDocument(
+      this.sale,
+      this.lines || [],
+      this.settings || {},
+      this.fiscal,
+      erplora().locale,
+      erplora().t(CATALOG, "ui.docDefaultBusiness")
+    );
+  }
   render() {
     const t7 = (k2) => erplora().t(CATALOG, k2);
     if (this.loading) return b2`<p class="muted">${t7("ui.loadingDocument")}</p>`;
@@ -3807,7 +3883,7 @@ __decorateClass([
 ], ErpSalesDocument.prototype, "fiscalRetryDelays", 2);
 define("erp-sales-document", ErpSalesDocument);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/modules/sales/ui/lib/document-modal.ts
+// modules/sales/ui/lib/document-modal.ts
 function renderDocumentModal({ saleId, onClose, t: t7 }) {
   return b2`<ion-modal class="doc-modal" .isOpen=${!!saleId} @ionModalDidDismiss=${onClose}>
     <style>
@@ -3857,10 +3933,17 @@ function renderDocumentModal({ saleId, onClose, t: t7 }) {
         <ion-button class="print" expand="block" aria-label=${t7("ui.print")} @click=${() => {
     const el = document.querySelector("ion-modal.doc-modal")?.querySelector("erp-sales-document");
     const html = el?.printableHtml?.();
+    const data = el?.printableDocument?.();
     const sdk = globalThis.erplora;
-    if (sdk?.print) void sdk.print({ role: "receipt", documentType: "receipt", html, jobId: saleId ? `sale-${saleId}` : void 0 });
-    else if (html) printHtmlInIframe(html);
-    else window.print();
+    if (!sdk?.print) {
+      if (html) printHtmlInIframe(html);
+      else window.print();
+      return;
+    }
+    void sdk.print({ role: "receipt", documentType: "receipt", html, data, jobId: saleId ? `sale-${saleId}` : void 0 }).then((res) => {
+      if (res?.via === "bridge" || res?.via === "queue") return;
+      sdk.notify?.({ type: "error", message: res?.error ? `${t7("ui.printFailed")}: ${res.error}` : t7("ui.printFailed") });
+    });
   }}>
           <ion-icon slot="icon-only" name="print-outline"></ion-icon>
         </ion-button>
@@ -3869,7 +3952,7 @@ function renderDocumentModal({ saleId, onClose, t: t7 }) {
   </ion-modal>`;
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/modules/sales/ui/lib/table-switch.ts
+// modules/sales/ui/lib/table-switch.ts
 function decideOnTableChange(c5) {
   if (!c5.targetTableId) return c5.cartHasItems ? "park-then-clear" : "clear";
   if (c5.currentTableId) return c5.targetOrderId ? "load-target" : "start-new-check";
@@ -3877,7 +3960,7 @@ function decideOnTableChange(c5) {
   return c5.targetOrderId ? "park-then-load" : "assign-to-target";
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/modules/sales/ui/lib/park-label.ts
+// modules/sales/ui/lib/park-label.ts
 function defaultParkLabel(tableLabel, now) {
   const mesa = (tableLabel ?? "").trim();
   if (mesa) return mesa;
@@ -3886,7 +3969,7 @@ function defaultParkLabel(tableLabel, now) {
   return `${hh}:${mm}`;
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/modules/sales/ui/lib/rounds.ts
+// modules/sales/ui/lib/rounds.ts
 function pendingLines(lines) {
   return lines.filter((l3) => !l3.fired_at);
 }
@@ -3898,7 +3981,7 @@ function nextRoundNo(lines) {
   return max + 1;
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/modules/sales/ui/lib/fire-order.ts
+// modules/sales/ui/lib/fire-order.ts
 function buildFirePayload(orderId, label, lines, roundNo) {
   if (!orderId || lines.length === 0) return void 0;
   return {
@@ -3919,7 +4002,7 @@ function buildFirePayload(orderId, label, lines, roundNo) {
   };
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/modules/sales/ui/lib/serial-queue.ts
+// modules/sales/ui/lib/serial-queue.ts
 function createSerialQueue() {
   let last = Promise.resolve();
   return (task) => {
@@ -3929,7 +4012,7 @@ function createSerialQueue() {
   };
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/modules/sales/ui/lib/split-selection.ts
+// modules/sales/ui/lib/split-selection.ts
 function esParcial(cart, sel) {
   const conId = cart.filter((l3) => l3.line_id);
   return sel.size > 0 && sel.size < conId.length;
@@ -3958,7 +4041,7 @@ function splitPayload(cart, sel) {
   };
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/modules/sales/ui/lib/current-check.ts
+// modules/sales/ui/lib/current-check.ts
 var CLAVE = "erplora.pos.currentCheck";
 function rememberCurrentCheck(store, orderId) {
   try {
@@ -3982,7 +4065,7 @@ function resolveCurrentCheck(store, abiertas) {
   return recordada && abiertas.includes(recordada) ? recordada : void 0;
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/modules/sales/ui/lib/brand-icons.ts
+// modules/sales/ui/lib/brand-icons.ts
 var BIZUM_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 122 36"><path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M59.8625 12.8257c-1.0347 0-1.8704.8358-1.8704 1.8308v13.8113c0 1.0348.8357 1.8707 1.8704 1.8707s1.8704-.8359 1.8704-1.8707V14.6565c0-.995-.8357-1.8308-1.8704-1.8308Zm-.0001-6.88561c-1.154 0-2.1091.95524-2.1091 2.1095 0 1.15425.9551 2.14931 2.1091 2.14931 1.1541 0 2.1092-.95526 2.1092-2.14931 0-1.15426-.9551-2.1095-2.1092-2.1095ZM78.089 14.6566c0-1.1543-.9153-1.5921-1.751-1.5921h-9.2725c-.9153 0-1.6316.7164-1.6316 1.5921 0 .9154.7163 1.6319 1.6316 1.6319h6.0888l-7.8796 10.9853c-.2388.3184-.3581.7562-.3581 1.1144 0 1.1543.9153 1.7911 1.7112 1.7911h9.8296c.9153 0 1.6316-.7164 1.6316-1.6319 0-.9154-.7163-1.6318-1.6316-1.6318h-6.6062l7.7204-10.7466c.398-.5572.5174-1.0348.5174-1.5124Zm-27.3 8.6769c0 2.2687-.9949 3.6618-3.2633 3.6618-2.2683 0-3.2234-1.3931-3.2234-3.6618v-7.045h3.3826c2.7459 0 3.1041 1.5125 3.1041 3.1842v3.8608Zm3.7408-3.9404c0-3.8608-2.0296-6.3683-6.7653-6.3683h-3.4224V7.81078c0-1.03485-.8357-1.87069-1.8306-1.87069-1.0347 0-1.8704.83584-1.8704 1.87069V23.3335c0 3.8608 2.0693 7.0051 6.9642 7.0051 4.8551 0 6.9643-3.1841 6.9643-7.0051v-3.9404h-.0398Zm38.1642-6.5674c-1.0346 0-1.8704.8358-1.8704 1.8706v8.6371c0 2.2687-.9949 3.6617-3.2632 3.6617-2.2684 0-3.2235-1.393-3.2235-3.6617v-8.6371c0-1.0348-.8357-1.8706-1.8306-1.8706-1.0347 0-1.8704.8358-1.8704 1.8706v8.6371c0 3.8607 2.0694 7.0051 6.9643 7.0051 4.8551 0 6.9642-3.1842 6.9642-7.0051v-8.6371c-.0397-1.0348-.8755-1.8706-1.8704-1.8706Zm28.374 7.0451c0-3.8608-1.79-7.0052-6.645-7.0052-2.189 0-3.741.6369-4.816 1.7115-1.074-1.0348-2.626-1.7115-4.815-1.7115-4.8552 0-6.646 3.1842-6.646 7.0052v8.637c0 1.0348.8357 1.8707 1.8306 1.8707 1.0344 0 1.8704-.8359 1.8704-1.8707v-8.637c0-2.2687.716-3.6618 2.945-3.6618 2.268 0 2.945 1.3931 2.945 3.6618v8.637c0 1.0348.836 1.8707 1.83 1.8707 1.035 0 1.871-.8359 1.871-1.8707v-8.637c0-2.2687.716-3.6618 2.945-3.6618 2.268 0 2.945 1.3931 2.945 3.6618v8.637c0 1.0348.835 1.8707 1.83 1.8707 1.035 0 1.871-.8359 1.871-1.8707l.039-8.637ZM6.61567 12.8655c1.31327.9553 3.14387.6767 4.09893-.6368l3.4225-4.73643c.9551-1.31346.6765-3.14434-.6367-4.09959-1.3133-.95524-3.1439-.67663-4.09902.63683L5.93914 8.76593c-.9153 1.31347-.63673 3.14437.67653 4.09957ZM22.2952 6.17881c-1.3133-.95524-3.1439-.67663-4.099.63683L4.42685 25.7613c-.9551 1.3135-.67653 3.1444.63673 4.0996 1.31326.9553 3.14387.6767 4.09897-.6368L22.9319 10.2784c.9949-1.31345.6765-3.14434-.6367-4.09959ZM5.3024 4.66637c.9551-1.31346.67652-3.14435-.63674-4.099591C3.3524-.388466 1.52179-.109853.566693 1.20361c-.9551 1.31346-.676529 3.14435.636737 4.09959 1.31326.95525 3.14387.67663 4.09897-.63683ZM26.1952 30.6968c-1.3132-.9553-3.1438-.6766-4.0989.6368-.9551 1.3135-.6766 3.1444.6367 4.0996 1.3133.9553 3.1439.6766 4.099-.6368.9551-1.3135.6765-3.1444-.6368-4.0996Zm-5.3724-7.5226c-1.3132-.9552-3.1438-.6766-4.0989.6369l-3.4623 4.7364c-.9551 1.3134-.6765 3.1443.6367 4.0996 1.3133.9552 3.1439.6766 4.099-.6369l3.4623-4.7364c.9551-1.3134.6765-3.1443-.6368-4.0996Z"/></svg>';
 function brandSvgFor(type, name) {
   const t7 = (type || "").trim().toLowerCase();
@@ -3991,13 +4074,13 @@ function brandSvgFor(type, name) {
   return void 0;
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/modules/sales/ui/lib/price-label.ts
+// modules/sales/ui/lib/price-label.ts
 var UNIT_EACH = "ud";
 function priceLabel(money2, unitCode) {
   return unitCode && unitCode !== UNIT_EACH ? `${money2} / ${unitCode}` : money2;
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
 var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e5 = (t7) => (...e7) => ({ _$litDirective$: t7, values: e7 });
 var i4 = class {
@@ -4017,7 +4100,7 @@ var i4 = class {
   }
 };
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-html.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-html.js
 var e6 = class extends i4 {
   constructor(i7) {
     if (super(i7), this.it = A, i7.type !== t3.CHILD) throw Error(this.constructor.directiveName + "() can only be used in child bindings");
@@ -4035,13 +4118,13 @@ var e6 = class extends i4 {
 e6.directiveName = "unsafeHTML", e6.resultType = 1;
 var o6 = e5(e6);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-svg.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-svg.js
 var t4 = class extends e6 {
 };
 t4.directiveName = "unsafeSVG", t4.resultType = 2;
 var o7 = e5(t4);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/modules/sales/ui/lib/pay-icons.ts
+// modules/sales/ui/lib/pay-icons.ts
 var PAY_ICON_FALLBACK = "ellipsis-horizontal-circle-outline";
 var BY_TYPE = {
   cash: "cash-outline",
@@ -4105,7 +4188,7 @@ function defaultPayMethod(methods) {
   return methods.find((m4) => (m4.type || "").trim().toLowerCase() === "cash") ?? methods.find((m4) => /efectiv|cash|met[\u00e1a]lico/i.test(m4.name || "")) ?? methods[0];
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-qty-stepper.js
+// ../outfitkit/dist/ok-qty-stepper.js
 var __defProp6 = Object.defineProperty;
 var __decorateClass6 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -4313,7 +4396,7 @@ __decorateClass6([
 ], OkQtyStepper.prototype, "labels");
 define("ok-qty-stepper", OkQtyStepper);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-spotlight-search.js
+// ../outfitkit/dist/ok-spotlight-search.js
 var __defProp7 = Object.defineProperty;
 var __decorateClass7 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -4519,7 +4602,7 @@ __decorateClass7([
 ], OkSpotlightSearch.prototype, "input");
 define("ok-spotlight-search", OkSpotlightSearch);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-empty-state.js
+// ../outfitkit/dist/ok-empty-state.js
 var __defProp8 = Object.defineProperty;
 var __decorateClass8 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -4619,7 +4702,7 @@ __decorateClass8([
 ], OkEmptyState.prototype, "message");
 define("ok-empty-state", OkEmptyState);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-status-pill.js
+// ../outfitkit/dist/ok-status-pill.js
 var __defProp9 = Object.defineProperty;
 var __decorateClass9 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -4738,7 +4821,7 @@ __decorateClass9([
 ], OkStatusPill.prototype, "size");
 define("ok-status-pill", OkStatusPill);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/modules/sales/ui/lib/pos-cart.ts
+// modules/sales/ui/lib/pos-cart.ts
 function rows(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
@@ -4896,7 +4979,7 @@ async function splitOrder(client, orderId, lineIds, label) {
   return firstNewId(res);
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/modules/sales/ui/lib/pos-tax.ts
+// modules/sales/ui/lib/pos-tax.ts
 function isRoot(r6) {
   return r6.parent_id == null || String(r6.parent_id) === "";
 }
@@ -4937,7 +5020,7 @@ function resolveLineTax(catRatesMap, taxCategoryKey) {
   return catRatesMap.get(String(taxCategoryKey)) ?? 0;
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/modules/sales/ui/lib/checkout-key.ts
+// modules/sales/ui/lib/checkout-key.ts
 var KEY_PREFIX = "sale";
 function newIdempotencyKey(source = globalThis.crypto) {
   const uuid = source?.randomUUID?.();
@@ -4971,7 +5054,7 @@ function checkoutErrorKey(message) {
   return "ui.errorCharge";
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/modules/sales/ui/components/erp-pos-touch/erp-pos-touch.ts
+// modules/sales/ui/components/erp-pos-touch/erp-pos-touch.ts
 var CATALOG2 = { es: es_default, en: en_default };
 function erplora2() {
   const c5 = globalThis.erplora;
@@ -6211,18 +6294,46 @@ var ErpPosTouch = class extends i3 {
     if (qty > 0) await updateOrderLineQty(erplora2(), this.orderId, ex.line_id, qty, ex.price, ex.is_gift);
     else await removeOrderLine(erplora2(), this.orderId, ex.line_id);
   }
-  /** Imprime la CUENTA (no fiscal). El navegador imprime el nodo del recibo; en Hub Local el
-   *  bridge de impresoras ESC/POS es un paso aparte (no bloquea llevar la cuenta a la mesa). */
-  printPrebill() {
-    const doc = orderToPrebill(
-      this.cart.map((l3) => ({ name: l3.name, price: l3.price, qty: l3.qty, is_gift: l3.is_gift })),
-      this.settings,
-      { tableLabel: this.tableLabel || void 0, notice: t5("ui.prebillNotice"), fallbackName: t5("ui.docDefaultBusiness") }
+  /** Imprime la CUENTA que se lleva a la mesa (no fiscal, ADR-0141).
+   *
+   *  Sale por la puerta GLOBAL del hub (`erplora.print`): impresora del rol `receipt` si la hay,
+   *  cola del hub si no, y el diálogo del navegador como último respaldo. NO se imprime el DOM de
+   *  la app —el papel vive en un ion-modal reparentado con shadow DOM y salía la app entera— sino
+   *  el HTML PLANO en un iframe aislado.
+   *
+   *  Van DOS documentos con el mismo contenido y distinta forma, y confundirlos era el fallo
+   *  (sales#78): el HTML plano es lo que imprime un navegador, y `data` es lo que lee el
+   *  renderizador ESC/POS, que busca POR CLAVE (`items`, `business_name`) y con la forma de
+   *  pantalla no falla —saca «ERPlora», sin líneas y TOTAL 0,00—. El `jobId` no es opcional: sin él
+   *  la puerta ni intenta la cola del hub, y cambia con la cuenta para que una segunda ronda no se
+   *  trague como duplicado. */
+  async printPrebill() {
+    const lines = this.cart.map((l3) => ({ name: l3.name, price: l3.price, qty: l3.qty, is_gift: l3.is_gift }));
+    const opts = {
+      tableLabel: this.tableLabel || void 0,
+      notice: t5("ui.prebillNotice"),
+      fallbackName: t5("ui.docDefaultBusiness")
+    };
+    const html = receiptToPrintableHtml(
+      orderToPrebill(lines, this.settings, opts)
     );
     const sdk = globalThis.erplora;
-    const html = receiptToPrintableHtml(doc);
-    if (sdk?.print) void sdk.print({ role: "receipt", documentType: "prebill", html, data: doc });
-    else printHtmlInIframe(html);
+    if (!sdk?.print) {
+      printHtmlInIframe(html);
+      return;
+    }
+    const res = await sdk.print({
+      role: "receipt",
+      documentType: "prebill",
+      jobId: prebillJobId(this.orderId, lines),
+      data: prebillToPrintDocument(lines, this.settings, opts),
+      html
+    }).catch((e7) => ({ via: "none", error: e7 instanceof Error ? e7.message : String(e7) }));
+    if (res?.via === "bridge" || res?.via === "queue") return;
+    erplora2().notify?.({
+      type: "error",
+      message: res?.error ? `${t5("ui.prebillPrintFailed")}: ${res.error}` : t5("ui.prebillPrintFailed")
+    });
   }
   /** Marca/desmarca una línea para el cobro por partes. Solo tiene sentido con más de una línea:
    *  con una sola, «lo suyo» y «la cuenta» son lo mismo. */
@@ -6810,7 +6921,7 @@ var ErpPosTouch = class extends i3 {
         <ion-header><ion-toolbar>
           <ion-title>${t5("ui.prebillTitle")}</ion-title>
           <ion-buttons slot="end">
-            <ion-button title=${t5("ui.print")} aria-label=${t5("ui.print")} @click=${() => this.printPrebill()}>
+            <ion-button title=${t5("ui.print")} aria-label=${t5("ui.print")} @click=${() => void this.printPrebill()}>
               <ion-icon slot="icon-only" name="print-outline"></ion-icon>
             </ion-button>
             <ion-button title=${t5("ui.close")} aria-label=${t5("ui.close")}
@@ -6933,7 +7044,7 @@ __decorateClass([
 ], ErpPosTouch.prototype, "customerName", 2);
 define("erp-pos-touch", ErpPosTouch);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/modules/sales/ui/components/erp-pos/erp-pos.ts
+// modules/sales/ui/components/erp-pos/erp-pos.ts
 var ErpPos = class extends i3 {
   static {
     this.styles = i`:host { display:block; height:100%; }`;
@@ -6944,7 +7055,7 @@ var ErpPos = class extends i3 {
 };
 define("erp-pos", ErpPos);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
 var { I: t6 } = j;
 var i5 = (o9) => o9;
 var s4 = () => document.createComment("");
@@ -6977,7 +7088,7 @@ var h3 = (o9) => {
   o9._$AR(), o9._$AA.remove();
 };
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
 var u4 = (e7, s5, t7) => {
   const r6 = /* @__PURE__ */ new Map();
   for (let l3 = s5; l3 <= t7; l3++) r6.set(e7[l3], l3);
@@ -7030,7 +7141,7 @@ var c4 = e5(class extends i4 {
   }
 });
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
+// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
 var n5 = "important";
 var i6 = " !" + n5;
 var o8 = e5(class extends i4 {
@@ -7059,7 +7170,7 @@ var o8 = e5(class extends i4 {
   }
 });
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-data-table.js
+// ../outfitkit/dist/ok-data-table.js
 var CSV_BOM = "\uFEFF";
 function decodeCsvBuffer(buf) {
   let text;
@@ -8487,7 +8598,7 @@ __decorateClass10([
 var OkDataTable = _OkDataTable;
 define("ok-data-table", OkDataTable);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/modules/sales/ui/components/erp-sales-list/erp-sales-list.ts
+// modules/sales/ui/components/erp-sales-list/erp-sales-list.ts
 var CATALOG3 = { es: es_default, en: en_default };
 function erplora3() {
   const c5 = globalThis.erplora;
