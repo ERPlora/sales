@@ -3432,6 +3432,7 @@ var es_default = {
     fireFailed: "No se pudo enviar a cocina",
     splitFailed: "No se pudo dividir la cuenta",
     lineNotSaved: "No se pudo guardar ese art\xEDculo \u2014 vuelve a tocarlo",
+    serverUnavailable: "El servidor no responde (puede estar reinici\xE1ndose). Int\xE9ntalo de nuevo en unos segundos y, si persiste, avisa al encargado.",
     payingPart: "Cobrando {n} l\xEDnea(s) de {total}",
     payExact: "Importe exacto",
     payCardHint: "Cobra {amount} en el dat\xE1fono y confirma.",
@@ -3651,6 +3652,7 @@ var en_default = {
     fireFailed: "Couldn't send to kitchen",
     splitFailed: "Couldn't split the check",
     lineNotSaved: "Couldn't save that item \u2014 tap again",
+    serverUnavailable: "The server isn't responding (it may be restarting). Try again in a few seconds and, if it keeps happening, call the manager.",
     payingPart: "Paying {n} of {total}",
     qtyOffGrid: "Quantity doesn't fit the product's step",
     payExact: "Exact amount",
@@ -5054,6 +5056,16 @@ function checkoutErrorKey(message) {
   return "ui.errorCharge";
 }
 
+// modules/sales/ui/lib/transport-error.ts
+var SERVER_UNAVAILABLE_KEY = "ui.serverUnavailable";
+function transportErrorKey(e7) {
+  const msg = e7 instanceof Error ? e7.message : String(e7 ?? "");
+  if (!msg) return null;
+  if (msg.includes("is not valid JSON")) return SERVER_UNAVAILABLE_KEY;
+  if (/^(Failed to fetch|Load failed|NetworkError)/i.test(msg)) return SERVER_UNAVAILABLE_KEY;
+  return null;
+}
+
 // modules/sales/ui/components/erp-pos-touch/erp-pos-touch.ts
 var CATALOG2 = { es: es_default, en: en_default };
 function erplora2() {
@@ -6239,7 +6251,8 @@ var ErpPosTouch = class extends i3 {
       line.line_id = await addOrderLine(erplora2(), this.orderId, line);
       this.cart = [...this.cart, line];
     } catch (e7) {
-      const msg = e7 instanceof Error ? e7.message : String(e7);
+      const transportKey = transportErrorKey(e7);
+      const msg = transportKey ? t5(transportKey) : e7 instanceof Error ? e7.message : String(e7);
       this.error = msg;
       erplora2().notify?.({ type: "error", message: msg });
     }
@@ -6441,9 +6454,14 @@ var ErpPosTouch = class extends i3 {
       this.resetSlotContexts();
       if (saleId) this.docSaleId = saleId;
     } catch (e7) {
-      const raw = e7 instanceof Error ? e7.message : String(e7 ?? "");
-      const key = checkoutErrorKey(raw);
-      this.error = key === "ui.errorCharge" && raw ? raw : t5(key);
+      const transportKey = transportErrorKey(e7);
+      if (transportKey === SERVER_UNAVAILABLE_KEY) {
+        this.error = t5(transportKey);
+      } else {
+        const raw = e7 instanceof Error ? e7.message : String(e7 ?? "");
+        const key = checkoutErrorKey(raw);
+        this.error = key === "ui.errorCharge" && raw ? raw : t5(key);
+      }
     } finally {
       this.busy = false;
     }

@@ -1281,11 +1281,26 @@ describe('checkout idempotency (sales#20)', () => {
     expect(pos.error).toBe('ui.errorPaymentMethod');
   });
 
-  it('shows an unknown failure verbatim — it says more than a generic message', async () => {
+  it('shows a business message for a transport failure (server down), not the raw browser phrase (sales#81)', async () => {
+    // Antes «Failed to fetch» se mostraba tal cual: era MÁS informativo que un «no se pudo cobrar»
+    // genérico. sales#81 cambia la valla: un cajero no sabe qué es un «Failed to fetch» (un mensaje
+    // de red del navegador), así que se traduce a un aviso de negocio accionable. Lo que sigue
+    // siendo cierto: un rechazo de dominio DESCONOCIDO se enseña tal cual (la frase lleva el código
+    // y el detalle que el encargado necesita), abajo.
     const pos = await posConUnaLinea();
     fallaElProximoCobro = 'Failed to fetch';
     await pos.confirm();
-    expect(pos.error).toBe('Failed to fetch');
+    expect(pos.error).toBe('ui.serverUnavailable');
+  });
+
+  it('shows an unknown domain rejection verbatim — its phrase carries the code the manager needs', async () => {
+    // Un rechazo que NO es ni de dominio conocido ni de transporte: su frase original lleva el
+    // código y el detalle interno, y eso es lo que el encargado necesita para diagnosticar. No se
+    // traduce a un mensaje genérico que lo borraría.
+    const pos = await posConUnaLinea();
+    fallaElProximoCobro = 'something_unexpected: details the manager needs';
+    await pos.confirm();
+    expect(pos.error).toBe('something_unexpected: details the manager needs');
   });
 });
 
