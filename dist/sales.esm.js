@@ -1474,8 +1474,8 @@ function majorToMinor(amount, decimals) {
   const n6 = Number(amount);
   return Number.isFinite(n6) ? Math.round(n6 * 10 ** decimals) : 0;
 }
-function eurosToCents(euros) {
-  return majorToMinor(euros, 2);
+function eurosToCents(euros2) {
+  return majorToMinor(euros2, 2);
 }
 
 // modules/sales/ui/lib/receipt-html.ts
@@ -2761,6 +2761,243 @@ __decorateClass4([
 ], OkReceipt.prototype, "labels");
 define("ok-receipt", OkReceipt);
 
+// modules/sales/ui/lib/quantity.ts
+var QUANTITY_SCALE2 = 1e6;
+function toMicro2(qty) {
+  return Math.round(qty * QUANTITY_SCALE2);
+}
+function fromMicro2(raw) {
+  return raw / QUANTITY_SCALE2;
+}
+function formatQuantity2(raw) {
+  return String(fromMicro2(raw));
+}
+function onGrid2(raw, increment) {
+  if (!Number.isFinite(increment) || increment <= 0) return true;
+  return raw % increment === 0;
+}
+
+// modules/sales/ui/lib/document-mappers.ts
+function toEuros(cents) {
+  return Number(cents ?? 0) / 100;
+}
+function formatDateTime(iso, locale = "es") {
+  if (!iso) return void 0;
+  const d3 = new Date(iso);
+  if (Number.isNaN(d3.getTime())) return iso;
+  return new Intl.DateTimeFormat(locale, {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(d3);
+}
+function receiptLabels(t7) {
+  return {
+    empty: t7("ui.docEmpty"),
+    phone: t7("ui.docPhone"),
+    receipt: t7("ui.docReceipt"),
+    servedBy: t7("ui.docServedBy"),
+    customer: t7("ui.docCustomer"),
+    item: t7("ui.docItem"),
+    amount: t7("ui.docAmount"),
+    noLines: t7("ui.docNoLines"),
+    subtotal: t7("ui.docSubtotal"),
+    total: t7("ui.docTotal"),
+    change: t7("ui.docChange")
+  };
+}
+function invoiceLabels(t7) {
+  return {
+    empty: t7("ui.docEmptyInvoice"),
+    invoice: t7("ui.docInvoice"),
+    number: t7("ui.docNumber"),
+    date: t7("ui.docDate"),
+    dueDate: t7("ui.docDueDate"),
+    billTo: t7("ui.docBillTo"),
+    description: t7("ui.docDescription"),
+    qty: t7("ui.docQty"),
+    price: t7("ui.docPrice"),
+    discount: t7("ui.docDiscount"),
+    tax: t7("ui.docTax"),
+    amount: t7("ui.docAmount"),
+    noLines: t7("ui.docNoLines"),
+    taxBase: t7("ui.docTaxBase"),
+    discountTotal: t7("ui.docDiscountTotal"),
+    total: t7("ui.docTotal"),
+    paymentMethod: t7("ui.docPaymentMethod")
+  };
+}
+function lineLabel(l3) {
+  return Number(l3.is_gift) ? `${l3.product_name} (Invitaci\xF3n)` : l3.product_name;
+}
+var DEFAULT_BUSINESS_NAME = "My business";
+function splitHeader(raw) {
+  const header = (raw || "").trim();
+  return {
+    name: header.split("\n")[0] || void 0,
+    address: header.split("\n").slice(1).join(" ") || void 0
+  };
+}
+function parseTaxes(tax_breakdown) {
+  if (!tax_breakdown) return [];
+  let obj;
+  try {
+    obj = JSON.parse(tax_breakdown);
+  } catch {
+    return [];
+  }
+  return Object.entries(obj).map(([rate, v3]) => {
+    const r6 = Number(rate);
+    return {
+      label: `IVA ${Number.isFinite(r6) ? r6.toFixed(0) : rate}%`,
+      rate: Number.isFinite(r6) ? r6 : void 0,
+      base: toEuros(v3?.base),
+      amount: toEuros(v3?.tax)
+    };
+  }).filter((t7) => t7.amount || t7.base);
+}
+function resolveFormat(sale, settings) {
+  const v3 = sale.document_type || settings.default_document_format || "ticket";
+  return v3 === "invoice" ? "invoice" : "ticket";
+}
+function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName = DEFAULT_BUSINESS_NAME) {
+  const header = splitHeader(settings.receipt_header);
+  return {
+    business: { name: header.name || fiscal.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || void 0 },
+    number: fiscal.number || sale.sale_number,
+    datetime: formatDateTime(sale.created_at, locale),
+    customer: fiscal.customer_name || sale.customer_name || void 0,
+    lines: lines.map((l3) => ({
+      name: lineLabel(l3),
+      qty: fromMicro2(Number(l3.quantity)),
+      // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
+      unit_price: toEuros(l3.unit_price),
+      total: toEuros(l3.line_total)
+    })),
+    subtotal: sale.subtotal != null ? toEuros(sale.subtotal) : void 0,
+    taxes: parseTaxes(sale.tax_breakdown).map((t7) => ({ label: t7.label, base: t7.base, amount: t7.amount })),
+    total: toEuros(sale.total),
+    payment: sale.payment_method_name ? { method: sale.payment_method_name, paid: sale.amount_tendered != null ? toEuros(sale.amount_tendered) : void 0, change: sale.change_due != null ? toEuros(sale.change_due) : void 0 } : void 0,
+    currency: settings.currency || "\u20AC",
+    footer: settings.receipt_footer || void 0,
+    qr: fiscal.qr || void 0,
+    qr_note: fiscal.qr_note || void 0,
+    // QR promocional (solo tiquet; la factura A4 es formal). Sin URL no hay rastro.
+    promo_qr: settings.receipt_marketing_url || void 0,
+    promo_note: settings.receipt_marketing_url ? settings.receipt_marketing_text || void 0 : void 0
+  };
+}
+function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName = DEFAULT_BUSINESS_NAME) {
+  const header = splitHeader(settings.receipt_header);
+  const invLines = lines.map((l3) => ({
+    description: lineLabel(l3),
+    qty: fromMicro2(Number(l3.quantity)),
+    // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
+    unit_price: toEuros(l3.unit_price),
+    discount_percent: l3.discount_percent ? Number(l3.discount_percent) : void 0,
+    tax_rate: l3.tax_rate != null ? Number(l3.tax_rate) : void 0,
+    total: toEuros(l3.line_total)
+  }));
+  const taxes = parseTaxes(sale.tax_breakdown);
+  return {
+    issuer: { name: fiscal.issuer_name || header.name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || void 0 },
+    customer: { name: fiscal.customer_name || sale.customer_name || "Cliente", tax_id: fiscal.customer_tax_id || void 0 },
+    number: fiscal.number || sale.sale_number,
+    issue_date: formatDateTime(sale.created_at, locale) || "",
+    lines: invLines,
+    subtotal: toEuros(sale.subtotal),
+    discount_total: sale.discount_amount ? toEuros(sale.discount_amount) : void 0,
+    taxes: taxes.map((t7) => ({ label: t7.label, rate: t7.rate, base: t7.base, amount: t7.amount })),
+    tax_total: toEuros(sale.tax_amount),
+    total: toEuros(sale.total),
+    currency: settings.currency || "\u20AC",
+    payment_method: sale.payment_method_name || void 0,
+    footer: settings.receipt_footer || void 0,
+    qr: fiscal.qr || void 0,
+    qr_note: fiscal.qr_note || void 0
+  };
+}
+function orderToPrebill(lines, settings = {}, opts = {}) {
+  const header = splitHeader(settings.receipt_header);
+  const cents = (l3) => l3.is_gift ? 0 : Math.round(l3.price * l3.qty);
+  const total = lines.reduce((s5, l3) => s5 + cents(l3), 0);
+  return {
+    business: {
+      name: header.name || opts.fallbackName || DEFAULT_BUSINESS_NAME,
+      address: header.address
+    },
+    // number/qr/payment AUSENTES a propósito: esto no es una factura (ver doc de la función).
+    datetime: formatDateTime(opts.datetime ?? (/* @__PURE__ */ new Date()).toISOString(), opts.locale ?? "es"),
+    customer: opts.tableLabel || void 0,
+    lines: lines.map((l3) => ({
+      name: l3.is_gift ? `${l3.name} (invitaci\xF3n)` : l3.name,
+      qty: l3.qty,
+      unit_price: toEuros(l3.price),
+      total: toEuros(cents(l3))
+    })),
+    total: toEuros(total),
+    taxes: [],
+    currency: settings.currency || "\u20AC",
+    // Inglés canónico (ADR-0055): la UI pasa el texto ya traducido en `opts.notice`; esto es solo
+    // el respaldo para llamadas sin i18n (tests, integraciones).
+    footer: opts.notice ?? "Bill \u2014 this is not an invoice. The fiscal receipt is issued on payment."
+  };
+}
+
+// modules/sales/ui/lib/print-document.ts
+function euros(cents) {
+  return cents == null ? void 0 : Number(cents) / 100;
+}
+function prebillToPrintDocument(lines, settings = {}, opts = {}) {
+  const screen = orderToPrebill(lines, settings, opts);
+  return {
+    business_name: screen.business.name,
+    business_address: screen.business.address,
+    // The renderer prints this as «Mesa/Cliente»: on a bill it is the table, which is what the
+    // waiter needs to know which paper goes where.
+    customer_name: screen.customer,
+    items: screen.lines.map((l3) => ({ name: l3.name, quantity: l3.qty, total: l3.total })),
+    total: screen.total,
+    notice: screen.footer
+  };
+}
+function saleToPrintDocument(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName) {
+  const screen = saleToReceipt(sale, lines, settings, fiscal, locale, fallbackName);
+  return {
+    business_name: screen.business.name,
+    business_address: screen.business.address,
+    vat_number: screen.business.tax_id,
+    receipt_id: screen.number,
+    customer_name: screen.customer,
+    items: screen.lines.map((l3) => ({ name: l3.name, quantity: l3.qty, total: l3.total })),
+    subtotal: screen.subtotal,
+    // The tax total comes from the sale row, not from the breakdown: a sale without
+    // `tax_breakdown` still has `tax_amount`, and the paper must not lose it.
+    tax_amount: euros(sale.tax_amount),
+    discount: euros(sale.discount_amount),
+    total: screen.total,
+    payment_method: screen.payment?.method,
+    paid: screen.payment?.paid,
+    change: screen.payment?.change,
+    qr_data: screen.qr,
+    receipt_footer: screen.footer
+  };
+}
+function prebillJobId(orderId, lines) {
+  const fingerprint = (lines || []).map((l3) => `${l3.name}${l3.qty}${l3.price}${l3.is_gift ? 1 : 0}`).join("");
+  return `prebill-${orderId || "open"}-${hash(fingerprint)}`;
+}
+function hash(s5) {
+  let h4 = 2166136261;
+  for (let i7 = 0; i7 < s5.length; i7++) {
+    h4 ^= s5.charCodeAt(i7);
+    h4 = Math.imul(h4, 16777619) >>> 0;
+  }
+  return h4.toString(36);
+}
+
 // ../outfitkit/dist/ok-invoice.js
 var __defProp5 = Object.defineProperty;
 var __decorateClass5 = (decorators, target, key, kind) => {
@@ -3016,191 +3253,6 @@ __decorateClass5([
 ], OkInvoice.prototype, "labels");
 define("ok-invoice", OkInvoice);
 
-// modules/sales/ui/lib/quantity.ts
-var QUANTITY_SCALE2 = 1e6;
-function toMicro2(qty) {
-  return Math.round(qty * QUANTITY_SCALE2);
-}
-function fromMicro2(raw) {
-  return raw / QUANTITY_SCALE2;
-}
-function formatQuantity2(raw) {
-  return String(fromMicro2(raw));
-}
-function onGrid2(raw, increment) {
-  if (!Number.isFinite(increment) || increment <= 0) return true;
-  return raw % increment === 0;
-}
-
-// modules/sales/ui/lib/document-mappers.ts
-function toEuros(cents) {
-  return Number(cents ?? 0) / 100;
-}
-function formatDateTime(iso, locale = "es") {
-  if (!iso) return void 0;
-  const d3 = new Date(iso);
-  if (Number.isNaN(d3.getTime())) return iso;
-  return new Intl.DateTimeFormat(locale, {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(d3);
-}
-function receiptLabels(t7) {
-  return {
-    empty: t7("ui.docEmpty"),
-    phone: t7("ui.docPhone"),
-    receipt: t7("ui.docReceipt"),
-    servedBy: t7("ui.docServedBy"),
-    customer: t7("ui.docCustomer"),
-    item: t7("ui.docItem"),
-    amount: t7("ui.docAmount"),
-    noLines: t7("ui.docNoLines"),
-    subtotal: t7("ui.docSubtotal"),
-    total: t7("ui.docTotal"),
-    change: t7("ui.docChange")
-  };
-}
-function invoiceLabels(t7) {
-  return {
-    empty: t7("ui.docEmptyInvoice"),
-    invoice: t7("ui.docInvoice"),
-    number: t7("ui.docNumber"),
-    date: t7("ui.docDate"),
-    dueDate: t7("ui.docDueDate"),
-    billTo: t7("ui.docBillTo"),
-    description: t7("ui.docDescription"),
-    qty: t7("ui.docQty"),
-    price: t7("ui.docPrice"),
-    discount: t7("ui.docDiscount"),
-    tax: t7("ui.docTax"),
-    amount: t7("ui.docAmount"),
-    noLines: t7("ui.docNoLines"),
-    taxBase: t7("ui.docTaxBase"),
-    discountTotal: t7("ui.docDiscountTotal"),
-    total: t7("ui.docTotal"),
-    paymentMethod: t7("ui.docPaymentMethod")
-  };
-}
-function lineLabel(l3) {
-  return Number(l3.is_gift) ? `${l3.product_name} (Invitaci\xF3n)` : l3.product_name;
-}
-var DEFAULT_BUSINESS_NAME = "My business";
-function splitHeader(raw) {
-  const header = (raw || "").trim();
-  return {
-    name: header.split("\n")[0] || void 0,
-    address: header.split("\n").slice(1).join(" ") || void 0
-  };
-}
-function parseTaxes(tax_breakdown) {
-  if (!tax_breakdown) return [];
-  let obj;
-  try {
-    obj = JSON.parse(tax_breakdown);
-  } catch {
-    return [];
-  }
-  return Object.entries(obj).map(([rate, v3]) => {
-    const r6 = Number(rate);
-    return {
-      label: `IVA ${Number.isFinite(r6) ? r6.toFixed(0) : rate}%`,
-      rate: Number.isFinite(r6) ? r6 : void 0,
-      base: toEuros(v3?.base),
-      amount: toEuros(v3?.tax)
-    };
-  }).filter((t7) => t7.amount || t7.base);
-}
-function resolveFormat(sale, settings) {
-  const v3 = sale.document_type || settings.default_document_format || "ticket";
-  return v3 === "invoice" ? "invoice" : "ticket";
-}
-function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName = DEFAULT_BUSINESS_NAME) {
-  const header = splitHeader(settings.receipt_header);
-  return {
-    business: { name: header.name || fiscal.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || void 0 },
-    number: fiscal.number || sale.sale_number,
-    datetime: formatDateTime(sale.created_at, locale),
-    customer: fiscal.customer_name || sale.customer_name || void 0,
-    lines: lines.map((l3) => ({
-      name: lineLabel(l3),
-      qty: fromMicro2(Number(l3.quantity)),
-      // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
-      unit_price: toEuros(l3.unit_price),
-      total: toEuros(l3.line_total)
-    })),
-    subtotal: sale.subtotal != null ? toEuros(sale.subtotal) : void 0,
-    taxes: parseTaxes(sale.tax_breakdown).map((t7) => ({ label: t7.label, base: t7.base, amount: t7.amount })),
-    total: toEuros(sale.total),
-    payment: sale.payment_method_name ? { method: sale.payment_method_name, paid: sale.amount_tendered != null ? toEuros(sale.amount_tendered) : void 0, change: sale.change_due != null ? toEuros(sale.change_due) : void 0 } : void 0,
-    currency: settings.currency || "\u20AC",
-    footer: settings.receipt_footer || void 0,
-    qr: fiscal.qr || void 0,
-    qr_note: fiscal.qr_note || void 0,
-    // QR promocional (solo tiquet; la factura A4 es formal). Sin URL no hay rastro.
-    promo_qr: settings.receipt_marketing_url || void 0,
-    promo_note: settings.receipt_marketing_url ? settings.receipt_marketing_text || void 0 : void 0
-  };
-}
-function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName = DEFAULT_BUSINESS_NAME) {
-  const header = splitHeader(settings.receipt_header);
-  const invLines = lines.map((l3) => ({
-    description: lineLabel(l3),
-    qty: fromMicro2(Number(l3.quantity)),
-    // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
-    unit_price: toEuros(l3.unit_price),
-    discount_percent: l3.discount_percent ? Number(l3.discount_percent) : void 0,
-    tax_rate: l3.tax_rate != null ? Number(l3.tax_rate) : void 0,
-    total: toEuros(l3.line_total)
-  }));
-  const taxes = parseTaxes(sale.tax_breakdown);
-  return {
-    issuer: { name: fiscal.issuer_name || header.name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || void 0 },
-    customer: { name: fiscal.customer_name || sale.customer_name || "Cliente", tax_id: fiscal.customer_tax_id || void 0 },
-    number: fiscal.number || sale.sale_number,
-    issue_date: formatDateTime(sale.created_at, locale) || "",
-    lines: invLines,
-    subtotal: toEuros(sale.subtotal),
-    discount_total: sale.discount_amount ? toEuros(sale.discount_amount) : void 0,
-    taxes: taxes.map((t7) => ({ label: t7.label, rate: t7.rate, base: t7.base, amount: t7.amount })),
-    tax_total: toEuros(sale.tax_amount),
-    total: toEuros(sale.total),
-    currency: settings.currency || "\u20AC",
-    payment_method: sale.payment_method_name || void 0,
-    footer: settings.receipt_footer || void 0,
-    qr: fiscal.qr || void 0,
-    qr_note: fiscal.qr_note || void 0
-  };
-}
-function orderToPrebill(lines, settings = {}, opts = {}) {
-  const header = splitHeader(settings.receipt_header);
-  const cents = (l3) => l3.is_gift ? 0 : Math.round(l3.price * l3.qty);
-  const total = lines.reduce((s5, l3) => s5 + cents(l3), 0);
-  return {
-    business: {
-      name: header.name || opts.fallbackName || DEFAULT_BUSINESS_NAME,
-      address: header.address
-    },
-    // number/qr/payment AUSENTES a propósito: esto no es una factura (ver doc de la función).
-    datetime: formatDateTime(opts.datetime ?? (/* @__PURE__ */ new Date()).toISOString(), opts.locale ?? "es"),
-    customer: opts.tableLabel || void 0,
-    lines: lines.map((l3) => ({
-      name: l3.is_gift ? `${l3.name} (invitaci\xF3n)` : l3.name,
-      qty: l3.qty,
-      unit_price: toEuros(l3.price),
-      total: toEuros(cents(l3))
-    })),
-    total: toEuros(total),
-    taxes: [],
-    currency: settings.currency || "\u20AC",
-    // Inglés canónico (ADR-0055): la UI pasa el texto ya traducido en `opts.notice`; esto es solo
-    // el respaldo para llamadas sin i18n (tests, integraciones).
-    footer: opts.notice ?? "Bill \u2014 this is not an invoice. The fiscal receipt is issued on payment."
-  };
-}
-
 // modules/sales/locales/es.json
 var es_default = {
   name: "Ventas / TPV",
@@ -3235,6 +3287,7 @@ var es_default = {
     close: "Cerrar",
     errorStats: "Error cargando m\xE9tricas",
     print: "Imprimir",
+    printFailed: "No se pudo imprimir",
     qrValidateNote: "Escanea para validar la factura en la AEAT",
     docEmpty: "Sin datos de tiquet.",
     docEmptyInvoice: "Sin datos de factura.",
@@ -3370,6 +3423,7 @@ var es_default = {
     printPrebill: "Imprimir cuenta",
     prebillTitle: "Cuenta",
     prebillNotice: "Cuenta \u2014 no es una factura. El tiquet fiscal se entrega al cobrar.",
+    prebillPrintFailed: "No se pudo imprimir la cuenta",
     paymentMethod: "Forma de pago",
     printReceipt: "Imprimir tiquet",
     parkedAs: "Aparcado como {number}",
@@ -3453,6 +3507,7 @@ var en_default = {
     close: "Close",
     errorStats: "Error loading metrics",
     print: "Print",
+    printFailed: "Could not print",
     qrValidateNote: "Scan to validate the invoice at the AEAT",
     docEmpty: "No receipt data.",
     docEmptyInvoice: "No invoice data.",
@@ -3588,6 +3643,7 @@ var en_default = {
     printPrebill: "Print bill",
     prebillTitle: "Bill",
     prebillNotice: "Bill \u2014 this is not an invoice. The fiscal receipt is issued on payment.",
+    prebillPrintFailed: "Bill could not be printed",
     paymentMethod: "Payment method",
     printReceipt: "Print receipt",
     parkedAs: "Parked as {number}",
@@ -3763,6 +3819,26 @@ var ErpSalesDocument = class extends i3 {
     );
     return receiptToPrintableHtml(doc);
   }
+  /**
+   * El documento **estructurado** que lee el renderizador ESC/POS (`escpos::render_receipt`).
+   *
+   * No es lo mismo que `printableHtml()`: aquel es para un navegador, este para una impresora
+   * térmica, que busca POR CLAVE (`items`, `total`, `receipt_id`). Reimprimir mandaba `data` vacío
+   * y el papel salía con todos los valores por defecto —«ERPlora», sin líneas, TOTAL 0,00— sin dar
+   * ningún error (sales#79). `undefined` si aún no hay venta: nada que imprimir es mejor que un
+   * tique en blanco.
+   */
+  printableDocument() {
+    if (!this.sale) return void 0;
+    return saleToPrintDocument(
+      this.sale,
+      this.lines || [],
+      this.settings || {},
+      this.fiscal,
+      erplora().locale,
+      erplora().t(CATALOG, "ui.docDefaultBusiness")
+    );
+  }
   render() {
     const t7 = (k2) => erplora().t(CATALOG, k2);
     if (this.loading) return b2`<p class="muted">${t7("ui.loadingDocument")}</p>`;
@@ -3859,10 +3935,17 @@ function renderDocumentModal({ saleId, onClose, t: t7 }) {
         <ion-button class="print" expand="block" aria-label=${t7("ui.print")} @click=${() => {
     const el = document.querySelector("ion-modal.doc-modal")?.querySelector("erp-sales-document");
     const html = el?.printableHtml?.();
+    const data = el?.printableDocument?.();
     const sdk = globalThis.erplora;
-    if (sdk?.print) void sdk.print({ role: "receipt", documentType: "receipt", html, jobId: saleId ? `sale-${saleId}` : void 0 });
-    else if (html) printHtmlInIframe(html);
-    else window.print();
+    if (!sdk?.print) {
+      if (html) printHtmlInIframe(html);
+      else window.print();
+      return;
+    }
+    void sdk.print({ role: "receipt", documentType: "receipt", html, data, jobId: saleId ? `sale-${saleId}` : void 0 }).then((res) => {
+      if (res?.via === "bridge" || res?.via === "queue") return;
+      sdk.notify?.({ type: "error", message: res?.error ? `${t7("ui.printFailed")}: ${res.error}` : t7("ui.printFailed") });
+    });
   }}>
           <ion-icon slot="icon-only" name="print-outline"></ion-icon>
         </ion-button>
@@ -6224,18 +6307,46 @@ var ErpPosTouch = class extends i3 {
     if (qty > 0) await updateOrderLineQty(erplora2(), this.orderId, ex.line_id, qty, ex.price, ex.is_gift);
     else await removeOrderLine(erplora2(), this.orderId, ex.line_id);
   }
-  /** Imprime la CUENTA (no fiscal). El navegador imprime el nodo del recibo; en Hub Local el
-   *  bridge de impresoras ESC/POS es un paso aparte (no bloquea llevar la cuenta a la mesa). */
-  printPrebill() {
-    const doc = orderToPrebill(
-      this.cart.map((l3) => ({ name: l3.name, price: l3.price, qty: l3.qty, is_gift: l3.is_gift })),
-      this.settings,
-      { tableLabel: this.tableLabel || void 0, notice: t5("ui.prebillNotice"), fallbackName: t5("ui.docDefaultBusiness") }
+  /** Imprime la CUENTA que se lleva a la mesa (no fiscal, ADR-0141).
+   *
+   *  Sale por la puerta GLOBAL del hub (`erplora.print`): impresora del rol `receipt` si la hay,
+   *  cola del hub si no, y el diálogo del navegador como último respaldo. NO se imprime el DOM de
+   *  la app —el papel vive en un ion-modal reparentado con shadow DOM y salía la app entera— sino
+   *  el HTML PLANO en un iframe aislado.
+   *
+   *  Van DOS documentos con el mismo contenido y distinta forma, y confundirlos era el fallo
+   *  (sales#78): el HTML plano es lo que imprime un navegador, y `data` es lo que lee el
+   *  renderizador ESC/POS, que busca POR CLAVE (`items`, `business_name`) y con la forma de
+   *  pantalla no falla —saca «ERPlora», sin líneas y TOTAL 0,00—. El `jobId` no es opcional: sin él
+   *  la puerta ni intenta la cola del hub, y cambia con la cuenta para que una segunda ronda no se
+   *  trague como duplicado. */
+  async printPrebill() {
+    const lines = this.cart.map((l3) => ({ name: l3.name, price: l3.price, qty: l3.qty, is_gift: l3.is_gift }));
+    const opts = {
+      tableLabel: this.tableLabel || void 0,
+      notice: t5("ui.prebillNotice"),
+      fallbackName: t5("ui.docDefaultBusiness")
+    };
+    const html = receiptToPrintableHtml(
+      orderToPrebill(lines, this.settings, opts)
     );
     const sdk = globalThis.erplora;
-    const html = receiptToPrintableHtml(doc);
-    if (sdk?.print) void sdk.print({ role: "receipt", documentType: "prebill", html, data: doc });
-    else printHtmlInIframe(html);
+    if (!sdk?.print) {
+      printHtmlInIframe(html);
+      return;
+    }
+    const res = await sdk.print({
+      role: "receipt",
+      documentType: "prebill",
+      jobId: prebillJobId(this.orderId, lines),
+      data: prebillToPrintDocument(lines, this.settings, opts),
+      html
+    }).catch((e7) => ({ via: "none", error: e7 instanceof Error ? e7.message : String(e7) }));
+    if (res?.via === "bridge" || res?.via === "queue") return;
+    erplora2().notify?.({
+      type: "error",
+      message: res?.error ? `${t5("ui.prebillPrintFailed")}: ${res.error}` : t5("ui.prebillPrintFailed")
+    });
   }
   /** Marca/desmarca una línea para el cobro por partes. Solo tiene sentido con más de una línea:
    *  con una sola, «lo suyo» y «la cuenta» son lo mismo. */
@@ -6828,7 +6939,7 @@ var ErpPosTouch = class extends i3 {
         <ion-header><ion-toolbar>
           <ion-title>${t5("ui.prebillTitle")}</ion-title>
           <ion-buttons slot="end">
-            <ion-button title=${t5("ui.print")} aria-label=${t5("ui.print")} @click=${() => this.printPrebill()}>
+            <ion-button title=${t5("ui.print")} aria-label=${t5("ui.print")} @click=${() => void this.printPrebill()}>
               <ion-icon slot="icon-only" name="print-outline"></ion-icon>
             </ion-button>
             <ion-button title=${t5("ui.close")} aria-label=${t5("ui.close")}

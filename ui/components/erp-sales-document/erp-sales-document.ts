@@ -4,6 +4,8 @@ import { define } from '@erplora/outfitkit/define';
 import '@erplora/outfitkit/ok-inline-feedback';
 import '@erplora/outfitkit/ok-receipt';
 import { receiptToPrintableHtml } from '../../lib/receipt-html.js';
+// El mismo tiquet, en la forma que lee la impresora térmica (sales#79).
+import { saleToPrintDocument, type PrintDocument } from '../../lib/print-document.js';
 import '@erplora/outfitkit/ok-invoice';
 import {
   saleToReceipt,
@@ -199,6 +201,23 @@ export class ErpSalesDocument extends LitElement {
       t('ui.docDefaultBusiness'),
     );
     return receiptToPrintableHtml(doc as unknown as Parameters<typeof receiptToPrintableHtml>[0]);
+  }
+
+  /**
+   * El documento **estructurado** que lee el renderizador ESC/POS (`escpos::render_receipt`).
+   *
+   * No es lo mismo que `printableHtml()`: aquel es para un navegador, este para una impresora
+   * térmica, que busca POR CLAVE (`items`, `total`, `receipt_id`). Reimprimir mandaba `data` vacío
+   * y el papel salía con todos los valores por defecto —«ERPlora», sin líneas, TOTAL 0,00— sin dar
+   * ningún error (sales#79). `undefined` si aún no hay venta: nada que imprimir es mejor que un
+   * tique en blanco.
+   */
+  printableDocument(): PrintDocument | undefined {
+    if (!this.sale) return undefined;
+    return saleToPrintDocument(
+      this.sale, this.lines || [], this.settings || {}, this.fiscal, erplora().locale,
+      erplora().t(CATALOG, 'ui.docDefaultBusiness'),
+    );
   }
 
   render() {

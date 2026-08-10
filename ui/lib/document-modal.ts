@@ -21,8 +21,15 @@ export interface DocumentModalOpts {
   saleId?: string;
   /** Cierra el modal (limpia el id en el componente anfitrión). */
   onClose: () => void;
-  /** Traductor del catálogo del módulo (`ui.print`, `ui.close`). */
+  /** Traductor del catálogo del módulo (`ui.print`, `ui.close`, `ui.printFailed`). */
   t: (key: string) => string;
+}
+
+/** Lo que este modal necesita del SDK del shell: la puerta de impresión y el canal de avisos.
+ *  `via` es por dónde salió el papel — `bridge`/`queue` son éxito; el resto, no. */
+interface PrintCapableSdk {
+  print?: (r: Record<string, unknown>) => Promise<{ via?: string; error?: string } | undefined>;
+  notify?: (n: { type: string; message: string }) => void;
 }
 
 export function renderDocumentModal({ saleId, onClose, t }: DocumentModalOpts): TemplateResult {
@@ -72,16 +79,31 @@ export function renderDocumentModal({ saleId, onClose, t }: DocumentModalOpts): 
         <!-- Solo-icono (ADR-0133): el nombre va en aria-label, nunca texto visible. A ancho
              completo igualmente: en el TPV táctil el objetivo grande manda. -->
         <ion-button class="print" expand="block" aria-label=${t('ui.print')} @click=${() => {
-          // Se imprime el DOCUMENTO, no la app: se pide su HTML plano al <erp-sales-document> y se
-          // manda por la puerta global (Bridge si lo hay; si no, iframe aislado). Imprimir el DOM
-          // del modal era indomable — ion-modal reparentado + shadow DOM = app entera o hoja blanca.
+          // Se imprime el DOCUMENTO, no la app: se le piden al <erp-sales-document> sus DOS formas y
+          // se mandan por la puerta global. Imprimir el DOM del modal era indomable — ion-modal
+          // reparentado + shadow DOM = app entera o hoja blanca.
+          //
+          // `html` es lo que imprime un navegador; `data` es lo que lee el renderizador ESC/POS, que
+          // busca POR CLAVE. Sin `data` la impresora no fallaba: pintaba todos sus valores por
+          // defecto y sacaba «ERPlora», sin líneas y TOTAL 0,00 (sales#79).
           const el = document.querySelector('ion-modal.doc-modal')?.querySelector('erp-sales-document') as
-            (HTMLElement & { printableHtml?: () => string }) | null;
+            (HTMLElement & { printableHtml?: () => string; printableDocument?: () => Record<string, unknown> | undefined }) | null;
           const html = el?.printableHtml?.();
-          const sdk = (globalThis as { erplora?: { print?: (r: Record<string, unknown>) => Promise<unknown> } }).erplora;
-          if (sdk?.print) void sdk.print({ role: 'receipt', documentType: 'receipt', html, jobId: saleId ? `sale-${saleId}` : undefined });
-          else if (html) printHtmlInIframe(html);
-          else window.print();
+          const data = el?.printableDocument?.();
+          const sdk = (globalThis as { erplora?: PrintCapableSdk }).erplora;
+          if (!sdk?.print) {
+            if (html) printHtmlInIframe(html); else window.print();
+            return;
+          }
+          void sdk
+            .print({ role: 'receipt', documentType: 'receipt', html, data, jobId: saleId ? `sale-${saleId}` : undefined })
+            .then((res) => {
+              // Salió por impresora o quedó en la cola: éxito. Lo demás hay que decirlo — en la app
+              // instalada el respaldo del navegador no imprime nada y el cliente se queda esperando
+              // su copia.
+              if (res?.via === 'bridge' || res?.via === 'queue') return;
+              sdk.notify?.({ type: 'error', message: res?.error ? `${t('ui.printFailed')}: ${res.error}` : t('ui.printFailed') });
+            });
         }}>
           <ion-icon slot="icon-only" name="print-outline"></ion-icon>
         </ion-button>

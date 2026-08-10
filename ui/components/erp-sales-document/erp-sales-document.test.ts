@@ -157,3 +157,28 @@ describe('QR fiscal: reintento mientras el Outbox termina', () => {
     expect(receipt.receipt.business.tax_id).toBe('B12345678');
   });
 });
+
+// The paper, not the screen (sales#79). `printableHtml()` is what a browser prints; a thermal
+// printer reads a STRUCTURED document instead, and reprinting used to send it nothing at all —
+// the renderer reads by key, found none, and printed «ERPlora», no lines, TOTAL 0.00.
+describe('printableDocument — what the thermal printer reads', () => {
+  it('rebuilds the ticket from the sale: number, lines and totals in euros', async () => {
+    const el = await montarVisor();
+    const doc = (el as unknown as { printableDocument(): Record<string, unknown> }).printableDocument();
+
+    expect(doc.receipt_id, 'the number the customer holds').toBe('TICKET-2026-000004');
+    expect(doc.items, 'the key the ESC/POS renderer reads').toHaveLength(1);
+    expect(doc.total, 'cents on the row, euros on the paper').toBe(3.6);
+    expect(doc.payment_method).toBe('Efectivo');
+    expect((doc as { lines?: unknown }).lines, 'not the screen shape').toBeUndefined();
+  });
+
+  it('is empty-safe: no sale loaded yet means nothing to print, not a blank ticket', async () => {
+    await import('./erp-sales-document');
+    const el = document.createElement('erp-sales-document');
+    document.body.appendChild(el);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    expect((el as unknown as { printableDocument(): unknown }).printableDocument()).toBeUndefined();
+  });
+});

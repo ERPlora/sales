@@ -6,6 +6,9 @@ import { bindTabbar } from '@erplora/outfitkit/tabbar';
 import { eurosToCents } from '@erplora/module-sdk';
 import { renderDocumentModal } from '../../lib/document-modal.js';
 import { orderToPrebill } from '../../lib/document-mappers.js';
+// La CUENTA se imprime con la forma que lee el renderizador ESC/POS, no con la de la pantalla
+// (sales#78): son dos documentos con el mismo contenido y distintas claves.
+import { prebillToPrintDocument, prebillJobId } from '../../lib/print-document.js';
 import { receiptToPrintableHtml, printHtmlInIframe } from '../../lib/receipt-html.js';
 import { decideOnTableChange } from '../../lib/table-switch.js';
 import { defaultParkLabel } from '../../lib/park-label.js';
@@ -76,6 +79,13 @@ interface IonicAlertElement extends HTMLElement {
   isOpen: boolean;
   present?: () => Promise<void>;
   dismiss?: () => Promise<boolean>;
+}
+
+/** Lo que contesta la puerta de impresión del shell (`apps/web/src/lib/print.ts`). `bridge` salió
+ *  por una impresora, `queue` espera a un host que la drene; el resto NO ha salido papel. */
+interface PrintOutcome {
+  via?: string;
+  error?: string;
 }
 
 /** i18n del módulo (ADR-0055): idioma activo + traducción del catálogo `ui`. */
@@ -1456,21 +1466,52 @@ export class ErpPosTouch extends LitElement {
     else await removeOrderLine(erplora(), this.orderId, ex.line_id);
   }
 
-  /** Imprime la CUENTA (no fiscal). El navegador imprime el nodo del recibo; en Hub Local el
-   *  bridge de impresoras ESC/POS es un paso aparte (no bloquea llevar la cuenta a la mesa). */
-  private printPrebill() {
-    // Puerta GLOBAL del Hub: Bridge si lo hay; si no, se imprime el HTML PLANO de la cuenta en un
-    // iframe aislado. NO se imprime el DOM de la app: el papel vive en un ion-modal reparentado con
-    // shadow DOM y salía la app entera (o una hoja en blanco).
-    const doc = orderToPrebill(
-      this.cart.map((l) => ({ name: l.name, price: l.price, qty: l.qty, is_gift: l.is_gift })),
-      this.settings,
-      { tableLabel: this.tableLabel || undefined, notice: t('ui.prebillNotice'), fallbackName: t('ui.docDefaultBusiness') },
+  /** Imprime la CUENTA que se lleva a la mesa (no fiscal, ADR-0141).
+   *
+   *  Sale por la puerta GLOBAL del hub (`erplora.print`): impresora del rol `receipt` si la hay,
+   *  cola del hub si no, y el diálogo del navegador como último respaldo. NO se imprime el DOM de
+   *  la app —el papel vive en un ion-modal reparentado con shadow DOM y salía la app entera— sino
+   *  el HTML PLANO en un iframe aislado.
+   *
+   *  Van DOS documentos con el mismo contenido y distinta forma, y confundirlos era el fallo
+   *  (sales#78): el HTML plano es lo que imprime un navegador, y `data` es lo que lee el
+   *  renderizador ESC/POS, que busca POR CLAVE (`items`, `business_name`) y con la forma de
+   *  pantalla no falla —saca «ERPlora», sin líneas y TOTAL 0,00—. El `jobId` no es opcional: sin él
+   *  la puerta ni intenta la cola del hub, y cambia con la cuenta para que una segunda ronda no se
+   *  trague como duplicado. */
+  private async printPrebill() {
+    const lines = this.cart.map((l) => ({ name: l.name, price: l.price, qty: l.qty, is_gift: l.is_gift }));
+    const opts = {
+      tableLabel: this.tableLabel || undefined,
+      notice: t('ui.prebillNotice'),
+      fallbackName: t('ui.docDefaultBusiness'),
+    };
+    const html = receiptToPrintableHtml(
+      orderToPrebill(lines, this.settings, opts) as Parameters<typeof receiptToPrintableHtml>[0],
     );
-    const sdk = (globalThis as { erplora?: { print?: (r: Record<string, unknown>) => Promise<unknown> } }).erplora;
-    const html = receiptToPrintableHtml(doc as Parameters<typeof receiptToPrintableHtml>[0]);
-    if (sdk?.print) void sdk.print({ role: 'receipt', documentType: 'prebill', html, data: doc as unknown as Record<string, unknown> });
-    else printHtmlInIframe(html);
+    const sdk = (globalThis as { erplora?: { print?: (r: Record<string, unknown>) => Promise<PrintOutcome> } }).erplora;
+    if (!sdk?.print) {
+      printHtmlInIframe(html);
+      return;
+    }
+    const res = await sdk
+      .print({
+        role: 'receipt',
+        documentType: 'prebill',
+        jobId: prebillJobId(this.orderId, lines),
+        data: prebillToPrintDocument(lines, this.settings, opts),
+        html,
+      })
+      .catch((e: unknown) => ({ via: 'none', error: e instanceof Error ? e.message : String(e) }) as PrintOutcome);
+    // Salió por una impresora, o quedó en la cola para que la saque un host: las dos son éxito.
+    if (res?.via === 'bridge' || res?.via === 'queue') return;
+    // Cualquier otra cosa hay que DECIRLA: en la app instalada el respaldo del navegador no imprime
+    // nada, así que un fallo mudo deja al camarero yendo a la mesa con las manos vacías creyendo
+    // que la cuenta está en la impresora.
+    erplora().notify?.({
+      type: 'error',
+      message: res?.error ? `${t('ui.prebillPrintFailed')}: ${res.error}` : t('ui.prebillPrintFailed'),
+    });
   }
 
   /** Marca/desmarca una línea para el cobro por partes. Solo tiene sentido con más de una línea:
@@ -2104,7 +2145,7 @@ export class ErpPosTouch extends LitElement {
         <ion-header><ion-toolbar>
           <ion-title>${t('ui.prebillTitle')}</ion-title>
           <ion-buttons slot="end">
-            <ion-button title=${t('ui.print')} aria-label=${t('ui.print')} @click=${() => this.printPrebill()}>
+            <ion-button title=${t('ui.print')} aria-label=${t('ui.print')} @click=${() => void this.printPrebill()}>
               <ion-icon slot="icon-only" name="print-outline"></ion-icon>
             </ion-button>
             <ion-button title=${t('ui.close')} aria-label=${t('ui.close')}
