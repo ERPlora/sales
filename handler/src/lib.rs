@@ -444,7 +444,12 @@ fn reject(code: &str, detail: impl std::fmt::Display) -> String {
 /// el runtime vía `reads`). Nada de aquí llega del navegador sin validar.
 struct ServerDecision {
     /// Nombre del método de pago **tal y como lo tiene el hub**, no como lo etiquetó el navegador.
+    /// Es el valor para DISPLAY (recibo, TPV): localizado, el que el cajero ve.
     payment_method_name: String,
+    /// Tipo canónico del método (`cash` | `card` | `transfer` | `other`), también leído del
+    /// catálogo del hub. Es el valor para LÓGICA: el cajón de `cash_register` lo usa para decidir
+    /// si una venta suma al efectivo esperado, sin depender del `name` localizado (hub#778).
+    payment_method_type: String,
     /// Base fiscal de los precios: `true` = brutos (IVA incluido), `false` = base imponible.
     /// `None` = el hub no la ha fijado (sin fila de ajustes o sin `reads`) → manda el payload.
     tax_included: Option<bool>,
@@ -541,8 +546,13 @@ fn decide_checkout(payload: &Value, context: &Value, items: &[Value]) -> Result<
         .map(as_bool);
 
     // ── Método de pago: del catálogo del hub o de ningún sitio ──
+    // El catálogo es la fuente de confianza para DOS cosas a la vez (hub#778):
+    //   - `name`  → display (recibo, TPV): localizado, el que el cajero ve.
+    //   - `type`  → lógica: `cash` | `card` | `transfer` | `other`, canónico. El cajón de
+    //               cash_register lo usa para saber si una venta suma al efectivo esperado,
+    //               sin depender del `name` localizado («Efectivo» ≠ «cash»).
     let method_id = field(payload, "payment_method_id");
-    let payment_method_name = match tax::read_rows(context, "sales.payment_methods") {
+    let (payment_method_name, payment_method_type) = match tax::read_rows(context, "sales.payment_methods") {
         Some(catalog) if !catalog.is_empty() => {
             if method_id.is_empty() {
                 return Err(reject("sales.payment_method_required", "the sale has no payment method"));
@@ -551,14 +561,17 @@ fn decide_checkout(payload: &Value, context: &Value, items: &[Value]) -> Result<
                 .iter()
                 .find(|row| field(row, "id") == method_id)
                 .ok_or_else(|| reject("sales.payment_method_not_available", &method_id))?;
-            field(row, "name")
+            (field(row, "name"), field(row, "type"))
         }
         // Degradación graceful (misma regla que el catálogo fiscal): sin catálogo de confianza no
-        // hay nada contra lo que validar, y el TPV tiene que poder cobrar igual.
-        _ => str_or(payload, "payment_method_name", ""),
+        // hay nada contra lo que validar, y el TPV tiene que poder cobrar igual. Sin `type` conocido
+        // asumimos `cash` (default de `sales_payment_method.type`): es el caso que menos daña al
+        // arqueo — una tarjeta sin catálogo se contaría como efectivo, pero sin catálogo no hay
+        // venta válida que llegue aquí de todos modos.
+        _ => (str_or(payload, "payment_method_name", ""), str_or(payload, "payment_method_type", "cash")),
     };
 
-    Ok(ServerDecision { payment_method_name, tax_included })
+    Ok(ServerDecision { payment_method_name, payment_method_type, tax_included })
 }
 
 pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
@@ -910,6 +923,10 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         "payment_method_id": payload.get("payment_method_id").cloned().unwrap_or(Value::Null),
         // Igual que en la cabecera: el nombre que viaja al arqueo es el del catálogo (sales#20).
         "payment_method_name": decision.payment_method_name,
+        // Tipo CANÓNICO del método (`cash` | `card` | …), del catálogo del hub (hub#778): el
+        // cajón compara contra este, no contra el `name` localizado. «Efectivo» y «Cash» son el
+        // mismo `type` («cash»), y solo las ventas así marcadadas suman al efectivo esperado.
+        "payment_method_type": decision.payment_method_type,
     }));
 
     let mut events = vec![event];
@@ -2304,6 +2321,45 @@ mod tests {
         assert_eq!(header.params["payment_method_name"], json!("Cash"));
         let event = out.events.iter().find(|e| e.name == "sale.completed").expect("event");
         assert_eq!(event.payload["payment_method_name"], json!("Cash"));
+    }
+
+    #[test]
+    fn the_payment_method_type_travels_in_the_event_from_the_catalog() {
+        // hub#778: the cash drawer must key on the canonical TYPE, not on the localized NAME.
+        // A Spanish hub labels cash "Efectivo"; the drawer compares against "cash". The event
+        // carries the TYPE read from the catalog so the consumer never has to guess the name.
+        let catalog = json!([{ "id": "pm-1", "name": "Efectivo", "type": "cash" }]);
+        let inp = input_with_catalogs(one_line(), 3, catalog, Value::Null, Value::Null);
+        let out = sale(inp);
+        let event = out.events.iter().find(|e| e.name == "sale.completed").expect("event");
+        assert_eq!(event.payload["payment_method_name"], json!("Efectivo"));
+        assert_eq!(event.payload["payment_method_type"], json!("cash"));
+    }
+
+    #[test]
+    fn a_card_payment_carries_its_type_so_the_drawer_excludes_it() {
+        // The regression that started this: card sales counted as cash because the drawer
+        // could not tell them apart. With the TYPE in the event, cash_register knows a "card"
+        // sale does NOT go into the expected drawer total.
+        let catalog = json!([
+            { "id": "pm-1", "name": "Efectivo", "type": "cash" },
+            { "id": "pm-2", "name": "Tarjeta", "type": "card" }
+        ]);
+        let mut inp = input_with_catalogs(one_line(), 3, catalog, Value::Null, Value::Null);
+        inp["payload"]["payment_method_id"] = json!("pm-2");
+        let out = sale(inp);
+        let event = out.events.iter().find(|e| e.name == "sale.completed").expect("event");
+        assert_eq!(event.payload["payment_method_type"], json!("card"));
+    }
+
+    #[test]
+    fn without_a_catalog_the_payment_method_type_defaults_to_cash() {
+        // Graceful degradation: without the catalog the TYPE is unknown, so we assume "cash"
+        // (the column default) — the least damaging guess for the drawer, and a hub with no
+        // payment methods seeded cannot produce a valid sale here anyway.
+        let out = sale(input(one_line(), 3, 500));
+        let event = out.events.iter().find(|e| e.name == "sale.completed").expect("event");
+        assert_eq!(event.payload["payment_method_type"], json!("cash"));
     }
 
     #[test]
