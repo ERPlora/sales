@@ -5,7 +5,7 @@ import { bindTabbar } from '@erplora/outfitkit/tabbar';
 // La frontera EUROS ↔ CÉNTIMOS vive en el SDK (ADR-0123), no copiada en cada WC (como el desktop).
 import { eurosToCents } from '@erplora/module-sdk';
 import { renderDocumentModal } from '../../lib/document-modal.js';
-import { orderToPrebill } from '../../lib/document-mappers.js';
+import { orderToPrebill, receiptLabels } from '../../lib/document-mappers.js';
 // La CUENTA se imprime con la forma que lee el renderizador ESC/POS, no con la de la pantalla
 // (sales#78): son dos documentos con el mismo contenido y distintas claves.
 import { prebillToPrintDocument, prebillJobId } from '../../lib/print-document.js';
@@ -21,6 +21,10 @@ import { brandSvgFor } from '../../lib/brand-icons.js';
 import { priceLabel } from '../../lib/price-label.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod, payMethodDisplayName } from '../../lib/pay-icons.js';
+// The bill is painted by ok-receipt HERE, so it is registered here. It used to arrive only
+// transitively (document-modal → erp-sales-document), i.e. by accident: dropping that unrelated
+// import would have left `<ok-receipt>` an unknown element and the bill blank again.
+import '@erplora/outfitkit/ok-receipt';
 import '@erplora/outfitkit/ok-qty-stepper';
 import '@erplora/outfitkit/ok-spotlight-search';
 import '@erplora/outfitkit/ok-empty-state';
@@ -2155,11 +2159,17 @@ export class ErpPosTouch extends LitElement {
           </ion-buttons>
         </ion-toolbar></ion-header>
         <ion-content class="doc-body ion-padding">
-          <ok-receipt id="prebill-doc" .data=${orderToPrebill(
+          <!-- .receipt and .labels are the ONLY properties ok-receipt reads. The bill used to be
+               handed to it on .data —a property that does not exist— so receipt stayed undefined
+               and the document was a white box reading «No receipt data.» in English on a Spanish
+               hub (sales#87). Both defects were that one line: no document AND no labels, so the
+               component fell back to its own built-in English DEFAULT_LABELS.
+               (No backticks in comments inside a Lit template: they close the literal.) -->
+          <ok-receipt id="prebill-doc" .receipt=${orderToPrebill(
             this.cart.map((l) => ({ name: l.name, price: l.price, qty: l.qty, is_gift: l.is_gift })),
             this.settings,
             { tableLabel: this.tableLabel || undefined, notice: t('ui.prebillNotice'), fallbackName: t('ui.docDefaultBusiness') },
-          )}></ok-receipt>
+          )} .labels=${receiptLabels(t)}></ok-receipt>
         </ion-content>
       </ion-modal>
     </div>`;
