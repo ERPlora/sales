@@ -3,7 +3,7 @@ import { state } from 'lit/decorators.js';
 import { define } from '@erplora/outfitkit/define';
 import { bindTabbar } from '@erplora/outfitkit/tabbar';
 // La frontera EUROS ↔ CÉNTIMOS vive en el SDK (ADR-0123), no copiada en cada WC (como el desktop).
-import { eurosToCents } from '@erplora/module-sdk';
+import { eurosToCents, centsToEuros } from '@erplora/module-sdk';
 import { renderDocumentModal } from '../../lib/document-modal.js';
 import { orderToPrebill, receiptLabels } from '../../lib/document-mappers.js';
 // La CUENTA se imprime con la forma que lee el renderizador ESC/POS, no con la de la pantalla
@@ -1557,11 +1557,9 @@ export class ErpPosTouch extends LitElement {
    *  (o si no hay catálogo fiscal con el que juzgarlo: eso es un incidente de `taxes`, no del
    *  producto, y cobrar es lo último que puede romperse). sales#74, ampliado en sales#89. */
   private blockedReason(p: Product): string | undefined {
-    // sales#89: «desde 65 €» es un precio de PARTIDA. Cobrarlo como si fuera el precio es
-    // equivocarse en silencio, así que se dice en la tarjeta en vez de cobrar mal.
-    if (p.is_service && !CLOSED_PRICING.has(p.pricing_type ?? 'fixed')) {
-      return t('ui.notSellableOpenPrice');
-    }
+    // services#12: un servicio de precio NO cerrado ya no se bloquea — se PREGUNTA (ver `add`).
+    // Cobrar «desde 65 €» como si fuera el precio sigue estando mal; la diferencia es que ahora
+    // el TPV sabe pedir la cifra.
     switch (productSellability(this.taxCatalog, p.tax_category_key)) {
       case 'no_tax_category': return t('ui.notSellableNoTaxCategory');
       case 'no_tax_rule': return t('ui.notSellableNoTaxRule');
@@ -1569,11 +1567,29 @@ export class ErpPosTouch extends LitElement {
     }
   }
 
+  /** ¿Este servicio deja el precio SIN decidir? (services#12)
+   *
+   *  El mercado tiene dos estados, no cinco: un artículo lleva precio o es variable, y el variable
+   *  «just asks the cashier how much» (Square; Vagaro lo cambia en el cobro). El «desde X» no es un
+   *  motor de precios, es una etiqueta del catálogo — en Square ni siquiera existe. Así que
+   *  `from`/`hourly`/`variable` caen todos en la misma pregunta, y `fixed`/`free` son precio final
+   *  (gratis es una cifra decidida: preguntar sería preguntar algo que ya tiene respuesta). */
+  private needsAmount(p: Product): boolean {
+    return !!p.is_service && !CLOSED_PRICING.has(p.pricing_type ?? 'fixed');
+  }
+
   private add(p: Product): Promise<void> {
     // Red de seguridad: la tarjeta ya se pinta `disabled` (Ionic corta el toque), así que llegar
     // aquí con un producto bloqueado sería un camino nuevo. No añadimos en silencio lo que el cobro
     // va a rechazar: el motivo ya está escrito en la propia tarjeta.
     if (this.blockedReason(p)) return Promise.resolve();
+    // services#12: si el servicio no trae precio final, esto no añade nada — abre la pregunta con
+    // el importe listado como SUGERENCIA y su categoría fiscal ya elegida. Lo que el cajero
+    // confirme entra por la puerta gateada (sales#63), que es donde vive el permiso.
+    if (this.needsAmount(p)) {
+      this.openOpenPrice({ amountCents: Number(p.price) || 0, deptKey: p.tax_category_key });
+      return Promise.resolve();
+    }
     return this.queue(() => this.addNow(p));
   }
 
@@ -1763,7 +1779,15 @@ export class ErpPosTouch extends LitElement {
   private get payable() { return splitTotal(this.cart, this.splitSel); }
 
   // ── Precio libre / venta por DEPARTAMENTO (fuera de catálogo) ──────────────────────────────
-  private openOpenPrice() { this.openAmount = ''; this.openDept = ''; this.openPriceOpen = true; }
+  /** Abre la pregunta del importe. Sin argumentos es la tecla suelta «Precio libre» (en blanco);
+   *  con ellos viene de un SERVICIO de precio no cerrado y arranca sugerido (services#12).
+   *  `0` no se sugiere: un «desde 0 €» no es una pista, es ruido en la casilla. */
+  private openOpenPrice(seed?: { amountCents?: number; deptKey?: string }) {
+    const cents = seed?.amountCents ?? 0;
+    this.openAmount = cents > 0 ? centsToEuros(cents) : '';
+    this.openDept = seed?.deptKey ?? '';
+    this.openPriceOpen = true;
+  }
   private tapOpen(k: string) { this.openAmount = pushDigit(this.openAmount, k); }
   /** El numpad teclea EUROS; el contrato es CÉNTIMOS (ADR-0007), igual que en el cobro. */
   private get openAmountCents() { return eurosToCents(this.openAmount || '0'); }

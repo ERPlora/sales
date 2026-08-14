@@ -142,14 +142,19 @@ describe('a service the till cannot charge correctly is blocked, not mispriced',
     expect(tile.getAttribute('title')).toBe('ui.notSellableNoTaxCategory');
   });
 
-  // "From 65 €" is a starting price, not the price. Charging it as if it were final is a silent
-  // business error; the till has no open-price flow yet, so it refuses out loud.
-  it('a service whose price is not final is disabled with its own reason', async () => {
+  // SUPERSEDED by services#12. This used to assert that «from 65 €» was painted DISABLED, because
+  // the till had no way to ask for the real figure and charging the starting price as if it were
+  // final is a silent business error. It has that way now (sales#63), so refusing would be worse
+  // than asking: the salon still could not charge a balayage.
+  //
+  // The blocking rule that remains is the FISCAL one — no tax category, no sale (sales#74) — which
+  // the case above still covers. What replaced this one lives in `erp-pos-service-open-price.test.ts`.
+  it('a service whose price is not final is offered, and asks for the amount', async () => {
     const el = await mount();
     const tile = tileOf(el, 'Balayage');
 
-    expect(tile.hasAttribute('disabled')).toBe(true);
-    expect(tile.getAttribute('title')).toBe('ui.notSellableOpenPrice');
+    expect(tile.hasAttribute('disabled'), 'it must be tappable now').toBe(false);
+    expect(tile.getAttribute('title')).not.toBe('ui.notSellableOpenPrice');
   });
 });
 

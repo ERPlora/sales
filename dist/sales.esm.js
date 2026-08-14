@@ -1477,6 +1477,9 @@ function majorToMinor(amount, decimals) {
 function eurosToCents(euros2) {
   return majorToMinor(euros2, 2);
 }
+function centsToEuros(cents) {
+  return cents == null ? "" : (cents / 100).toFixed(2);
+}
 
 // modules/sales/ui/lib/receipt-html.ts
 function esc(v3) {
@@ -3421,7 +3424,6 @@ var es_default = {
     noProducts: "Sin productos.",
     notSellableNoTaxCategory: "No se puede vender: sin categor\xEDa fiscal. Falta configurar el IVA.",
     notSellableNoTaxRule: "No se puede vender: su categor\xEDa fiscal no tiene tipo. Falta configurar el IVA.",
-    notSellableOpenPrice: "A\xFAn no se puede cobrar en el TPV: este servicio tiene precio abierto.",
     openPrice: "Precio libre",
     department: "Departamento (IVA)",
     noDepartments: "Sin departamentos configurados.",
@@ -3648,7 +3650,6 @@ var en_default = {
     noProducts: "No products.",
     notSellableNoTaxCategory: "Cannot be sold: no tax category. VAT needs to be set up.",
     notSellableNoTaxRule: "Cannot be sold: its tax category has no rate. VAT needs to be set up.",
-    notSellableOpenPrice: "Cannot be sold from the till yet: this service has an open price.",
     openPrice: "Open price",
     department: "Department (VAT)",
     noDepartments: "No departments configured.",
@@ -6454,9 +6455,6 @@ var ErpPosTouch = class extends i3 {
    *  (o si no hay catálogo fiscal con el que juzgarlo: eso es un incidente de `taxes`, no del
    *  producto, y cobrar es lo último que puede romperse). sales#74, ampliado en sales#89. */
   blockedReason(p4) {
-    if (p4.is_service && !CLOSED_PRICING.has(p4.pricing_type ?? "fixed")) {
-      return t5("ui.notSellableOpenPrice");
-    }
     switch (productSellability(this.taxCatalog, p4.tax_category_key)) {
       case "no_tax_category":
         return t5("ui.notSellableNoTaxCategory");
@@ -6466,8 +6464,22 @@ var ErpPosTouch = class extends i3 {
         return void 0;
     }
   }
+  /** ¿Este servicio deja el precio SIN decidir? (services#12)
+   *
+   *  El mercado tiene dos estados, no cinco: un artículo lleva precio o es variable, y el variable
+   *  «just asks the cashier how much» (Square; Vagaro lo cambia en el cobro). El «desde X» no es un
+   *  motor de precios, es una etiqueta del catálogo — en Square ni siquiera existe. Así que
+   *  `from`/`hourly`/`variable` caen todos en la misma pregunta, y `fixed`/`free` son precio final
+   *  (gratis es una cifra decidida: preguntar sería preguntar algo que ya tiene respuesta). */
+  needsAmount(p4) {
+    return !!p4.is_service && !CLOSED_PRICING.has(p4.pricing_type ?? "fixed");
+  }
   add(p4) {
     if (this.blockedReason(p4)) return Promise.resolve();
+    if (this.needsAmount(p4)) {
+      this.openOpenPrice({ amountCents: Number(p4.price) || 0, deptKey: p4.tax_category_key });
+      return Promise.resolve();
+    }
     return this.queue(() => this.addNow(p4));
   }
   async addNow(p4) {
@@ -6630,9 +6642,13 @@ var ErpPosTouch = class extends i3 {
     return splitTotal(this.cart, this.splitSel);
   }
   // ── Precio libre / venta por DEPARTAMENTO (fuera de catálogo) ──────────────────────────────
-  openOpenPrice() {
-    this.openAmount = "";
-    this.openDept = "";
+  /** Abre la pregunta del importe. Sin argumentos es la tecla suelta «Precio libre» (en blanco);
+   *  con ellos viene de un SERVICIO de precio no cerrado y arranca sugerido (services#12).
+   *  `0` no se sugiere: un «desde 0 €» no es una pista, es ruido en la casilla. */
+  openOpenPrice(seed) {
+    const cents = seed?.amountCents ?? 0;
+    this.openAmount = cents > 0 ? centsToEuros(cents) : "";
+    this.openDept = seed?.deptKey ?? "";
     this.openPriceOpen = true;
   }
   tapOpen(k2) {
