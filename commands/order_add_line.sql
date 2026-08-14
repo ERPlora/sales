@@ -5,7 +5,7 @@
 -- producto (§2.4). COALESCE = compat con llamadores que aún no lo envían (unidad suelta).
 INSERT INTO sales_order_item
   (id, hub_id, order_id, product_id, product_name, product_sku, quantity, unit_price,
-   is_gift, gift_reason, line_total, tax_category_key, cost,
+   is_gift, gift_reason, line_total, tax_category_key, cost, is_service,
    is_deleted, created_by, updated_by, created_at, updated_at,
    unit_code, unit_name, factor_num, factor_den, increment_value,
    price_quantity_value, pricing_unit_code, pricing_unit_name,
@@ -13,7 +13,7 @@ INSERT INTO sales_order_item
 VALUES
   (:new_id, :hub_id, :order_id, :product_id, :product_name, COALESCE(:product_sku, ''),
    :quantity, :unit_price, COALESCE(:is_gift, 0), COALESCE(:gift_reason, ''), :line_total,
-   COALESCE(:tax_category_key, ''), COALESCE(:cost, 0),
+   COALESCE(:tax_category_key, ''), COALESCE(:cost, 0), COALESCE(:is_service, 0),
    0, :current_user_id, :current_user_id, :now, :now,
    COALESCE(:unit_code, 'ud'), COALESCE(:unit_name, ''),
    COALESCE(:factor_num, 1), COALESCE(:factor_den, 1),

@@ -46,6 +46,10 @@ export interface CartLine {
   /** Coste unitario del producto (céntimos), del catálogo. Se usa para el arqueo de invitaciones
    *  (a coste); el servidor lo suma a `gift_total` solo en líneas regalo. */
   cost?: number;
+  /** SERVICIO (sales#89): la línea no sale del catálogo de `inventory` — su precio es el que manda
+   *  y no descuenta stock. Viaja hasta `complete_sale` y de ahí a `sale.completed`, donde
+   *  `inventory` la salta. Persistida en el pedido para sobrevivir al RETOMAR la cuenta. */
+  is_service?: boolean;
   /** INVITACIÓN/REGALO (comp): la línea no se cobra (net/tax/total=0) pero descuenta stock. */
   is_gift?: boolean;
   /** Motivo de la invitación (cortesía/error cocina/fidelización…). */
@@ -196,6 +200,8 @@ function toItemPayload(l: CartLine): Record<string, unknown> {
     quantity: toMicro(l.qty), // punto fijo 10⁶ (ADR-0147)
     is_gift: !!l.is_gift,
     gift_reason: l.gift_reason ?? '',
+    // sales#89: viaja también al ABRIR el pedido, no solo al añadir línea suelta.
+    is_service: !!l.is_service,
     tax_category_key: l.tax_category_key ?? '',
     cost: l.cost ?? 0,
     ...unitContextPayload(l),
@@ -223,6 +229,9 @@ export async function addOrderLine(client: ErploraClientLike, orderId: string, l
     unit_price: l.price,
     is_gift: !!l.is_gift,
     gift_reason: l.gift_reason ?? '',
+    // sales#89: el pedido recuerda que la línea es un SERVICIO. Sin esto el flag se perdía al
+    // materializar la línea (ADR-0141) y una cuenta RETOMADA cobraba el corte como producto.
+    is_service: !!l.is_service,
     tax_category_key: l.tax_category_key ?? '',
     cost: l.cost ?? 0,
     line_total: provisionalLineTotal(l.price, l.qty, l.is_gift),
@@ -296,6 +305,9 @@ export async function loadOrderLines(client: ErploraClientLike, orderId: string)
       // recuperan para que un pedido REANUDADO cobre con el mismo IVA que si no se hubiera recargado.
       tax_category_key: x.tax_category_key ? String(x.tax_category_key) : undefined,
       cost: Number(x.cost) || undefined,
+      // sales#89: servicio o producto. Una fila ANTERIOR a la columna no trae nada y vuelve como
+      // producto — que es lo que era; marcarla de servicio haría que inventory le saltara el stock.
+      is_service: x.is_service === 1 || x.is_service === true ? true : undefined,
       // Contexto de unidades CONGELADO (ADR-0147 §2.4): vuelve con la línea para que el pedido
       // reanudado valide la misma rejilla y cobre con el mismo contexto.
       unit_code: x.unit_code ? String(x.unit_code) : undefined,

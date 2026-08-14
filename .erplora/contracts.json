@@ -19,7 +19,10 @@
       "taxes.rules.list"
     ],
     "optional_queries": [
+      "appointments.appointments.get",
       "invoice.by_source",
+      "services.categories.list",
+      "services.services.list",
       "verifactu.records.by_invoice"
     ],
     "commands": [

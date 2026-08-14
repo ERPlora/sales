@@ -98,7 +98,8 @@
       "migrations/postgres/014_quantity_fixed_point.sql",
       "migrations/postgres/015_order_label.sql",
       "migrations/postgres/016_order_rounds.sql",
-      "migrations/postgres/017_idempotency_key.sql"
+      "migrations/postgres/017_idempotency_key.sql",
+      "migrations/postgres/018_order_item_is_service.sql"
     ]
   },
   "seed": {
