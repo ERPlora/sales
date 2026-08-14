@@ -25,6 +25,7 @@
     "sales.add_sale",
     "sales.change_sale",
     "sales.take_payment",
+    "sales.sell_open_price",
     "sales.delete_sale",
     "sales.void_sale",
     "sales.view_paymentmethod",
@@ -48,7 +49,8 @@
       "sales.add_paymentmethod",
       "sales.change_paymentmethod",
       "sales.view_reports",
-      "sales.manage_settings"
+      "sales.manage_settings",
+      "sales.sell_open_price"
     ],
     "employee": [
       "sales.view_sale",
@@ -385,6 +387,17 @@
       ],
       "ai": {
         "description": "Adds a line item to an open order and recomputes its provisional total (ADR-0141). Provisional amount; the fiscal breakdown is frozen at checkout."
+      }
+    },
+    "sales.order.add_open_line": {
+      "permission": "sales.sell_open_price",
+      "transaction": true,
+      "sql": [
+        "commands/order_add_line.sql",
+        "commands/order_recompute_total.sql"
+      ],
+      "ai": {
+        "description": "Adds an OPEN-PRICE line (free amount, no catalogue product) to an open order and recomputes its provisional total. Same effect as sales.order.add_line but gated by sales.sell_open_price: nothing contradicts a typed amount, so the cashier needs the permission or a manager's PIN approval (ADR-0238)."
       }
     },
     "sales.order.update_line": {

@@ -159,6 +159,10 @@ describe('a hub without the services module', () => {
   it('still opens the till and sells its products — the read is optional (ADR-0127)', async () => {
     const el = await mount();
     expect(() => tileOf(el, 'Champú')).not.toThrow();
-    expect(el.shadowRoot.querySelectorAll('ion-card.tile')).toHaveLength(1);
+    // No SERVICE tile is painted. Counting every tile would be wrong: the grid also carries the
+    // open-price action, which is not a catalogue item and has nothing to do with `services`.
+    for (const name of ['Corte de señora', 'Balayage', 'Ritual sin IVA']) {
+      expect(() => tileOf(el, name), `${name} must not be offered`).toThrow();
+    }
   });
 });

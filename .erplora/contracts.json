@@ -16,6 +16,7 @@
       "sales.payment_methods",
       "sales.settings.get",
       "sales.stats",
+      "taxes.categories.list",
       "taxes.rules.list"
     ],
     "optional_queries": [
@@ -28,6 +29,7 @@
     "commands": [
       "sales.complete_sale",
       "sales.order.add_line",
+      "sales.order.add_open_line",
       "sales.order.fire",
       "sales.order.merge",
       "sales.order.open",
