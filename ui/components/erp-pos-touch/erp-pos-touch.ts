@@ -32,7 +32,7 @@ import '@erplora/outfitkit/ok-status-pill';
 import {
   mergeCartLines, listOpenChecks, type OpenCheck,
   // ADR-0141: el carrito lo respalda un PEDIDO real (filas), no un blob con debounce.
-  openOrderWithLines, addOrderLine, updateOrderLineQty, persistLineQty, removeOrderLine, loadOrderLines, mergeOrders, splitOrder,
+  openOrderWithLines, addOrderLine, addOpenPriceLine, updateOrderLineQty, persistLineQty, removeOrderLine, loadOrderLines, mergeOrders, splitOrder,
   unitContextPayload, type CartLine, type ErploraClientLike,
 } from '../../lib/pos-cart.js';
 import { loadTaxCatalog, productSellability, resolveLineTax, type TaxCatalog } from '../../lib/pos-tax.js';
@@ -1423,11 +1423,17 @@ export class ErpPosTouch extends LitElement {
     }
   }
 
-  private async ensureOrder(first: CartLine): Promise<string> {
+  /** Abre el pedido, opcionalmente ya con su primera línea.
+   *
+   *  🔴 sales#63 — `first: null` NO es un detalle: `sales.order.open` va con `sales.add_sale`, que
+   *  tiene todo cajero. Si la línea de PRECIO LIBRE viajara dentro del payload que abre la cuenta,
+   *  el importe entraría por una puerta que no pide el permiso y el control no ocurriría nunca.
+   *  Por eso ese camino abre la cuenta VACÍA y añade su línea por el comando gateado. */
+  private async ensureOrder(first: CartLine | null): Promise<string> {
     if (this.orderId) return this.orderId;
     // Si el usuario escribió un título antes de añadir la primera línea, nace ya etiquetado;
     // si no, la mesa sigue siendo el fallback legible del pedido.
-    this.orderId = await openOrderWithLines(erplora(), [first], this.visibleOrderLabel);
+    this.orderId = await openOrderWithLines(erplora(), first ? [first] : [], this.visibleOrderLabel);
     rememberCurrentCheck(localStorage, this.orderId);
     // Aviso a TODOS los fillers: cada uno enlaza lo suyo si tiene algo seleccionado (la mesa en
     // `tables`, el cliente en `customers`). `sales` no sabe qué enlazan ni le importa.
@@ -1439,6 +1445,19 @@ export class ErpPosTouch extends LitElement {
    *  no hay ninguno, o la añade al abierto. La fila queda escrita ANTES de que la UI siga (un corte de
    *  corriente ya no se lleva el artículo). Compartido por `addNow` (producto de catálogo) y la venta
    *  por PRECIO LIBRE, que nunca fusiona: todas sus líneas llevan `id: ''`. */
+  /** Empuja una línea de PRECIO LIBRE, siempre por su puerta (sales#63).
+   *
+   *  Dos reglas, y ninguna es cosmética: la cuenta se abre **vacía** si aún no existe (meter el
+   *  importe en `sales.order.open` lo colaría por `sales.add_sale`), y la línea entra por
+   *  `sales.order.add_open_line`, que pide `sales.sell_open_price`. Al cajero sin ese permiso el
+   *  runtime le contesta `requires_elevation` y el shell levanta el PIN del encargado — no es un
+   *  callejón sin salida, es la autorización en el momento sin cerrar su sesión (ADR-0238). */
+  private async pushOpenPriceLine(line: CartLine): Promise<void> {
+    const orderId = await this.ensureOrder(null);
+    line.line_id = await addOpenPriceLine(erplora(), orderId, line);
+    this.cart = [...this.cart, line];
+  }
+
   private async pushNewLine(line: CartLine): Promise<void> {
     if (!this.orderId) {
       await this.ensureOrder(line);
@@ -1764,7 +1783,7 @@ export class ErpPosTouch extends LitElement {
     line.tax_rate = resolveLineTax(this.taxCatalog.rates, dept.key); // % SOLO para el preview del total
     this.openPriceOpen = false;
     try {
-      await this.queue(() => this.pushNewLine(line));
+      await this.queue(() => this.pushOpenPriceLine(line));
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e);
     }

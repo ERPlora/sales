@@ -218,9 +218,11 @@ export async function openOrderWithLines(client: ErploraClientLike, lines: CartL
   return firstNewId(res);
 }
 
-/** Añade una línea al pedido AHORA (fila real, sin debounce). Devuelve su `line_id`. */
-export async function addOrderLine(client: ErploraClientLike, orderId: string, l: CartLine): Promise<string> {
-  const res = await client.command('sales.order.add_line', {
+/** El payload de una línea de pedido. Compartido por las DOS puertas (`add_line` y
+ *  `add_open_line`): mismo efecto en la fila, distinto permiso. El nombre del comando NO se
+ *  parametriza — ADR-0127 exige literal en la llamada para poder analizar la superficie consumida. */
+function orderLinePayload(orderId: string, l: CartLine): Record<string, unknown> {
+  return {
     order_id: orderId,
     product_id: l.id || null,
     product_name: l.name,
@@ -236,7 +238,21 @@ export async function addOrderLine(client: ErploraClientLike, orderId: string, l
     cost: l.cost ?? 0,
     line_total: provisionalLineTotal(l.price, l.qty, l.is_gift),
     ...unitContextPayload(l),
-  });
+  };
+}
+
+/** Añade una línea de PRECIO LIBRE (sales#63). Mismo efecto que `addOrderLine`, pero por un comando
+ *  propio: el runtime gatea por COMANDO, así que es el permiso `sales.sell_open_price` el que decide.
+ *  Sin él, el dispatcher contesta `requires_elevation` y el shell pide el PIN del encargado
+ *  (ADR-0238) — el comportamiento por defecto de Toast, Shopify y Vagaro. */
+export async function addOpenPriceLine(client: ErploraClientLike, orderId: string, l: CartLine): Promise<string> {
+  const res = await client.command('sales.order.add_open_line', orderLinePayload(orderId, l));
+  return firstNewId(res);
+}
+
+/** Añade una línea al pedido AHORA (fila real, sin debounce). Devuelve su `line_id`. */
+export async function addOrderLine(client: ErploraClientLike, orderId: string, l: CartLine): Promise<string> {
+  const res = await client.command('sales.order.add_line', orderLinePayload(orderId, l));
   return firstNewId(res);
 }
 

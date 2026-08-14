@@ -4908,8 +4908,8 @@ async function openOrderWithLines(client, lines, label) {
   const res = await client.command("sales.order.open", payload);
   return firstNewId(res);
 }
-async function addOrderLine(client, orderId, l3) {
-  const res = await client.command("sales.order.add_line", {
+function orderLinePayload(orderId, l3) {
+  return {
     order_id: orderId,
     product_id: l3.id || null,
     product_name: l3.name,
@@ -4926,7 +4926,14 @@ async function addOrderLine(client, orderId, l3) {
     cost: l3.cost ?? 0,
     line_total: provisionalLineTotal(l3.price, l3.qty, l3.is_gift),
     ...unitContextPayload(l3)
-  });
+  };
+}
+async function addOpenPriceLine(client, orderId, l3) {
+  const res = await client.command("sales.order.add_open_line", orderLinePayload(orderId, l3));
+  return firstNewId(res);
+}
+async function addOrderLine(client, orderId, l3) {
+  const res = await client.command("sales.order.add_line", orderLinePayload(orderId, l3));
   return firstNewId(res);
 }
 async function persistLineQty(client, orderId, line, qty) {
@@ -6324,9 +6331,15 @@ var ErpPosTouch = class extends i3 {
       this.error = t5("ui.fireFailed");
     }
   }
+  /** Abre el pedido, opcionalmente ya con su primera línea.
+   *
+   *  🔴 sales#63 — `first: null` NO es un detalle: `sales.order.open` va con `sales.add_sale`, que
+   *  tiene todo cajero. Si la línea de PRECIO LIBRE viajara dentro del payload que abre la cuenta,
+   *  el importe entraría por una puerta que no pide el permiso y el control no ocurriría nunca.
+   *  Por eso ese camino abre la cuenta VACÍA y añade su línea por el comando gateado. */
   async ensureOrder(first) {
     if (this.orderId) return this.orderId;
-    this.orderId = await openOrderWithLines(erplora2(), [first], this.visibleOrderLabel);
+    this.orderId = await openOrderWithLines(erplora2(), first ? [first] : [], this.visibleOrderLabel);
     rememberCurrentCheck(localStorage, this.orderId);
     this.notifyOrderLinked();
     return this.orderId;
@@ -6335,6 +6348,18 @@ var ErpPosTouch = class extends i3 {
    *  no hay ninguno, o la añade al abierto. La fila queda escrita ANTES de que la UI siga (un corte de
    *  corriente ya no se lleva el artículo). Compartido por `addNow` (producto de catálogo) y la venta
    *  por PRECIO LIBRE, que nunca fusiona: todas sus líneas llevan `id: ''`. */
+  /** Empuja una línea de PRECIO LIBRE, siempre por su puerta (sales#63).
+   *
+   *  Dos reglas, y ninguna es cosmética: la cuenta se abre **vacía** si aún no existe (meter el
+   *  importe en `sales.order.open` lo colaría por `sales.add_sale`), y la línea entra por
+   *  `sales.order.add_open_line`, que pide `sales.sell_open_price`. Al cajero sin ese permiso el
+   *  runtime le contesta `requires_elevation` y el shell levanta el PIN del encargado — no es un
+   *  callejón sin salida, es la autorización en el momento sin cerrar su sesión (ADR-0238). */
+  async pushOpenPriceLine(line) {
+    const orderId = await this.ensureOrder(null);
+    line.line_id = await addOpenPriceLine(erplora2(), orderId, line);
+    this.cart = [...this.cart, line];
+  }
   async pushNewLine(line) {
     if (!this.orderId) {
       await this.ensureOrder(line);
@@ -6632,7 +6657,7 @@ var ErpPosTouch = class extends i3 {
     line.tax_rate = resolveLineTax(this.taxCatalog.rates, dept.key);
     this.openPriceOpen = false;
     try {
-      await this.queue(() => this.pushNewLine(line));
+      await this.queue(() => this.pushOpenPriceLine(line));
     } catch (e7) {
       this.error = e7 instanceof Error ? e7.message : String(e7);
     }
