@@ -62,6 +62,19 @@ describe('tiquet como HTML imprimible', () => {
     expect(malo).toContain('&lt;script&gt;');
   });
 
+  it('titles the paper when the document carries a title (pre-bill parity with ESC/POS)', () => {
+    // The thermal renderer prints «CUENTA» as the first line; the browser fallback must print
+    // the same paper. Before the business name, so it reads as the document's title.
+    const html = receiptToPrintableHtml({ ...doc, title: 'Cuenta' });
+    expect(html).toContain('Cuenta');
+    expect(html.indexOf('Cuenta')).toBeLessThan(html.indexOf('Bar Manolo'));
+  });
+
+  it('without a title nothing extra is printed (fiscal receipts keep their look)', () => {
+    // The CSS rule is always in the stylesheet; what must not exist is the ELEMENT.
+    expect(html).not.toContain('<div class="doc-title">');
+  });
+
   it('aguanta un documento mínimo sin reventar (cuenta previa: sin número ni pago)', () => {
     const minimo = receiptToPrintableHtml({ business: { name: 'Bar' }, lines: [{ name: 'X', qty: 1, unit_price: 1, total: 1 }], total: 1, currency: '€' });
     expect(minimo).toContain('Bar');

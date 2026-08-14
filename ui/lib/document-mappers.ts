@@ -295,12 +295,16 @@ export interface PrebillLine {
 export function orderToPrebill(
   lines: PrebillLine[],
   settings: SaleSettings = {},
-  opts: { tableLabel?: string; datetime?: string; locale?: string; notice?: string; fallbackName?: string } = {},
+  opts: { tableLabel?: string; datetime?: string; locale?: string; title?: string; notice?: string; fallbackName?: string } = {},
 ): ReceiptData {
   const header = splitHeader(settings.receipt_header);
   const cents = (l: PrebillLine) => (l.is_gift ? 0 : Math.round(l.price * l.qty));
   const total = lines.reduce((s, l) => s + cents(l), 0);
   return {
+    // Same job as the hardcoded «CUENTA» of the ESC/POS renderer: the first line tells this paper
+    // from a fiscal ticket at a glance. The UI passes the translation; the fallback is canonical
+    // English (ADR-0055).
+    title: opts.title ?? 'Bill',
     business: {
       name: header.name || opts.fallbackName || DEFAULT_BUSINESS_NAME,
       address: header.address,

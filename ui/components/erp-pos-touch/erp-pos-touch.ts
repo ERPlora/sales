@@ -1642,6 +1642,7 @@ export class ErpPosTouch extends LitElement {
     const lines = this.cart.map((l) => ({ name: l.name, price: l.price, qty: l.qty, is_gift: l.is_gift }));
     const opts = {
       tableLabel: this.tableLabel || undefined,
+      title: t('ui.prebillTitle'),
       notice: t('ui.prebillNotice'),
       fallbackName: t('ui.docDefaultBusiness'),
     };
@@ -2329,7 +2330,7 @@ export class ErpPosTouch extends LitElement {
           <ok-receipt id="prebill-doc" .receipt=${orderToPrebill(
             this.cart.map((l) => ({ name: l.name, price: l.price, qty: l.qty, is_gift: l.is_gift })),
             this.settings,
-            { tableLabel: this.tableLabel || undefined, notice: t('ui.prebillNotice'), fallbackName: t('ui.docDefaultBusiness') },
+            { tableLabel: this.tableLabel || undefined, title: t('ui.prebillTitle'), notice: t('ui.prebillNotice'), fallbackName: t('ui.docDefaultBusiness') },
           )} .labels=${receiptLabels(t)}></ok-receipt>
         </ion-content>
       </ion-modal>

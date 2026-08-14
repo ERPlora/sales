@@ -217,6 +217,14 @@ describe('cuenta previa (pre-bill) — NO es un documento fiscal', () => {
     expect(doc.payment, 'aún no se ha cobrado: sin datos de pago').toBeUndefined();
   });
 
+  it('titles the paper like the printed one does (screen/paper parity)', () => {
+    // The ESC/POS renderer prints «CUENTA» as the first line so a bill cannot pass for a fiscal
+    // ticket at a glance. The preview must show the same paper: the UI passes the translated
+    // title (ui.prebillTitle); the mapper's fallback is canonical English (ADR-0055).
+    expect(orderToPrebill(lineas, {}, { title: 'Cuenta' }).title).toBe('Cuenta');
+    expect(orderToPrebill(lineas, {}).title).toBe('Bill');
+  });
+
   it('avisa por escrito de que no es una factura (inglés canónico, ADR-0055)', () => {
     const doc = orderToPrebill(lineas, {});
     // El respaldo del mapper va en INGLÉS canónico (ADR-0055); la UI pasa el texto traducido.
