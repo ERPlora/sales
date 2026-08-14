@@ -11,6 +11,11 @@ import type { ListController, ListClient, ListParams, ListPage } from '@erplora/
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
+/** Estado de la venta (columna `status`) → su clave i18n. Lo que no esté aquí se enseña crudo. */
+const STATUS_KEYS: Record<string, string> = {
+  completed: 'ui.statusCompleted',
+  voided: 'ui.statusVoided',
+};
 
 interface ErploraClientLike extends ListClient {
   query<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T>;
@@ -89,6 +94,12 @@ export class ErpSalesList extends LitElement {
         { value: 'completed', label: t('ui.statusCompleted') },
         { value: 'voided', label: t('ui.statusVoided') },
       ],
+      // hub#923: el filtro traducía, pero la CELDA pintaba el valor crudo de la BD — «completed»,
+      // en inglés, sobre una UI en español. Es la lista a la que se manda al cajero cuando un cobro
+      // queda en duda, así que la palabra que dice «esto se cobró» no puede ser jerga. Un estado
+      // desconocido (un módulo más nuevo escribiendo `refunded`) cae a su valor crudo: peor sería
+      // una celda vacía, que esconde el estado de la fila.
+      format: (r) => STATUS_KEYS[String(r.status ?? '')] ? t(STATUS_KEYS[String(r.status)]) : String(r.status ?? ''),
     },
     { key: 'total', header: t('ui.colTotal'), align: 'right', sortable: true, filterable: true, filterType: 'range', format: (r) => erplora().formatMoney(Number(r.total || 0)) },
     ];

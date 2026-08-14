@@ -1206,16 +1206,24 @@ describe('checkout idempotency (sales#20)', () => {
   let comandos: { name: string; payload: Record<string, unknown> }[];
   let consultas: { name: string; params: Record<string, unknown> }[];
   let fallaElProximoCobro: string | null;
+  /** Lo que el servidor responde cuando se le pregunta por la clave del intento.
+   *
+   *  hub#923: desde que el POS pregunta «¿esta clave ya produjo una venta?» tras un fallo de
+   *  transporte, esta respuesta ES el escenario. Por defecto la venta consta (lo que necesita el
+   *  camino feliz); los tests que modelan un cobro que NO llegó a entrar lo vacían, porque un
+   *  servidor que dice «sí hay venta» describe un cobro CONSUMADO, no uno que haya que reintentar. */
+  let ventaEnServidor: { id: string }[];
 
   beforeEach(() => {
     comandos = [];
     consultas = [];
     fallaElProximoCobro = null;
+    ventaEnServidor = [{ id: 'sale-7' }];
     const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
     const productos = [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }];
     sdk.query = async (name: string, params: Record<string, unknown>) => {
       consultas.push({ name, params });
-      return name === 'sales.by_idempotency_key' ? [{ id: 'sale-7' }] : [];
+      return name === 'sales.by_idempotency_key' ? ventaEnServidor : [];
     };
     sdk.queryAll = async (name: string) => (name === 'inventory.products.list' ? productos : catalogoFiscal(name));
     sdk.command = async (name: string, payload: Record<string, unknown>) => {
@@ -1246,6 +1254,9 @@ describe('checkout idempotency (sales#20)', () => {
 
   it('retrying after a failure repeats the SAME key — a timeout never charges twice', async () => {
     const pos = await posConUnaLinea();
+    // El cobro NO entró (el servidor lo confirma al preguntarle por la clave), así que hay
+    // reintento de verdad — que es lo que este test mide.
+    ventaEnServidor = [];
     fallaElProximoCobro = 'Failed to fetch';
     await pos.confirm();
     await pos.confirm();
@@ -1288,6 +1299,10 @@ describe('checkout idempotency (sales#20)', () => {
     // siendo cierto: un rechazo de dominio DESCONOCIDO se enseña tal cual (la frase lleva el código
     // y el detalle que el encargado necesita), abajo.
     const pos = await posConUnaLinea();
+    // La venta no entró: el servidor contesta que no hay nada bajo esa clave (hub#923). Con la
+    // venta SÍ registrada el mensaje correcto ya no es este —el cobro está hecho— y eso se cubre
+    // en el bloque de la red de seguridad.
+    ventaEnServidor = [];
     fallaElProximoCobro = 'Failed to fetch';
     await pos.confirm();
     expect(pos.error).toBe('ui.serverUnavailable');
@@ -1448,5 +1463,84 @@ describe('sales#61 — dividir una mesa que no es la que hay en pantalla', () =>
       order_id: 'o-otra', line_ids: [],
     });
     expect((el as unknown as { error: string }).error, 'y no se avisa de un fallo que no existe').toBeFalsy();
+  });
+});
+
+// hub#923 (saas#1460) — LA RED DE SEGURIDAD DEL COBRO.
+//
+// El incidente, tal cual: el hub confirmó la venta (200, fila en la BD) y murió por OOM antes de
+// que el cliente pudiera leer la respuesta. La cajera vio «The string did not match the expected
+// pattern.» —una cadena cruda de WebKit, en inglés, sobre una UI en español—, dedujo lo único
+// razonable («no ha cobrado») y volvió a cobrar: cobro doble y documento fiscal duplicado.
+//
+// La venta lleva clave de idempotencia, así que la duda TIENE respuesta: se le pregunta al
+// servidor si esa clave ya produjo una venta. Aquí se fijan las tres salidas.
+describe('el cobro pierde la respuesta: la caja nunca deja al cajero sin saber (hub#923)', () => {
+  /** Doble del SDK: el comando de cobro falla como falló en producción; la sonda decide el caso. */
+  function montarConCobroRoto(fallo: unknown, sonda: (key: string) => Promise<Record<string, unknown>[]>) {
+    const productos = [{ id: 'p1', name: 'Champú profesional 300ml', sku: 'CH', price: 1290, is_active: 1, tax_category_key: CATEGORIA_IVA }];
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.queryAll = async (name: string) => (name === 'inventory.products.list' ? productos : catalogoFiscal(name));
+    sdk.query = async (name: string, params?: Record<string, unknown>) =>
+      name === 'sales.by_idempotency_key' ? sonda(String(params?.idempotency_key ?? '')) : [];
+    sdk.command = async () => {
+      throw fallo;
+    };
+  }
+
+  async function cobrar() {
+    const el = await montarCarrito();
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    const pos = el as unknown as {
+      confirm(): Promise<void>; error: string; checkoutKey: string; docSaleId?: string; cart: unknown[];
+    };
+    await pos.confirm();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    return { el, pos };
+  }
+
+  it('la venta SÍ entró: se cierra como cobrada y NO se enseña error', async () => {
+    // El caso exacto del incidente: error de transporte, pero la venta está en la BD.
+    montarConCobroRoto(new TypeError('The string did not match the expected pattern.'), async () => [{ id: 'sale-ok' }]);
+    const { pos } = await cobrar();
+
+    expect(pos.error, 'una venta cobrada no puede enseñarse como error').toBe('');
+    expect(pos.docSaleId, 'se abre el documento de la venta que SÍ se cobró').toBe('sale-ok');
+    expect(pos.cart, 'el carrito se limpia: esa cuenta está pagada').toEqual([]);
+    expect(pos.checkoutKey, 'el intento terminó: la próxima venta estrena clave').toBe('');
+  });
+
+  it('la venta NO entró: avisa de servidor caído y CONSERVA la clave para reintentar', async () => {
+    // El servidor contestó a la sonda («no hay venta»): reintentar es seguro, y con la MISMA clave
+    // para que un duplicado en carrera colapse en una sola venta.
+    montarConCobroRoto(new TypeError('Failed to fetch'), async () => []);
+    const { pos } = await cobrar();
+
+    expect(pos.error, 'se avisa con el mensaje de servidor caído').toBe('ui.serverUnavailable');
+    expect(pos.checkoutKey, 'la clave se conserva: el reintento no cobra dos veces').not.toBe('');
+    expect(pos.docSaleId, 'no hay documento que enseñar').toBeFalsy();
+  });
+
+  it('NO SE SABE (el servidor sigue caído): manda a Ventas ANTES de volver a cobrar', async () => {
+    // La rama que evita el cobro doble: sin respuesta no se puede afirmar «no cobró».
+    montarConCobroRoto(new TypeError('The string did not match the expected pattern.'), async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    const { el, pos } = await cobrar();
+
+    expect(pos.error, 'el mensaje es el de la duda, no el crudo del motor').toBe('ui.checkoutUnknown');
+    expect(pos.error, 'nunca la cadena cruda de WebKit').not.toContain('did not match');
+    expect(pos.checkoutKey, 'la clave se conserva: si reintenta, no se duplica').not.toBe('');
+
+    const enlace = el.shadowRoot!.querySelector<HTMLElement>('[data-testid="checkout-check-sales"]');
+    expect(enlace, 'se ofrece ir a Ventas a comprobarlo').toBeTruthy();
+  });
+
+  it('el catálogo español traduce los mensajes nuevos (ADR-0055)', () => {
+    const ui = (esCatalog as { ui: Record<string, string> }).ui;
+    expect(ui.checkoutUnknown, 'falta la traducción del cobro dudoso').toBeTruthy();
+    expect(ui.checkoutUnknown).toMatch(/Ventas/i);
+    expect(ui.checkSales, 'falta la traducción del enlace a Ventas').toBeTruthy();
   });
 });

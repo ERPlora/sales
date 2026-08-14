@@ -40,5 +40,19 @@ export function transportErrorKey(e: unknown): string | null {
   // El servidor no contesta (caído/reiniciándose): `fetch` rechaza ANTES de tocar el body, así
   // que no hay `res.json()` que rompa — el navegador entrega su mensaje de red propio.
   if (/^(Failed to fetch|Load failed|NetworkError)/i.test(msg)) return SERVER_UNAVAILABLE_KEY;
+  // hub#923 — la firma que SÍ vio la cajera cuando el hub murió por OOM a mitad del cobro
+  // (saas#1460) y que ninguna de las de arriba cubría. Cada motor tiene su frase para «no pude
+  // parsear esto»; WebKit (webview de Tauri en macOS, Safari) ni siquiera nombra el JSON:
+  //   WebKit/JSC : "The string did not match the expected pattern."
+  //                "JSON Parse error: Unrecognized token '<'"
+  //   V8 viejo   : "Unexpected token < in JSON at position 0"
+  //   SpiderMonkey: "JSON.parse: unexpected character at line 1 column 1…"
+  // La de WebKit es la más traicionera: suena a validación de negocio, así que se colaba entera
+  // en pantalla. Se ancla la frase COMPLETA (no la palabra «pattern» suelta) para no tragarse un
+  // rechazo de dominio que hable de patrones en su detalle.
+  if (msg.includes('The string did not match the expected pattern')) return SERVER_UNAVAILABLE_KEY;
+  if (msg.startsWith('JSON Parse error')) return SERVER_UNAVAILABLE_KEY;
+  if (msg.startsWith('JSON.parse:')) return SERVER_UNAVAILABLE_KEY;
+  if (/^Unexpected token .* in JSON/.test(msg)) return SERVER_UNAVAILABLE_KEY;
   return null;
 }

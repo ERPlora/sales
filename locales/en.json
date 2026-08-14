@@ -178,6 +178,8 @@
     "splitFailed": "Couldn't split the check",
     "lineNotSaved": "Couldn't save that item — tap again",
     "serverUnavailable": "The server isn't responding (it may be restarting). Try again in a few seconds and, if it keeps happening, call the manager.",
+    "checkoutUnknown": "We couldn't confirm whether this charge went through. Check it in Sales before charging again.",
+    "checkSales": "Check in Sales",
     "payingPart": "Paying {n} of {total}",
     "qtyOffGrid": "Quantity doesn't fit the product's step",
     "payExact": "Exact amount",

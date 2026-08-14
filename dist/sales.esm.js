@@ -3442,6 +3442,8 @@ var es_default = {
     splitFailed: "No se pudo dividir la cuenta",
     lineNotSaved: "No se pudo guardar ese art\xEDculo \u2014 vuelve a tocarlo",
     serverUnavailable: "El servidor no responde (puede estar reinici\xE1ndose). Int\xE9ntalo de nuevo en unos segundos y, si persiste, avisa al encargado.",
+    checkoutUnknown: "No hemos podido confirmar si el cobro se complet\xF3. Compru\xE9balo en Ventas antes de volver a cobrar.",
+    checkSales: "Comprobar en Ventas",
     payingPart: "Cobrando {n} l\xEDnea(s) de {total}",
     payExact: "Importe exacto",
     payCardHint: "Cobra {amount} en el dat\xE1fono y confirma.",
@@ -3663,6 +3665,8 @@ var en_default = {
     splitFailed: "Couldn't split the check",
     lineNotSaved: "Couldn't save that item \u2014 tap again",
     serverUnavailable: "The server isn't responding (it may be restarting). Try again in a few seconds and, if it keeps happening, call the manager.",
+    checkoutUnknown: "We couldn't confirm whether this charge went through. Check it in Sales before charging again.",
+    checkSales: "Check in Sales",
     payingPart: "Paying {n} of {total}",
     qtyOffGrid: "Quantity doesn't fit the product's step",
     payExact: "Exact amount",
@@ -5081,7 +5085,30 @@ function transportErrorKey(e7) {
   if (!msg) return null;
   if (msg.includes("is not valid JSON")) return SERVER_UNAVAILABLE_KEY;
   if (/^(Failed to fetch|Load failed|NetworkError)/i.test(msg)) return SERVER_UNAVAILABLE_KEY;
+  if (msg.includes("The string did not match the expected pattern")) return SERVER_UNAVAILABLE_KEY;
+  if (msg.startsWith("JSON Parse error")) return SERVER_UNAVAILABLE_KEY;
+  if (msg.startsWith("JSON.parse:")) return SERVER_UNAVAILABLE_KEY;
+  if (/^Unexpected token .* in JSON/.test(msg)) return SERVER_UNAVAILABLE_KEY;
   return null;
+}
+
+// ui/lib/checkout-recovery.ts
+var wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+async function recoverCheckout(probe, idempotencyKey, options = {}) {
+  if (!idempotencyKey) return { outcome: "unknown" };
+  const attempts = Math.max(1, options.attempts ?? 1);
+  const sleep = options.sleep ?? wait;
+  const delayMs = options.delayMs ?? 1500;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const rows3 = await probe(idempotencyKey);
+      if (!rows3?.length) return { outcome: "not_charged" };
+      return { outcome: "charged", saleId: rows3[0]?.id ?? "" };
+    } catch {
+      if (attempt < attempts) await sleep(delayMs);
+    }
+  }
+  return { outcome: "unknown" };
 }
 
 // ui/components/erp-pos-touch/erp-pos-touch.ts
@@ -5138,6 +5165,7 @@ var ErpPosTouch = class extends i3 {
      *  REUTILIZA en cada reintento —por eso un timeout no crea una segunda venta— y se descarta en
      *  cuanto la venta consta. Vacía = no hay cobro en curso. */
     this.checkoutKey = "";
+    this.checkoutUnknown = false;
     this.parked = [];
     this.splitSel = /* @__PURE__ */ new Set();
     this.parkedOpen = false;
@@ -6530,12 +6558,13 @@ var ErpPosTouch = class extends i3 {
   async confirm(_print = false) {
     this.busy = true;
     this.error = "";
+    this.checkoutUnknown = false;
+    if (!this.checkoutKey) this.checkoutKey = newIdempotencyKey();
+    const checkoutKey = this.checkoutKey;
+    const split = splitPayload(this.cart, this.splitSel);
     try {
-      const split = splitPayload(this.cart, this.splitSel);
       const cobradas = split.line_ids ? this.cart.filter((l3) => l3.line_id && this.splitSel.has(l3.line_id)) : this.cart;
       const items = cobradas.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: toMicro2(l3.qty), tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0, category_id: this.prodCats.get(l3.id)?.values().next().value ?? null, is_gift: l3.is_gift ?? false, gift_reason: l3.gift_reason ?? "", cost: l3.cost ?? 0, ...unitContextPayload(l3) }));
-      if (!this.checkoutKey) this.checkoutKey = newIdempotencyKey();
-      const checkoutKey = this.checkoutKey;
       await erplora2().command("sales.complete_sale", {
         items,
         // sales#20: el servidor no cierra una venta sin clave, y con la misma clave dos veces
@@ -6573,43 +6602,95 @@ var ErpPosTouch = class extends i3 {
       });
       const recorded = rows2(await erplora2().query("sales.by_idempotency_key", { idempotency_key: checkoutKey }));
       const saleId = recorded[0]?.id;
-      this.checkoutKey = "";
-      if (this.saveTimer) {
-        clearTimeout(this.saveTimer);
-        this.saveTimer = void 0;
-      }
-      this.paying = false;
-      this.splitSel = /* @__PURE__ */ new Set();
-      if (split.keep_order_open && this.orderId) {
-        this.cart = await loadOrderLines(erplora2(), this.orderId);
-        if (saleId) this.docSaleId = saleId;
-        return;
-      }
-      this.cart = [];
-      forgetCurrentCheck(localStorage);
-      this.orderId = void 0;
-      this.orderLabel = "";
-      this.orderView = "account";
-      this.tableId = void 0;
-      this.tableLabel = "";
-      this.customerId = void 0;
-      this.customerName = "";
-      this.customerTaxId = "";
-      this.customerAddress = "";
-      this.resetSlotContexts();
-      if (saleId) this.docSaleId = saleId;
+      await this.finishSale(saleId, split);
     } catch (e7) {
-      const transportKey = transportErrorKey(e7);
-      if (transportKey === SERVER_UNAVAILABLE_KEY) {
-        this.error = t5(transportKey);
-      } else {
-        const raw = e7 instanceof Error ? e7.message : String(e7 ?? "");
-        const key = checkoutErrorKey(raw);
-        this.error = key === "ui.errorCharge" && raw ? raw : t5(key);
-      }
+      await this.handleCheckoutFailure(e7, checkoutKey, split);
     } finally {
       this.busy = false;
     }
+  }
+  /** Cierra la venta EN PANTALLA: limpia la comanda, suelta mesa y cliente, abre el documento.
+   *
+   *  Vive aparte porque hay DOS caminos que llegan aquí (hub#923): el cobro que responde, y el que
+   *  perdió la respuesta pero cuya venta aparece luego por su clave de idempotencia. Duplicar este
+   *  cierre era garantizar que un día divergieran. */
+  async finishSale(saleId, split) {
+    this.checkoutKey = "";
+    this.error = "";
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = void 0;
+    }
+    this.paying = false;
+    this.splitSel = /* @__PURE__ */ new Set();
+    if (split.keep_order_open && this.orderId) {
+      this.cart = await loadOrderLines(erplora2(), this.orderId);
+      if (saleId) this.docSaleId = saleId;
+      return;
+    }
+    this.cart = [];
+    forgetCurrentCheck(localStorage);
+    this.orderId = void 0;
+    this.orderLabel = "";
+    this.orderView = "account";
+    this.tableId = void 0;
+    this.tableLabel = "";
+    this.customerId = void 0;
+    this.customerName = "";
+    this.customerTaxId = "";
+    this.customerAddress = "";
+    this.resetSlotContexts();
+    if (saleId) this.docSaleId = saleId;
+  }
+  /** El cobro no terminó. Decide QUÉ se le dice al cajero — y esa decisión vale dinero.
+   *
+   *  hub#923 (saas#1460): con un fallo de TRANSPORTE no se sabe si la venta entró. En el incidente
+   *  entró (200 en el servidor) y el proceso murió antes de que el cliente leyera la respuesta; la
+   *  cajera vio la cadena cruda del motor, dedujo «no ha cobrado» y volvió a cobrar. Aquí se le
+   *  pregunta al servidor por la CLAVE DE IDEMPOTENCIA, que es lo que convierte la duda en dato:
+   *
+   *    cobrada     → se cierra como si la respuesta hubiera llegado (el cliente ya pagó).
+   *    no cobrada  → el servidor lo dice: reintentar es seguro (misma clave, nunca dos ventas).
+   *    no se sabe  → se dice la verdad y se manda a Ventas. NUNCA «no se ha cobrado».
+   *
+   *  Un rechazo de DOMINIO (`sales.empty_sale`, …) no pasa por aquí: su frase lleva el código que
+   *  el encargado necesita y se enseña tal cual. */
+  async handleCheckoutFailure(e7, checkoutKey, split) {
+    if (transportErrorKey(e7) !== SERVER_UNAVAILABLE_KEY) {
+      const raw = e7 instanceof Error ? e7.message : String(e7 ?? "");
+      const key = checkoutErrorKey(raw);
+      this.error = key === "ui.errorCharge" && raw ? raw : t5(key);
+      return;
+    }
+    const recovery = await recoverCheckout(
+      async (key) => rows2(await erplora2().query("sales.by_idempotency_key", { idempotency_key: key })),
+      checkoutKey,
+      // Dos intentos: un hub tumbado por OOM vuelve en segundos, y preguntar de nuevo es lo que
+      // convierte «no sé» en una respuesta la mayoría de las veces.
+      { attempts: 2 }
+    );
+    if (recovery.outcome === "charged") {
+      await this.finishSale(recovery.saleId, split);
+      return;
+    }
+    this.checkoutUnknown = recovery.outcome === "unknown";
+    this.error = t5(this.checkoutUnknown ? "ui.checkoutUnknown" : SERVER_UNAVAILABLE_KEY);
+  }
+  /** La salida del cobro dudoso (hub#923): ir a Ventas a comprobar si aquello se cobró.
+   *
+   *  Solo aparece cuando NO se pudo averiguar. Un Web Component no recibe el router, así que el
+   *  canal módulo→shell es empujar la URL y avisar con `popstate` (mismo patrón que `appointments`
+   *  al mandar una cita al TPV). */
+  renderCheckSalesLink() {
+    if (!this.checkoutUnknown) return A;
+    return b2`<ion-button size="small" fill="outline" class="check-sales" data-testid="checkout-check-sales"
+      @click=${() => this.goToSales()}>
+      <ion-icon slot="start" name="cart-outline"></ion-icon>${t5("ui.checkSales")}
+    </ion-button>`;
+  }
+  goToSales() {
+    window.history.pushState({}, "", "/m/sales/sales");
+    window.dispatchEvent(new PopStateEvent("popstate"));
   }
   /** La REJILLA del catálogo: filtra por la categoría activa (la búsqueda por texto vive en el
    *  Spotlight, no empuja la rejilla). */
@@ -6886,7 +6967,7 @@ var ErpPosTouch = class extends i3 {
       <div class="body">
         <div class="catalog">
           ${this.renderCatBar()}
-          ${this.error ? b2`<p class="err">${this.error}</p>` : A}
+          ${this.error ? b2`<p class="err">${this.error}</p>${this.renderCheckSalesLink()}` : A}
           <div class="grid">
             ${this.filtered.map((p4) => {
       const blocked = this.blockedReason(p4);
@@ -6985,7 +7066,7 @@ var ErpPosTouch = class extends i3 {
 
               </div>
               <div class="sheet-foot">
-                ${this.error ? b2`<p class="pay-err">${this.error}</p>` : A}
+                ${this.error ? b2`<p class="pay-err">${this.error}</p>${this.renderCheckSalesLink()}` : A}
                 <!-- UNA acción, dice lo que hace y por cuánto, y no exige scroll para alcanzarla.
                      El importe es el PAYABLE: con split decía «Cobrar 3,60 €» para cobrar 1,80 €. -->
                 <ion-button class="charge" expand="block" ?disabled=${this.busy}
@@ -7154,6 +7235,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "docSaleId", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "checkoutUnknown", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "parked", 2);
@@ -8769,6 +8853,10 @@ define("ok-data-table", OkDataTable);
 
 // ui/components/erp-sales-list/erp-sales-list.ts
 var CATALOG3 = { es: es_default, en: en_default };
+var STATUS_KEYS = {
+  completed: "ui.statusCompleted",
+  voided: "ui.statusVoided"
+};
 function erplora3() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -8815,7 +8903,13 @@ var ErpSalesList = class extends i3 {
         options: [
           { value: "completed", label: t7("ui.statusCompleted") },
           { value: "voided", label: t7("ui.statusVoided") }
-        ]
+        ],
+        // hub#923: el filtro traducía, pero la CELDA pintaba el valor crudo de la BD — «completed»,
+        // en inglés, sobre una UI en español. Es la lista a la que se manda al cajero cuando un cobro
+        // queda en duda, así que la palabra que dice «esto se cobró» no puede ser jerga. Un estado
+        // desconocido (un módulo más nuevo escribiendo `refunded`) cae a su valor crudo: peor sería
+        // una celda vacía, que esconde el estado de la fila.
+        format: (r6) => STATUS_KEYS[String(r6.status ?? "")] ? t7(STATUS_KEYS[String(r6.status)]) : String(r6.status ?? "")
       },
       { key: "total", header: t7("ui.colTotal"), align: "right", sortable: true, filterable: true, filterType: "range", format: (r6) => erplora3().formatMoney(Number(r6.total || 0)) }
     ];
