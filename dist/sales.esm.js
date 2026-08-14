@@ -3413,6 +3413,7 @@ var es_default = {
     noProducts: "Sin productos.",
     notSellableNoTaxCategory: "No se puede vender: sin categor\xEDa fiscal. Falta configurar el IVA.",
     notSellableNoTaxRule: "No se puede vender: su categor\xEDa fiscal no tiene tipo. Falta configurar el IVA.",
+    notSellableOpenPrice: "A\xFAn no se puede cobrar en el TPV: este servicio tiene precio abierto.",
     sale: "Venta",
     cartEmptyTouch: "Toca un producto para a\xF1adirlo.",
     parkCurrentSale: "Aparcar esta cuenta",
@@ -3633,6 +3634,7 @@ var en_default = {
     noProducts: "No products.",
     notSellableNoTaxCategory: "Cannot be sold: no tax category. VAT needs to be set up.",
     notSellableNoTaxRule: "Cannot be sold: its tax category has no rate. VAT needs to be set up.",
+    notSellableOpenPrice: "Cannot be sold from the till yet: this service has an open price.",
     sale: "Sale",
     cartEmptyTouch: "Tap a product to add it.",
     parkCurrentSale: "Park this check",
@@ -4873,6 +4875,8 @@ function toItemPayload(l3) {
     // punto fijo 10⁶ (ADR-0147)
     is_gift: !!l3.is_gift,
     gift_reason: l3.gift_reason ?? "",
+    // sales#89: viaja también al ABRIR el pedido, no solo al añadir línea suelta.
+    is_service: !!l3.is_service,
     tax_category_key: l3.tax_category_key ?? "",
     cost: l3.cost ?? 0,
     ...unitContextPayload(l3)
@@ -4895,6 +4899,9 @@ async function addOrderLine(client, orderId, l3) {
     unit_price: l3.price,
     is_gift: !!l3.is_gift,
     gift_reason: l3.gift_reason ?? "",
+    // sales#89: el pedido recuerda que la línea es un SERVICIO. Sin esto el flag se perdía al
+    // materializar la línea (ADR-0141) y una cuenta RETOMADA cobraba el corte como producto.
+    is_service: !!l3.is_service,
     tax_category_key: l3.tax_category_key ?? "",
     cost: l3.cost ?? 0,
     line_total: provisionalLineTotal(l3.price, l3.qty, l3.is_gift),
@@ -4946,6 +4953,9 @@ async function loadOrderLines(client, orderId) {
       // recuperan para que un pedido REANUDADO cobre con el mismo IVA que si no se hubiera recargado.
       tax_category_key: x2.tax_category_key ? String(x2.tax_category_key) : void 0,
       cost: Number(x2.cost) || void 0,
+      // sales#89: servicio o producto. Una fila ANTERIOR a la columna no trae nada y vuelve como
+      // producto — que es lo que era; marcarla de servicio haría que inventory le saltara el stock.
+      is_service: x2.is_service === 1 || x2.is_service === true ? true : void 0,
       // Contexto de unidades CONGELADO (ADR-0147 §2.4): vuelve con la línea para que el pedido
       // reanudado valide la misma rejilla y cobre con el mismo contexto.
       unit_code: x2.unit_code ? String(x2.unit_code) : void 0,
@@ -5068,10 +5078,20 @@ function transportErrorKey(e7) {
 
 // modules/sales/ui/components/erp-pos-touch/erp-pos-touch.ts
 var CATALOG2 = { es: es_default, en: en_default };
+var CLOSED_PRICING = /* @__PURE__ */ new Set(["fixed", "free", ""]);
 function erplora2() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
   return c5;
+}
+async function optionalRead(read) {
+  try {
+    const c5 = erplora2();
+    if (typeof c5.queryOptional !== "function") return void 0;
+    return await read(c5);
+  } catch {
+    return void 0;
+  }
 }
 function t5(key, params) {
   return erplora2().t(CATALOG2, key, params);
@@ -5710,7 +5730,19 @@ var ErpPosTouch = class extends i3 {
     super.connectedCallback();
     window.addEventListener("erplora:locale-changed", this.onLocaleChange);
     try {
-      const [prods, methods, settingsRows, savedCart, parked, cats, prodCats, taxCatalog, unitRows] = await Promise.all([
+      const [
+        prods,
+        methods,
+        settingsRows,
+        savedCart,
+        parked,
+        cats,
+        prodCats,
+        taxCatalog,
+        unitRows,
+        svcRows,
+        svcCats
+      ] = await Promise.all([
         erplora2().queryAll("inventory.products.list").catch(() => []),
         erplora2().query("sales.payment_methods").catch(() => []),
         erplora2().query("sales.settings.get").catch(() => []),
@@ -5719,22 +5751,34 @@ var ErpPosTouch = class extends i3 {
         erplora2().queryAll("inventory.categories.list", { sort: "name", dir: "asc" }).catch(() => []),
         erplora2().queryAll("inventory.product_categories").catch(() => []),
         loadTaxCatalog(erplora2()),
-        erplora2().queryAll("inventory.units.list").catch(() => [])
+        erplora2().queryAll("inventory.units.list").catch(() => []),
+        // sales#89 — el catálogo VENDIBLE de servicios. Lectura OPCIONAL (ADR-0127): `services` NO
+        // está en `depends_on` a propósito, porque `depends_on` es un contrato DURO que obligaría a
+        // todo restaurante a instalar el módulo y ataría `sales` a su cascada de desactivación. Un
+        // hub sin `services` recibe `undefined` y el TPV sigue siendo exactamente el de antes.
+        this.loadServices(),
+        this.loadServiceCategories()
       ]);
       this.taxCatalog = taxCatalog;
       for (const u5 of rows2(unitRows)) if (u5.code) this.units.set(u5.code, u5);
-      this.products = rows2(prods).filter((p4) => p4.is_active !== 0);
+      this.products = [...rows2(prods).filter((p4) => p4.is_active !== 0), ...svcRows];
+      for (const s5 of svcRows) {
+        if (!s5.category_id) continue;
+        if (!this.prodCats.has(s5.id)) this.prodCats.set(s5.id, /* @__PURE__ */ new Set());
+        this.prodCats.get(s5.id).add(s5.category_id);
+      }
       this.methods = rows2(methods);
       this.settings = rows2(settingsRows)[0] || {};
       this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
       this.payMethod = defaultPayMethod(this.payMethods);
       this.parked = parked;
-      this.categories = rows2(cats).filter((c5) => c5.name);
+      this.categories = [...rows2(cats).filter((c5) => c5.name), ...svcCats];
       for (const pc of rows2(prodCats)) {
         if (!this.prodCats.has(pc.product_id)) this.prodCats.set(pc.product_id, /* @__PURE__ */ new Set());
         this.prodCats.get(pc.product_id).add(pc.category_id);
       }
       if (savedCart.length) this.cart = savedCart;
+      await this.consumeAppointmentDeepLink(svcRows);
       await this.updateComplete;
       this.addEventListener("erp:order-context", this.onOrderContext);
       this.addEventListener("erp:order-merge", this.onOrderMerge);
@@ -6201,10 +6245,93 @@ var ErpPosTouch = class extends i3 {
     this.notifyOrderLinked();
     return this.orderId;
   }
+  /** Lee `?appointment_id=` de la URL, siembra la cita y BORRA el parámetro.
+   *
+   *  El shell no pasa props ni la ruta a los Web Components, así que el deep link es el único canal
+   *  que tiene la agenda para decir «cobra esta cita». Se limpia con `replaceState` para que la
+   *  orden no quede pegada a la barra de direcciones. */
+  async consumeAppointmentDeepLink(services) {
+    let id = null;
+    try {
+      id = new URLSearchParams(window.location.search).get("appointment_id");
+    } catch {
+      return;
+    }
+    if (!id) return;
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("appointment_id");
+      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    } catch {
+    }
+    await this.seedFromAppointment(id, services);
+  }
+  /** Siembra el carrito con el servicio de una CITA (ADR-0077, seam cerrado en sales#89).
+   *
+   *  `sales` no sabe qué es una cita: lee UNA query pública y se queda con dos ids OPACOS
+   *  (`appointment_id`, `staff_id`) que reenvía al cobrar. No hay `depends_on`, ni JOIN, ni
+   *  conocimiento del dominio de citas — un hub sin el módulo abre el TPV vacío y en paz.
+   *
+   *  La cita guarda `service_price` pero NO la categoría fiscal, así que el IVA quedaría colgando.
+   *  Se resuelve contra el catálogo de servicios que el TPV ya carga para el walk-in: una sola
+   *  fuente de verdad fiscal para las dos puertas. */
+  async seedFromAppointment(appointmentId, services) {
+    const rowsIn = await optionalRead((c5) => c5.queryOptional("appointments.appointments.get", { id: appointmentId }));
+    if (rowsIn === void 0) return;
+    const ap = rows2(rowsIn)[0];
+    if (!ap) return;
+    const svc = services.find((s5) => s5.id === ap.service_id);
+    const price = Number(ap.service_price) || Number(svc?.price) || 0;
+    const name = ap.service_name || svc?.name || "";
+    if (!name) return;
+    this.appointmentId = ap.id || appointmentId;
+    this.staffId = ap.staff_id || void 0;
+    if (ap.customer_id) this.customerId = ap.customer_id;
+    if (ap.customer_name) this.customerName = ap.customer_name;
+    const tax_category_key = svc?.tax_category_key;
+    await this.queue(() => this.addNow({
+      id: svc?.id ?? "",
+      name,
+      price,
+      tax_category_key,
+      is_service: true,
+      pricing_type: "fixed",
+      is_active: 1
+    }));
+  }
+  /** El catálogo VENDIBLE de `services`, mapeado a la forma de la rejilla (sales#89).
+   *
+   *  Un servicio se cobra por la MISMA puerta que un producto —misma tarjeta, mismo carrito, mismo
+   *  cobro— para que no pueda divergir del camino fiscal. Lo único que lo distingue es
+   *  `is_service`, que hace que el handler no lo mida contra el catálogo de `inventory` ni le
+   *  descuente stock. `services` es la autoridad del precio y de la categoría fiscal. */
+  async loadServices() {
+    const rowsIn = await optionalRead((c5) => c5.queryOptional("services.services.list", { page_size: 500 }));
+    if (rowsIn === void 0) return [];
+    return rows2(rowsIn).map((s5) => ({
+      id: s5.id,
+      name: s5.name,
+      price: Number(s5.price) || 0,
+      tax_category_key: s5.tax_category_key,
+      pricing_type: s5.pricing_type ?? "fixed",
+      is_service: true,
+      is_active: 1
+    }));
+  }
+  /** Las categorías de servicio salen como una pestaña más: 40 servicios en un muro plano no son
+   *  usables en una peluquería con cliente delante. */
+  async loadServiceCategories() {
+    const rowsIn = await optionalRead((c5) => c5.queryOptional("services.categories.list", { sort: "name", dir: "asc" }));
+    if (rowsIn === void 0) return [];
+    return rows2(rowsIn).filter((c5) => c5.name).map((c5) => ({ id: c5.id, name: c5.name }));
+  }
   /** Motivo por el que este producto NO se puede cobrar, ya traducido; `undefined` si se puede
    *  (o si no hay catálogo fiscal con el que juzgarlo: eso es un incidente de `taxes`, no del
-   *  producto, y cobrar es lo último que puede romperse). sales#74. */
+   *  producto, y cobrar es lo último que puede romperse). sales#74, ampliado en sales#89. */
   blockedReason(p4) {
+    if (p4.is_service && !CLOSED_PRICING.has(p4.pricing_type ?? "fixed")) {
+      return t5("ui.notSellableOpenPrice");
+    }
     switch (productSellability(this.taxCatalog, p4.tax_category_key)) {
       case "no_tax_category":
         return t5("ui.notSellableNoTaxCategory");
@@ -6240,6 +6367,9 @@ var ErpPosTouch = class extends i3 {
         tax_category_key: p4.tax_category_key,
         tax_rate,
         cost: Number(p4.cost) || 0,
+        // sales#89: viaja hasta `complete_sale`, que por él no mide la línea contra el catálogo de
+        // `inventory` ni le descuenta stock, y hasta `sale.completed`, donde `inventory` la salta.
+        ...p4.is_service ? { is_service: true } : {},
         ...this.frozenUnitContext(p4)
       };
       if (!this.orderId) {
@@ -6416,6 +6546,12 @@ var ErpPosTouch = class extends i3 {
         // ADR-0141: la venta nace de este PEDIDO. El servidor lo marca completado (open→completed)
         // en el cobro final; para split-bill se enviaría `keep_order_open: true`.
         order_id: this.orderId ?? null,
+        // ADR-0077 (seam cerrado en sales#89) — ids OPACOS que `sales` reenvía sin interpretar.
+        // `appointment_id` hace que el handler emita `sales.sale.created_from_appointment`, con el
+        // que `appointments` marca la cita cobrada en SU listener; `staff_id` atribuye la venta a
+        // la profesional que atendió (≠ `employee_id`, que es la persona que cobra).
+        appointment_id: this.appointmentId ?? null,
+        staff_id: this.staffId ?? null,
         customer_id: this.customerId ?? null,
         customer_name: this.customerName,
         // Snapshot fiscal del cliente (ADR-0132): sin esto la factura emitida desde el TPV sale sin

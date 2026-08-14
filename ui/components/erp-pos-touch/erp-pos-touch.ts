@@ -137,11 +137,11 @@ function erplora(): ErploraClientLike {
  *  romperse: un shell antiguo sin ese método haría estallar el `connectedCallback` entero —
  *  sin rejilla, sin carrito y sin slots— por una integración accesoria. Aquí ausencia y fallo se
  *  responden igual: no hay catálogo extra que ofrecer, se cobra lo de siempre. */
-async function queryOptional(name: string, params?: Record<string, unknown>): Promise<unknown | undefined> {
+async function optionalRead(read: (c: ErploraClientLike) => Promise<unknown>): Promise<unknown | undefined> {
   try {
     const c = erplora() as Partial<ErploraClientLike>;
     if (typeof c.queryOptional !== 'function') return undefined;
-    return await c.queryOptional<unknown>(name, params);
+    return await read(c as ErploraClientLike);
   } catch {
     return undefined;
   }
@@ -1432,7 +1432,7 @@ export class ErpPosTouch extends LitElement {
    *  Se resuelve contra el catálogo de servicios que el TPV ya carga para el walk-in: una sola
    *  fuente de verdad fiscal para las dos puertas. */
   private async seedFromAppointment(appointmentId: string, services: Product[]): Promise<void> {
-    const rowsIn = await queryOptional('appointments.appointments.get', { id: appointmentId });
+    const rowsIn = await optionalRead((c) => c.queryOptional<unknown>('appointments.appointments.get', { id: appointmentId }));
     if (rowsIn === undefined) return; // módulo ausente: TPV vacío, sin ruido
     const ap = rows<AppointmentRow>(rowsIn)[0];
     if (!ap) return;
@@ -1462,7 +1462,7 @@ export class ErpPosTouch extends LitElement {
    *  `is_service`, que hace que el handler no lo mida contra el catálogo de `inventory` ni le
    *  descuente stock. `services` es la autoridad del precio y de la categoría fiscal. */
   private async loadServices(): Promise<Product[]> {
-    const rowsIn = await queryOptional('services.services.list', { page_size: 500 });
+    const rowsIn = await optionalRead((c) => c.queryOptional<unknown>('services.services.list', { page_size: 500 }));
     if (rowsIn === undefined) return []; // módulo no instalado: el TPV sigue siendo el de siempre
     return rows<ServiceRow>(rowsIn).map((s) => ({
       id: s.id,
@@ -1478,7 +1478,7 @@ export class ErpPosTouch extends LitElement {
   /** Las categorías de servicio salen como una pestaña más: 40 servicios en un muro plano no son
    *  usables en una peluquería con cliente delante. */
   private async loadServiceCategories(): Promise<Category[]> {
-    const rowsIn = await queryOptional('services.categories.list', { sort: 'name', dir: 'asc' });
+    const rowsIn = await optionalRead((c) => c.queryOptional<unknown>('services.categories.list', { sort: 'name', dir: 'asc' }));
     if (rowsIn === undefined) return [];
     return rows<ServiceCat>(rowsIn).filter((c) => c.name).map((c) => ({ id: c.id, name: c.name }));
   }
