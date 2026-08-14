@@ -63,6 +63,13 @@ interface ServiceRow {
 /** Categoría de servicio (`services.categories.list`) — se muestra como una pestaña más. */
 interface ServiceCat { id: string; name: string; }
 
+/** Fila de `appointments.appointments.get` (ADR-0077). `sales` lee SOLO lo que necesita para
+ *  armar la línea y atribuir la venta; el resto del dominio de citas no le incumbe. */
+interface AppointmentRow {
+  id?: string; customer_id?: string; customer_name?: string; staff_id?: string;
+  service_id?: string; service_name?: string; service_price?: number;
+}
+
 /** Formas de precio que el TPV sabe cobrar HOY. `from`/`hourly`/`variable` son un precio de
  *  PARTIDA, no el precio: cobrarlos tal cual sería equivocarse en silencio, y aún no hay flujo de
  *  precio abierto. Se pintan bloqueados con su motivo (misma puerta que sales#74). */
@@ -617,6 +624,12 @@ export class ErpPosTouch extends LitElement {
   /** Snapshot fiscal del cliente asignado (ADR-0132). Copia, no referencia: viaja con la venta. */
   private customerTaxId = '';
   private customerAddress = '';
+  /** CITA de origen y PROFESIONAL que atendió (ADR-0077). Ids OPACOS: `sales` no los interpreta,
+   *  solo los reenvía a `complete_sale`. `appointment_id` dispara
+   *  `sales.sale.created_from_appointment`, con el que `appointments` marca la cita convertida;
+   *  `staff_id` (≠ `employee_id`, el cajero) es lo que permite el cierre por profesional. */
+  private appointmentId?: string;
+  private staffId?: string;
 
   private prodCats = new Map<string, Set<string>>();
   /** Registro de unidades (ADR-0147): code → fila, para congelar el contexto al añadir línea. */
@@ -886,6 +899,10 @@ export class ErpPosTouch extends LitElement {
         this.prodCats.get(pc.product_id)!.add(pc.category_id);
       }
       if (savedCart.length) this.cart = savedCart;
+      // ADR-0077: la agenda manda aquí con `?appointment_id=`. Se consume UNA vez y se borra de la
+      // URL — si sobreviviera, recargar la pantalla volvería a sembrar la misma cita sobre el
+      // carrito. Va después del carrito guardado para no pisar una cuenta ya abierta.
+      await this.consumeAppointmentDeepLink(svcRows);
       await this.updateComplete;
       this.addEventListener('erp:order-context', this.onOrderContext);
       this.addEventListener('erp:order-merge', this.onOrderMerge);
@@ -1386,6 +1403,58 @@ export class ErpPosTouch extends LitElement {
    *  pedidos: cada uno veía «aún no hay pedido» porque el anterior seguía en vuelo (ADR-0144). */
   private readonly queue = createSerialQueue();
 
+  /** Lee `?appointment_id=` de la URL, siembra la cita y BORRA el parámetro.
+   *
+   *  El shell no pasa props ni la ruta a los Web Components, así que el deep link es el único canal
+   *  que tiene la agenda para decir «cobra esta cita». Se limpia con `replaceState` para que la
+   *  orden no quede pegada a la barra de direcciones. */
+  private async consumeAppointmentDeepLink(services: Product[]): Promise<void> {
+    let id: string | null = null;
+    try {
+      id = new URLSearchParams(window.location.search).get('appointment_id');
+    } catch { return; }
+    if (!id) return;
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('appointment_id');
+      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    } catch { /* sin History API no pasa nada: la siembra es lo que importa */ }
+    await this.seedFromAppointment(id, services);
+  }
+
+  /** Siembra el carrito con el servicio de una CITA (ADR-0077, seam cerrado en sales#89).
+   *
+   *  `sales` no sabe qué es una cita: lee UNA query pública y se queda con dos ids OPACOS
+   *  (`appointment_id`, `staff_id`) que reenvía al cobrar. No hay `depends_on`, ni JOIN, ni
+   *  conocimiento del dominio de citas — un hub sin el módulo abre el TPV vacío y en paz.
+   *
+   *  La cita guarda `service_price` pero NO la categoría fiscal, así que el IVA quedaría colgando.
+   *  Se resuelve contra el catálogo de servicios que el TPV ya carga para el walk-in: una sola
+   *  fuente de verdad fiscal para las dos puertas. */
+  private async seedFromAppointment(appointmentId: string, services: Product[]): Promise<void> {
+    const rowsIn = await queryOptional('appointments.appointments.get', { id: appointmentId });
+    if (rowsIn === undefined) return; // módulo ausente: TPV vacío, sin ruido
+    const ap = rows<AppointmentRow>(rowsIn)[0];
+    if (!ap) return;
+
+    // El catálogo manda en lo fiscal; la cita, en el precio pactado con el cliente.
+    const svc = services.find((s) => s.id === ap.service_id);
+    const price = Number(ap.service_price) || Number(svc?.price) || 0;
+    const name = ap.service_name || svc?.name || '';
+    if (!name) return;
+
+    this.appointmentId = ap.id || appointmentId;
+    this.staffId = ap.staff_id || undefined;
+    if (ap.customer_id) this.customerId = ap.customer_id;
+    if (ap.customer_name) this.customerName = ap.customer_name;
+
+    const tax_category_key = svc?.tax_category_key;
+    await this.queue(() => this.addNow({
+      id: svc?.id ?? '', name, price, tax_category_key,
+      is_service: true, pricing_type: 'fixed', is_active: 1,
+    }));
+  }
+
   /** El catálogo VENDIBLE de `services`, mapeado a la forma de la rejilla (sales#89).
    *
    *  Un servicio se cobra por la MISMA puerta que un producto —misma tarjeta, mismo carrito, mismo
@@ -1681,6 +1750,12 @@ export class ErpPosTouch extends LitElement {
         // ADR-0141: la venta nace de este PEDIDO. El servidor lo marca completado (open→completed)
         // en el cobro final; para split-bill se enviaría `keep_order_open: true`.
         order_id: this.orderId ?? null,
+        // ADR-0077 (seam cerrado en sales#89) — ids OPACOS que `sales` reenvía sin interpretar.
+        // `appointment_id` hace que el handler emita `sales.sale.created_from_appointment`, con el
+        // que `appointments` marca la cita cobrada en SU listener; `staff_id` atribuye la venta a
+        // la profesional que atendió (≠ `employee_id`, que es la persona que cobra).
+        appointment_id: this.appointmentId ?? null,
+        staff_id: this.staffId ?? null,
         customer_id: this.customerId ?? null,
         customer_name: this.customerName,
         // Snapshot fiscal del cliente (ADR-0132): sin esto la factura emitida desde el TPV sale sin
