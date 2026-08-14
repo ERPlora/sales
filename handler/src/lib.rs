@@ -1043,6 +1043,10 @@ pub fn open_order_pure(input: Value) -> Result<Output, String> {
         // invitaciones (gift_total). Sin ellos, un pedido reanudado facturaría con el IVA erróneo.
         p.insert("tax_category_key".into(), json!(str_or(item, "tax_category_key", "")));
         p.insert("cost".into(), json!(as_cents(item.get("cost").unwrap_or(&Value::Null), 0)));
+        // sales#89: SERVICIO o producto. La línea de servicio no se mide contra el catálogo de
+        // `inventory` ni descuenta stock, y el pedido tiene que recordarlo para que una cuenta
+        // RETOMADA lo siga cobrando como servicio.
+        p.insert("is_service".into(), json!(item.get("is_service").map(as_bool).unwrap_or(false) as i64));
         ops.push(Operation::sql("sales._insert_order_line", p));
     }
 

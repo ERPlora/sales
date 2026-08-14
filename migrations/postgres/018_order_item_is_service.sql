@@ -1,0 +1,12 @@
+-- sales#89: la línea de PEDIDO recuerda si es un SERVICIO.
+--
+-- `sales_sale_item` lleva `is_service` desde 001, porque el cobro lo necesita: el handler salta la
+-- validación contra el catálogo de `inventory` y el descuento de stock, y el flag viaja en
+-- `sale.completed` para que `inventory` salte la línea también.
+--
+-- Pero el carrito no vive en memoria (ADR-0141): cada línea se materializa aquí al añadirla y el
+-- carrito se reconstruye desde esta tabla al RETOMAR la cuenta. Sin esta columna el flag se perdía
+-- en ese ida y vuelta, y una peluquería que retoma una cuenta cobraba el servicio como producto.
+--
+-- Aditiva y con DEFAULT 0: los pedidos ya escritos siguen siendo de producto, que es lo que eran.
+ALTER TABLE sales_order_item ADD COLUMN is_service INTEGER NOT NULL DEFAULT 0;

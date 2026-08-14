@@ -3,8 +3,10 @@
 -- hub_id lo auto-inyecta el runtime.
 -- `quantity` en punto fijo, escala 10⁶ (ADR-0147); el contexto de unidades congelado viaja con la
 -- línea para que un pedido REANUDADO siga significando 0,5 kg aunque el maestro haya cambiado.
+-- `is_service` (sales#89) vuelve con la línea: un pedido REANUDADO tiene que seguir sabiendo que
+-- cobra un corte de pelo y no un producto, o el cobro lo mediría contra el catálogo de inventory.
 SELECT id, order_id, product_id, product_name, product_sku, quantity, unit_price,
-       is_gift, gift_reason, line_total, tax_category_key, cost,
+       is_gift, gift_reason, line_total, tax_category_key, cost, is_service,
        unit_code, unit_name, factor_num, factor_den, increment_value,
        price_quantity_value, pricing_unit_code, pricing_unit_name,
        pricing_factor_num, pricing_factor_den,
