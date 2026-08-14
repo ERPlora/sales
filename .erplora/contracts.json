@@ -16,6 +16,7 @@
       "sales.payment_methods",
       "sales.settings.get",
       "sales.stats",
+      "taxes.categories.list",
       "taxes.rules.list"
     ],
     "optional_queries": [
