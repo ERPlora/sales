@@ -178,6 +178,8 @@
     "splitFailed": "No se pudo dividir la cuenta",
     "lineNotSaved": "No se pudo guardar ese artículo — vuelve a tocarlo",
     "serverUnavailable": "El servidor no responde (puede estar reiniciándose). Inténtalo de nuevo en unos segundos y, si persiste, avisa al encargado.",
+    "checkoutUnknown": "No hemos podido confirmar si el cobro se completó. Compruébalo en Ventas antes de volver a cobrar.",
+    "checkSales": "Comprobar en Ventas",
     "payingPart": "Cobrando {n} línea(s) de {total}",
     "payExact": "Importe exacto",
     "payCardHint": "Cobra {amount} en el datáfono y confirma.",

@@ -43,6 +43,7 @@ import { checkoutErrorKey, newIdempotencyKey } from '../../lib/checkout-key.js';
 // («<!DOCTYPE … is not valid JSON»). Esta es la frontera del módulo: traducirlo a un mensaje de
 // negocio para el cajero (la guarda `res.ok` del SDK se persigue aparte, en el hub).
 import { transportErrorKey, SERVER_UNAVAILABLE_KEY } from '../../lib/transport-error.js';
+import { recoverCheckout } from '../../lib/checkout-recovery.js';
 // Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC.
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
@@ -583,6 +584,9 @@ export class ErpPosTouch extends LitElement {
    *  REUTILIZA en cada reintento —por eso un timeout no crea una segunda venta— y se descarta en
    *  cuanto la venta consta. Vacía = no hay cobro en curso. */
   private checkoutKey = '';
+  /** hub#923: el cobro falló y NO se pudo averiguar si la venta entró. Enciende el aviso con la
+   *  salida a Ventas — es la diferencia entre «cobro dudoso» y volver a cobrar a ciegas. */
+  @state() private checkoutUnknown = false;
   @state() private parked: OpenCheck[] = [];
   /** Líneas marcadas para cobrar por separado (ADR-0146). Vacío = se cobra la cuenta entera. */
   @state() private splitSel = new Set<string>();
@@ -1709,7 +1713,14 @@ export class ErpPosTouch extends LitElement {
    *  recibir `sale.completed` (ajuste `auto_print_on_sale`). El toggle de la pantalla de cobro
    *  refleja esa preferencia; el diálogo del navegador solo aparece como respaldo manual. */
   private async confirm(_print = false) {
-    this.busy = true; this.error = '';
+    // El aviso de duda muere al reintentar: si este intento vuelve a fallar, se decide de nuevo con
+    // la evidencia de AHORA (hub#923).
+    this.busy = true; this.error = ''; this.checkoutUnknown = false;
+    // Declarados FUERA del try: el `catch` los necesita para preguntar por la venta (hub#923). La
+    // clave se fija aquí — si el intento viene por atajo, sin pasar por `openPay`, se estrena una.
+    if (!this.checkoutKey) this.checkoutKey = newIdempotencyKey();
+    const checkoutKey = this.checkoutKey;
+    const split = splitPayload(this.cart, this.splitSel);
     try {
       // ADR-0069: la AUTORIDAD del IVA es el servidor. Cada línea manda su `tax_category_key`
       // (referencia fiscal del producto) y el handler resuelve `rate_pct` desde el catálogo de
@@ -1721,17 +1732,12 @@ export class ErpPosTouch extends LitElement {
       // `prodCats` (Map product_id → Set category_id). null si el producto no está clasificado.
       // ADR-0146 — «cada uno paga lo suyo»: si hay líneas marcadas, este cobro cubre SOLO esas y el
       // pedido sigue abierto para los demás. Marcarlas todas equivale a cobrar la cuenta entera.
-      const split = splitPayload(this.cart, this.splitSel);
       const cobradas = split.line_ids
         ? this.cart.filter((l) => l.line_id && this.splitSel.has(l.line_id))
         : this.cart;
       // `quantity` viaja en punto fijo 10⁶ y la línea lleva su contexto de unidades congelado
       // (ADR-0147): el servidor valida la rejilla y calcula el importe por el SDK (KPEIN).
       const items = cobradas.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: toMicro(l.qty), tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: this.prodCats.get(l.id)?.values().next().value ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0, ...unitContextPayload(l) }));
-      // Reintento tras un fallo: se conserva la clave del intento. Solo se genera una nueva si
-      // llegamos aquí sin ninguna (cobro disparado por atajo, sin pasar por `openPay`).
-      if (!this.checkoutKey) this.checkoutKey = newIdempotencyKey();
-      const checkoutKey = this.checkoutKey;
       await erplora().command('sales.complete_sale', {
         items,
         // sales#20: el servidor no cierra una venta sin clave, y con la misma clave dos veces
@@ -1773,8 +1779,23 @@ export class ErpPosTouch extends LitElement {
       // una venta que no era esta. El tipo ya quedó fijado dentro de complete_sale (ADR-0140).
       const recorded = rows<{ id: string }>(await erplora().query('sales.by_idempotency_key', { idempotency_key: checkoutKey }));
       const saleId = recorded[0]?.id;
+      await this.finishSale(saleId, split);
+    } catch (e) {
+      await this.handleCheckoutFailure(e, checkoutKey, split);
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /** Cierra la venta EN PANTALLA: limpia la comanda, suelta mesa y cliente, abre el documento.
+   *
+   *  Vive aparte porque hay DOS caminos que llegan aquí (hub#923): el cobro que responde, y el que
+   *  perdió la respuesta pero cuya venta aparece luego por su clave de idempotencia. Duplicar este
+   *  cierre era garantizar que un día divergieran. */
+  private async finishSale(saleId: string | undefined, split: { keep_order_open?: boolean }) {
       // El intento terminó: la próxima venta estrena clave.
       this.checkoutKey = '';
+      this.error = '';
       // Cobrada: limpia la comanda de ESA mesa (o el carrito suelto) antes de soltarla, si no la
       // comanda seguiría recuperándose al volver a tocar la mesa. La sesión la cierra el filler
       // al recibir el reset de abajo.
@@ -1809,29 +1830,66 @@ export class ErpPosTouch extends LitElement {
       // — ya existía (apps/web/src/lib/print-on-sale.ts) y el runtime no toca hardware (§2.7).
       // Abrir el diálogo del navegador por nuestra cuenta duplicaba ese camino y se lo comía.
       // El diálogo del navegador queda SOLO como respaldo manual, desde el botón del documento.
-    } catch (e) {
-      // El servidor rechaza el cierre con un código de dominio estable (`sales.empty_sale`,
-      // `sales.payment_method_not_available`, …). Se traduce el CÓDIGO, no la frase: el mensaje del
-      // servidor va en inglés y con detalle interno.
-      // sales#81: si el error es del TRANSPORTE (el proxy devolvió HTML 502 porque el contenedor
-      // del hub murió, o el fetch no llegó — `Failed to fetch`), el mensaje crudo NO le sirve al
-      // cajero: un navegador dice «Failed to fetch» y un parser HTML revienta con
-      // «<!DOCTYPE … is not valid JSON». Ninguno de los dos dice «el servidor está caído». Se
-      // traduce a un aviso de negocio ANTES de caer al fallback. Un rechazo de dominio desconocido
-      // sigue enseñándose tal cual: su frase lleva el código que el encargado necesita.
-      const transportKey = transportErrorKey(e);
-      if (transportKey === SERVER_UNAVAILABLE_KEY) {
-        this.error = t(transportKey);
-      } else {
-        const raw = e instanceof Error ? e.message : String(e ?? '');
-        const key = checkoutErrorKey(raw);
-        this.error = key === 'ui.errorCharge' && raw ? raw : t(key);
-      }
-      // OJO: `this.checkoutKey` NO se limpia aquí. Reintentar con la MISMA clave es justo lo que
-      // impide que un timeout (la venta pudo entrar) acabe cobrando dos veces.
-    } finally {
-      this.busy = false;
+  }
+
+  /** El cobro no terminó. Decide QUÉ se le dice al cajero — y esa decisión vale dinero.
+   *
+   *  hub#923 (saas#1460): con un fallo de TRANSPORTE no se sabe si la venta entró. En el incidente
+   *  entró (200 en el servidor) y el proceso murió antes de que el cliente leyera la respuesta; la
+   *  cajera vio la cadena cruda del motor, dedujo «no ha cobrado» y volvió a cobrar. Aquí se le
+   *  pregunta al servidor por la CLAVE DE IDEMPOTENCIA, que es lo que convierte la duda en dato:
+   *
+   *    cobrada     → se cierra como si la respuesta hubiera llegado (el cliente ya pagó).
+   *    no cobrada  → el servidor lo dice: reintentar es seguro (misma clave, nunca dos ventas).
+   *    no se sabe  → se dice la verdad y se manda a Ventas. NUNCA «no se ha cobrado».
+   *
+   *  Un rechazo de DOMINIO (`sales.empty_sale`, …) no pasa por aquí: su frase lleva el código que
+   *  el encargado necesita y se enseña tal cual. */
+  private async handleCheckoutFailure(e: unknown, checkoutKey: string, split: { keep_order_open?: boolean }) {
+    // OJO: `this.checkoutKey` NO se limpia en ninguna rama de fallo. Reintentar con la MISMA clave
+    // es justo lo que impide que un timeout (la venta pudo entrar) acabe cobrando dos veces.
+    if (transportErrorKey(e) !== SERVER_UNAVAILABLE_KEY) {
+      const raw = e instanceof Error ? e.message : String(e ?? '');
+      const key = checkoutErrorKey(raw);
+      this.error = key === 'ui.errorCharge' && raw ? raw : t(key);
+      return;
     }
+
+    const recovery = await recoverCheckout(
+      async (key) => rows<{ id: string }>(await erplora().query('sales.by_idempotency_key', { idempotency_key: key })),
+      checkoutKey,
+      // Dos intentos: un hub tumbado por OOM vuelve en segundos, y preguntar de nuevo es lo que
+      // convierte «no sé» en una respuesta la mayoría de las veces.
+      { attempts: 2 },
+    );
+
+    if (recovery.outcome === 'charged') {
+      // La venta SÍ entró. Cerrar en silencio es lo correcto: el cliente pagó y el tique existe.
+      await this.finishSale(recovery.saleId, split);
+      return;
+    }
+    // `not_charged`: el servidor habló y no hay venta → el aviso de siempre, reintento seguro.
+    // `unknown`: no se pudo preguntar → la duda explícita, con la salida a Ventas al lado.
+    this.checkoutUnknown = recovery.outcome === 'unknown';
+    this.error = t(this.checkoutUnknown ? 'ui.checkoutUnknown' : SERVER_UNAVAILABLE_KEY);
+  }
+
+  /** La salida del cobro dudoso (hub#923): ir a Ventas a comprobar si aquello se cobró.
+   *
+   *  Solo aparece cuando NO se pudo averiguar. Un Web Component no recibe el router, así que el
+   *  canal módulo→shell es empujar la URL y avisar con `popstate` (mismo patrón que `appointments`
+   *  al mandar una cita al TPV). */
+  private renderCheckSalesLink() {
+    if (!this.checkoutUnknown) return nothing;
+    return html`<ion-button size="small" fill="outline" class="check-sales" data-testid="checkout-check-sales"
+      @click=${() => this.goToSales()}>
+      <ion-icon slot="start" name="cart-outline"></ion-icon>${t('ui.checkSales')}
+    </ion-button>`;
+  }
+
+  private goToSales() {
+    window.history.pushState({}, '', '/m/sales/sales');
+    window.dispatchEvent(new PopStateEvent('popstate'));
   }
 
   /** La REJILLA del catálogo: filtra por la categoría activa (la búsqueda por texto vive en el
@@ -2127,7 +2185,7 @@ export class ErpPosTouch extends LitElement {
       <div class="body">
         <div class="catalog">
           ${this.renderCatBar()}
-          ${this.error ? html`<p class="err">${this.error}</p>` : nothing}
+          ${this.error ? html`<p class="err">${this.error}</p>${this.renderCheckSalesLink()}` : nothing}
           <div class="grid">
             ${this.filtered.map((p) => {
               // sales#74 — lo que el cobro va a rechazar (sin categoría fiscal, o con una que no
@@ -2228,7 +2286,7 @@ export class ErpPosTouch extends LitElement {
 
               </div>
               <div class="sheet-foot">
-                ${this.error ? html`<p class="pay-err">${this.error}</p>` : nothing}
+                ${this.error ? html`<p class="pay-err">${this.error}</p>${this.renderCheckSalesLink()}` : nothing}
                 <!-- UNA acción, dice lo que hace y por cuánto, y no exige scroll para alcanzarla.
                      El importe es el PAYABLE: con split decía «Cobrar 3,60 €» para cobrar 1,80 €. -->
                 <ion-button class="charge" expand="block" ?disabled=${this.busy}
