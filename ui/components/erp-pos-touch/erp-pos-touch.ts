@@ -54,9 +54,28 @@ const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 // sales. En móvil la cuenta se recoge a un drawer. Quitar línea = cantidad a 0. Al cobrar:
 // `sales.complete_sale` (channel='pos') → documento.
 
+/** Fila de `services.services.list` (sales#89). Es la superficie vendible del módulo `services`;
+ *  `sales` solo lee lo que necesita para cobrar: qué es, cuánto vale y con qué IVA. */
+interface ServiceRow {
+  id: string; name: string; price?: number; pricing_type?: string;
+  category_id?: string; tax_category_key?: string;
+}
+/** Categoría de servicio (`services.categories.list`) — se muestra como una pestaña más. */
+interface ServiceCat { id: string; name: string; }
+
+/** Formas de precio que el TPV sabe cobrar HOY. `from`/`hourly`/`variable` son un precio de
+ *  PARTIDA, no el precio: cobrarlos tal cual sería equivocarse en silencio, y aún no hay flujo de
+ *  precio abierto. Se pintan bloqueados con su motivo (misma puerta que sales#74). */
+const CLOSED_PRICING = new Set(['fixed', 'free', '']);
+
 interface Product {
   id: string; name: string; sku?: string; price: number; cost?: number; is_active?: number;
   product_type?: string; image?: string; tax_category_key?: string;
+  /** SERVICIO (sales#89): no sale del catálogo de `inventory`, no descuenta stock. Viaja hasta
+   *  `complete_sale` para que el handler no lo mida contra el catálogo de productos. */
+  is_service?: boolean;
+  /** `pricing_type` del servicio de origen; ausente en un producto de inventario. */
+  pricing_type?: string;
   // ADR-0147: unidad base + cantidad de precio del maestro (inventory/006). El POS los CONGELA
   // en la línea al añadirla — el histórico nunca relee el maestro.
   unit_code?: string; price_quantity_value?: number; pricing_unit_code?: string;
@@ -102,6 +121,23 @@ function erplora(): ErploraClientLike {
   const c = (globalThis as { erplora?: ErploraClientLike }).erplora;
   if (!c) throw new Error('erplora SDK no inicializado por el shell');
   return c;
+}
+
+/** Lectura OPCIONAL a un módulo que puede no estar instalado (ADR-0127): `undefined` = no está,
+ *  y el TPV sigue funcionando sin él.
+ *
+ *  Envuelve `queryOptional` en vez de llamarlo a pelo porque el TPV es la pantalla que NO puede
+ *  romperse: un shell antiguo sin ese método haría estallar el `connectedCallback` entero —
+ *  sin rejilla, sin carrito y sin slots— por una integración accesoria. Aquí ausencia y fallo se
+ *  responden igual: no hay catálogo extra que ofrecer, se cobra lo de siempre. */
+async function queryOptional(name: string, params?: Record<string, unknown>): Promise<unknown | undefined> {
+  try {
+    const c = erplora() as Partial<ErploraClientLike>;
+    if (typeof c.queryOptional !== 'function') return undefined;
+    return await c.queryOptional<unknown>(name, params);
+  } catch {
+    return undefined;
+  }
 }
 
 /** Traduce una clave del catálogo `ui` con el idioma activo del shell. */
@@ -811,7 +847,8 @@ export class ErpPosTouch extends LitElement {
     super.connectedCallback();
     window.addEventListener('erplora:locale-changed', this.onLocaleChange);
     try {
-      const [prods, methods, settingsRows, savedCart, parked, cats, prodCats, taxCatalog, unitRows] = await Promise.all([
+      const [prods, methods, settingsRows, savedCart, parked, cats, prodCats, taxCatalog, unitRows,
+             svcRows, svcCats] = await Promise.all([
         erplora().queryAll<Product>('inventory.products.list').catch(() => []),
         erplora().query('sales.payment_methods').catch(() => []),
         erplora().query('sales.settings.get').catch(() => []),
@@ -821,16 +858,29 @@ export class ErpPosTouch extends LitElement {
         erplora().queryAll<ProdCat>('inventory.product_categories').catch(() => []),
         loadTaxCatalog(erplora()),
         erplora().queryAll<UnitRow>('inventory.units.list').catch(() => [] as UnitRow[]),
+        // sales#89 — el catálogo VENDIBLE de servicios. Lectura OPCIONAL (ADR-0127): `services` NO
+        // está en `depends_on` a propósito, porque `depends_on` es un contrato DURO que obligaría a
+        // todo restaurante a instalar el módulo y ataría `sales` a su cascada de desactivación. Un
+        // hub sin `services` recibe `undefined` y el TPV sigue siendo exactamente el de antes.
+        this.loadServices(),
+        this.loadServiceCategories(),
       ]);
       this.taxCatalog = taxCatalog;
       for (const u of rows<UnitRow>(unitRows)) if (u.code) this.units.set(u.code, u);
-      this.products = rows<Product>(prods).filter((p) => p.is_active !== 0);
+      // sales#89: retail + servicios en la MISMA rejilla. Los servicios van detrás para que una
+      // tienda sin `services` vea exactamente el orden de siempre.
+      this.products = [...rows<Product>(prods).filter((p) => p.is_active !== 0), ...svcRows];
+      for (const s of svcRows) {
+        if (!s.category_id) continue;
+        if (!this.prodCats.has(s.id)) this.prodCats.set(s.id, new Set());
+        this.prodCats.get(s.id)!.add(s.category_id);
+      }
       this.methods = rows<PayMethod>(methods);
       this.settings = rows<PosSettings>(settingsRows)[0] || {};
       this.docFormat = this.settings.default_document_format === 'invoice' ? 'invoice' : 'ticket';
       this.payMethod = defaultPayMethod(this.payMethods);
       this.parked = parked;
-      this.categories = rows<Category>(cats).filter((c) => c.name);
+      this.categories = [...rows<Category>(cats).filter((c) => c.name), ...svcCats];
       for (const pc of rows<ProdCat>(prodCats)) {
         if (!this.prodCats.has(pc.product_id)) this.prodCats.set(pc.product_id, new Set());
         this.prodCats.get(pc.product_id)!.add(pc.category_id);
@@ -1336,10 +1386,43 @@ export class ErpPosTouch extends LitElement {
    *  pedidos: cada uno veía «aún no hay pedido» porque el anterior seguía en vuelo (ADR-0144). */
   private readonly queue = createSerialQueue();
 
+  /** El catálogo VENDIBLE de `services`, mapeado a la forma de la rejilla (sales#89).
+   *
+   *  Un servicio se cobra por la MISMA puerta que un producto —misma tarjeta, mismo carrito, mismo
+   *  cobro— para que no pueda divergir del camino fiscal. Lo único que lo distingue es
+   *  `is_service`, que hace que el handler no lo mida contra el catálogo de `inventory` ni le
+   *  descuente stock. `services` es la autoridad del precio y de la categoría fiscal. */
+  private async loadServices(): Promise<Product[]> {
+    const rowsIn = await queryOptional('services.services.list', { page_size: 500 });
+    if (rowsIn === undefined) return []; // módulo no instalado: el TPV sigue siendo el de siempre
+    return rows<ServiceRow>(rowsIn).map((s) => ({
+      id: s.id,
+      name: s.name,
+      price: Number(s.price) || 0,
+      tax_category_key: s.tax_category_key,
+      pricing_type: s.pricing_type ?? 'fixed',
+      is_service: true,
+      is_active: 1,
+    }));
+  }
+
+  /** Las categorías de servicio salen como una pestaña más: 40 servicios en un muro plano no son
+   *  usables en una peluquería con cliente delante. */
+  private async loadServiceCategories(): Promise<Category[]> {
+    const rowsIn = await queryOptional('services.categories.list', { sort: 'name', dir: 'asc' });
+    if (rowsIn === undefined) return [];
+    return rows<ServiceCat>(rowsIn).filter((c) => c.name).map((c) => ({ id: c.id, name: c.name }));
+  }
+
   /** Motivo por el que este producto NO se puede cobrar, ya traducido; `undefined` si se puede
    *  (o si no hay catálogo fiscal con el que juzgarlo: eso es un incidente de `taxes`, no del
-   *  producto, y cobrar es lo último que puede romperse). sales#74. */
+   *  producto, y cobrar es lo último que puede romperse). sales#74, ampliado en sales#89. */
   private blockedReason(p: Product): string | undefined {
+    // sales#89: «desde 65 €» es un precio de PARTIDA. Cobrarlo como si fuera el precio es
+    // equivocarse en silencio, así que se dice en la tarjeta en vez de cobrar mal.
+    if (p.is_service && !CLOSED_PRICING.has(p.pricing_type ?? 'fixed')) {
+      return t('ui.notSellableOpenPrice');
+    }
     switch (productSellability(this.taxCatalog, p.tax_category_key)) {
       case 'no_tax_category': return t('ui.notSellableNoTaxCategory');
       case 'no_tax_rule': return t('ui.notSellableNoTaxRule');
@@ -1377,6 +1460,9 @@ export class ErpPosTouch extends LitElement {
       const line: CartLine = {
         id: p.id, name: p.name, sku: p.sku, price: Number(p.price), qty: 1,
         tax_category_key: p.tax_category_key, tax_rate, cost: Number(p.cost) || 0,
+        // sales#89: viaja hasta `complete_sale`, que por él no mide la línea contra el catálogo de
+        // `inventory` ni le descuenta stock, y hasta `sale.completed`, donde `inventory` la salta.
+        ...(p.is_service ? { is_service: true } : {}),
         ...this.frozenUnitContext(p),
       };
       // Abre el pedido con la primera línea, o añádela al ya abierto. En ambos casos la fila queda

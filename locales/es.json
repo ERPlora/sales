@@ -157,6 +157,7 @@
     "noProducts": "Sin productos.",
     "notSellableNoTaxCategory": "No se puede vender: sin categoría fiscal. Falta configurar el IVA.",
     "notSellableNoTaxRule": "No se puede vender: su categoría fiscal no tiene tipo. Falta configurar el IVA.",
+    "notSellableOpenPrice": "Aún no se puede cobrar en el TPV: este servicio tiene precio abierto.",
     "sale": "Venta",
     "cartEmptyTouch": "Toca un producto para añadirlo.",
     "parkCurrentSale": "Aparcar esta cuenta",
