@@ -19,6 +19,9 @@ export interface PrintableLine {
 
 /** Documento imprimible (subconjunto de `ReceiptData`, todo opcional salvo lo mínimo). */
 export interface PrintableReceipt {
+  /** Document title, first line of the paper (pre-bill: «Cuenta»). Same job as the hardcoded
+   *  «CUENTA» of the ESC/POS renderer: telling this paper from a fiscal ticket at a glance. */
+  title?: string;
   business?: { name?: string; address?: string; tax_id?: string };
   number?: string;
   datetime?: string;
@@ -75,6 +78,7 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
   body { margin: 0; padding: 4mm; width: 80mm; background: #fff; color: #000;
          font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; }
   h1 { font-size: 14px; text-align: center; margin: 0 0 2mm; text-transform: uppercase; }
+  .doc-title { font-size: 15px; font-weight: 700; text-align: center; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 1mm; }
   .meta { text-align: center; font-size: 11px; margin-bottom: 2mm; }
   hr { border: 0; border-top: 1px dashed #000; margin: 2mm 0; }
   table { width: 100%; border-collapse: collapse; }
@@ -85,6 +89,7 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
   .foot { text-align: center; font-size: 10px; margin-top: 3mm; }
 </style></head>
 <body>
+  ${doc.title ? `<div class="doc-title">${esc(doc.title)}</div>` : ''}
   <h1>${esc(doc.business?.name || '')}</h1>
   ${doc.business?.address ? `<div class="meta">${esc(doc.business.address)}</div>` : ''}
   ${doc.business?.tax_id ? `<div class="meta">${esc(doc.business.tax_id)}</div>` : ''}
