@@ -3470,7 +3470,15 @@ var es_default = {
     courseInProgress: "Pendiente de enviar",
     qtyOffGrid: "La cantidad no encaja con el escal\xF3n del producto",
     leaveAtTable: "Dejar en la mesa",
-    sentHeader: "Enviado"
+    sentHeader: "Enviado",
+    limitBlockedTitle: "Esta venta no puede ser un tique",
+    limitBlockedBody: "Por encima de {max} la ley obliga a factura completa. Rellena los datos del cliente y cobra como siempre.",
+    limitReadyTitle: "Esta venta sale como factura completa",
+    limitReadyBody: "El cliente est\xE1 identificado, as\xED que el documento es una factura y no un tique.",
+    limitFieldName: "Nombre o raz\xF3n social",
+    limitFieldTaxId: "NIF",
+    limitFieldAddress: "Domicilio",
+    limitChargeBlocked: "Faltan los datos del cliente"
   },
   widgets: {
     "sales.today": {
@@ -3696,7 +3704,15 @@ var en_default = {
     deleteCheckConfirm: "Tap again to delete \u2014 this voids the check",
     courseInProgress: "Unsent",
     leaveAtTable: "Leave on the table",
-    sentHeader: "Sent"
+    sentHeader: "Sent",
+    limitBlockedTitle: "This sale cannot be a ticket",
+    limitBlockedBody: "Over {max} the law requires a complete invoice. Fill in the customer's details and charge as usual.",
+    limitReadyTitle: "This sale goes out as a complete invoice",
+    limitReadyBody: "The customer is identified, so the document is a full invoice instead of a ticket.",
+    limitFieldName: "Name or company name",
+    limitFieldTaxId: "Tax ID",
+    limitFieldAddress: "Address",
+    limitChargeBlocked: "Enter the customer's details"
   }
 };
 
@@ -4064,6 +4080,19 @@ function splitPayload(cart, sel) {
       gift_reason: l3.gift_reason ?? ""
     }))
   };
+}
+
+// modules/sales/ui/lib/simplified-limit.ts
+function isOverSimplifiedLimit(payableCents, maxCents) {
+  if (maxCents === null || maxCents <= 0) return false;
+  return payableCents >= maxCents;
+}
+function recipientIsComplete(recipient) {
+  return recipient.customerName.trim() !== "" && recipient.customerTaxId.trim() !== "" && recipient.customerAddress.trim() !== "";
+}
+function ticketIsBlocked(state) {
+  if (!isOverSimplifiedLimit(state.payableCents, state.maxCents)) return false;
+  return !(state.documentFormat === "invoice" && recipientIsComplete(state));
 }
 
 // modules/sales/ui/lib/current-check.ts
@@ -5225,9 +5254,9 @@ var ErpPosTouch = class extends i3 {
     this.printOnCharge = true;
     this.tableLabel = "";
     this.customerName = "";
-    /** Snapshot fiscal del cliente asignado (ADR-0132). Copia, no referencia: viaja con la venta. */
     this.customerTaxId = "";
     this.customerAddress = "";
+    this.simplifiedMaxCents = null;
     this.prodCats = /* @__PURE__ */ new Map();
     /** Registro de unidades (ADR-0147): code → fila, para congelar el contexto al añadir línea. */
     this.units = /* @__PURE__ */ new Map();
@@ -5565,6 +5594,20 @@ var ErpPosTouch = class extends i3 {
     .amt.big-change .v { font-size:1.6rem; font-weight:800; color:var(--accent); }
     .print-row { --background:transparent; --padding-start:0; --inner-padding-end:0; margin:.5rem 0 .2rem; }
     .pay-err { color:var(--ion-color-danger,#d9480f); margin:.4rem 0 0; }
+    /* hub#297 — la captura de NIF+domicilio por encima del techo de la simplificada. Va ARRIBA del
+       todo en el sheet porque es lo primero que hay que resolver, y cambia de ámbar a neutro en
+       cuanto está completa: el color deja de pedir algo cuando ya no hay nada que pedir. */
+    .limit-capture { display:flex; flex-direction:column; gap:.35rem; margin:0 0 .8rem;
+      padding:.7rem .75rem; border-radius:.7rem;
+      border:1px solid var(--ion-color-warning,#e8a33d); background:color-mix(in srgb,var(--ion-color-warning,#e8a33d) 12%,transparent); }
+    .limit-capture[data-done] { border-color:var(--ion-color-success,#2dd36f);
+      background:color-mix(in srgb,var(--ion-color-success,#2dd36f) 10%,transparent); }
+    .limit-head { display:flex; gap:.55rem; align-items:flex-start; margin-bottom:.25rem; }
+    .limit-head ion-icon { font-size:1.35rem; flex:0 0 auto; margin-top:.1rem; }
+    .limit-head strong { display:block; font-size:.98rem; }
+    .limit-head p { margin:.15rem 0 0; font-size:.86rem; color:var(--mut); }
+    .limit-capture ion-input { --background:var(--ion-background-color,#fff); --padding-start:.6rem;
+      --padding-end:.6rem; border-radius:.5rem; }
     .err { color:var(--ion-color-danger,#d9480f); }
     .pay-actions { display:flex; gap:.5rem; }
     .pay-actions .charge { flex:1; }
@@ -5831,7 +5874,8 @@ var ErpPosTouch = class extends i3 {
         unitRows,
         svcRows,
         svcCats,
-        taxCats
+        taxCats,
+        fiscalLimits
       ] = await Promise.all([
         erplora2().queryAll("inventory.products.list").catch(() => []),
         erplora2().query("sales.payment_methods").catch(() => []),
@@ -5850,9 +5894,19 @@ var ErpPosTouch = class extends i3 {
         this.loadServiceCategories(),
         // Departamentos para la venta por precio libre (ADR-0085). Best-effort: si taxes no responde,
         // el sheet queda sin departamentos y avisa (no rompe el TPV).
-        erplora2().queryAll("taxes.categories.list").catch(() => [])
+        erplora2().queryAll("taxes.categories.list").catch(() => []),
+        // hub#297 — qué techo pone el régimen fiscal de ESTE hub. Es una query del CORE
+        // (`hub.`), no de `verifactu`: así el TPV no gana una dependencia del módulo fiscal y la
+        // respuesta no desaparece el día que alguien lo desinstale.
+        //
+        // Best-effort a propósito. Si no responde (hub anterior a la query, arranque a medias) se
+        // vende exactamente como siempre: un TPV no deja de cobrar porque una lectura falle. Lo
+        // que NO queda desprotegido es el cable — §15.8 en el validador para el registro igual, y
+        // esa es la mitad que impide que el número se gaste en una factura que la AEAT rechaza.
+        erplora2().query("hub.fiscal.limits").catch(() => [])
       ]);
       this.taxCatalog = taxCatalog;
+      this.simplifiedMaxCents = rows2(fiscalLimits)[0]?.simplified_invoice_max_cents ?? null;
       for (const u5 of rows2(unitRows)) if (u5.code) this.units.set(u5.code, u5);
       this.products = [...rows2(prods).filter((p4) => p4.is_active !== 0), ...svcRows];
       for (const s5 of svcRows) {
@@ -6624,7 +6678,27 @@ var ErpPosTouch = class extends i3 {
     this.tendered = "";
     this.payMethod = defaultPayMethod(this.payMethods);
     this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
+    if (this.overSimplifiedLimit) this.docFormat = "invoice";
     this.paying = true;
+  }
+  /** ¿Este cobro pasa del techo de la simplificada? (independiente de quién sea el cliente). */
+  get overSimplifiedLimit() {
+    return isOverSimplifiedLimit(this.payable, this.simplifiedMaxCents);
+  }
+  /** Lo que el TPV le puede pedir al mostrador, reunido para no repetirlo en tres sitios. */
+  get limitState() {
+    return {
+      payableCents: this.payable,
+      maxCents: this.simplifiedMaxCents,
+      documentFormat: this.docFormat,
+      customerName: this.customerName,
+      customerTaxId: this.customerTaxId,
+      customerAddress: this.customerAddress
+    };
+  }
+  /** ¿Se puede cerrar este cobro tal y como está? Ver `lib/simplified-limit.ts`. */
+  get chargeBlocked() {
+    return ticketIsBlocked(this.limitState);
   }
   tap(k2) {
     this.tendered = pushDigit(this.tendered, k2);
@@ -6682,6 +6756,11 @@ var ErpPosTouch = class extends i3 {
    *  recibir `sale.completed` (ajuste `auto_print_on_sale`). El toggle de la pantalla de cobro
    *  refleja esa preferencia; el diálogo del navegador solo aparece como respaldo manual. */
   async confirm(_print = false) {
+    if (this.chargeBlocked) {
+      this.docFormat = "invoice";
+      this.paying = true;
+      return;
+    }
     this.busy = true;
     this.error = "";
     this.checkoutUnknown = false;
@@ -6817,6 +6896,43 @@ var ErpPosTouch = class extends i3 {
   goToSales() {
     window.history.pushState({}, "", "/m/sales/sales");
     window.dispatchEvent(new PopStateEvent("popstate"));
+  }
+  /** hub#297 — la captura de NIF + domicilio cuando la venta pasa del techo de la simplificada.
+   *
+   *  **En la MISMA pantalla del cobro**, no en un modal encima: quien la tiene que rellenar está
+   *  con el cliente delante y con el importe a la vista, y mandarlo a otra pantalla es donde estos
+   *  flujos se abandonan. Los tres campos se pintan siempre (no escondidos tras un botón) porque no
+   *  son opcionales: sin ellos esta venta no tiene documento válido que emitir.
+   *
+   *  Los campos vienen RELLENOS si hay cliente asignado (`sales.pos.assign` → ADR-0132), así que el
+   *  caso normal del cliente de empresa que ya está en la ficha es leer y cobrar. */
+  renderSimplifiedLimitCapture() {
+    const done = recipientIsComplete(this.limitState);
+    return b2`
+      <div class="limit-capture" data-testid="simplified-limit-capture" ?data-done=${done}>
+        <div class="limit-head">
+          <ion-icon name=${done ? "document-text-outline" : "alert-circle-outline"}></ion-icon>
+          <div>
+            <strong>${done ? t5("ui.limitReadyTitle") : t5("ui.limitBlockedTitle")}</strong>
+            <p>${done ? t5("ui.limitReadyBody") : t5("ui.limitBlockedBody", { max: this.money(this.simplifiedMaxCents ?? 0) })}</p>
+          </div>
+        </div>
+        <ion-input label=${t5("ui.limitFieldName")} label-placement="stacked" .value=${this.customerName}
+                   data-testid="limit-name" autocomplete="off"
+                   @ionInput=${(e7) => {
+      this.customerName = String(e7.target.value ?? "");
+    }}></ion-input>
+        <ion-input label=${t5("ui.limitFieldTaxId")} label-placement="stacked" .value=${this.customerTaxId}
+                   data-testid="limit-tax-id" autocomplete="off"
+                   @ionInput=${(e7) => {
+      this.customerTaxId = String(e7.target.value ?? "");
+    }}></ion-input>
+        <ion-input label=${t5("ui.limitFieldAddress")} label-placement="stacked" .value=${this.customerAddress}
+                   data-testid="limit-address" autocomplete="off"
+                   @ionInput=${(e7) => {
+      this.customerAddress = String(e7.target.value ?? "");
+    }}></ion-input>
+      </div>`;
   }
   /** La REJILLA del catálogo: filtra por la categoría activa (la búsqueda por texto vive en el
    *  Spotlight, no empuja la rejilla). */
@@ -7150,6 +7266,8 @@ var ErpPosTouch = class extends i3 {
               </div>
               <div class="pay">
 
+                ${this.overSimplifiedLimit ? this.renderSimplifiedLimitCapture() : A}
+
                 <!-- El MÉTODO se elige AQUÍ, como en la pantalla de tender de cualquier TPV:
                      botones grandes con icono y NOMBRE (el dueño los renombra a su gusto, así que
                      un icono mudo no basta). Solo se pinta con más de un método activo. -->
@@ -7202,9 +7320,9 @@ var ErpPosTouch = class extends i3 {
                 ${this.error ? b2`<p class="pay-err">${this.error}</p>${this.renderCheckSalesLink()}` : A}
                 <!-- UNA acción, dice lo que hace y por cuánto, y no exige scroll para alcanzarla.
                      El importe es el PAYABLE: con split decía «Cobrar 3,60 €» para cobrar 1,80 €. -->
-                <ion-button class="charge" expand="block" ?disabled=${this.busy}
+                <ion-button class="charge" expand="block" ?disabled=${this.busy || this.chargeBlocked}
                             @click=${() => this.confirm(this.printOnCharge)}>
-                  ${this.busy ? t5("ui.charging") : needsTendered(this.payMethod) ? `${t5("ui.charge")} ${this.money(this.payable)}` : t5("ui.chargeWithCard", { amount: this.money(this.payable) })}
+                  ${this.busy ? t5("ui.charging") : this.chargeBlocked ? t5("ui.limitChargeBlocked") : needsTendered(this.payMethod) ? `${t5("ui.charge")} ${this.money(this.payable)}` : t5("ui.chargeWithCard", { amount: this.money(this.payable) })}
                 </ion-button>
               </div>
             </div>
@@ -7481,6 +7599,15 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "customerName", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "customerTaxId", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "customerAddress", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "simplifiedMaxCents", 2);
 define("erp-pos-touch", ErpPosTouch);
 
 // modules/sales/ui/components/erp-pos/erp-pos.ts
