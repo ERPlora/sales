@@ -203,6 +203,14 @@
     "deleteCheckConfirm": "Tap again to delete — this voids the check",
     "courseInProgress": "Unsent",
     "leaveAtTable": "Leave on the table",
-    "sentHeader": "Sent"
+    "sentHeader": "Sent",
+    "limitBlockedTitle": "This sale cannot be a ticket",
+    "limitBlockedBody": "Over {max} the law requires a complete invoice. Fill in the customer's details and charge as usual.",
+    "limitReadyTitle": "This sale goes out as a complete invoice",
+    "limitReadyBody": "The customer is identified, so the document is a full invoice instead of a ticket.",
+    "limitFieldName": "Name or company name",
+    "limitFieldTaxId": "Tax ID",
+    "limitFieldAddress": "Address",
+    "limitChargeBlocked": "Enter the customer's details"
   }
 }

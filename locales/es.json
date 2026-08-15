@@ -203,7 +203,15 @@
     "courseInProgress": "Pendiente de enviar",
     "qtyOffGrid": "La cantidad no encaja con el escalón del producto",
     "leaveAtTable": "Dejar en la mesa",
-    "sentHeader": "Enviado"
+    "sentHeader": "Enviado",
+    "limitBlockedTitle": "Esta venta no puede ser un tique",
+    "limitBlockedBody": "Por encima de {max} la ley obliga a factura completa. Rellena los datos del cliente y cobra como siempre.",
+    "limitReadyTitle": "Esta venta sale como factura completa",
+    "limitReadyBody": "El cliente está identificado, así que el documento es una factura y no un tique.",
+    "limitFieldName": "Nombre o razón social",
+    "limitFieldTaxId": "NIF",
+    "limitFieldAddress": "Domicilio",
+    "limitChargeBlocked": "Faltan los datos del cliente"
   },
   "widgets": {
     "sales.today": {

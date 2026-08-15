@@ -16,6 +16,9 @@ import { pendingLines, nextRoundNo, isLineLocked } from '../../lib/rounds.js';
 import { buildFirePayload } from '../../lib/fire-order.js';
 import { createSerialQueue } from '../../lib/serial-queue.js';
 import { splitPayload, splitTotal } from '../../lib/split-selection.js';
+// hub#297 — el techo de la simplificada. La REGLA vive en lib (probada sin DOM); aquí solo se
+// pregunta. El techo NO está escrito en este módulo: llega como dato de `hub.fiscal.limits`.
+import { isOverSimplifiedLimit, ticketIsBlocked, recipientIsComplete } from '../../lib/simplified-limit.js';
 import { forgetCurrentCheck, rememberCurrentCheck, resolveCurrentCheck } from '../../lib/current-check.js';
 import { brandSvgFor } from '../../lib/brand-icons.js';
 import { priceLabel } from '../../lib/price-label.js';
@@ -337,6 +340,20 @@ export class ErpPosTouch extends LitElement {
     .amt.big-change .v { font-size:1.6rem; font-weight:800; color:var(--accent); }
     .print-row { --background:transparent; --padding-start:0; --inner-padding-end:0; margin:.5rem 0 .2rem; }
     .pay-err { color:var(--ion-color-danger,#d9480f); margin:.4rem 0 0; }
+    /* hub#297 — la captura de NIF+domicilio por encima del techo de la simplificada. Va ARRIBA del
+       todo en el sheet porque es lo primero que hay que resolver, y cambia de ámbar a neutro en
+       cuanto está completa: el color deja de pedir algo cuando ya no hay nada que pedir. */
+    .limit-capture { display:flex; flex-direction:column; gap:.35rem; margin:0 0 .8rem;
+      padding:.7rem .75rem; border-radius:.7rem;
+      border:1px solid var(--ion-color-warning,#e8a33d); background:color-mix(in srgb,var(--ion-color-warning,#e8a33d) 12%,transparent); }
+    .limit-capture[data-done] { border-color:var(--ion-color-success,#2dd36f);
+      background:color-mix(in srgb,var(--ion-color-success,#2dd36f) 10%,transparent); }
+    .limit-head { display:flex; gap:.55rem; align-items:flex-start; margin-bottom:.25rem; }
+    .limit-head ion-icon { font-size:1.35rem; flex:0 0 auto; margin-top:.1rem; }
+    .limit-head strong { display:block; font-size:.98rem; }
+    .limit-head p { margin:.15rem 0 0; font-size:.86rem; color:var(--mut); }
+    .limit-capture ion-input { --background:var(--ion-background-color,#fff); --padding-start:.6rem;
+      --padding-end:.6rem; border-radius:.5rem; }
     .err { color:var(--ion-color-danger,#d9480f); }
     .pay-actions { display:flex; gap:.5rem; }
     .pay-actions .charge { flex:1; }
@@ -652,9 +669,16 @@ export class ErpPosTouch extends LitElement {
   @state() private tableLabel = '';
   @state() private customerId?: string;
   @state() private customerName = '';
-  /** Snapshot fiscal del cliente asignado (ADR-0132). Copia, no referencia: viaja con la venta. */
-  private customerTaxId = '';
-  private customerAddress = '';
+  /** Snapshot fiscal del cliente asignado (ADR-0132). Copia, no referencia: viaja con la venta.
+   *  Reactivos desde hub#297: la captura del mostrador los edita a mano cuando la venta pasa del
+   *  techo de la simplificada, y el botón de cobrar se enciende con ellos. */
+  @state() private customerTaxId = '';
+  @state() private customerAddress = '';
+  /** Techo de la factura simplificada EN CÉNTIMOS, tal y como lo responde el core
+   *  (`hub.fiscal.limits`, hub#297). `null` = este país no pone techo, y entonces aquí no pasa
+   *  nada nunca. El número NO se escribe en este módulo: un TPV no sabe de derecho fiscal español,
+   *  y el día que cambie el importe cambia una fila, no este fichero. */
+  @state() private simplifiedMaxCents: number | null = null;
   /** CITA de origen y PROFESIONAL que atendió (ADR-0077). Ids OPACOS: `sales` no los interpreta,
    *  solo los reenvía a `complete_sale`. `appointment_id` dispara
    *  `sales.sale.created_from_appointment`, con el que `appointments` marca la cita convertida;
@@ -892,7 +916,7 @@ export class ErpPosTouch extends LitElement {
     window.addEventListener('erplora:locale-changed', this.onLocaleChange);
     try {
       const [prods, methods, settingsRows, savedCart, parked, cats, prodCats, taxCatalog, unitRows,
-             svcRows, svcCats, taxCats] = await Promise.all([
+             svcRows, svcCats, taxCats, fiscalLimits] = await Promise.all([
         erplora().queryAll<Product>('inventory.products.list').catch(() => []),
         erplora().query('sales.payment_methods').catch(() => []),
         erplora().query('sales.settings.get').catch(() => []),
@@ -911,8 +935,21 @@ export class ErpPosTouch extends LitElement {
         // Departamentos para la venta por precio libre (ADR-0085). Best-effort: si taxes no responde,
         // el sheet queda sin departamentos y avisa (no rompe el TPV).
         erplora().queryAll<TaxCategory>('taxes.categories.list').catch(() => [] as TaxCategory[]),
+        // hub#297 — qué techo pone el régimen fiscal de ESTE hub. Es una query del CORE
+        // (`hub.`), no de `verifactu`: así el TPV no gana una dependencia del módulo fiscal y la
+        // respuesta no desaparece el día que alguien lo desinstale.
+        //
+        // Best-effort a propósito. Si no responde (hub anterior a la query, arranque a medias) se
+        // vende exactamente como siempre: un TPV no deja de cobrar porque una lectura falle. Lo
+        // que NO queda desprotegido es el cable — §15.8 en el validador para el registro igual, y
+        // esa es la mitad que impide que el número se gaste en una factura que la AEAT rechaza.
+        erplora().query('hub.fiscal.limits').catch(() => []),
       ]);
       this.taxCatalog = taxCatalog;
+      // `?? null` y no `?? 0`: el core ya devuelve `null` cuando el país no pone techo, y un 0 que
+      // se colara aquí como importe pararía TODAS las ventas del local.
+      this.simplifiedMaxCents =
+        rows<{ simplified_invoice_max_cents?: number | null }>(fiscalLimits)[0]?.simplified_invoice_max_cents ?? null;
       for (const u of rows<UnitRow>(unitRows)) if (u.code) this.units.set(u.code, u);
       // sales#89: retail + servicios en la MISMA rejilla. Los servicios van detrás para que una
       // tienda sin `services` vea exactamente el orden de siempre.
@@ -1768,7 +1805,35 @@ export class ErpPosTouch extends LitElement {
     this.tendered = '';
     this.payMethod = defaultPayMethod(this.payMethods);
     this.docFormat = this.settings.default_document_format === 'invoice' ? 'invoice' : 'ticket';
+    // hub#297 — por encima del techo el tique NO es una opción, así que el formato se cambia solo
+    // y lo que queda en pantalla es la única pregunta que sí hay que hacerle al cliente: quién es.
+    //
+    // El cambio de formato es LA conversión: `resolve_invoice_type` solo degrada, nunca asciende,
+    // así que sin este `invoice` la venta saldría como F2 por muy completo que esté el cliente.
+    if (this.overSimplifiedLimit) this.docFormat = 'invoice';
     this.paying = true;
+  }
+
+  /** ¿Este cobro pasa del techo de la simplificada? (independiente de quién sea el cliente). */
+  private get overSimplifiedLimit(): boolean {
+    return isOverSimplifiedLimit(this.payable, this.simplifiedMaxCents);
+  }
+
+  /** Lo que el TPV le puede pedir al mostrador, reunido para no repetirlo en tres sitios. */
+  private get limitState() {
+    return {
+      payableCents: this.payable,
+      maxCents: this.simplifiedMaxCents,
+      documentFormat: this.docFormat,
+      customerName: this.customerName,
+      customerTaxId: this.customerTaxId,
+      customerAddress: this.customerAddress,
+    };
+  }
+
+  /** ¿Se puede cerrar este cobro tal y como está? Ver `lib/simplified-limit.ts`. */
+  private get chargeBlocked(): boolean {
+    return ticketIsBlocked(this.limitState);
   }
   private tap(k: string) { this.tendered = pushDigit(this.tendered, k); }
   // El pinpad teclea EUROS («20» = 20 €); el contrato de la venta es CÉNTIMOS (ADR-0007/0123),
@@ -1817,6 +1882,19 @@ export class ErpPosTouch extends LitElement {
    *  recibir `sale.completed` (ajuste `auto_print_on_sale`). El toggle de la pantalla de cobro
    *  refleja esa preferencia; el diálogo del navegador solo aparece como respaldo manual. */
   private async confirm(_print = false) {
+    // hub#297 — la ÚLTIMA puerta antes de gastar un número de la cadena. El sheet ya deshabilita el
+    // botón, pero esto no es una duplicación decorativa: a `confirm` se llega también por atajo, sin
+    // pasar por `openPay`, y una guarda que solo vive en el `?disabled` de un botón es una guarda
+    // que se salta el primer camino que no pinte ese botón.
+    //
+    // Se para ANTES de `busy = true`: no hay nada en vuelo que cancelar, solo una pregunta que
+    // hacer. Y NO es un error — el cobro no ha fallado, le falta un dato —, así que no se escribe
+    // en `this.error`: el sheet ya explica arriba por qué esto no puede salir como tique.
+    if (this.chargeBlocked) {
+      this.docFormat = 'invoice';
+      this.paying = true;
+      return;
+    }
     // El aviso de duda muere al reintentar: si este intento vuelve a fallar, se decide de nuevo con
     // la evidencia de AHORA (hub#923).
     this.busy = true; this.error = ''; this.checkoutUnknown = false;
@@ -1994,6 +2072,40 @@ export class ErpPosTouch extends LitElement {
   private goToSales() {
     window.history.pushState({}, '', '/m/sales/sales');
     window.dispatchEvent(new PopStateEvent('popstate'));
+  }
+
+  /** hub#297 — la captura de NIF + domicilio cuando la venta pasa del techo de la simplificada.
+   *
+   *  **En la MISMA pantalla del cobro**, no en un modal encima: quien la tiene que rellenar está
+   *  con el cliente delante y con el importe a la vista, y mandarlo a otra pantalla es donde estos
+   *  flujos se abandonan. Los tres campos se pintan siempre (no escondidos tras un botón) porque no
+   *  son opcionales: sin ellos esta venta no tiene documento válido que emitir.
+   *
+   *  Los campos vienen RELLENOS si hay cliente asignado (`sales.pos.assign` → ADR-0132), así que el
+   *  caso normal del cliente de empresa que ya está en la ficha es leer y cobrar. */
+  private renderSimplifiedLimitCapture() {
+    const done = recipientIsComplete(this.limitState);
+    return html`
+      <div class="limit-capture" data-testid="simplified-limit-capture" ?data-done=${done}>
+        <div class="limit-head">
+          <ion-icon name=${done ? 'document-text-outline' : 'alert-circle-outline'}></ion-icon>
+          <div>
+            <strong>${done ? t('ui.limitReadyTitle') : t('ui.limitBlockedTitle')}</strong>
+            <p>${done
+              ? t('ui.limitReadyBody')
+              : t('ui.limitBlockedBody', { max: this.money(this.simplifiedMaxCents ?? 0) })}</p>
+          </div>
+        </div>
+        <ion-input label=${t('ui.limitFieldName')} label-placement="stacked" .value=${this.customerName}
+                   data-testid="limit-name" autocomplete="off"
+                   @ionInput=${(e: CustomEvent) => { this.customerName = String((e.target as HTMLInputElement).value ?? ''); }}></ion-input>
+        <ion-input label=${t('ui.limitFieldTaxId')} label-placement="stacked" .value=${this.customerTaxId}
+                   data-testid="limit-tax-id" autocomplete="off"
+                   @ionInput=${(e: CustomEvent) => { this.customerTaxId = String((e.target as HTMLInputElement).value ?? ''); }}></ion-input>
+        <ion-input label=${t('ui.limitFieldAddress')} label-placement="stacked" .value=${this.customerAddress}
+                   data-testid="limit-address" autocomplete="off"
+                   @ionInput=${(e: CustomEvent) => { this.customerAddress = String((e.target as HTMLInputElement).value ?? ''); }}></ion-input>
+      </div>`;
   }
 
   /** La REJILLA del catálogo: filtra por la categoría activa (la búsqueda por texto vive en el
@@ -2345,6 +2457,8 @@ export class ErpPosTouch extends LitElement {
               </div>
               <div class="pay">
 
+                ${this.overSimplifiedLimit ? this.renderSimplifiedLimitCapture() : nothing}
+
                 <!-- El MÉTODO se elige AQUÍ, como en la pantalla de tender de cualquier TPV:
                      botones grandes con icono y NOMBRE (el dueño los renombra a su gusto, así que
                      un icono mudo no basta). Solo se pinta con más de un método activo. -->
@@ -2400,13 +2514,16 @@ export class ErpPosTouch extends LitElement {
                 ${this.error ? html`<p class="pay-err">${this.error}</p>${this.renderCheckSalesLink()}` : nothing}
                 <!-- UNA acción, dice lo que hace y por cuánto, y no exige scroll para alcanzarla.
                      El importe es el PAYABLE: con split decía «Cobrar 3,60 €» para cobrar 1,80 €. -->
-                <ion-button class="charge" expand="block" ?disabled=${this.busy}
+                <ion-button class="charge" expand="block" ?disabled=${this.busy || this.chargeBlocked}
                             @click=${() => this.confirm(this.printOnCharge)}>
                   ${this.busy
                     ? t('ui.charging')
-                    : needsTendered(this.payMethod)
-                      ? `${t('ui.charge')} ${this.money(this.payable)}`
-                      : t('ui.chargeWithCard', { amount: this.money(this.payable) })}
+                    : this.chargeBlocked
+                      // Dice lo que FALTA, no «no puedes». El motivo largo está arriba, en el aviso.
+                      ? t('ui.limitChargeBlocked')
+                      : needsTendered(this.payMethod)
+                        ? `${t('ui.charge')} ${this.money(this.payable)}`
+                        : t('ui.chargeWithCard', { amount: this.money(this.payable) })}
                 </ion-button>
               </div>
             </div>
