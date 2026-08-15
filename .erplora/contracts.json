@@ -3,6 +3,7 @@
   "module": "sales",
   "consumes": {
     "queries": [
+      "hub.fiscal.limits",
       "inventory.categories.list",
       "inventory.product_categories",
       "inventory.products.list",
