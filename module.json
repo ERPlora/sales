@@ -387,6 +387,12 @@
       ],
       "ai": {
         "description": "Adds a line item to an open order and recomputes its provisional total (ADR-0141). Provisional amount; the fiscal breakdown is frozen at checkout."
+      },
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "sales.order_unavailable",
+        "message": "That order is not available: it does not exist in this business or it has been deleted."
       }
     },
     "sales.order.add_open_line": {
@@ -398,6 +404,12 @@
       ],
       "ai": {
         "description": "Adds an OPEN-PRICE line (free amount, no catalogue product) to an open order and recomputes its provisional total. Same effect as sales.order.add_line but gated by sales.sell_open_price: nothing contradicts a typed amount, so the cashier needs the permission or a manager's PIN approval (ADR-0238)."
+      },
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "sales.order_unavailable",
+        "message": "That order is not available: it does not exist in this business or it has been deleted."
       }
     },
     "sales.order.update_line": {
