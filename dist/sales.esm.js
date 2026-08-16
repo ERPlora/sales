@@ -1226,13 +1226,6 @@ var o4 = s3.litElementPolyfillSupport;
 o4?.({ LitElement: i3 });
 (s3.litElementVersions ??= []).push("4.2.2");
 
-// ../../../../outfitkit/dist/define.js
-function define(tag, ctor) {
-  if (typeof customElements !== "undefined" && !customElements.get(tag)) {
-    customElements.define(tag, ctor);
-  }
-}
-
 // ../../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
 var r4 = (t7 = o5, e7, r6) => {
@@ -1293,6 +1286,13 @@ function e4(e7, r6) {
       return o9(this);
     } });
   };
+}
+
+// ../../../../outfitkit/dist/define.js
+function define(tag, ctor) {
+  if (typeof customElements !== "undefined" && !customElements.get(tag)) {
+    customElements.define(tag, ctor);
+  }
 }
 
 // ../../../../outfitkit/dist/tabbar.js
@@ -5771,6 +5771,10 @@ var ErpPosTouch = class extends i3 {
     .cat-segment-label .cc-n { font-size:.88rem; }
     .cat-segment-label .cc-c { font-size:.7rem; }
     .arrow.search-trigger { width:3rem; height:3.65rem; border-radius:var(--ok-radius,12px); color:var(--accent); }
+    /* El ⋮ crece con su vecina: quedaba en 34px al lado de una lupa de 48×58 —se leía como un
+       botón de segunda— y por debajo del área táctil que pide un dedo en el mostrador. Alto igual,
+       ancho algo menor porque el icono es estrecho y no debe robarle sitio a las categorías. */
+    .arrow.more-trigger { width:2.6rem; height:3.65rem; border-radius:var(--ok-radius,12px); }
 
     .grid { grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr)); gap:.62rem; }
     ion-card.tile { min-height:8.4rem; border-radius:var(--ok-radius,14px); cursor:pointer; }
@@ -7721,13 +7725,27 @@ define("erp-pos-touch", ErpPosTouch);
 
 // ui/components/erp-pos/erp-pos.ts
 var ErpPos = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.chrome = "";
+    this.fullscreen = false;
+  }
   static {
     this.styles = i`:host { display:block; height:100%; }`;
   }
   render() {
-    return b2`<erp-pos-touch></erp-pos-touch>`;
+    return b2`<erp-pos-touch
+      chrome=${this.chrome}
+      ?fullscreen=${this.fullscreen}
+    ></erp-pos-touch>`;
   }
 };
+__decorateClass([
+  n4()
+], ErpPos.prototype, "chrome", 2);
+__decorateClass([
+  n4({ type: Boolean })
+], ErpPos.prototype, "fullscreen", 2);
 define("erp-pos", ErpPos);
 
 // ../../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
