@@ -508,6 +508,10 @@ export class ErpPosTouch extends LitElement {
     .cat-segment-label .cc-n { font-size:.88rem; }
     .cat-segment-label .cc-c { font-size:.7rem; }
     .arrow.search-trigger { width:3rem; height:3.65rem; border-radius:var(--ok-radius,12px); color:var(--accent); }
+    /* El ⋮ crece con su vecina: quedaba en 34px al lado de una lupa de 48×58 —se leía como un
+       botón de segunda— y por debajo del área táctil que pide un dedo en el mostrador. Alto igual,
+       ancho algo menor porque el icono es estrecho y no debe robarle sitio a las categorías. */
+    .arrow.more-trigger { width:2.6rem; height:3.65rem; border-radius:var(--ok-radius,12px); }
 
     .grid { grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr)); gap:.62rem; }
     ion-card.tile { min-height:8.4rem; border-radius:var(--ok-radius,14px); cursor:pointer; }
