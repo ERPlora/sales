@@ -606,6 +606,20 @@ export class ErpPosTouch extends LitElement {
     }
   `;
 
+  /**
+   * Fotos que el navegador no ha podido cargar, por URL.
+   *
+   * Superponer la foto al marcador arregló la baldosa en blanco, pero dejaba una más pequeña: un
+   * `<img>` cuya fuente no resuelve SIGUE ocupando la baldosa y el navegador pinta encima su propio
+   * icono de imagen rota, tapando las iniciales. En una pared de 50 productos son 50 iconos de
+   * página rota, que no se lee como «falta una foto» sino como avería.
+   *
+   * Por URL y no por producto: dos productos que comparten foto fallan a la vez, y es una sola
+   * decisión. Se guarda en memoria, así que un reintento entra solo con el siguiente montaje —que
+   * es justo lo que se quiere cuando lo que faltaba era la credencial (hub#791) y ya está.
+   */
+  @state() private failedPhotos: ReadonlySet<string> = new Set();
+
   @state() private products: Product[] = [];
   @state() private categories: Category[] = [];
   @state() private taxCategories: TaxCategory[] = [];
@@ -1595,6 +1609,17 @@ export class ErpPosTouch extends LitElement {
   /** Motivo por el que este producto NO se puede cobrar, ya traducido; `undefined` si se puede
    *  (o si no hay catálogo fiscal con el que juzgarlo: eso es un incidente de `taxes`, no del
    *  producto, y cobrar es lo último que puede romperse). sales#74, ampliado en sales#89. */
+  /**
+   * Retira del render una foto que el navegador no ha podido cargar, para que asome el marcador.
+   *
+   * Es por URL y no un interruptor global: un 404 en un catálogo de 50 no puede leerse como «las
+   * fotos están apagadas», así que el resto de baldosas conserva la suya.
+   */
+  private photoFailed(url: string): void {
+    if (this.failedPhotos.has(url)) return;
+    this.failedPhotos = new Set(this.failedPhotos).add(url);
+  }
+
   private blockedReason(p: Product): string | undefined {
     // services#12: un servicio de precio NO cerrado ya no se bloquea — se PREGUNTA (ver `add`).
     // Cobrar «desde 65 €» como si fuera el precio sigue estando mal; la diferencia es que ahora
@@ -2421,7 +2446,10 @@ export class ErpPosTouch extends LitElement {
                 @click=${() => this.add(p)}>
               <div class="thumb" style=${`background:${gradient(p.name)}`}>
                 ${initials(p.name)}
-                ${p.image ? html`<img src=${p.image} alt="" loading="lazy" aria-hidden="true">` : nothing}
+                ${p.image && !this.failedPhotos.has(p.image)
+                  ? html`<img src=${p.image} alt="" loading="lazy" aria-hidden="true"
+                      @error=${() => this.photoFailed(p.image!)}>`
+                  : nothing}
                 ${blocked ? html`<span class="warn"><ion-icon name="alert-circle"></ion-icon></span>` : nothing}
               </div>
               <div class="tinfo"><div class="n">${p.name}</div><div class="sku">${p.sku || p.unit_code || ''}</div><div class="p">${this.money(Number(p.price))}</div></div>

@@ -119,4 +119,40 @@ describe('the tile always keeps something to look at', () => {
 
     expect(thumb.textContent?.trim()).toContain('C');
   });
+
+  it('a photo that fails to load takes itself off the tile', async () => {
+    // Laying the photo over the placeholder fixed the empty box, but left a smaller one: an `<img>`
+    // whose source does not resolve still occupies the tile and the browser paints its own
+    // broken-image glyph on top of the initials. On a wall of 50 tiles that is 50 torn-page icons,
+    // which reads as damage rather than as a missing photo.
+    //
+    // Measured on the live demo (hub#791): every tile answered 401 and every tile carried the glyph.
+    const el = await mount();
+    const thumb = thumbOf(el, 'Café');
+    const img = thumb.querySelector<HTMLImageElement>('img')!;
+
+    img.dispatchEvent(new Event('error'));
+    await el.updateComplete;
+
+    const after = thumbOf(el, 'Café').querySelector<HTMLImageElement>('img');
+    expect(after, 'a photo that cannot load must stop occupying the tile').toBeNull();
+    expect(
+      thumbOf(el, 'Café').textContent?.trim(),
+      'and what is left is the placeholder, not an empty box',
+    ).toContain('C');
+  });
+
+  it('one broken photo does not blank the others', async () => {
+    // The failure is per product — a single 404 in a catalogue of 50 must not be read as "photos are
+    // off". If this ever regresses to a component-wide flag, this is what catches it.
+    const el = await mount();
+    const broken = thumbOf(el, 'Café').querySelector<HTMLImageElement>('img')!;
+    broken.dispatchEvent(new Event('error'));
+    await el.updateComplete;
+
+    // `Croissant` has no photo of its own, so the standing proof is that the one that DID load is
+    // still there. Re-mounting is what a second render would do.
+    const fresh = await mount();
+    expect(thumbOf(fresh, 'Café').querySelector('img')).not.toBeNull();
+  });
 });
