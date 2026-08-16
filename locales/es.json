@@ -1,5 +1,6 @@
 {
   "name": "Ventas / TPV",
+  "description": "Terminal punto de venta: cierra y anula ventas, y consulta el histórico y las métricas.",
   "navigation": {
     "pos": {
       "label": "Vender"
