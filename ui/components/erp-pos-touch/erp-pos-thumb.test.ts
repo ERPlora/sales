@@ -22,7 +22,7 @@
 //
 // happy-dom does no layout and never fetches the image, so what is fixed here is the CONTRACT (what
 // is painted, with which classes). That the photo visually covers the initials is a browser matter.
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /** A product WITH a photo and one WITHOUT, so both branches are compared in one place. */
 const PRODUCTS = [
@@ -32,7 +32,7 @@ const PRODUCTS = [
     price: 150,
     is_active: 1,
     tax_category_key: 'product.generic',
-    image: 'https://example.test/cafe.webp',
+    image: '/api/media/raw?path=hospitality%2Fcafe.webp',
   },
   {
     id: 'p-sinfoto',
@@ -47,7 +47,14 @@ const RULES = [
   { id: 'r-21', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, is_active: 1 },
 ];
 
+const fetchMediaBlob = vi.fn(async () => new Blob(['webp'], { type: 'image/webp' }));
+let nextObjectUrl = 0;
+
 beforeEach(() => {
+  fetchMediaBlob.mockClear();
+  nextObjectUrl = 0;
+  vi.spyOn(URL, 'createObjectURL').mockImplementation(() => `blob:catalogue-${++nextObjectUrl}`);
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
   (globalThis as Record<string, unknown>).erplora = {
     query: async () => [],
     queryAll: async (name: string) => {
@@ -56,6 +63,7 @@ beforeEach(() => {
       return [];
     },
     command: async () => ({}),
+    fetchMediaBlob,
     currency: 'EUR',
     formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
     formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
@@ -104,13 +112,13 @@ describe('the tile always keeps something to look at', () => {
     const el = await mount();
     const thumb = thumbOf(el, 'Café');
 
-    const style = thumb.getAttribute('style') ?? '';
     const img = thumb.querySelector<HTMLImageElement>('img');
-    expect(
-      style.includes('https://example.test/cafe.webp')
-        || img?.getAttribute('src') === 'https://example.test/cafe.webp',
-      'the photo has to be painted one way or another',
-    ).toBe(true);
+    expect(img?.getAttribute('src')).toMatch(/^blob:catalogue-/);
+    expect(fetchMediaBlob).toHaveBeenCalledWith(
+      '/api/media/raw?path=hospitality%2Fcafe.webp',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(img?.getAttribute('src')).not.toContain('X-Hub-Session');
   });
 
   it('a product WITHOUT a photo keeps the placeholder it always had', async () => {
@@ -132,6 +140,7 @@ describe('the tile always keeps something to look at', () => {
     const img = thumb.querySelector<HTMLImageElement>('img')!;
 
     img.dispatchEvent(new Event('error'));
+    await new Promise((r) => setTimeout(r, 20));
     await el.updateComplete;
 
     const after = thumbOf(el, 'Café').querySelector<HTMLImageElement>('img');
@@ -148,6 +157,7 @@ describe('the tile always keeps something to look at', () => {
     const el = await mount();
     const broken = thumbOf(el, 'Café').querySelector<HTMLImageElement>('img')!;
     broken.dispatchEvent(new Event('error'));
+    await new Promise((r) => setTimeout(r, 20));
     await el.updateComplete;
 
     // `Croissant` has no photo of its own, so the standing proof is that the one that DID load is

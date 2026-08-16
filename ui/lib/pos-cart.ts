@@ -71,6 +71,8 @@ export interface ErploraClientLike {
    *  producto↔categoría. El viejo `page_size` NO era un parámetro del runtime: truncaba a 50. */
   queryAll<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T[]>;
   command<T = unknown>(name: string, payload?: Record<string, unknown>): Promise<T>;
+  /** Media autenticada por el shell; opcional para que un Hub anterior degrade a iniciales. */
+  fetchMediaBlob?(ref: string, opts?: { signal?: AbortSignal }): Promise<Blob | null>;
   /** Moneda del hub + formateo de dinero (ADR-0059). El POS formatea con la moneda del HUB. */
   currency: string;
   /** Importe en CÉNTIMOS (divide entre 100). El dinero es INTEGER (ADR-0007) → es ESTE el del POS. */
