@@ -165,7 +165,7 @@
     "cartEmptyTouch": "Tap a product to add it.",
     "parkCurrentSale": "Park this check",
     "closeAction": "Close",
-    "fullscreen": "Fullscreen",
+    "fullscreen": "Full screen",
     "giftBadge": "Gift",
     "giftAction": "Comp / un-comp line",
     "printPrebill": "Print bill",
@@ -211,6 +211,8 @@
     "limitFieldName": "Name or company name",
     "limitFieldTaxId": "Tax ID",
     "limitFieldAddress": "Address",
-    "limitChargeBlocked": "Enter the customer's details"
+    "limitChargeBlocked": "Enter the customer's details",
+    "screenMenu": "Screen",
+    "exitFullscreen": "Exit full screen"
   }
 }

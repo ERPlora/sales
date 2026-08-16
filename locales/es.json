@@ -212,7 +212,9 @@
     "limitFieldName": "Nombre o razón social",
     "limitFieldTaxId": "NIF",
     "limitFieldAddress": "Domicilio",
-    "limitChargeBlocked": "Faltan los datos del cliente"
+    "limitChargeBlocked": "Faltan los datos del cliente",
+    "screenMenu": "Pantalla",
+    "exitFullscreen": "Salir de pantalla completa"
   },
   "widgets": {
     "sales.today": {

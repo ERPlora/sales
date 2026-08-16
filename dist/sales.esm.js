@@ -3479,7 +3479,9 @@ var es_default = {
     limitFieldName: "Nombre o raz\xF3n social",
     limitFieldTaxId: "NIF",
     limitFieldAddress: "Domicilio",
-    limitChargeBlocked: "Faltan los datos del cliente"
+    limitChargeBlocked: "Faltan los datos del cliente",
+    screenMenu: "Pantalla",
+    exitFullscreen: "Salir de pantalla completa"
   },
   widgets: {
     "sales.today": {
@@ -3667,7 +3669,7 @@ var en_default = {
     cartEmptyTouch: "Tap a product to add it.",
     parkCurrentSale: "Park this check",
     closeAction: "Close",
-    fullscreen: "Fullscreen",
+    fullscreen: "Full screen",
     giftBadge: "Gift",
     giftAction: "Comp / un-comp line",
     printPrebill: "Print bill",
@@ -3713,7 +3715,9 @@ var en_default = {
     limitFieldName: "Name or company name",
     limitFieldTaxId: "Tax ID",
     limitFieldAddress: "Address",
-    limitChargeBlocked: "Enter the customer's details"
+    limitChargeBlocked: "Enter the customer's details",
+    screenMenu: "Screen",
+    exitFullscreen: "Exit full screen"
   }
 };
 
@@ -5220,6 +5224,9 @@ var ErpPosTouch = class extends i3 {
   constructor() {
     super(...arguments);
     this.failedPhotos = /* @__PURE__ */ new Set();
+    this.chrome = "";
+    this.fullscreen = false;
+    this.moreOpen = false;
     this.products = [];
     this.categories = [];
     this.taxCategories = [];
@@ -5465,7 +5472,20 @@ var ErpPosTouch = class extends i3 {
 
     /* ── Catálogo ── */
     .catalog { display:flex; flex-direction:column; min-width:0; padding:.8rem; }
-    .catbar { display:flex; align-items:center; gap:.4rem; margin-bottom:.7rem; }
+    .catbar { position:relative; display:flex; align-items:center; gap:.4rem; margin-bottom:.7rem; }
+
+    /* Menú ⋮ de PANTALLA (no de venta): anclado bajo su botón, como cualquier kebab. La capa de
+       cierre va fija sobre todo el viewport para que un toque fuera lo cierre venga de donde venga. */
+    .more-scrim { position:fixed; inset:0; z-index:30; background:transparent; }
+    dialog.more-menu { position:absolute; top:calc(100% + .35rem); right:0; left:auto; z-index:31;
+      display:flex; flex-direction:column; gap:.15rem; margin:0; padding:.3rem;
+      min-width:13rem; border:1px solid var(--ion-border-color); border-radius:var(--ok-radius,12px);
+      background:var(--panel); color:var(--tx); box-shadow:var(--ok-shadow-modal, 0 18px 50px rgba(0,0,0,.35)); }
+    dialog.more-menu button { display:flex; align-items:center; gap:.6rem; width:100%;
+      padding:.7rem .7rem; font-size:.92rem; text-align:left; color:inherit; cursor:pointer;
+      background:none; border:none; border-radius:var(--ok-radius-sm,10px); }
+    dialog.more-menu button:hover { background:var(--tile-hi); }
+    dialog.more-menu ion-icon { font-size:1.15rem; color:var(--mut); }
     .arrow { flex:none; width:2.1rem; height:2.1rem; border-radius:var(--ok-radius-sm,10px); border:1px solid var(--ion-border-color);
       background:var(--tile); color:var(--mut); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
     .arrow:hover { background:var(--tile-hi); color:var(--tx); }
@@ -6985,7 +7005,68 @@ var ErpPosTouch = class extends i3 {
           @click=${() => this.renderRoot.querySelector("ok-spotlight-search")?.openSearch?.()}>
           <ion-icon name="search-outline"></ion-icon>
         </button>
+        ${this.renderMoreMenu()}
       </div>`;
+  }
+  /** Controles de chrome que el shell dice honrar en esta pestaña (`chrome="fullscreen …"`). */
+  get chromeControls() {
+    return this.chrome.split(/\s+/).filter(Boolean);
+  }
+  /**
+   * Menú ⋮ de la barra de categorías: lo que afecta a la PANTALLA, no a la venta.
+   *
+   * Va aquí y no en la barra del carrito porque en un móvil el carrito se cierra —y con él se
+   * llevaría su cabecera—, mientras que la barra de categorías está en todos los tamaños. Es
+   * también el único sitio que sigue en pie DENTRO del modo: la topbar del shell, que es donde
+   * ADR-0048 puso este botón, se esconde ella misma al activarlo y se lleva la salida consigo.
+   *
+   * Hoy lleva un solo control; nace como menú a propósito, porque es la lista la que va a crecer.
+   */
+  renderMoreMenu() {
+    if (!this.chromeControls.length) return A;
+    return b2`
+      <button class="arrow more-trigger" title=${t5("ui.screenMenu")} aria-label=${t5("ui.screenMenu")}
+        aria-haspopup="menu" aria-expanded=${this.moreOpen}
+        @click=${() => {
+      this.moreOpen = !this.moreOpen;
+    }}>
+        <ion-icon name="ellipsis-vertical-outline"></ion-icon>
+      </button>
+      ${this.moreOpen ? b2`
+          <!-- Capa de cierre: un menú que solo se cierra por su propio botón se queda abierto en
+               cuanto el cajero toca cualquier otra cosa. Transparente y sin scrim visible: es un
+               menú, no un diálogo que exija atención. -->
+          <div class="more-scrim" @click=${() => {
+      this.moreOpen = false;
+    }}></div>
+          <!-- <dialog> nativo como el resto de overlays del TPV: los de Ionic dentro de un shadow
+               Lit se re-parentan al body y pierden el CSS (ADR-0028). NO modal a propósito —es un
+               menú anclado al ⋮, no un diálogo—, así que la salida con Esc se cablea a mano. -->
+          <dialog class="more-menu" open role="menu"
+            @keydown=${(e7) => {
+      if (e7.key === "Escape") this.moreOpen = false;
+    }}>
+            ${this.chromeControls.includes("fullscreen") ? b2`
+                <button type="button" role="menuitem" data-action="fullscreen"
+                  @click=${() => this.requestChrome("fullscreen")}>
+                  <ion-icon name=${this.fullscreen ? "contract-outline" : "expand-outline"}></ion-icon>
+                  <span>${this.fullscreen ? t5("ui.exitFullscreen") : t5("ui.fullscreen")}</span>
+                </button>` : A}
+          </dialog>` : A}`;
+  }
+  /**
+   * Pide al SHELL un control de chrome (ADR-0048: el módulo es contenido, el chrome es del shell).
+   * `composed` para salir del shadow root y `bubbles` para llegar al host del módulo; sin las dos
+   * la petición muere dentro del componente. Quien no la escuche, no la atiende —y por eso el ⋮ no
+   * se pinta si el shell no anunció el control.
+   */
+  requestChrome(control) {
+    this.moreOpen = false;
+    this.dispatchEvent(new CustomEvent("erp:chrome-request", {
+      detail: { control, action: "toggle" },
+      bubbles: true,
+      composed: true
+    }));
   }
   renderCart() {
     return b2`
@@ -7504,6 +7585,15 @@ var ErpPosTouch = class extends i3 {
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "failedPhotos", 2);
+__decorateClass([
+  n4()
+], ErpPosTouch.prototype, "chrome", 2);
+__decorateClass([
+  n4({ type: Boolean })
+], ErpPosTouch.prototype, "fullscreen", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "moreOpen", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "products", 2);
