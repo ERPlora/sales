@@ -264,8 +264,10 @@ export class ErpPosTouch extends LitElement {
     ion-card.tile[disabled]:hover { border-color:var(--ion-border-color); }
     .thumb { height:5.6rem; background-size:cover; background-position:center; display:flex; align-items:center; justify-content:center;
       font-weight:800; font-size:1.4rem; color:rgba(255,255,255,.85); position:relative; }
-    .thumb img { width:100%; height:100%; object-fit:cover; }
-    .thumb .warn { position:absolute; top:.28rem; right:.28rem; display:flex; align-items:center; justify-content:center;
+    /* La foto TAPA el marcador en vez de sustituirlo: va absoluta sobre el degradado y las
+       iniciales, que quedan debajo. Si no carga, no ocupa y asoma lo de abajo. */
+    .thumb img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+    .thumb .warn { z-index:1; position:absolute; top:.28rem; right:.28rem; display:flex; align-items:center; justify-content:center;
       width:1.5rem; height:1.5rem; border-radius:50%; background:var(--ion-color-warning,#ffc409);
       color:var(--ion-color-warning-contrast,#000); font-size:1.05rem; }
     .tinfo { padding:.5rem .6rem .65rem; }
@@ -2409,11 +2411,17 @@ export class ErpPosTouch extends LitElement {
               // nunca se entera de que tiene el catálogo a medio configurar. El motivo viaja en
               // `title`/`aria-label` y con una marca visible — no solo por color.
               const blocked = this.blockedReason(p);
+              // El degradado y las iniciales son el SUELO de la baldosa, no la alternativa a la
+              // foto: se pintan siempre y la foto se superpone. Si la foto no llega —URL caduca,
+              // 404, esquema que nadie resuelve, wifi caído al abrir— lo que asoma es el marcador,
+              // no un hueco vacío. Antes eran el `else` de `image`, así que un producto CON foto
+              // que no cargaba se quedaba sin foto Y sin iniciales: una baldosa en blanco.
               return html`<ion-card button class="tile" ?disabled=${!!blocked}
                 title=${blocked ?? nothing} aria-label=${blocked ? `${p.name} · ${blocked}` : nothing}
                 @click=${() => this.add(p)}>
-              <div class="thumb" style=${p.image ? `background-image:url(${p.image})` : `background:${gradient(p.name)}`}>
-                ${p.image ? nothing : initials(p.name)}
+              <div class="thumb" style=${`background:${gradient(p.name)}`}>
+                ${initials(p.name)}
+                ${p.image ? html`<img src=${p.image} alt="" loading="lazy" aria-hidden="true">` : nothing}
                 ${blocked ? html`<span class="warn"><ion-icon name="alert-circle"></ion-icon></span>` : nothing}
               </div>
               <div class="tinfo"><div class="n">${p.name}</div><div class="sku">${p.sku || p.unit_code || ''}</div><div class="p">${this.money(Number(p.price))}</div></div>
