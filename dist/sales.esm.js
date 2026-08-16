@@ -3267,6 +3267,7 @@ define("ok-invoice", OkInvoice);
 // modules/sales/locales/es.json
 var es_default = {
   name: "Ventas / TPV",
+  description: "Terminal punto de venta: cierra y anula ventas, y consulta el hist\xF3rico y las m\xE9tricas.",
   navigation: {
     pos: {
       label: "Vender"
@@ -5518,8 +5519,10 @@ var ErpPosTouch = class extends i3 {
     ion-card.tile[disabled]:hover { border-color:var(--ion-border-color); }
     .thumb { height:5.6rem; background-size:cover; background-position:center; display:flex; align-items:center; justify-content:center;
       font-weight:800; font-size:1.4rem; color:rgba(255,255,255,.85); position:relative; }
-    .thumb img { width:100%; height:100%; object-fit:cover; }
-    .thumb .warn { position:absolute; top:.28rem; right:.28rem; display:flex; align-items:center; justify-content:center;
+    /* La foto TAPA el marcador en vez de sustituirlo: va absoluta sobre el degradado y las
+       iniciales, que quedan debajo. Si no carga, no ocupa y asoma lo de abajo. */
+    .thumb img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+    .thumb .warn { z-index:1; position:absolute; top:.28rem; right:.28rem; display:flex; align-items:center; justify-content:center;
       width:1.5rem; height:1.5rem; border-radius:50%; background:var(--ion-color-warning,#ffc409);
       color:var(--ion-color-warning-contrast,#000); font-size:1.05rem; }
     .tinfo { padding:.5rem .6rem .65rem; }
@@ -7216,8 +7219,9 @@ var ErpPosTouch = class extends i3 {
       return b2`<ion-card button class="tile" ?disabled=${!!blocked}
                 title=${blocked ?? A} aria-label=${blocked ? `${p4.name} \xB7 ${blocked}` : A}
                 @click=${() => this.add(p4)}>
-              <div class="thumb" style=${p4.image ? `background-image:url(${p4.image})` : `background:${gradient(p4.name)}`}>
-                ${p4.image ? A : initials(p4.name)}
+              <div class="thumb" style=${`background:${gradient(p4.name)}`}>
+                ${initials(p4.name)}
+                ${p4.image ? b2`<img src=${p4.image} alt="" loading="lazy" aria-hidden="true">` : A}
                 ${blocked ? b2`<span class="warn"><ion-icon name="alert-circle"></ion-icon></span>` : A}
               </div>
               <div class="tinfo"><div class="n">${p4.name}</div><div class="sku">${p4.sku || p4.unit_code || ""}</div><div class="p">${this.money(Number(p4.price))}</div></div>
