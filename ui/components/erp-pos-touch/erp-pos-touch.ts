@@ -1630,6 +1630,8 @@ export class ErpPosTouch extends LitElement {
       id: s.id,
       name: s.name,
       price: Number(s.price) || 0,
+      // sales#99: without this the service never enters `prodCats` and its tab counts 0.
+      category_id: s.category_id,
       tax_category_key: s.tax_category_key,
       pricing_type: s.pricing_type ?? 'fixed',
       is_service: true,
@@ -2188,7 +2190,7 @@ export class ErpPosTouch extends LitElement {
     const cell = (id: string, name: string, count: number) => html`
       <ion-segment-button class="cat-segment-button" value=${id}>
         <ion-label class="cat-segment-label">
-          <span class="cc-n">${name}</span><span class="cc-c">${count} ${t('ui.products')}</span>
+          <span class="cc-n">${name}</span><span class="cc-c">${count} ${t('ui.items')}</span>
         </ion-label>
       </ion-segment-button>`;
     return html`
