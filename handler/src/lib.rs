@@ -803,6 +803,11 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
             format!("amount_tendered {tendered} is below the total {total}"),
         ));
     }
+    // «No indicado» (0/ausente) = importe EXACTO: se persiste el total, que es lo que el tique y el
+    // arqueo tienen que decir que se pagó — no un 0 que parece «sin cobrar». El TPV solo manda lo
+    // que la cajera TECLEA (sales#24): su total en pantalla es un preview y no puede decidir el
+    // entregado exacto (IVA excluido, cantidades a peso y descuentos redondean en el servidor).
+    let tendered = if tendered == 0 { total } else { tendered };
     let change = if tendered - total > 0 { tendered - total } else { 0 };
 
     // EL DESGLOSE SE CIERRA AQUÍ: la cuota se calcula UNA sola vez por TIPO IMPOSITIVO, sobre la
@@ -2657,6 +2662,13 @@ mod tests {
         assert_eq!(over.operations[1].params["change_due"], json!(500));
         let unstated = sale(input(items(), 3, 0));
         assert_eq!(unstated.operations[1].params["change_due"], json!(0));
+        // «No indicado» = importe exacto: la cabecera y el tique dicen lo que se pagó (el total), no 0.
+        assert_eq!(unstated.operations[1].params["amount_tendered"], json!(500));
+        let mut omitted = input(items(), 3, 0);
+        omitted["payload"].as_object_mut().unwrap().remove("amount_tendered");
+        let out = sale(omitted);
+        assert_eq!(out.operations[1].params["amount_tendered"], json!(500));
+        assert_eq!(out.operations[1].params["change_due"], json!(0));
     }
 
     #[test]

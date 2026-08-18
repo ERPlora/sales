@@ -1146,6 +1146,21 @@ describe('sheet de cobro (tender): método dentro, tarjeta sin numpad, atajos de
     expect(cta().hasAttribute('disabled'), '12,00 € sí cubre').toBe(false);
   });
 
+  it('sales#24: en efectivo sin teclear nada NO viaja amount_tendered (exacto lo decide el servidor); tecleado, sí', async () => {
+    const el = await conCobroAbierto();
+    const pos = el as unknown as { tap(k: string): void; confirm(): Promise<void>; updateComplete: Promise<unknown> };
+    await pos.confirm();
+    let venta = comandos.filter((c) => c.name === 'sales.complete_sale').pop()!;
+    expect(venta.payload.amount_tendered).toBeUndefined();
+
+    const el2 = await conCobroAbierto();
+    const pos2 = el2 as unknown as { tap(k: string): void; confirm(): Promise<void>; updateComplete: Promise<unknown> };
+    pos2.tap('5'); await pos2.updateComplete;
+    await pos2.confirm();
+    venta = comandos.filter((c) => c.name === 'sales.complete_sale').pop()!;
+    expect(venta.payload.amount_tendered, 'lo tecleado viaja en céntimos').toBe(500);
+  });
+
   it('tarjeta: sin numpad ni entregado — importe exacto, pista del datáfono y CTA propio', async () => {
     const el = await conCobroAbierto();
 
@@ -1167,7 +1182,10 @@ describe('sheet de cobro (tender): método dentro, tarjeta sin numpad, atajos de
     await (el as unknown as { confirm(): Promise<void> }).confirm();
     const venta = comandos.find((c) => c.name === 'sales.complete_sale')!;
     expect(venta.payload.payment_method_id).toBe('pm-card');
-    expect(venta.payload.amount_tendered, 'tarjeta = importe exacto (el payable), sin inventar entregado').toBe(180);
+    // sales#24 (2.ª vuelta): tarjeta = importe EXACTO → NO se manda entregado; el servidor persiste
+    // su total. Mandar el `payable` de pantalla era un preview que podía quedar por debajo del total
+    // del servidor (IVA excluido, cantidades a peso, descuentos) y hacer saltar `insufficient_tendered`.
+    expect(venta.payload.amount_tendered, 'tarjeta = importe exacto: no se inventa entregado').toBeUndefined();
   });
 
   it('con split activo, el CTA y amount_tendered usan el PAYABLE, no el total', async () => {
@@ -1191,7 +1209,7 @@ describe('sheet de cobro (tender): método dentro, tarjeta sin numpad, atajos de
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
     await (el as unknown as { confirm(): Promise<void> }).confirm();
     const venta = comandos.find((c) => c.name === 'sales.complete_sale')!;
-    expect(venta.payload.amount_tendered, 'split + tarjeta: se cobra el payable').toBe(180);
+    expect(venta.payload.amount_tendered, 'split + tarjeta: importe exacto, sin entregado').toBeUndefined();
   });
 });
 

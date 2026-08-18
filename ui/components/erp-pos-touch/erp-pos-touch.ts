@@ -2026,7 +2026,10 @@ export class ErpPosTouch extends LitElement {
         payment_method_name: this.payMethod?.name ?? '',
         // Sin entregado tecleado (tarjeta, importe justo) se cobra el PAYABLE: con split, caer al
         // total inflaba lo entregado y el cambio del tiquet.
-        amount_tendered: this.tenderedNum || this.payable,
+        // sales#24: viaja SOLO lo que la cajera TECLEA. Sin nada tecleado (o con tarjeta) es importe
+        // exacto y lo decide el servidor: el `payable` de pantalla es un preview que puede quedar por
+        // debajo del total real (IVA excluido, a peso, descuentos) y haría saltar `insufficient_tendered`.
+        ...(needsTendered(this.payMethod) && this.tenderedNum > 0 ? { amount_tendered: this.tenderedNum } : {}),
         channel: 'pos',
         source_module: 'pos',
         // ADR-0141: la venta nace de este PEDIDO. El servidor lo marca completado (open→completed)
