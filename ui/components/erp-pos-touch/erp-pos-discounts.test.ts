@@ -56,7 +56,9 @@ interface Pos {
   queue<T>(t: () => Promise<T>): Promise<T>;
   openDiscount(target: 'line' | 'ticket', lineId?: string): void;
   applyDiscount(pct: number): Promise<void>;
+  applyDiscountAmount(cents: number): Promise<void>;
   ticketDiscount: number;
+  ticketDiscountAmount: number;
   openPay(): void;
   confirm(): Promise<void>;
 }
@@ -127,6 +129,30 @@ describe('with discounts allowed', () => {
     await el.confirm();
     const sale = commands.find((c) => c.name === 'sales.complete_sale')!;
     expect(sale.payload.discount_percent).toBe(5);
+  });
+
+  // sales#113 — «5 € menos» / «te lo dejo en 20 €»: importe FIJO al ticket. El servidor lo reparte
+  // por resto mayor (ADR-0210); aquí solo se recoge, se persiste en la cuenta y se resta del preview.
+  it('a fixed amount off the ticket is persisted, previewed and charged as discount_amount (cents)', async () => {
+    const el = await mount();
+    await addTile(el, 'Café');
+    await addTile(el, 'Tarta');
+    el.openDiscount('ticket');
+    await el.updateComplete;
+    expect(el.shadowRoot.querySelector('.discount-mode'), 'the sheet offers % and €').toBeTruthy();
+    await el.applyDiscountAmount(100);
+    await el.updateComplete;
+    expect(el.ticketDiscountAmount).toBe(100);
+    expect(commands.find((c) => c.name === 'sales.order.set_discount')?.payload).toMatchObject({ order_id: 'ord-1', discount_amount: 100 });
+    // 1,80 + 5,00 − 1,00 = 5,80
+    expect(el.shadowRoot.querySelector('.cart-foot .total b')?.textContent).toContain('5.80');
+    expect(el.shadowRoot.querySelector('.ticket-discount-row')?.textContent).toContain('1.00');
+
+    el.openPay();
+    await el.updateComplete;
+    await el.confirm();
+    const sale = commands.find((c) => c.name === 'sales.complete_sale')!;
+    expect(sale.payload.discount_amount).toBe(100);
   });
 
   it('applying 0 removes the discount', async () => {

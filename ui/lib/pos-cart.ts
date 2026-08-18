@@ -142,6 +142,8 @@ export interface OpenCheck {
   label?: string;
   /** sales#71: descuento de TICKET (%) que la cuenta lleva puesto; vuelve al retomarla. */
   discount?: number;
+  /** sales#113: importe FIJO (céntimos) de descuento del ticket; vuelve al retomarla. */
+  discount_amount?: number;
 }
 
 /**
@@ -165,6 +167,7 @@ export async function listOpenChecks(client: ErploraClientLike, excluir?: string
         created_at: String(o.created_at ?? ''),
         label: o.label ? String(o.label) : undefined,
         discount: Number(o.discount_percent) > 0 ? Number(o.discount_percent) : undefined,
+        discount_amount: Number(o.discount_amount) > 0 ? Number(o.discount_amount) : undefined,
       }))
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
   } catch {

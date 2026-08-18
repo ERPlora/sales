@@ -379,6 +379,7 @@ export class ErpPosTouch extends LitElement {
     .foot-actions { display:flex; gap:.5rem; }
     .foot-actions .ticket-discount { flex:none; width:56px; }
     .ticket-discount-row { display:flex; justify-content:space-between; font-size:.9rem; color:var(--ion-color-warning-shade, #b7791f); margin:.1rem 0; }
+    .discount-mode { margin:0 0 .4rem; max-width:12rem; }
     .discount-foot { display:flex; gap:.5rem; align-items:center; }
     .discount-foot .charge { flex:1; }
     .line-discount-badge { vertical-align:middle; }
@@ -680,6 +681,10 @@ export class ErpPosTouch extends LitElement {
   /** El sheet de descuento: sobre una LÍNEA o sobre el TICKET. */
   @state() private discountSheet?: { target: 'line' | 'ticket'; lineId?: string };
   @state() private discountInput = '';
+  /** sales#113 — importe FIJO al ticket (céntimos); el servidor lo reparte por resto mayor. */
+  @state() ticketDiscountAmount = 0;
+  /** Modo del sheet de descuento del TICKET: porcentaje o importe. */
+  @state() private discountMode: 'percent' | 'amount' = 'percent';
   @state() private openAmount = '';
   @state() private openDept = '';
   @state() private payMethod?: PayMethod;
@@ -1216,9 +1221,9 @@ export class ErpPosTouch extends LitElement {
   }
 
   /** Total PREVIEW con los descuentos (sales#71); la autoridad sigue siendo el servidor. */
-  private get total() { return cartTotal(this.cart, this.ticketDiscount); }
-  /** Lo que el descuento de ticket quita, para pintarlo (bruto sin él − total con él). */
-  private get ticketDiscountAmount() { return cartTotal(this.cart, 0) - this.total; }
+  private get total() { return Math.max(0, cartTotal(this.cart, this.ticketDiscount) - this.ticketDiscountAmount); }
+  /** Lo que el descuento de ticket quita (porcentaje + importe), para pintarlo. */
+  private get ticketDiscountTotal() { return cartTotal(this.cart, 0) - this.total; }
   private get discountsAllowed(): boolean { return this.settings.allow_discounts !== 0; }
   private get itemCount() { return this.cart.reduce((s, l) => s + l.qty, 0); }
   private get parkingEnabled() { return this.settings.enable_parked_tickets !== 0; }
@@ -1433,6 +1438,7 @@ export class ErpPosTouch extends LitElement {
       this.orderId = c.id;
       this.orderLabel = c.label ?? '';
       this.ticketDiscount = c.discount ?? 0; // sales#71
+      this.ticketDiscountAmount = c.discount_amount ?? 0; // sales#113
       rememberCurrentCheck(localStorage, c.id);
       this.cart = await loadOrderLines(erplora(), c.id);
       this.notifyOrderRestored();
@@ -1472,6 +1478,7 @@ export class ErpPosTouch extends LitElement {
       this.orderId = id;
       this.orderLabel = cuentas.find((c) => c.id === id)?.label ?? '';
       this.ticketDiscount = cuentas.find((c) => c.id === id)?.discount ?? 0; // sales#71
+      this.ticketDiscountAmount = cuentas.find((c) => c.id === id)?.discount_amount ?? 0; // sales#113
       // El pedido vuelve, pero su MESA y su CLIENTE los saben sus dueños, no `sales`. Se les avisa
       // para que restauren lo suyo (y el de mesas nos devuelva el contexto por `erp:order-context`).
       // Sin esto, al recargar el TPV la comanda aparecía "sin mesa" aunque la mesa siguiera ocupada.
@@ -1943,22 +1950,43 @@ export class ErpPosTouch extends LitElement {
   protected override willUpdate(changed: Map<PropertyKey, unknown>): void {
     // sales#71: el descuento de ticket pertenece a la CUENTA. Al soltarla (cobrada, aparcada,
     // eliminada, mesa cambiada) no puede arrastrarse a la siguiente.
-    if (changed.has('orderId') && !this.orderId) this.ticketDiscount = 0;
+    if (changed.has('orderId') && !this.orderId) { this.ticketDiscount = 0; this.ticketDiscountAmount = 0; }
   }
   private tap(k: string) { this.tendered = pushDigit(this.tendered, k); }
 
   // ── sales#71 · descuentos manuales ─────────────────────────────────────────────────────────
   openDiscount(target: 'line' | 'ticket', lineId?: string): void {
+    // sales#113: si la cuenta ya lleva importe fijo, el sheet abre en € con él; si no, en %.
+    this.discountMode = target === 'ticket' && this.ticketDiscountAmount > 0 && this.ticketDiscount === 0 ? 'amount' : 'percent';
     const current = target === 'ticket'
-      ? this.ticketDiscount
+      ? (this.discountMode === 'amount' ? Number(centsToEuros(this.ticketDiscountAmount)) : this.ticketDiscount)
       : (this.cart.find((l) => l.line_id === lineId)?.discount ?? 0);
     this.discountInput = current > 0 ? String(current) : '';
     this.discountSheet = { target, lineId };
   }
+  private setDiscountMode(mode: 'percent' | 'amount'): void {
+    if (mode === this.discountMode) return;
+    this.discountMode = mode;
+    this.discountInput = '';
+  }
   private tapDiscount(k: string) {
-    // Un %: entero o con decimales, nunca por encima de 100 (el servidor también lo rechaza).
     const next = pushDigit(this.discountInput, k);
-    if (Number(next || '0') <= 100) this.discountInput = next;
+    // Un %: nunca por encima de 100 (el servidor también lo rechaza). Un importe: teclea EUROS.
+    if (this.discountMode === 'amount' || Number(next || '0') <= 100) this.discountInput = next;
+  }
+  /** Importe tecleado en céntimos (modo €). */
+  private get discountInputCents(): number { return Math.max(0, eurosToCents(this.discountInput || '0')); }
+  /** sales#113 — aplica un importe FIJO (céntimos; 0 = quitar) al ticket, persistiéndolo en el pedido. */
+  async applyDiscountAmount(cents: number): Promise<void> {
+    const sheet = this.discountSheet;
+    this.discountSheet = undefined;
+    if (!sheet || sheet.target !== 'ticket') return;
+    const value = Math.max(0, Math.round(cents));
+    this.ticketDiscountAmount = value;
+    if (this.orderId) {
+      try { await erplora().command('sales.order.set_discount', { order_id: this.orderId, discount_percent: this.ticketDiscount, discount_amount: value }); }
+      catch (e) { this.error = e instanceof Error ? e.message : String(e); }
+    }
   }
   private get discountInputPct(): number { return Math.min(100, Math.max(0, Number(this.discountInput || '0'))); }
   /** Aplica el % tecleado (0 = quitar) a la línea o al ticket, persistiéndolo en el pedido. */
@@ -1970,7 +1998,7 @@ export class ErpPosTouch extends LitElement {
     if (sheet.target === 'ticket') {
       this.ticketDiscount = value;
       if (this.orderId) {
-        try { await erplora().command('sales.order.set_discount', { order_id: this.orderId, discount_percent: value }); }
+        try { await erplora().command('sales.order.set_discount', { order_id: this.orderId, discount_percent: value, discount_amount: this.ticketDiscountAmount }); }
         catch (e) { this.error = e instanceof Error ? e.message : String(e); }
       }
       return;
@@ -1994,7 +2022,12 @@ export class ErpPosTouch extends LitElement {
     return needsTendered(this.payMethod) && this.tenderedNum > 0 && this.tenderedNum < this.payable;
   }
   /** Lo que se cobra AHORA: la selección si la hay, o la cuenta entera (ADR-0146). */
-  private get payable() { return splitTotal(this.cart, this.splitSel, this.ticketDiscount); }
+  private get payable() {
+    // sales#113: el importe fijo se resta del cobro entero (con split, el servidor lo reparte
+    // igualmente sobre las líneas que se cobran; el preview resta lo que corresponda a lo cobrado).
+    const base = splitTotal(this.cart, this.splitSel, this.ticketDiscount);
+    return Math.max(0, base - (this.splitSel.size ? 0 : this.ticketDiscountAmount));
+  }
 
   // ── Precio libre / venta por DEPARTAMENTO (fuera de catálogo) ──────────────────────────────
   /** Abre la pregunta del importe. Sin argumentos es la tecla suelta «Precio libre» (en blanco);
@@ -2077,6 +2110,9 @@ export class ErpPosTouch extends LitElement {
         items,
         // sales#71: descuento de TICKET (%); el servidor lo prorratea por línea antes del IVA.
         discount_percent: this.ticketDiscount,
+        // sales#113: importe FIJO (céntimos), repartido por resto mayor en el servidor (ADR-0210).
+        // Con split (cobro parcial) no se manda: se aplica al cerrar la cuenta entera.
+        ...(this.ticketDiscountAmount > 0 && !split.line_ids ? { discount_amount: this.ticketDiscountAmount } : {}),
         // sales#20: el servidor no cierra una venta sin clave, y con la misma clave dos veces
         // registra UNA. Es lo que hace seguro reintentar cuando el wifi del local parpadea.
         idempotency_key: checkoutKey,
@@ -2475,8 +2511,8 @@ export class ErpPosTouch extends LitElement {
       <!-- El PIE. ion-footer es un pie de verdad: se queda abajo pase lo que pase. -->
       <ion-footer class="ion-no-border">
         <div class="cart-foot">
-          ${this.ticketDiscount > 0 ? html`
-          <div class="ticket-discount-row"><span>${t('ui.discountTicket')} −${this.ticketDiscount}%</span><span>−${this.money(this.ticketDiscountAmount)}</span></div>` : nothing}
+          ${this.ticketDiscount > 0 || this.ticketDiscountAmount > 0 ? html`
+          <div class="ticket-discount-row"><span>${t('ui.discountTicket')}${this.ticketDiscount > 0 ? ` −${this.ticketDiscount}%` : ''}</span><span>−${this.money(this.ticketDiscountTotal)}</span></div>` : nothing}
           <div class="total"><span>${t('ui.colTotal')}</span><b>${this.money(this.total)}</b></div>
           <!-- Forma de pago ANTES de cobrar (decisión de Ioan): se elige aquí, con la comanda
                delante, y el modal de cobro queda limpio. Solo-icono porque son 3-4 opciones fijas
@@ -2512,10 +2548,10 @@ export class ErpPosTouch extends LitElement {
           <div class="foot-actions">
             ${this.discountsAllowed ? html`
             <ion-button class="ticket-discount" fill="outline" ?disabled=${!this.cart.length}
-                        color=${this.ticketDiscount > 0 ? 'warning' : undefined}
+                        color=${this.ticketDiscount > 0 || this.ticketDiscountAmount > 0 ? 'warning' : undefined}
                         title=${t('ui.discountTicket')} aria-label=${t('ui.discountTicket')}
                         @click=${() => this.openDiscount('ticket')}>
-              <ion-icon slot="icon-only" name=${this.ticketDiscount > 0 ? 'pricetag' : 'pricetag-outline'}></ion-icon>
+              <ion-icon slot="icon-only" name=${this.ticketDiscount > 0 || this.ticketDiscountAmount > 0 ? 'pricetag' : 'pricetag-outline'}></ion-icon>
             </ion-button>` : nothing}
             <ion-button class="prebill" fill="outline" ?disabled=${!this.cart.length}
                         title=${t('ui.printPrebill')} aria-label=${t('ui.printPrebill')}
@@ -2838,17 +2874,32 @@ export class ErpPosTouch extends LitElement {
                   : t('ui.discountLineOf', { name: this.cart.find((l) => l.line_id === this.discountSheet?.lineId)?.name ?? '' })}</span>
                 <button class="x" aria-label=${t('ui.closeAction')} @click=${() => { this.discountSheet = undefined; }}>✕</button>
               </div>
-              <div class="sheet-top"><div class="pay-total">${this.discountInput || '0'} %</div></div>
+              ${this.discountSheet.target === 'ticket' ? html`
+              <!-- sales#113: % o € (importe fijo, «5 € menos»); ambos estándar en el mercado. -->
+              <ion-segment class="discount-mode" value=${this.discountMode}
+                @ionChange=${(e: CustomEvent<{ value?: string }>) => this.setDiscountMode(e.detail.value === 'amount' ? 'amount' : 'percent')}>
+                <ion-segment-button value="percent"><ion-label>%</ion-label></ion-segment-button>
+                <ion-segment-button value="amount"><ion-label>€</ion-label></ion-segment-button>
+              </ion-segment>` : nothing}
+              <div class="sheet-top"><div class="pay-total">${this.discountMode === 'amount'
+                ? this.money(this.discountInputCents)
+                : `${this.discountInput || '0'} %`}</div></div>
               <div class="pay">
                 <div class="numpad">
                   ${['1','2','3','4','5','6','7','8','9','.','0','C'].map((k) => html`<button @click=${() => this.tapDiscount(k)}>${k}</button>`)}
                 </div>
               </div>
               <div class="sheet-foot discount-foot">
-                <ion-button fill="outline" color="medium" @click=${() => this.applyDiscount(0)}>${t('ui.discountRemove')}</ion-button>
-                <ion-button class="charge" expand="block" @click=${() => this.applyDiscount(this.discountInputPct)}>
-                  ${t('ui.discountApply')}${this.discountInputPct > 0 ? ` −${this.discountInputPct}%` : ''}
-                </ion-button>
+                <ion-button fill="outline" color="medium"
+                  @click=${() => (this.discountMode === 'amount' ? this.applyDiscountAmount(0) : this.applyDiscount(0))}>${t('ui.discountRemove')}</ion-button>
+                ${this.discountMode === 'amount'
+                  ? html`<ion-button class="charge" expand="block" ?disabled=${this.discountInputCents > cartTotal(this.cart, this.ticketDiscount)}
+                      @click=${() => this.applyDiscountAmount(this.discountInputCents)}>
+                      ${t('ui.discountApply')}${this.discountInputCents > 0 ? ` −${this.money(this.discountInputCents)}` : ''}
+                    </ion-button>`
+                  : html`<ion-button class="charge" expand="block" @click=${() => this.applyDiscount(this.discountInputPct)}>
+                      ${t('ui.discountApply')}${this.discountInputPct > 0 ? ` −${this.discountInputPct}%` : ''}
+                    </ion-button>`}
               </div>
             </div>
           </div>`
