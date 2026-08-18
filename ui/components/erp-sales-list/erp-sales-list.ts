@@ -22,9 +22,35 @@ interface ErploraClientLike extends ListClient {
   query<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T>;
   queryPage<R = unknown>(name: string, params: ListParams): Promise<ListPage<R>>;
   on(event: string, cb: (payload: unknown) => void): () => void;
+  command<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T>;
+  /** SOLO para mostrar/ocultar UI: la seguridad la revalida el runtime en cada command. */
+  hasPermission?(perm: string): boolean;
+  notify?(n: { type: 'success' | 'error' | 'info'; message: string }): void;
   /** i18n del módulo (ADR-0055): idioma activo + traducción del catálogo `ui`. */
   locale: string;
   t(catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>): string;
+}
+
+/** Overlay global de Ionic (mismo patrón que el TPV): declarado en body para heredar el tema. */
+interface IonicAlertElement extends HTMLElement {
+  header: string;
+  message: string;
+  inputs: Array<{ name: string; type: string; placeholder?: string; attributes?: Record<string, unknown> }>;
+  buttons: Array<{ text: string; role?: string; handler?: (data: Record<string, string>) => boolean | void }>;
+  isOpen: boolean;
+  present?: () => Promise<void>;
+}
+
+/** sales#26 — códigos de `sales.void` → clave i18n. La UI se orienta por el CÓDIGO, no por la frase. */
+const VOID_MESSAGES: Record<string, string> = {
+  'sales.void_requires_credit_note': 'ui.voidRequiresCreditNote',
+  'sales.already_voided': 'ui.voidAlreadyVoided',
+  'sales.void_reason_required': 'ui.voidReasonRequired',
+  'sales.sale_not_found': 'ui.voidSaleNotFound',
+};
+export function voidErrorKey(message: string): string {
+  for (const [code, key] of Object.entries(VOID_MESSAGES)) if (message.includes(code)) return key;
+  return 'ui.voidFailed';
 }
 
 interface Sale {
@@ -68,9 +94,59 @@ export class ErpSalesList extends LitElement {
   // Getter (no campo): se re-evalúa en cada render, así los textos cambian con el idioma activo
   // (ADR-0055). El listener `erplora:locale-changed` re-renderiza.
   private get documentActions(): DataTableAction[] {
-    return [
-      { id: 'document', label: erplora().t(CATALOG, 'ui.actionDocument'), icon: 'receipt-outline' },
+    const t = (k: string): string => erplora().t(CATALOG, k);
+    const actions: DataTableAction[] = [
+      { id: 'document', label: t('ui.actionDocument'), icon: 'receipt-outline' },
     ];
+    // sales#26: anular se ofrece SOLO a quien tiene el permiso (el runtime lo revalida igual), y
+    // solo sobre una venta cerrada: una anulada o reembolsada no se anula dos veces.
+    if (erplora().hasPermission?.('sales.void_sale')) {
+      actions.push({
+        id: 'void', label: t('ui.actionVoid'), icon: 'ban-outline', color: 'danger',
+        disabled: (r) => r.status !== 'completed',
+      });
+    }
+    return actions;
+  }
+
+  /** sales#26 — pide el MOTIVO (obligatorio: Toast, Lightspeed y el software fiscal español lo
+   *  exigen; es lo que luego se lee en el historial) y anula. Overlay global de Ionic, como el TPV. */
+  private async confirmVoid(sale: Sale): Promise<void> {
+    const t = (k: string, p?: Record<string, unknown>): string => erplora().t(CATALOG, k, p);
+    const alert = document.createElement('ion-alert') as IonicAlertElement;
+    alert.header = t('ui.voidTitle', { number: sale.sale_number });
+    alert.message = t('ui.voidExplain');
+    alert.inputs = [{ name: 'reason', type: 'textarea', placeholder: t('ui.voidReasonPlaceholder'), attributes: { maxlength: 500 } }];
+    alert.buttons = [
+      { text: t('ui.cancel'), role: 'cancel' },
+      { text: t('ui.actionVoid'), role: 'destructive', handler: (data) => {
+        const reason = (data?.reason ?? '').trim();
+        if (!reason) { erplora().notify?.({ type: 'error', message: t('ui.voidReasonRequired') }); return false; }
+        void this.voidSale(sale.id, reason);
+        return true;
+      } },
+    ];
+    alert.addEventListener('ionAlertDidDismiss', () => alert.remove(), { once: true });
+    document.body.appendChild(alert);
+    try {
+      if (typeof alert.present === 'function') await alert.present();
+      else alert.isOpen = true;
+    } catch {
+      alert.remove();
+    }
+  }
+
+  /** Ejecuta `sales.void`; el servidor decide (motivo, estado, factura) y aquí solo se cuenta. */
+  private async voidSale(saleId: string, reason: string): Promise<void> {
+    const t = (k: string): string => erplora().t(CATALOG, k);
+    try {
+      await erplora().command('sales.void', { sale_id: saleId, reason });
+      erplora().notify?.({ type: 'success', message: t('ui.voidDone') });
+      await Promise.all([this.ctrl.load(), this.loadStats()]);
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : String(e ?? '');
+      erplora().notify?.({ type: 'error', message: t(voidErrorKey(raw)) });
+    }
   }
 
   private ctrl!: ListController<Sale>;
@@ -156,7 +232,7 @@ export class ErpSalesList extends LitElement {
         </div>
         ${this.statsError ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.statsError}</ok-inline-feedback>` : nothing}
         ${this.ctrl?.error ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : nothing}
-        <ok-data-table .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r: Record<string, unknown>) => String(r.sale_number ?? '—')} .cardIcon=${() => 'receipt-outline'} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.ctrl?.state.sort} .sortDir=${this.ctrl?.state.dir ?? 'desc'} .searchable=${true} .searchPlaceholder=${t('ui.searchSalePlaceholder')} .emptyMessage=${this.ctrl?.loading ? t('ui.loading') : t('ui.noSales')} .actions=${this.documentActions} @rowAction=${(e: CustomEvent<{ actionId: string; row: Sale }>) => { if (e.detail.actionId === 'document') this.docSaleId = e.detail.row.id; }} @pageChange=${(e: CustomEvent<number>) => this.ctrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.ctrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.ctrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.ctrl.setFilter(e.detail.col, e.detail.value)}></ok-data-table>
+        <ok-data-table .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r: Record<string, unknown>) => String(r.sale_number ?? '—')} .cardIcon=${() => 'receipt-outline'} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.ctrl?.state.sort} .sortDir=${this.ctrl?.state.dir ?? 'desc'} .searchable=${true} .searchPlaceholder=${t('ui.searchSalePlaceholder')} .emptyMessage=${this.ctrl?.loading ? t('ui.loading') : t('ui.noSales')} .actions=${this.documentActions} @rowAction=${(e: CustomEvent<{ actionId: string; row: Sale }>) => { if (e.detail.actionId === 'document') this.docSaleId = e.detail.row.id; else if (e.detail.actionId === 'void') void this.confirmVoid(e.detail.row); }} @pageChange=${(e: CustomEvent<number>) => this.ctrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.ctrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.ctrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.ctrl.setFilter(e.detail.col, e.detail.value)}></ok-data-table>
 
         ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => { this.docSaleId = undefined; }, t })}
       </div>`;

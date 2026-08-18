@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sales.void — payload",
+  "description": "Voids a COMPLETED sale (sales#26). The original stays immutable; the reason is mandatory (market rule: Toast, Lightspeed and Spanish fiscal software require it); a sale carrying a full invoice cannot be voided — issue a credit note instead. Second call on the same sale is refused (sales.already_voided) and emits nothing.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sale_id", "reason"],
+  "properties": {
+    "sale_id": { "type": "string", "minLength": 1 },
+    "reason": { "type": "string", "minLength": 1, "maxLength": 500, "description": "Why the sale is voided: shown in the sales history and carried in sale.voided." }
+  }
+}

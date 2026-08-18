@@ -35,7 +35,7 @@ rate of every line.
 | Event | When | Carries |
 |---|---|---|
 | `sale.completed` | a sale is completed | sale id, order id and number, totals, tax amount, the lines, customer, `staff_id` |
-| `sale.voided` | a sale is voided | sale id, reason |
+| `sale.voided` | a sale is voided (sales#26: emitted exactly once; a second void of the same sale is refused) | sale id, sale number, reason, voided_by, voided_at, total, payment method, order id, document type |
 | `order.fired` | an open check is fired to production | order id, an opaque label, channel, the lines of that round |
 | `sales.sale.created_from_appointment` | a sale is completed carrying an `appointment_id` | sale id, appointment id, staff id, total |
 

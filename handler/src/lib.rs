@@ -68,6 +68,16 @@ pub fn fire_order(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output
     }
 }
 
+/// sales#26: anula una venta cerrada, con auditoría y de un solo disparo. Ver `void_sale_pure`.
+#[cfg(feature = "guest")]
+#[plugin_fn]
+pub fn void_sale(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
+    match void_sale_pure(input.into_inner().into_value()) {
+        Ok(out) => Ok(Json(out)),
+        Err(e) => Err(Error::msg(e).into()),
+    }
+}
+
 /// ADR-0141: abre un pedido MUTABLE (`order`). Ver `open_order_pure`.
 #[cfg(feature = "guest")]
 #[plugin_fn]
@@ -231,6 +241,14 @@ fn field(v: &Value, k: &str) -> String {
 struct TaxComponent {
     rate_pct: f64,
     rate_key: String,
+    /// sales#54 — qué es este componente dentro del desglose: `tax` (la regla raíz: el IVA) o el
+    /// `tax_type` del hijo (`surcharge` = recargo de equivalencia). Va al `tax_breakdown` para que
+    /// nadie lea el recargo como «un tipo de IVA más» (en el fiscal viaja DENTRO de la línea del
+    /// IVA, ADR-0186; aquí conserva su clave por tasa porque el arqueo y el tique la leen así).
+    kind: String,
+    /// Etiqueta de presentación (`component_label` de la regla o su `tax_type`): el tique la usa
+    /// para no imprimir «IVA 5,2 %» donde toca «RE 5,2 %».
+    label: String,
 }
 
 /// Clave de desglose para una tasa: "%.2f" del `rate_pct` (p.ej. 21.0 → "21.00").
@@ -288,9 +306,14 @@ fn resolve_line_tax(
             ));
         }
         if let Some(root) = tax::resolve_root(rules, cc, rc, &cat, date) {
+            let root_id = tax::rule_field(root, "id");
             let components = tax::rule_components(root, rules, date)
                 .into_iter()
-                .map(|c| TaxComponent { rate_pct: c.rate_pct, rate_key: rate_key(c.rate_pct) })
+                .map(|c| {
+                    let is_root = c.rule_id == root_id;
+                    let kind = if is_root { "tax".to_string() } else if c.tax_type.is_empty() { "component".to_string() } else { c.tax_type.clone() };
+                    TaxComponent { rate_pct: c.rate_pct, rate_key: rate_key(c.rate_pct), kind, label: c.label.clone() }
+                })
                 .collect();
             return Ok(ResolvedTax { rule_id: tax::rule_field(root, "id"), components });
         }
@@ -302,7 +325,7 @@ fn resolve_line_tax(
     }
     // Sin categoría que resolver: preview del cliente. La única puerta que queda (ver doc).
     let pct = item.get("tax_rate").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
-    Ok(ResolvedTax { rule_id: String::new(), components: vec![TaxComponent { rate_pct: pct, rate_key: rate_key(pct) }] })
+    Ok(ResolvedTax { rule_id: String::new(), components: vec![TaxComponent { rate_pct: pct, rate_key: rate_key(pct), kind: "tax".to_string(), label: String::new() }] })
 }
 
 /// Día ISO `YYYY-MM-DD` de `now` (para la vigencia de las reglas).
@@ -639,6 +662,8 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     let mut gross_pre_disc: i64 = 0; // céntimos (sin descuento global → discount_amount)
     let mut gift_total: i64 = 0; // céntimos: coste de las invitaciones (para el arqueo, ADR-comp)
     let mut breakdown: Vec<(String, i64, i64)> = Vec::new();
+    // sales#54: qué es cada clave del desglose (`kind`, `label`) — la primera línea que la aporta manda.
+    let mut breakdown_meta: std::collections::HashMap<String, (String, String)> = std::collections::HashMap::new();
     let mut ops: Vec<Operation> = Vec::new();
 
     let mut bump = Map::new();
@@ -673,6 +698,9 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         // (server-authoritative, raíz + componentes), con país/región del contexto y fallback
         // graceful al `tax_rate` del payload. El cliente NO es autoridad del %.
         let resolved = resolve_line_tax(item, catalog_cat, &catalog, catalog_delivered, &cc, &rc, &date)?;
+        for c in &resolved.components {
+            breakdown_meta.entry(c.rate_key.clone()).or_insert_with(|| (c.kind.clone(), c.label.clone()));
+        }
         let components = &resolved.components;
         // Tasa combinada que persistimos en la línea (== suma de componentes; para un tipo
         // simple es su propio %). Es la cifra que ve invoice/listeners en `tax_rate`.
@@ -775,6 +803,11 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
             format!("amount_tendered {tendered} is below the total {total}"),
         ));
     }
+    // «No indicado» (0/ausente) = importe EXACTO: se persiste el total, que es lo que el tique y el
+    // arqueo tienen que decir que se pagó — no un 0 que parece «sin cobrar». El TPV solo manda lo
+    // que la cajera TECLEA (sales#24): su total en pantalla es un preview y no puede decidir el
+    // entregado exacto (IVA excluido, cantidades a peso y descuentos redondean en el servidor).
+    let tendered = if tendered == 0 { total } else { tendered };
     let change = if tendered - total > 0 { tendered - total } else { 0 };
 
     // EL DESGLOSE SE CIERRA AQUÍ: la cuota se calcula UNA sola vez por TIPO IMPOSITIVO, sobre la
@@ -794,7 +827,15 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         let rate = Decimal::from_str(k).unwrap_or(Decimal::ZERO);
         let cuota = money::percent_of(*base, rate);
         tax_total_declarado += cuota;
-        tb.insert(k.clone(), json!({ "base": *base, "tax": cuota }));
+        let (kind, label) = breakdown_meta.get(k).cloned().unwrap_or_else(|| ("tax".to_string(), String::new()));
+        let mut entry = Map::new();
+        entry.insert("base".into(), json!(*base));
+        entry.insert("tax".into(), json!(cuota));
+        entry.insert("kind".into(), json!(kind)); // sales#54: `tax` | `surcharge` | …
+        if !label.is_empty() {
+            entry.insert("label".into(), json!(label));
+        }
+        tb.insert(k.clone(), Value::Object(entry));
     }
     let tax_total = tax_total_declarado;
     let tax_breakdown_json = Value::Object(tb).to_string();
@@ -1034,8 +1075,21 @@ pub fn open_order_pure(input: Value) -> Result<Output, String> {
         // que la venta — abrir con 0,0005 kg y cobrar sería mover el error de sitio.
         let qty = line_qty(item)?;
         let is_gift = item.get("is_gift").map(as_bool).unwrap_or(false);
+        // sales#71: descuento manual de la línea (%), mismo rango y mismo rechazo que el cobro.
+        let line_disc = item.get("discount").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
+        if !rate_in_range(line_disc) {
+            return Err(reject("sales.discount_out_of_range", format!("line discount {line_disc}")));
+        }
         let line_total = if is_gift {
             0
+        } else if line_disc > 0.0 {
+            // Con descuento: precio × factor exacto × cantidad, UN solo HALF_UP — la misma fórmula
+            // que `calc_line_components` en el cobro, para que el provisional no derive del tique.
+            let pq_raw = line_price_qty(item);
+            let pq = Decimal::from(if pq_raw > 0 { pq_raw } else { QUANTITY_SCALE }) / Decimal::from(QUANTITY_SCALE);
+            let factor = Decimal::ONE - Decimal::from_f64(line_disc).unwrap_or(Decimal::ZERO) / Decimal::from(100);
+            let exact = Decimal::from(unit_price) * factor * (Decimal::from(qty) / Decimal::from(QUANTITY_SCALE)) / pq;
+            money::round(exact)
         } else {
             // Provisional (display), pero con la MISMA aritmética del SDK que el cobro: dinero
             // entero por cantidad de precio, un solo HALF_UP (ADR-0147 §2.3).
@@ -1076,6 +1130,7 @@ pub fn open_order_pure(input: Value) -> Result<Output, String> {
         // la comanda (kitchen: categoría→estación) y tiene que sobrevivir a retomar la cuenta y a
         // que alguien recategorice el producto mañana. Misma regla que `tax_category_key`.
         p.insert("category_id".into(), category_snapshot(item));
+        p.insert("discount_percent".into(), json!(line_disc)); // sales#71
         ops.push(Operation::sql("sales._insert_order_line", p));
     }
 
@@ -1178,6 +1233,72 @@ pub fn fire_order_pure(input: Value) -> Result<Output, String> {
     }
     let event = Event::new("order.fired", ev);
     Ok(Output { operations: ops, events: vec![event], ..Default::default() })
+}
+
+/// sales#26 — **anular es auditable, idempotente y respeta la factura.**
+///
+/// Lo que hace el mercado (Square, Toast, Lightspeed, Odoo, Business Central, Shopify, Holded,
+/// Clover — tabla en la issue): nadie BORRA una venta pagada; el original queda inmutable y se
+/// añade el reverso; el motivo es obligatorio en el TPV de hostelería y en el software fiscal
+/// español; el permiso es propio (`sales.void_sale`); con factura completa emitida solo cabe la
+/// rectificativa (invoice#5); y el reverso es de UN solo disparo — los foros están llenos de
+/// reembolsos dobles.
+///
+/// El handler lee la venta que dice el payload (`sales.get`, read `required` filtrada por
+/// `payload.sale_id`) y decide con código propio:
+///   * no está en este hub / read ausente → `sales.sale_not_found`
+///   * ya anulada / reembolsada / no cerrada → `sales.already_voided` (segunda llamada = rechazo,
+///     sin evento: los consumidores no ven un segundo `sale.voided`)
+///   * `document_type = invoice` → `sales.void_requires_credit_note`
+///   * motivo vacío → `sales.void_reason_required`
+/// Si aplica: `sales._void_sale` (status + `voided_at/voided_by/void_reason`, el resto de la
+/// fila intacto) y `sale.voided` con la identidad de la operación.
+pub fn void_sale_pure(input: Value) -> Result<Output, String> {
+    let payload = input.get("payload").cloned().unwrap_or(Value::Null);
+    let context = input.get("context").cloned().unwrap_or(Value::Null);
+    let sale_id = field(&payload, "sale_id");
+    if sale_id.is_empty() {
+        return Err(reject("sales.sale_not_found", "missing sale_id"));
+    }
+    let reason = field(&payload, "reason").trim().to_string();
+    if reason.is_empty() {
+        return Err(reject("sales.void_reason_required", "a void needs a reason"));
+    }
+    let rows = tax::read_rows(&context, "sales.get").unwrap_or_default();
+    let sale = rows
+        .iter()
+        .find(|r| field(r, "id") == sale_id)
+        .ok_or_else(|| reject("sales.sale_not_found", format!("sale {sale_id} is not in this hub")))?;
+    if field(sale, "status") != "completed" {
+        return Err(reject(
+            "sales.already_voided",
+            format!("sale {sale_id} is `{}`: only a completed sale can be voided, and only once", field(sale, "status")),
+        ));
+    }
+    if field(sale, "document_type") == "invoice" {
+        return Err(reject(
+            "sales.void_requires_credit_note",
+            format!("sale {sale_id} carries a full invoice: issue a credit note (rectificativa) instead of voiding"),
+        ));
+    }
+    let voided_by = as_str(context.get("current_user_id").unwrap_or(&Value::Null));
+    let mut p = Map::new();
+    p.insert("sale_id".into(), json!(sale_id));
+    p.insert("void_reason".into(), json!(reason));
+    p.insert("voided_by".into(), json!(voided_by));
+    let event = Event::new("sale.voided", json!({
+        "sender": "sales",
+        "sale_id": sale_id,
+        "sale_number": sale.get("sale_number").cloned().unwrap_or(Value::Null),
+        "reason": reason,
+        "voided_by": voided_by,
+        "voided_at": context.get("now").cloned().unwrap_or(Value::Null),
+        "total": sale.get("total").cloned().unwrap_or(Value::Null),
+        "payment_method_name": sale.get("payment_method_name").cloned().unwrap_or(Value::Null),
+        "order_id": sale.get("order_id").cloned().unwrap_or(Value::Null),
+        "document_type": sale.get("document_type").cloned().unwrap_or(Value::Null),
+    }));
+    Ok(Output { operations: vec![Operation::sql("sales._void_sale", p)], events: vec![event], ..Default::default() })
 }
 
 #[cfg(test)]
@@ -1292,6 +1413,80 @@ mod tests {
         // Y el evento sigue saliendo UNA vez, con la ronda informativa para kitchen.
         assert_eq!(out.events.len(), 1);
         assert_eq!(out.events[0].payload["round_no"], json!(2));
+    }
+
+    // ── sales#26 · anular es AUDITABLE, IDEMPOTENTE y respeta la factura ─────────────────────
+    //
+    // Mercado (8 refs en la issue): nadie borra una venta pagada — el original queda inmutable y
+    // se añade el reverso; el motivo es obligatorio (Toast, Lightspeed, Holded/VeriFactu); el
+    // permiso es propio; con factura emitida solo cabe la rectificativa; y el reverso es de un
+    // solo disparo (Square/Toast: los foros están llenos de reembolsos dobles). Aquí: el handler
+    // lee la venta (`sales.get`, required), rechaza con código propio lo que no aplica, y solo
+    // emite `sale.voided` cuando de verdad cambia algo.
+
+    fn void_input(reason: &str, sale: Value) -> Value {
+        let mut reads = Map::new();
+        if !sale.is_null() { reads.insert("sales.get".into(), sale); }
+        json!({
+            "payload": { "sale_id": "sale-1", "reason": reason },
+            "context": { "hub_id": "h1", "current_user_id": "u-manager", "now": "2026-08-18T12:00:00+00:00", "new_ids": [],
+                         "reads": reads }
+        })
+    }
+    fn completed_ticket() -> Value {
+        json!([{ "id": "sale-1", "sale_number": "20260818-0007", "status": "completed", "document_type": "ticket",
+                 "total": 1210, "payment_method_name": "Cash", "order_id": "ord-9" }])
+    }
+
+    #[test]
+    fn voiding_a_completed_ticket_writes_the_audit_fields_and_emits_once() {
+        let out = void_sale_pure(void_input("customer changed their mind", completed_ticket())).expect("void ok");
+        let op = out.operations.iter().find(|o| o.command == "sales._void_sale").expect("the void op");
+        assert_eq!(op.params["sale_id"], json!("sale-1"));
+        assert_eq!(op.params["void_reason"], json!("customer changed their mind"));
+        assert_eq!(out.events.len(), 1);
+        let ev = &out.events[0];
+        assert_eq!(ev.name, "sale.voided");
+        assert_eq!(ev.payload["sale_id"], json!("sale-1"));
+        assert_eq!(ev.payload["reason"], json!("customer changed their mind"));
+        assert_eq!(ev.payload["voided_by"], json!("u-manager"));
+        assert_eq!(ev.payload["total"], json!(1210));
+        assert_eq!(ev.payload["order_id"], json!("ord-9"));
+    }
+
+    #[test]
+    fn voiding_twice_is_refused_and_emits_nothing_the_second_time() {
+        let mut already = completed_ticket();
+        already[0]["status"] = json!("voided");
+        let err = void_sale_pure(void_input("again", already)).expect_err("second void");
+        assert!(err.starts_with("sales.already_voided"), "{err}");
+    }
+
+    #[test]
+    fn a_reason_is_mandatory() {
+        let err = void_sale_pure(void_input("   ", completed_ticket())).expect_err("no reason");
+        assert!(err.starts_with("sales.void_reason_required"), "{err}");
+    }
+
+    #[test]
+    fn a_sale_that_does_not_exist_here_cannot_be_voided() {
+        let err = void_sale_pure(void_input("x", json!([]))).expect_err("unknown sale");
+        assert!(err.starts_with("sales.sale_not_found"), "{err}");
+    }
+
+    #[test]
+    fn a_full_invoice_needs_a_credit_note_not_a_void() {
+        let mut inv = completed_ticket();
+        inv[0]["document_type"] = json!("invoice");
+        let err = void_sale_pure(void_input("x", inv)).expect_err("invoice");
+        assert!(err.starts_with("sales.void_requires_credit_note"), "{err}");
+    }
+
+    #[test]
+    fn without_the_sale_read_the_void_is_refused_not_guessed() {
+        // La read es `required`; si aun así falta (runtime viejo) no se anula a ciegas.
+        let err = void_sale_pure(void_input("x", Value::Null)).expect_err("no read");
+        assert!(err.starts_with("sales.sale_not_found"), "{err}");
     }
 
     // ── sales#80 · el doble toque en «Enviar a cocina» no puede crear dos comandas ────────────
@@ -1787,6 +1982,13 @@ mod tests {
         assert_eq!(tb["21.00"]["tax"], json!(2100));
         assert_eq!(tb["5.20"]["tax"], json!(520));
         assert_eq!(s["tax_amount"], json!(2620));
+        // sales#54: el componente se MARCA para que nadie lo lea como «un tipo de IVA más». La
+        // forma (una clave por tasa) se conserva —arqueo y tique la leen así—; el marcador es
+        // aditivo. La raíz no lleva marca (o lleva `kind: "tax"`), el recargo `kind: "surcharge"`
+        // con su etiqueta (`component_label` o `tax_type` de la regla), que es lo que imprime el tique.
+        assert_eq!(tb["5.20"]["kind"], json!("surcharge"));
+        assert_eq!(tb["5.20"]["label"], json!("surcharge"));
+        assert_eq!(tb["21.00"]["kind"], json!("tax"));
     }
 
     #[test]
@@ -2107,6 +2309,23 @@ mod tests {
         let out = sale(input(items, 3, 300));
         let l = out.operations.iter().find(|o| o.command == "sales._insert_line").unwrap();
         assert_eq!(l.params["category_id"], json!("cat-bebidas"));
+    }
+
+    #[test]
+    fn the_order_line_keeps_its_manual_discount_and_the_provisional_reflects_it() {
+        // sales#71 — 1,80 € × 2 con 10 % = 3,24 € (un solo HALF_UP), y el % viaja a la fila para
+        // que la cuenta RETOMADA lo conserve. Fuera de rango → rechazo, como en el cobro.
+        let items = json!([{ "product_name": "Café", "price": 180, "quantity": 2_000_000, "discount": 10 }]);
+        let out = orden(input(items, 3, 0));
+        let l = out.operations.iter().find(|o| o.command == "sales._insert_order_line").unwrap();
+        assert_eq!(l.params["discount_percent"], json!(10.0));
+        assert_eq!(l.params["line_total"], json!(324));
+        let h = out.operations.iter().find(|o| o.command == "sales._insert_order").unwrap();
+        assert_eq!(h.params["provisional_total"], json!(324));
+
+        let bad = json!([{ "product_name": "Café", "price": 180, "quantity": 1_000_000, "discount": 120 }]);
+        let err = open_order_pure(input(bad, 3, 0)).expect_err("120 % no es un descuento");
+        assert!(err.contains("sales.discount_out_of_range"), "{err}");
     }
 
     #[test]
@@ -2474,6 +2693,13 @@ mod tests {
         assert_eq!(over.operations[1].params["change_due"], json!(500));
         let unstated = sale(input(items(), 3, 0));
         assert_eq!(unstated.operations[1].params["change_due"], json!(0));
+        // «No indicado» = importe exacto: la cabecera y el tique dicen lo que se pagó (el total), no 0.
+        assert_eq!(unstated.operations[1].params["amount_tendered"], json!(500));
+        let mut omitted = input(items(), 3, 0);
+        omitted["payload"].as_object_mut().unwrap().remove("amount_tendered");
+        let out = sale(omitted);
+        assert_eq!(out.operations[1].params["amount_tendered"], json!(500));
+        assert_eq!(out.operations[1].params["change_due"], json!(0));
     }
 
     #[test]

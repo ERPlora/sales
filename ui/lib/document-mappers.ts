@@ -174,9 +174,24 @@ interface TaxLine {
 }
 
 /** Desglose de impuestos a partir del JSON `tax_breakdown` ({"21.00": {base, tax}}). */
-function parseTaxes(tax_breakdown?: string): TaxLine[] {
+/** Raw `tax_type` words the rule may carry as `label`: they are keys, not something to print. */
+const RAW_TAX_TYPES = new Set(['vat', 'surcharge', 'sales_tax', 'withholding', 'excise', 'import_duty']);
+
+/** sales#54 — the label of one breakdown entry. `kind` marks the equivalence surcharge (`surcharge`)
+ *  so the paper stops calling it «IVA 5%»; a `label` set by the owner on the rule (`component_label`)
+ *  wins verbatim; a raw `tax_type` word is not printable. Entries older than the marker → IVA. */
+function taxLabel(rate: string, v: { kind?: string; label?: string } | undefined, t?: Translate): string {
+  const r = Number(rate);
+  const custom = v?.label && !RAW_TAX_TYPES.has(v.label) ? v.label : undefined;
+  const name = custom ?? (v?.kind === 'surcharge' ? (t ? t('ui.taxSurcharge') : 'RE') : 'IVA');
+  // 21 → «21%», 5.2 → «5.2%», 10.00 → «10%»: the exact rate, without trailing zeros.
+  const pct = Number.isFinite(r) ? String(Number(r.toFixed(2))) : rate;
+  return `${name} ${pct}%`;
+}
+
+function parseTaxes(tax_breakdown?: string, t?: Translate): TaxLine[] {
   if (!tax_breakdown) return [];
-  let obj: Record<string, { base?: number; tax?: number }>;
+  let obj: Record<string, { base?: number; tax?: number; kind?: string; label?: string }>;
   try {
     obj = JSON.parse(tax_breakdown);
   } catch {
@@ -186,7 +201,7 @@ function parseTaxes(tax_breakdown?: string): TaxLine[] {
     .map(([rate, v]) => {
       const r = Number(rate);
       return {
-        label: `IVA ${Number.isFinite(r) ? r.toFixed(0) : rate}%`,
+        label: taxLabel(rate, v, t),
         rate: Number.isFinite(r) ? r : undefined,
         base: toEuros(v?.base),
         amount: toEuros(v?.tax),
@@ -226,7 +241,7 @@ export function saleToReceipt(
       total: toEuros(l.line_total),
     })),
     subtotal: sale.subtotal != null ? toEuros(sale.subtotal) : undefined,
-    taxes: parseTaxes(sale.tax_breakdown).map((t) => ({ label: t.label, base: t.base, amount: t.amount })),
+    taxes: parseTaxes(sale.tax_breakdown, t).map((x) => ({ label: x.label, base: x.base, amount: x.amount })),
     total: toEuros(sale.total),
     payment: sale.payment_method_name
       ? { method: payLabel(sale.payment_method_name, t)!, paid: sale.amount_tendered != null ? toEuros(sale.amount_tendered) : undefined, change: sale.change_due != null ? toEuros(sale.change_due) : undefined }
@@ -262,7 +277,7 @@ export function saleToInvoice(
     tax_rate: l.tax_rate != null ? Number(l.tax_rate) : undefined,
     total: toEuros(l.line_total),
   }));
-  const taxes = parseTaxes(sale.tax_breakdown);
+  const taxes = parseTaxes(sale.tax_breakdown, t);
   return {
     issuer: { name: fiscal.issuer_name || header.name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || undefined },
     customer: { name: fiscal.customer_name || sale.customer_name || 'Cliente', tax_id: fiscal.customer_tax_id || undefined },

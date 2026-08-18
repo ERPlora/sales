@@ -99,6 +99,32 @@ describe('the payment method on the document is translated at render time (sales
   });
 });
 
+// sales#54 — el recargo de equivalencia lleva su clave propia en el `tax_breakdown` (una clave por
+// tasa) y el tique lo llamaba «IVA 5%». Desde sales#54 la entrada viene MARCADA (`kind`, `label`) y
+// el tique lo pinta como lo que es. Compat: una venta vieja sin marca sigue saliendo como IVA.
+describe('el desglose del tique distingue el recargo de equivalencia (sales#54)', () => {
+  const t = (k: string) => (k === 'ui.taxSurcharge' ? 'RE' : k);
+  const BD = '{"21.00":{"base":10000,"tax":2100,"kind":"tax","label":"vat"},"5.20":{"base":10000,"tax":520,"kind":"surcharge","label":"surcharge"}}';
+
+  it('el recargo se etiqueta RE con su tasa exacta, no «IVA 5%»', () => {
+    const r = saleToReceipt({ ...SALE, tax_breakdown: BD }, LINES, {}, {}, 'es', undefined, t);
+    const labels = r.taxes!.map((x) => x.label);
+    expect(labels).toContain('IVA 21%');
+    expect(labels).toContain('RE 5.2%');
+  });
+
+  it('una etiqueta puesta por el dueño en la regla (component_label) manda tal cual', () => {
+    const custom = BD.replace('"label":"surcharge"', '"label":"Rec. equiv."');
+    const r = saleToReceipt({ ...SALE, tax_breakdown: custom }, LINES, {}, {}, 'es', undefined, t);
+    expect(r.taxes!.map((x) => x.label)).toContain('Rec. equiv. 5.2%');
+  });
+
+  it('una venta anterior a la marca sigue pintando IVA (compat)', () => {
+    const r = saleToReceipt(SALE, LINES, {}, {}, 'es', undefined, t);
+    expect(r.taxes![0].label).toBe('IVA 10%');
+  });
+});
+
 describe('saleToInvoice — mismos contratos', () => {
   it('convierte céntimos → euros en líneas y totales', () => {
     const inv = saleToInvoice({ ...SALE, discount_amount: 50 }, LINES);

@@ -8,6 +8,7 @@
 // cuenta entera, y el pedido se cierra. Si no, quedaría abierto y vacío esperando a nadie.
 
 import type { CartLine } from './pos-cart';
+import { cartTotal } from './pos-cart';
 
 export interface SplitPayload {
   /** Líneas que cubre este cobro. `undefined` = la cuenta entera (no es un split). */
@@ -25,9 +26,10 @@ function esParcial(cart: CartLine[], sel: ReadonlySet<string>): boolean {
 
 /** Importe (céntimos) de lo seleccionado; con nada seleccionado, el total de la cuenta.
  *  Las invitaciones no suman: se sirven pero no se cobran. */
-export function splitTotal(cart: CartLine[], sel: ReadonlySet<string>): number {
+export function splitTotal(cart: CartLine[], sel: ReadonlySet<string>, ticketDiscount = 0): number {
   const lineas = sel.size ? cart.filter((l) => l.line_id && sel.has(l.line_id)) : cart;
-  return lineas.reduce((s, l) => s + (l.is_gift ? 0 : l.price * l.qty), 0);
+  // sales#71: con los descuentos (línea + ticket), redondeando como el servidor.
+  return cartTotal(lineas, ticketDiscount);
 }
 
 /** Qué mandarle a `sales.complete_sale` según lo que el camarero haya marcado. */
