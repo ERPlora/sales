@@ -20,6 +20,7 @@ recorded when one of them fires.
 | `sales.no_tax_rule` | No tax rule matches the line's category for this hub's country and region | Fix the rule in `taxes`, or the product's tax category in `inventory` |
 | `sales.tax_rate_out_of_range` | The resolved rate is not a sane percentage | Fix the rule in `taxes` |
 | `sales.tax_catalog_unavailable` | The tax catalogue (`taxes.rules.list`, a **required** read since sales#21) was not delivered to the handler — the sale is refused rather than priced with the browser's VAT | Retry; if it persists, `taxes` is down or the runtime is too old to honour `required` reads |
+| `sales.nothing_to_fire` | `sales.order.fire` with `round_no` found no pending line on the order — the round was already fired (double tap, sales#80); nothing is emitted | Nothing to do: the kitchen already has it |
 | `sales.insufficient_tendered` | A positive `amount_tendered` is below the total (short cash payment, sales#24) | Enter an amount that covers the total, or leave it empty for the exact amount |
 
 ## Caps and sizes

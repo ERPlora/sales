@@ -1125,6 +1125,24 @@ pub fn fire_order_pure(input: Value) -> Result<Output, String> {
     // sigue numerando sus rondas (ADR-0144) y ambos coinciden porque cuentan los mismos disparos.
     // Sin `round_no` (POS viejo, integraciones): comportamiento de siempre, no se escribe nada.
     let round_no = payload.get("round_no").and_then(|v| v.as_i64()).unwrap_or(0);
+    // sales#80 — el doble toque. `_mark_lines_fired` filtra `fired_at IS NULL`, así que el SEGUNDO
+    // disparo de la misma tanda marcaba 0 filas… y emitía `order.fired` igual: kitchen abría una
+    // ronda 2 con la misma comida. El handler no ve las filas afectadas (el SQL corre después),
+    // así que mira el estado del pedido ANTES en la read `sales.order.lines` (filtrada por
+    // `order_id`, module.json). Con `round_no` y NADA pendiente no hay tanda → se rechaza sin
+    // emitir. Sin la read (runtime viejo) no se puede saber → compat, como siempre.
+    if round_no >= 1 {
+        let context = input.get("context").cloned().unwrap_or(Value::Null);
+        if let Some(lines) = tax::read_rows(&context, "sales.order.lines") {
+            let pending = lines.iter().any(|l| l.get("fired_at").map_or(true, Value::is_null));
+            if !pending {
+                return Err(reject(
+                    "sales.nothing_to_fire",
+                    format!("order {order_id} has no pending lines: this round was already fired"),
+                ));
+            }
+        }
+    }
     let mut ops: Vec<Operation> = Vec::new();
     if round_no >= 1 {
         let mut p = Map::new();
@@ -1260,6 +1278,58 @@ mod tests {
         // Y el evento sigue saliendo UNA vez, con la ronda informativa para kitchen.
         assert_eq!(out.events.len(), 1);
         assert_eq!(out.events[0].payload["round_no"], json!(2));
+    }
+
+    // ── sales#80 · el doble toque en «Enviar a cocina» no puede crear dos comandas ────────────
+    //
+    // `_mark_lines_fired` filtra `fired_at IS NULL`, así que el SEGUNDO disparo de la misma tanda
+    // marcaba 0 filas… y emitía `order.fired` igual: kitchen numeraba una ronda 2 con la misma
+    // comida. El handler no ve las filas afectadas (el SQL corre después), así que lee el estado
+    // del pedido ANTES: `sales.order.lines` (filtrada por `order_id`, pre-cargada por el runtime).
+    // Si con `round_no` no queda ninguna línea pendiente, no hay tanda que enviar → se rechaza y
+    // NO se emite. Sin la read (runtime viejo) se comporta como siempre.
+
+    fn fire_input_with_lines(round_no: i64, lines: Value) -> Value {
+        json!({
+            "payload": {
+                "order_id": "ord-1", "label": "Mesa 4", "channel": "dine_in", "round_no": round_no,
+                "items": [{ "product_name": "Entrecot", "quantity": 1_000_000 }]
+            },
+            "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-07-19T14:25:00+00:00", "new_ids": [],
+                         "reads": { "sales.order.lines": lines } }
+        })
+    }
+
+    #[test]
+    fn a_second_fire_of_the_same_round_with_nothing_pending_is_refused_and_emits_nothing() {
+        // Todas las líneas del pedido ya llevan `fired_at`: el primer toque ya se las llevó.
+        let lines = json!([
+            { "id": "l-1", "order_id": "ord-1", "product_name": "Entrecot", "round_no": 1, "fired_at": "2026-07-19T14:24:59+00:00" }
+        ]);
+        let err = fire_order_pure(fire_input_with_lines(1, lines)).expect_err("nada pendiente → no se dispara");
+        assert!(err.contains("sales.nothing_to_fire"), "{err}");
+    }
+
+    #[test]
+    fn a_fire_with_pending_lines_goes_through_and_marks_them() {
+        let lines = json!([
+            { "id": "l-1", "order_id": "ord-1", "product_name": "Entrecot", "round_no": 1, "fired_at": "2026-07-19T14:20:00+00:00" },
+            { "id": "l-2", "order_id": "ord-1", "product_name": "Postre", "round_no": null, "fired_at": null }
+        ]);
+        let out = fire_order_pure(fire_input_with_lines(2, lines)).expect("hay una línea nueva → se dispara");
+        assert!(out.operations.iter().any(|o| o.command == "sales._mark_lines_fired"));
+        assert_eq!(out.events.len(), 1);
+    }
+
+    #[test]
+    fn without_the_lines_read_the_fire_behaves_as_before() {
+        // Runtime que no entrega la read: no se puede saber → compat, se dispara.
+        let inp = json!({
+            "payload": { "order_id": "ord-1", "round_no": 1, "items": [{ "product_name": "Entrecot", "quantity": 1_000_000 }] },
+            "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-07-19T14:25:00+00:00", "new_ids": [] }
+        });
+        let out = fire_order_pure(inp).expect("compat");
+        assert_eq!(out.events.len(), 1);
     }
 
     #[test]

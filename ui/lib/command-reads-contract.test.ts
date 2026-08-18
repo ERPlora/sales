@@ -21,3 +21,17 @@ describe('sales.complete_sale declares the tax catalogue as a REQUIRED read (sal
     expect((tax as { required?: boolean }).required).toBe(true);
   });
 });
+
+// sales#80 — the double tap on «Send to kitchen». The handler can only refuse a round with nothing
+// pending if it SEES the order's lines before the SQL runs: that is this read, filtered by the
+// order the payload names. Without it the second tap re-emits `order.fired` and kitchen opens a
+// second round with the same food.
+describe('sales.order.fire pre-loads the order lines (sales#80)', () => {
+  it('reads sales.order.lines filtered by payload.order_id', () => {
+    const reads = m.commands['sales.order.fire'].reads ?? [];
+    const lines = reads.find((r) => typeof r === 'object' && r.query === 'sales.order.lines') as
+      { query: string; params?: Record<string, string> } | undefined;
+    expect(lines, 'the fire must see the order lines').toBeTruthy();
+    expect(lines!.params?.order_id).toBe('payload.order_id');
+  });
+});

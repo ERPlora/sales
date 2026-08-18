@@ -808,6 +808,36 @@ describe('slot sales.pos.actions: cocina inyectada dentro de Comanda actual', ()
     expect(ultimo.pending_count, 'y cuánto queda SIN enviar (el badge del botón de cocina)').toBe(1);
   });
 
+  // sales#80 — el doble toque en «Enviar a cocina» del filler llegaba como DOS `erp:order-fire` y el
+  // host lanzaba dos `sales.order.fire` con las mismas líneas pendientes (misma ronda): dos comandas.
+  it('dos erp:order-fire seguidos (doble toque) disparan UN solo sales.order.fire (sales#80)', async () => {
+    const el = await conCafe();
+    const filler = el.shadowRoot!.querySelector('.draft-actions-slot erp-fake-fire')!;
+
+    filler.dispatchEvent(new CustomEvent('erp:order-fire', { detail: {}, bubbles: true, composed: true }));
+    filler.dispatchEvent(new CustomEvent('erp:order-fire', { detail: {}, bubbles: true, composed: true }));
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(comandos.filter((c) => c === 'sales.order.fire')).toHaveLength(1);
+  });
+
+  it('si el servidor dice que no había nada pendiente (sales.nothing_to_fire), no es un error para el cajero', async () => {
+    const el = await conCafe();
+    const sdk = (globalThis as Record<string, unknown>).erplora as { command: (n: string, p?: unknown) => Promise<unknown> };
+    const original = sdk.command;
+    sdk.command = async (n: string, p?: unknown) => {
+      if (n === 'sales.order.fire') throw new Error('command `sales.order.fire` failed: sales.nothing_to_fire: already fired');
+      return original(n, p);
+    };
+    const filler = el.shadowRoot!.querySelector('.draft-actions-slot erp-fake-fire')!;
+    filler.dispatchEvent(new CustomEvent('erp:order-fire', { detail: {}, bubbles: true, composed: true }));
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect((el as unknown as { error: string }).error, 'la comanda ya estaba enviada: no hay nada que arreglar').toBe('');
+    sdk.command = original;
+  });
+
   it('erp:order-fire del filler dispara sales.order.fire del host', async () => {
     const el = await conCafe();
     const filler = el.shadowRoot!.querySelector('.draft-actions-slot erp-fake-fire')!;

@@ -303,6 +303,14 @@
     },
     "sales.order.fire": {
       "permission": "sales.add_sale",
+      "reads": [
+        {
+          "query": "sales.order.lines",
+          "params": {
+            "order_id": "payload.order_id"
+          }
+        }
+      ],
       "handler": {
         "type": "wasm",
         "file": "dist/handler.wasm",

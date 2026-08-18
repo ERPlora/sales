@@ -1490,8 +1490,23 @@ export class ErpPosTouch extends LitElement {
    *
    *  La etiqueta que verá el cocinero es la de la mesa asignada, y viaja OPACA: `sales` no depende
    *  de `tables`, solo reenvía el texto que el slot de mesas le dejó en `tableLabel`. */
+  /** sales#80 — un disparo en vuelo. El filler de kitchen puede emitir dos `erp:order-fire` con un
+   *  doble toque; el segundo llega antes de que el primero haya releído las líneas y vería las
+   *  mismas pendientes. Mientras haya uno en vuelo, los demás se ignoran (defensa en la UI); el
+   *  handler además rechaza `sales.nothing_to_fire` si el pedido ya no tiene nada pendiente. */
+  private firing = false;
+
   private async fireToKitchen(): Promise<void> {
-    if (!this.cart.length) return;
+    if (!this.cart.length || this.firing) return;
+    this.firing = true;
+    try {
+      await this.fireToKitchenNow();
+    } finally {
+      this.firing = false;
+    }
+  }
+
+  private async fireToKitchenNow(): Promise<void> {
     const orderId = await this.ensureOrder(this.cart[0]);
     // TANDAS (decisión Ioan 2026-07-19): se dispara SOLO lo pendiente, con su ronda local, y el
     // handler lo marca (`fired_at`). Antes cada fire reenviaba el carrito ENTERO: dos disparos =
@@ -1508,7 +1523,14 @@ export class ErpPosTouch extends LitElement {
       // Las líneas recién marcadas (round_no/fired_at) se releen de la BD: es lo que bloquea su
       // edición y lo que pinta la ronda como «enviada» en la pestaña Tandas.
       if (this.orderId) this.cart = await loadOrderLines(erplora(), this.orderId);
-    } catch {
+    } catch (e) {
+      // sales#80: «no había nada pendiente» significa que la tanda YA se envió (doble toque que
+      // se coló, u otra caja): no es un fallo para el cajero — se relee el pedido y ya.
+      const msg = e instanceof Error ? e.message : String(e ?? '');
+      if (msg.includes('sales.nothing_to_fire')) {
+        if (this.orderId) this.cart = await loadOrderLines(erplora(), this.orderId).catch(() => this.cart);
+        return;
+      }
       // Sin `kitchen` instalado el evento no lo escucha nadie: el comando de `sales` igual pasa.
       // Un fallo aquí NO debe bloquear la venta — la comanda se puede repetir.
       this.error = t('ui.fireFailed');
