@@ -1096,6 +1096,26 @@ describe('sheet de cobro (tender): método dentro, tarjeta sin numpad, atajos de
     expect(venta.payload.payment_method_id).toBe('pm-cash');
   });
 
+  it('sales#24 — efectivo por debajo del total: el botón no cobra y dice que falta importe', async () => {
+    // El servidor rechaza (`sales.insufficient_tendered`), pero la cajera no debería tener que
+    // llegar al rechazo: con 1,00 € tecleado sobre 1,80 € el CTA se apaga y avisa. Al completar
+    // (2,00 €) vuelve a cobrar. Y 0 (nada tecleado) sigue siendo «importe exacto».
+    const el = await conCobroAbierto();
+    const tap = el as unknown as { tap(k: string): void; updateComplete: Promise<unknown> };
+    const cta = () => el.shadowRoot!.querySelector<HTMLElement>('.sheet-foot ion-button.charge')!;
+
+    expect(cta().hasAttribute('disabled'), 'sin teclear = exacto → se puede cobrar').toBe(false);
+
+    tap.tap('1');
+    await tap.updateComplete;
+    expect(cta().hasAttribute('disabled'), '1,00 € no cubre 1,80 €').toBe(true);
+    expect(cta().textContent, 'dice lo que pasa, no un «Cobrar» muerto').toContain('ui.tenderedShort');
+
+    tap.tap('2'); // ahora 12,00 €
+    await tap.updateComplete;
+    expect(cta().hasAttribute('disabled'), '12,00 € sí cubre').toBe(false);
+  });
+
   it('tarjeta: sin numpad ni entregado — importe exacto, pista del datáfono y CTA propio', async () => {
     const el = await conCobroAbierto();
 

@@ -47,6 +47,7 @@ const MESSAGES: Record<string, string> = {
   'sales.tax_rate_out_of_range': 'ui.errorDiscountRange',
   'sales.customer_required': 'ui.errorCustomerRequired',
   'sales.amount_negative': 'ui.errorAmountNegative',
+  'sales.insufficient_tendered': 'ui.errorInsufficientTendered',
   'sales.idempotency_key_required': 'ui.errorCharge',
 };
 

@@ -750,6 +750,16 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     let discount_amount: i64 = gross_pre_disc - gross;
     let total = gross; // céntimos
     let tendered = as_cents(payload.get("amount_tendered").unwrap_or(&Value::Null), 0); // céntimos
+    // sales#24 — a POSITIVE amount below the total is a short payment: the sale used to close
+    // anyway with `change = 0` and the drawer silently short. `0` keeps meaning «not stated»
+    // (integrations that never send it); the touch POS never sends 0 — an empty numpad becomes
+    // the payable. The server owns the total (ADR-0085), so the server refuses.
+    if tendered > 0 && tendered < total {
+        return Err(reject(
+            "sales.insufficient_tendered",
+            format!("amount_tendered {tendered} is below the total {total}"),
+        ));
+    }
     let change = if tendered - total > 0 { tendered - total } else { 0 };
 
     // EL DESGLOSE SE CIERRA AQUÍ: la cuota se calcula UNA sola vez por TIPO IMPOSITIVO, sobre la
@@ -2283,6 +2293,30 @@ mod tests {
         inp["payload"]["amount_tendered"] = json!(-100);
         let err = complete_sale_pure(inp).expect_err("negative tendered");
         assert!(err.contains("sales.amount_negative"), "{err}");
+    }
+
+    #[test]
+    fn cash_tendered_below_the_total_is_rejected() {
+        // sales#24 — a cash sale where the customer handed over LESS than the total used to close
+        // anyway, with `change = 0` and the drawer silently short. The server is the authority on
+        // the total (ADR-0085), so it is the server that refuses: 5,00 € due, 1,00 € tendered.
+        let items = json!([{ "product_name": "Menú", "price": 500, "quantity": 1_000_000, "tax_rate": 21.0 }]);
+        let err = complete_sale_pure(input(items, 3, 100)).expect_err("tendered below total");
+        assert!(err.contains("sales.insufficient_tendered"), "{err}");
+    }
+
+    #[test]
+    fn tendered_equal_or_above_the_total_still_closes_and_omitted_tendered_means_exact() {
+        // Exact amount, more than due (change), and the legacy «not stated» (0 — integrations that
+        // never send `amount_tendered`) all keep working: only a POSITIVE amount below the total is
+        // a short payment. The touch POS never sends 0: an empty numpad becomes the payable.
+        let items = || json!([{ "product_name": "Menú", "price": 500, "quantity": 1_000_000, "tax_rate": 21.0 }]);
+        let exact = sale(input(items(), 3, 500));
+        assert_eq!(exact.operations[1].params["change_due"], json!(0));
+        let over = sale(input(items(), 3, 1000));
+        assert_eq!(over.operations[1].params["change_due"], json!(500));
+        let unstated = sale(input(items(), 3, 0));
+        assert_eq!(unstated.operations[1].params["change_due"], json!(0));
     }
 
     #[test]

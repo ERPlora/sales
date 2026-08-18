@@ -146,6 +146,7 @@
     "errorDiscountRange": "The discount must be between 0 % and 100 %",
     "errorCustomerRequired": "This business requires a customer on every sale",
     "errorAmountNegative": "The sale cannot carry negative amounts",
+    "errorInsufficientTendered": "The amount tendered does not cover the total",
     "all": "All",
     "categoryFilter": "Categories",
     "products": "products",
@@ -212,6 +213,7 @@
     "limitFieldTaxId": "Tax ID",
     "limitFieldAddress": "Address",
     "limitChargeBlocked": "Enter the customer's details",
+    "tenderedShort": "The amount tendered does not cover the total",
     "screenMenu": "Screen",
     "exitFullscreen": "Exit full screen"
   }

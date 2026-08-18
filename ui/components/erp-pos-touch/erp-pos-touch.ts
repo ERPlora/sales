@@ -1895,6 +1895,11 @@ export class ErpPosTouch extends LitElement {
   // como `total`. Sin esta conversión: «Efectivo 0.20 €» y cambio 0 en el tiquet (QA 2026-07-17).
   private get tenderedNum() { return eurosToCents(this.tendered || '0'); }
   private get change() { return Math.max(0, this.tenderedNum - this.payable); }
+  /** sales#24 — cash typed in but SHORT of the payable. 0 (nothing typed) means «exact amount»;
+   *  the server refuses the same case (`sales.insufficient_tendered`), this just spares the trip. */
+  private get tenderedShort(): boolean {
+    return needsTendered(this.payMethod) && this.tenderedNum > 0 && this.tenderedNum < this.payable;
+  }
   /** Lo que se cobra AHORA: la selección si la hay, o la cuenta entera (ADR-0146). */
   private get payable() { return splitTotal(this.cart, this.splitSel); }
 
@@ -2641,14 +2646,16 @@ export class ErpPosTouch extends LitElement {
                 ${this.error ? html`<p class="pay-err">${this.error}</p>${this.renderCheckSalesLink()}` : nothing}
                 <!-- UNA acción, dice lo que hace y por cuánto, y no exige scroll para alcanzarla.
                      El importe es el PAYABLE: con split decía «Cobrar 3,60 €» para cobrar 1,80 €. -->
-                <ion-button class="charge" expand="block" ?disabled=${this.busy || this.chargeBlocked}
+                <ion-button class="charge" expand="block" ?disabled=${this.busy || this.chargeBlocked || this.tenderedShort}
                             @click=${() => this.confirm(this.printOnCharge)}>
                   ${this.busy
                     ? t('ui.charging')
                     : this.chargeBlocked
                       // Dice lo que FALTA, no «no puedes». El motivo largo está arriba, en el aviso.
                       ? t('ui.limitChargeBlocked')
-                      : needsTendered(this.payMethod)
+                      : this.tenderedShort
+                        ? t('ui.tenderedShort')
+                        : needsTendered(this.payMethod)
                         ? `${t('ui.charge')} ${this.money(this.payable)}`
                         : t('ui.chargeWithCard', { amount: this.money(this.payable) })}
                 </ion-button>

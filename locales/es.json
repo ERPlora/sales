@@ -147,6 +147,7 @@
     "errorDiscountRange": "El descuento debe estar entre 0 % y 100 %",
     "errorCustomerRequired": "Este negocio exige un cliente en cada venta",
     "errorAmountNegative": "La venta no puede llevar importes negativos",
+    "errorInsufficientTendered": "El importe entregado no cubre el total",
     "all": "Todos",
     "categoryFilter": "Categorías",
     "products": "productos",
@@ -213,6 +214,7 @@
     "limitFieldTaxId": "NIF",
     "limitFieldAddress": "Domicilio",
     "limitChargeBlocked": "Faltan los datos del cliente",
+    "tenderedShort": "Lo entregado no cubre el total",
     "screenMenu": "Pantalla",
     "exitFullscreen": "Salir de pantalla completa"
   },

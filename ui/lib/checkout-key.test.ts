@@ -36,6 +36,11 @@ describe('checkoutErrorKey', () => {
     expect(checkoutErrorKey('sales.customer_required')).toBe('ui.errorCustomerRequired');
   });
 
+  it('sales#24 — a cash amount below the total tells the cashier how much is missing, not «error»', () => {
+    expect(checkoutErrorKey('sales.insufficient_tendered: amount_tendered 100 is below the total 500'))
+      .toBe('ui.errorInsufficientTendered');
+  });
+
   it('finds the code even when the runtime wraps the message', () => {
     expect(
       checkoutErrorKey('command `sales.complete_sale` failed: sales.empty_sale: no lines'),
