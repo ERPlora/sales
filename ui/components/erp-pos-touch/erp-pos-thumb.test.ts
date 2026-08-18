@@ -166,3 +166,32 @@ describe('the tile always keeps something to look at', () => {
     expect(thumbOf(fresh, 'Café').querySelector('img')).not.toBeNull();
   });
 });
+
+// sales#57 (QA visual del catálogo, 2026-08-10): debajo del nombre la baldosa exponía el SKU/slug
+// interno (`agua_con_gas`) — ruido repetido en 50 baldosas que además entraba en el NOMBRE ACCESIBLE
+// del botón. Square, Toast y Lightspeed pintan nombre + precio; el SKU vive en la búsqueda y en la
+// ficha. Se conserva la UNIDAD cuando no es la pieza («kg», «l»): eso sí lo lee la cajera.
+async function mountWith(products: Record<string, unknown>[]): Promise<MountedPos> {
+  const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+  sdk.queryAll = async (name: string) => (name === 'inventory.products.list' ? products : name === 'taxes.rules.list' ? RULES : []);
+  document.body.innerHTML = '';
+  return mount();
+}
+
+describe('la baldosa no expone el SKU (sales#57)', () => {
+  it('nombre y precio dominan; el sku no se pinta ni entra en el texto accesible', async () => {
+    const el = await mountWith([{ id: 'p1', name: 'Agua con gas', sku: 'agua_con_gas', price: 120, is_active: 1, tax_category_key: 'product.generic' }]);
+    const tile = el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!;
+    expect(tile.textContent).not.toContain('agua_con_gas');
+    expect(tile.querySelector('.n')?.textContent).toBe('Agua con gas');
+  });
+  it('la unidad a peso sí se ve («kg»); la pieza («ud») no', async () => {
+    const el = await mountWith([
+      { id: 'p1', name: 'Gambas', sku: 'GAM', price: 1200, is_active: 1, tax_category_key: 'product.generic', unit_code: 'kg' },
+      { id: 'p2', name: 'Pan', sku: 'PAN', price: 100, is_active: 1, tax_category_key: 'product.generic', unit_code: 'ud' },
+    ]);
+    const tiles = [...el.shadowRoot!.querySelectorAll<HTMLElement>('ion-card.tile')];
+    expect(tiles[0].querySelector('.sku')?.textContent?.trim()).toBe('kg');
+    expect(tiles[1].querySelector('.sku')?.textContent?.trim() ?? '').toBe('');
+  });
+});

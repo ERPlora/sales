@@ -2666,7 +2666,10 @@ export class ErpPosTouch extends LitElement {
                   : nothing}
                 ${blocked ? html`<span class="warn"><ion-icon name="alert-circle"></ion-icon></span>` : nothing}
               </div>
-              <div class="tinfo"><div class="n">${p.name}</div><div class="sku">${p.sku || p.unit_code || ''}</div><div class="p">${this.money(Number(p.price))}</div></div>
+              <!-- sales#57: nombre y precio mandan. El SKU/slug NO se pinta (ruido interno que además
+                   entraba en el nombre accesible del botón; Square/Toast/Lightspeed no lo enseñan —
+                   vive en la búsqueda). La UNIDAD sí, cuando no es la pieza: «kg», «l». -->
+              <div class="tinfo"><div class="n">${p.name}</div><div class="sku">${p.unit_code && p.unit_code !== 'ud' ? p.unit_code : ''}</div><div class="p">${this.money(Number(p.price))}</div></div>
             </ion-card>`;
             })}
             <!-- PRECIO LIBRE: vender género suelto que no está fichado (fruta a ojo). Va al FINAL de la

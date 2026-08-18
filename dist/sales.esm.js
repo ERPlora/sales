@@ -7665,7 +7665,10 @@ var ErpPosTouch = class extends i3 {
                       @error=${() => this.photos.drop(p4.image, photo)}>` : A}
                 ${blocked ? b2`<span class="warn"><ion-icon name="alert-circle"></ion-icon></span>` : A}
               </div>
-              <div class="tinfo"><div class="n">${p4.name}</div><div class="sku">${p4.sku || p4.unit_code || ""}</div><div class="p">${this.money(Number(p4.price))}</div></div>
+              <!-- sales#57: nombre y precio mandan. El SKU/slug NO se pinta (ruido interno que además
+                   entraba en el nombre accesible del botón; Square/Toast/Lightspeed no lo enseñan —
+                   vive en la búsqueda). La UNIDAD sí, cuando no es la pieza: «kg», «l». -->
+              <div class="tinfo"><div class="n">${p4.name}</div><div class="sku">${p4.unit_code && p4.unit_code !== "ud" ? p4.unit_code : ""}</div><div class="p">${this.money(Number(p4.price))}</div></div>
             </ion-card>`;
     })}
             <!-- PRECIO LIBRE: vender género suelto que no está fichado (fruta a ojo). Va al FINAL de la
