@@ -6,6 +6,7 @@ import '@erplora/outfitkit/ok-data-table';
 import type { DataTableColumn, DataTableAction } from '@erplora/outfitkit';
 import { renderDocumentModal } from '../../lib/document-modal.js';
 import { payMethodDisplayName } from '../../lib/pay-icons.js';
+import { formatDateTime } from '../../lib/document-mappers.js';
 import { createListController } from '@erplora/module-sdk';
 import type { ListController, ListClient, ListParams, ListPage } from '@erplora/module-sdk';
 // Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC.
@@ -63,7 +64,23 @@ interface Sale {
   created_at: string;
 }
 
-interface Stats { count: number; total_revenue: number; avg_ticket: number; }
+interface Stats { count: number; total_revenue: number; avg_ticket: number; tax_total?: number; net_total?: number; discount_total?: number; voided_count?: number; }
+
+/** sales#27 — el rango que gobierna filas y KPIs a la vez. `today` por defecto (Odoo, Square). */
+type Range = 'today' | '7d' | '30d' | 'all';
+const RANGE_KEYS: Record<Range, string> = { today: 'ui.rangeToday', '7d': 'ui.range7d', '30d': 'ui.range30d', all: 'ui.rangeAll' };
+/** Día ISO local `YYYY-MM-DD` de hace `daysAgo` días. */
+function isoDay(daysAgo = 0): string {
+  const d = new Date(); d.setDate(d.getDate() - daysAgo);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+/** Límites del rango (ambos inclusivos); `all` = sin límites. */
+export function rangeBounds(range: Range): { from?: string; to?: string } {
+  if (range === 'all') return {};
+  const days = range === 'today' ? 0 : range === '7d' ? 6 : 29;
+  return { from: isoDay(days), to: isoDay(0) };
+}
 
 function erplora(): ErploraClientLike {
   const c = (globalThis as { erplora?: ErploraClientLike }).erplora;
@@ -76,6 +93,7 @@ export class ErpSalesList extends LitElement {
     :host { display:block; font-family: system-ui, sans-serif; color: var(--ion-text-color,#1c1b18); }
     h2 { margin:0 0 .75rem; font-size:1.15rem; }
     .cards { display:flex; gap:.6rem; margin-bottom:1rem; flex-wrap:wrap; }
+    .range-segment { margin:.25rem 0 .75rem; max-width:32rem; }
     .card { flex:1; min-width:8rem; padding:.7rem .9rem; border:1px solid var(--ion-border-color,#e0ddd4); border-radius: var(--ok-radius, 12px); }
     .card .k { color:#8b897f; font-size:.75rem; text-transform:uppercase; }
     .card .v { font-size:1.3rem; font-weight:700; }
@@ -83,6 +101,8 @@ export class ErpSalesList extends LitElement {
   `;
 
   @state() stats: Stats = { count: 0, total_revenue: 0, avg_ticket: 0 };
+  /** sales#27: rango activo; hoy por defecto. */
+  @state() range: Range = 'today';
 
   @state() statsError = '';
 
@@ -158,6 +178,9 @@ export class ErpSalesList extends LitElement {
   private get columns(): DataTableColumn[] {
     const t = (k: string): string => erplora().t(CATALOG, k);
     return [
+    // sales#27: la hora de cada venta a la vista (antes se ordenaba por ella y no se pintaba).
+    { key: 'created_at', header: t('ui.colDate'), sortable: true, filterable: true, filterType: 'daterange',
+      format: (r) => formatDateTime(String(r.created_at ?? ''), erplora().locale) },
     { key: 'sale_number', header: t('ui.colNumber'), sortable: true, filterable: true, filterType: 'text' },
     { key: 'customer_name', header: t('ui.colCustomer'), sortable: true, filterable: true, filterType: 'text', format: (r) => (r.customer_name as string) || '—' },
     { key: 'payment_method_name', header: t('ui.colPayment'), sortable: true, filterable: true, filterType: 'text', // sales#108: the row stores the canonical seed name («Cash»); the cell speaks the user's language.
@@ -189,10 +212,13 @@ export class ErpSalesList extends LitElement {
   async connectedCallback() {
     super.connectedCallback();
     window.addEventListener('erplora:locale-changed', this.onLocaleChange);
+    const b = rangeBounds(this.range);
     this.ctrl = createListController<Sale>(erplora(), 'sales.list', () => this.requestUpdate(), {
       pageSize: 50,
       sort: 'created_at',
       dir: 'desc',
+      // sales#27: se abre en HOY — las filas y los KPIs responden al mismo rango.
+      filters: b.from ? { created_at: { from: b.from, to: b.to } } : {},
     });
     await Promise.all([this.ctrl.load(), this.loadStats()]);
     try { this.unsub = erplora().on('sale.completed', () => { this.ctrl.load(); this.loadStats(); }); }
@@ -203,9 +229,18 @@ export class ErpSalesList extends LitElement {
     window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
     super.disconnectedCallback(); this.unsub?.(); }
 
+  /** sales#27: cambia el rango de filas Y KPIs a la vez. */
+  async setRange(range: Range): Promise<void> {
+    this.range = range;
+    const b = rangeBounds(range);
+    this.ctrl.setFilter('created_at', b.from ? { from: b.from, to: b.to } : null);
+    await this.loadStats();
+  }
+
   private async loadStats() {
     try {
-      const rows = await erplora().query<Stats[]>('sales.stats');
+      const b = rangeBounds(this.range);
+      const rows = await erplora().query<Stats[]>('sales.stats', { date_from: b.from ?? null, date_to: b.to ?? null });
       this.stats = (rows && rows[0]) || { count: 0, total_revenue: 0, avg_ticket: 0 };
     } catch (e) {
       this.statsError = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errorStats');
@@ -216,6 +251,10 @@ export class ErpSalesList extends LitElement {
     const t = (k: string): string => erplora().t(CATALOG, k);
     return html`<div>
         <h2>${t('ui.sales')}</h2>
+        <ion-segment class="range-segment" value=${this.range} aria-label=${t('ui.rangeLabel')}
+          @ionChange=${(e: CustomEvent<{ value?: string }>) => { void this.setRange((e.detail.value as Range) || 'today'); }}>
+          ${(Object.keys(RANGE_KEYS) as Range[]).map((r) => html`<ion-segment-button value=${r}><ion-label>${t(RANGE_KEYS[r])}</ion-label></ion-segment-button>`)}
+        </ion-segment>
         <div class="cards">
           <div class="card">
             <div class="k">${t('ui.tickets')}</div>
@@ -228,6 +267,18 @@ export class ErpSalesList extends LitElement {
           <div class="card">
             <div class="k">${t('ui.avgTicket')}</div>
             <div class="v">${erplora().formatMoney(Number(this.stats.avg_ticket || 0))}</div>
+          </div>
+          <div class="card">
+            <div class="k">${t('ui.kpiTax')}</div>
+            <div class="v">${erplora().formatMoney(Number(this.stats.tax_total || 0))}</div>
+          </div>
+          <div class="card">
+            <div class="k">${t('ui.kpiDiscounts')}</div>
+            <div class="v">${erplora().formatMoney(Number(this.stats.discount_total || 0))}</div>
+          </div>
+          <div class="card">
+            <div class="k">${t('ui.kpiVoided')}</div>
+            <div class="v">${Number(this.stats.voided_count || 0)}</div>
           </div>
         </div>
         ${this.statsError ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.statsError}</ok-inline-feedback>` : nothing}

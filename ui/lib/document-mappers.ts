@@ -24,7 +24,7 @@ function toEuros(cents: number | undefined): number {
 
 /** Fecha legible según locale («16/07/2026, 19:00»). ISO no parseable → se devuelve tal cual;
  *  vacía → undefined. Nunca "Invalid Date" en un tiquet. */
-function formatDateTime(iso: string | undefined, locale = 'es'): string | undefined {
+export function formatDateTime(iso: string | undefined, locale = 'es'): string | undefined {
   if (!iso) return undefined;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;

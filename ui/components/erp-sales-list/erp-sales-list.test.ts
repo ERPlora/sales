@@ -130,3 +130,72 @@ describe('sales list — the void action (sales#26)', () => {
     expect(err?.message).toBe('Esta venta lleva factura completa: emite una factura rectificativa en vez de anularla');
   });
 });
+
+// sales#27 — the sales history as an OPERATIONAL tool: what a manager opens at the end of the
+// day. Odoo and Square open their transaction lists on TODAY with a date filter, show the date and
+// time on every row, and the KPIs answer for the same range as the rows. Here: a range segment
+// (today · 7 days · 30 days · all) that drives BOTH the list filter (`created_at` range, already a
+// server filter) and `sales.stats` (which now takes an optional `date_from`/`date_to`).
+describe('sales list — today by default, date/time on the row, KPIs for the same range (sales#27)', () => {
+  const sdk = () => (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+  let queries: { name: string; params?: Record<string, unknown> }[] = [];
+
+  async function mountList() {
+    queries = [];
+    sdk().query = async (name: string, params?: Record<string, unknown>) => {
+      queries.push({ name, params });
+      if (name === 'sales.stats') return [{ count: 3, total_revenue: 4500, avg_ticket: 1500, tax_total: 780, discount_total: 200, voided_count: 1 }];
+      return [];
+    };
+    sdk().queryPage = async (name: string, params: Record<string, unknown>) => { queries.push({ name, params }); return { rows: [], total: 0 }; };
+    document.body.innerHTML = '';
+    await import('./erp-sales-list');
+    const el = document.createElement('erp-sales-list');
+    document.body.appendChild(el);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    await new Promise((r) => setTimeout(r, 0));
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    return el as unknown as {
+      shadowRoot: ShadowRoot; updateComplete: Promise<unknown>;
+      columns: Column[]; setRange(r: 'today' | '7d' | '30d' | 'all'): Promise<void>; range: string;
+    };
+  }
+  const today = () => new Date().toISOString().slice(0, 10);
+
+  it('shows the date and time of every sale, formatted, not the raw ISO string', async () => {
+    const el = await mountList();
+    const col = el.columns.find((c) => c.key === 'created_at');
+    expect(col, 'a created_at column').toBeTruthy();
+    const out = String(col!.format!({ created_at: '2026-08-18T09:05:00+00:00' }));
+    expect(out).not.toContain('T09:05');
+    expect(out).toMatch(/2026/);
+  });
+
+  it('opens on TODAY: the stats and the list are asked for today only', async () => {
+    const el = await mountList();
+    expect(el.range).toBe('today');
+    const stats = queries.find((q) => q.name === 'sales.stats');
+    expect(stats?.params).toMatchObject({ date_from: today(), date_to: today() });
+    const list = queries.find((q) => q.name === 'sales.list');
+    expect(JSON.stringify(list?.params)).toContain(today());
+  });
+
+  it('«all» clears the range from both, and the segment is on screen', async () => {
+    const el = await mountList();
+    expect(el.shadowRoot.querySelector('.range-segment'), 'range segment').toBeTruthy();
+    queries = [];
+    await el.setRange('all');
+    const stats = queries.find((q) => q.name === 'sales.stats');
+    expect(stats?.params?.date_from ?? null).toBeNull();
+    const list = queries.find((q) => q.name === 'sales.list');
+    expect(JSON.stringify(list?.params ?? {})).not.toContain(today());
+  });
+
+  it('the KPI cards also answer VAT, discounts and voided count for the range', async () => {
+    const el = await mountList();
+    const text = el.shadowRoot.querySelector('.cards')?.textContent ?? '';
+    expect(text).toContain('7.80');   // tax_total 780
+    expect(text).toContain('2.00');   // discount_total 200
+    expect(text).toContain('1');      // voided
+  });
+});

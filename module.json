@@ -230,7 +230,7 @@
       "permission": "sales.view_reports",
       "sql": "queries/stats.sql",
       "ai": {
-        "description": "Returns aggregated sales statistics and metrics"
+        "description": "Sales KPIs for an optional inclusive date range (date_from/date_to, ISO days; empty = unbounded): count, total_revenue, avg_ticket, net_total, tax_total, discount_total of completed sales, plus voided_count (sales#27)."
       }
     },
     "sales.payment_methods": {

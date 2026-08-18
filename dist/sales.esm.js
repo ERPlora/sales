@@ -3569,6 +3569,15 @@ var es_default = {
     limitFieldAddress: "Domicilio",
     limitChargeBlocked: "Faltan los datos del cliente",
     tenderedShort: "Lo entregado no cubre el total",
+    colDate: "Fecha",
+    rangeLabel: "Periodo",
+    rangeToday: "Hoy",
+    range7d: "7 d\xEDas",
+    range30d: "30 d\xEDas",
+    rangeAll: "Todo",
+    kpiTax: "IVA",
+    kpiDiscounts: "Descuentos",
+    kpiVoided: "Anuladas",
     discountLine: "Descuento en la l\xEDnea",
     discountLineOf: "Descuento en {name}",
     discountTicket: "Descuento del ticket",
@@ -3833,6 +3842,15 @@ var en_default = {
     limitFieldAddress: "Address",
     limitChargeBlocked: "Enter the customer's details",
     tenderedShort: "The amount tendered does not cover the total",
+    colDate: "Date",
+    rangeLabel: "Period",
+    rangeToday: "Today",
+    range7d: "7 days",
+    range30d: "30 days",
+    rangeAll: "All",
+    kpiTax: "VAT",
+    kpiDiscounts: "Discounts",
+    kpiVoided: "Voided",
     discountLine: "Line discount",
     discountLineOf: "Discount on {name}",
     discountTicket: "Ticket discount",
@@ -9671,6 +9689,18 @@ function voidErrorKey(message) {
   for (const [code, key] of Object.entries(VOID_MESSAGES)) if (message.includes(code)) return key;
   return "ui.voidFailed";
 }
+var RANGE_KEYS = { today: "ui.rangeToday", "7d": "ui.range7d", "30d": "ui.range30d", all: "ui.rangeAll" };
+function isoDay(daysAgo = 0) {
+  const d3 = /* @__PURE__ */ new Date();
+  d3.setDate(d3.getDate() - daysAgo);
+  const pad = (n6) => String(n6).padStart(2, "0");
+  return `${d3.getFullYear()}-${pad(d3.getMonth() + 1)}-${pad(d3.getDate())}`;
+}
+function rangeBounds(range) {
+  if (range === "all") return {};
+  const days = range === "today" ? 0 : range === "7d" ? 6 : 29;
+  return { from: isoDay(days), to: isoDay(0) };
+}
 function erplora3() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -9680,6 +9710,7 @@ var ErpSalesList = class extends i3 {
   constructor() {
     super(...arguments);
     this.stats = { count: 0, total_revenue: 0, avg_ticket: 0 };
+    this.range = "today";
     this.statsError = "";
     this.tick = 0;
     this.onLocaleChange = () => this.requestUpdate();
@@ -9689,6 +9720,7 @@ var ErpSalesList = class extends i3 {
     :host { display:block; font-family: system-ui, sans-serif; color: var(--ion-text-color,#1c1b18); }
     h2 { margin:0 0 .75rem; font-size:1.15rem; }
     .cards { display:flex; gap:.6rem; margin-bottom:1rem; flex-wrap:wrap; }
+    .range-segment { margin:.25rem 0 .75rem; max-width:32rem; }
     .card { flex:1; min-width:8rem; padding:.7rem .9rem; border:1px solid var(--ion-border-color,#e0ddd4); border-radius: var(--ok-radius, 12px); }
     .card .k { color:#8b897f; font-size:.75rem; text-transform:uppercase; }
     .card .v { font-size:1.3rem; font-weight:700; }
@@ -9757,6 +9789,15 @@ var ErpSalesList = class extends i3 {
   get columns() {
     const t7 = (k2) => erplora3().t(CATALOG3, k2);
     return [
+      // sales#27: la hora de cada venta a la vista (antes se ordenaba por ella y no se pintaba).
+      {
+        key: "created_at",
+        header: t7("ui.colDate"),
+        sortable: true,
+        filterable: true,
+        filterType: "daterange",
+        format: (r6) => formatDateTime(String(r6.created_at ?? ""), erplora3().locale)
+      },
       { key: "sale_number", header: t7("ui.colNumber"), sortable: true, filterable: true, filterType: "text" },
       { key: "customer_name", header: t7("ui.colCustomer"), sortable: true, filterable: true, filterType: "text", format: (r6) => r6.customer_name || "\u2014" },
       {
@@ -9794,10 +9835,13 @@ var ErpSalesList = class extends i3 {
   async connectedCallback() {
     super.connectedCallback();
     window.addEventListener("erplora:locale-changed", this.onLocaleChange);
+    const b3 = rangeBounds(this.range);
     this.ctrl = createListController(erplora3(), "sales.list", () => this.requestUpdate(), {
       pageSize: 50,
       sort: "created_at",
-      dir: "desc"
+      dir: "desc",
+      // sales#27: se abre en HOY — las filas y los KPIs responden al mismo rango.
+      filters: b3.from ? { created_at: { from: b3.from, to: b3.to } } : {}
     });
     await Promise.all([this.ctrl.load(), this.loadStats()]);
     try {
@@ -9813,9 +9857,17 @@ var ErpSalesList = class extends i3 {
     super.disconnectedCallback();
     this.unsub?.();
   }
+  /** sales#27: cambia el rango de filas Y KPIs a la vez. */
+  async setRange(range) {
+    this.range = range;
+    const b3 = rangeBounds(range);
+    this.ctrl.setFilter("created_at", b3.from ? { from: b3.from, to: b3.to } : null);
+    await this.loadStats();
+  }
   async loadStats() {
     try {
-      const rows3 = await erplora3().query("sales.stats");
+      const b3 = rangeBounds(this.range);
+      const rows3 = await erplora3().query("sales.stats", { date_from: b3.from ?? null, date_to: b3.to ?? null });
       this.stats = rows3 && rows3[0] || { count: 0, total_revenue: 0, avg_ticket: 0 };
     } catch (e7) {
       this.statsError = e7 instanceof Error ? e7.message : erplora3().t(CATALOG3, "ui.errorStats");
@@ -9825,6 +9877,12 @@ var ErpSalesList = class extends i3 {
     const t7 = (k2) => erplora3().t(CATALOG3, k2);
     return b2`<div>
         <h2>${t7("ui.sales")}</h2>
+        <ion-segment class="range-segment" value=${this.range} aria-label=${t7("ui.rangeLabel")}
+          @ionChange=${(e7) => {
+      void this.setRange(e7.detail.value || "today");
+    }}>
+          ${Object.keys(RANGE_KEYS).map((r6) => b2`<ion-segment-button value=${r6}><ion-label>${t7(RANGE_KEYS[r6])}</ion-label></ion-segment-button>`)}
+        </ion-segment>
         <div class="cards">
           <div class="card">
             <div class="k">${t7("ui.tickets")}</div>
@@ -9837,6 +9895,18 @@ var ErpSalesList = class extends i3 {
           <div class="card">
             <div class="k">${t7("ui.avgTicket")}</div>
             <div class="v">${erplora3().formatMoney(Number(this.stats.avg_ticket || 0))}</div>
+          </div>
+          <div class="card">
+            <div class="k">${t7("ui.kpiTax")}</div>
+            <div class="v">${erplora3().formatMoney(Number(this.stats.tax_total || 0))}</div>
+          </div>
+          <div class="card">
+            <div class="k">${t7("ui.kpiDiscounts")}</div>
+            <div class="v">${erplora3().formatMoney(Number(this.stats.discount_total || 0))}</div>
+          </div>
+          <div class="card">
+            <div class="k">${t7("ui.kpiVoided")}</div>
+            <div class="v">${Number(this.stats.voided_count || 0)}</div>
           </div>
         </div>
         ${this.statsError ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.statsError}</ok-inline-feedback>` : A}
@@ -9855,6 +9925,9 @@ var ErpSalesList = class extends i3 {
 __decorateClass([
   r5()
 ], ErpSalesList.prototype, "stats", 2);
+__decorateClass([
+  r5()
+], ErpSalesList.prototype, "range", 2);
 __decorateClass([
   r5()
 ], ErpSalesList.prototype, "statsError", 2);
