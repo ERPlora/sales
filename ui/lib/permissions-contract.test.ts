@@ -51,3 +51,41 @@ describe('permission layer: sales.take_payment separated from add_sale (sales#55
     expect(m.role_permissions.employee).toContain('sales.add_sale');
   });
 });
+
+// sales#100 — «cashier» is a set of permissions, never an identity (a job in Toast, a permission
+// set in Square, a permission group in Mindbody — decided in ERPlora/pm#9). The base catalogue is
+// frozen at admin/manager/employee (ADR-0192), so the role is DECLARED by the till module: it can
+// charge, build and park checks, and can NOT read business reports, touch the payment-method
+// catalogue or the till settings. It hangs from `employee` (never administers the hub) and lands
+// opt-in: the vertical blueprint switches it on (ADR-0242).
+describe('the cashier role is declared by sales, not by the core (sales#100)', () => {
+  type WithRoles = ManifestPermissions & { roles?: { key: string; label: string; extends: string }[] };
+  const mr = manifest as unknown as WithRoles;
+
+  it('declares `cashier` extending `employee`, with an English label', () => {
+    const cashier = (mr.roles ?? []).find((r) => r.key === 'cashier');
+    expect(cashier, 'sales declares the cashier role').toBeTruthy();
+    expect(cashier!.extends).toBe('employee');
+    expect(cashier!.label).toBe('Cashier');
+  });
+
+  it('a cashier can charge and run the till', () => {
+    const grants = mr.role_permissions.cashier ?? [];
+    for (const p of ['sales.view_sale', 'sales.add_sale', 'sales.change_sale', 'sales.take_payment', 'sales.view_paymentmethod']) {
+      expect(grants, `cashier needs ${p}`).toContain(p);
+    }
+  });
+
+  it('a cashier can NOT read reports, void, edit the payment methods or the till settings', () => {
+    const grants = mr.role_permissions.cashier ?? [];
+    for (const p of ['sales.view_reports', 'sales.manage_settings', 'sales.void_sale', 'sales.delete_sale',
+                     'sales.add_paymentmethod', 'sales.change_paymentmethod', 'sales.delete_paymentmethod']) {
+      expect(grants, `cashier must not get ${p}`).not.toContain(p);
+    }
+    expect(grants).not.toContain('*');
+  });
+
+  it('every permission granted to cashier is one the module declares', () => {
+    for (const p of mr.role_permissions.cashier ?? []) expect(mr.permissions).toContain(p);
+  });
+});

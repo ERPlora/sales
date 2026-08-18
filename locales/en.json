@@ -11,6 +11,11 @@
       "label": "POS Settings"
     }
   },
+  "roles": {
+    "cashier": {
+      "label": "Cashier"
+    }
+  },
   "ui": {
     "sales": "Sales",
     "tickets": "Tickets",

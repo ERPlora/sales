@@ -35,9 +35,23 @@
     "sales.view_reports",
     "sales.manage_settings"
   ],
+  "roles": [
+    {
+      "key": "cashier",
+      "label": "Cashier",
+      "extends": "employee"
+    }
+  ],
   "role_permissions": {
     "admin": [
       "*"
+    ],
+    "cashier": [
+      "sales.view_sale",
+      "sales.add_sale",
+      "sales.change_sale",
+      "sales.take_payment",
+      "sales.view_paymentmethod"
     ],
     "manager": [
       "sales.view_sale",

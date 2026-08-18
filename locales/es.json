@@ -12,6 +12,11 @@
       "label": "Ajustes TPV"
     }
   },
+  "roles": {
+    "cashier": {
+      "label": "Cajero"
+    }
+  },
   "ui": {
     "sales": "Ventas",
     "tickets": "Tickets",
