@@ -18,6 +18,8 @@
 // se orienta por su código y su frase sí le sirve al cajero. Solo se traduce lo que no es de
 // negocio.
 
+import { SERVER_UNAVAILABLE } from '@erplora/module-sdk';
+
 /** Clave del catálogo i18n del módulo para «el servidor no responde». */
 export const SERVER_UNAVAILABLE_KEY = 'ui.serverUnavailable';
 
@@ -32,6 +34,13 @@ export const SERVER_UNAVAILABLE_KEY = 'ui.serverUnavailable';
  *    dicen `Failed to fetch`, Safari `Load failed`.
  */
 export function transportErrorKey(e: unknown): string | null {
+  // sales#91 — desde hub#782 el transporte del SDK lanza un error TIPADO (`code === SERVER_UNAVAILABLE`,
+  // exportado por `@erplora/module-sdk`) con un mensaje técnico propio que ninguna firma de texto de
+  // abajo reconoce («request to /api/command failed: …», «unexpected response …: HTTP 502 text/html»).
+  // El código manda: si viene, decide él. Y un error de DOMINIO tipado (`sales.customer_required`)
+  // nunca es de transporte, diga lo que diga su frase — no se olfatea.
+  const code = (e as { code?: unknown } | null | undefined)?.code;
+  if (typeof code === 'string' && code) return code === SERVER_UNAVAILABLE ? SERVER_UNAVAILABLE_KEY : null;
   const msg = e instanceof Error ? e.message : String(e ?? '');
   if (!msg) return null;
   // El 502 HTML del proxy: el parser JSON revienta sobre el `<!DOCTYPE`. Cadena común a los

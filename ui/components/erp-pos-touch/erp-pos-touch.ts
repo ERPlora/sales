@@ -1264,6 +1264,10 @@ export class ErpPosTouch extends LitElement {
     void this.showPendingSwitchAlert(this.pendingCount);
     return true;
   }
+  /** La categoría PRIMARIA de un producto (la primera de `prodCats`); `undefined` sin clasificar. */
+  private primaryCategory(productId: string): string | undefined {
+    return this.prodCats.get(productId)?.values().next().value ?? undefined;
+  }
   private catCount(id: string) {
     const c = this.categories.find((x) => x.id === id);
     return c?.product_count ?? this.products.filter((p) => this.prodCats.get(p.id)?.has(id)).length;
@@ -1490,8 +1494,23 @@ export class ErpPosTouch extends LitElement {
    *
    *  La etiqueta que verá el cocinero es la de la mesa asignada, y viaja OPACA: `sales` no depende
    *  de `tables`, solo reenvía el texto que el slot de mesas le dejó en `tableLabel`. */
+  /** sales#80 — un disparo en vuelo. El filler de kitchen puede emitir dos `erp:order-fire` con un
+   *  doble toque; el segundo llega antes de que el primero haya releído las líneas y vería las
+   *  mismas pendientes. Mientras haya uno en vuelo, los demás se ignoran (defensa en la UI); el
+   *  handler además rechaza `sales.nothing_to_fire` si el pedido ya no tiene nada pendiente. */
+  private firing = false;
+
   private async fireToKitchen(): Promise<void> {
-    if (!this.cart.length) return;
+    if (!this.cart.length || this.firing) return;
+    this.firing = true;
+    try {
+      await this.fireToKitchenNow();
+    } finally {
+      this.firing = false;
+    }
+  }
+
+  private async fireToKitchenNow(): Promise<void> {
     const orderId = await this.ensureOrder(this.cart[0]);
     // TANDAS (decisión Ioan 2026-07-19): se dispara SOLO lo pendiente, con su ronda local, y el
     // handler lo marca (`fired_at`). Antes cada fire reenviaba el carrito ENTERO: dos disparos =
@@ -1508,7 +1527,14 @@ export class ErpPosTouch extends LitElement {
       // Las líneas recién marcadas (round_no/fired_at) se releen de la BD: es lo que bloquea su
       // edición y lo que pinta la ronda como «enviada» en la pestaña Tandas.
       if (this.orderId) this.cart = await loadOrderLines(erplora(), this.orderId);
-    } catch {
+    } catch (e) {
+      // sales#80: «no había nada pendiente» significa que la tanda YA se envió (doble toque que
+      // se coló, u otra caja): no es un fallo para el cajero — se relee el pedido y ya.
+      const msg = e instanceof Error ? e.message : String(e ?? '');
+      if (msg.includes('sales.nothing_to_fire')) {
+        if (this.orderId) this.cart = await loadOrderLines(erplora(), this.orderId).catch(() => this.cart);
+        return;
+      }
       // Sin `kitchen` instalado el evento no lo escucha nadie: el comando de `sales` igual pasa.
       // Un fallo aquí NO debe bloquear la venta — la comanda se puede repetir.
       this.error = t('ui.fireFailed');
@@ -1630,6 +1656,8 @@ export class ErpPosTouch extends LitElement {
       id: s.id,
       name: s.name,
       price: Number(s.price) || 0,
+      // sales#99: without this the service never enters `prodCats` and its tab counts 0.
+      category_id: s.category_id,
       tax_category_key: s.tax_category_key,
       pricing_type: s.pricing_type ?? 'fixed',
       is_service: true,
@@ -1707,6 +1735,9 @@ export class ErpPosTouch extends LitElement {
       const line: CartLine = {
         id: p.id, name: p.name, sku: p.sku, price: Number(p.price), qty: 1,
         tax_category_key: p.tax_category_key, tax_rate, cost: Number(p.cost) || 0,
+        // sales#12: la categoría se congela en la línea — es lo que enruta la comanda en kitchen y
+        // sobrevive a retomar la cuenta (antes solo vivía en `prodCats`, en memoria).
+        category_id: this.primaryCategory(p.id),
         // sales#89: viaja hasta `complete_sale`, que por él no mide la línea contra el catálogo de
         // `inventory` ni le descuenta stock, y hasta `sale.completed`, donde `inventory` la salta.
         ...(p.is_service ? { is_service: true } : {}),
@@ -1895,6 +1926,11 @@ export class ErpPosTouch extends LitElement {
   // como `total`. Sin esta conversión: «Efectivo 0.20 €» y cambio 0 en el tiquet (QA 2026-07-17).
   private get tenderedNum() { return eurosToCents(this.tendered || '0'); }
   private get change() { return Math.max(0, this.tenderedNum - this.payable); }
+  /** sales#24 — cash typed in but SHORT of the payable. 0 (nothing typed) means «exact amount»;
+   *  the server refuses the same case (`sales.insufficient_tendered`), this just spares the trip. */
+  private get tenderedShort(): boolean {
+    return needsTendered(this.payMethod) && this.tenderedNum > 0 && this.tenderedNum < this.payable;
+  }
   /** Lo que se cobra AHORA: la selección si la hay, o la cuenta entera (ADR-0146). */
   private get payable() { return splitTotal(this.cart, this.splitSel); }
 
@@ -1974,7 +2010,7 @@ export class ErpPosTouch extends LitElement {
         : this.cart;
       // `quantity` viaja en punto fijo 10⁶ y la línea lleva su contexto de unidades congelado
       // (ADR-0147): el servidor valida la rejilla y calcula el importe por el SDK (KPEIN).
-      const items = cobradas.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: toMicro(l.qty), tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: this.prodCats.get(l.id)?.values().next().value ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0, ...unitContextPayload(l) }));
+      const items = cobradas.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: toMicro(l.qty), tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: l.category_id ?? this.primaryCategory(l.id) ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0, ...unitContextPayload(l) }));
       await erplora().command('sales.complete_sale', {
         items,
         // sales#20: el servidor no cierra una venta sin clave, y con la misma clave dos veces
@@ -1985,7 +2021,9 @@ export class ErpPosTouch extends LitElement {
         tax_included: this.settings.default_tax_included !== 0,
         payment_method_id: this.payMethod?.id ?? null,
         // El nombre viaja al tiquet: el de fábrica va traducido (seed canónico EN → i18n).
-        payment_method_name: this.payMethod ? payMethodDisplayName(this.payMethod, t) : t('ui.cash'),
+        // sales#108: the CANONICAL name travels (the server persists the catalogue row's name anyway,
+        // ADR-0085); the ticket and the list translate it when they paint it.
+        payment_method_name: this.payMethod?.name ?? '',
         // Sin entregado tecleado (tarjeta, importe justo) se cobra el PAYABLE: con split, caer al
         // total inflaba lo entregado y el cambio del tiquet.
         amount_tendered: this.tenderedNum || this.payable,
@@ -2183,7 +2221,7 @@ export class ErpPosTouch extends LitElement {
     const cell = (id: string, name: string, count: number) => html`
       <ion-segment-button class="cat-segment-button" value=${id}>
         <ion-label class="cat-segment-label">
-          <span class="cc-n">${name}</span><span class="cc-c">${count} ${t('ui.products')}</span>
+          <span class="cc-n">${name}</span><span class="cc-c">${count} ${t('ui.items')}</span>
         </ion-label>
       </ion-segment-button>`;
     return html`
@@ -2558,11 +2596,15 @@ export class ErpPosTouch extends LitElement {
         </div>
 
         <div class="cart-backdrop" ?data-open=${this.cartOpen} @click=${() => { this.cartOpen = false; }}></div>
-        <aside class="cart" ?data-open=${this.cartOpen}>${this.renderCart()}</aside>
+        <aside class="cart" id="pos-cart-drawer" ?data-open=${this.cartOpen}>${this.renderCart()}</aside>
 
-        <!-- Botón flotante de carrito (solo móvil) -->
-        <button class="fab" @click=${() => { this.cartOpen = true; }}>
-          <ion-icon name="cart-outline"></ion-icon>
+        <!-- Botón flotante de carrito (solo móvil). sales#84: nombre accesible con la cantidad (el
+             badge visual no lo lee nadie), y estado abierto/cerrado del cajón que controla. -->
+        <button class="fab"
+                aria-label=${this.itemCount ? t('ui.openCartWithItems', { count: this.itemCount }) : t('ui.openCart')}
+                aria-expanded=${this.cartOpen ? 'true' : 'false'} aria-controls="pos-cart-drawer"
+                @click=${() => { this.cartOpen = true; }}>
+          <ion-icon name="cart-outline" aria-hidden="true"></ion-icon>
           ${this.itemCount ? html`<span class="badge">${this.itemCount}</span>` : nothing}
         </button>
       </div>
@@ -2641,14 +2683,16 @@ export class ErpPosTouch extends LitElement {
                 ${this.error ? html`<p class="pay-err">${this.error}</p>${this.renderCheckSalesLink()}` : nothing}
                 <!-- UNA acción, dice lo que hace y por cuánto, y no exige scroll para alcanzarla.
                      El importe es el PAYABLE: con split decía «Cobrar 3,60 €» para cobrar 1,80 €. -->
-                <ion-button class="charge" expand="block" ?disabled=${this.busy || this.chargeBlocked}
+                <ion-button class="charge" expand="block" ?disabled=${this.busy || this.chargeBlocked || this.tenderedShort}
                             @click=${() => this.confirm(this.printOnCharge)}>
                   ${this.busy
                     ? t('ui.charging')
                     : this.chargeBlocked
                       // Dice lo que FALTA, no «no puedes». El motivo largo está arriba, en el aviso.
                       ? t('ui.limitChargeBlocked')
-                      : needsTendered(this.payMethod)
+                      : this.tenderedShort
+                        ? t('ui.tenderedShort')
+                        : needsTendered(this.payMethod)
                         ? `${t('ui.charge')} ${this.money(this.payable)}`
                         : t('ui.chargeWithCard', { amount: this.money(this.payable) })}
                 </ion-button>

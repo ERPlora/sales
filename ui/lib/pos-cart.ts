@@ -46,6 +46,11 @@ export interface CartLine {
   /** Coste unitario del producto (céntimos), del catálogo. Se usa para el arqueo de invitaciones
    *  (a coste); el servidor lo suma a `gift_total` solo en líneas regalo. */
   cost?: number;
+  /** CATEGORÍA del producto (`inventory.product_categories` / `services.categories`), congelada en la
+   *  línea (sales#12): es lo que enruta la comanda en `kitchen` (categoría→estación) y tiene que
+   *  sobrevivir a retomar la cuenta y a que alguien recategorice el producto. Opaca para `sales`.
+   *  Ausente = sin clasificar (precio libre). */
+  category_id?: string;
   /** SERVICIO (sales#89): la línea no sale del catálogo de `inventory` — su precio es el que manda
    *  y no descuenta stock. Viaja hasta `complete_sale` y de ahí a `sale.completed`, donde
    *  `inventory` la salta. Persistida en el pedido para sobrevivir al RETOMAR la cuenta. */
@@ -206,6 +211,8 @@ function toItemPayload(l: CartLine): Record<string, unknown> {
     is_service: !!l.is_service,
     tax_category_key: l.tax_category_key ?? '',
     cost: l.cost ?? 0,
+    // sales#12: la categoría se congela en la línea del pedido (routing de cocina).
+    category_id: l.category_id ?? null,
     ...unitContextPayload(l),
   };
 }
@@ -238,6 +245,8 @@ function orderLinePayload(orderId: string, l: CartLine): Record<string, unknown>
     is_service: !!l.is_service,
     tax_category_key: l.tax_category_key ?? '',
     cost: l.cost ?? 0,
+    // sales#12: la categoría se congela en la línea del pedido (routing de cocina).
+    category_id: l.category_id ?? null,
     line_total: provisionalLineTotal(l.price, l.qty, l.is_gift),
     ...unitContextPayload(l),
   };
@@ -326,6 +335,8 @@ export async function loadOrderLines(client: ErploraClientLike, orderId: string)
       // sales#89: servicio o producto. Una fila ANTERIOR a la columna no trae nada y vuelve como
       // producto — que es lo que era; marcarla de servicio haría que inventory le saltara el stock.
       is_service: x.is_service === 1 || x.is_service === true ? true : undefined,
+      // sales#12: la categoría congelada vuelve con la línea (routing de cocina al retomar).
+      category_id: x.category_id ? String(x.category_id) : undefined,
       // Contexto de unidades CONGELADO (ADR-0147 §2.4): vuelve con la línea para que el pedido
       // reanudado valide la misma rejilla y cobre con el mismo contexto.
       unit_code: x.unit_code ? String(x.unit_code) : undefined,

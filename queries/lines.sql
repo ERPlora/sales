@@ -4,6 +4,7 @@
 SELECT id, product_id, product_name, product_sku, is_service,
        quantity, unit_price, discount_percent, tax_rate, tax_class_name,
        tax_category_key, tax_country_code, tax_region_code, tax_rule_id, is_gift, gift_reason,
+       category_id,
        net_amount, tax_amount, line_total,
        unit_code, unit_name, factor_num, factor_den, increment_value,
        price_quantity_value, pricing_unit_code, pricing_unit_name,

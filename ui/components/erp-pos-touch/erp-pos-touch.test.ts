@@ -808,6 +808,36 @@ describe('slot sales.pos.actions: cocina inyectada dentro de Comanda actual', ()
     expect(ultimo.pending_count, 'y cuánto queda SIN enviar (el badge del botón de cocina)').toBe(1);
   });
 
+  // sales#80 — el doble toque en «Enviar a cocina» del filler llegaba como DOS `erp:order-fire` y el
+  // host lanzaba dos `sales.order.fire` con las mismas líneas pendientes (misma ronda): dos comandas.
+  it('dos erp:order-fire seguidos (doble toque) disparan UN solo sales.order.fire (sales#80)', async () => {
+    const el = await conCafe();
+    const filler = el.shadowRoot!.querySelector('.draft-actions-slot erp-fake-fire')!;
+
+    filler.dispatchEvent(new CustomEvent('erp:order-fire', { detail: {}, bubbles: true, composed: true }));
+    filler.dispatchEvent(new CustomEvent('erp:order-fire', { detail: {}, bubbles: true, composed: true }));
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(comandos.filter((c) => c === 'sales.order.fire')).toHaveLength(1);
+  });
+
+  it('si el servidor dice que no había nada pendiente (sales.nothing_to_fire), no es un error para el cajero', async () => {
+    const el = await conCafe();
+    const sdk = (globalThis as Record<string, unknown>).erplora as { command: (n: string, p?: unknown) => Promise<unknown> };
+    const original = sdk.command;
+    sdk.command = async (n: string, p?: unknown) => {
+      if (n === 'sales.order.fire') throw new Error('command `sales.order.fire` failed: sales.nothing_to_fire: already fired');
+      return original(n, p);
+    };
+    const filler = el.shadowRoot!.querySelector('.draft-actions-slot erp-fake-fire')!;
+    filler.dispatchEvent(new CustomEvent('erp:order-fire', { detail: {}, bubbles: true, composed: true }));
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect((el as unknown as { error: string }).error, 'la comanda ya estaba enviada: no hay nada que arreglar').toBe('');
+    sdk.command = original;
+  });
+
   it('erp:order-fire del filler dispara sales.order.fire del host', async () => {
     const el = await conCafe();
     const filler = el.shadowRoot!.querySelector('.draft-actions-slot erp-fake-fire')!;
@@ -1096,6 +1126,26 @@ describe('sheet de cobro (tender): método dentro, tarjeta sin numpad, atajos de
     expect(venta.payload.payment_method_id).toBe('pm-cash');
   });
 
+  it('sales#24 — efectivo por debajo del total: el botón no cobra y dice que falta importe', async () => {
+    // El servidor rechaza (`sales.insufficient_tendered`), pero la cajera no debería tener que
+    // llegar al rechazo: con 1,00 € tecleado sobre 1,80 € el CTA se apaga y avisa. Al completar
+    // (2,00 €) vuelve a cobrar. Y 0 (nada tecleado) sigue siendo «importe exacto».
+    const el = await conCobroAbierto();
+    const tap = el as unknown as { tap(k: string): void; updateComplete: Promise<unknown> };
+    const cta = () => el.shadowRoot!.querySelector<HTMLElement>('.sheet-foot ion-button.charge')!;
+
+    expect(cta().hasAttribute('disabled'), 'sin teclear = exacto → se puede cobrar').toBe(false);
+
+    tap.tap('1');
+    await tap.updateComplete;
+    expect(cta().hasAttribute('disabled'), '1,00 € no cubre 1,80 €').toBe(true);
+    expect(cta().textContent, 'dice lo que pasa, no un «Cobrar» muerto').toContain('ui.tenderedShort');
+
+    tap.tap('2'); // ahora 12,00 €
+    await tap.updateComplete;
+    expect(cta().hasAttribute('disabled'), '12,00 € sí cubre').toBe(false);
+  });
+
   it('tarjeta: sin numpad ni entregado — importe exacto, pista del datáfono y CTA propio', async () => {
     const el = await conCobroAbierto();
 
@@ -1187,6 +1237,29 @@ describe('carrito cerrado en móvil: ni puntero ni árbol accesible (sales#58)',
     expect(cajonAbierto, 'abierto vuelve a ser visible').toMatch(/visibility\s*:\s*visible/);
   });
 
+  // sales#84 — el FAB del carrito (móvil) era un botón con un icono y sin nombre: para un lector de
+  // pantalla, «button». Es el control principal de la venta en 390 px.
+  it('el FAB del carrito tiene nombre accesible, dice cuántas líneas lleva y expone su estado', async () => {
+    const el = await montarCarrito();
+    const fab = () => el.shadowRoot!.querySelector<HTMLButtonElement>('button.fab')!;
+    expect(fab().getAttribute('aria-label'), 'vacío: «abrir carrito»').toBe('ui.openCart');
+    expect(fab().getAttribute('aria-expanded'), 'cerrado').toBe('false');
+    expect(fab().getAttribute('aria-controls'), 'apunta al cajón que abre').toBeTruthy();
+
+    (el as unknown as { cart: unknown[] }).cart = [
+      { id: 'p1', name: 'Café solo', price: 180, qty: 2 },
+    ];
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    // Con líneas, el nombre incluye la cantidad — el badge visual no lo lee nadie.
+    expect(fab().getAttribute('aria-label')).toBe('ui.openCartWithItems');
+
+    fab().click();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    expect(fab().getAttribute('aria-expanded'), 'abierto').toBe('true');
+    const cajon = el.shadowRoot!.getElementById(fab().getAttribute('aria-controls')!);
+    expect(cajon?.classList.contains('cart'), 'aria-controls resuelve al cajón').toBe(true);
+  });
+
   it('el ocultado espera al final del deslizamiento (no corta la animación)', async () => {
     const movil = bloqueMovil(await cssDelPos());
     const cajonCerrado = movil.match(/\.cart\s*\{[^}]*\}/)?.[0] ?? '';
@@ -1205,7 +1278,7 @@ describe('carrito cerrado en móvil: ni puntero ni árbol accesible (sales#58)',
 describe('checkout idempotency (sales#20)', () => {
   let comandos: { name: string; payload: Record<string, unknown> }[];
   let consultas: { name: string; params: Record<string, unknown> }[];
-  let fallaElProximoCobro: string | null;
+  let fallaElProximoCobro: string | Error | null;
   /** Lo que el servidor responde cuando se le pregunta por la clave del intento.
    *
    *  hub#923: desde que el POS pregunta «¿esta clave ya produjo una venta?» tras un fallo de
@@ -1231,7 +1304,7 @@ describe('checkout idempotency (sales#20)', () => {
       if (name === 'sales.complete_sale' && fallaElProximoCobro) {
         const boom = fallaElProximoCobro;
         fallaElProximoCobro = null;
-        throw new Error(boom);
+        throw boom instanceof Error ? boom : new Error(boom);
       }
       return {};
     };
@@ -1306,6 +1379,19 @@ describe('checkout idempotency (sales#20)', () => {
     fallaElProximoCobro = 'Failed to fetch';
     await pos.confirm();
     expect(pos.error).toBe('ui.serverUnavailable');
+  });
+
+  // sales#91 — desde hub#782 el transporte del SDK ya NO deja pasar la frase del navegador: lanza un
+  // error TIPADO `code = server_unavailable` con un mensaje técnico propio («request to /api/command
+  // failed: …»). El detector de este módulo olfateaba el TEXTO, así que ese error tipado se le
+  // colaba como «dominio desconocido» y el modal de cobro enseñaba el mensaje técnico crudo.
+  it('a TYPED server_unavailable error from the SDK is transport too, whatever its message says (sales#91)', async () => {
+    const pos = await posConUnaLinea();
+    ventaEnServidor = [];
+    const typed = Object.assign(new Error('request to /api/command failed: TypeError: Load failed'), { code: 'server_unavailable' });
+    fallaElProximoCobro = typed;
+    await pos.confirm();
+    expect(pos.error, 'not the technical line').toBe('ui.serverUnavailable');
   });
 
   it('shows an unknown domain rejection verbatim — its phrase carries the code the manager needs', async () => {
@@ -1537,6 +1623,18 @@ describe('el cobro pierde la respuesta: la caja nunca deja al cajero sin saber (
     expect(enlace, 'se ofrece ir a Ventas a comprobarlo').toBeTruthy();
   });
 
+  it('sales#91: el error TIPADO del SDK con outcomeUnknown y la sonda caída → el veredicto honesto, nunca «inténtalo de nuevo»', async () => {
+    // Desde hub#906 el SDK entrega `code = server_unavailable` + `outcomeUnknown: true` con un mensaje
+    // técnico propio (nada de «Failed to fetch» suelto). Si el detector no lo reconoce, cae en
+    // «dominio desconocido» y enseña esa línea técnica — y NO consulta la sonda.
+    const typed = Object.assign(new Error('request to /api/command failed: TypeError: Failed to fetch'),
+      { code: 'server_unavailable', outcomeUnknown: true });
+    montarConCobroRoto(typed, async () => { throw Object.assign(new Error('request to /api/query failed'), { code: 'server_unavailable' }); });
+    const { el, pos } = await cobrar();
+    expect(pos.error).toBe('ui.checkoutUnknown');
+    expect(el.shadowRoot!.querySelector('[data-testid="checkout-check-sales"]'), 'se ofrece ir a Ventas').toBeTruthy();
+  });
+
   it('el catálogo español traduce los mensajes nuevos (ADR-0055)', () => {
     const ui = (esCatalog as { ui: Record<string, string> }).ui;
     expect(ui.checkoutUnknown, 'falta la traducción del cobro dudoso').toBeTruthy();
@@ -1619,5 +1717,47 @@ describe('venta por precio libre (fuera de catálogo)', () => {
     expect(c.cart[0].name, 'la línea toma el nombre del departamento').toBe('General');
     expect(c.cart[0].price, 'importe en céntimos').toBe(350);
     expect(c.cart[0].tax_category_key).toBe('product.generic');
+  });
+});
+
+// sales#12 — de la baldosa a la comanda: la categoría del producto se CONGELA en la línea al
+// añadirla (viaja en `sales.order.open` / `add_line`) y es la que sale en `sales.order.fire`.
+// Antes solo vivía en `prodCats` (memoria del TPV) y el disparo no la mandaba: la regla
+// categoría→estación de kitchen no se aplicaba nunca.
+describe('la categoría del producto viaja con la línea hasta cocina (sales#12)', () => {
+  let comandos: { name: string; payload: Record<string, unknown> }[];
+
+  beforeEach(() => {
+    comandos = [];
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    const productos = [{ id: 'p-cerveza', name: 'Cerveza', price: 250, is_active: 1, tax_category_key: CATEGORIA_IVA }];
+    sdk.queryAll = async (name: string) => {
+      if (name === 'inventory.products.list') return productos;
+      if (name === 'inventory.categories.list') return [{ id: 'cat-bebidas', name: 'Bebidas' }];
+      if (name === 'inventory.product_categories') return [{ product_id: 'p-cerveza', category_id: 'cat-bebidas' }];
+      return catalogoFiscal(name);
+    };
+    sdk.command = async (name: string, payload: Record<string, unknown>) => {
+      comandos.push({ name, payload });
+      return { ok: true, new_ids: ['ord-1', 'line-1'] };
+    };
+  });
+
+  it('al añadir el producto, la línea del pedido nace con su category_id', async () => {
+    const el = await montarCarrito();
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    await (el as unknown as { queue: <T>(t: () => Promise<T>) => Promise<T> }).queue(async () => undefined);
+    const apertura = comandos.find((c) => c.name === 'sales.order.open')!;
+    expect((apertura.payload.items as Record<string, unknown>[])[0]).toMatchObject({ category_id: 'cat-bebidas' });
+  });
+
+  it('y el disparo a cocina la reenvía por línea', async () => {
+    const el = await montarCarrito();
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    await (el as unknown as { queue: <T>(t: () => Promise<T>) => Promise<T> }).queue(async () => undefined);
+    await (el as unknown as { fireToKitchen(): Promise<void> }).fireToKitchen();
+    const fuego = comandos.find((c) => c.name === 'sales.order.fire')!;
+    expect(fuego, 'se disparó').toBeTruthy();
+    expect((fuego.payload.items as Record<string, unknown>[])[0]).toMatchObject({ category_id: 'cat-bebidas' });
   });
 });

@@ -8,6 +8,7 @@
 // address); the VeriFactu QR comes from `verifactu.records.by_invoice` (ADR-0140/0184).
 
 import { fromMicro } from './quantity';
+import { payMethodDisplayName } from './pay-icons.js';
 import type {
   ReceiptData,
   InvoiceData,
@@ -33,6 +34,15 @@ function formatDateTime(iso: string | undefined, locale = 'es'): string | undefi
 }
 
 type Translate = (key: string) => string;
+
+/** sales#108 — the sale stores the CANONICAL method name (the seed is English by contract,
+ *  ADR-0055, and the handler persists the catalogue row's `name`, not the label the till showed).
+ *  It is data, not a label: the paper translates it at render time. Without `t` (legacy callers)
+ *  the raw name goes through. */
+function payLabel(name: string | undefined, t?: Translate): string | undefined {
+  if (!name) return undefined;
+  return t ? payMethodDisplayName({ id: '', name }, t) : name;
+}
 
 /** Labels del tiquet (`<ok-receipt .labels>`) desde el catálogo del módulo (ADR-0055). */
 export function receiptLabels(t: Translate): OkReceiptLabels {
@@ -201,6 +211,7 @@ export function saleToReceipt(
   fiscal: FiscalData = {},
   locale = 'es',
   fallbackName = DEFAULT_BUSINESS_NAME,
+  t?: Translate,
 ): ReceiptData {
   const header = splitHeader(settings.receipt_header);
   return {
@@ -218,7 +229,7 @@ export function saleToReceipt(
     taxes: parseTaxes(sale.tax_breakdown).map((t) => ({ label: t.label, base: t.base, amount: t.amount })),
     total: toEuros(sale.total),
     payment: sale.payment_method_name
-      ? { method: sale.payment_method_name, paid: sale.amount_tendered != null ? toEuros(sale.amount_tendered) : undefined, change: sale.change_due != null ? toEuros(sale.change_due) : undefined }
+      ? { method: payLabel(sale.payment_method_name, t)!, paid: sale.amount_tendered != null ? toEuros(sale.amount_tendered) : undefined, change: sale.change_due != null ? toEuros(sale.change_due) : undefined }
       : undefined,
     currency: settings.currency || '€',
     footer: settings.receipt_footer || undefined,
@@ -240,6 +251,7 @@ export function saleToInvoice(
   fiscal: FiscalData = {},
   locale = 'es',
   fallbackName = DEFAULT_BUSINESS_NAME,
+  t?: Translate,
 ): InvoiceData {
   const header = splitHeader(settings.receipt_header);
   const invLines: InvoiceLine[] = lines.map((l) => ({
@@ -263,7 +275,7 @@ export function saleToInvoice(
     tax_total: toEuros(sale.tax_amount),
     total: toEuros(sale.total),
     currency: settings.currency || '€',
-    payment_method: sale.payment_method_name || undefined,
+    payment_method: payLabel(sale.payment_method_name, t),
     footer: settings.receipt_footer || undefined,
     qr: fiscal.qr || undefined,
     qr_note: fiscal.qr_note || undefined,

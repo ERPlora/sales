@@ -35,9 +35,23 @@
     "sales.view_reports",
     "sales.manage_settings"
   ],
+  "roles": [
+    {
+      "key": "cashier",
+      "label": "Cashier",
+      "extends": "employee"
+    }
+  ],
   "role_permissions": {
     "admin": [
       "*"
+    ],
+    "cashier": [
+      "sales.view_sale",
+      "sales.add_sale",
+      "sales.change_sale",
+      "sales.take_payment",
+      "sales.view_paymentmethod"
     ],
     "manager": [
       "sales.view_sale",
@@ -101,7 +115,8 @@
       "migrations/postgres/015_order_label.sql",
       "migrations/postgres/016_order_rounds.sql",
       "migrations/postgres/017_idempotency_key.sql",
-      "migrations/postgres/018_order_item_is_service.sql"
+      "migrations/postgres/018_order_item_is_service.sql",
+      "migrations/postgres/019_line_category_snapshot.sql"
     ]
   },
   "seed": {
@@ -265,7 +280,10 @@
     "sales.complete_sale": {
       "permission": "sales.take_payment",
       "reads": [
-        "taxes.rules.list",
+        {
+          "query": "taxes.rules.list",
+          "required": true
+        },
         "inventory.products.for_sale",
         "sales.payment_methods",
         "sales.settings.get",
@@ -300,6 +318,14 @@
     },
     "sales.order.fire": {
       "permission": "sales.add_sale",
+      "reads": [
+        {
+          "query": "sales.order.lines",
+          "params": {
+            "order_id": "payload.order_id"
+          }
+        }
+      ],
       "handler": {
         "type": "wasm",
         "file": "dist/handler.wasm",

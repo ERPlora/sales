@@ -16,6 +16,10 @@ export interface FireItem {
   quantity: number;
   unit_price: number;
   notes: string;
+  /** Categoría del producto (snapshot de la línea, sales#12): enruta categoría→estación en kitchen. */
+  category_id: string | null;
+  /** Línea de pedido de la que sale: kitchen reparte anulaciones por ronda con este id. */
+  order_item_id: string | null;
 }
 
 export interface FirePayload {
@@ -51,6 +55,12 @@ export function buildFirePayload(
       unit_price: l.price,
       // El motivo de una invitación es información de sala que el cocinero necesita ver.
       notes: l.is_gift ? (l.gift_reason ?? '') : '',
+      // sales#12: la CATEGORÍA (snapshot de la línea) es lo que deja a kitchen aplicar
+      // categoría→estación; sin ella solo enrutaba lo que tuviera mapeo producto→estación.
+      category_id: l.category_id ?? null,
+      // Y de qué línea de pedido salió: kitchen reparte una anulación entre las estaciones que
+      // recibieron cada ronda por este id.
+      order_item_id: l.line_id ?? null,
     })),
   };
 }

@@ -30,14 +30,15 @@ beforeEach(() => {
   };
 });
 
-async function statusColumn(): Promise<Column> {
+async function column(key: string): Promise<Column> {
   await import('./erp-sales-list');
   const el = document.createElement('erp-sales-list');
   document.body.appendChild(el);
   await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
   const columns = (el as unknown as { columns: Column[] }).columns;
-  return columns.find((c) => c.key === 'status')!;
+  return columns.find((c) => c.key === key)!;
 }
+const statusColumn = () => column('status');
 
 describe('sales list — the status column speaks the user language (hub#923)', () => {
   it('renders `completed` translated, not the raw database value', async () => {
@@ -56,5 +57,21 @@ describe('sales list — the status column speaks the user language (hub#923)', 
     // the raw value: an empty cell would hide the row's state entirely.
     const column = await statusColumn();
     expect(column.format!({ status: 'refunded' })).toBe('refunded');
+  });
+});
+
+// sales#108 — same list, next column over: the seed stores «Cash»/«Card» (English canonical,
+// ADR-0055) and the handler persists that name as data. The CELL translates it; a name the owner
+// typed («BBVA TPV») shows as is.
+describe('sales list — the payment column speaks the user language (sales#108)', () => {
+  it('renders `Cash` as «Efectivo»', async () => {
+    const col = await column('payment_method_name');
+    expect(col.format!({ payment_method_name: 'Cash' })).toBe('Efectivo');
+  });
+
+  it('renders `Card` as «Tarjeta» and keeps a custom name verbatim', async () => {
+    const col = await column('payment_method_name');
+    expect(col.format!({ payment_method_name: 'Card' })).toBe('Tarjeta');
+    expect(col.format!({ payment_method_name: 'BBVA TPV' })).toBe('BBVA TPV');
   });
 });

@@ -12,6 +12,11 @@
       "label": "Ajustes TPV"
     }
   },
+  "roles": {
+    "cashier": {
+      "label": "Cajero"
+    }
+  },
   "ui": {
     "sales": "Ventas",
     "tickets": "Tickets",
@@ -113,6 +118,8 @@
     "charge": "Cobrar",
     "chargeShortcut": "Cobrar (F2)",
     "parkedTickets": "Cuentas abiertas",
+    "openCart": "Abrir carrito",
+    "openCartWithItems": "Abrir carrito, {count} artículos",
     "openChecksAction": "Cuentas",
     "openChecksHint": "Toca una cuenta para retomarla.",
     "parkForLaterHint": "Aparca la cuenta actual para retomarla más tarde. El título es opcional.",
@@ -147,9 +154,13 @@
     "errorDiscountRange": "El descuento debe estar entre 0 % y 100 %",
     "errorCustomerRequired": "Este negocio exige un cliente en cada venta",
     "errorAmountNegative": "La venta no puede llevar importes negativos",
+    "errorInsufficientTendered": "El importe entregado no cubre el total",
+    "errorNoTaxRule": "Una línea tiene una categoría fiscal sin regla de IVA en este negocio: configúrala en Impuestos antes de cobrar",
+    "errorTaxCatalogUnavailable": "No se han podido cargar las reglas de IVA, así que no se ha cobrado nada. Vuelve a intentarlo y, si persiste, avisa al encargado",
     "all": "Todos",
     "categoryFilter": "Categorías",
     "products": "productos",
+    "items": "artículos",
     "previous": "Anterior",
     "next": "Siguiente",
     "searchProductPlaceholder": "Buscar producto…",
@@ -213,6 +224,7 @@
     "limitFieldTaxId": "NIF",
     "limitFieldAddress": "Domicilio",
     "limitChargeBlocked": "Faltan los datos del cliente",
+    "tenderedShort": "Lo entregado no cubre el total",
     "screenMenu": "Pantalla",
     "exitFullscreen": "Salir de pantalla completa"
   },

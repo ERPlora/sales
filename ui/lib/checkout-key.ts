@@ -47,6 +47,10 @@ const MESSAGES: Record<string, string> = {
   'sales.tax_rate_out_of_range': 'ui.errorDiscountRange',
   'sales.customer_required': 'ui.errorCustomerRequired',
   'sales.amount_negative': 'ui.errorAmountNegative',
+  'sales.insufficient_tendered': 'ui.errorInsufficientTendered',
+  // sales#21 — no tax rule / no tax catalogue: the sale is refused, never priced by the browser.
+  'sales.no_tax_rule': 'ui.errorNoTaxRule',
+  'sales.tax_catalog_unavailable': 'ui.errorTaxCatalogUnavailable',
   'sales.idempotency_key_required': 'ui.errorCharge',
 };
 

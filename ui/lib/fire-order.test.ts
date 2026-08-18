@@ -30,8 +30,9 @@ describe('buildFirePayload (ADR-0141: la comanda nace del pedido)', () => {
     ]);
     expect(p.items).toEqual([
       // El CABLE habla punto fijo 10⁶ (ADR-0147): 2 croquetas son 2000000. La UI sigue en lógico.
-      { product_id: 'p1', product_name: 'Croquetas', quantity: 2_000_000, unit_price: 350, notes: '' },
-      { product_id: 'p2', product_name: 'Vino', quantity: 1_000_000, unit_price: 250, notes: '' },
+      // sales#12: category_id / order_item_id viajan siempre (null si la línea no los tiene).
+      { product_id: 'p1', product_name: 'Croquetas', quantity: 2_000_000, unit_price: 350, notes: '', category_id: null, order_item_id: null },
+      { product_id: 'p2', product_name: 'Vino', quantity: 1_000_000, unit_price: 250, notes: '', category_id: null, order_item_id: null },
     ]);
   });
 
@@ -66,5 +67,21 @@ describe('ronda local en el payload del disparo', () => {
   it('sin round_no, el payload no lo inventa (compat)', () => {
     const p = buildFirePayload('ord-1', 'Mesa 4', [linea]);
     expect(p && 'round_no' in p && p.round_no !== undefined).toBe(false);
+  });
+});
+
+// sales#12 — el enrutado por CATEGORÍA. `kitchen` resuelve la estación en este orden: estación
+// explícita → producto→estación → categoría→estación «si el caller aporta category_id». El caller
+// es este payload, y no la mandaba: la regla categoría→estación no se aplicaba nunca. La línea la
+// lleva congelada (snapshot, sales#12) y aquí solo se reenvía. `order_item_id` también viaja: es
+// lo que kitchen usa para repartir una anulación entre las estaciones que recibieron cada ronda.
+describe('la categoría y el id de línea viajan en el disparo (sales#12)', () => {
+  it('cada item lleva category_id (null si la línea no está clasificada) y order_item_id', () => {
+    const p = buildFirePayload('ord-1', 'Mesa 4', [
+      line({ id: 'p1', name: 'Cerveza', qty: 1, price: 250, category_id: 'cat-bebidas', line_id: 'l-1' }),
+      line({ id: '', name: 'Varios', qty: 1, price: 100 }),
+    ])!;
+    expect(p.items[0]).toMatchObject({ category_id: 'cat-bebidas', order_item_id: 'l-1' });
+    expect(p.items[1]).toMatchObject({ category_id: null, order_item_id: null });
   });
 });

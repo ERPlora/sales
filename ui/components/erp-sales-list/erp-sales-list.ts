@@ -5,6 +5,7 @@ import '@erplora/outfitkit/ok-inline-feedback';
 import '@erplora/outfitkit/ok-data-table';
 import type { DataTableColumn, DataTableAction } from '@erplora/outfitkit';
 import { renderDocumentModal } from '../../lib/document-modal.js';
+import { payMethodDisplayName } from '../../lib/pay-icons.js';
 import { createListController } from '@erplora/module-sdk';
 import type { ListController, ListClient, ListParams, ListPage } from '@erplora/module-sdk';
 // Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC.
@@ -83,7 +84,8 @@ export class ErpSalesList extends LitElement {
     return [
     { key: 'sale_number', header: t('ui.colNumber'), sortable: true, filterable: true, filterType: 'text' },
     { key: 'customer_name', header: t('ui.colCustomer'), sortable: true, filterable: true, filterType: 'text', format: (r) => (r.customer_name as string) || '—' },
-    { key: 'payment_method_name', header: t('ui.colPayment'), sortable: true, filterable: true, filterType: 'text', format: (r) => (r.payment_method_name as string) || '—' },
+    { key: 'payment_method_name', header: t('ui.colPayment'), sortable: true, filterable: true, filterType: 'text', // sales#108: the row stores the canonical seed name («Cash»); the cell speaks the user's language.
+      format: (r) => (r.payment_method_name ? payMethodDisplayName({ id: '', name: r.payment_method_name as string }, t) : '—') },
     {
       key: 'status',
       header: t('ui.colStatus'),

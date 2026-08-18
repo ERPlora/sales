@@ -129,6 +129,34 @@ describe('the till offers services alongside products (sales#89)', () => {
     const labels = [...el.shadowRoot.querySelectorAll('.cc-n')].map((n) => n.textContent?.trim());
     expect(labels).toContain('Cabello');
   });
+
+  // sales#99 — the tabs existed but every one of them said «0»: the adapter that turns a
+  // `services.services.list` row into a grid item dropped `category_id`, so no service ever
+  // entered the category map. The tab counter must equal the tiles the tab really shows, and
+  // selecting the tab must show ONLY that category's services — no retail, no other category.
+  it('a service category tab counts its services and, selected, shows only them (sales#99)', async () => {
+    const el = await mount();
+    const tab = [...el.shadowRoot.querySelectorAll<HTMLElement>('ion-segment-button.cat-segment-button')]
+      .find((b) => b.querySelector('.cc-n')?.textContent?.trim() === 'Cabello');
+    expect(tab, 'the Cabello tab is painted').toBeTruthy();
+    // The three fixtures are all in `sc-pelo` (the unconfigured one is painted, disabled).
+    expect(tab!.querySelector('.cc-c')?.textContent).toMatch(/^3 /);
+
+    (el as unknown as { activeCat: string }).activeCat = 'sc-pelo';
+    await el.updateComplete;
+    const names = [...el.shadowRoot.querySelectorAll<HTMLElement>('ion-card.tile .n')]
+      .map((n) => n.textContent?.trim());
+    expect(names).toEqual(expect.arrayContaining(['Corte de señora', 'Balayage', 'Ritual sin IVA']));
+    expect(names, 'retail does not leak into a service category').not.toContain('Champú');
+    expect(new Set(names).size, 'no tile is painted twice').toBe(names.length);
+  });
+
+  it('the tab counter uses a neutral noun: a salon does not sell «products» (sales#99)', async () => {
+    const el = await mount();
+    const counter = el.shadowRoot.querySelector('.cc-c')?.textContent ?? '';
+    expect(counter).toContain('ui.items');
+    expect(counter).not.toContain('ui.products');
+  });
 });
 
 describe('a service the till cannot charge correctly is blocked, not mispriced', () => {
