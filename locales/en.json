@@ -147,6 +147,8 @@
     "errorCustomerRequired": "This business requires a customer on every sale",
     "errorAmountNegative": "The sale cannot carry negative amounts",
     "errorInsufficientTendered": "The amount tendered does not cover the total",
+    "errorNoTaxRule": "A line has a tax category with no VAT rule in this business — set it up in Taxes before charging",
+    "errorTaxCatalogUnavailable": "The VAT rules could not be loaded, so nothing was charged. Try again; if it keeps happening, call the manager",
     "all": "All",
     "categoryFilter": "Categories",
     "products": "products",

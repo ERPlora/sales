@@ -41,6 +41,11 @@ describe('checkoutErrorKey', () => {
       .toBe('ui.errorInsufficientTendered');
   });
 
+  it('sales#21 — a missing VAT rule or catalogue is explained, not shown as a generic charge error', () => {
+    expect(checkoutErrorKey('sales.no_tax_rule: no tax rule for category `x`')).toBe('ui.errorNoTaxRule');
+    expect(checkoutErrorKey('sales.tax_catalog_unavailable: …')).toBe('ui.errorTaxCatalogUnavailable');
+  });
+
   it('finds the code even when the runtime wraps the message', () => {
     expect(
       checkoutErrorKey('command `sales.complete_sale` failed: sales.empty_sale: no lines'),

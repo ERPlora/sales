@@ -247,27 +247,30 @@ struct ResolvedTax {
 
 /// Resuelve los componentes de impuesto de una línea (ADR-0085), **server-authoritative**:
 ///
-/// 1. Si la línea trae `tax_category_key` y hay una regla raíz que matchee país (del CONTEXTO),
-///    región y vigencia → la raíz + sus componentes (filas con `parent_id == raíz.id`, activas y
-///    vigentes), cada una con su `rate_pct`. Ignora el `tax_rate` que mandó el cliente.
-/// 2. Si no hay catálogo, o categoría ausente/sin regla → **fallback graceful** al `tax_rate` del
-///    payload (preview del cliente) si viene; si no, 0%. Un solo componente, `rule_id` vacío.
-/// Impuesto de una línea. `catalog_cat` es la categoría que dice el CATÁLOGO cuando la línea es de
-/// catálogo (sales#68): manda sobre la del payload.
+/// 1. Si la línea trae categoría (la del CATÁLOGO si es de catálogo —sales#68—, si no la del
+///    payload) y hay una regla raíz que matchee país (del CONTEXTO), región y vigencia → la raíz +
+///    sus componentes (filas con `parent_id == raíz.id`, activas y vigentes). Ignora el `tax_rate`
+///    que mandó el cliente.
+/// 2. Si la línea trae categoría y NO resuelve regla → **se rechaza** (`sales.no_tax_rule`).
+///    Cobrar el tipo que propone el cliente es cobrar una cosa y declarar otra (sales#67).
+/// 3. Si el catálogo fiscal NO llegó (`catalog_delivered == false`) y la línea trae categoría →
+///    **se rechaza** (`sales.tax_catalog_unavailable`). sales#21: la read `taxes.rules.list` se
+///    declara `required` (hub#701), así que un runtime que la honra aborta antes; si aun así falta
+///    (runtime viejo), el handler cierra la puerta él mismo en vez de adivinar el IVA. Antes aquí
+///    se degradaba al `tax_rate` del navegador — un catálogo vacío era indistinguible de «la read
+///    falló» porque el runtime la omitía en silencio (hub#650). Ya no.
+/// 4. Sin categoría que resolver (línea libre de integración, sin departamento) → fallback al
+///    `tax_rate` del payload si viene; si no, 0 %. Es la ÚNICA puerta que queda abierta y se deja
+///    explícita: el TPV nunca manda una línea así (ADR-0289 — sin categoría fiscal no entra al
+///    catálogo; el precio libre lleva la del departamento).
 ///
-/// sales#67: si la línea es de catálogo, su categoría sale de la fila y la regla TIENE que resolver.
-/// Antes se caía al `tax_rate` del payload —el comentario lo llamaba «preview del cliente»— y con
-/// eso los DOS números que deciden lo que se cobra y lo que se declara a la AEAT los proponía quien
-/// llama: se podía cobrar el 21 % y declarar una categoría exenta, y `CuotaTotal` dejaba de cuadrar
-/// con la suma de cuotas repercutidas (justo la comprobación cruzada que hace la AEAT).
-///
-/// El fallback SOLO sobrevive donde no hay nada que resolver: una línea sin producto (venta por
-/// departamento) o de servicio, que no traen categoría de catálogo. Es la misma puerta que deja
-/// abierta sales#68 y tiene su issue (sales#63): cerrarla pide un permiso que el handler no recibe.
+/// `catalog_cat` es la categoría que dice el CATÁLOGO cuando la línea es de catálogo (sales#68):
+/// manda sobre la del payload.
 fn resolve_line_tax(
     item: &Value,
     catalog_cat: Option<&str>,
     rules: &[&Value],
+    catalog_delivered: bool,
     cc: &str,
     rc: &str,
     date: &str,
@@ -278,6 +281,12 @@ fn resolve_line_tax(
         .unwrap_or_else(|| field(item, "tax_category_key"));
 
     if !cat.is_empty() {
+        if !catalog_delivered {
+            return Err(reject(
+                "sales.tax_catalog_unavailable",
+                "the tax catalogue (taxes.rules.list) was not delivered; refusing to guess the VAT",
+            ));
+        }
         if let Some(root) = tax::resolve_root(rules, cc, rc, &cat, date) {
             let components = tax::rule_components(root, rules, date)
                 .into_iter()
@@ -285,20 +294,13 @@ fn resolve_line_tax(
                 .collect();
             return Ok(ResolvedTax { rule_id: tax::rule_field(root, "id"), components });
         }
-        // Es de catálogo, HAY catálogo fiscal y su categoría no resuelve regla: el hub está sin
+        // Categoría que no resuelve regla (venga del catálogo o del payload): el hub está sin
         // configurar para esa categoría. Cobrar el tipo que propone el cliente sería inventarse el
-        // impuesto — se cobraría una cosa y se declararía otra.
-        //
-        // ⚠️ La condición `!rules.is_empty()` no es un detalle: distingue «esta categoría no tiene
-        // regla» de «el catálogo fiscal no ha llegado». Sin ella, un `taxes` caído o una `read`
-        // omitida (que el runtime omite EN SILENCIO, hub#650) convertiría un fallo del módulo de
-        // impuestos en un TPV que no puede cobrar nada. Ahí sí manda la regla de la casa: cobrar es
-        // lo último que puede romperse.
-        if catalog_cat.is_some() && !rules.is_empty() {
-            return Err(reject("sales.no_tax_rule", format!("no tax rule for category `{cat}`")));
-        }
+        // impuesto — se cobraría una cosa y se declararía otra. Un catálogo VACÍO ya no es excusa:
+        // la read es `required`, así que vacío significa «este hub no tiene reglas» (sales#21).
+        return Err(reject("sales.no_tax_rule", format!("no tax rule for category `{cat}`")));
     }
-    // Sin categoría que resolver (línea libre o servicio): preview del cliente. Puerta conocida.
+    // Sin categoría que resolver: preview del cliente. La única puerta que queda (ver doc).
     let pct = item.get("tax_rate").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
     Ok(ResolvedTax { rule_id: String::new(), components: vec![TaxComponent { rate_pct: pct, rate_key: rate_key(pct) }] })
 }
@@ -614,11 +616,14 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     let rc = context.get("region_code").map(as_str).unwrap_or_default();
     let date = iso_date(&now);
 
-    // Catálogo fiscal de confianza pre-cargado por el runtime (ADR-0085, reads taxes.rules.list).
-    // Vacío si el runtime no inyectó reads (host antiguo / dependencia no resuelta) → fallback graceful.
-    // `&Value::Null` as the payload fallback ON PURPOSE: in `taxes.calculate` the caller may hand
-    // its own catalog for an ad-hoc calculation, but here the payload IS the browser — a client
-    // able to inject `rules` would price its own VAT.
+    // Catálogo fiscal de confianza pre-cargado por el runtime (ADR-0085, reads taxes.rules.list —
+    // `required` desde sales#21/hub#701). `&Value::Null` as the payload fallback ON PURPOSE: in
+    // `taxes.calculate` the caller may hand its own catalog for an ad-hoc calculation, but here the
+    // payload IS the browser — a client able to inject `rules` would price its own VAT.
+    // `catalog_delivered` distingue «la read llegó (aunque vacía)» de «no llegó»: lo primero es un
+    // hub sin reglas, lo segundo un runtime que no honra `required` — ninguno cobra con el IVA del
+    // navegador, pero se rechazan con códigos distintos para que el encargado sepa qué mirar.
+    let catalog_delivered = tax::CATALOG_READS.iter().any(|q| tax::read_rows(&context, q).is_some());
     let catalog = tax::rule_catalog(&context, &Value::Null);
 
     let mut subtotal: i64 = 0; // céntimos
@@ -659,7 +664,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         // ADR-0085: resuelve el impuesto por CATEGORÍA desde el catálogo de confianza
         // (server-authoritative, raíz + componentes), con país/región del contexto y fallback
         // graceful al `tax_rate` del payload. El cliente NO es autoridad del %.
-        let resolved = resolve_line_tax(item, catalog_cat, &catalog, &cc, &rc, &date)?;
+        let resolved = resolve_line_tax(item, catalog_cat, &catalog, catalog_delivered, &cc, &rc, &date)?;
         let components = &resolved.components;
         // Tasa combinada que persistimos en la línea (== suma de componentes; para un tipo
         // simple es su propio %). Es la cifra que ve invoice/listeners en `tax_rate`.
@@ -857,7 +862,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
             // Mismo resolver server-authoritative que arriba (ADR-0085): el evento lleva el %
             // y los net/tax RESUELTOS del catálogo, no la pista del cliente, para que
             // invoice/inventory reaccionen con cifras de confianza.
-            let resolved = resolve_line_tax(it, it_catalog_cat, &catalog, &cc, &rc, &date)
+            let resolved = resolve_line_tax(it, it_catalog_cat, &catalog, catalog_delivered, &cc, &rc, &date)
                 .unwrap_or_else(|_| ResolvedTax { rule_id: String::new(), components: vec![] });
             let combined_pct: f64 = resolved.components.iter().map(|c| c.rate_pct).sum();
             // Invitación: net/tax = 0 en el evento (invoice/customers no facturan la cortesía). Sigue
@@ -1719,22 +1724,18 @@ mod tests {
     }
 
     #[test]
-    fn unknown_category_falls_back_to_zero() {
-        // Categoría sin regla en el país y SIN tax_rate de preview → 0%, sin romper. rule_id NULL.
+    fn unknown_category_is_refused_not_charged_at_zero() {
+        // sales#21 — ANTES: categoría sin regla y sin `tax_rate` de preview → 0 % «sin romper».
+        // Cobrar al 0 % una categoría que el hub no conoce es declarar exento lo que no lo es.
         let items = json!([
             { "product_name": "Misterioso", "price": 10000, "quantity": 1_000_000, "tax_category_key": "unknown.cat" }
         ]);
         let rules = json!([
             { "id": "r-21", "country_code": "ES", "region_code": null, "tax_category_key": "product.generic", "rate_pct": 21.0, "tax_type": "vat", "parent_id": null, "is_active": 1 }
         ]);
-        let out = sale(input_with_rules(items, 4, rules, "array", "ES", ""));
-        let line = &out.operations[2].params;
-        assert_eq!(line["tax_rate"], json!(0.0));
-        assert_eq!(line["net_amount"], json!(10000));
-        assert_eq!(line["tax_amount"], json!(0));
-        assert_eq!(line["tax_rule_id"], Value::Null);
-        assert!(out.operations.len() >= 3);
-        assert_eq!(out.events[0].name, "sale.completed");
+        let err = complete_sale_pure(input_with_rules(items, 4, rules, "array", "ES", ""))
+            .expect_err("categoría desconocida → rechazo");
+        assert!(err.starts_with("sales.no_tax_rule"), "{err}");
     }
 
     // ── Atribución por profesional + cita→venta ──────────────────────────────
@@ -1833,9 +1834,11 @@ mod tests {
     }
 
     #[test]
-    fn falls_back_to_payload_hint_when_no_catalog() {
-        // Sin context.reads (host antiguo / dep no resuelta): se usa el tax_rate del payload.
-        // 100.00€ neto, IVA 10% del preview → 10.00€. rule_id NULL (no resolvió por catálogo).
+    fn without_context_reads_a_categorised_line_is_refused_not_priced_by_the_client() {
+        // sales#21 — ANTES: sin `context.reads` (host antiguo / dep no resuelta) se usaba el
+        // `tax_rate` del payload. Eso era el agujero: un `taxes` caído se convertía en «cobra lo
+        // que diga el navegador». Con la read `required` (hub#701) el runtime ya aborta; y si un
+        // runtime viejo la omite, el handler rechaza con su propio código.
         let items = json!([
             { "product_name": "Agua", "price": 10000, "quantity": 1_000_000, "tax_category_key": "restaurant.drink", "tax_rate": 10.0 }
         ]);
@@ -1844,11 +1847,8 @@ mod tests {
             "context": { "hub_id": "h1", "now": "2026-05-31T10:00:00+00:00", "country_code": "ES",
                 "new_ids": [json!("id-0"), json!("id-1"), json!("id-2"), json!("id-3")] }
         });
-        let out = sale(inp);
-        let line = &out.operations[2].params;
-        assert_eq!(line["tax_rate"], json!(10.0)); // fallback al preview del payload
-        assert_eq!(line["tax_amount"], json!(1000));
-        assert_eq!(line["tax_rule_id"], Value::Null);
+        let err = complete_sale_pure(inp).expect_err("sin catálogo fiscal no se cobra");
+        assert!(err.starts_with("sales.tax_catalog_unavailable"), "{err}");
     }
 
     #[test]
@@ -1860,7 +1860,16 @@ mod tests {
               "tax_rate": 10.0, "is_gift": true, "gift_reason": "cortesía", "cost": 60 },
             { "product_name": "Tarta", "price": 500, "quantity": 1_000_000, "tax_category_key": "restaurant.food", "tax_rate": 10.0 }
         ]);
-        let out = sale(input(items, 8, 1000));
+        // sales#21: una línea con categoría exige catálogo fiscal — este test es de invitaciones,
+        // no de impuestos, así que se le da el suyo (ES, 10 % para bebida y comida).
+        let rules = json!([
+            { "id": "r-drink", "country_code": "ES", "region_code": null, "tax_category_key": "restaurant.drink", "rate_pct": 10.0, "tax_type": "vat", "parent_id": null, "is_active": 1 },
+            { "id": "r-food", "country_code": "ES", "region_code": null, "tax_category_key": "restaurant.food", "rate_pct": 10.0, "tax_type": "vat", "parent_id": null, "is_active": 1 }
+        ]);
+        let mut inp = input(items, 8, 1000);
+        inp["context"]["country_code"] = json!("ES");
+        inp["context"]["reads"] = json!({ "taxes.rules.list": rules });
+        let out = sale(inp);
         // línea 1 (invitación): todo a 0, marcada is_gift + motivo.
         let l1 = &out.operations[2].params;
         assert_eq!(l1["is_gift"], json!(1));
@@ -2146,18 +2155,47 @@ mod tests {
         assert!(err.starts_with("sales.no_tax_rule"), "código inesperado: {err}");
     }
 
+    // ── sales#21 · sin catálogo fiscal NO se cobra con el IVA del navegador ────────────────────
+    //
+    // Hasta hub#701 el runtime omitía EN SILENCIO una read que fallaba, así que un catálogo vacío
+    // era indistinguible de «este hub no tiene reglas» y el handler degradaba al `tax_rate` del
+    // payload. Desde hub#701 la read se declara `required` (module.json) y el runtime ABORTA el
+    // command si no resuelve — así que aquí un catálogo vacío ya solo significa lo que dice: el
+    // hub no tiene regla para esa categoría. Y una line con categoría que no resuelve se rechaza,
+    // venga la categoría del catálogo o del payload (servicio, precio libre): cobrar el tipo que
+    // propone el cliente es cobrar una cosa y declarar otra.
+
     #[test]
-    fn without_a_tax_catalogue_at_all_the_sale_still_closes() {
-        // Distinción deliberada: «esta categoría no tiene regla» es un hub mal configurado y se
-        // rechaza; «el catálogo fiscal no ha llegado» es `taxes` caído o una read omitida en
-        // silencio (hub#650), y ahí manda la regla de la casa — cobrar es lo último que puede
-        // romperse. Sin ella, un fallo de `taxes` dejaría al TPV sin poder cobrar nada.
+    fn a_catalogued_line_with_an_EMPTY_tax_catalogue_is_refused() {
         let items = json!([{ "product_id": "p-wine", "product_name": "Vino", "price": 5000,
                              "quantity": 1_000_000, "tax_rate": 21.0 }]);
-        let out = complete_sale_pure(input_fiscal(items, product_catalog(), Value::Null))
-            .expect("sin catálogo fiscal la venta se cierra con la pista del cliente");
-        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").unwrap();
-        assert_eq!(line.params["tax_rate"], json!(21.0));
+        let err = complete_sale_pure(input_fiscal(items, product_catalog(), json!([])))
+            .expect_err("catálogo fiscal vacío: no hay regla → no se cierra la venta");
+        assert!(err.starts_with("sales.no_tax_rule"), "código inesperado: {err}");
+    }
+
+    #[test]
+    fn a_catalogued_line_when_the_tax_read_never_arrived_is_refused() {
+        // La read es `required`: un runtime que la honra nunca llega aquí sin ella. Si aun así
+        // falta (runtime viejo), el handler cierra la puerta él mismo en vez de adivinar el IVA.
+        let items = json!([{ "product_id": "p-wine", "product_name": "Vino", "price": 5000,
+                             "quantity": 1_000_000, "tax_rate": 21.0 }]);
+        let err = complete_sale_pure(input_fiscal(items, product_catalog(), Value::Null))
+            .expect_err("sin la read fiscal no se cobra con la pista del cliente");
+        assert!(err.starts_with("sales.tax_catalog_unavailable"), "código inesperado: {err}");
+    }
+
+    #[test]
+    fn a_non_catalogue_line_whose_own_category_has_no_rule_is_refused() {
+        // Servicio o precio libre: la categoría viene del payload (no hay fila de catálogo), pero
+        // si NOMBRA una categoría, esa categoría tiene que resolver. El TPV ya deshabilita la
+        // baldosa en este caso; el servidor no puede fiarse de eso.
+        let items = json!([{ "product_name": "Corte", "price": 1800, "quantity": 1_000_000,
+                             "is_service": true, "tax_category_key": "service.generic",
+                             "tax_rate": 21.0 }]);
+        let err = complete_sale_pure(input_fiscal(items, product_catalog(), tax_catalog()))
+            .expect_err("service.generic no tiene regla en este catálogo");
+        assert!(err.starts_with("sales.no_tax_rule"), "código inesperado: {err}");
     }
 
     #[test]
