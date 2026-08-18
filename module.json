@@ -118,7 +118,8 @@
       "migrations/postgres/018_order_item_is_service.sql",
       "migrations/postgres/019_line_category_snapshot.sql",
       "migrations/postgres/020_void_audit.sql",
-      "migrations/postgres/021_manual_discounts.sql"
+      "migrations/postgres/021_manual_discounts.sql",
+      "migrations/postgres/022_ticket_discount_amount.sql"
     ]
   },
   "seed": {
@@ -528,7 +529,7 @@
         "message": "That order is not open in this business."
       },
       "ai": {
-        "description": "Sets the manual TICKET discount (percent, 0-100) of an OPEN order (sales#71). Applied by the server at checkout (sales.complete_sale discount_percent, prorated over the lines before the VAT); allow_discounts is enforced there."
+        "description": "Sets the manual TICKET discount of an OPEN order: percent (0-100, sales#71) and/or a fixed amount in cents (discount_amount, sales#113). Applied by the server at checkout (sales.complete_sale discount_percent / discount_amount, prorated over the lines before the VAT — the amount by largest remainder, ADR-0210); allow_discounts is enforced there."
       }
     },
     "sales.order.set_label": {

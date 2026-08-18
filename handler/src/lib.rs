@@ -199,6 +199,7 @@ fn str_or(p: &Value, k: &str, d: &str) -> String {
 }
 
 /// Totales de línea en **céntimos** (`i64`).
+#[derive(Clone, Copy)]
 struct LineTotals { net: i64, tax: i64, line: i64 }
 
 /// Calcula los totales de una línea en céntimos para **una sola tasa**. `unit_price_cents`
@@ -238,6 +239,7 @@ fn field(v: &Value, k: &str) -> String {
 /// Un componente de impuesto a aplicar sobre la base de una línea: un tipo simple
 /// (un solo componente) o cada hijo de un grupo (multi-impuesto). `rate_pct` es la
 /// tasa %, `rate_key` es la clave del `tax_breakdown` ("21.00", "5.20", …).
+#[derive(Clone)]
 struct TaxComponent {
     rate_pct: f64,
     rate_key: String,
@@ -326,6 +328,54 @@ fn resolve_line_tax(
     // Sin categoría que resolver: preview del cliente. La única puerta que queda (ver doc).
     let pct = item.get("tax_rate").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
     Ok(ResolvedTax { rule_id: String::new(), components: vec![TaxComponent { rate_pct: pct, rate_key: rate_key(pct), kind: "tax".to_string(), label: String::new() }] })
+}
+
+/// sales#113 / ADR-0210 — reparte `total` entre `weights` por RESTO MAYOR (Hamilton), en enteros:
+/// suelo de la parte exacta y los restos mayores se llevan las unidades que faltan. La suma de las
+/// partes es EXACTAMENTE `total` (acotado a Σweights). Un peso ≤ 0 no recibe nada.
+fn allocate_amount(total: i64, weights: &[i64]) -> Vec<i64> {
+    let n = weights.len();
+    if n == 0 || total <= 0 { return vec![0; n]; }
+    let w: Vec<i128> = weights.iter().map(|x| (*x as i128).max(0)).collect();
+    let w_total: i128 = w.iter().sum();
+    if w_total == 0 { return vec![0; n]; }
+    let magnitude = (total as i128).min(w_total);
+    let mut parts: Vec<i128> = Vec::with_capacity(n);
+    let mut remainders: Vec<(i128, usize)> = Vec::with_capacity(n);
+    for (i, wi) in w.iter().enumerate() {
+        let numerator = magnitude * wi;
+        parts.push(numerator / w_total);
+        remainders.push((numerator % w_total, i));
+    }
+    let mut left = magnitude - parts.iter().sum::<i128>();
+    // Restos mayores primero; a igualdad, la línea anterior (orden estable del ticket).
+    remainders.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    for (_, i) in remainders {
+        if left == 0 { break; }
+        parts[i] += 1;
+        left -= 1;
+    }
+    parts.into_iter().map(|p| p as i64).collect()
+}
+
+/// sales#113 — rebaja una línea ya calculada en `amount` céntimos de su bruto (lo que paga el
+/// cliente) y recompone base y cuota sobre lo cobrado: base = bruto' / (1 + tasa combinada), cuota
+/// = bruto' − base; cada componente informa su cuota sobre esa base (la que se DECLARA sale del
+/// desglose agregado por tipo, ADR-0123 §4). Misma garantía que sales#33: la AEAT recibe lo cobrado.
+fn apply_amount_discount(t: &mut LineTotals, parts: &mut [(String, i64, i64)], amount: i64, components: &[TaxComponent]) {
+    if amount <= 0 { return; }
+    let new_line = (t.line - amount).max(0);
+    let combined_pct: f64 = components.iter().map(|c| c.rate_pct).sum();
+    let divisor = Decimal::ONE + Decimal::from_f64(combined_pct).unwrap_or(Decimal::ZERO) / Decimal::from(100);
+    let net = money::round(Decimal::from(new_line) / divisor);
+    t.line = new_line;
+    t.net = net;
+    t.tax = new_line - net;
+    for part in parts.iter_mut() {
+        let pct = components.iter().find(|c| c.rate_key == part.0).map(|c| c.rate_pct).unwrap_or(0.0);
+        part.1 = net;
+        part.2 = money::round(Decimal::from(net) * Decimal::from_f64(pct).unwrap_or(Decimal::ZERO) / Decimal::from(100));
+    }
 }
 
 /// Día ISO `YYYY-MM-DD` de `now` (para la vigencia de las reglas).
@@ -529,7 +579,13 @@ fn decide_checkout(payload: &Value, context: &Value, items: &[Value]) -> Result<
         return Err(reject("sales.amount_negative", format!("amount_tendered {tendered}")));
     }
 
-    let mut discounted = sale_disc > 0.0;
+    // sales#113: descuento de IMPORTE FIJO al ticket (céntimos, entero ≥ 0). Se reparte por resto
+    // mayor entre las líneas no invitadas (ADR-0210) DESPUÉS de los porcentuales; ver más abajo.
+    let sale_disc_amount = as_cents(payload.get("discount_amount").unwrap_or(&Value::Null), 0);
+    if sale_disc_amount < 0 {
+        return Err(reject("sales.amount_negative", format!("discount_amount {sale_disc_amount}")));
+    }
+    let mut discounted = sale_disc > 0.0 || sale_disc_amount > 0;
     for item in items {
         let line_disc = item.get("discount").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
         if !rate_in_range(line_disc) {
@@ -617,6 +673,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     let sale_id = new_ids.first().map(as_str).unwrap_or_default();
 
     let sale_disc = payload.get("discount_percent").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
+    let sale_disc_amount = as_cents(payload.get("discount_amount").unwrap_or(&Value::Null), 0); // sales#113
     let items = payload.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
 
     // ── IDEMPOTENCIA (sales#20) ──────────────────────────────────────────────────────────────
@@ -665,6 +722,10 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     // sales#54: qué es cada clave del desglose (`kind`, `label`) — la primera línea que la aporta manda.
     let mut breakdown_meta: std::collections::HashMap<String, (String, String)> = std::collections::HashMap::new();
     let mut ops: Vec<Operation> = Vec::new();
+    // sales#113: las líneas se calculan primero y se emiten después (el importe fijo se reparte
+    // cuando se conocen todas).
+    struct PendingLine { t: LineTotals, parts: Vec<(String, i64, i64)>, is_gift: bool, resolved: ResolvedTax, combined_pct: f64, unit_price: i64, qty: i64, line_disc: f64, item: Value }
+    let mut pending_lines: Vec<PendingLine> = Vec::new();
 
     let mut bump = Map::new();
     bump.insert("day".into(), json!(day));
@@ -677,7 +738,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     // bloque `list` a propósito: una read paginada entregaría solo 50 filas, en silencio (hub#650).
     let product_catalog = tax::read_rows(&context, "inventory.products.for_sale");
 
-    for (i, item) in items.iter().enumerate() {
+    for item in items.iter() {
         // El precio SALE DEL CATÁLOGO si la línea dice ser de catálogo. El del payload es una
         // propuesta, no un hecho.
         let from_catalog = authoritative_price(item, product_catalog.as_ref())?;
@@ -738,6 +799,30 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         } else {
             calc_line_components(unit_price, qty, price_qty, line_disc, tax_incl, components).0.line
         };
+        // sales#113: la línea se guarda calculada; el importe fijo se reparte cuando se conocen
+        // TODAS (fase 2, más abajo) y solo entonces se agrega y se emite.
+        pending_lines.push(PendingLine { t, parts, is_gift, resolved, combined_pct, unit_price, qty, line_disc, item: item.clone() });
+    }
+
+    // ── Fase 2 (sales#113): reparto del importe fijo por RESTO MAYOR entre las líneas cobradas ──
+    if sale_disc_amount > 0 {
+        let weights: Vec<i64> = pending_lines.iter().map(|l| if l.is_gift { 0 } else { l.t.line }).collect();
+        let payable: i64 = weights.iter().sum();
+        if sale_disc_amount > payable {
+            return Err(reject("sales.discount_out_of_range", format!("discount_amount {sale_disc_amount} above the gross {payable}")));
+        }
+        let shares = allocate_amount(sale_disc_amount, &weights);
+        for (l, share) in pending_lines.iter_mut().zip(shares) {
+            let comps = l.resolved.components.clone();
+            apply_amount_discount(&mut l.t, &mut l.parts, share, &comps);
+        }
+    }
+
+    // ── Fase 3: agregar y emitir las líneas ──
+    let mut line_results: Vec<LineTotals> = Vec::with_capacity(pending_lines.len());
+    for (i, l) in pending_lines.into_iter().enumerate() {
+        let PendingLine { t, parts, is_gift, resolved, combined_pct, unit_price, qty, line_disc, item } = l;
+        let item = &item;
         // `tax_total` YA NO se acumula por línea: la cuota que se DECLARA sale del desglose, una
         // sola vez por tipo impositivo (ADR-0123 §4). `t.tax` queda como informativo de la línea.
         subtotal += t.net; gross += t.line;
@@ -786,6 +871,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         p.insert("tax_amount".into(), json!(t.tax)); // céntimos
         p.insert("line_total".into(), json!(t.line)); // céntimos
         ops.push(Operation::sql("sales._insert_line", p));
+        line_results.push(t);
     }
 
     // El descuento global YA está prorrateado en las líneas: `gross` es lo cobrado y el
@@ -897,7 +983,8 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     // el mismo orden que arriba para emitir la base/IVA por línea sin reestructurar.
     let event_items: Vec<Value> = items
         .iter()
-        .map(|it| {
+        .enumerate()
+        .map(|(idx, it)| {
             // MISMAS cifras de confianza que la línea que se persiste (sales#67/#68): si el evento
             // llevara el precio o la categoría del payload, `invoice` facturaría una cosa y la venta
             // guardaría otra. Ya validado en el bucle de arriba (mismo item), así que aquí no falla.
@@ -927,6 +1014,9 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
             } else {
                 calc_line_components(unit_price, qty, price_qty, eff_disc, tax_incl, &resolved.components)
             };
+            // sales#113: si hubo importe fijo, la línea persistida ya lleva su parte repartida; el
+            // evento (lo que factura `invoice`) tiene que decir lo MISMO que la fila.
+            let t = line_results.get(idx).copied().unwrap_or(t);
             json!({
                 "product_id": it.get("product_id").cloned().unwrap_or(Value::Null),
                 "product_name": as_str(it.get("product_name").unwrap_or(&Value::Null)),
@@ -2651,6 +2741,89 @@ mod tests {
         inp["payload"]["discount_percent"] = json!(101.0);
         let err = complete_sale_pure(inp).expect_err("global discount > 100");
         assert!(err.contains("sales.discount_out_of_range"), "{err}");
+    }
+
+    // ── sales#113 · descuento de IMPORTE FIJO al ticket, repartido por RESTO MAYOR (ADR-0210) ──
+    //
+    // «5 € menos», «te lo dejo en 20 €»: estándar en Square, Toast, Lightspeed, Odoo (amount off).
+    // Es el caso que obliga a REPARTIR: el importe se prorratea entre las líneas no invitadas por
+    // resto mayor (Hamilton) en enteros — HALF_UP por línea NO vale (1,01 € entre 3 líneas → 1,02).
+    // El desglose por tipo y el net/tax de cada línea salen YA descontados (misma garantía que
+    // sales#33: la AEAT recibe lo cobrado). Se aplica DESPUÉS de los porcentuales.
+
+    fn three_equal_lines() -> Value {
+        json!([
+            { "product_name": "A", "price": 100, "quantity": 1_000_000, "tax_rate": 21.0 },
+            { "product_name": "B", "price": 100, "quantity": 1_000_000, "tax_rate": 21.0 },
+            { "product_name": "C", "price": 100, "quantity": 1_000_000, "tax_rate": 21.0 }
+        ])
+    }
+
+    #[test]
+    fn a_fixed_amount_is_split_by_largest_remainder_and_the_header_carries_it_exactly() {
+        let mut inp = input(three_equal_lines(), 5, 0);
+        inp["payload"]["discount_amount"] = json!(101);
+        let out = sale(inp);
+        let lines: Vec<i64> = out.operations.iter().filter(|o| o.command == "sales._insert_line")
+            .map(|o| o.params["line_total"].as_i64().unwrap()).collect();
+        assert_eq!(lines, vec![66, 66, 67], "34+34+33 de descuento, no 3 × HALF_UP(33,67)");
+        let h = &out.operations[1].params;
+        assert_eq!(h["total"], json!(199));
+        assert_eq!(h["discount_amount"], json!(101));
+        // Base y cuota se declaran sobre lo cobrado (la cuota se cierra por TIPO sobre la base
+        // agregada, ADR-0123 §4, así que puede diferir del bruto en ±1 céntimo, como en cualquier
+        // venta con IVA incluido): 55+55+55 = 165 de base, 165 × 21 % = 34,65 → 35.
+        let declared = h["subtotal"].as_i64().unwrap() + h["tax_amount"].as_i64().unwrap();
+        assert!((declared - 199).abs() <= 1, "declarado {declared} vs cobrado 199");
+    }
+
+    #[test]
+    fn a_gifted_line_receives_no_share_of_the_amount() {
+        let items = json!([
+            { "product_name": "A", "price": 100, "quantity": 1_000_000, "tax_rate": 21.0, "is_gift": true, "cost": 10 },
+            { "product_name": "B", "price": 100, "quantity": 1_000_000, "tax_rate": 21.0 },
+            { "product_name": "C", "price": 100, "quantity": 1_000_000, "tax_rate": 21.0 }
+        ]);
+        let mut inp = input(items, 5, 0);
+        inp["payload"]["discount_amount"] = json!(50);
+        let out = sale(inp);
+        let lines: Vec<i64> = out.operations.iter().filter(|o| o.command == "sales._insert_line")
+            .map(|o| o.params["line_total"].as_i64().unwrap()).collect();
+        assert_eq!(lines, vec![0, 75, 75]);
+        assert_eq!(out.operations[1].params["total"], json!(150));
+    }
+
+    #[test]
+    fn the_amount_composes_after_the_percentages_and_the_event_lines_carry_the_discounted_figures() {
+        // 2 × 10,00 € con 10 % de ticket = 18,00 €; menos 1,00 € fijo = 17,00 € (8,50 + 8,50).
+        let items = json!([
+            { "product_name": "A", "price": 1000, "quantity": 1_000_000, "tax_rate": 21.0 },
+            { "product_name": "B", "price": 1000, "quantity": 1_000_000, "tax_rate": 21.0 }
+        ]);
+        let mut inp = input(items, 4, 0);
+        inp["payload"]["discount_percent"] = json!(10.0);
+        inp["payload"]["discount_amount"] = json!(100);
+        let out = sale(inp);
+        let h = &out.operations[1].params;
+        assert_eq!(h["total"], json!(1700));
+        assert_eq!(h["discount_amount"], json!(300), "2,00 € del 10 % + 1,00 € fijo");
+        let ev = &out.events[0].payload;
+        let ev_lines: i64 = ev["items"].as_array().unwrap().iter()
+            .map(|it| it["net_amount"].as_i64().unwrap() + it["tax_amount"].as_i64().unwrap()).sum();
+        assert_eq!(ev_lines, 1700, "el evento (lo que factura invoice) lleva lo cobrado");
+    }
+
+    #[test]
+    fn a_fixed_amount_above_the_gross_is_refused_and_it_needs_discounts_allowed() {
+        let mut inp = input(three_equal_lines(), 5, 0);
+        inp["payload"]["discount_amount"] = json!(301);
+        let err = complete_sale_pure(inp).expect_err("más descuento que venta");
+        assert!(err.contains("sales.discount_out_of_range"), "{err}");
+
+        let mut inp = input_with_catalogs(three_equal_lines(), 5, Value::Null, json!([{ "allow_discounts": 0 }]), Value::Null);
+        inp["payload"]["discount_amount"] = json!(10);
+        let err = complete_sale_pure(inp).expect_err("descuentos apagados");
+        assert!(err.contains("sales.discounts_not_allowed"), "{err}");
     }
 
     #[test]

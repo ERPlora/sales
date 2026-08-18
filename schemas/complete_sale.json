@@ -148,6 +148,11 @@
       "minimum": 0,
       "maximum": 100
     },
+    "discount_amount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Fixed ticket discount in minor units (cents), applied AFTER the percentages and split over the non-gift lines by largest remainder (ADR-0210, sales#113). Must not exceed the gross."
+    },
     "amount_tendered": {
       "type": "integer",
       "minimum": 0

@@ -4,5 +4,7 @@
 -- venta cobrada ya no se descuenta (guard, ADR-0141). El total provisional NO cambia aquí: es la
 -- suma de líneas (display); el descuento global se ve en el TPV y se aplica al cobrar.
 UPDATE sales_order
-SET discount_percent = :discount_percent, updated_by = :current_user_id, updated_at = :now
+SET discount_percent = :discount_percent,
+    discount_amount = COALESCE(:discount_amount, discount_amount), -- sales#113 (céntimos)
+    updated_by = :current_user_id, updated_at = :now
 WHERE id = :order_id AND hub_id = :hub_id AND status = 'open' AND is_deleted = 0;
