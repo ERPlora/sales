@@ -441,6 +441,14 @@ fn reject(code: &str, detail: impl std::fmt::Display) -> String {
     format!("{code}: {detail}")
 }
 
+/// sales#12 — the product's category, frozen on the line for kitchen routing. Opaque to `sales`
+/// (no cross-module FK). `Null` when the line is unclassified: an empty string would be an id
+/// that does not exist and kitchen would try to route by it.
+fn category_snapshot(item: &Value) -> Value {
+    let cat = field(item, "category_id");
+    if cat.is_empty() { Value::Null } else { json!(cat) }
+}
+
 /// Lo que el SERVIDOR decidió sobre este cobro tras contrastar la oferta del cliente con las
 /// fuentes de confianza del hub (catálogo de métodos de pago y ajustes del TPV, pre-cargados por
 /// el runtime vía `reads`). Nada de aquí llega del navegador sin validar.
@@ -737,6 +745,8 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         p.insert("gift_reason".into(), json!(if is_gift { str_or(item, "gift_reason", "") } else { String::new() }));
         // ── Snapshot fiscal inmutable de la línea (ADR-0085) ──
         p.insert("tax_category_key".into(), json!(field(item, "tax_category_key")));
+        // sales#12: la categoría del producto también se congela (routing de cocina; misma regla).
+        p.insert("category_id".into(), category_snapshot(item));
         p.insert("tax_country_code".into(), json!(cc));
         p.insert("tax_region_code".into(), json!(rc));
         // tax_rule_id NULL si la línea no resolvió por catálogo (fallback al preview del cliente).
@@ -1062,6 +1072,10 @@ pub fn open_order_pure(input: Value) -> Result<Output, String> {
         // `inventory` ni descuenta stock, y el pedido tiene que recordarlo para que una cuenta
         // RETOMADA lo siga cobrando como servicio.
         p.insert("is_service".into(), json!(item.get("is_service").map(as_bool).unwrap_or(false) as i64));
+        // sales#12: la categoría del producto se CONGELA en la línea del pedido — es lo que enruta
+        // la comanda (kitchen: categoría→estación) y tiene que sobrevivir a retomar la cuenta y a
+        // que alguien recategorice el producto mañana. Misma regla que `tax_category_key`.
+        p.insert("category_id".into(), category_snapshot(item));
         ops.push(Operation::sql("sales._insert_order_line", p));
     }
 
@@ -2058,6 +2072,41 @@ mod tests {
         assert_eq!(p["increment_value"], json!(SCALE), "una pieza no se parte");
         assert_eq!(p["price_quantity_value"], json!(SCALE), "precio por 1 unidad");
         assert_eq!(p["line_total"], json!(250), "1 caña × 250 = 250: nada cambia para el bar");
+    }
+
+    // ── sales#12 · la CATEGORÍA del producto es snapshot de la línea (routing de cocina) ────────
+    //
+    // Regla de `architecture/modules/sales.md`: dependencia FUNCIONAL (inventory/taxes) = snapshot
+    // en la línea. La categoría decide a qué estación se cocina, y una comanda ya enviada no puede
+    // cambiar de estación porque mañana alguien recategorice el producto. Mismo molde que el
+    // snapshot fiscal (`tax_category_key`, 006). Se congela al abrir/añadir (pedido) y al cobrar.
+
+    #[test]
+    fn the_order_line_freezes_the_product_category_it_was_added_with() {
+        let items = json!([{ "product_id": "p-cerveza", "product_name": "Cerveza", "price": 300,
+                             "quantity": 1_000_000, "category_id": "cat-bebidas" }]);
+        let out = orden(input(items, 3, 0));
+        let l = out.operations.iter().find(|o| o.command == "sales._insert_order_line").unwrap();
+        assert_eq!(l.params["category_id"], json!("cat-bebidas"));
+    }
+
+    #[test]
+    fn an_order_line_without_category_stores_null_not_empty_string() {
+        // NULL = «sin clasificar» (precio libre, servicio sin categoría). Kitchen enruta con
+        // `category_id` solo si viene; una cadena vacía sería un id que no existe.
+        let items = json!([{ "product_name": "Varios", "price": 300, "quantity": 1_000_000 }]);
+        let out = orden(input(items, 3, 0));
+        let l = out.operations.iter().find(|o| o.command == "sales._insert_order_line").unwrap();
+        assert_eq!(l.params["category_id"], Value::Null);
+    }
+
+    #[test]
+    fn the_sale_line_freezes_the_category_too() {
+        let items = json!([{ "product_name": "Cerveza", "price": 300, "quantity": 1_000_000,
+                             "tax_rate": 21.0, "category_id": "cat-bebidas" }]);
+        let out = sale(input(items, 3, 300));
+        let l = out.operations.iter().find(|o| o.command == "sales._insert_line").unwrap();
+        assert_eq!(l.params["category_id"], json!("cat-bebidas"));
     }
 
     #[test]

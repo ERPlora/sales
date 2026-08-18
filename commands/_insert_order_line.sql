@@ -4,9 +4,11 @@
 -- (la categoría es la autoridad del IVA en servidor, ADR-0085; el coste alimenta el arqueo de
 -- invitaciones).
 -- ADR-0147: `quantity` en punto fijo 10⁶ + contexto de unidades CONGELADO (§2.4).
+-- sales#12: `category_id` (opaco, NULL = sin clasificar) es el snapshot que enruta la comanda.
 INSERT INTO sales_order_item (
     id, hub_id, order_id, product_id, product_name, product_sku,
     quantity, unit_price, is_gift, gift_reason, line_total, tax_category_key, cost, is_service,
+    category_id,
     is_deleted, created_by, updated_by, created_at, updated_at,
     unit_code, unit_name, factor_num, factor_den, increment_value,
     price_quantity_value, pricing_unit_code, pricing_unit_name,
@@ -15,6 +17,7 @@ INSERT INTO sales_order_item (
     :id, :hub_id, :order_id, :product_id, :product_name, :product_sku,
     :quantity, :unit_price, :is_gift, COALESCE(:gift_reason, ''), :line_total,
     COALESCE(:tax_category_key, ''), COALESCE(:cost, 0), COALESCE(:is_service, 0),
+    :category_id,
     0, :current_user_id, :current_user_id, :now, :now,
     :unit_code, :unit_name, :factor_num, :factor_den, :increment_value,
     :price_quantity_value, :pricing_unit_code, :pricing_unit_name,

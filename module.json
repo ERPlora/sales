@@ -101,7 +101,8 @@
       "migrations/postgres/015_order_label.sql",
       "migrations/postgres/016_order_rounds.sql",
       "migrations/postgres/017_idempotency_key.sql",
-      "migrations/postgres/018_order_item_is_service.sql"
+      "migrations/postgres/018_order_item_is_service.sql",
+      "migrations/postgres/019_line_category_snapshot.sql"
     ]
   },
   "seed": {

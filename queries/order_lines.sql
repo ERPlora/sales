@@ -5,12 +5,14 @@
 -- línea para que un pedido REANUDADO siga significando 0,5 kg aunque el maestro haya cambiado.
 -- `is_service` (sales#89) vuelve con la línea: un pedido REANUDADO tiene que seguir sabiendo que
 -- cobra un corte de pelo y no un producto, o el cobro lo mediría contra el catálogo de inventory.
+-- `category_id` (sales#12): snapshot de la categoría del producto — es lo que enruta la comanda en
+-- kitchen y tiene que sobrevivir a retomar la cuenta.
 SELECT id, order_id, product_id, product_name, product_sku, quantity, unit_price,
        is_gift, gift_reason, line_total, tax_category_key, cost, is_service,
        unit_code, unit_name, factor_num, factor_den, increment_value,
        price_quantity_value, pricing_unit_code, pricing_unit_name,
        pricing_factor_num, pricing_factor_den,
-       round_no, fired_at
+       round_no, fired_at, category_id
 FROM sales_order_item
 -- `sale_id IS NULL` = lo que queda POR PAGAR (ADR-0146): en un pedido cobrado a medias,
 -- las líneas ya pagadas no vuelven a la pantalla ni se cobran dos veces.

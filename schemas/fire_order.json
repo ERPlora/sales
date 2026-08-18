@@ -41,6 +41,13 @@
           "product_name": {
             "type": "string"
           },
+          "category_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Opaque product category id (inventory/services), frozen on the line for kitchen routing (sales#12). null = unclassified."
+          },
           "quantity": {
             "type": "integer",
             "minimum": 1

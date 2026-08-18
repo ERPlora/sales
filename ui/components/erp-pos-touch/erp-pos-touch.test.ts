@@ -1719,3 +1719,45 @@ describe('venta por precio libre (fuera de catálogo)', () => {
     expect(c.cart[0].tax_category_key).toBe('product.generic');
   });
 });
+
+// sales#12 — de la baldosa a la comanda: la categoría del producto se CONGELA en la línea al
+// añadirla (viaja en `sales.order.open` / `add_line`) y es la que sale en `sales.order.fire`.
+// Antes solo vivía en `prodCats` (memoria del TPV) y el disparo no la mandaba: la regla
+// categoría→estación de kitchen no se aplicaba nunca.
+describe('la categoría del producto viaja con la línea hasta cocina (sales#12)', () => {
+  let comandos: { name: string; payload: Record<string, unknown> }[];
+
+  beforeEach(() => {
+    comandos = [];
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    const productos = [{ id: 'p-cerveza', name: 'Cerveza', price: 250, is_active: 1, tax_category_key: CATEGORIA_IVA }];
+    sdk.queryAll = async (name: string) => {
+      if (name === 'inventory.products.list') return productos;
+      if (name === 'inventory.categories.list') return [{ id: 'cat-bebidas', name: 'Bebidas' }];
+      if (name === 'inventory.product_categories') return [{ product_id: 'p-cerveza', category_id: 'cat-bebidas' }];
+      return catalogoFiscal(name);
+    };
+    sdk.command = async (name: string, payload: Record<string, unknown>) => {
+      comandos.push({ name, payload });
+      return { ok: true, new_ids: ['ord-1', 'line-1'] };
+    };
+  });
+
+  it('al añadir el producto, la línea del pedido nace con su category_id', async () => {
+    const el = await montarCarrito();
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    await (el as unknown as { queue: <T>(t: () => Promise<T>) => Promise<T> }).queue(async () => undefined);
+    const apertura = comandos.find((c) => c.name === 'sales.order.open')!;
+    expect((apertura.payload.items as Record<string, unknown>[])[0]).toMatchObject({ category_id: 'cat-bebidas' });
+  });
+
+  it('y el disparo a cocina la reenvía por línea', async () => {
+    const el = await montarCarrito();
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    await (el as unknown as { queue: <T>(t: () => Promise<T>) => Promise<T> }).queue(async () => undefined);
+    await (el as unknown as { fireToKitchen(): Promise<void> }).fireToKitchen();
+    const fuego = comandos.find((c) => c.name === 'sales.order.fire')!;
+    expect(fuego, 'se disparó').toBeTruthy();
+    expect((fuego.payload.items as Record<string, unknown>[])[0]).toMatchObject({ category_id: 'cat-bebidas' });
+  });
+});

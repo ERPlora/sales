@@ -135,6 +135,23 @@ describe('carrito respaldado por pedido (ADR-0141)', () => {
     expect(lines[0]).toMatchObject({ line_id: 'line-1', id: 'p1', name: 'Cerveza', qty: 2, price: 250 });
   });
 
+  it('sales#12: la categoría del producto se persiste con la línea y vuelve al retomar la cuenta', async () => {
+    const { client, calls } = orderClient([], [
+      { id: 'line-1', product_id: 'p1', product_name: 'Cerveza', quantity: 1_000_000, unit_price: 250, line_total: 250, category_id: 'cat-bebidas' },
+      { id: 'line-2', product_id: null, product_name: 'Varios', quantity: 1_000_000, unit_price: 100, line_total: 100, category_id: null },
+    ]);
+    // Al añadir: viaja en el payload de la línea (abrir el pedido y añadir a uno abierto).
+    await openOrderWithLines(client, [{ id: 'p1', name: 'Cerveza', price: 250, qty: 1, category_id: 'cat-bebidas' }]);
+    expect((calls.find((c) => c.name === 'sales.order.open')!.params.items as Record<string, unknown>[])[0])
+      .toMatchObject({ category_id: 'cat-bebidas' });
+    await addOrderLine(client, 'ord-1', { id: 'p1', name: 'Cerveza', price: 250, qty: 1, category_id: 'cat-bebidas' });
+    expect(calls.find((c) => c.name === 'sales.order.add_line')!.params).toMatchObject({ category_id: 'cat-bebidas' });
+    // Al retomar: vuelve con la línea (y una línea sin clasificar vuelve sin ella, no con '').
+    const lines = await loadOrderLines(client, 'ord-1');
+    expect(lines[0].category_id).toBe('cat-bebidas');
+    expect(lines[1].category_id).toBeUndefined();
+  });
+
   it('encuentra el pedido ABIERTO para reanudarlo tras recargar', async () => {
     const { client } = orderClient([], [
       { id: 'ord-viejo', status: 'completed' },

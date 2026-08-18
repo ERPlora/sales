@@ -1264,6 +1264,10 @@ export class ErpPosTouch extends LitElement {
     void this.showPendingSwitchAlert(this.pendingCount);
     return true;
   }
+  /** La categoría PRIMARIA de un producto (la primera de `prodCats`); `undefined` sin clasificar. */
+  private primaryCategory(productId: string): string | undefined {
+    return this.prodCats.get(productId)?.values().next().value ?? undefined;
+  }
   private catCount(id: string) {
     const c = this.categories.find((x) => x.id === id);
     return c?.product_count ?? this.products.filter((p) => this.prodCats.get(p.id)?.has(id)).length;
@@ -1731,6 +1735,9 @@ export class ErpPosTouch extends LitElement {
       const line: CartLine = {
         id: p.id, name: p.name, sku: p.sku, price: Number(p.price), qty: 1,
         tax_category_key: p.tax_category_key, tax_rate, cost: Number(p.cost) || 0,
+        // sales#12: la categoría se congela en la línea — es lo que enruta la comanda en kitchen y
+        // sobrevive a retomar la cuenta (antes solo vivía en `prodCats`, en memoria).
+        category_id: this.primaryCategory(p.id),
         // sales#89: viaja hasta `complete_sale`, que por él no mide la línea contra el catálogo de
         // `inventory` ni le descuenta stock, y hasta `sale.completed`, donde `inventory` la salta.
         ...(p.is_service ? { is_service: true } : {}),
@@ -2003,7 +2010,7 @@ export class ErpPosTouch extends LitElement {
         : this.cart;
       // `quantity` viaja en punto fijo 10⁶ y la línea lleva su contexto de unidades congelado
       // (ADR-0147): el servidor valida la rejilla y calcula el importe por el SDK (KPEIN).
-      const items = cobradas.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: toMicro(l.qty), tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: this.prodCats.get(l.id)?.values().next().value ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0, ...unitContextPayload(l) }));
+      const items = cobradas.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: toMicro(l.qty), tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: l.category_id ?? this.primaryCategory(l.id) ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0, ...unitContextPayload(l) }));
       await erplora().command('sales.complete_sale', {
         items,
         // sales#20: el servidor no cierra una venta sin clave, y con la misma clave dos veces
