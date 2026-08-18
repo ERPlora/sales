@@ -66,3 +66,22 @@ describe('transportErrorKey — the engine messages that leaked raw in saas#1460
     expect(transportErrorKey(e)).toBeNull();
   });
 });
+
+// sales#91 — since hub#782 the SDK transport throws a TYPED error (`code === SERVER_UNAVAILABLE`,
+// exported by `@erplora/module-sdk`) with its own technical message («request to /api/command
+// failed: …», «unexpected response from …: HTTP 502 text/html», «… returned an invalid JSON
+// body»). None of those match the browser phrases above: keying on the CODE is what makes the
+// detector robust; the text sniffing stays only for a transport that still leaks the raw phrase.
+describe('transportErrorKey — keys on the typed SDK code first (sales#91)', () => {
+  it('an error carrying code=server_unavailable is transport whatever its message says', () => {
+    const e = Object.assign(new Error('request to /api/command failed: TypeError: Load failed'), { code: 'server_unavailable' });
+    expect(transportErrorKey(e)).toBe(SERVER_UNAVAILABLE_KEY);
+    const proxy = Object.assign(new Error('unexpected response from /api/command: HTTP 502 text/html'), { code: 'server_unavailable' });
+    expect(transportErrorKey(proxy)).toBe(SERVER_UNAVAILABLE_KEY);
+  });
+
+  it('a typed DOMAIN error is not transport, even if its message mentions fetch', () => {
+    const e = Object.assign(new Error('Failed to fetch the customer'), { code: 'sales.customer_required' });
+    expect(transportErrorKey(e)).toBeNull();
+  });
+});

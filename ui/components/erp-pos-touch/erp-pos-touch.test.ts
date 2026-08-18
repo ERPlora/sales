@@ -1248,7 +1248,7 @@ describe('carrito cerrado en móvil: ni puntero ni árbol accesible (sales#58)',
 describe('checkout idempotency (sales#20)', () => {
   let comandos: { name: string; payload: Record<string, unknown> }[];
   let consultas: { name: string; params: Record<string, unknown> }[];
-  let fallaElProximoCobro: string | null;
+  let fallaElProximoCobro: string | Error | null;
   /** Lo que el servidor responde cuando se le pregunta por la clave del intento.
    *
    *  hub#923: desde que el POS pregunta «¿esta clave ya produjo una venta?» tras un fallo de
@@ -1274,7 +1274,7 @@ describe('checkout idempotency (sales#20)', () => {
       if (name === 'sales.complete_sale' && fallaElProximoCobro) {
         const boom = fallaElProximoCobro;
         fallaElProximoCobro = null;
-        throw new Error(boom);
+        throw boom instanceof Error ? boom : new Error(boom);
       }
       return {};
     };
@@ -1349,6 +1349,19 @@ describe('checkout idempotency (sales#20)', () => {
     fallaElProximoCobro = 'Failed to fetch';
     await pos.confirm();
     expect(pos.error).toBe('ui.serverUnavailable');
+  });
+
+  // sales#91 — desde hub#782 el transporte del SDK ya NO deja pasar la frase del navegador: lanza un
+  // error TIPADO `code = server_unavailable` con un mensaje técnico propio («request to /api/command
+  // failed: …»). El detector de este módulo olfateaba el TEXTO, así que ese error tipado se le
+  // colaba como «dominio desconocido» y el modal de cobro enseñaba el mensaje técnico crudo.
+  it('a TYPED server_unavailable error from the SDK is transport too, whatever its message says (sales#91)', async () => {
+    const pos = await posConUnaLinea();
+    ventaEnServidor = [];
+    const typed = Object.assign(new Error('request to /api/command failed: TypeError: Load failed'), { code: 'server_unavailable' });
+    fallaElProximoCobro = typed;
+    await pos.confirm();
+    expect(pos.error, 'not the technical line').toBe('ui.serverUnavailable');
   });
 
   it('shows an unknown domain rejection verbatim — its phrase carries the code the manager needs', async () => {
@@ -1578,6 +1591,18 @@ describe('el cobro pierde la respuesta: la caja nunca deja al cajero sin saber (
 
     const enlace = el.shadowRoot!.querySelector<HTMLElement>('[data-testid="checkout-check-sales"]');
     expect(enlace, 'se ofrece ir a Ventas a comprobarlo').toBeTruthy();
+  });
+
+  it('sales#91: el error TIPADO del SDK con outcomeUnknown y la sonda caída → el veredicto honesto, nunca «inténtalo de nuevo»', async () => {
+    // Desde hub#906 el SDK entrega `code = server_unavailable` + `outcomeUnknown: true` con un mensaje
+    // técnico propio (nada de «Failed to fetch» suelto). Si el detector no lo reconoce, cae en
+    // «dominio desconocido» y enseña esa línea técnica — y NO consulta la sonda.
+    const typed = Object.assign(new Error('request to /api/command failed: TypeError: Failed to fetch'),
+      { code: 'server_unavailable', outcomeUnknown: true });
+    montarConCobroRoto(typed, async () => { throw Object.assign(new Error('request to /api/query failed'), { code: 'server_unavailable' }); });
+    const { el, pos } = await cobrar();
+    expect(pos.error).toBe('ui.checkoutUnknown');
+    expect(el.shadowRoot!.querySelector('[data-testid="checkout-check-sales"]'), 'se ofrece ir a Ventas').toBeTruthy();
   });
 
   it('el catálogo español traduce los mensajes nuevos (ADR-0055)', () => {
