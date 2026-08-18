@@ -112,6 +112,8 @@
     "charge": "Charge",
     "chargeShortcut": "Charge (F2)",
     "parkedTickets": "Open checks",
+    "openCart": "Open cart",
+    "openCartWithItems": "Open cart, {count} items",
     "openChecksAction": "Checks",
     "openChecksHint": "Tap a check to resume it.",
     "parkForLaterHint": "Park the current check to resume it later. The title is optional.",

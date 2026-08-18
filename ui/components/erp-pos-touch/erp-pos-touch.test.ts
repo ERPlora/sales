@@ -1207,6 +1207,29 @@ describe('carrito cerrado en móvil: ni puntero ni árbol accesible (sales#58)',
     expect(cajonAbierto, 'abierto vuelve a ser visible').toMatch(/visibility\s*:\s*visible/);
   });
 
+  // sales#84 — el FAB del carrito (móvil) era un botón con un icono y sin nombre: para un lector de
+  // pantalla, «button». Es el control principal de la venta en 390 px.
+  it('el FAB del carrito tiene nombre accesible, dice cuántas líneas lleva y expone su estado', async () => {
+    const el = await montarCarrito();
+    const fab = () => el.shadowRoot!.querySelector<HTMLButtonElement>('button.fab')!;
+    expect(fab().getAttribute('aria-label'), 'vacío: «abrir carrito»').toBe('ui.openCart');
+    expect(fab().getAttribute('aria-expanded'), 'cerrado').toBe('false');
+    expect(fab().getAttribute('aria-controls'), 'apunta al cajón que abre').toBeTruthy();
+
+    (el as unknown as { cart: unknown[] }).cart = [
+      { id: 'p1', name: 'Café solo', price: 180, qty: 2 },
+    ];
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    // Con líneas, el nombre incluye la cantidad — el badge visual no lo lee nadie.
+    expect(fab().getAttribute('aria-label')).toBe('ui.openCartWithItems');
+
+    fab().click();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    expect(fab().getAttribute('aria-expanded'), 'abierto').toBe('true');
+    const cajon = el.shadowRoot!.getElementById(fab().getAttribute('aria-controls')!);
+    expect(cajon?.classList.contains('cart'), 'aria-controls resuelve al cajón').toBe(true);
+  });
+
   it('el ocultado espera al final del deslizamiento (no corta la animación)', async () => {
     const movil = bloqueMovil(await cssDelPos());
     const cajonCerrado = movil.match(/\.cart\s*\{[^}]*\}/)?.[0] ?? '';

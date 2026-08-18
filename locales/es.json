@@ -113,6 +113,8 @@
     "charge": "Cobrar",
     "chargeShortcut": "Cobrar (F2)",
     "parkedTickets": "Cuentas abiertas",
+    "openCart": "Abrir carrito",
+    "openCartWithItems": "Abrir carrito, {count} artículos",
     "openChecksAction": "Cuentas",
     "openChecksHint": "Toca una cuenta para retomarla.",
     "parkForLaterHint": "Aparca la cuenta actual para retomarla más tarde. El título es opcional.",

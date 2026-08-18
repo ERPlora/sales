@@ -2567,11 +2567,15 @@ export class ErpPosTouch extends LitElement {
         </div>
 
         <div class="cart-backdrop" ?data-open=${this.cartOpen} @click=${() => { this.cartOpen = false; }}></div>
-        <aside class="cart" ?data-open=${this.cartOpen}>${this.renderCart()}</aside>
+        <aside class="cart" id="pos-cart-drawer" ?data-open=${this.cartOpen}>${this.renderCart()}</aside>
 
-        <!-- Botón flotante de carrito (solo móvil) -->
-        <button class="fab" @click=${() => { this.cartOpen = true; }}>
-          <ion-icon name="cart-outline"></ion-icon>
+        <!-- Botón flotante de carrito (solo móvil). sales#84: nombre accesible con la cantidad (el
+             badge visual no lo lee nadie), y estado abierto/cerrado del cajón que controla. -->
+        <button class="fab"
+                aria-label=${this.itemCount ? t('ui.openCartWithItems', { count: this.itemCount }) : t('ui.openCart')}
+                aria-expanded=${this.cartOpen ? 'true' : 'false'} aria-controls="pos-cart-drawer"
+                @click=${() => { this.cartOpen = true; }}>
+          <ion-icon name="cart-outline" aria-hidden="true"></ion-icon>
           ${this.itemCount ? html`<span class="badge">${this.itemCount}</span>` : nothing}
         </button>
       </div>
