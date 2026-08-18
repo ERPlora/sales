@@ -51,6 +51,10 @@ export interface CartLine {
    *  sobrevivir a retomar la cuenta y a que alguien recategorice el producto. Opaca para `sales`.
    *  Ausente = sin clasificar (precio libre). */
   category_id?: string;
+  /** DESCUENTO MANUAL de la línea, en % (0–100), sales#71. El servidor lo aplica y lo prorratea
+   *  antes de extraer el IVA (`items[].discount`); aquí solo se persiste con la línea del pedido
+   *  (sobrevive a retomar la cuenta) y se pinta. Ausente = sin descuento. */
+  discount?: number;
   /** SERVICIO (sales#89): la línea no sale del catálogo de `inventory` — su precio es el que manda
    *  y no descuenta stock. Viaja hasta `complete_sale` y de ahí a `sale.completed`, donde
    *  `inventory` la salta. Persistida en el pedido para sobrevivir al RETOMAR la cuenta. */
@@ -136,6 +140,8 @@ export interface OpenCheck {
   created_at: string;
   /** Etiqueta de quien la owna (mesa, cliente…), si el TPV la ha resuelto. Vacía = cuenta de barra. */
   label?: string;
+  /** sales#71: descuento de TICKET (%) que la cuenta lleva puesto; vuelve al retomarla. */
+  discount?: number;
 }
 
 /**
@@ -158,6 +164,7 @@ export async function listOpenChecks(client: ErploraClientLike, excluir?: string
         total: Number(o.provisional_total) || 0,
         created_at: String(o.created_at ?? ''),
         label: o.label ? String(o.label) : undefined,
+        discount: Number(o.discount_percent) > 0 ? Number(o.discount_percent) : undefined,
       }))
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
   } catch {
@@ -178,8 +185,27 @@ function firstNewId(res: unknown): string {
 
 /** Importe provisional de una línea (céntimos). Las invitaciones no se cobran. NO es fiscal: la
  *  cuota HALF_UP + el desglose por tipo los congela el servidor al COBRAR. */
-function provisionalLineTotal(unitPrice: number, qty: number, isGift?: boolean): number {
-  return isGift ? 0 : Math.round(unitPrice * qty);
+function provisionalLineTotal(unitPrice: number, qty: number, isGift?: boolean, discount = 0): number {
+  return isGift ? 0 : roundHalfUp(unitPrice * qty * (1 - discount / 100));
+}
+
+/** HALF_UP sobre céntimos, inmune al ruido de coma flotante (2,4999999… es 2,5). */
+function roundHalfUp(x: number): number {
+  return Math.round(x + 1e-9);
+}
+
+/** sales#71 — importe PREVIEW de una línea (céntimos): precio × cantidad × (1 − línea %) ×
+ *  (1 − ticket %), UN solo redondeo HALF_UP — exactamente como el servidor compone el descuento
+ *  global con el de la línea (`complete_sale`), para que «Cobrar 9,50 €» sea la cifra del tique.
+ *  Una invitación es 0. La autoridad sigue siendo el servidor (ADR-0085). */
+export function lineAmount(l: CartLine, ticketDiscount = 0): number {
+  if (l.is_gift) return 0;
+  return roundHalfUp(l.price * l.qty * (1 - (l.discount ?? 0) / 100) * (1 - ticketDiscount / 100));
+}
+
+/** Total PREVIEW del carrito con los descuentos aplicados (sales#71). */
+export function cartTotal(cart: CartLine[], ticketDiscount = 0): number {
+  return cart.reduce((s, l) => s + lineAmount(l, ticketDiscount), 0);
 }
 
 /** El contexto de unidades congelado, tal y como viaja en los payloads (solo claves presentes). */
@@ -213,6 +239,8 @@ function toItemPayload(l: CartLine): Record<string, unknown> {
     cost: l.cost ?? 0,
     // sales#12: la categoría se congela en la línea del pedido (routing de cocina).
     category_id: l.category_id ?? null,
+    // sales#71: descuento manual de la línea, en %.
+    discount: l.discount ?? 0,
     ...unitContextPayload(l),
   };
 }
@@ -247,7 +275,9 @@ function orderLinePayload(orderId: string, l: CartLine): Record<string, unknown>
     cost: l.cost ?? 0,
     // sales#12: la categoría se congela en la línea del pedido (routing de cocina).
     category_id: l.category_id ?? null,
-    line_total: provisionalLineTotal(l.price, l.qty, l.is_gift),
+    // sales#71: descuento manual de la línea (%), persistido con ella.
+    discount_percent: l.discount ?? 0,
+    line_total: provisionalLineTotal(l.price, l.qty, l.is_gift, l.discount ?? 0),
     ...unitContextPayload(l),
   };
 }
@@ -297,14 +327,27 @@ export async function persistLineQty(
 
 export async function updateOrderLineQty(
   client: ErploraClientLike, orderId: string, lineId: string, qty: number, unitPrice: number,
-  isGift?: boolean, giftReason?: string,
+  isGift?: boolean, giftReason?: string, discount = 0,
 ): Promise<void> {
   await client.command('sales.order.update_line', {
     order_id: orderId, line_id: lineId, quantity: toMicro(qty), // punto fijo 10⁶ (ADR-0147)
-    line_total: provisionalLineTotal(unitPrice, qty, isGift),
+    line_total: provisionalLineTotal(unitPrice, qty, isGift, discount),
     // Alternar invitación cambia el importe: viaja junto para que la fila quede coherente.
     is_gift: isGift === undefined ? null : (isGift ? 1 : 0),
     gift_reason: giftReason ?? null,
+  });
+}
+
+/** sales#71 — cambia el DESCUENTO (%) de una línea del pedido y su total provisional. */
+export async function updateOrderLineDiscount(
+  client: ErploraClientLike, orderId: string, line: CartLine, discount: number,
+): Promise<void> {
+  if (!line.line_id) return;
+  await client.command('sales.order.update_line', {
+    order_id: orderId, line_id: line.line_id, quantity: toMicro(line.qty),
+    line_total: provisionalLineTotal(line.price, line.qty, line.is_gift, discount),
+    discount_percent: discount,
+    is_gift: null, gift_reason: null,
   });
 }
 
@@ -337,6 +380,8 @@ export async function loadOrderLines(client: ErploraClientLike, orderId: string)
       is_service: x.is_service === 1 || x.is_service === true ? true : undefined,
       // sales#12: la categoría congelada vuelve con la línea (routing de cocina al retomar).
       category_id: x.category_id ? String(x.category_id) : undefined,
+      // sales#71: el descuento de la línea vuelve al retomar la cuenta.
+      discount: Number(x.discount_percent) > 0 ? Number(x.discount_percent) : undefined,
       // Contexto de unidades CONGELADO (ADR-0147 §2.4): vuelve con la línea para que el pedido
       // reanudado valide la misma rejilla y cobre con el mismo contexto.
       unit_code: x.unit_code ? String(x.unit_code) : undefined,

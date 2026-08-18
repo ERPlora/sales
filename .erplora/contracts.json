@@ -35,10 +35,12 @@
       "sales.order.merge",
       "sales.order.open",
       "sales.order.remove_line",
+      "sales.order.set_discount",
       "sales.order.set_label",
       "sales.order.split",
       "sales.order.update_line",
-      "sales.order.void"
+      "sales.order.void",
+      "sales.void"
     ],
     "events": [
       "sale.completed"

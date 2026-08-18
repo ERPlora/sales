@@ -12,7 +12,7 @@ SELECT id, order_id, product_id, product_name, product_sku, quantity, unit_price
        unit_code, unit_name, factor_num, factor_den, increment_value,
        price_quantity_value, pricing_unit_code, pricing_unit_name,
        pricing_factor_num, pricing_factor_den,
-       round_no, fired_at, category_id
+       round_no, fired_at, category_id, discount_percent
 FROM sales_order_item
 -- `sale_id IS NULL` = lo que queda POR PAGAR (ADR-0146): en un pedido cobrado a medias,
 -- las líneas ya pagadas no vuelven a la pantalla ni se cobran dos veces.

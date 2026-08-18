@@ -1075,8 +1075,21 @@ pub fn open_order_pure(input: Value) -> Result<Output, String> {
         // que la venta — abrir con 0,0005 kg y cobrar sería mover el error de sitio.
         let qty = line_qty(item)?;
         let is_gift = item.get("is_gift").map(as_bool).unwrap_or(false);
+        // sales#71: descuento manual de la línea (%), mismo rango y mismo rechazo que el cobro.
+        let line_disc = item.get("discount").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
+        if !rate_in_range(line_disc) {
+            return Err(reject("sales.discount_out_of_range", format!("line discount {line_disc}")));
+        }
         let line_total = if is_gift {
             0
+        } else if line_disc > 0.0 {
+            // Con descuento: precio × factor exacto × cantidad, UN solo HALF_UP — la misma fórmula
+            // que `calc_line_components` en el cobro, para que el provisional no derive del tique.
+            let pq_raw = line_price_qty(item);
+            let pq = Decimal::from(if pq_raw > 0 { pq_raw } else { QUANTITY_SCALE }) / Decimal::from(QUANTITY_SCALE);
+            let factor = Decimal::ONE - Decimal::from_f64(line_disc).unwrap_or(Decimal::ZERO) / Decimal::from(100);
+            let exact = Decimal::from(unit_price) * factor * (Decimal::from(qty) / Decimal::from(QUANTITY_SCALE)) / pq;
+            money::round(exact)
         } else {
             // Provisional (display), pero con la MISMA aritmética del SDK que el cobro: dinero
             // entero por cantidad de precio, un solo HALF_UP (ADR-0147 §2.3).
@@ -1117,6 +1130,7 @@ pub fn open_order_pure(input: Value) -> Result<Output, String> {
         // la comanda (kitchen: categoría→estación) y tiene que sobrevivir a retomar la cuenta y a
         // que alguien recategorice el producto mañana. Misma regla que `tax_category_key`.
         p.insert("category_id".into(), category_snapshot(item));
+        p.insert("discount_percent".into(), json!(line_disc)); // sales#71
         ops.push(Operation::sql("sales._insert_order_line", p));
     }
 
@@ -2295,6 +2309,23 @@ mod tests {
         let out = sale(input(items, 3, 300));
         let l = out.operations.iter().find(|o| o.command == "sales._insert_line").unwrap();
         assert_eq!(l.params["category_id"], json!("cat-bebidas"));
+    }
+
+    #[test]
+    fn the_order_line_keeps_its_manual_discount_and_the_provisional_reflects_it() {
+        // sales#71 — 1,80 € × 2 con 10 % = 3,24 € (un solo HALF_UP), y el % viaja a la fila para
+        // que la cuenta RETOMADA lo conserve. Fuera de rango → rechazo, como en el cobro.
+        let items = json!([{ "product_name": "Café", "price": 180, "quantity": 2_000_000, "discount": 10 }]);
+        let out = orden(input(items, 3, 0));
+        let l = out.operations.iter().find(|o| o.command == "sales._insert_order_line").unwrap();
+        assert_eq!(l.params["discount_percent"], json!(10.0));
+        assert_eq!(l.params["line_total"], json!(324));
+        let h = out.operations.iter().find(|o| o.command == "sales._insert_order").unwrap();
+        assert_eq!(h.params["provisional_total"], json!(324));
+
+        let bad = json!([{ "product_name": "Café", "price": 180, "quantity": 1_000_000, "discount": 120 }]);
+        let err = open_order_pure(input(bad, 3, 0)).expect_err("120 % no es un descuento");
+        assert!(err.contains("sales.discount_out_of_range"), "{err}");
     }
 
     #[test]

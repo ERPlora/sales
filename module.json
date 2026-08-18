@@ -117,7 +117,8 @@
       "migrations/postgres/017_idempotency_key.sql",
       "migrations/postgres/018_order_item_is_service.sql",
       "migrations/postgres/019_line_category_snapshot.sql",
-      "migrations/postgres/020_void_audit.sql"
+      "migrations/postgres/020_void_audit.sql",
+      "migrations/postgres/021_manual_discounts.sql"
     ]
   },
   "seed": {
@@ -512,6 +513,22 @@
       ],
       "ai": {
         "description": "Voids an OPEN order (cancels the ticket before checkout); status open -> voided (ADR-0141)."
+      }
+    },
+    "sales.order.set_discount": {
+      "permission": "sales.add_sale",
+      "transaction": true,
+      "sql": [
+        "commands/order_set_discount.sql"
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "sales.order_unavailable",
+        "message": "That order is not open in this business."
+      },
+      "ai": {
+        "description": "Sets the manual TICKET discount (percent, 0-100) of an OPEN order (sales#71). Applied by the server at checkout (sales.complete_sale discount_percent, prorated over the lines before the VAT); allow_discounts is enforced there."
       }
     },
     "sales.order.set_label": {

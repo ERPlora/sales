@@ -35,8 +35,8 @@ import '@erplora/outfitkit/ok-status-pill';
 import {
   mergeCartLines, listOpenChecks, type OpenCheck,
   // ADR-0141: el carrito lo respalda un PEDIDO real (filas), no un blob con debounce.
-  openOrderWithLines, addOrderLine, addOpenPriceLine, updateOrderLineQty, persistLineQty, removeOrderLine, loadOrderLines, mergeOrders, splitOrder,
-  unitContextPayload, type CartLine, type ErploraClientLike,
+  openOrderWithLines, addOrderLine, addOpenPriceLine, updateOrderLineQty, updateOrderLineDiscount, persistLineQty, removeOrderLine, loadOrderLines, mergeOrders, splitOrder,
+  unitContextPayload, lineAmount, cartTotal, type CartLine, type ErploraClientLike,
 } from '../../lib/pos-cart.js';
 import { loadTaxCatalog, productSellability, resolveLineTax, type TaxCatalog } from '../../lib/pos-tax.js';
 import { buildOpenPriceLine } from '../../lib/pos-open-price.js';
@@ -105,6 +105,8 @@ interface PosSettings {
   default_tax_included?: number;
   /** Formas de pago permitidas (Ajustes). 0 = desactivada. */
   allow_cash?: number; allow_card?: number; allow_transfer?: number;
+  /** sales#71: descuentos manuales permitidos (Ajustes). 0 = sin botón; el servidor lo revalida. */
+  allow_discounts?: number;
 }
 interface Category { id: string; name: string; icon?: string; color?: string; image?: string; product_count?: number; }
 interface ProdCat { product_id: string; category_id: string; }
@@ -375,6 +377,11 @@ export class ErpPosTouch extends LitElement {
     .pay-actions .charge { flex:1; }
     .pay-actions .charge-print { flex:none; width:64px; }
     .foot-actions { display:flex; gap:.5rem; }
+    .foot-actions .ticket-discount { flex:none; width:56px; }
+    .ticket-discount-row { display:flex; justify-content:space-between; font-size:.9rem; color:var(--ion-color-warning-shade, #b7791f); margin:.1rem 0; }
+    .discount-foot { display:flex; gap:.5rem; align-items:center; }
+    .discount-foot .charge { flex:1; }
+    .line-discount-badge { vertical-align:middle; }
     .foot-actions .prebill { flex:none; width:56px; }
     .foot-actions .charge { flex:1; }
 
@@ -667,6 +674,12 @@ export class ErpPosTouch extends LitElement {
   // Precio libre / venta por departamento (fuera de catálogo): sheet propio con su importe tecleado
   // y el departamento (categoría fiscal) elegido.
   @state() private openPriceOpen = false;
+  /** sales#71 — descuento de TICKET (%) de la cuenta en curso; 0 = ninguno. Se persiste en el
+   *  pedido (`sales.order.set_discount`) y vuelve al retomar la cuenta (`OpenCheck.discount`). */
+  @state() ticketDiscount = 0;
+  /** El sheet de descuento: sobre una LÍNEA o sobre el TICKET. */
+  @state() private discountSheet?: { target: 'line' | 'ticket'; lineId?: string };
+  @state() private discountInput = '';
   @state() private openAmount = '';
   @state() private openDept = '';
   @state() private payMethod?: PayMethod;
@@ -1202,7 +1215,11 @@ export class ErpPosTouch extends LitElement {
     });
   }
 
-  private get total() { return this.cart.reduce((s, l) => s + (l.is_gift ? 0 : l.price * l.qty), 0); }
+  /** Total PREVIEW con los descuentos (sales#71); la autoridad sigue siendo el servidor. */
+  private get total() { return cartTotal(this.cart, this.ticketDiscount); }
+  /** Lo que el descuento de ticket quita, para pintarlo (bruto sin él − total con él). */
+  private get ticketDiscountAmount() { return cartTotal(this.cart, 0) - this.total; }
+  private get discountsAllowed(): boolean { return this.settings.allow_discounts !== 0; }
   private get itemCount() { return this.cart.reduce((s, l) => s + l.qty, 0); }
   private get parkingEnabled() { return this.settings.enable_parked_tickets !== 0; }
   /** La capacidad Cocina existe solo si el registro de slots ha montado alguno de sus fillers. */
@@ -1415,6 +1432,7 @@ export class ErpPosTouch extends LitElement {
       }
       this.orderId = c.id;
       this.orderLabel = c.label ?? '';
+      this.ticketDiscount = c.discount ?? 0; // sales#71
       rememberCurrentCheck(localStorage, c.id);
       this.cart = await loadOrderLines(erplora(), c.id);
       this.notifyOrderRestored();
@@ -1453,6 +1471,7 @@ export class ErpPosTouch extends LitElement {
       if (!id) return [];
       this.orderId = id;
       this.orderLabel = cuentas.find((c) => c.id === id)?.label ?? '';
+      this.ticketDiscount = cuentas.find((c) => c.id === id)?.discount ?? 0; // sales#71
       // El pedido vuelve, pero su MESA y su CLIENTE los saben sus dueños, no `sales`. Se les avisa
       // para que restauren lo suyo (y el de mesas nos devuelva el contexto por `erp:order-context`).
       // Sin esto, al recargar el TPV la comanda aparecía "sin mesa" aunque la mesa siguiera ocupada.
@@ -1770,7 +1789,7 @@ export class ErpPosTouch extends LitElement {
     this.cart = this.cart.map((l) => (l === ex ? { ...l, is_gift, gift_reason } : l));
     // Cambia el importe de la línea → se persiste YA (ADR-0141).
     if (this.orderId && ex.line_id) {
-      await updateOrderLineQty(erplora(), this.orderId, ex.line_id, ex.qty, ex.price, is_gift, gift_reason ?? '');
+      await updateOrderLineQty(erplora(), this.orderId, ex.line_id, ex.qty, ex.price, is_gift, gift_reason ?? '', ex.discount ?? 0);
     }
   }
   /** Contexto de unidades CONGELADO desde el maestro (ADR-0147 §2.4): unidad de la línea, su
@@ -1821,7 +1840,7 @@ export class ErpPosTouch extends LitElement {
       : this.cart.filter((l) => l !== ex);
     // Persistencia INMEDIATA de la fila (0 → se elimina del pedido).
     if (!this.orderId || !ex.line_id) return;
-    if (qty > 0) await updateOrderLineQty(erplora(), this.orderId, ex.line_id, qty, ex.price, ex.is_gift);
+    if (qty > 0) await updateOrderLineQty(erplora(), this.orderId, ex.line_id, qty, ex.price, ex.is_gift, undefined, ex.discount ?? 0);
     else await removeOrderLine(erplora(), this.orderId, ex.line_id);
   }
 
@@ -1921,7 +1940,50 @@ export class ErpPosTouch extends LitElement {
   private get chargeBlocked(): boolean {
     return ticketIsBlocked(this.limitState);
   }
+  protected override willUpdate(changed: Map<PropertyKey, unknown>): void {
+    // sales#71: el descuento de ticket pertenece a la CUENTA. Al soltarla (cobrada, aparcada,
+    // eliminada, mesa cambiada) no puede arrastrarse a la siguiente.
+    if (changed.has('orderId') && !this.orderId) this.ticketDiscount = 0;
+  }
   private tap(k: string) { this.tendered = pushDigit(this.tendered, k); }
+
+  // ── sales#71 · descuentos manuales ─────────────────────────────────────────────────────────
+  openDiscount(target: 'line' | 'ticket', lineId?: string): void {
+    const current = target === 'ticket'
+      ? this.ticketDiscount
+      : (this.cart.find((l) => l.line_id === lineId)?.discount ?? 0);
+    this.discountInput = current > 0 ? String(current) : '';
+    this.discountSheet = { target, lineId };
+  }
+  private tapDiscount(k: string) {
+    // Un %: entero o con decimales, nunca por encima de 100 (el servidor también lo rechaza).
+    const next = pushDigit(this.discountInput, k);
+    if (Number(next || '0') <= 100) this.discountInput = next;
+  }
+  private get discountInputPct(): number { return Math.min(100, Math.max(0, Number(this.discountInput || '0'))); }
+  /** Aplica el % tecleado (0 = quitar) a la línea o al ticket, persistiéndolo en el pedido. */
+  async applyDiscount(pct: number): Promise<void> {
+    const sheet = this.discountSheet;
+    this.discountSheet = undefined;
+    if (!sheet) return;
+    const value = Math.min(100, Math.max(0, pct));
+    if (sheet.target === 'ticket') {
+      this.ticketDiscount = value;
+      if (this.orderId) {
+        try { await erplora().command('sales.order.set_discount', { order_id: this.orderId, discount_percent: value }); }
+        catch (e) { this.error = e instanceof Error ? e.message : String(e); }
+      }
+      return;
+    }
+    const line = this.cart.find((l) => l.line_id === sheet.lineId);
+    if (!line) return;
+    const discount = value > 0 ? value : undefined;
+    this.cart = this.cart.map((l) => (l === line ? { ...l, discount } : l));
+    if (this.orderId && line.line_id) {
+      try { await updateOrderLineDiscount(erplora(), this.orderId, { ...line, discount }, value); }
+      catch (e) { this.error = e instanceof Error ? e.message : String(e); }
+    }
+  }
   // El pinpad teclea EUROS («20» = 20 €); el contrato de la venta es CÉNTIMOS (ADR-0007/0123),
   // como `total`. Sin esta conversión: «Efectivo 0.20 €» y cambio 0 en el tiquet (QA 2026-07-17).
   private get tenderedNum() { return eurosToCents(this.tendered || '0'); }
@@ -1932,7 +1994,7 @@ export class ErpPosTouch extends LitElement {
     return needsTendered(this.payMethod) && this.tenderedNum > 0 && this.tenderedNum < this.payable;
   }
   /** Lo que se cobra AHORA: la selección si la hay, o la cuenta entera (ADR-0146). */
-  private get payable() { return splitTotal(this.cart, this.splitSel); }
+  private get payable() { return splitTotal(this.cart, this.splitSel, this.ticketDiscount); }
 
   // ── Precio libre / venta por DEPARTAMENTO (fuera de catálogo) ──────────────────────────────
   /** Abre la pregunta del importe. Sin argumentos es la tecla suelta «Precio libre» (en blanco);
@@ -2010,9 +2072,11 @@ export class ErpPosTouch extends LitElement {
         : this.cart;
       // `quantity` viaja en punto fijo 10⁶ y la línea lleva su contexto de unidades congelado
       // (ADR-0147): el servidor valida la rejilla y calcula el importe por el SDK (KPEIN).
-      const items = cobradas.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: toMicro(l.qty), tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: l.category_id ?? this.primaryCategory(l.id) ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0, ...unitContextPayload(l) }));
+      const items = cobradas.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: toMicro(l.qty), tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: l.category_id ?? this.primaryCategory(l.id) ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0, discount: l.discount ?? 0, ...unitContextPayload(l) }));
       await erplora().command('sales.complete_sale', {
         items,
+        // sales#71: descuento de TICKET (%); el servidor lo prorratea por línea antes del IVA.
+        discount_percent: this.ticketDiscount,
         // sales#20: el servidor no cierra una venta sin clave, y con la misma clave dos veces
         // registra UNA. Es lo que hace seguro reintentar cuando el wifi del local parpadea.
         idempotency_key: checkoutKey,
@@ -2411,6 +2475,8 @@ export class ErpPosTouch extends LitElement {
       <!-- El PIE. ion-footer es un pie de verdad: se queda abajo pase lo que pase. -->
       <ion-footer class="ion-no-border">
         <div class="cart-foot">
+          ${this.ticketDiscount > 0 ? html`
+          <div class="ticket-discount-row"><span>${t('ui.discountTicket')} −${this.ticketDiscount}%</span><span>−${this.money(this.ticketDiscountAmount)}</span></div>` : nothing}
           <div class="total"><span>${t('ui.colTotal')}</span><b>${this.money(this.total)}</b></div>
           <!-- Forma de pago ANTES de cobrar (decisión de Ioan): se elige aquí, con la comanda
                delante, y el modal de cobro queda limpio. Solo-icono porque son 3-4 opciones fijas
@@ -2432,6 +2498,9 @@ export class ErpPosTouch extends LitElement {
                  (trash → alert al armar), y el empaquetador solo hornea literales. -->
             <ion-icon name="trash-outline"></ion-icon>
             <ion-icon name="alert-circle-outline"></ion-icon>
+            <!-- sales#71: el icono del descuento cambia con el estado (outline ↔ relleno). -->
+            <ion-icon name="pricetag-outline"></ion-icon>
+            <ion-icon name="pricetag"></ion-icon>
           </span>
           <!-- El MÉTODO de pago ya no se elige aquí: vive DENTRO del sheet de cobro, como la
                pantalla de tender de cualquier TPV (rediseño 2026-07-19). El footer solo acciona. -->
@@ -2441,6 +2510,13 @@ export class ErpPosTouch extends LitElement {
           <!-- El botón de COCINA ya no vive aquí: entra por el slot sales.pos.actions (lo
                aporta kitchen si está instalado/activo) y se monta dentro de Comanda actual. -->
           <div class="foot-actions">
+            ${this.discountsAllowed ? html`
+            <ion-button class="ticket-discount" fill="outline" ?disabled=${!this.cart.length}
+                        color=${this.ticketDiscount > 0 ? 'warning' : undefined}
+                        title=${t('ui.discountTicket')} aria-label=${t('ui.discountTicket')}
+                        @click=${() => this.openDiscount('ticket')}>
+              <ion-icon slot="icon-only" name=${this.ticketDiscount > 0 ? 'pricetag' : 'pricetag-outline'}></ion-icon>
+            </ion-button>` : nothing}
             <ion-button class="prebill" fill="outline" ?disabled=${!this.cart.length}
                         title=${t('ui.printPrebill')} aria-label=${t('ui.printPrebill')}
                         @click=${() => { this.prebillOpen = true; }}>
@@ -2508,13 +2584,19 @@ export class ErpPosTouch extends LitElement {
             : nothing}
           <span>${l.name}</span>${l.is_gift
             ? html` <ion-badge color="success">${t('ui.giftBadge')}</ion-badge>` : nothing}</h3>
-        <p>${priceLabel(this.money(l.price), l.unit_code)}${l.is_gift && l.gift_reason ? html` · ${l.gift_reason}` : nothing}</p>
+        <p>${priceLabel(this.money(l.price), l.unit_code)}${l.is_gift && l.gift_reason ? html` · ${l.gift_reason}` : nothing}${l.discount
+          ? html` <ion-badge class="line-discount-badge" color="warning">−${l.discount}%</ion-badge>` : nothing}</p>
       </ion-label>
       <div slot="end" class="lineend">
-        <span class="lt ${l.is_gift ? 'is-gift' : ''}">${this.money(l.price * l.qty)}</span>
+        <span class="lt ${l.is_gift ? 'is-gift' : ''}">${this.money(lineAmount(l))}</span>
         ${locked
           ? html`<span class="lqty">×${formatQuantity(toMicro(l.qty))}</span>`
           : html`
+            ${this.discountsAllowed ? html`
+            <ion-button class="line-discount" fill="clear" size="small" title=${t('ui.discountLine')} aria-label=${t('ui.discountLine')}
+                        @click=${() => this.openDiscount('line', l.line_id)}>
+              <ion-icon name=${l.discount ? 'pricetag' : 'pricetag-outline'} slot="icon-only" color=${l.discount ? 'warning' : 'medium'}></ion-icon>
+            </ion-button>` : nothing}
             <ion-button fill="clear" size="small" title=${t('ui.giftAction')} @click=${() => this.toggleGift(l.id)}>
               <ion-icon name=${l.is_gift ? 'gift' : 'gift-outline'} slot="icon-only" color=${l.is_gift ? 'success' : 'medium'}></ion-icon>
             </ion-button>
@@ -2735,6 +2817,34 @@ export class ErpPosTouch extends LitElement {
                             ?disabled=${!(this.openAmountCents > 0 && this.openDept)}
                             @click=${() => this.addOpenPrice()}>
                   ${t('ui.add')}${this.openAmountCents > 0 ? ` ${this.money(this.openAmountCents)}` : ''}
+                </ion-button>
+              </div>
+            </div>
+          </div>`
+        : nothing}
+
+      <!-- DESCUENTO (sales#71): mismo sheet/numpad del cobro. Se teclea el %, y Aplicar; 0 = quitar.
+           Sobre la LÍNEA elegida o sobre el TICKET entero. El servidor prorratea y revalida
+           allow_discounts; aquí solo se recoge la cifra. -->
+      ${this.discountSheet
+        ? html`<div class="scrim" @click=${(e: Event) => { if ((e.target as HTMLElement).classList.contains('scrim')) this.discountSheet = undefined; }}>
+            <div class="sheet discount-sheet">
+              <div class="sheet-h">
+                <span class="t">${this.discountSheet.target === 'ticket'
+                  ? t('ui.discountTicket')
+                  : t('ui.discountLineOf', { name: this.cart.find((l) => l.line_id === this.discountSheet?.lineId)?.name ?? '' })}</span>
+                <button class="x" aria-label=${t('ui.closeAction')} @click=${() => { this.discountSheet = undefined; }}>✕</button>
+              </div>
+              <div class="sheet-top"><div class="pay-total">${this.discountInput || '0'} %</div></div>
+              <div class="pay">
+                <div class="numpad">
+                  ${['1','2','3','4','5','6','7','8','9','.','0','C'].map((k) => html`<button @click=${() => this.tapDiscount(k)}>${k}</button>`)}
+                </div>
+              </div>
+              <div class="sheet-foot discount-foot">
+                <ion-button fill="outline" color="medium" @click=${() => this.applyDiscount(0)}>${t('ui.discountRemove')}</ion-button>
+                <ion-button class="charge" expand="block" @click=${() => this.applyDiscount(this.discountInputPct)}>
+                  ${t('ui.discountApply')}${this.discountInputPct > 0 ? ` −${this.discountInputPct}%` : ''}
                 </ion-button>
               </div>
             </div>

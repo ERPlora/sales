@@ -9,6 +9,7 @@ SET quantity    = :quantity,
     line_total  = :line_total,
     is_gift     = COALESCE(:is_gift, is_gift),
     gift_reason = COALESCE(:gift_reason, gift_reason),
+    discount_percent = COALESCE(:discount_percent, discount_percent), -- sales#71
     updated_by  = :current_user_id,
     updated_at  = :now
 -- `fired_at IS NULL`: una línea YA ENVIADA a cocina no se edita desde el TPV (tandas,

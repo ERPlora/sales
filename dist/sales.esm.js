@@ -2916,7 +2916,15 @@ function splitHeader(raw) {
     address: header.split("\n").slice(1).join(" ") || void 0
   };
 }
-function parseTaxes(tax_breakdown) {
+var RAW_TAX_TYPES = /* @__PURE__ */ new Set(["vat", "surcharge", "sales_tax", "withholding", "excise", "import_duty"]);
+function taxLabel(rate, v3, t7) {
+  const r6 = Number(rate);
+  const custom = v3?.label && !RAW_TAX_TYPES.has(v3.label) ? v3.label : void 0;
+  const name = custom ?? (v3?.kind === "surcharge" ? t7 ? t7("ui.taxSurcharge") : "RE" : "IVA");
+  const pct = Number.isFinite(r6) ? String(Number(r6.toFixed(2))) : rate;
+  return `${name} ${pct}%`;
+}
+function parseTaxes(tax_breakdown, t7) {
   if (!tax_breakdown) return [];
   let obj;
   try {
@@ -2927,12 +2935,12 @@ function parseTaxes(tax_breakdown) {
   return Object.entries(obj).map(([rate, v3]) => {
     const r6 = Number(rate);
     return {
-      label: `IVA ${Number.isFinite(r6) ? r6.toFixed(0) : rate}%`,
+      label: taxLabel(rate, v3, t7),
       rate: Number.isFinite(r6) ? r6 : void 0,
       base: toEuros(v3?.base),
       amount: toEuros(v3?.tax)
     };
-  }).filter((t7) => t7.amount || t7.base);
+  }).filter((t8) => t8.amount || t8.base);
 }
 function resolveFormat(sale, settings) {
   const v3 = sale.document_type || settings.default_document_format || "ticket";
@@ -2953,7 +2961,7 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", f
       total: toEuros(l3.line_total)
     })),
     subtotal: sale.subtotal != null ? toEuros(sale.subtotal) : void 0,
-    taxes: parseTaxes(sale.tax_breakdown).map((t8) => ({ label: t8.label, base: t8.base, amount: t8.amount })),
+    taxes: parseTaxes(sale.tax_breakdown, t7).map((x2) => ({ label: x2.label, base: x2.base, amount: x2.amount })),
     total: toEuros(sale.total),
     payment: sale.payment_method_name ? { method: payLabel(sale.payment_method_name, t7), paid: sale.amount_tendered != null ? toEuros(sale.amount_tendered) : void 0, change: sale.change_due != null ? toEuros(sale.change_due) : void 0 } : void 0,
     currency: settings.currency || "\u20AC",
@@ -2976,7 +2984,7 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", f
     tax_rate: l3.tax_rate != null ? Number(l3.tax_rate) : void 0,
     total: toEuros(l3.line_total)
   }));
-  const taxes = parseTaxes(sale.tax_breakdown);
+  const taxes = parseTaxes(sale.tax_breakdown, t7);
   return {
     issuer: { name: fiscal.issuer_name || header.name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || void 0 },
     customer: { name: fiscal.customer_name || sale.customer_name || "Cliente", tax_id: fiscal.customer_tax_id || void 0 },
@@ -3561,6 +3569,22 @@ var es_default = {
     limitFieldAddress: "Domicilio",
     limitChargeBlocked: "Faltan los datos del cliente",
     tenderedShort: "Lo entregado no cubre el total",
+    discountLine: "Descuento en la l\xEDnea",
+    discountLineOf: "Descuento en {name}",
+    discountTicket: "Descuento del ticket",
+    discountApply: "Aplicar",
+    discountRemove: "Quitar",
+    actionVoid: "Anular",
+    voidTitle: "Anular la venta {number}",
+    voidExplain: "La venta queda registrada como anulada; caja y stock se revierten una sola vez. El motivo es obligatorio.",
+    voidReasonPlaceholder: "Motivo (obligatorio)",
+    voidDone: "Venta anulada",
+    voidFailed: "No se ha podido anular la venta",
+    voidRequiresCreditNote: "Esta venta lleva factura completa: emite una factura rectificativa en vez de anularla",
+    voidAlreadyVoided: "Esta venta ya est\xE1 anulada",
+    voidReasonRequired: "Hace falta un motivo para anular una venta",
+    voidSaleNotFound: "Esa venta no est\xE1 en este negocio",
+    taxSurcharge: "RE",
     screenMenu: "Pantalla",
     exitFullscreen: "Salir de pantalla completa"
   },
@@ -3809,6 +3833,22 @@ var en_default = {
     limitFieldAddress: "Address",
     limitChargeBlocked: "Enter the customer's details",
     tenderedShort: "The amount tendered does not cover the total",
+    discountLine: "Line discount",
+    discountLineOf: "Discount on {name}",
+    discountTicket: "Ticket discount",
+    discountApply: "Apply",
+    discountRemove: "Remove",
+    actionVoid: "Void",
+    voidTitle: "Void sale {number}",
+    voidExplain: "The sale stays on record as voided; cash and stock are reversed once. A reason is required.",
+    voidReasonPlaceholder: "Reason (required)",
+    voidDone: "Sale voided",
+    voidFailed: "The sale could not be voided",
+    voidRequiresCreditNote: "This sale carries a full invoice: issue a credit note instead of voiding it",
+    voidAlreadyVoided: "This sale is already voided",
+    voidReasonRequired: "A reason is required to void a sale",
+    voidSaleNotFound: "That sale is not in this business",
+    taxSurcharge: "Surcharge",
     screenMenu: "Screen",
     exitFullscreen: "Exit full screen"
   }
@@ -4160,14 +4200,222 @@ function createSerialQueue() {
   };
 }
 
+// ui/lib/pos-cart.ts
+function rows(r6) {
+  if (Array.isArray(r6)) return r6;
+  if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
+  return [];
+}
+async function listOpenChecks(client, excluir) {
+  try {
+    const r6 = rows(await client.query("sales.orders.list"));
+    return r6.filter((o9) => o9.status === "open" && String(o9.id) !== excluir).map((o9) => ({
+      id: String(o9.id),
+      total: Number(o9.provisional_total) || 0,
+      created_at: String(o9.created_at ?? ""),
+      label: o9.label ? String(o9.label) : void 0,
+      discount: Number(o9.discount_percent) > 0 ? Number(o9.discount_percent) : void 0
+    })).sort((a3, b3) => b3.created_at.localeCompare(a3.created_at));
+  } catch {
+    return [];
+  }
+}
+function firstNewId(res) {
+  const ids = res?.new_ids;
+  return Array.isArray(ids) && typeof ids[0] === "string" ? ids[0] : "";
+}
+function provisionalLineTotal(unitPrice, qty, isGift, discount = 0) {
+  return isGift ? 0 : roundHalfUp(unitPrice * qty * (1 - discount / 100));
+}
+function roundHalfUp(x2) {
+  return Math.round(x2 + 1e-9);
+}
+function lineAmount(l3, ticketDiscount = 0) {
+  if (l3.is_gift) return 0;
+  return roundHalfUp(l3.price * l3.qty * (1 - (l3.discount ?? 0) / 100) * (1 - ticketDiscount / 100));
+}
+function cartTotal(cart, ticketDiscount = 0) {
+  return cart.reduce((s5, l3) => s5 + lineAmount(l3, ticketDiscount), 0);
+}
+function unitContextPayload(l3) {
+  const ctx = {};
+  if (l3.unit_code) ctx.unit_code = l3.unit_code;
+  if (l3.unit_name) ctx.unit_name = l3.unit_name;
+  if (l3.factor_num) ctx.factor_num = l3.factor_num;
+  if (l3.factor_den) ctx.factor_den = l3.factor_den;
+  if (l3.increment_value) ctx.increment_value = l3.increment_value;
+  if (l3.price_quantity_value) ctx.price_quantity_value = l3.price_quantity_value;
+  if (l3.pricing_unit_code) ctx.pricing_unit_code = l3.pricing_unit_code;
+  if (l3.pricing_unit_name) ctx.pricing_unit_name = l3.pricing_unit_name;
+  if (l3.pricing_factor_num) ctx.pricing_factor_num = l3.pricing_factor_num;
+  if (l3.pricing_factor_den) ctx.pricing_factor_den = l3.pricing_factor_den;
+  return ctx;
+}
+function toItemPayload(l3) {
+  return {
+    product_id: l3.id || null,
+    product_name: l3.name,
+    product_sku: l3.sku ?? "",
+    price: l3.price,
+    quantity: toMicro2(l3.qty),
+    // punto fijo 10⁶ (ADR-0147)
+    is_gift: !!l3.is_gift,
+    gift_reason: l3.gift_reason ?? "",
+    // sales#89: viaja también al ABRIR el pedido, no solo al añadir línea suelta.
+    is_service: !!l3.is_service,
+    tax_category_key: l3.tax_category_key ?? "",
+    cost: l3.cost ?? 0,
+    // sales#12: la categoría se congela en la línea del pedido (routing de cocina).
+    category_id: l3.category_id ?? null,
+    // sales#71: descuento manual de la línea, en %.
+    discount: l3.discount ?? 0,
+    ...unitContextPayload(l3)
+  };
+}
+async function openOrderWithLines(client, lines, label) {
+  const payload = { items: lines.map(toItemPayload) };
+  if (label?.trim()) payload.label = label.trim();
+  const res = await client.command("sales.order.open", payload);
+  return firstNewId(res);
+}
+function orderLinePayload(orderId, l3) {
+  return {
+    order_id: orderId,
+    product_id: l3.id || null,
+    product_name: l3.name,
+    product_sku: l3.sku ?? "",
+    quantity: toMicro2(l3.qty),
+    // punto fijo 10⁶ (ADR-0147)
+    unit_price: l3.price,
+    is_gift: !!l3.is_gift,
+    gift_reason: l3.gift_reason ?? "",
+    // sales#89: el pedido recuerda que la línea es un SERVICIO. Sin esto el flag se perdía al
+    // materializar la línea (ADR-0141) y una cuenta RETOMADA cobraba el corte como producto.
+    is_service: !!l3.is_service,
+    tax_category_key: l3.tax_category_key ?? "",
+    cost: l3.cost ?? 0,
+    // sales#12: la categoría se congela en la línea del pedido (routing de cocina).
+    category_id: l3.category_id ?? null,
+    // sales#71: descuento manual de la línea (%), persistido con ella.
+    discount_percent: l3.discount ?? 0,
+    line_total: provisionalLineTotal(l3.price, l3.qty, l3.is_gift, l3.discount ?? 0),
+    ...unitContextPayload(l3)
+  };
+}
+async function addOpenPriceLine(client, orderId, l3) {
+  const res = await client.command("sales.order.add_open_line", orderLinePayload(orderId, l3));
+  return firstNewId(res);
+}
+async function addOrderLine(client, orderId, l3) {
+  const res = await client.command("sales.order.add_line", orderLinePayload(orderId, l3));
+  return firstNewId(res);
+}
+async function persistLineQty(client, orderId, line, qty) {
+  let lineId = line.line_id;
+  if (!lineId) {
+    const persisted = await loadOrderLines(client, orderId);
+    lineId = persisted.find((p4) => p4.id === line.id && !p4.is_gift === !line.is_gift)?.line_id;
+  }
+  if (!lineId) return false;
+  line.line_id = lineId;
+  await updateOrderLineQty(client, orderId, lineId, qty, line.price, line.is_gift, line.gift_reason);
+  return true;
+}
+async function updateOrderLineQty(client, orderId, lineId, qty, unitPrice, isGift, giftReason, discount = 0) {
+  await client.command("sales.order.update_line", {
+    order_id: orderId,
+    line_id: lineId,
+    quantity: toMicro2(qty),
+    // punto fijo 10⁶ (ADR-0147)
+    line_total: provisionalLineTotal(unitPrice, qty, isGift, discount),
+    // Alternar invitación cambia el importe: viaja junto para que la fila quede coherente.
+    is_gift: isGift === void 0 ? null : isGift ? 1 : 0,
+    gift_reason: giftReason ?? null
+  });
+}
+async function updateOrderLineDiscount(client, orderId, line, discount) {
+  if (!line.line_id) return;
+  await client.command("sales.order.update_line", {
+    order_id: orderId,
+    line_id: line.line_id,
+    quantity: toMicro2(line.qty),
+    line_total: provisionalLineTotal(line.price, line.qty, line.is_gift, discount),
+    discount_percent: discount,
+    is_gift: null,
+    gift_reason: null
+  });
+}
+async function removeOrderLine(client, orderId, lineId) {
+  await client.command("sales.order.remove_line", { order_id: orderId, line_id: lineId });
+}
+async function loadOrderLines(client, orderId) {
+  try {
+    const r6 = rows(await client.query("sales.order.lines", { order_id: orderId }));
+    return r6.map((x2) => ({
+      line_id: String(x2.id ?? ""),
+      id: String(x2.product_id ?? ""),
+      name: String(x2.product_name ?? ""),
+      sku: x2.product_sku ? String(x2.product_sku) : void 0,
+      price: Number(x2.unit_price) || 0,
+      // La fila trae punto fijo 10⁶ (ADR-0147); la UI trabaja en lógico. Cerrar y reabrir el
+      // pedido debe seguir mostrando 0,5 kg — no 500000 ni 1.
+      qty: fromMicro2(Number(x2.quantity) || 1e6),
+      is_gift: x2.is_gift === 1 || x2.is_gift === true ? true : void 0,
+      gift_reason: x2.gift_reason ? String(x2.gift_reason) : void 0,
+      // Autoridad del IVA en servidor (ADR-0085) y coste para el arqueo de invitaciones: se
+      // recuperan para que un pedido REANUDADO cobre con el mismo IVA que si no se hubiera recargado.
+      tax_category_key: x2.tax_category_key ? String(x2.tax_category_key) : void 0,
+      cost: Number(x2.cost) || void 0,
+      // sales#89: servicio o producto. Una fila ANTERIOR a la columna no trae nada y vuelve como
+      // producto — que es lo que era; marcarla de servicio haría que inventory le saltara el stock.
+      is_service: x2.is_service === 1 || x2.is_service === true ? true : void 0,
+      // sales#12: la categoría congelada vuelve con la línea (routing de cocina al retomar).
+      category_id: x2.category_id ? String(x2.category_id) : void 0,
+      // sales#71: el descuento de la línea vuelve al retomar la cuenta.
+      discount: Number(x2.discount_percent) > 0 ? Number(x2.discount_percent) : void 0,
+      // Contexto de unidades CONGELADO (ADR-0147 §2.4): vuelve con la línea para que el pedido
+      // reanudado valide la misma rejilla y cobre con el mismo contexto.
+      unit_code: x2.unit_code ? String(x2.unit_code) : void 0,
+      unit_name: x2.unit_name ? String(x2.unit_name) : void 0,
+      factor_num: Number(x2.factor_num) || void 0,
+      factor_den: Number(x2.factor_den) || void 0,
+      increment_value: Number(x2.increment_value) || void 0,
+      price_quantity_value: Number(x2.price_quantity_value) || void 0,
+      pricing_unit_code: x2.pricing_unit_code ? String(x2.pricing_unit_code) : void 0,
+      pricing_unit_name: x2.pricing_unit_name ? String(x2.pricing_unit_name) : void 0,
+      pricing_factor_num: Number(x2.pricing_factor_num) || void 0,
+      pricing_factor_den: Number(x2.pricing_factor_den) || void 0,
+      // Tandas (2026-07-19): la ronda vuelve con la línea para que un pedido REANUDADO siga
+      // sabiendo qué salió ya a cocina (y no lo re-envíe ni lo deje editar).
+      round_no: Number(x2.round_no) || void 0,
+      fired_at: x2.fired_at ? String(x2.fired_at) : void 0
+    }));
+  } catch {
+    return [];
+  }
+}
+async function mergeOrders(client, fromOrderId, toOrderId) {
+  if (!fromOrderId || !toOrderId || fromOrderId === toOrderId) return;
+  await client.command("sales.order.merge", { from_order_id: fromOrderId, to_order_id: toOrderId });
+}
+async function splitOrder(client, orderId, lineIds, label) {
+  if (!orderId) return "";
+  const res = await client.command("sales.order.split", {
+    order_id: orderId,
+    line_ids: [...lineIds],
+    label: label ?? ""
+  });
+  return firstNewId(res);
+}
+
 // ui/lib/split-selection.ts
 function esParcial(cart, sel) {
   const conId = cart.filter((l3) => l3.line_id);
   return sel.size > 0 && sel.size < conId.length;
 }
-function splitTotal(cart, sel) {
+function splitTotal(cart, sel, ticketDiscount = 0) {
   const lineas = sel.size ? cart.filter((l3) => l3.line_id && sel.has(l3.line_id)) : cart;
-  return lineas.reduce((s5, l3) => s5 + (l3.is_gift ? 0 : l3.price * l3.qty), 0);
+  return cartTotal(lineas, ticketDiscount);
 }
 function splitPayload(cart, sel) {
   const parcial = esParcial(cart, sel);
@@ -4918,185 +5166,6 @@ __decorateClass9([
 ], OkStatusPill.prototype, "size");
 define("ok-status-pill", OkStatusPill);
 
-// ui/lib/pos-cart.ts
-function rows(r6) {
-  if (Array.isArray(r6)) return r6;
-  if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
-  return [];
-}
-async function listOpenChecks(client, excluir) {
-  try {
-    const r6 = rows(await client.query("sales.orders.list"));
-    return r6.filter((o9) => o9.status === "open" && String(o9.id) !== excluir).map((o9) => ({
-      id: String(o9.id),
-      total: Number(o9.provisional_total) || 0,
-      created_at: String(o9.created_at ?? ""),
-      label: o9.label ? String(o9.label) : void 0
-    })).sort((a3, b3) => b3.created_at.localeCompare(a3.created_at));
-  } catch {
-    return [];
-  }
-}
-function firstNewId(res) {
-  const ids = res?.new_ids;
-  return Array.isArray(ids) && typeof ids[0] === "string" ? ids[0] : "";
-}
-function provisionalLineTotal(unitPrice, qty, isGift) {
-  return isGift ? 0 : Math.round(unitPrice * qty);
-}
-function unitContextPayload(l3) {
-  const ctx = {};
-  if (l3.unit_code) ctx.unit_code = l3.unit_code;
-  if (l3.unit_name) ctx.unit_name = l3.unit_name;
-  if (l3.factor_num) ctx.factor_num = l3.factor_num;
-  if (l3.factor_den) ctx.factor_den = l3.factor_den;
-  if (l3.increment_value) ctx.increment_value = l3.increment_value;
-  if (l3.price_quantity_value) ctx.price_quantity_value = l3.price_quantity_value;
-  if (l3.pricing_unit_code) ctx.pricing_unit_code = l3.pricing_unit_code;
-  if (l3.pricing_unit_name) ctx.pricing_unit_name = l3.pricing_unit_name;
-  if (l3.pricing_factor_num) ctx.pricing_factor_num = l3.pricing_factor_num;
-  if (l3.pricing_factor_den) ctx.pricing_factor_den = l3.pricing_factor_den;
-  return ctx;
-}
-function toItemPayload(l3) {
-  return {
-    product_id: l3.id || null,
-    product_name: l3.name,
-    product_sku: l3.sku ?? "",
-    price: l3.price,
-    quantity: toMicro2(l3.qty),
-    // punto fijo 10⁶ (ADR-0147)
-    is_gift: !!l3.is_gift,
-    gift_reason: l3.gift_reason ?? "",
-    // sales#89: viaja también al ABRIR el pedido, no solo al añadir línea suelta.
-    is_service: !!l3.is_service,
-    tax_category_key: l3.tax_category_key ?? "",
-    cost: l3.cost ?? 0,
-    // sales#12: la categoría se congela en la línea del pedido (routing de cocina).
-    category_id: l3.category_id ?? null,
-    ...unitContextPayload(l3)
-  };
-}
-async function openOrderWithLines(client, lines, label) {
-  const payload = { items: lines.map(toItemPayload) };
-  if (label?.trim()) payload.label = label.trim();
-  const res = await client.command("sales.order.open", payload);
-  return firstNewId(res);
-}
-function orderLinePayload(orderId, l3) {
-  return {
-    order_id: orderId,
-    product_id: l3.id || null,
-    product_name: l3.name,
-    product_sku: l3.sku ?? "",
-    quantity: toMicro2(l3.qty),
-    // punto fijo 10⁶ (ADR-0147)
-    unit_price: l3.price,
-    is_gift: !!l3.is_gift,
-    gift_reason: l3.gift_reason ?? "",
-    // sales#89: el pedido recuerda que la línea es un SERVICIO. Sin esto el flag se perdía al
-    // materializar la línea (ADR-0141) y una cuenta RETOMADA cobraba el corte como producto.
-    is_service: !!l3.is_service,
-    tax_category_key: l3.tax_category_key ?? "",
-    cost: l3.cost ?? 0,
-    // sales#12: la categoría se congela en la línea del pedido (routing de cocina).
-    category_id: l3.category_id ?? null,
-    line_total: provisionalLineTotal(l3.price, l3.qty, l3.is_gift),
-    ...unitContextPayload(l3)
-  };
-}
-async function addOpenPriceLine(client, orderId, l3) {
-  const res = await client.command("sales.order.add_open_line", orderLinePayload(orderId, l3));
-  return firstNewId(res);
-}
-async function addOrderLine(client, orderId, l3) {
-  const res = await client.command("sales.order.add_line", orderLinePayload(orderId, l3));
-  return firstNewId(res);
-}
-async function persistLineQty(client, orderId, line, qty) {
-  let lineId = line.line_id;
-  if (!lineId) {
-    const persisted = await loadOrderLines(client, orderId);
-    lineId = persisted.find((p4) => p4.id === line.id && !p4.is_gift === !line.is_gift)?.line_id;
-  }
-  if (!lineId) return false;
-  line.line_id = lineId;
-  await updateOrderLineQty(client, orderId, lineId, qty, line.price, line.is_gift, line.gift_reason);
-  return true;
-}
-async function updateOrderLineQty(client, orderId, lineId, qty, unitPrice, isGift, giftReason) {
-  await client.command("sales.order.update_line", {
-    order_id: orderId,
-    line_id: lineId,
-    quantity: toMicro2(qty),
-    // punto fijo 10⁶ (ADR-0147)
-    line_total: provisionalLineTotal(unitPrice, qty, isGift),
-    // Alternar invitación cambia el importe: viaja junto para que la fila quede coherente.
-    is_gift: isGift === void 0 ? null : isGift ? 1 : 0,
-    gift_reason: giftReason ?? null
-  });
-}
-async function removeOrderLine(client, orderId, lineId) {
-  await client.command("sales.order.remove_line", { order_id: orderId, line_id: lineId });
-}
-async function loadOrderLines(client, orderId) {
-  try {
-    const r6 = rows(await client.query("sales.order.lines", { order_id: orderId }));
-    return r6.map((x2) => ({
-      line_id: String(x2.id ?? ""),
-      id: String(x2.product_id ?? ""),
-      name: String(x2.product_name ?? ""),
-      sku: x2.product_sku ? String(x2.product_sku) : void 0,
-      price: Number(x2.unit_price) || 0,
-      // La fila trae punto fijo 10⁶ (ADR-0147); la UI trabaja en lógico. Cerrar y reabrir el
-      // pedido debe seguir mostrando 0,5 kg — no 500000 ni 1.
-      qty: fromMicro2(Number(x2.quantity) || 1e6),
-      is_gift: x2.is_gift === 1 || x2.is_gift === true ? true : void 0,
-      gift_reason: x2.gift_reason ? String(x2.gift_reason) : void 0,
-      // Autoridad del IVA en servidor (ADR-0085) y coste para el arqueo de invitaciones: se
-      // recuperan para que un pedido REANUDADO cobre con el mismo IVA que si no se hubiera recargado.
-      tax_category_key: x2.tax_category_key ? String(x2.tax_category_key) : void 0,
-      cost: Number(x2.cost) || void 0,
-      // sales#89: servicio o producto. Una fila ANTERIOR a la columna no trae nada y vuelve como
-      // producto — que es lo que era; marcarla de servicio haría que inventory le saltara el stock.
-      is_service: x2.is_service === 1 || x2.is_service === true ? true : void 0,
-      // sales#12: la categoría congelada vuelve con la línea (routing de cocina al retomar).
-      category_id: x2.category_id ? String(x2.category_id) : void 0,
-      // Contexto de unidades CONGELADO (ADR-0147 §2.4): vuelve con la línea para que el pedido
-      // reanudado valide la misma rejilla y cobre con el mismo contexto.
-      unit_code: x2.unit_code ? String(x2.unit_code) : void 0,
-      unit_name: x2.unit_name ? String(x2.unit_name) : void 0,
-      factor_num: Number(x2.factor_num) || void 0,
-      factor_den: Number(x2.factor_den) || void 0,
-      increment_value: Number(x2.increment_value) || void 0,
-      price_quantity_value: Number(x2.price_quantity_value) || void 0,
-      pricing_unit_code: x2.pricing_unit_code ? String(x2.pricing_unit_code) : void 0,
-      pricing_unit_name: x2.pricing_unit_name ? String(x2.pricing_unit_name) : void 0,
-      pricing_factor_num: Number(x2.pricing_factor_num) || void 0,
-      pricing_factor_den: Number(x2.pricing_factor_den) || void 0,
-      // Tandas (2026-07-19): la ronda vuelve con la línea para que un pedido REANUDADO siga
-      // sabiendo qué salió ya a cocina (y no lo re-envíe ni lo deje editar).
-      round_no: Number(x2.round_no) || void 0,
-      fired_at: x2.fired_at ? String(x2.fired_at) : void 0
-    }));
-  } catch {
-    return [];
-  }
-}
-async function mergeOrders(client, fromOrderId, toOrderId) {
-  if (!fromOrderId || !toOrderId || fromOrderId === toOrderId) return;
-  await client.command("sales.order.merge", { from_order_id: fromOrderId, to_order_id: toOrderId });
-}
-async function splitOrder(client, orderId, lineIds, label) {
-  if (!orderId) return "";
-  const res = await client.command("sales.order.split", {
-    order_id: orderId,
-    line_ids: [...lineIds],
-    label: label ?? ""
-  });
-  return firstNewId(res);
-}
-
 // ui/lib/pos-tax.ts
 function isRoot(r6) {
   return r6.parent_id == null || String(r6.parent_id) === "";
@@ -5381,6 +5450,8 @@ var ErpPosTouch = class extends i3 {
     this.paying = false;
     this.tendered = "";
     this.openPriceOpen = false;
+    this.ticketDiscount = 0;
+    this.discountInput = "";
     this.openAmount = "";
     this.openDept = "";
     this.docFormat = "ticket";
@@ -5794,6 +5865,11 @@ var ErpPosTouch = class extends i3 {
     .pay-actions .charge { flex:1; }
     .pay-actions .charge-print { flex:none; width:64px; }
     .foot-actions { display:flex; gap:.5rem; }
+    .foot-actions .ticket-discount { flex:none; width:56px; }
+    .ticket-discount-row { display:flex; justify-content:space-between; font-size:.9rem; color:var(--ion-color-warning-shade, #b7791f); margin:.1rem 0; }
+    .discount-foot { display:flex; gap:.5rem; align-items:center; }
+    .discount-foot .charge { flex:1; }
+    .line-discount-badge { vertical-align:middle; }
     .foot-actions .prebill { flex:none; width:56px; }
     .foot-actions .charge { flex:1; }
 
@@ -6278,8 +6354,16 @@ var ErpPosTouch = class extends i3 {
       allow_transfer: this.settings.allow_transfer
     });
   }
+  /** Total PREVIEW con los descuentos (sales#71); la autoridad sigue siendo el servidor. */
   get total() {
-    return this.cart.reduce((s5, l3) => s5 + (l3.is_gift ? 0 : l3.price * l3.qty), 0);
+    return cartTotal(this.cart, this.ticketDiscount);
+  }
+  /** Lo que el descuento de ticket quita, para pintarlo (bruto sin él − total con él). */
+  get ticketDiscountAmount() {
+    return cartTotal(this.cart, 0) - this.total;
+  }
+  get discountsAllowed() {
+    return this.settings.allow_discounts !== 0;
   }
   get itemCount() {
     return this.cart.reduce((s5, l3) => s5 + l3.qty, 0);
@@ -6496,6 +6580,7 @@ var ErpPosTouch = class extends i3 {
       }
       this.orderId = c5.id;
       this.orderLabel = c5.label ?? "";
+      this.ticketDiscount = c5.discount ?? 0;
       rememberCurrentCheck(localStorage, c5.id);
       this.cart = await loadOrderLines(erplora2(), c5.id);
       this.notifyOrderRestored();
@@ -6531,6 +6616,7 @@ var ErpPosTouch = class extends i3 {
       if (!id) return [];
       this.orderId = id;
       this.orderLabel = cuentas.find((c5) => c5.id === id)?.label ?? "";
+      this.ticketDiscount = cuentas.find((c5) => c5.id === id)?.discount ?? 0;
       for (const f3 of this.assignFillers) {
         f3.el.dispatchEvent(new CustomEvent("erp:order-restored", { detail: { order_id: id }, bubbles: false }));
       }
@@ -6783,7 +6869,7 @@ var ErpPosTouch = class extends i3 {
     const gift_reason = is_gift ? ex.gift_reason || "Invitaci\xF3n" : void 0;
     this.cart = this.cart.map((l3) => l3 === ex ? { ...l3, is_gift, gift_reason } : l3);
     if (this.orderId && ex.line_id) {
-      await updateOrderLineQty(erplora2(), this.orderId, ex.line_id, ex.qty, ex.price, is_gift, gift_reason ?? "");
+      await updateOrderLineQty(erplora2(), this.orderId, ex.line_id, ex.qty, ex.price, is_gift, gift_reason ?? "", ex.discount ?? 0);
     }
   }
   /** Contexto de unidades CONGELADO desde el maestro (ADR-0147 §2.4): unidad de la línea, su
@@ -6821,7 +6907,7 @@ var ErpPosTouch = class extends i3 {
     const qty = fromMicro2(qtyMicro);
     this.cart = qty > 0 ? this.cart.map((l3) => l3 === ex ? { ...l3, qty } : l3) : this.cart.filter((l3) => l3 !== ex);
     if (!this.orderId || !ex.line_id) return;
-    if (qty > 0) await updateOrderLineQty(erplora2(), this.orderId, ex.line_id, qty, ex.price, ex.is_gift);
+    if (qty > 0) await updateOrderLineQty(erplora2(), this.orderId, ex.line_id, qty, ex.price, ex.is_gift, void 0, ex.discount ?? 0);
     else await removeOrderLine(erplora2(), this.orderId, ex.line_id);
   }
   /** Imprime la CUENTA que se lleva a la mesa (no fiscal, ADR-0141).
@@ -6903,8 +6989,53 @@ var ErpPosTouch = class extends i3 {
   get chargeBlocked() {
     return ticketIsBlocked(this.limitState);
   }
+  willUpdate(changed) {
+    if (changed.has("orderId") && !this.orderId) this.ticketDiscount = 0;
+  }
   tap(k2) {
     this.tendered = pushDigit(this.tendered, k2);
+  }
+  // ── sales#71 · descuentos manuales ─────────────────────────────────────────────────────────
+  openDiscount(target, lineId) {
+    const current = target === "ticket" ? this.ticketDiscount : this.cart.find((l3) => l3.line_id === lineId)?.discount ?? 0;
+    this.discountInput = current > 0 ? String(current) : "";
+    this.discountSheet = { target, lineId };
+  }
+  tapDiscount(k2) {
+    const next = pushDigit(this.discountInput, k2);
+    if (Number(next || "0") <= 100) this.discountInput = next;
+  }
+  get discountInputPct() {
+    return Math.min(100, Math.max(0, Number(this.discountInput || "0")));
+  }
+  /** Aplica el % tecleado (0 = quitar) a la línea o al ticket, persistiéndolo en el pedido. */
+  async applyDiscount(pct) {
+    const sheet = this.discountSheet;
+    this.discountSheet = void 0;
+    if (!sheet) return;
+    const value = Math.min(100, Math.max(0, pct));
+    if (sheet.target === "ticket") {
+      this.ticketDiscount = value;
+      if (this.orderId) {
+        try {
+          await erplora2().command("sales.order.set_discount", { order_id: this.orderId, discount_percent: value });
+        } catch (e7) {
+          this.error = e7 instanceof Error ? e7.message : String(e7);
+        }
+      }
+      return;
+    }
+    const line = this.cart.find((l3) => l3.line_id === sheet.lineId);
+    if (!line) return;
+    const discount = value > 0 ? value : void 0;
+    this.cart = this.cart.map((l3) => l3 === line ? { ...l3, discount } : l3);
+    if (this.orderId && line.line_id) {
+      try {
+        await updateOrderLineDiscount(erplora2(), this.orderId, { ...line, discount }, value);
+      } catch (e7) {
+        this.error = e7 instanceof Error ? e7.message : String(e7);
+      }
+    }
   }
   // El pinpad teclea EUROS («20» = 20 €); el contrato de la venta es CÉNTIMOS (ADR-0007/0123),
   // como `total`. Sin esta conversión: «Efectivo 0.20 €» y cambio 0 en el tiquet (QA 2026-07-17).
@@ -6921,7 +7052,7 @@ var ErpPosTouch = class extends i3 {
   }
   /** Lo que se cobra AHORA: la selección si la hay, o la cuenta entera (ADR-0146). */
   get payable() {
-    return splitTotal(this.cart, this.splitSel);
+    return splitTotal(this.cart, this.splitSel, this.ticketDiscount);
   }
   // ── Precio libre / venta por DEPARTAMENTO (fuera de catálogo) ──────────────────────────────
   /** Abre la pregunta del importe. Sin argumentos es la tecla suelta «Precio libre» (en blanco);
@@ -6977,9 +7108,11 @@ var ErpPosTouch = class extends i3 {
     const split = splitPayload(this.cart, this.splitSel);
     try {
       const cobradas = split.line_ids ? this.cart.filter((l3) => l3.line_id && this.splitSel.has(l3.line_id)) : this.cart;
-      const items = cobradas.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: toMicro2(l3.qty), tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0, category_id: l3.category_id ?? this.primaryCategory(l3.id) ?? null, is_gift: l3.is_gift ?? false, gift_reason: l3.gift_reason ?? "", cost: l3.cost ?? 0, ...unitContextPayload(l3) }));
+      const items = cobradas.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: toMicro2(l3.qty), tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0, category_id: l3.category_id ?? this.primaryCategory(l3.id) ?? null, is_gift: l3.is_gift ?? false, gift_reason: l3.gift_reason ?? "", cost: l3.cost ?? 0, discount: l3.discount ?? 0, ...unitContextPayload(l3) }));
       await erplora2().command("sales.complete_sale", {
         items,
+        // sales#71: descuento de TICKET (%); el servidor lo prorratea por línea antes del IVA.
+        discount_percent: this.ticketDiscount,
         // sales#20: el servidor no cierra una venta sin clave, y con la misma clave dos veces
         // registra UNA. Es lo que hace seguro reintentar cuando el wifi del local parpadea.
         idempotency_key: checkoutKey,
@@ -6993,7 +7126,10 @@ var ErpPosTouch = class extends i3 {
         payment_method_name: this.payMethod?.name ?? "",
         // Sin entregado tecleado (tarjeta, importe justo) se cobra el PAYABLE: con split, caer al
         // total inflaba lo entregado y el cambio del tiquet.
-        amount_tendered: this.tenderedNum || this.payable,
+        // sales#24: viaja SOLO lo que la cajera TECLEA. Sin nada tecleado (o con tarjeta) es importe
+        // exacto y lo decide el servidor: el `payable` de pantalla es un preview que puede quedar por
+        // debajo del total real (IVA excluido, a peso, descuentos) y haría saltar `insufficient_tendered`.
+        ...needsTendered(this.payMethod) && this.tenderedNum > 0 ? { amount_tendered: this.tenderedNum } : {},
         channel: "pos",
         source_module: "pos",
         // ADR-0141: la venta nace de este PEDIDO. El servidor lo marca completado (open→completed)
@@ -7346,6 +7482,8 @@ var ErpPosTouch = class extends i3 {
       <!-- El PIE. ion-footer es un pie de verdad: se queda abajo pase lo que pase. -->
       <ion-footer class="ion-no-border">
         <div class="cart-foot">
+          ${this.ticketDiscount > 0 ? b2`
+          <div class="ticket-discount-row"><span>${t5("ui.discountTicket")} −${this.ticketDiscount}%</span><span>−${this.money(this.ticketDiscountAmount)}</span></div>` : A}
           <div class="total"><span>${t5("ui.colTotal")}</span><b>${this.money(this.total)}</b></div>
           <!-- Forma de pago ANTES de cobrar (decisión de Ioan): se elige aquí, con la comanda
                delante, y el modal de cobro queda limpio. Solo-icono porque son 3-4 opciones fijas
@@ -7367,6 +7505,9 @@ var ErpPosTouch = class extends i3 {
                  (trash → alert al armar), y el empaquetador solo hornea literales. -->
             <ion-icon name="trash-outline"></ion-icon>
             <ion-icon name="alert-circle-outline"></ion-icon>
+            <!-- sales#71: el icono del descuento cambia con el estado (outline ↔ relleno). -->
+            <ion-icon name="pricetag-outline"></ion-icon>
+            <ion-icon name="pricetag"></ion-icon>
           </span>
           <!-- El MÉTODO de pago ya no se elige aquí: vive DENTRO del sheet de cobro, como la
                pantalla de tender de cualquier TPV (rediseño 2026-07-19). El footer solo acciona. -->
@@ -7376,6 +7517,13 @@ var ErpPosTouch = class extends i3 {
           <!-- El botón de COCINA ya no vive aquí: entra por el slot sales.pos.actions (lo
                aporta kitchen si está instalado/activo) y se monta dentro de Comanda actual. -->
           <div class="foot-actions">
+            ${this.discountsAllowed ? b2`
+            <ion-button class="ticket-discount" fill="outline" ?disabled=${!this.cart.length}
+                        color=${this.ticketDiscount > 0 ? "warning" : void 0}
+                        title=${t5("ui.discountTicket")} aria-label=${t5("ui.discountTicket")}
+                        @click=${() => this.openDiscount("ticket")}>
+              <ion-icon slot="icon-only" name=${this.ticketDiscount > 0 ? "pricetag" : "pricetag-outline"}></ion-icon>
+            </ion-button>` : A}
             <ion-button class="prebill" fill="outline" ?disabled=${!this.cart.length}
                         title=${t5("ui.printPrebill")} aria-label=${t5("ui.printPrebill")}
                         @click=${() => {
@@ -7430,11 +7578,16 @@ var ErpPosTouch = class extends i3 {
         <h3>
           ${this.hasKitchen ? locked ? b2`<ok-status-pill tone="success" size="sm" dot>${t5("ui.commandRound", { n: String(l3.round_no ?? "") })}</ok-status-pill>` : b2`<ok-status-pill tone="warning" size="sm" dot>${t5("ui.pendingStatus")}</ok-status-pill>` : A}
           <span>${l3.name}</span>${l3.is_gift ? b2` <ion-badge color="success">${t5("ui.giftBadge")}</ion-badge>` : A}</h3>
-        <p>${priceLabel(this.money(l3.price), l3.unit_code)}${l3.is_gift && l3.gift_reason ? b2` · ${l3.gift_reason}` : A}</p>
+        <p>${priceLabel(this.money(l3.price), l3.unit_code)}${l3.is_gift && l3.gift_reason ? b2` · ${l3.gift_reason}` : A}${l3.discount ? b2` <ion-badge class="line-discount-badge" color="warning">−${l3.discount}%</ion-badge>` : A}</p>
       </ion-label>
       <div slot="end" class="lineend">
-        <span class="lt ${l3.is_gift ? "is-gift" : ""}">${this.money(l3.price * l3.qty)}</span>
+        <span class="lt ${l3.is_gift ? "is-gift" : ""}">${this.money(lineAmount(l3))}</span>
         ${locked ? b2`<span class="lqty">×${formatQuantity2(toMicro2(l3.qty))}</span>` : b2`
+            ${this.discountsAllowed ? b2`
+            <ion-button class="line-discount" fill="clear" size="small" title=${t5("ui.discountLine")} aria-label=${t5("ui.discountLine")}
+                        @click=${() => this.openDiscount("line", l3.line_id)}>
+              <ion-icon name=${l3.discount ? "pricetag" : "pricetag-outline"} slot="icon-only" color=${l3.discount ? "warning" : "medium"}></ion-icon>
+            </ion-button>` : A}
             <ion-button fill="clear" size="small" title=${t5("ui.giftAction")} @click=${() => this.toggleGift(l3.id)}>
               <ion-icon name=${l3.is_gift ? "gift" : "gift-outline"} slot="icon-only" color=${l3.is_gift ? "success" : "medium"}></ion-icon>
             </ion-button>
@@ -7647,6 +7800,34 @@ var ErpPosTouch = class extends i3 {
             </div>
           </div>` : A}
 
+      <!-- DESCUENTO (sales#71): mismo sheet/numpad del cobro. Se teclea el %, y Aplicar; 0 = quitar.
+           Sobre la LÍNEA elegida o sobre el TICKET entero. El servidor prorratea y revalida
+           allow_discounts; aquí solo se recoge la cifra. -->
+      ${this.discountSheet ? b2`<div class="scrim" @click=${(e7) => {
+      if (e7.target.classList.contains("scrim")) this.discountSheet = void 0;
+    }}>
+            <div class="sheet discount-sheet">
+              <div class="sheet-h">
+                <span class="t">${this.discountSheet.target === "ticket" ? t5("ui.discountTicket") : t5("ui.discountLineOf", { name: this.cart.find((l3) => l3.line_id === this.discountSheet?.lineId)?.name ?? "" })}</span>
+                <button class="x" aria-label=${t5("ui.closeAction")} @click=${() => {
+      this.discountSheet = void 0;
+    }}>✕</button>
+              </div>
+              <div class="sheet-top"><div class="pay-total">${this.discountInput || "0"} %</div></div>
+              <div class="pay">
+                <div class="numpad">
+                  ${["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "C"].map((k2) => b2`<button @click=${() => this.tapDiscount(k2)}>${k2}</button>`)}
+                </div>
+              </div>
+              <div class="sheet-foot discount-foot">
+                <ion-button fill="outline" color="medium" @click=${() => this.applyDiscount(0)}>${t5("ui.discountRemove")}</ion-button>
+                <ion-button class="charge" expand="block" @click=${() => this.applyDiscount(this.discountInputPct)}>
+                  ${t5("ui.discountApply")}${this.discountInputPct > 0 ? ` \u2212${this.discountInputPct}%` : ""}
+                </ion-button>
+              </div>
+            </div>
+          </div>` : A}
+
       <!-- APARCAR sin mesa: se pide un NOMBRE (default: la hora, patrón Loyverse) pre-seleccionado
            para sobreescribirlo de un toque. <dialog> nativo: top layer, inmune al transform del
            drawer del carrito (gotcha conocido de overlays en ancestros con transform). -->
@@ -7805,6 +7986,15 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "openPriceOpen", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "ticketDiscount", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "discountSheet", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "discountInput", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "openAmount", 2);
@@ -9471,6 +9661,16 @@ var STATUS_KEYS = {
   completed: "ui.statusCompleted",
   voided: "ui.statusVoided"
 };
+var VOID_MESSAGES = {
+  "sales.void_requires_credit_note": "ui.voidRequiresCreditNote",
+  "sales.already_voided": "ui.voidAlreadyVoided",
+  "sales.void_reason_required": "ui.voidReasonRequired",
+  "sales.sale_not_found": "ui.voidSaleNotFound"
+};
+function voidErrorKey(message) {
+  for (const [code, key] of Object.entries(VOID_MESSAGES)) if (message.includes(code)) return key;
+  return "ui.voidFailed";
+}
 function erplora3() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -9498,9 +9698,61 @@ var ErpSalesList = class extends i3 {
   // Getter (no campo): se re-evalúa en cada render, así los textos cambian con el idioma activo
   // (ADR-0055). El listener `erplora:locale-changed` re-renderiza.
   get documentActions() {
-    return [
-      { id: "document", label: erplora3().t(CATALOG3, "ui.actionDocument"), icon: "receipt-outline" }
+    const t7 = (k2) => erplora3().t(CATALOG3, k2);
+    const actions = [
+      { id: "document", label: t7("ui.actionDocument"), icon: "receipt-outline" }
     ];
+    if (erplora3().hasPermission?.("sales.void_sale")) {
+      actions.push({
+        id: "void",
+        label: t7("ui.actionVoid"),
+        icon: "ban-outline",
+        color: "danger",
+        disabled: (r6) => r6.status !== "completed"
+      });
+    }
+    return actions;
+  }
+  /** sales#26 — pide el MOTIVO (obligatorio: Toast, Lightspeed y el software fiscal español lo
+   *  exigen; es lo que luego se lee en el historial) y anula. Overlay global de Ionic, como el TPV. */
+  async confirmVoid(sale) {
+    const t7 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
+    const alert = document.createElement("ion-alert");
+    alert.header = t7("ui.voidTitle", { number: sale.sale_number });
+    alert.message = t7("ui.voidExplain");
+    alert.inputs = [{ name: "reason", type: "textarea", placeholder: t7("ui.voidReasonPlaceholder"), attributes: { maxlength: 500 } }];
+    alert.buttons = [
+      { text: t7("ui.cancel"), role: "cancel" },
+      { text: t7("ui.actionVoid"), role: "destructive", handler: (data) => {
+        const reason = (data?.reason ?? "").trim();
+        if (!reason) {
+          erplora3().notify?.({ type: "error", message: t7("ui.voidReasonRequired") });
+          return false;
+        }
+        void this.voidSale(sale.id, reason);
+        return true;
+      } }
+    ];
+    alert.addEventListener("ionAlertDidDismiss", () => alert.remove(), { once: true });
+    document.body.appendChild(alert);
+    try {
+      if (typeof alert.present === "function") await alert.present();
+      else alert.isOpen = true;
+    } catch {
+      alert.remove();
+    }
+  }
+  /** Ejecuta `sales.void`; el servidor decide (motivo, estado, factura) y aquí solo se cuenta. */
+  async voidSale(saleId, reason) {
+    const t7 = (k2) => erplora3().t(CATALOG3, k2);
+    try {
+      await erplora3().command("sales.void", { sale_id: saleId, reason });
+      erplora3().notify?.({ type: "success", message: t7("ui.voidDone") });
+      await Promise.all([this.ctrl.load(), this.loadStats()]);
+    } catch (e7) {
+      const raw = e7 instanceof Error ? e7.message : String(e7 ?? "");
+      erplora3().notify?.({ type: "error", message: t7(voidErrorKey(raw)) });
+    }
   }
   get columns() {
     const t7 = (k2) => erplora3().t(CATALOG3, k2);
@@ -9591,6 +9843,7 @@ var ErpSalesList = class extends i3 {
         ${this.ctrl?.error ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : A}
         <ok-data-table .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r6) => String(r6.sale_number ?? "\u2014")} .cardIcon=${() => "receipt-outline"} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.ctrl?.state.sort} .sortDir=${this.ctrl?.state.dir ?? "desc"} .searchable=${true} .searchPlaceholder=${t7("ui.searchSalePlaceholder")} .emptyMessage=${this.ctrl?.loading ? t7("ui.loading") : t7("ui.noSales")} .actions=${this.documentActions} @rowAction=${(e7) => {
       if (e7.detail.actionId === "document") this.docSaleId = e7.detail.row.id;
+      else if (e7.detail.actionId === "void") void this.confirmVoid(e7.detail.row);
     }} @pageChange=${(e7) => this.ctrl.setPage(e7.detail)} @sortChange=${(e7) => this.ctrl.setSort(e7.detail.sort, e7.detail.dir)} @searchChange=${(e7) => this.ctrl.setSearch(e7.detail)} @filterChange=${(e7) => this.ctrl.setFilter(e7.detail.col, e7.detail.value)}></ok-data-table>
 
         ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => {
