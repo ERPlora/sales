@@ -103,8 +103,9 @@ export function saleToPrintDocument(
   fiscal: FiscalData = {},
   locale = 'es',
   fallbackName?: string,
+  t?: (key: string) => string,
 ): PrintDocument {
-  const screen = saleToReceipt(sale, lines, settings, fiscal, locale, fallbackName);
+  const screen = saleToReceipt(sale, lines, settings, fiscal, locale, fallbackName, t);
   return {
     business_name: screen.business.name,
     business_address: screen.business.address,

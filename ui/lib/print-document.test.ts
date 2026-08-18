@@ -167,4 +167,9 @@ describe('saleToPrintDocument — the ticket, reprinted', () => {
     expect(doc.items[2].name).toContain('Invitación');
     expect(doc.items[2].total).toBe(0);
   });
+  it('the payment method is translated on the paper too (sales#108)', () => {
+    const t = (k: string) => (k === 'ui.cash' ? 'Efectivo' : k);
+    const doc = saleToPrintDocument({ ...SALE, payment_method_name: 'Cash' }, LINES, SETTINGS, {}, 'es', undefined, t);
+    expect(doc.payment_method).toBe('Efectivo');
+  });
 });

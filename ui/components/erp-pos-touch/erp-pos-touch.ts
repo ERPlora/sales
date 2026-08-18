@@ -1992,7 +1992,9 @@ export class ErpPosTouch extends LitElement {
         tax_included: this.settings.default_tax_included !== 0,
         payment_method_id: this.payMethod?.id ?? null,
         // El nombre viaja al tiquet: el de fábrica va traducido (seed canónico EN → i18n).
-        payment_method_name: this.payMethod ? payMethodDisplayName(this.payMethod, t) : t('ui.cash'),
+        // sales#108: the CANONICAL name travels (the server persists the catalogue row's name anyway,
+        // ADR-0085); the ticket and the list translate it when they paint it.
+        payment_method_name: this.payMethod?.name ?? '',
         // Sin entregado tecleado (tarjeta, importe justo) se cobra el PAYABLE: con split, caer al
         // total inflaba lo entregado y el cambio del tiquet.
         amount_tendered: this.tenderedNum || this.payable,

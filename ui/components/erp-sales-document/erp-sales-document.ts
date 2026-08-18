@@ -198,7 +198,7 @@ export class ErpSalesDocument extends LitElement {
     const t = (k: string): string => erplora().t(CATALOG, k);
     const doc = saleToReceipt(
       this.sale, this.lines || [], this.settings || {}, this.fiscal, erplora().locale,
-      t('ui.docDefaultBusiness'),
+      t('ui.docDefaultBusiness'), t,
     );
     return receiptToPrintableHtml(doc as unknown as Parameters<typeof receiptToPrintableHtml>[0]);
   }
@@ -214,9 +214,10 @@ export class ErpSalesDocument extends LitElement {
    */
   printableDocument(): PrintDocument | undefined {
     if (!this.sale) return undefined;
+    const t = (k: string): string => erplora().t(CATALOG, k);
     return saleToPrintDocument(
       this.sale, this.lines || [], this.settings || {}, this.fiscal, erplora().locale,
-      erplora().t(CATALOG, 'ui.docDefaultBusiness'),
+      t('ui.docDefaultBusiness'), t,
     );
   }
 
@@ -236,10 +237,10 @@ export class ErpSalesDocument extends LitElement {
     const fallbackName = t('ui.docDefaultBusiness');
     return fmt === 'invoice'
       ? html`<ok-invoice
-          .invoice=${saleToInvoice(this.sale, lines, settings, this.fiscal, locale, fallbackName)}
+          .invoice=${saleToInvoice(this.sale, lines, settings, this.fiscal, locale, fallbackName, t)}
           .labels=${invoiceLabels(t)}></ok-invoice>`
       : html`<ok-receipt
-          .receipt=${saleToReceipt(this.sale, lines, settings, this.fiscal, locale, fallbackName)}
+          .receipt=${saleToReceipt(this.sale, lines, settings, this.fiscal, locale, fallbackName, t)}
           .labels=${receiptLabels(t)}></ok-receipt>`;
   }
 }

@@ -72,6 +72,33 @@ describe('saleToReceipt — fecha legible', () => {
   });
 });
 
+// sales#108 — the sale persists the CANONICAL method name («Cash»: the seed is English by
+// contract, ADR-0055, and the handler is server-authoritative about it). That is data, not a
+// label: the ticket must translate it at render time, like every other word on the paper.
+describe('the payment method on the document is translated at render time (sales#108)', () => {
+  const t = (k: string) => (k === 'ui.cash' ? 'Efectivo' : k === 'ui.card' ? 'Tarjeta' : k);
+
+  it('the receipt shows «Efectivo» for a sale that stored «Cash»', () => {
+    const r = saleToReceipt({ ...SALE, payment_method_name: 'Cash' }, LINES, {}, {}, 'es', undefined, t);
+    expect(r.payment?.method).toBe('Efectivo');
+  });
+
+  it('the invoice too', () => {
+    const inv = saleToInvoice({ ...SALE, payment_method_name: 'Card' }, LINES, {}, {}, 'es', undefined, t);
+    expect(inv.payment_method).toBe('Tarjeta');
+  });
+
+  it('a method the owner renamed («BBVA TPV») is shown as is — only the seed names map', () => {
+    const r = saleToReceipt({ ...SALE, payment_method_name: 'BBVA TPV' }, LINES, {}, {}, 'es', undefined, t);
+    expect(r.payment?.method).toBe('BBVA TPV');
+  });
+
+  it('without a translator (legacy callers) the raw name still comes through', () => {
+    const r = saleToReceipt({ ...SALE, payment_method_name: 'Cash' }, LINES);
+    expect(r.payment?.method).toBe('Cash');
+  });
+});
+
 describe('saleToInvoice — mismos contratos', () => {
   it('convierte céntimos → euros en líneas y totales', () => {
     const inv = saleToInvoice({ ...SALE, discount_amount: 50 }, LINES);
