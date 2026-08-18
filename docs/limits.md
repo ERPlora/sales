@@ -21,6 +21,10 @@ recorded when one of them fires.
 | `sales.tax_rate_out_of_range` | The resolved rate is not a sane percentage | Fix the rule in `taxes` |
 | `sales.tax_catalog_unavailable` | The tax catalogue (`taxes.rules.list`, a **required** read since sales#21) was not delivered to the handler — the sale is refused rather than priced with the browser's VAT | Retry; if it persists, `taxes` is down or the runtime is too old to honour `required` reads |
 | `sales.nothing_to_fire` | `sales.order.fire` with `round_no` found no pending line on the order — the round was already fired (double tap, sales#80); nothing is emitted | Nothing to do: the kitchen already has it |
+| `sales.void_reason_required` | `sales.void` without a reason (sales#26) | Type why the sale is voided |
+| `sales.already_voided` | The sale is not `completed` (already voided/refunded): a void is one-shot and never emits twice | Nothing to do — it is already reversed |
+| `sales.void_requires_credit_note` | The sale carries a full invoice; voiding it would leave the invoice orphaned | Issue a credit note (rectificativa) from `invoice` instead |
+| `sales.sale_not_found` | `sales.void` on a sale that is not in this hub | Check the sale id |
 | `sales.insufficient_tendered` | A positive `amount_tendered` is below the total (short cash payment, sales#24) | Enter an amount that covers the total, or leave it empty for the exact amount |
 
 ## Caps and sizes

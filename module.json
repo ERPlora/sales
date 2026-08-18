@@ -116,7 +116,8 @@
       "migrations/postgres/016_order_rounds.sql",
       "migrations/postgres/017_idempotency_key.sql",
       "migrations/postgres/018_order_item_is_service.sql",
-      "migrations/postgres/019_line_category_snapshot.sql"
+      "migrations/postgres/019_line_category_snapshot.sql",
+      "migrations/postgres/020_void_audit.sql"
     ]
   },
   "seed": {
@@ -338,15 +339,32 @@
     },
     "sales.void": {
       "permission": "sales.void_sale",
-      "transaction": true,
-      "sql": [
-        "commands/void.sql"
+      "reads": [
+        {
+          "query": "sales.get",
+          "params": {
+            "sale_id": "payload.sale_id"
+          },
+          "required": true
+        }
       ],
-      "emit": [
-        "sale.voided"
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "void_sale"
+      },
+      "schema": "schemas/void_sale.json",
+      "ai": {
+        "description": "Voids a COMPLETED sale with a mandatory reason (sales#26): the original stays immutable, voided_at/voided_by/void_reason are recorded, and sale.voided is emitted exactly once (a second call is refused with sales.already_voided). A sale that carries a full invoice cannot be voided: issue a credit note instead (sales.void_requires_credit_note)."
+      }
+    },
+    "sales._void_sale": {
+      "permission": "sales.void_sale",
+      "sql": [
+        "commands/_void_sale.sql"
       ],
       "ai": {
-        "description": "Voids an existing sale and emits the corresponding event (destructive)"
+        "description": "Internal (sales#26): the state change of sales.void, resolved by the void_sale handler after it validated the sale against sales.get."
       }
     },
     "sales.create_payment_method": {

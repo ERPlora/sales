@@ -75,3 +75,58 @@ describe('sales list — the payment column speaks the user language (sales#108)
     expect(col.format!({ payment_method_name: 'BBVA TPV' })).toBe('BBVA TPV');
   });
 });
+
+// sales#26 — anular desde el historial: con PERMISO, con MOTIVO obligatorio y con resultado claro.
+// Mercado (8 refs en la issue): el reverso se pide desde la venta original, gateado por un permiso
+// propio, y el motivo se captura siempre. La lista solo ofrece la acción a quien la tiene; el
+// servidor la revalida igual (`sales.void_sale`).
+describe('sales list — the void action (sales#26)', () => {
+  const sdk = () => (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+  const commands: { name: string; params?: Record<string, unknown> }[] = [];
+  const notes: { type: string; message: string }[] = [];
+
+  async function mountList(perms: string[]) {
+    commands.length = 0; notes.length = 0;
+    sdk().hasPermission = (p: string) => perms.includes(p) || perms.includes('*');
+    sdk().command = async (name: string, params?: Record<string, unknown>) => { commands.push({ name, params }); return {}; };
+    sdk().notify = (n: { type: string; message: string }) => { notes.push(n); };
+    document.body.innerHTML = '';
+    await import('./erp-sales-list');
+    const el = document.createElement('erp-sales-list');
+    document.body.appendChild(el);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    return el as unknown as {
+      documentActions: { id: string; disabled?: (r: Record<string, unknown>) => boolean }[];
+      voidSale(saleId: string, reason: string): Promise<void>;
+      updateComplete: Promise<unknown>;
+    };
+  }
+
+  it('without sales.void_sale the action is not offered at all', async () => {
+    const el = await mountList(['sales.view_sale']);
+    expect(el.documentActions.map((a) => a.id)).not.toContain('void');
+  });
+
+  it('with the permission it is offered, and disabled on a sale that is not completed', async () => {
+    const el = await mountList(['sales.void_sale']);
+    const act = el.documentActions.find((a) => a.id === 'void');
+    expect(act, 'the void action').toBeTruthy();
+    expect(act!.disabled!({ status: 'voided' })).toBe(true);
+    expect(act!.disabled!({ status: 'completed' })).toBe(false);
+  });
+
+  it('runs sales.void with the sale id and the reason, and confirms', async () => {
+    const el = await mountList(['sales.void_sale']);
+    await el.voidSale('sale-1', 'customer changed their mind');
+    expect(commands.find((c) => c.name === 'sales.void')?.params).toEqual({ sale_id: 'sale-1', reason: 'customer changed their mind' });
+    expect(notes.some((n) => n.type === 'success')).toBe(true);
+  });
+
+  it('a refusal is explained in the user words, by its code', async () => {
+    const el = await mountList(['sales.void_sale']);
+    sdk().command = async () => { throw new Error('command `sales.void` failed: sales.void_requires_credit_note: …'); };
+    await el.voidSale('sale-1', 'x');
+    const err = notes.find((n) => n.type === 'error');
+    expect(err?.message).toBe('Esta venta lleva factura completa: emite una factura rectificativa en vez de anularla');
+  });
+});

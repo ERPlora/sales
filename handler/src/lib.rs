@@ -68,6 +68,16 @@ pub fn fire_order(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output
     }
 }
 
+/// sales#26: anula una venta cerrada, con auditoría y de un solo disparo. Ver `void_sale_pure`.
+#[cfg(feature = "guest")]
+#[plugin_fn]
+pub fn void_sale(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
+    match void_sale_pure(input.into_inner().into_value()) {
+        Ok(out) => Ok(Json(out)),
+        Err(e) => Err(Error::msg(e).into()),
+    }
+}
+
 /// ADR-0141: abre un pedido MUTABLE (`order`). Ver `open_order_pure`.
 #[cfg(feature = "guest")]
 #[plugin_fn]
@@ -1206,6 +1216,72 @@ pub fn fire_order_pure(input: Value) -> Result<Output, String> {
     Ok(Output { operations: ops, events: vec![event], ..Default::default() })
 }
 
+/// sales#26 — **anular es auditable, idempotente y respeta la factura.**
+///
+/// Lo que hace el mercado (Square, Toast, Lightspeed, Odoo, Business Central, Shopify, Holded,
+/// Clover — tabla en la issue): nadie BORRA una venta pagada; el original queda inmutable y se
+/// añade el reverso; el motivo es obligatorio en el TPV de hostelería y en el software fiscal
+/// español; el permiso es propio (`sales.void_sale`); con factura completa emitida solo cabe la
+/// rectificativa (invoice#5); y el reverso es de UN solo disparo — los foros están llenos de
+/// reembolsos dobles.
+///
+/// El handler lee la venta que dice el payload (`sales.get`, read `required` filtrada por
+/// `payload.sale_id`) y decide con código propio:
+///   * no está en este hub / read ausente → `sales.sale_not_found`
+///   * ya anulada / reembolsada / no cerrada → `sales.already_voided` (segunda llamada = rechazo,
+///     sin evento: los consumidores no ven un segundo `sale.voided`)
+///   * `document_type = invoice` → `sales.void_requires_credit_note`
+///   * motivo vacío → `sales.void_reason_required`
+/// Si aplica: `sales._void_sale` (status + `voided_at/voided_by/void_reason`, el resto de la
+/// fila intacto) y `sale.voided` con la identidad de la operación.
+pub fn void_sale_pure(input: Value) -> Result<Output, String> {
+    let payload = input.get("payload").cloned().unwrap_or(Value::Null);
+    let context = input.get("context").cloned().unwrap_or(Value::Null);
+    let sale_id = field(&payload, "sale_id");
+    if sale_id.is_empty() {
+        return Err(reject("sales.sale_not_found", "missing sale_id"));
+    }
+    let reason = field(&payload, "reason").trim().to_string();
+    if reason.is_empty() {
+        return Err(reject("sales.void_reason_required", "a void needs a reason"));
+    }
+    let rows = tax::read_rows(&context, "sales.get").unwrap_or_default();
+    let sale = rows
+        .iter()
+        .find(|r| field(r, "id") == sale_id)
+        .ok_or_else(|| reject("sales.sale_not_found", format!("sale {sale_id} is not in this hub")))?;
+    if field(sale, "status") != "completed" {
+        return Err(reject(
+            "sales.already_voided",
+            format!("sale {sale_id} is `{}`: only a completed sale can be voided, and only once", field(sale, "status")),
+        ));
+    }
+    if field(sale, "document_type") == "invoice" {
+        return Err(reject(
+            "sales.void_requires_credit_note",
+            format!("sale {sale_id} carries a full invoice: issue a credit note (rectificativa) instead of voiding"),
+        ));
+    }
+    let voided_by = as_str(context.get("current_user_id").unwrap_or(&Value::Null));
+    let mut p = Map::new();
+    p.insert("sale_id".into(), json!(sale_id));
+    p.insert("void_reason".into(), json!(reason));
+    p.insert("voided_by".into(), json!(voided_by));
+    let event = Event::new("sale.voided", json!({
+        "sender": "sales",
+        "sale_id": sale_id,
+        "sale_number": sale.get("sale_number").cloned().unwrap_or(Value::Null),
+        "reason": reason,
+        "voided_by": voided_by,
+        "voided_at": context.get("now").cloned().unwrap_or(Value::Null),
+        "total": sale.get("total").cloned().unwrap_or(Value::Null),
+        "payment_method_name": sale.get("payment_method_name").cloned().unwrap_or(Value::Null),
+        "order_id": sale.get("order_id").cloned().unwrap_or(Value::Null),
+        "document_type": sale.get("document_type").cloned().unwrap_or(Value::Null),
+    }));
+    Ok(Output { operations: vec![Operation::sql("sales._void_sale", p)], events: vec![event], ..Default::default() })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1318,6 +1394,80 @@ mod tests {
         // Y el evento sigue saliendo UNA vez, con la ronda informativa para kitchen.
         assert_eq!(out.events.len(), 1);
         assert_eq!(out.events[0].payload["round_no"], json!(2));
+    }
+
+    // ── sales#26 · anular es AUDITABLE, IDEMPOTENTE y respeta la factura ─────────────────────
+    //
+    // Mercado (8 refs en la issue): nadie borra una venta pagada — el original queda inmutable y
+    // se añade el reverso; el motivo es obligatorio (Toast, Lightspeed, Holded/VeriFactu); el
+    // permiso es propio; con factura emitida solo cabe la rectificativa; y el reverso es de un
+    // solo disparo (Square/Toast: los foros están llenos de reembolsos dobles). Aquí: el handler
+    // lee la venta (`sales.get`, required), rechaza con código propio lo que no aplica, y solo
+    // emite `sale.voided` cuando de verdad cambia algo.
+
+    fn void_input(reason: &str, sale: Value) -> Value {
+        let mut reads = Map::new();
+        if !sale.is_null() { reads.insert("sales.get".into(), sale); }
+        json!({
+            "payload": { "sale_id": "sale-1", "reason": reason },
+            "context": { "hub_id": "h1", "current_user_id": "u-manager", "now": "2026-08-18T12:00:00+00:00", "new_ids": [],
+                         "reads": reads }
+        })
+    }
+    fn completed_ticket() -> Value {
+        json!([{ "id": "sale-1", "sale_number": "20260818-0007", "status": "completed", "document_type": "ticket",
+                 "total": 1210, "payment_method_name": "Cash", "order_id": "ord-9" }])
+    }
+
+    #[test]
+    fn voiding_a_completed_ticket_writes_the_audit_fields_and_emits_once() {
+        let out = void_sale_pure(void_input("customer changed their mind", completed_ticket())).expect("void ok");
+        let op = out.operations.iter().find(|o| o.command == "sales._void_sale").expect("the void op");
+        assert_eq!(op.params["sale_id"], json!("sale-1"));
+        assert_eq!(op.params["void_reason"], json!("customer changed their mind"));
+        assert_eq!(out.events.len(), 1);
+        let ev = &out.events[0];
+        assert_eq!(ev.name, "sale.voided");
+        assert_eq!(ev.payload["sale_id"], json!("sale-1"));
+        assert_eq!(ev.payload["reason"], json!("customer changed their mind"));
+        assert_eq!(ev.payload["voided_by"], json!("u-manager"));
+        assert_eq!(ev.payload["total"], json!(1210));
+        assert_eq!(ev.payload["order_id"], json!("ord-9"));
+    }
+
+    #[test]
+    fn voiding_twice_is_refused_and_emits_nothing_the_second_time() {
+        let mut already = completed_ticket();
+        already[0]["status"] = json!("voided");
+        let err = void_sale_pure(void_input("again", already)).expect_err("second void");
+        assert!(err.starts_with("sales.already_voided"), "{err}");
+    }
+
+    #[test]
+    fn a_reason_is_mandatory() {
+        let err = void_sale_pure(void_input("   ", completed_ticket())).expect_err("no reason");
+        assert!(err.starts_with("sales.void_reason_required"), "{err}");
+    }
+
+    #[test]
+    fn a_sale_that_does_not_exist_here_cannot_be_voided() {
+        let err = void_sale_pure(void_input("x", json!([]))).expect_err("unknown sale");
+        assert!(err.starts_with("sales.sale_not_found"), "{err}");
+    }
+
+    #[test]
+    fn a_full_invoice_needs_a_credit_note_not_a_void() {
+        let mut inv = completed_ticket();
+        inv[0]["document_type"] = json!("invoice");
+        let err = void_sale_pure(void_input("x", inv)).expect_err("invoice");
+        assert!(err.starts_with("sales.void_requires_credit_note"), "{err}");
+    }
+
+    #[test]
+    fn without_the_sale_read_the_void_is_refused_not_guessed() {
+        // La read es `required`; si aun así falta (runtime viejo) no se anula a ciegas.
+        let err = void_sale_pure(void_input("x", Value::Null)).expect_err("no read");
+        assert!(err.starts_with("sales.sale_not_found"), "{err}");
     }
 
     // ── sales#80 · el doble toque en «Enviar a cocina» no puede crear dos comandas ────────────
