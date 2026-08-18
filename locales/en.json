@@ -224,6 +224,7 @@
     "limitFieldAddress": "Address",
     "limitChargeBlocked": "Enter the customer's details",
     "tenderedShort": "The amount tendered does not cover the total",
+    "taxSurcharge": "Surcharge",
     "screenMenu": "Screen",
     "exitFullscreen": "Exit full screen"
   }

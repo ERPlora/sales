@@ -231,6 +231,14 @@ fn field(v: &Value, k: &str) -> String {
 struct TaxComponent {
     rate_pct: f64,
     rate_key: String,
+    /// sales#54 — qué es este componente dentro del desglose: `tax` (la regla raíz: el IVA) o el
+    /// `tax_type` del hijo (`surcharge` = recargo de equivalencia). Va al `tax_breakdown` para que
+    /// nadie lea el recargo como «un tipo de IVA más» (en el fiscal viaja DENTRO de la línea del
+    /// IVA, ADR-0186; aquí conserva su clave por tasa porque el arqueo y el tique la leen así).
+    kind: String,
+    /// Etiqueta de presentación (`component_label` de la regla o su `tax_type`): el tique la usa
+    /// para no imprimir «IVA 5,2 %» donde toca «RE 5,2 %».
+    label: String,
 }
 
 /// Clave de desglose para una tasa: "%.2f" del `rate_pct` (p.ej. 21.0 → "21.00").
@@ -288,9 +296,14 @@ fn resolve_line_tax(
             ));
         }
         if let Some(root) = tax::resolve_root(rules, cc, rc, &cat, date) {
+            let root_id = tax::rule_field(root, "id");
             let components = tax::rule_components(root, rules, date)
                 .into_iter()
-                .map(|c| TaxComponent { rate_pct: c.rate_pct, rate_key: rate_key(c.rate_pct) })
+                .map(|c| {
+                    let is_root = c.rule_id == root_id;
+                    let kind = if is_root { "tax".to_string() } else if c.tax_type.is_empty() { "component".to_string() } else { c.tax_type.clone() };
+                    TaxComponent { rate_pct: c.rate_pct, rate_key: rate_key(c.rate_pct), kind, label: c.label.clone() }
+                })
                 .collect();
             return Ok(ResolvedTax { rule_id: tax::rule_field(root, "id"), components });
         }
@@ -302,7 +315,7 @@ fn resolve_line_tax(
     }
     // Sin categoría que resolver: preview del cliente. La única puerta que queda (ver doc).
     let pct = item.get("tax_rate").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
-    Ok(ResolvedTax { rule_id: String::new(), components: vec![TaxComponent { rate_pct: pct, rate_key: rate_key(pct) }] })
+    Ok(ResolvedTax { rule_id: String::new(), components: vec![TaxComponent { rate_pct: pct, rate_key: rate_key(pct), kind: "tax".to_string(), label: String::new() }] })
 }
 
 /// Día ISO `YYYY-MM-DD` de `now` (para la vigencia de las reglas).
@@ -639,6 +652,8 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     let mut gross_pre_disc: i64 = 0; // céntimos (sin descuento global → discount_amount)
     let mut gift_total: i64 = 0; // céntimos: coste de las invitaciones (para el arqueo, ADR-comp)
     let mut breakdown: Vec<(String, i64, i64)> = Vec::new();
+    // sales#54: qué es cada clave del desglose (`kind`, `label`) — la primera línea que la aporta manda.
+    let mut breakdown_meta: std::collections::HashMap<String, (String, String)> = std::collections::HashMap::new();
     let mut ops: Vec<Operation> = Vec::new();
 
     let mut bump = Map::new();
@@ -673,6 +688,9 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         // (server-authoritative, raíz + componentes), con país/región del contexto y fallback
         // graceful al `tax_rate` del payload. El cliente NO es autoridad del %.
         let resolved = resolve_line_tax(item, catalog_cat, &catalog, catalog_delivered, &cc, &rc, &date)?;
+        for c in &resolved.components {
+            breakdown_meta.entry(c.rate_key.clone()).or_insert_with(|| (c.kind.clone(), c.label.clone()));
+        }
         let components = &resolved.components;
         // Tasa combinada que persistimos en la línea (== suma de componentes; para un tipo
         // simple es su propio %). Es la cifra que ve invoice/listeners en `tax_rate`.
@@ -794,7 +812,15 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         let rate = Decimal::from_str(k).unwrap_or(Decimal::ZERO);
         let cuota = money::percent_of(*base, rate);
         tax_total_declarado += cuota;
-        tb.insert(k.clone(), json!({ "base": *base, "tax": cuota }));
+        let (kind, label) = breakdown_meta.get(k).cloned().unwrap_or_else(|| ("tax".to_string(), String::new()));
+        let mut entry = Map::new();
+        entry.insert("base".into(), json!(*base));
+        entry.insert("tax".into(), json!(cuota));
+        entry.insert("kind".into(), json!(kind)); // sales#54: `tax` | `surcharge` | …
+        if !label.is_empty() {
+            entry.insert("label".into(), json!(label));
+        }
+        tb.insert(k.clone(), Value::Object(entry));
     }
     let tax_total = tax_total_declarado;
     let tax_breakdown_json = Value::Object(tb).to_string();
@@ -1787,6 +1813,13 @@ mod tests {
         assert_eq!(tb["21.00"]["tax"], json!(2100));
         assert_eq!(tb["5.20"]["tax"], json!(520));
         assert_eq!(s["tax_amount"], json!(2620));
+        // sales#54: el componente se MARCA para que nadie lo lea como «un tipo de IVA más». La
+        // forma (una clave por tasa) se conserva —arqueo y tique la leen así—; el marcador es
+        // aditivo. La raíz no lleva marca (o lleva `kind: "tax"`), el recargo `kind: "surcharge"`
+        // con su etiqueta (`component_label` o `tax_type` de la regla), que es lo que imprime el tique.
+        assert_eq!(tb["5.20"]["kind"], json!("surcharge"));
+        assert_eq!(tb["5.20"]["label"], json!("surcharge"));
+        assert_eq!(tb["21.00"]["kind"], json!("tax"));
     }
 
     #[test]
