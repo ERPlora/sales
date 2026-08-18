@@ -9,7 +9,7 @@ var __decorateClass = (decorators, target, key, kind) => {
   return result;
 };
 
-// ../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
+// ../../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
 var ElementInternalsShim = class ElementInternals {
   get shadowRoot() {
     return this.__host.__shadowRoot;
@@ -88,7 +88,7 @@ var ElementInternalsShim = class ElementInternals {
   }
 };
 
-// ../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
+// ../../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
 var __classPrivateFieldSet = function(receiver, state, value, kind, f3) {
   if (kind === "m") throw new TypeError("Private method is not writable");
   if (kind === "a" && !f3) throw new TypeError("Private accessor was defined without a setter");
@@ -246,7 +246,7 @@ Object.defineProperties(CustomEventShim.prototype, {
 var EventShimWithRealType = EventShim;
 var CustomEventShimWithRealType = CustomEventShim;
 
-// ../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
+// ../../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
 var _a2;
 var CSSRuleShim = (_a2 = class CSSRule {
   constructor() {
@@ -277,7 +277,7 @@ var CSSRuleShim = (_a2 = class CSSRule {
   }
 }, _a2.STYLE_RULE = 1, _a2.CHARSET_RULE = 2, _a2.IMPORT_RULE = 3, _a2.MEDIA_RULE = 4, _a2.FONT_FACE_RULE = 5, _a2.PAGE_RULE = 6, _a2.NAMESPACE_RULE = 10, _a2.KEYFRAMES_RULE = 7, _a2.KEYFRAME_RULE = 8, _a2.SUPPORTS_RULE = 12, _a2.COUNTER_STYLE_RULE = 11, _a2.FONT_FEATURE_VALUES_RULE = 14, _a2.MARGIN_RULE = 9, _a2);
 
-// ../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/index.js
+// ../../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/index.js
 globalThis.Event ??= EventShimWithRealType;
 globalThis.CustomEvent ??= CustomEventShimWithRealType;
 var constructionToken = Symbol();
@@ -674,7 +674,7 @@ var CustomElementRegistryShimWithRealType = CustomElementRegistry;
 var customElements2 = new CustomElementRegistryShimWithRealType();
 var windowShim = new WindowShim(constructionToken);
 
-// ../module-toolkit/node_modules/@lit/reactive-element/node/css-tag.js
+// ../../../../module-toolkit/node_modules/@lit/reactive-element/node/css-tag.js
 var t = globalThis;
 var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
 var s = Symbol();
@@ -719,7 +719,7 @@ var c = e || void 0 === t.CSSStyleSheet ? (t7) => t7 : (t7) => t7 instanceof CSS
   return r(e7);
 })(t7) : t7;
 
-// ../module-toolkit/node_modules/@lit/reactive-element/node/reactive-element.js
+// ../../../../module-toolkit/node_modules/@lit/reactive-element/node/reactive-element.js
 var { is: h, defineProperty: r2, getOwnPropertyDescriptor: o2, getOwnPropertyNames: n2, getOwnPropertySymbols: a, getPrototypeOf: c2 } = Object;
 var l = globalThis;
 l.customElements ??= customElements2;
@@ -942,7 +942,7 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
 };
 g.elementStyles = [], g.shadowRootOptions = { mode: "open" }, g[f("elementProperties")] = /* @__PURE__ */ new Map(), g[f("finalized")] = /* @__PURE__ */ new Map(), u?.({ ReactiveElement: g }), (l.reactiveElementVersions ??= []).push("2.1.2");
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
+// ../../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
 var t2 = globalThis;
 var i2 = (t7) => t7;
 var s2 = t2.trustedTypes;
@@ -1197,7 +1197,7 @@ var D = (t7, i7, s5) => {
   return h4._$AI(t7), h4;
 };
 
-// node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
+// ../../../node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
 var s3 = globalThis;
 var i3 = class extends g {
   constructor() {
@@ -1226,7 +1226,7 @@ var o4 = s3.litElementPolyfillSupport;
 o4?.({ LitElement: i3 });
 (s3.litElementVersions ??= []).push("4.2.2");
 
-// ../module-toolkit/node_modules/@lit/reactive-element/node/decorators/property.js
+// ../../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
 var r4 = (t7 = o5, e7, r6) => {
   const { kind: n6, metadata: i7 } = r6;
@@ -1256,15 +1256,15 @@ function n4(t7) {
   })(t7, e7, o9);
 }
 
-// ../module-toolkit/node_modules/@lit/reactive-element/node/decorators/state.js
+// ../../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/state.js
 function r5(r6) {
   return n4({ ...r6, state: true, attribute: false });
 }
 
-// ../module-toolkit/node_modules/@lit/reactive-element/node/decorators/base.js
+// ../../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/base.js
 var e3 = (e7, t7, c5) => (c5.configurable = true, c5.enumerable = true, Reflect.decorate && "object" != typeof t7 && Object.defineProperty(e7, t7, c5), c5);
 
-// ../module-toolkit/node_modules/@lit/reactive-element/node/decorators/query.js
+// ../../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/query.js
 function e4(e7, r6) {
   return (n6, s5, i7) => {
     const o9 = (t7) => t7.renderRoot?.querySelector(e7) ?? null;
@@ -1288,14 +1288,14 @@ function e4(e7, r6) {
   };
 }
 
-// ../outfitkit/dist/define.js
+// ../../../../outfitkit/dist/define.js
 function define(tag, ctor) {
   if (typeof customElements !== "undefined" && !customElements.get(tag)) {
     customElements.define(tag, ctor);
   }
 }
 
-// ../outfitkit/dist/tabbar.js
+// ../../../../outfitkit/dist/tabbar.js
 var EPSILON = 1;
 var HINT_PX = 28;
 var HINT_VUELTA_MS = 420;
@@ -1353,7 +1353,7 @@ function bindTabbar(segment, opts = {}) {
   };
 }
 
-// ../hub/packages/module-sdk/src/index.ts
+// ../../../../hub/packages/module-sdk/src/index.ts
 function isEmpty(v3) {
   return v3 === null || v3 === void 0 || v3 === "";
 }
@@ -1470,6 +1470,7 @@ function createListController(client, queryName, onChange = () => {
 }, opts = {}) {
   return new ListController(client, queryName, onChange, opts);
 }
+var SERVER_UNAVAILABLE = "server_unavailable";
 function majorToMinor(amount, decimals) {
   const n6 = Number(amount);
   return Number.isFinite(n6) ? Math.round(n6 * 10 ** decimals) : 0;
@@ -1481,7 +1482,7 @@ function centsToEuros(cents) {
   return cents == null ? "" : (cents / 100).toFixed(2);
 }
 
-// modules/sales/ui/lib/receipt-html.ts
+// ui/lib/receipt-html.ts
 function esc(v3) {
   return String(v3 ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
@@ -1564,7 +1565,7 @@ function printHtmlInIframe(html, doc = document) {
   else w2.addEventListener("load", () => setTimeout(lanzar, 50), { once: true });
 }
 
-// ../outfitkit/dist/shared/icons.js
+// ../../../../outfitkit/dist/shared/icons.js
 var rawAdd = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M256 112v288m144-144H112"/></svg>';
 var rawAlertCircle = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="M256 48C141.31 48 48 141.31 48 256s93.31 208 208 208s208-93.31 208-208S370.69 48 256 48m0 319.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20m21.72-201.15l-5.74 122a16 16 0 0 1-32 0l-5.74-121.94v-.05a21.74 21.74 0 1 1 43.44 0Z"/></svg>';
 var rawAlertCircleOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" d="M448 256c0-106-86-192-192-192S64 150 64 256s86 192 192 192s192-86 192-192Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M250.26 166.05L256 288l5.73-121.95a5.74 5.74 0 0 0-5.79-6h0a5.74 5.74 0 0 0-5.68 6"/><path fill="currentColor" d="M256 367.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20"/></svg>';
@@ -1712,7 +1713,7 @@ function okIcon(value) {
   return BY_NAME[value] ?? value;
 }
 
-// ../outfitkit/dist/ok-inline-feedback.js
+// ../../../../outfitkit/dist/ok-inline-feedback.js
 var __defProp2 = Object.defineProperty;
 var __decorateClass2 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -1929,7 +1930,7 @@ __decorateClass2([
 ], OkInlineFeedback.prototype, "hasActions");
 define("ok-inline-feedback", OkInlineFeedback);
 
-// ../outfitkit/dist/ok-qr.js
+// ../../../../outfitkit/dist/ok-qr.js
 var __defProp3 = Object.defineProperty;
 var __decorateClass3 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2577,7 +2578,7 @@ __decorateClass3([
 ], OkQr.prototype, "margin");
 define("ok-qr", OkQr);
 
-// ../outfitkit/dist/ok-receipt.js
+// ../../../../outfitkit/dist/ok-receipt.js
 var __defProp4 = Object.defineProperty;
 var __decorateClass4 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2768,7 +2769,7 @@ __decorateClass4([
 ], OkReceipt.prototype, "labels");
 define("ok-receipt", OkReceipt);
 
-// modules/sales/ui/lib/quantity.ts
+// ui/lib/quantity.ts
 var QUANTITY_SCALE2 = 1e6;
 function toMicro2(qty) {
   return Math.round(qty * QUANTITY_SCALE2);
@@ -2784,7 +2785,71 @@ function onGrid2(raw, increment) {
   return raw % increment === 0;
 }
 
-// modules/sales/ui/lib/document-mappers.ts
+// ui/lib/pay-icons.ts
+var PAY_ICON_FALLBACK = "ellipsis-horizontal-circle-outline";
+var BY_TYPE = {
+  cash: "cash-outline",
+  card: "card-outline",
+  credit: "card-outline",
+  debit: "card-outline",
+  transfer: "swap-horizontal-outline",
+  bank: "swap-horizontal-outline",
+  mobile: "phone-portrait-outline",
+  wallet: "phone-portrait-outline",
+  voucher: "ticket-outline",
+  gift: "gift-outline"
+};
+var BY_NAME2 = [
+  [/efectiv|cash|met[áa]lico|caja/i, "cash-outline"],
+  [/tarjet|card|visa|mastercard|cr[ée]dito|d[ée]bito/i, "card-outline"],
+  [/bizum|m[óo]vil|mobile|wallet|apple pay|google pay/i, "phone-portrait-outline"],
+  [/transfer|banc|iban/i, "swap-horizontal-outline"],
+  [/vale|ticket|cheque|restaurante/i, "ticket-outline"],
+  [/regalo|gift/i, "gift-outline"]
+];
+function payMethodIcon(type, name) {
+  const t7 = (type || "").trim().toLowerCase();
+  if (BY_TYPE[t7]) return BY_TYPE[t7];
+  const n6 = (name || "").trim();
+  if (n6) {
+    for (const [re, icon] of BY_NAME2) if (re.test(n6)) return icon;
+  }
+  return PAY_ICON_FALLBACK;
+}
+function needsTendered(method) {
+  if (!method) return true;
+  if (method.requires_change !== void 0 && method.requires_change !== null) {
+    return method.requires_change === 1 || method.requires_change === true;
+  }
+  return (method.type || "").trim().toLowerCase() === "cash";
+}
+function enabledPayMethods(methods, policy = {}) {
+  const allowed = (m4) => {
+    const t7 = (m4.type || "").trim().toLowerCase();
+    if (t7 === "cash") return policy.allow_cash !== 0;
+    if (t7 === "card" || t7 === "credit" || t7 === "debit") return policy.allow_card !== 0;
+    if (t7 === "transfer" || t7 === "bank") return policy.allow_transfer !== 0;
+    return true;
+  };
+  const out = methods.filter(allowed);
+  return out.length ? out : methods;
+}
+var PAY_ICON_NAMES = [
+  .../* @__PURE__ */ new Set([...Object.values(BY_TYPE), ...BY_NAME2.map(([, i7]) => i7), PAY_ICON_FALLBACK])
+];
+var SEED_NAME_TO_KEY = {
+  Cash: "ui.cash",
+  Card: "ui.card"
+};
+function payMethodDisplayName(method, t7) {
+  const key = SEED_NAME_TO_KEY[(method.name || "").trim()];
+  return key ? t7(key) : method.name || "";
+}
+function defaultPayMethod(methods) {
+  return methods.find((m4) => (m4.type || "").trim().toLowerCase() === "cash") ?? methods.find((m4) => /efectiv|cash|met[\u00e1a]lico/i.test(m4.name || "")) ?? methods[0];
+}
+
+// ui/lib/document-mappers.ts
 function toEuros(cents) {
   return Number(cents ?? 0) / 100;
 }
@@ -2799,6 +2864,10 @@ function formatDateTime(iso, locale = "es") {
     hour: "2-digit",
     minute: "2-digit"
   }).format(d3);
+}
+function payLabel(name, t7) {
+  if (!name) return void 0;
+  return t7 ? payMethodDisplayName({ id: "", name }, t7) : name;
 }
 function receiptLabels(t7) {
   return {
@@ -2869,7 +2938,7 @@ function resolveFormat(sale, settings) {
   const v3 = sale.document_type || settings.default_document_format || "ticket";
   return v3 === "invoice" ? "invoice" : "ticket";
 }
-function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName = DEFAULT_BUSINESS_NAME) {
+function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName = DEFAULT_BUSINESS_NAME, t7) {
   const header = splitHeader(settings.receipt_header);
   return {
     business: { name: header.name || fiscal.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || void 0 },
@@ -2884,9 +2953,9 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", f
       total: toEuros(l3.line_total)
     })),
     subtotal: sale.subtotal != null ? toEuros(sale.subtotal) : void 0,
-    taxes: parseTaxes(sale.tax_breakdown).map((t7) => ({ label: t7.label, base: t7.base, amount: t7.amount })),
+    taxes: parseTaxes(sale.tax_breakdown).map((t8) => ({ label: t8.label, base: t8.base, amount: t8.amount })),
     total: toEuros(sale.total),
-    payment: sale.payment_method_name ? { method: sale.payment_method_name, paid: sale.amount_tendered != null ? toEuros(sale.amount_tendered) : void 0, change: sale.change_due != null ? toEuros(sale.change_due) : void 0 } : void 0,
+    payment: sale.payment_method_name ? { method: payLabel(sale.payment_method_name, t7), paid: sale.amount_tendered != null ? toEuros(sale.amount_tendered) : void 0, change: sale.change_due != null ? toEuros(sale.change_due) : void 0 } : void 0,
     currency: settings.currency || "\u20AC",
     footer: settings.receipt_footer || void 0,
     qr: fiscal.qr || void 0,
@@ -2896,7 +2965,7 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", f
     promo_note: settings.receipt_marketing_url ? settings.receipt_marketing_text || void 0 : void 0
   };
 }
-function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName = DEFAULT_BUSINESS_NAME) {
+function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName = DEFAULT_BUSINESS_NAME, t7) {
   const header = splitHeader(settings.receipt_header);
   const invLines = lines.map((l3) => ({
     description: lineLabel(l3),
@@ -2916,11 +2985,11 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", f
     lines: invLines,
     subtotal: toEuros(sale.subtotal),
     discount_total: sale.discount_amount ? toEuros(sale.discount_amount) : void 0,
-    taxes: taxes.map((t7) => ({ label: t7.label, rate: t7.rate, base: t7.base, amount: t7.amount })),
+    taxes: taxes.map((t8) => ({ label: t8.label, rate: t8.rate, base: t8.base, amount: t8.amount })),
     tax_total: toEuros(sale.tax_amount),
     total: toEuros(sale.total),
     currency: settings.currency || "\u20AC",
-    payment_method: sale.payment_method_name || void 0,
+    payment_method: payLabel(sale.payment_method_name, t7),
     footer: settings.receipt_footer || void 0,
     qr: fiscal.qr || void 0,
     qr_note: fiscal.qr_note || void 0
@@ -2957,7 +3026,7 @@ function orderToPrebill(lines, settings = {}, opts = {}) {
   };
 }
 
-// modules/sales/ui/lib/print-document.ts
+// ui/lib/print-document.ts
 function euros(cents) {
   return cents == null ? void 0 : Number(cents) / 100;
 }
@@ -2974,8 +3043,8 @@ function prebillToPrintDocument(lines, settings = {}, opts = {}) {
     notice: screen.footer
   };
 }
-function saleToPrintDocument(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName) {
-  const screen = saleToReceipt(sale, lines, settings, fiscal, locale, fallbackName);
+function saleToPrintDocument(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName, t7) {
+  const screen = saleToReceipt(sale, lines, settings, fiscal, locale, fallbackName, t7);
   return {
     business_name: screen.business.name,
     business_address: screen.business.address,
@@ -3009,7 +3078,7 @@ function hash(s5) {
   return h4.toString(36);
 }
 
-// ../outfitkit/dist/ok-invoice.js
+// ../../../../outfitkit/dist/ok-invoice.js
 var __defProp5 = Object.defineProperty;
 var __decorateClass5 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -3264,7 +3333,7 @@ __decorateClass5([
 ], OkInvoice.prototype, "labels");
 define("ok-invoice", OkInvoice);
 
-// modules/sales/locales/es.json
+// locales/es.json
 var es_default = {
   name: "Ventas / TPV",
   description: "Terminal punto de venta: cierra y anula ventas, y consulta el hist\xF3rico y las m\xE9tricas.",
@@ -3277,6 +3346,11 @@ var es_default = {
     },
     settings: {
       label: "Ajustes TPV"
+    }
+  },
+  roles: {
+    cashier: {
+      label: "Cajero"
     }
   },
   ui: {
@@ -3380,6 +3454,8 @@ var es_default = {
     charge: "Cobrar",
     chargeShortcut: "Cobrar (F2)",
     parkedTickets: "Cuentas abiertas",
+    openCart: "Abrir carrito",
+    openCartWithItems: "Abrir carrito, {count} art\xEDculos",
     openChecksAction: "Cuentas",
     openChecksHint: "Toca una cuenta para retomarla.",
     parkForLaterHint: "Aparca la cuenta actual para retomarla m\xE1s tarde. El t\xEDtulo es opcional.",
@@ -3414,9 +3490,13 @@ var es_default = {
     errorDiscountRange: "El descuento debe estar entre 0 % y 100 %",
     errorCustomerRequired: "Este negocio exige un cliente en cada venta",
     errorAmountNegative: "La venta no puede llevar importes negativos",
+    errorInsufficientTendered: "El importe entregado no cubre el total",
+    errorNoTaxRule: "Una l\xEDnea tiene una categor\xEDa fiscal sin regla de IVA en este negocio: config\xFArala en Impuestos antes de cobrar",
+    errorTaxCatalogUnavailable: "No se han podido cargar las reglas de IVA, as\xED que no se ha cobrado nada. Vuelve a intentarlo y, si persiste, avisa al encargado",
     all: "Todos",
     categoryFilter: "Categor\xEDas",
     products: "productos",
+    items: "art\xEDculos",
     previous: "Anterior",
     next: "Siguiente",
     searchProductPlaceholder: "Buscar producto\u2026",
@@ -3480,6 +3560,7 @@ var es_default = {
     limitFieldTaxId: "NIF",
     limitFieldAddress: "Domicilio",
     limitChargeBlocked: "Faltan los datos del cliente",
+    tenderedShort: "Lo entregado no cubre el total",
     screenMenu: "Pantalla",
     exitFullscreen: "Salir de pantalla completa"
   },
@@ -3501,7 +3582,7 @@ var es_default = {
   }
 };
 
-// modules/sales/locales/en.json
+// locales/en.json
 var en_default = {
   name: "Sales & POS",
   navigation: {
@@ -3513,6 +3594,11 @@ var en_default = {
     },
     settings: {
       label: "POS Settings"
+    }
+  },
+  roles: {
+    cashier: {
+      label: "Cashier"
     }
   },
   ui: {
@@ -3616,6 +3702,8 @@ var en_default = {
     charge: "Charge",
     chargeShortcut: "Charge (F2)",
     parkedTickets: "Open checks",
+    openCart: "Open cart",
+    openCartWithItems: "Open cart, {count} items",
     openChecksAction: "Checks",
     openChecksHint: "Tap a check to resume it.",
     parkForLaterHint: "Park the current check to resume it later. The title is optional.",
@@ -3650,9 +3738,13 @@ var en_default = {
     errorDiscountRange: "The discount must be between 0 % and 100 %",
     errorCustomerRequired: "This business requires a customer on every sale",
     errorAmountNegative: "The sale cannot carry negative amounts",
+    errorInsufficientTendered: "The amount tendered does not cover the total",
+    errorNoTaxRule: "A line has a tax category with no VAT rule in this business \u2014 set it up in Taxes before charging",
+    errorTaxCatalogUnavailable: "The VAT rules could not be loaded, so nothing was charged. Try again; if it keeps happening, call the manager",
     all: "All",
     categoryFilter: "Categories",
     products: "products",
+    items: "items",
     previous: "Previous",
     next: "Next",
     searchProductPlaceholder: "Search product\u2026",
@@ -3716,12 +3808,13 @@ var en_default = {
     limitFieldTaxId: "Tax ID",
     limitFieldAddress: "Address",
     limitChargeBlocked: "Enter the customer's details",
+    tenderedShort: "The amount tendered does not cover the total",
     screenMenu: "Screen",
     exitFullscreen: "Exit full screen"
   }
 };
 
-// modules/sales/ui/components/erp-sales-document/erp-sales-document.ts
+// ui/components/erp-sales-document/erp-sales-document.ts
 var CATALOG = { es: es_default, en: en_default };
 function erplora() {
   const c5 = globalThis.erplora;
@@ -3859,7 +3952,8 @@ var ErpSalesDocument = class extends i3 {
       this.settings || {},
       this.fiscal,
       erplora().locale,
-      t7("ui.docDefaultBusiness")
+      t7("ui.docDefaultBusiness"),
+      t7
     );
     return receiptToPrintableHtml(doc);
   }
@@ -3874,13 +3968,15 @@ var ErpSalesDocument = class extends i3 {
    */
   printableDocument() {
     if (!this.sale) return void 0;
+    const t7 = (k2) => erplora().t(CATALOG, k2);
     return saleToPrintDocument(
       this.sale,
       this.lines || [],
       this.settings || {},
       this.fiscal,
       erplora().locale,
-      erplora().t(CATALOG, "ui.docDefaultBusiness")
+      t7("ui.docDefaultBusiness"),
+      t7
     );
   }
   render() {
@@ -3894,9 +3990,9 @@ var ErpSalesDocument = class extends i3 {
     const locale = erplora().locale;
     const fallbackName = t7("ui.docDefaultBusiness");
     return fmt === "invoice" ? b2`<ok-invoice
-          .invoice=${saleToInvoice(this.sale, lines, settings, this.fiscal, locale, fallbackName)}
+          .invoice=${saleToInvoice(this.sale, lines, settings, this.fiscal, locale, fallbackName, t7)}
           .labels=${invoiceLabels(t7)}></ok-invoice>` : b2`<ok-receipt
-          .receipt=${saleToReceipt(this.sale, lines, settings, this.fiscal, locale, fallbackName)}
+          .receipt=${saleToReceipt(this.sale, lines, settings, this.fiscal, locale, fallbackName, t7)}
           .labels=${receiptLabels(t7)}></ok-receipt>`;
   }
 };
@@ -3929,7 +4025,7 @@ __decorateClass([
 ], ErpSalesDocument.prototype, "fiscalRetryDelays", 2);
 define("erp-sales-document", ErpSalesDocument);
 
-// modules/sales/ui/lib/document-modal.ts
+// ui/lib/document-modal.ts
 function renderDocumentModal({ saleId, onClose, t: t7 }) {
   return b2`<ion-modal class="doc-modal" .isOpen=${!!saleId} @ionModalDidDismiss=${onClose}>
     <style>
@@ -3998,7 +4094,7 @@ function renderDocumentModal({ saleId, onClose, t: t7 }) {
   </ion-modal>`;
 }
 
-// modules/sales/ui/lib/table-switch.ts
+// ui/lib/table-switch.ts
 function decideOnTableChange(c5) {
   if (!c5.targetTableId) return c5.cartHasItems ? "park-then-clear" : "clear";
   if (c5.currentTableId) return c5.targetOrderId ? "load-target" : "start-new-check";
@@ -4006,7 +4102,7 @@ function decideOnTableChange(c5) {
   return c5.targetOrderId ? "park-then-load" : "assign-to-target";
 }
 
-// modules/sales/ui/lib/park-label.ts
+// ui/lib/park-label.ts
 function defaultParkLabel(tableLabel, now) {
   const mesa = (tableLabel ?? "").trim();
   if (mesa) return mesa;
@@ -4015,7 +4111,7 @@ function defaultParkLabel(tableLabel, now) {
   return `${hh}:${mm}`;
 }
 
-// modules/sales/ui/lib/rounds.ts
+// ui/lib/rounds.ts
 function pendingLines(lines) {
   return lines.filter((l3) => !l3.fired_at);
 }
@@ -4027,7 +4123,7 @@ function nextRoundNo(lines) {
   return max + 1;
 }
 
-// modules/sales/ui/lib/fire-order.ts
+// ui/lib/fire-order.ts
 function buildFirePayload(orderId, label, lines, roundNo) {
   if (!orderId || lines.length === 0) return void 0;
   return {
@@ -4043,12 +4139,18 @@ function buildFirePayload(orderId, label, lines, roundNo) {
       quantity: toMicro2(l3.qty),
       unit_price: l3.price,
       // El motivo de una invitación es información de sala que el cocinero necesita ver.
-      notes: l3.is_gift ? l3.gift_reason ?? "" : ""
+      notes: l3.is_gift ? l3.gift_reason ?? "" : "",
+      // sales#12: la CATEGORÍA (snapshot de la línea) es lo que deja a kitchen aplicar
+      // categoría→estación; sin ella solo enrutaba lo que tuviera mapeo producto→estación.
+      category_id: l3.category_id ?? null,
+      // Y de qué línea de pedido salió: kitchen reparte una anulación entre las estaciones que
+      // recibieron cada ronda por este id.
+      order_item_id: l3.line_id ?? null
     }))
   };
 }
 
-// modules/sales/ui/lib/serial-queue.ts
+// ui/lib/serial-queue.ts
 function createSerialQueue() {
   let last = Promise.resolve();
   return (task) => {
@@ -4058,7 +4160,7 @@ function createSerialQueue() {
   };
 }
 
-// modules/sales/ui/lib/split-selection.ts
+// ui/lib/split-selection.ts
 function esParcial(cart, sel) {
   const conId = cart.filter((l3) => l3.line_id);
   return sel.size > 0 && sel.size < conId.length;
@@ -4087,7 +4189,7 @@ function splitPayload(cart, sel) {
   };
 }
 
-// modules/sales/ui/lib/simplified-limit.ts
+// ui/lib/simplified-limit.ts
 function isOverSimplifiedLimit(payableCents, maxCents) {
   if (maxCents === null || maxCents <= 0) return false;
   return payableCents >= maxCents;
@@ -4100,7 +4202,7 @@ function ticketIsBlocked(state) {
   return !(state.documentFormat === "invoice" && recipientIsComplete(state));
 }
 
-// modules/sales/ui/lib/current-check.ts
+// ui/lib/current-check.ts
 var CLAVE = "erplora.pos.currentCheck";
 function rememberCurrentCheck(store, orderId) {
   try {
@@ -4124,7 +4226,7 @@ function resolveCurrentCheck(store, abiertas) {
   return recordada && abiertas.includes(recordada) ? recordada : void 0;
 }
 
-// modules/sales/ui/lib/brand-icons.ts
+// ui/lib/brand-icons.ts
 var BIZUM_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 122 36"><path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M59.8625 12.8257c-1.0347 0-1.8704.8358-1.8704 1.8308v13.8113c0 1.0348.8357 1.8707 1.8704 1.8707s1.8704-.8359 1.8704-1.8707V14.6565c0-.995-.8357-1.8308-1.8704-1.8308Zm-.0001-6.88561c-1.154 0-2.1091.95524-2.1091 2.1095 0 1.15425.9551 2.14931 2.1091 2.14931 1.1541 0 2.1092-.95526 2.1092-2.14931 0-1.15426-.9551-2.1095-2.1092-2.1095ZM78.089 14.6566c0-1.1543-.9153-1.5921-1.751-1.5921h-9.2725c-.9153 0-1.6316.7164-1.6316 1.5921 0 .9154.7163 1.6319 1.6316 1.6319h6.0888l-7.8796 10.9853c-.2388.3184-.3581.7562-.3581 1.1144 0 1.1543.9153 1.7911 1.7112 1.7911h9.8296c.9153 0 1.6316-.7164 1.6316-1.6319 0-.9154-.7163-1.6318-1.6316-1.6318h-6.6062l7.7204-10.7466c.398-.5572.5174-1.0348.5174-1.5124Zm-27.3 8.6769c0 2.2687-.9949 3.6618-3.2633 3.6618-2.2683 0-3.2234-1.3931-3.2234-3.6618v-7.045h3.3826c2.7459 0 3.1041 1.5125 3.1041 3.1842v3.8608Zm3.7408-3.9404c0-3.8608-2.0296-6.3683-6.7653-6.3683h-3.4224V7.81078c0-1.03485-.8357-1.87069-1.8306-1.87069-1.0347 0-1.8704.83584-1.8704 1.87069V23.3335c0 3.8608 2.0693 7.0051 6.9642 7.0051 4.8551 0 6.9643-3.1841 6.9643-7.0051v-3.9404h-.0398Zm38.1642-6.5674c-1.0346 0-1.8704.8358-1.8704 1.8706v8.6371c0 2.2687-.9949 3.6617-3.2632 3.6617-2.2684 0-3.2235-1.393-3.2235-3.6617v-8.6371c0-1.0348-.8357-1.8706-1.8306-1.8706-1.0347 0-1.8704.8358-1.8704 1.8706v8.6371c0 3.8607 2.0694 7.0051 6.9643 7.0051 4.8551 0 6.9642-3.1842 6.9642-7.0051v-8.6371c-.0397-1.0348-.8755-1.8706-1.8704-1.8706Zm28.374 7.0451c0-3.8608-1.79-7.0052-6.645-7.0052-2.189 0-3.741.6369-4.816 1.7115-1.074-1.0348-2.626-1.7115-4.815-1.7115-4.8552 0-6.646 3.1842-6.646 7.0052v8.637c0 1.0348.8357 1.8707 1.8306 1.8707 1.0344 0 1.8704-.8359 1.8704-1.8707v-8.637c0-2.2687.716-3.6618 2.945-3.6618 2.268 0 2.945 1.3931 2.945 3.6618v8.637c0 1.0348.836 1.8707 1.83 1.8707 1.035 0 1.871-.8359 1.871-1.8707v-8.637c0-2.2687.716-3.6618 2.945-3.6618 2.268 0 2.945 1.3931 2.945 3.6618v8.637c0 1.0348.835 1.8707 1.83 1.8707 1.035 0 1.871-.8359 1.871-1.8707l.039-8.637ZM6.61567 12.8655c1.31327.9553 3.14387.6767 4.09893-.6368l3.4225-4.73643c.9551-1.31346.6765-3.14434-.6367-4.09959-1.3133-.95524-3.1439-.67663-4.09902.63683L5.93914 8.76593c-.9153 1.31347-.63673 3.14437.67653 4.09957ZM22.2952 6.17881c-1.3133-.95524-3.1439-.67663-4.099.63683L4.42685 25.7613c-.9551 1.3135-.67653 3.1444.63673 4.0996 1.31326.9553 3.14387.6767 4.09897-.6368L22.9319 10.2784c.9949-1.31345.6765-3.14434-.6367-4.09959ZM5.3024 4.66637c.9551-1.31346.67652-3.14435-.63674-4.099591C3.3524-.388466 1.52179-.109853.566693 1.20361c-.9551 1.31346-.676529 3.14435.636737 4.09959 1.31326.95525 3.14387.67663 4.09897-.63683ZM26.1952 30.6968c-1.3132-.9553-3.1438-.6766-4.0989.6368-.9551 1.3135-.6766 3.1444.6367 4.0996 1.3133.9553 3.1439.6766 4.099-.6368.9551-1.3135.6765-3.1444-.6368-4.0996Zm-5.3724-7.5226c-1.3132-.9552-3.1438-.6766-4.0989.6369l-3.4623 4.7364c-.9551 1.3134-.6765 3.1443.6367 4.0996 1.3133.9552 3.1439.6766 4.099-.6369l3.4623-4.7364c.9551-1.3134.6765-3.1443-.6368-4.0996Z"/></svg>';
 function brandSvgFor(type, name) {
   const t7 = (type || "").trim().toLowerCase();
@@ -4133,13 +4235,13 @@ function brandSvgFor(type, name) {
   return void 0;
 }
 
-// modules/sales/ui/lib/price-label.ts
+// ui/lib/price-label.ts
 var UNIT_EACH = "ud";
 function priceLabel(money2, unitCode) {
   return unitCode && unitCode !== UNIT_EACH ? `${money2} / ${unitCode}` : money2;
 }
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
+// ../../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
 var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e5 = (t7) => (...e7) => ({ _$litDirective$: t7, values: e7 });
 var i4 = class {
@@ -4159,7 +4261,7 @@ var i4 = class {
   }
 };
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-html.js
+// ../../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-html.js
 var e6 = class extends i4 {
   constructor(i7) {
     if (super(i7), this.it = A, i7.type !== t3.CHILD) throw Error(this.constructor.directiveName + "() can only be used in child bindings");
@@ -4177,77 +4279,13 @@ var e6 = class extends i4 {
 e6.directiveName = "unsafeHTML", e6.resultType = 1;
 var o6 = e5(e6);
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-svg.js
+// ../../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-svg.js
 var t4 = class extends e6 {
 };
 t4.directiveName = "unsafeSVG", t4.resultType = 2;
 var o7 = e5(t4);
 
-// modules/sales/ui/lib/pay-icons.ts
-var PAY_ICON_FALLBACK = "ellipsis-horizontal-circle-outline";
-var BY_TYPE = {
-  cash: "cash-outline",
-  card: "card-outline",
-  credit: "card-outline",
-  debit: "card-outline",
-  transfer: "swap-horizontal-outline",
-  bank: "swap-horizontal-outline",
-  mobile: "phone-portrait-outline",
-  wallet: "phone-portrait-outline",
-  voucher: "ticket-outline",
-  gift: "gift-outline"
-};
-var BY_NAME2 = [
-  [/efectiv|cash|met[áa]lico|caja/i, "cash-outline"],
-  [/tarjet|card|visa|mastercard|cr[ée]dito|d[ée]bito/i, "card-outline"],
-  [/bizum|m[óo]vil|mobile|wallet|apple pay|google pay/i, "phone-portrait-outline"],
-  [/transfer|banc|iban/i, "swap-horizontal-outline"],
-  [/vale|ticket|cheque|restaurante/i, "ticket-outline"],
-  [/regalo|gift/i, "gift-outline"]
-];
-function payMethodIcon(type, name) {
-  const t7 = (type || "").trim().toLowerCase();
-  if (BY_TYPE[t7]) return BY_TYPE[t7];
-  const n6 = (name || "").trim();
-  if (n6) {
-    for (const [re, icon] of BY_NAME2) if (re.test(n6)) return icon;
-  }
-  return PAY_ICON_FALLBACK;
-}
-function needsTendered(method) {
-  if (!method) return true;
-  if (method.requires_change !== void 0 && method.requires_change !== null) {
-    return method.requires_change === 1 || method.requires_change === true;
-  }
-  return (method.type || "").trim().toLowerCase() === "cash";
-}
-function enabledPayMethods(methods, policy = {}) {
-  const allowed = (m4) => {
-    const t7 = (m4.type || "").trim().toLowerCase();
-    if (t7 === "cash") return policy.allow_cash !== 0;
-    if (t7 === "card" || t7 === "credit" || t7 === "debit") return policy.allow_card !== 0;
-    if (t7 === "transfer" || t7 === "bank") return policy.allow_transfer !== 0;
-    return true;
-  };
-  const out = methods.filter(allowed);
-  return out.length ? out : methods;
-}
-var PAY_ICON_NAMES = [
-  .../* @__PURE__ */ new Set([...Object.values(BY_TYPE), ...BY_NAME2.map(([, i7]) => i7), PAY_ICON_FALLBACK])
-];
-var SEED_NAME_TO_KEY = {
-  Cash: "ui.cash",
-  Card: "ui.card"
-};
-function payMethodDisplayName(method, t7) {
-  const key = SEED_NAME_TO_KEY[(method.name || "").trim()];
-  return key ? t7(key) : method.name || "";
-}
-function defaultPayMethod(methods) {
-  return methods.find((m4) => (m4.type || "").trim().toLowerCase() === "cash") ?? methods.find((m4) => /efectiv|cash|met[\u00e1a]lico/i.test(m4.name || "")) ?? methods[0];
-}
-
-// ../outfitkit/dist/ok-qty-stepper.js
+// ../../../../outfitkit/dist/ok-qty-stepper.js
 var __defProp6 = Object.defineProperty;
 var __decorateClass6 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -4455,7 +4493,7 @@ __decorateClass6([
 ], OkQtyStepper.prototype, "labels");
 define("ok-qty-stepper", OkQtyStepper);
 
-// ../outfitkit/dist/ok-spotlight-search.js
+// ../../../../outfitkit/dist/ok-spotlight-search.js
 var __defProp7 = Object.defineProperty;
 var __decorateClass7 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -4661,7 +4699,7 @@ __decorateClass7([
 ], OkSpotlightSearch.prototype, "input");
 define("ok-spotlight-search", OkSpotlightSearch);
 
-// ../outfitkit/dist/ok-empty-state.js
+// ../../../../outfitkit/dist/ok-empty-state.js
 var __defProp8 = Object.defineProperty;
 var __decorateClass8 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -4761,7 +4799,7 @@ __decorateClass8([
 ], OkEmptyState.prototype, "message");
 define("ok-empty-state", OkEmptyState);
 
-// ../outfitkit/dist/ok-status-pill.js
+// ../../../../outfitkit/dist/ok-status-pill.js
 var __defProp9 = Object.defineProperty;
 var __decorateClass9 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -4880,7 +4918,7 @@ __decorateClass9([
 ], OkStatusPill.prototype, "size");
 define("ok-status-pill", OkStatusPill);
 
-// modules/sales/ui/lib/pos-cart.ts
+// ui/lib/pos-cart.ts
 function rows(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
@@ -4934,6 +4972,8 @@ function toItemPayload(l3) {
     is_service: !!l3.is_service,
     tax_category_key: l3.tax_category_key ?? "",
     cost: l3.cost ?? 0,
+    // sales#12: la categoría se congela en la línea del pedido (routing de cocina).
+    category_id: l3.category_id ?? null,
     ...unitContextPayload(l3)
   };
 }
@@ -4959,6 +4999,8 @@ function orderLinePayload(orderId, l3) {
     is_service: !!l3.is_service,
     tax_category_key: l3.tax_category_key ?? "",
     cost: l3.cost ?? 0,
+    // sales#12: la categoría se congela en la línea del pedido (routing de cocina).
+    category_id: l3.category_id ?? null,
     line_total: provisionalLineTotal(l3.price, l3.qty, l3.is_gift),
     ...unitContextPayload(l3)
   };
@@ -5018,6 +5060,8 @@ async function loadOrderLines(client, orderId) {
       // sales#89: servicio o producto. Una fila ANTERIOR a la columna no trae nada y vuelve como
       // producto — que es lo que era; marcarla de servicio haría que inventory le saltara el stock.
       is_service: x2.is_service === 1 || x2.is_service === true ? true : void 0,
+      // sales#12: la categoría congelada vuelve con la línea (routing de cocina al retomar).
+      category_id: x2.category_id ? String(x2.category_id) : void 0,
       // Contexto de unidades CONGELADO (ADR-0147 §2.4): vuelve con la línea para que el pedido
       // reanudado valide la misma rejilla y cobre con el mismo contexto.
       unit_code: x2.unit_code ? String(x2.unit_code) : void 0,
@@ -5053,7 +5097,7 @@ async function splitOrder(client, orderId, lineIds, label) {
   return firstNewId(res);
 }
 
-// modules/sales/ui/lib/pos-tax.ts
+// ui/lib/pos-tax.ts
 function isRoot(r6) {
   return r6.parent_id == null || String(r6.parent_id) === "";
 }
@@ -5094,7 +5138,7 @@ function resolveLineTax(catRatesMap, taxCategoryKey) {
   return catRatesMap.get(String(taxCategoryKey)) ?? 0;
 }
 
-// modules/sales/ui/lib/pos-open-price.ts
+// ui/lib/pos-open-price.ts
 function buildOpenPriceLine(input) {
   const name = input.name.trim();
   if (!name) throw new Error("open-price: name is required");
@@ -5113,7 +5157,7 @@ function buildOpenPriceLine(input) {
   };
 }
 
-// modules/sales/ui/lib/checkout-key.ts
+// ui/lib/checkout-key.ts
 var KEY_PREFIX = "sale";
 function newIdempotencyKey(source = globalThis.crypto) {
   const uuid = source?.randomUUID?.();
@@ -5138,6 +5182,10 @@ var MESSAGES = {
   "sales.tax_rate_out_of_range": "ui.errorDiscountRange",
   "sales.customer_required": "ui.errorCustomerRequired",
   "sales.amount_negative": "ui.errorAmountNegative",
+  "sales.insufficient_tendered": "ui.errorInsufficientTendered",
+  // sales#21 — no tax rule / no tax catalogue: the sale is refused, never priced by the browser.
+  "sales.no_tax_rule": "ui.errorNoTaxRule",
+  "sales.tax_catalog_unavailable": "ui.errorTaxCatalogUnavailable",
   "sales.idempotency_key_required": "ui.errorCharge"
 };
 function checkoutErrorKey(message) {
@@ -5147,9 +5195,11 @@ function checkoutErrorKey(message) {
   return "ui.errorCharge";
 }
 
-// modules/sales/ui/lib/transport-error.ts
+// ui/lib/transport-error.ts
 var SERVER_UNAVAILABLE_KEY = "ui.serverUnavailable";
 function transportErrorKey(e7) {
+  const code = e7?.code;
+  if (typeof code === "string" && code) return code === SERVER_UNAVAILABLE ? SERVER_UNAVAILABLE_KEY : null;
   const msg = e7 instanceof Error ? e7.message : String(e7 ?? "");
   if (!msg) return null;
   if (msg.includes("is not valid JSON")) return SERVER_UNAVAILABLE_KEY;
@@ -5161,7 +5211,7 @@ function transportErrorKey(e7) {
   return null;
 }
 
-// modules/sales/ui/lib/checkout-recovery.ts
+// ui/lib/checkout-recovery.ts
 var wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function recoverCheckout(probe, idempotencyKey, options = {}) {
   if (!idempotencyKey) return { outcome: "unknown" };
@@ -5180,7 +5230,7 @@ async function recoverCheckout(probe, idempotencyKey, options = {}) {
   return { outcome: "unknown" };
 }
 
-// modules/sales/ui/lib/media-photo-cache.ts
+// ui/lib/media-photo-cache.ts
 var MediaPhotoCache = class {
   constructor(client, changed = () => void 0, createObjectUrl = (blob) => URL.createObjectURL(blob), revokeObjectUrl = (url) => URL.revokeObjectURL(url), concurrency = 8) {
     this.client = client;
@@ -5264,7 +5314,7 @@ var MediaPhotoCache = class {
   }
 };
 
-// modules/sales/ui/components/erp-pos-touch/erp-pos-touch.ts
+// ui/components/erp-pos-touch/erp-pos-touch.ts
 var CATALOG2 = { es: es_default, en: en_default };
 var CLOSED_PRICING = /* @__PURE__ */ new Set(["fixed", "free", ""]);
 function pushDigit(cur, k2) {
@@ -5538,6 +5588,20 @@ var ErpPosTouch = class extends i3 {
       void this.fireToKitchen();
     };
     this.onLocaleChange = () => this.requestUpdate();
+    /** Asegura que existe un pedido abierto que respalde el carrito; devuelve su id ('' si falla).
+     *  Si hay una MESA seleccionada, avisa a los fillers (`tables`) para que escriban la junction
+     *  mesa↔pedido — `sales` no toca `tables`: es un contrato por evento (ADR-0043/0141). */
+    /** Manda a cocina lo pedido hasta ahora (ADR-0141). La comanda nace del PEDIDO, no del cobro: el
+     *  camarero dispara al tomar nota y el pedido sigue abierto hasta que el cliente pague. Cada
+     *  disparo es una RONDA (bebidas primero, comida después), y `kitchen` las numera.
+     *
+     *  La etiqueta que verá el cocinero es la de la mesa asignada, y viaja OPACA: `sales` no depende
+     *  de `tables`, solo reenvía el texto que el slot de mesas le dejó en `tableLabel`. */
+    /** sales#80 — un disparo en vuelo. El filler de kitchen puede emitir dos `erp:order-fire` con un
+     *  doble toque; el segundo llega antes de que el primero haya releído las líneas y vería las
+     *  mismas pendientes. Mientras haya uno en vuelo, los demás se ignoran (defensa en la UI); el
+     *  handler además rechaza `sales.nothing_to_fire` si el pedido ya no tiene nada pendiente. */
+    this.firing = false;
     /** Una sola vía para el trabajo del carrito. Sin esto, cinco toques seguidos abrían cinco
      *  pedidos: cada uno veía «aún no hay pedido» porque el anterior seguía en vuelo (ADR-0144). */
     this.queue = createSerialQueue();
@@ -6284,6 +6348,10 @@ var ErpPosTouch = class extends i3 {
     void this.showPendingSwitchAlert(this.pendingCount);
     return true;
   }
+  /** La categoría PRIMARIA de un producto (la primera de `prodCats`); `undefined` sin clasificar. */
+  primaryCategory(productId) {
+    return this.prodCats.get(productId)?.values().next().value ?? void 0;
+  }
   catCount(id) {
     const c5 = this.categories.find((x2) => x2.id === id);
     return c5?.product_count ?? this.products.filter((p4) => this.prodCats.get(p4.id)?.has(id)).length;
@@ -6489,17 +6557,16 @@ var ErpPosTouch = class extends i3 {
     }
     this.pendingSplitSession = void 0;
   }
-  /** Asegura que existe un pedido abierto que respalde el carrito; devuelve su id ('' si falla).
-   *  Si hay una MESA seleccionada, avisa a los fillers (`tables`) para que escriban la junction
-   *  mesa↔pedido — `sales` no toca `tables`: es un contrato por evento (ADR-0043/0141). */
-  /** Manda a cocina lo pedido hasta ahora (ADR-0141). La comanda nace del PEDIDO, no del cobro: el
-   *  camarero dispara al tomar nota y el pedido sigue abierto hasta que el cliente pague. Cada
-   *  disparo es una RONDA (bebidas primero, comida después), y `kitchen` las numera.
-   *
-   *  La etiqueta que verá el cocinero es la de la mesa asignada, y viaja OPACA: `sales` no depende
-   *  de `tables`, solo reenvía el texto que el slot de mesas le dejó en `tableLabel`. */
   async fireToKitchen() {
-    if (!this.cart.length) return;
+    if (!this.cart.length || this.firing) return;
+    this.firing = true;
+    try {
+      await this.fireToKitchenNow();
+    } finally {
+      this.firing = false;
+    }
+  }
+  async fireToKitchenNow() {
     const orderId = await this.ensureOrder(this.cart[0]);
     const pendientes = pendingLines(this.cart);
     const payload = buildFirePayload(orderId, this.tableLabel, pendientes, nextRoundNo(this.cart));
@@ -6508,7 +6575,12 @@ var ErpPosTouch = class extends i3 {
       await erplora2().command("sales.order.fire", payload);
       erplora2().notify?.({ type: "success", message: t5("ui.firedToKitchen") });
       if (this.orderId) this.cart = await loadOrderLines(erplora2(), this.orderId);
-    } catch {
+    } catch (e7) {
+      const msg = e7 instanceof Error ? e7.message : String(e7 ?? "");
+      if (msg.includes("sales.nothing_to_fire")) {
+        if (this.orderId) this.cart = await loadOrderLines(erplora2(), this.orderId).catch(() => this.cart);
+        return;
+      }
       this.error = t5("ui.fireFailed");
     }
   }
@@ -6618,6 +6690,8 @@ var ErpPosTouch = class extends i3 {
       id: s5.id,
       name: s5.name,
       price: Number(s5.price) || 0,
+      // sales#99: without this the service never enters `prodCats` and its tab counts 0.
+      category_id: s5.category_id,
       tax_category_key: s5.tax_category_key,
       pricing_type: s5.pricing_type ?? "fixed",
       is_service: true,
@@ -6684,6 +6758,9 @@ var ErpPosTouch = class extends i3 {
         tax_category_key: p4.tax_category_key,
         tax_rate,
         cost: Number(p4.cost) || 0,
+        // sales#12: la categoría se congela en la línea — es lo que enruta la comanda en kitchen y
+        // sobrevive a retomar la cuenta (antes solo vivía en `prodCats`, en memoria).
+        category_id: this.primaryCategory(p4.id),
         // sales#89: viaja hasta `complete_sale`, que por él no mide la línea contra el catálogo de
         // `inventory` ni le descuenta stock, y hasta `sale.completed`, donde `inventory` la salta.
         ...p4.is_service ? { is_service: true } : {},
@@ -6837,6 +6914,11 @@ var ErpPosTouch = class extends i3 {
   get change() {
     return Math.max(0, this.tenderedNum - this.payable);
   }
+  /** sales#24 — cash typed in but SHORT of the payable. 0 (nothing typed) means «exact amount»;
+   *  the server refuses the same case (`sales.insufficient_tendered`), this just spares the trip. */
+  get tenderedShort() {
+    return needsTendered(this.payMethod) && this.tenderedNum > 0 && this.tenderedNum < this.payable;
+  }
   /** Lo que se cobra AHORA: la selección si la hay, o la cuenta entera (ADR-0146). */
   get payable() {
     return splitTotal(this.cart, this.splitSel);
@@ -6895,7 +6977,7 @@ var ErpPosTouch = class extends i3 {
     const split = splitPayload(this.cart, this.splitSel);
     try {
       const cobradas = split.line_ids ? this.cart.filter((l3) => l3.line_id && this.splitSel.has(l3.line_id)) : this.cart;
-      const items = cobradas.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: toMicro2(l3.qty), tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0, category_id: this.prodCats.get(l3.id)?.values().next().value ?? null, is_gift: l3.is_gift ?? false, gift_reason: l3.gift_reason ?? "", cost: l3.cost ?? 0, ...unitContextPayload(l3) }));
+      const items = cobradas.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: toMicro2(l3.qty), tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0, category_id: l3.category_id ?? this.primaryCategory(l3.id) ?? null, is_gift: l3.is_gift ?? false, gift_reason: l3.gift_reason ?? "", cost: l3.cost ?? 0, ...unitContextPayload(l3) }));
       await erplora2().command("sales.complete_sale", {
         items,
         // sales#20: el servidor no cierra una venta sin clave, y con la misma clave dos veces
@@ -6906,7 +6988,9 @@ var ErpPosTouch = class extends i3 {
         tax_included: this.settings.default_tax_included !== 0,
         payment_method_id: this.payMethod?.id ?? null,
         // El nombre viaja al tiquet: el de fábrica va traducido (seed canónico EN → i18n).
-        payment_method_name: this.payMethod ? payMethodDisplayName(this.payMethod, t5) : t5("ui.cash"),
+        // sales#108: the CANONICAL name travels (the server persists the catalogue row's name anyway,
+        // ADR-0085); the ticket and the list translate it when they paint it.
+        payment_method_name: this.payMethod?.name ?? "",
         // Sin entregado tecleado (tarjeta, importe justo) se cobra el PAYABLE: con split, caer al
         // total inflaba lo entregado y el cambio del tiquet.
         amount_tendered: this.tenderedNum || this.payable,
@@ -7078,7 +7162,7 @@ var ErpPosTouch = class extends i3 {
     const cell = (id, name, count) => b2`
       <ion-segment-button class="cat-segment-button" value=${id}>
         <ion-label class="cat-segment-label">
-          <span class="cc-n">${name}</span><span class="cc-c">${count} ${t5("ui.products")}</span>
+          <span class="cc-n">${name}</span><span class="cc-c">${count} ${t5("ui.items")}</span>
         </ion-label>
       </ion-segment-button>`;
     return b2`
@@ -7427,13 +7511,17 @@ var ErpPosTouch = class extends i3 {
         <div class="cart-backdrop" ?data-open=${this.cartOpen} @click=${() => {
       this.cartOpen = false;
     }}></div>
-        <aside class="cart" ?data-open=${this.cartOpen}>${this.renderCart()}</aside>
+        <aside class="cart" id="pos-cart-drawer" ?data-open=${this.cartOpen}>${this.renderCart()}</aside>
 
-        <!-- Botón flotante de carrito (solo móvil) -->
-        <button class="fab" @click=${() => {
+        <!-- Botón flotante de carrito (solo móvil). sales#84: nombre accesible con la cantidad (el
+             badge visual no lo lee nadie), y estado abierto/cerrado del cajón que controla. -->
+        <button class="fab"
+                aria-label=${this.itemCount ? t5("ui.openCartWithItems", { count: this.itemCount }) : t5("ui.openCart")}
+                aria-expanded=${this.cartOpen ? "true" : "false"} aria-controls="pos-cart-drawer"
+                @click=${() => {
       this.cartOpen = true;
     }}>
-          <ion-icon name="cart-outline"></ion-icon>
+          <ion-icon name="cart-outline" aria-hidden="true"></ion-icon>
           ${this.itemCount ? b2`<span class="badge">${this.itemCount}</span>` : A}
         </button>
       </div>
@@ -7510,9 +7598,9 @@ var ErpPosTouch = class extends i3 {
                 ${this.error ? b2`<p class="pay-err">${this.error}</p>${this.renderCheckSalesLink()}` : A}
                 <!-- UNA acción, dice lo que hace y por cuánto, y no exige scroll para alcanzarla.
                      El importe es el PAYABLE: con split decía «Cobrar 3,60 €» para cobrar 1,80 €. -->
-                <ion-button class="charge" expand="block" ?disabled=${this.busy || this.chargeBlocked}
+                <ion-button class="charge" expand="block" ?disabled=${this.busy || this.chargeBlocked || this.tenderedShort}
                             @click=${() => this.confirm(this.printOnCharge)}>
-                  ${this.busy ? t5("ui.charging") : this.chargeBlocked ? t5("ui.limitChargeBlocked") : needsTendered(this.payMethod) ? `${t5("ui.charge")} ${this.money(this.payable)}` : t5("ui.chargeWithCard", { amount: this.money(this.payable) })}
+                  ${this.busy ? t5("ui.charging") : this.chargeBlocked ? t5("ui.limitChargeBlocked") : this.tenderedShort ? t5("ui.tenderedShort") : needsTendered(this.payMethod) ? `${t5("ui.charge")} ${this.money(this.payable)}` : t5("ui.chargeWithCard", { amount: this.money(this.payable) })}
                 </ion-button>
               </div>
             </div>
@@ -7809,7 +7897,7 @@ __decorateClass([
 ], ErpPosTouch.prototype, "simplifiedMaxCents", 2);
 define("erp-pos-touch", ErpPosTouch);
 
-// modules/sales/ui/components/erp-pos/erp-pos.ts
+// ui/components/erp-pos/erp-pos.ts
 var ErpPos = class extends i3 {
   constructor() {
     super(...arguments);
@@ -7834,7 +7922,7 @@ __decorateClass([
 ], ErpPos.prototype, "fullscreen", 2);
 define("erp-pos", ErpPos);
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
+// ../../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
 var { I: t6 } = j;
 var i5 = (o9) => o9;
 var s4 = () => document.createComment("");
@@ -7867,7 +7955,7 @@ var h3 = (o9) => {
   o9._$AR(), o9._$AA.remove();
 };
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
+// ../../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
 var u4 = (e7, s5, t7) => {
   const r6 = /* @__PURE__ */ new Map();
   for (let l3 = s5; l3 <= t7; l3++) r6.set(e7[l3], l3);
@@ -7920,7 +8008,7 @@ var c4 = e5(class extends i4 {
   }
 });
 
-// node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
+// ../../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
 var n5 = "important";
 var i6 = " !" + n5;
 var o8 = e5(class extends i4 {
@@ -7949,7 +8037,7 @@ var o8 = e5(class extends i4 {
   }
 });
 
-// ../outfitkit/dist/ok-data-table.js
+// ../../../../outfitkit/dist/ok-data-table.js
 var CSV_BOM = "\uFEFF";
 function decodeCsvBuffer(buf) {
   let text;
@@ -9377,7 +9465,7 @@ __decorateClass10([
 var OkDataTable = _OkDataTable;
 define("ok-data-table", OkDataTable);
 
-// modules/sales/ui/components/erp-sales-list/erp-sales-list.ts
+// ui/components/erp-sales-list/erp-sales-list.ts
 var CATALOG3 = { es: es_default, en: en_default };
 var STATUS_KEYS = {
   completed: "ui.statusCompleted",
@@ -9419,7 +9507,15 @@ var ErpSalesList = class extends i3 {
     return [
       { key: "sale_number", header: t7("ui.colNumber"), sortable: true, filterable: true, filterType: "text" },
       { key: "customer_name", header: t7("ui.colCustomer"), sortable: true, filterable: true, filterType: "text", format: (r6) => r6.customer_name || "\u2014" },
-      { key: "payment_method_name", header: t7("ui.colPayment"), sortable: true, filterable: true, filterType: "text", format: (r6) => r6.payment_method_name || "\u2014" },
+      {
+        key: "payment_method_name",
+        header: t7("ui.colPayment"),
+        sortable: true,
+        filterable: true,
+        filterType: "text",
+        // sales#108: the row stores the canonical seed name («Cash»); the cell speaks the user's language.
+        format: (r6) => r6.payment_method_name ? payMethodDisplayName({ id: "", name: r6.payment_method_name }, t7) : "\u2014"
+      },
       {
         key: "status",
         header: t7("ui.colStatus"),
