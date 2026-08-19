@@ -364,10 +364,7 @@
       "permission": "sales.void_sale",
       "sql": [
         "commands/_void_sale.sql"
-      ],
-      "ai": {
-        "description": "Internal (sales#26): the state change of sales.void, resolved by the void_sale handler after it validated the sale against sales.get."
-      }
+      ]
     },
     "sales.create_payment_method": {
       "permission": "sales.add_paymentmethod",
@@ -413,10 +410,7 @@
       "permission": "sales.add_sale",
       "sql": [
         "commands/_mark_lines_fired.sql"
-      ],
-      "ai": {
-        "description": "Internal (courses, 2026-07-19): marks the still-pending lines of an order as fired to the kitchen (round_no + fired_at). Emitted by sales.order.fire when the POS sends round_no; fired_at IS NULL guarantees the next fire only sends new lines."
-      }
+      ]
     },
     "sales._complete_order": {
       "permission": "sales.add_sale",
@@ -557,10 +551,7 @@
       "permission": "sales.add_sale",
       "sql": [
         "commands/_mark_order_line_paid.sql"
-      ],
-      "ai": {
-        "description": "Internal (ADR-0146): links an order line to the sale that charged it (split-bill). Emitted by complete_sale when it receives line_ids."
-      }
+      ]
     }
   },
   "events": {
