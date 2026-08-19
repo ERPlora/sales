@@ -279,6 +279,15 @@
       }
     }
   },
+  "records": {
+    "sale": {
+      "mutable": false,
+      "reason": "fiscal",
+      "correct_with": [
+        "sales.void"
+      ]
+    }
+  },
   "commands": {
     "sales.complete_sale": {
       "permission": "sales.take_payment",
