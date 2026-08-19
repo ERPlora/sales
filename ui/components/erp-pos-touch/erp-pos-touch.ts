@@ -1916,7 +1916,7 @@ export class ErpPosTouch extends LitElement {
     this.checkoutKey = newIdempotencyKey();
     this.tendered = '';
     this.payMethod = defaultPayMethod(this.payMethods);
-    this.docFormat = this.settings.default_document_format === 'invoice' ? 'invoice' : 'ticket';
+    this.docFormat = this.defaultDocFormat;
     // hub#297 — por encima del techo el tique NO es una opción, así que el formato se cambia solo
     // y lo que queda en pantalla es la única pregunta que sí hay que hacerle al cliente: quién es.
     //
@@ -1924,6 +1924,40 @@ export class ErpPosTouch extends LitElement {
     // así que sin este `invoice` la venta saldría como F2 por muy completo que esté el cliente.
     if (this.overSimplifiedLimit) this.docFormat = 'invoice';
     this.paying = true;
+  }
+
+  /**
+   * Con qué formato se ABRE el cobro (hub#962).
+   *
+   * `auto_invoice_with_tax_id` llevaba desde su alta guardándose sin que lo leyera nadie: un
+   * interruptor que no hace nada es peor que no tener interruptor, porque el comercio cree haber
+   * pedido algo. Lo que dice es exactamente esto — «si el cliente se ha identificado con su NIF, es
+   * que quiere factura» — y es la regla que aplican Odoo, Holded y los TPV españoles: quien da su
+   * NIF en el mostrador no lo da por gusto.
+   *
+   * No decide sobre el techo: por encima, `openPay` fuerza factura igual, porque ahí no es una
+   * preferencia del comercio sino la ley.
+   */
+  private get defaultDocFormat(): 'ticket' | 'invoice' {
+    if (this.settings.default_document_format === 'invoice') return 'invoice';
+    const auto = this.settings.auto_invoice_with_tax_id;
+    if ((auto === 1 || auto === true) && this.customerTaxId.trim()) return 'invoice';
+    return 'ticket';
+  }
+
+  /**
+   * ¿Hay algo que elegir? (hub#962) Por encima del techo de la simplificada, **no**: la venta sale
+   * en factura por ley, y ofrecer un botón que devuelve a tique sería ofrecer romperla. Se oculta
+   * en vez de deshabilitarse porque un control apagado y sin motivo se lee como una avería.
+   */
+  private get canChooseDocFormat(): boolean {
+    return !this.overSimplifiedLimit;
+  }
+
+  /** El cajero elige. Por encima del techo no se admite volver a tique (ver `canChooseDocFormat`). */
+  private chooseDocFormat(next: 'ticket' | 'invoice') {
+    if (next === 'ticket' && this.overSimplifiedLimit) return;
+    this.docFormat = next;
   }
 
   /** ¿Este cobro pasa del techo de la simplificada? (independiente de quién sea el cliente). */
@@ -2751,6 +2785,22 @@ export class ErpPosTouch extends LitElement {
               <div class="pay">
 
                 ${this.overSimplifiedLimit ? this.renderSimplifiedLimitCapture() : nothing}
+
+                <!-- TIQUE o FACTURA (hub#962). Dos botones grandes al lado del importe, como el
+                     método de pago: es la otra pregunta que el mostrador hace en voz alta
+                     («¿necesita factura?») y hasta ahora no tenía dónde contestarse — solo se podía
+                     dejar puesto un valor por defecto en Ajustes. Por encima del techo de la
+                     simplificada no se pinta: ahí la factura es obligatoria y ofrecer el botón de
+                     tique sería ofrecer romper la ley. -->
+                ${this.canChooseDocFormat ? html`
+                  <div class="pay-docformat" role="group" aria-label=${t('ui.documentFormat')}>
+                    ${(['ticket', 'invoice'] as const).map((f) => html`
+                      <button
+                        class="pm-btn"
+                        aria-pressed=${this.docFormat === f ? 'true' : 'false'}
+                        @click=${() => this.chooseDocFormat(f)}
+                      >${f === 'ticket' ? t('ui.docTicket') : t('ui.docInvoice')}</button>`)}
+                  </div>` : nothing}
 
                 <!-- El MÉTODO se elige AQUÍ, como en la pantalla de tender de cualquier TPV:
                      botones grandes con icono y NOMBRE (el dueño los renombra a su gusto, así que
