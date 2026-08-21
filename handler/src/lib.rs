@@ -497,6 +497,62 @@ fn authoritative_price(item: &Value, catalog: Option<&Vec<&Value>>) -> Result<Op
     )))
 }
 
+/// Los suplementos de una línea, **con el precio del CATÁLOGO** (pm#93 / ADR-0376).
+///
+/// Mismo principio que [`authoritative_price`]: el `price_delta` del payload es una propuesta, no
+/// un hecho. Sin esto, un cliente que enviara `price_delta: -500` se estaría haciendo un descuento.
+///
+/// 🔴 **Falla CERRADO.** Si la línea trae suplementos y el catálogo no llegó —porque `modifiers` no
+/// está instalado, o porque el `read` opcional no se entregó— la venta se RECHAZA. Cobrar
+/// «confiando» sería abrir el agujero por la puerta de atrás, y una lectura ausente es
+/// indistinguible de una manipulada.
+///
+/// Devuelve `(delta total en céntimos, snapshot JSON)`. El snapshot conserva el **orden de
+/// elección** (petición recurrente en cocina: el orden de catálogo no sirve) y congela el
+/// `kitchen_name`, que es el que se imprime.
+fn authoritative_modifiers(item: &Value, catalog: Option<&Vec<&Value>>) -> Result<(i64, String), String> {
+    let chosen = match item.get("modifiers").and_then(|v| v.as_array()) {
+        Some(a) if !a.is_empty() => a,
+        // Sin suplementos no hace falta catálogo: la inmensa mayoría de las líneas.
+        _ => return Ok((0, "[]".to_string())),
+    };
+    let rows = catalog.ok_or_else(|| {
+        reject(
+            "sales.modifier_catalog_unavailable",
+            "the modifier catalogue was not available to price this line",
+        )
+    })?;
+    let mut delta_total: i64 = 0;
+    let mut snapshot: Vec<Value> = Vec::with_capacity(chosen.len());
+    for pick in chosen {
+        let id = field(pick, "option_id");
+        let row = rows
+            .iter()
+            .find(|r| field(r, "option_id") == id)
+            .ok_or_else(|| reject("sales.modifier_not_available", &id))?;
+        let delta = as_cents(row.get("price_delta").unwrap_or(&Value::Null), 0);
+        delta_total += delta;
+        let name = field(row, "name");
+        let kitchen = {
+            let k = field(row, "kitchen_name");
+            if k.is_empty() { name.clone() } else { k }
+        };
+        snapshot.push(json!({
+            "option_id": id,
+            "group_id": field(row, "group_id"),
+            "name": name,
+            "kitchen_name": kitchen,
+            "price_delta": delta,
+            // Vacío = hereda la categoría fiscal de la línea (ADR-0376). Se congela igual para que
+            // el histórico sepa qué se decidió, aunque hoy solo se use el caso que hereda.
+            "tax_category_key": field(row, "tax_category_key"),
+        }));
+    }
+    let text = serde_json::to_string(&Value::Array(snapshot))
+        .map_err(|e| format!("modifier_snapshot_encode: {e}"))?;
+    Ok((delta_total, text))
+}
+
 /// Lógica pura: `{payload, context}` → Output (intenciones).
 ///
 /// Devuelve `Err` si una cantidad es inválida (ADR-0147 §2.2): fuera de la rejilla del incremento
@@ -724,7 +780,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     let mut ops: Vec<Operation> = Vec::new();
     // sales#113: las líneas se calculan primero y se emiten después (el importe fijo se reparte
     // cuando se conocen todas).
-    struct PendingLine { t: LineTotals, parts: Vec<(String, i64, i64)>, is_gift: bool, resolved: ResolvedTax, combined_pct: f64, unit_price: i64, qty: i64, line_disc: f64, item: Value }
+    struct PendingLine { t: LineTotals, parts: Vec<(String, i64, i64)>, is_gift: bool, resolved: ResolvedTax, combined_pct: f64, unit_price: i64, qty: i64, line_disc: f64, item: Value, modifiers: String }
     let mut pending_lines: Vec<PendingLine> = Vec::new();
 
     let mut bump = Map::new();
@@ -737,6 +793,9 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     // El catálogo de venta que el runtime pre-carga (`inventory.products.for_sale`, sales#68). Sin
     // bloque `list` a propósito: una read paginada entregaría solo 50 filas, en silencio (hub#650).
     let product_catalog = tax::read_rows(&context, "inventory.products.for_sale");
+    // Catálogo de suplementos (pm#93). Lectura OPCIONAL: `None` = `modifiers` no está instalado,
+    // y entonces una línea CON suplementos se rechaza en `authoritative_modifiers` (falla cerrado).
+    let modifier_catalog = tax::read_rows(&context, "modifiers.options.all");
 
     for item in items.iter() {
         // El precio SALE DEL CATÁLOGO si la línea dice ser de catálogo. El del payload es una
@@ -749,6 +808,12 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
                 as_cents(item.get("cost").unwrap_or(&Value::Null), 0),
             ),
         };
+        // pm#93: el suplemento suma al PRECIO UNITARIO, así que el descuento de línea, el
+        // prorrateo del descuento global, el punto fijo y el redondeo HALF_UP siguen siendo los
+        // mismos. Una segunda ruta del dinero sería una segunda ruta que mantener y auditar.
+        let (modifier_delta, modifier_snapshot) =
+            authoritative_modifiers(item, modifier_catalog.as_ref())?;
+        let unit_price = unit_price + modifier_delta;
         let catalog_cat = from_catalog.as_ref().map(|(_, _, cat)| cat.as_str());
         // Cantidad en punto fijo 10⁶ (ADR-0147) + rechazo fuera de rejilla; y la cantidad de
         // precio KPEIN («37 céntimos por 100 ud») que hace exacto el sub-céntimo sin tocar el dinero.
@@ -801,7 +866,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         };
         // sales#113: la línea se guarda calculada; el importe fijo se reparte cuando se conocen
         // TODAS (fase 2, más abajo) y solo entonces se agrega y se emite.
-        pending_lines.push(PendingLine { t, parts, is_gift, resolved, combined_pct, unit_price, qty, line_disc, item: item.clone() });
+        pending_lines.push(PendingLine { t, parts, is_gift, resolved, combined_pct, unit_price, qty, line_disc, item: item.clone(), modifiers: modifier_snapshot });
     }
 
     // ── Fase 2 (sales#113): reparto del importe fijo por RESTO MAYOR entre las líneas cobradas ──
@@ -821,7 +886,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     // ── Fase 3: agregar y emitir las líneas ──
     let mut line_results: Vec<LineTotals> = Vec::with_capacity(pending_lines.len());
     for (i, l) in pending_lines.into_iter().enumerate() {
-        let PendingLine { t, parts, is_gift, resolved, combined_pct, unit_price, qty, line_disc, item } = l;
+        let PendingLine { t, parts, is_gift, resolved, combined_pct, unit_price, qty, line_disc, item, modifiers } = l;
         let item = &item;
         // `tax_total` YA NO se acumula por línea: la cuota que se DECLARA sale del desglose, una
         // sola vez por tipo impositivo (ADR-0123 §4). `t.tax` queda como informativo de la línea.
@@ -867,6 +932,9 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
             "tax_rule_id".into(),
             if resolved.rule_id.is_empty() { Value::Null } else { json!(resolved.rule_id) },
         );
+        // pm#93: snapshot inmutable de los suplementos, en el ORDEN en que se eligieron. La columna
+        // `sales_sale_item.modifiers` existía desde el principio y no la escribía nadie.
+        p.insert("modifiers".into(), json!(modifiers));
         p.insert("net_amount".into(), json!(t.net)); // céntimos
         p.insert("tax_amount".into(), json!(t.tax)); // céntimos
         p.insert("line_total".into(), json!(t.line)); // céntimos
@@ -3144,5 +3212,99 @@ mod tests {
         let line = &out.operations[2].params;
         assert_eq!(line["tax_rule_id"], json!("es-vat-21"));
         assert_eq!(line["tax_rate"], json!(26.2));
+    }
+
+    // ── pm#93 · suplementos: el precio lo pone el CATÁLOGO, nunca el cliente ─────────────────
+
+    /// Catálogo de opciones tal como lo entrega `modifiers.options.all` (lectura OPCIONAL).
+    fn con_suplementos(mut inp: Value, catalogo: Value) -> Value {
+        inp["context"]["reads"] = json!({ "modifiers.options.all": catalogo });
+        inp
+    }
+
+    fn catalogo_queso() -> Value {
+        json!([{ "option_id": "o-queso", "group_id": "g-extras", "name": "Extra de queso",
+                 "kitchen_name": "+QUESO", "price_delta": 100, "tax_category_key": null }])
+    }
+
+    #[test]
+    fn un_suplemento_suma_su_delta_al_importe_de_la_linea() {
+        // «+queso +1 €» sobre una hamburguesa de 5 €: se cobran 6 €. El delta entra por el precio
+        // unitario, así que TODA la maquinaria de ADR-0147/0123 (punto fijo, HALF_UP, un redondeo
+        // por importe) sigue siendo la misma — no hay una segunda ruta del dinero que mantener.
+        let inp = con_suplementos(
+            input(json!([{ "product_name": "Hamburguesa", "price": 500, "quantity": 1_000_000,
+                           "tax_rate": 10.0, "modifiers": [{ "option_id": "o-queso" }] }]), 3, 600),
+            catalogo_queso(),
+        );
+        let out = sale(inp);
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("línea");
+        assert_eq!(line.params["line_total"], json!(600), "5 € + 1 € de suplemento");
+    }
+
+    #[test]
+    fn el_snapshot_del_suplemento_viaja_a_la_linea() {
+        // Congelado como la factura (ADR-0140): cambiar el catálogo mañana no reescribe la comanda
+        // de ayer. Y viaja el nombre de COCINA, que es el que se imprime.
+        let inp = con_suplementos(
+            input(json!([{ "product_name": "Hamburguesa", "price": 500, "quantity": 1_000_000,
+                           "tax_rate": 10.0, "modifiers": [{ "option_id": "o-queso" }] }]), 3, 600),
+            catalogo_queso(),
+        );
+        let out = sale(inp);
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("línea");
+        let snap: Value = serde_json::from_str(line.params["modifiers"].as_str().expect("TEXT"))
+            .expect("JSON");
+        assert_eq!(snap[0]["option_id"], json!("o-queso"));
+        assert_eq!(snap[0]["kitchen_name"], json!("+QUESO"));
+        assert_eq!(snap[0]["price_delta"], json!(100));
+    }
+
+    #[test]
+    fn el_price_delta_QUE_MANDA_EL_CLIENTE_se_ignora() {
+        // El agujero que esto cierra: mandar `price_delta: -500` para pagar menos. El precio sale
+        // del catálogo, igual que el del producto («el del payload es una propuesta, no un hecho»).
+        let inp = con_suplementos(
+            input(json!([{ "product_name": "Hamburguesa", "price": 500, "quantity": 1_000_000,
+                           "tax_rate": 10.0,
+                           "modifiers": [{ "option_id": "o-queso", "price_delta": -500 }] }]), 3, 600),
+            catalogo_queso(),
+        );
+        let out = sale(inp);
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("línea");
+        assert_eq!(line.params["line_total"], json!(600), "manda el catálogo, no el payload");
+    }
+
+    #[test]
+    fn un_suplemento_que_no_esta_en_el_catalogo_RECHAZA_la_venta() {
+        let inp = con_suplementos(
+            input(json!([{ "product_name": "Hamburguesa", "price": 500, "quantity": 1_000_000,
+                           "tax_rate": 10.0, "modifiers": [{ "option_id": "o-inventado" }] }]), 3, 600),
+            catalogo_queso(),
+        );
+        let err = complete_sale_pure(inp).expect_err("debe rechazar");
+        assert!(err.contains("sales.modifier_not_available"), "código de dominio estable: {err}");
+    }
+
+    #[test]
+    fn sin_el_modulo_instalado_una_linea_con_suplementos_se_RECHAZA() {
+        // FALLA CERRADO. Si `modifiers` no está, la lectura no llega y NO hay forma de verificar el
+        // importe — cobrar «confiando» sería el agujero por la puerta de atrás. Una línea SIN
+        // suplementos sigue cobrándose igual (lo fija el test de abajo).
+        let inp = input(json!([{ "product_name": "Hamburguesa", "price": 500, "quantity": 1_000_000,
+                                 "tax_rate": 10.0, "modifiers": [{ "option_id": "o-queso" }] }]), 3, 600);
+        let err = complete_sale_pure(inp).expect_err("debe rechazar");
+        assert!(err.contains("sales.modifier_catalog_unavailable"), "código estable: {err}");
+    }
+
+    #[test]
+    fn una_linea_SIN_suplementos_no_cambia_en_nada() {
+        // Control: sin `modifiers` no hace falta el catálogo, no hay rechazo y el importe es el de
+        // siempre. Si este test se pusiera rojo, el arreglo habría roto el 100 % de las ventas.
+        let out = sale(input(json!([{ "product_name": "Hamburguesa", "price": 500,
+                                      "quantity": 1_000_000, "tax_rate": 10.0 }]), 3, 500));
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("línea");
+        assert_eq!(line.params["line_total"], json!(500));
+        assert_eq!(line.params["modifiers"], json!("[]"), "sin suplementos, snapshot vacío");
     }
 }

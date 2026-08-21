@@ -121,6 +121,29 @@
           "pricing_factor_den": {
             "type": "integer",
             "minimum": 1
+          },
+          "modifiers": {
+            "type": "array",
+            "description": "Suplementos elegidos para esta línea (pm#93 / ADR-0376), EN EL ORDEN en que se eligieron. Solo se envía `option_id`: el precio y el nombre los pone el catálogo del servidor, nunca el cliente. Si el módulo `modifiers` no está instalado y esto llega con contenido, la venta se RECHAZA.",
+            "default": [],
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "option_id"
+              ],
+              "properties": {
+                "option_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "price_delta": {
+                  "type": "integer",
+                  "description": "IGNORADO. Se admite para que el TPV pueda mandar su preview sin que el contrato lo rechace, pero el importe que se cobra sale de `modifiers.options.all`."
+                }
+              }
+            }
           }
         }
       }

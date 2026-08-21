@@ -304,6 +304,10 @@
           "params": {
             "idempotency_key": "payload.idempotency_key"
           }
+        },
+        {
+          "query": "modifiers.options.all",
+          "required": false
         }
       ],
       "handler": {
