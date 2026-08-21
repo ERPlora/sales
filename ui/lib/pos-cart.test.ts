@@ -378,3 +378,62 @@ describe('suplementos e identidad de la línea (pm#93)', () => {
     expect(out[0].qty).toBe(2);
   });
 });
+
+// ── pm#93 · los suplementos SOBREVIVEN a retomar la cuenta ───────────────────────────────────
+//
+// Es el caso del RESTAURANTE, y el que se pierde en silencio si no se persiste: abrir cuenta →
+// añadir con suplementos → recargar / retomar → cobrar. Los demás campos de la línea ya tienen su
+// comentario de «tiene que sobrevivir a retomar la cuenta» (IVA, coste, is_service, category_id,
+// descuento, contexto de unidades). Los suplementos NO estaban: `sales_order_item` ni siquiera
+// tenía la columna, aunque `sales_sale_item` sí.
+//
+// Sin esto, el selector deja elegir «sin cebolla», la elección vive solo en el navegador, y al
+// volver a la cuenta la línea es una hamburguesa normal — sin que nada avise.
+describe('los suplementos sobreviven a retomar la cuenta (pm#93)', () => {
+  it('viajan en el payload de `order.add_line`', async () => {
+    const { client, calls } = orderClient(['li-1']);
+    await addOrderLine(client, 'ord-1', {
+      id: 'p-burger', name: 'Hamburguesa', price: 500, qty: 1,
+      modifiers: [{ option_id: 'o-sin-cebolla' }, { option_id: 'o-queso' }],
+    } as CartLine);
+    const [add] = calls.filter((c) => c.name === 'sales.order.add_line');
+    // `order.add_line` es DECLARATIVO (SQL puro, sin handler): el payload bindea directo a una
+    // columna TEXT, así que viaja serializado. Y viajan solo los `option_id`: el nombre y el precio
+    // definitivos los resuelve el servidor AL COBRAR, contra `modifiers.options.all`. La línea de
+    // pedido es de trabajo —su `line_total` también es provisional—, no el registro fiscal.
+    expect(add.params?.modifiers).toBe(JSON.stringify([{ option_id: 'o-sin-cebolla' }, { option_id: 'o-queso' }]));
+  });
+
+  it('vuelven al releer las líneas del pedido, EN SU ORDEN', async () => {
+    const { client } = orderClient([], [{
+      id: 'li-1', product_id: 'p-burger', product_name: 'Hamburguesa',
+      quantity: 1_000_000, unit_price: 500,
+      modifiers: JSON.stringify([{ option_id: 'o-sin-cebolla' }, { option_id: 'o-queso' }]),
+    }]);
+    const [line] = await loadOrderLines(client, 'ord-1');
+    expect(line.modifiers?.map((m) => m.option_id)).toEqual(['o-sin-cebolla', 'o-queso']);
+  });
+
+  it('una fila ANTERIOR a la columna vuelve sin suplementos, no rota', async () => {
+    // Compat: las líneas ya escritas no traen la columna. Deben volver como lo que eran —una línea
+    // sin suplementos— y NO tumbar la carga de la cuenta entera.
+    const { client } = orderClient([], [
+      { id: 'li-1', product_id: 'p-x', product_name: 'X', quantity: 1_000_000, unit_price: 100 },
+    ]);
+    const [line] = await loadOrderLines(client, 'ord-1');
+    expect(line.modifiers).toBeUndefined();
+    expect(line.name).toBe('X');
+  });
+
+  it('un JSON corrupto no tumba la cuenta', async () => {
+    // Defensa: una fila manipulada o media escrita no puede dejar al camarero sin poder abrir su
+    // mesa. Se pierde el suplemento de esa línea, no la comanda entera.
+    const { client } = orderClient([], [
+      { id: 'li-1', product_id: 'p-x', product_name: 'X', quantity: 1_000_000, unit_price: 100,
+        modifiers: '{no es json' },
+    ]);
+    const [line] = await loadOrderLines(client, 'ord-1');
+    expect(line.modifiers).toBeUndefined();
+    expect(line.name).toBe('X');
+  });
+});

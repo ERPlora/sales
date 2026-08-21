@@ -4238,6 +4238,17 @@ function rows(r6) {
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
   return [];
 }
+function parseModifiers(raw) {
+  if (typeof raw !== "string" || !raw.trim()) return void 0;
+  try {
+    const v3 = JSON.parse(raw);
+    if (!Array.isArray(v3)) return void 0;
+    const out = v3.map((m4) => m4 && typeof m4 === "object" ? String(m4.option_id ?? "") : "").filter(Boolean).map((option_id) => ({ option_id }));
+    return out.length ? out : void 0;
+  } catch {
+    return void 0;
+  }
+}
 async function listOpenChecks(client, excluir) {
   try {
     const r6 = rows(await client.query("sales.orders.list"));
@@ -4334,6 +4345,10 @@ function orderLinePayload(orderId, l3) {
     category_id: l3.category_id ?? null,
     // sales#71: descuento manual de la línea (%), persistido con ella.
     discount_percent: l3.discount ?? 0,
+    // pm#93: `order.add_line` es DECLARATIVO — el payload bindea a una columna TEXT, así que viaja
+    // serializado. Solo los ids: el nombre y el precio definitivos los resuelve el cobro contra
+    // `modifiers.options.all`. Esta fila es de trabajo, como su `line_total` provisional.
+    modifiers: JSON.stringify((l3.modifiers ?? []).map((m4) => ({ option_id: m4.option_id }))),
     line_total: provisionalLineTotal(l3.price, l3.qty, l3.is_gift, l3.discount ?? 0),
     ...unitContextPayload(l3)
   };
@@ -4409,6 +4424,9 @@ async function loadOrderLines(client, orderId) {
       category_id: x2.category_id ? String(x2.category_id) : void 0,
       // sales#71: el descuento de la línea vuelve al retomar la cuenta.
       discount: Number(x2.discount_percent) > 0 ? Number(x2.discount_percent) : void 0,
+      // pm#93: los suplementos vuelven con la línea. Una fila ANTERIOR a la columna, o un JSON
+      // corrupto, devuelven `undefined` — se pierde el suplemento de esa línea, nunca la comanda.
+      modifiers: parseModifiers(x2.modifiers),
       // Contexto de unidades CONGELADO (ADR-0147 §2.4): vuelve con la línea para que el pedido
       // reanudado valide la misma rejilla y cobre con el mismo contexto.
       unit_code: x2.unit_code ? String(x2.unit_code) : void 0,
