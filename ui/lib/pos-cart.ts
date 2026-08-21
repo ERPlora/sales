@@ -105,6 +105,24 @@ function rows<T>(r: unknown): T[] {
  *  El orden cuenta a propósito. Cocina lee la comanda en el orden en que se eligió —es la petición
  *  recurrente en los foros de Square, porque el orden de catálogo no sirve en el pase—, así que dos
  *  líneas con las mismas opciones en distinto orden imprimen distinto y no son la misma unidad. */
+/** Lee la columna `modifiers` de una fila de pedido. Defensivo a propósito: una fila escrita antes
+ *  de que existiera la columna, o media escrita, NO puede dejar al camarero sin poder abrir su
+ *  mesa. Se pierde el suplemento de esa línea; nunca la cuenta entera. */
+function parseModifiers(raw: unknown): { option_id: string }[] | undefined {
+  if (typeof raw !== 'string' || !raw.trim()) return undefined;
+  try {
+    const v = JSON.parse(raw);
+    if (!Array.isArray(v)) return undefined;
+    const out = v
+      .map((m) => (m && typeof m === 'object' ? String((m as { option_id?: unknown }).option_id ?? '') : ''))
+      .filter(Boolean)
+      .map((option_id) => ({ option_id }));
+    return out.length ? out : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function modifierFingerprint(l: CartLine): string {
   return (l.modifiers ?? []).map((m) => m.option_id).join('\u0000');
 }
@@ -300,6 +318,10 @@ function orderLinePayload(orderId: string, l: CartLine): Record<string, unknown>
     category_id: l.category_id ?? null,
     // sales#71: descuento manual de la línea (%), persistido con ella.
     discount_percent: l.discount ?? 0,
+    // pm#93: `order.add_line` es DECLARATIVO — el payload bindea a una columna TEXT, así que viaja
+    // serializado. Solo los ids: el nombre y el precio definitivos los resuelve el cobro contra
+    // `modifiers.options.all`. Esta fila es de trabajo, como su `line_total` provisional.
+    modifiers: JSON.stringify((l.modifiers ?? []).map((m) => ({ option_id: m.option_id }))),
     line_total: provisionalLineTotal(l.price, l.qty, l.is_gift, l.discount ?? 0),
     ...unitContextPayload(l),
   };
@@ -405,6 +427,9 @@ export async function loadOrderLines(client: ErploraClientLike, orderId: string)
       category_id: x.category_id ? String(x.category_id) : undefined,
       // sales#71: el descuento de la línea vuelve al retomar la cuenta.
       discount: Number(x.discount_percent) > 0 ? Number(x.discount_percent) : undefined,
+      // pm#93: los suplementos vuelven con la línea. Una fila ANTERIOR a la columna, o un JSON
+      // corrupto, devuelven `undefined` — se pierde el suplemento de esa línea, nunca la comanda.
+      modifiers: parseModifiers(x.modifiers),
       // Contexto de unidades CONGELADO (ADR-0147 §2.4): vuelve con la línea para que el pedido
       // reanudado valide la misma rejilla y cobre con el mismo contexto.
       unit_code: x.unit_code ? String(x.unit_code) : undefined,

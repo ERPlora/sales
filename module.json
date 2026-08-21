@@ -119,7 +119,8 @@
       "migrations/postgres/019_line_category_snapshot.sql",
       "migrations/postgres/020_void_audit.sql",
       "migrations/postgres/021_manual_discounts.sql",
-      "migrations/postgres/022_ticket_discount_amount.sql"
+      "migrations/postgres/022_ticket_discount_amount.sql",
+      "migrations/postgres/023_order_line_modifiers.sql"
     ]
   },
   "seed": {

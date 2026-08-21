@@ -1,0 +1,19 @@
+-- pm#93 -- la linea de PEDIDO guarda sus suplementos.
+--
+-- sales_sale_item ya tenia la columna desde el principio (aunque nadie la escribiera), pero
+-- sales_order_item no. Y el pedido es justo el camino del restaurante: abrir cuenta, anadir
+-- lineas, disparar a cocina, cobrar despues. Sin esta columna el camarero elige «sin cebolla»,
+-- la eleccion vive solo en el navegador, y al RETOMAR la cuenta la linea vuelve a ser una
+-- hamburguesa normal -- sin que nada avise.
+--
+-- Es el mismo motivo por el que ya viajan aqui la categoria fiscal, el coste, is_service,
+-- category_id, el descuento y el contexto de unidades: lo que el cobro necesita y no se puede
+-- re-derivar tras recargar.
+--
+-- Guarda solo los option_id, en su ORDEN de eleccion. El nombre y el precio definitivos los
+-- resuelve el servidor AL COBRAR contra modifiers.options.all: esta fila es de trabajo, como su
+-- line_total provisional, no el registro fiscal.
+--
+-- DEFAULT '[]' y no '{}': el contenido es una LISTA ordenada. La linea de venta usa '{}' por
+-- historia, y un dia habra que reconciliarlo.
+ALTER TABLE sales_order_item ADD COLUMN IF NOT EXISTS modifiers TEXT NOT NULL DEFAULT '[]';
