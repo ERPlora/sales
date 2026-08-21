@@ -23,6 +23,7 @@
     "optional_queries": [
       "appointments.appointments.get",
       "invoice.by_source",
+      "modifiers.for_target",
       "services.categories.list",
       "services.services.list",
       "verifactu.records.by_invoice"
