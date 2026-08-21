@@ -4294,6 +4294,9 @@ function toItemPayload(l3) {
     category_id: l3.category_id ?? null,
     // sales#71: descuento manual de la línea, en %.
     discount: l3.discount ?? 0,
+    // pm#93: solo los ids, en su orden. El importe lo resuelve el servidor contra
+    // `modifiers.options.all` — el navegador no es autoridad del precio de un suplemento.
+    modifiers: (l3.modifiers ?? []).map((m4) => ({ option_id: m4.option_id })),
     ...unitContextPayload(l3)
   };
 }
