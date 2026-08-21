@@ -330,3 +330,51 @@ describe('sales#61 — dividir y juntar cuentas', () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+// ── pm#93 · los suplementos son parte de la IDENTIDAD de la línea ────────────────────────────
+//
+// Hasta ahora `sameCartLine` decía, literal: «Los modifiers no viven en la línea del carrito (se
+// resuelven al vender), por eso no entran en la identidad». Con el selector del TPV eso deja de
+// ser cierto: la elección se hace al AÑADIR, y viaja en la línea.
+//
+// Si no entran en la identidad, una hamburguesa «sin cebolla» se fusiona con una normal y cocina
+// recibe «2 × Hamburguesa» — una de ellas mal. Es el mismo principio que ya separa una invitación
+// de una línea normal, o el mismo producto a distinto precio: son unidades de cobro distintas.
+describe('suplementos e identidad de la línea (pm#93)', () => {
+  const base = (over: Partial<CartLine> = {}): CartLine =>
+    ({ id: 'p-burger', name: 'Hamburguesa', price: 500, qty: 1, ...over }) as CartLine;
+
+  it('el mismo producto con suplementos DISTINTOS no se fusiona', () => {
+    const out = mergeCartLines(
+      [base({ modifiers: [{ option_id: 'o-sin-cebolla' }] })],
+      [base()],
+    );
+    expect(out).toHaveLength(2);
+  });
+
+  it('el mismo producto con los MISMOS suplementos sí se fusiona', () => {
+    const out = mergeCartLines(
+      [base({ modifiers: [{ option_id: 'o-queso' }] })],
+      [base({ modifiers: [{ option_id: 'o-queso' }] })],
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0].qty).toBe(2);
+  });
+
+  it('el ORDEN de elección distingue: cocina lee la comanda en ese orden', () => {
+    // Petición recurrente en los foros de Square: los modificadores deben salir en el orden en que
+    // se eligieron, no en el del catálogo. Si el orden importa para el papel, distingue la línea.
+    const out = mergeCartLines(
+      [base({ modifiers: [{ option_id: 'a' }, { option_id: 'b' }] })],
+      [base({ modifiers: [{ option_id: 'b' }, { option_id: 'a' }] })],
+    );
+    expect(out).toHaveLength(2);
+  });
+
+  it('sin suplementos, dos líneas iguales siguen fusionándose', () => {
+    // Control: si esto se rompiera, cada pulsación crearía una línea nueva en TODAS las ventas.
+    const out = mergeCartLines([base()], [base()]);
+    expect(out).toHaveLength(1);
+    expect(out[0].qty).toBe(2);
+  });
+});

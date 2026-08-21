@@ -14,6 +14,9 @@ import { toMicro, fromMicro } from './quantity';
 export interface CartLine {
   id: string;
   name: string;
+  /** pm#93 — suplementos elegidos, EN EL ORDEN en que se eligieron. Solo el `option_id`: el
+   *  precio y el nombre los pone el catálogo del servidor al cobrar, nunca el navegador. */
+  modifiers?: { option_id: string }[];
   sku?: string;
   price: number;
   /** Cantidad LÓGICA (0,5 = medio kilo). El cable habla punto fijo 10⁶ (ADR-0147): la conversión
@@ -97,10 +100,23 @@ function rows<T>(r: unknown): T[] {
 }
 
 
+/** La huella de los suplementos de una línea: los `option_id` EN SU ORDEN, tal cual.
+ *
+ *  El orden cuenta a propósito. Cocina lee la comanda en el orden en que se eligió —es la petición
+ *  recurrente en los foros de Square, porque el orden de catálogo no sirve en el pase—, así que dos
+ *  líneas con las mismas opciones en distinto orden imprimen distinto y no son la misma unidad. */
+function modifierFingerprint(l: CartLine): string {
+  return (l.modifiers ?? []).map((m) => m.option_id).join('\u0000');
+}
+
 /** Dos líneas son "la misma" (fusionables) si coinciden producto, precio, categoría/tipo fiscal,
- *  condición de invitación y sku. Una invitación (comp) NO se fusiona con una línea normal, ni el
- *  mismo producto a distinto precio: son unidades de cobro distintas. Los `modifiers` no viven en
- *  la línea del carrito (se resuelven al vender), por eso no entran en la identidad. */
+ *  condición de invitación, sku y SUPLEMENTOS. Una invitación (comp) NO se fusiona con una línea
+ *  normal, ni el mismo producto a distinto precio: son unidades de cobro distintas.
+ *
+ *  pm#93: los suplementos entran en la identidad. Antes no vivían en la línea del carrito («se
+ *  resuelven al vender») y por eso quedaban fuera; con el selector del TPV la elección se hace al
+ *  AÑADIR. Sin esto, una hamburguesa «sin cebolla» se fusiona con una normal y cocina recibe
+ *  «2 × Hamburguesa» — una de ellas mal, y sin forma de saber cuál. */
 function sameCartLine(a: CartLine, b: CartLine): boolean {
   return a.id === b.id
     && a.price === b.price
@@ -108,7 +124,8 @@ function sameCartLine(a: CartLine, b: CartLine): boolean {
     && a.tax_category_key === b.tax_category_key
     && a.tax_rate === b.tax_rate
     && !!a.is_gift === !!b.is_gift
-    && a.gift_reason === b.gift_reason;
+    && a.gift_reason === b.gift_reason
+    && modifierFingerprint(a) === modifierFingerprint(b);
 }
 
 /** Fusiona dos comandas al FUSIONAR mesas (punto 3): parte de `base` (comanda de la mesa DESTINO,
@@ -244,6 +261,9 @@ function toItemPayload(l: CartLine): Record<string, unknown> {
     category_id: l.category_id ?? null,
     // sales#71: descuento manual de la línea, en %.
     discount: l.discount ?? 0,
+    // pm#93: solo los ids, en su orden. El importe lo resuelve el servidor contra
+    // `modifiers.options.all` — el navegador no es autoridad del precio de un suplemento.
+    modifiers: (l.modifiers ?? []).map((m) => ({ option_id: m.option_id })),
     ...unitContextPayload(l),
   };
 }
