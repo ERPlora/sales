@@ -186,7 +186,6 @@
     "paymentMethod": "Payment method",
     "documentFormat": "Document",
     "docTicket": "Receipt",
-    "docInvoice": "Invoice",
     "printReceipt": "Print receipt",
     "parkedAs": "Parked as {number}",
     "fireToKitchen": "Send to kitchen",
@@ -253,6 +252,11 @@
     "voidSaleNotFound": "That sale is not in this business",
     "taxSurcharge": "Surcharge",
     "screenMenu": "Screen",
-    "exitFullscreen": "Exit full screen"
+    "exitFullscreen": "Exit full screen",
+    "modifiers": "Options",
+    "modifierRequired": "Choose {n}",
+    "modifierUpTo": "Up to {n}",
+    "modifierOptional": "Optional",
+    "modifierPickOne": "Choose an option to continue"
   }
 }

@@ -3531,7 +3531,6 @@ var es_default = {
     paymentMethod: "Forma de pago",
     documentFormat: "Documento",
     docTicket: "Tique",
-    docInvoice: "Factura",
     printReceipt: "Imprimir tiquet",
     parkedAs: "Aparcado como {number}",
     fireToKitchen: "Enviar a cocina",
@@ -3598,7 +3597,12 @@ var es_default = {
     voidSaleNotFound: "Esa venta no est\xE1 en este negocio",
     taxSurcharge: "RE",
     screenMenu: "Pantalla",
-    exitFullscreen: "Salir de pantalla completa"
+    exitFullscreen: "Salir de pantalla completa",
+    modifiers: "Opciones",
+    modifierRequired: "Elige {n}",
+    modifierUpTo: "Hasta {n}",
+    modifierOptional: "Opcional",
+    modifierPickOne: "Elige una opci\xF3n para continuar"
   },
   widgets: {
     "sales.today": {
@@ -3807,7 +3811,6 @@ var en_default = {
     paymentMethod: "Payment method",
     documentFormat: "Document",
     docTicket: "Receipt",
-    docInvoice: "Invoice",
     printReceipt: "Print receipt",
     parkedAs: "Parked as {number}",
     fireToKitchen: "Send to kitchen",
@@ -3874,7 +3877,12 @@ var en_default = {
     voidSaleNotFound: "That sale is not in this business",
     taxSurcharge: "Surcharge",
     screenMenu: "Screen",
-    exitFullscreen: "Exit full screen"
+    exitFullscreen: "Exit full screen",
+    modifiers: "Options",
+    modifierRequired: "Choose {n}",
+    modifierUpTo: "Up to {n}",
+    modifierOptional: "Optional",
+    modifierPickOne: "Choose an option to continue"
   }
 };
 
@@ -5433,6 +5441,28 @@ async function optionalRead(read) {
     return void 0;
   }
 }
+function groupModifierRows(rows3) {
+  const out = [];
+  for (const raw of rows3) {
+    const r6 = raw;
+    const gid = String(r6.group_id ?? "");
+    if (!gid) continue;
+    let g3 = out.find((x2) => x2.id === gid);
+    if (!g3) {
+      g3 = {
+        id: gid,
+        name: String(r6.group_name ?? ""),
+        min: Number(r6.min_choices ?? 0),
+        max: Number(r6.max_choices ?? 0),
+        options: []
+      };
+      out.push(g3);
+    }
+    const oid = String(r6.option_id ?? "");
+    if (oid) g3.options.push({ id: oid, name: String(r6.option_name ?? ""), price_delta: Number(r6.price_delta ?? 0) });
+  }
+  return out;
+}
 function t5(key, params) {
   return erplora2().t(CATALOG2, key, params);
 }
@@ -5483,6 +5513,7 @@ var ErpPosTouch = class extends i3 {
     this.ticketDiscountAmount = 0;
     this.discountMode = "percent";
     this.openAmount = "";
+    this.modifierPicks = [];
     this.openDept = "";
     this.docFormat = "ticket";
     this.busy = false;
@@ -6853,10 +6884,55 @@ var ErpPosTouch = class extends i3 {
       this.openOpenPrice({ amountCents: Number(p4.price) || 0, deptKey: p4.tax_category_key });
       return Promise.resolve();
     }
-    return this.queue(() => this.addNow(p4));
+    return this.queue(() => this.addWithModifiers(p4));
   }
-  async addNow(p4) {
-    const ex = this.cart.find((l3) => l3.id === p4.id && !l3.is_gift);
+  /** pm#93 — si lo que se añade tiene grupos de suplementos, se PREGUNTA antes; si no, se añade
+   *  igual que siempre.
+   *
+   *  La lectura es OPCIONAL (ADR-0127): `undefined` = el módulo `modifiers` no está instalado, y el
+   *  TPV sigue cobrando sin enterarse. Ese es el 99 % de las pulsaciones de un TPV, y meterles un
+   *  paso sería empeorar el producto para casi todo el mundo. */
+  async addWithModifiers(p4) {
+    const rows3 = await optionalRead(
+      (c5) => c5.queryOptional("modifiers.for_target", {
+        target_kind: p4.is_service ? "service" : "product",
+        target_ref: p4.id,
+        category_ref: this.primaryCategory(p4.id) ?? null
+      })
+    );
+    const groups = groupModifierRows(Array.isArray(rows3) ? rows3 : []);
+    if (!groups.length) return this.addNow(p4);
+    this.modifierPicks = [];
+    this.modifierSheet = { product: p4, groups };
+  }
+  /** ¿Se puede confirmar la hoja? Un grupo con `min >= 1` sin resolver NO deja seguir: es una
+   *  PRECONDICIÓN, no un aviso — Toast bloquea el envío a cocina por lo mismo. El techo `max` se
+   *  respeta igual (0 = sin techo). */
+  canConfirmModifiers() {
+    const sheet = this.modifierSheet;
+    if (!sheet) return false;
+    return sheet.groups.every((g3) => {
+      const n6 = g3.options.filter((o9) => this.modifierPicks.includes(o9.id)).length;
+      return n6 >= g3.min && (g3.max === 0 || n6 <= g3.max);
+    });
+  }
+  /** Confirma la hoja y añade la línea con sus suplementos. Solo viajan los `option_id`, en el
+   *  ORDEN elegido: el importe lo resuelve el servidor contra `modifiers.options.all`. */
+  async confirmModifiers() {
+    const sheet = this.modifierSheet;
+    if (!sheet || !this.canConfirmModifiers()) return;
+    const picks = this.modifierPicks.map((option_id) => ({ option_id }));
+    this.modifierSheet = void 0;
+    this.modifierPicks = [];
+    await this.addNow(sheet.product, picks);
+  }
+  toggleModifier(id) {
+    this.modifierPicks = this.modifierPicks.includes(id) ? this.modifierPicks.filter((x2) => x2 !== id) : [...this.modifierPicks, id];
+  }
+  async addNow(p4, picks = []) {
+    const fingerprint = (m4) => (m4 ?? []).map((x2) => x2.option_id).join("\0");
+    const want = fingerprint(picks);
+    const ex = this.cart.find((l3) => l3.id === p4.id && !l3.is_gift && fingerprint(l3.modifiers) === want);
     const tax_rate = resolveLineTax(this.taxCatalog.rates, p4.tax_category_key);
     try {
       if (ex) {
@@ -6880,6 +6956,8 @@ var ErpPosTouch = class extends i3 {
         // sales#12: la categoría se congela en la línea — es lo que enruta la comanda en kitchen y
         // sobrevive a retomar la cuenta (antes solo vivía en `prodCats`, en memoria).
         category_id: this.primaryCategory(p4.id),
+        // pm#93: solo los ids, en su orden de elección.
+        ...picks.length ? { modifiers: picks } : {},
         // sales#89: viaja hasta `complete_sale`, que por él no mide la línea contra el catálogo de
         // `inventory` ni le descuenta stock, y hasta `sale.completed`, donde `inventory` la salta.
         ...p4.is_service ? { is_service: true } : {},
@@ -7877,6 +7955,43 @@ var ErpPosTouch = class extends i3 {
       <!-- PRECIO LIBRE: reutiliza el sheet del cobro (.scrim/.sheet/.numpad). Tecleas el importe y
            eliges el DEPARTAMENTO (categoría fiscal, que lleva su IVA); "Añadir" queda deshabilitado
            hasta tener importe > 0 y departamento (nunca una línea desnuda). -->
+      ${this.modifierSheet ? b2`<div class="scrim" @click=${(e7) => {
+      if (e7.target.classList.contains("scrim")) {
+        this.modifierSheet = void 0;
+      }
+    }}>
+            <div class="sheet">
+              <div class="sheet-h">
+                <span class="t">${this.modifierSheet.product.name}</span>
+                <button class="x" @click=${() => {
+      this.modifierSheet = void 0;
+    }}>✕</button>
+              </div>
+              <div class="pay">
+                ${this.modifierSheet.groups.map((g3) => b2`
+                  <div class="dept-label">
+                    ${g3.name}
+                    <!-- La obligatoriedad se LEE de min/max: el cajero ve la misma regla que aplica
+                         el servidor, en vez de una etiqueta que puede contradecirla. -->
+                    <small>${g3.min >= 1 ? t5("ui.modifierRequired", { n: g3.min }) : g3.max > 0 ? t5("ui.modifierUpTo", { n: g3.max }) : t5("ui.modifierOptional")}</small>
+                  </div>
+                  <div class="dept-grid" role="group" aria-label=${g3.name}>
+                    ${g3.options.map((o9) => b2`
+                      <button class="dept-btn" aria-pressed=${this.modifierPicks.includes(o9.id) ? "true" : "false"}
+                              @click=${() => this.toggleModifier(o9.id)}>
+                        <span class="dn">${o9.name}</span>
+                        <span class="dr">${o9.price_delta ? this.money(o9.price_delta) : ""}</span>
+                      </button>`)}
+                  </div>`)}
+              </div>
+              <div class="sheet-foot">
+                <ion-button class="charge" expand="block" ?disabled=${!this.canConfirmModifiers()}
+                            @click=${() => this.confirmModifiers()}>
+                  ${this.canConfirmModifiers() ? t5("ui.add") : t5("ui.modifierPickOne")}
+                </ion-button>
+              </div>
+            </div>
+          </div>` : A}
       ${this.openPriceOpen ? b2`<div class="scrim" @click=${(e7) => {
       if (e7.target.classList.contains("scrim")) this.openPriceOpen = false;
     }}>
@@ -8130,6 +8245,12 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "openAmount", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "modifierSheet", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "modifierPicks", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "openDept", 2);

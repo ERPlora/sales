@@ -166,6 +166,43 @@ async function optionalRead(read: (c: ErploraClientLike) => Promise<unknown>): P
   }
 }
 
+/** Un grupo de suplementos con sus opciones, tal como lo entrega `modifiers.for_target`. */
+interface ModifierGroup {
+  id: string;
+  name: string;
+  min: number;
+  /** 0 = sin techo. */
+  max: number;
+  options: { id: string; name: string; price_delta: number }[];
+}
+
+/** Aplana las filas de `modifiers.for_target` en grupos, conservando el orden que trae el SQL
+ *  (`group.sort_order, group.name, option.sort_order, option.name`). Una fila por OPCIÓN: la query
+ *  devuelve el producto cartesiano a propósito, para no hacer una llamada por grupo. */
+function groupModifierRows(rows: unknown[]): ModifierGroup[] {
+  const out: ModifierGroup[] = [];
+  for (const raw of rows) {
+    const r = raw as Record<string, unknown>;
+    const gid = String(r.group_id ?? '');
+    if (!gid) continue;
+    let g = out.find((x) => x.id === gid);
+    if (!g) {
+      g = {
+        id: gid,
+        name: String(r.group_name ?? ''),
+        min: Number(r.min_choices ?? 0),
+        max: Number(r.max_choices ?? 0),
+        options: [],
+      };
+      out.push(g);
+    }
+    const oid = String(r.option_id ?? '');
+    // Un grupo sin opciones llega con `option_id` nulo (LEFT JOIN): es un grupo vacío, no una opción.
+    if (oid) g.options.push({ id: oid, name: String(r.option_name ?? ''), price_delta: Number(r.price_delta ?? 0) });
+  }
+  return out;
+}
+
 /** Traduce una clave del catálogo `ui` con el idioma activo del shell. */
 function t(key: string, params?: Record<string, unknown>): string {
   return (erplora() as unknown as I18nClient).t(CATALOG, key, params);
@@ -686,6 +723,11 @@ export class ErpPosTouch extends LitElement {
   /** Modo del sheet de descuento del TICKET: porcentaje o importe. */
   @state() private discountMode: 'percent' | 'amount' = 'percent';
   @state() private openAmount = '';
+  /** pm#93 — hoja de suplementos abierta: el producto que la disparó y sus grupos ya aplanados.
+   *  `undefined` = no hay hoja. Mismo patrón que el precio libre de un servicio sin importe. */
+  @state() modifierSheet?: { product: Product; groups: ModifierGroup[] };
+  /** Opciones elegidas, EN EL ORDEN de elección — cocina lee la comanda en ese orden. */
+  @state() modifierPicks: string[] = [];
   @state() private openDept = '';
   @state() private payMethod?: PayMethod;
   @state() private docFormat: 'ticket' | 'invoice' = 'ticket';
@@ -1736,11 +1778,65 @@ export class ErpPosTouch extends LitElement {
       this.openOpenPrice({ amountCents: Number(p.price) || 0, deptKey: p.tax_category_key });
       return Promise.resolve();
     }
-    return this.queue(() => this.addNow(p));
+    return this.queue(() => this.addWithModifiers(p));
   }
 
-  private async addNow(p: Product) {
-    const ex = this.cart.find((l) => l.id === p.id && !l.is_gift);
+  /** pm#93 — si lo que se añade tiene grupos de suplementos, se PREGUNTA antes; si no, se añade
+   *  igual que siempre.
+   *
+   *  La lectura es OPCIONAL (ADR-0127): `undefined` = el módulo `modifiers` no está instalado, y el
+   *  TPV sigue cobrando sin enterarse. Ese es el 99 % de las pulsaciones de un TPV, y meterles un
+   *  paso sería empeorar el producto para casi todo el mundo. */
+  private async addWithModifiers(p: Product) {
+    const rows = await optionalRead((c) =>
+      c.queryOptional<unknown>('modifiers.for_target', {
+        target_kind: p.is_service ? 'service' : 'product',
+        target_ref: p.id,
+        category_ref: this.primaryCategory(p.id) ?? null,
+      }),
+    );
+    const groups = groupModifierRows(Array.isArray(rows) ? rows : []);
+    if (!groups.length) return this.addNow(p);
+    this.modifierPicks = [];
+    this.modifierSheet = { product: p, groups };
+  }
+
+  /** ¿Se puede confirmar la hoja? Un grupo con `min >= 1` sin resolver NO deja seguir: es una
+   *  PRECONDICIÓN, no un aviso — Toast bloquea el envío a cocina por lo mismo. El techo `max` se
+   *  respeta igual (0 = sin techo). */
+  canConfirmModifiers(): boolean {
+    const sheet = this.modifierSheet;
+    if (!sheet) return false;
+    return sheet.groups.every((g) => {
+      const n = g.options.filter((o) => this.modifierPicks.includes(o.id)).length;
+      return n >= g.min && (g.max === 0 || n <= g.max);
+    });
+  }
+
+  /** Confirma la hoja y añade la línea con sus suplementos. Solo viajan los `option_id`, en el
+   *  ORDEN elegido: el importe lo resuelve el servidor contra `modifiers.options.all`. */
+  async confirmModifiers(): Promise<void> {
+    const sheet = this.modifierSheet;
+    if (!sheet || !this.canConfirmModifiers()) return;
+    const picks = this.modifierPicks.map((option_id) => ({ option_id }));
+    this.modifierSheet = undefined;
+    this.modifierPicks = [];
+    await this.addNow(sheet.product, picks);
+  }
+
+  private toggleModifier(id: string) {
+    this.modifierPicks = this.modifierPicks.includes(id)
+      ? this.modifierPicks.filter((x) => x !== id)
+      : [...this.modifierPicks, id];
+  }
+
+  private async addNow(p: Product, picks: { option_id: string }[] = []) {
+    // pm#93: la fusión mira los suplementos. Sin esto, una hamburguesa «sin cebolla» sube la
+    // cantidad de la normal y cocina recibe «2 × Hamburguesa», una de ellas mal. Es la misma regla
+    // que `sameCartLine` aplica al fusionar mesas, y este camino tenía su propia búsqueda.
+    const fingerprint = (m?: { option_id: string }[]) => (m ?? []).map((x) => x.option_id).join('\u0000');
+    const want = fingerprint(picks);
+    const ex = this.cart.find((l) => l.id === p.id && !l.is_gift && fingerprint(l.modifiers) === want);
     // tax_category_key = referencia fiscal del producto (autoridad del servidor, ADR-0085).
     // tax_rate = % resuelto en cliente SOLO para el preview del total. cost = para el arqueo de regalos.
     const tax_rate = resolveLineTax(this.taxCatalog.rates, p.tax_category_key);
@@ -1764,6 +1860,8 @@ export class ErpPosTouch extends LitElement {
         // sales#12: la categoría se congela en la línea — es lo que enruta la comanda en kitchen y
         // sobrevive a retomar la cuenta (antes solo vivía en `prodCats`, en memoria).
         category_id: this.primaryCategory(p.id),
+        // pm#93: solo los ids, en su orden de elección.
+        ...(picks.length ? { modifiers: picks } : {}),
         // sales#89: viaja hasta `complete_sale`, que por él no mide la línea contra el catálogo de
         // `inventory` ni le descuenta stock, y hasta `sale.completed`, donde `inventory` la salta.
         ...(p.is_service ? { is_service: true } : {}),
@@ -2878,6 +2976,41 @@ export class ErpPosTouch extends LitElement {
       <!-- PRECIO LIBRE: reutiliza el sheet del cobro (.scrim/.sheet/.numpad). Tecleas el importe y
            eliges el DEPARTAMENTO (categoría fiscal, que lleva su IVA); "Añadir" queda deshabilitado
            hasta tener importe > 0 y departamento (nunca una línea desnuda). -->
+      ${this.modifierSheet
+        ? html`<div class="scrim" @click=${(e: Event) => { if ((e.target as HTMLElement).classList.contains('scrim')) { this.modifierSheet = undefined; } }}>
+            <div class="sheet">
+              <div class="sheet-h">
+                <span class="t">${this.modifierSheet.product.name}</span>
+                <button class="x" @click=${() => { this.modifierSheet = undefined; }}>✕</button>
+              </div>
+              <div class="pay">
+                ${this.modifierSheet.groups.map((g) => html`
+                  <div class="dept-label">
+                    ${g.name}
+                    <!-- La obligatoriedad se LEE de min/max: el cajero ve la misma regla que aplica
+                         el servidor, en vez de una etiqueta que puede contradecirla. -->
+                    <small>${g.min >= 1
+                      ? t('ui.modifierRequired', { n: g.min })
+                      : g.max > 0 ? t('ui.modifierUpTo', { n: g.max }) : t('ui.modifierOptional')}</small>
+                  </div>
+                  <div class="dept-grid" role="group" aria-label=${g.name}>
+                    ${g.options.map((o) => html`
+                      <button class="dept-btn" aria-pressed=${this.modifierPicks.includes(o.id) ? 'true' : 'false'}
+                              @click=${() => this.toggleModifier(o.id)}>
+                        <span class="dn">${o.name}</span>
+                        <span class="dr">${o.price_delta ? this.money(o.price_delta) : ''}</span>
+                      </button>`)}
+                  </div>`)}
+              </div>
+              <div class="sheet-foot">
+                <ion-button class="charge" expand="block" ?disabled=${!this.canConfirmModifiers()}
+                            @click=${() => this.confirmModifiers()}>
+                  ${this.canConfirmModifiers() ? t('ui.add') : t('ui.modifierPickOne')}
+                </ion-button>
+              </div>
+            </div>
+          </div>`
+        : nothing}
       ${this.openPriceOpen
         ? html`<div class="scrim" @click=${(e: Event) => { if ((e.target as HTMLElement).classList.contains('scrim')) this.openPriceOpen = false; }}>
             <div class="sheet">
