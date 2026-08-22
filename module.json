@@ -341,6 +341,10 @@
           "params": {
             "order_id": "payload.order_id"
           }
+        },
+        {
+          "query": "modifiers.options.all",
+          "required": false
         }
       ],
       "handler": {

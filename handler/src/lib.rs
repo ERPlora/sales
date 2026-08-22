@@ -1332,6 +1332,52 @@ pub fn open_order_pure(input: Value) -> Result<Output, String> {
 ///
 /// No escribe nada: mandar comida a cocina no cambia el pedido. Cada disparo es una **ronda** y de
 /// numerarlas se encarga `kitchen`, que es quien las imprime.
+/// pm#93 — pone el NOMBRE DE COCINA a los suplementos de una comanda, resolviéndolo en el servidor.
+///
+/// El TPV manda solo `option_id`. El texto que se IMPRIME lo pone el servidor por el mismo motivo
+/// que el precio: si lo pusiera el navegador, cualquiera podría escribir lo que quisiera en la
+/// comanda que sale por la impresora de cocina.
+///
+/// 🔴 Aquí, a diferencia del cobro, NO se falla cerrado. Al cobrar, un precio sin verificar es un
+/// agujero de dinero y la venta se rechaza. Aquí lo que está en juego es que la comida SALGA:
+/// negarse a imprimir porque falta un catálogo dejaría la cocina parada por una integración
+/// accesoria. Sin catálogo se manda lo que se sabe —el id—, que es mejor que un silencio.
+fn name_modifiers_for_kitchen(items: &[Value], catalog: Option<&Vec<&Value>>) -> Vec<Value> {
+    items
+        .iter()
+        .map(|item| {
+            let picks = match item.get("modifiers").and_then(|v| v.as_array()) {
+                Some(a) if !a.is_empty() => a,
+                _ => return item.clone(),
+            };
+            let named: Vec<Value> = picks
+                .iter()
+                .map(|pick| {
+                    let id = field(pick, "option_id");
+                    let row = catalog.and_then(|rows| rows.iter().find(|r| field(r, "option_id") == id));
+                    let Some(row) = row else {
+                        // Sin catálogo o id desconocido: el id viaja igual. La comanda sale.
+                        return json!({ "option_id": id });
+                    };
+                    let name = field(row, "name");
+                    let kitchen = {
+                        let k = field(row, "kitchen_name");
+                        // Vacío = se imprime el comercial. Un hueco en la comanda es lo mismo que
+                        // no haberla impreso.
+                        if k.is_empty() { name.clone() } else { k }
+                    };
+                    json!({ "option_id": id, "name": name, "kitchen_name": kitchen })
+                })
+                .collect();
+            let mut out = item.clone();
+            if let Some(obj) = out.as_object_mut() {
+                obj.insert("modifiers".into(), Value::Array(named));
+            }
+            out
+        })
+        .collect()
+}
+
 pub fn fire_order_pure(input: Value) -> Result<Output, String> {
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
     let order_id = as_str(payload.get("order_id").unwrap_or(&Value::Null));
@@ -1384,7 +1430,11 @@ pub fn fire_order_pure(input: Value) -> Result<Output, String> {
         // Opaca a propósito: `sales` no sabe (ni quiere saber) de dónde sale este texto.
         "label": str_or(&payload, "label", ""),
         "channel": channel,
-        "items": items,
+        // pm#93: los suplementos salen con el nombre que resuelve el SERVIDOR, no el navegador.
+        "items": name_modifiers_for_kitchen(
+            &items,
+            tax::read_rows(&input.get("context").cloned().unwrap_or(Value::Null), "modifiers.options.all").as_ref(),
+        ),
     });
     if round_no >= 1 {
         ev["round_no"] = json!(round_no); // informativo: kitchen numera lo suyo (ADR-0144)
@@ -3306,5 +3356,91 @@ mod tests {
         let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("línea");
         assert_eq!(line.params["line_total"], json!(500));
         assert_eq!(line.params["modifiers"], json!("[]"), "sin suplementos, snapshot vacío");
+    }
+
+    // ── pm#93 · los suplementos llegan a COCINA con el nombre que resuelve el SERVIDOR ────────
+
+    fn fire_con_suplementos(picks: Value, catalogo: Option<Value>) -> Value {
+        let mut inp = json!({
+            "payload": {
+                "order_id": "ord-1", "label": "Mesa 4", "channel": "dine_in",
+                "items": [{ "product_id": "p-burger", "product_name": "Hamburguesa",
+                            "quantity": 1_000_000, "unit_price": 500, "notes": "",
+                            "category_id": null, "order_item_id": "li-1",
+                            "modifiers": picks }]
+            },
+            "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-05-31T10:00:00+00:00" }
+        });
+        if let Some(c) = catalogo {
+            inp["context"]["reads"] = json!({ "modifiers.options.all": c });
+        }
+        inp
+    }
+
+    fn catalogo_cocina() -> Value {
+        json!([
+            { "option_id": "o-no-onion", "group_id": "g", "name": "Sin cebolla",
+              "kitchen_name": "SIN CEBOLLA", "price_delta": 0, "tax_category_key": null },
+            // kitchen_name vacío: cocina imprime el comercial. Que el fallback exista importa,
+            // porque un hueco en la comanda es lo mismo que no imprimirla.
+            { "option_id": "o-cheese", "group_id": "g", "name": "Extra de queso",
+              "kitchen_name": "", "price_delta": 100, "tax_category_key": null },
+        ])
+    }
+
+    #[test]
+    fn la_comanda_lleva_el_NOMBRE_DE_COCINA_resuelto_por_el_servidor() {
+        // El TPV manda solo ids. El texto que se IMPRIME lo pone el servidor, igual que el precio:
+        // si lo pusiera el navegador, un cliente podría escribir lo que quisiera en la comanda.
+        let out = fire_order_pure(fire_con_suplementos(
+            json!([{ "option_id": "o-no-onion" }]), Some(catalogo_cocina()),
+        )).expect("fire ok");
+        let ev = &out.events[0];
+        let m = &ev.payload["items"][0]["modifiers"][0];
+        assert_eq!(m["kitchen_name"], json!("SIN CEBOLLA"));
+    }
+
+    #[test]
+    fn sin_kitchen_name_cocina_imprime_el_nombre_comercial() {
+        let out = fire_order_pure(fire_con_suplementos(
+            json!([{ "option_id": "o-cheese" }]), Some(catalogo_cocina()),
+        )).expect("fire ok");
+        let m = &out.events[0].payload["items"][0]["modifiers"][0];
+        assert_eq!(m["kitchen_name"], json!("Extra de queso"), "hueco en la comanda = comanda inútil");
+    }
+
+    #[test]
+    fn el_ORDEN_de_eleccion_se_conserva_hasta_el_papel() {
+        // Petición recurrente en los foros de Square: cocina lee en el orden en que se eligió, no
+        // en el del catálogo.
+        let out = fire_order_pure(fire_con_suplementos(
+            json!([{ "option_id": "o-cheese" }, { "option_id": "o-no-onion" }]), Some(catalogo_cocina()),
+        )).expect("fire ok");
+        let ms = out.events[0].payload["items"][0]["modifiers"].as_array().expect("array").clone();
+        let names: Vec<String> = ms.iter().map(|m| as_str(&m["kitchen_name"])).collect();
+        assert_eq!(names, vec!["Extra de queso".to_string(), "SIN CEBOLLA".to_string()]);
+    }
+
+    #[test]
+    fn sin_catalogo_la_comanda_SIGUE_saliendo() {
+        // 🔴 Aquí NO se falla cerrado, y es a propósito: al cobrar, un precio sin verificar es un
+        // agujero de dinero y se rechaza. Aquí lo que está en juego es que la comida salga. Negarse
+        // a imprimir porque falta un catálogo dejaría la cocina parada por una integración
+        // accesoria. Se imprime lo que se sabe: el id, que es mejor que nada y que un silencio.
+        let out = fire_order_pure(fire_con_suplementos(
+            json!([{ "option_id": "o-no-onion" }]), None,
+        )).expect("la comanda tiene que salir igual");
+        let m = &out.events[0].payload["items"][0]["modifiers"][0];
+        assert_eq!(m["option_id"], json!("o-no-onion"));
+    }
+
+    #[test]
+    fn una_comanda_SIN_suplementos_no_cambia() {
+        // Control: el 99 % de las comandas. Si esto se rompiera, se rompería cocina entera.
+        let out = fire_order_pure(fire_con_suplementos(json!([]), Some(catalogo_cocina())))
+            .expect("fire ok");
+        let item = &out.events[0].payload["items"][0];
+        assert_eq!(item["product_name"], json!("Hamburguesa"));
+        assert_eq!(out.events[0].name, "order.fired");
     }
 }
