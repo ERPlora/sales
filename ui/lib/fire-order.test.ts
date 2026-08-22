@@ -85,3 +85,24 @@ describe('la categoría y el id de línea viajan en el disparo (sales#12)', () =
     expect(p.items[1]).toMatchObject({ category_id: null, order_item_id: null });
   });
 });
+
+// pm#93 — los suplementos viajan en el disparo a cocina. Solo los ids: el nombre que se IMPRIME lo
+// resuelve el handler contra `modifiers.options.all`, por el mismo motivo que el precio.
+describe('suplementos en la comanda (pm#93)', () => {
+  const linea = (over: Partial<CartLine> = {}): CartLine =>
+    ({ id: 'p-burger', name: 'Hamburguesa', price: 500, qty: 1, line_id: 'li-1', ...over }) as CartLine;
+
+  it('viajan con la línea, en su orden', () => {
+    const p = buildFirePayload('ord-1', 'Mesa 4', [
+      linea({ modifiers: [{ option_id: 'o-no-onion' }, { option_id: 'o-cheese' }] }),
+    ]);
+    expect(p?.items[0].modifiers).toEqual([{ option_id: 'o-no-onion' }, { option_id: 'o-cheese' }]);
+  });
+
+  it('una línea sin suplementos no gana ruido', () => {
+    // Control: el 99 % de las comandas. Un array vacío en cada línea sería basura en el evento que
+    // consume kitchen, y `order.fired` lo leen más módulos.
+    const p = buildFirePayload('ord-1', 'Mesa 4', [linea()]);
+    expect(p?.items[0].modifiers).toBeUndefined();
+  });
+});

@@ -4217,7 +4217,8 @@ function buildFirePayload(orderId, label, lines, roundNo) {
       category_id: l3.category_id ?? null,
       // Y de qué línea de pedido salió: kitchen reparte una anulación entre las estaciones que
       // recibieron cada ronda por este id.
-      order_item_id: l3.line_id ?? null
+      order_item_id: l3.line_id ?? null,
+      ...l3.modifiers?.length ? { modifiers: l3.modifiers.map((m4) => ({ option_id: m4.option_id })) } : {}
     }))
   };
 }

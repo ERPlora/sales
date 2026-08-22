@@ -20,6 +20,11 @@ export interface FireItem {
   category_id: string | null;
   /** Línea de pedido de la que sale: kitchen reparte anulaciones por ronda con este id. */
   order_item_id: string | null;
+  /** pm#93 — suplementos elegidos, EN SU ORDEN. Solo los ids: el nombre que se IMPRIME lo resuelve
+   *  el handler contra `modifiers.options.all`, por el mismo motivo que el precio — si lo pusiera
+   *  el navegador, cualquiera podría escribir lo que quisiera en la comanda de cocina.
+   *  Ausente cuando la línea no tiene: `order.fired` lo leen más módulos y no merece ruido. */
+  modifiers?: { option_id: string }[];
 }
 
 export interface FirePayload {
@@ -61,6 +66,7 @@ export function buildFirePayload(
       // Y de qué línea de pedido salió: kitchen reparte una anulación entre las estaciones que
       // recibieron cada ronda por este id.
       order_item_id: l.line_id ?? null,
+      ...(l.modifiers?.length ? { modifiers: l.modifiers.map((m) => ({ option_id: m.option_id })) } : {}),
     })),
   };
 }
