@@ -218,7 +218,11 @@ export class ErpSalesList extends LitElement {
       sort: 'created_at',
       dir: 'desc',
       // sales#27: se abre en HOY — las filas y los KPIs responden al mismo rango.
-      filters: b.from ? { created_at: { from: b.from, to: b.to } } : {},
+      // sales#125: el rango viaja como DÍAS (`erp_date`, la parte fecha que proyecta la query), no
+      // sobre el timestamp crudo: el motor compara la columna tal cual y «hasta hoy» cortaba a las
+      // 00:00 — «Hoy»/«7 días»/«30 días» salían vacías mientras los KPIs (que comparan por día)
+      // sí contaban el día en curso.
+      filters: b.from ? { erp_date: { from: b.from, to: b.to } } : {},
     });
     await Promise.all([this.ctrl.load(), this.loadStats()]);
     try { this.unsub = erplora().on('sale.completed', () => { this.ctrl.load(); this.loadStats(); }); }
@@ -229,11 +233,20 @@ export class ErpSalesList extends LitElement {
     window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
     super.disconnectedCallback(); this.unsub?.(); }
 
+  /** El selector de fechas de la propia tabla (columna «Fecha») también filtra por DÍA: la
+   *  columna pinta `created_at`, pero el rango que pide el usuario es de días y el filtro del
+   *  servidor es `erp_date` (sales#125). Mandarlo al timestamp repetiría el corte a las 00:00. */
+  private onFilterChange(e: CustomEvent<{ col: string; value: unknown }>): void {
+    const col = e.detail.col === 'created_at' ? 'erp_date' : e.detail.col;
+    this.ctrl.setFilter(col, e.detail.value);
+  }
+
   /** sales#27: cambia el rango de filas Y KPIs a la vez. */
   async setRange(range: Range): Promise<void> {
     this.range = range;
     const b = rangeBounds(range);
-    this.ctrl.setFilter('created_at', b.from ? { from: b.from, to: b.to } : null);
+    // sales#125: el filtro es la columna DÍA (`erp_date`), no el timestamp.
+    this.ctrl.setFilter('erp_date', b.from ? { from: b.from, to: b.to } : null);
     await this.loadStats();
   }
 
@@ -285,7 +298,7 @@ export class ErpSalesList extends LitElement {
         ${this.ctrl?.error ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : nothing}
         <!-- The «document» button is not the only door: rowClickable makes the whole row open the
              same document (outfitkit#67 — the actions column can be off-screen at 1440 px). -->
-        <ok-data-table .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r: Record<string, unknown>) => String(r.sale_number ?? '—')} .cardIcon=${() => 'receipt-outline'} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.ctrl?.state.sort} .sortDir=${this.ctrl?.state.dir ?? 'desc'} .searchable=${true} .searchPlaceholder=${t('ui.searchSalePlaceholder')} .emptyMessage=${this.ctrl?.loading ? t('ui.loading') : t('ui.noSales')} .actions=${this.documentActions} .rowClickable=${true} @rowAction=${(e: CustomEvent<{ actionId: string; row: Sale }>) => { if (e.detail.actionId === 'document') this.docSaleId = e.detail.row.id; else if (e.detail.actionId === 'void') void this.confirmVoid(e.detail.row); }} @rowClick=${(e: CustomEvent<{ row: Sale }>) => { this.docSaleId = e.detail.row.id; }} @pageChange=${(e: CustomEvent<number>) => this.ctrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.ctrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.ctrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.ctrl.setFilter(e.detail.col, e.detail.value)}></ok-data-table>
+        <ok-data-table .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r: Record<string, unknown>) => String(r.sale_number ?? '—')} .cardIcon=${() => 'receipt-outline'} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.ctrl?.state.sort} .sortDir=${this.ctrl?.state.dir ?? 'desc'} .searchable=${true} .searchPlaceholder=${t('ui.searchSalePlaceholder')} .emptyMessage=${this.ctrl?.loading ? t('ui.loading') : t('ui.noSales')} .actions=${this.documentActions} .rowClickable=${true} @rowAction=${(e: CustomEvent<{ actionId: string; row: Sale }>) => { if (e.detail.actionId === 'document') this.docSaleId = e.detail.row.id; else if (e.detail.actionId === 'void') void this.confirmVoid(e.detail.row); }} @rowClick=${(e: CustomEvent<{ row: Sale }>) => { this.docSaleId = e.detail.row.id; }} @pageChange=${(e: CustomEvent<number>) => this.ctrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.ctrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.ctrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.onFilterChange(e)}></ok-data-table>
 
         ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => { this.docSaleId = undefined; }, t })}
       </div>`;
