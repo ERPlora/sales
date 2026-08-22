@@ -179,3 +179,34 @@ describe('la línea del papel lleva su unidad (sales#28)', () => {
     expect(html).toContain('250 g × 12,00 € / kg');
   });
 });
+
+// sales#103 — «pide tu factura»: el HTML (el respaldo del navegador y el input del PDF) lleva el
+// mismo bloque que el renderer ESC/POS. Aquí no hay QR pintable sin librería — igual que el QR
+// fiscal, que en HTML solo estampa su nota — así que el bloque es LEYENDA + LOCALIZADOR EN TEXTO
+// (la única vía cuando la cámara no enfoca) + la URL para teclearla.
+describe('el bloque «pide tu factura» del papel HTML (sales#103)', () => {
+  it('con claim: leyenda, localizador en texto y URL escaneable/tecleable', () => {
+    const html = receiptToPrintableHtml({
+      ...doc,
+      claim_qr_data: 'https://hub.example/p/ABCD1234ABCD1234',
+      claim_note: 'Pide tu factura',
+      claim_locator: 'ABCD1234ABCD1234',
+    });
+    expect(html).toContain('Pide tu factura');
+    expect(html).toContain('ABCD1234ABCD1234');
+    expect(html).toContain('https://hub.example/p/ABCD1234ABCD1234');
+  });
+
+  it('sin claim no existe el bloque: el papel es exactamente el de hoy', () => {
+    const html = receiptToPrintableHtml(doc);
+    // La regla CSS vive SIEMPRE en el stylesheet (como .doc-title); lo que no debe existir es el
+    // ELEMENTO del bloque.
+    expect(html).not.toContain('class="claim"');
+    expect(html).not.toContain('Pide tu factura');
+  });
+
+  it('el localizador se escapa como el resto de los datos (es texto tecleado por el hub, pero por si acaso)', () => {
+    const html = receiptToPrintableHtml({ ...doc, claim_note: 'X', claim_locator: '<b>LOC</b>' });
+    expect(html).not.toContain('<b>LOC</b>');
+  });
+});

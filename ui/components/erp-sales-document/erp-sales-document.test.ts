@@ -7,7 +7,7 @@
 //    desde el catálogo del módulo (ADR-0055) vía receiptLabels()/invoiceLabels().
 // 2. BOTÓN IMPRIMIR FLOTANDO — vivía arriba-derecha, suelto sobre el documento. Se mueve al
 //    ion-footer del modal anfitrión (document-modal.ts); el visor pinta SOLO el documento.
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ReceiptData } from '@erplora/outfitkit';
 
 beforeEach(() => {
@@ -240,3 +240,156 @@ describe('la unidad de la línea llega al papel (sales#28)', () => {
   });
 });
 
+// sales#103 — «pide tu factura» (hub#963 / ADR-0363). Al resolver la F2 se ACUÑA el claim contra
+// la puerta pública del hub (`POST /api/hub/public-claims`, sesión del cajero) y el papel gana su
+// segundo QR. Las líneas del payload sellado salen de `invoice.lines`: el esquema de
+// `invoice.substitute` las EXIGE y no se derivan server-side.
+//
+// Tolerancias no opcionales (ADR-0127): sin módulo invoice → sin claim y sin segundo QR, el tique
+// sale exactamente como hoy. Un tique nacido F1 (con NIF) no tiene nada que canjear. Y acuñar es
+// idempotente: una reimpresión NO dispara un segundo acuñamiento observable.
+describe('claim «pide tu factura» — acuñar al resolver la F2 e imprimir el segundo QR (sales#103)', () => {
+  const SALE = {
+    id: 's1', sale_number: 'T-1', subtotal: 264, total: 288,
+    payment_method_name: 'Efectivo', created_at: '2026-07-16T19:00:30Z',
+  };
+  const F2_LINES = [
+    { id: 'li1', line_number: 1, description: 'Café solo', quantity: 2, unit_price: 120, tax_rate: 10,
+      surcharge_rate: 0, tax_category_key: 'product.standard', base_amount: 240, tax_amount: 24,
+      total_amount: 264, product_id: 'p-cafe' },
+  ];
+
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    (globalThis as { fetch?: unknown }).fetch = originalFetch;
+  });
+
+  /** Monta el visor por sale-id con las queries del SDK stubbeadas y el fetch de la puerta. */
+  async function montarConF2(opts: {
+    invoice?: Record<string, unknown> | undefined; // fila de invoice.by_source; undefined = módulo ausente
+    fetchImpl?: unknown;
+  }) {
+    const fetchCalls: [string, RequestInit][] = [];
+    // El fetch instalado SIEMPRE graba la llamada; `fetchImpl` decide la respuesta (defecto: la
+    // puerta del hub contestando bien).
+    (globalThis as { fetch?: unknown }).fetch = async (url: string, init: RequestInit) => {
+      fetchCalls.push([url, init]);
+      if (opts.fetchImpl) return (opts.fetchImpl as (u: string, i: RequestInit) => unknown)(url, init);
+      return { ok: true, json: async () => ({ ok: true, locator: 'ABCD1234ABCD1234', url: '/p/ABCD1234ABCD1234' }) };
+    };
+    (globalThis as Record<string, unknown>).erplora = {
+      query: async (name: string) => (name === 'sales.get' ? [SALE]
+        : name === 'sales.lines' ? [{ product_name: 'Cafe', quantity: 2, unit_price: 120, line_total: 240 }]
+        : []),
+      queryOptional: async (name: string) => {
+        if (name === 'invoice.by_source') return opts.invoice; // undefined = módulo ausente (ADR-0127)
+        if (name === 'invoice.lines') return F2_LINES;
+        if (name === 'verifactu.records.by_invoice') return [{ qr_url: 'https://aeat/qr', aeat_csv: '' }];
+        return undefined;
+      },
+      locale: 'es',
+      t: (_c: unknown, k: string) => k,
+    };
+    await import('./erp-sales-document');
+    const el = document.createElement('erp-sales-document') as HTMLElement & {
+      fiscalRetryDelays: number[]; updateComplete: Promise<unknown>;
+    };
+    el.fiscalRetryDelays = [10];
+    el.setAttribute('sale-id', 's1');
+    document.body.appendChild(el);
+    await el.updateComplete;
+    return { el, fetchCalls };
+  }
+
+  it('F2 con invoice presente: acuña contra la puerta pública con el payload sellado correcto', async () => {
+    const { el, fetchCalls } = await montarConF2({ invoice: { id: 'inv-42', number: 'F2-1', invoice_type: 'F2' } });
+
+    await new Promise((r) => setTimeout(r, 60));
+    await el.updateComplete;
+    expect(fetchCalls, 'se llama a la puerta de acuñado').toHaveLength(1);
+    const [url, init] = fetchCalls[0];
+    expect(url).toBe('/api/hub/public-claims');
+    expect(JSON.parse(String(init.body))).toEqual({
+      kind: 'invoice_request',
+      subject_id: 'inv-42',
+      command: 'invoice.substitute',
+      sealed_payload: {
+        original_invoice_id: 'inv-42',
+        items: F2_LINES, // las líneas de invoice.lines TAL CUAL, ya en céntimos
+      },
+      public_fields: ['customer_tax_id', 'customer_name', 'customer_address'],
+    });
+  });
+
+  it('el papel gana los tres campos: QR absoluto, leyenda traducida y localizador en texto', async () => {
+    const { el } = await montarConF2({ invoice: { id: 'inv-42', number: 'F2-1', invoice_type: 'F2' } });
+
+    await new Promise((r) => setTimeout(r, 60));
+    await el.updateComplete;
+    const doc = (el as unknown as { printableDocument(): Record<string, unknown> }).printableDocument();
+    expect(doc.claim_locator).toBe('ABCD1234ABCD1234');
+    // La URL relativa del hub (/p/<locator>) se vuelve ABSOLUTA contra el origen del hub.
+    expect(doc.claim_qr_data).toBe(`${globalThis.location.origin}/p/ABCD1234ABCD1234`);
+    expect(doc.claim_note, 'la leyenda sale del catálogo (t() devuelve la clave aquí)').toBe('ui.claimNote');
+    // El QR fiscal NO se toca: son DOS códigos con destinos distintos.
+    expect(doc.qr_data).toBe('https://aeat/qr');
+
+    const html = (el as unknown as { printableHtml(): string }).printableHtml();
+    expect(html).toContain('ABCD1234ABCD1234');
+    expect(html).toContain('ui.claimNote');
+  });
+
+  it('SIN módulo invoice: ni fetch ni claim_* — el documento es idéntico al de hoy (ADR-0127)', async () => {
+    const { el, fetchCalls } = await montarConF2({ invoice: undefined });
+
+    await new Promise((r) => setTimeout(r, 60));
+    await el.updateComplete;
+    expect(fetchCalls, 'sin módulo invoice no hay nada que acuñar').toHaveLength(0);
+    const doc = (el as unknown as { printableDocument(): Record<string, unknown> }).printableDocument();
+    expect(Object.keys(doc).filter((k) => k.startsWith('claim_'))).toEqual([]);
+    expect(doc.qr_data).toBeUndefined(); // y sin QR fiscal, como siempre
+  });
+
+  it('un tique nacido F1 (con NIF) no tiene nada que canjear: no se acuña', async () => {
+    const { el, fetchCalls } = await montarConF2({
+      invoice: { id: 'inv-42', number: 'F1-1', invoice_type: 'F1', customer_tax_id: '12345678Z' },
+    });
+
+    await new Promise((r) => setTimeout(r, 60));
+    await el.updateComplete;
+    expect(fetchCalls).toHaveLength(0);
+    const doc = (el as unknown as { printableDocument(): Record<string, unknown> }).printableDocument();
+    expect(Object.keys(doc).filter((k) => k.startsWith('claim_'))).toEqual([]);
+  });
+
+  it('reimpresión idempotente: el claim se acuñó UNA vez y la copia lleva el MISMO localizador', async () => {
+    const { el, fetchCalls } = await montarConF2({ invoice: { id: 'inv-42', number: 'F2-1', invoice_type: 'F2' } });
+
+    await new Promise((r) => setTimeout(r, 60));
+    const primero = (el as unknown as { printableDocument(): Record<string, unknown> }).printableDocument();
+    // El cliente del mostrador vuelve a pedir su copia (reimpresión): mismo papel, mismo locator.
+    const segunda = (el as unknown as { printableDocument(): Record<string, unknown> }).printableDocument();
+    const tercera = (el as unknown as { printableHtml(): string }).printableHtml();
+
+    expect(fetchCalls, 'un solo acuñamiento observable (el hub además es idempotente por (kind, subject_id))').toHaveLength(1);
+    expect(primero.claim_locator).toBe('ABCD1234ABCD1234');
+    expect(segunda.claim_locator).toBe(primero.claim_locator);
+    expect(tercera).toContain('ABCD1234ABCD1234');
+  });
+
+  it('si acuñar falla (puerta caída, sin permiso invoice.add_invoice…) el tique sale como hoy', async () => {
+    const { el, fetchCalls } = await montarConF2({
+      invoice: { id: 'inv-42', number: 'F2-1', invoice_type: 'F2' },
+      fetchImpl: async () => ({ ok: false, status: 403, json: async () => ({}) }),
+    });
+
+    await new Promise((r) => setTimeout(r, 60));
+    await el.updateComplete;
+    // Se INTENTÓ acuñar (≥1; el reintento best-effort de printableDocument puede sumar otro).
+    expect(fetchCalls.length).toBeGreaterThanOrEqual(1);
+    const doc = (el as unknown as { printableDocument(): Record<string, unknown> }).printableDocument();
+    expect(Object.keys(doc).filter((k) => k.startsWith('claim_'))).toEqual([]);
+    expect(doc.qr_data).toBe('https://aeat/qr', 'el QR fiscal sigue en su sitio');
+  });
+});

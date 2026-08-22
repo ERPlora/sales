@@ -39,6 +39,7 @@
     "print": "Imprimir",
     "printFailed": "No se pudo imprimir",
     "qrValidateNote": "Escanea para validar la factura en la AEAT",
+    "claimNote": "Pide tu factura",
     "docEmpty": "Sin datos de tiquet.",
     "docEmptyInvoice": "Sin datos de factura.",
     "docDefaultBusiness": "Mi negocio",

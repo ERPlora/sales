@@ -20,7 +20,7 @@
 //
 // The field names are the wire contract of `escpos::render_receipt` / `render_prebill`. Changing
 // one here without changing it there prints a document with a missing field, silently.
-import { orderToPrebill, saleToReceipt } from './document-mappers.js';
+import { orderToPrebill, saleToReceipt, claimPrintFields } from './document-mappers.js';
 import type { PrebillLine, SaleRow, SaleLineRow, SaleSettings, FiscalData } from './document-mappers.js';
 import { quantityLabel, unitTag } from './price-label.js';
 
@@ -72,6 +72,16 @@ export interface PrintDocument extends Record<string, unknown> {
   change?: number;
   /** VeriFactu (or any) QR, as the renderer names it. */
   qr_data?: string;
+  /** sales#103 (ADR-0363) — the SECOND QR: `https://<hub>/p/<locator>`, the self-service door to
+   *  ask for the full invoice. Deliberately SEPARATE from `qr_data`: that one points at the AEAT
+   *  and its numserie is sequential and public, so it cannot serve as a locator — two codes, two
+   *  destinations. Printed only when a claim was minted (a plain F2 with the invoice module). */
+  claim_qr_data?: string;
+  /** The legend beside it («Pide tu factura» / «Get your invoice»): without it nobody knows what
+   *  the second code is for. Translated at render time from the module catalog (ADR-0055). */
+  claim_note?: string;
+  /** The locator IN TEXT — the only way in when the camera won't focus or the ticket is a copy. */
+  claim_locator?: string;
   receipt_footer?: string;
   /** Printed at the foot of a bill: «this is not an invoice» (ADR-0141). */
   notice?: string;
@@ -136,6 +146,9 @@ export function saleToPrintDocument(
     paid: screen.payment?.paid,
     change: screen.payment?.change,
     qr_data: screen.qr,
+    // sales#103: el bloque «pide tu factura», VACÍO sin locator acuñado — el renderer imprime
+    // solo los campos presentes, así que un tique sin claim sale byte a byte como hoy.
+    ...claimPrintFields(fiscal, t),
     receipt_footer: screen.footer,
   };
 }
