@@ -45,11 +45,15 @@
           },
           "quantity": {
             "type": "integer",
-            "minimum": 1
+            "minimum": 1,
+            "description": "Cantidad en PUNTO FIJO entero, escala global 10⁶ (ADR-0147): 1 unidad = 1000000, media unidad = 500000, el mínimo representable (minimum 1) es 0,000001. NUNCA un float ni una cantidad en unidades humanas: 2 aquí no son «2 unidades», son 0,000002. El importe de la línea lo calcula el servidor con esta escala (SDK, KPEIN).",
+            "examples": [1000000, 500000, 2500000]
           },
           "price": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "description": "Precio por unidad de venta, en UNIDADES MÍNIMAS enteras (céntimos, ADR-0007/0123): 250 = 2,50 €. Es el precio POR `price_quantity_value` de `pricing_unit_code` (KPEIN §2.3; por defecto, por 1 unidad del producto) — con precio por kilo (price_quantity 1 kg), 250 cobra 2,50 € por cada kilo. La base fiscal (IVA incluido o no) la decide el hub (`tax_included` es solo fallback).",
+            "examples": [250, 1895, 120]
           },
           "discount": {
             "type": "number",
@@ -78,7 +82,9 @@
           },
           "cost": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "description": "Coste unitario en UNIDADES MÍNIMAS enteras (céntimos, ADR-0007/0123), como `price`: snapshot para margen, no afecta al importe cobrado.",
+            "examples": [90]
           },
           "category_id": {
             "type": [
@@ -178,7 +184,9 @@
     },
     "amount_tendered": {
       "type": "integer",
-      "minimum": 0
+      "minimum": 0,
+      "description": "Importe ENTREGADO por el cliente en UNIDADES MÍNIMAS enteras (céntimos, ADR-0007/0123): 2000 = 20,00 €. Con efectivo decide el cambio; sin él (tarjeta, importe justo) se cobra el total.",
+      "examples": [2000]
     },
     "payment_method_id": {
       "type": [
