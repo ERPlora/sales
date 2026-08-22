@@ -426,13 +426,43 @@ fn calc_line_components(
     } else {
         (amount, 0) // line se recompone abajo (net + suma de cuotas)
     };
-    // Cuota por componente sobre la misma base; la cuota total = suma de las redondeadas.
+    // Cuota por componente. sales#124 — con el precio IVA **INCLUIDO** el importe cobrado ya está
+    // fijado, así que la cuota es lo que QUEDA (`line - net`) y se reparte entre los componentes
+    // por resto mayor. Recalcularla desde la base daba `545 + 114 = 659` sobre un cobro de 660: el
+    // desglose no sumaba el total, y ese descuadre viajaba al tique, a la factura y al `CuotaTotal`
+    // de la AEAT. Con el IVA **EXCLUIDO** la línea SE COMPONE de base + cuota (`line = net + tax`),
+    // así que ahí la suma cuadra por construcción y cada componente conserva su propio redondeo.
     let net_dec = Decimal::from(net);
+    let comp_taxes: Vec<i64> = if tax_incl {
+        let weights: Vec<i64> = components
+            .iter()
+            .map(|c| (c.rate_pct * 100.0).round() as i64)
+            .collect();
+        let w_total: i64 = weights.iter().map(|w| (*w).max(0)).sum();
+        let quota = line - net;
+        if w_total <= 0 {
+            vec![0; components.len()]
+        } else {
+            // Escalar todos los pesos por igual conserva la proporción y esquiva el techo de
+            // `allocate_amount`, que acota el reparto a Σpesos (pensado para el descuento de
+            // ADR-0210, donde no se puede repartir más que la línea).
+            let scale = ((quota + w_total - 1) / w_total).max(1);
+            let scaled: Vec<i64> = weights.iter().map(|w| w * scale).collect();
+            allocate_amount(quota, &scaled)
+        }
+    } else {
+        components
+            .iter()
+            .map(|c| {
+                let pct = Decimal::from_f64(c.rate_pct).unwrap_or(Decimal::ZERO) / Decimal::from(100);
+                money::round(net_dec * pct)
+            })
+            .collect()
+    };
+
     let mut parts: Vec<(String, i64, i64)> = Vec::with_capacity(components.len());
     let mut tax_total: i64 = 0;
-    for c in components {
-        let pct = Decimal::from_f64(c.rate_pct).unwrap_or(Decimal::ZERO) / Decimal::from(100);
-        let comp_tax = money::round(net_dec * pct);
+    for (c, comp_tax) in components.iter().zip(comp_taxes) {
         tax_total += comp_tax;
         // Agrega por clave (dos componentes con la misma tasa se funden en una entrada).
         if let Some(e) = parts.iter_mut().find(|(k, _, _)| *k == c.rate_key) {
@@ -2016,6 +2046,95 @@ mod tests {
         assert_eq!(t.line, 198); assert_eq!(t.net, 164); assert_eq!(t.tax, 34);
     }
 
+    /// Helper: un solo componente de IVA, que es el caso del 99 % de las lineas.
+    #[cfg(test)]
+    fn one_vat(rate_pct: f64) -> Vec<TaxComponent> {
+        vec![TaxComponent {
+            rate_pct,
+            rate_key: rate_key(rate_pct),
+            kind: "tax".to_string(),
+            label: "IVA".to_string(),
+        }]
+    }
+
+    /// sales#124 — el camino de PRODUCCION (`calc_line_components`) tiene que cumplir lo mismo
+    /// que la referencia (`calc_line`): **base + cuota = importe cobrado**.
+    ///
+    /// Con precio IVA incluido la cuota NO se puede recalcular desde la base: `2 x 3,30 EUR` al
+    /// 21 % da `net = round(660/1,21) = 545` y `round(545 x 0,21) = 114`, que suma 659 y no 660.
+    /// La cuota es lo que queda: `line - net`.
+    #[test]
+    fn components_tax_inclusive_line_always_sums() {
+        let comps = one_vat(21.0);
+        let (t, parts) = calc_line_components(330, 2 * QUANTITY_SCALE, QUANTITY_SCALE, 0.0, true, &comps);
+
+        assert_eq!(t.line, 660, "el importe cobrado es el del catalogo");
+        assert_eq!(
+            t.net + t.tax,
+            t.line,
+            "base {} + cuota {} != cobrado {}",
+            t.net, t.tax, t.line
+        );
+        assert_eq!(t.net, 545);
+        assert_eq!(t.tax, 115, "la cuota es line - net, no round(net * pct)");
+        assert_eq!(
+            parts.iter().map(|(_, _, q)| *q).sum::<i64>(),
+            t.tax,
+            "las cuotas del desglose suman la cuota de la linea"
+        );
+    }
+
+    /// El invariante no es de un caso: se cumple para CUALQUIER importe. Barremos 1..2000
+    /// centimos a los tipos espanoles con precio IVA incluido, que es como vende un TPV.
+    #[test]
+    fn components_tax_inclusive_sums_for_every_amount() {
+        for rate in [4.0_f64, 10.0, 21.0] {
+            let comps = one_vat(rate);
+            for cents in 1..=2000_i64 {
+                let (t, parts) =
+                    calc_line_components(cents, QUANTITY_SCALE, QUANTITY_SCALE, 0.0, true, &comps);
+                assert_eq!(
+                    t.net + t.tax,
+                    t.line,
+                    "no suma con {} centimos al {} %: {} + {} != {}",
+                    cents, rate, t.net, t.tax, t.line
+                );
+                assert_eq!(
+                    parts.iter().map(|(_, _, q)| *q).sum::<i64>(),
+                    t.tax,
+                    "el desglose no suma la cuota con {} centimos al {} %",
+                    cents, rate
+                );
+            }
+        }
+    }
+
+    /// Un grupo multi-impuesto (IVA 21 % + recargo de equivalencia 5,2 %) reparte la cuota entre
+    /// sus componentes, y la suma de las partes sigue siendo `line - net`.
+    #[test]
+    fn components_tax_inclusive_group_splits_the_exact_quota() {
+        let comps = vec![
+            TaxComponent { rate_pct: 21.0, rate_key: rate_key(21.0), kind: "tax".to_string(), label: "IVA".to_string() },
+            TaxComponent { rate_pct: 5.2, rate_key: rate_key(5.2), kind: "surcharge".to_string(), label: "RE".to_string() },
+        ];
+        for cents in 1..=500_i64 {
+            let (t, parts) =
+                calc_line_components(cents, QUANTITY_SCALE, QUANTITY_SCALE, 0.0, true, &comps);
+            assert_eq!(
+                t.net + t.tax,
+                t.line,
+                "el grupo no suma con {} centimos: {} + {} != {}",
+                cents, t.net, t.tax, t.line
+            );
+            assert_eq!(
+                parts.iter().map(|(_, _, q)| *q).sum::<i64>(),
+                t.tax,
+                "las partes del grupo no suman la cuota con {} centimos",
+                cents
+            );
+        }
+    }
+
     #[test]
     fn emits_counter_sale_lines_event() {
         let items = json!([
@@ -3134,9 +3253,18 @@ mod tests {
         let items = json!([{ "product_name": "Café", "price": 10000, "quantity": 1_000_000, "tax_rate": 21.0 }]);
         let out = sale(input(items, 3, 0));
         let line = &out.operations.iter().find(|o| o.command == "sales._insert_line").expect("line").params;
-        // Gross 100,00 € at 21 %: base 82,64 € and the quota the hub declares on that base.
+        // Gross 100,00 € at 21 %: base 82,64 € and the quota that is LEFT, so the breakdown adds
+        // up to what the customer actually paid. sales#124 — this used to assert 1735, the quota
+        // recomputed from the base (`round(8264 * 0.21)`), which declared 82,64 + 17,35 = 99,99 €
+        // on a 100,00 € charge. One cent short of the money taken, and that gap travelled to the
+        // printed receipt, to the invoice and to the AEAT `CuotaTotal`.
         assert_eq!(line["net_amount"], json!(8264));
-        assert_eq!(line["tax_amount"], json!(1735));
+        assert_eq!(line["tax_amount"], json!(1736));
+        assert_eq!(
+            line["net_amount"].as_i64().unwrap() + line["tax_amount"].as_i64().unwrap(),
+            10000,
+            "base + quota must equal the gross charged"
+        );
     }
 
     #[test]
