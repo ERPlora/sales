@@ -137,3 +137,55 @@ describe('imprimir el documento', () => {
     expect(avisos).toHaveLength(0);
   });
 });
+
+// sales#92 — reimprimir un tique NO imprimía. La cola del hub es idempotente por
+// (hub_id, job_id) (printing.jobs_create: ON CONFLICT DO NOTHING) y el modal reutilizaba
+// `sale-${saleId}` — LA MISMA clave que el shell ya gastó en la impresión automática del cobro
+// (apps/web/src/lib/print-on-on-sale.ts): la reimpresión caía en el hueco del dedup y no salía
+// papel, sin error. A diferencia de la cuenta previa (prebillJobId: huella del CONTENIDO), una
+// venta es INMUTABLE — su huella sería constante y el dedup se tragaría todas las copias. La
+// clave de una reimpresión es única por INTENTO: cada pulsación de IMPRIMIR es una petición
+// explícita de otra copia.
+describe('reimprimir: cada intento es un trabajo nuevo (sales#92)', () => {
+  interface PrintReq { jobId?: string }
+  let enviados: PrintReq[];
+
+  function montarConVenta() {
+    const modal = montar('venta-1');
+    const visor = modal.querySelector('erp-sales-document') as unknown as Record<string, unknown>;
+    visor.sale = { id: 'venta-1', sale_number: 'T-42', subtotal: 327, tax_amount: 33, total: 360, payment_method_name: 'Efectivo' };
+    visor.lines = [{ product_name: 'Cafe solo', quantity: 2, unit_price: 180, line_total: 360 }];
+    visor.settings = {};
+    return modal;
+  }
+
+  beforeEach(() => {
+    enviados = [];
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.print = async (req: PrintReq) => { enviados.push(req); return { via: 'queue' }; };
+    sdk.notify = () => {};
+  });
+
+  it('dos pulsaciones de IMPRIMIR mandan DOS jobIds distintos — la cola no se traga la segunda', async () => {
+    const modal = montarConVenta();
+    const btn = () => modal.querySelector<HTMLElement>('ion-footer ion-button.print')!;
+    btn().click();
+    await new Promise((r) => setTimeout(r, 0));
+    btn().click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(enviados, 'dos peticiones de impresión').toHaveLength(2);
+    expect(enviados[0].jobId, 'la primera lleva jobId').toBeTruthy();
+    expect(enviados[1].jobId, 'y distinto de la primera — si no, el dedup la ignora').not.toBe(enviados[0].jobId);
+  });
+
+  it('la clave de reimpresión NUNCA es la del cobre (`sale-<id>` ya la gastó el auto-print)', async () => {
+    const modal = montarConVenta();
+    modal.querySelector<HTMLElement>('ion-footer ion-button.print')!.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const jobId = enviados[0].jobId!;
+    expect(jobId, 'no es la clave exacta del auto-print del checkout').not.toBe('sale-venta-1');
+    expect(jobId.startsWith('sale-venta-1'), 'pero se correlaciona con la venta').toBe(true);
+  });
+});
