@@ -374,3 +374,123 @@ describe('sales list — clicking the row opens the document (pm#155)', () => {
     expect(wc.docSaleId, 'the row was clicked and the document did not open').toBe('sale-1');
   });
 });
+
+// ── sales#126 — scroll propio y KPIs de una fila en móvil ─────────────────────────────────────
+//
+// En 390×844 el histórico quedaba inalcanzable: `div.outlet` con `overflow-y: visible` (clientHeight
+// 553 · scrollHeight 765 → 212 px fuera) y el `body` del hub con `overflow: hidden` — el contenido
+// desbordado se recortaba SIN scrollbar (`outlet.scrollTop` seguía a 0 tras rueda y End). El
+// desbordamiento lo aportaba esta vista: los 6 KPI apilados en 2 columnas × 3 filas (~230 px) más
+// la barra de filtros, y nada envuelto en un contenedor con scroll propio.
+//
+// happy-dom NO computa layout (flex/scroll — vitest.config.ts), así que aquí se fija el CONTRATO
+// que lo hace posible, no el píxel: la vista LLENA el alto del outlet (`:host` flex con
+// `height:100%` + `min-height:0`, el mismo patrón que payments/list y erp-pos) y envuelve TODO su
+// contenido en un `.scroll` con `overflow-y:auto` — así la última fila, el estado vacío y el pie
+// «N registros» se alcanzan scrollando la propia vista. Por debajo de 768 px los KPI colapsan en
+// UNA fila desplazable (Square/Toast) elegida por `matchMedia`. El cálculo real de scrollHeight en
+// 390/834/1440 es QA visual en el hub.
+describe('sales list — la vista gestiona su scroll y sus KPI en móvil (sales#126)', () => {
+  // La media query EXACTA que gobierna la fila de KPI: por debajo de 768 px (767.98 excluye el
+  // propio 768, donde el grid multi-columna sigue siendo el layout correcto).
+  const KPI_QUERY = '(max-width: 767.98px)';
+  type ChangeListener = (e: { matches: boolean }) => void;
+
+  /** matchMedia controlable: la lista decide su fila de KPI por ESTE query; el resto (ok-data-table
+   *  pregunta por 640 px en su propio connectedCallback) pasa a la implementación real de happy-dom. */
+  function stubMatchMedia(initial: boolean): { mql: { dispatch(matches: boolean): void }; spy: ReturnType<typeof vi.spyOn> } {
+    const listeners = new Set<ChangeListener>();
+    let matches = initial;
+    const mql = {
+      matches, media: KPI_QUERY,
+      addEventListener: (_t: string, l: ChangeListener) => { listeners.add(l); },
+      removeEventListener: (_t: string, l: ChangeListener) => { listeners.delete(l); },
+      /** Simula que el viewport cambia de ancho (rotación, mover la ventana). */
+      dispatch(next: boolean): void { matches = next; listeners.forEach((l) => l({ matches: next })); },
+    };
+    const real = window.matchMedia.bind(window);
+    const spy = vi.spyOn(window, 'matchMedia').mockImplementation((q: string) =>
+      q === KPI_QUERY ? mql as unknown as MediaQueryList : real(q));
+    return { mql, spy };
+  }
+
+  async function mountList(mobile: boolean): Promise<{ el: HTMLElement & { shadowRoot: ShadowRoot; updateComplete: Promise<unknown> }; mql: { dispatch(matches: boolean): void } }> {
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.queryPage = async () => ({ rows: [], total: 0 });
+    const { mql } = stubMatchMedia(mobile);
+    document.body.innerHTML = '';
+    await import('./erp-sales-list');
+    const el = document.createElement('erp-sales-list') as HTMLElement & { shadowRoot: ShadowRoot; updateComplete: Promise<unknown> };
+    document.body.appendChild(el);
+    await el.updateComplete;
+    return { el, mql };
+  }
+
+  const cssOf = (el: HTMLElement): string => {
+    const declaradas = (el.constructor as unknown as { styles: { cssText: string } | Array<{ cssText: string }> }).styles;
+    return [declaradas].flat().map((s) => s.cssText).join('\n');
+  };
+
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('la vista LLENA el alto del outlet: :host en flex-column con height 100% y min-height 0', async () => {
+    const { el } = await mountList(false);
+    const css = cssOf(el);
+    // Sin `height:100%` el host no tiene alto propio y el hijo no puede scrollar contra nada;
+    // sin `min-height:0` el flex no deja encoger al contenedor de scroll (el fallo de 390 px).
+    expect(css).toMatch(/:host\s*\{[^}]*display\s*:\s*flex/);
+    expect(css).toMatch(/:host\s*\{[^}]*flex-direction\s*:\s*column/);
+    expect(css).toMatch(/:host\s*\{[^}]*height\s*:\s*100%/);
+    expect(css).toMatch(/:host\s*\{[^}]*min-height\s*:\s*0/);
+  });
+
+  it('existe un contenedor `.scroll` (overflow-y auto + min-height 0) que envuelve título, KPIs Y tabla', async () => {
+    const { el } = await mountList(false);
+    const scroll = el.shadowRoot.querySelector('.scroll');
+    expect(scroll, 'the .scroll wrapper').toBeTruthy();
+    // El pie «N registros» y el estado vacío viven DENTRO de la tabla: si la tabla no está dentro
+    // del scroller, vuelven a quedar fuera del alcance (lo que pasaba en 390 px).
+    expect(scroll!.querySelector('h2'), 'the title scrolls with the view').toBeTruthy();
+    expect(scroll!.querySelector('.cards'), 'the KPI strip scrolls with the view').toBeTruthy();
+    expect(scroll!.querySelector('ok-data-table'), 'the table (rows, empty state, pager) scrolls with the view').toBeTruthy();
+    const css = cssOf(el);
+    expect(css).toMatch(/\.scroll\s*\{[^}]*flex\s*:\s*1 1 auto/);
+    expect(css).toMatch(/\.scroll\s*\{[^}]*min-height\s*:\s*0/);
+    expect(css).toMatch(/\.scroll\s*\{[^}]*overflow-y\s*:\s*auto/);
+  });
+
+  it('por debajo de 768 px los KPI llevan la clase de fila horizontal (una sola fila, no 2×3)', async () => {
+    const { el } = await mountList(true);
+    const cards = el.shadowRoot.querySelector('.cards')!;
+    expect(cards.classList.contains('kpi-row'), 'the KPI strip collapses to one row below 768 px').toBe(true);
+  });
+
+  it('por encima de 768 px la clase NO está: el grid multi-columna se queda como estaba', async () => {
+    const { el } = await mountList(false);
+    expect(el.shadowRoot.querySelector('.cards')!.classList.contains('kpi-row')).toBe(false);
+  });
+
+  it('la fila de KPI absorbe SU desbordamiento horizontal: overflow-x auto + nowrap en .kpi-row', async () => {
+    const { el } = await mountList(false); // el contrato CSS existe en ambas orientaciones
+    const css = cssOf(el);
+    // Con wrap la tira se apilaba en 2×3 (~230 px); nowrap + overflow-x:auto la dejan en UNA fila
+    // y el desbordamiento lo absorbe la tira — nunca la página (scroll horizontal en 390 prohibido).
+    expect(css).toMatch(/\.cards\.kpi-row\s*\{[^}]*flex-wrap\s*:\s*nowrap/);
+    expect(css).toMatch(/\.cards\.kpi-row\s*\{[^}]*overflow-x\s*:\s*auto/);
+    expect(css).toMatch(/\.cards\.kpi-row\s*\.card\s*\{[^}]*flex\s*:\s*0 0 auto/);
+    // Y el grid de escritorio (>768) sigue envolviendo igual que antes.
+    expect(css).toMatch(/\.cards\s*\{[^}]*flex-wrap\s*:\s*wrap/);
+  });
+
+  it('la tira sigue al viewport EN VIVO: al estrechar a móvil la clase aparece; al ensanchar, se va', async () => {
+    const { el, mql } = await mountList(false);
+    // El usuario rota el móvil o estrecha la ventana POR DEBAJO de 768 px: el listener de
+    // matchMedia tiene que conmutar la clase sin remontar la vista.
+    mql.dispatch(true);
+    await el.updateComplete;
+    expect(el.shadowRoot.querySelector('.cards')!.classList.contains('kpi-row'), 'narrowed below 768 → one-row strip').toBe(true);
+    mql.dispatch(false);
+    await el.updateComplete;
+    expect(el.shadowRoot.querySelector('.cards')!.classList.contains('kpi-row'), 'widened back → multi-column grid').toBe(false);
+  });
+});
