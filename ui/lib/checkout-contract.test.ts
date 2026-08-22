@@ -111,3 +111,37 @@ describe('trusted reads the runtime pre-loads for the handler (ADR-0069, sales#2
     expect(m.migrations.postgres).toContain('migrations/postgres/017_idempotency_key.sql');
   });
 });
+
+// sales#127 — the money/quantity ENCODING must be readable from the schema ALONE. An API client
+// integrating against `sales.complete_sale` gets the per-field docs (that is what generated
+// references and error hints surface); the encoding only lived in the payload-level description,
+// so `quantity: 2` and `price: 2.2` looked sane and silently meant 0.000002 units at 2 cents.
+// Fixed point and minor units are CONTRACT, not folklore: each field that carries them documents
+// them (and carries an example) where the field is declared.
+describe('complete_sale documents its encodings per field (sales#127)', () => {
+  type Field = JsonSchema & { description?: string; examples?: unknown[] };
+  const fields: Record<string, Field> = item.properties as Record<string, Field>;
+  const top: Record<string, Field> = s.properties as Record<string, Field>;
+
+  it('quantity declares the fixed-point 10⁶ scale, with an example', () => {
+    const d = fields.quantity.description ?? '';
+    expect(d, 'a description on the field itself').toContain('10⁶');
+    expect(d, 'says it is integer fixed point, never a float').toMatch(/punto fijo|fixed/i);
+    expect(fields.quantity.examples?.length, 'at least one worked example').toBeGreaterThan(0);
+  });
+
+  it('price declares minor units (cents) and what the price is FOR, with an example', () => {
+    const d = fields.price.description ?? '';
+    expect(d, 'minor units').toMatch(/céntimos|cents/i);
+    expect(d, 'the unit the price refers to (pricing unit context)').toMatch(/price_quantity|unidad/i);
+    expect(fields.price.examples?.length).toBeGreaterThan(0);
+  });
+
+  it('the other money fields say they are cents too (cost, amount_tendered, discount_amount)', () => {
+    for (const name of ['cost'] as const) {
+      expect((fields[name].description ?? ''), `${name} declares minor units`).toMatch(/céntimos|cents/i);
+    }
+    expect((top.amount_tendered.description ?? ''), 'amount_tendered declares minor units').toMatch(/céntimos|cents/i);
+    expect((top.discount_amount.description ?? ''), 'discount_amount already documented').toMatch(/céntimos|cents/i);
+  });
+});
