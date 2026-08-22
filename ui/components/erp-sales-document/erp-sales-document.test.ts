@@ -199,3 +199,44 @@ describe('printableHtml — el papel lleva las labels traducidas (sales#120)', (
     expect(html).not.toContain('>Subtotal<', 'ni el Subtotal de la plantilla');
   });
 });
+
+// sales#28 — la unidad congelada de la línea (sales.lines la devuelve desde ADR-0147 §2.4) tiene
+// que llegar HASTA el papel: el visor arma ambos documentos (HTML y térmico) desde el mismo mapper,
+// así que aquí se fija el cableado entero — fila con `unit_code` → «1,5 kg» en los dos soportes.
+describe('la unidad de la línea llega al papel (sales#28)', () => {
+  async function montarVentaConKilo() {
+    await import('./erp-sales-document');
+    const el = document.createElement('erp-sales-document');
+    (el as unknown as Record<string, unknown>).sale = {
+      id: 's-kg', sale_number: 'T-000125', total: 1800, created_at: '2026-08-20T10:00:00Z',
+    };
+    (el as unknown as Record<string, unknown>).lines = [{
+      product_name: 'Tomate rosa',
+      quantity: 1_500_000, // µ (ADR-0147) = 1,5 kg
+      unit_price: 1200,
+      line_total: 1800,
+      unit_code: 'kg',
+      unit_name: 'Kilogramo',
+      pricing_unit_code: 'kg',
+    }];
+    (el as unknown as Record<string, unknown>).settings = {};
+    document.body.appendChild(el);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    return el;
+  }
+
+  it('printableHtml: la línea del papel dice «1,5 kg × 12,00 € / kg»', async () => {
+    const el = await montarVentaConKilo();
+    const html = (el as unknown as { printableHtml(): string }).printableHtml();
+    expect(html).toContain('1,5 kg × 12,00 € / kg');
+    expect(html).not.toContain('1.5 ×', 'el punto inglés junto a la coma del dinero era el defecto');
+  });
+
+  it('printableDocument: la cantidad del térmico sale compuesta, «1,5 kg »', async () => {
+    const el = await montarVentaConKilo();
+    const doc = (el as unknown as { printableDocument(): { items: { quantity: number | string }[] } })
+      .printableDocument();
+    expect(doc.items[0].quantity).toBe('1,5 kg ');
+  });
+});
+

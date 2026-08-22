@@ -309,3 +309,51 @@ describe('cuenta previa (pre-bill) — NO es un documento fiscal', () => {
     expect(orderToPrebill(lineas, {}, { fallbackName: 'Mi negocio' }).business.name).toBe('Mi negocio');
   });
 });
+
+// sales#28 — la unidad congelada en la línea (ADR-0147 §2.4) tiene que llegar al PAPEL: el tiquet
+// imprimía «1.5 × 12,00 €» para 1,5 kg. Los mappers la hacen viajar con la línea del documento
+// (`<ok-receipt>` de outfitkit no la conoce: son campos extra que consumen receipt-html/ESC-POS) y
+// la factura A4 la pinta donde su contrato lo permite: junto a la descripción, «Tomate rosa (kg)».
+describe('la unidad congelada viaja al documento (sales#28)', () => {
+  const KG: SaleLineRow = {
+    product_name: 'Tomate rosa',
+    quantity: 1_500_000, // µ (ADR-0147): 1,5 kg
+    unit_price: 1200,
+    line_total: 1800,
+    unit_code: 'kg',
+    unit_name: 'Kilogramo',
+    pricing_unit_code: 'kg',
+    pricing_unit_name: 'Kilogramo',
+  };
+
+  it('saleToReceipt: la línea lleva unit_code/unit_name/pricing_unit_code para el papel', () => {
+    const r = saleToReceipt(SALE, [KG]);
+    expect(r.lines[0].qty).toBe(1.5);
+    expect(r.lines[0]).toMatchObject({ unit_code: 'kg', unit_name: 'Kilogramo', pricing_unit_code: 'kg' });
+  });
+
+  it('saleToReceipt: una línea antigua sin contexto no fabrica unidades', () => {
+    const r = saleToReceipt(SALE, LINES);
+    expect(r.lines[0]).not.toHaveProperty('unit_code');
+  });
+
+  it('orderToPrebill: la unidad congelada del carrito llega a la cuenta que se imprime', () => {
+    const doc = orderToPrebill([{ name: 'Tomate rosa', price: 1200, qty: 1.5, unit_code: 'kg', unit_name: 'Kilogramo' }], {});
+    expect(doc.lines[0].qty).toBe(1.5);
+    expect(doc.lines[0]).toMatchObject({ unit_code: 'kg', unit_name: 'Kilogramo' });
+  });
+
+  it('saleToInvoice: la factura A4 dice la unidad junto a la descripción, «Tomate rosa (kg)»', () => {
+    // `InvoiceLine` (outfitkit) no tiene campo de unidad: el hueco honesto es la descripción,
+    // como «Vino (botella)» — la columna de cantidad sigue siendo el número.
+    const inv = saleToInvoice(SALE, [KG]);
+    expect(inv.lines[0].description).toBe('Tomate rosa (kg)');
+    expect(inv.lines[0].qty).toBe(1.5);
+  });
+
+  it('saleToInvoice: sin unidad o con la suelta (`ud`) la descripción queda como estaba', () => {
+    const ud: SaleLineRow = { ...KG, unit_code: 'ud', unit_name: 'Unidad', pricing_unit_code: 'ud' };
+    expect(saleToInvoice(SALE, [LINES[0], ud]).lines.map((l) => l.description))
+      .toEqual(['Cafe solo', 'Tomate rosa']);
+  });
+});

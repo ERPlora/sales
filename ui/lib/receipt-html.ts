@@ -9,12 +9,22 @@
 // Este HTML es además el input natural para generar el PDF desde Rust (la tercera vía de
 // `erplora.print`): mismo documento, distinto destino.
 
+import { priceLabel, quantityLabel } from './price-label';
+
 /** Línea del papel (misma forma que `ReceiptData.lines`). */
 export interface PrintableLine {
   name: string;
   qty: number;
   unit_price: number;
   total: number;
+  /** Unidad congelada de la línea (ADR-0147 §2.4; sales#28): la cantidad se pinta con ella
+   *  («1,5 kg», «2» a secas para `ud`/sin unidad). `ReceiptLine` de outfitkit no las conoce:
+   *  viajan como campos extra desde los mappers y solo el papel las lee. */
+  unit_code?: string;
+  unit_name?: string;
+  /** Unidad en la que está expresado el `unit_price`: «12,00 € / kg». Si falta, hereda la de la
+   *  línea (la convención del carrito: `priceLabel`). */
+  pricing_unit_code?: string;
 }
 
 /** Documento imprimible (subconjunto de `ReceiptData`, todo opcional salvo lo mínimo). */
@@ -54,6 +64,13 @@ function money(v: unknown, currency: string): string {
   return `${(Number.isFinite(n) ? n : 0).toFixed(2).replace('.', ',')} ${currency}`;
 }
 
+/** La sublínea «cantidad × precio» (sales#28): la cantidad con su unidad congelada y el precio
+ *  con su unidad de precio — la misma convención del carrito (`quantityLabel`/`priceLabel`).
+ *  Sin unidad (o `ud`) queda como siempre: «2 × 3,00 €». */
+function qtyPrice(l: PrintableLine, currency: string): string {
+  return `${quantityLabel(l.qty, l.unit_code)} × ${priceLabel(money(l.unit_price, currency), l.pricing_unit_code || l.unit_code)}`;
+}
+
 /**
  * Documento HTML completo del tiquet, listo para imprimir en un iframe aislado.
  * Ancho 80 mm (papel térmico) y tipografía monoespaciada, como el papel real.
@@ -64,7 +81,7 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
   const lbl = { subtotal: 'Subtotal', total: 'TOTAL', change: 'Cambio', document: 'Documento', ...doc.labels };
   const lineas = (doc.lines ?? []).map((l) => `
       <tr>
-        <td class="n">${esc(l.name)}<div class="q">${esc(l.qty)} × ${money(l.unit_price, cur)}</div></td>
+        <td class="n">${esc(l.name)}<div class="q">${esc(qtyPrice(l, cur))}</div></td>
         <td class="a">${money(l.total, cur)}</td>
       </tr>`).join('');
 

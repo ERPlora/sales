@@ -128,6 +128,22 @@ describe('printing the bill before charging', () => {
     expect(printed[0].html, 'the browser fallback needs its own document').toContain('Café solo');
   });
 
+  // sales#28 — el carrito congela la unidad de la línea (ADR-0147 §2.4) y la cuenta que se lleva
+  // a la mesa debe imprimirla: «1,5 kg», en el térmico y en el HTML de respaldo. Sin unidad, la
+  // línea de toda la vida («2x Café»).
+  it('prints the FROZEN unit of the line: «1,5 kg» on both papers (sales#28)', async () => {
+    await printBill([
+      ...CART,
+      { line_id: 'l3', name: 'Tomate rosa', price: 1200, qty: 1.5, unit_code: 'kg', unit_name: 'Kilogramo' },
+    ]);
+
+    const items = printed[0].data!.items as { name: string; quantity: number | string }[];
+    expect(items[0].quantity, 'sin unidad la cantidad es el número de siempre').toBe(2);
+    expect(items[2].quantity, 'con unidad viaja compuesta para el «x» literal del renderer').toBe('1,5 kg ');
+    expect(printed[0].html, 'el papel HTML dice la unidad junto a la cantidad').toContain('1,5 kg');
+    expect(printed[0].html).not.toContain('1.5 ×', 'el punto inglés era el defecto');
+  });
+
   it('TELLS the waiter when the bill did not reach a printer', async () => {
     // In the installed app the browser fallback prints nothing at all, so «it went to the browser»
     // is a failure the person holding the order pad has to hear about — not a `void`.
