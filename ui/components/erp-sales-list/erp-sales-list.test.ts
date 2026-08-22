@@ -4,7 +4,7 @@
 // no `format`, so every row printed the raw database value — `completed`, in English, on a Spanish
 // UI. It is the same list the cashier is sent to when a charge is in doubt, so the one word that
 // tells her "this was charged" cannot be jargon.
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import esCatalog from '../../../locales/es.json';
 
@@ -160,7 +160,15 @@ describe('sales list — today by default, date/time on the row, KPIs for the sa
       columns: Column[]; setRange(r: 'today' | '7d' | '30d' | 'all'): Promise<void>; range: string;
     };
   }
-  const today = () => new Date().toISOString().slice(0, 10);
+  // sales#133 — the day is NOT recomputed here: this asks the component for its OWN range, the
+  // same one the screen uses. This helper used to build the day in UTC
+  // (`new Date().toISOString().slice(0, 10)`) while `isoDay()` builds it in local time, so the
+  // suite went red on its own every night between 00:00 and 02:00 CEST. Two implementations of
+  // "what day is today" is exactly where that bug came from — now there is only one.
+  const today = async (): Promise<string> => {
+    const { rangeBounds } = await import('./erp-sales-list');
+    return rangeBounds('today').from!;
+  };
 
   it('shows the date and time of every sale, formatted, not the raw ISO string', async () => {
     const el = await mountList();
@@ -174,10 +182,11 @@ describe('sales list — today by default, date/time on the row, KPIs for the sa
   it('opens on TODAY: the stats and the list are asked for today only', async () => {
     const el = await mountList();
     expect(el.range).toBe('today');
+    const day = await today();
     const stats = queries.find((q) => q.name === 'sales.stats');
-    expect(stats?.params).toMatchObject({ date_from: today(), date_to: today() });
+    expect(stats?.params).toMatchObject({ date_from: day, date_to: day });
     const list = queries.find((q) => q.name === 'sales.list');
-    expect(JSON.stringify(list?.params)).toContain(today());
+    expect(JSON.stringify(list?.params)).toContain(day);
   });
 
   it('«all» clears the range from both, and the segment is on screen', async () => {
@@ -188,7 +197,7 @@ describe('sales list — today by default, date/time on the row, KPIs for the sa
     const stats = queries.find((q) => q.name === 'sales.stats');
     expect(stats?.params?.date_from ?? null).toBeNull();
     const list = queries.find((q) => q.name === 'sales.list');
-    expect(JSON.stringify(list?.params ?? {})).not.toContain(today());
+    expect(JSON.stringify(list?.params ?? {})).not.toContain(await today());
   });
 
   it('the KPI cards also answer VAT, discounts and voided count for the range', async () => {
@@ -197,5 +206,59 @@ describe('sales list — today by default, date/time on the row, KPIs for the sa
     expect(text).toContain('7.80');   // tax_total 780
     expect(text).toContain('2.00');   // discount_total 200
     expect(text).toContain('1');      // voided
+  });
+});
+
+
+// sales#133 — GUARD: «today» is the LOCAL day, never the UTC day.
+//
+// For a bar that closes at three in the morning, "today" is the day the till has been open, so the
+// business day runs in the shop timezone (what Square, Toast and Lightspeed all do). If
+// `isoDay()` ever went back to `toISOString().slice(0, 10)`, at 01:00 the history would jump to
+// the next day in the middle of the shift, the cashier would not find the ticket she just charged
+// and the cash count would not add up.
+//
+// The clock and the timezone are frozen here so this is deterministic instead of only failing
+// between 00:00 and 02:00 CEST, which is how the defect stayed alive.
+describe('sales list — «today» is the LOCAL day, never the UTC day (sales#133)', () => {
+  // 01:30 in Europe/Madrid (CEST, UTC+2) on the 23rd — still the 22nd in UTC.
+  const AT_0130_LOCAL = new Date('2026-08-22T23:30:00Z');
+  const LOCAL_DAY = '2026-08-23';
+  const UTC_DAY = '2026-08-22';
+  let realTz: string | undefined;
+
+  beforeEach(() => {
+    realTz = process.env.TZ;
+    process.env.TZ = 'Europe/Madrid';
+    vi.useFakeTimers();
+    vi.setSystemTime(AT_0130_LOCAL);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    if (realTz === undefined) delete process.env.TZ;
+    else process.env.TZ = realTz;
+  });
+
+  it('the two days really differ at that instant (otherwise this guard proves nothing)', () => {
+    expect(AT_0130_LOCAL.toISOString().slice(0, 10)).toBe(UTC_DAY);
+    expect(new Date().getDate()).toBe(23);
+    expect(UTC_DAY).not.toBe(LOCAL_DAY);
+  });
+
+  it('at 01:30 local, «today» is the local day — the shift that is still open', async () => {
+    const { rangeBounds } = await import('./erp-sales-list');
+    expect(rangeBounds('today')).toEqual({ from: LOCAL_DAY, to: LOCAL_DAY });
+  });
+
+  it('«7 days» and «30 days» count back in local days too, both ends', async () => {
+    const { rangeBounds } = await import('./erp-sales-list');
+    expect(rangeBounds('7d')).toEqual({ from: '2026-08-17', to: LOCAL_DAY });
+    expect(rangeBounds('30d')).toEqual({ from: '2026-07-25', to: LOCAL_DAY });
+  });
+
+  it('«all» stays unbounded: no day is computed at all', async () => {
+    const { rangeBounds } = await import('./erp-sales-list');
+    expect(rangeBounds('all')).toEqual({});
   });
 });
