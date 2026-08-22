@@ -1,11 +1,23 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { BIZUM_SVG, brandSvgFor } from './brand-icons';
 
-const salesRoot = basename(process.cwd()) === 'sales'
-  ? process.cwd()
-  : join(process.cwd(), 'modules', 'sales');
+// La raíz del módulo se ancla en SU module.json: se sube desde ESTE fichero (import.meta.url)
+// hasta encontrarlo. Adivinarla con basename(cwd) === 'sales' hacía que en cualquier worktree
+// con otro nombre la ruta no existiera y este guard reventara con ENOENT sin comprobar nada (#141).
+function raizDelModulo(): string {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  while (!existsSync(join(dir, 'module.json'))) {
+    const arriba = dirname(dir);
+    if (arriba === dir) throw new Error('no se encontró module.json subiendo desde el test');
+    dir = arriba;
+  }
+  return dir;
+}
+
+const salesRoot = raizDelModulo();
 
 // Bizum NO existe en Iconify (comprobado contra su API: not_found), así que su logo viaja como SVG
 // propio en ui/assets. Va INLINE, no por <ion-icon>: el registro de iconos del módulo solo hornea
