@@ -200,7 +200,12 @@ export class ErpSalesDocument extends LitElement {
       this.sale, this.lines || [], this.settings || {}, this.fiscal, erplora().locale,
       t('ui.docDefaultBusiness'), t,
     );
-    return receiptToPrintableHtml(doc as unknown as Parameters<typeof receiptToPrintableHtml>[0]);
+    // sales#120: el papel habla el idioma del hub — las palabras son labels del catálogo, no
+    // constantes de la plantilla («Cambio» junto a un tique en inglés era el papel mezclado).
+    return receiptToPrintableHtml({
+      ...(doc as unknown as Parameters<typeof receiptToPrintableHtml>[0]),
+      labels: { subtotal: t('ui.docSubtotal'), total: t('ui.docTotal'), change: t('ui.docChange'), document: t('ui.document') },
+    });
   }
 
   /**
