@@ -82,3 +82,43 @@ describe('tiquet como HTML imprimible', () => {
     expect(minimo).not.toContain('NaN');
   });
 });
+
+// sales#120 — el tique impreso sale en el idioma del HUB. «Subtotal»/«TOTAL»/«Cambio» vivían
+// HARDCODEADOS en español dentro de la plantilla: en un hub inglés el papel decía «Cambio» al
+// lado de líneas en inglés. Las palabras no son datos — son labels — así que viajan con el
+// documento (`labels`), traducidas por quien lo pide, igual que las de `<ok-receipt>`.
+describe('el papel habla el idioma del hub (sales#120)', () => {
+  it('Subtotal/TOTAL/Cambio salen de las labels del documento, no de la plantilla', () => {
+    const html = receiptToPrintableHtml({
+      ...doc,
+      labels: { subtotal: 'Subtotal', total: 'TOTAL', change: 'Change', document: 'Document' },
+    });
+    expect(html).toContain('Change');
+    expect(html).not.toContain('Cambio');
+    expect(html).toMatch(/TOTAL[\s\S]*5,00 €/);
+  });
+
+  it('el <title> de respaldo también: «Document» cuando llega traducido', () => {
+    // El fallback solo entra sin número NI negocio (el título preferido es el número).
+    const html = receiptToPrintableHtml({
+      lines: [{ name: 'Beer', qty: 1, unit_price: 5, total: 5 }],
+      total: 5,
+      currency: '€',
+      labels: { subtotal: 'Subtotal', total: 'TOTAL', change: 'Change', document: 'Document' },
+    });
+    expect(html).toMatch(/<title>Document<\/title>/);
+  });
+
+  it('sin labels se mantiene el español de siempre (nadie regresa peor que antes)', () => {
+    const html = receiptToPrintableHtml(doc);
+    expect(html).toContain('Cambio');
+    expect(html).toContain('Subtotal');
+    expect(html).toContain('TOTAL');
+    const sinReferencia = receiptToPrintableHtml({
+      lines: [{ name: 'Café', qty: 1, unit_price: 1, total: 1 }],
+      total: 1,
+      currency: '€',
+    });
+    expect(sinReferencia).toMatch(/<title>Documento<\/title>/);
+  });
+});

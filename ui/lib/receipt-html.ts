@@ -34,6 +34,11 @@ export interface PrintableReceipt {
   currency?: string;
   footer?: string;
   qr_note?: string;
+  /** Words of the paper (sales#120): the printed ticket speaks the HUB's language, and these
+   *  are labels, not data — «Cambio» next to English lines was the mixed-language ticket. The
+   *  caller translates them from the module catalog; the Spanish defaults keep every existing
+   *  caller (and the tests) printing exactly what they printed. */
+  labels?: { subtotal?: string; total?: string; change?: string; document?: string };
 }
 
 /** Escapa para HTML: los datos los teclea el usuario (un producto llamado `<script>` no ejecuta). */
@@ -55,6 +60,8 @@ function money(v: unknown, currency: string): string {
  */
 export function receiptToPrintableHtml(doc: PrintableReceipt): string {
   const cur = doc.currency || '€';
+  // sales#120: las palabras del papel las trae quien lo pide, traducidas al idioma del hub.
+  const lbl = { subtotal: 'Subtotal', total: 'TOTAL', change: 'Cambio', document: 'Documento', ...doc.labels };
   const lineas = (doc.lines ?? []).map((l) => `
       <tr>
         <td class="n">${esc(l.name)}<div class="q">${esc(l.qty)} × ${money(l.unit_price, cur)}</div></td>
@@ -66,11 +73,11 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
 
   const pago = doc.payment
     ? `<tr><td>${esc(doc.payment.method)}</td><td class="a">${money(doc.payment.paid ?? doc.total, cur)}</td></tr>` +
-      (doc.payment.change != null ? `<tr><td>Cambio</td><td class="a">${money(doc.payment.change, cur)}</td></tr>` : '')
+      (doc.payment.change != null ? `<tr><td>${esc(lbl.change)}</td><td class="a">${money(doc.payment.change, cur)}</td></tr>` : '')
     : '';
 
   return `<!doctype html>
-<html><head><meta charset="utf-8"><title>${esc(doc.number || doc.business?.name || 'Documento')}</title>
+<html><head><meta charset="utf-8"><title>${esc(doc.number || doc.business?.name || lbl.document)}</title>
 <style>
   /* Papel térmico de 80 mm: sin márgenes de página, el navegador no estampa cabecera ni pie. */
   @page { size: 80mm auto; margin: 0; }
@@ -99,9 +106,9 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
   <table>${lineas}</table>
   <hr>
   <table>
-    ${doc.subtotal != null ? `<tr><td>Subtotal</td><td class="a">${money(doc.subtotal, cur)}</td></tr>` : ''}
+    ${doc.subtotal != null ? `<tr><td>${esc(lbl.subtotal)}</td><td class="a">${money(doc.subtotal, cur)}</td></tr>` : ''}
     ${impuestos}
-    <tr class="tot"><td>TOTAL</td><td class="a">${money(doc.total, cur)}</td></tr>
+    <tr class="tot"><td>${esc(lbl.total)}</td><td class="a">${money(doc.total, cur)}</td></tr>
     ${pago}
   </table>
   ${doc.footer ? `<div class="foot">${esc(doc.footer)}</div>` : ''}

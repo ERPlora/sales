@@ -1779,3 +1779,80 @@ describe('la categoría del producto viaja con la línea hasta cocina (sales#12)
     expect((fuego.payload.items as Record<string, unknown>[])[0]).toMatchObject({ category_id: 'cat-bebidas' });
   });
 });
+
+// sales#120 — los DEPARTAMENTOS (categorías fiscales) en el idioma del hub. El sheet de precio
+// libre pintaba `dept.name`, el nombre CANÓNICO del seed de taxes («Product — generic») — en un
+// hub español la tecla decía «Product — generic», y esa palabra es la que se congelaba como
+// nombre de la línea: el cliente se llevaba «Product — generic» impreso en el tique.
+//
+// taxes#38 ya publica `display_name` resuelto AL IDIOMA DE QUIEN PREGUNTA (la query lee el
+// idioma del hub/usuario del CORE; ningún módulo puede importar el catálogo i18n de otro,
+// ADR-0043): el TPV solo tiene que pintarlo y congelarlo. Sin `display_name` (un taxes más
+// viejo) degrada al nombre crudo — peor sería una tecla vacía.
+describe('los departamentos hablan el idioma del hub (sales#120)', () => {
+  const SDK_ES = {
+    query: async () => [],
+    queryAll: async (name: string) => {
+      if (name === 'taxes.categories.list') return [
+        { key: 'product.generic', name: 'Product — generic', display_name: 'Producto — general', is_active: 1 },
+        { key: 'restaurant.food', name: 'Restaurant — food', display_name: 'Restauración — comida', is_active: 1 },
+      ];
+      if (name === 'taxes.rules.list') return [
+        { id: 'r1', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, valid_from: '2020-01-01', is_active: 1 },
+        { id: 'r2', tax_category_key: 'restaurant.food', rate_pct: 10, parent_id: null, valid_from: '2020-01-01', is_active: 1 },
+      ];
+      return [];
+    },
+    command: async () => ({}),
+    currency: 'EUR',
+    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
+    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
+    t: (_c: unknown, k: string) => k,
+    loadSlot: async () => [],
+  };
+
+  it('la tecla del departamento pinta display_name (el idioma del hub), no el nombre canónico', async () => {
+    (globalThis as Record<string, unknown>).erplora = { ...SDK_ES };
+    const el = await montarCarrito();
+    (el.shadowRoot!.querySelector('.tile.open-price') as HTMLElement).click();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    const txt = [...el.shadowRoot!.querySelectorAll('.dept-btn')].map((d) => d.textContent ?? '');
+    expect(txt.some((s) => s.includes('Producto — general')), 'la tecla habla el idioma del hub').toBe(true);
+    expect(txt.some((s) => s.includes('Restauración — comida'))).toBe(true);
+    expect(txt.join(' '), 'el nombre canónico EN ya no se pinta').not.toContain('Product — generic');
+  });
+
+  it('la línea libre congela el nombre en el idioma del hub — es el que viaja al tique impreso', async () => {
+    (globalThis as Record<string, unknown>).erplora = { ...SDK_ES };
+    const el = await montarCarrito();
+    const c = el as unknown as {
+      openPriceOpen: boolean; openDept: string; openAmount: string;
+      updateComplete: Promise<unknown>; addOpenPrice(): Promise<void>;
+      cart: Array<Record<string, unknown>>;
+    };
+    c.openPriceOpen = true;
+    c.openDept = 'product.generic';
+    c.openAmount = '3.5';
+    await c.updateComplete;
+    await c.addOpenPrice();
+
+    expect(c.cart[0].name, 'el cliente se lleva «Producto — general» en el papel').toBe('Producto — general');
+    expect(c.cart[0].tax_category_key, 'la clave fiscal no cambia: es la identidad').toBe('product.generic');
+  });
+
+  it('sin display_name (taxes más viejo) degrada al nombre crudo — la tecla nunca queda vacía', async () => {
+    (globalThis as Record<string, unknown>).erplora = {
+      ...SDK_ES,
+      queryAll: async (name: string) => {
+        if (name === 'taxes.categories.list') return [{ key: 'product.generic', name: 'Product — generic', is_active: 1 }];
+        return SDK_ES.queryAll(name);
+      },
+    };
+    const el = await montarCarrito();
+    (el.shadowRoot!.querySelector('.tile.open-price') as HTMLElement).click();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    const txt = [...el.shadowRoot!.querySelectorAll('.dept-btn')].map((d) => d.textContent ?? '');
+    expect(txt.some((s) => s.includes('Product — generic')), 'fallback al nombre crudo').toBe(true);
+  });
+});

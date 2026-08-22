@@ -111,8 +111,18 @@ interface PosSettings {
 interface Category { id: string; name: string; icon?: string; color?: string; image?: string; product_count?: number; }
 interface ProdCat { product_id: string; category_id: string; }
 /** Categoría fiscal (`taxes.categories.list`, ADR-0085) = el "departamento" de la venta por precio
- *  libre: lleva su IVA (el % lo resuelve el servidor; el ratesMap solo es preview). */
-interface TaxCategory { key: string; name: string; is_active?: number; }
+ *  libre: lleva su IVA (el % lo resuelve el servidor; el ratesMap solo es preview).
+ *
+ * `display_name` es el nombre YA TRADUCIDO al idioma de quien pregunta (taxes#38): el canónico
+ * `name` es inglés del seed («Product — generic») y sales no puede traducirlo él — el catálogo
+ * i18n de otro módulo no se importa (ADR-0043), la query es la única puerta. Sin `display_name`
+ * (un taxes más viejo) se degrada al nombre crudo. */
+interface TaxCategory { key: string; name: string; display_name?: string; is_active?: number; }
+
+/** El nombre que se PINTA y se CONGELA de un departamento: el idioma del hub si taxes lo dio. */
+function deptDisplayName(c: TaxCategory): string {
+  return c.display_name || c.name;
+}
 
 /** Acumulador de dígitos del numpad (euros como texto): 'C' limpia, un solo separador decimal, tope
  *  9 chars. Puro para poder compartirlo entre el numpad de COBRO y el de PRECIO LIBRE sin duplicar. */
@@ -1970,9 +1980,11 @@ export class ErpPosTouch extends LitElement {
       notice: t('ui.prebillNotice'),
       fallbackName: t('ui.docDefaultBusiness'),
     };
-    const html = receiptToPrintableHtml(
-      orderToPrebill(lines, this.settings, opts) as Parameters<typeof receiptToPrintableHtml>[0],
-    );
+    const html = receiptToPrintableHtml({
+      ...(orderToPrebill(lines, this.settings, opts) as Parameters<typeof receiptToPrintableHtml>[0]),
+      // sales#120: el papel de la cuenta sale en el idioma del hub (labels, no plantilla).
+      labels: { subtotal: t('ui.docSubtotal'), total: t('ui.docTotal'), change: t('ui.docChange'), document: t('ui.document') },
+    });
     const sdk = (globalThis as { erplora?: { print?: (r: Record<string, unknown>) => Promise<PrintOutcome> } }).erplora;
     if (!sdk?.print) {
       printHtmlInIframe(html);
@@ -2182,11 +2194,14 @@ export class ErpPosTouch extends LitElement {
   }
   /** Añade la venta libre: nombre = el del DEPARTAMENTO (estilo frutería, sin teclear), precio
    *  tecleado y su categoría fiscal. Nunca fusiona → siempre línea nueva (`pushNewLine`, serializada
-   *  por `queue` como el resto del carrito). `buildOpenPriceLine` valida que no sea línea desnuda. */
+   *  por `queue` como el resto del carrito). `buildOpenPriceLine` valida que no sea línea desnuda.
+   *  sales#120: el nombre congelado es el del idioma del HUB (`display_name`, taxes#38) — es el que
+   *  persiste como `product_name` y el que el cliente se lleva en el tique impreso; la IDENTIDAD
+   *  fiscal sigue siendo `key`. */
   private async addOpenPrice(): Promise<void> {
     const dept = this.taxCategories.find((c) => c.key === this.openDept);
     if (!dept || this.openAmountCents <= 0) return;
-    const line = buildOpenPriceLine({ name: dept.name, priceCents: this.openAmountCents, taxCategoryKey: dept.key });
+    const line = buildOpenPriceLine({ name: deptDisplayName(dept), priceCents: this.openAmountCents, taxCategoryKey: dept.key });
     line.tax_rate = resolveLineTax(this.taxCatalog.rates, dept.key); // % SOLO para el preview del total
     this.openPriceOpen = false;
     try {
@@ -3028,7 +3043,7 @@ export class ErpPosTouch extends LitElement {
                   ${this.taxCategories.map((c) => html`
                     <button class="dept-btn" aria-pressed=${this.openDept === c.key ? 'true' : 'false'}
                             @click=${() => { this.openDept = c.key; }}>
-                      <span class="dn">${c.name}</span>
+                      <span class="dn">${deptDisplayName(c)}</span>
                       <span class="dr">${this.deptRateLabel(c.key)}</span>
                     </button>`)}
                   ${!this.taxCategories.length ? html`<div class="dept-empty">${t('ui.noDepartments')}</div>` : nothing}

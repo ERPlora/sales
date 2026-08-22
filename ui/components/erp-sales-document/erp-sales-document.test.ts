@@ -182,3 +182,20 @@ describe('printableDocument — what the thermal printer reads', () => {
     expect((el as unknown as { printableDocument(): unknown }).printableDocument()).toBeUndefined();
   });
 });
+
+// sales#120 — el papel del tique impreso sale en el idioma del hub. `printableHtml()` armaba el
+// HTML con «Subtotal»/«TOTAL»/«Cambio» hardcoded en español; ahora las lleva traducidas (el
+// visor ya tiene el traductor del catálogo). El test mira estructura (t() devuelve la clave),
+// como el resto de este fichero.
+describe('printableHtml — el papel lleva las labels traducidas (sales#120)', () => {
+  it('las palabras del papel salen del catálogo, no de la plantilla', async () => {
+    const el = await montarVisor();
+    const html = (el as unknown as { printableHtml(): string }).printableHtml();
+    // El fixture no lleva pago con cambio, así que la label que siempre está es la del subtotal
+    // (y el TOTAL): con ellas basta para probar que la palabra ya no vive en la plantilla.
+    expect(html).toContain('ui.docSubtotal');
+    expect(html).toContain('ui.docTotal');
+    expect(html).not.toContain('Cambio', 'la palabra suelta, hardcoded, ya no existe');
+    expect(html).not.toContain('>Subtotal<', 'ni el Subtotal de la plantilla');
+  });
+});
