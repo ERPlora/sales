@@ -38,6 +38,7 @@
     "print": "Print",
     "printFailed": "Could not print",
     "qrValidateNote": "Scan to validate the invoice at the AEAT",
+    "claimNote": "Get your invoice",
     "docEmpty": "No receipt data.",
     "docEmptyInvoice": "No invoice data.",
     "docDefaultBusiness": "My business",

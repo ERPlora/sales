@@ -44,6 +44,14 @@ export interface PrintableReceipt {
   currency?: string;
   footer?: string;
   qr_note?: string;
+  /** sales#103 (ADR-0363) — «pide tu factura»: the second QR's absolute URL. The thermal
+   *  renderer prints it as a QR; THIS paper has no QR library (same as the fiscal QR, which here
+   *  only prints its note), so the block is legend + locator in text + the URL to type. */
+  claim_qr_data?: string;
+  /** The legend («Pide tu factura»), translated by the caller from the module catalog. */
+  claim_note?: string;
+  /** The locator IN TEXT: the only way in when the camera won't focus or the ticket is a copy. */
+  claim_locator?: string;
   /** Words of the paper (sales#120): the printed ticket speaks the HUB's language, and these
    *  are labels, not data — «Cambio» next to English lines was the mixed-language ticket. The
    *  caller translates them from the module catalog; the Spanish defaults keep every existing
@@ -93,6 +101,16 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
       (doc.payment.change != null ? `<tr><td>${esc(lbl.change)}</td><td class="a">${money(doc.payment.change, cur)}</td></tr>` : '')
     : '';
 
+  // sales#103 — «pide tu factura»: legend + locator EN TEXT + la URL (aquí no hay QR pintable
+  // sin librería; el térmico sí lo imprime). Sin locator el bloque no existe: el papel de hoy.
+  const claim = doc.claim_note || doc.claim_locator
+    ? `<div class="claim">` +
+      (doc.claim_note ? `<div class="claim-note">${esc(doc.claim_note)}</div>` : '') +
+      (doc.claim_locator ? `<div class="claim-loc">${esc(doc.claim_locator)}</div>` : '') +
+      (doc.claim_qr_data ? `<div class="claim-url">${esc(doc.claim_qr_data)}</div>` : '') +
+      `</div>`
+    : '';
+
   return `<!doctype html>
 <html><head><meta charset="utf-8"><title>${esc(doc.number || doc.business?.name || lbl.document)}</title>
 <style>
@@ -111,6 +129,11 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
   .q { font-size: 10px; color: #333; }
   .tot td { font-size: 15px; font-weight: 700; padding-top: 1mm; }
   .foot { text-align: center; font-size: 10px; margin-top: 3mm; }
+  /* El bloque del claim (sales#103): al pie y separado del QR fiscal, como en el papel térmico. */
+  .claim { text-align: center; margin-top: 3mm; }
+  .claim-note { font-size: 11px; font-weight: 700; }
+  .claim-loc { font-size: 13px; letter-spacing: .08em; margin-top: 1mm; }
+  .claim-url { font-size: 9px; color: #333; margin-top: 1mm; word-break: break-all; }
 </style></head>
 <body>
   ${doc.title ? `<div class="doc-title">${esc(doc.title)}</div>` : ''}
@@ -130,6 +153,7 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
   </table>
   ${doc.footer ? `<div class="foot">${esc(doc.footer)}</div>` : ''}
   ${doc.qr_note ? `<div class="foot">${esc(doc.qr_note)}</div>` : ''}
+  ${claim}
 </body></html>`;
 }
 

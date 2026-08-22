@@ -66,6 +66,14 @@ describe('prebillToPrintDocument — the bill taken to the table', () => {
     expect((doc as Record<string, unknown>).qr, 'no VeriFactu QR').toBeUndefined();
   });
 
+  // sales#103 — la precuenta no lleva el claim NI EN CAPA DOBLE: aquí no se pinta (no hay
+  // registro de facturación al que apuntar, y por tanto no hay factura que pedir); el renderer
+  // del hub lo vuelve a garantizar por su lado. Dos capas es a propósito.
+  it('carries NO claim block either: a bill has no fiscal record to point at (sales#103)', () => {
+    const doc = prebillToPrintDocument(CART, SETTINGS, { tableLabel: 'Mesa 4' });
+    expect(Object.keys(doc).filter((k) => k.startsWith('claim_'))).toEqual([]);
+  });
+
   it('says on paper exactly what the modal showed on screen', () => {
     // The waiter reads the screen and the customer reads the paper. If these two mappers ever
     // disagree on a name, a quantity or a total, one of the two people is being lied to.
@@ -167,6 +175,37 @@ describe('saleToPrintDocument — the ticket, reprinted', () => {
     const doc = saleToPrintDocument(SALE, [...LINES, { product_name: 'Chupito', quantity: 1, unit_price: 200, line_total: 0, is_gift: 1 }], SETTINGS);
     expect(doc.items[2].name).toContain('Invitación');
     expect(doc.items[2].total).toBe(0);
+  });
+
+  // sales#103 — «pide tu factura»: el SEGUNDO QR. El renderer ESC/POS acepta tres campos
+  // SEPARADOS del `qr_data` fiscal: el QR fiscal apunta a la AEAT y su numserie es correlativo y
+  // público, así que NO vale como localizador. Sin locator acuñado, ninguno de los tres existe.
+  it('carries the claim block when the locator was minted: second QR, legend and locator in text', () => {
+    const doc = saleToPrintDocument(SALE, LINES, SETTINGS, {
+      qr: 'https://prewww2.aeat.es/validar',
+      claim_locator: 'ABCD1234ABCD1234',
+      claim_qr: 'https://hub.example/p/ABCD1234ABCD1234',
+    });
+
+    expect(doc.claim_qr_data, 'la URL del segundo QR, no la de la AEAT').toBe('https://hub.example/p/ABCD1234ABCD1234');
+    expect(doc.claim_locator, 'el localizador en TEXTO: la vía cuando la cámara no enfoca').toBe('ABCD1234ABCD1234');
+    expect(doc.claim_note, 'sin ella nadie sabe para qué es el segundo código').toBe('Get your invoice');
+    expect(doc.qr_data, 'el QR fiscal sigue siendo el de la AEAT — son DOS códigos').toBe('https://prewww2.aeat.es/validar');
+  });
+
+  it('the claim legend is translated when the caller brings the catalog translator', () => {
+    const t = (k: string) => (k === 'ui.claimNote' ? 'Pide tu factura' : k);
+    const doc = saleToPrintDocument(SALE, LINES, SETTINGS, {
+      claim_locator: 'ABCD1234ABCD1234',
+      claim_qr: 'https://hub.example/p/ABCD1234ABCD1234',
+    }, 'es', undefined, t);
+    expect(doc.claim_note).toBe('Pide tu factura');
+  });
+
+  it('without a minted locator the ticket is IDENTICAL to today: no claim_* field exists', () => {
+    const doc = saleToPrintDocument(SALE, LINES, SETTINGS, { qr: 'https://aeat/qr' });
+    // La clave ni siquiera existe: el renderer imprime solo los campos presentes (opt-in, ADR-0363).
+    expect(Object.keys(doc).filter((k) => k.startsWith('claim_'))).toEqual([]);
   });
   it('the payment method is translated on the paper too (sales#108)', () => {
     const t = (k: string) => (k === 'ui.cash' ? 'Efectivo' : k);

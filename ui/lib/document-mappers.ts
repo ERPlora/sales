@@ -160,6 +160,41 @@ export interface FiscalData {
   issuer_name?: string;
   customer_name?: string;
   customer_tax_id?: string;
+  /** sales#103 (hub#963 / ADR-0363) — autoservicio «pide tu factura»: el localizador acuñado en
+   *  el mostrador contra `POST /api/hub/public-claims`. Solo sobre F2: una F1 nació completa y
+   *  una F3 ya ES el canje. Ausente (sin módulo invoice, sin permiso, fallo) → el papel sale como
+   *  siempre: sin claim y sin segundo QR. */
+  claim_locator?: string;
+  /** URL ABSOLUTA del segundo QR (`https://<origen del hub>/p/<locator>`). Separada a propósito
+   *  del `qr` fiscal: aquel apunta a la AEAT y NO vale como localizador (numserie correlativo y
+   *  público) — son DOS códigos con destinos distintos. */
+  claim_qr?: string;
+}
+
+/** sales#103 — la leyenda del segundo QR. Cadena visible → catálogo `en` Y `es` (ADR-0055/0199);
+ *  este inglés canónico es solo el respaldo de las llamadas sin traductor (tests, integraciones). */
+const CLAIM_NOTE_FALLBACK = 'Get your invoice';
+
+/**
+ * sales#103 — el bloque «pide tu factura» del papel, en las claves que el renderer ESC/POS lee
+ * (`claim_qr_data` / `claim_note` / `claim_locator`, ADR-0363).
+ *
+ * Única fuente de los tres campos para TODOS los papeles (ESC/POS e HTML): si cada uno los
+ * compusiera por su cuenta, acabarían discrepando y un tique llevaría un localizador que su
+ * reimpresión no reconoce. **Sin locator acuñado el bloque es VACÍO de verdad** — ni claves
+ * `undefined` — porque el renderer imprime solo los campos presentes: un hub que no adopta la
+ * puerta imprime exactamente lo de antes.
+ */
+export function claimPrintFields(
+  fiscal: FiscalData,
+  t?: Translate,
+): { claim_qr_data?: string; claim_note?: string; claim_locator?: string } {
+  if (!fiscal.claim_locator) return {};
+  return {
+    claim_qr_data: fiscal.claim_qr || undefined,
+    claim_note: t ? t('ui.claimNote') : CLAIM_NOTE_FALLBACK,
+    claim_locator: fiscal.claim_locator,
+  };
 }
 
 /** Canonical English fallback for the business name (ADR-0055): the UI passes the translated

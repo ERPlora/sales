@@ -16,6 +16,7 @@ import {
   saleToInvoice,
   receiptLabels,
   invoiceLabels,
+  claimPrintFields,
   type SaleRow,
   type SaleLineRow,
 } from './document-mappers.js';
@@ -355,5 +356,53 @@ describe('la unidad congelada viaja al documento (sales#28)', () => {
     const ud: SaleLineRow = { ...KG, unit_code: 'ud', unit_name: 'Unidad', pricing_unit_code: 'ud' };
     expect(saleToInvoice(SALE, [LINES[0], ud]).lines.map((l) => l.description))
       .toEqual(['Cafe solo', 'Tomate rosa']);
+  });
+});
+
+// sales#103 — «pide tu factura» (hub#963 / ADR-0363). El claim acuñado en el mostrador viaja
+// con el FISCAL del documento (`FiscalData`), porque su vida es la misma que la del QR de
+// VeriFactu: lo resuelve el componente (acuña contra la puerta pública) y los mappers solo lo
+// PLASMAN en la forma que cada papel lee. `claimPrintFields` es la ÚNICA fuente de los tres
+// campos, para que el papel ESC/POS y el HTML no puedan discrepar.
+describe('claimPrintFields — el bloque «pide tu factura» del papel (sales#103)', () => {
+  it('con locator acuñado: los tres campos, con las claves del renderer ESC/POS', () => {
+    const fields = claimPrintFields({
+      claim_locator: 'ABCD1234ABCD1234',
+      claim_qr: 'https://hub.example/p/ABCD1234ABCD1234',
+    });
+    expect(fields).toEqual({
+      claim_qr_data: 'https://hub.example/p/ABCD1234ABCD1234',
+      claim_locator: 'ABCD1234ABCD1234',
+      claim_note: 'Get your invoice', // inglés canónico sin traductor (ADR-0055)
+    });
+  });
+
+  it('la leyenda sale del catálogo cuando hay traductor', () => {
+    const t = (k: string) => (k === 'ui.claimNote' ? 'Pide tu factura' : k);
+    expect(claimPrintFields({ claim_locator: 'X' }, t).claim_note).toBe('Pide tu factura');
+  });
+
+  it('SIN locator: bloque VACÍO — el tique sale exactamente como hoy (ADR-0127)', () => {
+    // Vacío de verdad: ninguna clave `claim_*`, para que el renderer (que imprime solo lo
+    // presente) no tenga ni un campo opcional que pintar.
+    expect(claimPrintFields({ qr: 'https://aeat/qr' })).toEqual({});
+    expect(claimPrintFields({})).toEqual({});
+  });
+
+  it('sin URL absoluta no hay segundo QR: queda el localizador en texto, la vía sin cámara', () => {
+    const fields = claimPrintFields({ claim_locator: 'ABCD1234ABCD1234' });
+    expect(fields.claim_locator).toBe('ABCD1234ABCD1234');
+    expect(fields.claim_qr_data).toBeUndefined();
+  });
+});
+
+// La leyenda es una CADENA VISIBLE → catálogo en Y es (ADR-0055/0199). Se fija aquí para que
+// el día que alguien la retoca en un solo idioma el test lo diga antes que el tique mezclado.
+describe('la leyenda del claim vive en el catálogo en y es (sales#103)', () => {
+  it('ui.claimNote existe en ambos catálogos con el texto acordado', async () => {
+    const es = (await import('../../locales/es.json')).default as { ui: Record<string, string> };
+    const en = (await import('../../locales/en.json')).default as { ui: Record<string, string> };
+    expect(es.ui.claimNote).toBe('Pide tu factura');
+    expect(en.ui.claimNote).toBe('Get your invoice');
   });
 });
