@@ -178,14 +178,14 @@
           "staff_id": {
             "op": "eq"
           },
-          "created_at": {
+          "erp_date": {
             "op": "range"
           }
         },
         "page_size": 50
       },
       "ai": {
-        "description": "Lists sales records registered in the system"
+        "description": "Lists sales records registered in the system. The date-range filter is `erp_date` (the local day, ISO YYYY-MM-DD, both ends inclusive), not the raw `created_at` timestamp: comparing the timestamp with a day cut the current day at 00:00 (sales#125)."
       }
     },
     "sales.get": {

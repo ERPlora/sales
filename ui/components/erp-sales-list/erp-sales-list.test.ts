@@ -263,6 +263,79 @@ describe('sales list — «today» is the LOCAL day, never the UTC day (sales#13
   });
 });
 
+// sales#125 — «hoy», «7 días» y «30 días» salían SIEMPRE vacías. The range traveled as a filter
+// on `created_at` — a raw ISO TIMESTAMP — and the hub's list engine compares the column as is
+// (`sub.created_at <= :f_created_at_to`), so «up to today» meant «up to today at 00:00» and every
+// sale charged after midnight was cut. The KPI cards (sales.stats) compare by DATE PART and never
+// had the bug: two implementations of «up to today», two answers, on the same screen.
+//
+// The module now projects the date part of `created_at` as a TEXT column `erp_date` (the same
+// `erp_date` helper stats uses) and declares the range filter on THAT column — days compared
+// with days, both ends inclusive. The screen must ask for that column.
+describe('sales list — the range filter asks for DAYS, not timestamps (sales#125)', () => {
+  const sdk = () => (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+  let listQueries: { name: string; params?: Record<string, unknown> }[] = [];
+
+  async function mountList() {
+    listQueries = [];
+    sdk().query = async () => [];
+    sdk().queryPage = async (name: string, params: Record<string, unknown>) => {
+      listQueries.push({ name, params });
+      return { rows: [], total: 0 };
+    };
+    document.body.innerHTML = '';
+    await import('./erp-sales-list');
+    const el = document.createElement('erp-sales-list');
+    document.body.appendChild(el);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    await new Promise((r) => setTimeout(r, 0));
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    return el as unknown as {
+      setRange(r: 'today' | '7d' | '30d' | 'all'): Promise<void>;
+      updateComplete: Promise<unknown>;
+    };
+  }
+
+  const filtersOf = (q: { name: string; params?: Record<string, unknown> } | undefined):
+    Record<string, unknown> =>
+    ((q?.params as { filters?: Record<string, unknown> } | undefined)?.filters) ?? {};
+
+  it('the segment range filters on `erp_date` (day granularity), never on the raw `created_at`', async () => {
+    await mountList();
+    const { rangeBounds } = await import('./erp-sales-list');
+    const day = rangeBounds('today').from!;
+    const filters = filtersOf(listQueries.find((q) => q.name === 'sales.list'));
+    // Day-granularity column with ISO days on both ends: comparing the timestamp with a day
+    // is what emptied the screen (the engine reads `<=`, so «today» stopped at 00:00).
+    expect(filters.erp_date).toEqual({ from: day, to: day });
+    expect(filters.created_at, 'the raw timestamp column must not carry the range').toBeUndefined();
+  });
+
+  it('setRange re-points the SAME day column («7 días», «all» clears it)', async () => {
+    const el = await mountList();
+    const { rangeBounds } = await import('./erp-sales-list');
+    listQueries = [];
+    await el.setRange('7d');
+    let filters = filtersOf(listQueries.find((q) => q.name === 'sales.list'));
+    expect(filters.erp_date).toEqual(rangeBounds('7d'));
+
+    listQueries = [];
+    await el.setRange('all');
+    filters = filtersOf(listQueries.find((q) => q.name === 'sales.list'));
+    expect(filters.erp_date, '«all» drops the day filter entirely').toBeUndefined();
+  });
+
+  it('the table\'s own date-range picker on the date column feeds the day column too', async () => {
+    const el = await mountList();
+    const table = (el as unknown as { shadowRoot: ShadowRoot }).shadowRoot.querySelector('ok-data-table');
+    table!.dispatchEvent(new CustomEvent('filterChange', { detail: { col: 'created_at', value: { from: '2026-01-01', to: '2026-01-31' } } }));
+    await new Promise((r) => setTimeout(r, 0));
+    const filters = filtersOf(listQueries.find((q) => q.name === 'sales.list'));
+    expect(filters.erp_date, 'a day picked on the date column filters by day').toEqual({ from: '2026-01-01', to: '2026-01-31' });
+    expect(filters.created_at).toBeUndefined();
+  });
+});
+
 // ── pm#155 (outfitkit#67, second half) ────────────────────────────────────────────────────────
 //
 // At 1440 px the «Actions» column fell off the screen with nothing hinting the table went on to
