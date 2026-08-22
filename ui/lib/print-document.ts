@@ -144,9 +144,32 @@ export function saleToPrintDocument(
  */
 export function prebillJobId(orderId: string | undefined, lines: PrebillLine[]): string {
   const fingerprint = (lines || [])
-    .map((l) => `${l.name}${l.qty}${l.price}${l.is_gift ? 1 : 0}`)
-    .join('');
+    .map((l) => `${l.name}${l.qty}${l.price}${l.is_gift ? 1 : 0}`)
+    .join('');
   return `prebill-${orderId || 'open'}-${hash(fingerprint)}`;
+}
+
+/** Sequence so two attempts inside the same millisecond still get different keys. */
+let reprintSeq = 0;
+
+/**
+ * Idempotency key for REPRINTING a sale's ticket (sales#92).
+ *
+ * Why not the sale's own key (`sale-${saleId}`): the print queue is idempotent by
+ * `(hub_id, job_id)` (`printing.jobs_create`: `ON CONFLICT DO NOTHING`) and that exact key was
+ * already spent by the shell's automatic print at checkout (`print-on-sale.ts`) — the reprint
+ * fell into the dedup's pocket and no paper came out, with no error shown.
+ *
+ * Why not a content fingerprint (the prebill's answer): a sale is IMMUTABLE (fiscal record,
+ * module.json `records.sale`), so its fingerprint is constant and every copy after the first
+ * would be swallowed. The prebill's trade («an unchanged bill prints once») is wrong for a
+ * reprint: pressing IMPRIMIR is an explicit request for ANOTHER copy, so each attempt is a new
+ * job — `sale-<id>-<attempt>`, still correlatable with the sale it belongs to.
+ */
+export function reprintJobId(saleId: string | undefined): string | undefined {
+  if (!saleId) return undefined;
+  reprintSeq += 1;
+  return `sale-${saleId}-${Date.now().toString(36)}-${reprintSeq}`;
 }
 
 /** FNV-1a, 32 bits, base36. Small and stable — this is a cache key, not a checksum. */

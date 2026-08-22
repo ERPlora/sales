@@ -173,3 +173,30 @@ describe('saleToPrintDocument — the ticket, reprinted', () => {
     expect(doc.payment_method).toBe('Efectivo');
   });
 });
+
+// sales#92 — the REPRINT key is unique per attempt. A sale is immutable (fiscal record), so a
+// content fingerprint (the prebill's answer) would be constant and the queue's
+// (hub_id, job_id) dedup would swallow every copy after the first — and the sale's own key
+// (`sale-<id>`) was already spent by the shell's auto-print at checkout. Each press of IMPRIMIR
+// is an explicit request for another copy: a new job, still correlatable with the sale.
+describe('reprintJobId — one key per print attempt (sales#92)', () => {
+  it('every call returns a DIFFERENT key, even in the same millisecond', async () => {
+    const { reprintJobId } = await import('./print-document.js');
+    const first = reprintJobId('venta-1')!;
+    const second = reprintJobId('venta-1')!;
+    expect(first).not.toBe(second);
+    expect(reprintJobId('venta-1')).not.toBe(second);
+  });
+
+  it('correlates with the sale (`sale-<id>-…`) and is NEVER the checkout key', async () => {
+    const { reprintJobId } = await import('./print-document.js');
+    const key = reprintJobId('venta-1')!;
+    expect(key.startsWith('sale-venta-1-')).toBe(true);
+    expect(key).not.toBe('sale-venta-1', 'that exact key belongs to the auto-print of the checkout');
+  });
+
+  it('without a sale there is no job: nothing to correlate, nothing to print', async () => {
+    const { reprintJobId } = await import('./print-document.js');
+    expect(reprintJobId(undefined)).toBeUndefined();
+  });
+});

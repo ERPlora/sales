@@ -14,6 +14,7 @@
 // en ambos escenarios. También oculta pie y X al imprimir (@media print).
 import { html, nothing, type TemplateResult } from 'lit';
 import { printHtmlInIframe } from './receipt-html.js';
+import { reprintJobId } from './print-document.js';
 import '../components/erp-sales-document/erp-sales-document.js';
 
 export interface DocumentModalOpts {
@@ -96,7 +97,10 @@ export function renderDocumentModal({ saleId, onClose, t }: DocumentModalOpts): 
             return;
           }
           void sdk
-            .print({ role: 'receipt', documentType: 'receipt', html, data, jobId: saleId ? `sale-${saleId}` : undefined })
+            // sales#92: el jobId es ÚNICO POR INTENTO (reprintJobId) — la cola deduplica por
+            // (hub_id, job_id) y la clave del cobro (`sale-<id>`) ya la gastó el auto-print del
+            // checkout: reutilizarla tragaba la reimpresión sin error ni papel.
+            .print({ role: 'receipt', documentType: 'receipt', html, data, jobId: reprintJobId(saleId) })
             .then((res) => {
               // Salió por impresora o quedó en la cola: éxito. Lo demás hay que decirlo — en la app
               // instalada el respaldo del navegador no imprime nada y el cliente se queda esperando
