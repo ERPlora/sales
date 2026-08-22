@@ -14,6 +14,7 @@
 import { describe, expect, it } from 'vitest';
 import { orderToPrebill } from './document-mappers.js';
 import { prebillToPrintDocument, saleToPrintDocument, prebillJobId } from './print-document.js';
+import { quantityLabel } from './price-label.js';
 
 const SETTINGS = { receipt_header: 'Bar Manolo\nCalle Mayor 3, Madrid', receipt_footer: 'Gracias' };
 
@@ -171,6 +172,56 @@ describe('saleToPrintDocument — the ticket, reprinted', () => {
     const t = (k: string) => (k === 'ui.cash' ? 'Efectivo' : k);
     const doc = saleToPrintDocument({ ...SALE, payment_method_name: 'Cash' }, LINES, SETTINGS, {}, 'es', undefined, t);
     expect(doc.payment_method).toBe('Efectivo');
+  });
+});
+
+// sales#28 — la cantidad con su unidad también en el papel TÉRMICO. El renderer compone la línea
+// como `«{}x {name}»` con la cantidad tal cual llega: un número sale «2x Café», y un 1,5 a secas
+// saldría «1.5x Tomate» — punto inglés, sin unidad. El contrato del renderer (escpos.rs, fmt_qty)
+// acepta la cantidad como STRING y la imprime verbatim: es la costura oficial para mandar «1,5 kg »
+// (con el espacio final, para que su «x» literal no se pegue: «1,5 kgx» no lo lee nadie).
+describe('la cantidad del papel térmico lleva su unidad (sales#28)', () => {
+  const PESO = [
+    ...CART,
+    { name: 'Tomate rosa', price: 1200, qty: 1.5, unit_code: 'kg' },
+  ];
+
+  it('prebill: sin unidad la cantidad sigue siendo el NÚMERO de siempre (papel byte a byte)', () => {
+    const doc = prebillToPrintDocument(CART, SETTINGS, {});
+    expect(doc.items[0].quantity).toBe(2);
+    expect(typeof doc.items[0].quantity, 'el renderer imprime el número tal cual').toBe('number');
+  });
+
+  it('prebill: con unidad medible la cantidad viaja YA compuesta, «1,5 kg » para su «x» literal', () => {
+    const doc = prebillToPrintDocument(PESO, SETTINGS, {});
+    expect(doc.items[2].quantity).toBe('1,5 kg ');
+    expect(doc.items[2].name, 'el nombre no se toca: la unidad va con la cantidad').toBe('Tomate rosa');
+  });
+
+  it('prebill: unidad suelta (`ud`) = sin ruido, la cantidad a secas como número', () => {
+    const doc = prebillToPrintDocument([...CART, { name: 'Café', price: 300, qty: 2, unit_code: 'ud' }], SETTINGS, {});
+    expect(doc.items[2].quantity).toBe(2);
+    expect(typeof doc.items[2].quantity).toBe('number');
+  });
+
+  it('sale (reprint): la fila de `sales.lines` llega en punto fijo 10⁶ y sale «1,5 kg »', () => {
+    const sale = { id: 'sale-kg', sale_number: 'T-000124', total: 2040 };
+    const lines = [
+      { product_name: 'Café solo', quantity: 2_000_000, unit_price: 120, line_total: 240 },
+      { product_name: 'Tomate rosa', quantity: 1_500_000, unit_price: 1200, line_total: 1800, unit_code: 'kg' },
+    ];
+    const doc = saleToPrintDocument(sale, lines, SETTINGS);
+    expect(doc.items[1].quantity).toBe('1,5 kg ');
+    expect(doc.items[0].quantity, 'la línea antigua sin unidad no cambia').toBe(2);
+    expect(typeof doc.items[0].quantity).toBe('number');
+  });
+
+  it('lo que sale es lo que la pantalla del papel HTML pinta: misma cantidad, misma unidad', () => {
+    // Paridad pantalla/papel (el mismo principio del test de arriba): el HTML imprime
+    // «1,5 kg × …» y el térmico debe componer su línea con LA MISMA cantidad.
+    const screen = orderToPrebill(PESO, SETTINGS, { tableLabel: 'Mesa 4' });
+    const paper = prebillToPrintDocument(PESO, SETTINGS, { tableLabel: 'Mesa 4' });
+    expect(paper.items[2].quantity).toBe(`${quantityLabel(screen.lines[2].qty, screen.lines[2].unit_code)} `);
   });
 });
 

@@ -122,3 +122,60 @@ describe('el papel habla el idioma del hub (sales#120)', () => {
     expect(sinReferencia).toMatch(/<title>Documento<\/title>/);
   });
 });
+
+// sales#28 — el recibo impreso no llevaba la unidad: 1,5 kg salía como «1.5 × 12,00 €» (punto
+// inglés, sin unidad, junto a euros con coma). La línea del papel pinta ahora la CANTIDAD con su
+// unidad congelada y el PRECIO con su unidad de precio, con la misma convención del carrito
+// (`priceLabel`: sufijo « / kg» salvo unidad suelta). La unidad suelta y las líneas antiguas sin
+// contexto siguen exactamente como estaban: «2 × 3,00 €».
+describe('la línea del papel lleva su unidad (sales#28)', () => {
+  const pesable = {
+    business: { name: 'Frutería Ana' },
+    lines: [
+      { name: 'Tomate rosa', qty: 1.5, unit_price: 12, total: 18, unit_code: 'kg', pricing_unit_code: 'kg' },
+    ],
+    total: 18,
+    currency: '€',
+  };
+
+  it('cantidad decimal con unidad: «1,5 kg × 12,00 € / kg», no «1.5 × 12,00 €»', () => {
+    const html = receiptToPrintableHtml(pesable);
+    expect(html).toContain('1,5 kg × 12,00 € / kg');
+    expect(html).not.toContain('1.5', 'el punto inglés junto a la coma del dinero era el papel roto');
+  });
+
+  it('cantidad entera con unidad suelta (`ud`): sin ruido, «2 × 3,00 €»', () => {
+    const html = receiptToPrintableHtml({
+      ...pesable,
+      lines: [{ name: 'Café', qty: 2, unit_price: 3, total: 6, unit_code: 'ud', pricing_unit_code: 'ud' }],
+    });
+    expect(html).toContain('2 × 3,00 €');
+    expect(html).not.toContain('/ ud');
+    expect(html).not.toContain(' ud ', '«2 ud» en cada café es el ruido que priceLabel ya evita');
+  });
+
+  it('línea antigua sin contexto de unidades: el papel de siempre, byte a byte', () => {
+    const html = receiptToPrintableHtml({
+      ...pesable,
+      lines: [{ name: 'Café', qty: 2, unit_price: 3, total: 6 }],
+    });
+    expect(html).toContain('2 × 3,00 €');
+  });
+
+  it('sin unidad de precio explícita, el precio hereda la unidad de la línea', () => {
+    const html = receiptToPrintableHtml({
+      ...pesable,
+      lines: [{ name: 'Tomate rosa', qty: 1.5, unit_price: 12, total: 18, unit_code: 'kg' }],
+    });
+    expect(html).toContain('1,5 kg × 12,00 € / kg');
+  });
+
+  it('unidad de precio distinta de la de venta: cada cual con la suya', () => {
+    // Precio por kg, vendido en g: la cantidad dice «250 g» y el precio, a cuánto el kilo.
+    const html = receiptToPrintableHtml({
+      ...pesable,
+      lines: [{ name: 'Gamba blanca', qty: 250, unit_price: 12, total: 3, unit_code: 'g', pricing_unit_code: 'kg' }],
+    });
+    expect(html).toContain('250 g × 12,00 € / kg');
+  });
+});

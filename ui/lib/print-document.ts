@@ -22,6 +22,7 @@
 // one here without changing it there prints a document with a missing field, silently.
 import { orderToPrebill, saleToReceipt } from './document-mappers.js';
 import type { PrebillLine, SaleRow, SaleLineRow, SaleSettings, FiscalData } from './document-mappers.js';
+import { quantityLabel, unitTag } from './price-label.js';
 
 /** Cents (the row) → euros (the paper). The renderer formats with `{:.2}` and expects a number. */
 function euros(cents: number | undefined): number | undefined {
@@ -31,9 +32,21 @@ function euros(cents: number | undefined): number | undefined {
 /** A line as `escpos` reads it. */
 export interface PrintDocumentItem {
   name: string;
-  quantity: number;
+  /** Cantidad: el NÚMERO de siempre, o la cadena YA compuesta («1,5 kg ») cuando la línea lleva
+   *  unidad medible (sales#28). El renderer (`fmt_qty`) imprime una cadena tal cual. */
+  quantity: number | string;
   total: number;
   notes?: string;
+}
+
+/** Cantidad para la línea del papel térmico (sales#28).
+ *
+ * Sin unidad (línea antigua o `ud`) va el NÚMERO, como siempre: el papel sale byte a byte
+ * idéntico. Con unidad medible va la cadena compuesta con un ESPACIO final, porque el renderer
+ * escribe su separador como un literal — `format!("{}x {name}", …)` — y sin él «1,5 kg» saldría
+ * pegado: «1,5 kgx Tomate». Con él, «1,5 kg x Tomate». */
+function printQuantity(qty: number, unitCode?: string): number | string {
+  return unitTag(unitCode) ? `${quantityLabel(qty, unitCode)} ` : qty;
 }
 
 /**
@@ -83,7 +96,7 @@ export function prebillToPrintDocument(
     // The renderer prints this as «Mesa/Cliente»: on a bill it is the table, which is what the
     // waiter needs to know which paper goes where.
     customer_name: screen.customer,
-    items: screen.lines.map((l) => ({ name: l.name, quantity: l.qty, total: l.total })),
+    items: screen.lines.map((l) => ({ name: l.name, quantity: printQuantity(l.qty, l.unit_code), total: l.total })),
     total: screen.total,
     notice: screen.footer,
   };
@@ -112,7 +125,7 @@ export function saleToPrintDocument(
     vat_number: screen.business.tax_id,
     receipt_id: screen.number,
     customer_name: screen.customer,
-    items: screen.lines.map((l) => ({ name: l.name, quantity: l.qty, total: l.total })),
+    items: screen.lines.map((l) => ({ name: l.name, quantity: printQuantity(l.qty, l.unit_code), total: l.total })),
     subtotal: screen.subtotal,
     // The tax total comes from the sale row, not from the breakdown: a sale without
     // `tax_breakdown` still has `tax_amount`, and the paper must not lose it.

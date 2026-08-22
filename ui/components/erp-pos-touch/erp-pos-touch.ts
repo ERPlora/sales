@@ -1973,7 +1973,12 @@ export class ErpPosTouch extends LitElement {
    *  la puerta ni intenta la cola del hub, y cambia con la cuenta para que una segunda ronda no se
    *  trague como duplicado. */
   private async printPrebill() {
-    const lines = this.cart.map((l) => ({ name: l.name, price: l.price, qty: l.qty, is_gift: l.is_gift }));
+    // La unidad congelada viaja con la línea (sales#28): la cuenta que se lleva a la mesa pinta
+    // «1,5 kg», como el tiquet y la factura.
+    const lines = this.cart.map((l) => ({
+      name: l.name, price: l.price, qty: l.qty, is_gift: l.is_gift,
+      unit_code: l.unit_code, unit_name: l.unit_name,
+    }));
     const opts = {
       tableLabel: this.tableLabel || undefined,
       title: t('ui.prebillTitle'),

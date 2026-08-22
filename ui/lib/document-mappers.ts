@@ -8,9 +8,11 @@
 // address); the VeriFactu QR comes from `verifactu.records.by_invoice` (ADR-0140/0184).
 
 import { fromMicro } from './quantity';
+import { unitTag } from './price-label';
 import { payMethodDisplayName } from './pay-icons.js';
 import type {
   ReceiptData,
+  ReceiptLine,
   InvoiceData,
   InvoiceLine,
   OkReceiptLabels,
@@ -118,6 +120,13 @@ export interface SaleLineRow {
   line_total: number;
   is_gift?: number;
   gift_reason?: string;
+  /** ── Contexto de unidades CONGELADO en la línea (ADR-0147 §2.4; sales#28): la fila ya lo
+   *  devuelve y el PAPEL lo pinta — la cantidad con su unidad y el precio con la suya. Sin
+   *  unidad (línea antigua o `ud`) no hay nada que etiquetar. */
+  unit_code?: string;
+  unit_name?: string;
+  pricing_unit_code?: string;
+  pricing_unit_name?: string;
 }
 
 /** Etiqueta de línea para el documento: añade "(Invitación)" a una línea regalo (comp). */
@@ -216,6 +225,30 @@ export function resolveFormat(sale: SaleRow, settings: SaleSettings): 'ticket' |
   return v === 'invoice' ? 'invoice' : 'ticket';
 }
 
+/** Línea de `ReceiptData` con la unidad congelada que el PAPEL pinta (sales#28). `<ok-receipt>`
+ *  (outfitkit) no conoce unidades: estos campos extra viajan con el objeto — la pantalla los
+ *  ignora, `receiptToPrintableHtml` y el documento ESC/POS los componen en la línea impresa. */
+export interface PaperReceiptLine extends ReceiptLine {
+  unit_code?: string;
+  unit_name?: string;
+  /** Unidad en la que está expresado el `unit_price` (KPEIN): «12,00 € / kg». */
+  pricing_unit_code?: string;
+}
+
+/** `ReceiptData` con líneas que llevan su unidad — lo que devuelven los mappers de tiquet. */
+export type PaperReceiptData = ReceiptData & { lines: PaperReceiptLine[] };
+
+/** El contexto de unidades de la línea, en la forma del papel: sin unidad → sin campos (una
+ *  línea antigua no fabrica unidades que nadie congeló). */
+function paperUnit(l: { unit_code?: string; unit_name?: string; pricing_unit_code?: string }): Partial<PaperReceiptLine> {
+  if (!l.unit_code) return {};
+  return {
+    unit_code: l.unit_code,
+    ...(l.unit_name ? { unit_name: l.unit_name } : {}),
+    ...(l.pricing_unit_code ? { pricing_unit_code: l.pricing_unit_code } : {}),
+  };
+}
+
 /** Sale → 80mm thermal ticket (`<ok-receipt>`). Header: explicit `receipt_header` wins
  *  (deliberate branding); empty → the fiscal issuer name (business profile, #32); last resort
  *  → the translated default passed by the UI. */
@@ -227,18 +260,19 @@ export function saleToReceipt(
   locale = 'es',
   fallbackName = DEFAULT_BUSINESS_NAME,
   t?: Translate,
-): ReceiptData {
+): PaperReceiptData {
   const header = splitHeader(settings.receipt_header);
   return {
     business: { name: header.name || fiscal.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || undefined },
     number: fiscal.number || sale.sale_number,
     datetime: formatDateTime(sale.created_at, locale),
     customer: fiscal.customer_name || sale.customer_name || undefined,
-    lines: lines.map((l) => ({
+    lines: lines.map((l): PaperReceiptLine => ({
       name: lineLabel(l),
       qty: fromMicro(Number(l.quantity)), // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
       unit_price: toEuros(l.unit_price),
       total: toEuros(l.line_total),
+      ...paperUnit(l), // sales#28: la unidad congelada, para el papel
     })),
     subtotal: sale.subtotal != null ? toEuros(sale.subtotal) : undefined,
     taxes: parseTaxes(sale.tax_breakdown, t).map((x) => ({ label: x.label, base: x.base, amount: x.amount })),
@@ -270,7 +304,10 @@ export function saleToInvoice(
 ): InvoiceData {
   const header = splitHeader(settings.receipt_header);
   const invLines: InvoiceLine[] = lines.map((l) => ({
-    description: lineLabel(l),
+    // sales#28: `InvoiceLine` (outfitkit) no tiene campo de unidad, y la factura A4 debe decir
+    // igualmente en qué va la línea — el hueco honesto es la descripción, como «Vino (botella)»:
+    // «Tomate rosa (kg)». Sin unidad o con la suelta, la descripción queda como estaba.
+    description: unitTag(l.unit_code) ? `${lineLabel(l)} (${unitTag(l.unit_code)})` : lineLabel(l),
     qty: fromMicro(Number(l.quantity)), // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
     unit_price: toEuros(l.unit_price),
     discount_percent: l.discount_percent ? Number(l.discount_percent) : undefined,
@@ -305,6 +342,10 @@ export interface PrebillLine {
   price: number; // céntimos
   qty: number;
   is_gift?: boolean;
+  /** Unidad congelada de la línea (ADR-0147 §2.4; sales#28): la cuenta que se lleva a la mesa
+   *  pinta la cantidad con su unidad, como el tiquet. */
+  unit_code?: string;
+  unit_name?: string;
 }
 
 /**
@@ -323,7 +364,7 @@ export function orderToPrebill(
   lines: PrebillLine[],
   settings: SaleSettings = {},
   opts: { tableLabel?: string; datetime?: string; locale?: string; title?: string; notice?: string; fallbackName?: string } = {},
-): ReceiptData {
+): PaperReceiptData {
   const header = splitHeader(settings.receipt_header);
   const cents = (l: PrebillLine) => (l.is_gift ? 0 : Math.round(l.price * l.qty));
   const total = lines.reduce((s, l) => s + cents(l), 0);
@@ -339,11 +380,12 @@ export function orderToPrebill(
     // number/qr/payment AUSENTES a propósito: esto no es una factura (ver doc de la función).
     datetime: formatDateTime(opts.datetime ?? new Date().toISOString(), opts.locale ?? 'es'),
     customer: opts.tableLabel || undefined,
-    lines: lines.map((l) => ({
+    lines: lines.map((l): PaperReceiptLine => ({
       name: l.is_gift ? `${l.name} (invitación)` : l.name,
       qty: l.qty,
       unit_price: toEuros(l.price),
       total: toEuros(cents(l)),
+      ...paperUnit(l), // sales#28: la unidad congelada, para el papel
     })),
     total: toEuros(total),
     taxes: [],
