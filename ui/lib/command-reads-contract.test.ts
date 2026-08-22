@@ -35,3 +35,24 @@ describe('sales.order.fire pre-loads the order lines (sales#80)', () => {
     expect(lines!.params?.order_id).toBe('payload.order_id');
   });
 });
+
+// sales#111 — `sales.complete_sale` reads `inventory.products.for_sale`, a query that exists since
+// inventory 1.2.20. With an older `inventory` the read is silently omitted and every catalogue
+// line is refused: the till cannot charge (hub#960). The hub installer validates a version FLOOR
+// (`depends_on: [{id, min_version}]`, hub#681, `dependency_too_old`) and the marketplace accepts
+// the object form since saas#1535 — so the floor is declared, not hoped for.
+describe('sales declares the inventory version floor its reads need (sales#111)', () => {
+  type WithDeps = { depends_on: (string | { id: string; min_version?: string })[] };
+  const md = manifest as unknown as WithDeps;
+
+  it('depends_on inventory carries min_version 1.2.20', () => {
+    const inv = md.depends_on.find((d) => (typeof d === 'string' ? d : d.id) === 'inventory');
+    expect(inv, 'inventory is a dependency').toBeTruthy();
+    expect(typeof inv).toBe('object');
+    expect((inv as { min_version?: string }).min_version).toBe('1.2.20');
+  });
+
+  it('taxes stays a plain string: nothing sales reads there was born in a specific version', () => {
+    expect(md.depends_on).toContain('taxes');
+  });
+});
