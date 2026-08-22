@@ -90,9 +90,21 @@ function erplora(): ErploraClientLike {
 
 export class ErpSalesList extends LitElement {
   static styles = css`
-    :host { display:block; font-family: system-ui, sans-serif; color: var(--ion-text-color,#1c1b18); }
+    /* sales#126 — la vista LLENA el alto del outlet y gestiona SU scroll (el mismo contrato que
+       payments/list y erp-pos). El body del hub tiene «overflow: hidden»: si el contenido crece
+       por debajo del viewport y la propia vista no scrolla, no hay forma de llegar a él — ni rueda,
+       ni teclado, ni arrastre. «min-height: 0» es lo que deja al hijo encogerse en el flex. */
+    :host { display:flex; flex-direction:column; height:100%; min-height:0; font-family: system-ui, sans-serif; color: var(--ion-text-color,#1c1b18); }
+    /* sales#126 — TODO el contenido vive en el contenedor con scroll propio: título, rangos, KPIs,
+       tabla y pie «N registros» se alcanzan scrollando AQUÍ, salga lo que salga en cada viewport. */
+    .scroll { flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
     h2 { margin:0 0 .75rem; font-size:1.15rem; }
     .cards { display:flex; gap:.6rem; margin-bottom:1rem; flex-wrap:wrap; }
+    /* sales#126 — por debajo de 768 px los 6 KPI NO se apilan en 2 columnas × 3 filas (~230 px que
+       se comían el viewport): UNA fila desplazable horizontalmente (Square/Toast). El desbordamiento
+       horizontal lo absorbe la propia tira, nunca la página. */
+    .cards.kpi-row { flex-wrap:nowrap; overflow-x:auto; min-width:0; scrollbar-width:thin; }
+    .cards.kpi-row .card { flex:0 0 auto; }
     .range-segment { margin:.25rem 0 .75rem; max-width:32rem; }
     .card { flex:1; min-width:8rem; padding:.7rem .9rem; border:1px solid var(--ion-border-color,#e0ddd4); border-radius: var(--ok-radius, 12px); }
     .card .k { color:#8b897f; font-size:.75rem; text-transform:uppercase; }
@@ -107,6 +119,19 @@ export class ErpSalesList extends LitElement {
   @state() statsError = '';
 
   @state() tick = 0;
+
+  /** sales#126 — por debajo de 768 px los KPI colapsan en UNA fila desplazable (Square/Toast).
+   *  La clase `kpi-row` es la que apaga el `flex-wrap`; así el contrato es medible en DOM y sigue
+   *  al viewport en vivo (mismo mecanismo de matchMedia que usa ok-data-table para su modo tarjetas). */
+  static readonly KPI_ROW_QUERY = '(max-width: 767.98px)';
+
+  @state() private kpiRow = false;
+
+  private kpiMq?: MediaQueryList;
+
+  private readonly onKpiMqChange = (e: MediaQueryListEvent): void => {
+    if (this.kpiRow !== e.matches) this.kpiRow = e.matches;
+  };
 
   /** Venta seleccionada para ver su documento (tiquet/factura) en el modal. */
   @state() docSaleId?: string;
@@ -212,6 +237,12 @@ export class ErpSalesList extends LitElement {
   async connectedCallback() {
     super.connectedCallback();
     window.addEventListener('erplora:locale-changed', this.onLocaleChange);
+    // sales#126 — estado inicial del viewport + seguimiento en vivo (rotar/mover la ventana).
+    if (typeof window.matchMedia === 'function') {
+      this.kpiMq = window.matchMedia(ErpSalesList.KPI_ROW_QUERY);
+      this.kpiRow = this.kpiMq.matches;
+      this.kpiMq.addEventListener('change', this.onKpiMqChange);
+    }
     const b = rangeBounds(this.range);
     this.ctrl = createListController<Sale>(erplora(), 'sales.list', () => this.requestUpdate(), {
       pageSize: 50,
@@ -231,6 +262,7 @@ export class ErpSalesList extends LitElement {
 
   disconnectedCallback() {
     window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
+    this.kpiMq?.removeEventListener('change', this.onKpiMqChange); // sales#126
     super.disconnectedCallback(); this.unsub?.(); }
 
   /** El selector de fechas de la propia tabla (columna «Fecha») también filtra por DÍA: la
@@ -262,13 +294,15 @@ export class ErpSalesList extends LitElement {
 
   render() {
     const t = (k: string): string => erplora().t(CATALOG, k);
-    return html`<div>
+    // sales#126 — todo dentro de `.scroll`: lo que no quepa en el outlet se alcanza scrollando
+    // la propia vista (antes desbordaba en `overflow: visible` y el body `hidden` lo recortaba).
+    return html`<div class="scroll">
         <h2>${t('ui.sales')}</h2>
         <ion-segment class="range-segment" value=${this.range} aria-label=${t('ui.rangeLabel')}
           @ionChange=${(e: CustomEvent<{ value?: string }>) => { void this.setRange((e.detail.value as Range) || 'today'); }}>
           ${(Object.keys(RANGE_KEYS) as Range[]).map((r) => html`<ion-segment-button value=${r}><ion-label>${t(RANGE_KEYS[r])}</ion-label></ion-segment-button>`)}
         </ion-segment>
-        <div class="cards">
+        <div class=${this.kpiRow ? 'cards kpi-row' : 'cards'}>
           <div class="card">
             <div class="k">${t('ui.tickets')}</div>
             <div class="v">${this.stats.count}</div>
@@ -299,9 +333,10 @@ export class ErpSalesList extends LitElement {
         <!-- The «document» button is not the only door: rowClickable makes the whole row open the
              same document (outfitkit#67 — the actions column can be off-screen at 1440 px). -->
         <ok-data-table .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r: Record<string, unknown>) => String(r.sale_number ?? '—')} .cardIcon=${() => 'receipt-outline'} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.ctrl?.state.sort} .sortDir=${this.ctrl?.state.dir ?? 'desc'} .searchable=${true} .searchPlaceholder=${t('ui.searchSalePlaceholder')} .emptyMessage=${this.ctrl?.loading ? t('ui.loading') : t('ui.noSales')} .actions=${this.documentActions} .rowClickable=${true} @rowAction=${(e: CustomEvent<{ actionId: string; row: Sale }>) => { if (e.detail.actionId === 'document') this.docSaleId = e.detail.row.id; else if (e.detail.actionId === 'void') void this.confirmVoid(e.detail.row); }} @rowClick=${(e: CustomEvent<{ row: Sale }>) => { this.docSaleId = e.detail.row.id; }} @pageChange=${(e: CustomEvent<number>) => this.ctrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.ctrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.ctrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.onFilterChange(e)}></ok-data-table>
-
-        ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => { this.docSaleId = undefined; }, t })}
-      </div>`;
+      </div>
+      <!-- sales#126 — el modal FUERA del contenedor con scroll: Ionic lo reparenta al light-DOM
+           igual, pero así la vista no arrastra overlays al scrollear. -->
+      ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => { this.docSaleId = undefined; }, t })}`;
   }
 }
 
