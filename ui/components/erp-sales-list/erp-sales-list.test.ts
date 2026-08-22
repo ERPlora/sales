@@ -262,3 +262,42 @@ describe('sales list — «today» is the LOCAL day, never the UTC day (sales#13
     expect(rangeBounds('all')).toEqual({});
   });
 });
+
+// ── pm#155 (outfitkit#67, second half) ────────────────────────────────────────────────────────
+//
+// At 1440 px the «Actions» column fell off the screen with nothing hinting the table went on to
+// the right, so the only door into a sale was a button nobody could see. OutfitKit 0.1.44 pins
+// that column, but the other half of the fix is opt-in: `rowClickable` turns the whole row into a
+// door — the first thing a user tries. The list has to ask for it, and wire `rowClick` to the
+// same document the «document» action opens.
+describe('sales list — clicking the row opens the document (pm#155)', () => {
+  async function mountList() {
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.hasPermission = () => true;
+    document.body.innerHTML = '';
+    await import('./erp-sales-list');
+    const el = document.createElement('erp-sales-list') as HTMLElement & { shadowRoot: ShadowRoot };
+    document.body.appendChild(el);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    return el;
+  }
+
+  it('the table declares `rowClickable` → the whole row is a door, not just the action button', async () => {
+    const el = await mountList();
+    const table = el.shadowRoot.querySelector('ok-data-table') as (HTMLElement & { rowClickable: boolean }) | null;
+    expect(
+      table?.rowClickable,
+      'without `rowClickable` the row is dead: if the actions column is off-screen there is no way in',
+    ).toBe(true);
+  });
+
+  it('`rowClick` opens the document of the clicked sale, same as the «document» action', async () => {
+    const el = await mountList();
+    const table = el.shadowRoot.querySelector('ok-data-table') as HTMLElement | null;
+    table!.dispatchEvent(new CustomEvent('rowClick', { detail: { row: { id: 'sale-1', sale_number: 'S-1', status: 'completed' } } }));
+    await new Promise((r) => setTimeout(r, 0));
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    const wc = el as unknown as { docSaleId?: string };
+    expect(wc.docSaleId, 'the row was clicked and the document did not open').toBe('sale-1');
+  });
+});
