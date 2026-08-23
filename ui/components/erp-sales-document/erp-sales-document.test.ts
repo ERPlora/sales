@@ -393,3 +393,50 @@ describe('claim «pide tu factura» — acuñar al resolver la F2 e imprimir el 
     expect(doc.qr_data).toBe('https://aeat/qr', 'el QR fiscal sigue en su sitio');
   });
 });
+
+// sales#148 — REIMPRIMIR un tique con suplementos. Es el otro extremo del cable: la fila de
+// `sales.lines` trae el snapshot que congeló el cobro (`sales_sale_item.modifiers`) y el visor arma
+// los DOS papeles desde el mismo mapper, así que aquí se fija que sobrevive a la reimpresión —
+// uno de los cuatro casos que la issue exige (dividir, transferir, reabrir, REIMPRIMIR).
+describe('los suplementos sobreviven a la REIMPRESIÓN del tique (sales#148)', () => {
+  async function montarVentaConSuplementos() {
+    await import('./erp-sales-document');
+    const el = document.createElement('erp-sales-document');
+    (el as unknown as Record<string, unknown>).sale = {
+      id: 's-mod', sale_number: 'T-000126', total: 1000, created_at: '2026-08-20T10:00:00Z',
+    };
+    (el as unknown as Record<string, unknown>).lines = [{
+      product_name: 'Hamburguesa',
+      quantity: 1_000_000,
+      unit_price: 1000, // el delta del queso YA está dentro (authoritative_modifiers)
+      line_total: 1000,
+      // Tal cual lo devuelve la columna: TEXT con el snapshot en el orden de elección.
+      modifiers: JSON.stringify([
+        { option_id: 'o-queso', group_id: 'g1', name: 'Extra queso', kitchen_name: '+QUESO', price_delta: 100 },
+        { option_id: 'o-sin-cebolla', group_id: 'g2', name: 'Sin cebolla', kitchen_name: 'SIN CEB.', price_delta: 0 },
+      ]),
+    }];
+    (el as unknown as Record<string, unknown>).settings = {};
+    document.body.appendChild(el);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    return el;
+  }
+
+  it('printableHtml: cada suplemento en su renglón sangrado, con el nombre COMERCIAL', async () => {
+    const el = await montarVentaConSuplementos();
+    const html = (el as unknown as { printableHtml(): string }).printableHtml();
+    expect(html).toContain('Extra queso');
+    expect(html).toContain('Sin cebolla');
+    expect(html).toContain('class="mod"');
+    expect(html, 'lo que se grita en el pase no es lo que lee el cliente').not.toContain('+QUESO');
+    expect(html.indexOf('Extra queso'), 'en el orden en que se eligieron').toBeLessThan(html.indexOf('Sin cebolla'));
+  });
+
+  it('printableDocument: el térmico los lleva en `notes`, la sub-línea que ya indenta', async () => {
+    const el = await montarVentaConSuplementos();
+    const doc = (el as unknown as { printableDocument(): { items: { notes?: string; total: number }[] } })
+      .printableDocument();
+    expect(doc.items[0].notes).toBe('Extra queso · Sin cebolla');
+    expect(doc.items[0].total, 'el importe es el de la línea, con el suplemento ya dentro').toBe(10);
+  });
+});

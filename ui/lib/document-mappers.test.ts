@@ -483,9 +483,17 @@ describe('los suplementos viajan al documento (sales#148)', () => {
 // real, y los tests de TS pasarían mintiendo.
 describe('la puerta de lectura del tique devuelve el snapshot (sales#148)', () => {
   it('`queries/lines.sql` SELECCIONA la columna `modifiers`', () => {
-    const sql = readFileSync(join(salesRoot, 'queries/lines.sql'), 'utf8');
-    const select = sql.slice(sql.toUpperCase().indexOf('SELECT'), sql.toUpperCase().indexOf('FROM'));
+    // Los comentarios se quitan ANTES de mirar: un `-- … modifiers …` haría pasar esta
+    // comprobación sin que la columna viajara, que es exactamente el fallo que vigila.
+    const sinComentarios = readFileSync(join(salesRoot, 'queries/lines.sql'), 'utf8')
+      .split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');
+    const select = sinComentarios.slice(
+      sinComentarios.toUpperCase().indexOf('SELECT'),
+      sinComentarios.toUpperCase().indexOf('FROM'),
+    );
     expect(select, 'lo que no se SELECCIONA no llega al papel').toMatch(/\bmodifiers\b/);
+    // Y que la comprobación DETECTA el positivo: sobre el SQL de antes de esta issue, falla.
+    expect(select.replace(/,\s*modifiers/, '')).not.toMatch(/\bmodifiers\b/);
   });
 });
 
