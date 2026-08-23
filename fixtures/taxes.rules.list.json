@@ -1,0 +1,18 @@
+[
+  {
+    "id": "r-21",
+    "tax_category_key": "product.generic",
+    "rate_pct": 21,
+    "parent_id": null,
+    "valid_from": "2026-01-01",
+    "is_active": 1
+  },
+  {
+    "id": "r-10",
+    "tax_category_key": "restaurant.food",
+    "rate_pct": 10,
+    "parent_id": null,
+    "valid_from": "2026-01-01",
+    "is_active": 1
+  }
+]

@@ -320,11 +320,13 @@ export class ErpPosTouch extends LitElement {
       overflow:hidden; display:flex; flex-direction:column; transition:border-color .12s, transform .05s; }
     ion-card.tile:hover { border-color:var(--accent); }
     ion-card.tile:active { transform:scale(.98); }
-    /* sales#74 — producto que el cobro rechazaría: se ve, pero no se puede pulsar. Ni el color ni
-       la opacidad son el mensaje (hay daltonismo y hay pantallas malas): el motivo va en el
-       title / aria-label de la tarjeta y la marca es un icono, no un tono. */
-    ion-card.tile[disabled] { opacity:.62; border-style:dashed; cursor:not-allowed; }
-    ion-card.tile[disabled]:hover { border-color:var(--ion-border-color); }
+    /* sales#74 + sales#58 - an item checkout would reject: it shows, it takes the tap, and the tap
+       SAYS why. Never the native disabled attribute: on Ionic that means pointer-events none, so a
+       touchscreen swallows the tap and the reason (title needs a hover, aria-label needs a screen
+       reader) reaches nobody - the grid just looks broken. Colour and opacity are not the message
+       either (colour blindness, bad screens): the reason travels in WORDS, on the tile itself. */
+    ion-card.tile[aria-disabled='true'] { opacity:.72; border-style:dashed; cursor:not-allowed; }
+    ion-card.tile[aria-disabled='true']:hover { border-color:var(--ion-color-warning,#ffc409); }
     .thumb { height:5.6rem; background-size:cover; background-position:center; display:flex; align-items:center; justify-content:center;
       font-weight:800; font-size:1.4rem; color:rgba(255,255,255,.85); position:relative; }
     /* La foto TAPA el marcador en vez de sustituirlo: va absoluta sobre el degradado y las
@@ -334,6 +336,18 @@ export class ErpPosTouch extends LitElement {
       width:1.5rem; height:1.5rem; border-radius:50%; background:var(--ion-color-warning,#ffc409);
       color:var(--ion-color-warning-contrast,#000); font-size:1.05rem; }
     .tinfo { padding:.5rem .6rem .65rem; }
+    /* The block label, on the tile and in words (Square and Toast paint "Sold Out" right there).
+       The long reason goes to the notice the tap raises; the short label is what fits here. */
+    .tile .blocked-badge { margin-top:.3rem; display:inline-block; max-width:100%; overflow:hidden;
+      text-overflow:ellipsis; white-space:nowrap; padding:.08rem .38rem; border-radius:var(--ok-radius-pill,999px);
+      background:var(--ion-color-warning,#ffc409); color:var(--ion-color-warning-contrast,#000);
+      font-size:.68rem; font-weight:700; letter-spacing:.02em; text-transform:uppercase; }
+    /* The notice the tap raises: where the cashier is already looking, not in a corner. */
+    .blocked-notice { display:flex; align-items:center; gap:.4rem; margin:0 0 .5rem; padding:.45rem .6rem;
+      border-radius:var(--ok-radius,14px); border:1px solid var(--ion-color-warning,#ffc409);
+      background:color-mix(in srgb, var(--ion-color-warning,#ffc409) 16%, transparent);
+      color:var(--tx); font-size:.82rem; line-height:1.25; }
+    .blocked-notice ion-icon { flex:none; font-size:1.05rem; color:var(--ion-color-warning-shade,#e0ac08); }
     .tile .n { font-weight:600; font-size:.9rem; line-height:1.2; color:var(--tx); }
     .tile .p { font-weight:800; color:var(--accent); margin-top:.25rem; }
 
@@ -743,6 +757,10 @@ export class ErpPosTouch extends LitElement {
   @state() private docFormat: 'ticket' | 'invoice' = 'ticket';
   @state() private busy = false;
   @state() private error = '';
+  /** sales#58 - why the LAST tapped tile did not reach the check. It lives apart from `error`
+   *  (a sale failure, which drags the "check the sales list" link along): this is not a failure,
+   *  it is an unconfigured catalogue, and it clears itself as soon as something sellable goes in. */
+  @state() private blockedNotice = '';
   @state() private docSaleId?: string;
   /** Clave del INTENTO de cobro en curso (sales#20): se genera al abrir la pantalla de cobro, se
    *  REUTILIZA en cada reintento —por eso un timeout no crea una segunda venta— y se descarta en
@@ -1754,6 +1772,13 @@ export class ErpPosTouch extends LitElement {
   /** Motivo por el que este producto NO se puede cobrar, ya traducido; `undefined` si se puede
    *  (o si no hay catálogo fiscal con el que juzgarlo: eso es un incidente de `taxes`, no del
    *  producto, y cobrar es lo último que puede romperse). sales#74, ampliado en sales#89. */
+  /** Best-effort: the shell toast goes ON TOP of our own notice, never instead of it. A shell with
+   *  no notifier wired (or an older one) would leave the cashier with no explanation at all. */
+  private notifyShell(message: string) {
+    const c = erplora() as Partial<{ notify(n: { type: string; message: string }): void }>;
+    try { c.notify?.({ type: 'warning', message }); } catch { /* el aviso propio ya está pintado */ }
+  }
+
   private blockedReason(p: Product): string | undefined {
     // services#12: un servicio de precio NO cerrado ya no se bloquea — se PREGUNTA (ver `add`).
     // Cobrar «desde 65 €» como si fuera el precio sigue estando mal; la diferencia es que ahora
@@ -1777,10 +1802,17 @@ export class ErpPosTouch extends LitElement {
   }
 
   private add(p: Product): Promise<void> {
-    // Red de seguridad: la tarjeta ya se pinta `disabled` (Ionic corta el toque), así que llegar
-    // aquí con un producto bloqueado sería un camino nuevo. No añadimos en silencio lo que el cobro
-    // va a rechazar: el motivo ya está escrito en la propia tarjeta.
-    if (this.blockedReason(p)) return Promise.resolve();
+    // sales#58 - a blocked tile DOES take the tap, and this is the only place that answers it.
+    // Staying silent here is what turned "VAT is not configured yet" into "the POS is broken":
+    // with no line, no error and no log, a cashier has no way to tell those two apart.
+    const blocked = this.blockedReason(p);
+    if (blocked) {
+      this.blockedNotice = blocked;
+      this.notifyShell(blocked);
+      return Promise.resolve();
+    }
+    // Whatever does go in closes the incident: the notice is about the last tap, not a banner.
+    this.blockedNotice = '';
     // services#12: si el servicio no trae precio final, esto no añade nada — abre la pregunta con
     // el importe listado como SUGERENCIA y su categoría fiscal ya elegida. Lo que el cajero
     // confirme entra por la puerta gateada (sales#63), que es donde vive el permiso.
@@ -2830,6 +2862,11 @@ export class ErpPosTouch extends LitElement {
         <div class="catalog">
           ${this.renderCatBar()}
           ${this.error ? html`<p class="err">${this.error}</p>${this.renderCheckSalesLink()}` : nothing}
+          ${this.blockedNotice
+            ? html`<div class="blocked-notice" role="status">
+                <ion-icon name="alert-circle" aria-hidden="true"></ion-icon><span>${this.blockedNotice}</span>
+              </div>`
+            : nothing}
           <div class="grid">
             ${this.filtered.map((p) => {
               // sales#74 — lo que el cobro va a rechazar (sin categoría fiscal, o con una que no
@@ -2843,7 +2880,7 @@ export class ErpPosTouch extends LitElement {
               // 404, esquema que nadie resuelve, wifi caído al abrir— lo que asoma es el marcador,
               // no un hueco vacío. Antes eran el `else` de `image`, así que un producto CON foto
               // que no cargaba se quedaba sin foto Y sin iniciales: una baldosa en blanco.
-              return html`<ion-card button class="tile" ?disabled=${!!blocked}
+              return html`<ion-card button class="tile" aria-disabled=${blocked ? 'true' : nothing}
                 title=${blocked ?? nothing} aria-label=${blocked ? `${p.name} · ${blocked}` : nothing}
                 @click=${() => this.add(p)}>
               <div class="thumb" style=${`background:${gradient(p.name)}`}>
@@ -2857,7 +2894,8 @@ export class ErpPosTouch extends LitElement {
               <!-- sales#57: nombre y precio mandan. El SKU/slug NO se pinta (ruido interno que además
                    entraba en el nombre accesible del botón; Square/Toast/Lightspeed no lo enseñan —
                    vive en la búsqueda). La UNIDAD sí, cuando no es la pieza: «kg», «l». -->
-              <div class="tinfo"><div class="n">${p.name}</div><div class="sku">${p.unit_code && p.unit_code !== 'ud' ? p.unit_code : ''}</div><div class="p">${this.money(Number(p.price))}</div></div>
+              <div class="tinfo"><div class="n">${p.name}</div><div class="sku">${p.unit_code && p.unit_code !== 'ud' ? p.unit_code : ''}</div><div class="p">${this.money(Number(p.price))}</div>
+                ${blocked ? html`<div class="blocked-badge">${t('ui.notSellableBadge')}</div>` : nothing}</div>
             </ion-card>`;
             })}
             <!-- PRECIO LIBRE: vender género suelto que no está fichado (fruta a ojo). Va al FINAL de la
@@ -3157,7 +3195,7 @@ export class ErpPosTouch extends LitElement {
             // cuenta lo que no se puede cobrar (sales#74).
             const blocked = this.blockedReason(p);
             return html`
-            <ion-item button detail="false" ?disabled=${!!blocked} title=${blocked ?? nothing}
+            <ion-item button detail="false" aria-disabled=${blocked ? 'true' : nothing} title=${blocked ?? nothing}
               @click=${() => { this.add(p); this.q = ''; (this.renderRoot.querySelector('ok-spotlight-search') as { close?: () => void } | null)?.close?.(); }}>
               <ion-label><h3>${p.name}</h3>${blocked ? html`<p class="sp-warn">${blocked}</p>` : p.sku ? html`<p>${p.sku}</p>` : nothing}</ion-label>
               <span slot="end" class="sp-price">${this.money(Number(p.price))}</span>
