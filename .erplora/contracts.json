@@ -25,6 +25,7 @@
       "invoice.by_source",
       "invoice.lines",
       "modifiers.for_target",
+      "modifiers.options.all",
       "services.categories.list",
       "services.services.list",
       "verifactu.records.by_invoice"
