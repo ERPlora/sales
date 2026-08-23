@@ -2342,7 +2342,13 @@ export class ErpPosTouch extends LitElement {
         : this.cart;
       // `quantity` viaja en punto fijo 10⁶ y la línea lleva su contexto de unidades congelado
       // (ADR-0147): el servidor valida la rejilla y calcula el importe por el SDK (KPEIN).
-      const items = cobradas.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: toMicro(l.qty), tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: l.category_id ?? this.primaryCategory(l.id) ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0, discount: l.discount ?? 0, ...unitContextPayload(l) }));
+      // 🔴 sales#148: y sus SUPLEMENTOS. Sin ellos el servidor no tiene nada que valorar
+      // (`authoritative_modifiers` devuelve delta 0 y snapshot vacío), así que la hamburguesa con
+      // queso se cobraba a precio de hamburguesa —la línea del carrito lleva el precio BASE, el
+      // delta lo pone el catálogo al cobrar— y `sales_sale_item.modifiers` se congelaba VACÍO, de
+      // modo que el tique no podía nombrarlos por mucho que el papel supiera leerlos. Va SOLO el
+      // `option_id`: un `price_delta` del navegador sería un descuento que se hace el cliente solo.
+      const items = cobradas.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: toMicro(l.qty), tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: l.category_id ?? this.primaryCategory(l.id) ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0, discount: l.discount ?? 0, ...(l.modifiers?.length ? { modifiers: l.modifiers.map((m) => ({ option_id: m.option_id })) } : {}), ...unitContextPayload(l) }));
       await erplora().command('sales.complete_sale', {
         items,
         // sales#71: descuento de TICKET (%); el servidor lo prorratea por línea antes del IVA.

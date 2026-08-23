@@ -154,3 +154,66 @@ describe('la fusión de `addNow` también mira los suplementos', () => {
     expect(el.cart[0].qty, 'la normal no se toca').toBe(1);
   });
 });
+
+// ── 🔴 sales#148 · el suplemento tiene que llegar al COBRO, o no hay nada que imprimir ────────
+//
+// Encontrado reproduciendo la mitad del tique de sales#148. El servidor lleva desde sales#128 su
+// autoridad de precio (`authoritative_modifiers`: el `price_delta` del payload es una propuesta, el
+// del catálogo es el hecho) y congela el snapshot en `sales_sale_item.modifiers` — pero el TPV
+// **no le mandaba los suplementos** en `complete_sale`. Consecuencias, en orden de gravedad:
+//
+//   1. EL SUPLEMENTO NO SE COBRA. La línea del carrito lleva el precio BASE del producto (`addNow`:
+//      `price: Number(p.price)`) porque el delta lo suma el servidor; sin `modifiers` en el payload
+//      el delta es 0 y la hamburguesa con queso se cobra a precio de hamburguesa.
+//   2. El snapshot se congela VACÍO, así que el tique nunca podría nombrarlos por mucho que los
+//      mappers del papel supieran leerlos.
+//
+// Nada de esto avisa: la venta se cierra en verde, el tique cuadra consigo mismo y solo falta
+// dinero. El servidor ya sabía defenderse (falla CERRADO si le mandan suplementos sin catálogo);
+// lo que faltaba era que alguien se los mandara.
+describe('los suplementos elegidos llegan al COBRO (sales#148)', () => {
+  /** Añade una hamburguesa con «extra de queso» (+1,00 €) y cobra. */
+  async function chargeBurgerWithCheese() {
+    installSdk({ 'p-burger': GROUPS_FOR_BURGER });
+    const el = await mount();
+    await el.add(BURGER);
+    await el.updateComplete;
+    el.modifierPicks = ['o-rare', 'o-cheese'];
+    await el.confirmModifiers();
+    await el.updateComplete;
+    (el as unknown as { payMethod: unknown }).payMethod = { id: 'pm-cash', name: 'Cash' };
+    await (el as unknown as { confirm(p?: boolean): Promise<void> }).confirm();
+    await el.updateComplete;
+    return commands.find((c) => c.name === 'sales.complete_sale');
+  }
+
+  it('`complete_sale` recibe los `option_id`, en el ORDEN de elección', async () => {
+    const sale = await chargeBurgerWithCheese();
+    expect(sale, 'la venta se envía').toBeTruthy();
+    const items = sale!.params.items as { modifiers?: { option_id: string }[] }[];
+    expect(items[0].modifiers?.map((m) => m.option_id)).toEqual(['o-rare', 'o-cheese']);
+  });
+
+  it('manda SOLO el id: el precio de un suplemento no lo pone el navegador', async () => {
+    const sale = await chargeBurgerWithCheese();
+    const items = sale!.params.items as { modifiers?: Record<string, unknown>[] }[];
+    // Sin esto el bucle de abajo recorrería una lista vacía y pasaría sin comprobar nada.
+    expect(items[0].modifiers, 'hay dos suplementos que mirar').toHaveLength(2);
+    for (const m of items[0].modifiers ?? []) {
+      expect(Object.keys(m), 'un `price_delta` del cliente sería un descuento que se hace él solo').toEqual(['option_id']);
+    }
+  });
+
+  it('una línea SIN suplementos no gana la clave: el cobro de siempre no cambia', async () => {
+    installSdk();
+    const el = await mount();
+    await el.add(COFFEE);
+    await el.updateComplete;
+    (el as unknown as { payMethod: unknown }).payMethod = { id: 'pm-cash', name: 'Cash' };
+    await (el as unknown as { confirm(p?: boolean): Promise<void> }).confirm();
+    await el.updateComplete;
+    const sale = commands.find((c) => c.name === 'sales.complete_sale');
+    const items = sale!.params.items as Record<string, unknown>[];
+    expect(Object.keys(items[0])).not.toContain('modifiers');
+  });
+});
