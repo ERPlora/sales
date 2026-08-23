@@ -9,6 +9,7 @@ import { orderToPrebill, receiptLabels } from '../../lib/document-mappers.js';
 // La CUENTA se imprime con la forma que lee el renderizador ESC/POS, no con la de la pantalla
 // (sales#78): son dos documentos con el mismo contenido y distintas claves.
 import { prebillToPrintDocument, prebillJobId } from '../../lib/print-document.js';
+import type { PrintedModifier } from '../../lib/paper-modifiers.js';
 import { receiptToPrintableHtml, printHtmlInIframe } from '../../lib/receipt-html.js';
 import { decideOnTableChange } from '../../lib/table-switch.js';
 import { defaultParkLabel } from '../../lib/park-label.js';
@@ -789,6 +790,12 @@ export class ErpPosTouch extends LitElement {
   private pendingSplitSession?: string;
   /** Modal de la CUENTA previa (pre-bill) que se lleva a la mesa antes de cobrar. No es fiscal. */
   @state() private prebillOpen = false;
+  /** sales#148 — catálogo de suplementos resuelto (`option_id` → nombre + delta), para poder
+   *  IMPRIMIR la cuenta. La fila del pedido guarda solo los ids (migración 023, a propósito: el
+   *  precio y el nombre los pone el servidor al cobrar), así que al retomar una mesa el navegador
+   *  no sabe cómo se llama «o-queso». Se rellena de `modifiers.options.all`, la misma lectura
+   *  autoritativa que usa el cobro. Vacío = aún no se pidió, o el módulo no está. */
+  @state() private modifierCatalog = new Map<string, PrintedModifier>();
   /** Diálogo del NOMBRE al aparcar sin mesa (default: la hora, editable de un toque). */
   @state() private parkPromptOpen = false;
   @state() private parkName = '';
@@ -2004,13 +2011,59 @@ export class ErpPosTouch extends LitElement {
    *  pantalla no falla —saca «ERPlora», sin líneas y TOTAL 0,00—. El `jobId` no es opcional: sin él
    *  la puerta ni intenta la cola del hub, y cambia con la cuenta para que una segunda ronda no se
    *  trague como duplicado. */
-  private async printPrebill() {
+  /** Trae el catálogo de suplementos si la cuenta lo necesita (sales#148).
+   *
+   *  Solo cuando alguna línea lleva suplementos: en el 99 % de las cuentas de un TPV no hay
+   *  ninguno, y cobrarle una lectura de más a ese 99 % por una integración accesoria es empeorar
+   *  el producto para casi todo el mundo — el mismo criterio que `addWithModifiers`.
+   *
+   *  Lectura OPCIONAL (ADR-0127): si `modifiers` no está instalado no hay nada que resolver y la
+   *  cuenta se imprime igual, con el id en lugar del nombre. Un papel feo es preferible a un cobro
+   *  que el cliente no puede leer, que es justo el fallo que esta issue arregla. */
+  private async loadModifierCatalog(): Promise<void> {
+    if (!this.cart.some((l) => l.modifiers?.length)) return;
+    const rows = await optionalRead((c) => c.queryOptional<unknown>('modifiers.options.all', {}));
+    if (!Array.isArray(rows)) return;
+    const map = new Map<string, PrintedModifier>();
+    for (const raw of rows) {
+      const r = raw as Record<string, unknown>;
+      const option_id = String(r.option_id ?? '');
+      if (!option_id) continue;
+      const name = String(r.name ?? '');
+      const delta = Number(r.price_delta);
+      map.set(option_id, {
+        option_id,
+        ...(name ? { name } : {}),
+        ...(Number.isFinite(delta) ? { price_delta: delta } : {}),
+      });
+    }
+    this.modifierCatalog = map;
+  }
+
+  /** Los suplementos de una línea, con el nombre que el cliente debe leer. Sin resolver queda el
+   *  id: la línea sale fea, pero sale. */
+  private resolvedModifiers(l: CartLine): PrintedModifier[] | undefined {
+    if (!l.modifiers?.length) return undefined;
+    return l.modifiers.map((m) => this.modifierCatalog.get(m.option_id) ?? { option_id: m.option_id });
+  }
+
+  /** El carrito en la forma de la CUENTA. Una sola fuente para el papel y para la pantalla del
+   *  modal: si cada uno compusiera la suya, el camarero vería algo distinto de lo que imprime. */
+  private prebillLines() {
     // La unidad congelada viaja con la línea (sales#28): la cuenta que se lleva a la mesa pinta
     // «1,5 kg», como el tiquet y la factura.
-    const lines = this.cart.map((l) => ({
+    return this.cart.map((l) => ({
       name: l.name, price: l.price, qty: l.qty, is_gift: l.is_gift,
       unit_code: l.unit_code, unit_name: l.unit_name,
+      // sales#148: y sus suplementos, o el cliente paga un «+ queso» que su papel no nombra.
+      ...(this.resolvedModifiers(l) ? { modifiers: this.resolvedModifiers(l) } : {}),
     }));
+  }
+
+  private async printPrebill() {
+    // El nombre de cada suplemento sale del catálogo, no del navegador (sales#148).
+    await this.loadModifierCatalog();
+    const lines = this.prebillLines();
     const opts = {
       tableLabel: this.tableLabel || undefined,
       title: t('ui.prebillTitle'),
@@ -2739,7 +2792,7 @@ export class ErpPosTouch extends LitElement {
             </ion-button>` : nothing}
             <ion-button class="prebill" fill="outline" ?disabled=${!this.cart.length}
                         title=${t('ui.printPrebill')} aria-label=${t('ui.printPrebill')}
-                        @click=${() => { this.prebillOpen = true; }}>
+                        @click=${() => { this.prebillOpen = true; void this.loadModifierCatalog(); }}>
               <ion-icon slot="icon-only" name="print-outline"></ion-icon>
             </ion-button>
             <ion-button class="charge" ?disabled=${!this.cart.length}
@@ -3230,7 +3283,7 @@ export class ErpPosTouch extends LitElement {
                component fell back to its own built-in English DEFAULT_LABELS.
                (No backticks in comments inside a Lit template: they close the literal.) -->
           <ok-receipt id="prebill-doc" .receipt=${orderToPrebill(
-            this.cart.map((l) => ({ name: l.name, price: l.price, qty: l.qty, is_gift: l.is_gift })),
+            this.prebillLines(),
             this.settings,
             { tableLabel: this.tableLabel || undefined, title: t('ui.prebillTitle'), notice: t('ui.prebillNotice'), fallbackName: t('ui.docDefaultBusiness') },
           )} .labels=${receiptLabels(t)}></ok-receipt>
