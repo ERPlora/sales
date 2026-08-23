@@ -10,6 +10,9 @@
 // 3. IDIOMAS MEZCLADOS — ok-receipt/ok-invoice pintan sus defaults en inglés («Receipt», «Change»)
 //    si nadie les pasa `.labels`; junto a «Efectivo» quedaba spanglish. El mapper expone
 //    `receiptLabels(t)` / `invoiceLabels(t)` para construirlas desde el catálogo ADR-0055.
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   saleToReceipt,
@@ -20,6 +23,18 @@ import {
   type SaleRow,
   type SaleLineRow,
 } from './document-mappers.js';
+
+// La raíz del módulo se ancla en SU module.json: se sube desde ESTE fichero (import.meta.url)
+// hasta encontrarlo, para que el test no dependa del cwd de vitest.
+const salesRoot = (() => {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  while (!existsSync(join(dir, 'module.json'))) {
+    const arriba = dirname(dir);
+    if (arriba === dir) throw new Error('no se encontró module.json subiendo desde el test');
+    dir = arriba;
+  }
+  return dir;
+})();
 
 // Venta real de la captura: 2 cafés de 1,80 € = 3,60 €; pagado 5 €, cambio 1,40 €. En BD: céntimos.
 const SALE: SaleRow = {
@@ -404,5 +419,103 @@ describe('la leyenda del claim vive en el catálogo en y es (sales#103)', () => 
     const en = (await import('../../locales/en.json')).default as { ui: Record<string, string> };
     expect(es.ui.claimNote).toBe('Pide tu factura');
     expect(en.ui.claimNote).toBe('Get your invoice');
+  });
+});
+
+// ── sales#148 · los suplementos llegan al PAPEL ──────────────────────────────────────────────
+//
+// Criterio de aceptación de ADR-0376: no basta con que el suplemento se GUARDE — el fallo estrella
+// del sector es de enrutado. El cliente paga «+ queso 1 €» y el tique decía solo «Hamburguesa»: el
+// importe cuadraba (el delta va dentro del `unit_price`) pero el CONCEPTO no aparecía, así que no
+// se podía reclamar, comprobar ni justificar. Un tique es un documento fiscal: lo que se cobra
+// tiene que estar impreso.
+describe('los suplementos viajan al documento (sales#148)', () => {
+  it('la línea de venta desempaqueta el snapshot que congeló el servidor al cobrar', () => {
+    const lines: SaleLineRow[] = [{
+      product_name: 'Hamburguesa', quantity: 1_000_000, unit_price: 1000, line_total: 1000,
+      modifiers: JSON.stringify([
+        { option_id: 'o-queso', name: 'Extra queso', kitchen_name: 'QUESO', price_delta: 100 },
+        { option_id: 'o-sin-cebolla', name: 'Sin cebolla', kitchen_name: 'SIN CEBOLLA', price_delta: 0 },
+      ]),
+    }];
+    const r = saleToReceipt(SALE, lines);
+    expect(r.lines[0].modifiers, 'el papel lee el nombre COMERCIAL, no el de cocina').toEqual([
+      { option_id: 'o-queso', name: 'Extra queso', price_delta: 100 },
+      { option_id: 'o-sin-cebolla', name: 'Sin cebolla', price_delta: 0 },
+    ]);
+  });
+
+  it('conserva el ORDEN de elección: el cliente los lee como los pidió', () => {
+    const snap = (names: string[]) => JSON.stringify(names.map((name, i) => ({ option_id: `o-${i}`, name })));
+    const line = (s: string): SaleLineRow => ({ product_name: 'X', quantity: 1_000_000, unit_price: 100, line_total: 100, modifiers: s });
+    expect(saleToReceipt(SALE, [line(snap(['B', 'A']))]).lines[0].modifiers?.map((m) => m.name)).toEqual(['B', 'A']);
+  });
+
+  it('una línea SIN suplementos no fabrica el campo: el tique de siempre sale igual', () => {
+    const r = saleToReceipt(SALE, LINES);
+    expect(r.lines[0].modifiers).toBeUndefined();
+  });
+
+  it('un snapshot ROTO no tumba el tique: se pierde el suplemento, nunca el documento', () => {
+    const lines: SaleLineRow[] = [{ product_name: 'X', quantity: 1_000_000, unit_price: 100, line_total: 100, modifiers: '{not json' }];
+    expect(saleToReceipt(SALE, lines).lines[0].modifiers).toBeUndefined();
+  });
+
+  it('sin nombre resoluble queda el id: mejor una línea fea que un cobro invisible', () => {
+    const lines: SaleLineRow[] = [{
+      product_name: 'X', quantity: 1_000_000, unit_price: 100, line_total: 100,
+      modifiers: JSON.stringify([{ option_id: 'o-huerfano', price_delta: 50 }]),
+    }];
+    expect(saleToReceipt(SALE, lines).lines[0].modifiers).toEqual([{ option_id: 'o-huerfano', price_delta: 50 }]);
+  });
+
+  it('la cuenta previa lleva los suyos tal cual se los dan (ya resueltos contra el catálogo vivo)', () => {
+    const r = orderToPrebill([
+      { name: 'Hamburguesa', price: 900, qty: 1, modifiers: [{ option_id: 'o-queso', name: 'Extra queso', price_delta: 100 }] },
+    ]);
+    expect(r.lines[0].modifiers).toEqual([{ option_id: 'o-queso', name: 'Extra queso', price_delta: 100 }]);
+  });
+});
+
+// 🔴 La columna existe y el handler la escribe (`_insert_line.sql`), pero `queries/lines.sql` NO la
+// devolvía: el tique y su reimpresión leen la venta por esa puerta, así que el snapshot estaba
+// escrito y era ILEGIBLE. Sin esto el mapper de arriba no tiene nada que desempaquetar en un hub
+// real, y los tests de TS pasarían mintiendo.
+describe('la puerta de lectura del tique devuelve el snapshot (sales#148)', () => {
+  it('`queries/lines.sql` SELECCIONA la columna `modifiers`', () => {
+    // Los comentarios se quitan ANTES de mirar: un `-- … modifiers …` haría pasar esta
+    // comprobación sin que la columna viajara, que es exactamente el fallo que vigila.
+    const sinComentarios = readFileSync(join(salesRoot, 'queries/lines.sql'), 'utf8')
+      .split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');
+    const select = sinComentarios.slice(
+      sinComentarios.toUpperCase().indexOf('SELECT'),
+      sinComentarios.toUpperCase().indexOf('FROM'),
+    );
+    expect(select, 'lo que no se SELECCIONA no llega al papel').toMatch(/\bmodifiers\b/);
+    // Y que la comprobación DETECTA el positivo: sobre el SQL de antes de esta issue, falla.
+    expect(select.replace(/,\s*modifiers/, '')).not.toMatch(/\bmodifiers\b/);
+  });
+});
+
+// La PANTALLA del tique y su PAPEL no pueden discrepar (sales#148). `<ok-receipt>` no conoce
+// suplementos, pero sí pinta una `note` bajo la línea desde siempre: por ahí entran, compuestos por
+// el MISMO `modifierNote` que usan los dos papeles. Si cada superficie compusiera lo suyo, el
+// camarero leería en pantalla algo distinto de lo que el cliente lleva en la mano.
+describe('la pantalla del tique dice lo mismo que su papel (sales#148)', () => {
+  it('la línea lleva su `note` con los suplementos, en el orden elegido', () => {
+    const lines: SaleLineRow[] = [{
+      product_name: 'Hamburguesa', quantity: 1_000_000, unit_price: 1000, line_total: 1000,
+      modifiers: JSON.stringify([{ option_id: 'o1', name: 'Extra queso', price_delta: 100 }, { option_id: 'o2', name: 'Sin cebolla', price_delta: 0 }]),
+    }];
+    expect(saleToReceipt(SALE, lines).lines[0].note).toBe('Extra queso · Sin cebolla');
+  });
+
+  it('la cuenta previa también', () => {
+    const r = orderToPrebill([{ name: 'Hamburguesa', price: 900, qty: 1, modifiers: [{ name: 'Extra queso' }] }]);
+    expect(r.lines[0].note).toBe('Extra queso');
+  });
+
+  it('sin suplementos NO se fabrica nota: la línea de siempre no cambia', () => {
+    expect(saleToReceipt(SALE, LINES).lines[0].note).toBeUndefined();
   });
 });

@@ -114,6 +114,38 @@ describe('prebillJobId — idempotency that still allows a second round', () => 
   it('names itself so a queued job can be recognised', () => {
     expect(prebillJobId('order-1', CART)).toMatch(/^prebill-order-1-/);
   });
+
+  // sales#148 — the fingerprint skipped the supplements, so «+ queso» and «sin cebolla» hashed
+  // the same and the queue swallowed the corrected bill as a duplicate. Silent: the waiter takes
+  // the OLD paper to the table and nothing errors. Same shape of bug as sales#92.
+  it('CHANGES when only a supplement changes: two different bills are two jobs (sales#148)', () => {
+    const cheese = [{ name: 'Hamburguesa', price: 900, qty: 1, modifiers: [{ option_id: 'o-queso', name: 'Extra queso', price_delta: 100 }] }];
+    const noOnion = [{ name: 'Hamburguesa', price: 900, qty: 1, modifiers: [{ option_id: 'o-sin-cebolla', name: 'Sin cebolla' }] }];
+    expect(prebillJobId('order-1', cheese)).not.toBe(prebillJobId('order-1', noOnion));
+  });
+
+  it('CHANGES when a supplement is ADDED to a line that had none', () => {
+    const plain = [{ name: 'Hamburguesa', price: 900, qty: 1 }];
+    const withCheese = [{ ...plain[0], modifiers: [{ option_id: 'o-queso', name: 'Extra queso', price_delta: 100 }] }];
+    expect(prebillJobId('order-1', withCheese)).not.toBe(prebillJobId('order-1', plain));
+  });
+
+  it('CHANGES with the ORDER of the supplements: the paper prints them in the order chosen', () => {
+    const a = [{ name: 'Hamburguesa', price: 900, qty: 1, modifiers: [{ option_id: 'o-a', name: 'A' }, { option_id: 'o-b', name: 'B' }] }];
+    const b = [{ name: 'Hamburguesa', price: 900, qty: 1, modifiers: [{ option_id: 'o-b', name: 'B' }, { option_id: 'o-a', name: 'A' }] }];
+    expect(prebillJobId('order-1', a)).not.toBe(prebillJobId('order-1', b));
+  });
+
+  it('is STABLE for the same supplements: a retry is still one job, not two papers', () => {
+    const l = [{ name: 'Hamburguesa', price: 900, qty: 1, modifiers: [{ option_id: 'o-queso', name: 'Extra queso', price_delta: 100 }] }];
+    expect(prebillJobId('order-1', l)).toBe(prebillJobId('order-1', [{ ...l[0], modifiers: [...l[0].modifiers] }]));
+  });
+
+  it('a line with an EMPTY list of supplements hashes like a line with none (no phantom change)', () => {
+    const plain = [{ name: 'Hamburguesa', price: 900, qty: 1 }];
+    const empty = [{ ...plain[0], modifiers: [] }];
+    expect(prebillJobId('order-1', empty)).toBe(prebillJobId('order-1', plain));
+  });
 });
 
 describe('saleToPrintDocument — the ticket, reprinted', () => {
@@ -288,5 +320,42 @@ describe('reprintJobId — one key per print attempt (sales#92)', () => {
   it('without a sale there is no job: nothing to correlate, nothing to print', async () => {
     const { reprintJobId } = await import('./print-document.js');
     expect(reprintJobId(undefined)).toBeUndefined();
+  });
+});
+
+// ── sales#148 · el suplemento llega al papel TÉRMICO ─────────────────────────────────────────
+//
+// El renderizador ESC/POS lee POR CLAVE y ya sabe pintar UNA nota indentada bajo cada artículo
+// (`  > {notes}`, crates/peripherals/src/escpos.rs, render_receipt y render_prebill). Por ahí van
+// los suplementos: es la puerta que TODO hub desplegado hoy imprime ya, sin esperar una imagen
+// nueva. Añadir una clave `modifiers` que el renderizador no lee habría impreso exactamente nada
+// —el fallo que la cabecera de este fichero lleva avisando desde sales#78—, así que no se añade.
+describe('los suplementos en el documento del térmico (sales#148)', () => {
+  const MODS = [{ option_id: 'o1', name: 'Extra queso', price_delta: 100 }, { option_id: 'o2', name: 'Sin cebolla', price_delta: 0 }];
+
+  it('la cuenta previa los manda en `notes`, la sub-línea que el renderizador ya indenta', () => {
+    const doc = prebillToPrintDocument([{ name: 'Hamburguesa', price: 900, qty: 1, modifiers: MODS }], SETTINGS, {});
+    expect(doc.items[0].notes).toBe('Extra queso · Sin cebolla');
+  });
+
+  it('el tique reimpreso también, desde el snapshot que congeló el cobro', () => {
+    const doc = saleToPrintDocument(
+      { id: 's1', sale_number: 'T-1', total: 1000 },
+      [{ product_name: 'Hamburguesa', quantity: 1_000_000, unit_price: 1000, line_total: 1000, modifiers: JSON.stringify(MODS) }],
+      SETTINGS,
+    );
+    expect(doc.items[0].notes).toBe('Extra queso · Sin cebolla');
+  });
+
+  it('SIN importe en el papel: el delta ya viaja dentro del total de la línea', () => {
+    const doc = prebillToPrintDocument([{ name: 'Hamburguesa', price: 1000, qty: 1, modifiers: MODS }], SETTINGS, {});
+    expect(doc.items[0].notes).not.toMatch(/\d/);
+    expect(doc.items[0].total, 'el importe cobrado es el de la línea, con el suplemento dentro').toBe(10);
+  });
+
+  it('una línea sin suplementos NO gana la clave: el papel de siempre sale byte a byte igual', () => {
+    const doc = prebillToPrintDocument(CART, SETTINGS, {});
+    expect(doc.items[0].notes).toBeUndefined();
+    expect(Object.keys(doc.items[0]).includes('notes'), 'ni la clave presente en `undefined`').toBe(false);
   });
 });

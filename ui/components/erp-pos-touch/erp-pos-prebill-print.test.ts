@@ -167,3 +167,68 @@ describe('printing the bill before charging', () => {
     expect(notices).toHaveLength(0);
   });
 });
+
+// ── sales#148 · el suplemento llega a la CUENTA que se lleva a la mesa ────────────────────────
+//
+// La fila del pedido guarda solo los `option_id` (migración 023, a propósito: el nombre y el precio
+// los pone el servidor al cobrar, nunca el navegador). Así que para imprimir la cuenta hay que
+// RESOLVERLOS contra el catálogo vivo — `modifiers.options.all`, la misma lectura autoritativa que
+// usa el cobro. Sin eso, retomar una mesa y pedir la cuenta imprimía una hamburguesa a secas.
+describe('los suplementos en la cuenta previa (sales#148)', () => {
+  const CATALOG = [
+    { option_id: 'o-queso', group_id: 'g1', name: 'Extra queso', kitchen_name: 'QUESO', price_delta: 100 },
+    { option_id: 'o-sin-cebolla', group_id: 'g1', name: 'Sin cebolla', kitchen_name: 'SIN CEB.', price_delta: 0 },
+  ];
+
+  /** El shell responde al catálogo de suplementos; a todo lo demás, nada. */
+  function withCatalog(rows: unknown[] = CATALOG) {
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.queryOptional = async (name: string) => (name === 'modifiers.options.all' ? rows : undefined);
+  }
+
+  const BURGER = [{
+    line_id: 'l1', name: 'Hamburguesa', price: 1000, qty: 1,
+    modifiers: [{ option_id: 'o-queso' }, { option_id: 'o-sin-cebolla' }],
+  }];
+
+  it('el papel térmico los nombra bajo su línea, en el orden elegido', async () => {
+    withCatalog();
+    await printBill(BURGER);
+    const items = printed[0].data!.items as { name: string; notes?: string }[];
+    expect(items[0].notes).toBe('Extra queso · Sin cebolla');
+  });
+
+  it('el HTML de respaldo también, sangrados y sin importe', async () => {
+    withCatalog();
+    await printBill(BURGER);
+    expect(printed[0].html).toContain('Extra queso');
+    expect(printed[0].html).toContain('Sin cebolla');
+    expect(printed[0].html).toContain('class="mod"');
+  });
+
+  it('🔴 cambiar SOLO un suplemento produce OTRO jobId: la cola no se traga la cuenta corregida', async () => {
+    withCatalog();
+    await printBill(BURGER);
+    await printBill([{ ...BURGER[0], modifiers: [{ option_id: 'o-sin-cebolla' }] }]);
+    expect(printed[1].jobId, 'sin esto la cola dedupe en silencio y sale la cuenta VIEJA').not.toBe(printed[0].jobId);
+  });
+
+  it('sin el módulo `modifiers` instalado la cuenta sale igual, con el id por delante del silencio', async () => {
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.queryOptional = async () => undefined; // el módulo no está
+    await printBill(BURGER);
+    const items = printed[0].data!.items as { name: string; notes?: string }[];
+    expect(items[0].notes, 'un cobro invisible es peor que una línea fea').toBe('o-queso · o-sin-cebolla');
+    expect(printed[0].data!.total, 'y la cuenta se imprime igual').toBe(10);
+  });
+
+  it('una cuenta SIN suplementos no pide el catálogo ni cambia de papel', async () => {
+    const asked: string[] = [];
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.queryOptional = async (name: string) => { asked.push(name); return CATALOG; };
+    await printBill();
+    expect(asked, 'ni una lectura de más en el 99 % de las cuentas').not.toContain('modifiers.options.all');
+    const items = printed[0].data!.items as { notes?: string }[];
+    expect(items[0].notes).toBeUndefined();
+  });
+});

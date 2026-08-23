@@ -10,6 +10,12 @@
 import { fromMicro } from './quantity';
 import { unitTag } from './price-label';
 import { payMethodDisplayName } from './pay-icons.js';
+// sales#148 — los suplementos del papel viven en UN sitio (`paper-modifiers.ts`) para que la
+// pantalla, el HTML, el térmico y la huella del jobId no puedan discrepar. Se re-exporta el tipo
+// porque quien consume estos mappers ya importa de aquí.
+import { modifierNote, type PrintedModifier } from './paper-modifiers.js';
+
+export { modifierIdentity, modifierLabel, modifierNote, type PrintedModifier } from './paper-modifiers.js';
 import type {
   ReceiptData,
   ReceiptLine,
@@ -127,6 +133,46 @@ export interface SaleLineRow {
   unit_name?: string;
   pricing_unit_code?: string;
   pricing_unit_name?: string;
+  /** pm#93 — snapshot JSON de los suplementos que congeló el servidor al COBRAR
+   *  (`authoritative_modifiers`, en el orden de elección). Llega como TEXT porque eso es la
+   *  columna; el papel lo desempaqueta con `parseModifierSnapshot`. */
+  modifiers?: string;
+}
+
+/** El snapshot `sales_sale_item.modifiers` → lo que el papel imprime (sales#148).
+ *
+ * DEFENSIVO a propósito, y en una sola dirección: una fila escrita antes de que nadie llenara la
+ * columna, o un JSON a medias, **no puede tumbar un tique**. Se pierde el suplemento de esa línea,
+ * nunca el documento — mismo criterio que `parseModifiers` en el carrito.
+ *
+ * Se queda con el nombre COMERCIAL, no con el de cocina: `kitchen_name` existe justamente porque
+ * lo que se grita en el pase («SIN CEB.») no es lo que el cliente debe leer en su tique. Y si no
+ * hay nombre resoluble sobrevive el `option_id`: una línea fea es preferible a un cobro invisible,
+ * que es el fallo que esta issue arregla. */
+export function parseModifierSnapshot(raw: unknown): PrintedModifier[] | undefined {
+  if (typeof raw !== 'string' || !raw.trim()) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(parsed)) return undefined;
+  const out = parsed
+    .filter((m): m is Record<string, unknown> => !!m && typeof m === 'object')
+    .map((m): PrintedModifier => {
+      const option_id = m.option_id == null ? undefined : String(m.option_id);
+      const name = m.name == null || String(m.name) === '' ? undefined : String(m.name);
+      const delta = Number(m.price_delta);
+      return {
+        ...(option_id ? { option_id } : {}),
+        ...(name ? { name } : {}),
+        ...(Number.isFinite(delta) ? { price_delta: delta } : {}),
+      };
+    })
+    // Ni nombre ni id no es un suplemento: es ruido, y un renglón en blanco en el tique.
+    .filter((m) => m.name || m.option_id);
+  return out.length ? out : undefined;
 }
 
 /** Etiqueta de línea para el documento: añade "(Invitación)" a una línea regalo (comp). */
@@ -264,6 +310,9 @@ export function resolveFormat(sale: SaleRow, settings: SaleSettings): 'ticket' |
  *  (outfitkit) no conoce unidades: estos campos extra viajan con el objeto — la pantalla los
  *  ignora, `receiptToPrintableHtml` y el documento ESC/POS los componen en la línea impresa. */
 export interface PaperReceiptLine extends ReceiptLine {
+  /** pm#93 / sales#148 — los suplementos de la línea, EN EL ORDEN en que se eligieron. `ReceiptLine`
+   *  (outfitkit) no los conoce: viajan como campo extra y los leen los papeles. */
+  modifiers?: PrintedModifier[];
   unit_code?: string;
   unit_name?: string;
   /** Unidad en la que está expresado el `unit_price` (KPEIN): «12,00 € / kg». */
@@ -282,6 +331,17 @@ function paperUnit(l: { unit_code?: string; unit_name?: string; pricing_unit_cod
     ...(l.unit_name ? { unit_name: l.unit_name } : {}),
     ...(l.pricing_unit_code ? { pricing_unit_code: l.pricing_unit_code } : {}),
   };
+}
+
+/** Los suplementos en la forma del papel: sin ninguno, SIN campo — una línea que nunca tuvo
+ *  suplementos no fabrica una lista vacía, y el tique de siempre sale byte a byte igual. */
+function paperModifiers(mods: PrintedModifier[] | undefined): Partial<PaperReceiptLine> {
+  if (!mods?.length) return {};
+  // `note` es la puerta que `<ok-receipt>` YA pinta bajo la línea: por ahí los ve la PANTALLA, con
+  // el mismo texto que los dos papeles. Sin esto el camarero leería en pantalla algo distinto de lo
+  // que el cliente lleva en la mano — y una de las dos personas estaría siendo engañada.
+  const note = modifierNote(mods);
+  return { modifiers: mods, ...(note ? { note } : {}) };
 }
 
 /** Sale → 80mm thermal ticket (`<ok-receipt>`). Header: explicit `receipt_header` wins
@@ -307,6 +367,7 @@ export function saleToReceipt(
       qty: fromMicro(Number(l.quantity)), // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
       unit_price: toEuros(l.unit_price),
       total: toEuros(l.line_total),
+      ...paperModifiers(parseModifierSnapshot(l.modifiers)), // sales#148: lo que se cobró, impreso
       ...paperUnit(l), // sales#28: la unidad congelada, para el papel
     })),
     subtotal: sale.subtotal != null ? toEuros(sale.subtotal) : undefined,
@@ -377,6 +438,10 @@ export interface PrebillLine {
   price: number; // céntimos
   qty: number;
   is_gift?: boolean;
+  /** pm#93 — los suplementos elegidos, **en el orden en que se eligieron** (sales#148). Ese orden
+   *  es contenido, no presentación: el cliente los lee como los pidió, y dos líneas con las mismas
+   *  opciones en distinto orden no son la misma cuenta. */
+  modifiers?: PrintedModifier[];
   /** Unidad congelada de la línea (ADR-0147 §2.4; sales#28): la cuenta que se lleva a la mesa
    *  pinta la cantidad con su unidad, como el tiquet. */
   unit_code?: string;
@@ -420,6 +485,9 @@ export function orderToPrebill(
       qty: l.qty,
       unit_price: toEuros(l.price),
       total: toEuros(cents(l)),
+      // sales#148: ya resueltos contra el catálogo VIVO por quien pide la cuenta (la fila del
+      // pedido guarda solo los `option_id`; el nombre y el importe no son del navegador).
+      ...paperModifiers(l.modifiers),
       ...paperUnit(l), // sales#28: la unidad congelada, para el papel
     })),
     total: toEuros(total),

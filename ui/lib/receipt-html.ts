@@ -10,6 +10,7 @@
 // `erplora.print`): mismo documento, distinto destino.
 
 import { priceLabel, quantityLabel } from './price-label';
+import { modifierLabel, type PrintedModifier } from './paper-modifiers';
 
 /** Línea del papel (misma forma que `ReceiptData.lines`). */
 export interface PrintableLine {
@@ -25,6 +26,10 @@ export interface PrintableLine {
   /** Unidad en la que está expresado el `unit_price`: «12,00 € / kg». Si falta, hereda la de la
    *  línea (la convención del carrito: `priceLabel`). */
   pricing_unit_code?: string;
+  /** sales#148 — los suplementos de la línea, EN EL ORDEN en que se eligieron. Se pintan sangrados
+   *  bajo su producto y SIN importe: el delta ya está dentro del total que va a la derecha (ver la
+   *  cabecera de `paper-modifiers.ts` y las 10 referencias de la issue). */
+  modifiers?: PrintedModifier[];
 }
 
 /** Documento imprimible (subconjunto de `ReceiptData`, todo opcional salvo lo mínimo). */
@@ -79,6 +84,17 @@ function qtyPrice(l: PrintableLine, currency: string): string {
   return `${quantityLabel(l.qty, l.unit_code)} × ${priceLabel(money(l.unit_price, currency), l.pricing_unit_code || l.unit_code)}`;
 }
 
+/** Las sub-líneas de los suplementos (sales#148): una por suplemento, sangradas, dentro de la
+ *  celda de su producto — no en una fila propia, para que la columna de importes siga siendo solo
+ *  lo que suma al TOTAL. Sin suplementos no se emite nada y el papel sale como salía. */
+function modLines(l: PrintableLine): string {
+  return (l.modifiers ?? [])
+    .map(modifierLabel)
+    .filter(Boolean)
+    .map((label) => `<div class="mod">${esc(label)}</div>`)
+    .join('');
+}
+
 /**
  * Documento HTML completo del tiquet, listo para imprimir en un iframe aislado.
  * Ancho 80 mm (papel térmico) y tipografía monoespaciada, como el papel real.
@@ -89,7 +105,7 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
   const lbl = { subtotal: 'Subtotal', total: 'TOTAL', change: 'Cambio', document: 'Documento', ...doc.labels };
   const lineas = (doc.lines ?? []).map((l) => `
       <tr>
-        <td class="n">${esc(l.name)}<div class="q">${esc(qtyPrice(l, cur))}</div></td>
+        <td class="n">${esc(l.name)}<div class="q">${esc(qtyPrice(l, cur))}</div>${modLines(l)}</td>
         <td class="a">${money(l.total, cur)}</td>
       </tr>`).join('');
 
@@ -127,6 +143,10 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
   td { vertical-align: top; padding: .4mm 0; }
   td.a { text-align: right; white-space: nowrap; padding-left: 2mm; }
   .q { font-size: 10px; color: #333; }
+  /* sales#148 — el suplemento, sangrado bajo su producto. La indentación ES el vínculo con la
+     línea madre: es lo que hacen Odoo (margin-start), Shopify (li anidado) y LS Central (línea
+     hija). Sin importe a la derecha: ya está dentro del total de la línea. */
+  .mod { font-size: 11px; padding-left: 4mm; }
   .tot td { font-size: 15px; font-weight: 700; padding-top: 1mm; }
   .foot { text-align: center; font-size: 10px; margin-top: 3mm; }
   /* El bloque del claim (sales#103): al pie y separado del QR fiscal, como en el papel térmico. */
