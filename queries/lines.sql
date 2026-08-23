@@ -8,7 +8,12 @@ SELECT id, product_id, product_name, product_sku, is_service,
        net_amount, tax_amount, line_total,
        unit_code, unit_name, factor_num, factor_den, increment_value,
        price_quantity_value, pricing_unit_code, pricing_unit_name,
-       pricing_factor_num, pricing_factor_den
+       pricing_factor_num, pricing_factor_den,
+       -- pm#93 / sales#148: el snapshot de los suplementos que congelo el cobro. La columna
+       -- existia y el handler la escribia, pero esta puerta no la devolvia: el tique y su
+       -- reimpresion leen la venta por AQUI, asi que lo cobrado estaba escrito y era ilegible,
+       -- y el cliente pagaba un «+ queso» que su papel no nombraba.
+       modifiers
 FROM sales_sale_item
 WHERE sale_id = :sale_id AND hub_id = :hub_id
 ORDER BY created_at ASC;
