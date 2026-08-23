@@ -371,12 +371,42 @@ export function saleToInvoice(
 
 // ── Cuenta previa (pre-bill) — ADR-0141 ──────────────────────────────────────────────────────
 
+/** Un suplemento **tal como lo lee quien paga** (pm#93 / ADR-0376; sales#148).
+ *
+ * Deliberadamente NO es la fila del catálogo ni la elección del carrito: es lo mínimo que el papel
+ * necesita — cómo se llama y cuánto suma. El `option_id` viaja solo para dar IDENTIDAD (huella del
+ * `jobId`, orden de elección), nunca para imprimirse cuando hay nombre.
+ *
+ * El nombre lo pone SIEMPRE el catálogo, nunca el navegador: en el tique sale del snapshot que
+ * congeló el servidor al cobrar (`sales_sale_item.modifiers`), y en la cuenta previa de la lectura
+ * viva de `modifiers.options.all`. El importe del suplemento YA está dentro del `unit_price` de la
+ * línea (lo suma `authoritative_modifiers` al cobrar), así que aquí es **desglose, no dinero que
+ * volver a sumar**: imprimirlo y volver a acumularlo cobraría el queso dos veces. */
+export interface PrintedModifier {
+  /** Id del catálogo. Identidad, no texto: solo se imprime cuando NO se pudo resolver el nombre. */
+  option_id?: string;
+  /** Lo que lee el cliente. Vacío = el catálogo no estaba y solo queda el id. */
+  name?: string;
+  /** Céntimos que suma este suplemento. Ausente o 0 = elección gratuita («sin cebolla»). */
+  price_delta?: number;
+}
+
+/** La huella de identidad de un suplemento: el id si lo hay (estable aunque renombren la opción),
+ *  el nombre si no. Con su importe, porque un mismo suplemento a otro precio es otra cuenta. */
+export function modifierIdentity(m: PrintedModifier): string {
+  return `${m.option_id || m.name || ''}:${m.price_delta ?? 0}`;
+}
+
 /** Línea de la comanda en curso (forma mínima de `CartLine`, sin acoplar los módulos). */
 export interface PrebillLine {
   name: string;
   price: number; // céntimos
   qty: number;
   is_gift?: boolean;
+  /** pm#93 — los suplementos elegidos, **en el orden en que se eligieron** (sales#148). Ese orden
+   *  es contenido, no presentación: el cliente los lee como los pidió, y dos líneas con las mismas
+   *  opciones en distinto orden no son la misma cuenta. */
+  modifiers?: PrintedModifier[];
   /** Unidad congelada de la línea (ADR-0147 §2.4; sales#28): la cuenta que se lleva a la mesa
    *  pinta la cantidad con su unidad, como el tiquet. */
   unit_code?: string;

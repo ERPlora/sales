@@ -114,6 +114,38 @@ describe('prebillJobId — idempotency that still allows a second round', () => 
   it('names itself so a queued job can be recognised', () => {
     expect(prebillJobId('order-1', CART)).toMatch(/^prebill-order-1-/);
   });
+
+  // sales#148 — the fingerprint skipped the supplements, so «+ queso» and «sin cebolla» hashed
+  // the same and the queue swallowed the corrected bill as a duplicate. Silent: the waiter takes
+  // the OLD paper to the table and nothing errors. Same shape of bug as sales#92.
+  it('CHANGES when only a supplement changes: two different bills are two jobs (sales#148)', () => {
+    const cheese = [{ name: 'Hamburguesa', price: 900, qty: 1, modifiers: [{ option_id: 'o-queso', name: 'Extra queso', price_delta: 100 }] }];
+    const noOnion = [{ name: 'Hamburguesa', price: 900, qty: 1, modifiers: [{ option_id: 'o-sin-cebolla', name: 'Sin cebolla' }] }];
+    expect(prebillJobId('order-1', cheese)).not.toBe(prebillJobId('order-1', noOnion));
+  });
+
+  it('CHANGES when a supplement is ADDED to a line that had none', () => {
+    const plain = [{ name: 'Hamburguesa', price: 900, qty: 1 }];
+    const withCheese = [{ ...plain[0], modifiers: [{ option_id: 'o-queso', name: 'Extra queso', price_delta: 100 }] }];
+    expect(prebillJobId('order-1', withCheese)).not.toBe(prebillJobId('order-1', plain));
+  });
+
+  it('CHANGES with the ORDER of the supplements: the paper prints them in the order chosen', () => {
+    const a = [{ name: 'Hamburguesa', price: 900, qty: 1, modifiers: [{ option_id: 'o-a', name: 'A' }, { option_id: 'o-b', name: 'B' }] }];
+    const b = [{ name: 'Hamburguesa', price: 900, qty: 1, modifiers: [{ option_id: 'o-b', name: 'B' }, { option_id: 'o-a', name: 'A' }] }];
+    expect(prebillJobId('order-1', a)).not.toBe(prebillJobId('order-1', b));
+  });
+
+  it('is STABLE for the same supplements: a retry is still one job, not two papers', () => {
+    const l = [{ name: 'Hamburguesa', price: 900, qty: 1, modifiers: [{ option_id: 'o-queso', name: 'Extra queso', price_delta: 100 }] }];
+    expect(prebillJobId('order-1', l)).toBe(prebillJobId('order-1', [{ ...l[0], modifiers: [...l[0].modifiers] }]));
+  });
+
+  it('a line with an EMPTY list of supplements hashes like a line with none (no phantom change)', () => {
+    const plain = [{ name: 'Hamburguesa', price: 900, qty: 1 }];
+    const empty = [{ ...plain[0], modifiers: [] }];
+    expect(prebillJobId('order-1', empty)).toBe(prebillJobId('order-1', plain));
+  });
 });
 
 describe('saleToPrintDocument — the ticket, reprinted', () => {

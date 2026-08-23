@@ -20,7 +20,7 @@
 //
 // The field names are the wire contract of `escpos::render_receipt` / `render_prebill`. Changing
 // one here without changing it there prints a document with a missing field, silently.
-import { orderToPrebill, saleToReceipt, claimPrintFields } from './document-mappers.js';
+import { orderToPrebill, saleToReceipt, claimPrintFields, modifierIdentity } from './document-mappers.js';
 import type { PrebillLine, SaleRow, SaleLineRow, SaleSettings, FiscalData } from './document-mappers.js';
 import { quantityLabel, unitTag } from './price-label.js';
 
@@ -170,9 +170,23 @@ export function saleToPrintDocument(
  */
 export function prebillJobId(orderId: string | undefined, lines: PrebillLine[]): string {
   const fingerprint = (lines || [])
-    .map((l) => `${l.name}${l.qty}${l.price}${l.is_gift ? 1 : 0}`)
+    .map((l) => `${l.name}${l.qty}${l.price}${l.is_gift ? 1 : 0}${modifierPrint(l.modifiers)}`)
     .join('');
   return `prebill-${orderId || 'open'}-${hash(fingerprint)}`;
+}
+
+/** Los suplementos DENTRO de la huella (sales#148).
+ *
+ * Sin esto la huella se toma solo de `name/qty/price/is_gift`, así que «+ queso» y «sin cebolla»
+ * hashean IGUAL: el camarero corrige la cuenta, la cola la reconoce como el mismo `job_id`
+ * (`ON CONFLICT DO NOTHING`) y **no sale papel** — sin error, sin aviso, con el cliente esperando.
+ * Es el mismo fallo mudo de sales#92 por la otra puerta.
+ *
+ * Vacío para una línea sin suplementos, y para una con la lista vacía: una cuenta que no cambió no
+ * puede cambiar de huella, o cada reintento imprimiría otra vez. */
+function modifierPrint(mods: PrebillLine['modifiers']): string {
+  if (!mods?.length) return '';
+  return `[${mods.map(modifierIdentity).join('|')}]`;
 }
 
 /** Sequence so two attempts inside the same millisecond still get different keys. */
