@@ -1408,14 +1408,73 @@ fn name_modifiers_for_kitchen(items: &[Value], catalog: Option<&Vec<&Value>>) ->
         .collect()
 }
 
+/// kitchen#54 — **las líneas que se cocinan las pone el SERVIDOR, no el navegador.**
+///
+/// El KDS recibía comandas VACÍAS: tarjeta con número y cronómetro, cero productos, sin rejilla por
+/// estación y sin botón «Listo». `sales.order.fire` declaraba desde siempre su read de
+/// `sales.order.lines` filtrada por `payload.order_id` —la puerta que aplica `hub_id` y el
+/// permiso—, pero solo la usaba para el guard del doble toque: lo que viajaba en `order.fired`
+/// salía de `payload.items`. Quien llamase al comando sin repetir el carrito (la API, el
+/// asistente, una integración, un POS a medio cargar) disparaba una comanda en blanco con 200 OK.
+///
+/// La fila del pedido ya trae TODO lo que cocina necesita, y mejor que el payload: producto,
+/// nombre, cantidad en punto fijo 10⁶ (ADR-0147), precio, `category_id` (sales#12, lo que enruta a
+/// la estación), el id de la línea con el que `kitchen` reparte una anulación, `is_service` y el
+/// snapshot de suplementos. Hasta la nota del cocinero —el motivo de la invitación, lo único que
+/// el POS metía en `notes`— sale de `is_gift`/`gift_reason`, que sí están en la fila.
+fn kitchen_items_from_lines(rows: &[&Value], round_no: i64) -> Vec<Value> {
+    rows.iter()
+        // Con tandas, la ronda manda SOLO lo nuevo: la línea que ya salió no se vuelve a cocinar.
+        // Sin `round_no` (compat) va el pedido entero, como siempre.
+        .filter(|l| round_no < 1 || l.get("fired_at").map_or(true, Value::is_null))
+        .map(|l| {
+            let notes = if as_bool(l.get("is_gift").unwrap_or(&Value::Null)) {
+                field(l, "gift_reason")
+            } else {
+                String::new()
+            };
+            json!({
+                "product_id": l.get("product_id").cloned().unwrap_or(Value::Null),
+                "product_name": field(l, "product_name"),
+                "quantity": l.get("quantity").map(|v| as_qty(v, QUANTITY_SCALE)).unwrap_or(QUANTITY_SCALE),
+                "unit_price": l.get("unit_price").map(|v| as_qty(v, 0)).unwrap_or(0),
+                "notes": notes,
+                "category_id": l.get("category_id").cloned().unwrap_or(Value::Null),
+                "order_item_id": field(l, "id"),
+                // Quien filtra las líneas de servicio es cocina, con el mismo criterio que
+                // inventory al descontar stock. Aquí solo se transporta el hecho.
+                "is_service": as_bool(l.get("is_service").unwrap_or(&Value::Null)),
+                "modifiers": stored_modifiers(l),
+            })
+        })
+        .collect()
+}
+
+/// 🔴 `sales_order_item.modifiers` es una columna **TEXT** con un JSON dentro (migración 023): la
+/// read la devuelve como CADENA, no como lista. Pasarla tal cual imprimiría el JSON crudo por la
+/// térmica de cocina, porque `kitchen::modifiers_for_display` trata una cadena como «formato
+/// antiguo, ya viene escrito».
+///
+/// Si el texto no es la lista que escribimos, se pasa **verbatim** en vez de descartarlo: cocina
+/// sabe imprimir una cadena suelta, y un suplemento que no sepamos releer es mejor en el vale que
+/// desaparecido en silencio — que es justo el fallo estrella del sector (ADR-0376).
+fn stored_modifiers(line: &Value) -> Value {
+    match line.get("modifiers") {
+        Some(Value::Array(a)) => Value::Array(a.clone()),
+        Some(Value::String(s)) => match serde_json::from_str::<Value>(s) {
+            Ok(v @ Value::Array(_)) => v,
+            _ => Value::String(s.clone()),
+        },
+        _ => json!([]),
+    }
+}
+
 pub fn fire_order_pure(input: Value) -> Result<Output, String> {
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
     let order_id = as_str(payload.get("order_id").unwrap_or(&Value::Null));
     if order_id.is_empty() {
         return Err("missing_order_id".to_string());
     }
-    let empty: Vec<Value> = Vec::new();
-    let items = payload.get("items").and_then(|v| v.as_array()).unwrap_or(&empty).clone();
     let channel = match as_str(payload.get("channel").unwrap_or(&Value::Null)).as_str() {
         "" => "dine_in".to_string(),
         c => c.to_string(),
@@ -1434,17 +1493,30 @@ pub fn fire_order_pure(input: Value) -> Result<Output, String> {
     // así que mira el estado del pedido ANTES en la read `sales.order.lines` (filtrada por
     // `order_id`, module.json). Con `round_no` y NADA pendiente no hay tanda → se rechaza sin
     // emitir. Sin la read (runtime viejo) no se puede saber → compat, como siempre.
-    if round_no >= 1 {
-        let context = input.get("context").cloned().unwrap_or(Value::Null);
-        if let Some(lines) = tax::read_rows(&context, "sales.order.lines") {
-            let pending = lines.iter().any(|l| l.get("fired_at").map_or(true, Value::is_null));
-            if !pending {
-                return Err(reject(
-                    "sales.nothing_to_fire",
-                    format!("order {order_id} has no pending lines: this round was already fired"),
-                ));
-            }
-        }
+    let context = input.get("context").cloned().unwrap_or(Value::Null);
+    // kitchen#54 — las líneas salen de la READ (autoridad del servidor). Sin la read (runtime
+    // viejo, integración fuera del dispatcher) no hay de dónde sacarlas: se cae al payload, que es
+    // el comportamiento de siempre y lo único disponible.
+    let items = match tax::read_rows(&context, "sales.order.lines") {
+        Some(rows) => kitchen_items_from_lines(&rows, round_no),
+        None => payload
+            .get("items")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default(),
+    };
+    // Una comanda sin líneas no es una comanda: es una tarjeta en blanco en el KDS que nadie puede
+    // cocinar y que nadie sabe que está mal. Aquí caen los tres casos que la producían — el pedido
+    // no existe en este hub (el `order_id` basura fabricaba una comanda igual), el pedido está
+    // vacío, y el segundo toque de la misma tanda (sales#80), que ya se rechazaba. Se rechaza
+    // ANTES de emitir: `order.fired` no sale.
+    if items.is_empty() {
+        return Err(reject(
+            "sales.nothing_to_fire",
+            format!(
+                "order {order_id} has no lines to fire (unknown order, empty order, or this round was already fired)"
+            ),
+        ));
     }
     let mut ops: Vec<Operation> = Vec::new();
     if round_no >= 1 {
@@ -1463,7 +1535,7 @@ pub fn fire_order_pure(input: Value) -> Result<Output, String> {
         // pm#93: los suplementos salen con el nombre que resuelve el SERVIDOR, no el navegador.
         "items": name_modifiers_for_kitchen(
             &items,
-            tax::read_rows(&input.get("context").cloned().unwrap_or(Value::Null), "modifiers.options.all").as_ref(),
+            tax::read_rows(&context, "modifiers.options.all").as_ref(),
         ),
     });
     if round_no >= 1 {
@@ -3570,5 +3642,124 @@ mod tests {
         let item = &out.events[0].payload["items"][0];
         assert_eq!(item["product_name"], json!("Hamburguesa"));
         assert_eq!(out.events[0].name, "order.fired");
+    }
+
+    // ── kitchen#54 · las líneas de la comanda las pone el SERVIDOR ────────────────────────────
+    //
+    // El KDS recibía comandas VACÍAS: tarjeta con su número y su cronómetro, cero productos, sin
+    // rejilla por estación y sin botón «Listo». `sales.order.fire` declara desde siempre una read
+    // de `sales.order.lines` filtrada por `payload.order_id` —la puerta que aplica `hub_id` y el
+    // permiso— pero el handler la usaba SOLO para el guard del doble toque: las líneas que
+    // viajaban en `order.fired` salían de `payload.items`, o sea del navegador. Quien llamara al
+    // comando sin repetir el carrito (la API, el asistente, una integración, un POS a medio
+    // cargar) disparaba una comanda en blanco, y nada fallaba: 200 OK y cocina a ciegas.
+    //
+    // Es además el agujero que dejaba fabricar una comanda con un `order_id` INEXISTENTE.
+
+    /// Fila tal y como la devuelve `sales.order.lines` (columnas reales de la query).
+    fn line_row(id: &str, name: &str, qty: i64, price: i64) -> Value {
+        json!({
+            "id": id, "order_id": "ord-1", "product_id": "p-1", "product_name": name,
+            "product_sku": "", "quantity": qty, "unit_price": price, "is_gift": 0,
+            "gift_reason": "", "line_total": price, "tax_category_key": "standard", "cost": 0,
+            "is_service": 0, "round_no": null, "fired_at": null, "category_id": "cat-tapas",
+            "discount_percent": 0, "modifiers": "[]"
+        })
+    }
+
+    /// Disparo tal y como llega por la API: SOLO el id del pedido. Sin `items` en el payload.
+    fn fire_from_server(lines: Value, catalog: Option<Value>) -> Value {
+        let mut reads = json!({ "sales.order.lines": lines });
+        if let Some(c) = catalog {
+            reads["modifiers.options.all"] = c;
+        }
+        json!({
+            "payload": { "order_id": "ord-1", "label": "Mesa 4", "channel": "dine_in" },
+            "context": { "hub_id": "h1", "current_user_id": "u1",
+                         "now": "2026-08-24T13:00:00+00:00", "new_ids": [], "reads": reads }
+        })
+    }
+
+    #[test]
+    fn firing_an_order_takes_its_lines_from_the_server_not_from_the_payload() {
+        let out = fire_order_pure(fire_from_server(
+            json!([line_row("li-1", "Tortilla pincho", 1_000_000, 350),
+                   line_row("li-2", "Vermut", 2_000_000, 300)]),
+            None,
+        ))
+        .expect("fire ok");
+
+        let items = out.events[0].payload["items"].as_array().expect("items");
+        assert_eq!(items.len(), 2, "la comanda sale con las dos líneas del pedido: {items:?}");
+        assert_eq!(items[0]["product_name"], json!("Tortilla pincho"));
+        assert_eq!(items[0]["quantity"], json!(1_000_000), "punto fijo 10⁶, ADR-0147");
+        assert_eq!(items[0]["unit_price"], json!(350));
+        assert_eq!(items[0]["category_id"], json!("cat-tapas"), "sin esto no hay enrutado por estación");
+        assert_eq!(items[0]["order_item_id"], json!("li-1"), "kitchen reparte anulaciones por este id");
+        assert_eq!(items[1]["product_name"], json!("Vermut"));
+    }
+
+    #[test]
+    fn an_order_with_no_lines_here_is_refused_instead_of_firing_an_empty_ticket() {
+        // El `order_id` no existe en este hub (o el pedido está vacío): la read vuelve sin filas.
+        // Fabricar igualmente una comanda es lo que dejó pasar un id BASURA y colgó de él una
+        // tarjeta en blanco en el KDS. Sin líneas no hay nada que cocinar: se rechaza y NO se emite.
+        let err = fire_order_pure(fire_from_server(json!([]), None))
+            .expect_err("un pedido sin líneas no es una comanda");
+        assert!(err.contains("sales.nothing_to_fire"), "{err}");
+    }
+
+    #[test]
+    fn the_stored_modifiers_snapshot_is_parsed_before_it_reaches_the_kitchen() {
+        // 🔴 `sales_order_item.modifiers` es una columna TEXT: la read la devuelve como CADENA
+        // (`[{"option_id":"o-cheese"}]`), no como lista. Pasarla tal cual a cocina imprimiría el
+        // JSON crudo por la térmica — `modifiers_for_display` trata una cadena como «formato
+        // antiguo, ya escrito». Se parsea aquí, y el nombre lo sigue resolviendo el servidor.
+        let mut row = line_row("li-1", "Hamburguesa", 1_000_000, 900);
+        row["modifiers"] = json!(r#"[{"option_id":"o-cheese"},{"option_id":"o-no-onion"}]"#);
+        let out = fire_order_pure(fire_from_server(json!([row]), Some(catalogo_cocina())))
+            .expect("fire ok");
+
+        let ms = out.events[0].payload["items"][0]["modifiers"].as_array().expect("lista de suplementos").clone();
+        assert_eq!(ms.len(), 2, "en su ORDEN de elección: {ms:?}");
+        assert_eq!(ms[0]["option_id"], json!("o-cheese"));
+        assert_eq!(ms[0]["kitchen_name"], json!("Extra de queso"), "kitchen_name vacío → el comercial");
+        assert_eq!(ms[1]["kitchen_name"], json!("SIN CEBOLLA"));
+    }
+
+    #[test]
+    fn a_gifted_line_carries_its_reason_as_the_note_for_the_cook() {
+        // El motivo de una invitación es información de SALA que el cocinero necesita ver, y es
+        // lo único que el POS metía en `notes`. Está en la fila (`is_gift`/`gift_reason`), así que
+        // se deriva del servidor como todo lo demás.
+        let mut row = line_row("li-1", "Postre", 1_000_000, 400);
+        row["is_gift"] = json!(1);
+        row["gift_reason"] = json!("cumpleaños");
+        let out = fire_order_pure(fire_from_server(json!([row]), None)).expect("fire ok");
+        assert_eq!(out.events[0].payload["items"][0]["notes"], json!("cumpleaños"));
+    }
+
+    #[test]
+    fn a_round_fires_only_the_lines_still_pending() {
+        // Tandas: la ronda 2 manda lo NUEVO. La línea que ya salió no se vuelve a cocinar.
+        let mut ya = line_row("li-1", "Entrecot", 1_000_000, 1800);
+        ya["fired_at"] = json!("2026-08-24T12:50:00+00:00");
+        ya["round_no"] = json!(1);
+        let mut inp = fire_from_server(json!([ya, line_row("li-2", "Postre", 1_000_000, 400)]), None);
+        inp["payload"]["round_no"] = json!(2);
+
+        let out = fire_order_pure(inp).expect("hay una línea nueva");
+        let items = out.events[0].payload["items"].as_array().expect("items");
+        assert_eq!(items.len(), 1, "solo lo pendiente: {items:?}");
+        assert_eq!(items[0]["product_name"], json!("Postre"));
+    }
+
+    #[test]
+    fn a_service_line_still_travels_and_kitchen_decides_it_does_not_cook_it() {
+        // `is_service` viaja con la línea: quien filtra es cocina (mismo criterio que inventory).
+        let mut corte = line_row("li-1", "Corte de pelo", 1_000_000, 1500);
+        corte["is_service"] = json!(1);
+        let out = fire_order_pure(fire_from_server(json!([corte]), None)).expect("fire ok");
+        assert_eq!(out.events[0].payload["items"][0]["is_service"], json!(true));
     }
 }
