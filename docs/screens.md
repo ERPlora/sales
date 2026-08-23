@@ -27,6 +27,29 @@ and a fixed footer with the running total and the **Cobrar** (charge) button.
 
 Requires `sales.add_sale` to build the check and `sales.take_payment` to charge it.
 
+### An item the sale could not charge (sales#74 / sales#58)
+
+A catalogue line the checkout would reject — it carries no `tax_category_key`, or its category
+resolves no rate in the hub's tax catalogue — is **never hidden and never inert**:
+
+- the tile is `aria-disabled="true"`, **not** natively `disabled`. On Ionic `disabled` renders
+  `<button disabled>` and applies `pointer-events: none`, so on a POS touchscreen the tap reaches
+  nothing at all — no handler, no message, no log — and the whole grid reads as a broken till;
+- the tile carries a **badge with words** (`ui.notSellableBadge`), on top of the dashed border and
+  the warning mark: colour alone is not a message;
+- **tapping it answers.** Nothing is added, and the full reason is painted in a notice above the
+  grid (plus a best-effort toast through the shell). The notice clears as soon as a sellable item
+  goes in — it is about the last tap, not a permanent banner.
+
+The market settles this: Square and Toast paint the blocked state on the tile itself, Shopify POS
+and Dynamics 365 Commerce answer the tap with the reason instead of swallowing it, and NN/g and MDN
+both say a native `disabled` is the wrong carrier for a state that still needs explaining. What is
+deliberately **not** here: warning the manager up front that the catalogue has unconfigured items
+(that belongs to catalogue/cash-open, tracked separately).
+
+A taxes **outage** is a different incident: if the tax catalogue never arrived, a categorised item
+is not marked broken — the handler is the net, and charging comes first.
+
 ### Park a check and pick it up later
 
 - The action bar has **Aparcar** (park), which becomes **Dejar en la mesa** (leave on the table) when

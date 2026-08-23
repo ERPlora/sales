@@ -139,7 +139,7 @@ describe('the till offers services alongside products (sales#89)', () => {
     const tab = [...el.shadowRoot.querySelectorAll<HTMLElement>('ion-segment-button.cat-segment-button')]
       .find((b) => b.querySelector('.cc-n')?.textContent?.trim() === 'Cabello');
     expect(tab, 'the Cabello tab is painted').toBeTruthy();
-    // The three fixtures are all in `sc-pelo` (the unconfigured one is painted, disabled).
+    // The three fixtures are all in `sc-pelo` (the unconfigured one is painted, blocked).
     expect(tab!.querySelector('.cc-c')?.textContent).toMatch(/^3 /);
 
     (el as unknown as { activeCat: string }).activeCat = 'sc-pelo';
@@ -162,11 +162,14 @@ describe('the till offers services alongside products (sales#89)', () => {
 describe('a service the till cannot charge correctly is blocked, not mispriced', () => {
   beforeEach(() => installSdk(true));
 
-  it('a service with no tax category is disabled and says why', async () => {
+  it('a service with no tax category is blocked and says why', async () => {
     const el = await mount();
     const tile = tileOf(el, 'Ritual sin IVA');
 
-    expect(tile.hasAttribute('disabled'), 'it must not be tappable').toBe(true);
+    // sales#58: blocked is `aria-disabled`, never the native `disabled` — that one is
+    // `pointer-events:none` on Ionic, and it would eat the tap that has to raise the reason.
+    expect(tile.hasAttribute('disabled'), 'a native disabled swallows the tap in silence').toBe(false);
+    expect(tile.getAttribute('aria-disabled')).toBe('true');
     expect(tile.getAttribute('title')).toBe('ui.notSellableNoTaxCategory');
   });
 
@@ -181,7 +184,7 @@ describe('a service the till cannot charge correctly is blocked, not mispriced',
     const el = await mount();
     const tile = tileOf(el, 'Balayage');
 
-    expect(tile.hasAttribute('disabled'), 'it must be tappable now').toBe(false);
+    expect(tile.hasAttribute('aria-disabled'), 'it must be sellable now').toBe(false);
     expect(tile.getAttribute('title')).not.toBe('ui.notSellableOpenPrice');
   });
 });

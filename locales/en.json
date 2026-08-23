@@ -167,6 +167,7 @@
     "searchAction": "Search",
     "assign": "Assign",
     "noProducts": "No products.",
+    "notSellableBadge": "VAT missing",
     "notSellableNoTaxCategory": "Cannot be sold: no tax category. VAT needs to be set up.",
     "notSellableNoTaxRule": "Cannot be sold: its tax category has no rate. VAT needs to be set up.",
     "openPrice": "Open price",
