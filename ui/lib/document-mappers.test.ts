@@ -488,3 +488,26 @@ describe('la puerta de lectura del tique devuelve el snapshot (sales#148)', () =
     expect(select, 'lo que no se SELECCIONA no llega al papel').toMatch(/\bmodifiers\b/);
   });
 });
+
+// La PANTALLA del tique y su PAPEL no pueden discrepar (sales#148). `<ok-receipt>` no conoce
+// suplementos, pero sí pinta una `note` bajo la línea desde siempre: por ahí entran, compuestos por
+// el MISMO `modifierNote` que usan los dos papeles. Si cada superficie compusiera lo suyo, el
+// camarero leería en pantalla algo distinto de lo que el cliente lleva en la mano.
+describe('la pantalla del tique dice lo mismo que su papel (sales#148)', () => {
+  it('la línea lleva su `note` con los suplementos, en el orden elegido', () => {
+    const lines: SaleLineRow[] = [{
+      product_name: 'Hamburguesa', quantity: 1_000_000, unit_price: 1000, line_total: 1000,
+      modifiers: JSON.stringify([{ option_id: 'o1', name: 'Extra queso', price_delta: 100 }, { option_id: 'o2', name: 'Sin cebolla', price_delta: 0 }]),
+    }];
+    expect(saleToReceipt(SALE, lines).lines[0].note).toBe('Extra queso · Sin cebolla');
+  });
+
+  it('la cuenta previa también', () => {
+    const r = orderToPrebill([{ name: 'Hamburguesa', price: 900, qty: 1, modifiers: [{ name: 'Extra queso' }] }]);
+    expect(r.lines[0].note).toBe('Extra queso');
+  });
+
+  it('sin suplementos NO se fabrica nota: la línea de siempre no cambia', () => {
+    expect(saleToReceipt(SALE, LINES).lines[0].note).toBeUndefined();
+  });
+});

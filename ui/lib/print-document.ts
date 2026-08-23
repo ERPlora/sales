@@ -20,7 +20,8 @@
 //
 // The field names are the wire contract of `escpos::render_receipt` / `render_prebill`. Changing
 // one here without changing it there prints a document with a missing field, silently.
-import { orderToPrebill, saleToReceipt, claimPrintFields, modifierIdentity } from './document-mappers.js';
+import { orderToPrebill, saleToReceipt, claimPrintFields } from './document-mappers.js';
+import { modifierIdentity, modifierNote } from './paper-modifiers.js';
 import type { PrebillLine, SaleRow, SaleLineRow, SaleSettings, FiscalData } from './document-mappers.js';
 import { quantityLabel, unitTag } from './price-label.js';
 
@@ -47,6 +48,23 @@ export interface PrintDocumentItem {
  * pegado: «1,5 kgx Tomate». Con él, «1,5 kg x Tomate». */
 function printQuantity(qty: number, unitCode?: string): number | string {
   return unitTag(unitCode) ? `${quantityLabel(qty, unitCode)} ` : qty;
+}
+
+/** Los suplementos de la línea en la clave que el renderizador ESC/POS **ya lee** (sales#148).
+ *
+ * `notes` es la sub-línea que `render_receipt` y `render_prebill` imprimen indentada bajo su
+ * artículo (`  > {notes}`, crates/peripherals/src/escpos.rs). Se usa esa y no una clave `modifiers`
+ * nueva a propósito: el renderizador lee POR CLAVE, así que una clave que no conoce no falla — no
+ * imprime NADA, en silencio, que es el fallo contra el que avisa la cabecera de este fichero desde
+ * sales#78. Por `notes` lo imprime hoy cualquier hub desplegado, sin esperar una imagen nueva.
+ *
+ * Va todo en una sub-línea porque el renderizador imprime UNA por artículo; una lista estructurada
+ * con su importe alineado a la derecha necesita que el renderizador aprenda a leerla (ERPlora/hub).
+ *
+ * Sin suplementos NO se emite la clave: el papel sale byte a byte como salía. */
+function printNotes(l: { modifiers?: Parameters<typeof modifierNote>[0] }): { notes?: string } {
+  const notes = modifierNote(l.modifiers);
+  return notes ? { notes } : {};
 }
 
 /**
@@ -106,7 +124,7 @@ export function prebillToPrintDocument(
     // The renderer prints this as «Mesa/Cliente»: on a bill it is the table, which is what the
     // waiter needs to know which paper goes where.
     customer_name: screen.customer,
-    items: screen.lines.map((l) => ({ name: l.name, quantity: printQuantity(l.qty, l.unit_code), total: l.total })),
+    items: screen.lines.map((l) => ({ name: l.name, quantity: printQuantity(l.qty, l.unit_code), total: l.total, ...printNotes(l) })),
     total: screen.total,
     notice: screen.footer,
   };
@@ -135,7 +153,7 @@ export function saleToPrintDocument(
     vat_number: screen.business.tax_id,
     receipt_id: screen.number,
     customer_name: screen.customer,
-    items: screen.lines.map((l) => ({ name: l.name, quantity: printQuantity(l.qty, l.unit_code), total: l.total })),
+    items: screen.lines.map((l) => ({ name: l.name, quantity: printQuantity(l.qty, l.unit_code), total: l.total, ...printNotes(l) })),
     subtotal: screen.subtotal,
     // The tax total comes from the sale row, not from the breakdown: a sale without
     // `tax_breakdown` still has `tax_amount`, and the paper must not lose it.

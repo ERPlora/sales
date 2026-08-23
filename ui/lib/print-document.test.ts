@@ -322,3 +322,40 @@ describe('reprintJobId — one key per print attempt (sales#92)', () => {
     expect(reprintJobId(undefined)).toBeUndefined();
   });
 });
+
+// ── sales#148 · el suplemento llega al papel TÉRMICO ─────────────────────────────────────────
+//
+// El renderizador ESC/POS lee POR CLAVE y ya sabe pintar UNA nota indentada bajo cada artículo
+// (`  > {notes}`, crates/peripherals/src/escpos.rs, render_receipt y render_prebill). Por ahí van
+// los suplementos: es la puerta que TODO hub desplegado hoy imprime ya, sin esperar una imagen
+// nueva. Añadir una clave `modifiers` que el renderizador no lee habría impreso exactamente nada
+// —el fallo que la cabecera de este fichero lleva avisando desde sales#78—, así que no se añade.
+describe('los suplementos en el documento del térmico (sales#148)', () => {
+  const MODS = [{ option_id: 'o1', name: 'Extra queso', price_delta: 100 }, { option_id: 'o2', name: 'Sin cebolla', price_delta: 0 }];
+
+  it('la cuenta previa los manda en `notes`, la sub-línea que el renderizador ya indenta', () => {
+    const doc = prebillToPrintDocument([{ name: 'Hamburguesa', price: 900, qty: 1, modifiers: MODS }], SETTINGS, {});
+    expect(doc.items[0].notes).toBe('Extra queso · Sin cebolla');
+  });
+
+  it('el tique reimpreso también, desde el snapshot que congeló el cobro', () => {
+    const doc = saleToPrintDocument(
+      { id: 's1', sale_number: 'T-1', total: 1000 },
+      [{ product_name: 'Hamburguesa', quantity: 1_000_000, unit_price: 1000, line_total: 1000, modifiers: JSON.stringify(MODS) }],
+      SETTINGS,
+    );
+    expect(doc.items[0].notes).toBe('Extra queso · Sin cebolla');
+  });
+
+  it('SIN importe en el papel: el delta ya viaja dentro del total de la línea', () => {
+    const doc = prebillToPrintDocument([{ name: 'Hamburguesa', price: 1000, qty: 1, modifiers: MODS }], SETTINGS, {});
+    expect(doc.items[0].notes).not.toMatch(/\d/);
+    expect(doc.items[0].total, 'el importe cobrado es el de la línea, con el suplemento dentro').toBe(10);
+  });
+
+  it('una línea sin suplementos NO gana la clave: el papel de siempre sale byte a byte igual', () => {
+    const doc = prebillToPrintDocument(CART, SETTINGS, {});
+    expect(doc.items[0].notes).toBeUndefined();
+    expect(Object.keys(doc.items[0]).includes('notes'), 'ni la clave presente en `undefined`').toBe(false);
+  });
+});

@@ -210,3 +210,69 @@ describe('el bloque «pide tu factura» del papel HTML (sales#103)', () => {
     expect(html).not.toContain('<b>LOC</b>');
   });
 });
+
+// ── sales#148 · el suplemento se imprime BAJO su línea, sangrado y sin importe ────────────────
+//
+// Decidido por el mercado (10 referencias, tabla en la issue): sub-línea sangrada bajo su producto
+// —Square, Lightspeed «below items», LS Central línea hija, Odoo `ms-4`, Shopify `<li>` anidado,
+// Clover, Toast en modo Vertical— y SOLO EL NOMBRE, porque el delta ya está dentro del total de la
+// línea que se pinta a la derecha (mismo modelo que Toast documenta y Shopify POS implementa).
+describe('los suplementos en el papel HTML (sales#148)', () => {
+  const conSuplementos = {
+    lines: [{
+      name: 'Hamburguesa', qty: 1, unit_price: 10, total: 10,
+      modifiers: [{ name: 'Extra queso', price_delta: 100 }, { name: 'Sin cebolla', price_delta: 0 }],
+    }],
+    total: 10,
+  };
+
+  it('imprime cada suplemento, con su nombre', () => {
+    const html = receiptToPrintableHtml(conSuplementos);
+    expect(html).toContain('Extra queso');
+    expect(html).toContain('Sin cebolla');
+  });
+
+  it('cada uno en SU renglón, dentro de la celda de su línea — no pegado al nombre del producto', () => {
+    const html = receiptToPrintableHtml(conSuplementos);
+    const celda = html.slice(html.indexOf('<td class="n">'), html.indexOf('</td>'));
+    expect(celda, 'el suplemento vive DENTRO de la celda de su producto').toContain('Extra queso');
+    expect(celda).toMatch(/class="mod"[^>]*>\s*Extra queso/);
+    expect(celda).toMatch(/class="mod"[^>]*>\s*Sin cebolla/);
+    expect(celda, 'y no fundido en el nombre del producto').toMatch(/>Hamburguesa</);
+  });
+
+  it('el sangrado es real: la clase `.mod` lleva su indentación en el CSS del papel', () => {
+    const html = receiptToPrintableHtml(conSuplementos);
+    expect(html).toMatch(/\.mod\s*\{[^}]*padding-left/);
+  });
+
+  it('SIN importe: el delta ya está dentro del total de la línea, y esa columna cuadra el TOTAL', () => {
+    // Se mira DENTRO de las sub-líneas, no en la celda entera: la celda lleva «1 × 10,00 €», y
+    // «10,00» contiene «0,00» — una aserción sobre la celda pasaría por accidente y no probaría nada.
+    const mods = [...receiptToPrintableHtml(conSuplementos).matchAll(/<div class="mod">(.*?)<\/div>/g)].map((m) => m[1]);
+    expect(mods, 'las dos sub-líneas están ahí (si no, esta comprobación no probaría nada)').toHaveLength(2);
+    for (const m of mods) {
+      expect(m, 'ni el importe del suplemento, ni un «0,00» para el gratuito').not.toMatch(/\d/);
+      expect(m, 'ni la moneda').not.toContain('€');
+    }
+  });
+
+  it('respeta el ORDEN de elección', () => {
+    const html = receiptToPrintableHtml(conSuplementos);
+    expect(html.indexOf('Extra queso')).toBeLessThan(html.indexOf('Sin cebolla'));
+  });
+
+  it('un suplemento con un nombre malicioso se ESCAPA, como cualquier dato tecleado', () => {
+    const html = receiptToPrintableHtml({
+      lines: [{ name: 'X', qty: 1, unit_price: 1, total: 1, modifiers: [{ name: '<script>alert(1)</script>' }] }],
+      total: 1,
+    });
+    expect(html).not.toContain('<script>alert(1)</script>');
+    expect(html).toContain('&lt;script&gt;');
+  });
+
+  it('una línea SIN suplementos sale exactamente como salía antes', () => {
+    const sin = { lines: [{ name: 'Hamburguesa', qty: 1, unit_price: 10, total: 10 }], total: 10 };
+    expect(receiptToPrintableHtml(sin)).not.toContain('class="mod"');
+  });
+});
