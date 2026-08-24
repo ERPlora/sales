@@ -9247,7 +9247,7 @@ var ErpPosTouch = class extends i3 {
                       ${g3.options.map((o9) => {
         const n6 = this.comboCount(o9.option_id);
         const delta = this.comboDelta(o9);
-        const barred = full && n6 === 0;
+        const barred = full && n6 === 0 && g3.max !== 1;
         return b2`
                         <button class="dept-btn combo-opt" data-option-id=${o9.option_id}
                                 aria-pressed=${n6 > 0 ? "true" : "false"}

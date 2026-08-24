@@ -3880,7 +3880,12 @@ export class ErpPosTouch extends LitElement {
                         // En el techo, lo NO elegido se marca pero sigue LEGIBLE: Square se niega
                         // a esconder lo no seleccionable, y el gris sin motivo es la queja de
                         // campo documentada en Toast. El toque CONTESTA igual (pickComboOption).
-                        const barred = full && n === 0;
+                        //
+                        // 🔴 Nunca en `max = 1`: ahí el toque SÍ hace algo (auto-swap), y marcarlo
+                        // como inservible seria mentirle al camarero. Lo cazo el navegador de
+                        // verdad, no happy-dom: en pantalla los otros primeros salian con borde
+                        // discontinuo aunque cambiar de primero es justo lo que se espera poder.
+                        const barred = full && n === 0 && g.max !== 1;
                         return html`
                         <button class="dept-btn combo-opt" data-option-id=${o.option_id}
                                 aria-pressed=${n > 0 ? 'true' : 'false'}

@@ -468,3 +468,29 @@ describe('el techo REHÚSA de verdad el toque de más', () => {
     expect(pos.comboPicks).toEqual(['o-soup', 'o-third']);
   });
 });
+
+// Lo cazó el NAVEGADOR DE VERDAD, no happy-dom: en un grupo de `max = 1`, elegir uno dejaba a los
+// demás pintados como no disponibles (borde discontinuo). Y es MENTIRA: en `max = 1` el toque SÍ
+// hace algo — hace AUTO-SWAP. Marcar como inservible algo que sí responde es la patología del
+// «gris sin motivo» al revés, y Square se niega expresamente a esconder lo que aún es elegible.
+describe('en max = 1 NADA se marca como no disponible: el toque SIEMPRE hace swap', () => {
+  it('elegido el primero, el otro sigue ofreciéndose como elegible', async () => {
+    installSdk(MENU);
+    const pos = await mount();
+    await tap(pos, comboTiles(pos)[0]);
+    await tap(pos, q(pos, '[data-option-id="o-soup"]'));
+    const other = q(pos, '[data-option-id="o-salad"]')!;
+    expect(other.getAttribute('data-barred'), 'en max=1 tocarlo SÍ hace algo: cambia la elección').toBe('false');
+    expect(other.getAttribute('aria-disabled')).toBe('false');
+  });
+
+  it('control: en un grupo de max > 1 lleno, lo no elegido SÍ se marca', async () => {
+    installSdk(MENU.map((r) => (r.group_id === 'g-starter' ? { ...r, max_choices: 2 } : r)));
+    const pos = await mount();
+    await tap(pos, comboTiles(pos)[0]);
+    await tap(pos, q(pos, '[data-option-id="o-soup"]'));
+    await tap(pos, q(pos, '[data-option-id="o-salad"]'));
+    // Con dos opciones y techo 2 no queda ninguna sin elegir, así que se usa el menú de tres.
+    expect(q(pos, '[data-group-id="g-starter"]')!.getAttribute('data-full')).toBe('true');
+  });
+});
