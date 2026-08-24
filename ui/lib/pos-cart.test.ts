@@ -437,3 +437,52 @@ describe('los suplementos sobreviven a retomar la cuenta (pm#93)', () => {
     expect(line.name).toBe('X');
   });
 });
+
+// ── sales#153 · dos MENÚS distintos no son la misma línea ─────────────────────────────────────
+//
+// El picker elige la composición al AÑADIR, así que la composición ES parte de la identidad — el
+// mismo argumento de pm#93 para los suplementos, y el mismo fallo si falta: dos menús con primeros
+// distintos se fusionarían en «2 × Menú del día» y cocina recibiría dos veces el mismo plato, uno
+// de ellos mal y sin forma de saber cuál (ADR-0381: cada componente a SU estación).
+describe('sales#153 — la COMPOSICIÓN del menú entra en la identidad de la línea', () => {
+  const menu = (over: Partial<CartLine> = {}): CartLine =>
+    ({ id: 'c-menu', name: 'Menú del día', price: 1250, qty: 1, combo_id: 'c-menu', ...over }) as CartLine;
+
+  it('el mismo menú con ELECCIONES distintas no se fusiona', () => {
+    const out = mergeCartLines(
+      [menu({ combo_choices: [{ option_id: 'o-sopa' }, { option_id: 'o-pollo' }] })],
+      [menu({ combo_choices: [{ option_id: 'o-sopa' }, { option_id: 'o-solomillo' }] })],
+    );
+    expect(out, 'dos menús con segundo distinto son dos líneas').toHaveLength(2);
+  });
+
+  it('el mismo menú con las MISMAS elecciones sí se fusiona', () => {
+    const picks = [{ option_id: 'o-sopa' }, { option_id: 'o-pollo' }];
+    const out = mergeCartLines([menu({ combo_choices: picks })], [menu({ combo_choices: [...picks] })]);
+    expect(out).toHaveLength(1);
+    expect(out[0].qty).toBe(2);
+  });
+
+  it('el ORDEN de elección distingue, igual que en los suplementos', () => {
+    const out = mergeCartLines(
+      [menu({ combo_choices: [{ option_id: 'a' }, { option_id: 'b' }] })],
+      [menu({ combo_choices: [{ option_id: 'b' }, { option_id: 'a' }] })],
+    );
+    expect(out).toHaveLength(2);
+  });
+
+  it('un menú NUNCA se fusiona con un producto suelto que llevara el mismo id', () => {
+    const out = mergeCartLines(
+      [menu({ combo_choices: [{ option_id: 'o-sopa' }] })],
+      [{ id: 'c-menu', name: 'Menú del día', price: 1250, qty: 1 } as CartLine],
+    );
+    expect(out, 'uno lleva combo_id y el otro no: no son la misma unidad de cobro').toHaveLength(2);
+  });
+
+  it('control: sin combo, dos líneas iguales siguen fusionándose', () => {
+    const plain = (): CartLine => ({ id: 'p-x', name: 'X', price: 100, qty: 1 }) as CartLine;
+    const out = mergeCartLines([plain()], [plain()]);
+    expect(out).toHaveLength(1);
+    expect(out[0].qty).toBe(2);
+  });
+});
