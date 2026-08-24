@@ -1,7 +1,7 @@
 {
   "id": "sales",
   "name": "Sales & POS",
-  "version": "2.15.27",
+  "version": "2.16.0",
   "description": "Point of sale: complete and void sales, and review sales history and metrics.",
   "agent": {
     "description": "Manages sales and point-of-sale operations: list and inspect sales, complete new sales transactions, void sales, configure payment methods, and retrieve sales statistics.",
@@ -123,7 +123,8 @@
       "migrations/postgres/020_void_audit.sql",
       "migrations/postgres/021_manual_discounts.sql",
       "migrations/postgres/022_ticket_discount_amount.sql",
-      "migrations/postgres/023_order_line_modifiers.sql"
+      "migrations/postgres/023_order_line_modifiers.sql",
+      "migrations/postgres/024_sale_payments.sql"
     ]
   },
   "seed": {
@@ -205,6 +206,14 @@
       "sql": "queries/lines.sql",
       "ai": {
         "description": "Lists the product lines (items) belonging to a sale"
+      }
+    },
+    "sales.payments": {
+      "permission": "sales.view_sale",
+      "expose_api": true,
+      "sql": "queries/payments.sql",
+      "ai": {
+        "description": "Lists the individual payments (tenders) that settled a sale — method, type, amount, tendered and change"
       }
     },
     "sales.orders.list": {
@@ -413,6 +422,12 @@
       "permission": "sales.add_sale",
       "sql": [
         "commands/_insert_line.sql"
+      ]
+    },
+    "sales._insert_payment": {
+      "permission": "sales.add_sale",
+      "sql": [
+        "commands/_insert_payment.sql"
       ]
     },
     "sales._insert_order": {
