@@ -52,11 +52,19 @@ describe('sales list — the status column speaks the user language (hub#923)', 
     expect(column.format!({ status: 'voided' })).toBe('Anulada');
   });
 
-  it('an unknown status still shows something, never an empty cell', async () => {
-    // A status this build does not know about (a newer module writing `refunded`) must degrade to
-    // the raw value: an empty cell would hide the row's state entirely.
+  it('renders `refunded` translated too (sales#160)', async () => {
+    // It used to be THE example of an unknown status here. Since sales#160 a fully refunded sale
+    // really is written as `refunded`, so leaving it as the unknown case would have quietly turned
+    // this test into a guard over nothing.
     const column = await statusColumn();
-    expect(column.format!({ status: 'refunded' })).toBe('refunded');
+    expect(column.format!({ status: 'refunded' })).toBe('Devuelta');
+  });
+
+  it('an unknown status still shows something, never an empty cell', async () => {
+    // A status this build does not know about (a newer module writing its own) must degrade to the
+    // raw value: an empty cell would hide the row's state entirely.
+    const column = await statusColumn();
+    expect(column.format!({ status: 'partially_refunded' })).toBe('partially_refunded');
   });
 });
 

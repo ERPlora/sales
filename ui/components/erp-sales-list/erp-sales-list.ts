@@ -5,6 +5,7 @@ import '@erplora/outfitkit/ok-inline-feedback';
 import '@erplora/outfitkit/ok-data-table';
 import type { DataTableColumn, DataTableAction } from '@erplora/outfitkit';
 import { renderDocumentModal } from '../../lib/document-modal.js';
+import '../erp-sale-refund/erp-sale-refund.js';
 import { payMethodDisplayName } from '../../lib/pay-icons.js';
 import { formatDateTime } from '../../lib/document-mappers.js';
 import { createListController } from '@erplora/module-sdk';
@@ -17,6 +18,9 @@ const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 const STATUS_KEYS: Record<string, string> = {
   completed: 'ui.statusCompleted',
   voided: 'ui.statusVoided',
+  // sales#160: una venta devuelta ENTERA pasa a `refunded`. Sin su clave, la celda pintaba la
+  // palabra cruda de la base de datos sobre una UI en español (el mismo defecto que hub#923).
+  refunded: 'ui.statusRefunded',
 };
 
 interface ErploraClientLike extends ListClient {
@@ -136,6 +140,9 @@ export class ErpSalesList extends LitElement {
   /** Venta seleccionada para ver su documento (tiquet/factura) en el modal. */
   @state() docSaleId?: string;
 
+  /** sales#160 — venta que se está devolviendo. El modal está abierto mientras haya id. */
+  @state() refundSaleId?: string;
+
   // Getter (no campo): se re-evalúa en cada render, así los textos cambian con el idioma activo
   // (ADR-0055). El listener `erplora:locale-changed` re-renderiza.
   private get documentActions(): DataTableAction[] {
@@ -148,6 +155,15 @@ export class ErpSalesList extends LitElement {
     if (erplora().hasPermission?.('sales.void_sale')) {
       actions.push({
         id: 'void', label: t('ui.actionVoid'), icon: 'ban-outline', color: 'danger',
+        disabled: (r) => r.status !== 'completed',
+      });
+    }
+    // sales#160 — devolver es permiso PROPIO (manager + admin, nunca cashier: saca dinero de la
+    // caja), y solo sobre una venta cerrada. A diferencia de anular, una venta CON FACTURA sí se
+    // devuelve: la devolución es el hecho económico y la rectificativa su documento.
+    if (erplora().hasPermission?.('sales.refund_sale')) {
+      actions.push({
+        id: 'refund', label: t('ui.actionRefund'), icon: 'return-down-back-outline', color: 'warning',
         disabled: (r) => r.status !== 'completed',
       });
     }
@@ -219,6 +235,7 @@ export class ErpSalesList extends LitElement {
       options: [
         { value: 'completed', label: t('ui.statusCompleted') },
         { value: 'voided', label: t('ui.statusVoided') },
+        { value: 'refunded', label: t('ui.statusRefunded') },
       ],
       // hub#923: el filtro traducía, pero la CELDA pintaba el valor crudo de la BD — «completed»,
       // en inglés, sobre una UI en español. Es la lista a la que se manda al cajero cuando un cobro
@@ -332,11 +349,25 @@ export class ErpSalesList extends LitElement {
         ${this.ctrl?.error ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : nothing}
         <!-- The «document» button is not the only door: rowClickable makes the whole row open the
              same document (outfitkit#67 — the actions column can be off-screen at 1440 px). -->
-        <ok-data-table .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r: Record<string, unknown>) => String(r.sale_number ?? '—')} .cardIcon=${() => 'receipt-outline'} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.ctrl?.state.sort} .sortDir=${this.ctrl?.state.dir ?? 'desc'} .searchable=${true} .searchPlaceholder=${t('ui.searchSalePlaceholder')} .emptyMessage=${this.ctrl?.loading ? t('ui.loading') : t('ui.noSales')} .actions=${this.documentActions} .rowClickable=${true} @rowAction=${(e: CustomEvent<{ actionId: string; row: Sale }>) => { if (e.detail.actionId === 'document') this.docSaleId = e.detail.row.id; else if (e.detail.actionId === 'void') void this.confirmVoid(e.detail.row); }} @rowClick=${(e: CustomEvent<{ row: Sale }>) => { this.docSaleId = e.detail.row.id; }} @pageChange=${(e: CustomEvent<number>) => this.ctrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.ctrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.ctrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.onFilterChange(e)}></ok-data-table>
+        <ok-data-table .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r: Record<string, unknown>) => String(r.sale_number ?? '—')} .cardIcon=${() => 'receipt-outline'} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.ctrl?.state.sort} .sortDir=${this.ctrl?.state.dir ?? 'desc'} .searchable=${true} .searchPlaceholder=${t('ui.searchSalePlaceholder')} .emptyMessage=${this.ctrl?.loading ? t('ui.loading') : t('ui.noSales')} .actions=${this.documentActions} .rowClickable=${true} @rowAction=${(e: CustomEvent<{ actionId: string; row: Sale }>) => { if (e.detail.actionId === 'document') this.docSaleId = e.detail.row.id; else if (e.detail.actionId === 'void') void this.confirmVoid(e.detail.row); else if (e.detail.actionId === 'refund') this.refundSaleId = e.detail.row.id; }} @rowClick=${(e: CustomEvent<{ row: Sale }>) => { this.docSaleId = e.detail.row.id; }} @pageChange=${(e: CustomEvent<number>) => this.ctrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.ctrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.ctrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.onFilterChange(e)}></ok-data-table>
       </div>
       <!-- sales#126 — el modal FUERA del contenedor con scroll: Ionic lo reparenta al light-DOM
            igual, pero así la vista no arrastra overlays al scrollear. -->
-      ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => { this.docSaleId = undefined; }, t })}`;
+      ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => { this.docSaleId = undefined; }, t })}
+      <!-- sales#160 — la devolución vive en su propio modal: el reparto por tender no cabe en un
+           ion-alert, y el operador tiene que poder leer los topes mientras teclea. -->
+      <ion-modal class="refund-modal" .isOpen=${!!this.refundSaleId}
+        @ionModalDidDismiss=${() => { this.refundSaleId = undefined; }}>
+        <ion-content>
+          ${this.refundSaleId
+            ? html`<erp-sale-refund .saleId=${this.refundSaleId} @refunded=${() => {
+                this.refundSaleId = undefined;
+                void this.ctrl.load();
+                void this.loadStats();
+              }}></erp-sale-refund>`
+            : nothing}
+        </ion-content>
+      </ion-modal>`;
   }
 }
 

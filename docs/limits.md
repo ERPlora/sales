@@ -25,6 +25,15 @@ recorded when one of them fires.
 | `sales.already_voided` | The sale is not `completed` (already voided/refunded): a void is one-shot and never emits twice | Nothing to do — it is already reversed |
 | `sales.void_requires_credit_note` | The sale carries a full invoice; voiding it would leave the invoice orphaned | Issue a credit note (rectificativa) from `invoice` instead |
 | `sales.sale_not_found` | `sales.void` on a sale that is not in this hub | Check the sale id |
+| `sales.refund_reason_required` | `sales.refund` without a reason (sales#160) | Type why the money goes back |
+| `sales.refund_requires_completed` | The sale is not `completed` — already voided, or already refunded in full | Nothing to do: it has no money left behind it |
+| `sales.refund_nothing_to_return` | The refund carries no allocation, or every leg is at zero | Type how much goes back to each tender |
+| `sales.refund_tender_unknown` | An allocation names a payment leg that does not belong to this sale | A client bug: the legs come from `sales.refund_options` |
+| `sales.refund_tender_duplicated` | The same leg appears twice in one refund | Merge them into a single line: two lines pass the cap one by one and break it together |
+| `sales.refund_amount_invalid` | A leg was given something that is not a positive amount of cents | Type an amount; a negative here would be a charge disguised as a refund |
+| `sales.refund_exceeds_tender` | A leg is being given back more than it was charged minus what it already returned. **The message names which leg** | Lower that leg, or move the excess to another one |
+| `sales.refund_tender_not_eligible` | The leg cannot take its own money back (its payment method is gone) and no other destination was named | Pick another destination for that leg — the money is still refundable, just not through that door |
+| `sales.refund_method_unavailable` | The named destination is not an active payment method in this hub | Pick an active one, or re-enable it in settings |
 | `sales.insufficient_tendered` | A positive `amount_tendered` is below the total (short cash payment, sales#24) | Enter an amount that covers the total, or leave it empty for the exact amount |
 
 ## Caps and sizes

@@ -78,6 +78,16 @@ pub fn void_sale(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>
     }
 }
 
+/// sales#160: devuelve una venta por TENDER ELEGIBLE, con reparto editable. Ver `refund_sale_pure`.
+#[cfg(feature = "guest")]
+#[plugin_fn]
+pub fn refund_sale(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
+    match refund_sale_pure(input.into_inner().into_value()) {
+        Ok(out) => Ok(Json(out)),
+        Err(e) => Err(Error::msg(e).into()),
+    }
+}
+
 /// ADR-0141: abre un pedido MUTABLE (`order`). Ver `open_order_pure`.
 #[cfg(feature = "guest")]
 #[plugin_fn]
@@ -1865,6 +1875,302 @@ pub fn void_sale_pure(input: Value) -> Result<Output, String> {
     }));
     Ok(Output { operations: vec![Operation::sql("sales._void_sale", p)], events: vec![event], ..Default::default() })
 }
+
+/// sales#160 / ADR-0386 decisión 3 — **devolver una venta cobrada con VARIOS medios**.
+///
+/// Es el fallo más repetido del mercado y ninguno lo resuelve: Shopify POS prorratea y lo tiene
+/// HARDCODED (*«there's no setting or permission to change it»*); Square obliga al tender original
+/// *«even if the gift card does not exist or has been reused»* (reportado en 2018, sin solución en
+/// 2021); Odoo, al devolver por otro método, genera un asiento inválido.
+///
+/// Aquí decide el operador y el servidor solo hace de **tope**. Y hay DOS ejes, que confundirlos
+/// es justo lo que deja al cajero encerrado:
+///
+/// * **De dónde sale** — la pata original (`payment_id`). Su tope es lo que esa pata cobró menos
+///   lo que ya se le devolvió, y pasarse se rechaza **diciendo cuál** se pasó.
+/// * **A dónde va** — el método de destino. Por defecto el de la propia pata (se devuelve por
+///   donde se cobró). Cuando esa puerta ya no existe, la pata sale marcada **no elegible con su
+///   motivo** por `sales.refund_options` y el operador nombra otro destino con
+///   `to_payment_method_id`. Marcarla y no dejar salida sería el bug de Square con mejores
+///   palabras.
+///
+/// **No es una operación fiscal en sí**: la devolución es el hecho económico y la rectificativa es
+/// su documento (invoice#5 / hub#1023). Por eso, al revés que `sales.void`, una venta CON FACTURA
+/// sí se devuelve — si esto la rechazara, una venta facturada no tendría reverso en el TPV.
+///
+/// El id del documento es la referencia (`refund_ref`) que `services` usa como clave de
+/// idempotencia para devolver la sesión al bono, así que es **estable por documento**: un reintento
+/// con la misma `idempotency_key` no escribe nada y responde con el MISMO id.
+pub fn refund_sale_pure(input: Value) -> Result<Output, String> {
+    let payload = input.get("payload").cloned().unwrap_or(Value::Null);
+    let context = input.get("context").cloned().unwrap_or(Value::Null);
+
+    // ── El reintento, ANTES que nada ────────────────────────────────────────────────────────
+    //
+    // Se cae el wifi entre el INSERT y la respuesta y el cajero vuelve a pulsar. Si esto se
+    // comprobara DESPUÉS de validar el reparto, el reintento moriría con
+    // `sales.refund_exceeds_tender` — porque la primera pasada ya consumió el tope— y el operador
+    // leería «te has pasado» sobre una devolución que ya salió. El dinero es lo último que puede
+    // permitirse un mensaje equivocado.
+    if let Some(prev) = tax::read_rows(&context, "sales.refund_by_idempotency_key")
+        .unwrap_or_default()
+        .first()
+        .filter(|r| !field(r, "id").is_empty())
+    {
+        let id = field(prev, "id");
+        return Ok(Output {
+            result: Some(json!({
+                "already": true,
+                "refund_id": id,
+                "refund_ref": id,
+                "total": prev.get("total").cloned().unwrap_or(json!(0)),
+            })),
+            ..Default::default()
+        });
+    }
+
+    let sale_id = field(&payload, "sale_id");
+    if sale_id.is_empty() {
+        return Err(reject("sales.sale_not_found", "missing sale_id"));
+    }
+    let sale_rows = tax::read_rows(&context, "sales.get").unwrap_or_default();
+    let sale = sale_rows
+        .iter()
+        .find(|r| field(r, "id") == sale_id)
+        .ok_or_else(|| reject("sales.sale_not_found", format!("sale {sale_id} is not in this hub")))?;
+
+    // Una venta anulada no tiene dinero que devolver, y una ya devuelta entera tampoco. La factura
+    // NO bloquea: ver el doc de arriba.
+    if field(sale, "status") != "completed" {
+        return Err(reject(
+            "sales.refund_requires_completed",
+            format!(
+                "sale {sale_id} is `{}`: only a completed sale can be refunded",
+                field(sale, "status")
+            ),
+        ));
+    }
+
+    let reason = field(&payload, "reason").trim().to_string();
+    if reason.is_empty() {
+        return Err(reject("sales.refund_reason_required", "a refund needs a reason"));
+    }
+
+    // Las patas, con su tope y su elegibilidad ya resueltos por la puerta que lee la BD. El handler
+    // no los recalcula: lo que ya se devolvió está en filas que él no ve.
+    let options = tax::read_rows(&context, "sales.refund_options").unwrap_or_default();
+    let catalog = tax::read_rows(&context, "sales.payment_methods").unwrap_or_default();
+
+    let allocations: Vec<&Value> = payload
+        .get("allocations")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().collect())
+        .unwrap_or_default();
+    if allocations.is_empty() {
+        return Err(reject(
+            "sales.refund_nothing_to_return",
+            "a refund must say which tender each cent goes back to",
+        ));
+    }
+
+    let new_ids: Vec<String> = context
+        .get("new_ids")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().map(as_str).collect())
+        .unwrap_or_default();
+    // Cabecera + una fila por pata. Quedarse corto y tirar de `unwrap_or_default()` escribiría
+    // filas con la clave primaria vacía, y la segunda chocaría contra la primera.
+    if 1 + allocations.len() > new_ids.len() {
+        return Err(reject(
+            "sales.too_many_rows",
+            format!(
+                "{} refund legs need {} ids, the host gave {}",
+                allocations.len(),
+                1 + allocations.len(),
+                new_ids.len()
+            ),
+        ));
+    }
+
+    let refund_id = new_ids[0].clone();
+    let mut seen: Vec<String> = Vec::with_capacity(allocations.len());
+    let mut legs: Vec<Map<String, Value>> = Vec::with_capacity(allocations.len());
+    let mut event_legs: Vec<Value> = Vec::with_capacity(allocations.len());
+    let mut total: i64 = 0;
+
+    for (idx, alloc) in allocations.iter().enumerate() {
+        let payment_id = field(alloc, "payment_id");
+        let leg = options
+            .iter()
+            .find(|o| field(o, "payment_id") == payment_id)
+            .ok_or_else(|| {
+                reject(
+                    "sales.refund_tender_unknown",
+                    format!("`{payment_id}` is not a tender of sale {sale_id}"),
+                )
+            })?;
+        if seen.contains(&payment_id) {
+            // Dos filas de 20,00 € sobre una pata de 20,00 € pasan el tope una a una y lo rompen
+            // juntas. Sumarlas calladamente escondería un reparto que el operador no quiso.
+            return Err(reject(
+                "sales.refund_tender_duplicated",
+                format!("tender `{payment_id}` appears twice in the same refund"),
+            ));
+        }
+        seen.push(payment_id.clone());
+
+        // Dinero: entero positivo en céntimos y nada más. Un `"mucho"` o un negativo no se
+        // interpretan — un importe negativo aquí sería un COBRO disfrazado de devolución.
+        let amount = match alloc.get("amount") {
+            Some(v) if v.is_i64() => v.as_i64().unwrap_or(0),
+            _ => 0,
+        };
+        if amount <= 0 {
+            return Err(reject(
+                "sales.refund_amount_invalid",
+                format!(
+                    "tender `{payment_id}` was given {:?}: a refund leg is a positive amount in cents",
+                    alloc.get("amount").unwrap_or(&Value::Null)
+                ),
+            ));
+        }
+
+        let method_name = field(leg, "payment_method_name");
+        let charged = item_i64(leg, "charged", 0);
+        let remaining = leg
+            .get("remaining")
+            .map(|v| as_qty(v, 0))
+            .unwrap_or_else(|| charged - item_i64(leg, "refunded", 0));
+        if amount > remaining {
+            // 🔴 El tope de la issue. Y el mensaje NOMBRA la pata: «no cuadra» a secas obliga al
+            // cajero a adivinar cuál de las tres tocar.
+            return Err(reject(
+                "sales.refund_exceeds_tender",
+                format!(
+                    "`{method_name}` was charged {charged} and {remaining} is still refundable: {amount} is more than that"
+                ),
+            ));
+        }
+
+        // ── A dónde vuelve el dinero ────────────────────────────────────────────────────────
+        let to_method_id = field(alloc, "to_payment_method_id");
+        let (method_id, name, kind) = if to_method_id.is_empty() {
+            // Por donde se cobró. La puerta ya dijo si eso sigue siendo posible.
+            if item_i64(leg, "refundable", 1) != 1 {
+                let why = field(leg, "reason");
+                return Err(reject(
+                    "sales.refund_tender_not_eligible",
+                    format!(
+                        "`{method_name}` cannot take its own money back ({}): choose another destination",
+                        if why.is_empty() { "not_refundable".to_string() } else { why }
+                    ),
+                ));
+            }
+            (
+                leg.get("payment_method_id").cloned().unwrap_or(Value::Null),
+                method_name.clone(),
+                field(leg, "payment_method_type"),
+            )
+        } else {
+            // Un destino distinto: sale del CATÁLOGO del hub, no del navegador — mismo criterio
+            // que el cobro (sales#20).
+            let m = catalog
+                .iter()
+                .find(|m| field(m, "id") == to_method_id && item_i64(m, "is_active", 1) == 1)
+                .ok_or_else(|| {
+                    reject(
+                        "sales.refund_method_unavailable",
+                        format!("payment method `{to_method_id}` is not available in this hub"),
+                    )
+                })?;
+            (json!(to_method_id), field(m, "name"), field(m, "type"))
+        };
+
+        total += amount;
+
+        let mut p = Map::new();
+        p.insert("refund_payment_id".into(), json!(new_ids[1 + idx]));
+        p.insert("refund_id".into(), json!(refund_id));
+        p.insert("sale_id".into(), json!(sale_id));
+        p.insert("payment_id".into(), json!(payment_id));
+        p.insert("payment_method_id".into(), method_id.clone());
+        p.insert("payment_method_name".into(), json!(name));
+        p.insert("payment_method_type".into(), json!(kind));
+        p.insert("amount".into(), json!(amount));
+        p.insert("sort_order".into(), json!(idx as i64));
+        legs.push(p);
+
+        event_legs.push(json!({
+            "payment_id": payment_id,
+            "payment_method_id": method_id,
+            "payment_method_name": name,
+            "payment_method_type": kind,
+            "amount": amount,
+        }));
+    }
+
+    // ¿Queda algo cobrado? Se compara CONTRA EL TOTAL DE LA VENTA, no contra las patas: es el
+    // dinero lo que decide si la venta sigue viva, y una pata cuyo método murió puede volver por
+    // otra puerta sin que su propia fila llegue nunca a cero.
+    let sale_total = item_i64(sale, "total", 0);
+    let already: i64 = options.iter().map(|o| item_i64(o, "refunded", 0)).sum();
+    let fully_refunded = sale_total > 0 && already + total >= sale_total;
+
+    let mut operations: Vec<Operation> = Vec::with_capacity(2 + legs.len());
+    let mut head = Map::new();
+    head.insert("refund_id".into(), json!(refund_id));
+    head.insert("sale_id".into(), json!(sale_id));
+    head.insert("total".into(), json!(total));
+    head.insert("reason".into(), json!(reason));
+    head.insert("note".into(), json!(field(&payload, "note")));
+    head.insert("idempotency_key".into(), json!(field(&payload, "idempotency_key")));
+    operations.push(Operation::sql("sales._insert_refund", head));
+    for leg in legs {
+        operations.push(Operation::sql("sales._insert_refund_payment", leg));
+    }
+    if fully_refunded {
+        // Sin esta marca la lista de ventas sigue diciendo `completed` sobre una venta que ya no
+        // tiene dinero detrás, y el histórico miente en la única pantalla que el dueño mira.
+        let mut m = Map::new();
+        m.insert("sale_id".into(), json!(sale_id));
+        operations.push(Operation::sql("sales._mark_refunded", m));
+    }
+
+    let refunded_by = as_str(context.get("current_user_id").unwrap_or(&Value::Null));
+    let event = Event::new(
+        "sale.refunded",
+        json!({
+            "sender": "sales",
+            "sale_id": sale_id,
+            "sale_number": sale.get("sale_number").cloned().unwrap_or(Value::Null),
+            "refund_id": refund_id,
+            // La referencia ES el documento: `services` la usa como clave de idempotencia.
+            "refund_ref": refund_id,
+            "total": total,
+            "reason": reason,
+            "refunded_by": refunded_by,
+            "refunded_at": context.get("now").cloned().unwrap_or(Value::Null),
+            "fully_refunded": fully_refunded,
+            "document_type": sale.get("document_type").cloned().unwrap_or(Value::Null),
+            "order_id": sale.get("order_id").cloned().unwrap_or(Value::Null),
+            "payments": event_legs,
+        }),
+    );
+
+    Ok(Output {
+        operations,
+        events: vec![event],
+        result: Some(json!({
+            "already": false,
+            "refund_id": refund_id,
+            "refund_ref": refund_id,
+            "total": total,
+            "fully_refunded": fully_refunded,
+        })),
+        ..Default::default()
+    })
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -4440,6 +4746,386 @@ mod tests {
             json!([{ "payment_method_id": "pm-card", "amount": 12100 }]),
         ))
         .expect_err("not enough ids");
+        assert!(err.contains("sales.too_many_rows"), "{err}");
+    }
+
+    // ── sales#160 · devolver una venta cobrada con VARIOS medios (ADR-0386, decisión 3) ────────
+    //
+    // El fallo más repetido del mercado y ninguno lo resuelve: Shopify POS prorratea y lo tiene
+    // HARDCODED («there's no setting or permission to change it»); Square obliga al tender
+    // original «even if the gift card does not exist or has been reused» (reportado en 2018, sin
+    // solución en 2021); Odoo genera un asiento inválido al devolver por otro método.
+    //
+    // Aquí el operador decide, y el servidor solo hace de tope. Dos ejes distintos, que la pantalla
+    // confunde si no se separan:
+    //
+    //   * DE DÓNDE sale el dinero — la pata original (`payment_id`). Su tope es lo que esa pata
+    //     cobró menos lo que ya se le devolvió, y pasarse se RECHAZA diciendo CUÁL se pasó.
+    //   * A DÓNDE va — el método de destino. Por defecto, el de la propia pata: se devuelve por
+    //     donde se cobró. Cuando esa puerta ya no existe (la tarjeta regalo de Square), la pata se
+    //     marca NO ELEGIBLE con su motivo y el operador nombra otro destino — que es lo que a
+    //     Square le falta. Marcarla y no dejar salida sería el mismo bug con mejores palabras.
+
+    /// Las patas de la venta tal como las devuelve `sales.refund_options`: lo cobrado, lo ya
+    /// devuelto, el tope que queda y si su propio método sigue siendo una puerta válida.
+    fn refund_options() -> Value {
+        json!([
+            { "payment_id": "pay-card", "sort_order": 0, "payment_method_id": "pm-card",
+              "payment_method_name": "Tarjeta", "payment_method_type": "card",
+              "charged": 5000, "refunded": 0, "remaining": 5000, "refundable": 1, "reason": "" },
+            { "payment_id": "pay-cash", "sort_order": 1, "payment_method_id": "pm-cash",
+              "payment_method_name": "Efectivo", "payment_method_type": "cash",
+              "charged": 2000, "refunded": 0, "remaining": 2000, "refundable": 1, "reason": "" }
+        ])
+    }
+
+    fn refund_methods() -> Value {
+        json!([
+            { "id": "pm-card", "name": "Tarjeta", "type": "card", "is_active": 1 },
+            { "id": "pm-cash", "name": "Efectivo", "type": "cash", "is_active": 1 }
+        ])
+    }
+
+    fn refunded_sale() -> Value {
+        json!([{ "id": "sale-1", "sale_number": "20260824-0007", "status": "completed",
+                 "document_type": "ticket", "total": 7000, "order_id": "ord-9" }])
+    }
+
+    fn refund_input(allocations: Value) -> Value {
+        refund_input_with(allocations, refund_options(), refunded_sale())
+    }
+
+    fn refund_input_with(allocations: Value, options: Value, sale: Value) -> Value {
+        let mut reads = Map::new();
+        if !sale.is_null() { reads.insert("sales.get".into(), sale); }
+        if !options.is_null() { reads.insert("sales.refund_options".into(), options); }
+        reads.insert("sales.payment_methods".into(), refund_methods());
+        reads.insert("sales.refund_by_idempotency_key".into(), json!([]));
+        json!({
+            "payload": { "sale_id": "sale-1", "reason": "el cliente devuelve el producto",
+                         "idempotency_key": "idem-refund-0001", "allocations": allocations },
+            "context": { "hub_id": "h1", "current_user_id": "u-manager",
+                         "now": "2026-08-24T12:00:00+00:00",
+                         "new_ids": ["ref-1", "ref-line-1", "ref-line-2", "ref-line-3"],
+                         "reads": reads }
+        })
+    }
+
+    #[test]
+    fn devolver_mas_de_lo_cobrado_por_UNA_pata_se_rechaza_diciendo_cual_se_paso() {
+        // 🔴 EL test de la issue. 70,00 € cobrados como 50,00 € en tarjeta + 20,00 € en efectivo.
+        // El operador teclea 25,00 € al efectivo: son 5,00 € que esa pata NUNCA cobró. Aceptarlo
+        // sacaría del cajón dinero que no entró por él, y el arqueo cerraría corto sin que nadie
+        // pueda explicar por qué. Se rechaza — y el mensaje NOMBRA la pata, porque «no cuadra» a
+        // secas obliga al cajero a adivinar cuál de las tres tocar.
+        let err = refund_sale_pure(refund_input(json!([
+            { "payment_id": "pay-card", "amount": 5000 },
+            { "payment_id": "pay-cash", "amount": 2500 }
+        ])))
+        .expect_err("25,00 € sobre una pata que cobró 20,00 €");
+
+        assert!(err.starts_with("sales.refund_exceeds_tender"), "{err}");
+        assert!(err.contains("Efectivo"), "el rechazo dice CUÁL se pasó: {err}");
+        assert!(err.contains("2500") && err.contains("2000"), "y con cuánto se pasó: {err}");
+        // Y no nombra a la inocente: la tarjeta iba justa de tope.
+        assert!(!err.contains("Tarjeta"), "solo se nombra la pata que se pasó: {err}");
+    }
+
+    #[test]
+    fn el_tope_de_una_pata_es_lo_que_QUEDA_no_lo_que_cobro() {
+        // Segunda devolución parcial sobre la misma venta: de los 50,00 € de la tarjeta ya
+        // volvieron 15,00 €. Pedir 40,00 € es menos de lo que cobró y aun así son 5,00 € de más.
+        // Sin esta resta, dos devoluciones parciales devuelven más que la venta entera — que es
+        // como se vacía una caja sin que salte ninguna alarma.
+        let mut options = refund_options();
+        options[0]["refunded"] = json!(1500);
+        options[0]["remaining"] = json!(3500);
+
+        let err = refund_sale_pure(refund_input_with(
+            json!([{ "payment_id": "pay-card", "amount": 4000 }]),
+            options,
+            refunded_sale(),
+        ))
+        .expect_err("40,00 € sobre un resto de 35,00 €");
+        assert!(err.starts_with("sales.refund_exceeds_tender"), "{err}");
+        assert!(err.contains("Tarjeta"), "{err}");
+    }
+
+    #[test]
+    fn el_reparto_lo_decide_el_operador_y_se_escribe_pata_a_pata() {
+        // Reparto NO proporcional a propósito: 30,00 € que el operador manda enteros a la tarjeta,
+        // aunque el prorrateo habría propuesto 21,43 / 8,57. La propuesta es una propuesta.
+        let out = refund_sale_pure(refund_input(json!([
+            { "payment_id": "pay-card", "amount": 3000 }
+        ])))
+        .expect("devolución válida");
+
+        let head = out.operations.iter().find(|o| o.command == "sales._insert_refund").expect("cabecera");
+        assert_eq!(head.params["refund_id"], json!("ref-1"));
+        assert_eq!(head.params["sale_id"], json!("sale-1"));
+        assert_eq!(head.params["total"], json!(3000));
+        assert_eq!(head.params["idempotency_key"], json!("idem-refund-0001"));
+
+        let legs: Vec<&Operation> = out.operations.iter()
+            .filter(|o| o.command == "sales._insert_refund_payment").collect();
+        assert_eq!(legs.len(), 1, "una fila por pata devuelta");
+        assert_eq!(legs[0].params["payment_id"], json!("pay-card"));
+        assert_eq!(legs[0].params["amount"], json!(3000));
+        // El nombre y el tipo salen del CATÁLOGO, no del navegador (mismo criterio que el cobro).
+        assert_eq!(legs[0].params["payment_method_id"], json!("pm-card"));
+        assert_eq!(legs[0].params["payment_method_name"], json!("Tarjeta"));
+        assert_eq!(legs[0].params["payment_method_type"], json!("card"));
+    }
+
+    #[test]
+    fn una_pata_no_elegible_no_falla_al_confirmar_dice_su_motivo() {
+        // El caso de Square: la tarjeta con la que se cobró ya no existe en el catálogo. Devolver
+        // ahí no es posible, pero eso se sabe ANTES de confirmar y se dice con su motivo, en vez
+        // de reventar al pulsar el botón.
+        let mut options = refund_options();
+        options[0]["refundable"] = json!(0);
+        options[0]["reason"] = json!("method_unavailable");
+
+        let err = refund_sale_pure(refund_input_with(
+            json!([{ "payment_id": "pay-card", "amount": 3000 }]),
+            options,
+            refunded_sale(),
+        ))
+        .expect_err("la pata no admite su propio método");
+        assert!(err.starts_with("sales.refund_tender_not_eligible"), "{err}");
+        assert!(err.contains("method_unavailable"), "el motivo viaja: {err}");
+        assert!(err.contains("Tarjeta"), "y CUÁL: {err}");
+    }
+
+    #[test]
+    fn una_pata_no_elegible_SI_sale_por_otro_destino_que_el_operador_nombra() {
+        // Y aquí está la diferencia con Square, que marca el problema y deja al cajero encerrado:
+        // el dinero de una pata inservible sale por el destino que el operador elige. El tope
+        // sigue siendo el de la pata de ORIGEN — se devuelve lo que entró por ella, ni un céntimo
+        // más — pero por la puerta que hoy funciona.
+        let mut options = refund_options();
+        options[0]["refundable"] = json!(0);
+        options[0]["reason"] = json!("method_unavailable");
+
+        let out = refund_sale_pure(refund_input_with(
+            json!([{ "payment_id": "pay-card", "amount": 3000, "to_payment_method_id": "pm-cash" }]),
+            options,
+            refunded_sale(),
+        ))
+        .expect("con destino explícito, la devolución sale");
+
+        let leg = out.operations.iter()
+            .find(|o| o.command == "sales._insert_refund_payment").expect("la pata");
+        assert_eq!(leg.params["payment_id"], json!("pay-card"), "el origen sigue siendo la tarjeta");
+        assert_eq!(leg.params["payment_method_id"], json!("pm-cash"), "pero vuelve en efectivo");
+        assert_eq!(leg.params["payment_method_type"], json!("cash"));
+        assert_eq!(leg.params["amount"], json!(3000));
+    }
+
+    #[test]
+    fn el_destino_tiene_que_existir_en_el_catalogo_del_hub() {
+        let err = refund_sale_pure(refund_input(json!([
+            { "payment_id": "pay-card", "amount": 1000, "to_payment_method_id": "pm-ghost" }
+        ])))
+        .expect_err("destino inventado");
+        assert!(err.starts_with("sales.refund_method_unavailable"), "{err}");
+    }
+
+    #[test]
+    fn una_pata_ya_devuelta_entera_no_admite_ni_un_centimo_mas() {
+        let mut options = refund_options();
+        options[1]["refunded"] = json!(2000);
+        options[1]["remaining"] = json!(0);
+        options[1]["refundable"] = json!(0);
+        options[1]["reason"] = json!("already_refunded");
+
+        let err = refund_sale_pure(refund_input_with(
+            json!([{ "payment_id": "pay-cash", "amount": 1 }]),
+            options,
+            refunded_sale(),
+        ))
+        .expect_err("ya devuelta");
+        assert!(err.starts_with("sales.refund_exceeds_tender"), "{err}");
+        assert!(err.contains("Efectivo"), "{err}");
+    }
+
+    #[test]
+    fn una_pata_que_no_es_de_esta_venta_se_rechaza() {
+        let err = refund_sale_pure(refund_input(json!([
+            { "payment_id": "pay-de-otra-venta", "amount": 100 }
+        ])))
+        .expect_err("pata ajena");
+        assert!(err.starts_with("sales.refund_tender_unknown"), "{err}");
+    }
+
+    #[test]
+    fn la_misma_pata_dos_veces_en_el_mismo_reparto_se_rechaza() {
+        // Dos filas de 2.000 sobre una pata de 2.000 pasan el tope UNA a UNA y lo rompen juntas.
+        let err = refund_sale_pure(refund_input(json!([
+            { "payment_id": "pay-cash", "amount": 2000 },
+            { "payment_id": "pay-cash", "amount": 2000 }
+        ])))
+        .expect_err("pata repetida");
+        assert!(err.starts_with("sales.refund_tender_duplicated"), "{err}");
+    }
+
+    #[test]
+    fn un_importe_que_no_es_dinero_positivo_se_rechaza() {
+        for amount in [json!(0), json!(-100), json!("mucho")] {
+            let err = refund_sale_pure(refund_input(json!([
+                { "payment_id": "pay-cash", "amount": amount }
+            ])))
+            .expect_err("importe inválido");
+            assert!(err.starts_with("sales.refund_amount_invalid"), "{err}");
+        }
+    }
+
+    #[test]
+    fn una_devolucion_sin_nada_que_devolver_se_rechaza() {
+        let err = refund_sale_pure(refund_input(json!([]))).expect_err("sin reparto");
+        assert!(err.starts_with("sales.refund_nothing_to_return"), "{err}");
+    }
+
+    #[test]
+    fn el_motivo_es_obligatorio() {
+        let mut inp = refund_input(json!([{ "payment_id": "pay-cash", "amount": 100 }]));
+        inp["payload"]["reason"] = json!("   ");
+        let err = refund_sale_pure(inp).expect_err("sin motivo");
+        assert!(err.starts_with("sales.refund_reason_required"), "{err}");
+    }
+
+    #[test]
+    fn una_venta_ANULADA_no_se_devuelve() {
+        let mut sale = refunded_sale();
+        sale[0]["status"] = json!("voided");
+        let err = refund_sale_pure(refund_input_with(
+            json!([{ "payment_id": "pay-cash", "amount": 100 }]),
+            refund_options(),
+            sale,
+        ))
+        .expect_err("venta anulada");
+        assert!(err.starts_with("sales.refund_requires_completed"), "{err}");
+    }
+
+    #[test]
+    fn una_venta_CON_FACTURA_si_se_devuelve_la_devolucion_es_camino_normal() {
+        // 🔴 Al revés que `sales.void`, que la rechaza con `sales.void_requires_credit_note`. Una
+        // venta facturada NO se anula, pero SÍ se devuelve: la devolución es el hecho económico y
+        // la rectificativa es su documento (invoice#5 / hub#1023). Si esto rechazara, una venta
+        // con factura no tendría reverso ninguno en el TPV.
+        let mut sale = refunded_sale();
+        sale[0]["document_type"] = json!("invoice");
+        let out = refund_sale_pure(refund_input_with(
+            json!([{ "payment_id": "pay-cash", "amount": 2000 }]),
+            refund_options(),
+            sale,
+        ))
+        .expect("una venta facturada se devuelve");
+        let ev = out.events.iter().find(|e| e.name == "sale.refunded").expect("evento");
+        assert_eq!(ev.payload["document_type"], json!("invoice"),
+                   "el consumidor fiscal necesita saber que detrás hay una factura que rectificar");
+    }
+
+    #[test]
+    fn sin_la_read_de_las_patas_no_se_devuelve_a_ciegas() {
+        let err = refund_sale_pure(refund_input_with(
+            json!([{ "payment_id": "pay-cash", "amount": 100 }]),
+            Value::Null,
+            refunded_sale(),
+        ))
+        .expect_err("sin patas");
+        assert!(err.starts_with("sales.refund_tender_unknown"), "{err}");
+    }
+
+    #[test]
+    fn una_venta_que_no_existe_aqui_no_se_devuelve() {
+        let err = refund_sale_pure(refund_input_with(
+            json!([{ "payment_id": "pay-cash", "amount": 100 }]),
+            refund_options(),
+            json!([]),
+        ))
+        .expect_err("venta ajena");
+        assert!(err.starts_with("sales.sale_not_found"), "{err}");
+    }
+
+    #[test]
+    fn el_evento_lleva_refund_ref_ESTABLE_igual_al_id_del_documento() {
+        // Lo pidió `services` en la issue: `refund_ref` es la clave de idempotencia de
+        // `services.packages.refund_redemption`. Si fuera un uuid nuevo por intento, el segundo
+        // reintento se rechazaría como doble devolución del bono — correcto, pero ilegible.
+        let out = refund_sale_pure(refund_input(json!([
+            { "payment_id": "pay-card", "amount": 5000 },
+            { "payment_id": "pay-cash", "amount": 2000 }
+        ])))
+        .expect("devolución total");
+
+        let ev = out.events.iter().find(|e| e.name == "sale.refunded").expect("evento");
+        assert_eq!(ev.payload["refund_id"], json!("ref-1"));
+        assert_eq!(ev.payload["refund_ref"], ev.payload["refund_id"], "la referencia ES el documento");
+        assert_eq!(ev.payload["sale_id"], json!("sale-1"));
+        assert_eq!(ev.payload["total"], json!(7000));
+        assert_eq!(ev.payload["refunded_by"], json!("u-manager"));
+        assert_eq!(ev.payload["fully_refunded"], json!(true));
+        assert_eq!(ev.payload["payments"].as_array().map(|a| a.len()), Some(2),
+                   "las patas viajan: el arqueo las necesita una a una");
+        assert_eq!(out.events.iter().filter(|e| e.name == "sale.refunded").count(), 1);
+
+        // Y la referencia vuelve al que llamó, que es como el TPV se la pasa a `services` sin
+        // adivinarla ni recomponerla desde la lista.
+        let res = out.result.expect("la devolución responde con su documento");
+        assert_eq!(res["refund_id"], json!("ref-1"));
+        assert_eq!(res["refund_ref"], json!("ref-1"));
+        assert_eq!(res["total"], json!(7000));
+        assert_eq!(res["already"], json!(false));
+    }
+
+    #[test]
+    fn una_devolucion_PARCIAL_no_marca_la_venta_como_devuelta() {
+        let out = refund_sale_pure(refund_input(json!([
+            { "payment_id": "pay-cash", "amount": 1000 }
+        ])))
+        .expect("parcial");
+        let ev = out.events.iter().find(|e| e.name == "sale.refunded").expect("evento");
+        assert_eq!(ev.payload["fully_refunded"], json!(false));
+        assert!(!out.operations.iter().any(|o| o.command == "sales._mark_refunded"),
+                "la venta sigue viva: quedan 60,00 € cobrados");
+    }
+
+    #[test]
+    fn cuando_vuelve_el_ultimo_centimo_la_venta_queda_marcada_como_devuelta() {
+        // Sin esta marca, la lista de ventas sigue diciendo `completed` sobre una venta que ya no
+        // tiene dinero detrás — y el histórico miente en la única pantalla que el dueño mira.
+        let out = refund_sale_pure(refund_input(json!([
+            { "payment_id": "pay-card", "amount": 5000 },
+            { "payment_id": "pay-cash", "amount": 2000 }
+        ])))
+        .expect("total");
+        let mark = out.operations.iter().find(|o| o.command == "sales._mark_refunded").expect("la marca");
+        assert_eq!(mark.params["sale_id"], json!("sale-1"));
+    }
+
+    #[test]
+    fn un_reintento_con_la_MISMA_clave_no_escribe_nada_y_devuelve_el_MISMO_documento() {
+        // Se cae el wifi entre el INSERT y la respuesta y el cajero vuelve a pulsar. Sin esto, el
+        // segundo intento es una SEGUNDA devolución: el dinero sale dos veces.
+        let mut inp = refund_input(json!([{ "payment_id": "pay-cash", "amount": 2000 }]));
+        inp["context"]["reads"]["sales.refund_by_idempotency_key"] =
+            json!([{ "id": "ref-ya-escrito", "sale_id": "sale-1", "total": 2000 }]);
+
+        let out = refund_sale_pure(inp).expect("reintento limpio");
+        assert!(out.operations.is_empty(), "un reintento no escribe: {:?}", out.operations);
+        assert!(out.events.is_empty(), "ni vuelve a emitir");
+        let res = out.result.expect("un reintento SÍ responde: el que llama necesita la referencia");
+        assert_eq!(res["already"], json!(true));
+        assert_eq!(res["refund_id"], json!("ref-ya-escrito"));
+        assert_eq!(res["refund_ref"], json!("ref-ya-escrito"));
+    }
+
+    #[test]
+    fn sin_ids_del_host_no_se_escriben_filas_con_clave_vacia() {
+        let mut inp = refund_input(json!([{ "payment_id": "pay-cash", "amount": 100 }]));
+        inp["context"]["new_ids"] = json!(["ref-1"]); // cabecera sí, pata no
+        let err = refund_sale_pure(inp).expect_err("sin ids");
         assert!(err.contains("sales.too_many_rows"), "{err}");
     }
 

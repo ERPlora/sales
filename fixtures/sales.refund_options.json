@@ -1,0 +1,26 @@
+[
+  {
+    "payment_id": "pay-card",
+    "sort_order": 0,
+    "payment_method_id": "pm-card",
+    "payment_method_name": "Card",
+    "payment_method_type": "card",
+    "charged": 5000,
+    "refunded": 0,
+    "remaining": 5000,
+    "refundable": 0,
+    "reason": "method_unavailable"
+  },
+  {
+    "payment_id": "pay-cash",
+    "sort_order": 1,
+    "payment_method_id": "pm-cash",
+    "payment_method_name": "Cash",
+    "payment_method_type": "cash",
+    "charged": 2000,
+    "refunded": 500,
+    "remaining": 1500,
+    "refundable": 1,
+    "reason": ""
+  }
+]

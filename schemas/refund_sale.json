@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sales.refund — payload",
+  "description": "Refunds a COMPLETED sale by ELIGIBLE TENDER, with an EDITABLE split (ADR-0386 decision 3). The operator decides how much goes back to each leg of the original payment; the proportional split is the screen's default proposal, not a cage. Two independent axes: `payment_id` is where the money comes FROM (capped at what that leg was charged minus what it already gave back — going over is refused naming which leg), and the optional `to_payment_method_id` is where it goes TO (defaults to the leg's own method; needed when that method is no longer available, which is the case Square never solved). Unlike sales.void, an invoiced sale CAN be refunded: the refund is the economic fact and the credit note is its document.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sale_id", "reason", "allocations"],
+  "properties": {
+    "sale_id": { "type": "string", "minLength": 1 },
+    "reason": { "type": "string", "minLength": 1, "maxLength": 500, "description": "Why the money goes back: shown in the sale's history and carried in sale.refunded." },
+    "note": { "type": "string", "maxLength": 500 },
+    "idempotency_key": { "type": "string", "maxLength": 120, "description": "One per refund ATTEMPT. A retry with the same key writes nothing and answers with the SAME refund id — which is the stable refund_ref services needs to give a voucher session back." },
+    "allocations": {
+      "type": "array",
+      "minItems": 1,
+      "description": "How much goes back to each tender. Legs not named here get nothing.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["payment_id", "amount"],
+        "properties": {
+          "payment_id": { "type": "string", "minLength": 1, "description": "The leg of the original payment (sales.payments) whose money comes back." },
+          "amount": { "type": "integer", "minimum": 1, "description": "Cents (ADR-0123). Never more than that leg's `remaining` in sales.refund_options." },
+          "to_payment_method_id": { "type": "string", "description": "Where the money physically goes. Omit to return it the way it was charged; name another method when the original one is no longer available." }
+        }
+      }
+    }
+  }
+}

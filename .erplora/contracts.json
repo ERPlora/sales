@@ -15,6 +15,7 @@
       "sales.order.lines",
       "sales.orders.list",
       "sales.payment_methods",
+      "sales.refund_options",
       "sales.settings.get",
       "sales.stats",
       "taxes.categories.list",
@@ -43,6 +44,7 @@
       "sales.order.split",
       "sales.order.update_line",
       "sales.order.void",
+      "sales.refund",
       "sales.void"
     ],
     "events": [
