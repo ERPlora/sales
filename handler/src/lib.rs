@@ -640,6 +640,33 @@ struct ComboLine {
     /// Snapshot inmutable del combo (regla 6 de ADR-0381), congelado en CADA hermana: cambiar el
     /// menú mañana no reescribe la comanda de ayer.
     snapshot: String,
+    /// Las unidades que mueven el STOCK de esta línea (sales#171 / inventory#69), **por unidad de
+    /// combo**: el multiplicador de la línea se aplica al armar el evento.
+    ///
+    /// Va llena SOLO cuando el combo se cobró como UNA línea, que es justo cuando esa línea no
+    /// tiene `product_id` propio y nadie más puede saber qué salió del almacén. Cuando el combo se
+    /// PARTE en hermanas, cada hermana YA es un componente con su artículo y su cantidad: colgarle
+    /// además esta lista descontaría cada artículo una vez por hermana.
+    stock_components: Vec<ComboComponent>,
+}
+
+/// Un componente del combo visto como UNIDAD DE STOCK: lo que `inventory` necesita para mover
+/// existencias, con los MISMOS campos que ya lleva una línea de venta.
+///
+/// El contrato que viaja en el evento es genérico a propósito y no lo puso `sales`: lo fijó
+/// `inventory` (inventory#69) como «una línea que lleva `components[]` no vacío cede su stock a
+/// ellos». No nombra la palabra «combo», sirve para cualquier línea compuesta que venga después, y
+/// por eso `sales` sigue SIN `depends_on` de `combos` ni de `inventory`.
+#[derive(Clone)]
+struct ComboComponent {
+    /// El artículo real detrás de la elección (`source_ref`). `combos` lo referencia de forma
+    /// OPACA (`source`/`source_ref`, sin FK), así que aquí viaja tal cual.
+    product_id: String,
+    /// Nombre de display, el mismo que llevaría la línea si el componente se hubiese vendido suelto.
+    product_name: String,
+    /// Un servicio dentro de un combo (el corte del pack de peluquería) NO mueve stock, y eso es
+    /// lo NORMAL, no un error: se salta ese componente y los demás se descuentan igual.
+    is_service: bool,
 }
 
 /// Precio de catálogo y categoría fiscal de un componente, leídos de `inventory.products.for_sale`.
@@ -847,6 +874,16 @@ fn expand_combo(
             })
         })
         .collect();
+    // Las unidades de stock del combo, en el MISMO orden de elección que el snapshot: una por
+    // pick, porque cada elección es una unidad de ese artículo por unidad de combo.
+    let stock_components: Vec<ComboComponent> = chosen
+        .iter()
+        .map(|(pick, row)| ComboComponent {
+            product_id: field(row, "source_ref"),
+            product_name: str_or(pick, "product_name", &combo_name),
+            is_service: field(row, "source") == "service",
+        })
+        .collect();
     let kitchen_name = {
         let k = field(head, "combo_kitchen_name");
         if k.is_empty() { combo_name.clone() } else { k }
@@ -902,7 +939,16 @@ fn expand_combo(
         inherit(&mut p);
         return Ok(vec![(
             Value::Object(p),
-            ComboLine { unit_price: dividend, tax_category_key: cat, group_ref, snapshot },
+            ComboLine {
+                unit_price: dividend,
+                tax_category_key: cat,
+                group_ref,
+                snapshot,
+                // 🔴 Esta línea NO tiene `product_id` —un combo no es un artículo del catálogo— así
+                // que sin esta lista `inventory` no tendría a qué agarrarse: caería a la línea, el
+                // `WHERE` de su `_decrease_stock` no casaría ninguna fila y el SQL respondería `ok`.
+                stock_components,
+            },
         )]);
     }
 
@@ -929,6 +975,10 @@ fn expand_combo(
                 tax_category_key: cat.clone(),
                 group_ref: group_ref.clone(),
                 snapshot: snapshot.clone(),
+                // La hermana YA es un componente, con su `product_id` y la cantidad heredada del
+                // combo: mueve su propio stock. Repetir aquí la lista entera descontaría cada
+                // artículo una vez POR HERMANA.
+                stock_components: Vec::new(),
             },
         ));
     }
@@ -1810,6 +1860,34 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
                 // esto, `inventory` no puede mover el stock de los componentes de un menú que salió
                 // como UNA línea (no hay `product_id` que mirar — es la regla 8, inventory#69) y el
                 // documento de `invoice` no puede nombrar el menú que cobró.
+                // sales#171 · LAS UNIDADES DE STOCK DE ESTA LÍNEA. Contrato genérico de
+                // inventory#69: una línea con `components[]` no vacío cede su stock a ellos. Un
+                // menú cobrado como UNA línea no tiene `product_id`, así que sin esto `inventory`
+                // caía a la propia línea, no casaba ninguna fila y respondía `ok` — el stock no se
+                // movía y NADIE se enteraba. `null` en una línea que ya mueve su propio stock (una
+                // venta suelta, o una hermana de un combo partido: descontaría dos veces).
+                //
+                // ⚠️ `quantity` es ABSOLUTA y en punto fijo 10⁶ (ADR-0147), igual que la de la
+                // línea de la que cuelga: el multiplicador de la línea se aplica AQUÍ. Leerla como
+                // «por unidad de combo» descontaría una ración donde se sirvieron tres, y el mismo
+                // payload significaría dos cosas en dos niveles de anidamiento.
+                "components": it_combo
+                    .as_ref()
+                    .filter(|c| !c.stock_components.is_empty())
+                    .map(|c| {
+                        Value::Array(
+                            c.stock_components
+                                .iter()
+                                .map(|k| json!({
+                                    "product_id": k.product_id,
+                                    "product_name": k.product_name,
+                                    "quantity": qty,
+                                    "is_service": k.is_service,
+                                }))
+                                .collect(),
+                        )
+                    })
+                    .unwrap_or(Value::Null),
                 "combo_group_ref": it_combo.as_ref().map(|c| json!(c.group_ref)).unwrap_or(Value::Null),
                 "combo": it_combo
                     .as_ref()
