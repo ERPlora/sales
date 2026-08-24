@@ -935,7 +935,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     let mut ops: Vec<Operation> = Vec::new();
     // sales#113: las líneas se calculan primero y se emiten después (el importe fijo se reparte
     // cuando se conocen todas).
-    struct PendingLine { t: LineTotals, parts: Vec<(String, i64, i64)>, is_gift: bool, resolved: ResolvedTax, combined_pct: f64, unit_price: i64, qty: i64, line_disc: f64, item: Value, modifiers: String }
+    struct PendingLine { t: LineTotals, parts: Vec<(String, i64, i64)>, is_gift: bool, covered: bool, resolved: ResolvedTax, combined_pct: f64, unit_price: i64, qty: i64, line_disc: f64, item: Value, modifiers: String }
     let mut pending_lines: Vec<PendingLine> = Vec::new();
 
     let mut bump = Map::new();
@@ -990,6 +990,16 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         // entra en el desglose de IVA (base 0). Acumula su COSTE (a coste, decisión del humano) en
         // `gift_total` para el arqueo "Invitaciones". Sigue descontando stock (el evento lleva qty).
         let is_gift = item.get("is_gift").map(as_bool).unwrap_or(false);
+        // CUBIERTA POR UN TENDER EXTERNO (sales#162 / ADR-0386): otro módulo ya cobró esta línea
+        // —el bono de `services` cubre LÍNEAS enteras, no importes— así que aquí vale net/tax/total
+        // = 0 y NO entra en el desglose de IVA. Sigue en la venta: la clienta se llevó el corte y
+        // el tique tiene que nombrarlo. Fiscalmente es lo correcto para un bono univalente: el
+        // registro salió al VENDER el bono y el canje «no se considerará una operación
+        // independiente» (art. 30 ter.1 de la Directiva 2006/112/CE).
+        //
+        // 🔴 No es un descuento (no toca `discount_amount` ni el ajuste `allow_discounts`) y no es
+        // una invitación (no acumula coste en `gift_total`): el salón no regala nada, ya cobró.
+        let covered = item.get("covered").map(as_bool).unwrap_or(false);
         // DESCUENTO GLOBAL prorrateado a la LÍNEA (sales#33): factor multiplicativo con el
         // descuento propio de la línea. Así el snapshot fiscal por línea (net/tax) YA lleva el
         // descuento y TODO lo que deriva de él —desglose por tipo, evento `sale.completed`,
@@ -997,7 +1007,9 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         // AEAT recibía la base sin descontar (cliente paga 4,50 €, factura decía 5,00 €).
         // La columna `discount_percent` de la línea conserva SOLO el suyo (el global va en el header).
         let eff_disc = 100.0 * (1.0 - (1.0 - line_disc / 100.0) * (1.0 - sale_disc / 100.0));
-        let (t, parts) = if is_gift {
+        let (t, parts) = if covered {
+            (LineTotals { net: 0, tax: 0, line: 0 }, Vec::<(String, i64, i64)>::new())
+        } else if is_gift {
             // El coste de una invitación va al arqueo (`gift_total`), así que también es un número
             // que decide dinero: sale del catálogo cuando la línea es de catálogo (sales#68).
             let cost = item_cost;
@@ -1014,19 +1026,21 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         };
         // Bruto SIN descuento global (mismo cálculo con solo el descuento de línea): la resta de
         // ambos brutos es el `discount_amount` que ve el cliente en el ticket.
-        gross_pre_disc += if is_gift || sale_disc <= 0.0 {
+        gross_pre_disc += if is_gift || covered || sale_disc <= 0.0 {
             t.line
         } else {
             calc_line_components(unit_price, qty, price_qty, line_disc, tax_incl, components).0.line
         };
         // sales#113: la línea se guarda calculada; el importe fijo se reparte cuando se conocen
         // TODAS (fase 2, más abajo) y solo entonces se agrega y se emite.
-        pending_lines.push(PendingLine { t, parts, is_gift, resolved, combined_pct, unit_price, qty, line_disc, item: item.clone(), modifiers: modifier_snapshot });
+        pending_lines.push(PendingLine { t, parts, is_gift, covered, resolved, combined_pct, unit_price, qty, line_disc, item: item.clone(), modifiers: modifier_snapshot });
     }
 
     // ── Fase 2 (sales#113): reparto del importe fijo por RESTO MAYOR entre las líneas cobradas ──
     if sale_disc_amount > 0 {
-        let weights: Vec<i64> = pending_lines.iter().map(|l| if l.is_gift { 0 } else { l.t.line }).collect();
+        // Una línea que no se cobra (invitación o cubierta por otro tender) pesa 0: darle un trozo
+        // del importe fijo lo aplicaría sobre un 0 y el descuento se evaporaría, cobrando de más.
+        let weights: Vec<i64> = pending_lines.iter().map(|l| if l.is_gift || l.covered { 0 } else { l.t.line }).collect();
         let payable: i64 = weights.iter().sum();
         if sale_disc_amount > payable {
             return Err(reject("sales.discount_out_of_range", format!("discount_amount {sale_disc_amount} above the gross {payable}")));
@@ -1041,7 +1055,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     // ── Fase 3: agregar y emitir las líneas ──
     let mut line_results: Vec<LineTotals> = Vec::with_capacity(pending_lines.len());
     for (i, l) in pending_lines.into_iter().enumerate() {
-        let PendingLine { t, parts, is_gift, resolved, combined_pct, unit_price, qty, line_disc, item, modifiers } = l;
+        let PendingLine { t, parts, is_gift, covered, resolved, combined_pct, unit_price, qty, line_disc, item, modifiers } = l;
         let item = &item;
         // `tax_total` YA NO se acumula por línea: la cuota que se DECLARA sale del desglose, una
         // sola vez por tipo impositivo (ADR-0123 §4). `t.tax` queda como informativo de la línea.
@@ -1076,6 +1090,10 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         // net/tax/total = 0; `gift_reason` da el motivo (cortesía/error cocina/fidelización…).
         p.insert("is_gift".into(), json!(is_gift as i64));
         p.insert("gift_reason".into(), json!(if is_gift { str_or(item, "gift_reason", "") } else { String::new() }));
+        // sales#162: la línea deja escrito que la pagó un tender EXTERNO. Sin esta marca, un 0 € en
+        // un documento fiscal no se distingue de un error de precio ni de una invitación, y el
+        // papel no tiene con qué explicárselo al cliente.
+        p.insert("is_covered".into(), json!(covered as i64));
         // ── Snapshot fiscal inmutable de la línea (ADR-0085) ──
         p.insert("tax_category_key".into(), json!(field(item, "tax_category_key")));
         // sales#12: la categoría del producto también se congela (routing de cocina; misma regla).
@@ -1326,10 +1344,14 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
             // Invitación: net/tax = 0 en el evento (invoice/customers no facturan la cortesía). Sigue
             // descontando stock (inventory usa product_id+quantity). Mismo gating que arriba.
             let it_gift = it.get("is_gift").map(as_bool).unwrap_or(false);
+            // sales#162: cubierta por un tender externo → net/tax 0 en el evento, igual que la fila.
+            // `invoice` construye el documento de ESTOS números: sin esto declararía IVA por una
+            // sesión que ya se gravó al vender el bono.
+            let it_covered = it.get("covered").map(as_bool).unwrap_or(false);
             // El descuento GLOBAL también viaja prorrateado en el evento (sales#33): `invoice`
             // construye la factura de estos net/tax — sin esto declararía la base sin descontar.
             let eff_disc = 100.0 * (1.0 - (1.0 - line_disc / 100.0) * (1.0 - sale_disc / 100.0));
-            let (t, _parts) = if it_gift {
+            let (t, _parts) = if it_gift || it_covered {
                 (LineTotals { net: 0, tax: 0, line: 0 }, Vec::<(String, i64, i64)>::new())
             } else {
                 calc_line_components(unit_price, qty, price_qty, eff_disc, tax_incl, &resolved.components)
@@ -1350,6 +1372,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
                 "net_amount": t.net,                // céntimos: base imponible YA extraída (0 si invitación)
                 "tax_amount": t.tax,                // céntimos: IVA YA calculado (0 si invitación)
                 "is_gift": it_gift,                 // invitación/regalo (comp)
+                "covered": it_covered,              // la pagó un tender externo (sales#162)
                 "is_service": it.get("is_service").map(as_bool).unwrap_or(false),
                 // category_id por línea (aditivo, QA 2026-06-25): el KDS enruta la comanda a su
                 // estación (station_id) por la categoría del producto. Sin esto, el KDS recibe
@@ -2812,6 +2835,81 @@ mod tests {
         assert_eq!(ev["items"][0]["is_gift"], json!(true));
         assert_eq!(ev["items"][0]["net_amount"], json!(0));
         assert_eq!(ev["total"], json!(500));
+    }
+
+    #[test]
+    fn covered_line_is_worth_nothing_and_is_not_a_discount() {
+        // sales#162 / ADR-0386 — una línea que un TENDER EXTERNO ya pagó (el bono de `services`
+        // cubre LÍNEAS, no importes). Vale net/tax/total = 0, sigue en la venta —la clienta SÍ se
+        // llevó el corte, y el tique tiene que nombrarlo— y el resto del ticket se cobra normal.
+        //
+        // 🔴 NO es un descuento y no puede modelarse como uno: `discount: 100` entraría en
+        // `discount_amount` (mentiría en los libros diciendo que el salón regaló 18 €) y un hub con
+        // `allow_discounts` desactivado RECHAZARÍA el canje, que es lo contrario de lo que pasa.
+        //
+        // 🔴 Tampoco es una invitación: un comp acumula su COSTE en `gift_total` para el arqueo, y
+        // una sesión de bono no es una cortesía del salón — se cobró al vender el bono.
+        //
+        // Fiscalmente esto es lo correcto para un bono UNIVALENTE (ADR-0386 §5): el registro salió
+        // al VENDER el bono, con el IVA del servicio, y el canje «no se considerará una operación
+        // independiente» (art. 30 ter.1 de la Directiva 2006/112/CE). Base 0, cuota 0.
+        let items = json!([
+            { "product_name": "Corte", "price": 1800, "quantity": 1_000_000,
+              "tax_category_key": "service.generic", "tax_rate": 21.0, "is_service": true,
+              "covered": true, "cost": 400 },
+            { "product_name": "Champú", "price": 900, "quantity": 1_000_000,
+              "tax_category_key": "product.generic", "tax_rate": 21.0 }
+        ]);
+        let rules = json!([
+            { "id": "r-svc", "country_code": "ES", "region_code": null, "tax_category_key": "service.generic", "rate_pct": 21.0, "tax_type": "vat", "parent_id": null, "is_active": 1 },
+            { "id": "r-prod", "country_code": "ES", "region_code": null, "tax_category_key": "product.generic", "rate_pct": 21.0, "tax_type": "vat", "parent_id": null, "is_active": 1 }
+        ]);
+        let mut inp = input(items, 8, 900);
+        inp["context"]["country_code"] = json!("ES");
+        inp["context"]["reads"] = json!({ "taxes.rules.list": rules });
+        let out = sale(inp);
+
+        let corte = &out.operations[2].params;
+        assert_eq!(corte["is_covered"], json!(1), "la fila deja escrito que otro tender la pagó");
+        assert_eq!(corte["net_amount"], json!(0));
+        assert_eq!(corte["tax_amount"], json!(0));
+        assert_eq!(corte["line_total"], json!(0));
+        assert_eq!(corte["unit_price"], json!(1800), "el precio se conserva para el papel");
+        assert_eq!(corte["is_gift"], json!(0), "cubierto no es invitación");
+        assert_eq!(corte["discount_percent"], json!(0.0), "cubierto no es descuento");
+
+        let champu = &out.operations[3].params;
+        assert_eq!(champu["is_covered"], json!(0));
+        assert_eq!(champu["line_total"], json!(900), "el resto del ticket se cobra igual");
+
+        let h = &out.operations[1].params;
+        assert_eq!(h["total"], json!(900), "solo se cobra lo no cubierto");
+        assert_eq!(h["gift_total"], json!(0), "el coste NO va al arqueo de invitaciones");
+        assert_eq!(h["discount_amount"], json!(0), "y no aparece como descuento concedido");
+
+        let ev = &out.events[0].payload;
+        assert_eq!(ev["items"][0]["covered"], json!(true));
+        assert_eq!(ev["items"][0]["net_amount"], json!(0), "`invoice` no declara base por la sesión");
+        assert_eq!(ev["items"][0]["tax_amount"], json!(0));
+        assert_eq!(ev["total"], json!(900));
+    }
+
+    #[test]
+    fn covered_line_does_not_take_a_share_of_the_fixed_discount() {
+        // sales#113 reparte el importe fijo por RESTO MAYOR entre las líneas cobradas. Una línea
+        // cubierta no se cobra, así que no puede llevarse un trozo: si se lo llevara, el descuento
+        // se evaporaría (aplicado sobre un 0) y el cliente pagaría de más.
+        let items = json!([
+            { "product_name": "Corte", "price": 1800, "quantity": 1_000_000, "tax_rate": 21.0, "covered": true },
+            { "product_name": "Champú", "price": 900, "quantity": 1_000_000, "tax_rate": 21.0 }
+        ]);
+        let mut inp = input(items, 8, 800);
+        inp["payload"]["discount_amount"] = json!(100);
+        let out = sale(inp);
+        let h = &out.operations[1].params;
+        assert_eq!(h["total"], json!(800), "900 - 100: el descuento cae ENTERO sobre lo cobrado");
+        assert_eq!(out.operations[2].params["line_total"], json!(0));
+        assert_eq!(out.operations[3].params["line_total"], json!(800));
     }
 
     // ── ADR-0147 · contrato de la CANTIDAD: punto fijo global 10⁶ ────────────────────────────

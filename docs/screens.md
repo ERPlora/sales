@@ -87,6 +87,27 @@ Select the lines this person is paying for and charge them. Those lines are mark
 to the sale that charged them; the check **stays open** with the rest. One order can produce several
 sales this way. Selection is **per whole line** today.
 
+### A line somebody already paid for (sales#162 / ADR-0386)
+
+The checkout hosts one more slot, `sales.pos.tender`, mounted **per line** rather than per ticket.
+A prepaid voucher is N uses of concrete services, not a wallet, so it covers a service **line**
+whole or not at all, and whatever it does not cover is charged with its own payment method.
+
+What the till does is host the slot and do the arithmetic. It offers it on the service lines of the
+charge when a customer is assigned, hands the filler four values (`customer-id`, `service-id`,
+`checkout-ref`, `line-ref`) and listens for two events: the line stops being charged, or it counts
+again. What is on offer there — which voucher, how many sessions are left afterwards, why that one
+— belongs to the module that provides the slot. **Sales never learns what a voucher is**, and a hub
+without that module sees the checkout it always had: no calls, no empty row.
+
+A confirmed redemption leaves the line **on the ticket at 0,00 € with «Ya pagado» next to it**, not
+off it: the customer did get the haircut. It is neither a discount (the business gave nothing away
+— it was paid when the voucher was sold) nor a comp, and the paper says so. Fiscally the record
+came out when the voucher was sold, so redeeming it issues no second document.
+
+A line of more than one is **not** offered: one redemption covers one line and spends one session,
+so «Corte × 3» would hand out three sessions for one. The screen says that instead of hiding.
+
 ### Merge two checks
 
 When two tables that both ordered are merged, every unpaid line of one check moves into the other and

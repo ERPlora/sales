@@ -126,6 +126,11 @@ export interface SaleLineRow {
   line_total: number;
   is_gift?: number;
   gift_reason?: string;
+  /** sales#162 / ADR-0386 — la línea la pagó un TENDER EXTERNO por línea (un bono cubre líneas
+   *  enteras, no importes). Vale 0 en el documento y el papel lo dice: un «0,00» a secas se lee
+   *  como un error de precio, o como que el negocio regaló el servicio, y no es ni una cosa ni la
+   *  otra — el dinero entró al VENDER el bono. La marca es OPACA: `sales` no nombra la familia. */
+  is_covered?: number;
   /** ── Contexto de unidades CONGELADO en la línea (ADR-0147 §2.4; sales#28): la fila ya lo
    *  devuelve y el PAPEL lo pinta — la cantidad con su unidad y el precio con la suya. Sin
    *  unidad (línea antigua o `ud`) no hay nada que etiquetar. */
@@ -175,9 +180,16 @@ export function parseModifierSnapshot(raw: unknown): PrintedModifier[] | undefin
   return out.length ? out : undefined;
 }
 
-/** Etiqueta de línea para el documento: añade "(Invitación)" a una línea regalo (comp). */
-function lineLabel(l: SaleLineRow): string {
-  return Number(l.is_gift) ? `${l.product_name} (Invitación)` : l.product_name;
+/** Etiqueta de línea para el documento: marca la invitación (comp) y la línea que pagó un tender
+ *  externo (sales#162). Sin `t` —llamadas legadas— se imprime la fuente canónica en inglés
+ *  (ADR-0055), nunca la clave: el papel sale de la impresora igual y tiene que ser legible. */
+function lineLabel(l: SaleLineRow, t?: Translate): string {
+  if (Number(l.is_gift)) return `${l.product_name} (Invitación)`;
+  if (Number(l.is_covered)) {
+    const label = t?.('ui.linePaidElsewhere');
+    return `${l.product_name} (${label && label !== 'ui.linePaidElsewhere' ? label : 'Prepaid'})`;
+  }
+  return l.product_name;
 }
 
 /** Subconjunto de `sales.settings.get` que afecta al documento. */
@@ -363,7 +375,7 @@ export function saleToReceipt(
     datetime: formatDateTime(sale.created_at, locale),
     customer: fiscal.customer_name || sale.customer_name || undefined,
     lines: lines.map((l): PaperReceiptLine => ({
-      name: lineLabel(l),
+      name: lineLabel(l, t),
       qty: fromMicro(Number(l.quantity)), // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
       unit_price: toEuros(l.unit_price),
       total: toEuros(l.line_total),
@@ -403,7 +415,7 @@ export function saleToInvoice(
     // sales#28: `InvoiceLine` (outfitkit) no tiene campo de unidad, y la factura A4 debe decir
     // igualmente en qué va la línea — el hueco honesto es la descripción, como «Vino (botella)»:
     // «Tomate rosa (kg)». Sin unidad o con la suelta, la descripción queda como estaba.
-    description: unitTag(l.unit_code) ? `${lineLabel(l)} (${unitTag(l.unit_code)})` : lineLabel(l),
+    description: unitTag(l.unit_code) ? `${lineLabel(l, t)} (${unitTag(l.unit_code)})` : lineLabel(l, t),
     qty: fromMicro(Number(l.quantity)), // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
     unit_price: toEuros(l.unit_price),
     discount_percent: l.discount_percent ? Number(l.discount_percent) : undefined,

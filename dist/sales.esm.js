@@ -9,7 +9,7 @@ var __decorateClass = (decorators, target, key, kind) => {
   return result;
 };
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
+// ../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
 var ElementInternalsShim = class ElementInternals {
   get shadowRoot() {
     return this.__host.__shadowRoot;
@@ -88,7 +88,7 @@ var ElementInternalsShim = class ElementInternals {
   }
 };
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
+// ../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
 var __classPrivateFieldSet = function(receiver, state, value, kind, f3) {
   if (kind === "m") throw new TypeError("Private method is not writable");
   if (kind === "a" && !f3) throw new TypeError("Private accessor was defined without a setter");
@@ -246,7 +246,7 @@ Object.defineProperties(CustomEventShim.prototype, {
 var EventShimWithRealType = EventShim;
 var CustomEventShimWithRealType = CustomEventShim;
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
+// ../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
 var _a2;
 var CSSRuleShim = (_a2 = class CSSRule {
   constructor() {
@@ -277,7 +277,7 @@ var CSSRuleShim = (_a2 = class CSSRule {
   }
 }, _a2.STYLE_RULE = 1, _a2.CHARSET_RULE = 2, _a2.IMPORT_RULE = 3, _a2.MEDIA_RULE = 4, _a2.FONT_FACE_RULE = 5, _a2.PAGE_RULE = 6, _a2.NAMESPACE_RULE = 10, _a2.KEYFRAMES_RULE = 7, _a2.KEYFRAME_RULE = 8, _a2.SUPPORTS_RULE = 12, _a2.COUNTER_STYLE_RULE = 11, _a2.FONT_FEATURE_VALUES_RULE = 14, _a2.MARGIN_RULE = 9, _a2);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit-labs/ssr-dom-shim/index.js
+// ../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/index.js
 globalThis.Event ??= EventShimWithRealType;
 globalThis.CustomEvent ??= CustomEventShimWithRealType;
 var constructionToken = Symbol();
@@ -674,7 +674,7 @@ var CustomElementRegistryShimWithRealType = CustomElementRegistry;
 var customElements2 = new CustomElementRegistryShimWithRealType();
 var windowShim = new WindowShim(constructionToken);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit/reactive-element/node/css-tag.js
+// ../../../module-toolkit/node_modules/@lit/reactive-element/node/css-tag.js
 var t = globalThis;
 var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
 var s = Symbol();
@@ -719,7 +719,7 @@ var c = e || void 0 === t.CSSStyleSheet ? (t7) => t7 : (t7) => t7 instanceof CSS
   return r(e7);
 })(t7) : t7;
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit/reactive-element/node/reactive-element.js
+// ../../../module-toolkit/node_modules/@lit/reactive-element/node/reactive-element.js
 var { is: h, defineProperty: r2, getOwnPropertyDescriptor: o2, getOwnPropertyNames: n2, getOwnPropertySymbols: a, getPrototypeOf: c2 } = Object;
 var l = globalThis;
 l.customElements ??= customElements2;
@@ -942,7 +942,7 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
 };
 g.elementStyles = [], g.shadowRootOptions = { mode: "open" }, g[f("elementProperties")] = /* @__PURE__ */ new Map(), g[f("finalized")] = /* @__PURE__ */ new Map(), u?.({ ReactiveElement: g }), (l.reactiveElementVersions ??= []).push("2.1.2");
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
+// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
 var t2 = globalThis;
 var i2 = (t7) => t7;
 var s2 = t2.trustedTypes;
@@ -1197,7 +1197,7 @@ var D = (t7, i7, s5) => {
   return h4._$AI(t7), h4;
 };
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
+// ../../node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
 var s3 = globalThis;
 var i3 = class extends g {
   constructor() {
@@ -1226,7 +1226,7 @@ var o4 = s3.litElementPolyfillSupport;
 o4?.({ LitElement: i3 });
 (s3.litElementVersions ??= []).push("4.2.2");
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit/reactive-element/node/decorators/property.js
+// ../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
 var r4 = (t7 = o5, e7, r6) => {
   const { kind: n6, metadata: i7 } = r6;
@@ -1256,15 +1256,15 @@ function n4(t7) {
   })(t7, e7, o9);
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit/reactive-element/node/decorators/state.js
+// ../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/state.js
 function r5(r6) {
   return n4({ ...r6, state: true, attribute: false });
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit/reactive-element/node/decorators/base.js
+// ../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/base.js
 var e3 = (e7, t7, c5) => (c5.configurable = true, c5.enumerable = true, Reflect.decorate && "object" != typeof t7 && Object.defineProperty(e7, t7, c5), c5);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit/reactive-element/node/decorators/query.js
+// ../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/query.js
 function e4(e7, r6) {
   return (n6, s5, i7) => {
     const o9 = (t7) => t7.renderRoot?.querySelector(e7) ?? null;
@@ -1288,14 +1288,14 @@ function e4(e7, r6) {
   };
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/define.js
+// ../../../outfitkit/dist/define.js
 function define(tag, ctor) {
   if (typeof customElements !== "undefined" && !customElements.get(tag)) {
     customElements.define(tag, ctor);
   }
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/tabbar.js
+// ../../../outfitkit/dist/tabbar.js
 var EPSILON = 1;
 var HINT_PX = 28;
 var HINT_VUELTA_MS = 420;
@@ -1353,7 +1353,7 @@ function bindTabbar(segment, opts = {}) {
   };
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/hub/packages/module-sdk/src/index.ts
+// ../../../hub/packages/module-sdk/src/index.ts
 function isEmpty(v3) {
   return v3 === null || v3 === void 0 || v3 === "";
 }
@@ -1768,8 +1768,13 @@ function parseModifierSnapshot(raw) {
   }).filter((m4) => m4.name || m4.option_id);
   return out.length ? out : void 0;
 }
-function lineLabel(l3) {
-  return Number(l3.is_gift) ? `${l3.product_name} (Invitaci\xF3n)` : l3.product_name;
+function lineLabel(l3, t7) {
+  if (Number(l3.is_gift)) return `${l3.product_name} (Invitaci\xF3n)`;
+  if (Number(l3.is_covered)) {
+    const label = t7?.("ui.linePaidElsewhere");
+    return `${l3.product_name} (${label && label !== "ui.linePaidElsewhere" ? label : "Prepaid"})`;
+  }
+  return l3.product_name;
 }
 var CLAIM_NOTE_FALLBACK = "Get your invoice";
 function claimPrintFields(fiscal, t7) {
@@ -1839,7 +1844,7 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", f
     datetime: formatDateTime(sale.created_at, locale),
     customer: fiscal.customer_name || sale.customer_name || void 0,
     lines: lines.map((l3) => ({
-      name: lineLabel(l3),
+      name: lineLabel(l3, t7),
       qty: fromMicro2(Number(l3.quantity)),
       // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
       unit_price: toEuros(l3.unit_price),
@@ -1868,7 +1873,7 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", f
     // sales#28: `InvoiceLine` (outfitkit) no tiene campo de unidad, y la factura A4 debe decir
     // igualmente en qué va la línea — el hueco honesto es la descripción, como «Vino (botella)»:
     // «Tomate rosa (kg)». Sin unidad o con la suelta, la descripción queda como estaba.
-    description: unitTag(l3.unit_code) ? `${lineLabel(l3)} (${unitTag(l3.unit_code)})` : lineLabel(l3),
+    description: unitTag(l3.unit_code) ? `${lineLabel(l3, t7)} (${unitTag(l3.unit_code)})` : lineLabel(l3, t7),
     qty: fromMicro2(Number(l3.quantity)),
     // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
     unit_price: toEuros(l3.unit_price),
@@ -2003,7 +2008,7 @@ function hash(s5) {
   return h4.toString(36);
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/shared/icons.js
+// ../../../outfitkit/dist/shared/icons.js
 var rawAdd = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M256 112v288m144-144H112"/></svg>';
 var rawAlertCircle = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="M256 48C141.31 48 48 141.31 48 256s93.31 208 208 208s208-93.31 208-208S370.69 48 256 48m0 319.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20m21.72-201.15l-5.74 122a16 16 0 0 1-32 0l-5.74-121.94v-.05a21.74 21.74 0 1 1 43.44 0Z"/></svg>';
 var rawAlertCircleOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" d="M448 256c0-106-86-192-192-192S64 150 64 256s86 192 192 192s192-86 192-192Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M250.26 166.05L256 288l5.73-121.95a5.74 5.74 0 0 0-5.79-6h0a5.74 5.74 0 0 0-5.68 6"/><path fill="currentColor" d="M256 367.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20"/></svg>';
@@ -2151,7 +2156,7 @@ function okIcon(value) {
   return BY_NAME2[value] ?? value;
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-inline-feedback.js
+// ../../../outfitkit/dist/ok-inline-feedback.js
 var __defProp2 = Object.defineProperty;
 var __decorateClass2 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2368,7 +2373,7 @@ __decorateClass2([
 ], OkInlineFeedback.prototype, "hasActions");
 define("ok-inline-feedback", OkInlineFeedback);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-qr.js
+// ../../../outfitkit/dist/ok-qr.js
 var __defProp3 = Object.defineProperty;
 var __decorateClass3 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -3016,7 +3021,7 @@ __decorateClass3([
 ], OkQr.prototype, "margin");
 define("ok-qr", OkQr);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-receipt.js
+// ../../../outfitkit/dist/ok-receipt.js
 var __defProp4 = Object.defineProperty;
 var __decorateClass4 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -3207,7 +3212,7 @@ __decorateClass4([
 ], OkReceipt.prototype, "labels");
 define("ok-receipt", OkReceipt);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-invoice.js
+// ../../../outfitkit/dist/ok-invoice.js
 var __defProp5 = Object.defineProperty;
 var __decorateClass5 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -3693,6 +3698,9 @@ var es_default = {
     fireFailed: "No se pudo enviar a cocina",
     splitFailed: "No se pudo dividir la cuenta",
     lineNotSaved: "No se pudo guardar ese art\xEDculo \u2014 vuelve a tocarlo",
+    linePaidElsewhere: "Ya pagado",
+    lineTenders: "L\xEDneas pagadas de otra forma",
+    tenderOneSessionPerLine: "Un canje cubre una l\xEDnea: separa la l\xEDnea para poder canjearla.",
     serverUnavailable: "El servidor no responde (puede estar reinici\xE1ndose). Int\xE9ntalo de nuevo en unos segundos y, si persiste, avisa al encargado.",
     checkoutUnknown: "No hemos podido confirmar si el cobro se complet\xF3. Compru\xE9balo en Ventas antes de volver a cobrar.",
     checkSales: "Comprobar en Ventas",
@@ -3985,6 +3993,9 @@ var en_default = {
     fireFailed: "Couldn't send to kitchen",
     splitFailed: "Couldn't split the check",
     lineNotSaved: "Couldn't save that item \u2014 tap again",
+    linePaidElsewhere: "Prepaid",
+    lineTenders: "Lines paid another way",
+    tenderOneSessionPerLine: "One redemption covers one line: split the line to redeem it.",
     serverUnavailable: "The server isn't responding (it may be restarting). Try again in a few seconds and, if it keeps happening, call the manager.",
     checkoutUnknown: "We couldn't confirm whether this charge went through. Check it in Sales before charging again.",
     checkSales: "Check in Sales",
@@ -4715,10 +4726,6 @@ function esParcial(cart, sel) {
   const conId = cart.filter((l3) => l3.line_id);
   return sel.size > 0 && sel.size < conId.length;
 }
-function splitTotal(cart, sel, ticketDiscount = 0) {
-  const lineas = sel.size ? cart.filter((l3) => l3.line_id && sel.has(l3.line_id)) : cart;
-  return cartTotal(lineas, ticketDiscount);
-}
 function splitPayload(cart, sel) {
   const parcial = esParcial(cart, sel);
   const lineas = parcial ? cart.filter((l3) => l3.line_id && sel.has(l3.line_id)) : cart;
@@ -4785,7 +4792,7 @@ function brandSvgFor(type, name) {
   return void 0;
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
+// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
 var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e5 = (t7) => (...e7) => ({ _$litDirective$: t7, values: e7 });
 var i4 = class {
@@ -4805,7 +4812,7 @@ var i4 = class {
   }
 };
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-html.js
+// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-html.js
 var e6 = class extends i4 {
   constructor(i7) {
     if (super(i7), this.it = A, i7.type !== t3.CHILD) throw Error(this.constructor.directiveName + "() can only be used in child bindings");
@@ -4823,7 +4830,7 @@ var e6 = class extends i4 {
 e6.directiveName = "unsafeHTML", e6.resultType = 1;
 var o6 = e5(e6);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-svg.js
+// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-svg.js
 var t4 = class extends e6 {
 };
 t4.directiveName = "unsafeSVG", t4.resultType = 2;
@@ -4864,7 +4871,21 @@ function chargeBlock(payable, tenders) {
   return remaining > 0 ? { reason: "remaining", remaining } : void 0;
 }
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-qty-stepper.js
+// ui/lib/line-tender.ts
+function tenderableLines(lines) {
+  return lines.filter(
+    (l3) => !!l3.is_service && !!l3.line_id && !l3.is_gift && Math.round(l3.price * l3.qty) > 0
+  );
+}
+function coverableLine(l3) {
+  return l3.qty === 1;
+}
+function uncoveredLines(lines, covered) {
+  if (!covered.size) return [...lines];
+  return lines.filter((l3) => !l3.line_id || !covered.has(l3.line_id));
+}
+
+// ../../../outfitkit/dist/ok-qty-stepper.js
 var __defProp6 = Object.defineProperty;
 var __decorateClass6 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -5072,7 +5093,7 @@ __decorateClass6([
 ], OkQtyStepper.prototype, "labels");
 define("ok-qty-stepper", OkQtyStepper);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-spotlight-search.js
+// ../../../outfitkit/dist/ok-spotlight-search.js
 var __defProp7 = Object.defineProperty;
 var __decorateClass7 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -5278,7 +5299,7 @@ __decorateClass7([
 ], OkSpotlightSearch.prototype, "input");
 define("ok-spotlight-search", OkSpotlightSearch);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-empty-state.js
+// ../../../outfitkit/dist/ok-empty-state.js
 var __defProp8 = Object.defineProperty;
 var __decorateClass8 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -5378,7 +5399,7 @@ __decorateClass8([
 ], OkEmptyState.prototype, "message");
 define("ok-empty-state", OkEmptyState);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-status-pill.js
+// ../../../outfitkit/dist/ok-status-pill.js
 var __defProp9 = Object.defineProperty;
 var __decorateClass9 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -5832,6 +5853,7 @@ var ErpPosTouch = class extends i3 {
     this.checkoutUnknown = false;
     this.parked = [];
     this.splitSel = /* @__PURE__ */ new Set();
+    this.covered = /* @__PURE__ */ new Map();
     this.parkedOpen = false;
     this.cartOpen = false;
     this.orderLabel = "";
@@ -5865,6 +5887,14 @@ var ErpPosTouch = class extends i3 {
     /** Fillers del slot de INFO del pedido (`sales.pos.order_info`, cabecera de ENVIADO):
      *  kitchen aporta su chip «Comandas · N» que abre el modal con estados en vivo. */
     this.infoFillers = [];
+    /** Fillers del slot de TENDER POR LÍNEA (`sales.pos.tender`, sales#162 / ADR-0386): `services`
+     *  aporta aquí su bono, que cubre UNA línea de servicio entera. El POS no sabe qué es un bono —
+     *  monta el slot, le pasa cuatro valores y escucha dos eventos. Sin el módulo dueño, `loadSlot`
+     *  devuelve vacío y el cobro es exactamente el de siempre. */
+    this.tenderFillers = [];
+    /** Una instancia por (filler × línea). Se guardan aquí para que la MISMA sobreviva a cerrar y
+     *  reabrir el sheet: el canje ya tomado sigue en pantalla, con su «deshacer». */
+    this.tenderEls = /* @__PURE__ */ new Map();
     // Comanda ATADA a la mesa (puntos 1+2): al cambiar de mesa se GUARDA la comanda de la mesa
     // actual y se RECUPERA la de la nueva (o el carrito suelto si es null). Así tocar una mesa
     // ocupada trae su tiquet a la pantalla de venta, como cualquier POS.
@@ -6026,6 +6056,23 @@ var ErpPosTouch = class extends i3 {
     };
     this.onOrderFire = () => {
       void this.fireToKitchen();
+    };
+    /** Una línea la cubrió un tender externo: sale del importe a cobrar y el resto del ticket sigue
+     *  cobrándose con su propio medio. El id del canje se guarda porque es lo que lo identifica. */
+    this.onLineTenderHeld = (e7) => {
+      const d3 = e7.detail;
+      if (!d3?.lineRef) return;
+      const next = new Map(this.covered);
+      next.set(d3.lineRef, String(d3.redemptionId ?? ""));
+      this.covered = next;
+    };
+    /** El cajero deshizo el canje antes de cobrar: la línea vuelve a contar. */
+    this.onLineTenderReleased = (e7) => {
+      const d3 = e7.detail;
+      if (!d3?.lineRef) return;
+      const next = new Map(this.covered);
+      next.delete(d3.lineRef);
+      this.covered = next;
     };
     this.onLocaleChange = () => this.requestUpdate();
     /** Asegura que existe un pedido abierto que respalde el carrito; devuelve su id ('' si falla).
@@ -6257,6 +6304,17 @@ var ErpPosTouch = class extends i3 {
       justify-content:center; border-radius:10px; border:1px solid var(--ion-border-color);
       background:var(--tile); color:var(--mut); cursor:pointer; }
     .tender-remove ion-icon { font-size:1.2rem; }
+    /* sales#162 — TENDER POR LÍNEA: un renglón por línea de servicio, con el hueco del slot debajo.
+       El importe cubierto se tacha: es la señal de un vistazo de que esa línea ya no se cobra. */
+    .tl-list { list-style:none; margin:0 0 .2rem; padding:0; display:flex; flex-direction:column; gap:.45rem; }
+    .tender-line { border:1px solid var(--ion-color-step-200,#e2e0dc); border-radius:.6rem; padding:.5rem .6rem; }
+    .tl-h { display:flex; align-items:baseline; justify-content:space-between; gap:.5rem; }
+    .tl-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .tl-amount { font-weight:800; white-space:nowrap; }
+    .tl-amount[data-covered] { text-decoration:line-through; color:var(--mut); }
+    .tl-slot { margin-top:.45rem; }
+    .tl-slot:empty { display:none; }
+    .tl-note { margin-top:.35rem; font-size:.8rem; color:var(--mut); }
     /* Entrar a repartir es SECUNDARIO (la mayoría de los cobros son de un solo medio); tomar la
        pata, en cambio, es lo que se pulsa una vez por medio, así que lleva el acento. */
     .pay-split-btn, .pay-add { display:flex; align-items:center; justify-content:center; gap:.45rem;
@@ -6626,6 +6684,8 @@ var ErpPosTouch = class extends i3 {
       this.addEventListener("erp:order-transfer", this.onOrderTransfer);
       this.addEventListener("erp:customer-context", this.onCustomerContext);
       this.addEventListener("erp:order-fire", this.onOrderFire);
+      this.addEventListener("erp:voucher-held", this.onLineTenderHeld);
+      this.addEventListener("erp:voucher-released", this.onLineTenderReleased);
       await this.resolveSlots();
       this.ensureSlotsMounted();
     } catch (e7) {
@@ -6645,6 +6705,8 @@ var ErpPosTouch = class extends i3 {
     this.removeEventListener("erp:order-transfer", this.onOrderTransfer);
     this.removeEventListener("erp:customer-context", this.onCustomerContext);
     this.removeEventListener("erp:order-fire", this.onOrderFire);
+    this.removeEventListener("erp:voucher-held", this.onLineTenderHeld);
+    this.removeEventListener("erp:voucher-released", this.onLineTenderReleased);
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = void 0;
@@ -6691,6 +6753,13 @@ var ErpPosTouch = class extends i3 {
       component: f3.component,
       el: document.createElement(f3.component)
     }));
+    let tender = [];
+    try {
+      tender = await sdk.loadSlot("sales.pos.tender") ?? [];
+    } catch {
+      tender = [];
+    }
+    this.tenderFillers = tender.map((f3) => f3.component);
     this.requestUpdate();
   }
   /** (Re)engancha los botones de los fillers en el header; idempotente, sobrevive a re-renders. */
@@ -6714,6 +6783,51 @@ var ErpPosTouch = class extends i3 {
       if (f3.el.parentElement === infoHost) continue;
       infoHost.appendChild(f3.el);
       this.emitPosState([f3]);
+    }
+    this.ensureTenderSlotsMounted();
+  }
+  /** Tender POR LÍNEA (`sales.pos.tender`, sales#162): una instancia del filler por línea de
+   *  servicio del cobro. Idempotente como el resto — el sheet se re-renderiza en cada tecla.
+   *
+   *  🔴 Las cuatro propiedades se ponen ANTES de insertar el elemento: el filler arranca su lectura
+   *  en `connectedCallback`, así que un insert primero lo haría preguntar por un cliente vacío y
+   *  pintar «este cliente no tiene bonos» encima de una clienta que sí lo tiene.
+   *
+   *  Las instancias se guardan en `tenderEls` y NO se recrean: cerrar el sheet desmonta el DOM del
+   *  cobro, y con un elemento nuevo el canje ya tomado desaparecería de la pantalla junto con su
+   *  «deshacer», dejando una sesión gastada que nadie puede devolver desde la caja. */
+  ensureTenderSlotsMounted() {
+    const lines = this.tenderLines;
+    const alive = /* @__PURE__ */ new Set();
+    for (const l3 of lines) {
+      if (!coverableLine(l3)) continue;
+      const host = [...this.renderRoot.querySelectorAll(".tender-line")].find((n6) => n6.dataset.line === l3.line_id)?.querySelector(".tl-slot");
+      if (!host) continue;
+      for (const component of this.tenderFillers) {
+        const key = `${component}::${l3.line_id}`;
+        alive.add(key);
+        let el = this.tenderEls.get(key);
+        if (!el) {
+          el = document.createElement(component);
+          this.tenderEls.set(key, el);
+        }
+        const props = el;
+        props.customerId = this.customerId ?? "";
+        props.serviceId = l3.id;
+        props.checkoutRef = this.orderId ?? "";
+        props.lineRef = l3.line_id;
+        if (el.parentElement !== host) host.appendChild(el);
+      }
+    }
+    for (const [key, el] of [...this.tenderEls]) {
+      if (alive.has(key)) continue;
+      el.remove();
+      this.tenderEls.delete(key);
+    }
+    if (this.covered.size) {
+      const billed = new Set(this.billedLines.map((l3) => l3.line_id));
+      const next = new Map([...this.covered].filter(([lineId]) => billed.has(lineId)));
+      if (next.size !== this.covered.size) this.covered = next;
     }
   }
   /** Cuenta a los fillers el estado mínimo del carrito (`erp:pos-state`). No viaja ninguna línea:
@@ -7729,9 +7843,25 @@ var ErpPosTouch = class extends i3 {
     if (this.tenderedShort) return { short: t5("ui.tenderedShort"), reason: t5("ui.tenderedShort") };
     return void 0;
   }
+  /** Las líneas que entran en ESTE cobro: la selección si la hay, o la cuenta entera (ADR-0146). */
+  get billedLines() {
+    return this.splitSel.size ? this.cart.filter((l3) => l3.line_id && this.splitSel.has(l3.line_id)) : this.cart;
+  }
+  /** De esas, las que todavía se cobran en DINERO: un tender externo pudo cubrir alguna entera
+   *  (sales#162). Es la lista que decide el importe en pantalla y la que el servidor recalcula. */
+  get chargedLines() {
+    return uncoveredLines(this.billedLines, new Set(this.covered.keys()));
+  }
+  /** Líneas del cobro a las que se les puede OFRECER un tender externo por línea. Vacío cuando
+   *  nadie hospeda el slot, cuando no hay cliente asignado (sin cliente no hay bono que ofrecer) o
+   *  cuando el pedido aún no existe: `checkout_ref` es lo que deja liquidar el canje por evento. */
+  get tenderLines() {
+    if (!this.tenderFillers.length || !this.customerId || !this.orderId) return [];
+    return tenderableLines(this.billedLines);
+  }
   /** Lo que se cobra AHORA: la selección si la hay, o la cuenta entera (ADR-0146). */
   get payable() {
-    const base = splitTotal(this.cart, this.splitSel, this.ticketDiscount);
+    const base = cartTotal(this.chargedLines, this.ticketDiscount);
     return Math.max(0, base - (this.splitSel.size ? 0 : this.ticketDiscountAmount));
   }
   // ── Precio libre / venta por DEPARTAMENTO (fuera de catálogo) ──────────────────────────────
@@ -7796,8 +7926,8 @@ var ErpPosTouch = class extends i3 {
     const checkoutKey = this.checkoutKey;
     const split = splitPayload(this.cart, this.splitSel);
     try {
-      const cobradas = split.line_ids ? this.cart.filter((l3) => l3.line_id && this.splitSel.has(l3.line_id)) : this.cart;
-      const items = cobradas.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: toMicro2(l3.qty), tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0, category_id: l3.category_id ?? this.primaryCategory(l3.id) ?? null, is_gift: l3.is_gift ?? false, gift_reason: l3.gift_reason ?? "", cost: l3.cost ?? 0, discount: l3.discount ?? 0, ...l3.modifiers?.length ? { modifiers: l3.modifiers.map((m4) => ({ option_id: m4.option_id })) } : {}, ...unitContextPayload(l3) }));
+      const cobradas = this.billedLines;
+      const items = cobradas.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: toMicro2(l3.qty), tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0, category_id: l3.category_id ?? this.primaryCategory(l3.id) ?? null, is_gift: l3.is_gift ?? false, gift_reason: l3.gift_reason ?? "", cost: l3.cost ?? 0, discount: l3.discount ?? 0, ...l3.modifiers?.length ? { modifiers: l3.modifiers.map((m4) => ({ option_id: m4.option_id })) } : {}, ...l3.line_id && this.covered.has(l3.line_id) ? { covered: true } : {}, ...unitContextPayload(l3) }));
       await erplora2().command("sales.complete_sale", {
         items,
         // sales#71: descuento de TICKET (%); el servidor lo prorratea por línea antes del IVA.
@@ -8272,6 +8402,29 @@ var ErpPosTouch = class extends i3 {
   /** Una línea de la cuenta. BLOQUEADA si ya salió a cocina (`fired_at`): la comida está en
    *  fuego — ni stepper ni invitación (el SQL también lo impone). Tocarla sigue marcándola para
    *  el cobro por partes: enviada ≠ no cobrable. */
+  /** TENDER POR LÍNEA (sales#162 / ADR-0386). Un bono cubre una LÍNEA entera, no un importe, así
+   *  que la pregunta «¿esto lo paga el bono?» se hace sobre la línea y no sobre el ticket. `sales`
+   *  pinta el renglón y el hueco; QUÉ se ofrece ahí lo decide el módulo que hospeda el slot.
+   *
+   *  Sin fillers (nadie provee el slot) no se pinta NADA: ni cabecera, ni lista, ni hueco vacío. */
+  renderLineTenders() {
+    const lines = this.tenderLines;
+    if (!lines.length) return A;
+    return b2`
+      <div class="pay-lbl">${t5("ui.lineTenders")}</div>
+      <ul class="tl-list">
+        ${lines.map((l3) => {
+      const isCovered = !!l3.line_id && this.covered.has(l3.line_id);
+      return b2`<li class="tender-line" data-line=${l3.line_id ?? ""}>
+            <div class="tl-h">
+              <span class="tl-name">${l3.name}</span>
+              <span class="tl-amount" ?data-covered=${isCovered}>${this.money(lineAmount(l3))}</span>
+            </div>
+            ${coverableLine(l3) ? b2`<div class="tl-slot"></div>` : b2`<div class="tl-note">${t5("ui.tenderOneSessionPerLine")}</div>`}
+          </li>`;
+    })}
+      </ul>`;
+  }
   renderLine(l3) {
     const locked = isLineLocked(l3);
     return b2`<ion-item class=${l3.line_id && this.splitSel.has(l3.line_id) ? "sel" : ""}
@@ -8417,6 +8570,8 @@ var ErpPosTouch = class extends i3 {
               <div class="pay">
 
                 ${this.overSimplifiedLimit ? this.renderSimplifiedLimitCapture() : A}
+
+                ${this.renderLineTenders()}
 
                 <!-- TIQUE o FACTURA (hub#962). Dos botones grandes al lado del importe, como el
                      método de pago: es la otra pregunta que el mostrador hace en voz alta
@@ -8887,6 +9042,9 @@ __decorateClass([
 ], ErpPosTouch.prototype, "splitSel", 2);
 __decorateClass([
   r5()
+], ErpPosTouch.prototype, "covered", 2);
+__decorateClass([
+  r5()
 ], ErpPosTouch.prototype, "parkedOpen", 2);
 __decorateClass([
   r5()
@@ -8978,7 +9136,7 @@ __decorateClass([
 ], ErpPos.prototype, "fullscreen", 2);
 define("erp-pos", ErpPos);
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
+// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
 var { I: t6 } = j;
 var i5 = (o9) => o9;
 var s4 = () => document.createComment("");
@@ -9011,7 +9169,7 @@ var h3 = (o9) => {
   o9._$AR(), o9._$AA.remove();
 };
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
+// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
 var u4 = (e7, s5, t7) => {
   const r6 = /* @__PURE__ */ new Map();
   for (let l3 = s5; l3 <= t7; l3++) r6.set(e7[l3], l3);
@@ -9064,7 +9222,7 @@ var c4 = e5(class extends i4 {
   }
 });
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
+// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
 var n5 = "important";
 var i6 = " !" + n5;
 var o8 = e5(class extends i4 {
@@ -9093,7 +9251,7 @@ var o8 = e5(class extends i4 {
   }
 });
 
-// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-data-table.js
+// ../../../outfitkit/dist/ok-data-table.js
 var CSV_BOM = "\uFEFF";
 var WINDOWS_1252_C1 = [
   8364,

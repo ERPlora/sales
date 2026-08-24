@@ -4,6 +4,9 @@
 SELECT id, product_id, product_name, product_sku, is_service,
        quantity, unit_price, discount_percent, tax_rate, tax_class_name,
        tax_category_key, tax_country_code, tax_region_code, tax_rule_id, is_gift, gift_reason,
+       -- sales#162: la marca de linea pagada por un TENDER EXTERNO viaja al documento. Sin ella el
+       -- tique ensena un 0,00 sin explicacion, que se lee como un error de precio.
+       is_covered,
        category_id,
        net_amount, tax_amount, line_total,
        unit_code, unit_name, factor_num, factor_den, increment_value,
