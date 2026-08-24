@@ -1465,6 +1465,14 @@ export class ErpPosTouch extends LitElement {
 
   /** Total PREVIEW con los descuentos (sales#71); la autoridad sigue siendo el servidor. */
   private get total() { return Math.max(0, cartTotal(this.cart, this.ticketDiscount) - this.ticketDiscountAmount); }
+  /** Lo que la cuenta todavía DEBE: el total menos lo que un tender externo ya cubrió (sales#162).
+   *  El botón del pie promete un importe, así que tiene que prometer el que se va a pedir — con un
+   *  canje tomado, el sheet decía 9,00 € y el pie, detrás, seguía diciendo 27,00 €. El TOTAL del
+   *  ticket sigue siendo 27,00 € y se pinta aparte: son dos números distintos y los dos son ciertos. */
+  private get owed() {
+    const lines = uncoveredLines(this.cart, new Set(this.covered.keys()));
+    return Math.max(0, cartTotal(lines, this.ticketDiscount) - this.ticketDiscountAmount);
+  }
   /** Lo que el descuento de ticket quita (porcentaje + importe), para pintarlo. */
   private get ticketDiscountTotal() { return cartTotal(this.cart, 0) - this.total; }
   private get discountsAllowed(): boolean { return this.settings.allow_discounts !== 0; }
@@ -3112,7 +3120,7 @@ export class ErpPosTouch extends LitElement {
                         title=${t('ui.charge')} aria-label=${t('ui.charge')}
                         @click=${() => this.openPay()}>
               <ion-icon slot="start" name="card-outline"></ion-icon>
-              ${t('ui.charge')} · ${this.money(this.total)}
+              ${t('ui.charge')} · ${this.money(this.owed)}
             </ion-button>
           </div>
         </div>

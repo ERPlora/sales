@@ -248,6 +248,23 @@ describe('sales#162 — the POS hosts `sales.pos.tender`', () => {
     expect(champu.covered).toBeUndefined();
   });
 
+  it('the CART footer stops promising money the ticket no longer owes', async () => {
+    // Found in the browser at 1440×900: the sheet said «Cobrar 9,00 €» and the till's own footer,
+    // behind it, still said «Cobrar · 27,00 €». Close the sheet and that is the only number on
+    // screen — the cashier reads the amount the customer is about to be asked for, and it is wrong
+    // by the whole voucher. The ticket TOTAL is still 27,00 €, and that line stays: what changed is
+    // what is left to charge.
+    const el = await salonTicket();
+    hold(el, 'line-1');
+    await el.updateComplete;
+    const foot = $(el, '.cart-foot ion-button.charge')!;
+    expect(foot.textContent?.replace(/\s+/g, ' ')).toContain('9.00 €');
+    expect($(el, '.cart-foot .total b')?.textContent?.trim(), 'the ticket is still worth 27,00 €').toBe('27.00 €');
+    release(el, 'line-1');
+    await el.updateComplete;
+    expect($(el, '.cart-foot ion-button.charge')!.textContent?.replace(/\s+/g, ' ')).toContain('27.00 €');
+  });
+
   it('without `services` installed the checkout does not change: no gaps, no fillers', async () => {
     // No `services` means no service catalogue either, so this is a shop ticket: one shampoo. The
     // guarantee is that the pay sheet is EXACTLY the one that shipped in 2.16.2 — the slot leaves

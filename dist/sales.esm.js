@@ -6900,6 +6900,14 @@ var ErpPosTouch = class extends i3 {
   get total() {
     return Math.max(0, cartTotal(this.cart, this.ticketDiscount) - this.ticketDiscountAmount);
   }
+  /** Lo que la cuenta todavía DEBE: el total menos lo que un tender externo ya cubrió (sales#162).
+   *  El botón del pie promete un importe, así que tiene que prometer el que se va a pedir — con un
+   *  canje tomado, el sheet decía 9,00 € y el pie, detrás, seguía diciendo 27,00 €. El TOTAL del
+   *  ticket sigue siendo 27,00 € y se pinta aparte: son dos números distintos y los dos son ciertos. */
+  get owed() {
+    const lines = uncoveredLines(this.cart, new Set(this.covered.keys()));
+    return Math.max(0, cartTotal(lines, this.ticketDiscount) - this.ticketDiscountAmount);
+  }
   /** Lo que el descuento de ticket quita (porcentaje + importe), para pintarlo. */
   get ticketDiscountTotal() {
     return cartTotal(this.cart, 0) - this.total;
@@ -8370,7 +8378,7 @@ var ErpPosTouch = class extends i3 {
                         title=${t5("ui.charge")} aria-label=${t5("ui.charge")}
                         @click=${() => this.openPay()}>
               <ion-icon slot="start" name="card-outline"></ion-icon>
-              ${t5("ui.charge")} · ${this.money(this.total)}
+              ${t5("ui.charge")} · ${this.money(this.owed)}
             </ion-button>
           </div>
         </div>
