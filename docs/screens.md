@@ -3,6 +3,30 @@
 The module contributes two tabs to the hub navigation — **Vender** (the till) and **Sales** (the
 history) — plus a **TPV** settings tab the shell generates from the declarative settings block.
 
+## Refunding a sale paid with several methods
+
+From **Sales**, the `…` menu of a completed sale offers **Devolver** (permission `sales.refund_sale`
+— manager and admin, never cashier: a refund takes money out of the drawer). It opens a screen with
+one card per way the sale was paid.
+
+Each card carries what that tender was charged, what it has already given back, and what is still
+refundable. The screen **proposes** the full refund split proportionally, and every amount is
+editable — the proposal is a starting point, not a cage.
+
+Two things it does that most tills do not:
+
+* **A tender whose payment method no longer exists is marked with its reason**, not left to blow up
+  at confirm. Its money is still refundable: a **Devolver por** selector appears so you send it back
+  through a method that does work.
+* **No tender can give back more than it took.** If you go over, the screen says *which* one, and
+  with which numbers, before you press anything.
+
+The button stays pressable while the refund is blocked — pressing it tells you what is missing. A
+sale carrying a full invoice **can** be refunded (unlike voiding it): the refund is the economic
+fact, and the credit note is its document, issued from `invoice`.
+
+When the last cent goes back, the sale's status becomes **Devuelta**.
+
 ## Vender — the till
 
 The touch point of sale. It opens **full screen**: the shell hides its own chrome and gives a
