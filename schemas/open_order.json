@@ -78,6 +78,88 @@
           },
           "pricing_factor_den": {
             "type": "integer"
+          },
+          "modifiers": {
+            "type": "array",
+            "description": "Suplementos elegidos para esta línea (pm#93 / ADR-0376), EN EL ORDEN en que se eligieron. Solo se envía `option_id`: el nombre y el precio definitivos los resuelve el servidor AL COBRAR, contra `modifiers.options.all`. La fila del pedido es de trabajo —su `line_total` también es provisional—, no el registro fiscal.",
+            "default": [],
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "option_id"
+              ],
+              "properties": {
+                "option_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "price_delta": {
+                  "type": "integer",
+                  "description": "IGNORADO. Se admite para que el TPV pueda mandar su preview sin que el contrato lo rechace, pero el importe que se cobra sale de `modifiers.options.all`."
+                }
+              }
+            }
+          },
+          "combo_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "sales#169 / ADR-0381 — esta línea es un MENÚ (combo, pack) y la cuenta abierta congela QUÉ menú es. La fila del pedido guarda la COMPOSICIÓN, nunca dinero: el precio cerrado y el reparto del art. 79.Dos los decide `sales.complete_sale` contra `combos.options.all`, en un único recorrido. El `price` de esta línea es un PREVIEW de pantalla. Sin esto, al RETOMAR la cuenta el menú se pierde y el cobro la rechaza entera (`sales.product_not_available`)."
+          },
+          "combo_choices": {
+            "type": "array",
+            "description": "Lo elegido en cada grupo del menú, EN EL ORDEN en que se eligió (el que lee cocina). Solo `option_id` decide dinero; `product_name` y `category_id` viajan para DISPLAY y para que el KDS enrute cada componente a SU estación al retomar la cuenta. Los grupos obligatorios los valida el COBRO (`sales.combo_group_unresolved`): la cuenta abierta es mutable.",
+            "default": [],
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "option_id"
+              ],
+              "properties": {
+                "option_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "product_name": {
+                  "type": "string",
+                  "description": "Nombre del componente para DISPLAY, igual que el `product_name` de cualquier línea: `combos` referencia el artículo de forma opaca (`source`/`source_ref`) y no conoce su nombre. No decide nada de dinero."
+                },
+                "category_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Categoría del componente, congelada en SU línea para que el KDS lo enrute a su estación — y no a la del primer plato, que es el fallo de TouchBistro."
+                },
+                "modifiers": {
+                  "type": "array",
+                  "description": "Suplementos de ESTE componente («el segundo, sin cebolla»). ADR-0376 sin cambios: el modificador cuelga de la línea de su componente, no del menú. Mismo contrato que `items[].modifiers`.",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "option_id"
+                    ],
+                    "properties": {
+                      "option_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "price_delta": {
+                        "type": "integer",
+                        "description": "IGNORADO: el importe sale de `modifiers.options.all`."
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
