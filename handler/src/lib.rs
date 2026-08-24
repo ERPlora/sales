@@ -737,14 +737,16 @@ fn expand_combo(
     // Regla 7 de ADR-0381: `min_choices >= 1` ES «obligatorio» (misma regla de Clover que ya fijó
     // ADR-0376: no hay flag `required`). Que la pantalla lo impida no basta — quien llame al
     // comando por la API se la salta.
+    // Cada grupo aparece una vez POR OPCIÓN en la read (viene aplanada), así que se recorre la
+    // lista de grupos DISTINTOS: comprobar el mismo grupo cuatro veces daría el mismo veredicto
+    // cuatro veces y haría el bucle O(n²) sin decir nada nuevo.
+    let mut seen_groups: Vec<String> = Vec::new();
     for group in &options {
         let group_id = field(group, "group_id");
-        // Cada grupo aparece una vez por opción; basta con mirarlo una sola vez.
-        if options.iter().position(|r| field(r, "group_id") == group_id)
-            != options.iter().position(|r| std::ptr::eq(**r, **group))
-        {
+        if seen_groups.contains(&group_id) {
             continue;
         }
+        seen_groups.push(group_id.clone());
         let picked: Vec<&(&Value, &Value)> =
             chosen.iter().filter(|(_, r)| field(r, "group_id") == group_id).collect();
         let min = item_i64(group, "min_choices", 0);
