@@ -61,7 +61,13 @@ describe('complete_sale payload contract (sales#20)', () => {
     expect(s.properties.idempotency_key.type).toBe('string');
   });
 
-  it('still accepts the fields the POS really sends (split bill, order link, fiscal snapshot)', () => {
+  // ⚠️ This pins the SCHEMA's closed list — nothing else. A schema that ACCEPTS `is_service` says
+  // nothing about whether the till SENDS it, and sales#146 is exactly that gap: this list has
+  // carried `is_service` the whole time, green, while `erp-pos-touch` built the checkout payload
+  // in its own `items.map()` without the field and every salon got `sales.product_not_available`.
+  // The other half — what the component really puts on the wire — is pinned against a REAL
+  // captured payload in `ui/components/erp-pos-touch/erp-pos-service-checkout.test.ts`.
+  it('declares every field a caller may legitimately send (split bill, order link, fiscal snapshot)', () => {
     // `additionalProperties: false` is only safe if the closed list covers today's callers:
     // a forgotten key here is a POS that cannot charge at all.
     for (const key of [
