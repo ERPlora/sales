@@ -1803,6 +1803,16 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
                 // station_id vacío. Opaco para sales (no FK cross-módulo); NULL si la línea no
                 // trae categoría (p.ej. producto sin clasificar). No depende de qué KDS se instale.
                 "category_id": it.get("category_id").cloned().unwrap_or(Value::Null),
+                // sales#152 / ADR-0381: de qué combo salió esta línea, y el combo entero congelado.
+                // Va al EVENTO y no solo a la fila porque los consumidores viven del evento: sin
+                // esto, `inventory` no puede mover el stock de los componentes de un menú que salió
+                // como UNA línea (no hay `product_id` que mirar — es la regla 8, inventory#69) y el
+                // documento de `invoice` no puede nombrar el menú que cobró.
+                "combo_group_ref": it_combo.as_ref().map(|c| json!(c.group_ref)).unwrap_or(Value::Null),
+                "combo": it_combo
+                    .as_ref()
+                    .map(|c| serde_json::from_str::<Value>(&c.snapshot).unwrap_or(Value::Null))
+                    .unwrap_or(Value::Null),
             })
         })
         .collect();
@@ -5152,6 +5162,11 @@ mod tests {
         assert_eq!(items[1]["unit_price"], json!(185));
         assert_eq!(items[0]["tax_rate"], json!(10.0));
         assert_eq!(items[1]["tax_rate"], json!(21.0));
+        // El grupo y el snapshot viajan TAMBIÉN en el evento: los consumidores (inventory para el
+        // stock de los componentes, invoice para nombrar el menú) viven del evento, no de la fila.
+        assert_eq!(items[0]["combo_group_ref"], items[1]["combo_group_ref"]);
+        assert_eq!(items[0]["combo"]["name"], json!("Pack merienda"));
+        assert_eq!(items[0]["combo"]["components"][1]["source_ref"], json!("p-beer"));
         // Y el total de la venta es el precio cerrado, al céntimo.
         assert_eq!(ev["total"], json!(600));
         let header = out.operations.iter().find(|o| o.command == "sales._insert_sale").expect("cabecera");
@@ -5194,6 +5209,9 @@ mod tests {
         assert_eq!(lines[0]["line_total"], json!(150));
         assert_eq!(lines[0]["combo_group_ref"], Value::Null, "sin combo, sin grupo");
         assert_eq!(lines[0]["combo"], json!("{}"), "sin combo, snapshot vacío");
+        let ev_item = &out.events[0].payload["items"][0];
+        assert_eq!(ev_item["combo_group_ref"], Value::Null, "y el evento tampoco se inventa uno");
+        assert_eq!(ev_item["combo"], Value::Null);
     }
 
     #[test]
