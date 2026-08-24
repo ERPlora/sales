@@ -5,6 +5,8 @@
 // ATTEMPT, not as long as the request: one key per "charge" screen, reused verbatim on every
 // retry after a timeout or a failure, thrown away only once the sale is recorded.
 import { describe, expect, it } from 'vitest';
+import en from '../../locales/en.json' with { type: 'json' };
+import es from '../../locales/es.json' with { type: 'json' };
 import { checkoutErrorKey, newIdempotencyKey } from './checkout-key.js';
 
 describe('newIdempotencyKey', () => {
@@ -47,6 +49,29 @@ describe('checkoutErrorKey', () => {
   it('sales#21 — a missing VAT rule or catalogue is explained, not shown as a generic charge error', () => {
     expect(checkoutErrorKey('sales.no_tax_rule: no tax rule for category `x`')).toBe('ui.errorNoTaxRule');
     expect(checkoutErrorKey('sales.tax_catalog_unavailable: …')).toBe('ui.errorTaxCatalogUnavailable');
+  });
+
+  it('sales#152 — every way a combo can be refused sends the cashier somewhere DIFFERENT', () => {
+    // Nine codes, nine screens to fix it on. Collapsing them into one «could not charge» is what
+    // turns a two-second fix («the menu was withdrawn») into a call to the manager.
+    const cases: Array<[string, string]> = [
+      ['sales.combo_catalog_unavailable: no combo catalogue to price `c-1`', 'ui.errorComboCatalogUnavailable'],
+      ['sales.combo_not_available: c-1', 'ui.errorComboNotAvailable'],
+      ['sales.combo_not_on_sale: `c-1` was withdrawn from sale', 'ui.errorComboNotOnSale'],
+      ['sales.combo_option_not_available: o-9', 'ui.errorComboOptionNotAvailable'],
+      ['sales.combo_group_unresolved: `Postre` needs 1 choice(s), got 0', 'ui.errorComboGroupUnresolved'],
+      ['sales.combo_group_over_max: `Postre` allows 1 choice(s), got 2', 'ui.errorComboGroupOverMax'],
+      ['sales.combo_option_repeated: o-1', 'ui.errorComboOptionRepeated'],
+      ['sales.combo_component_price_unknown: `p-9` is not on sale', 'ui.errorComboComponentPriceUnknown'],
+      ['sales.combo_tax_category_missing: `c-1` has no tax category', 'ui.errorComboTaxCategoryMissing'],
+      ['sales.too_many_lines: 300 lines need 301 ids, the batch has 256', 'ui.errorTooManyLines'],
+    ];
+    for (const [message, key] of cases) expect(checkoutErrorKey(message)).toBe(key);
+    // And every key it points at really exists in BOTH catalogues (ADR-0055/0199: en + its es).
+    const keys = new Set(cases.map(([, key]) => key.replace('ui.', '')));
+    for (const catalogue of [en, es]) {
+      for (const key of keys) expect(catalogue.ui[key], `${key}`).toBeTruthy();
+    }
   });
 
   it('finds the code even when the runtime wraps the message', () => {

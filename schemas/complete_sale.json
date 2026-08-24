@@ -164,6 +164,65 @@
                 }
               }
             }
+          },
+          "combo_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "sales#152 / ADR-0381 — esta línea es un COMBO (menú, pack) y el servidor la arma entera: lee `combos.options.all`, valida los grupos de elección y decide cuántas líneas de venta salen. Un solo tipo impositivo dentro → UNA línea con el precio cerrado; tipos distintos → UNA LÍNEA POR COMPONENTE con el precio cerrado repartido en proporción al precio de catálogo (art. 79.Dos LIVA). El `price` de esta línea se IGNORA. Si el módulo `combos` no está instalado y esto llega con contenido, la venta se RECHAZA."
+          },
+          "combo_choices": {
+            "type": "array",
+            "description": "Lo elegido en cada grupo del combo, EN EL ORDEN en que se eligió (el orden que lee cocina). Solo `option_id` decide dinero: el precio cerrado, el `price_delta` de la sustitución y la categoría fiscal salen del catálogo del servidor. Un grupo con `min_choices >= 1` sin resolver RECHAZA la venta — es una precondición, no un aviso.",
+            "default": [],
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "option_id"
+              ],
+              "properties": {
+                "option_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "product_name": {
+                  "type": "string",
+                  "description": "Nombre del componente para DISPLAY, igual que el `product_name` de cualquier línea: `combos` referencia el artículo de forma opaca (`source`/`source_ref`) y no conoce su nombre. No decide nada de dinero."
+                },
+                "category_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Categoría del componente, congelada en SU línea para que el KDS lo enrute a su estación — y no a la del primer plato, que es el fallo de TouchBistro."
+                },
+                "modifiers": {
+                  "type": "array",
+                  "description": "Suplementos de ESTE componente («el segundo, sin cebolla»). ADR-0376 sin cambios: el modificador cuelga de la línea de su componente, no del menú. Mismo contrato que `items[].modifiers`.",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "option_id"
+                    ],
+                    "properties": {
+                      "option_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "price_delta": {
+                        "type": "integer",
+                        "description": "IGNORADO: el importe sale de `modifiers.options.all`."
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
