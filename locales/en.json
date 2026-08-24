@@ -311,6 +311,12 @@
     "errorComboOptionRepeated": "That course does not allow choosing the same item twice",
     "errorComboComponentPriceUnknown": "A component of the menu has no catalogue price, so its share of the VAT cannot be worked out. Set its price in the catalogue",
     "errorComboTaxCategoryMissing": "That menu has no tax category, so it cannot be charged. Set it in Combos",
-    "errorTooManyLines": "The ticket has too many lines to be charged in one go. Split it into two"
+    "errorTooManyLines": "The ticket has too many lines to be charged in one go. Split it into two",
+    "comboBadge": "Menu",
+    "comboCatalogUnavailable": "The menus could not be loaded, so none are being offered. Check the Combos module and try again",
+    "comboGroupUnresolved": "Choose {n} in {group}",
+    "comboGroupOverMax": "{group} allows only {n}",
+    "comboOptionRepeated": "{group} cannot take the same item twice",
+    "comboRemoveOne": "Remove one {name}"
   }
 }

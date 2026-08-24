@@ -312,7 +312,13 @@
     "errorComboOptionRepeated": "Ese plato no admite elegir dos veces lo mismo",
     "errorComboComponentPriceUnknown": "Un componente del menú no tiene precio de catálogo, así que no se puede repartir su IVA. Ponle precio en el catálogo",
     "errorComboTaxCategoryMissing": "Ese menú no tiene categoría fiscal, así que no se puede cobrar. Configúrala en Combos",
-    "errorTooManyLines": "El tique tiene demasiadas líneas para cobrarlo de una vez. Divídelo en dos"
+    "errorTooManyLines": "El tique tiene demasiadas líneas para cobrarlo de una vez. Divídelo en dos",
+    "comboBadge": "Menú",
+    "comboCatalogUnavailable": "No se han podido cargar los menús, así que no se ofrece ninguno. Revisa el módulo Combos e inténtalo de nuevo",
+    "comboGroupUnresolved": "Elige {n} en {group}",
+    "comboGroupOverMax": "{group} admite solo {n}",
+    "comboOptionRepeated": "{group} no admite el mismo artículo dos veces",
+    "comboRemoveOne": "Quitar un {name}"
   },
   "widgets": {
     "sales.today": {
