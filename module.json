@@ -128,7 +128,8 @@
       "migrations/postgres/023_order_line_modifiers.sql",
       "migrations/postgres/024_sale_payments.sql",
       "migrations/postgres/025_line_covered.sql",
-      "migrations/postgres/026_sale_refund.sql"
+      "migrations/postgres/026_sale_refund.sql",
+      "migrations/postgres/027_line_combo_group.sql"
     ]
   },
   "seed": {
@@ -349,6 +350,10 @@
         },
         {
           "query": "modifiers.options.all",
+          "required": false
+        },
+        {
+          "query": "combos.options.all",
           "required": false
         }
       ],

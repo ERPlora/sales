@@ -301,6 +301,16 @@
     "refundSaleNotFound": "That sale is not in this business.",
     "refundRequiresCompleted": "Only a completed sale can be refunded.",
     "refundMethodUnavailable": "That payment method is not available in this business.",
-    "refundLegAmount": "Refund amount"
+    "refundLegAmount": "Refund amount",
+    "errorComboCatalogUnavailable": "The menus could not be loaded, so nothing was charged. Check that the Combos module is installed and try again",
+    "errorComboNotAvailable": "That menu is not in the catalogue any more — remove the line and add it again",
+    "errorComboNotOnSale": "That menu is no longer on sale. Remove it from the ticket or put it back on sale in Combos",
+    "errorComboOptionNotAvailable": "One of the choices in the menu is no longer on the catalogue — pick it again",
+    "errorComboGroupUnresolved": "The menu has a course still to be chosen. Complete it before charging",
+    "errorComboGroupOverMax": "The menu allows fewer choices in that course. Remove one before charging",
+    "errorComboOptionRepeated": "That course does not allow choosing the same item twice",
+    "errorComboComponentPriceUnknown": "A component of the menu has no catalogue price, so its share of the VAT cannot be worked out. Set its price in the catalogue",
+    "errorComboTaxCategoryMissing": "That menu has no tax category, so it cannot be charged. Set it in Combos",
+    "errorTooManyLines": "The ticket has too many lines to be charged in one go. Split it into two"
   }
 }

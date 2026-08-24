@@ -245,6 +245,12 @@ def line_params(line_id: str, sale_id: str, **over) -> dict:
         "is_covered": 0,
         "category_id": None,
         "modifiers": "",
+        # sales#152: every line carries the combo columns, whether it came from a combo or
+        # not. They are here because THIS dict is the payload shape the handler produces:
+        # leaving them out is how the command and the handler drift apart, and `combo` is
+        # NOT NULL, so the drift shows up as a rejected INSERT and not as a wrong number.
+        "combo_group_ref": None,
+        "combo": "{}",
         "net_amount": 1488,
         "tax_amount": 312,
         "line_total": 1800,

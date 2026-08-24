@@ -368,6 +368,33 @@ fn allocate_amount(total: i64, weights: &[i64]) -> Vec<i64> {
     parts.into_iter().map(|p| p as i64).collect()
 }
 
+/// sales#152 / ADR-0381 — reparto proporcional del art. 79.Dos, **sin el techo** de
+/// [`allocate_amount`].
+///
+/// El reparto de un descuento nunca puede pasar del bruto, así que `allocate_amount` acota el
+/// total a la suma de los pesos. Un combo es al revés: el precio cerrado puede **superar** la suma
+/// de los precios de catálogo (una sustitución con `price_delta`, o un pack por encima de sus
+/// partes), y ahí el techo repartiría de menos y la suma dejaría de ser el precio cerrado.
+///
+/// 🔴 Sigue siendo LA MISMA máquina, no una nueva: con `total = k·Σpesos + r` la parte de Hamilton
+/// vale `k·peso_i + hamilton(r, pesos)_i`, porque `⌊total·wᵢ/Σw⌋ = k·wᵢ + ⌊r·wᵢ/Σw⌋` y los restos
+/// de `total·wᵢ` y de `r·wᵢ` módulo `Σw` son idénticos. El resto mayor se decide sobre `r`, que ya
+/// cabe en el rango que [`allocate_amount`] sabe repartir.
+fn allocate_proportional(total: i64, weights: &[i64]) -> Vec<i64> {
+    let n = weights.len();
+    if n == 0 || total <= 0 { return vec![0; n]; }
+    let w_total: i64 = weights.iter().map(|w| (*w).max(0)).sum();
+    if w_total <= 0 { return vec![0; n]; }
+    let whole = total / w_total;
+    let rest = total % w_total;
+    let shares = allocate_amount(rest, weights);
+    weights
+        .iter()
+        .zip(shares)
+        .map(|(w, share)| whole * (*w).max(0) + share)
+        .collect()
+}
+
 /// sales#113 — rebaja una línea ya calculada en `amount` céntimos de su bruto (lo que paga el
 /// cliente) y recompone base y cuota sobre lo cobrado: base = bruto' / (1 + tasa combinada), cuota
 /// = bruto' − base; cada componente informa su cuota sobre esa base (la que se DECLARA sale del
@@ -591,6 +618,350 @@ fn authoritative_modifiers(item: &Value, catalog: Option<&Vec<&Value>>) -> Resul
     let text = serde_json::to_string(&Value::Array(snapshot))
         .map_err(|e| format!("modifier_snapshot_encode: {e}"))?;
     Ok((delta_total, text))
+}
+
+/// Una línea que el SERVIDOR materializó a partir de un combo (sales#152 / ADR-0381).
+///
+/// Un combo NO es una línea: es un GRUPO de líneas hermanas, y cuántas tenga lo decide cuántos
+/// TIPOS impositivos distintos hay dentro, nunca cuántos componentes se eligieron. No existe línea
+/// padre con dinero, ni siquiera a 0 € — es el fallo documentado de Odoo (odoo#187509), donde el
+/// combo aparece REGALADO en el informe de ventas.
+#[derive(Clone)]
+struct ComboLine {
+    /// Precio unitario que decide el SERVIDOR: el precio cerrado del combo, o la parte que le tocó
+    /// del reparto del art. 79.Dos. NUNCA sale del payload (la lección de sales#68).
+    unit_price: i64,
+    /// Categoría fiscal de ESTA línea: la del combo cuando es prestación única (`service`), la del
+    /// componente cuando el pack de bienes se reparte.
+    tax_category_key: String,
+    /// Lo que hermana las líneas de un mismo combo. La cabecera del tique se pinta agrupando por
+    /// esto y por el snapshot, no leyendo una fila a cero.
+    group_ref: String,
+    /// Snapshot inmutable del combo (regla 6 de ADR-0381), congelado en CADA hermana: cambiar el
+    /// menú mañana no reescribe la comanda de ayer.
+    snapshot: String,
+}
+
+/// Precio de catálogo y categoría fiscal de un componente, leídos de `inventory.products.for_sale`.
+///
+/// Son el **peso** del reparto (art. 79.Dos: «en proporción al valor de mercado»; HMRC VATVAL03800:
+/// *selling price*) y el tipo con el que tributa. `combos` no puede conocerlos —su referencia al
+/// artículo es OPACA (`source`/`source_ref`, `depends_on: []`)— así que el reparto es de `sales`.
+fn combo_component_catalog(
+    source: &str,
+    source_ref: &str,
+    catalog: Option<&Vec<&Value>>,
+) -> Result<(i64, String), String> {
+    // Un componente que no es un producto (un servicio del pack de peluquería) no tiene catálogo
+    // que `sales` pueda leer: `services` no está en su `depends_on`. Un combo `service` no lo
+    // necesita —va entero a un tipo—, pero uno de bienes SÍ, y ahí se rechaza en vez de estimar.
+    let rows = match (source, catalog) {
+        ("product", Some(rows)) => rows,
+        _ => {
+            return Err(reject(
+                "sales.combo_component_price_unknown",
+                format!("`{source_ref}` ({source}) has no catalogue price to weigh the split with"),
+            ))
+        }
+    };
+    let row = rows.iter().find(|r| field(r, "id") == source_ref).ok_or_else(|| {
+        reject("sales.combo_component_price_unknown", format!("`{source_ref}` is not on sale"))
+    })?;
+    Ok((
+        as_cents(row.get("price").unwrap_or(&Value::Null), 0),
+        field(row, "tax_category_key"),
+    ))
+}
+
+/// Arma UN combo contra el catálogo y devuelve las líneas hermanas que lo materializan.
+///
+/// Hermano de [`authoritative_modifiers`]: el precio, el tipo y el `price_delta` salen de
+/// `combos.options.all`, **nunca del payload**. Devuelve `Err` con código de dominio si el combo no
+/// se sostiene — un menú retirado, un curso obligatorio sin resolver, un componente sin precio.
+///
+/// El número de líneas lo decide **cuántas categorías fiscales distintas** hay dentro:
+/// * `supply_kind = service` → **UNA** línea al tipo del combo, aunque el vino de dentro esté
+///   etiquetado al 21 % (art. 91.Uno.2.2º LIVA: prestación única, la bebida es accesoria). La
+///   accesoriedad es una posición jurídica del negocio, no una consecuencia del etiquetado.
+/// * `goods` con **un solo** tipo → **UNA** línea con el precio cerrado. Cero reparto, cero
+///   redondeo: la maquinaria de dinero ya probada ni se entera de que había un combo.
+/// * `goods` con tipos **distintos** → **UNA LÍNEA POR COMPONENTE** (art. 79.Dos LIVA), con el
+///   precio cerrado repartido por [`allocate_amount`] — la misma máquina de resto mayor de
+///   ADR-0210/sales#113, reutilizada, no reinventada.
+fn expand_combo(
+    item: &Value,
+    group_ref: String,
+    combo_catalog: Option<&Vec<&Value>>,
+    product_catalog: Option<&Vec<&Value>>,
+) -> Result<Vec<(Value, ComboLine)>, String> {
+    let combo_id = field(item, "combo_id");
+    // FALLA CERRADO (ADR-0127). La read es OPCIONAL —`sales` no depende de `combos`—, así que su
+    // ausencia significa «el módulo no está instalado». Sin catálogo no se conocen ni el precio
+    // cerrado ni los pesos del reparto, y cobrar «confiando» sería el agujero por la puerta de
+    // atrás. Un hub SIN `combos` cobra exactamente igual que antes: nadie manda `combo_id`.
+    let rows = combo_catalog.ok_or_else(|| {
+        reject("sales.combo_catalog_unavailable", format!("no combo catalogue to price `{combo_id}`"))
+    })?;
+    let options: Vec<&&Value> = rows.iter().filter(|r| field(r, "combo_id") == combo_id).collect();
+    let head = *options
+        .first()
+        .ok_or_else(|| reject("sales.combo_not_available", &combo_id))?;
+    // `combo_is_active = 0` viaja en la read a propósito: un menú retirado se rechaza diciendo QUE
+    // YA NO ESTÁ A LA VENTA. Confundirlo con «opción desconocida» manda al encargado a mirar el
+    // sitio equivocado — es otro bug con otro arreglo.
+    if !head.get("combo_is_active").map(as_bool).unwrap_or(false) {
+        return Err(reject(
+            "sales.combo_not_on_sale",
+            format!("`{combo_id}` was withdrawn from sale"),
+        ));
+    }
+    let supply_kind = field(head, "supply_kind");
+    let combo_name = field(head, "combo_name");
+    let closed_price = as_cents(head.get("combo_price").unwrap_or(&Value::Null), 0);
+
+    let empty: Vec<Value> = Vec::new();
+    let picks = item.get("combo_choices").and_then(|v| v.as_array()).unwrap_or(&empty);
+
+    // ── Lo elegido, resuelto contra el catálogo y EN EL ORDEN de elección ──
+    let mut chosen: Vec<(&Value, &Value)> = Vec::with_capacity(picks.len()); // (pick, fila del catálogo)
+    for pick in picks {
+        let option_id = field(pick, "option_id");
+        let row = options
+            .iter()
+            .find(|r| field(r, "option_id") == option_id)
+            .ok_or_else(|| reject("sales.combo_option_not_available", &option_id))?;
+        chosen.push((pick, row));
+    }
+
+    // ── Los grupos de elección son una PRECONDICIÓN del servidor, no del picker ──
+    // Regla 7 de ADR-0381: `min_choices >= 1` ES «obligatorio» (misma regla de Clover que ya fijó
+    // ADR-0376: no hay flag `required`). Que la pantalla lo impida no basta — quien llame al
+    // comando por la API se la salta.
+    // Cada grupo aparece una vez POR OPCIÓN en la read (viene aplanada), así que se recorre la
+    // lista de grupos DISTINTOS: comprobar el mismo grupo cuatro veces daría el mismo veredicto
+    // cuatro veces y haría el bucle O(n²) sin decir nada nuevo.
+    let mut seen_groups: Vec<String> = Vec::new();
+    for group in &options {
+        let group_id = field(group, "group_id");
+        if seen_groups.contains(&group_id) {
+            continue;
+        }
+        seen_groups.push(group_id.clone());
+        let picked: Vec<&(&Value, &Value)> =
+            chosen.iter().filter(|(_, r)| field(r, "group_id") == group_id).collect();
+        let min = item_i64(group, "min_choices", 0);
+        let max = item_i64(group, "max_choices", 0);
+        if (picked.len() as i64) < min {
+            return Err(reject(
+                "sales.combo_group_unresolved",
+                format!("`{}` needs {min} choice(s), got {}", field(group, "group_name"), picked.len()),
+            ));
+        }
+        // `max_choices = 0` = sin techo (contrato de `combos`).
+        if max > 0 && picked.len() as i64 > max {
+            return Err(reject(
+                "sales.combo_group_over_max",
+                format!("`{}` allows {max} choice(s), got {}", field(group, "group_name"), picked.len()),
+            ));
+        }
+        if !group.get("allow_repeat").map(as_bool).unwrap_or(false) {
+            let mut seen: Vec<String> = Vec::with_capacity(picked.len());
+            for (_, r) in picked {
+                let id = field(r, "option_id");
+                if seen.contains(&id) {
+                    return Err(reject("sales.combo_option_repeated", &id));
+                }
+                seen.push(id);
+            }
+        }
+    }
+    if chosen.is_empty() {
+        return Err(reject("sales.combo_group_unresolved", format!("`{combo_id}` was sent with no choice")));
+    }
+
+    // ── EL DIVIDENDO: el precio cerrado + los suplementos de sustitución ──
+    // El `price_delta` («+ solomillo 3 €») suma AL PRECIO CERRADO, nunca al peso del componente:
+    // entra en el dividendo, no en los pesos. Puede ser negativo (contrato de `combos`).
+    let mut dividend = closed_price;
+    for (_, row) in &chosen {
+        dividend += as_cents(row.get("price_delta").unwrap_or(&Value::Null), 0);
+    }
+    if dividend < 0 {
+        return Err(reject("sales.amount_negative", format!("combo `{combo_id}` priced at {dividend}")));
+    }
+
+    // ── Los PESOS: el precio de CATÁLOGO de cada componente elegido ──
+    // Un combo `service` no los necesita (va entero a un tipo), y por eso un pack de peluquería
+    // —cuyos componentes son servicios que `sales` no puede leer— se cobra igual de bien.
+    let components: Vec<(i64, String)> = if supply_kind == "service" {
+        Vec::new()
+    } else {
+        let mut out = Vec::with_capacity(chosen.len());
+        for (_, row) in &chosen {
+            out.push(combo_component_catalog(
+                &field(row, "source"),
+                &field(row, "source_ref"),
+                product_catalog,
+            )?);
+        }
+        out
+    };
+
+    // ── ¿Una línea o una por componente? Lo deciden los TIPOS, no los componentes ──
+    let distinct = supply_kind != "service"
+        && components.iter().any(|(_, cat)| *cat != components[0].1);
+    let shares: Vec<i64> = if distinct {
+        let weights: Vec<i64> = components.iter().map(|(price, _)| *price).collect();
+        if weights.iter().sum::<i64>() <= 0 {
+            return Err(reject(
+                "sales.combo_component_price_unknown",
+                format!("`{combo_id}` has no catalogue prices to weigh the split with"),
+            ));
+        }
+        // 🔴 LA MISMA MÁQUINA DE ADR-0210 (sales#113), no una nueva: suelo de la parte exacta y el
+        // céntimo residual al RESTO MAYOR, con la suma EXACTAMENTE igual al precio cerrado.
+        allocate_proportional(dividend, &weights)
+    } else {
+        Vec::new()
+    };
+
+    // ── El SNAPSHOT que congela cada hermana (regla 6) ──
+    let snapshot_components: Vec<Value> = chosen
+        .iter()
+        .enumerate()
+        .map(|(i, (pick, row))| {
+            json!({
+                "option_id": field(row, "option_id"),
+                "group_id": field(row, "group_id"),
+                "group_name": field(row, "group_name"),
+                "source": field(row, "source"),
+                "source_ref": field(row, "source_ref"),
+                // El nombre es DISPLAY y viene del pick, como el `product_name` de cualquier línea:
+                // el catálogo de `combos` referencia el artículo de forma opaca y no lo conoce.
+                "name": str_or(pick, "product_name", ""),
+                "price_delta": as_cents(row.get("price_delta").unwrap_or(&Value::Null), 0),
+                "tax_category_key": components.get(i).map(|(_, c)| c.clone()).unwrap_or_default(),
+                "catalog_price": components.get(i).map(|(p, _)| *p).unwrap_or(0),
+                // Lo que le tocó del reparto; `null` cuando el combo NO se parte.
+                "share": shares.get(i).map(|s| json!(s)).unwrap_or(Value::Null),
+            })
+        })
+        .collect();
+    let kitchen_name = {
+        let k = field(head, "combo_kitchen_name");
+        if k.is_empty() { combo_name.clone() } else { k }
+    };
+    let snapshot = serde_json::to_string(&json!({
+        "combo_id": combo_id,
+        "name": combo_name,
+        "kitchen_name": kitchen_name,
+        // El precio de CATÁLOGO y el que de verdad se repartió (con los suplementos dentro).
+        "price": closed_price,
+        "price_charged": dividend,
+        "supply_kind": supply_kind,
+        "components": snapshot_components,
+    }))
+    .map_err(|e| format!("combo_snapshot_encode: {e}"))?;
+
+    // Lo que la línea hereda del combo: si el menú se invita o lo cubre un bono, se invita o se
+    // cubre ENTERO; un descuento de línea sobre el menú lo llevan por igual todas sus hermanas, así
+    // que la proporción del reparto se conserva.
+    let inherit = |p: &mut Map<String, Value>| {
+        p.insert("quantity".into(), item.get("quantity").cloned().unwrap_or(Value::Null));
+        p.insert("discount".into(), item.get("discount").cloned().unwrap_or(Value::Null));
+        p.insert("is_gift".into(), item.get("is_gift").cloned().unwrap_or(Value::Null));
+        p.insert("gift_reason".into(), item.get("gift_reason").cloned().unwrap_or(Value::Null));
+        p.insert("covered".into(), item.get("covered").cloned().unwrap_or(Value::Null));
+    };
+
+    if !distinct {
+        // UNA línea con el precio cerrado. El tipo es el del combo cuando es prestación única, y el
+        // de sus componentes cuando son bienes que tributan todos igual.
+        let cat = if supply_kind == "service" {
+            field(head, "combo_tax_category_key")
+        } else {
+            components.first().map(|(_, c)| c.clone()).unwrap_or_default()
+        };
+        if cat.is_empty() {
+            // Sin categoría, `resolve_line_tax` se caería al `tax_rate` del payload — el navegador
+            // fijando el IVA de un menú. El combo está mal configurado y se dice en voz alta.
+            return Err(reject(
+                "sales.combo_tax_category_missing",
+                format!("`{combo_id}` has no tax category to charge the closed price with"),
+            ));
+        }
+        let mut p = Map::new();
+        // Sin `product_id`: un combo NO es un artículo del catálogo de productos, y una fila con el
+        // id del combo sería justo la línea padre que ADR-0381 prohíbe.
+        p.insert("product_id".into(), Value::Null);
+        p.insert("product_name".into(), json!(combo_name));
+        p.insert("is_service".into(), json!(supply_kind == "service"));
+        p.insert("price".into(), json!(dividend));
+        p.insert("tax_category_key".into(), json!(cat.clone()));
+        p.insert("category_id".into(), Value::Null);
+        inherit(&mut p);
+        return Ok(vec![(
+            Value::Object(p),
+            ComboLine { unit_price: dividend, tax_category_key: cat, group_ref, snapshot },
+        )]);
+    }
+
+    // UNA LÍNEA POR COMPONENTE, cada una con SU tipo y su parte del precio cerrado.
+    let mut lines = Vec::with_capacity(chosen.len());
+    for (i, (pick, row)) in chosen.iter().enumerate() {
+        let (_, cat) = &components[i];
+        let source = field(row, "source");
+        let mut p = Map::new();
+        p.insert("product_id".into(), json!(field(row, "source_ref")));
+        p.insert("product_name".into(), json!(str_or(pick, "product_name", &combo_name)));
+        p.insert("is_service".into(), json!(source == "service"));
+        p.insert("price".into(), json!(shares[i]));
+        p.insert("tax_category_key".into(), json!(cat.clone()));
+        p.insert("category_id".into(), pick.get("category_id").cloned().unwrap_or(Value::Null));
+        // ADR-0376 sin cambios: un modificador dentro de un combo cuelga de la línea de SU
+        // componente («el segundo, sin cebolla»), y su delta lo sigue poniendo `modifiers`.
+        p.insert("modifiers".into(), pick.get("modifiers").cloned().unwrap_or(Value::Null));
+        inherit(&mut p);
+        lines.push((
+            Value::Object(p),
+            ComboLine {
+                unit_price: shares[i],
+                tax_category_key: cat.clone(),
+                group_ref: group_ref.clone(),
+                snapshot: snapshot.clone(),
+            },
+        ));
+    }
+    Ok(lines)
+}
+
+/// Sustituye cada línea de combo del payload por las líneas hermanas que el SERVIDOR arma
+/// (sales#152). Una línea normal pasa tal cual, con `None`: un hub sin `combos` cobra igual.
+///
+/// 🔴 Se hace UNA sola vez y lo consumen las DOS rutas —las filas que se persisten y el evento
+/// `sale.completed`—. Si el evento se quedara con el item del payload, `invoice` facturaría el
+/// combo por el precio que mandó el navegador mientras las filas dicen otra cosa, y lo que llega a
+/// la AEAT sale del evento.
+fn expand_combos(
+    items: &[Value],
+    sale_id: &str,
+    combo_catalog: Option<&Vec<&Value>>,
+    product_catalog: Option<&Vec<&Value>>,
+) -> Result<Vec<(Value, Option<ComboLine>)>, String> {
+    let mut out: Vec<(Value, Option<ComboLine>)> = Vec::with_capacity(items.len());
+    for (idx, item) in items.iter().enumerate() {
+        if field(item, "combo_id").is_empty() {
+            out.push((item.clone(), None));
+            continue;
+        }
+        // El ref que hermana las líneas de ESTE combo. Derivado (venta + posición) en vez de tomado
+        // de `new_ids`: no consume ids de la tanda y es único fuera de la venta.
+        let group_ref = format!("{sale_id}-{idx}");
+        for (line, combo) in expand_combo(item, group_ref, combo_catalog, product_catalog)? {
+            out.push((line, Some(combo)));
+        }
+    }
+    Ok(out)
 }
 
 /// Lógica pura: `{payload, context}` → Output (intenciones).
@@ -945,7 +1316,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     let mut ops: Vec<Operation> = Vec::new();
     // sales#113: las líneas se calculan primero y se emiten después (el importe fijo se reparte
     // cuando se conocen todas).
-    struct PendingLine { t: LineTotals, parts: Vec<(String, i64, i64)>, is_gift: bool, covered: bool, resolved: ResolvedTax, combined_pct: f64, unit_price: i64, qty: i64, line_disc: f64, item: Value, modifiers: String }
+    struct PendingLine { t: LineTotals, parts: Vec<(String, i64, i64)>, is_gift: bool, covered: bool, resolved: ResolvedTax, combined_pct: f64, unit_price: i64, qty: i64, line_disc: f64, item: Value, modifiers: String, combo: Option<ComboLine> }
     let mut pending_lines: Vec<PendingLine> = Vec::new();
 
     let mut bump = Map::new();
@@ -961,8 +1332,27 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     // Catálogo de suplementos (pm#93). Lectura OPCIONAL: `None` = `modifiers` no está instalado,
     // y entonces una línea CON suplementos se rechaza en `authoritative_modifiers` (falla cerrado).
     let modifier_catalog = tax::read_rows(&context, "modifiers.options.all");
+    // Catálogo de combos (sales#152 / ADR-0381). Lectura OPCIONAL igual que la de suplementos:
+    // `None` = `combos` no está instalado, y entonces una línea CON `combo_id` se rechaza en
+    // `expand_combo` (falla cerrado). Sin bloque `list` en origen — es autoridad de precio, y una
+    // read paginada entregaría 50 filas y callaría sobre el resto (hub#650).
+    let combo_catalog = tax::read_rows(&context, "combos.options.all");
 
-    for item in items.iter() {
+    // 🔴 EL COMBO SE ARMA UNA SOLA VEZ, aquí, y de esto beben las DOS rutas: las filas que se
+    // persisten y el evento `sale.completed` del que salen la factura y el registro de la AEAT. Si
+    // cada una expandiera por su cuenta, un día dirían cosas distintas.
+    let lines_in = expand_combos(items, &sale_id, combo_catalog.as_ref(), product_catalog.as_ref())?;
+    // La tanda de ids del host es finita (256, ARQUITECTURA.md §5.3) y un combo MULTIPLICA líneas.
+    // Sin este guard la línea 256 saldría con id vacío, y el fallo aparecería como una colisión de
+    // clave primaria en la BD, lejos de su causa.
+    if lines_in.len() + 1 > new_ids.len() {
+        return Err(reject(
+            "sales.too_many_lines",
+            format!("{} lines need {} ids, the batch has {}", lines_in.len(), lines_in.len() + 1, new_ids.len()),
+        ));
+    }
+
+    for (item, combo) in lines_in.iter() {
         // El precio SALE DEL CATÁLOGO si la línea dice ser de catálogo. El del payload es una
         // propuesta, no un hecho.
         let from_catalog = authoritative_price(item, product_catalog.as_ref())?;
@@ -976,10 +1366,19 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         // pm#93: el suplemento suma al PRECIO UNITARIO, así que el descuento de línea, el
         // prorrateo del descuento global, el punto fijo y el redondeo HALF_UP siguen siendo los
         // mismos. Una segunda ruta del dinero sería una segunda ruta que mantener y auditar.
+        // sales#152: en una línea de combo el precio lo decidió el SERVIDOR al repartir el precio
+        // cerrado; el del catálogo del producto es el PESO que ya se usó para repartirlo, no lo que
+        // se cobra. Aquí no hay una segunda ruta del dinero: el resto de la maquinaria sigue igual.
+        let unit_price = match combo { Some(c) => c.unit_price, None => unit_price };
         let (modifier_delta, modifier_snapshot) =
             authoritative_modifiers(item, modifier_catalog.as_ref())?;
         let unit_price = unit_price + modifier_delta;
-        let catalog_cat = from_catalog.as_ref().map(|(_, _, cat)| cat.as_str());
+        // La categoría de una línea de combo la fijó el servidor: la del combo si es prestación
+        // única (art. 91.Uno.2.2º), la del componente si el pack se repartió (art. 79.Dos).
+        let catalog_cat = match combo {
+            Some(c) => Some(c.tax_category_key.as_str()),
+            None => from_catalog.as_ref().map(|(_, _, cat)| cat.as_str()),
+        };
         // Cantidad en punto fijo 10⁶ (ADR-0147) + rechazo fuera de rejilla; y la cantidad de
         // precio KPEIN («37 céntimos por 100 ud») que hace exacto el sub-céntimo sin tocar el dinero.
         let qty = line_qty(item)?;
@@ -1043,7 +1442,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         };
         // sales#113: la línea se guarda calculada; el importe fijo se reparte cuando se conocen
         // TODAS (fase 2, más abajo) y solo entonces se agrega y se emite.
-        pending_lines.push(PendingLine { t, parts, is_gift, covered, resolved, combined_pct, unit_price, qty, line_disc, item: item.clone(), modifiers: modifier_snapshot });
+        pending_lines.push(PendingLine { t, parts, is_gift, covered, resolved, combined_pct, unit_price, qty, line_disc, item: item.clone(), modifiers: modifier_snapshot, combo: combo.clone() });
     }
 
     // ── Fase 2 (sales#113): reparto del importe fijo por RESTO MAYOR entre las líneas cobradas ──
@@ -1065,7 +1464,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     // ── Fase 3: agregar y emitir las líneas ──
     let mut line_results: Vec<LineTotals> = Vec::with_capacity(pending_lines.len());
     for (i, l) in pending_lines.into_iter().enumerate() {
-        let PendingLine { t, parts, is_gift, covered, resolved, combined_pct, unit_price, qty, line_disc, item, modifiers } = l;
+        let PendingLine { t, parts, is_gift, covered, resolved, combined_pct, unit_price, qty, line_disc, item, modifiers, combo } = l;
         let item = &item;
         // `tax_total` YA NO se acumula por línea: la cuota que se DECLARA sale del desglose, una
         // sola vez por tipo impositivo (ADR-0123 §4). `t.tax` queda como informativo de la línea.
@@ -1118,6 +1517,17 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         // pm#93: snapshot inmutable de los suplementos, en el ORDEN en que se eligieron. La columna
         // `sales_sale_item.modifiers` existía desde el principio y no la escribía nadie.
         p.insert("modifiers".into(), json!(modifiers));
+        // sales#152 / ADR-0381: lo que HERMANA las líneas de un mismo combo, y el snapshot del
+        // combo congelado en cada una. NO hay línea padre con dinero: la cabecera del tique se
+        // pinta de este snapshot, no de una fila a cero (el fallo de Odoo, odoo#187509).
+        p.insert(
+            "combo_group_ref".into(),
+            combo.as_ref().map(|c| json!(c.group_ref)).unwrap_or(Value::Null),
+        );
+        p.insert(
+            "combo".into(),
+            json!(combo.as_ref().map(|c| c.snapshot.clone()).unwrap_or_else(|| "{}".to_string())),
+        );
         p.insert("net_amount".into(), json!(t.net)); // céntimos
         p.insert("tax_amount".into(), json!(t.tax)); // céntimos
         p.insert("line_total".into(), json!(t.line)); // céntimos
@@ -1329,10 +1739,12 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     // `calc_line` respetando `tax_included`: invoice NO debe re-sumar IVA sobre el
     // bruto (precios IVA-incluido), debe USAR estos importes. Recomputamos aquí en
     // el mismo orden que arriba para emitir la base/IVA por línea sin reestructurar.
-    let event_items: Vec<Value> = items
+    // 🔴 Las MISMAS líneas expandidas que se persistieron (sales#152): si esto recorriera
+    // `payload.items`, un combo llegaría a `invoice` y a la AEAT con el precio del navegador.
+    let event_items: Vec<Value> = lines_in
         .iter()
         .enumerate()
-        .map(|(idx, it)| {
+        .map(|(idx, (it, it_combo))| {
             // MISMAS cifras de confianza que la línea que se persiste (sales#67/#68): si el evento
             // llevara el precio o la categoría del payload, `invoice` facturaría una cosa y la venta
             // guardaría otra. Ya validado en el bucle de arriba (mismo item), así que aquí no falla.
@@ -1341,7 +1753,11 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
                 Some((price, _, _)) => *price,
                 None => as_cents(it.get("price").unwrap_or(&Value::Null), 0), // céntimos
             };
-            let it_catalog_cat = it_from_catalog.as_ref().map(|(_, _, cat)| cat.as_str());
+            let unit_price = match it_combo { Some(c) => c.unit_price, None => unit_price };
+            let it_catalog_cat = match it_combo {
+                Some(c) => Some(c.tax_category_key.as_str()),
+                None => it_from_catalog.as_ref().map(|(_, _, cat)| cat.as_str()),
+            };
             let qty = line_qty(it).unwrap_or(QUANTITY_SCALE);
             let price_qty = line_price_qty(it);
             let line_disc = it.get("discount").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
@@ -1389,6 +1805,16 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
                 // station_id vacío. Opaco para sales (no FK cross-módulo); NULL si la línea no
                 // trae categoría (p.ej. producto sin clasificar). No depende de qué KDS se instale.
                 "category_id": it.get("category_id").cloned().unwrap_or(Value::Null),
+                // sales#152 / ADR-0381: de qué combo salió esta línea, y el combo entero congelado.
+                // Va al EVENTO y no solo a la fila porque los consumidores viven del evento: sin
+                // esto, `inventory` no puede mover el stock de los componentes de un menú que salió
+                // como UNA línea (no hay `product_id` que mirar — es la regla 8, inventory#69) y el
+                // documento de `invoice` no puede nombrar el menú que cobró.
+                "combo_group_ref": it_combo.as_ref().map(|c| json!(c.group_ref)).unwrap_or(Value::Null),
+                "combo": it_combo
+                    .as_ref()
+                    .map(|c| serde_json::from_str::<Value>(&c.snapshot).unwrap_or(Value::Null))
+                    .unwrap_or(Value::Null),
             })
         })
         .collect();
@@ -1415,7 +1841,8 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         "tax_amount": tax_total,
         "gift_total": gift_total, // coste de invitaciones (céntimos) → cash_register lo suma al arqueo
 
-        "items_count": items.len(),
+        // Las líneas REALES de la venta: un combo de bienes a tipos distintos son N, no una.
+        "items_count": lines_in.len(),
         "items": event_items,
         "customer_id": payload.get("customer_id").cloned().unwrap_or(Value::Null),
         "customer_name": str_or(&payload, "customer_name", ""),
@@ -4282,6 +4709,622 @@ mod tests {
         let item = &out.events[0].payload["items"][0];
         assert_eq!(item["product_name"], json!("Hamburguesa"));
         assert_eq!(out.events[0].name, "order.fired");
+    }
+
+    // ── sales#152 / ADR-0381 · el SERVIDOR arma el combo y REPARTE la base (art. 79.Dos) ───────
+    //
+    // Un combo NO es una línea: es un GRUPO de líneas hermanas, y cuántas tenga lo decide cuántos
+    // TIPOS impositivos distintos hay dentro, nunca cuántos componentes se eligieron.
+    //
+    //   * un solo tipo  → UNA línea con el precio cerrado. Cero reparto, cero redondeo: toda la
+    //     maquinaria de dinero ya probada (punto fijo, HALF_UP, un redondeo por importe) intacta.
+    //   * tipos distintos → UNA LÍNEA POR COMPONENTE, cada una con su categoría fiscal y el precio
+    //     cerrado repartido EN PROPORCIÓN AL PRECIO DE CATÁLOGO (art. 79.Dos LIVA, «valor de
+    //     mercado»; HMRC VATVAL03800, «selling price»). El céntimo residual va por RESTO MAYOR con
+    //     la MISMA máquina de ADR-0210/sales#113 (`allocate_amount`), no una nueva.
+    //
+    // 🔴 Y NUNCA una línea padre con dinero, ni siquiera a 0 €: es el fallo documentado de Odoo
+    // (odoo#187509), donde el combo aparece REGALADO en el informe de ventas.
+
+    /// Reglas de IVA con los DOS tipos que necesita un pack de tienda de alimentación.
+    fn combo_rules() -> Value {
+        json!([
+            { "id": "es-vat-10", "country_code": "ES", "region_code": null,
+              "tax_category_key": "shop.food", "rate_pct": 10.0, "tax_type": "vat", "parent_id": null },
+            { "id": "es-vat-21", "country_code": "ES", "region_code": null,
+              "tax_category_key": "product.generic", "rate_pct": 21.0, "tax_type": "vat", "parent_id": null }
+        ])
+    }
+
+    /// Una fila de `combos.options.all` (lectura OPCIONAL, ADR-0127: `sales` NO depende de `combos`).
+    #[allow(clippy::too_many_arguments)]
+    fn combo_option(
+        option_id: &str, group_id: &str, min_choices: i64, source_ref: &str,
+        price_delta: i64, supply_kind: &str, combo_price: i64, combo_tax: &str,
+    ) -> Value {
+        json!({
+            "option_id": option_id, "group_id": group_id, "combo_id": "c-1",
+            "combo_name": "Pack merienda", "combo_kitchen_name": "PACK",
+            "combo_price": combo_price, "combo_tax_category_key": combo_tax,
+            "supply_kind": supply_kind, "combo_is_active": 1,
+            "group_name": group_id, "min_choices": min_choices, "max_choices": 1, "allow_repeat": 0,
+            "group_sort_order": 0, "source": "product", "source_ref": source_ref,
+            "price_delta": price_delta, "option_sort_order": 0
+        })
+    }
+
+    /// Una fila de `inventory.products.for_sale`: el PESO del reparto (precio de catálogo) y la
+    /// categoría fiscal del componente salen de aquí, nunca del payload.
+    fn combo_product(id: &str, price: i64, cat: &str) -> Value {
+        json!({ "id": id, "price": price, "cost": 0, "tax_category_key": cat })
+    }
+
+    /// Cobro de UN combo con todos los catálogos de confianza puestos.
+    fn combo_input(choices: Value, options: Value, products: Value, ids: usize) -> Value {
+        let items = json!([{
+            // El TPV manda el id del combo y lo elegido. El nombre y el precio los pone el catálogo.
+            "combo_id": "c-1", "product_name": "Pack merienda", "price": 1, "quantity": 1_000_000,
+            "combo_choices": choices
+        }]);
+        let mut inp = input(items, ids, 0);
+        inp["context"]["country_code"] = json!("ES");
+        inp["context"]["reads"] = json!({
+            "taxes.rules.list": combo_rules(),
+            "inventory.products.for_sale": products,
+            "combos.options.all": options,
+        });
+        inp
+    }
+
+    /// Las líneas de venta que emitió el cobro, en orden.
+    fn sale_lines(out: &Output) -> Vec<Map<String, Value>> {
+        out.operations.iter()
+            .filter(|o| o.command == "sales._insert_line")
+            .map(|o| o.params.clone())
+            .collect()
+    }
+
+    fn line_totals(out: &Output) -> Vec<i64> {
+        sale_lines(out).iter().map(|p| p["line_total"].as_i64().unwrap_or(-1)).collect()
+    }
+
+    #[test]
+    fn el_pack_de_tienda_reparte_el_centimo_residual_a_la_CERVEZA_no_al_bocadillo() {
+        // 🔴 EL VECTOR DISCRIMINANTE (pm#156). Tienda de alimentación: bocadillo 4,50 € (10 %) +
+        // cerveza 2,00 € (21 %) = 6,50 € de catálogo, vendidos por 6,00 € cerrados.
+        //
+        //   600 × 450 / 650 = 415,38…  → suelo 415, resto 250
+        //   600 × 200 / 650 = 184,61…  → suelo 184, resto 400   ← el resto MAYOR
+        //
+        // Sobra 1 céntimo y va a la CERVEZA. Quien sume el sobrante a la primera línea da
+        // [416, 184] y NO se entera con ningún otro vector; quien redondee HALF_UP por línea da
+        // [415, 185] por casualidad aquí pero descuadra en cuanto la suma no cierra.
+        let out = sale(combo_input(
+            json!([{ "option_id": "o-sandwich", "product_name": "Bocadillo" },
+                   { "option_id": "o-beer", "product_name": "Cerveza" }]),
+            json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
+                   combo_option("o-beer", "g-drink", 1, "p-beer", 0, "goods", 600, "")]),
+            json!([combo_product("p-sandwich", 450, "shop.food"),
+                   combo_product("p-beer", 200, "product.generic")]),
+            8,
+        ));
+        assert_eq!(line_totals(&out), vec![415, 185], "el céntimo va al RESTO MAYOR (la cerveza)");
+        // LA INVARIANTE: la suma es EXACTAMENTE el precio cerrado. No «±1 céntimo»: exactamente.
+        assert_eq!(line_totals(&out).iter().sum::<i64>(), 600);
+        // Y cada línea tributa a LO SUYO: el bocadillo al 10 %, la cerveza al 21 %.
+        let lines = sale_lines(&out);
+        assert_eq!(lines[0]["tax_rate"], json!(10.0));
+        assert_eq!(lines[1]["tax_rate"], json!(21.0));
+        assert_eq!(lines[0]["tax_category_key"], json!("shop.food"));
+        assert_eq!(lines[1]["tax_category_key"], json!("product.generic"));
+    }
+
+    #[test]
+    fn el_reparto_reproduce_EXACTAMENTE_la_tabla_de_HMRC_VATVAL03800() {
+        // El control EXTERNO: HMRC documenta el reparto con un meal deal CON VINO dentro —
+        // plato 6,00 → 4,00; guarnición 1,50 → 1,00; postre 1,50 → 1,00; vino 6,00 → 4,00, sobre
+        // un precio de 10,00 frente a 15,00 de suma individual. Que España (art. 79.Dos, «valor de
+        // mercado») y HMRC («selling price») converjan deja de ser una afirmación del ADR.
+        let out = sale(combo_input(
+            json!([{ "option_id": "o-main" }, { "option_id": "o-side" },
+                   { "option_id": "o-dessert" }, { "option_id": "o-wine" }]),
+            json!([combo_option("o-main", "g1", 1, "p-main", 0, "goods", 1000, ""),
+                   combo_option("o-side", "g2", 1, "p-side", 0, "goods", 1000, ""),
+                   combo_option("o-dessert", "g3", 1, "p-dessert", 0, "goods", 1000, ""),
+                   combo_option("o-wine", "g4", 1, "p-wine", 0, "goods", 1000, "")]),
+            json!([combo_product("p-main", 600, "shop.food"),
+                   combo_product("p-side", 150, "shop.food"),
+                   combo_product("p-dessert", 150, "shop.food"),
+                   combo_product("p-wine", 600, "product.generic")]),
+            8,
+        ));
+        assert_eq!(line_totals(&out), vec![400, 100, 100, 400], "la tabla de HMRC, literal");
+        assert_eq!(line_totals(&out).iter().sum::<i64>(), 1000);
+    }
+
+    #[test]
+    fn con_restos_iguales_el_centimo_se_lo_lleva_la_linea_ANTERIOR() {
+        // 1000 sobre [500, 500, 500]: 333,33… cada uno, suelo 333, sobra 1 y los tres restos son
+        // IGUALES. El desempate es el orden estable del tique (la línea anterior), que es lo que
+        // hace `remainders.sort_by(… b.0.cmp(&a.0).then(a.1.cmp(&b.1)))` en `allocate_amount`.
+        let out = sale(combo_input(
+            json!([{ "option_id": "o-a" }, { "option_id": "o-b" }, { "option_id": "o-c" }]),
+            json!([combo_option("o-a", "g1", 1, "p-a", 0, "goods", 1000, ""),
+                   combo_option("o-b", "g2", 1, "p-b", 0, "goods", 1000, ""),
+                   combo_option("o-c", "g3", 1, "p-c", 0, "goods", 1000, "")]),
+            json!([combo_product("p-a", 500, "shop.food"),
+                   combo_product("p-b", 500, "shop.food"),
+                   combo_product("p-c", 500, "product.generic")]),
+            8,
+        ));
+        assert_eq!(line_totals(&out), vec![334, 333, 333]);
+        assert_eq!(line_totals(&out).iter().sum::<i64>(), 1000);
+    }
+
+    #[test]
+    fn un_menu_del_dia_es_UNA_linea_al_tipo_del_COMBO_aunque_dentro_haya_vino() {
+        // 🇪🇸 El error de partida más caro de esta funcionalidad: un menú SERVIDO EN EL LOCAL va
+        // ENTERO al 10 %, vino incluido (art. 91.Uno.2.2º LIVA — prestación única, la bebida es
+        // ACCESORIA). `supply_kind = service` lo DECLARA el combo; no lo adivina el TPV mirando
+        // cómo estén etiquetados los artículos. Una línea, el precio cerrado, cero reparto.
+        let out = sale(combo_input(
+            json!([{ "option_id": "o-first" }, { "option_id": "o-second" },
+                   { "option_id": "o-dessert" }, { "option_id": "o-wine" }]),
+            json!([combo_option("o-first", "g1", 1, "p-a", 0, "service", 1350, "shop.food"),
+                   combo_option("o-second", "g2", 1, "p-b", 0, "service", 1350, "shop.food"),
+                   combo_option("o-dessert", "g3", 1, "p-c", 0, "service", 1350, "shop.food"),
+                   // El vino está etiquetado al 21 % en el catálogo y NO parte el menú.
+                   combo_option("o-wine", "g4", 1, "p-wine", 0, "service", 1350, "shop.food")]),
+            json!([combo_product("p-a", 600, "shop.food"), combo_product("p-b", 800, "shop.food"),
+                   combo_product("p-c", 300, "shop.food"),
+                   combo_product("p-wine", 400, "product.generic")]),
+            8,
+        ));
+        let lines = sale_lines(&out);
+        assert_eq!(lines.len(), 1, "prestación única = UNA línea");
+        assert_eq!(lines[0]["unit_price"], json!(1350), "el precio CERRADO, sin repartir");
+        assert_eq!(lines[0]["line_total"], json!(1350));
+        assert_eq!(lines[0]["tax_rate"], json!(10.0), "todo al 10 %, vino incluido");
+        assert_eq!(lines[0]["tax_category_key"], json!("shop.food"));
+        // Y el nombre que se guarda es el del CATÁLOGO, no el que mandó el navegador.
+        assert_eq!(lines[0]["product_name"], json!("Pack merienda"));
+    }
+
+    #[test]
+    fn un_pack_de_UN_SOLO_tipo_tampoco_se_parte() {
+        // Regla 1 de ADR-0381: lo que decide el número de líneas es cuántos TIPOS distintos hay,
+        // nunca cuántos componentes. Dos productos al 10 % → UNA línea con el precio cerrado, y la
+        // maquinaria de dinero ni se entera de que había un combo.
+        let out = sale(combo_input(
+            json!([{ "option_id": "o-a" }, { "option_id": "o-b" }]),
+            json!([combo_option("o-a", "g1", 1, "p-a", 0, "goods", 600, ""),
+                   combo_option("o-b", "g2", 1, "p-b", 0, "goods", 600, "")]),
+            json!([combo_product("p-a", 450, "shop.food"), combo_product("p-b", 200, "shop.food")]),
+            8,
+        ));
+        let lines = sale_lines(&out);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0]["line_total"], json!(600));
+        assert_eq!(lines[0]["tax_category_key"], json!("shop.food"), "el tipo de sus componentes");
+    }
+
+    #[test]
+    fn NO_hay_linea_padre_con_importe_ni_a_cero_euros() {
+        // 🔴 El fallo documentado de Odoo (odoo#187509 + foro 279266): al prorratear, el combo
+        // queda a 0 € en el informe de ventas y el operador cree que lo ha REGALADO. Aquí las
+        // líneas son HERMANAS: no hay una fila más, ni a 0, ni con el `combo_id` como producto.
+        let out = sale(combo_input(
+            json!([{ "option_id": "o-sandwich" }, { "option_id": "o-beer" }]),
+            json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
+                   combo_option("o-beer", "g-drink", 1, "p-beer", 0, "goods", 600, "")]),
+            json!([combo_product("p-sandwich", 450, "shop.food"),
+                   combo_product("p-beer", 200, "product.generic")]),
+            8,
+        ));
+        let lines = sale_lines(&out);
+        assert_eq!(lines.len(), 2, "dos componentes, dos líneas: ni una más");
+        assert!(!lines.iter().any(|l| l["line_total"] == json!(0)), "ninguna línea a 0 €");
+        assert!(!lines.iter().any(|l| l["product_id"] == json!("c-1")), "el combo NO es una fila");
+    }
+
+    #[test]
+    fn las_lineas_hermanas_comparten_combo_group_ref_y_el_SNAPSHOT_del_combo() {
+        // Regla 4 y 6 de ADR-0381: las hermanas se reconocen por su `combo_group_ref` y llevan
+        // CONGELADO el nombre y el precio del combo — la cabecera del tique se pinta de ahí, no de
+        // una fila a cero. Cambiar el menú mañana no reescribe la comanda de ayer (ADR-0140).
+        let out = sale(combo_input(
+            json!([{ "option_id": "o-sandwich", "product_name": "Bocadillo" },
+                   { "option_id": "o-beer", "product_name": "Cerveza" }]),
+            json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
+                   combo_option("o-beer", "g-drink", 1, "p-beer", 0, "goods", 600, "")]),
+            json!([combo_product("p-sandwich", 450, "shop.food"),
+                   combo_product("p-beer", 200, "product.generic")]),
+            8,
+        ));
+        let lines = sale_lines(&out);
+        let refs: Vec<&Value> = lines.iter().map(|l| &l["combo_group_ref"]).collect();
+        assert_eq!(refs[0], refs[1], "hermanas: el MISMO grupo");
+        assert!(!as_str(refs[0]).is_empty(), "y un ref de verdad, no vacío");
+        let snap: Value = serde_json::from_str(lines[0]["combo"].as_str().expect("TEXT")).expect("JSON");
+        assert_eq!(snap["combo_id"], json!("c-1"));
+        assert_eq!(snap["name"], json!("Pack merienda"), "el nombre del CATÁLOGO, congelado");
+        assert_eq!(snap["price"], json!(600), "el precio CERRADO, congelado");
+        assert_eq!(snap["supply_kind"], json!("goods"));
+        // Y el orden de ELECCIÓN, que es el que lee cocina (la petición recurrente de Square).
+        assert_eq!(snap["components"][0]["option_id"], json!("o-sandwich"));
+        assert_eq!(snap["components"][1]["option_id"], json!("o-beer"));
+        assert_eq!(snap["components"][0]["source_ref"], json!("p-sandwich"));
+    }
+
+    #[test]
+    fn el_precio_QUE_MANDA_EL_CLIENTE_se_ignora_del_todo() {
+        // La lección de sales#68, aplicada al combo: el payload manda `price: 1` (un céntimo) y
+        // cada componente con su propio precio inventado. Se cobran los 6,00 € del catálogo.
+        let mut inp = combo_input(
+            json!([{ "option_id": "o-sandwich", "price": 1 }, { "option_id": "o-beer", "price": 1 }]),
+            json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
+                   combo_option("o-beer", "g-drink", 1, "p-beer", 0, "goods", 600, "")]),
+            json!([combo_product("p-sandwich", 450, "shop.food"),
+                   combo_product("p-beer", 200, "product.generic")]),
+            8,
+        );
+        inp["payload"]["items"][0]["price"] = json!(1);
+        let out = sale(inp);
+        assert_eq!(line_totals(&out).iter().sum::<i64>(), 600, "manda el catálogo, no el payload");
+    }
+
+    #[test]
+    fn el_price_delta_de_una_sustitucion_sube_el_DIVIDENDO_no_el_peso() {
+        // «+ solomillo 3 €»: el suplemento suma AL PRECIO CERRADO (el dividendo), nunca al peso del
+        // componente. El componente caro se lleva más base porque su precio de CATÁLOGO es mayor,
+        // sin tratamiento fiscal especial. 600 + 300 = 900 sobre [450, 200]:
+        //   900 × 450 / 650 = 623,07… → 623 (resto 50)
+        //   900 × 200 / 650 = 276,92… → 276 (resto 600) ← el resto mayor se lleva el céntimo
+        let out = sale(combo_input(
+            json!([{ "option_id": "o-sandwich" }, { "option_id": "o-beer" }]),
+            json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 300, "goods", 600, ""),
+                   combo_option("o-beer", "g-drink", 1, "p-beer", 0, "goods", 600, "")]),
+            json!([combo_product("p-sandwich", 450, "shop.food"),
+                   combo_product("p-beer", 200, "product.generic")]),
+            8,
+        ));
+        assert_eq!(line_totals(&out), vec![623, 277]);
+        assert_eq!(line_totals(&out).iter().sum::<i64>(), 900, "600 cerrados + 300 de suplemento");
+    }
+
+    #[test]
+    fn el_ORDEN_de_eleccion_no_cambia_lo_que_cobra_cada_componente() {
+        // Es lo que hizo indefendible el `override` de Toast: el reparto no puede depender de en
+        // qué orden tocó las baldosas el cajero. Se eligen al revés y cada componente cobra lo mismo.
+        let options = json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
+                             combo_option("o-beer", "g-drink", 1, "p-beer", 0, "goods", 600, "")]);
+        let products = json!([combo_product("p-sandwich", 450, "shop.food"),
+                              combo_product("p-beer", 200, "product.generic")]);
+        let al_reves = sale(combo_input(
+            json!([{ "option_id": "o-beer" }, { "option_id": "o-sandwich" }]),
+            options, products, 8,
+        ));
+        // Las líneas salen en el orden de elección, pero cada componente cobra LO SUYO.
+        let lines = sale_lines(&al_reves);
+        assert_eq!(lines[0]["product_id"], json!("p-beer"));
+        assert_eq!(lines[0]["line_total"], json!(185), "la cerveza cobra 1,85 € se elija cuando se elija");
+        assert_eq!(lines[1]["line_total"], json!(415));
+        assert_eq!(line_totals(&al_reves).iter().sum::<i64>(), 600);
+    }
+
+    #[test]
+    fn dos_packs_cobran_el_doble_exacto() {
+        // La cantidad multiplica DESPUÉS del reparto: el reparto es por unidad de combo, así que
+        // 2 packs son 2 × 4,15 € + 2 × 1,85 € = 12,00 € exactos, no un segundo redondeo.
+        let mut inp = combo_input(
+            json!([{ "option_id": "o-sandwich" }, { "option_id": "o-beer" }]),
+            json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
+                   combo_option("o-beer", "g-drink", 1, "p-beer", 0, "goods", 600, "")]),
+            json!([combo_product("p-sandwich", 450, "shop.food"),
+                   combo_product("p-beer", 200, "product.generic")]),
+            8,
+        );
+        inp["payload"]["items"][0]["quantity"] = json!(2_000_000);
+        let out = sale(inp);
+        assert_eq!(line_totals(&out), vec![830, 370]);
+        assert_eq!(line_totals(&out).iter().sum::<i64>(), 1200);
+    }
+
+    #[test]
+    fn un_grupo_OBLIGATORIO_sin_resolver_RECHAZA_la_venta() {
+        // Regla 7: `min_choices >= 1` es una PRECONDICIÓN, no un aviso. El pack tiene dos cursos
+        // obligatorios y solo se eligió uno: no se cobra media cosa.
+        let inp = combo_input(
+            json!([{ "option_id": "o-sandwich" }]),
+            json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
+                   combo_option("o-beer", "g-drink", 1, "p-beer", 0, "goods", 600, "")]),
+            json!([combo_product("p-sandwich", 450, "shop.food"),
+                   combo_product("p-beer", 200, "product.generic")]),
+            8,
+        );
+        let err = complete_sale_pure(inp).expect_err("un curso sin resolver no se cobra");
+        assert!(err.contains("sales.combo_group_unresolved"), "código de dominio estable: {err}");
+    }
+
+    #[test]
+    fn elegir_MAS_de_lo_que_permite_el_grupo_RECHAZA_la_venta() {
+        // `max_choices` es del servidor, no del picker: una petición que se salte la pantalla no
+        // puede llevarse dos postres al precio de uno.
+        let inp = combo_input(
+            json!([{ "option_id": "o-sandwich" }, { "option_id": "o-toast" }, { "option_id": "o-beer" }]),
+            json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
+                   combo_option("o-toast", "g-food", 1, "p-toast", 0, "goods", 600, ""),
+                   combo_option("o-beer", "g-drink", 1, "p-beer", 0, "goods", 600, "")]),
+            json!([combo_product("p-sandwich", 450, "shop.food"),
+                   combo_product("p-toast", 450, "shop.food"),
+                   combo_product("p-beer", 200, "product.generic")]),
+            8,
+        );
+        let err = complete_sale_pure(inp).expect_err("dos de un grupo de máximo uno");
+        assert!(err.contains("sales.combo_group_over_max"), "código de dominio estable: {err}");
+    }
+
+    #[test]
+    fn un_menu_RETIRADO_se_rechaza_RUIDOSO_y_no_como_opcion_desconocida() {
+        // `combo_is_active = 0` viaja a propósito en la read: un componente de un menú retirado se
+        // rechaza diciendo QUE EL MENÚ YA NO ESTÁ A LA VENTA. Confundirlo con «opción desconocida»
+        // manda al encargado a mirar el sitio equivocado — es otro bug con otro arreglo.
+        let mut options = json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
+                                 combo_option("o-beer", "g-drink", 1, "p-beer", 0, "goods", 600, "")]);
+        options[0]["combo_is_active"] = json!(0);
+        options[1]["combo_is_active"] = json!(0);
+        let inp = combo_input(
+            json!([{ "option_id": "o-sandwich" }, { "option_id": "o-beer" }]),
+            options,
+            json!([combo_product("p-sandwich", 450, "shop.food"),
+                   combo_product("p-beer", 200, "product.generic")]),
+            8,
+        );
+        let err = complete_sale_pure(inp).expect_err("un menú retirado no se vende");
+        assert!(err.contains("sales.combo_not_on_sale"), "código propio y RUIDOSO: {err}");
+    }
+
+    #[test]
+    fn una_opcion_que_no_es_de_ese_combo_RECHAZA_la_venta() {
+        let inp = combo_input(
+            json!([{ "option_id": "o-sandwich" }, { "option_id": "o-inventada" }]),
+            json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, "")]),
+            json!([combo_product("p-sandwich", 450, "shop.food")]),
+            8,
+        );
+        let err = complete_sale_pure(inp).expect_err("opción inventada");
+        assert!(err.contains("sales.combo_option_not_available"), "código estable: {err}");
+    }
+
+    #[test]
+    fn un_combo_que_no_esta_en_el_catalogo_RECHAZA_la_venta() {
+        let mut inp = combo_input(
+            json!([{ "option_id": "o-sandwich" }]),
+            json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, "")]),
+            json!([combo_product("p-sandwich", 450, "shop.food")]),
+            8,
+        );
+        inp["payload"]["items"][0]["combo_id"] = json!("c-inventado");
+        let err = complete_sale_pure(inp).expect_err("combo inventado");
+        assert!(err.contains("sales.combo_not_available"), "código estable: {err}");
+    }
+
+    #[test]
+    fn sin_el_modulo_combos_instalado_una_linea_de_combo_se_RECHAZA() {
+        // FALLA CERRADO (ADR-0127). `sales` NO depende de `combos`: la read es OPCIONAL, así que su
+        // ausencia significa «el módulo no está». Y sin catálogo no hay forma de saber ni el precio
+        // cerrado ni el reparto — cobrar «confiando» sería el agujero por la puerta de atrás.
+        // Un hub SIN `combos` cobra exactamente igual que antes (lo fija el test de control).
+        let mut inp = combo_input(
+            json!([{ "option_id": "o-sandwich" }]),
+            json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, "")]),
+            json!([combo_product("p-sandwich", 450, "shop.food")]),
+            8,
+        );
+        inp["context"]["reads"]["combos.options.all"] = Value::Null;
+        let err = complete_sale_pure(inp).expect_err("sin catálogo no se cobra un combo");
+        assert!(err.contains("sales.combo_catalog_unavailable"), "código estable: {err}");
+    }
+
+    #[test]
+    fn un_componente_SIN_precio_de_catalogo_RECHAZA_el_reparto() {
+        // El peso del reparto es el precio de CATÁLOGO del componente. Si el componente no está en
+        // `inventory.products.for_sale` no hay peso, y repartir «a partes iguales» sería inventarse
+        // la base imponible de una factura. Se rechaza, no se estima.
+        let inp = combo_input(
+            json!([{ "option_id": "o-sandwich" }, { "option_id": "o-beer" }]),
+            json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
+                   combo_option("o-beer", "g-drink", 1, "p-fantasma", 0, "goods", 600, "")]),
+            json!([combo_product("p-sandwich", 450, "shop.food")]),
+            8,
+        );
+        let err = complete_sale_pure(inp).expect_err("sin peso no hay reparto");
+        assert!(err.contains("sales.combo_component_price_unknown"), "código estable: {err}");
+    }
+
+    #[test]
+    fn el_EVENTO_lleva_las_mismas_lineas_repartidas_que_la_venta() {
+        // 🔴 `sale.completed` se construye en un SEGUNDO recorrido sobre los items. Si ese recorrido
+        // se quedara con el item del payload, `invoice` facturaría el combo por el precio que mandó
+        // el navegador (aquí, 1 céntimo) mientras las filas dicen otra cosa — y lo que llega a la
+        // AEAT sale del evento. Las dos rutas tienen que ver EXACTAMENTE las mismas líneas.
+        let out = sale(combo_input(
+            json!([{ "option_id": "o-sandwich" }, { "option_id": "o-beer" }]),
+            json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
+                   combo_option("o-beer", "g-drink", 1, "p-beer", 0, "goods", 600, "")]),
+            json!([combo_product("p-sandwich", 450, "shop.food"),
+                   combo_product("p-beer", 200, "product.generic")]),
+            8,
+        ));
+        let ev = &out.events[0].payload;
+        assert_eq!(ev["items_count"], json!(2), "el evento cuenta las líneas REALES");
+        let items = ev["items"].as_array().expect("items");
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0]["unit_price"], json!(415));
+        assert_eq!(items[1]["unit_price"], json!(185));
+        assert_eq!(items[0]["tax_rate"], json!(10.0));
+        assert_eq!(items[1]["tax_rate"], json!(21.0));
+        // El grupo y el snapshot viajan TAMBIÉN en el evento: los consumidores (inventory para el
+        // stock de los componentes, invoice para nombrar el menú) viven del evento, no de la fila.
+        assert_eq!(items[0]["combo_group_ref"], items[1]["combo_group_ref"]);
+        assert_eq!(items[0]["combo"]["name"], json!("Pack merienda"));
+        assert_eq!(items[0]["combo"]["components"][1]["source_ref"], json!("p-beer"));
+        // Y el total de la venta es el precio cerrado, al céntimo.
+        assert_eq!(ev["total"], json!(600));
+        let header = out.operations.iter().find(|o| o.command == "sales._insert_sale").expect("cabecera");
+        assert_eq!(header.params["total"], json!(600));
+    }
+
+    #[test]
+    fn el_DESGLOSE_por_tipo_reparte_la_base_del_pack_entre_los_dos_tipos() {
+        // Lo que se DECLARA (ADR-0123 §4): una entrada por tipo, sobre la base agregada. 415 brutos
+        // al 10 % → base 377, cuota 38; 185 brutos al 21 % → base 153, cuota 32. N líneas con N
+        // tipos es lo que el desglose YA sabía emitir: aguas abajo no hay caso nuevo.
+        let out = sale(combo_input(
+            json!([{ "option_id": "o-sandwich" }, { "option_id": "o-beer" }]),
+            json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
+                   combo_option("o-beer", "g-drink", 1, "p-beer", 0, "goods", 600, "")]),
+            json!([combo_product("p-sandwich", 450, "shop.food"),
+                   combo_product("p-beer", 200, "product.generic")]),
+            8,
+        ));
+        let header = out.operations.iter().find(|o| o.command == "sales._insert_sale").expect("cabecera");
+        let bd: Value = serde_json::from_str(header.params["tax_breakdown"].as_str().expect("TEXT"))
+            .expect("JSON");
+        let entries = bd.as_object().expect("un DetalleDesglose por TIPO (ADR-0123 §4)");
+        assert_eq!(entries.len(), 2, "dos tipos, dos entradas de desglose: {entries:?}");
+        assert_eq!(bd["10.00"]["base"], json!(377));
+        assert_eq!(bd["10.00"]["tax"], json!(38));
+        assert_eq!(bd["21.00"]["base"], json!(153));
+        assert_eq!(bd["21.00"]["tax"], json!(32));
+    }
+
+    #[test]
+    fn una_venta_SIN_combos_no_cambia_en_NADA() {
+        // Control (el 100 % de las ventas de hoy): sin `combo_id` no hace falta el catálogo de
+        // combos, no hay rechazo, y la línea es la de siempre. Si esto se pusiera rojo, el arreglo
+        // habría roto todas las ventas del producto.
+        let out = sale(input(json!([{ "product_name": "Café", "price": 150,
+                                      "quantity": 1_000_000, "tax_rate": 10.0 }]), 3, 150));
+        let lines = sale_lines(&out);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0]["line_total"], json!(150));
+        assert_eq!(lines[0]["combo_group_ref"], Value::Null, "sin combo, sin grupo");
+        assert_eq!(lines[0]["combo"], json!("{}"), "sin combo, snapshot vacío");
+        let ev_item = &out.events[0].payload["items"][0];
+        assert_eq!(ev_item["combo_group_ref"], Value::Null, "y el evento tampoco se inventa uno");
+        assert_eq!(ev_item["combo"], Value::Null);
+    }
+
+    #[test]
+    fn el_reparto_de_un_combo_MAS_CARO_que_sus_partes_sigue_siendo_el_de_hamilton() {
+        // `allocate_amount` acota el total a la suma de los pesos (un descuento no puede pasar del
+        // bruto). Un precio cerrado POR ENCIMA de la suma de los precios de catálogo es legítimo
+        // —una sustitución con suplemento, un pack por encima de sus partes— y con el techo se
+        // repartía de MENOS: la suma dejaba de ser el precio cerrado, que es la invariante.
+        //
+        // La equivalencia que hace que siga siendo la misma máquina: para todo total y todo peso,
+        // el resultado es el de Hamilton calculado con enteros de 128 bits.
+        let weights = [450_i64, 200];
+        for total in [1_i64, 599, 600, 650, 651, 900, 1300, 1301, 99_999] {
+            let got = allocate_proportional(total, &weights);
+            assert_eq!(got.iter().sum::<i64>(), total, "la suma es EXACTA para {total}");
+            let w_total: i128 = weights.iter().map(|w| *w as i128).sum();
+            let floors: Vec<i64> = weights.iter()
+                .map(|w| ((total as i128 * *w as i128) / w_total) as i64).collect();
+            for (i, f) in floors.iter().enumerate() {
+                assert!(got[i] == *f || got[i] == f + 1, "cada parte es el suelo o el suelo + 1 ({total})");
+            }
+        }
+        // Y por debajo del techo sigue coincidiendo, céntimo a céntimo, con la máquina de sales#113.
+        for total in [1_i64, 250, 600, 650] {
+            assert_eq!(allocate_proportional(total, &weights), allocate_amount(total, &weights));
+        }
+    }
+
+    #[test]
+    fn un_modificador_DENTRO_de_un_combo_cuelga_de_la_linea_de_SU_componente() {
+        // ADR-0376 sin cambios: «el segundo, sin cebolla» no es del menú, es de ese plato. El delta
+        // del suplemento suma AL PRECIO DE ESA LÍNEA, sobre su parte del reparto, y solo a esa.
+        let mut inp = combo_input(
+            json!([{ "option_id": "o-sandwich", "modifiers": [{ "option_id": "o-queso" }] },
+                   { "option_id": "o-beer" }]),
+            json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
+                   combo_option("o-beer", "g-drink", 1, "p-beer", 0, "goods", 600, "")]),
+            json!([combo_product("p-sandwich", 450, "shop.food"),
+                   combo_product("p-beer", 200, "product.generic")]),
+            8,
+        );
+        inp["context"]["reads"]["modifiers.options.all"] = catalogo_queso();
+        let out = sale(inp);
+        // 415 de reparto + 100 de queso en la línea del bocadillo; la cerveza, intacta.
+        assert_eq!(line_totals(&out), vec![515, 185]);
+    }
+
+    #[test]
+    fn un_combo_SIN_categoria_fiscal_se_rechaza_en_vez_de_cobrar_el_IVA_del_NAVEGADOR() {
+        // Sin categoría, el resolver se caería al `tax_rate` del payload —«preview del cliente»— y
+        // el navegador acabaría fijando el IVA de un menú. El combo está mal configurado y se dice
+        // en voz alta, que es lo contrario de cobrar al 0 % sin que nadie se entere.
+        let inp = combo_input(
+            json!([{ "option_id": "o-first" }]),
+            json!([combo_option("o-first", "g1", 1, "p-a", 0, "service", 1350, "")]),
+            json!([combo_product("p-a", 600, "shop.food")]),
+            8,
+        );
+        let err = complete_sale_pure(inp).expect_err("un menú sin categoría fiscal no se cobra");
+        assert!(err.contains("sales.combo_tax_category_missing"), "código estable: {err}");
+    }
+
+    #[test]
+    fn repetir_una_opcion_que_no_admite_repeticion_RECHAZA_la_venta() {
+        // `allow_repeat = 0`: dos veces el mismo plato en un curso que SÍ admite dos elecciones
+        // (`max_choices = 2`) pero no repetirlas. Con `max_choices = 1` lo pararía antes el techo
+        // del grupo, y el test no probaría nada de lo que dice probar.
+        let mut options = json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, "")]);
+        options[0]["max_choices"] = json!(2);
+        let inp = combo_input(
+            json!([{ "option_id": "o-sandwich" }, { "option_id": "o-sandwich" }]),
+            options,
+            json!([combo_product("p-sandwich", 450, "shop.food")]),
+            8,
+        );
+        let err = complete_sale_pure(inp).expect_err("opción repetida");
+        assert!(err.contains("sales.combo_option_repeated"), "código estable: {err}");
+    }
+
+    #[test]
+    fn un_menu_INVITADO_lo_es_en_TODAS_sus_lineas_hermanas() {
+        // Invitar medio menú no existe: la invitación es del combo, así que la heredan todas las
+        // hermanas. Si solo la heredara la primera, el tique cobraría la cerveza de una cortesía.
+        let mut inp = combo_input(
+            json!([{ "option_id": "o-sandwich" }, { "option_id": "o-beer" }]),
+            json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
+                   combo_option("o-beer", "g-drink", 1, "p-beer", 0, "goods", 600, "")]),
+            json!([combo_product("p-sandwich", 450, "shop.food"),
+                   combo_product("p-beer", 200, "product.generic")]),
+            8,
+        );
+        inp["payload"]["items"][0]["is_gift"] = json!(true);
+        inp["payload"]["items"][0]["gift_reason"] = json!("error de cocina");
+        let out = sale(inp);
+        let lines = sale_lines(&out);
+        assert_eq!(lines.len(), 2);
+        assert!(lines.iter().all(|l| l["is_gift"] == json!(1)), "las dos, o ninguna");
+        assert_eq!(line_totals(&out), vec![0, 0]);
+    }
+
+    #[test]
+    fn una_venta_con_MAS_lineas_que_ids_se_rechaza_en_vez_de_colisionar_en_la_BD() {
+        // La tanda de ids del host es finita (256) y un combo MULTIPLICA líneas. Sin guard, la
+        // línea 256 salía con id VACÍO y el fallo aparecía como una colisión de clave primaria en
+        // la BD, lejos de su causa — y con la venta a medio escribir.
+        let items: Vec<Value> = (0..300)
+            .map(|i| json!({ "product_name": format!("Item {i}"), "price": 100,
+                             "quantity": 1_000_000, "tax_rate": 10.0 }))
+            .collect();
+        let err = complete_sale_pure(input(json!(items), 256, 0)).expect_err("no caben");
+        assert!(err.contains("sales.too_many_lines"), "código estable: {err}");
     }
 
     // ── kitchen#54 · las líneas de la comanda las pone el SERVIDOR ────────────────────────────

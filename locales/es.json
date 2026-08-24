@@ -302,7 +302,17 @@
     "refundSaleNotFound": "Esa venta no es de este negocio.",
     "refundRequiresCompleted": "Solo se puede devolver una venta cerrada.",
     "refundMethodUnavailable": "Ese medio de pago no está disponible en este negocio.",
-    "refundLegAmount": "Importe a devolver"
+    "refundLegAmount": "Importe a devolver",
+    "errorComboCatalogUnavailable": "No se han podido cargar los menús, así que no se ha cobrado nada. Comprueba que el módulo Combos está instalado y vuelve a intentarlo",
+    "errorComboNotAvailable": "Ese menú ya no está en el catálogo: quita la línea y vuelve a añadirla",
+    "errorComboNotOnSale": "Ese menú ya no está a la venta. Quítalo del tique o vuelve a activarlo en Combos",
+    "errorComboOptionNotAvailable": "Una de las elecciones del menú ya no está en el catálogo: vuelve a elegirla",
+    "errorComboGroupUnresolved": "Al menú le falta un plato por elegir. Complétalo antes de cobrar",
+    "errorComboGroupOverMax": "El menú admite menos elecciones en ese plato. Quita una antes de cobrar",
+    "errorComboOptionRepeated": "Ese plato no admite elegir dos veces lo mismo",
+    "errorComboComponentPriceUnknown": "Un componente del menú no tiene precio de catálogo, así que no se puede repartir su IVA. Ponle precio en el catálogo",
+    "errorComboTaxCategoryMissing": "Ese menú no tiene categoría fiscal, así que no se puede cobrar. Configúrala en Combos",
+    "errorTooManyLines": "El tique tiene demasiadas líneas para cobrarlo de una vez. Divídelo en dos"
   },
   "widgets": {
     "sales.today": {

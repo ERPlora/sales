@@ -5,6 +5,10 @@
 -- pm#93: `modifiers` congela los suplementos elegidos (JSON, en el ORDEN de eleccion). La
 -- columna existia desde el principio y no la escribia nadie. El delta YA esta dentro de
 -- unit_price, asi que aqui es snapshot puro, no dinero que recalcular.
+-- sales#152 / ADR-0381: `combo_group_ref` hermana las lineas que salieron de UN combo (no hay
+-- linea padre con dinero: el combo a 0 EUR en los informes es el fallo de Odoo) y `combo` congela
+-- el snapshot del menu -- nombre, precio cerrado y componentes en su orden de eleccion -- del que
+-- se pinta la cabecera del tique. NULL / '{}' en toda linea que no venga de un combo.
 -- sales#12: `category_id` = categoría del producto congelada (routing de cocina), NULL sin clasificar.
 -- sales#162: `is_covered` = la línea la pagó un TENDER EXTERNO por línea (el bono de `services`
 -- cubre líneas enteras). Vale net/tax/total 0 y la marca es lo que deja al papel explicar por que.
@@ -14,7 +18,7 @@ INSERT INTO sales_sale_item (
     id, hub_id, sale_id, product_id, product_name, product_sku, is_service,
     quantity, unit_price, discount_percent, tax_rate, tax_class_name,
     tax_category_key, tax_country_code, tax_region_code, tax_rule_id, is_gift, gift_reason,
-    is_covered, category_id, modifiers,
+    is_covered, category_id, modifiers, combo_group_ref, combo,
     net_amount, tax_amount, line_total, created_at,
     unit_code, unit_name, factor_num, factor_den, increment_value,
     price_quantity_value, pricing_unit_code, pricing_unit_name,
@@ -23,7 +27,7 @@ INSERT INTO sales_sale_item (
     :line_id, :hub_id, :sale_id, :product_id, :product_name, :product_sku, :is_service,
     :quantity, :unit_price, :discount_percent, :tax_rate, :tax_class_name,
     :tax_category_key, :tax_country_code, :tax_region_code, :tax_rule_id, :is_gift, :gift_reason,
-    :is_covered, :category_id, :modifiers,
+    :is_covered, :category_id, :modifiers, :combo_group_ref, :combo,
     :net_amount, :tax_amount, :line_total, :now,
     :unit_code, :unit_name, :factor_num, :factor_den, :increment_value,
     :price_quantity_value, :pricing_unit_code, :pricing_unit_name,

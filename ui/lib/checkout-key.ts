@@ -58,6 +58,21 @@ const MESSAGES: Record<string, string> = {
   'sales.no_tax_rule': 'ui.errorNoTaxRule',
   'sales.tax_catalog_unavailable': 'ui.errorTaxCatalogUnavailable',
   'sales.idempotency_key_required': 'ui.errorCharge',
+  // sales#152 (ADR-0381) — el servidor arma el combo contra `combos.options.all` y falla CERRADO.
+  // Cada uno manda al cajero a un sitio distinto, y por eso no comparten mensaje: «el menú se
+  // retiró» se arregla en Combos, «falta un plato» se arregla en el tique, y «no se pudo cargar el
+  // catálogo» no es culpa de nadie que esté delante de la caja. Un único «no se ha podido cobrar»
+  // los convertiría a los tres en el mismo callejón sin salida.
+  'sales.combo_catalog_unavailable': 'ui.errorComboCatalogUnavailable',
+  'sales.combo_not_available': 'ui.errorComboNotAvailable',
+  'sales.combo_not_on_sale': 'ui.errorComboNotOnSale',
+  'sales.combo_option_not_available': 'ui.errorComboOptionNotAvailable',
+  'sales.combo_group_unresolved': 'ui.errorComboGroupUnresolved',
+  'sales.combo_group_over_max': 'ui.errorComboGroupOverMax',
+  'sales.combo_option_repeated': 'ui.errorComboOptionRepeated',
+  'sales.combo_component_price_unknown': 'ui.errorComboComponentPriceUnknown',
+  'sales.combo_tax_category_missing': 'ui.errorComboTaxCategoryMissing',
+  'sales.too_many_lines': 'ui.errorTooManyLines',
 };
 
 /** Traduce el mensaje de error de un cobro rechazado a una clave del catálogo del módulo. */
