@@ -23,6 +23,13 @@ import { isOverSimplifiedLimit, ticketIsBlocked, recipientIsComplete } from '../
 import { forgetCurrentCheck, rememberCurrentCheck, resolveCurrentCheck } from '../../lib/current-check.js';
 import { brandSvgFor } from '../../lib/brand-icons.js';
 import { priceLabel } from '../../lib/price-label.js';
+// sales#153 (ADR-0381) — las REGLAS del picker del menú viven en lib, probadas sin DOM: qué
+// elecciones son legales, qué grupo queda sin resolver y qué total se MUESTRA. El precio que se
+// cobra lo pone el servidor contra `combos.options.all`; esto es la propuesta, no la decisión.
+import {
+  canConfirmCombo, comboBlockReason, comboTotalCents, groupComboRows,
+  type Combo, type ComboGroup, type ComboOption,
+} from '../../lib/combo-picker.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod, payMethodDisplayName } from '../../lib/pay-icons.js';
 // sales#159 (ADR-0386) — una venta, N cobros. La ARITMÉTICA del reparto vive en lib (probada sin
@@ -582,6 +589,38 @@ export class ErpPosTouch extends LitElement {
     .tile.open-price .op-thumb { display:flex; align-items:center; justify-content:center; font-size:2rem; color:var(--ion-color-primary,#3880ff); background:var(--ion-color-primary-tint,rgba(56,128,255,.14)); }
     .dept-label { margin:.5rem 0 .3rem; font-size:.8rem; opacity:.7; }
     .dept-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:.4rem; }
+    /* ── sales#153 · el picker del menú ──────────────────────────────────────────────────── */
+    ion-card.tile.combo { border-color:var(--accent); }
+    .tile.combo .combo-badge { position:absolute; top:.3rem; left:.3rem; width:1.5rem; height:1.5rem;
+      border-radius:999px; display:flex; align-items:center; justify-content:center;
+      background:var(--ion-color-primary,#3880ff); color:#fff; font-size:.85rem; }
+    .combo-group { margin-bottom:.35rem; }
+    /* El contador lleva glifo ADEMÁS de color: el color solo no pasa contraste, y en un TPV la
+       pantalla puede ser mala. */
+    .combo-counter { display:inline-flex; align-items:center; gap:.25rem; font-weight:600; }
+    .combo-group[data-needs='true'] .combo-counter { color:var(--ion-color-danger,#c5000f); }
+    .combo-group[data-needs='false'] .combo-counter { color:var(--ion-color-success,#2dd36f); }
+    /* El toque en un botón bloqueado CONTESTA: el grupo que falta se señala. */
+    .combo-group[data-flagged='true'] { outline:2px solid var(--ion-color-danger,#c5000f);
+      outline-offset:2px; border-radius:var(--ok-radius-sm,10px); }
+    /* En el techo, lo no elegido se marca pero sigue LEGIBLE (Square no esconde lo no
+       seleccionable). Nada de pointer-events:none — el toque tiene que llegar. */
+    .combo-opt[data-barred='true'] { opacity:.6; border-style:dashed; }
+    .combo-opt[aria-pressed='true'] { border-color:var(--accent);
+      background:color-mix(in srgb,var(--accent) 12%,var(--tile)); }
+    .combo-less { min-width:2.1rem; border-radius:var(--ok-radius-sm,10px);
+      border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx);
+      font-size:1.1rem; cursor:pointer; }
+    .combo-total { display:flex; justify-content:space-between; align-items:baseline;
+      padding:.35rem .1rem .5rem; color:var(--tx); font-size:1rem; }
+    .combo-total strong { font-size:1.15rem; font-weight:800; }
+    .combo-confirm { width:100%; min-height:2.9rem; padding:.6rem 1rem; font:inherit;
+      font-weight:700; border-radius:var(--ok-radius-sm,10px); border:1px solid transparent;
+      background:var(--ion-color-primary,#3880ff); color:#fff; cursor:pointer; }
+    /* Bloqueado: se VE que no procede y el motivo va escrito DENTRO del boton -- nunca en title,
+       que en tactil no existe. Y sin pointer-events:none, para que el toque conteste. */
+    .combo-confirm[data-blocked='true'] { background:var(--tile-hi); color:var(--mut);
+      border-color:var(--ion-border-color); cursor:not-allowed; }
     .dept-btn { display:flex; flex-direction:column; align-items:flex-start; gap:.1rem; padding:.55rem .7rem; border-radius:var(--ok-radius-sm,10px); border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); cursor:pointer; text-align:left; }
     .dept-btn[aria-pressed='true'] { border-color:var(--ion-color-primary,#3880ff); background:var(--ion-color-primary-tint,rgba(56,128,255,.16)); }
     .dept-btn .dn { font-size:1rem; }
@@ -813,6 +852,18 @@ export class ErpPosTouch extends LitElement {
   @state() modifierSheet?: { product: Product; groups: ModifierGroup[] };
   /** Opciones elegidas, EN EL ORDEN de elección — cocina lee la comanda en ese orden. */
   @state() modifierPicks: string[] = [];
+  /** sales#153 — los menús que este hub puede vender. Vacío cuando `combos` no está instalado. */
+  @state() private comboCatalog: Combo[] = [];
+  /** La lectura del catálogo FALLÓ (≠ «no está instalado»). Se pinta: un menú que no se puede
+   *  componer no se ofrece, y el motivo se dice en vez de dejar la rejilla misteriosamente corta. */
+  @state() private comboCatalogFailed = false;
+  @state() comboSheet?: { combo: Combo };
+  /** Lo elegido, EN EL ORDEN de elección y con repeticiones si el grupo las permite. */
+  @state() comboPicks: string[] = [];
+  /** El grupo que el último toque bloqueado señaló. Es lo que hace que un botón que NO se puede
+   *  pulsar CONTESTE igualmente — sin esto el camarero solo tendría el `title`, que en táctil no
+   *  existe. */
+  @state() private comboNeedsGroup = '';
   @state() private openDept = '';
   @state() private payMethod?: PayMethod;
   /** sales#159 — ¿se está repartiendo el cobro entre varios medios? Es OPT-IN: hasta que el cajero
@@ -1188,6 +1239,10 @@ export class ErpPosTouch extends LitElement {
         // que NO queda desprotegido es el cable — §15.8 en el validador para el registro igual, y
         // esa es la mitad que impide que el número se gaste en una factura que la AEAT rechaza.
         erplora().query('hub.fiscal.limits').catch(() => []),
+        // sales#153 — los MENÚS que este hub vende. Una sola lectura (`combos.options.all`) da a la
+        // vez las baldosas y sus grupos, así que es imposible ofrecer un menú cuyos cursos no se
+        // hayan cargado: eso sería justo «ofrecer lo que el servidor va a rechazar».
+        this.loadCombos(),
       ]);
       if (connectionEpoch !== this.connectionEpoch || !this.isConnected) return;
       this.taxCatalog = taxCatalog;
@@ -2047,6 +2102,175 @@ export class ErpPosTouch extends LitElement {
     await this.addNow(sheet.product, picks);
   }
 
+  // ══ sales#153 · EL PICKER DEL MENÚ (ADR-0381) ════════════════════════════════════════════════
+  //
+  // Decidido con el mercado (12 referencias + foros; la tabla va en el PR). Tres veredictos:
+  //  · HOJA ÚNICA con los grupos apilados, no wizard. Odoo lo hace así en 18 y en 19, y Toast
+  //    construyó «Open View» para SALIR del wizard: «rather than in a sequential way».
+  //  · El TECHO se respeta PARTIDO por el valor de `max` — ver `pickComboOption`.
+  //  · El suplemento lleva SIGNO SEPARADO y se oculta si es cero — ver `comboDelta`.
+
+  /** Lee el catálogo de menús. Distingue tres estados que NO son el mismo:
+   *
+   *  · `undefined` → el módulo `combos` no está instalado. `sales` no gana `depends_on` (ADR-0127)
+   *    y el TPV es exactamente el de antes: ni baldosas ni aviso, porque no hay nada que avisar.
+   *  · lanza → el módulo está y la lectura FALLÓ. Eso sí se dice: una rejilla misteriosamente
+   *    corta es un fallo mudo, y este es el que deja al camarero buscando un menú que no aparece.
+   *  · filas → los menús vendibles.
+   */
+  private async loadCombos(): Promise<void> {
+    let raw: unknown;
+    try {
+      const c = erplora() as unknown as ErploraClientLike & { queryOptional?: (n: string, p?: unknown) => Promise<unknown> };
+      if (typeof c.queryOptional !== 'function') return;
+      raw = await c.queryOptional('combos.options.all', {});
+    } catch {
+      this.comboCatalogFailed = true;
+      return;
+    }
+    if (raw === undefined || raw === null) return;
+    this.comboCatalog = groupComboRows(rows<unknown>(raw));
+  }
+
+  /** El nombre de un componente. `combos` referencia el artículo de forma OPACA (`source`/
+   *  `source_ref`, `depends_on: []`), así que quien sabe cómo se llama es el catálogo que el TPV ya
+   *  tiene cargado. Sin resolverlo, el camarero elegiría entre «p-sirloin» y «p-chicken». */
+  private comboOptionName(o: ComboOption): string {
+    return this.products.find((p) => p.id === o.source_ref)?.name ?? o.source_ref;
+  }
+
+  /** El suplemento, con el SIGNO SEPARADO del número y vacío cuando es cero.
+   *
+   *  Es literalmente lo que hace Odoo (`Math.abs()` + `'+ '`/`'- '`, y `''` si es cero) y coincide
+   *  con el modo `Relative` de WooCommerce y con el «−$1.00» que Square publica para «No cheese».
+   *  El signo carga el significado: el color NO, porque el color solo no pasa contraste — y Odoo
+   *  pinta los dos signos del mismo color a propósito. */
+  private comboDelta(o: ComboOption): string {
+    if (!o.price_delta) return '';
+    // U+2212 (menos verdadero), no el guion de teclado.
+    return `${o.price_delta > 0 ? '+' : '\u2212'} ${this.money(Math.abs(o.price_delta))}`;
+  }
+
+  /** Cuántas veces está elegida una opción (con `allow_repeat` puede ser > 1). */
+  private comboCount(id: string): number {
+    return this.comboPicks.filter((x) => x === id).length;
+  }
+
+  private comboPicksIn(g: ComboGroup): string[] {
+    const ids = new Set(g.options.map((o) => o.option_id));
+    return this.comboPicks.filter((p) => ids.has(p));
+  }
+
+  /** El grupo llegó a su techo. `max = 0` es SIN TECHO: nunca se llena. */
+  private comboGroupFull(g: ComboGroup): boolean {
+    return g.max > 0 && this.comboPicksIn(g).length >= g.max;
+  }
+
+  /** El contador de la cabecera, con la gramática de Toast Open View: `1` exacto · `1-3` rango ·
+   *  `1+` mínimo sin techo · `3` opcional con techo · nada = opcional sin límite. Explica la regla
+   *  ANTES de que se choque contra ella, que es lo que no hace apagar la opción sin más. */
+  private comboGroupCounter(g: ComboGroup): string {
+    if (g.min > 0 && g.max === g.min) return `${g.min}`;
+    if (g.min > 0 && g.max > g.min) return `${g.min}-${g.max}`;
+    if (g.min > 0 && g.max === 0) return `${g.min}+`;
+    if (g.min === 0 && g.max > 0) return `${g.max}`;
+    return '';
+  }
+
+  private openCombo(combo: Combo) {
+    this.blockedNotice = '';
+    this.comboPicks = [];
+    this.comboNeedsGroup = '';
+    this.comboSheet = { combo };
+  }
+
+  /**
+   * Un toque en una opción. El mercado NO da una respuesta única al techo: la da **partida** por el
+   * valor de `max`, y así se implementa.
+   *
+   * · `max === 1` → **AUTO-SWAP** tipo radio. Square se lo prescribe a sus integradores («use radio
+   *   buttons when `max_selected_modifiers = 1`») y Odoo 18 lo hace con `<input type="radio">`. La
+   *   anterior se RETIRA limpiamente: cuando Square falló en eso, el KDS imprimía «No Not spicy» y
+   *   «Spicy Level 1» a la vez y hubo que renunciar a las preselecciones.
+   * · `max > 1` (o 0 = sin techo) → acumula. En el techo, el toque no añade pero **CONTESTA**:
+   *   marca el grupo. Nunca se apaga la opción entera —Square se niega a esconder lo no
+   *   seleccionable— y el motivo vive en el contador de la cabecera, no en un `title` que en una
+   *   pantalla táctil nadie puede leer.
+   *
+   * Y jamás se autoconfirma al llegar al mínimo: en Square eso se percibe como avería.
+   */
+  private pickComboOption(g: ComboGroup, id: string) {
+    this.comboNeedsGroup = '';
+    const mine = new Set(g.options.map((o) => o.option_id));
+    if (g.max === 1) {
+      // Volver a tocar la misma la retira: un grupo de uno no deja la elección atrapada.
+      this.comboPicks = this.comboCount(id) > 0
+        ? this.comboPicks.filter((x) => !mine.has(x))
+        : [...this.comboPicks.filter((x) => !mine.has(x)), id];
+      return;
+    }
+    const already = this.comboCount(id) > 0;
+    if (already && !g.allow_repeat) {
+      this.comboPicks = this.comboPicks.filter((x) => x !== id);
+      return;
+    }
+    if (this.comboGroupFull(g)) {
+      // El toque CONTESTA aunque no añada. Sin esto sería un botón que parece roto.
+      this.comboNeedsGroup = g.id;
+      return;
+    }
+    this.comboPicks = [...this.comboPicks, id];
+  }
+
+  /** Quita UNA de las repeticiones (solo existe cuando el grupo permite repetir). */
+  private dropComboOption(id: string) {
+    const i = this.comboPicks.lastIndexOf(id);
+    if (i < 0) return;
+    this.comboPicks = [...this.comboPicks.slice(0, i), ...this.comboPicks.slice(i + 1)];
+  }
+
+  /** Por qué no se puede confirmar, o `undefined`. Sale de la MISMA función que decide el botón,
+   *  así que el motivo escrito y el botón no pueden contradecirse. */
+  private comboBlocked(): { text: string; group: string } | undefined {
+    const sheet = this.comboSheet;
+    if (!sheet) return undefined;
+    const why = comboBlockReason(sheet.combo, this.comboPicks);
+    if (!why) return undefined;
+    return { text: t(why.key, { group: why.group, n: why.n ?? 1 }), group: why.group };
+  }
+
+  /** Confirma la composición y añade la línea. Solo viajan los `option_id` EN SU ORDEN —el que lee
+   *  cocina—, más el nombre y la categoría de cada componente para DISPLAY y para que el KDS
+   *  enrute cada uno a SU estación (el fallo de TouchBistro que ADR-0381 nombra).
+   *
+   *  🔴 El `price` que se manda es un PREVIEW. El servidor lo IGNORA y recalcula contra
+   *  `combos.options.all`: quien decide el dinero es él, nunca el navegador (sales#68). */
+  async confirmCombo(): Promise<void> {
+    const sheet = this.comboSheet;
+    if (!sheet) return;
+    if (!canConfirmCombo(sheet.combo, this.comboPicks)) {
+      // Un botón que no se puede pulsar tiene que CONTESTAR igual: se señala el grupo que falta.
+      this.comboNeedsGroup = comboBlockReason(sheet.combo, this.comboPicks)?.group ?? '';
+      const g = sheet.combo.groups.find((x) => x.name === this.comboNeedsGroup);
+      if (g) this.comboNeedsGroup = g.id;
+      return;
+    }
+    const combo = sheet.combo;
+    const picks = this.comboPicks;
+    const choices = picks.map((option_id) => {
+      const o = combo.groups.flatMap((g) => g.options).find((x) => x.option_id === option_id)!;
+      return {
+        option_id,
+        product_name: this.comboOptionName(o),
+        category_id: this.primaryCategory(o.source_ref) ?? null,
+      };
+    });
+    this.comboSheet = undefined;
+    this.comboPicks = [];
+    this.comboNeedsGroup = '';
+    await this.queue(() => this.addComboLine(combo, choices, comboTotalCents(combo, picks)));
+  }
+
   private toggleModifier(id: string) {
     this.modifierPicks = this.modifierPicks.includes(id)
       ? this.modifierPicks.filter((x) => x !== id)
@@ -2103,6 +2327,50 @@ export class ErpPosTouch extends LitElement {
       // #270 — el banner `this.error` es discreto y en un TPV táctil se pierde → el rechazo del
       // backend parecía "no pasa nada" al tocar un producto. Avisamos además por el canal de toasts
       // del shell (mismo `notify` que los avisos de éxito) para feedback visible e inmediato.
+      erplora().notify?.({ type: 'error', message: msg });
+    }
+  }
+
+  /** Añade la línea del MENÚ. Hermana de `addNow`, con su propia fusión: dos menús con segundo
+   *  distinto NO son la misma línea (la composición entra en la identidad, igual que los
+   *  suplementos en pm#93), o cocina recibiría «2 × Menú del día» y uno de los dos mal.
+   *
+   *  `price` es el PREVIEW que se acaba de enseñar; el servidor lo ignora y recalcula. */
+  private async addComboLine(
+    combo: Combo,
+    choices: { option_id: string; product_name: string; category_id: string | null }[],
+    previewCents: number,
+  ): Promise<void> {
+    const want = choices.map((c) => c.option_id).join('\u0000');
+    const ex = this.cart.find(
+      (l) => l.combo_id === combo.combo_id && !l.is_gift
+        && (l.combo_choices ?? []).map((c) => c.option_id).join('\u0000') === want,
+    );
+    const tax_rate = resolveLineTax(this.taxCatalog.rates, combo.tax_category_key);
+    try {
+      if (ex) {
+        const qty = ex.qty + 1;
+        this.cart = this.cart.map((l) => (l === ex ? { ...l, qty } : l));
+        if (this.orderId && !(await persistLineQty(erplora(), this.orderId, ex, qty))) {
+          this.cart = this.cart.map((l) => (l === ex ? { ...l, qty: ex.qty } : l));
+        }
+        return;
+      }
+      await this.pushNewLine({
+        id: combo.combo_id,
+        name: combo.name,
+        price: previewCents,
+        qty: 1,
+        tax_category_key: combo.tax_category_key,
+        tax_rate,
+        cost: 0,
+        combo_id: combo.combo_id,
+        combo_choices: choices,
+      });
+    } catch (e) {
+      const transportKey = transportErrorKey(e);
+      const msg = transportKey ? t(transportKey) : (e instanceof Error ? e.message : String(e));
+      this.error = msg;
       erplora().notify?.({ type: 'error', message: msg });
     }
   }
@@ -2657,7 +2925,7 @@ export class ErpPosTouch extends LitElement {
       // `inventory` y rechazaba la VENTA ENTERA con `sales.product_not_available`. Una peluquería
       // no podía cobrar un corte. Va condicional a propósito: marcarlo en una línea de catálogo le
       // saltaría la autoridad de precio y stock que el servidor sí tiene que aplicarle.
-      const items = cobradas.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: toMicro(l.qty), tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: l.category_id ?? this.primaryCategory(l.id) ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0, discount: l.discount ?? 0, ...(l.is_service ? { is_service: true } : {}), ...(l.modifiers?.length ? { modifiers: l.modifiers.map((m) => ({ option_id: m.option_id })) } : {}), ...(l.line_id && this.covered.has(l.line_id) ? { covered: true } : {}), ...unitContextPayload(l) }));
+      const items = cobradas.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: toMicro(l.qty), tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: l.category_id ?? this.primaryCategory(l.id) ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0, discount: l.discount ?? 0, ...(l.is_service ? { is_service: true } : {}), ...(l.modifiers?.length ? { modifiers: l.modifiers.map((m) => ({ option_id: m.option_id })) } : {}), ...(l.combo_id ? { combo_id: l.combo_id, combo_choices: (l.combo_choices ?? []).map((c) => ({ option_id: c.option_id, product_name: c.product_name ?? '', category_id: c.category_id ?? null })) } : {}), ...(l.line_id && this.covered.has(l.line_id) ? { covered: true } : {}), ...unitContextPayload(l) }));
       await erplora().command('sales.complete_sale', {
         items,
         // sales#71: descuento de TICKET (%); el servidor lo prorratea por línea antes del IVA.
@@ -3279,7 +3547,31 @@ export class ErpPosTouch extends LitElement {
                 <ion-icon name="alert-circle" aria-hidden="true"></ion-icon><span>${this.blockedNotice}</span>
               </div>`
             : nothing}
+          <!-- sales#153: la lectura del catálogo de menús FALLÓ (≠ «combos no está instalado»).
+               Se dice, en vez de dejar la rejilla misteriosamente corta: un menú que no se puede
+               componer no se ofrece, porque el servidor lo rechazaría al cobrar. -->
+          ${this.comboCatalogFailed
+            ? html`<div class="blocked-notice combo-unavailable" role="status">
+                <ion-icon name="alert-circle" aria-hidden="true"></ion-icon><span>${t('ui.comboCatalogUnavailable')}</span>
+              </div>`
+            : nothing}
           <div class="grid">
+            <!-- Los MENÚS van primero: en un local con menú del día es la primera comanda de la
+                 hora punta. Solo en la pestaña «todo»: un combo no pertenece a ninguna categoría
+                 de producto, así que pintarlo dentro de «Bebidas» sería mentir. -->
+            ${!this.activeCat ? this.comboCatalog.map((c) => html`
+              <ion-card button class="tile combo" data-combo-id=${c.combo_id}
+                        aria-label=${`${c.name} · ${this.money(c.price)}`}
+                        @click=${() => this.openCombo(c)}>
+                <div class="thumb" style=${`background:${gradient(c.name)}`}>
+                  ${initials(c.name)}
+                  <span class="combo-badge"><ion-icon name="restaurant-outline"></ion-icon></span>
+                </div>
+                <div class="tinfo">
+                  <div class="n">${c.name}</div><div class="sku">${t('ui.comboBadge')}</div>
+                  <div class="p">${this.money(c.price)}</div>
+                </div>
+              </ion-card>`) : nothing}
             ${this.filtered.map((p) => {
               // sales#74 — lo que el cobro va a rechazar (sin categoría fiscal, o con una que no
               // resuelve tipo) se pinta DESHABILITADO, no se esconde: escondiéndolo el negocio
@@ -3547,6 +3839,92 @@ export class ErpPosTouch extends LitElement {
                             @click=${() => this.confirmModifiers()}>
                   ${this.canConfirmModifiers() ? t('ui.add') : t('ui.modifierPickOne')}
                 </ion-button>
+              </div>
+            </div>
+          </div>`
+        : nothing}
+      <!-- sales#153 · EL PICKER DEL MENÚ. HOJA ÚNICA con los grupos apilados y scroll, no wizard:
+           es a lo que ha convergido el mercado táctil (Odoo 18 y 19; Toast construyó «Open View»
+           para salir del wizard, «rather than in a sequential way»). -->
+      ${this.comboSheet
+        ? html`<div class="scrim" @click=${(e: Event) => { if ((e.target as HTMLElement).classList.contains('scrim')) { this.comboSheet = undefined; } }}>
+            <div class="sheet" data-combo-sheet>
+              <div class="sheet-h">
+                <span class="t">${this.comboSheet.combo.name}</span>
+                <button class="x" @click=${() => { this.comboSheet = undefined; }}>✕</button>
+              </div>
+              <div class="pay">
+                ${this.comboSheet.combo.groups.map((g) => {
+                  const picked = this.comboPicksIn(g);
+                  const needs = picked.length < g.min;
+                  const full = this.comboGroupFull(g);
+                  const counter = this.comboGroupCounter(g);
+                  return html`
+                  <div class="combo-group" data-group-id=${g.id}
+                       data-needs=${needs ? 'true' : 'false'}
+                       data-full=${full ? 'true' : 'false'}
+                       data-flagged=${this.comboNeedsGroup === g.id ? 'true' : 'false'}>
+                    <div class="dept-label">
+                      ${g.name}
+                      <!-- El contador de Toast Open View: explica la regla ANTES de chocar con
+                           ella. La marca de estado NO es solo color (no pasaría contraste). -->
+                      ${counter ? html`<small class="combo-counter">
+                        <span aria-hidden="true">${needs ? '✕' : '✓'}</span>
+                        ${picked.length}/${counter}
+                      </small>` : html`<small>${t('ui.modifierOptional')}</small>`}
+                    </div>
+                    <div class="dept-grid" role="group" aria-label=${g.name}>
+                      ${g.options.map((o) => {
+                        const n = this.comboCount(o.option_id);
+                        const delta = this.comboDelta(o);
+                        // En el techo, lo NO elegido se marca pero sigue LEGIBLE: Square se niega
+                        // a esconder lo no seleccionable, y el gris sin motivo es la queja de
+                        // campo documentada en Toast. El toque CONTESTA igual (pickComboOption).
+                        //
+                        // 🔴 Nunca en `max = 1`: ahí el toque SÍ hace algo (auto-swap), y marcarlo
+                        // como inservible seria mentirle al camarero. Lo cazo el navegador de
+                        // verdad, no happy-dom: en pantalla los otros primeros salian con borde
+                        // discontinuo aunque cambiar de primero es justo lo que se espera poder.
+                        const barred = full && n === 0 && g.max !== 1;
+                        return html`
+                        <button class="dept-btn combo-opt" data-option-id=${o.option_id}
+                                aria-pressed=${n > 0 ? 'true' : 'false'}
+                                aria-disabled=${barred ? 'true' : 'false'}
+                                data-barred=${barred ? 'true' : 'false'}
+                                @click=${() => this.pickComboOption(g, o.option_id)}>
+                          <span class="dn">${this.comboOptionName(o)}${n > 1 ? html` <b>×${n}</b>` : nothing}</span>
+                          ${delta ? html`<span class="dr" data-delta>${delta}</span>` : nothing}
+                        </button>
+                        ${g.allow_repeat && n > 0
+                          ? html`<button class="combo-less" data-drop-option=${o.option_id}
+                                         aria-label=${t('ui.comboRemoveOne', { name: this.comboOptionName(o) })}
+                                         @click=${() => this.dropComboOption(o.option_id)}>−</button>`
+                          : nothing}`;
+                      })}
+                    </div>
+                  </div>`;
+                })}
+              </div>
+              <div class="sheet-foot">
+                <!-- El TOTAL EN VIVO. No es opinión: Odoo lo añadió del 18 al 19. -->
+                <div class="combo-total" data-combo-total>
+                  <span>${t('ui.colTotal')}</span>
+                  <strong>${this.money(comboTotalCents(this.comboSheet.combo, this.comboPicks))}</strong>
+                </div>
+                <!-- 🔴 Botón PLANO a propósito, no ion-button: el disabled de Ionic es
+                     pointer-events:none y se TRAGA el toque, dejando el motivo en title —
+                     hover, imposible en un TPV. Y en Shadow DOM Ionic mueve los aria-* a su
+                     <button> interno, así que un selector sobre el host no casaría nunca. Aquí el
+                     aria-disabled y el gancho data-blocked viven en el elemento que controlo. -->
+                ${(() => {
+                  const blocked = this.comboBlocked();
+                  return html`<button class="combo-confirm" data-combo-confirm
+                          aria-disabled=${blocked ? 'true' : 'false'}
+                          data-blocked=${blocked ? 'true' : 'false'}
+                          @click=${() => this.confirmCombo()}>
+                    ${blocked ? blocked.text : `${t('ui.add')} · ${this.money(comboTotalCents(this.comboSheet!.combo, this.comboPicks))}`}
+                  </button>`;
+                })()}
               </div>
             </div>
           </div>`

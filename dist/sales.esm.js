@@ -9,7 +9,7 @@ var __decorateClass = (decorators, target, key, kind) => {
   return result;
 };
 
-// node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
+// ../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
 var ElementInternalsShim = class ElementInternals {
   get shadowRoot() {
     return this.__host.__shadowRoot;
@@ -88,7 +88,7 @@ var ElementInternalsShim = class ElementInternals {
   }
 };
 
-// node_modules/@lit-labs/ssr-dom-shim/lib/events.js
+// ../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
 var __classPrivateFieldSet = function(receiver, state, value, kind, f3) {
   if (kind === "m") throw new TypeError("Private method is not writable");
   if (kind === "a" && !f3) throw new TypeError("Private accessor was defined without a setter");
@@ -246,7 +246,7 @@ Object.defineProperties(CustomEventShim.prototype, {
 var EventShimWithRealType = EventShim;
 var CustomEventShimWithRealType = CustomEventShim;
 
-// node_modules/@lit-labs/ssr-dom-shim/lib/css.js
+// ../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
 var _a2;
 var CSSRuleShim = (_a2 = class CSSRule {
   constructor() {
@@ -277,7 +277,7 @@ var CSSRuleShim = (_a2 = class CSSRule {
   }
 }, _a2.STYLE_RULE = 1, _a2.CHARSET_RULE = 2, _a2.IMPORT_RULE = 3, _a2.MEDIA_RULE = 4, _a2.FONT_FACE_RULE = 5, _a2.PAGE_RULE = 6, _a2.NAMESPACE_RULE = 10, _a2.KEYFRAMES_RULE = 7, _a2.KEYFRAME_RULE = 8, _a2.SUPPORTS_RULE = 12, _a2.COUNTER_STYLE_RULE = 11, _a2.FONT_FEATURE_VALUES_RULE = 14, _a2.MARGIN_RULE = 9, _a2);
 
-// node_modules/@lit-labs/ssr-dom-shim/index.js
+// ../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/index.js
 globalThis.Event ??= EventShimWithRealType;
 globalThis.CustomEvent ??= CustomEventShimWithRealType;
 var constructionToken = Symbol();
@@ -674,7 +674,7 @@ var CustomElementRegistryShimWithRealType = CustomElementRegistry;
 var customElements2 = new CustomElementRegistryShimWithRealType();
 var windowShim = new WindowShim(constructionToken);
 
-// node_modules/@lit/reactive-element/node/css-tag.js
+// ../../../module-toolkit/node_modules/@lit/reactive-element/node/css-tag.js
 var t = globalThis;
 var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
 var s = Symbol();
@@ -719,7 +719,7 @@ var c = e || void 0 === t.CSSStyleSheet ? (t7) => t7 : (t7) => t7 instanceof CSS
   return r(e7);
 })(t7) : t7;
 
-// node_modules/@lit/reactive-element/node/reactive-element.js
+// ../../../module-toolkit/node_modules/@lit/reactive-element/node/reactive-element.js
 var { is: h, defineProperty: r2, getOwnPropertyDescriptor: o2, getOwnPropertyNames: n2, getOwnPropertySymbols: a, getPrototypeOf: c2 } = Object;
 var l = globalThis;
 l.customElements ??= customElements2;
@@ -942,7 +942,7 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
 };
 g.elementStyles = [], g.shadowRootOptions = { mode: "open" }, g[f("elementProperties")] = /* @__PURE__ */ new Map(), g[f("finalized")] = /* @__PURE__ */ new Map(), u?.({ ReactiveElement: g }), (l.reactiveElementVersions ??= []).push("2.1.2");
 
-// ../modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
+// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
 var t2 = globalThis;
 var i2 = (t7) => t7;
 var s2 = t2.trustedTypes;
@@ -1197,7 +1197,7 @@ var D = (t7, i7, s5) => {
   return h4._$AI(t7), h4;
 };
 
-// ../modules-workspace/node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
+// ../../node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
 var s3 = globalThis;
 var i3 = class extends g {
   constructor() {
@@ -1226,7 +1226,7 @@ var o4 = s3.litElementPolyfillSupport;
 o4?.({ LitElement: i3 });
 (s3.litElementVersions ??= []).push("4.2.2");
 
-// node_modules/@lit/reactive-element/node/decorators/property.js
+// ../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
 var r4 = (t7 = o5, e7, r6) => {
   const { kind: n6, metadata: i7 } = r6;
@@ -1256,15 +1256,15 @@ function n4(t7) {
   })(t7, e7, o9);
 }
 
-// node_modules/@lit/reactive-element/node/decorators/state.js
+// ../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/state.js
 function r5(r6) {
   return n4({ ...r6, state: true, attribute: false });
 }
 
-// node_modules/@lit/reactive-element/node/decorators/base.js
+// ../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/base.js
 var e3 = (e7, t7, c5) => (c5.configurable = true, c5.enumerable = true, Reflect.decorate && "object" != typeof t7 && Object.defineProperty(e7, t7, c5), c5);
 
-// node_modules/@lit/reactive-element/node/decorators/query.js
+// ../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/query.js
 function e4(e7, r6) {
   return (n6, s5, i7) => {
     const o9 = (t7) => t7.renderRoot?.querySelector(e7) ?? null;
@@ -1288,14 +1288,14 @@ function e4(e7, r6) {
   };
 }
 
-// ../outfitkit/dist/define.js
+// ../../../outfitkit/dist/define.js
 function define(tag, ctor) {
   if (typeof customElements !== "undefined" && !customElements.get(tag)) {
     customElements.define(tag, ctor);
   }
 }
 
-// ../outfitkit/dist/tabbar.js
+// ../../../outfitkit/dist/tabbar.js
 var EPSILON = 1;
 var HINT_PX = 28;
 var HINT_VUELTA_MS = 420;
@@ -1353,7 +1353,7 @@ function bindTabbar(segment, opts = {}) {
   };
 }
 
-// ../hub/packages/module-sdk/src/index.ts
+// ../../../hub/packages/module-sdk/src/index.ts
 function isEmpty(v3) {
   return v3 === null || v3 === void 0 || v3 === "";
 }
@@ -1482,7 +1482,7 @@ function centsToEuros(cents2) {
   return cents2 == null ? "" : (cents2 / 100).toFixed(2);
 }
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/quantity.ts
+// ui/lib/quantity.ts
 var QUANTITY_SCALE2 = 1e6;
 function toMicro2(qty) {
   return Math.round(qty * QUANTITY_SCALE2);
@@ -1498,7 +1498,7 @@ function onGrid2(raw, increment) {
   return raw % increment === 0;
 }
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/price-label.ts
+// ui/lib/price-label.ts
 var UNIT_EACH = "ud";
 function unitTag(unitCode) {
   return unitCode && unitCode !== UNIT_EACH ? unitCode : "";
@@ -1513,7 +1513,7 @@ function quantityLabel(qty, unitCode) {
   return tag ? `${n6} ${tag}` : n6;
 }
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/paper-modifiers.ts
+// ui/lib/paper-modifiers.ts
 var SEP = " \xB7 ";
 function modifierLabel(m4) {
   return (m4.name || "").trim() || (m4.option_id || "").trim();
@@ -1526,7 +1526,7 @@ function modifierIdentity(m4) {
   return `${m4.option_id || m4.name || ""}:${m4.price_delta ?? 0}`;
 }
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/receipt-html.ts
+// ui/lib/receipt-html.ts
 function esc(v3) {
   return String(v3 ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
@@ -1627,7 +1627,7 @@ function printHtmlInIframe(html, doc = document) {
   else w2.addEventListener("load", () => setTimeout(lanzar, 50), { once: true });
 }
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/pay-icons.ts
+// ui/lib/pay-icons.ts
 var PAY_ICON_FALLBACK = "ellipsis-horizontal-circle-outline";
 var BY_TYPE = {
   cash: "cash-outline",
@@ -1691,7 +1691,7 @@ function defaultPayMethod(methods) {
   return methods.find((m4) => (m4.type || "").trim().toLowerCase() === "cash") ?? methods.find((m4) => /efectiv|cash|met[\u00e1a]lico/i.test(m4.name || "")) ?? methods[0];
 }
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/document-mappers.ts
+// ui/lib/document-mappers.ts
 function toEuros(cents2) {
   return Number(cents2 ?? 0) / 100;
 }
@@ -1936,7 +1936,7 @@ function orderToPrebill(lines, settings = {}, opts = {}) {
   };
 }
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/print-document.ts
+// ui/lib/print-document.ts
 function euros(cents2) {
   return cents2 == null ? void 0 : Number(cents2) / 100;
 }
@@ -2008,7 +2008,7 @@ function hash(s5) {
   return h4.toString(36);
 }
 
-// ../outfitkit/dist/shared/icons.js
+// ../../../outfitkit/dist/shared/icons.js
 var rawAdd = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M256 112v288m144-144H112"/></svg>';
 var rawAlertCircle = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="M256 48C141.31 48 48 141.31 48 256s93.31 208 208 208s208-93.31 208-208S370.69 48 256 48m0 319.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20m21.72-201.15l-5.74 122a16 16 0 0 1-32 0l-5.74-121.94v-.05a21.74 21.74 0 1 1 43.44 0Z"/></svg>';
 var rawAlertCircleOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" d="M448 256c0-106-86-192-192-192S64 150 64 256s86 192 192 192s192-86 192-192Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M250.26 166.05L256 288l5.73-121.95a5.74 5.74 0 0 0-5.79-6h0a5.74 5.74 0 0 0-5.68 6"/><path fill="currentColor" d="M256 367.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20"/></svg>';
@@ -2156,7 +2156,7 @@ function okIcon(value) {
   return BY_NAME2[value] ?? value;
 }
 
-// ../outfitkit/dist/ok-inline-feedback.js
+// ../../../outfitkit/dist/ok-inline-feedback.js
 var __defProp2 = Object.defineProperty;
 var __decorateClass2 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2373,7 +2373,7 @@ __decorateClass2([
 ], OkInlineFeedback.prototype, "hasActions");
 define("ok-inline-feedback", OkInlineFeedback);
 
-// ../outfitkit/dist/ok-qr.js
+// ../../../outfitkit/dist/ok-qr.js
 var __defProp3 = Object.defineProperty;
 var __decorateClass3 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -3021,7 +3021,7 @@ __decorateClass3([
 ], OkQr.prototype, "margin");
 define("ok-qr", OkQr);
 
-// ../outfitkit/dist/ok-receipt.js
+// ../../../outfitkit/dist/ok-receipt.js
 var __defProp4 = Object.defineProperty;
 var __decorateClass4 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -3212,7 +3212,7 @@ __decorateClass4([
 ], OkReceipt.prototype, "labels");
 define("ok-receipt", OkReceipt);
 
-// ../outfitkit/dist/ok-invoice.js
+// ../../../outfitkit/dist/ok-invoice.js
 var __defProp5 = Object.defineProperty;
 var __decorateClass5 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -3467,7 +3467,7 @@ __decorateClass5([
 ], OkInvoice.prototype, "labels");
 define("ok-invoice", OkInvoice);
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/public-claim.ts
+// ui/lib/public-claim.ts
 var CLAIM_KIND = "invoice_request";
 var CLAIM_COMMAND = "invoice.substitute";
 var CLAIM_PUBLIC_FIELDS = ["customer_tax_id", "customer_name", "customer_address"];
@@ -3499,7 +3499,7 @@ async function mintInvoiceRequestClaim(invoiceId, items, opts = {}) {
   }
 }
 
-// ../modules-workspace/modules/.sales-152-combo/locales/es.json
+// locales/es.json
 var es_default = {
   name: "Ventas / TPV",
   description: "Terminal punto de venta: cierra y anula ventas, y consulta el hist\xF3rico y las m\xE9tricas.",
@@ -3814,7 +3814,13 @@ var es_default = {
     errorComboOptionRepeated: "Ese plato no admite elegir dos veces lo mismo",
     errorComboComponentPriceUnknown: "Un componente del men\xFA no tiene precio de cat\xE1logo, as\xED que no se puede repartir su IVA. Ponle precio en el cat\xE1logo",
     errorComboTaxCategoryMissing: "Ese men\xFA no tiene categor\xEDa fiscal, as\xED que no se puede cobrar. Config\xFArala en Combos",
-    errorTooManyLines: "El tique tiene demasiadas l\xEDneas para cobrarlo de una vez. Div\xEDdelo en dos"
+    errorTooManyLines: "El tique tiene demasiadas l\xEDneas para cobrarlo de una vez. Div\xEDdelo en dos",
+    comboBadge: "Men\xFA",
+    comboCatalogUnavailable: "No se han podido cargar los men\xFAs, as\xED que no se ofrece ninguno. Revisa el m\xF3dulo Combos e int\xE9ntalo de nuevo",
+    comboGroupUnresolved: "Elige {n} en {group}",
+    comboGroupOverMax: "{group} admite solo {n}",
+    comboOptionRepeated: "{group} no admite el mismo art\xEDculo dos veces",
+    comboRemoveOne: "Quitar un {name}"
   },
   widgets: {
     "sales.today": {
@@ -3834,7 +3840,7 @@ var es_default = {
   }
 };
 
-// ../modules-workspace/modules/.sales-152-combo/locales/en.json
+// locales/en.json
 var en_default = {
   name: "Sales & POS",
   navigation: {
@@ -4148,11 +4154,17 @@ var en_default = {
     errorComboOptionRepeated: "That course does not allow choosing the same item twice",
     errorComboComponentPriceUnknown: "A component of the menu has no catalogue price, so its share of the VAT cannot be worked out. Set its price in the catalogue",
     errorComboTaxCategoryMissing: "That menu has no tax category, so it cannot be charged. Set it in Combos",
-    errorTooManyLines: "The ticket has too many lines to be charged in one go. Split it into two"
+    errorTooManyLines: "The ticket has too many lines to be charged in one go. Split it into two",
+    comboBadge: "Menu",
+    comboCatalogUnavailable: "The menus could not be loaded, so none are being offered. Check the Combos module and try again",
+    comboGroupUnresolved: "Choose {n} in {group}",
+    comboGroupOverMax: "{group} allows only {n}",
+    comboOptionRepeated: "{group} cannot take the same item twice",
+    comboRemoveOne: "Remove one {name}"
   }
 };
 
-// ../modules-workspace/modules/.sales-152-combo/ui/components/erp-sales-document/erp-sales-document.ts
+// ui/components/erp-sales-document/erp-sales-document.ts
 var CATALOG = { es: es_default, en: en_default };
 function erplora() {
   const c5 = globalThis.erplora;
@@ -4433,7 +4445,7 @@ __decorateClass([
 ], ErpSalesDocument.prototype, "fiscalRetryDelays", 2);
 define("erp-sales-document", ErpSalesDocument);
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/document-modal.ts
+// ui/lib/document-modal.ts
 function renderDocumentModal({ saleId, onClose, t: t7 }) {
   return b2`<ion-modal class="doc-modal" .isOpen=${!!saleId} @ionModalDidDismiss=${onClose}>
     <style>
@@ -4502,7 +4514,7 @@ function renderDocumentModal({ saleId, onClose, t: t7 }) {
   </ion-modal>`;
 }
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/table-switch.ts
+// ui/lib/table-switch.ts
 function decideOnTableChange(c5) {
   if (!c5.targetTableId) return c5.cartHasItems ? "park-then-clear" : "clear";
   if (c5.currentTableId) return c5.targetOrderId ? "load-target" : "start-new-check";
@@ -4510,7 +4522,7 @@ function decideOnTableChange(c5) {
   return c5.targetOrderId ? "park-then-load" : "assign-to-target";
 }
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/park-label.ts
+// ui/lib/park-label.ts
 function defaultParkLabel(tableLabel, now) {
   const mesa = (tableLabel ?? "").trim();
   if (mesa) return mesa;
@@ -4519,7 +4531,7 @@ function defaultParkLabel(tableLabel, now) {
   return `${hh}:${mm}`;
 }
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/rounds.ts
+// ui/lib/rounds.ts
 function pendingLines(lines) {
   return lines.filter((l3) => !l3.fired_at);
 }
@@ -4531,7 +4543,7 @@ function nextRoundNo(lines) {
   return max + 1;
 }
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/fire-order.ts
+// ui/lib/fire-order.ts
 function buildFirePayload(orderId, label, lines, roundNo) {
   if (!orderId || lines.length === 0) return void 0;
   return {
@@ -4559,7 +4571,7 @@ function buildFirePayload(orderId, label, lines, roundNo) {
   };
 }
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/serial-queue.ts
+// ui/lib/serial-queue.ts
 function createSerialQueue() {
   let last = Promise.resolve();
   return (task) => {
@@ -4569,7 +4581,7 @@ function createSerialQueue() {
   };
 }
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/pos-cart.ts
+// ui/lib/pos-cart.ts
 function rows(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
@@ -4799,7 +4811,7 @@ async function splitOrder(client, orderId, lineIds, label) {
   return firstNewId(res);
 }
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/split-selection.ts
+// ui/lib/split-selection.ts
 function esParcial(cart, sel) {
   const conId = cart.filter((l3) => l3.line_id);
   return sel.size > 0 && sel.size < conId.length;
@@ -4824,7 +4836,7 @@ function splitPayload(cart, sel) {
   };
 }
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/simplified-limit.ts
+// ui/lib/simplified-limit.ts
 function isOverSimplifiedLimit(payableCents, maxCents) {
   if (maxCents === null || maxCents <= 0) return false;
   return payableCents >= maxCents;
@@ -4837,7 +4849,7 @@ function ticketIsBlocked(state) {
   return !(state.documentFormat === "invoice" && recipientIsComplete(state));
 }
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/current-check.ts
+// ui/lib/current-check.ts
 var CLAVE = "erplora.pos.currentCheck";
 function rememberCurrentCheck(store, orderId) {
   try {
@@ -4861,7 +4873,7 @@ function resolveCurrentCheck(store, abiertas) {
   return recordada && abiertas.includes(recordada) ? recordada : void 0;
 }
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/brand-icons.ts
+// ui/lib/brand-icons.ts
 var BIZUM_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 122 36"><path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M59.8625 12.8257c-1.0347 0-1.8704.8358-1.8704 1.8308v13.8113c0 1.0348.8357 1.8707 1.8704 1.8707s1.8704-.8359 1.8704-1.8707V14.6565c0-.995-.8357-1.8308-1.8704-1.8308Zm-.0001-6.88561c-1.154 0-2.1091.95524-2.1091 2.1095 0 1.15425.9551 2.14931 2.1091 2.14931 1.1541 0 2.1092-.95526 2.1092-2.14931 0-1.15426-.9551-2.1095-2.1092-2.1095ZM78.089 14.6566c0-1.1543-.9153-1.5921-1.751-1.5921h-9.2725c-.9153 0-1.6316.7164-1.6316 1.5921 0 .9154.7163 1.6319 1.6316 1.6319h6.0888l-7.8796 10.9853c-.2388.3184-.3581.7562-.3581 1.1144 0 1.1543.9153 1.7911 1.7112 1.7911h9.8296c.9153 0 1.6316-.7164 1.6316-1.6319 0-.9154-.7163-1.6318-1.6316-1.6318h-6.6062l7.7204-10.7466c.398-.5572.5174-1.0348.5174-1.5124Zm-27.3 8.6769c0 2.2687-.9949 3.6618-3.2633 3.6618-2.2683 0-3.2234-1.3931-3.2234-3.6618v-7.045h3.3826c2.7459 0 3.1041 1.5125 3.1041 3.1842v3.8608Zm3.7408-3.9404c0-3.8608-2.0296-6.3683-6.7653-6.3683h-3.4224V7.81078c0-1.03485-.8357-1.87069-1.8306-1.87069-1.0347 0-1.8704.83584-1.8704 1.87069V23.3335c0 3.8608 2.0693 7.0051 6.9642 7.0051 4.8551 0 6.9643-3.1841 6.9643-7.0051v-3.9404h-.0398Zm38.1642-6.5674c-1.0346 0-1.8704.8358-1.8704 1.8706v8.6371c0 2.2687-.9949 3.6617-3.2632 3.6617-2.2684 0-3.2235-1.393-3.2235-3.6617v-8.6371c0-1.0348-.8357-1.8706-1.8306-1.8706-1.0347 0-1.8704.8358-1.8704 1.8706v8.6371c0 3.8607 2.0694 7.0051 6.9643 7.0051 4.8551 0 6.9642-3.1842 6.9642-7.0051v-8.6371c-.0397-1.0348-.8755-1.8706-1.8704-1.8706Zm28.374 7.0451c0-3.8608-1.79-7.0052-6.645-7.0052-2.189 0-3.741.6369-4.816 1.7115-1.074-1.0348-2.626-1.7115-4.815-1.7115-4.8552 0-6.646 3.1842-6.646 7.0052v8.637c0 1.0348.8357 1.8707 1.8306 1.8707 1.0344 0 1.8704-.8359 1.8704-1.8707v-8.637c0-2.2687.716-3.6618 2.945-3.6618 2.268 0 2.945 1.3931 2.945 3.6618v8.637c0 1.0348.836 1.8707 1.83 1.8707 1.035 0 1.871-.8359 1.871-1.8707v-8.637c0-2.2687.716-3.6618 2.945-3.6618 2.268 0 2.945 1.3931 2.945 3.6618v8.637c0 1.0348.835 1.8707 1.83 1.8707 1.035 0 1.871-.8359 1.871-1.8707l.039-8.637ZM6.61567 12.8655c1.31327.9553 3.14387.6767 4.09893-.6368l3.4225-4.73643c.9551-1.31346.6765-3.14434-.6367-4.09959-1.3133-.95524-3.1439-.67663-4.09902.63683L5.93914 8.76593c-.9153 1.31347-.63673 3.14437.67653 4.09957ZM22.2952 6.17881c-1.3133-.95524-3.1439-.67663-4.099.63683L4.42685 25.7613c-.9551 1.3135-.67653 3.1444.63673 4.0996 1.31326.9553 3.14387.6767 4.09897-.6368L22.9319 10.2784c.9949-1.31345.6765-3.14434-.6367-4.09959ZM5.3024 4.66637c.9551-1.31346.67652-3.14435-.63674-4.099591C3.3524-.388466 1.52179-.109853.566693 1.20361c-.9551 1.31346-.676529 3.14435.636737 4.09959 1.31326.95525 3.14387.67663 4.09897-.63683ZM26.1952 30.6968c-1.3132-.9553-3.1438-.6766-4.0989.6368-.9551 1.3135-.6766 3.1444.6367 4.0996 1.3133.9553 3.1439.6766 4.099-.6368.9551-1.3135.6765-3.1444-.6368-4.0996Zm-5.3724-7.5226c-1.3132-.9552-3.1438-.6766-4.0989.6369l-3.4623 4.7364c-.9551 1.3134-.6765 3.1443.6367 4.0996 1.3133.9552 3.1439.6766 4.099-.6369l3.4623-4.7364c.9551-1.3134.6765-3.1443-.6368-4.0996Z"/></svg>';
 function brandSvgFor(type, name) {
   const t7 = (type || "").trim().toLowerCase();
@@ -4870,7 +4882,107 @@ function brandSvgFor(type, name) {
   return void 0;
 }
 
-// ../modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
+// ui/lib/combo-picker.ts
+var str = (r6, k2) => {
+  const v3 = r6[k2];
+  return v3 === void 0 || v3 === null ? "" : String(v3);
+};
+var int = (r6, k2, fallback = 0) => {
+  const n6 = Number(r6[k2]);
+  return Number.isFinite(n6) ? Math.trunc(n6) : fallback;
+};
+var bool = (r6, k2) => {
+  const v3 = r6[k2];
+  return v3 === true || v3 === 1 || v3 === "1" || v3 === "t" || v3 === "true";
+};
+function groupComboRows(rows3) {
+  const out = [];
+  const byCombo = /* @__PURE__ */ new Map();
+  const byGroup = /* @__PURE__ */ new Map();
+  for (const raw of rows3) {
+    if (!raw || typeof raw !== "object") continue;
+    const r6 = raw;
+    const comboId = str(r6, "combo_id");
+    const groupId = str(r6, "group_id");
+    const optionId = str(r6, "option_id");
+    if (!comboId || !groupId || !optionId) continue;
+    if (!bool(r6, "combo_is_active")) continue;
+    let combo = byCombo.get(comboId);
+    if (!combo) {
+      combo = {
+        combo_id: comboId,
+        name: str(r6, "combo_name"),
+        kitchen_name: str(r6, "combo_kitchen_name"),
+        price: int(r6, "combo_price"),
+        tax_category_key: str(r6, "combo_tax_category_key"),
+        supply_kind: str(r6, "supply_kind"),
+        groups: []
+      };
+      byCombo.set(comboId, combo);
+      out.push(combo);
+    }
+    const groupKey = `${comboId}\0${groupId}`;
+    let group = byGroup.get(groupKey);
+    if (!group) {
+      group = {
+        id: groupId,
+        name: str(r6, "group_name"),
+        min: int(r6, "min_choices"),
+        max: int(r6, "max_choices"),
+        allow_repeat: bool(r6, "allow_repeat"),
+        options: []
+      };
+      byGroup.set(groupKey, group);
+      combo.groups.push(group);
+    }
+    group.options.push({
+      option_id: optionId,
+      source: str(r6, "source"),
+      source_ref: str(r6, "source_ref"),
+      price_delta: int(r6, "price_delta")
+    });
+  }
+  return out;
+}
+function optionOf(combo, optionId) {
+  for (const g3 of combo.groups) {
+    const o9 = g3.options.find((x2) => x2.option_id === optionId);
+    if (o9) return o9;
+  }
+  return void 0;
+}
+function comboTotalCents(combo, picks) {
+  let total = combo.price;
+  for (const id of picks) total += optionOf(combo, id)?.price_delta ?? 0;
+  return total;
+}
+function picksIn(combo, group, picks) {
+  const ids = new Set(group.options.map((o9) => o9.option_id));
+  return picks.filter((p4) => ids.has(p4));
+}
+function comboBlockReason(combo, picks) {
+  for (const g3 of combo.groups) {
+    const mine = picksIn(combo, g3, picks);
+    if (mine.length < g3.min) {
+      return { key: "ui.comboGroupUnresolved", group: g3.name, n: g3.min };
+    }
+    if (g3.max > 0 && mine.length > g3.max) {
+      return { key: "ui.comboGroupOverMax", group: g3.name, n: g3.max };
+    }
+    if (!g3.allow_repeat && new Set(mine).size !== mine.length) {
+      return { key: "ui.comboOptionRepeated", group: g3.name };
+    }
+  }
+  if (!picks.length) {
+    return { key: "ui.comboGroupUnresolved", group: combo.name, n: 1 };
+  }
+  return void 0;
+}
+function canConfirmCombo(combo, picks) {
+  return comboBlockReason(combo, picks) === void 0;
+}
+
+// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
 var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e5 = (t7) => (...e7) => ({ _$litDirective$: t7, values: e7 });
 var i4 = class {
@@ -4890,7 +5002,7 @@ var i4 = class {
   }
 };
 
-// ../modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-html.js
+// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-html.js
 var e6 = class extends i4 {
   constructor(i7) {
     if (super(i7), this.it = A, i7.type !== t3.CHILD) throw Error(this.constructor.directiveName + "() can only be used in child bindings");
@@ -4908,13 +5020,13 @@ var e6 = class extends i4 {
 e6.directiveName = "unsafeHTML", e6.resultType = 1;
 var o6 = e5(e6);
 
-// ../modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-svg.js
+// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-svg.js
 var t4 = class extends e6 {
 };
 t4.directiveName = "unsafeSVG", t4.resultType = 2;
 var o7 = e5(t4);
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/split-tender.ts
+// ui/lib/split-tender.ts
 function tendersTotal(tenders) {
   return tenders.reduce((sum, t7) => sum + Math.max(0, t7.amount), 0);
 }
@@ -4949,7 +5061,7 @@ function chargeBlock(payable, tenders) {
   return remaining > 0 ? { reason: "remaining", remaining } : void 0;
 }
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/line-tender.ts
+// ui/lib/line-tender.ts
 function tenderableLines(lines) {
   return lines.filter(
     (l3) => !!l3.is_service && !!l3.line_id && !l3.is_gift && Math.round(l3.price * l3.qty) > 0
@@ -4963,7 +5075,7 @@ function uncoveredLines(lines, covered) {
   return lines.filter((l3) => !l3.line_id || !covered.has(l3.line_id));
 }
 
-// ../outfitkit/dist/ok-qty-stepper.js
+// ../../../outfitkit/dist/ok-qty-stepper.js
 var __defProp6 = Object.defineProperty;
 var __decorateClass6 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -5171,7 +5283,7 @@ __decorateClass6([
 ], OkQtyStepper.prototype, "labels");
 define("ok-qty-stepper", OkQtyStepper);
 
-// ../outfitkit/dist/ok-spotlight-search.js
+// ../../../outfitkit/dist/ok-spotlight-search.js
 var __defProp7 = Object.defineProperty;
 var __decorateClass7 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -5377,7 +5489,7 @@ __decorateClass7([
 ], OkSpotlightSearch.prototype, "input");
 define("ok-spotlight-search", OkSpotlightSearch);
 
-// ../outfitkit/dist/ok-empty-state.js
+// ../../../outfitkit/dist/ok-empty-state.js
 var __defProp8 = Object.defineProperty;
 var __decorateClass8 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -5477,7 +5589,7 @@ __decorateClass8([
 ], OkEmptyState.prototype, "message");
 define("ok-empty-state", OkEmptyState);
 
-// ../outfitkit/dist/ok-status-pill.js
+// ../../../outfitkit/dist/ok-status-pill.js
 var __defProp9 = Object.defineProperty;
 var __decorateClass9 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -5596,7 +5708,7 @@ __decorateClass9([
 ], OkStatusPill.prototype, "size");
 define("ok-status-pill", OkStatusPill);
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/pos-tax.ts
+// ui/lib/pos-tax.ts
 function isRoot(r6) {
   return r6.parent_id == null || String(r6.parent_id) === "";
 }
@@ -5637,7 +5749,7 @@ function resolveLineTax(catRatesMap, taxCategoryKey) {
   return catRatesMap.get(String(taxCategoryKey)) ?? 0;
 }
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/pos-open-price.ts
+// ui/lib/pos-open-price.ts
 function buildOpenPriceLine(input) {
   const name = input.name.trim();
   if (!name) throw new Error("open-price: name is required");
@@ -5656,7 +5768,7 @@ function buildOpenPriceLine(input) {
   };
 }
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/checkout-key.ts
+// ui/lib/checkout-key.ts
 var KEY_PREFIX = "sale";
 function newIdempotencyKey(source = globalThis.crypto) {
   const uuid = source?.randomUUID?.();
@@ -5715,7 +5827,7 @@ function checkoutErrorKey(message) {
   return "ui.errorCharge";
 }
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/transport-error.ts
+// ui/lib/transport-error.ts
 var SERVER_UNAVAILABLE_KEY = "ui.serverUnavailable";
 function transportErrorKey(e7) {
   const code = e7?.code;
@@ -5731,7 +5843,7 @@ function transportErrorKey(e7) {
   return null;
 }
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/checkout-recovery.ts
+// ui/lib/checkout-recovery.ts
 var wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function recoverCheckout(probe, idempotencyKey, options = {}) {
   if (!idempotencyKey) return { outcome: "unknown" };
@@ -5750,7 +5862,7 @@ async function recoverCheckout(probe, idempotencyKey, options = {}) {
   return { outcome: "unknown" };
 }
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/media-photo-cache.ts
+// ui/lib/media-photo-cache.ts
 var MediaPhotoCache = class {
   constructor(client, changed = () => void 0, createObjectUrl = (blob) => URL.createObjectURL(blob), revokeObjectUrl = (url) => URL.revokeObjectURL(url), concurrency = 8) {
     this.client = client;
@@ -5834,7 +5946,7 @@ var MediaPhotoCache = class {
   }
 };
 
-// ../modules-workspace/modules/.sales-152-combo/ui/components/erp-pos-touch/erp-pos-touch.ts
+// ui/components/erp-pos-touch/erp-pos-touch.ts
 var CATALOG2 = { es: es_default, en: en_default };
 var CLOSED_PRICING = /* @__PURE__ */ new Set(["fixed", "free", ""]);
 function deptDisplayName(c5) {
@@ -5932,6 +6044,10 @@ var ErpPosTouch = class extends i3 {
     this.discountMode = "percent";
     this.openAmount = "";
     this.modifierPicks = [];
+    this.comboCatalog = [];
+    this.comboCatalogFailed = false;
+    this.comboPicks = [];
+    this.comboNeedsGroup = "";
     this.openDept = "";
     this.splitting = false;
     this.tenders = [];
@@ -6526,6 +6642,38 @@ var ErpPosTouch = class extends i3 {
     .tile.open-price .op-thumb { display:flex; align-items:center; justify-content:center; font-size:2rem; color:var(--ion-color-primary,#3880ff); background:var(--ion-color-primary-tint,rgba(56,128,255,.14)); }
     .dept-label { margin:.5rem 0 .3rem; font-size:.8rem; opacity:.7; }
     .dept-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:.4rem; }
+    /* ── sales#153 · el picker del menú ──────────────────────────────────────────────────── */
+    ion-card.tile.combo { border-color:var(--accent); }
+    .tile.combo .combo-badge { position:absolute; top:.3rem; left:.3rem; width:1.5rem; height:1.5rem;
+      border-radius:999px; display:flex; align-items:center; justify-content:center;
+      background:var(--ion-color-primary,#3880ff); color:#fff; font-size:.85rem; }
+    .combo-group { margin-bottom:.35rem; }
+    /* El contador lleva glifo ADEMÁS de color: el color solo no pasa contraste, y en un TPV la
+       pantalla puede ser mala. */
+    .combo-counter { display:inline-flex; align-items:center; gap:.25rem; font-weight:600; }
+    .combo-group[data-needs='true'] .combo-counter { color:var(--ion-color-danger,#c5000f); }
+    .combo-group[data-needs='false'] .combo-counter { color:var(--ion-color-success,#2dd36f); }
+    /* El toque en un botón bloqueado CONTESTA: el grupo que falta se señala. */
+    .combo-group[data-flagged='true'] { outline:2px solid var(--ion-color-danger,#c5000f);
+      outline-offset:2px; border-radius:var(--ok-radius-sm,10px); }
+    /* En el techo, lo no elegido se marca pero sigue LEGIBLE (Square no esconde lo no
+       seleccionable). Nada de pointer-events:none — el toque tiene que llegar. */
+    .combo-opt[data-barred='true'] { opacity:.6; border-style:dashed; }
+    .combo-opt[aria-pressed='true'] { border-color:var(--accent);
+      background:color-mix(in srgb,var(--accent) 12%,var(--tile)); }
+    .combo-less { min-width:2.1rem; border-radius:var(--ok-radius-sm,10px);
+      border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx);
+      font-size:1.1rem; cursor:pointer; }
+    .combo-total { display:flex; justify-content:space-between; align-items:baseline;
+      padding:.35rem .1rem .5rem; color:var(--tx); font-size:1rem; }
+    .combo-total strong { font-size:1.15rem; font-weight:800; }
+    .combo-confirm { width:100%; min-height:2.9rem; padding:.6rem 1rem; font:inherit;
+      font-weight:700; border-radius:var(--ok-radius-sm,10px); border:1px solid transparent;
+      background:var(--ion-color-primary,#3880ff); color:#fff; cursor:pointer; }
+    /* Bloqueado: se VE que no procede y el motivo va escrito DENTRO del boton -- nunca en title,
+       que en tactil no existe. Y sin pointer-events:none, para que el toque conteste. */
+    .combo-confirm[data-blocked='true'] { background:var(--tile-hi); color:var(--mut);
+      border-color:var(--ion-border-color); cursor:not-allowed; }
     .dept-btn { display:flex; flex-direction:column; align-items:flex-start; gap:.1rem; padding:.55rem .7rem; border-radius:var(--ok-radius-sm,10px); border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); cursor:pointer; text-align:left; }
     .dept-btn[aria-pressed='true'] { border-color:var(--ion-color-primary,#3880ff); background:var(--ion-color-primary-tint,rgba(56,128,255,.16)); }
     .dept-btn .dn { font-size:1rem; }
@@ -6744,7 +6892,11 @@ var ErpPosTouch = class extends i3 {
         // vende exactamente como siempre: un TPV no deja de cobrar porque una lectura falle. Lo
         // que NO queda desprotegido es el cable — §15.8 en el validador para el registro igual, y
         // esa es la mitad que impide que el número se gaste en una factura que la AEAT rechaza.
-        erplora2().query("hub.fiscal.limits").catch(() => [])
+        erplora2().query("hub.fiscal.limits").catch(() => []),
+        // sales#153 — los MENÚS que este hub vende. Una sola lectura (`combos.options.all`) da a la
+        // vez las baldosas y sus grupos, así que es imposible ofrecer un menú cuyos cursos no se
+        // hayan cargado: eso sería justo «ofrecer lo que el servidor va a rechazar».
+        this.loadCombos()
       ]);
       if (connectionEpoch !== this.connectionEpoch || !this.isConnected) return;
       this.taxCatalog = taxCatalog;
@@ -7522,6 +7674,156 @@ var ErpPosTouch = class extends i3 {
     this.modifierPicks = [];
     await this.addNow(sheet.product, picks);
   }
+  // ══ sales#153 · EL PICKER DEL MENÚ (ADR-0381) ════════════════════════════════════════════════
+  //
+  // Decidido con el mercado (12 referencias + foros; la tabla va en el PR). Tres veredictos:
+  //  · HOJA ÚNICA con los grupos apilados, no wizard. Odoo lo hace así en 18 y en 19, y Toast
+  //    construyó «Open View» para SALIR del wizard: «rather than in a sequential way».
+  //  · El TECHO se respeta PARTIDO por el valor de `max` — ver `pickComboOption`.
+  //  · El suplemento lleva SIGNO SEPARADO y se oculta si es cero — ver `comboDelta`.
+  /** Lee el catálogo de menús. Distingue tres estados que NO son el mismo:
+   *
+   *  · `undefined` → el módulo `combos` no está instalado. `sales` no gana `depends_on` (ADR-0127)
+   *    y el TPV es exactamente el de antes: ni baldosas ni aviso, porque no hay nada que avisar.
+   *  · lanza → el módulo está y la lectura FALLÓ. Eso sí se dice: una rejilla misteriosamente
+   *    corta es un fallo mudo, y este es el que deja al camarero buscando un menú que no aparece.
+   *  · filas → los menús vendibles.
+   */
+  async loadCombos() {
+    let raw;
+    try {
+      const c5 = erplora2();
+      if (typeof c5.queryOptional !== "function") return;
+      raw = await c5.queryOptional("combos.options.all", {});
+    } catch {
+      this.comboCatalogFailed = true;
+      return;
+    }
+    if (raw === void 0 || raw === null) return;
+    this.comboCatalog = groupComboRows(rows2(raw));
+  }
+  /** El nombre de un componente. `combos` referencia el artículo de forma OPACA (`source`/
+   *  `source_ref`, `depends_on: []`), así que quien sabe cómo se llama es el catálogo que el TPV ya
+   *  tiene cargado. Sin resolverlo, el camarero elegiría entre «p-sirloin» y «p-chicken». */
+  comboOptionName(o9) {
+    return this.products.find((p4) => p4.id === o9.source_ref)?.name ?? o9.source_ref;
+  }
+  /** El suplemento, con el SIGNO SEPARADO del número y vacío cuando es cero.
+   *
+   *  Es literalmente lo que hace Odoo (`Math.abs()` + `'+ '`/`'- '`, y `''` si es cero) y coincide
+   *  con el modo `Relative` de WooCommerce y con el «−$1.00» que Square publica para «No cheese».
+   *  El signo carga el significado: el color NO, porque el color solo no pasa contraste — y Odoo
+   *  pinta los dos signos del mismo color a propósito. */
+  comboDelta(o9) {
+    if (!o9.price_delta) return "";
+    return `${o9.price_delta > 0 ? "+" : "\u2212"} ${this.money(Math.abs(o9.price_delta))}`;
+  }
+  /** Cuántas veces está elegida una opción (con `allow_repeat` puede ser > 1). */
+  comboCount(id) {
+    return this.comboPicks.filter((x2) => x2 === id).length;
+  }
+  comboPicksIn(g3) {
+    const ids = new Set(g3.options.map((o9) => o9.option_id));
+    return this.comboPicks.filter((p4) => ids.has(p4));
+  }
+  /** El grupo llegó a su techo. `max = 0` es SIN TECHO: nunca se llena. */
+  comboGroupFull(g3) {
+    return g3.max > 0 && this.comboPicksIn(g3).length >= g3.max;
+  }
+  /** El contador de la cabecera, con la gramática de Toast Open View: `1` exacto · `1-3` rango ·
+   *  `1+` mínimo sin techo · `3` opcional con techo · nada = opcional sin límite. Explica la regla
+   *  ANTES de que se choque contra ella, que es lo que no hace apagar la opción sin más. */
+  comboGroupCounter(g3) {
+    if (g3.min > 0 && g3.max === g3.min) return `${g3.min}`;
+    if (g3.min > 0 && g3.max > g3.min) return `${g3.min}-${g3.max}`;
+    if (g3.min > 0 && g3.max === 0) return `${g3.min}+`;
+    if (g3.min === 0 && g3.max > 0) return `${g3.max}`;
+    return "";
+  }
+  openCombo(combo) {
+    this.blockedNotice = "";
+    this.comboPicks = [];
+    this.comboNeedsGroup = "";
+    this.comboSheet = { combo };
+  }
+  /**
+   * Un toque en una opción. El mercado NO da una respuesta única al techo: la da **partida** por el
+   * valor de `max`, y así se implementa.
+   *
+   * · `max === 1` → **AUTO-SWAP** tipo radio. Square se lo prescribe a sus integradores («use radio
+   *   buttons when `max_selected_modifiers = 1`») y Odoo 18 lo hace con `<input type="radio">`. La
+   *   anterior se RETIRA limpiamente: cuando Square falló en eso, el KDS imprimía «No Not spicy» y
+   *   «Spicy Level 1» a la vez y hubo que renunciar a las preselecciones.
+   * · `max > 1` (o 0 = sin techo) → acumula. En el techo, el toque no añade pero **CONTESTA**:
+   *   marca el grupo. Nunca se apaga la opción entera —Square se niega a esconder lo no
+   *   seleccionable— y el motivo vive en el contador de la cabecera, no en un `title` que en una
+   *   pantalla táctil nadie puede leer.
+   *
+   * Y jamás se autoconfirma al llegar al mínimo: en Square eso se percibe como avería.
+   */
+  pickComboOption(g3, id) {
+    this.comboNeedsGroup = "";
+    const mine = new Set(g3.options.map((o9) => o9.option_id));
+    if (g3.max === 1) {
+      this.comboPicks = this.comboCount(id) > 0 ? this.comboPicks.filter((x2) => !mine.has(x2)) : [...this.comboPicks.filter((x2) => !mine.has(x2)), id];
+      return;
+    }
+    const already = this.comboCount(id) > 0;
+    if (already && !g3.allow_repeat) {
+      this.comboPicks = this.comboPicks.filter((x2) => x2 !== id);
+      return;
+    }
+    if (this.comboGroupFull(g3)) {
+      this.comboNeedsGroup = g3.id;
+      return;
+    }
+    this.comboPicks = [...this.comboPicks, id];
+  }
+  /** Quita UNA de las repeticiones (solo existe cuando el grupo permite repetir). */
+  dropComboOption(id) {
+    const i7 = this.comboPicks.lastIndexOf(id);
+    if (i7 < 0) return;
+    this.comboPicks = [...this.comboPicks.slice(0, i7), ...this.comboPicks.slice(i7 + 1)];
+  }
+  /** Por qué no se puede confirmar, o `undefined`. Sale de la MISMA función que decide el botón,
+   *  así que el motivo escrito y el botón no pueden contradecirse. */
+  comboBlocked() {
+    const sheet = this.comboSheet;
+    if (!sheet) return void 0;
+    const why = comboBlockReason(sheet.combo, this.comboPicks);
+    if (!why) return void 0;
+    return { text: t5(why.key, { group: why.group, n: why.n ?? 1 }), group: why.group };
+  }
+  /** Confirma la composición y añade la línea. Solo viajan los `option_id` EN SU ORDEN —el que lee
+   *  cocina—, más el nombre y la categoría de cada componente para DISPLAY y para que el KDS
+   *  enrute cada uno a SU estación (el fallo de TouchBistro que ADR-0381 nombra).
+   *
+   *  🔴 El `price` que se manda es un PREVIEW. El servidor lo IGNORA y recalcula contra
+   *  `combos.options.all`: quien decide el dinero es él, nunca el navegador (sales#68). */
+  async confirmCombo() {
+    const sheet = this.comboSheet;
+    if (!sheet) return;
+    if (!canConfirmCombo(sheet.combo, this.comboPicks)) {
+      this.comboNeedsGroup = comboBlockReason(sheet.combo, this.comboPicks)?.group ?? "";
+      const g3 = sheet.combo.groups.find((x2) => x2.name === this.comboNeedsGroup);
+      if (g3) this.comboNeedsGroup = g3.id;
+      return;
+    }
+    const combo = sheet.combo;
+    const picks = this.comboPicks;
+    const choices = picks.map((option_id) => {
+      const o9 = combo.groups.flatMap((g3) => g3.options).find((x2) => x2.option_id === option_id);
+      return {
+        option_id,
+        product_name: this.comboOptionName(o9),
+        category_id: this.primaryCategory(o9.source_ref) ?? null
+      };
+    });
+    this.comboSheet = void 0;
+    this.comboPicks = [];
+    this.comboNeedsGroup = "";
+    await this.queue(() => this.addComboLine(combo, choices, comboTotalCents(combo, picks)));
+  }
   toggleModifier(id) {
     this.modifierPicks = this.modifierPicks.includes(id) ? this.modifierPicks.filter((x2) => x2 !== id) : [...this.modifierPicks, id];
   }
@@ -7560,6 +7862,44 @@ var ErpPosTouch = class extends i3 {
         ...this.frozenUnitContext(p4)
       };
       await this.pushNewLine(line);
+    } catch (e7) {
+      const transportKey = transportErrorKey(e7);
+      const msg = transportKey ? t5(transportKey) : e7 instanceof Error ? e7.message : String(e7);
+      this.error = msg;
+      erplora2().notify?.({ type: "error", message: msg });
+    }
+  }
+  /** Añade la línea del MENÚ. Hermana de `addNow`, con su propia fusión: dos menús con segundo
+   *  distinto NO son la misma línea (la composición entra en la identidad, igual que los
+   *  suplementos en pm#93), o cocina recibiría «2 × Menú del día» y uno de los dos mal.
+   *
+   *  `price` es el PREVIEW que se acaba de enseñar; el servidor lo ignora y recalcula. */
+  async addComboLine(combo, choices, previewCents) {
+    const want = choices.map((c5) => c5.option_id).join("\0");
+    const ex = this.cart.find(
+      (l3) => l3.combo_id === combo.combo_id && !l3.is_gift && (l3.combo_choices ?? []).map((c5) => c5.option_id).join("\0") === want
+    );
+    const tax_rate = resolveLineTax(this.taxCatalog.rates, combo.tax_category_key);
+    try {
+      if (ex) {
+        const qty = ex.qty + 1;
+        this.cart = this.cart.map((l3) => l3 === ex ? { ...l3, qty } : l3);
+        if (this.orderId && !await persistLineQty(erplora2(), this.orderId, ex, qty)) {
+          this.cart = this.cart.map((l3) => l3 === ex ? { ...l3, qty: ex.qty } : l3);
+        }
+        return;
+      }
+      await this.pushNewLine({
+        id: combo.combo_id,
+        name: combo.name,
+        price: previewCents,
+        qty: 1,
+        tax_category_key: combo.tax_category_key,
+        tax_rate,
+        cost: 0,
+        combo_id: combo.combo_id,
+        combo_choices: choices
+      });
     } catch (e7) {
       const transportKey = transportErrorKey(e7);
       const msg = transportKey ? t5(transportKey) : e7 instanceof Error ? e7.message : String(e7);
@@ -8028,7 +8368,7 @@ var ErpPosTouch = class extends i3 {
     const split = splitPayload(this.cart, this.splitSel);
     try {
       const cobradas = this.billedLines;
-      const items = cobradas.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: toMicro2(l3.qty), tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0, category_id: l3.category_id ?? this.primaryCategory(l3.id) ?? null, is_gift: l3.is_gift ?? false, gift_reason: l3.gift_reason ?? "", cost: l3.cost ?? 0, discount: l3.discount ?? 0, ...l3.is_service ? { is_service: true } : {}, ...l3.modifiers?.length ? { modifiers: l3.modifiers.map((m4) => ({ option_id: m4.option_id })) } : {}, ...l3.line_id && this.covered.has(l3.line_id) ? { covered: true } : {}, ...unitContextPayload(l3) }));
+      const items = cobradas.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: toMicro2(l3.qty), tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0, category_id: l3.category_id ?? this.primaryCategory(l3.id) ?? null, is_gift: l3.is_gift ?? false, gift_reason: l3.gift_reason ?? "", cost: l3.cost ?? 0, discount: l3.discount ?? 0, ...l3.is_service ? { is_service: true } : {}, ...l3.modifiers?.length ? { modifiers: l3.modifiers.map((m4) => ({ option_id: m4.option_id })) } : {}, ...l3.combo_id ? { combo_id: l3.combo_id, combo_choices: (l3.combo_choices ?? []).map((c5) => ({ option_id: c5.option_id, product_name: c5.product_name ?? "", category_id: c5.category_id ?? null })) } : {}, ...l3.line_id && this.covered.has(l3.line_id) ? { covered: true } : {}, ...unitContextPayload(l3) }));
       await erplora2().command("sales.complete_sale", {
         items,
         // sales#71: descuento de TICKET (%); el servidor lo prorratea por línea antes del IVA.
@@ -8597,7 +8937,29 @@ var ErpPosTouch = class extends i3 {
           ${this.blockedNotice ? b2`<div class="blocked-notice" role="status">
                 <ion-icon name="alert-circle" aria-hidden="true"></ion-icon><span>${this.blockedNotice}</span>
               </div>` : A}
+          <!-- sales#153: la lectura del catálogo de menús FALLÓ (≠ «combos no está instalado»).
+               Se dice, en vez de dejar la rejilla misteriosamente corta: un menú que no se puede
+               componer no se ofrece, porque el servidor lo rechazaría al cobrar. -->
+          ${this.comboCatalogFailed ? b2`<div class="blocked-notice combo-unavailable" role="status">
+                <ion-icon name="alert-circle" aria-hidden="true"></ion-icon><span>${t5("ui.comboCatalogUnavailable")}</span>
+              </div>` : A}
           <div class="grid">
+            <!-- Los MENÚS van primero: en un local con menú del día es la primera comanda de la
+                 hora punta. Solo en la pestaña «todo»: un combo no pertenece a ninguna categoría
+                 de producto, así que pintarlo dentro de «Bebidas» sería mentir. -->
+            ${!this.activeCat ? this.comboCatalog.map((c5) => b2`
+              <ion-card button class="tile combo" data-combo-id=${c5.combo_id}
+                        aria-label=${`${c5.name} \xB7 ${this.money(c5.price)}`}
+                        @click=${() => this.openCombo(c5)}>
+                <div class="thumb" style=${`background:${gradient(c5.name)}`}>
+                  ${initials(c5.name)}
+                  <span class="combo-badge"><ion-icon name="restaurant-outline"></ion-icon></span>
+                </div>
+                <div class="tinfo">
+                  <div class="n">${c5.name}</div><div class="sku">${t5("ui.comboBadge")}</div>
+                  <div class="p">${this.money(c5.price)}</div>
+                </div>
+              </ion-card>`) : A}
             ${this.filtered.map((p4) => {
       const blocked = this.blockedReason(p4);
       const photo = this.photos.get(p4.image);
@@ -8843,6 +9205,86 @@ var ErpPosTouch = class extends i3 {
                             @click=${() => this.confirmModifiers()}>
                   ${this.canConfirmModifiers() ? t5("ui.add") : t5("ui.modifierPickOne")}
                 </ion-button>
+              </div>
+            </div>
+          </div>` : A}
+      <!-- sales#153 · EL PICKER DEL MENÚ. HOJA ÚNICA con los grupos apilados y scroll, no wizard:
+           es a lo que ha convergido el mercado táctil (Odoo 18 y 19; Toast construyó «Open View»
+           para salir del wizard, «rather than in a sequential way»). -->
+      ${this.comboSheet ? b2`<div class="scrim" @click=${(e7) => {
+      if (e7.target.classList.contains("scrim")) {
+        this.comboSheet = void 0;
+      }
+    }}>
+            <div class="sheet" data-combo-sheet>
+              <div class="sheet-h">
+                <span class="t">${this.comboSheet.combo.name}</span>
+                <button class="x" @click=${() => {
+      this.comboSheet = void 0;
+    }}>✕</button>
+              </div>
+              <div class="pay">
+                ${this.comboSheet.combo.groups.map((g3) => {
+      const picked = this.comboPicksIn(g3);
+      const needs = picked.length < g3.min;
+      const full = this.comboGroupFull(g3);
+      const counter = this.comboGroupCounter(g3);
+      return b2`
+                  <div class="combo-group" data-group-id=${g3.id}
+                       data-needs=${needs ? "true" : "false"}
+                       data-full=${full ? "true" : "false"}
+                       data-flagged=${this.comboNeedsGroup === g3.id ? "true" : "false"}>
+                    <div class="dept-label">
+                      ${g3.name}
+                      <!-- El contador de Toast Open View: explica la regla ANTES de chocar con
+                           ella. La marca de estado NO es solo color (no pasaría contraste). -->
+                      ${counter ? b2`<small class="combo-counter">
+                        <span aria-hidden="true">${needs ? "\u2715" : "\u2713"}</span>
+                        ${picked.length}/${counter}
+                      </small>` : b2`<small>${t5("ui.modifierOptional")}</small>`}
+                    </div>
+                    <div class="dept-grid" role="group" aria-label=${g3.name}>
+                      ${g3.options.map((o9) => {
+        const n6 = this.comboCount(o9.option_id);
+        const delta = this.comboDelta(o9);
+        const barred = full && n6 === 0 && g3.max !== 1;
+        return b2`
+                        <button class="dept-btn combo-opt" data-option-id=${o9.option_id}
+                                aria-pressed=${n6 > 0 ? "true" : "false"}
+                                aria-disabled=${barred ? "true" : "false"}
+                                data-barred=${barred ? "true" : "false"}
+                                @click=${() => this.pickComboOption(g3, o9.option_id)}>
+                          <span class="dn">${this.comboOptionName(o9)}${n6 > 1 ? b2` <b>×${n6}</b>` : A}</span>
+                          ${delta ? b2`<span class="dr" data-delta>${delta}</span>` : A}
+                        </button>
+                        ${g3.allow_repeat && n6 > 0 ? b2`<button class="combo-less" data-drop-option=${o9.option_id}
+                                         aria-label=${t5("ui.comboRemoveOne", { name: this.comboOptionName(o9) })}
+                                         @click=${() => this.dropComboOption(o9.option_id)}>−</button>` : A}`;
+      })}
+                    </div>
+                  </div>`;
+    })}
+              </div>
+              <div class="sheet-foot">
+                <!-- El TOTAL EN VIVO. No es opinión: Odoo lo añadió del 18 al 19. -->
+                <div class="combo-total" data-combo-total>
+                  <span>${t5("ui.colTotal")}</span>
+                  <strong>${this.money(comboTotalCents(this.comboSheet.combo, this.comboPicks))}</strong>
+                </div>
+                <!-- 🔴 Botón PLANO a propósito, no ion-button: el disabled de Ionic es
+                     pointer-events:none y se TRAGA el toque, dejando el motivo en title —
+                     hover, imposible en un TPV. Y en Shadow DOM Ionic mueve los aria-* a su
+                     <button> interno, así que un selector sobre el host no casaría nunca. Aquí el
+                     aria-disabled y el gancho data-blocked viven en el elemento que controlo. -->
+                ${(() => {
+      const blocked = this.comboBlocked();
+      return b2`<button class="combo-confirm" data-combo-confirm
+                          aria-disabled=${blocked ? "true" : "false"}
+                          data-blocked=${blocked ? "true" : "false"}
+                          @click=${() => this.confirmCombo()}>
+                    ${blocked ? blocked.text : `${t5("ui.add")} \xB7 ${this.money(comboTotalCents(this.comboSheet.combo, this.comboPicks))}`}
+                  </button>`;
+    })()}
               </div>
             </div>
           </div>` : A}
@@ -9107,6 +9549,21 @@ __decorateClass([
 ], ErpPosTouch.prototype, "modifierPicks", 2);
 __decorateClass([
   r5()
+], ErpPosTouch.prototype, "comboCatalog", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "comboCatalogFailed", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "comboSheet", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "comboPicks", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "comboNeedsGroup", 2);
+__decorateClass([
+  r5()
 ], ErpPosTouch.prototype, "openDept", 2);
 __decorateClass([
   r5()
@@ -9212,7 +9669,7 @@ __decorateClass([
 ], ErpPosTouch.prototype, "padPrimed", 2);
 define("erp-pos-touch", ErpPosTouch);
 
-// ../modules-workspace/modules/.sales-152-combo/ui/components/erp-pos/erp-pos.ts
+// ui/components/erp-pos/erp-pos.ts
 var ErpPos = class extends i3 {
   constructor() {
     super(...arguments);
@@ -9237,7 +9694,7 @@ __decorateClass([
 ], ErpPos.prototype, "fullscreen", 2);
 define("erp-pos", ErpPos);
 
-// ../modules-workspace/modules/.sales-152-combo/ui/lib/refund-allocation.ts
+// ui/lib/refund-allocation.ts
 var cents = (n6) => Math.max(0, Math.round(Number(n6) || 0));
 function refundableTotal(legs) {
   return legs.reduce((sum, l3) => sum + cents(l3.remaining), 0);
@@ -9329,7 +9786,7 @@ function formatAmountInput(amount, locale) {
   return fixed.replace(".", decimal);
 }
 
-// ../modules-workspace/modules/.sales-152-combo/ui/components/erp-sale-refund/erp-sale-refund.ts
+// ui/components/erp-sale-refund/erp-sale-refund.ts
 var CATALOG3 = { es: es_default, en: en_default };
 var REFUND_MESSAGES = {
   "sales.refund_exceeds_tender": "ui.refundExceedsTender",
@@ -9640,7 +10097,7 @@ __decorateClass([
 ], ErpSaleRefund.prototype, "busy", 2);
 define("erp-sale-refund", ErpSaleRefund);
 
-// ../modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
+// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
 var { I: t6 } = j;
 var i5 = (o9) => o9;
 var s4 = () => document.createComment("");
@@ -9673,7 +10130,7 @@ var h3 = (o9) => {
   o9._$AR(), o9._$AA.remove();
 };
 
-// ../modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
+// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
 var u4 = (e7, s5, t7) => {
   const r6 = /* @__PURE__ */ new Map();
   for (let l3 = s5; l3 <= t7; l3++) r6.set(e7[l3], l3);
@@ -9726,7 +10183,7 @@ var c4 = e5(class extends i4 {
   }
 });
 
-// ../modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
+// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
 var n5 = "important";
 var i6 = " !" + n5;
 var o8 = e5(class extends i4 {
@@ -9755,7 +10212,7 @@ var o8 = e5(class extends i4 {
   }
 });
 
-// ../outfitkit/dist/ok-data-table.js
+// ../../../outfitkit/dist/ok-data-table.js
 var CSV_BOM = "\uFEFF";
 var WINDOWS_1252_C1 = [
   8364,
@@ -11297,7 +11754,7 @@ __decorateClass10([
 var OkDataTable = _OkDataTable;
 define("ok-data-table", OkDataTable);
 
-// ../modules-workspace/modules/.sales-152-combo/ui/components/erp-sales-list/erp-sales-list.ts
+// ui/components/erp-sales-list/erp-sales-list.ts
 var CATALOG4 = { es: es_default, en: en_default };
 var STATUS_KEYS = {
   completed: "ui.statusCompleted",

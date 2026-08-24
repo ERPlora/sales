@@ -17,6 +17,14 @@ export interface CartLine {
   /** pm#93 — suplementos elegidos, EN EL ORDEN en que se eligieron. Solo el `option_id`: el
    *  precio y el nombre los pone el catálogo del servidor al cobrar, nunca el navegador. */
   modifiers?: { option_id: string }[];
+  /** sales#153 / ADR-0381 — esta línea ES un combo (menú, pack). El servidor la arma entera al
+   *  cobrar: lee `combos.options.all`, valida los grupos y decide cuántas líneas hermanas salen.
+   *  `price` es un PREVIEW de pantalla y el servidor lo ignora. */
+  combo_id?: string;
+  /** Lo elegido en cada grupo, EN EL ORDEN de elección (el que lee cocina). Solo `option_id` decide
+   *  dinero; `product_name` y `category_id` viajan para DISPLAY y para que el KDS enrute cada
+   *  componente a SU estación — el fallo de TouchBistro que ADR-0381 nombra. */
+  combo_choices?: { option_id: string; product_name?: string; category_id?: string | null }[];
   sku?: string;
   price: number;
   /** Cantidad LÓGICA (0,5 = medio kilo). El cable habla punto fijo 10⁶ (ADR-0147): la conversión
@@ -127,6 +135,13 @@ function modifierFingerprint(l: CartLine): string {
   return (l.modifiers ?? []).map((m) => m.option_id).join('\u0000');
 }
 
+/** sales#153 — la COMPOSICIÓN de un menú, con su orden. Vacío cuando la línea no es un combo, así
+ *  que una línea normal conserva exactamente la identidad de siempre. */
+function comboFingerprint(l: CartLine): string {
+  if (!l.combo_id) return '';
+  return `${l.combo_id}\u0001${(l.combo_choices ?? []).map((c) => c.option_id).join('\u0000')}`;
+}
+
 /** Dos líneas son "la misma" (fusionables) si coinciden producto, precio, categoría/tipo fiscal,
  *  condición de invitación, sku y SUPLEMENTOS. Una invitación (comp) NO se fusiona con una línea
  *  normal, ni el mismo producto a distinto precio: son unidades de cobro distintas.
@@ -143,7 +158,10 @@ function sameCartLine(a: CartLine, b: CartLine): boolean {
     && a.tax_rate === b.tax_rate
     && !!a.is_gift === !!b.is_gift
     && a.gift_reason === b.gift_reason
-    && modifierFingerprint(a) === modifierFingerprint(b);
+    && modifierFingerprint(a) === modifierFingerprint(b)
+    // sales#153: dos menús con primeros distintos son dos líneas. Sin esto se fusionarían en
+    // «2 × Menú del día» y cocina recibiría dos veces el mismo plato, uno de ellos mal.
+    && comboFingerprint(a) === comboFingerprint(b);
 }
 
 /** Fusiona dos comandas al FUSIONAR mesas (punto 3): parte de `base` (comanda de la mesa DESTINO,
