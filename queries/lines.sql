@@ -16,7 +16,12 @@ SELECT id, product_id, product_name, product_sku, is_service,
        -- existia y el handler la escribia, pero esta puerta no la devolvia: el tique y su
        -- reimpresion leen la venta por AQUI, asi que lo cobrado estaba escrito y era ilegible,
        -- y el cliente pagaba un «+ queso» que su papel no nombraba.
-       modifiers
+       modifiers,
+       -- sales#152 / ADR-0381: las lineas de un combo son HERMANAS y no hay fila padre, asi que
+       -- la cabecera del menu en el tique se pinta agrupando por `combo_group_ref` y leyendo el
+       -- snapshot congelado en `combo`. Sin devolverlas por AQUI, lo cobrado quedaria escrito y
+       -- seria ilegible -- que es exactamente lo que le paso a `modifiers` hasta sales#148.
+       combo_group_ref, combo
 FROM sales_sale_item
 WHERE sale_id = :sale_id AND hub_id = :hub_id
 ORDER BY created_at ASC;
