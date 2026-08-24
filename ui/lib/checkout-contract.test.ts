@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import manifest from '../../module.json';
 import schema from '../../schemas/complete_sale.json';
+import openOrderSchema from '../../schemas/open_order.json';
 
 type JsonSchema = {
   type: string;
@@ -149,5 +150,32 @@ describe('complete_sale documents its encodings per field (sales#127)', () => {
     }
     expect((top.amount_tendered.description ?? ''), 'amount_tendered declares minor units').toMatch(/céntimos|cents/i);
     expect((top.discount_amount.description ?? ''), 'discount_amount already documented').toMatch(/céntimos|cents/i);
+  });
+});
+
+// ── sales#169 · la puerta que ABRE la cuenta declara lo mismo que la que la COBRA ─────────────
+//
+// `sales.order.open` es por donde entra la PRIMERA línea de toda cuenta. Su esquema declaraba el
+// contexto de unidades y la categoría, pero no los suplementos ni el menú — que sí viajan, porque
+// el item es abierto (`additionalProperties` ausente). Un contrato que calla sobre lo que su puerta
+// acepta es el contrato que lee quien integra por API… y el asistente.
+describe('order.open payload contract (sales#169)', () => {
+  const openSchema = openOrderSchema as unknown as JsonSchema;
+  const openItem = openSchema.properties.items.items as JsonSchema;
+
+  it('declara la COMPOSICIÓN del menú, igual que `complete_sale`', () => {
+    expect(openItem.properties.combo_id).toBeTruthy();
+    expect(openItem.properties.combo_choices).toBeTruthy();
+    const choice = openItem.properties.combo_choices.items as JsonSchema;
+    expect(choice.required).toContain('option_id');
+    // Nombre y categoría del componente: display y routing de cocina al RETOMAR la cuenta.
+    expect(choice.properties.product_name).toBeTruthy();
+    expect(choice.properties.category_id).toBeTruthy();
+  });
+
+  it('y los suplementos, que ya viajaban sin estar escritos (pm#93)', () => {
+    expect(openItem.properties.modifiers).toBeTruthy();
+    const mod = openItem.properties.modifiers.items as JsonSchema;
+    expect(mod.required).toContain('option_id');
   });
 });

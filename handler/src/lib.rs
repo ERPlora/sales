@@ -2006,7 +2006,62 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     Ok(Output { operations: ops, events, ..Default::default() })
 }
 
-/// ADR-0141 (owner: human, en construcción TDD) — abre un `order` **mutable** (estado `open`) con sus
+/// sales#169 — la COMPOSICIÓN de un menú, congelada en la fila del PEDIDO: qué combo y qué se
+/// eligió, EN SU ORDEN de elección.
+///
+/// Es una fila de **trabajo**, con el mismo criterio que `modifiers` (migración 023) y que su
+/// `line_total` provisional: **no lleva dinero**. El precio cerrado, el reparto del art. 79.Dos y
+/// los nombres definitivos los decide `complete_sale` contra `combos.options.all`, en el mismo y
+/// ÚNICO recorrido de siempre. Congelar aquí líneas hermanas ya repartidas sería el segundo
+/// recorrido que sales#152 quitó a propósito — y un día las dos rutas dirían cosas distintas.
+///
+/// `product_name` y `category_id` viajan porque son DISPLAY y ROUTING, no dinero: sin ellos la
+/// cuenta retomada no sabe pintar los componentes, y el KDS no sabe a qué estación mandar cada uno
+/// (el fallo de TouchBistro que nombra ADR-0381).
+///
+/// `Ok(None)` = la línea no es un combo, que es el 100 % de las líneas de casi todas las cuentas.
+fn order_combo_snapshot(item: &Value) -> Result<Option<String>, String> {
+    let combo_id = field(item, "combo_id");
+    if combo_id.is_empty() {
+        return Ok(None);
+    }
+    let empty: Vec<Value> = Vec::new();
+    let picks = item.get("combo_choices").and_then(|v| v.as_array()).unwrap_or(&empty);
+    let choices: Vec<Value> = picks
+        .iter()
+        .filter(|p| !field(p, "option_id").is_empty())
+        .map(|p| {
+            json!({
+                "option_id": field(p, "option_id"),
+                "product_name": str_or(p, "product_name", ""),
+                "category_id": category_snapshot(p),
+            })
+        })
+        .collect();
+    // Un menú SIN elegir no se rechaza aquí: la cuenta abierta es mutable y la puerta que decide es
+    // el cobro, que ya lo rechaza con `sales.combo_group_unresolved`. Duplicar la regla aquí sería
+    // una segunda cerradura que mantener, con su propio riesgo de decir algo distinto.
+    serde_json::to_string(&json!({ "combo_id": combo_id, "combo_choices": choices }))
+        .map(Some)
+        .map_err(|e| format!("order_combo_snapshot_encode: {e}"))
+}
+
+/// pm#93 — los suplementos elegidos, en su orden, serializados para la columna TEXT de la fila del
+/// pedido. Solo los `option_id`: el nombre y el precio los resuelve el cobro contra
+/// `modifiers.options.all` (`authoritative_modifiers`), nunca el navegador.
+fn order_modifiers_snapshot(item: &Value) -> Result<String, String> {
+    let empty: Vec<Value> = Vec::new();
+    let picks = item.get("modifiers").and_then(|v| v.as_array()).unwrap_or(&empty);
+    let ids: Vec<Value> = picks
+        .iter()
+        .filter(|m| !field(m, "option_id").is_empty())
+        .map(|m| json!({ "option_id": field(m, "option_id") }))
+        .collect();
+    serde_json::to_string(&Value::Array(ids))
+        .map_err(|e| format!("order_modifiers_snapshot_encode: {e}"))
+}
+
+/// ADR-0141 — abre un `order` **mutable** (estado `open`) con sus
 /// líneas materializadas **temprano** (filas reales, no un blob). Es la entidad canónica del pedido;
 /// al cobrar producirá 1..N `sale` inmutables (split-bill). `sales` es **agnóstico de la mesa**: NO
 /// conoce `table_id` — la asociación mesa↔pedido la OWNea `tables` en `table_session.order_id`.
@@ -2089,6 +2144,24 @@ pub fn open_order_pure(input: Value) -> Result<Output, String> {
         // que alguien recategorice el producto mañana. Misma regla que `tax_category_key`.
         p.insert("category_id".into(), category_snapshot(item));
         p.insert("discount_percent".into(), json!(line_disc)); // sales#71
+        // pm#93: los suplementos también son de la FILA. `sales.order.add_line` los guardaba desde
+        // el primer día, pero esta puerta —por la que entra la PRIMERA línea de toda cuenta— no los
+        // reenviaba: la hamburguesa «sin cebolla» que abría la mesa los perdía al retomarla.
+        p.insert("modifiers".into(), json!(order_modifiers_snapshot(item)?));
+        // sales#169: y la composición del MENÚ, por el mismo motivo y con el mismo criterio.
+        match order_combo_snapshot(item)? {
+            Some(text) => {
+                p.insert("combo".into(), json!(text));
+                // 🔴 Lo que marca la fila como combo lo MINTA EL SERVIDOR, igual que el precio
+                // (sales#68) y con la misma forma que en la venta (`{sale_id}-{idx}`): del pedido y
+                // la posición. Tomarlo del payload dejaría que dos cuentas dijeran ser el mismo menú.
+                p.insert("combo_group_ref".into(), json!(format!("{order_id}-{i}")));
+            }
+            None => {
+                p.insert("combo".into(), json!("{}"));
+                p.insert("combo_group_ref".into(), Value::Null);
+            }
+        }
         ops.push(Operation::sql("sales._insert_order_line", p));
     }
 
@@ -6449,6 +6522,175 @@ mod tests {
         inp["context"]["new_ids"] = json!(["ref-1"]); // cabecera sí, pata no
         let err = refund_sale_pure(inp).expect_err("sin ids");
         assert!(err.contains("sales.too_many_rows"), "{err}");
+    }
+
+    // ── sales#169 · el MENÚ sobrevive en una CUENTA ABIERTA ──────────────────────────────────
+    //
+    // sales#152 dejó el combo cobrable de un tirón, pero el camino del restaurante es otro: abrir
+    // cuenta → añadir líneas → disparar a cocina → cobrar media hora después. Y ahí la fila del
+    // pedido no tenía dónde guardar de qué menú venía la línea ni qué se eligió.
+    //
+    // 🔴 El síntoma NO era «el menú se convierte en un plato normal»: `addComboLine` pone el
+    // `combo_id` en `product_id`, así que al perderse `combo_id` la línea entra por
+    // `is_catalog_line` → `authoritative_price` busca el combo en el catálogo de PRODUCTOS, no lo
+    // encuentra, y el cobro entero se RECHAZA con `sales.product_not_available`. La mesa que pidió
+    // el menú del día no podía pagar.
+    //
+    // Lo que se congela en la fila del pedido es la COMPOSICIÓN (qué menú y qué se eligió, en su
+    // orden), nunca dinero: el `line_total` del pedido sigue siendo provisional y el precio lo
+    // decide `complete_sale` contra `combos.options.all`, en el MISMO y ÚNICO recorrido de siempre.
+    // Mismo criterio que la migración 023 para los suplementos.
+
+    /// La composición tal y como la fila del pedido la devuelve al RETOMAR la cuenta: se lee la
+    /// columna `combo` que congeló el pedido y se rearma el item del cobro con ella, que es
+    /// literalmente lo que hace `loadOrderLines` + el constructor del payload del TPV.
+    ///
+    /// Se pasa por el TEXTO de la columna a propósito: probar el cobro con el item original sería
+    /// probar que el test se pone de acuerdo consigo mismo, no que la cuenta sobrevive al viaje.
+    fn resumed_item(frozen: &Map<String, Value>) -> Value {
+        let combo: Value = serde_json::from_str(frozen["combo"].as_str().expect("TEXT"))
+            .expect("la columna `combo` es JSON");
+        json!({
+            // La fila guarda el id del combo en `product_id` (lo pone `addComboLine`), y eso es lo
+            // único que sobrevivía ANTES de esta rebanada.
+            "product_id": frozen["product_id"].clone(),
+            "product_name": frozen["product_name"].clone(),
+            "price": frozen["unit_price"].clone(),
+            "quantity": frozen["quantity"].clone(),
+            "combo_id": combo["combo_id"].clone(),
+            "combo_choices": combo["combo_choices"].clone(),
+        })
+    }
+
+    /// El pedido de UN menú, con los mismos catálogos de confianza que usa `combo_input`.
+    fn combo_order_input(choices: Value, ids: usize) -> Value {
+        let items = json!([{
+            "combo_id": "c-1", "product_id": "c-1", "product_name": "Pack merienda",
+            "price": 600, "quantity": 1_000_000, "combo_choices": choices
+        }]);
+        input(items, ids, 0)
+    }
+
+    fn order_lines(out: &Output) -> Vec<Map<String, Value>> {
+        out.operations.iter()
+            .filter(|o| o.command == "sales._insert_order_line")
+            .map(|o| o.params.clone())
+            .collect()
+    }
+
+    #[test]
+    fn aparcar_un_menu_congela_QUE_menu_y_QUE_se_eligio_en_su_orden() {
+        let out = orden(combo_order_input(
+            json!([{ "option_id": "o-sandwich", "product_name": "Bocadillo", "category_id": "cat-food" },
+                   { "option_id": "o-beer", "product_name": "Cerveza", "category_id": "cat-drink" }]),
+            3,
+        ));
+        let l = &order_lines(&out)[0];
+        let combo: Value = serde_json::from_str(l["combo"].as_str().expect("TEXT")).expect("JSON");
+        assert_eq!(combo["combo_id"], json!("c-1"));
+        // EL ORDEN es el que lee cocina: el de catálogo no sirve en el pase (foros de Square).
+        assert_eq!(combo["combo_choices"][0]["option_id"], json!("o-sandwich"));
+        assert_eq!(combo["combo_choices"][1]["option_id"], json!("o-beer"));
+        // `product_name` y `category_id` viajan para DISPLAY y para que el KDS enrute CADA
+        // componente a SU estación al retomar la cuenta — el fallo de TouchBistro de ADR-0381.
+        assert_eq!(combo["combo_choices"][0]["product_name"], json!("Bocadillo"));
+        assert_eq!(combo["combo_choices"][1]["category_id"], json!("cat-drink"));
+        assert!(!as_str(&l["combo_group_ref"]).is_empty(), "la fila dice que ES un combo");
+    }
+
+    #[test]
+    fn una_linea_normal_del_pedido_no_gana_ni_grupo_ni_snapshot() {
+        // El control: el 100 % de las cuentas que no venden menús no cambia en nada.
+        let out = orden(input(
+            json!([{ "product_id": "p-cafe", "product_name": "Café", "price": 150, "quantity": 1_000_000 }]),
+            3, 0,
+        ));
+        let l = &order_lines(&out)[0];
+        assert_eq!(l["combo_group_ref"], Value::Null, "sin combo, sin grupo");
+        assert_eq!(l["combo"], json!("{}"), "y el snapshot vacío, como la columna por defecto");
+    }
+
+    #[test]
+    fn el_grupo_de_la_fila_del_pedido_lo_MINTA_el_servidor_no_el_navegador() {
+        // Mismo principio que el precio (sales#68): lo que hermana las líneas no puede venir del
+        // payload, o dos cuentas distintas podrían decir ser el mismo menú.
+        let mut inp = combo_order_input(json!([{ "option_id": "o-sandwich" }]), 3);
+        inp["payload"]["items"][0]["combo_group_ref"] = json!("me-lo-invento");
+        let out = orden(inp);
+        let l = &order_lines(&out)[0];
+        assert_ne!(l["combo_group_ref"], json!("me-lo-invento"));
+        assert!(as_str(&l["combo_group_ref"]).starts_with("id-0"), "deriva del pedido: {:?}", l["combo_group_ref"]);
+    }
+
+    #[test]
+    fn abrir_un_pedido_tambien_congela_los_SUPLEMENTOS_de_la_linea() {
+        // pm#93 cerró `sales.order.add_line`, pero `sales.order.open` —la puerta por la que entra
+        // la PRIMERA línea de toda cuenta— nunca reenvió `modifiers` a la fila: la hamburguesa
+        // «sin cebolla» que abría la mesa perdía su suplemento al retomarla. Misma columna, mismo
+        // contrato, mismo test.
+        let out = orden(input(
+            json!([{ "product_id": "p-burger", "product_name": "Hamburguesa", "price": 900,
+                     "quantity": 1_000_000, "modifiers": [{ "option_id": "m-sin-cebolla" }] }]),
+            3, 0,
+        ));
+        let l = &order_lines(&out)[0];
+        let mods: Value = serde_json::from_str(l["modifiers"].as_str().expect("TEXT")).expect("JSON");
+        assert_eq!(mods[0]["option_id"], json!("m-sin-cebolla"));
+    }
+
+    #[test]
+    fn cobrar_la_cuenta_RETOMADA_da_EXACTAMENTE_las_mismas_hermanas_que_cobrarla_directa() {
+        // 🔴 EL CRITERIO DE LA ISSUE. La mesa pide el menú, se aparca la cuenta, se retoma y se
+        // cobra: tiene que salir el MISMO reparto, al céntimo, que si se hubiera cobrado de un
+        // tirón. Y la expansión sigue siendo UNA sola, la de `complete_sale`: el pedido guarda la
+        // composición, nunca líneas hermanas ya repartidas.
+        let choices = json!([{ "option_id": "o-sandwich", "product_name": "Bocadillo" },
+                             { "option_id": "o-beer", "product_name": "Cerveza" }]);
+        let options = json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
+                             combo_option("o-beer", "g-drink", 1, "p-beer", 0, "goods", 600, "")]);
+        let products = json!([combo_product("p-sandwich", 450, "shop.food"),
+                              combo_product("p-beer", 200, "product.generic")]);
+
+        // (a) DIRECTO: el camino de la tienda de alimentación, ya vivo desde sales#152.
+        let directo = sale_lines(&sale(combo_input(choices.clone(), options.clone(), products.clone(), 8)));
+
+        // (b) APARCADO Y RETOMADO: se abre la cuenta con el menú, se lee la fila que quedó escrita
+        // y se cobra con lo que esa fila devuelve — nada del navegador de la sesión anterior.
+        let aparcada = orden(combo_order_input(choices, 3));
+        let mut inp = combo_input(json!([]), options, products, 8);
+        inp["payload"]["items"] = json!([resumed_item(&order_lines(&aparcada)[0])]);
+        let retomada = sale_lines(&sale(inp));
+
+        assert_eq!(retomada.len(), directo.len(), "las mismas hermanas, ni una más");
+        for (r, d) in retomada.iter().zip(directo.iter()) {
+            for k in ["product_id", "product_name", "unit_price", "line_total", "net_amount",
+                      "tax_amount", "tax_rate", "tax_category_key", "combo"] {
+                assert_eq!(r[k], d[k], "difiere `{k}` al retomar la cuenta");
+            }
+        }
+        let suma: i64 = retomada.iter().map(|l| l["line_total"].as_i64().unwrap_or(-1)).sum();
+        assert_eq!(suma, 600, "el precio cerrado, al céntimo, tras aparcar y retomar");
+    }
+
+    #[test]
+    fn el_precio_PROVISIONAL_que_quedo_en_la_fila_no_decide_lo_que_se_cobra() {
+        // El navegador aparcó el menú a 99,99 € (un bundle viejo, una integración, un bug). La fila
+        // conserva ese provisional —es display— pero al cobrar manda `combos.options.all`: 6,00 €.
+        let choices = json!([{ "option_id": "o-sandwich" }, { "option_id": "o-beer" }]);
+        let options = json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
+                             combo_option("o-beer", "g-drink", 1, "p-beer", 0, "goods", 600, "")]);
+        let products = json!([combo_product("p-sandwich", 450, "shop.food"),
+                              combo_product("p-beer", 200, "product.generic")]);
+        let mut abrir = combo_order_input(choices, 3);
+        abrir["payload"]["items"][0]["price"] = json!(9999);
+        let aparcada = orden(abrir);
+        let fila = &order_lines(&aparcada)[0];
+        assert_eq!(fila["line_total"], json!(9999), "el provisional es lo que se pintó, sí");
+
+        let mut inp = combo_input(json!([]), options, products, 8);
+        inp["payload"]["items"] = json!([resumed_item(fila)]);
+        let cobrado: i64 = line_totals(&sale(inp)).iter().sum();
+        assert_eq!(cobrado, 600, "manda el catálogo del combo, no la fila del pedido");
     }
 
 }

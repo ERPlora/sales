@@ -486,3 +486,118 @@ describe('sales#153 — la COMPOSICIÓN del menú entra en la identidad de la l�
     expect(out[0].qty).toBe(2);
   });
 });
+
+// ── sales#169 · el MENÚ sobrevive a retomar la cuenta ────────────────────────────────────────
+//
+// sales#153 dejó el picker y la composición en la línea del carrito; lo que faltaba era la mitad
+// de abajo: la fila del pedido no tenía dónde guardarla. La composición vivía SOLO en el navegador.
+//
+// 🔴 Y no fallaba «bonito». La línea del menú lleva el `combo_id` en `product_id` (lo pone
+// `addComboLine`), así que al perderse la composición el cobro la toma por una línea de catálogo,
+// busca el combo en `inventory.products.for_sale`, no lo encuentra y RECHAZA la venta entera con
+// `sales.product_not_available`: la mesa que pidió el menú del día no podía pagar.
+describe('el menú sobrevive a retomar la cuenta (sales#169)', () => {
+  const menu = (): CartLine => ({
+    id: 'c-menu-dia', name: 'Menú del día', price: 1400, qty: 1,
+    combo_id: 'c-menu-dia',
+    combo_choices: [
+      { option_id: 'o-sopa', product_name: 'Sopa', category_id: 'cat-cocina' },
+      { option_id: 'o-merluza', product_name: 'Merluza', category_id: 'cat-plancha' },
+    ],
+  });
+
+  it('viaja SERIALIZADA en el payload de `order.add_line`, en su orden', async () => {
+    const { client, calls } = orderClient(['li-1']);
+    await addOrderLine(client, 'ord-1', menu());
+    const [add] = calls.filter((c) => c.name === 'sales.order.add_line');
+    // `order.add_line` es DECLARATIVO: bindea a una columna TEXT, igual que `modifiers`. Y viaja
+    // la COMPOSICIÓN, nunca dinero: el precio cerrado y el reparto los decide el servidor al
+    // cobrar, contra `combos.options.all`. El `combo_group_ref` no se manda — lo minta el SQL.
+    expect(add.params?.combo).toBe(JSON.stringify({
+      combo_id: 'c-menu-dia',
+      combo_choices: [
+        { option_id: 'o-sopa', product_name: 'Sopa', category_id: 'cat-cocina' },
+        { option_id: 'o-merluza', product_name: 'Merluza', category_id: 'cat-plancha' },
+      ],
+    }));
+    expect(add.params?.combo_group_ref).toBeUndefined();
+  });
+
+  it('una línea normal manda el snapshot VACÍO, no null (el 100 % de las cuentas sin menús)', async () => {
+    const { client, calls } = orderClient(['li-1']);
+    await addOrderLine(client, 'ord-1', line({ qty: 1 }));
+    const [add] = calls.filter((c) => c.name === 'sales.order.add_line');
+    expect(add.params?.combo).toBe('{}');
+  });
+
+  it('viaja también al ABRIR el pedido — es la puerta de la PRIMERA línea de toda cuenta', async () => {
+    const { client, calls } = orderClient(['ord-1', 'li-1']);
+    await openOrderWithLines(client, [menu()]);
+    const [open] = calls.filter((c) => c.name === 'sales.order.open');
+    const [item] = open.params!.items as Record<string, unknown>[];
+    // `order.open` SÍ tiene handler WASM: aquí el combo viaja como objeto, no serializado.
+    expect(item.combo_id).toBe('c-menu-dia');
+    expect((item.combo_choices as { option_id: string }[]).map((c) => c.option_id))
+      .toEqual(['o-sopa', 'o-merluza']);
+  });
+
+  it('vuelve al releer las líneas del pedido, con sus elecciones EN SU ORDEN', async () => {
+    const { client } = orderClient([], [{
+      id: 'li-1', product_id: 'c-menu-dia', product_name: 'Menú del día',
+      quantity: 1_000_000, unit_price: 1400,
+      combo_group_ref: 'li-1',
+      combo: JSON.stringify({
+        combo_id: 'c-menu-dia',
+        combo_choices: [
+          { option_id: 'o-sopa', product_name: 'Sopa', category_id: 'cat-cocina' },
+          { option_id: 'o-merluza', product_name: 'Merluza', category_id: 'cat-plancha' },
+        ],
+      }),
+    }]);
+    const [l] = await loadOrderLines(client, 'ord-1');
+    expect(l.combo_id).toBe('c-menu-dia');
+    expect(l.combo_choices?.map((c) => c.option_id)).toEqual(['o-sopa', 'o-merluza']);
+    // El nombre y la categoría de cada componente vuelven para DISPLAY y para que el KDS enrute
+    // cada uno a SU estación (ADR-0381): sin ellos, la comanda retomada pierde el destino.
+    expect(l.combo_choices?.map((c) => c.product_name)).toEqual(['Sopa', 'Merluza']);
+    expect(l.combo_choices?.map((c) => c.category_id)).toEqual(['cat-cocina', 'cat-plancha']);
+  });
+
+  it('una fila ANTERIOR a la columna vuelve sin menú, no rota', async () => {
+    const { client } = orderClient([], [
+      { id: 'li-1', product_id: 'p-x', product_name: 'X', quantity: 1_000_000, unit_price: 100 },
+    ]);
+    const [l] = await loadOrderLines(client, 'ord-1');
+    expect(l.combo_id).toBeUndefined();
+    expect(l.combo_choices).toBeUndefined();
+    expect(l.name).toBe('X');
+  });
+
+  it('un snapshot corrupto no tumba la cuenta entera', async () => {
+    // Misma defensa que los suplementos: se pierde el menú de esa línea, nunca la comanda entera.
+    // Un camarero que no puede ni ABRIR su mesa es peor que uno que ve un menú mal pintado.
+    const { client } = orderClient([], [
+      { id: 'li-1', product_id: 'c-menu-dia', product_name: 'Menú del día',
+        quantity: 1_000_000, unit_price: 1400, combo: '{no es json' },
+      { id: 'li-2', product_id: 'p-cana', product_name: 'Caña', quantity: 1_000_000, unit_price: 250 },
+    ]);
+    const lines = await loadOrderLines(client, 'ord-1');
+    expect(lines).toHaveLength(2);
+    expect(lines[0].combo_id).toBeUndefined();
+    expect(lines[1].name).toBe('Caña');
+  });
+
+  it('un menú SIN elecciones vuelve como menú igual: quien lo rechaza es el cobro', async () => {
+    // La cuenta abierta es MUTABLE y su fila es de trabajo. Duplicar aquí la regla de los grupos
+    // obligatorios sería una segunda cerradura que mantener; el cobro ya contesta
+    // `sales.combo_group_unresolved`, y esa es la puerta que decide.
+    const { client } = orderClient([], [{
+      id: 'li-1', product_id: 'c-menu-dia', product_name: 'Menú del día',
+      quantity: 1_000_000, unit_price: 1400,
+      combo: JSON.stringify({ combo_id: 'c-menu-dia', combo_choices: [] }),
+    }]);
+    const [l] = await loadOrderLines(client, 'ord-1');
+    expect(l.combo_id).toBe('c-menu-dia');
+    expect(l.combo_choices).toEqual([]);
+  });
+});

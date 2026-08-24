@@ -4598,6 +4598,48 @@ function parseModifiers(raw) {
     return void 0;
   }
 }
+function parseCombo(raw) {
+  if (typeof raw !== "string" || !raw.trim()) return void 0;
+  try {
+    const v3 = JSON.parse(raw);
+    if (!v3 || typeof v3 !== "object") return void 0;
+    const combo_id = String(v3.combo_id ?? "");
+    if (!combo_id) return void 0;
+    const raws = Array.isArray(v3.combo_choices) ? v3.combo_choices : [];
+    const combo_choices = raws.map((c5) => c5 && typeof c5 === "object" ? c5 : {}).filter((c5) => String(c5.option_id ?? "")).map((c5) => ({
+      option_id: String(c5.option_id),
+      // DISPLAY y ROUTING: sin el nombre no se pinta el componente, y sin la categoría el KDS
+      // no sabe a qué estación mandarlo al RETOMAR la cuenta (ADR-0381).
+      product_name: c5.product_name ? String(c5.product_name) : void 0,
+      category_id: c5.category_id ? String(c5.category_id) : null
+    }));
+    return { combo_id, combo_choices };
+  } catch {
+    return void 0;
+  }
+}
+function comboColumn(l3) {
+  if (!l3.combo_id) return "{}";
+  return JSON.stringify({
+    combo_id: l3.combo_id,
+    combo_choices: (l3.combo_choices ?? []).map((c5) => ({
+      option_id: c5.option_id,
+      product_name: c5.product_name ?? "",
+      category_id: c5.category_id ?? null
+    }))
+  });
+}
+function comboPayload(l3) {
+  if (!l3.combo_id) return {};
+  return {
+    combo_id: l3.combo_id,
+    combo_choices: (l3.combo_choices ?? []).map((c5) => ({
+      option_id: c5.option_id,
+      product_name: c5.product_name ?? "",
+      category_id: c5.category_id ?? null
+    }))
+  };
+}
 async function listOpenChecks(client, excluir) {
   try {
     const r6 = rows(await client.query("sales.orders.list"));
@@ -4665,6 +4707,10 @@ function toItemPayload(l3) {
     // pm#93: solo los ids, en su orden. El importe lo resuelve el servidor contra
     // `modifiers.options.all` — el navegador no es autoridad del precio de un suplemento.
     modifiers: (l3.modifiers ?? []).map((m4) => ({ option_id: m4.option_id })),
+    // sales#169: y la COMPOSICIÓN del menú, por el mismo motivo. Es la puerta por la que entra la
+    // PRIMERA línea de toda cuenta: sin esto, abrir la mesa CON el menú lo perdía igual que
+    // retomarla. El precio sigue siendo el del servidor.
+    ...comboPayload(l3),
     ...unitContextPayload(l3)
   };
 }
@@ -4698,6 +4744,10 @@ function orderLinePayload(orderId, l3) {
     // serializado. Solo los ids: el nombre y el precio definitivos los resuelve el cobro contra
     // `modifiers.options.all`. Esta fila es de trabajo, como su `line_total` provisional.
     modifiers: JSON.stringify((l3.modifiers ?? []).map((m4) => ({ option_id: m4.option_id }))),
+    // sales#169: la composición del menú, serializada igual y con el mismo criterio. `'{}'` cuando
+    // la línea no es un menú — y entonces el SQL deja `combo_group_ref` en NULL, así que una línea
+    // normal no cambia en nada. El grupo NO se manda: lo minta el servidor con el id de la fila.
+    combo: comboColumn(l3),
     line_total: provisionalLineTotal(l3.price, l3.qty, l3.is_gift, l3.discount ?? 0),
     ...unitContextPayload(l3)
   };
@@ -4776,6 +4826,10 @@ async function loadOrderLines(client, orderId) {
       // pm#93: los suplementos vuelven con la línea. Una fila ANTERIOR a la columna, o un JSON
       // corrupto, devuelven `undefined` — se pierde el suplemento de esa línea, nunca la comanda.
       modifiers: parseModifiers(x2.modifiers),
+      // sales#169: el MENÚ vuelve con la línea. Sin esto la línea retomada solo conserva el
+      // `combo_id` metido en `product_id`, el cobro la toma por una línea de catálogo y RECHAZA la
+      // venta entera (`sales.product_not_available`): la mesa no puede pagar.
+      ...parseCombo(x2.combo),
       // Contexto de unidades CONGELADO (ADR-0147 §2.4): vuelve con la línea para que el pedido
       // reanudado valide la misma rejilla y cobre con el mismo contexto.
       unit_code: x2.unit_code ? String(x2.unit_code) : void 0,

@@ -17,7 +17,7 @@
 INSERT INTO sales_order_item
   (id, hub_id, order_id, product_id, product_name, product_sku, quantity, unit_price,
    is_gift, gift_reason, line_total, tax_category_key, cost, is_service, category_id, discount_percent,
-   modifiers,
+   modifiers, combo_group_ref, combo,
    is_deleted, created_by, updated_by, created_at, updated_at,
    unit_code, unit_name, factor_num, factor_den, increment_value,
    price_quantity_value, pricing_unit_code, pricing_unit_name,
@@ -28,6 +28,12 @@ SELECT
   COALESCE(:tax_category_key, ''), COALESCE(:cost, 0), COALESCE(:is_service, 0), :category_id, COALESCE(:discount_percent, 0),
   -- pm#93: los option_id elegidos, en su orden. Nombre y precio los resuelve el cobro.
   COALESCE(:modifiers, '[]'),
+  -- sales#169: de qué MENÚ viene la línea y qué se eligió, con el MISMO criterio que `modifiers`:
+  -- fila de trabajo, sin dinero. Lo que marca la fila como combo lo minta el SERVIDOR (`:new_id`,
+  -- el id que el runtime acaba de acuñar para esta línea), nunca el payload — misma regla que el
+  -- precio (sales#68). Sin composición no hay grupo, y así una línea normal no cambia en nada.
+  CASE WHEN COALESCE(:combo, '{}') IN ('', '{}') THEN NULL ELSE :new_id END,
+  COALESCE(NULLIF(:combo, ''), '{}'),
   0, :current_user_id, :current_user_id, :now, :now,
   COALESCE(:unit_code, 'ud'), COALESCE(:unit_name, ''),
   COALESCE(:factor_num, 1), COALESCE(:factor_den, 1),
