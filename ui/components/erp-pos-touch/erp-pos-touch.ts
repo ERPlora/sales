@@ -2651,7 +2651,13 @@ export class ErpPosTouch extends LitElement {
       // delta lo pone el catálogo al cobrar— y `sales_sale_item.modifiers` se congelaba VACÍO, de
       // modo que el tique no podía nombrarlos por mucho que el papel supiera leerlos. Va SOLO el
       // `option_id`: un `price_delta` del navegador sería un descuento que se hace el cliente solo.
-      const items = cobradas.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: toMicro(l.qty), tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: l.category_id ?? this.primaryCategory(l.id) ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0, discount: l.discount ?? 0, ...(l.modifiers?.length ? { modifiers: l.modifiers.map((m) => ({ option_id: m.option_id })) } : {}), ...(l.line_id && this.covered.has(l.line_id) ? { covered: true } : {}), ...unitContextPayload(l) }));
+      // 🔴 sales#146: y su `is_service`. El carrito ya lo lleva y el PEDIDO ya lo mandaba, pero el
+      // cobro se armaba en este `map()` aparte y aquí el campo no estaba: el handler tomaba la
+      // línea del servicio por una línea de catálogo (`is_catalog_line`), no encontraba su id en
+      // `inventory` y rechazaba la VENTA ENTERA con `sales.product_not_available`. Una peluquería
+      // no podía cobrar un corte. Va condicional a propósito: marcarlo en una línea de catálogo le
+      // saltaría la autoridad de precio y stock que el servidor sí tiene que aplicarle.
+      const items = cobradas.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: toMicro(l.qty), tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: l.category_id ?? this.primaryCategory(l.id) ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0, discount: l.discount ?? 0, ...(l.is_service ? { is_service: true } : {}), ...(l.modifiers?.length ? { modifiers: l.modifiers.map((m) => ({ option_id: m.option_id })) } : {}), ...(l.line_id && this.covered.has(l.line_id) ? { covered: true } : {}), ...unitContextPayload(l) }));
       await erplora().command('sales.complete_sale', {
         items,
         // sales#71: descuento de TICKET (%); el servidor lo prorratea por línea antes del IVA.
