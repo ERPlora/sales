@@ -31,6 +31,7 @@
     "sales.sell_open_price",
     "sales.delete_sale",
     "sales.void_sale",
+    "sales.refund_sale",
     "sales.view_paymentmethod",
     "sales.add_paymentmethod",
     "sales.change_paymentmethod",
@@ -62,6 +63,7 @@
       "sales.change_sale",
       "sales.take_payment",
       "sales.void_sale",
+      "sales.refund_sale",
       "sales.view_paymentmethod",
       "sales.add_paymentmethod",
       "sales.change_paymentmethod",
@@ -125,7 +127,8 @@
       "migrations/postgres/022_ticket_discount_amount.sql",
       "migrations/postgres/023_order_line_modifiers.sql",
       "migrations/postgres/024_sale_payments.sql",
-      "migrations/postgres/025_line_covered.sql"
+      "migrations/postgres/025_line_covered.sql",
+      "migrations/postgres/026_sale_refund.sql"
     ]
   },
   "seed": {
@@ -291,6 +294,30 @@
       "ai": {
         "description": "Breaks down completed sales attributed to each professional (staff_id) over a date range (date_from..date_to, inclusive): sales_count and gross/net/tax totals in cents. Backs the per-professional day close; combine with staff.commissions.summary to compute commission."
       }
+    },
+    "sales.refund_options": {
+      "permission": "sales.view_sale",
+      "expose_api": true,
+      "sql": "queries/refund_options.sql",
+      "ai": {
+        "description": "For each tender that settled a sale, how much can still be refunded (`remaining`) and whether it can go back through its OWN method (`refundable` + `reason`: already_refunded or method_unavailable). Always returns one row per tender, so «no rows» never means «not refundable»."
+      }
+    },
+    "sales.refunds": {
+      "permission": "sales.view_sale",
+      "expose_api": true,
+      "sql": "queries/refunds.sql",
+      "ai": {
+        "description": "Lists the refund documents already issued against a sale, newest first."
+      }
+    },
+    "sales.refund_by_idempotency_key": {
+      "permission": "sales.view_sale",
+      "expose_api": true,
+      "sql": "queries/refund_by_idempotency_key.sql",
+      "ai": {
+        "description": "Finds the refund document already written for a given idempotency key, so a retry recovers the same document instead of refunding twice."
+      }
     }
   },
   "records": {
@@ -298,7 +325,8 @@
       "mutable": false,
       "reason": "fiscal",
       "correct_with": [
-        "sales.void"
+        "sales.void",
+        "sales.refund"
       ]
     }
   },
@@ -389,6 +417,44 @@
       "schema": "schemas/void_sale.json",
       "ai": {
         "description": "Voids a COMPLETED sale with a mandatory reason (sales#26): the original stays immutable, voided_at/voided_by/void_reason are recorded, and sale.voided is emitted exactly once (a second call is refused with sales.already_voided). A sale that carries a full invoice cannot be voided: issue a credit note instead (sales.void_requires_credit_note)."
+      }
+    },
+    "sales.refund": {
+      "permission": "sales.refund_sale",
+      "reads": [
+        {
+          "query": "sales.get",
+          "params": {
+            "sale_id": "payload.sale_id"
+          },
+          "required": true
+        },
+        {
+          "query": "sales.refund_options",
+          "params": {
+            "sale_id": "payload.sale_id"
+          },
+          "required": true
+        },
+        {
+          "query": "sales.refund_by_idempotency_key",
+          "params": {
+            "idempotency_key": "payload.idempotency_key"
+          }
+        },
+        "sales.payment_methods"
+      ],
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "refund_sale"
+      },
+      "schema": "schemas/refund_sale.json",
+      "emit": [
+        "sale.refunded"
+      ],
+      "ai": {
+        "description": "Refunds a COMPLETED sale by ELIGIBLE TENDER with an EDITABLE split (ADR-0386): the operator decides how much goes back to each leg of the original payment. A leg can never give back more than it was charged minus what it already returned, and going over is refused naming WHICH leg (sales.refund_exceeds_tender). A leg whose payment method is no longer available is marked not eligible with its reason instead of failing at confirm — the money still comes out through another destination the operator names. Unlike sales.void, an invoiced sale CAN be refunded: the credit note is issued by invoice. Idempotent by idempotency_key: the same key answers with the same refund document instead of paying twice."
       }
     },
     "sales._void_sale": {
@@ -589,6 +655,24 @@
       "sql": [
         "commands/_mark_order_line_paid.sql"
       ]
+    },
+    "sales._insert_refund": {
+      "permission": "sales.refund_sale",
+      "sql": [
+        "commands/_insert_refund.sql"
+      ]
+    },
+    "sales._insert_refund_payment": {
+      "permission": "sales.refund_sale",
+      "sql": [
+        "commands/_insert_refund_payment.sql"
+      ]
+    },
+    "sales._mark_refunded": {
+      "permission": "sales.refund_sale",
+      "sql": [
+        "commands/_mark_refunded.sql"
+      ]
     }
   },
   "events": {
@@ -597,6 +681,7 @@
       "order.completed",
       "order.fired",
       "sale.completed",
+      "sale.refunded",
       "sale.voided",
       "sales.order.opened",
       "sales.sale.created_from_appointment"
