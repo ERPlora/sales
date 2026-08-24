@@ -1478,8 +1478,8 @@ function majorToMinor(amount, decimals) {
 function eurosToCents(euros2) {
   return majorToMinor(euros2, 2);
 }
-function centsToEuros(cents) {
-  return cents == null ? "" : (cents / 100).toFixed(2);
+function centsToEuros(cents2) {
+  return cents2 == null ? "" : (cents2 / 100).toFixed(2);
 }
 
 // ui/lib/quantity.ts
@@ -1692,8 +1692,8 @@ function defaultPayMethod(methods) {
 }
 
 // ui/lib/document-mappers.ts
-function toEuros(cents) {
-  return Number(cents ?? 0) / 100;
+function toEuros(cents2) {
+  return Number(cents2 ?? 0) / 100;
 }
 function formatDateTime(iso, locale = "es") {
   if (!iso) return void 0;
@@ -1902,8 +1902,8 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", f
 }
 function orderToPrebill(lines, settings = {}, opts = {}) {
   const header = splitHeader(settings.receipt_header);
-  const cents = (l3) => l3.is_gift ? 0 : Math.round(l3.price * l3.qty);
-  const total = lines.reduce((s5, l3) => s5 + cents(l3), 0);
+  const cents2 = (l3) => l3.is_gift ? 0 : Math.round(l3.price * l3.qty);
+  const total = lines.reduce((s5, l3) => s5 + cents2(l3), 0);
   return {
     // Same job as the hardcoded «CUENTA» of the ESC/POS renderer: the first line tells this paper
     // from a fiscal ticket at a glance. The UI passes the translation; the fallback is canonical
@@ -1920,7 +1920,7 @@ function orderToPrebill(lines, settings = {}, opts = {}) {
       name: l3.is_gift ? `${l3.name} (invitaci\xF3n)` : l3.name,
       qty: l3.qty,
       unit_price: toEuros(l3.price),
-      total: toEuros(cents(l3)),
+      total: toEuros(cents2(l3)),
       // sales#148: ya resueltos contra el catálogo VIVO por quien pide la cuenta (la fila del
       // pedido guarda solo los `option_id`; el nombre y el importe no son del navegador).
       ...paperModifiers(l3.modifiers),
@@ -1937,8 +1937,8 @@ function orderToPrebill(lines, settings = {}, opts = {}) {
 }
 
 // ui/lib/print-document.ts
-function euros(cents) {
-  return cents == null ? void 0 : Number(cents) / 100;
+function euros(cents2) {
+  return cents2 == null ? void 0 : Number(cents2) / 100;
 }
 function printQuantity(qty, unitCode) {
   return unitTag(unitCode) ? `${quantityLabel(qty, unitCode)} ` : qty;
@@ -3775,7 +3775,36 @@ var es_default = {
     tenderRemainingShort: "Faltan {amount}",
     editTender: "Editar {name}, {amount}",
     removeTender: "Quitar {name}, {amount}",
-    errorPaymentsMismatch: "El total ha cambiado mientras se repart\xEDa el cobro. Revisa los importes y vuelve a cobrar."
+    errorPaymentsMismatch: "El total ha cambiado mientras se repart\xEDa el cobro. Revisa los importes y vuelve a cobrar.",
+    actionRefund: "Devolver",
+    statusRefunded: "Devuelta",
+    refundTitle: "Devolver la venta {number}",
+    refundExplain: "Elige cu\xE1nto vuelve por cada forma en que se pag\xF3. El reparto de abajo es una propuesta: cambia el importe que quieras.",
+    refundLoading: "Cargando lo que se puede devolver\u2026",
+    refundNothing: "No queda nada por devolver en esta venta.",
+    refundLegCharged: "Cobrado",
+    refundLegRefunded: "Ya devuelto",
+    refundLegRemaining: "Devolvible",
+    refundTotalLabel: "Se devuelve",
+    refundProposeAll: "Devolver todo",
+    refundDestination: "Devolver por",
+    refundNeedsDestination: "{method}: elige por d\xF3nde vuelve este dinero.",
+    refundOverCap: "{method}: {amount} es m\xE1s que los {remaining} que quedan por devolver.",
+    refundNothingToReturn: "Escribe cu\xE1nto vuelve.",
+    refundReasonLabel: "Motivo",
+    refundReasonRequired: "Una devoluci\xF3n necesita un motivo.",
+    refundReasonPlaceholder: "Por qu\xE9 vuelve el dinero",
+    refundReasonAlreadyRefunded: "Ya se devolvi\xF3 entero.",
+    refundReasonMethodUnavailable: "Ese medio de pago ya no est\xE1 disponible.",
+    refundReasonNotEligible: "No puede volver por donde se cobr\xF3.",
+    refundConfirm: "Devolver {amount}",
+    refundDone: "Devoluci\xF3n registrada.",
+    refundFailed: "No se ha podido registrar la devoluci\xF3n.",
+    refundExceedsTender: "A un medio de pago se le est\xE1 devolviendo m\xE1s de lo que cobr\xF3.",
+    refundSaleNotFound: "Esa venta no es de este negocio.",
+    refundRequiresCompleted: "Solo se puede devolver una venta cerrada.",
+    refundMethodUnavailable: "Ese medio de pago no est\xE1 disponible en este negocio.",
+    refundLegAmount: "Importe a devolver"
   },
   widgets: {
     "sales.today": {
@@ -4070,7 +4099,36 @@ var en_default = {
     tenderRemainingShort: "{amount} still to cover",
     editTender: "Edit {name}, {amount}",
     removeTender: "Remove {name}, {amount}",
-    errorPaymentsMismatch: "The total changed while the payment was being split. Check the amounts and charge again."
+    errorPaymentsMismatch: "The total changed while the payment was being split. Check the amounts and charge again.",
+    actionRefund: "Refund",
+    statusRefunded: "Refunded",
+    refundTitle: "Refund sale {number}",
+    refundExplain: "Choose how much goes back to each way it was paid. The split below is a proposal \u2014 change any amount.",
+    refundLoading: "Loading what can be refunded\u2026",
+    refundNothing: "There is nothing left to refund on this sale.",
+    refundLegCharged: "Charged",
+    refundLegRefunded: "Already refunded",
+    refundLegRemaining: "Refundable",
+    refundTotalLabel: "Refunding",
+    refundProposeAll: "Refund everything",
+    refundDestination: "Give it back through",
+    refundNeedsDestination: "{method}: choose where this money goes back.",
+    refundOverCap: "{method}: {amount} is more than the {remaining} still refundable.",
+    refundNothingToReturn: "Type how much goes back.",
+    refundReasonLabel: "Reason",
+    refundReasonRequired: "A refund needs a reason.",
+    refundReasonPlaceholder: "Why the money goes back",
+    refundReasonAlreadyRefunded: "Already given back in full.",
+    refundReasonMethodUnavailable: "That payment method is no longer available.",
+    refundReasonNotEligible: "Cannot go back the way it was paid.",
+    refundConfirm: "Refund {amount}",
+    refundDone: "Refund recorded.",
+    refundFailed: "The refund could not be recorded.",
+    refundExceedsTender: "One tender is being given back more than it was charged.",
+    refundSaleNotFound: "That sale is not in this business.",
+    refundRequiresCompleted: "Only a completed sale can be refunded.",
+    refundMethodUnavailable: "That payment method is not available in this business.",
+    refundLegAmount: "Refund amount"
   }
 };
 
@@ -7723,11 +7781,11 @@ var ErpPosTouch = class extends i3 {
     return Math.max(0, eurosToCents(this.discountInput || "0"));
   }
   /** sales#113 — aplica un importe FIJO (céntimos; 0 = quitar) al ticket, persistiéndolo en el pedido. */
-  async applyDiscountAmount(cents) {
+  async applyDiscountAmount(cents2) {
     const sheet = this.discountSheet;
     this.discountSheet = void 0;
     if (!sheet || sheet.target !== "ticket") return;
-    const value = Math.max(0, Math.round(cents));
+    const value = Math.max(0, Math.round(cents2));
     this.ticketDiscountAmount = value;
     if (this.orderId) {
       try {
@@ -7877,8 +7935,8 @@ var ErpPosTouch = class extends i3 {
    *  con ellos viene de un SERVICIO de precio no cerrado y arranca sugerido (services#12).
    *  `0` no se sugiere: un «desde 0 €» no es una pista, es ruido en la casilla. */
   openOpenPrice(seed) {
-    const cents = seed?.amountCents ?? 0;
-    this.openAmount = cents > 0 ? centsToEuros(cents) : "";
+    const cents2 = seed?.amountCents ?? 0;
+    this.openAmount = cents2 > 0 ? centsToEuros(cents2) : "";
     this.openDept = seed?.deptKey ?? "";
     this.openPriceOpen = true;
   }
@@ -9143,6 +9201,409 @@ __decorateClass([
   n4({ type: Boolean })
 ], ErpPos.prototype, "fullscreen", 2);
 define("erp-pos", ErpPos);
+
+// ui/lib/refund-allocation.ts
+var cents = (n6) => Math.max(0, Math.round(Number(n6) || 0));
+function refundableTotal(legs) {
+  return legs.reduce((sum, l3) => sum + cents(l3.remaining), 0);
+}
+function draftTotal(draft) {
+  return Object.values(draft).reduce((sum, e7) => sum + cents(e7?.amount), 0);
+}
+function proportionalSplit(amount, legs) {
+  const split = {};
+  for (const l3 of legs) split[l3.payment_id] = 0;
+  const weights = legs.map((l3) => cents(l3.remaining));
+  const totalWeight = weights.reduce((a3, b3) => a3 + b3, 0);
+  const magnitude = Math.min(cents(amount), totalWeight);
+  if (magnitude <= 0 || totalWeight <= 0) return split;
+  const remainders = [];
+  let assigned = 0;
+  legs.forEach((l3, i7) => {
+    const numerator = magnitude * weights[i7];
+    const part = Math.floor(numerator / totalWeight);
+    split[l3.payment_id] = part;
+    assigned += part;
+    remainders.push({ rest: numerator % totalWeight, index: i7 });
+  });
+  remainders.sort((a3, b3) => b3.rest - a3.rest || a3.index - b3.index);
+  let left = magnitude - assigned;
+  for (const { index } of remainders) {
+    if (left <= 0) break;
+    split[legs[index].payment_id] += 1;
+    left -= 1;
+  }
+  return split;
+}
+function refundBlock(draft, legs) {
+  const known = legs.reduce((sum, l3) => sum + cents(draft[l3.payment_id]?.amount), 0);
+  if (known <= 0) return { reason: "nothing" };
+  const ordered = [...legs].sort((a3, b3) => a3.sort_order - b3.sort_order);
+  for (const leg of ordered) {
+    const amount = cents(draft[leg.payment_id]?.amount);
+    if (amount > cents(leg.remaining)) {
+      return { reason: "over-cap", leg, amount, remaining: cents(leg.remaining) };
+    }
+  }
+  for (const leg of ordered) {
+    const entry = draft[leg.payment_id];
+    const amount = cents(entry?.amount);
+    if (amount > 0 && Number(leg.refundable) !== 1 && !entry?.to) {
+      return { reason: "needs-destination", leg, why: leg.reason };
+    }
+  }
+  return void 0;
+}
+function buildAllocations(draft, legs) {
+  return [...legs].sort((a3, b3) => a3.sort_order - b3.sort_order).flatMap((leg) => {
+    const entry = draft[leg.payment_id];
+    const amount = cents(entry?.amount);
+    if (amount <= 0) return [];
+    const changed = entry?.to && entry.to !== leg.payment_method_id;
+    return [{ payment_id: leg.payment_id, amount, ...changed ? { to_payment_method_id: entry.to } : {} }];
+  });
+}
+var REASON_KEYS = {
+  already_refunded: "ui.refundReasonAlreadyRefunded",
+  method_unavailable: "ui.refundReasonMethodUnavailable"
+};
+function reasonKey(reason) {
+  return REASON_KEYS[reason] ?? "ui.refundReasonNotEligible";
+}
+function parseAmountToCents(text) {
+  const raw = String(text ?? "").replace(/[^\d.,-]/g, "");
+  if (!raw || raw.startsWith("-")) return 0;
+  const cut = Math.max(raw.lastIndexOf(","), raw.lastIndexOf("."));
+  const digits = (part) => part.replace(/[^\d]/g, "");
+  const whole = digits(cut >= 0 ? raw.slice(0, cut) : raw);
+  const frac = cut >= 0 ? digits(raw.slice(cut + 1)) : "";
+  const padded = (frac + "000").slice(0, 3);
+  const units = Number(whole || "0");
+  if (!Number.isFinite(units)) return 0;
+  const cents2 = units * 100 + Number(padded.slice(0, 2));
+  return Number(padded[2]) >= 5 ? cents2 + 1 : cents2;
+}
+function formatAmountInput(amount, locale) {
+  const fixed = (Math.max(0, Math.round(Number(amount) || 0)) / 100).toFixed(2);
+  let decimal = ".";
+  try {
+    decimal = new Intl.NumberFormat(locale || void 0).formatToParts(1.1).find((p4) => p4.type === "decimal")?.value ?? ".";
+  } catch {
+    decimal = ".";
+  }
+  return fixed.replace(".", decimal);
+}
+
+// ui/components/erp-sale-refund/erp-sale-refund.ts
+var CATALOG3 = { es: es_default, en: en_default };
+var REFUND_MESSAGES = {
+  "sales.refund_exceeds_tender": "ui.refundExceedsTender",
+  "sales.refund_tender_not_eligible": "ui.refundNeedsDestinationShort",
+  "sales.refund_method_unavailable": "ui.refundMethodUnavailable",
+  "sales.refund_reason_required": "ui.refundReasonRequired",
+  "sales.refund_nothing_to_return": "ui.refundNothingToReturn",
+  "sales.refund_requires_completed": "ui.refundRequiresCompleted",
+  "sales.sale_not_found": "ui.refundSaleNotFound"
+};
+function refundErrorKey(message) {
+  for (const [code, key] of Object.entries(REFUND_MESSAGES)) {
+    if (message.includes(code)) return key === "ui.refundNeedsDestinationShort" ? "ui.refundReasonNotEligible" : key;
+  }
+  return "ui.refundFailed";
+}
+function erplora3() {
+  const c5 = globalThis.erplora;
+  if (!c5) throw new Error("erplora SDK no inicializado por el shell");
+  return c5;
+}
+function newKey(saleId) {
+  const rnd = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `refund-${saleId}-${rnd}`;
+}
+var ErpSaleRefund = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.legs = [];
+    this.methods = [];
+    this.draft = {};
+    this.reason = "";
+    this.loading = false;
+    this.error = "";
+    this.busy = false;
+    /** La clave del intento, congelada: un reintento NO la renueva. */
+    this.key = "";
+  }
+  static {
+    this.styles = i`
+    :host { display:block; }
+    /* 🔴 El padding es PROPIO, no la clase ion-padding: esa clase vive en el stylesheet GLOBAL de Ionic y
+       NO atraviesa el shadow DOM, así que dentro de un módulo no aplica jamás. Medido en un
+       Chromium real contra el preview: el cuerpo salia con padding 0 y el boton pegado al borde en
+       los tres viewports. (Y no metas acentos graves en un comentario dentro de una plantilla css:
+       cierran el literal.) */
+    .refund-body, .refund-loading { padding:1rem; }
+    /* A 1440 px la ficha se estiraba a 1.404 px de ancho: un formulario de importes con el nombre
+       del medio a la izquierda y el campo a un metro a la derecha no se lee de un vistazo. Se
+       centra con un ancho de lectura, y por debajo de eso ocupa lo que haya. */
+    .refund-body { display:flex; flex-direction:column; gap:.85rem; max-width:46rem; margin:0 auto; }
+    .refund-loading { display:flex; align-items:center; gap:.6rem; }
+    h3 { margin:0; font-size:1.1rem; }
+    .hint { margin:0; color:var(--ion-color-medium,#8b897f); font-size:.85rem; }
+    .legs { display:flex; flex-direction:column; gap:.7rem; }
+    .leg { border:1px solid var(--ion-border-color,#e0ddd4); border-radius:var(--ok-radius,12px); padding:.7rem .8rem; }
+    .leg-head { display:flex; justify-content:space-between; align-items:baseline; gap:.5rem; }
+    /* El dinero se lee en columna y a la derecha, como en cualquier ERP: alineado a la izquierda
+       pegado al nombre del medio, la vista no tiene donde apoyarse para comparar dos importes. */
+    .leg-head ion-input { margin-left:auto; max-width:12rem; --padding-end:0; text-align:right; }
+    .leg-name { font-weight:700; }
+    .leg-figures { display:flex; gap:.9rem; flex-wrap:wrap; color:var(--ion-color-medium,#8b897f); font-size:.78rem; margin:.25rem 0 .1rem; }
+    /* El motivo se LEE sin tocar nada y sin ratón: nunca en un title ni dentro del botón. */
+    .leg-reason { margin:.35rem 0 0; color:var(--ion-color-warning-shade,#b26a00); font-size:.82rem; }
+    .totals { display:flex; justify-content:space-between; align-items:baseline; font-size:1.05rem; }
+    .totals .v { font-weight:800; }
+    .block { margin:0; color:var(--ion-color-danger,#d9480f); font-size:.85rem; }
+    /* El color de un ion-button dentro de shadow DOM NO puede venir del atributo color="danger":
+       esa via pasa por las reglas globales .ion-color-*, que tampoco atraviesan el shadow. Medido: el
+       boton salia con fondo transparente y texto blanco, o sea INVISIBLE sobre fondo claro. Las
+       custom properties de Ionic si entran, asi que el color se pone por ahi. */
+    ion-button.refund-confirm { --background:var(--ion-color-danger,#eb445a);
+      --background-activated:var(--ion-color-danger-shade,#cf3c4f);
+      --color:var(--ion-color-danger-contrast,#fff); --border-radius:12px; min-height:48px; }
+    /* Bloqueado se ve apagado, pero SIGUE recibiendo el toque (aria-disabled, no disabled).
+       🔴 El selector va sobre data-blocked, NO sobre [aria-disabled]: medido en un Chromium de
+       verdad contra el preview, Ionic MUEVE los aria-* del host al <button> nativo de su shadow
+       (el host se queda con class/expand/color y el interior recibe aria-disabled="true"). Es
+       decir: el contrato de accesibilidad se cumple, pero un CSS colgado de [aria-disabled] en el
+       host no casa NUNCA y el botón se ve encendido estando bloqueado.
+       (Y no metas acentos graves en un comentario dentro de una plantilla css: cierran el
+       literal.) */
+    ion-button.refund-confirm[data-blocked='true'] { opacity:.75; }
+    /* Tres viewports: por debajo de 560 px la ficha de la pata apila cifras e importe, que en una
+       tablet de mostrador en vertical se salían de la caja. */
+    @media (max-width: 559.98px) {
+      .leg-head { flex-direction:column; align-items:stretch; }
+      .leg-head ion-input { max-width:none; margin-left:0; }
+      .leg-figures { gap:.5rem; }
+    }
+  `;
+  }
+  connectedCallback() {
+    super.connectedCallback();
+    void this.load();
+  }
+  updated(changed) {
+    if (changed.has("saleId")) void this.load();
+  }
+  async load() {
+    const saleId = this.saleId;
+    if (!saleId || this.loadedFor === saleId) return;
+    this.loadedFor = saleId;
+    this.loading = true;
+    this.error = "";
+    try {
+      const [sales, legs, methods] = await Promise.all([
+        erplora3().query("sales.get", { sale_id: saleId }),
+        erplora3().query("sales.refund_options", { sale_id: saleId }),
+        erplora3().query("sales.payment_methods")
+      ]);
+      this.sale = sales?.[0];
+      this.legs = (legs ?? []).filter((l3) => Number(l3.remaining) > 0 || Number(l3.charged) > 0);
+      this.methods = methods ?? [];
+      this.key = newKey(saleId);
+      const split = proportionalSplit(refundableTotal(this.legs), this.legs);
+      this.draft = Object.fromEntries(Object.entries(split).map(([id, amount]) => [id, { amount }]));
+    } catch (e7) {
+      this.error = e7 instanceof Error ? e7.message : String(e7 ?? "");
+    } finally {
+      this.loading = false;
+    }
+  }
+  /** El operador teclea EUROS; lo que se guarda son céntimos. Nada más se recalcula: su reparto. */
+  setAmount(paymentId, text) {
+    this.draft = { ...this.draft, [paymentId]: { ...this.draft[paymentId], amount: parseAmountToCents(text) } };
+  }
+  setDestination(paymentId, methodId) {
+    this.draft = { ...this.draft, [paymentId]: { ...this.draft[paymentId], to: methodId || void 0 } };
+  }
+  proposeAll() {
+    const split = proportionalSplit(refundableTotal(this.legs), this.legs);
+    this.draft = Object.fromEntries(
+      Object.entries(split).map(([id, amount]) => [id, { ...this.draft[id], amount }])
+    );
+  }
+  /** Por qué no se puede confirmar, ya escrito. `undefined` = adelante. */
+  get blockText() {
+    const t7 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
+    const block = refundBlock(this.draft, this.legs);
+    if (block?.reason === "nothing") return t7("ui.refundNothingToReturn");
+    if (block?.reason === "over-cap") {
+      return t7("ui.refundOverCap", {
+        method: this.legName(block.leg),
+        amount: erplora3().formatMoney(block.amount),
+        remaining: erplora3().formatMoney(block.remaining)
+      });
+    }
+    if (block?.reason === "needs-destination") {
+      return t7("ui.refundNeedsDestination", { method: this.legName(block.leg) });
+    }
+    if (!this.reason.trim()) return t7("ui.refundReasonRequired");
+    return void 0;
+  }
+  /** El nombre del método en el idioma del usuario: la fila guarda el nombre canónico del seed. */
+  legName(leg) {
+    return payMethodDisplayName(
+      { id: leg.payment_method_id ?? "", name: leg.payment_method_name },
+      (k2) => erplora3().t(CATALOG3, k2)
+    );
+  }
+  async confirm() {
+    const t7 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
+    const why = this.blockText;
+    if (why) {
+      erplora3().notify?.({ type: "error", message: why });
+      return;
+    }
+    if (this.busy) return;
+    this.busy = true;
+    try {
+      await erplora3().command("sales.refund", {
+        sale_id: this.saleId,
+        reason: this.reason.trim(),
+        // La MISMA clave en cada intento: un reintento recupera el documento ya escrito en vez de
+        // devolver el dinero por segunda vez (y `refund_ref` sigue siendo el mismo para services).
+        idempotency_key: this.key,
+        allocations: buildAllocations(this.draft, this.legs)
+      });
+      erplora3().notify?.({ type: "success", message: t7("ui.refundDone") });
+      this.dispatchEvent(new CustomEvent("refunded", { bubbles: true, composed: true, detail: { saleId: this.saleId } }));
+    } catch (e7) {
+      const raw = e7 instanceof Error ? e7.message : String(e7 ?? "");
+      erplora3().notify?.({ type: "error", message: t7(refundErrorKey(raw)) });
+    } finally {
+      this.busy = false;
+    }
+  }
+  renderLeg(leg) {
+    const t7 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
+    const money2 = (c5) => erplora3().formatMoney(c5);
+    const entry = this.draft[leg.payment_id];
+    const eligible = Number(leg.refundable) === 1;
+    return b2`<div class="leg" data-leg=${leg.payment_id}>
+      <div class="leg-head">
+        <span class="leg-name">${this.legName(leg)}</span>
+        <ion-input
+          class="refund-amount"
+          type="text"
+          inputmode="decimal"
+          label=${t7("ui.refundLegAmount")}
+          label-placement="stacked"
+          .value=${formatAmountInput(entry?.amount ?? 0, erplora3().locale)}
+          @ionInput=${(e7) => this.setAmount(leg.payment_id, e7.detail?.value ?? "")}
+        ></ion-input>
+      </div>
+      <div class="leg-figures">
+        <span>${t7("ui.refundLegCharged")}: ${money2(leg.charged)}</span>
+        ${leg.refunded > 0 ? b2`<span>${t7("ui.refundLegRefunded")}: ${money2(leg.refunded)}</span>` : A}
+        <span>${t7("ui.refundLegRemaining")}: ${money2(leg.remaining)}</span>
+      </div>
+      ${eligible ? A : b2`<p class="leg-reason">${t7(reasonKey(leg.reason))}</p>
+            ${leg.remaining > 0 ? b2`<ion-select
+                  class="refund-destination"
+                  label=${t7("ui.refundDestination")}
+                  label-placement="stacked"
+                  .value=${entry?.to ?? ""}
+                  @ionChange=${(e7) => this.setDestination(leg.payment_id, e7.detail?.value ?? "")}
+                >
+                  ${this.methods.map((m4) => b2`<ion-select-option value=${m4.id}>${payMethodDisplayName(m4, (k2) => erplora3().t(CATALOG3, k2))}</ion-select-option>`)}
+                </ion-select>` : A}`}
+    </div>`;
+  }
+  render() {
+    const t7 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
+    if (this.loading) {
+      return b2`<div class="refund-loading">
+        <ion-spinner name="crescent"></ion-spinner>
+        <span>${t7("ui.refundLoading")}</span>
+      </div>`;
+    }
+    if (this.error) {
+      return b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>`;
+    }
+    if (!this.legs.length) {
+      return b2`<ok-inline-feedback tone="warning" icon="information-circle-outline">${t7("ui.refundNothing")}</ok-inline-feedback>`;
+    }
+    const total = draftTotal(this.draft);
+    const block = this.blockText;
+    return b2`<div class="refund-body">
+      <h3>${t7("ui.refundTitle", { number: this.sale?.sale_number ?? "" })}</h3>
+      <p class="hint">${t7("ui.refundExplain")}</p>
+      <div class="legs">${this.legs.map((l3) => this.renderLeg(l3))}</div>
+      <ion-button class="refund-propose" size="small" fill="clear" @click=${() => this.proposeAll()}>
+        ${t7("ui.refundProposeAll")}
+      </ion-button>
+      <ion-textarea
+        class="refund-reason"
+        label=${t7("ui.refundReasonLabel")}
+        label-placement="stacked"
+        maxlength="500"
+        placeholder=${t7("ui.refundReasonPlaceholder")}
+        .value=${this.reason}
+        @ionInput=${(e7) => {
+      this.reason = e7.detail?.value ?? "";
+    }}
+      ></ion-textarea>
+      <div class="totals">
+        <span>${t7("ui.refundTotalLabel")}</span>
+        <span class="v">${erplora3().formatMoney(total)}</span>
+      </div>
+      <!-- EL MOTIVO DEL BLOQUEO, ESCRITO EN LA PANTALLA: se lee sin tocar nada y sin un ratón. -->
+      ${block ? b2`<p class="block">${block}</p>` : A}
+      <!-- 🔴 aria-disabled, JAMÁS el disabled de Ionic: en modo ios es pointer-events:none y en
+           una tablet de mostrador el toque muere en silencio (sales#58). El estado ocupado sí es
+           disabled de verdad: ahí no hay nada que contestar y un segundo toque devolvería dos
+           veces. (Y no metas acentos graves en un comentario dentro de una plantilla Lit: cierran
+           el literal.) -->
+      <ion-button
+        class="refund-confirm"
+        expand="block"
+        ?disabled=${this.busy}
+        aria-disabled=${block ? "true" : A}
+        data-blocked=${block ? "true" : A}
+        @click=${() => {
+      void this.confirm();
+    }}
+      >${t7("ui.refundConfirm", { amount: erplora3().formatMoney(total) })}</ion-button>
+    </div>`;
+  }
+};
+__decorateClass([
+  n4({ attribute: "sale-id" })
+], ErpSaleRefund.prototype, "saleId", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "sale", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "legs", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "methods", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "draft", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "reason", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "loading", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "error", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "busy", 2);
+define("erp-sale-refund", ErpSaleRefund);
 
 // ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
 var { I: t6 } = j;
@@ -10802,10 +11263,13 @@ var OkDataTable = _OkDataTable;
 define("ok-data-table", OkDataTable);
 
 // ui/components/erp-sales-list/erp-sales-list.ts
-var CATALOG3 = { es: es_default, en: en_default };
+var CATALOG4 = { es: es_default, en: en_default };
 var STATUS_KEYS = {
   completed: "ui.statusCompleted",
-  voided: "ui.statusVoided"
+  voided: "ui.statusVoided",
+  // sales#160: una venta devuelta ENTERA pasa a `refunded`. Sin su clave, la celda pintaba la
+  // palabra cruda de la base de datos sobre una UI en español (el mismo defecto que hub#923).
+  refunded: "ui.statusRefunded"
 };
 var VOID_MESSAGES = {
   "sales.void_requires_credit_note": "ui.voidRequiresCreditNote",
@@ -10829,7 +11293,7 @@ function rangeBounds(range) {
   const days = range === "today" ? 0 : range === "7d" ? 6 : 29;
   return { from: isoDay(days), to: isoDay(0) };
 }
-function erplora3() {
+function erplora4() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
   return c5;
@@ -10880,11 +11344,11 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
   // Getter (no campo): se re-evalúa en cada render, así los textos cambian con el idioma activo
   // (ADR-0055). El listener `erplora:locale-changed` re-renderiza.
   get documentActions() {
-    const t7 = (k2) => erplora3().t(CATALOG3, k2);
+    const t7 = (k2) => erplora4().t(CATALOG4, k2);
     const actions = [
       { id: "document", label: t7("ui.actionDocument"), icon: "receipt-outline" }
     ];
-    if (erplora3().hasPermission?.("sales.void_sale")) {
+    if (erplora4().hasPermission?.("sales.void_sale")) {
       actions.push({
         id: "void",
         label: t7("ui.actionVoid"),
@@ -10893,12 +11357,21 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
         disabled: (r6) => r6.status !== "completed"
       });
     }
+    if (erplora4().hasPermission?.("sales.refund_sale")) {
+      actions.push({
+        id: "refund",
+        label: t7("ui.actionRefund"),
+        icon: "return-down-back-outline",
+        color: "warning",
+        disabled: (r6) => r6.status !== "completed"
+      });
+    }
     return actions;
   }
   /** sales#26 — pide el MOTIVO (obligatorio: Toast, Lightspeed y el software fiscal español lo
    *  exigen; es lo que luego se lee en el historial) y anula. Overlay global de Ionic, como el TPV. */
   async confirmVoid(sale) {
-    const t7 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
+    const t7 = (k2, p4) => erplora4().t(CATALOG4, k2, p4);
     const alert = document.createElement("ion-alert");
     alert.header = t7("ui.voidTitle", { number: sale.sale_number });
     alert.message = t7("ui.voidExplain");
@@ -10908,7 +11381,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
       { text: t7("ui.actionVoid"), role: "destructive", handler: (data) => {
         const reason = (data?.reason ?? "").trim();
         if (!reason) {
-          erplora3().notify?.({ type: "error", message: t7("ui.voidReasonRequired") });
+          erplora4().notify?.({ type: "error", message: t7("ui.voidReasonRequired") });
           return false;
         }
         void this.voidSale(sale.id, reason);
@@ -10926,18 +11399,18 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
   }
   /** Ejecuta `sales.void`; el servidor decide (motivo, estado, factura) y aquí solo se cuenta. */
   async voidSale(saleId, reason) {
-    const t7 = (k2) => erplora3().t(CATALOG3, k2);
+    const t7 = (k2) => erplora4().t(CATALOG4, k2);
     try {
-      await erplora3().command("sales.void", { sale_id: saleId, reason });
-      erplora3().notify?.({ type: "success", message: t7("ui.voidDone") });
+      await erplora4().command("sales.void", { sale_id: saleId, reason });
+      erplora4().notify?.({ type: "success", message: t7("ui.voidDone") });
       await Promise.all([this.ctrl.load(), this.loadStats()]);
     } catch (e7) {
       const raw = e7 instanceof Error ? e7.message : String(e7 ?? "");
-      erplora3().notify?.({ type: "error", message: t7(voidErrorKey(raw)) });
+      erplora4().notify?.({ type: "error", message: t7(voidErrorKey(raw)) });
     }
   }
   get columns() {
-    const t7 = (k2) => erplora3().t(CATALOG3, k2);
+    const t7 = (k2) => erplora4().t(CATALOG4, k2);
     return [
       // sales#27: la hora de cada venta a la vista (antes se ordenaba por ella y no se pintaba).
       {
@@ -10946,7 +11419,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
         sortable: true,
         filterable: true,
         filterType: "daterange",
-        format: (r6) => formatDateTime(String(r6.created_at ?? ""), erplora3().locale)
+        format: (r6) => formatDateTime(String(r6.created_at ?? ""), erplora4().locale)
       },
       { key: "sale_number", header: t7("ui.colNumber"), sortable: true, filterable: true, filterType: "text" },
       { key: "customer_name", header: t7("ui.colCustomer"), sortable: true, filterable: true, filterType: "text", format: (r6) => r6.customer_name || "\u2014" },
@@ -10967,7 +11440,8 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
         filterType: "select",
         options: [
           { value: "completed", label: t7("ui.statusCompleted") },
-          { value: "voided", label: t7("ui.statusVoided") }
+          { value: "voided", label: t7("ui.statusVoided") },
+          { value: "refunded", label: t7("ui.statusRefunded") }
         ],
         // hub#923: el filtro traducía, pero la CELDA pintaba el valor crudo de la BD — «completed»,
         // en inglés, sobre una UI en español. Es la lista a la que se manda al cajero cuando un cobro
@@ -10976,7 +11450,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
         // una celda vacía, que esconde el estado de la fila.
         format: (r6) => STATUS_KEYS[String(r6.status ?? "")] ? t7(STATUS_KEYS[String(r6.status)]) : String(r6.status ?? "")
       },
-      { key: "total", header: t7("ui.colTotal"), align: "right", sortable: true, filterable: true, filterType: "range", format: (r6) => erplora3().formatMoney(Number(r6.total || 0)) }
+      { key: "total", header: t7("ui.colTotal"), align: "right", sortable: true, filterable: true, filterType: "range", format: (r6) => erplora4().formatMoney(Number(r6.total || 0)) }
     ];
   }
   // TODO-LIT: componentWillLoad → connectedCallback. Recuerda: connectedCallback se dispara
@@ -10991,7 +11465,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
       this.kpiMq.addEventListener("change", this.onKpiMqChange);
     }
     const b3 = rangeBounds(this.range);
-    this.ctrl = createListController(erplora3(), "sales.list", () => this.requestUpdate(), {
+    this.ctrl = createListController(erplora4(), "sales.list", () => this.requestUpdate(), {
       pageSize: 50,
       sort: "created_at",
       dir: "desc",
@@ -11004,7 +11478,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
     });
     await Promise.all([this.ctrl.load(), this.loadStats()]);
     try {
-      this.unsub = erplora3().on("sale.completed", () => {
+      this.unsub = erplora4().on("sale.completed", () => {
         this.ctrl.load();
         this.loadStats();
       });
@@ -11034,14 +11508,14 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
   async loadStats() {
     try {
       const b3 = rangeBounds(this.range);
-      const rows3 = await erplora3().query("sales.stats", { date_from: b3.from ?? null, date_to: b3.to ?? null });
+      const rows3 = await erplora4().query("sales.stats", { date_from: b3.from ?? null, date_to: b3.to ?? null });
       this.stats = rows3 && rows3[0] || { count: 0, total_revenue: 0, avg_ticket: 0 };
     } catch (e7) {
-      this.statsError = e7 instanceof Error ? e7.message : erplora3().t(CATALOG3, "ui.errorStats");
+      this.statsError = e7 instanceof Error ? e7.message : erplora4().t(CATALOG4, "ui.errorStats");
     }
   }
   render() {
-    const t7 = (k2) => erplora3().t(CATALOG3, k2);
+    const t7 = (k2) => erplora4().t(CATALOG4, k2);
     return b2`<div class="scroll">
         <h2>${t7("ui.sales")}</h2>
         <ion-segment class="range-segment" value=${this.range} aria-label=${t7("ui.rangeLabel")}
@@ -11057,19 +11531,19 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
           </div>
           <div class="card">
             <div class="k">${t7("ui.revenue")}</div>
-            <div class="v">${erplora3().formatMoney(Number(this.stats.total_revenue || 0))}</div>
+            <div class="v">${erplora4().formatMoney(Number(this.stats.total_revenue || 0))}</div>
           </div>
           <div class="card">
             <div class="k">${t7("ui.avgTicket")}</div>
-            <div class="v">${erplora3().formatMoney(Number(this.stats.avg_ticket || 0))}</div>
+            <div class="v">${erplora4().formatMoney(Number(this.stats.avg_ticket || 0))}</div>
           </div>
           <div class="card">
             <div class="k">${t7("ui.kpiTax")}</div>
-            <div class="v">${erplora3().formatMoney(Number(this.stats.tax_total || 0))}</div>
+            <div class="v">${erplora4().formatMoney(Number(this.stats.tax_total || 0))}</div>
           </div>
           <div class="card">
             <div class="k">${t7("ui.kpiDiscounts")}</div>
-            <div class="v">${erplora3().formatMoney(Number(this.stats.discount_total || 0))}</div>
+            <div class="v">${erplora4().formatMoney(Number(this.stats.discount_total || 0))}</div>
           </div>
           <div class="card">
             <div class="k">${t7("ui.kpiVoided")}</div>
@@ -11083,6 +11557,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
         <ok-data-table .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r6) => String(r6.sale_number ?? "\u2014")} .cardIcon=${() => "receipt-outline"} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.ctrl?.state.sort} .sortDir=${this.ctrl?.state.dir ?? "desc"} .searchable=${true} .searchPlaceholder=${t7("ui.searchSalePlaceholder")} .emptyMessage=${this.ctrl?.loading ? t7("ui.loading") : t7("ui.noSales")} .actions=${this.documentActions} .rowClickable=${true} @rowAction=${(e7) => {
       if (e7.detail.actionId === "document") this.docSaleId = e7.detail.row.id;
       else if (e7.detail.actionId === "void") void this.confirmVoid(e7.detail.row);
+      else if (e7.detail.actionId === "refund") this.refundSaleId = e7.detail.row.id;
     }} @rowClick=${(e7) => {
       this.docSaleId = e7.detail.row.id;
     }} @pageChange=${(e7) => this.ctrl.setPage(e7.detail)} @sortChange=${(e7) => this.ctrl.setSort(e7.detail.sort, e7.detail.dir)} @searchChange=${(e7) => this.ctrl.setSearch(e7.detail)} @filterChange=${(e7) => this.onFilterChange(e7)}></ok-data-table>
@@ -11091,7 +11566,21 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
            igual, pero así la vista no arrastra overlays al scrollear. -->
       ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => {
       this.docSaleId = void 0;
-    }, t: t7 })}`;
+    }, t: t7 })}
+      <!-- sales#160 — la devolución vive en su propio modal: el reparto por tender no cabe en un
+           ion-alert, y el operador tiene que poder leer los topes mientras teclea. -->
+      <ion-modal class="refund-modal" .isOpen=${!!this.refundSaleId}
+        @ionModalDidDismiss=${() => {
+      this.refundSaleId = void 0;
+    }}>
+        <ion-content>
+          ${this.refundSaleId ? b2`<erp-sale-refund .saleId=${this.refundSaleId} @refunded=${() => {
+      this.refundSaleId = void 0;
+      void this.ctrl.load();
+      void this.loadStats();
+    }}></erp-sale-refund>` : A}
+        </ion-content>
+      </ion-modal>`;
   }
 };
 __decorateClass([
@@ -11112,5 +11601,8 @@ __decorateClass([
 __decorateClass([
   r5()
 ], _ErpSalesList.prototype, "docSaleId", 2);
+__decorateClass([
+  r5()
+], _ErpSalesList.prototype, "refundSaleId", 2);
 var ErpSalesList = _ErpSalesList;
 define("erp-sales-list", ErpSalesList);

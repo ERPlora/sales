@@ -198,3 +198,28 @@ export function parseAmountToCents(text: string): number {
   const cents = units * 100 + Number(padded.slice(0, 2));
   return Number(padded[2]) >= 5 ? cents + 1 : cents;
 }
+
+/**
+ * Céntimos → lo que se ESCRIBE en el campo editable, con el separador decimal del idioma activo.
+ *
+ * 🔴 Sin esto el campo pintaba «50.00» justo encima de un «Cobrado: 50,00 €», y el operador tiene
+ * que decidir sobre ese número si el punto es decimal o de miles. Es el campo con el que se decide
+ * cuánto dinero sale de la caja.
+ *
+ * SIN separador de miles a propósito: lo que se pinta se tiene que poder reeditar a mano y volver
+ * a leer igual (`parseAmountToCents(formatAmountInput(x)) === x`). Agrupar en un campo editable es
+ * la forma más rápida de que un importe cambie solo.
+ */
+export function formatAmountInput(amount: number, locale: string): string {
+  const fixed = (Math.max(0, Math.round(Number(amount) || 0)) / 100).toFixed(2);
+  let decimal = '.';
+  try {
+    decimal = new Intl.NumberFormat(locale || undefined)
+      .formatToParts(1.1)
+      .find((p) => p.type === 'decimal')?.value ?? '.';
+  } catch {
+    // Un locale que Intl no reconoce no puede dejar el campo vacío: se cae al punto y sigue.
+    decimal = '.';
+  }
+  return fixed.replace('.', decimal);
+}

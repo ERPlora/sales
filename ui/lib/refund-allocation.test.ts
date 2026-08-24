@@ -7,6 +7,7 @@ import {
   buildAllocations,
   reasonKey,
   parseAmountToCents,
+  formatAmountInput,
   type RefundLeg,
   type RefundDraft,
 } from './refund-allocation.js';
@@ -194,5 +195,30 @@ describe('lo que el operador teclea son EUROS; lo que viaja son CÉNTIMOS', () =
     // El operador copia y pega «1.234,56 €» del tique: lo que se lee tiene que ser 123456.
     expect(parseAmountToCents('1.234,56 €')).toBe(123456);
     expect(parseAmountToCents('1,234.56')).toBe(123456);
+  });
+});
+
+describe('y lo que se le enseña al operador vuelve en SU separador decimal', () => {
+  it('en español el importe editable lleva coma, como el resto de la pantalla', () => {
+    // 🔴 Un «50.00» dentro del campo, justo encima de un «Cobrado: 50,00 €», hace dudar de si el
+    // punto es decimal o de miles. Y es el campo con el que se decide cuánto dinero sale.
+    expect(formatAmountInput(5000, 'es')).toBe('50,00');
+    expect(formatAmountInput(7, 'es-ES')).toBe('0,07');
+  });
+
+  it('en inglés lleva punto', () => {
+    expect(formatAmountInput(5000, 'en')).toBe('50.00');
+  });
+
+  it('nunca mete separador de miles: lo que se pinta se tiene que poder reeditar', () => {
+    // Un «1.234,56» reeditado a mano y vuelto a leer tiene que dar lo mismo; el agrupamiento en un
+    // campo editable es la forma más rápida de que un importe cambie solo.
+    expect(formatAmountInput(123456, 'es')).toBe('1234,56');
+    expect(parseAmountToCents(formatAmountInput(123456, 'es'))).toBe(123456);
+  });
+
+  it('un locale raro o ausente no rompe el campo', () => {
+    expect(formatAmountInput(5000, '')).toMatch(/^50[.,]00$/);
+    expect(formatAmountInput(0, 'es')).toBe('0,00');
   });
 });
