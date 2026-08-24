@@ -259,6 +259,16 @@
     "modifierRequired": "Choose {n}",
     "modifierUpTo": "Up to {n}",
     "modifierOptional": "Optional",
-    "modifierPickOne": "Choose an option to continue"
+    "modifierPickOne": "Choose an option to continue",
+    "remaining": "Remaining",
+    "splitPayment": "Split the payment",
+    "addTender": "Add this payment",
+    "legAmount": "Amount for this payment",
+    "paymentsTaken": "Payments taken",
+    "tenderRemainingBlock": "{amount} still to cover before the sale can be charged.",
+    "tenderRemainingShort": "{amount} still to cover",
+    "editTender": "Edit {name}, {amount}",
+    "removeTender": "Remove {name}, {amount}",
+    "errorPaymentsMismatch": "The total changed while the payment was being split. Check the amounts and charge again."
   }
 }

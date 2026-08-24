@@ -39,6 +39,9 @@ describe('checkoutErrorKey', () => {
   it('sales#24 — a cash amount below the total tells the cashier how much is missing, not «error»', () => {
     expect(checkoutErrorKey('sales.insufficient_tendered: amount_tendered 100 is below the total 500'))
       .toBe('ui.errorInsufficientTendered');
+    // sales#159 — a split whose legs do not add up is refused; the cashier gets words, not a code.
+    expect(checkoutErrorKey('command failed: sales.payments_do_not_match_total: the payments add up to 12000 but the total is 12100'))
+      .toBe('ui.errorPaymentsMismatch');
   });
 
   it('sales#21 — a missing VAT rule or catalogue is explained, not shown as a generic charge error', () => {

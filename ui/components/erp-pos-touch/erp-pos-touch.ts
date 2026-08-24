@@ -25,6 +25,12 @@ import { brandSvgFor } from '../../lib/brand-icons.js';
 import { priceLabel } from '../../lib/price-label.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod, payMethodDisplayName } from '../../lib/pay-icons.js';
+// sales#159 (ADR-0386) — una venta, N cobros. La ARITMÉTICA del reparto vive en lib (probada sin
+// DOM): el restante, lo que cubre cada pata, el cambio —que sale SOLO del efectivo— y el
+// `payments[]` que se le entrega al servidor.
+import {
+  buildPaymentsPayload, changeDue, chargeBlock, planTender, remainingCents, type Tender,
+} from '../../lib/split-tender.js';
 // The bill is painted by ok-receipt HERE, so it is registered here. It used to arrive only
 // transitively (document-modal → erp-sales-document), i.e. by accident: dropping that unrelated
 // import would have left `<ok-receipt>` an unknown element and the bill blank again.
@@ -418,6 +424,45 @@ export class ErpPosTouch extends LitElement {
     .pay-hint { margin:.1rem 0 .4rem; color:var(--mut); font-size:.9rem; }
     /* El cambio es lo que el cajero busca con el ojo al devolver. */
     .amt.big-change .v { font-size:1.6rem; font-weight:800; color:var(--accent); }
+
+    /* ── sales#159 · pago mixto (ADR-0386) ────────────────────────────────────────────────── */
+    /* EL RESTANTE. Vive en la cabecera del sheet, fuera del scroll, y es el segundo número más
+       grande de la pantalla: en un reparto es el que se mira en cada pata. Se tiñe de acento
+       mientras queda algo y de éxito en cuanto está cubierto — el color contesta antes que el texto. */
+    .pay-remaining { display:flex; justify-content:space-between; align-items:baseline; gap:.75rem;
+      margin:-.6rem 0 .9rem; padding:.5rem .7rem; border-radius:.7rem;
+      border:1px solid var(--ion-border-color); background:var(--tile); color:var(--mut);
+      font-size:.9rem; font-weight:600; }
+    .pay-remaining .v { font-size:1.35rem; font-weight:800; color:var(--accent); }
+    /* Las patas ya tomadas. Fila alta (objetivo táctil ≥48px) con el importe a la derecha, donde
+       el ojo compara una columna de números. */
+    .tender-list { list-style:none; margin:0 0 .2rem; padding:0; display:flex; flex-direction:column; gap:.35rem; }
+    .tender-row { display:flex; align-items:stretch; gap:.35rem; }
+    .tender-edit { flex:1; display:flex; align-items:center; gap:.5rem; min-height:48px;
+      padding:.4rem .65rem; border-radius:10px; border:1px solid var(--ion-border-color);
+      background:var(--tile); color:var(--tx); font:inherit; text-align:left; cursor:pointer; }
+    .tender-edit ion-icon { font-size:1.2rem; flex:none; color:var(--mut); }
+    .tender-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .tender-amount { font-weight:800; white-space:nowrap; }
+    .tender-change { font-size:.78rem; color:var(--mut); white-space:nowrap; }
+    .tender-remove { flex:none; width:48px; min-height:48px; display:flex; align-items:center;
+      justify-content:center; border-radius:10px; border:1px solid var(--ion-border-color);
+      background:var(--tile); color:var(--mut); cursor:pointer; }
+    .tender-remove ion-icon { font-size:1.2rem; }
+    /* Entrar a repartir es SECUNDARIO (la mayoría de los cobros son de un solo medio); tomar la
+       pata, en cambio, es lo que se pulsa una vez por medio, así que lleva el acento. */
+    .pay-split-btn, .pay-add { display:flex; align-items:center; justify-content:center; gap:.45rem;
+      width:100%; min-height:52px; border-radius:12px; font:inherit; font-weight:700; cursor:pointer; }
+    .pay-split-btn { border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); }
+    .pay-add { border:1px solid var(--accent); background:color-mix(in srgb,var(--accent) 14%,transparent); color:var(--accent); }
+    .pay-split-btn ion-icon, .pay-add ion-icon { font-size:1.25rem; }
+    /* EL MOTIVO por el que no se puede cobrar, en palabras y en la pantalla — nunca en un title. */
+    .pay-block-reason { margin:0 0 .45rem; padding:.5rem .65rem; border-radius:.6rem;
+      border:1px solid var(--ion-color-warning,#e8a33d);
+      background:color-mix(in srgb,var(--ion-color-warning,#e8a33d) 12%,transparent);
+      color:var(--tx); font-size:.9rem; }
+    /* Un cobro bloqueado se ve apagado, pero SIGUE recibiendo el toque (aria-disabled, no disabled). */
+    ion-button.charge[aria-disabled='true'] { opacity:.75; }
     .print-row { --background:transparent; --padding-start:0; --inner-padding-end:0; margin:.5rem 0 .2rem; }
     .pay-err { color:var(--ion-color-danger,#d9480f); margin:.4rem 0 0; }
     /* hub#297 — la captura de NIF+domicilio por encima del techo de la simplificada. Va ARRIBA del
@@ -755,6 +800,13 @@ export class ErpPosTouch extends LitElement {
   @state() modifierPicks: string[] = [];
   @state() private openDept = '';
   @state() private payMethod?: PayMethod;
+  /** sales#159 — ¿se está repartiendo el cobro entre varios medios? Es OPT-IN: hasta que el cajero
+   *  lo pide, la pantalla es exactamente la de un solo medio (el rediseño de tender de 2026-07-19,
+   *  donde la tarjeta no tiene teclado porque cobra el importe exacto). Repartir cambia eso: cada
+   *  pata necesita su importe, así que el teclado pasa a estar siempre. */
+  @state() private splitting = false;
+  /** Las patas del cobro ya tomadas, EN ORDEN. Vacío = venta de un solo medio (camino escalar). */
+  @state() tenders: Tender[] = [];
   @state() private docFormat: 'ticket' | 'invoice' = 'ticket';
   @state() private busy = false;
   @state() private error = '';
@@ -2115,6 +2167,11 @@ export class ErpPosTouch extends LitElement {
     // clave, así que el servidor los resuelve a la misma venta en vez de duplicarla.
     this.checkoutKey = newIdempotencyKey();
     this.tendered = '';
+    this.padPrimed = false;
+    // sales#159 — cada cobro estrena reparto: arrastrar las patas del ticket anterior sería cobrar
+    // esta venta con el dinero de la otra.
+    this.splitting = false;
+    this.tenders = [];
     this.payMethod = defaultPayMethod(this.payMethods);
     this.docFormat = this.defaultDocFormat;
     // hub#297 — por encima del techo el tique NO es una opción, así que el formato se cambia solo
@@ -2186,7 +2243,16 @@ export class ErpPosTouch extends LitElement {
     // eliminada, mesa cambiada) no puede arrastrarse a la siguiente.
     if (changed.has('orderId') && !this.orderId) { this.ticketDiscount = 0; this.ticketDiscountAmount = 0; }
   }
-  private tap(k: string) { this.tendered = pushDigit(this.tendered, k); }
+  /** El teclado. Tras traer una pata a editar el importe queda CEBADO: la siguiente tecla lo
+   *  sustituye en vez de encadenarse a él (50,00 + «6» daría 50,006, que no es un importe). Es como
+   *  se comporta el teclado de cualquier TPV o calculadora tras un resultado. */
+  private tap(k: string) {
+    const base = this.padPrimed ? '' : this.tendered;
+    this.padPrimed = false;
+    this.tendered = pushDigit(base, k);
+  }
+  /** ¿Está el importe tecleado a la espera de ser sustituido por la siguiente tecla? */
+  @state() private padPrimed = false;
 
   // ── sales#71 · descuentos manuales ─────────────────────────────────────────────────────────
   openDiscount(target: 'line' | 'ticket', lineId?: string): void {
@@ -2253,7 +2319,88 @@ export class ErpPosTouch extends LitElement {
   /** sales#24 — cash typed in but SHORT of the payable. 0 (nothing typed) means «exact amount»;
    *  the server refuses the same case (`sales.insufficient_tendered`), this just spares the trip. */
   private get tenderedShort(): boolean {
+    // Repartiendo, «lo tecleado» es el importe de UNA pata, no el de la cuenta: quedarse corto es
+    // lo normal (para eso hay más patas) y lo que bloquea es el RESTANTE, no esto.
+    if (this.splitting) return false;
     return needsTendered(this.payMethod) && this.tenderedNum > 0 && this.tenderedNum < this.payable;
+  }
+
+  // ── sales#159 · pagar UNA venta de N formas (ADR-0386) ─────────────────────────────────────
+  /** Lo que queda por cubrir, en céntimos. Sin patas es la cuenta entera. */
+  private get remaining(): number { return remainingCents(this.payable, this.tenders); }
+
+  /** La pata que se tomaría AHORA con lo elegido y lo tecleado. `undefined` = no hay nada que añadir. */
+  private get pendingTender(): { amount: number; tendered: number } | undefined {
+    return planTender(this.payMethod, this.tenderedNum, this.remaining);
+  }
+
+  /** El cambio del reparto: sale del EFECTIVO y nunca se prorratea (ADR-0386, decisión 2). Incluye
+   *  la pata pendiente para que el cajero vea lo que va a devolver ANTES de tomarla. */
+  private get splitChange(): number {
+    const pending = this.pendingTender;
+    const legs = pending && this.payMethod
+      ? [...this.tenders, { id: 'pending', method: this.payMethod, ...pending }]
+      : this.tenders;
+    return changeDue(legs);
+  }
+
+  /** Empieza a repartir. No toma ninguna pata: abre la pantalla que las toma. */
+  private startSplit(): void {
+    if (this.payable <= 0) return;
+    this.splitting = true;
+    this.error = '';
+  }
+
+  /** Toma la pata que hay compuesta (método + importe tecleado) y deja el resto por cubrir.
+   *  Sin importe tecleado la pata cubre TODO el restante: es lo que hace que la última sea un solo
+   *  toque, y lo que evita el atasco de Shopify con 3+ medios. */
+  addTender(): void {
+    const plan = this.pendingTender;
+    if (!plan || !this.payMethod) return;
+    this.tenders = [...this.tenders, { id: `tender-${this.tenderSeq += 1}`, method: this.payMethod, ...plan }];
+    this.tendered = '';
+    this.padPrimed = false;
+    this.error = '';
+  }
+  private tenderSeq = 0;
+
+  /** Quita una pata: su importe vuelve al restante. */
+  removeTender(id: string): void {
+    this.tenders = this.tenders.filter((t) => t.id !== id);
+    this.error = '';
+  }
+
+  /** Edita una pata: vuelve al teclado con su importe y su método, para volver a tomarla. Es la
+   *  edición más honesta en una pantalla táctil — un campo de texto dentro de una lista de filas se
+   *  falla con el dedo, y aquí ya hay un teclado grande al que devolverla. */
+  editTender(id: string): void {
+    const leg = this.tenders.find((t) => t.id === id);
+    if (!leg) return;
+    this.tenders = this.tenders.filter((t) => t.id !== id);
+    this.payMethod = leg.method as PayMethod;
+    this.tendered = centsToEuros(leg.tendered);
+    this.padPrimed = true;
+    this.error = '';
+  }
+
+  /** POR QUÉ no se puede cobrar todavía, en palabras. `undefined` = se puede.
+   *
+   *  🔴 Esto NO se resuelve con el `disabled` nativo de Ionic. `disabled` es `pointer-events:none`:
+   *  en una pantalla táctil el toque no llega a nada, no corre ningún handler, no se registra nada,
+   *  y el motivo se queda en `title` — que necesita un hover que una tablet de mostrador no produce
+   *  jamás. Es el bug de sales#58 y no vuelve por el botón más importante de la pantalla. */
+  private get chargeBlock(): { short: string; reason: string } | undefined {
+    if (this.chargeBlocked) {
+      // El motivo largo ya está escrito arriba, en el panel de captura del cliente.
+      return { short: t('ui.limitChargeBlocked'), reason: '' };
+    }
+    const split = chargeBlock(this.payable, this.tenders);
+    if (split) {
+      const amount = this.money(split.remaining);
+      return { short: t('ui.tenderRemainingShort', { amount }), reason: t('ui.tenderRemainingBlock', { amount }) };
+    }
+    if (this.tenderedShort) return { short: t('ui.tenderedShort'), reason: t('ui.tenderedShort') };
+    return undefined;
   }
   /** Lo que se cobra AHORA: la selección si la hay, o la cuenta entera (ADR-0146). */
   private get payable() {
@@ -2318,6 +2465,16 @@ export class ErpPosTouch extends LitElement {
       this.paying = true;
       return;
     }
+    // sales#159 — el toque en un cobro bloqueado tiene que CONTESTAR. El botón está `aria-disabled`
+    // (nunca `disabled`, que se tragaría el toque), así que el handler llega hasta aquí y aquí es
+    // donde se le dice al cajero, con un importe, qué le falta. Se para ANTES de `busy`: no hay
+    // nada en vuelo, solo una venta que todavía no está cubierta.
+    const block = this.chargeBlock;
+    if (block) {
+      this.paying = true;
+      this.error = block.reason || block.short;
+      return;
+    }
     // El aviso de duda muere al reintentar: si este intento vuelve a fallar, se decide de nuevo con
     // la evidencia de AHORA (hub#923).
     this.busy = true; this.error = ''; this.checkoutUnknown = false;
@@ -2373,6 +2530,18 @@ export class ErpPosTouch extends LitElement {
         // exacto y lo decide el servidor: el `payable` de pantalla es un preview que puede quedar por
         // debajo del total real (IVA excluido, a peso, descuentos) y haría saltar `insufficient_tendered`.
         ...(needsTendered(this.payMethod) && this.tenderedNum > 0 ? { amount_tendered: this.tenderedNum } : {}),
+        // sales#159 (ADR-0386) — PAGO MIXTO. Solo viaja cuando el cajero ha repartido de verdad: con
+        // una sola forma de pago manda el camino escalar de arriba, que es lo que hace todo lo demás
+        // que llama a `complete_sale` (y lo que el servidor ya sabe convertir en su fila única). Con
+        // patas, `payments[]` MANDA y los escalares pasan a derivarse de la pata mayor.
+        //
+        // ⚠️ Las patas se construyen sobre el PAYABLE de pantalla, que es un preview: el total lo
+        // fija el servidor (IVA excluido, cantidades a peso y descuentos redondean allí). Si no
+        // cuadran al céntimo la venta se RECHAZA (`sales.payments_do_not_match_total`) — a propósito,
+        // porque una venta cuyas patas no suman es un cajón que acaba el día con un número que nadie
+        // sabe explicar. El rechazo se pinta con palabras y el reparto se queda en pantalla para
+        // corregirlo (`ui.errorPaymentsMismatch`).
+        ...(this.tenders.length ? { payments: buildPaymentsPayload(this.tenders) } : {}),
         channel: 'pos',
         source_module: 'pos',
         // ADR-0141: la venta nace de este PEDIDO. El servidor lo marca completado (open→completed)
@@ -2916,6 +3085,9 @@ export class ErpPosTouch extends LitElement {
   }
 
   render() {
+    // sales#159 — por qué el cobro no puede salir todavía (o `undefined`). Se resuelve UNA vez por
+    // pintada: lo lee el motivo escrito y lo lee el botón, y tienen que decir lo mismo.
+    const blockedWhy = this.paying ? this.chargeBlock : undefined;
     return html`<div class="card">
       <div class="body">
         <div class="catalog">
@@ -2996,6 +3168,14 @@ export class ErpPosTouch extends LitElement {
                 ${this.splitSel.size
                   ? html`<div class="pay-split">${t('ui.payingPart', { n: String(this.splitSel.size), total: this.money(this.total) })}</div>`
                   : nothing}
+                <!-- sales#159 — EL RESTANTE. Vive en la cabecera del sheet, FUERA del scroll: es el
+                     número que el cajero mira en cada pata y esconderlo bajo el teclado es lo que
+                     convierte un reparto en un «¿cuánto falta ya?» a mano. -->
+                ${this.splitting
+                  ? html`<div class="pay-remaining" aria-live="polite">
+                      <span>${t('ui.remaining')}</span><span class="v">${this.money(this.remaining)}</span>
+                    </div>`
+                  : nothing}
               </div>
               <div class="pay">
 
@@ -3017,6 +3197,32 @@ export class ErpPosTouch extends LitElement {
                       >${f === 'ticket' ? t('ui.docTicket') : t('ui.docInvoice')}</button>`)}
                   </div>` : nothing}
 
+                <!-- sales#159 — LAS PATAS YA TOMADAS. Cada una se puede editar (vuelve al teclado
+                     con su importe) y quitar (su importe vuelve al restante). Sin esto, corregir un
+                     «no, eran 40 con tarjeta» obliga a cancelar el cobro entero. -->
+                ${this.tenders.length ? html`
+                  <div class="pay-lbl">${t('ui.paymentsTaken')}</div>
+                  <ul class="tender-list">
+                    ${this.tenders.map((leg) => {
+                      const name = payMethodDisplayName(leg.method, t);
+                      const amount = this.money(leg.amount);
+                      const back = leg.tendered - leg.amount;
+                      return html`<li class="tender-row">
+                        <button class="tender-edit" aria-label=${t('ui.editTender', { name, amount })}
+                                @click=${() => this.editTender(leg.id)}>
+                          <ion-icon name=${payMethodIcon(leg.method.type, leg.method.name)} aria-hidden="true"></ion-icon>
+                          <span class="tender-name">${name}</span>
+                          <span class="tender-amount">${amount}</span>
+                          ${back > 0 ? html`<span class="tender-change">${t('ui.change')} ${this.money(back)}</span>` : nothing}
+                        </button>
+                        <button class="tender-remove" aria-label=${t('ui.removeTender', { name, amount })}
+                                @click=${() => this.removeTender(leg.id)}>
+                          <ion-icon name="close-outline" aria-hidden="true"></ion-icon>
+                        </button>
+                      </li>`;
+                    })}
+                  </ul>` : nothing}
+
                 <!-- El MÉTODO se elige AQUÍ, como en la pantalla de tender de cualquier TPV:
                      botones grandes con icono y NOMBRE (el dueño los renombra a su gusto, así que
                      un icono mudo no basta). Solo se pinta con más de un método activo. -->
@@ -3030,7 +3236,7 @@ export class ErpPosTouch extends LitElement {
                       return html`
                       <button class="pm-btn" aria-pressed=${this.payMethod?.id === m.id ? 'true' : 'false'}
                               title=${nombre}
-                              @click=${() => { this.payMethod = m; if (!needsTendered(m)) this.tendered = ''; }}>
+                              @click=${() => { this.payMethod = m; if (!needsTendered(m) && !this.splitting) this.tendered = ''; }}>
                         ${marca
                           ? html`<span class="brand">${unsafeSVG(marca)}</span>`
                           : html`<ion-icon name=${payMethodIcon(m.type, m.name)}></ion-icon>`}
@@ -3043,11 +3249,17 @@ export class ErpPosTouch extends LitElement {
                      exacto y no hay nada que teclear (lo decide requires_change, no un "si es
                      efectivo"). Los ATAJOS son el patrón Toast: el exacto y los redondeos por
                      encima — el cajero toca en vez de teclear y el cambio sale solo. -->
-                ${needsTendered(this.payMethod)
+                ${needsTendered(this.payMethod) || this.splitting
                   ? html`
-                    <div class="amt"><span>${t('ui.tendered')}</span><span class="v">${this.money(this.tenderedNum)}</span></div>
-                    ${this.change > 0
-                      ? html`<div class="amt big-change"><span>${t('ui.change')}</span><span class="v">${this.money(this.change)}</span></div>`
+                    <!-- Repartiendo, lo que se teclea es el importe de ESTA pata (en efectivo, lo
+                         ENTREGADO, que puede pasarse: la diferencia es el cambio). Decirlo importa:
+                         con tarjeta, «Entregado» invitaría a teclear lo que da el cliente. -->
+                    <div class="amt pay-amount-label">
+                      <span>${this.splitting && !needsTendered(this.payMethod) ? t('ui.legAmount') : t('ui.tendered')}</span>
+                      <span class="v">${this.money(this.tenderedNum)}</span>
+                    </div>
+                    ${(this.splitting ? this.splitChange : this.change) > 0
+                      ? html`<div class="amt big-change"><span>${t('ui.change')}</span><span class="v">${this.money(this.splitting ? this.splitChange : this.change)}</span></div>`
                       : nothing}
                     <!-- SIN atajos de importe (73/75/80…): Ioan los eliminó el 2026-07-19 y pidió
                          NO volver a añadirlos. El entregado se teclea en el numpad, punto. -->
@@ -3057,6 +3269,23 @@ export class ErpPosTouch extends LitElement {
                   : html`
                     <div class="amt pay-exact"><span>${t('ui.payExact')}</span><span class="v">${this.money(this.payable)}</span></div>
                     <p class="pay-hint">${t('ui.payCardHint', { amount: this.money(this.payable) })}</p>`}
+
+                <!-- sales#159 — la puerta al reparto, y luego la tecla que toma cada pata.
+                     Repartir es OPT-IN: mientras no se pida, la pantalla es la de un solo medio.
+                     🔴 «Añadir» SIN importe tecleado cubre TODO el restante, así que la ÚLTIMA pata
+                     es un solo toque. Es justo lo que le falta a Shopify, donde con 3+ medios hay
+                     que teclear cada importe a mano y el flujo se atasca («I could not exit the
+                     screen other than to mark the order as part paid») — inviable en hora punta. -->
+                ${this.payable > 0 && !this.splitting
+                  ? html`<button class="pay-split-btn" @click=${() => this.startSplit()}>
+                      <ion-icon name="swap-horizontal-outline" aria-hidden="true"></ion-icon>${t('ui.splitPayment')}
+                    </button>`
+                  : nothing}
+                ${this.splitting && this.remaining > 0
+                  ? html`<button class="pay-add" @click=${() => this.addTender()}>
+                      <ion-icon name="add-outline" aria-hidden="true"></ion-icon>${t('ui.addTender')}
+                    </button>`
+                  : nothing}
 
                 <!-- Imprimir deja de ser un botón gemelo del de cobrar (dos botones azules iguales
                      no dicen cuál hace qué): es una PREFERENCIA del cobro. -->
@@ -3072,18 +3301,29 @@ export class ErpPosTouch extends LitElement {
                 ${this.error ? html`<p class="pay-err">${this.error}</p>${this.renderCheckSalesLink()}` : nothing}
                 <!-- UNA acción, dice lo que hace y por cuánto, y no exige scroll para alcanzarla.
                      El importe es el PAYABLE: con split decía «Cobrar 3,60 €» para cobrar 1,80 €. -->
-                <ion-button class="charge" expand="block" ?disabled=${this.busy || this.chargeBlocked || this.tenderedShort}
+                <!-- sales#159 — EL MOTIVO, ESCRITO EN LA PANTALLA. No dentro del botón y no en un
+                     title: el motivo tiene que poder leerse sin tocar nada y sin un ratón. -->
+                ${blockedWhy?.reason ? html`<p class="pay-block-reason">${blockedWhy.reason}</p>` : nothing}
+                <!-- UNA acción, dice lo que hace y por cuánto, y no exige scroll para alcanzarla.
+                     El importe es el PAYABLE: con split decía «Cobrar 3,60 €» para cobrar 1,80 €.
+                     🔴 aria-disabled, JAMAS disabled: en Ionic disabled es pointer-events:none
+                     y en una tablet de mostrador el toque muere en silencio (sales#58). Aquí el
+                     toque llega, confirm() lo para y CONTESTA con lo que falta. busy sí es
+                     disabled de verdad: ahí no hay nada que contestar y un segundo toque cobraría
+                     dos veces. -->
+                <ion-button class="charge" expand="block" ?disabled=${this.busy}
+                            aria-disabled=${blockedWhy ? 'true' : nothing}
                             @click=${() => this.confirm(this.printOnCharge)}>
                   ${this.busy
                     ? t('ui.charging')
-                    : this.chargeBlocked
-                      // Dice lo que FALTA, no «no puedes». El motivo largo está arriba, en el aviso.
-                      ? t('ui.limitChargeBlocked')
-                      : this.tenderedShort
-                        ? t('ui.tenderedShort')
-                        : needsTendered(this.payMethod)
+                    : blockedWhy
+                      // Dice lo que FALTA, no «no puedes».
+                      ? blockedWhy.short
+                      : this.tenders.length
                         ? `${t('ui.charge')} ${this.money(this.payable)}`
-                        : t('ui.chargeWithCard', { amount: this.money(this.payable) })}
+                        : needsTendered(this.payMethod)
+                          ? `${t('ui.charge')} ${this.money(this.payable)}`
+                          : t('ui.chargeWithCard', { amount: this.money(this.payable) })}
                 </ion-button>
               </div>
             </div>

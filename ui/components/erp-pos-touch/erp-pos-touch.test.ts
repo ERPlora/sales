@@ -1130,20 +1130,38 @@ describe('sheet de cobro (tender): método dentro, tarjeta sin numpad, atajos de
     // El servidor rechaza (`sales.insufficient_tendered`), pero la cajera no debería tener que
     // llegar al rechazo: con 1,00 € tecleado sobre 1,80 € el CTA se apaga y avisa. Al completar
     // (2,00 €) vuelve a cobrar. Y 0 (nada tecleado) sigue siendo «importe exacto».
+    //
+    // 🔴 sales#159 — ESTE TEST EXIGÍA EL `disabled` NATIVO, Y ESO ERA EL BUG DE sales#58 EN EL
+    // BOTÓN MÁS IMPORTANTE DE LA PANTALLA. En Ionic `disabled` es `pointer-events:none`: en una
+    // tablet de mostrador el toque no llega a nada, no corre ningún handler y el motivo se queda
+    // en un `title` que necesita un hover que no existe. Lo que se pide es exactamente lo que
+    // sales#58 dejó escrito para las baldosas: `aria-disabled`, el motivo legible, y un toque que
+    // CONTESTA. El contrato de este caso cambia aquí; lo que se comprueba —que 1,00 € sobre 1,80 €
+    // no cobra y lo dice— es el mismo.
     const el = await conCobroAbierto();
-    const tap = el as unknown as { tap(k: string): void; updateComplete: Promise<unknown> };
+    const tap = el as unknown as { tap(k: string): void; updateComplete: Promise<unknown>; error: string };
     const cta = () => el.shadowRoot!.querySelector<HTMLElement>('.sheet-foot ion-button.charge')!;
 
-    expect(cta().hasAttribute('disabled'), 'sin teclear = exacto → se puede cobrar').toBe(false);
+    expect(cta().getAttribute('aria-disabled'), 'sin teclear = exacto → se puede cobrar').not.toBe('true');
 
     tap.tap('1');
     await tap.updateComplete;
-    expect(cta().hasAttribute('disabled'), '1,00 € no cubre 1,80 €').toBe(true);
+    expect(cta().hasAttribute('disabled'), 'un disabled nativo se tragaría el toque').toBe(false);
+    expect(cta().getAttribute('aria-disabled'), '1,00 € no cubre 1,80 €').toBe('true');
     expect(cta().textContent, 'dice lo que pasa, no un «Cobrar» muerto').toContain('ui.tenderedShort');
+    expect(el.shadowRoot!.querySelector('.sheet .pay-block-reason')?.textContent,
+      'y el motivo se lee en la pantalla, no en un title').toContain('ui.tenderedShort');
+
+    // El toque LLEGA y contesta; y no cobra media venta.
+    cta().click();
+    await new Promise((r) => setTimeout(r, 0));
+    await tap.updateComplete;
+    expect(tap.error, 'el toque se contesta con palabras').toContain('ui.tenderedShort');
+    expect(comandos.some((c) => c.name === 'sales.complete_sale'), 'y no se cobra de menos').toBe(false);
 
     tap.tap('2'); // ahora 12,00 €
     await tap.updateComplete;
-    expect(cta().hasAttribute('disabled'), '12,00 € sí cubre').toBe(false);
+    expect(cta().getAttribute('aria-disabled'), '12,00 € sí cubre').not.toBe('true');
   });
 
   it('sales#24: en efectivo sin teclear nada NO viaja amount_tendered (exacto lo decide el servidor); tecleado, sí', async () => {
