@@ -4788,6 +4788,67 @@ mod tests {
         sale_lines(out).iter().map(|p| p["line_total"].as_i64().unwrap_or(-1)).collect()
     }
 
+    /// The stock movements `inventory` would take out of this sale — a LITERAL port of its
+    /// `stock_units()` plus the loop of `decrease_on_sale_pure` (`inventory` v1.2.38,
+    /// `handler/src/lib.rs:415-520`, read at `origin/main`), not a reinterpretation of them.
+    ///
+    /// It lives here because the contract between the two modules is the EVENT: `sales` does not
+    /// depend on `inventory` and never will. Asserting on the shape of the payload alone is what
+    /// let sales#171 through — the event looked right and the stock did not move, because a combo
+    /// line carries no `product_id` of its own and `inventory` had nothing else to read.
+    ///
+    /// Returns `(product_id, quantity)` in emission order, quantity in 10⁶ fixed point (ADR-0147).
+    fn stock_movements(out: &Output) -> Vec<(String, i64)> {
+        let ev = out.events.iter().find(|e| e.name == "sale.completed").expect("sale.completed");
+        let empty: Vec<Value> = Vec::new();
+        let items = ev.payload["items"].as_array().unwrap_or(&empty);
+        let mut moves: Vec<(String, i64)> = Vec::new();
+        for item in items {
+            // `stock_units`: a line that carries a non-empty `components[]` hands its stock over
+            // to them; absent OR empty means a plain line, which moves its own.
+            let units: Vec<&Value> = match item.get("components").and_then(|v| v.as_array()) {
+                Some(c) if !c.is_empty() => c.iter().collect(),
+                _ => vec![item],
+            };
+            for u in units {
+                // `is_service_entry`: the flag travels as bool, number or string.
+                let is_service = match u.get("is_service") {
+                    Some(Value::Bool(b)) => *b,
+                    Some(Value::Number(n)) => n.as_i64().unwrap_or(0) != 0,
+                    Some(Value::String(s)) => matches!(s.as_str(), "1" | "true" | "True"),
+                    _ => false,
+                };
+                let product_id = u.get("product_id").cloned().unwrap_or(Value::Null);
+                if is_service || product_id.is_null() {
+                    continue;
+                }
+                let qty = u.get("quantity").and_then(|v| v.as_i64()).unwrap_or(0);
+                if qty <= 0 {
+                    continue;
+                }
+                moves.push((as_str(&product_id), qty));
+            }
+        }
+        moves
+    }
+
+    /// El menú del día: `service` (prestación única al 10 %, art. 91.Uno.2.2º LIVA) con tres
+    /// platos que SÍ son artículos del catálogo. `qty` en punto fijo 10⁶ (ADR-0147).
+    fn menu_del_dia(qty: i64) -> Value {
+        let mut inp = combo_input(
+            json!([{ "option_id": "o-first", "product_name": "Ensalada" },
+                   { "option_id": "o-second", "product_name": "Merluza" },
+                   { "option_id": "o-dessert", "product_name": "Flan" }]),
+            json!([combo_option("o-first", "g-first", 1, "p-salad", 0, "service", 1350, "shop.food"),
+                   combo_option("o-second", "g-second", 1, "p-hake", 0, "service", 1350, "shop.food"),
+                   combo_option("o-dessert", "g-dessert", 1, "p-flan", 0, "service", 1350, "shop.food")]),
+            json!([]),
+            8,
+        );
+        inp["payload"]["items"][0]["quantity"] = json!(qty);
+        inp
+    }
+
     #[test]
     fn el_pack_de_tienda_reparte_el_centimo_residual_a_la_CERVEZA_no_al_bocadillo() {
         // 🔴 EL VECTOR DISCRIMINANTE (pm#156). Tienda de alimentación: bocadillo 4,50 € (10 %) +
@@ -5312,6 +5373,146 @@ mod tests {
         assert_eq!(lines.len(), 2);
         assert!(lines.iter().all(|l| l["is_gift"] == json!(1)), "las dos, o ninguna");
         assert_eq!(line_totals(&out), vec![0, 0]);
+    }
+
+    // ── sales#171 · el stock de un menú lo mueven sus COMPONENTES ─────────────────────────────
+    //
+    // 🔴 EL FALLO ERA MUDO, que es lo que lo hacía P0. Un combo que se cobra como UNA línea no
+    // tiene `product_id` —no es un artículo del catálogo, y una fila con el id del combo sería la
+    // línea padre que ADR-0381 prohíbe—, así que `inventory` no tenía a qué agarrarse: caía a la
+    // línea, el `WHERE` de su `_decrease_stock` no casaba ninguna fila y el SQL respondía `ok`.
+    // El negocio leía «el stock no ha cambiado» mientras servía menús que no descontaban nada.
+    //
+    // El contrato es GENÉRICO a propósito y lo puso `inventory` (inventory#69): «una línea que
+    // lleva `components[]` no vacío cede su stock a ellos». No nombra la palabra «combo», sirve
+    // para cualquier línea compuesta que venga después, y por eso `sales` NO gana un `depends_on`
+    // de `combos` ni de `inventory` — lo que viaja es el evento.
+
+    #[test]
+    fn dos_menus_mueven_el_stock_de_sus_TRES_componentes_y_CERO_del_combo() {
+        // Se venden DOS a propósito: la cantidad del componente es ABSOLUTA —con el multiplicador
+        // de la línea YA aplicado, porque `items[].quantity` significa exactamente eso y un mismo
+        // payload no puede decir dos cosas en dos niveles de anidamiento—. Con UN solo menú
+        // «absoluta» y «por unidad de combo» valen lo mismo y el test pasaría con la lectura
+        // equivocada; solo se rompe al vender dos.
+        let out = sale(menu_del_dia(2_000_000));
+
+        // Prestación única: UNA línea al tipo del combo, sin `product_id` propio.
+        let lines = sale_lines(&out);
+        assert_eq!(lines.len(), 1, "un menú del día es UNA línea");
+        assert_eq!(lines[0]["product_id"], Value::Null, "un combo no es un artículo del catálogo");
+
+        let moves = stock_movements(&out);
+        assert_eq!(
+            moves,
+            vec![("p-salad".to_string(), 2_000_000),
+                 ("p-hake".to_string(), 2_000_000),
+                 ("p-flan".to_string(), 2_000_000)],
+            "un movimiento por componente, con la cantidad de los DOS menús: {moves:?}"
+        );
+        // Seis unidades de stock salen del almacén (3 platos × 2 menús), en punto fijo 10⁶.
+        assert_eq!(moves.iter().map(|(_, q)| *q).sum::<i64>(), 6_000_000);
+        assert!(!moves.iter().any(|(id, _)| id == "c-1"),
+                "el combo NUNCA aparece en un movimiento: su id no es un artículo y el SQL diría `ok` sin mover nada");
+
+        // Y el evento lo dice con los campos que una LÍNEA ya tiene, que es lo que `inventory` lee.
+        let comps = out.events[0].payload["items"][0]["components"].as_array().expect("components[]");
+        assert_eq!(comps.len(), 3);
+        assert_eq!(comps[0]["product_id"], json!("p-salad"));
+        assert_eq!(comps[0]["product_name"], json!("Ensalada"));
+        assert_eq!(comps[0]["quantity"], json!(2_000_000));
+        assert_eq!(comps[0]["is_service"], json!(false), "el plato es un BIEN aunque el menú se sirva");
+        // El snapshot del combo se queda donde estaba: `invoice` nombra el menú con él y `kitchen`
+        // enruta por él. Esto es ADITIVO.
+        assert_eq!(out.events[0].payload["items"][0]["combo"]["combo_id"], json!("c-1"));
+    }
+
+    #[test]
+    fn cuando_el_combo_SI_se_parte_el_stock_no_se_descuenta_DOS_veces() {
+        // El caso que más fácil se cuela. `goods` con tipos distintos se materializa como UNA
+        // LÍNEA POR COMPONENTE (regla 2 de ADR-0381): cada hermana YA es un componente, con su
+        // `product_id` y la cantidad heredada del combo. Colgarles ADEMÁS el `components[]` del
+        // menú descontaría cada artículo una vez por hermana — 2 × 2 = 4 unidades donde tocan 2.
+        let mut inp = combo_input(
+            json!([{ "option_id": "o-sandwich", "product_name": "Bocadillo" },
+                   { "option_id": "o-beer", "product_name": "Cerveza" }]),
+            json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
+                   combo_option("o-beer", "g-drink", 1, "p-beer", 0, "goods", 600, "")]),
+            json!([combo_product("p-sandwich", 450, "shop.food"),
+                   combo_product("p-beer", 200, "product.generic")]),
+            8,
+        );
+        inp["payload"]["items"][0]["quantity"] = json!(2_000_000); // DOS packs
+        let out = sale(inp);
+
+        assert_eq!(sale_lines(&out).len(), 2, "dos tipos, dos líneas hermanas");
+        let moves = stock_movements(&out);
+        assert_eq!(
+            moves,
+            vec![("p-sandwich".to_string(), 2_000_000), ("p-beer".to_string(), 2_000_000)],
+            "UNA vez cada artículo: la hermana ya ES el componente — {moves:?}"
+        );
+        // Y el evento no cuelga un `components[]` de una línea que ya se mueve a sí misma.
+        for item in out.events[0].payload["items"].as_array().expect("items") {
+            assert_eq!(item["components"], Value::Null,
+                       "una hermana no lleva componentes: los llevaría dos veces");
+        }
+    }
+
+    #[test]
+    fn un_pack_de_bienes_a_UN_solo_tipo_tambien_mueve_el_stock_de_sus_partes() {
+        // `goods` cuyos componentes tributan IGUAL: cero reparto, UNA línea con el precio cerrado
+        // (y por tanto sin `product_id`). Es el mismo agujero que el menú del día, por otro camino
+        // — el que se olvida quien arregla solo el caso `service`.
+        let out = sale(combo_input(
+            json!([{ "option_id": "o-sandwich", "product_name": "Bocadillo" },
+                   { "option_id": "o-water", "product_name": "Agua" }]),
+            json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
+                   combo_option("o-water", "g-drink", 1, "p-water", 0, "goods", 600, "")]),
+            json!([combo_product("p-sandwich", 450, "shop.food"),
+                   combo_product("p-water", 200, "shop.food")]),
+            8,
+        ));
+        assert_eq!(sale_lines(&out).len(), 1, "un solo tipo, una sola línea");
+        assert_eq!(stock_movements(&out),
+                   vec![("p-sandwich".to_string(), 1_000_000), ("p-water".to_string(), 1_000_000)]);
+    }
+
+    #[test]
+    fn un_componente_que_es_un_SERVICIO_no_mueve_stock_y_no_impide_que_lo_muevan_los_demas() {
+        // El pack de peluquería: corte (servicio, sin stock) + champú (producto). Que un
+        // componente no tenga existencias es lo NORMAL dentro de un combo, no un error: se salta
+        // ese y se descuenta el otro. Tratarlo como fallo dejaría el pack entero sin mover nada.
+        let mut options = json!([combo_option("o-cut", "g-service", 1, "s-cut", 0, "service", 3000, "shop.food"),
+                                 combo_option("o-shampoo", "g-goods", 1, "p-shampoo", 0, "service", 3000, "shop.food")]);
+        options[0]["source"] = json!("service");
+        let out = sale(combo_input(
+            json!([{ "option_id": "o-cut", "product_name": "Corte" },
+                   { "option_id": "o-shampoo", "product_name": "Champú" }]),
+            options,
+            json!([]),
+            8,
+        ));
+        assert_eq!(stock_movements(&out), vec![("p-shampoo".to_string(), 1_000_000)],
+                   "el servicio se salta; el champú se descuenta igual");
+    }
+
+    #[test]
+    fn una_linea_normal_sigue_moviendo_SU_propio_stock() {
+        // Control (el 100 % de las ventas de hoy): sin combo no hay `components[]`, y la línea
+        // sigue siendo su propia unidad de stock. Si esto se pusiera rojo, el arreglo habría
+        // dejado de descontar en todo el producto.
+        let mut inp = input(json!([{ "product_id": "p-coffee", "product_name": "Café", "price": 150,
+                                     "quantity": 3_000_000, "tax_rate": 10.0 }]), 3, 450);
+        inp["context"]["country_code"] = json!("ES");
+        inp["context"]["reads"] = json!({
+            "taxes.rules.list": combo_rules(),
+            "inventory.products.for_sale": [combo_product("p-coffee", 150, "shop.food")],
+        });
+        let out = sale(inp);
+        assert_eq!(stock_movements(&out), vec![("p-coffee".to_string(), 3_000_000)]);
+        assert_eq!(out.events[0].payload["items"][0]["components"], Value::Null,
+                   "una línea suelta no se inventa componentes");
     }
 
     #[test]
