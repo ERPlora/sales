@@ -2472,7 +2472,11 @@ export class ErpPosTouch extends LitElement {
     const block = this.chargeBlock;
     if (block) {
       this.paying = true;
-      this.error = block.reason || block.short;
+      // El motivo YA está escrito en la pantalla (`.pay-block-reason`), así que repetirlo en el
+      // hueco del error sería decir dos veces lo mismo en dos colores. Lo que falta cuando el dedo
+      // llega al botón es el ACUSE: el aviso del shell, encima del nuestro y nunca en su lugar —
+      // el mismo reparto que sales#58 dejó para la baldosa bloqueada.
+      this.notifyShell(block.reason || block.short);
       return;
     }
     // El aviso de duda muere al reintentar: si este intento vuelve a fallar, se decide de nuevo con

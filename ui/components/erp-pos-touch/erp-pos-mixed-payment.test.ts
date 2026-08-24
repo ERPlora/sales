@@ -31,11 +31,14 @@ const METHODS = [
 ];
 
 let commands: { name: string; payload: Record<string, unknown> }[] = [];
+/** Toasts the component asked the shell for, in order. */
+let notices: { type: string; message: string }[] = [];
 /** Set to a domain code to make the next `sales.complete_sale` fail with it. */
 let refuseWith = '';
 
 function installSdk() {
   commands = [];
+  notices = [];
   refuseWith = '';
   const orderLines: Record<string, unknown>[] = [];
   (globalThis as Record<string, unknown>).erplora = {
@@ -63,7 +66,7 @@ function installSdk() {
     formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
     t: (_c: unknown, key: string) => key,
     loadSlot: async () => [],
-    notify: () => {},
+    notify: (n: { type: string; message: string }) => { notices.push(n); },
     hasPermission: () => true,
   };
 }
@@ -257,7 +260,11 @@ describe('the charge is blocked while something is owed — and it SAYS SO', () 
     await new Promise((r) => setTimeout(r, 0));
     await el.updateComplete;
     expect(commands.some((c) => c.name === 'sales.complete_sale'), 'nothing is charged half-paid').toBe(false);
-    expect($(el, '.sheet .pay-err')?.textContent, 'the tap is answered in words')
+    // The reason is already painted; what the finger is owed is an ACKNOWLEDGEMENT, so the shell
+    // toast goes on top of it — the same split sales#58 settled for the blocked tile.
+    expect(notices.map((n) => n.message), 'the tap is answered out loud')
+      .toContain('ui.tenderRemainingBlock');
+    expect($(el, '.sheet .pay-block-reason')?.textContent, 'and the written reason stays put')
       .toContain('ui.tenderRemainingBlock');
   });
 

@@ -1,1 +1,5 @@
-[{"id":"pm1","name":"Efectivo"},{"id":"pm2","name":"Tarjeta"},{"id":"pm3","name":"Bizum"}]
+[
+  {"id":"pm1","name":"Efectivo","type":"cash","requires_change":1,"sort_order":10,"is_active":1},
+  {"id":"pm2","name":"Tarjeta","type":"card","requires_change":0,"sort_order":20,"is_active":1},
+  {"id":"pm3","name":"Bizum","type":"mobile","requires_change":0,"sort_order":30,"is_active":1}
+]

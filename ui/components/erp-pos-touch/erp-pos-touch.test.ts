@@ -1067,10 +1067,14 @@ describe('sheet de cobro (tender): método dentro, tarjeta sin numpad, atajos de
     { id: 'pm-card', name: 'Tarjeta', type: 'card', requires_change: 0, sort_order: 20 },
   ];
   let comandos: { name: string; payload: Record<string, unknown> }[];
+  /** sales#159 — los avisos del shell: es por donde CONTESTA un cobro bloqueado. */
+  let avisosCobro: { type: string; message: string }[];
 
   beforeEach(() => {
     comandos = [];
+    avisosCobro = [];
     const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.notify = (n: { type: string; message: string }) => { avisosCobro.push(n); };
     sdk.query = async (name: string) => (name === 'sales.payment_methods' ? METODOS : []);
     sdk.queryAll = async (name: string) =>
       (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }] : catalogoFiscal(name));
@@ -1152,11 +1156,12 @@ describe('sheet de cobro (tender): método dentro, tarjeta sin numpad, atajos de
     expect(el.shadowRoot!.querySelector('.sheet .pay-block-reason')?.textContent,
       'y el motivo se lee en la pantalla, no en un title').toContain('ui.tenderedShort');
 
-    // El toque LLEGA y contesta; y no cobra media venta.
+    // El toque LLEGA y contesta (aviso del shell ENCIMA del motivo escrito, no en su lugar);
+    // y no cobra media venta.
     cta().click();
     await new Promise((r) => setTimeout(r, 0));
     await tap.updateComplete;
-    expect(tap.error, 'el toque se contesta con palabras').toContain('ui.tenderedShort');
+    expect(avisosCobro.map((a) => a.message), 'el toque se contesta en voz alta').toContain('ui.tenderedShort');
     expect(comandos.some((c) => c.name === 'sales.complete_sale'), 'y no se cobra de menos').toBe(false);
 
     tap.tap('2'); // ahora 12,00 €

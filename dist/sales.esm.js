@@ -7783,7 +7783,7 @@ var ErpPosTouch = class extends i3 {
     const block = this.chargeBlock;
     if (block) {
       this.paying = true;
-      this.error = block.reason || block.short;
+      this.notifyShell(block.reason || block.short);
       return;
     }
     this.busy = true;
