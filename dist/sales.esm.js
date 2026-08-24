@@ -9,7 +9,7 @@ var __decorateClass = (decorators, target, key, kind) => {
   return result;
 };
 
-// module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
 var ElementInternalsShim = class ElementInternals {
   get shadowRoot() {
     return this.__host.__shadowRoot;
@@ -88,7 +88,7 @@ var ElementInternalsShim = class ElementInternals {
   }
 };
 
-// module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
 var __classPrivateFieldSet = function(receiver, state, value, kind, f3) {
   if (kind === "m") throw new TypeError("Private method is not writable");
   if (kind === "a" && !f3) throw new TypeError("Private accessor was defined without a setter");
@@ -246,7 +246,7 @@ Object.defineProperties(CustomEventShim.prototype, {
 var EventShimWithRealType = EventShim;
 var CustomEventShimWithRealType = CustomEventShim;
 
-// module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
 var _a2;
 var CSSRuleShim = (_a2 = class CSSRule {
   constructor() {
@@ -277,7 +277,7 @@ var CSSRuleShim = (_a2 = class CSSRule {
   }
 }, _a2.STYLE_RULE = 1, _a2.CHARSET_RULE = 2, _a2.IMPORT_RULE = 3, _a2.MEDIA_RULE = 4, _a2.FONT_FACE_RULE = 5, _a2.PAGE_RULE = 6, _a2.NAMESPACE_RULE = 10, _a2.KEYFRAMES_RULE = 7, _a2.KEYFRAME_RULE = 8, _a2.SUPPORTS_RULE = 12, _a2.COUNTER_STYLE_RULE = 11, _a2.FONT_FEATURE_VALUES_RULE = 14, _a2.MARGIN_RULE = 9, _a2);
 
-// module-toolkit/node_modules/@lit-labs/ssr-dom-shim/index.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit-labs/ssr-dom-shim/index.js
 globalThis.Event ??= EventShimWithRealType;
 globalThis.CustomEvent ??= CustomEventShimWithRealType;
 var constructionToken = Symbol();
@@ -674,7 +674,7 @@ var CustomElementRegistryShimWithRealType = CustomElementRegistry;
 var customElements2 = new CustomElementRegistryShimWithRealType();
 var windowShim = new WindowShim(constructionToken);
 
-// module-toolkit/node_modules/@lit/reactive-element/node/css-tag.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit/reactive-element/node/css-tag.js
 var t = globalThis;
 var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
 var s = Symbol();
@@ -719,7 +719,7 @@ var c = e || void 0 === t.CSSStyleSheet ? (t7) => t7 : (t7) => t7 instanceof CSS
   return r(e7);
 })(t7) : t7;
 
-// module-toolkit/node_modules/@lit/reactive-element/node/reactive-element.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit/reactive-element/node/reactive-element.js
 var { is: h, defineProperty: r2, getOwnPropertyDescriptor: o2, getOwnPropertyNames: n2, getOwnPropertySymbols: a, getPrototypeOf: c2 } = Object;
 var l = globalThis;
 l.customElements ??= customElements2;
@@ -942,7 +942,7 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
 };
 g.elementStyles = [], g.shadowRootOptions = { mode: "open" }, g[f("elementProperties")] = /* @__PURE__ */ new Map(), g[f("finalized")] = /* @__PURE__ */ new Map(), u?.({ ReactiveElement: g }), (l.reactiveElementVersions ??= []).push("2.1.2");
 
-// modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
 var t2 = globalThis;
 var i2 = (t7) => t7;
 var s2 = t2.trustedTypes;
@@ -1197,7 +1197,7 @@ var D = (t7, i7, s5) => {
   return h4._$AI(t7), h4;
 };
 
-// modules-workspace/node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
 var s3 = globalThis;
 var i3 = class extends g {
   constructor() {
@@ -1226,7 +1226,7 @@ var o4 = s3.litElementPolyfillSupport;
 o4?.({ LitElement: i3 });
 (s3.litElementVersions ??= []).push("4.2.2");
 
-// module-toolkit/node_modules/@lit/reactive-element/node/decorators/property.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
 var r4 = (t7 = o5, e7, r6) => {
   const { kind: n6, metadata: i7 } = r6;
@@ -1256,15 +1256,15 @@ function n4(t7) {
   })(t7, e7, o9);
 }
 
-// module-toolkit/node_modules/@lit/reactive-element/node/decorators/state.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit/reactive-element/node/decorators/state.js
 function r5(r6) {
   return n4({ ...r6, state: true, attribute: false });
 }
 
-// module-toolkit/node_modules/@lit/reactive-element/node/decorators/base.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit/reactive-element/node/decorators/base.js
 var e3 = (e7, t7, c5) => (c5.configurable = true, c5.enumerable = true, Reflect.decorate && "object" != typeof t7 && Object.defineProperty(e7, t7, c5), c5);
 
-// module-toolkit/node_modules/@lit/reactive-element/node/decorators/query.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/module-toolkit/node_modules/@lit/reactive-element/node/decorators/query.js
 function e4(e7, r6) {
   return (n6, s5, i7) => {
     const o9 = (t7) => t7.renderRoot?.querySelector(e7) ?? null;
@@ -1288,14 +1288,14 @@ function e4(e7, r6) {
   };
 }
 
-// outfitkit/dist/define.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/define.js
 function define(tag, ctor) {
   if (typeof customElements !== "undefined" && !customElements.get(tag)) {
     customElements.define(tag, ctor);
   }
 }
 
-// outfitkit/dist/tabbar.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/tabbar.js
 var EPSILON = 1;
 var HINT_PX = 28;
 var HINT_VUELTA_MS = 420;
@@ -1353,7 +1353,7 @@ function bindTabbar(segment, opts = {}) {
   };
 }
 
-// hub/packages/module-sdk/src/index.ts
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/hub/packages/module-sdk/src/index.ts
 function isEmpty(v3) {
   return v3 === null || v3 === void 0 || v3 === "";
 }
@@ -1482,7 +1482,7 @@ function centsToEuros(cents) {
   return cents == null ? "" : (cents / 100).toFixed(2);
 }
 
-// modules-workspace/modules/sales/ui/lib/quantity.ts
+// ui/lib/quantity.ts
 var QUANTITY_SCALE2 = 1e6;
 function toMicro2(qty) {
   return Math.round(qty * QUANTITY_SCALE2);
@@ -1498,7 +1498,7 @@ function onGrid2(raw, increment) {
   return raw % increment === 0;
 }
 
-// modules-workspace/modules/sales/ui/lib/price-label.ts
+// ui/lib/price-label.ts
 var UNIT_EACH = "ud";
 function unitTag(unitCode) {
   return unitCode && unitCode !== UNIT_EACH ? unitCode : "";
@@ -1513,7 +1513,7 @@ function quantityLabel(qty, unitCode) {
   return tag ? `${n6} ${tag}` : n6;
 }
 
-// modules-workspace/modules/sales/ui/lib/paper-modifiers.ts
+// ui/lib/paper-modifiers.ts
 var SEP = " \xB7 ";
 function modifierLabel(m4) {
   return (m4.name || "").trim() || (m4.option_id || "").trim();
@@ -1526,7 +1526,7 @@ function modifierIdentity(m4) {
   return `${m4.option_id || m4.name || ""}:${m4.price_delta ?? 0}`;
 }
 
-// modules-workspace/modules/sales/ui/lib/receipt-html.ts
+// ui/lib/receipt-html.ts
 function esc(v3) {
   return String(v3 ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
@@ -1627,7 +1627,7 @@ function printHtmlInIframe(html, doc = document) {
   else w2.addEventListener("load", () => setTimeout(lanzar, 50), { once: true });
 }
 
-// modules-workspace/modules/sales/ui/lib/pay-icons.ts
+// ui/lib/pay-icons.ts
 var PAY_ICON_FALLBACK = "ellipsis-horizontal-circle-outline";
 var BY_TYPE = {
   cash: "cash-outline",
@@ -1691,7 +1691,7 @@ function defaultPayMethod(methods) {
   return methods.find((m4) => (m4.type || "").trim().toLowerCase() === "cash") ?? methods.find((m4) => /efectiv|cash|met[\u00e1a]lico/i.test(m4.name || "")) ?? methods[0];
 }
 
-// modules-workspace/modules/sales/ui/lib/document-mappers.ts
+// ui/lib/document-mappers.ts
 function toEuros(cents) {
   return Number(cents ?? 0) / 100;
 }
@@ -1931,7 +1931,7 @@ function orderToPrebill(lines, settings = {}, opts = {}) {
   };
 }
 
-// modules-workspace/modules/sales/ui/lib/print-document.ts
+// ui/lib/print-document.ts
 function euros(cents) {
   return cents == null ? void 0 : Number(cents) / 100;
 }
@@ -2003,7 +2003,7 @@ function hash(s5) {
   return h4.toString(36);
 }
 
-// outfitkit/dist/shared/icons.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/shared/icons.js
 var rawAdd = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M256 112v288m144-144H112"/></svg>';
 var rawAlertCircle = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="M256 48C141.31 48 48 141.31 48 256s93.31 208 208 208s208-93.31 208-208S370.69 48 256 48m0 319.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20m21.72-201.15l-5.74 122a16 16 0 0 1-32 0l-5.74-121.94v-.05a21.74 21.74 0 1 1 43.44 0Z"/></svg>';
 var rawAlertCircleOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" d="M448 256c0-106-86-192-192-192S64 150 64 256s86 192 192 192s192-86 192-192Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M250.26 166.05L256 288l5.73-121.95a5.74 5.74 0 0 0-5.79-6h0a5.74 5.74 0 0 0-5.68 6"/><path fill="currentColor" d="M256 367.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20"/></svg>';
@@ -2151,7 +2151,7 @@ function okIcon(value) {
   return BY_NAME2[value] ?? value;
 }
 
-// outfitkit/dist/ok-inline-feedback.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-inline-feedback.js
 var __defProp2 = Object.defineProperty;
 var __decorateClass2 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2368,7 +2368,7 @@ __decorateClass2([
 ], OkInlineFeedback.prototype, "hasActions");
 define("ok-inline-feedback", OkInlineFeedback);
 
-// outfitkit/dist/ok-qr.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-qr.js
 var __defProp3 = Object.defineProperty;
 var __decorateClass3 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -3016,7 +3016,7 @@ __decorateClass3([
 ], OkQr.prototype, "margin");
 define("ok-qr", OkQr);
 
-// outfitkit/dist/ok-receipt.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-receipt.js
 var __defProp4 = Object.defineProperty;
 var __decorateClass4 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -3207,7 +3207,7 @@ __decorateClass4([
 ], OkReceipt.prototype, "labels");
 define("ok-receipt", OkReceipt);
 
-// outfitkit/dist/ok-invoice.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-invoice.js
 var __defProp5 = Object.defineProperty;
 var __decorateClass5 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -3462,7 +3462,7 @@ __decorateClass5([
 ], OkInvoice.prototype, "labels");
 define("ok-invoice", OkInvoice);
 
-// modules-workspace/modules/sales/ui/lib/public-claim.ts
+// ui/lib/public-claim.ts
 var CLAIM_KIND = "invoice_request";
 var CLAIM_COMMAND = "invoice.substitute";
 var CLAIM_PUBLIC_FIELDS = ["customer_tax_id", "customer_name", "customer_address"];
@@ -3494,7 +3494,7 @@ async function mintInvoiceRequestClaim(invoiceId, items, opts = {}) {
   }
 }
 
-// modules-workspace/modules/sales/locales/es.json
+// locales/es.json
 var es_default = {
   name: "Ventas / TPV",
   description: "Terminal punto de venta: cierra y anula ventas, y consulta el hist\xF3rico y las m\xE9tricas.",
@@ -3757,7 +3757,17 @@ var es_default = {
     modifierRequired: "Elige {n}",
     modifierUpTo: "Hasta {n}",
     modifierOptional: "Opcional",
-    modifierPickOne: "Elige una opci\xF3n para continuar"
+    modifierPickOne: "Elige una opci\xF3n para continuar",
+    remaining: "Restante",
+    splitPayment: "Repartir el cobro",
+    addTender: "A\xF1adir este cobro",
+    legAmount: "Importe de este cobro",
+    paymentsTaken: "Cobros tomados",
+    tenderRemainingBlock: "Faltan {amount} por cubrir para poder cobrar la venta.",
+    tenderRemainingShort: "Faltan {amount}",
+    editTender: "Editar {name}, {amount}",
+    removeTender: "Quitar {name}, {amount}",
+    errorPaymentsMismatch: "El total ha cambiado mientras se repart\xEDa el cobro. Revisa los importes y vuelve a cobrar."
   },
   widgets: {
     "sales.today": {
@@ -3777,7 +3787,7 @@ var es_default = {
   }
 };
 
-// modules-workspace/modules/sales/locales/en.json
+// locales/en.json
 var en_default = {
   name: "Sales & POS",
   navigation: {
@@ -4039,11 +4049,21 @@ var en_default = {
     modifierRequired: "Choose {n}",
     modifierUpTo: "Up to {n}",
     modifierOptional: "Optional",
-    modifierPickOne: "Choose an option to continue"
+    modifierPickOne: "Choose an option to continue",
+    remaining: "Remaining",
+    splitPayment: "Split the payment",
+    addTender: "Add this payment",
+    legAmount: "Amount for this payment",
+    paymentsTaken: "Payments taken",
+    tenderRemainingBlock: "{amount} still to cover before the sale can be charged.",
+    tenderRemainingShort: "{amount} still to cover",
+    editTender: "Edit {name}, {amount}",
+    removeTender: "Remove {name}, {amount}",
+    errorPaymentsMismatch: "The total changed while the payment was being split. Check the amounts and charge again."
   }
 };
 
-// modules-workspace/modules/sales/ui/components/erp-sales-document/erp-sales-document.ts
+// ui/components/erp-sales-document/erp-sales-document.ts
 var CATALOG = { es: es_default, en: en_default };
 function erplora() {
   const c5 = globalThis.erplora;
@@ -4324,7 +4344,7 @@ __decorateClass([
 ], ErpSalesDocument.prototype, "fiscalRetryDelays", 2);
 define("erp-sales-document", ErpSalesDocument);
 
-// modules-workspace/modules/sales/ui/lib/document-modal.ts
+// ui/lib/document-modal.ts
 function renderDocumentModal({ saleId, onClose, t: t7 }) {
   return b2`<ion-modal class="doc-modal" .isOpen=${!!saleId} @ionModalDidDismiss=${onClose}>
     <style>
@@ -4393,7 +4413,7 @@ function renderDocumentModal({ saleId, onClose, t: t7 }) {
   </ion-modal>`;
 }
 
-// modules-workspace/modules/sales/ui/lib/table-switch.ts
+// ui/lib/table-switch.ts
 function decideOnTableChange(c5) {
   if (!c5.targetTableId) return c5.cartHasItems ? "park-then-clear" : "clear";
   if (c5.currentTableId) return c5.targetOrderId ? "load-target" : "start-new-check";
@@ -4401,7 +4421,7 @@ function decideOnTableChange(c5) {
   return c5.targetOrderId ? "park-then-load" : "assign-to-target";
 }
 
-// modules-workspace/modules/sales/ui/lib/park-label.ts
+// ui/lib/park-label.ts
 function defaultParkLabel(tableLabel, now) {
   const mesa = (tableLabel ?? "").trim();
   if (mesa) return mesa;
@@ -4410,7 +4430,7 @@ function defaultParkLabel(tableLabel, now) {
   return `${hh}:${mm}`;
 }
 
-// modules-workspace/modules/sales/ui/lib/rounds.ts
+// ui/lib/rounds.ts
 function pendingLines(lines) {
   return lines.filter((l3) => !l3.fired_at);
 }
@@ -4422,7 +4442,7 @@ function nextRoundNo(lines) {
   return max + 1;
 }
 
-// modules-workspace/modules/sales/ui/lib/fire-order.ts
+// ui/lib/fire-order.ts
 function buildFirePayload(orderId, label, lines, roundNo) {
   if (!orderId || lines.length === 0) return void 0;
   return {
@@ -4450,7 +4470,7 @@ function buildFirePayload(orderId, label, lines, roundNo) {
   };
 }
 
-// modules-workspace/modules/sales/ui/lib/serial-queue.ts
+// ui/lib/serial-queue.ts
 function createSerialQueue() {
   let last = Promise.resolve();
   return (task) => {
@@ -4460,7 +4480,7 @@ function createSerialQueue() {
   };
 }
 
-// modules-workspace/modules/sales/ui/lib/pos-cart.ts
+// ui/lib/pos-cart.ts
 function rows(r6) {
   if (Array.isArray(r6)) return r6;
   if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
@@ -4690,7 +4710,7 @@ async function splitOrder(client, orderId, lineIds, label) {
   return firstNewId(res);
 }
 
-// modules-workspace/modules/sales/ui/lib/split-selection.ts
+// ui/lib/split-selection.ts
 function esParcial(cart, sel) {
   const conId = cart.filter((l3) => l3.line_id);
   return sel.size > 0 && sel.size < conId.length;
@@ -4719,7 +4739,7 @@ function splitPayload(cart, sel) {
   };
 }
 
-// modules-workspace/modules/sales/ui/lib/simplified-limit.ts
+// ui/lib/simplified-limit.ts
 function isOverSimplifiedLimit(payableCents, maxCents) {
   if (maxCents === null || maxCents <= 0) return false;
   return payableCents >= maxCents;
@@ -4732,7 +4752,7 @@ function ticketIsBlocked(state) {
   return !(state.documentFormat === "invoice" && recipientIsComplete(state));
 }
 
-// modules-workspace/modules/sales/ui/lib/current-check.ts
+// ui/lib/current-check.ts
 var CLAVE = "erplora.pos.currentCheck";
 function rememberCurrentCheck(store, orderId) {
   try {
@@ -4756,7 +4776,7 @@ function resolveCurrentCheck(store, abiertas) {
   return recordada && abiertas.includes(recordada) ? recordada : void 0;
 }
 
-// modules-workspace/modules/sales/ui/lib/brand-icons.ts
+// ui/lib/brand-icons.ts
 var BIZUM_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 122 36"><path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M59.8625 12.8257c-1.0347 0-1.8704.8358-1.8704 1.8308v13.8113c0 1.0348.8357 1.8707 1.8704 1.8707s1.8704-.8359 1.8704-1.8707V14.6565c0-.995-.8357-1.8308-1.8704-1.8308Zm-.0001-6.88561c-1.154 0-2.1091.95524-2.1091 2.1095 0 1.15425.9551 2.14931 2.1091 2.14931 1.1541 0 2.1092-.95526 2.1092-2.14931 0-1.15426-.9551-2.1095-2.1092-2.1095ZM78.089 14.6566c0-1.1543-.9153-1.5921-1.751-1.5921h-9.2725c-.9153 0-1.6316.7164-1.6316 1.5921 0 .9154.7163 1.6319 1.6316 1.6319h6.0888l-7.8796 10.9853c-.2388.3184-.3581.7562-.3581 1.1144 0 1.1543.9153 1.7911 1.7112 1.7911h9.8296c.9153 0 1.6316-.7164 1.6316-1.6319 0-.9154-.7163-1.6318-1.6316-1.6318h-6.6062l7.7204-10.7466c.398-.5572.5174-1.0348.5174-1.5124Zm-27.3 8.6769c0 2.2687-.9949 3.6618-3.2633 3.6618-2.2683 0-3.2234-1.3931-3.2234-3.6618v-7.045h3.3826c2.7459 0 3.1041 1.5125 3.1041 3.1842v3.8608Zm3.7408-3.9404c0-3.8608-2.0296-6.3683-6.7653-6.3683h-3.4224V7.81078c0-1.03485-.8357-1.87069-1.8306-1.87069-1.0347 0-1.8704.83584-1.8704 1.87069V23.3335c0 3.8608 2.0693 7.0051 6.9642 7.0051 4.8551 0 6.9643-3.1841 6.9643-7.0051v-3.9404h-.0398Zm38.1642-6.5674c-1.0346 0-1.8704.8358-1.8704 1.8706v8.6371c0 2.2687-.9949 3.6617-3.2632 3.6617-2.2684 0-3.2235-1.393-3.2235-3.6617v-8.6371c0-1.0348-.8357-1.8706-1.8306-1.8706-1.0347 0-1.8704.8358-1.8704 1.8706v8.6371c0 3.8607 2.0694 7.0051 6.9643 7.0051 4.8551 0 6.9642-3.1842 6.9642-7.0051v-8.6371c-.0397-1.0348-.8755-1.8706-1.8704-1.8706Zm28.374 7.0451c0-3.8608-1.79-7.0052-6.645-7.0052-2.189 0-3.741.6369-4.816 1.7115-1.074-1.0348-2.626-1.7115-4.815-1.7115-4.8552 0-6.646 3.1842-6.646 7.0052v8.637c0 1.0348.8357 1.8707 1.8306 1.8707 1.0344 0 1.8704-.8359 1.8704-1.8707v-8.637c0-2.2687.716-3.6618 2.945-3.6618 2.268 0 2.945 1.3931 2.945 3.6618v8.637c0 1.0348.836 1.8707 1.83 1.8707 1.035 0 1.871-.8359 1.871-1.8707v-8.637c0-2.2687.716-3.6618 2.945-3.6618 2.268 0 2.945 1.3931 2.945 3.6618v8.637c0 1.0348.835 1.8707 1.83 1.8707 1.035 0 1.871-.8359 1.871-1.8707l.039-8.637ZM6.61567 12.8655c1.31327.9553 3.14387.6767 4.09893-.6368l3.4225-4.73643c.9551-1.31346.6765-3.14434-.6367-4.09959-1.3133-.95524-3.1439-.67663-4.09902.63683L5.93914 8.76593c-.9153 1.31347-.63673 3.14437.67653 4.09957ZM22.2952 6.17881c-1.3133-.95524-3.1439-.67663-4.099.63683L4.42685 25.7613c-.9551 1.3135-.67653 3.1444.63673 4.0996 1.31326.9553 3.14387.6767 4.09897-.6368L22.9319 10.2784c.9949-1.31345.6765-3.14434-.6367-4.09959ZM5.3024 4.66637c.9551-1.31346.67652-3.14435-.63674-4.099591C3.3524-.388466 1.52179-.109853.566693 1.20361c-.9551 1.31346-.676529 3.14435.636737 4.09959 1.31326.95525 3.14387.67663 4.09897-.63683ZM26.1952 30.6968c-1.3132-.9553-3.1438-.6766-4.0989.6368-.9551 1.3135-.6766 3.1444.6367 4.0996 1.3133.9553 3.1439.6766 4.099-.6368.9551-1.3135.6765-3.1444-.6368-4.0996Zm-5.3724-7.5226c-1.3132-.9552-3.1438-.6766-4.0989.6369l-3.4623 4.7364c-.9551 1.3134-.6765 3.1443.6367 4.0996 1.3133.9552 3.1439.6766 4.099-.6369l3.4623-4.7364c.9551-1.3134.6765-3.1443-.6368-4.0996Z"/></svg>';
 function brandSvgFor(type, name) {
   const t7 = (type || "").trim().toLowerCase();
@@ -4765,7 +4785,7 @@ function brandSvgFor(type, name) {
   return void 0;
 }
 
-// modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
 var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e5 = (t7) => (...e7) => ({ _$litDirective$: t7, values: e7 });
 var i4 = class {
@@ -4785,7 +4805,7 @@ var i4 = class {
   }
 };
 
-// modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-html.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-html.js
 var e6 = class extends i4 {
   constructor(i7) {
     if (super(i7), this.it = A, i7.type !== t3.CHILD) throw Error(this.constructor.directiveName + "() can only be used in child bindings");
@@ -4803,13 +4823,48 @@ var e6 = class extends i4 {
 e6.directiveName = "unsafeHTML", e6.resultType = 1;
 var o6 = e5(e6);
 
-// modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-svg.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-svg.js
 var t4 = class extends e6 {
 };
 t4.directiveName = "unsafeSVG", t4.resultType = 2;
 var o7 = e5(t4);
 
-// outfitkit/dist/ok-qty-stepper.js
+// ui/lib/split-tender.ts
+function tendersTotal(tenders) {
+  return tenders.reduce((sum, t7) => sum + Math.max(0, t7.amount), 0);
+}
+function remainingCents(payable, tenders) {
+  return Math.max(0, Math.round(payable) - tendersTotal(tenders));
+}
+function changeDue(tenders) {
+  return tenders.reduce(
+    (sum, t7) => sum + (needsTendered(t7.method) ? Math.max(0, t7.tendered - t7.amount) : 0),
+    0
+  );
+}
+function planTender(method, typedCents, remaining) {
+  if (!method || remaining <= 0) return void 0;
+  const typed = Math.max(0, Math.round(typedCents) || 0);
+  const amount = typed > 0 ? Math.min(typed, remaining) : remaining;
+  const tendered = needsTendered(method) && typed > amount ? typed : amount;
+  return { amount, tendered };
+}
+function buildPaymentsPayload(tenders) {
+  return tenders.filter((t7) => t7.amount > 0).map((t7) => ({
+    payment_method_id: t7.method?.id ?? null,
+    amount: t7.amount,
+    // Absent means «the exact amount» to the server, so it is only worth sending when the cashier
+    // was handed more than the leg covers — which is the change.
+    ...t7.tendered > t7.amount ? { amount_tendered: t7.tendered } : {}
+  }));
+}
+function chargeBlock(payable, tenders) {
+  if (!tenders.length) return void 0;
+  const remaining = remainingCents(payable, tenders);
+  return remaining > 0 ? { reason: "remaining", remaining } : void 0;
+}
+
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-qty-stepper.js
 var __defProp6 = Object.defineProperty;
 var __decorateClass6 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -5017,7 +5072,7 @@ __decorateClass6([
 ], OkQtyStepper.prototype, "labels");
 define("ok-qty-stepper", OkQtyStepper);
 
-// outfitkit/dist/ok-spotlight-search.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-spotlight-search.js
 var __defProp7 = Object.defineProperty;
 var __decorateClass7 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -5223,7 +5278,7 @@ __decorateClass7([
 ], OkSpotlightSearch.prototype, "input");
 define("ok-spotlight-search", OkSpotlightSearch);
 
-// outfitkit/dist/ok-empty-state.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-empty-state.js
 var __defProp8 = Object.defineProperty;
 var __decorateClass8 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -5323,7 +5378,7 @@ __decorateClass8([
 ], OkEmptyState.prototype, "message");
 define("ok-empty-state", OkEmptyState);
 
-// outfitkit/dist/ok-status-pill.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-status-pill.js
 var __defProp9 = Object.defineProperty;
 var __decorateClass9 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -5442,7 +5497,7 @@ __decorateClass9([
 ], OkStatusPill.prototype, "size");
 define("ok-status-pill", OkStatusPill);
 
-// modules-workspace/modules/sales/ui/lib/pos-tax.ts
+// ui/lib/pos-tax.ts
 function isRoot(r6) {
   return r6.parent_id == null || String(r6.parent_id) === "";
 }
@@ -5483,7 +5538,7 @@ function resolveLineTax(catRatesMap, taxCategoryKey) {
   return catRatesMap.get(String(taxCategoryKey)) ?? 0;
 }
 
-// modules-workspace/modules/sales/ui/lib/pos-open-price.ts
+// ui/lib/pos-open-price.ts
 function buildOpenPriceLine(input) {
   const name = input.name.trim();
   if (!name) throw new Error("open-price: name is required");
@@ -5502,7 +5557,7 @@ function buildOpenPriceLine(input) {
   };
 }
 
-// modules-workspace/modules/sales/ui/lib/checkout-key.ts
+// ui/lib/checkout-key.ts
 var KEY_PREFIX = "sale";
 function newIdempotencyKey(source = globalThis.crypto) {
   const uuid = source?.randomUUID?.();
@@ -5528,6 +5583,12 @@ var MESSAGES = {
   "sales.customer_required": "ui.errorCustomerRequired",
   "sales.amount_negative": "ui.errorAmountNegative",
   "sales.insufficient_tendered": "ui.errorInsufficientTendered",
+  // sales#159 (ADR-0386) — the legs of a split payment did not add up to the total the SERVER
+  // priced. The screen builds the split on its preview, and the preview can sit a cent away from
+  // the server's total (VAT excluded, weighed quantities, prorated discounts all round on the
+  // server). The sale is refused, never absorbed, so the cashier has to be told what happened and
+  // that the legs are still on screen to be fixed — not shown a raw domain code.
+  "sales.payments_do_not_match_total": "ui.errorPaymentsMismatch",
   // sales#21 — no tax rule / no tax catalogue: the sale is refused, never priced by the browser.
   "sales.no_tax_rule": "ui.errorNoTaxRule",
   "sales.tax_catalog_unavailable": "ui.errorTaxCatalogUnavailable",
@@ -5540,7 +5601,7 @@ function checkoutErrorKey(message) {
   return "ui.errorCharge";
 }
 
-// modules-workspace/modules/sales/ui/lib/transport-error.ts
+// ui/lib/transport-error.ts
 var SERVER_UNAVAILABLE_KEY = "ui.serverUnavailable";
 function transportErrorKey(e7) {
   const code = e7?.code;
@@ -5556,7 +5617,7 @@ function transportErrorKey(e7) {
   return null;
 }
 
-// modules-workspace/modules/sales/ui/lib/checkout-recovery.ts
+// ui/lib/checkout-recovery.ts
 var wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function recoverCheckout(probe, idempotencyKey, options = {}) {
   if (!idempotencyKey) return { outcome: "unknown" };
@@ -5575,7 +5636,7 @@ async function recoverCheckout(probe, idempotencyKey, options = {}) {
   return { outcome: "unknown" };
 }
 
-// modules-workspace/modules/sales/ui/lib/media-photo-cache.ts
+// ui/lib/media-photo-cache.ts
 var MediaPhotoCache = class {
   constructor(client, changed = () => void 0, createObjectUrl = (blob) => URL.createObjectURL(blob), revokeObjectUrl = (url) => URL.revokeObjectURL(url), concurrency = 8) {
     this.client = client;
@@ -5659,7 +5720,7 @@ var MediaPhotoCache = class {
   }
 };
 
-// modules-workspace/modules/sales/ui/components/erp-pos-touch/erp-pos-touch.ts
+// ui/components/erp-pos-touch/erp-pos-touch.ts
 var CATALOG2 = { es: es_default, en: en_default };
 var CLOSED_PRICING = /* @__PURE__ */ new Set(["fixed", "free", ""]);
 function deptDisplayName(c5) {
@@ -5758,6 +5819,8 @@ var ErpPosTouch = class extends i3 {
     this.openAmount = "";
     this.modifierPicks = [];
     this.openDept = "";
+    this.splitting = false;
+    this.tenders = [];
     this.docFormat = "ticket";
     this.busy = false;
     this.error = "";
@@ -5982,6 +6045,8 @@ var ErpPosTouch = class extends i3 {
     /** Una sola vía para el trabajo del carrito. Sin esto, cinco toques seguidos abrían cinco
      *  pedidos: cada uno veía «aún no hay pedido» porque el anterior seguía en vuelo (ADR-0144). */
     this.queue = createSerialQueue();
+    this.padPrimed = false;
+    this.tenderSeq = 0;
   }
   static {
     this.styles = i`
@@ -6164,6 +6229,45 @@ var ErpPosTouch = class extends i3 {
     .pay-hint { margin:.1rem 0 .4rem; color:var(--mut); font-size:.9rem; }
     /* El cambio es lo que el cajero busca con el ojo al devolver. */
     .amt.big-change .v { font-size:1.6rem; font-weight:800; color:var(--accent); }
+
+    /* ── sales#159 · pago mixto (ADR-0386) ────────────────────────────────────────────────── */
+    /* EL RESTANTE. Vive en la cabecera del sheet, fuera del scroll, y es el segundo número más
+       grande de la pantalla: en un reparto es el que se mira en cada pata. Se tiñe de acento
+       mientras queda algo y de éxito en cuanto está cubierto — el color contesta antes que el texto. */
+    .pay-remaining { display:flex; justify-content:space-between; align-items:baseline; gap:.75rem;
+      margin:-.6rem 0 .9rem; padding:.5rem .7rem; border-radius:.7rem;
+      border:1px solid var(--ion-border-color); background:var(--tile); color:var(--mut);
+      font-size:.9rem; font-weight:600; }
+    .pay-remaining .v { font-size:1.35rem; font-weight:800; color:var(--accent); }
+    /* Las patas ya tomadas. Fila alta (objetivo táctil ≥48px) con el importe a la derecha, donde
+       el ojo compara una columna de números. */
+    .tender-list { list-style:none; margin:0 0 .2rem; padding:0; display:flex; flex-direction:column; gap:.35rem; }
+    .tender-row { display:flex; align-items:stretch; gap:.35rem; }
+    .tender-edit { flex:1; display:flex; align-items:center; gap:.5rem; min-height:48px;
+      padding:.4rem .65rem; border-radius:10px; border:1px solid var(--ion-border-color);
+      background:var(--tile); color:var(--tx); font:inherit; text-align:left; cursor:pointer; }
+    .tender-edit ion-icon { font-size:1.2rem; flex:none; color:var(--mut); }
+    .tender-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .tender-amount { font-weight:800; white-space:nowrap; }
+    .tender-change { font-size:.78rem; color:var(--mut); white-space:nowrap; }
+    .tender-remove { flex:none; width:48px; min-height:48px; display:flex; align-items:center;
+      justify-content:center; border-radius:10px; border:1px solid var(--ion-border-color);
+      background:var(--tile); color:var(--mut); cursor:pointer; }
+    .tender-remove ion-icon { font-size:1.2rem; }
+    /* Entrar a repartir es SECUNDARIO (la mayoría de los cobros son de un solo medio); tomar la
+       pata, en cambio, es lo que se pulsa una vez por medio, así que lleva el acento. */
+    .pay-split-btn, .pay-add { display:flex; align-items:center; justify-content:center; gap:.45rem;
+      width:100%; min-height:52px; border-radius:12px; font:inherit; font-weight:700; cursor:pointer; }
+    .pay-split-btn { border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); }
+    .pay-add { border:1px solid var(--accent); background:color-mix(in srgb,var(--accent) 14%,transparent); color:var(--accent); }
+    .pay-split-btn ion-icon, .pay-add ion-icon { font-size:1.25rem; }
+    /* EL MOTIVO por el que no se puede cobrar, en palabras y en la pantalla — nunca en un title. */
+    .pay-block-reason { margin:0 0 .45rem; padding:.5rem .65rem; border-radius:.6rem;
+      border:1px solid var(--ion-color-warning,#e8a33d);
+      background:color-mix(in srgb,var(--ion-color-warning,#e8a33d) 12%,transparent);
+      color:var(--tx); font-size:.9rem; }
+    /* Un cobro bloqueado se ve apagado, pero SIGUE recibiendo el toque (aria-disabled, no disabled). */
+    ion-button.charge[aria-disabled='true'] { opacity:.75; }
     .print-row { --background:transparent; --padding-start:0; --inner-padding-end:0; margin:.5rem 0 .2rem; }
     .pay-err { color:var(--ion-color-danger,#d9480f); margin:.4rem 0 0; }
     /* hub#297 — la captura de NIF+domicilio por encima del techo de la simplificada. Va ARRIBA del
@@ -7401,6 +7505,9 @@ var ErpPosTouch = class extends i3 {
     if (!this.cart.length) return;
     this.checkoutKey = newIdempotencyKey();
     this.tendered = "";
+    this.padPrimed = false;
+    this.splitting = false;
+    this.tenders = [];
     this.payMethod = defaultPayMethod(this.payMethods);
     this.docFormat = this.defaultDocFormat;
     if (this.overSimplifiedLimit) this.docFormat = "invoice";
@@ -7462,8 +7569,13 @@ var ErpPosTouch = class extends i3 {
       this.ticketDiscountAmount = 0;
     }
   }
+  /** El teclado. Tras traer una pata a editar el importe queda CEBADO: la siguiente tecla lo
+   *  sustituye en vez de encadenarse a él (50,00 + «6» daría 50,006, que no es un importe). Es como
+   *  se comporta el teclado de cualquier TPV o calculadora tras un resultado. */
   tap(k2) {
-    this.tendered = pushDigit(this.tendered, k2);
+    const base = this.padPrimed ? "" : this.tendered;
+    this.padPrimed = false;
+    this.tendered = pushDigit(base, k2);
   }
   // ── sales#71 · descuentos manuales ─────────────────────────────────────────────────────────
   openDiscount(target, lineId) {
@@ -7543,7 +7655,76 @@ var ErpPosTouch = class extends i3 {
   /** sales#24 — cash typed in but SHORT of the payable. 0 (nothing typed) means «exact amount»;
    *  the server refuses the same case (`sales.insufficient_tendered`), this just spares the trip. */
   get tenderedShort() {
+    if (this.splitting) return false;
     return needsTendered(this.payMethod) && this.tenderedNum > 0 && this.tenderedNum < this.payable;
+  }
+  // ── sales#159 · pagar UNA venta de N formas (ADR-0386) ─────────────────────────────────────
+  /** Lo que queda por cubrir, en céntimos. Sin patas es la cuenta entera. */
+  get remaining() {
+    return remainingCents(this.payable, this.tenders);
+  }
+  /** La pata que se tomaría AHORA con lo elegido y lo tecleado. `undefined` = no hay nada que añadir. */
+  get pendingTender() {
+    return planTender(this.payMethod, this.tenderedNum, this.remaining);
+  }
+  /** El cambio del reparto: sale del EFECTIVO y nunca se prorratea (ADR-0386, decisión 2). Incluye
+   *  la pata pendiente para que el cajero vea lo que va a devolver ANTES de tomarla. */
+  get splitChange() {
+    const pending = this.pendingTender;
+    const legs = pending && this.payMethod ? [...this.tenders, { id: "pending", method: this.payMethod, ...pending }] : this.tenders;
+    return changeDue(legs);
+  }
+  /** Empieza a repartir. No toma ninguna pata: abre la pantalla que las toma. */
+  startSplit() {
+    if (this.payable <= 0) return;
+    this.splitting = true;
+    this.error = "";
+  }
+  /** Toma la pata que hay compuesta (método + importe tecleado) y deja el resto por cubrir.
+   *  Sin importe tecleado la pata cubre TODO el restante: es lo que hace que la última sea un solo
+   *  toque, y lo que evita el atasco de Shopify con 3+ medios. */
+  addTender() {
+    const plan = this.pendingTender;
+    if (!plan || !this.payMethod) return;
+    this.tenders = [...this.tenders, { id: `tender-${this.tenderSeq += 1}`, method: this.payMethod, ...plan }];
+    this.tendered = "";
+    this.padPrimed = false;
+    this.error = "";
+  }
+  /** Quita una pata: su importe vuelve al restante. */
+  removeTender(id) {
+    this.tenders = this.tenders.filter((t7) => t7.id !== id);
+    this.error = "";
+  }
+  /** Edita una pata: vuelve al teclado con su importe y su método, para volver a tomarla. Es la
+   *  edición más honesta en una pantalla táctil — un campo de texto dentro de una lista de filas se
+   *  falla con el dedo, y aquí ya hay un teclado grande al que devolverla. */
+  editTender(id) {
+    const leg = this.tenders.find((t7) => t7.id === id);
+    if (!leg) return;
+    this.tenders = this.tenders.filter((t7) => t7.id !== id);
+    this.payMethod = leg.method;
+    this.tendered = centsToEuros(leg.tendered);
+    this.padPrimed = true;
+    this.error = "";
+  }
+  /** POR QUÉ no se puede cobrar todavía, en palabras. `undefined` = se puede.
+   *
+   *  🔴 Esto NO se resuelve con el `disabled` nativo de Ionic. `disabled` es `pointer-events:none`:
+   *  en una pantalla táctil el toque no llega a nada, no corre ningún handler, no se registra nada,
+   *  y el motivo se queda en `title` — que necesita un hover que una tablet de mostrador no produce
+   *  jamás. Es el bug de sales#58 y no vuelve por el botón más importante de la pantalla. */
+  get chargeBlock() {
+    if (this.chargeBlocked) {
+      return { short: t5("ui.limitChargeBlocked"), reason: "" };
+    }
+    const split = chargeBlock(this.payable, this.tenders);
+    if (split) {
+      const amount = this.money(split.remaining);
+      return { short: t5("ui.tenderRemainingShort", { amount }), reason: t5("ui.tenderRemainingBlock", { amount }) };
+    }
+    if (this.tenderedShort) return { short: t5("ui.tenderedShort"), reason: t5("ui.tenderedShort") };
+    return void 0;
   }
   /** Lo que se cobra AHORA: la selección si la hay, o la cuenta entera (ADR-0146). */
   get payable() {
@@ -7599,6 +7780,12 @@ var ErpPosTouch = class extends i3 {
       this.paying = true;
       return;
     }
+    const block = this.chargeBlock;
+    if (block) {
+      this.paying = true;
+      this.error = block.reason || block.short;
+      return;
+    }
     this.busy = true;
     this.error = "";
     this.checkoutUnknown = false;
@@ -7632,6 +7819,18 @@ var ErpPosTouch = class extends i3 {
         // exacto y lo decide el servidor: el `payable` de pantalla es un preview que puede quedar por
         // debajo del total real (IVA excluido, a peso, descuentos) y haría saltar `insufficient_tendered`.
         ...needsTendered(this.payMethod) && this.tenderedNum > 0 ? { amount_tendered: this.tenderedNum } : {},
+        // sales#159 (ADR-0386) — PAGO MIXTO. Solo viaja cuando el cajero ha repartido de verdad: con
+        // una sola forma de pago manda el camino escalar de arriba, que es lo que hace todo lo demás
+        // que llama a `complete_sale` (y lo que el servidor ya sabe convertir en su fila única). Con
+        // patas, `payments[]` MANDA y los escalares pasan a derivarse de la pata mayor.
+        //
+        // ⚠️ Las patas se construyen sobre el PAYABLE de pantalla, que es un preview: el total lo
+        // fija el servidor (IVA excluido, cantidades a peso y descuentos redondean allí). Si no
+        // cuadran al céntimo la venta se RECHAZA (`sales.payments_do_not_match_total`) — a propósito,
+        // porque una venta cuyas patas no suman es un cajón que acaba el día con un número que nadie
+        // sabe explicar. El rechazo se pinta con palabras y el reparto se queda en pantalla para
+        // corregirlo (`ui.errorPaymentsMismatch`).
+        ...this.tenders.length ? { payments: buildPaymentsPayload(this.tenders) } : {},
         channel: "pos",
         source_module: "pos",
         // ADR-0141: la venta nace de este PEDIDO. El servidor lo marca completado (open→completed)
@@ -8132,6 +8331,7 @@ var ErpPosTouch = class extends i3 {
     </div>`;
   }
   render() {
+    const blockedWhy = this.paying ? this.chargeBlock : void 0;
     return b2`<div class="card">
       <div class="body">
         <div class="catalog">
@@ -8204,6 +8404,12 @@ var ErpPosTouch = class extends i3 {
               <div class="sheet-top">
                 <div class="pay-total">${this.money(this.payable)}</div>
                 ${this.splitSel.size ? b2`<div class="pay-split">${t5("ui.payingPart", { n: String(this.splitSel.size), total: this.money(this.total) })}</div>` : A}
+                <!-- sales#159 — EL RESTANTE. Vive en la cabecera del sheet, FUERA del scroll: es el
+                     número que el cajero mira en cada pata y esconderlo bajo el teclado es lo que
+                     convierte un reparto en un «¿cuánto falta ya?» a mano. -->
+                ${this.splitting ? b2`<div class="pay-remaining" aria-live="polite">
+                      <span>${t5("ui.remaining")}</span><span class="v">${this.money(this.remaining)}</span>
+                    </div>` : A}
               </div>
               <div class="pay">
 
@@ -8225,6 +8431,32 @@ var ErpPosTouch = class extends i3 {
                       >${f3 === "ticket" ? t5("ui.docTicket") : t5("ui.docInvoice")}</button>`)}
                   </div>` : A}
 
+                <!-- sales#159 — LAS PATAS YA TOMADAS. Cada una se puede editar (vuelve al teclado
+                     con su importe) y quitar (su importe vuelve al restante). Sin esto, corregir un
+                     «no, eran 40 con tarjeta» obliga a cancelar el cobro entero. -->
+                ${this.tenders.length ? b2`
+                  <div class="pay-lbl">${t5("ui.paymentsTaken")}</div>
+                  <ul class="tender-list">
+                    ${this.tenders.map((leg) => {
+      const name = payMethodDisplayName(leg.method, t5);
+      const amount = this.money(leg.amount);
+      const back = leg.tendered - leg.amount;
+      return b2`<li class="tender-row">
+                        <button class="tender-edit" aria-label=${t5("ui.editTender", { name, amount })}
+                                @click=${() => this.editTender(leg.id)}>
+                          <ion-icon name=${payMethodIcon(leg.method.type, leg.method.name)} aria-hidden="true"></ion-icon>
+                          <span class="tender-name">${name}</span>
+                          <span class="tender-amount">${amount}</span>
+                          ${back > 0 ? b2`<span class="tender-change">${t5("ui.change")} ${this.money(back)}</span>` : A}
+                        </button>
+                        <button class="tender-remove" aria-label=${t5("ui.removeTender", { name, amount })}
+                                @click=${() => this.removeTender(leg.id)}>
+                          <ion-icon name="close-outline" aria-hidden="true"></ion-icon>
+                        </button>
+                      </li>`;
+    })}
+                  </ul>` : A}
+
                 <!-- El MÉTODO se elige AQUÍ, como en la pantalla de tender de cualquier TPV:
                      botones grandes con icono y NOMBRE (el dueño los renombra a su gusto, así que
                      un icono mudo no basta). Solo se pinta con más de un método activo. -->
@@ -8238,7 +8470,7 @@ var ErpPosTouch = class extends i3 {
                               title=${nombre}
                               @click=${() => {
         this.payMethod = m4;
-        if (!needsTendered(m4)) this.tendered = "";
+        if (!needsTendered(m4) && !this.splitting) this.tendered = "";
       }}>
                         ${marca ? b2`<span class="brand">${o7(marca)}</span>` : b2`<ion-icon name=${payMethodIcon(m4.type, m4.name)}></ion-icon>`}
                         <span class="pm-name">${nombre}</span>
@@ -8250,9 +8482,15 @@ var ErpPosTouch = class extends i3 {
                      exacto y no hay nada que teclear (lo decide requires_change, no un "si es
                      efectivo"). Los ATAJOS son el patrón Toast: el exacto y los redondeos por
                      encima — el cajero toca en vez de teclear y el cambio sale solo. -->
-                ${needsTendered(this.payMethod) ? b2`
-                    <div class="amt"><span>${t5("ui.tendered")}</span><span class="v">${this.money(this.tenderedNum)}</span></div>
-                    ${this.change > 0 ? b2`<div class="amt big-change"><span>${t5("ui.change")}</span><span class="v">${this.money(this.change)}</span></div>` : A}
+                ${needsTendered(this.payMethod) || this.splitting ? b2`
+                    <!-- Repartiendo, lo que se teclea es el importe de ESTA pata (en efectivo, lo
+                         ENTREGADO, que puede pasarse: la diferencia es el cambio). Decirlo importa:
+                         con tarjeta, «Entregado» invitaría a teclear lo que da el cliente. -->
+                    <div class="amt pay-amount-label">
+                      <span>${this.splitting && !needsTendered(this.payMethod) ? t5("ui.legAmount") : t5("ui.tendered")}</span>
+                      <span class="v">${this.money(this.tenderedNum)}</span>
+                    </div>
+                    ${(this.splitting ? this.splitChange : this.change) > 0 ? b2`<div class="amt big-change"><span>${t5("ui.change")}</span><span class="v">${this.money(this.splitting ? this.splitChange : this.change)}</span></div>` : A}
                     <!-- SIN atajos de importe (73/75/80…): Ioan los eliminó el 2026-07-19 y pidió
                          NO volver a añadirlos. El entregado se teclea en el numpad, punto. -->
                     <div class="numpad">
@@ -8260,6 +8498,19 @@ var ErpPosTouch = class extends i3 {
                     </div>` : b2`
                     <div class="amt pay-exact"><span>${t5("ui.payExact")}</span><span class="v">${this.money(this.payable)}</span></div>
                     <p class="pay-hint">${t5("ui.payCardHint", { amount: this.money(this.payable) })}</p>`}
+
+                <!-- sales#159 — la puerta al reparto, y luego la tecla que toma cada pata.
+                     Repartir es OPT-IN: mientras no se pida, la pantalla es la de un solo medio.
+                     🔴 «Añadir» SIN importe tecleado cubre TODO el restante, así que la ÚLTIMA pata
+                     es un solo toque. Es justo lo que le falta a Shopify, donde con 3+ medios hay
+                     que teclear cada importe a mano y el flujo se atasca («I could not exit the
+                     screen other than to mark the order as part paid») — inviable en hora punta. -->
+                ${this.payable > 0 && !this.splitting ? b2`<button class="pay-split-btn" @click=${() => this.startSplit()}>
+                      <ion-icon name="swap-horizontal-outline" aria-hidden="true"></ion-icon>${t5("ui.splitPayment")}
+                    </button>` : A}
+                ${this.splitting && this.remaining > 0 ? b2`<button class="pay-add" @click=${() => this.addTender()}>
+                      <ion-icon name="add-outline" aria-hidden="true"></ion-icon>${t5("ui.addTender")}
+                    </button>` : A}
 
                 <!-- Imprimir deja de ser un botón gemelo del de cobrar (dos botones azules iguales
                      no dicen cuál hace qué): es una PREFERENCIA del cobro. -->
@@ -8277,9 +8528,20 @@ var ErpPosTouch = class extends i3 {
                 ${this.error ? b2`<p class="pay-err">${this.error}</p>${this.renderCheckSalesLink()}` : A}
                 <!-- UNA acción, dice lo que hace y por cuánto, y no exige scroll para alcanzarla.
                      El importe es el PAYABLE: con split decía «Cobrar 3,60 €» para cobrar 1,80 €. -->
-                <ion-button class="charge" expand="block" ?disabled=${this.busy || this.chargeBlocked || this.tenderedShort}
+                <!-- sales#159 — EL MOTIVO, ESCRITO EN LA PANTALLA. No dentro del botón y no en un
+                     title: el motivo tiene que poder leerse sin tocar nada y sin un ratón. -->
+                ${blockedWhy?.reason ? b2`<p class="pay-block-reason">${blockedWhy.reason}</p>` : A}
+                <!-- UNA acción, dice lo que hace y por cuánto, y no exige scroll para alcanzarla.
+                     El importe es el PAYABLE: con split decía «Cobrar 3,60 €» para cobrar 1,80 €.
+                     🔴 aria-disabled, JAMAS disabled: en Ionic disabled es pointer-events:none
+                     y en una tablet de mostrador el toque muere en silencio (sales#58). Aquí el
+                     toque llega, confirm() lo para y CONTESTA con lo que falta. busy sí es
+                     disabled de verdad: ahí no hay nada que contestar y un segundo toque cobraría
+                     dos veces. -->
+                <ion-button class="charge" expand="block" ?disabled=${this.busy}
+                            aria-disabled=${blockedWhy ? "true" : A}
                             @click=${() => this.confirm(this.printOnCharge)}>
-                  ${this.busy ? t5("ui.charging") : this.chargeBlocked ? t5("ui.limitChargeBlocked") : this.tenderedShort ? t5("ui.tenderedShort") : needsTendered(this.payMethod) ? `${t5("ui.charge")} ${this.money(this.payable)}` : t5("ui.chargeWithCard", { amount: this.money(this.payable) })}
+                  ${this.busy ? t5("ui.charging") : blockedWhy ? blockedWhy.short : this.tenders.length ? `${t5("ui.charge")} ${this.money(this.payable)}` : needsTendered(this.payMethod) ? `${t5("ui.charge")} ${this.money(this.payable)}` : t5("ui.chargeWithCard", { amount: this.money(this.payable) })}
                 </ion-button>
               </div>
             </div>
@@ -8592,6 +8854,12 @@ __decorateClass([
 ], ErpPosTouch.prototype, "payMethod", 2);
 __decorateClass([
   r5()
+], ErpPosTouch.prototype, "splitting", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "tenders", 2);
+__decorateClass([
+  r5()
 ], ErpPosTouch.prototype, "docFormat", 2);
 __decorateClass([
   r5()
@@ -8677,9 +8945,12 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "simplifiedMaxCents", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "padPrimed", 2);
 define("erp-pos-touch", ErpPosTouch);
 
-// modules-workspace/modules/sales/ui/components/erp-pos/erp-pos.ts
+// ui/components/erp-pos/erp-pos.ts
 var ErpPos = class extends i3 {
   constructor() {
     super(...arguments);
@@ -8704,7 +8975,7 @@ __decorateClass([
 ], ErpPos.prototype, "fullscreen", 2);
 define("erp-pos", ErpPos);
 
-// modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
 var { I: t6 } = j;
 var i5 = (o9) => o9;
 var s4 = () => document.createComment("");
@@ -8737,7 +9008,7 @@ var h3 = (o9) => {
   o9._$AR(), o9._$AA.remove();
 };
 
-// modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
 var u4 = (e7, s5, t7) => {
   const r6 = /* @__PURE__ */ new Map();
   for (let l3 = s5; l3 <= t7; l3++) r6.set(e7[l3], l3);
@@ -8790,7 +9061,7 @@ var c4 = e5(class extends i4 {
   }
 });
 
-// modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/modules-workspace/node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
 var n5 = "important";
 var i6 = " !" + n5;
 var o8 = e5(class extends i4 {
@@ -8819,7 +9090,7 @@ var o8 = e5(class extends i4 {
   }
 });
 
-// outfitkit/dist/ok-data-table.js
+// ../../../../../../../Users/ioan.beilic/workspace/code/ERPlora/outfitkit/dist/ok-data-table.js
 var CSV_BOM = "\uFEFF";
 var WINDOWS_1252_C1 = [
   8364,
@@ -10361,7 +10632,7 @@ __decorateClass10([
 var OkDataTable = _OkDataTable;
 define("ok-data-table", OkDataTable);
 
-// modules-workspace/modules/sales/ui/components/erp-sales-list/erp-sales-list.ts
+// ui/components/erp-sales-list/erp-sales-list.ts
 var CATALOG3 = { es: es_default, en: en_default };
 var STATUS_KEYS = {
   completed: "ui.statusCompleted",
