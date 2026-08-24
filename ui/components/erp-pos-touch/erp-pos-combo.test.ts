@@ -421,3 +421,50 @@ describe('la composición LLEGA a sales.complete_sale', () => {
     expect(items[0]).not.toHaveProperty('combo_choices');
   });
 });
+
+// El agujero que destapó la MUTACIÓN: los tests de arriba llegaban al techo pero nunca intentaban
+// PASARLO, así que un `pickComboOption` que ignorase el techo pasaba en verde. El techo solo está
+// probado si un toque de más se REHÚSA — y si además CONTESTA.
+describe('el techo REHÚSA de verdad el toque de más', () => {
+  // Tres primeros, y el grupo admite dos.
+  const THREE = [
+    optRow({ option_id: 'o-soup', source_ref: 'p-soup', min_choices: 1, max_choices: 2, option_sort_order: 0 }),
+    optRow({ option_id: 'o-salad', source_ref: 'p-salad', min_choices: 1, max_choices: 2, option_sort_order: 1 }),
+    optRow({ option_id: 'o-third', source_ref: 'p-chicken', min_choices: 1, max_choices: 2, option_sort_order: 2 }),
+    ...MENU.filter((r) => r.group_id === 'g-main'),
+  ];
+
+  it('el tercer toque en un grupo de dos NO entra', async () => {
+    installSdk(THREE);
+    const pos = await mount();
+    await tap(pos, comboTiles(pos)[0]);
+    await tap(pos, q(pos, '[data-option-id="o-soup"]'));
+    await tap(pos, q(pos, '[data-option-id="o-salad"]'));
+    await tap(pos, q(pos, '[data-option-id="o-third"]'));
+    expect(pos.comboPicks, 'el techo es 2: el tercero se rehúsa').toEqual(['o-soup', 'o-salad']);
+  });
+
+  it('y el toque rehusado CONTESTA: señala el grupo', async () => {
+    installSdk(THREE);
+    const pos = await mount();
+    await tap(pos, comboTiles(pos)[0]);
+    await tap(pos, q(pos, '[data-option-id="o-soup"]'));
+    await tap(pos, q(pos, '[data-option-id="o-salad"]'));
+    expect(q(pos, '[data-group-id="g-starter"]')!.getAttribute('data-flagged'), 'control: aún no').toBe('false');
+    await tap(pos, q(pos, '[data-option-id="o-third"]'));
+    expect(q(pos, '[data-group-id="g-starter"]')!.getAttribute('data-flagged'),
+      'un toque que no hace nada Y no dice nada es un botón roto').toBe('true');
+  });
+
+  it('en el techo se puede RETIRAR una y volver a elegir otra — no se queda atrapado', async () => {
+    installSdk(THREE);
+    const pos = await mount();
+    await tap(pos, comboTiles(pos)[0]);
+    await tap(pos, q(pos, '[data-option-id="o-soup"]'));
+    await tap(pos, q(pos, '[data-option-id="o-salad"]'));
+    await tap(pos, q(pos, '[data-option-id="o-salad"]'));
+    expect(pos.comboPicks, 'lo ya elegido se retira aunque el grupo esté lleno').toEqual(['o-soup']);
+    await tap(pos, q(pos, '[data-option-id="o-third"]'));
+    expect(pos.comboPicks).toEqual(['o-soup', 'o-third']);
+  });
+});
