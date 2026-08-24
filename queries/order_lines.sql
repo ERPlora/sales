@@ -15,7 +15,12 @@ SELECT id, order_id, product_id, product_name, product_sku, quantity, unit_price
        round_no, fired_at, category_id, discount_percent,
        -- pm#93: los suplementos tienen que sobrevivir a retomar la cuenta, como el IVA o el
        -- contexto de unidades. Sin esto el camarero elige «sin cebolla» y al volver ya no está.
-       modifiers
+       modifiers,
+       -- sales#169: la COMPOSICIÓN del menú tiene que volver con la línea o la cuenta retomada no
+       -- se puede ni cobrar (el cobro busca el id del combo en el catálogo de productos y rechaza
+       -- la venta entera). Es el error que costó sales#148 con los suplementos: escritos, cobrados
+       -- e ilegibles.
+       combo_group_ref, combo
 FROM sales_order_item
 -- `sale_id IS NULL` = lo que queda POR PAGAR (ADR-0146): en un pedido cobrado a medias,
 -- las líneas ya pagadas no vuelven a la pantalla ni se cobran dos veces.

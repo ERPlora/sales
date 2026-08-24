@@ -5,10 +5,12 @@
 -- invitaciones).
 -- ADR-0147: `quantity` en punto fijo 10⁶ + contexto de unidades CONGELADO (§2.4).
 -- sales#12: `category_id` (opaco, NULL = sin clasificar) es el snapshot que enruta la comanda.
+-- sales#169: `combo`/`combo_group_ref` congelan la COMPOSICIÓN del menú (fila de trabajo, sin
+-- dinero): el precio cerrado y el reparto los decide el COBRO contra `combos.options.all`.
 INSERT INTO sales_order_item (
     id, hub_id, order_id, product_id, product_name, product_sku,
     quantity, unit_price, is_gift, gift_reason, line_total, tax_category_key, cost, is_service,
-    category_id, discount_percent, modifiers,
+    category_id, discount_percent, modifiers, combo_group_ref, combo,
     is_deleted, created_by, updated_by, created_at, updated_at,
     unit_code, unit_name, factor_num, factor_den, increment_value,
     price_quantity_value, pricing_unit_code, pricing_unit_name,
@@ -18,6 +20,9 @@ INSERT INTO sales_order_item (
     :quantity, :unit_price, :is_gift, COALESCE(:gift_reason, ''), :line_total,
     COALESCE(:tax_category_key, ''), COALESCE(:cost, 0), COALESCE(:is_service, 0),
     :category_id, COALESCE(:discount_percent, 0), COALESCE(:modifiers, '[]'),
+    -- sales#169: de qué MENÚ viene la línea y qué se eligió, en su orden. NULL/'{}' = no es un
+    -- combo, que es lo que son casi todas las líneas. El grupo lo minta el handler, no el payload.
+    :combo_group_ref, COALESCE(:combo, '{}'),
     0, :current_user_id, :current_user_id, :now, :now,
     :unit_code, :unit_name, :factor_num, :factor_den, :increment_value,
     :price_quantity_value, :pricing_unit_code, :pricing_unit_name,
