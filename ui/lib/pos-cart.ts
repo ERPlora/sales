@@ -11,6 +11,14 @@
 
 import { toMicro, fromMicro } from './quantity';
 
+/** Una elección dentro de un menú. Solo `option_id` decide dinero (lo resuelve el servidor contra
+ *  `combos.options.all`); `product_name` y `category_id` son DISPLAY y ROUTING de cocina. */
+export interface ComboChoice {
+  option_id: string;
+  product_name?: string;
+  category_id?: string | null;
+}
+
 export interface CartLine {
   id: string;
   name: string;
@@ -24,7 +32,7 @@ export interface CartLine {
   /** Lo elegido en cada grupo, EN EL ORDEN de elección (el que lee cocina). Solo `option_id` decide
    *  dinero; `product_name` y `category_id` viajan para DISPLAY y para que el KDS enrute cada
    *  componente a SU estación — el fallo de TouchBistro que ADR-0381 nombra. */
-  combo_choices?: { option_id: string; product_name?: string; category_id?: string | null }[];
+  combo_choices?: ComboChoice[];
   sku?: string;
   price: number;
   /** Cantidad LÓGICA (0,5 = medio kilo). El cable habla punto fijo 10⁶ (ADR-0147): la conversión
@@ -129,6 +137,63 @@ function parseModifiers(raw: unknown): { option_id: string }[] | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** sales#169 — la COMPOSICIÓN de un menú tal y como la fila del pedido la guarda: qué combo y qué
+ *  se eligió, EN SU ORDEN. Defensivo por el mismo motivo que `parseModifiers`: una fila escrita
+ *  antes de que existiera la columna, o media escrita, NO puede dejar al camarero sin poder abrir
+ *  su mesa. Se pierde el menú de esa línea; nunca la cuenta entera. */
+function parseCombo(raw: unknown): { combo_id: string; combo_choices: ComboChoice[] } | undefined {
+  if (typeof raw !== 'string' || !raw.trim()) return undefined;
+  try {
+    const v = JSON.parse(raw) as { combo_id?: unknown; combo_choices?: unknown };
+    if (!v || typeof v !== 'object') return undefined;
+    const combo_id = String(v.combo_id ?? '');
+    if (!combo_id) return undefined;
+    const raws = Array.isArray(v.combo_choices) ? v.combo_choices : [];
+    const combo_choices: ComboChoice[] = raws
+      .map((c) => (c && typeof c === 'object' ? (c as Record<string, unknown>) : {}))
+      .filter((c) => String(c.option_id ?? ''))
+      .map((c) => ({
+        option_id: String(c.option_id),
+        // DISPLAY y ROUTING: sin el nombre no se pinta el componente, y sin la categoría el KDS
+        // no sabe a qué estación mandarlo al RETOMAR la cuenta (ADR-0381).
+        product_name: c.product_name ? String(c.product_name) : undefined,
+        category_id: c.category_id ? String(c.category_id) : null,
+      }));
+    return { combo_id, combo_choices };
+  } catch {
+    return undefined;
+  }
+}
+
+/** La composición serializada para la columna TEXT de la fila del pedido. Sin dinero: el precio
+ *  cerrado y el reparto los decide el servidor AL COBRAR contra `combos.options.all`. `'{}'` en una
+ *  línea normal, que es lo que dice la columna por defecto. */
+function comboColumn(l: CartLine): string {
+  if (!l.combo_id) return '{}';
+  return JSON.stringify({
+    combo_id: l.combo_id,
+    combo_choices: (l.combo_choices ?? []).map((c) => ({
+      option_id: c.option_id,
+      product_name: c.product_name ?? '',
+      category_id: c.category_id ?? null,
+    })),
+  });
+}
+
+/** Lo que viaja a un comando CON handler (`sales.order.open`, `sales.complete_sale`): objeto, no
+ *  texto. Solo `option_id` decide dinero; el resto es display y routing. */
+function comboPayload(l: CartLine): Record<string, unknown> {
+  if (!l.combo_id) return {};
+  return {
+    combo_id: l.combo_id,
+    combo_choices: (l.combo_choices ?? []).map((c) => ({
+      option_id: c.option_id,
+      product_name: c.product_name ?? '',
+      category_id: c.category_id ?? null,
+    })),
+  };
 }
 
 function modifierFingerprint(l: CartLine): string {
@@ -300,6 +365,10 @@ function toItemPayload(l: CartLine): Record<string, unknown> {
     // pm#93: solo los ids, en su orden. El importe lo resuelve el servidor contra
     // `modifiers.options.all` — el navegador no es autoridad del precio de un suplemento.
     modifiers: (l.modifiers ?? []).map((m) => ({ option_id: m.option_id })),
+    // sales#169: y la COMPOSICIÓN del menú, por el mismo motivo. Es la puerta por la que entra la
+    // PRIMERA línea de toda cuenta: sin esto, abrir la mesa CON el menú lo perdía igual que
+    // retomarla. El precio sigue siendo el del servidor.
+    ...comboPayload(l),
     ...unitContextPayload(l),
   };
 }
@@ -340,6 +409,10 @@ function orderLinePayload(orderId: string, l: CartLine): Record<string, unknown>
     // serializado. Solo los ids: el nombre y el precio definitivos los resuelve el cobro contra
     // `modifiers.options.all`. Esta fila es de trabajo, como su `line_total` provisional.
     modifiers: JSON.stringify((l.modifiers ?? []).map((m) => ({ option_id: m.option_id }))),
+    // sales#169: la composición del menú, serializada igual y con el mismo criterio. `'{}'` cuando
+    // la línea no es un menú — y entonces el SQL deja `combo_group_ref` en NULL, así que una línea
+    // normal no cambia en nada. El grupo NO se manda: lo minta el servidor con el id de la fila.
+    combo: comboColumn(l),
     line_total: provisionalLineTotal(l.price, l.qty, l.is_gift, l.discount ?? 0),
     ...unitContextPayload(l),
   };
@@ -448,6 +521,10 @@ export async function loadOrderLines(client: ErploraClientLike, orderId: string)
       // pm#93: los suplementos vuelven con la línea. Una fila ANTERIOR a la columna, o un JSON
       // corrupto, devuelven `undefined` — se pierde el suplemento de esa línea, nunca la comanda.
       modifiers: parseModifiers(x.modifiers),
+      // sales#169: el MENÚ vuelve con la línea. Sin esto la línea retomada solo conserva el
+      // `combo_id` metido en `product_id`, el cobro la toma por una línea de catálogo y RECHAZA la
+      // venta entera (`sales.product_not_available`): la mesa no puede pagar.
+      ...parseCombo(x.combo),
       // Contexto de unidades CONGELADO (ADR-0147 §2.4): vuelve con la línea para que el pedido
       // reanudado valide la misma rejilla y cobre con el mismo contexto.
       unit_code: x.unit_code ? String(x.unit_code) : undefined,
