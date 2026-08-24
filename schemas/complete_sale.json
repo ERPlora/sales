@@ -88,6 +88,10 @@
           "gift_reason": {
             "type": "string"
           },
+          "covered": {
+            "type": "boolean",
+            "description": "sales#162 / ADR-0386: la línea la pagó un TENDER EXTERNO por línea (el bono de `services` cubre líneas enteras, no importes). Vale net/tax/total = 0 y sigue en la venta. No es un descuento ni una invitación."
+          },
           "cost": {
             "type": "integer",
             "minimum": 0,

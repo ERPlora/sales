@@ -519,3 +519,34 @@ describe('la pantalla del tique dice lo mismo que su papel (sales#148)', () => {
     expect(saleToReceipt(SALE, LINES).lines[0].note).toBeUndefined();
   });
 });
+
+// sales#162 / ADR-0386 — a line an EXTERNAL tender already paid comes out of the sale at 0,00 €.
+//
+// On paper a bare «0,00» is unreadable: it looks like a pricing mistake, or like the salon gave the
+// haircut away. It is neither — the money came in when the voucher was SOLD. So the line says so,
+// and it says it in the ticket's language: this is the one word `sales` adds to the paper here, and
+// `sales` never names the family (it hosts a slot; the word «voucher» is not its to print).
+describe('a line covered by an external tender says so on the paper (sales#162)', () => {
+  const t = (k: string) => (k === 'ui.linePaidElsewhere' ? 'Ya pagado' : k);
+  const COVERED: SaleLineRow[] = [
+    { product_name: 'Corte', quantity: 1, unit_price: 1800, line_total: 0, is_covered: 1 },
+    { product_name: 'Champú', quantity: 1, unit_price: 900, line_total: 900 },
+  ];
+
+  it('marks the covered line and leaves the rest of the ticket alone', () => {
+    const r = saleToReceipt(SALE, COVERED, {}, {}, 'es', undefined, t);
+    expect(r.lines[0].name).toBe('Corte (Ya pagado)');
+    expect(r.lines[0].total).toBe(0);
+    expect(r.lines[1].name).toBe('Champú');
+  });
+
+  it('the invoice says it too — the same line, the same reason', () => {
+    const inv = saleToInvoice(SALE, COVERED, {}, {}, 'es', undefined, t);
+    expect(inv.lines[0].description).toContain('Ya pagado');
+  });
+
+  it('without a translator the paper still prints something readable, never the key', () => {
+    const r = saleToReceipt(SALE, COVERED);
+    expect(r.lines[0].name).toBe('Corte (Prepaid)');
+  });
+});

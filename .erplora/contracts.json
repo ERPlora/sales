@@ -51,7 +51,8 @@
     "slots": [
       "sales.pos.actions",
       "sales.pos.assign",
-      "sales.pos.order_info"
+      "sales.pos.order_info",
+      "sales.pos.tender"
     ]
   }
 }

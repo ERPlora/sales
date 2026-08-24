@@ -48,7 +48,7 @@ and `sale.completed`.
 `cash_register` (till reconciliation), `invoice` / `verifactu` (fiscal record), `kitchen`. Each is
 documented in its own module.
 
-**The POS screen hosts other modules.** Three named slots let installed modules add capability
+**The POS screen hosts other modules.** Four named slots let installed modules add capability
 without Sales knowing they exist:
 
 | Modules installed | What the POS gains |
@@ -57,6 +57,7 @@ without Sales knowing they exist:
 | `+ customers` | search, assign or remove a customer |
 | `+ tables` | assign, move and merge a table and its service session |
 | `+ kitchen` | "current order" view, fire only pending lines, order history and status |
+| `+ services` | a per-LINE tender in the checkout: a prepaid voucher covers one service line whole |
 
 These are independent. Turning off `tables` does not turn off Kitchen — a takeaway pizzeria runs
 `sales + kitchen` with no dining room. Records of a deactivated module are kept; only its surface

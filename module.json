@@ -124,7 +124,8 @@
       "migrations/postgres/021_manual_discounts.sql",
       "migrations/postgres/022_ticket_discount_amount.sql",
       "migrations/postgres/023_order_line_modifiers.sql",
-      "migrations/postgres/024_sale_payments.sql"
+      "migrations/postgres/024_sale_payments.sql",
+      "migrations/postgres/025_line_covered.sql"
     ]
   },
   "seed": {

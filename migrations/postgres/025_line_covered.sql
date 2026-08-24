@@ -1,0 +1,26 @@
+-- sales#162 / ADR-0386: la línea de VENTA deja escrito que la pagó un TENDER EXTERNO.
+--
+-- Un bono de sesiones cubre LÍNEAS —N usos de servicios concretos, no saldo en euros—, así que en
+-- la caja se aplica a la línea del servicio, entera o nada, y lo no cubierto se cobra aparte con su
+-- propio medio. Quien posee el bono es `services`, que ya guarda su canje. Lo que falta es que
+-- `sales` sepa, mirando SU fila, por qué esa línea vale 0.
+--
+-- POR QUÉ UNA COLUMNA Y NO DEDUCIRLO. Un `line_total = 0` no se distingue de un error de precio,
+-- de un producto gratis ni de una invitación, y el papel no tiene con qué explicárselo al cliente.
+-- La marca es de `sales` y es OPACA: dice «otro tender ya pagó esta línea», nunca cuál. Un hub sin
+-- `services` no escribe aquí jamás y el cobro es exactamente el que ya tenía.
+--
+-- Y NO ES NINGUNA DE LAS DOS COSAS QUE SE LE PARECEN. No es un descuento: `discount_percent` sigue
+-- siendo el que concedió el negocio, y contarlo como descuento diría en los libros que el salón
+-- regaló 18 euros que en realidad cobró al vender el bono (además, un hub con `allow_discounts`
+-- desactivado rechazaría el canje). Y no es una invitación: un comp acumula su coste en
+-- `gift_total` para el arqueo, y una sesión de bono no sale del bolsillo del negocio.
+--
+-- FISCALMENTE la línea vale base 0 y cuota 0, y es lo correcto para un bono UNIVALENTE: el registro
+-- salió al VENDER el bono, con el IVA del servicio, y la prestación a cambio del bono «no se
+-- considerará una operación independiente» -- art. 30 ter.1 de la Directiva 2006/112/CE, más la
+-- Resolución de la DGT de 28/12/2018. Emitir un segundo documento sería doble imposición.
+--
+-- Aditiva y con DEFAULT 0: las ventas ya escritas no las pagó ningún tender externo, que es la
+-- verdad. Revertirla es apartar la columna, y de eso se encarga el guard de migraciones (ADR-0387).
+ALTER TABLE sales_sale_item ADD COLUMN is_covered INTEGER NOT NULL DEFAULT 0;
