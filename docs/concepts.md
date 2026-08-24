@@ -54,6 +54,27 @@ they carry the round number and the moment they were sent. This is why a line th
 never returns to "pending" when checks are split or merged — otherwise the same food would be cooked
 twice.
 
+## An open check remembers what was CHOSEN, never what it costs
+
+The row of an open check is a **working row**. It carries everything the checkout cannot re-derive
+after a reload — the tax category, the cost, whether it is a service, the product category the
+kitchen routes by, the line discount, the frozen unit context, the supplements chosen, and **which
+menu the line came from and what was picked inside it, in the order it was picked**. Its
+`line_total`, on the other hand, is a *preview*: it is what the screen painted, and it decides
+nothing.
+
+That split is the whole point. A set menu is not a line: it is a group of sibling lines, and how
+many there are depends on how many tax rates are inside it, not on how many components were chosen.
+That is decided **once**, at checkout, against the combo catalogue — so parking a check and
+resuming it half an hour later charges exactly the same cents as charging it in one go. If the
+order row carried an already-apportioned share, there would be two places computing the same money
+and one day they would disagree.
+
+What that costs you if it is missing is not subtle: the till puts the menu id in `product_id`, so a
+line that loses its composition is taken for a catalogue line, the menu is looked up in the product
+catalogue, it is not there, and **the whole sale is rejected** — the table that ordered the set menu
+cannot pay.
+
 ## The server decides the price, not the till
 
 What the screen sends is a proposal. At checkout the server re-reads four trusted catalogues and
