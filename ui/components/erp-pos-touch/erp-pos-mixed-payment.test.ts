@@ -146,6 +146,8 @@ describe('adding legs until the total is covered', () => {
     expect(remaining(el), '121,00 − 50,00').toBe('71.00 €');
     await addLeg(el, 'Efectivo');
     expect(remaining(el), 'the blank leg covers what was left').toBe('0.00 €');
+    // El color contesta antes que el texto: cubierto deja de pedir algo.
+    expect($(el, '.sheet .pay-remaining')?.hasAttribute('data-covered')).toBe(true);
   });
 
   it('charges the sale as payments[], in the order the legs were taken', async () => {

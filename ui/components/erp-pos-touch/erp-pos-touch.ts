@@ -434,6 +434,9 @@ export class ErpPosTouch extends LitElement {
       border:1px solid var(--ion-border-color); background:var(--tile); color:var(--mut);
       font-size:.9rem; font-weight:600; }
     .pay-remaining .v { font-size:1.35rem; font-weight:800; color:var(--accent); }
+    .pay-remaining[data-covered] { border-color:var(--ion-color-success,#2dd36f);
+      background:color-mix(in srgb,var(--ion-color-success,#2dd36f) 10%,transparent); }
+    .pay-remaining[data-covered] .v { color:var(--ion-color-success,#2dd36f); }
     /* Las patas ya tomadas. Fila alta (objetivo táctil ≥48px) con el importe a la derecha, donde
        el ojo compara una columna de números. */
     .tender-list { list-style:none; margin:0 0 .2rem; padding:0; display:flex; flex-direction:column; gap:.35rem; }
@@ -3176,7 +3179,7 @@ export class ErpPosTouch extends LitElement {
                      número que el cajero mira en cada pata y esconderlo bajo el teclado es lo que
                      convierte un reparto en un «¿cuánto falta ya?» a mano. -->
                 ${this.splitting
-                  ? html`<div class="pay-remaining" aria-live="polite">
+                  ? html`<div class="pay-remaining" aria-live="polite" ?data-covered=${this.remaining === 0}>
                       <span>${t('ui.remaining')}</span><span class="v">${this.money(this.remaining)}</span>
                     </div>`
                   : nothing}
