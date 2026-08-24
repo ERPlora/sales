@@ -260,7 +260,17 @@
     "modifierRequired": "Elige {n}",
     "modifierUpTo": "Hasta {n}",
     "modifierOptional": "Opcional",
-    "modifierPickOne": "Elige una opción para continuar"
+    "modifierPickOne": "Elige una opción para continuar",
+    "remaining": "Restante",
+    "splitPayment": "Repartir el cobro",
+    "addTender": "Añadir este cobro",
+    "legAmount": "Importe de este cobro",
+    "paymentsTaken": "Cobros tomados",
+    "tenderRemainingBlock": "Faltan {amount} por cubrir para poder cobrar la venta.",
+    "tenderRemainingShort": "Faltan {amount}",
+    "editTender": "Editar {name}, {amount}",
+    "removeTender": "Quitar {name}, {amount}",
+    "errorPaymentsMismatch": "El total ha cambiado mientras se repartía el cobro. Revisa los importes y vuelve a cobrar."
   },
   "widgets": {
     "sales.today": {

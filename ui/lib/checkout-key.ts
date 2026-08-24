@@ -48,6 +48,12 @@ const MESSAGES: Record<string, string> = {
   'sales.customer_required': 'ui.errorCustomerRequired',
   'sales.amount_negative': 'ui.errorAmountNegative',
   'sales.insufficient_tendered': 'ui.errorInsufficientTendered',
+  // sales#159 (ADR-0386) — the legs of a split payment did not add up to the total the SERVER
+  // priced. The screen builds the split on its preview, and the preview can sit a cent away from
+  // the server's total (VAT excluded, weighed quantities, prorated discounts all round on the
+  // server). The sale is refused, never absorbed, so the cashier has to be told what happened and
+  // that the legs are still on screen to be fixed — not shown a raw domain code.
+  'sales.payments_do_not_match_total': 'ui.errorPaymentsMismatch',
   // sales#21 — no tax rule / no tax catalogue: the sale is refused, never priced by the browser.
   'sales.no_tax_rule': 'ui.errorNoTaxRule',
   'sales.tax_catalog_unavailable': 'ui.errorTaxCatalogUnavailable',
