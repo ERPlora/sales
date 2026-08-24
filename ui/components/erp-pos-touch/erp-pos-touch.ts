@@ -16,7 +16,7 @@ import { defaultParkLabel } from '../../lib/park-label.js';
 import { pendingLines, nextRoundNo, isLineLocked } from '../../lib/rounds.js';
 import { buildFirePayload } from '../../lib/fire-order.js';
 import { createSerialQueue } from '../../lib/serial-queue.js';
-import { splitPayload, splitTotal } from '../../lib/split-selection.js';
+import { splitPayload } from '../../lib/split-selection.js';
 // hub#297 — el techo de la simplificada. La REGLA vive en lib (probada sin DOM); aquí solo se
 // pregunta. El techo NO está escrito en este módulo: llega como dato de `hub.fiscal.limits`.
 import { isOverSimplifiedLimit, ticketIsBlocked, recipientIsComplete } from '../../lib/simplified-limit.js';
@@ -31,6 +31,7 @@ import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod, payM
 import {
   buildPaymentsPayload, changeDue, chargeBlock, planTender, remainingCents, type Tender,
 } from '../../lib/split-tender.js';
+import { tenderableLines, coverableLine, uncoveredLines } from '../../lib/line-tender.js';
 // The bill is painted by ok-receipt HERE, so it is registered here. It used to arrive only
 // transitively (document-modal → erp-sales-document), i.e. by accident: dropping that unrelated
 // import would have left `<ok-receipt>` an unknown element and the bill blank again.
@@ -452,6 +453,17 @@ export class ErpPosTouch extends LitElement {
       justify-content:center; border-radius:10px; border:1px solid var(--ion-border-color);
       background:var(--tile); color:var(--mut); cursor:pointer; }
     .tender-remove ion-icon { font-size:1.2rem; }
+    /* sales#162 — TENDER POR LÍNEA: un renglón por línea de servicio, con el hueco del slot debajo.
+       El importe cubierto se tacha: es la señal de un vistazo de que esa línea ya no se cobra. */
+    .tl-list { list-style:none; margin:0 0 .2rem; padding:0; display:flex; flex-direction:column; gap:.45rem; }
+    .tender-line { border:1px solid var(--ion-color-step-200,#e2e0dc); border-radius:.6rem; padding:.5rem .6rem; }
+    .tl-h { display:flex; align-items:baseline; justify-content:space-between; gap:.5rem; }
+    .tl-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .tl-amount { font-weight:800; white-space:nowrap; }
+    .tl-amount[data-covered] { text-decoration:line-through; color:var(--mut); }
+    .tl-slot { margin-top:.45rem; }
+    .tl-slot:empty { display:none; }
+    .tl-note { margin-top:.35rem; font-size:.8rem; color:var(--mut); }
     /* Entrar a repartir es SECUNDARIO (la mayoría de los cobros son de un solo medio); tomar la
        pata, en cambio, es lo que se pulsa una vez por medio, así que lleva el acento. */
     .pay-split-btn, .pay-add { display:flex; align-items:center; justify-content:center; gap:.45rem;
@@ -828,6 +840,10 @@ export class ErpPosTouch extends LitElement {
   @state() private parked: OpenCheck[] = [];
   /** Líneas marcadas para cobrar por separado (ADR-0146). Vacío = se cobra la cuenta entera. */
   @state() private splitSel = new Set<string>();
+  /** Líneas que un TENDER EXTERNO ya cubrió (sales#162 / ADR-0386): `line_id` → id del canje.
+   *  Salen del importe a cobrar y viajan a `complete_sale` marcadas `covered`, donde el servidor
+   *  las vale a 0. El id se guarda porque es lo que identifica el canje que hay que deshacer. */
+  @state() private covered = new Map<string, string>();
   @state() private parkedOpen = false;
   @state() private cartOpen = false;
   /** Etiqueta visible de la cuenta. Se persiste en el pedido existente con sales.order.set_label. */
@@ -906,6 +922,14 @@ export class ErpPosTouch extends LitElement {
   /** Fillers del slot de INFO del pedido (`sales.pos.order_info`, cabecera de ENVIADO):
    *  kitchen aporta su chip «Comandas · N» que abre el modal con estados en vivo. */
   private infoFillers: Array<{ component: string; el: HTMLElement }> = [];
+  /** Fillers del slot de TENDER POR LÍNEA (`sales.pos.tender`, sales#162 / ADR-0386): `services`
+   *  aporta aquí su bono, que cubre UNA línea de servicio entera. El POS no sabe qué es un bono —
+   *  monta el slot, le pasa cuatro valores y escucha dos eventos. Sin el módulo dueño, `loadSlot`
+   *  devuelve vacío y el cobro es exactamente el de siempre. */
+  private tenderFillers: string[] = [];
+  /** Una instancia por (filler × línea). Se guardan aquí para que la MISMA sobreviva a cerrar y
+   *  reabrir el sheet: el canje ya tomado sigue en pantalla, con su «deshacer». */
+  private readonly tenderEls = new Map<string, HTMLElement>();
   // Comanda ATADA a la mesa (puntos 1+2): al cambiar de mesa se GUARDA la comanda de la mesa
   // actual y se RECUPERA la de la nueva (o el carrito suelto si es null). Así tocar una mesa
   // ocupada trae su tiquet a la pantalla de venta, como cualquier POS.
@@ -1109,6 +1133,25 @@ export class ErpPosTouch extends LitElement {
     this.notifyOrderLinked();
   };
   private readonly onOrderFire = () => { void this.fireToKitchen(); };
+
+  /** Una línea la cubrió un tender externo: sale del importe a cobrar y el resto del ticket sigue
+   *  cobrándose con su propio medio. El id del canje se guarda porque es lo que lo identifica. */
+  private readonly onLineTenderHeld = (e: Event) => {
+    const d = (e as CustomEvent<{ redemptionId?: string; lineRef?: string }>).detail;
+    if (!d?.lineRef) return;
+    const next = new Map(this.covered);
+    next.set(d.lineRef, String(d.redemptionId ?? ''));
+    this.covered = next;
+  };
+
+  /** El cajero deshizo el canje antes de cobrar: la línea vuelve a contar. */
+  private readonly onLineTenderReleased = (e: Event) => {
+    const d = (e as CustomEvent<{ lineRef?: string }>).detail;
+    if (!d?.lineRef) return;
+    const next = new Map(this.covered);
+    next.delete(d.lineRef);
+    this.covered = next;
+  };
   private readonly onLocaleChange = (): void => this.requestUpdate();
 
   async connectedCallback() {
@@ -1188,6 +1231,11 @@ export class ErpPosTouch extends LitElement {
       // Contrato del slot del footer: el filler emite `erp:order-fire` (bubbles+composed) y el
       // HOST ejecuta su comando — el estado del carrito vive aquí, al filler no viaja nada.
       this.addEventListener('erp:order-fire', this.onOrderFire);
+      // sales#162 — contrato del slot `sales.pos.tender`: el filler avisa de que UNA línea quedó
+      // cubierta (o dejó de estarlo) y el HOST hace la aritmética. Bubbles + composed, así que
+      // cruzan el Shadow DOM del filler y llegan aquí sin que el POS lo conozca.
+      this.addEventListener('erp:voucher-held', this.onLineTenderHeld);
+      this.addEventListener('erp:voucher-released', this.onLineTenderReleased);
       await this.resolveSlots();
       this.ensureSlotsMounted();
     } catch (e) {
@@ -1208,6 +1256,8 @@ export class ErpPosTouch extends LitElement {
     this.removeEventListener('erp:order-transfer', this.onOrderTransfer);
     this.removeEventListener('erp:customer-context', this.onCustomerContext);
     this.removeEventListener('erp:order-fire', this.onOrderFire);
+    this.removeEventListener('erp:voucher-held', this.onLineTenderHeld);
+    this.removeEventListener('erp:voucher-released', this.onLineTenderReleased);
     if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = undefined; }
     if (this.pendingSwitchAlert) {
       void this.pendingSwitchAlert.dismiss?.();
@@ -1246,6 +1296,11 @@ export class ErpPosTouch extends LitElement {
       component: f.component,
       el: document.createElement(f.component) as HTMLElement,
     }));
+    // Slot de TENDER POR LÍNEA: aquí NO se crea el elemento todavía, porque hay uno POR LÍNEA y las
+    // líneas aún no existen. Se guarda el nombre y `ensureSlotsMounted` instancia lo que toque.
+    let tender: Array<Record<string, unknown> & { component: string }> = [];
+    try { tender = (await sdk.loadSlot('sales.pos.tender')) ?? []; } catch { tender = []; }
+    this.tenderFillers = tender.map((f) => f.component);
     this.requestUpdate();
   }
 
@@ -1278,6 +1333,62 @@ export class ErpPosTouch extends LitElement {
       if (f.el.parentElement === infoHost) continue;
       infoHost.appendChild(f.el);
       this.emitPosState([f]);
+    }
+    this.ensureTenderSlotsMounted();
+  }
+
+  /** Tender POR LÍNEA (`sales.pos.tender`, sales#162): una instancia del filler por línea de
+   *  servicio del cobro. Idempotente como el resto — el sheet se re-renderiza en cada tecla.
+   *
+   *  🔴 Las cuatro propiedades se ponen ANTES de insertar el elemento: el filler arranca su lectura
+   *  en `connectedCallback`, así que un insert primero lo haría preguntar por un cliente vacío y
+   *  pintar «este cliente no tiene bonos» encima de una clienta que sí lo tiene.
+   *
+   *  Las instancias se guardan en `tenderEls` y NO se recrean: cerrar el sheet desmonta el DOM del
+   *  cobro, y con un elemento nuevo el canje ya tomado desaparecería de la pantalla junto con su
+   *  «deshacer», dejando una sesión gastada que nadie puede devolver desde la caja. */
+  private ensureTenderSlotsMounted() {
+    const lines = this.tenderLines;
+    const alive = new Set<string>();
+    for (const l of lines) {
+      if (!coverableLine(l)) continue;
+      const host = [...this.renderRoot.querySelectorAll<HTMLElement>('.tender-line')]
+        .find((n) => n.dataset.line === l.line_id)
+        ?.querySelector<HTMLElement>('.tl-slot');
+      if (!host) continue;
+      for (const component of this.tenderFillers) {
+        const key = `${component}::${l.line_id}`;
+        alive.add(key);
+        let el = this.tenderEls.get(key);
+        if (!el) {
+          el = document.createElement(component);
+          this.tenderEls.set(key, el);
+        }
+        // Datos TIPADOS por propiedad JS, nunca por atributo (ADR-0043): un atributo obliga al
+        // filler a re-parsear cadenas y pierde el tipo.
+        const props = el as HTMLElement & {
+          customerId?: string; serviceId?: string; checkoutRef?: string; lineRef?: string;
+        };
+        props.customerId = this.customerId ?? '';
+        props.serviceId = l.id;
+        props.checkoutRef = this.orderId ?? '';
+        props.lineRef = l.line_id as string;
+        if (el.parentElement !== host) host.appendChild(el);
+      }
+    }
+    // Una línea que ya no está en el cobro (se quitó del carrito, o el cajero cambió la selección)
+    // se lleva su filler: dejarlo colgando sería ofrecer canjear algo que ya nadie cobra.
+    for (const [key, el] of [...this.tenderEls]) {
+      if (alive.has(key)) continue;
+      el.remove();
+      this.tenderEls.delete(key);
+    }
+    // Y su cobertura: el dinero manda: si la línea no se cobra, no puede seguir descontando importe.
+    // El canje huérfano vive en el módulo dueño, que es quien sabe deshacerlo.
+    if (this.covered.size) {
+      const billed = new Set(this.billedLines.map((l) => l.line_id));
+      const next = new Map([...this.covered].filter(([lineId]) => billed.has(lineId)));
+      if (next.size !== this.covered.size) this.covered = next;
     }
   }
 
@@ -2405,11 +2516,33 @@ export class ErpPosTouch extends LitElement {
     if (this.tenderedShort) return { short: t('ui.tenderedShort'), reason: t('ui.tenderedShort') };
     return undefined;
   }
+  /** Las líneas que entran en ESTE cobro: la selección si la hay, o la cuenta entera (ADR-0146). */
+  private get billedLines(): CartLine[] {
+    return this.splitSel.size
+      ? this.cart.filter((l) => l.line_id && this.splitSel.has(l.line_id))
+      : this.cart;
+  }
+
+  /** De esas, las que todavía se cobran en DINERO: un tender externo pudo cubrir alguna entera
+   *  (sales#162). Es la lista que decide el importe en pantalla y la que el servidor recalcula. */
+  private get chargedLines(): CartLine[] {
+    return uncoveredLines(this.billedLines, new Set(this.covered.keys()));
+  }
+
+  /** Líneas del cobro a las que se les puede OFRECER un tender externo por línea. Vacío cuando
+   *  nadie hospeda el slot, cuando no hay cliente asignado (sin cliente no hay bono que ofrecer) o
+   *  cuando el pedido aún no existe: `checkout_ref` es lo que deja liquidar el canje por evento. */
+  private get tenderLines(): CartLine[] {
+    if (!this.tenderFillers.length || !this.customerId || !this.orderId) return [];
+    return tenderableLines(this.billedLines);
+  }
+
   /** Lo que se cobra AHORA: la selección si la hay, o la cuenta entera (ADR-0146). */
   private get payable() {
     // sales#113: el importe fijo se resta del cobro entero (con split, el servidor lo reparte
     // igualmente sobre las líneas que se cobran; el preview resta lo que corresponda a lo cobrado).
-    const base = splitTotal(this.cart, this.splitSel, this.ticketDiscount);
+    // sales#162: lo que un tender externo cubrió no se cobra dos veces.
+    const base = cartTotal(this.chargedLines, this.ticketDiscount);
     return Math.max(0, base - (this.splitSel.size ? 0 : this.ticketDiscountAmount));
   }
 
@@ -2501,9 +2634,7 @@ export class ErpPosTouch extends LitElement {
       // `prodCats` (Map product_id → Set category_id). null si el producto no está clasificado.
       // ADR-0146 — «cada uno paga lo suyo»: si hay líneas marcadas, este cobro cubre SOLO esas y el
       // pedido sigue abierto para los demás. Marcarlas todas equivale a cobrar la cuenta entera.
-      const cobradas = split.line_ids
-        ? this.cart.filter((l) => l.line_id && this.splitSel.has(l.line_id))
-        : this.cart;
+      const cobradas = this.billedLines;
       // `quantity` viaja en punto fijo 10⁶ y la línea lleva su contexto de unidades congelado
       // (ADR-0147): el servidor valida la rejilla y calcula el importe por el SDK (KPEIN).
       // 🔴 sales#148: y sus SUPLEMENTOS. Sin ellos el servidor no tiene nada que valorar
@@ -2512,7 +2643,7 @@ export class ErpPosTouch extends LitElement {
       // delta lo pone el catálogo al cobrar— y `sales_sale_item.modifiers` se congelaba VACÍO, de
       // modo que el tique no podía nombrarlos por mucho que el papel supiera leerlos. Va SOLO el
       // `option_id`: un `price_delta` del navegador sería un descuento que se hace el cliente solo.
-      const items = cobradas.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: toMicro(l.qty), tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: l.category_id ?? this.primaryCategory(l.id) ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0, discount: l.discount ?? 0, ...(l.modifiers?.length ? { modifiers: l.modifiers.map((m) => ({ option_id: m.option_id })) } : {}), ...unitContextPayload(l) }));
+      const items = cobradas.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: toMicro(l.qty), tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: l.category_id ?? this.primaryCategory(l.id) ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0, discount: l.discount ?? 0, ...(l.modifiers?.length ? { modifiers: l.modifiers.map((m) => ({ option_id: m.option_id })) } : {}), ...(l.line_id && this.covered.has(l.line_id) ? { covered: true } : {}), ...unitContextPayload(l) }));
       await erplora().command('sales.complete_sale', {
         items,
         // sales#71: descuento de TICKET (%); el servidor lo prorratea por línea antes del IVA.
@@ -3021,6 +3152,35 @@ export class ErpPosTouch extends LitElement {
   /** Una línea de la cuenta. BLOQUEADA si ya salió a cocina (`fired_at`): la comida está en
    *  fuego — ni stepper ni invitación (el SQL también lo impone). Tocarla sigue marcándola para
    *  el cobro por partes: enviada ≠ no cobrable. */
+  /** TENDER POR LÍNEA (sales#162 / ADR-0386). Un bono cubre una LÍNEA entera, no un importe, así
+   *  que la pregunta «¿esto lo paga el bono?» se hace sobre la línea y no sobre el ticket. `sales`
+   *  pinta el renglón y el hueco; QUÉ se ofrece ahí lo decide el módulo que hospeda el slot.
+   *
+   *  Sin fillers (nadie provee el slot) no se pinta NADA: ni cabecera, ni lista, ni hueco vacío. */
+  private renderLineTenders() {
+    const lines = this.tenderLines;
+    if (!lines.length) return nothing;
+    return html`
+      <div class="pay-lbl">${t('ui.lineTenders')}</div>
+      <ul class="tl-list">
+        ${lines.map((l) => {
+          const isCovered = !!l.line_id && this.covered.has(l.line_id);
+          return html`<li class="tender-line" data-line=${l.line_id ?? ''}>
+            <div class="tl-h">
+              <span class="tl-name">${l.name}</span>
+              <span class="tl-amount" ?data-covered=${isCovered}>${this.money(lineAmount(l))}</span>
+            </div>
+            ${coverableLine(l)
+              ? html`<div class="tl-slot"></div>`
+              // Un canje gasta UNA sesión y cubre la línea ENTERA, así que «Corte × 3» saldría a
+              // tres cortes por una sesión. No se ofrece — y se DICE, que un hueco que desaparece
+              // sin explicación es el fallo mudo que se lee como «el TPV no responde».
+              : html`<div class="tl-note">${t('ui.tenderOneSessionPerLine')}</div>`}
+          </li>`;
+        })}
+      </ul>`;
+  }
+
   private renderLine(l: CartLine) {
     const locked = isLineLocked(l);
     return html`<ion-item class=${l.line_id && this.splitSel.has(l.line_id) ? 'sel' : ''}
@@ -3187,6 +3347,8 @@ export class ErpPosTouch extends LitElement {
               <div class="pay">
 
                 ${this.overSimplifiedLimit ? this.renderSimplifiedLimitCapture() : nothing}
+
+                ${this.renderLineTenders()}
 
                 <!-- TIQUE o FACTURA (hub#962). Dos botones grandes al lado del importe, como el
                      método de pago: es la otra pregunta que el mostrador hace en voz alta
