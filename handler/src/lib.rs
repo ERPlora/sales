@@ -611,6 +611,30 @@ fn category_snapshot(item: &Value) -> Value {
 /// Lo que el SERVIDOR decidió sobre este cobro tras contrastar la oferta del cliente con las
 /// fuentes de confianza del hub (catálogo de métodos de pago y ajustes del TPV, pre-cargados por
 /// el runtime vía `reads`). Nada de aquí llega del navegador sin validar.
+/// ONE leg of the payment (ADR-0386). A sale is charged with N of these; a sale paid the old way
+/// has exactly one. Everything here is what the SERVER decided: the name and the canonical type
+/// come from the hub catalog, never from the browser.
+#[derive(Clone)]
+struct Tender {
+    /// Catalog id, or `Null` in the degraded case where the runtime delivered no catalog.
+    method_id: Value,
+    /// Display name, resolved from the hub catalog (localized, what the cashier sees).
+    name: String,
+    /// Canonical type (`cash` | `card` | `transfer` | `other`) — the value LOGIC keys on (hub#778).
+    kind: String,
+    /// What this leg covers of the sale total, in cents. The legs add up to the total exactly.
+    amount: i64,
+    /// What the customer actually handed over on this leg, in cents. Only a `cash` leg can exceed
+    /// its `amount`; every other kind is normalised to it (ADR-0386: no cash, no change).
+    tendered: i64,
+    /// `tendered - amount`, and only ever non-zero on a `cash` leg.
+    change: i64,
+    /// The order the cashier took the legs in — the receipt prints them in it.
+    sort_order: i64,
+    /// Free-text trace (a card authorisation code, a transfer reference). Opaque to `sales`.
+    reference: String,
+}
+
 struct ServerDecision {
     /// Nombre del método de pago **tal y como lo tiene el hub**, no como lo etiquetó el navegador.
     /// Es el valor para DISPLAY (recibo, TPV): localizado, el que el cajero ve.
@@ -622,6 +646,13 @@ struct ServerDecision {
     /// Base fiscal de los precios: `true` = brutos (IVA incluido), `false` = base imponible.
     /// `None` = el hub no la ha fijado (sin fila de ajustes o sin `reads`) → manda el payload.
     tax_included: Option<bool>,
+    /// Id of the PRINCIPAL tender — the leg the header scalars derive from (ADR-0386).
+    payment_method_id: Value,
+    /// The legs of this payment, in the order they were taken. Never empty.
+    tenders: Vec<Tender>,
+    /// Did the caller send `payments[]`? A caller that did not is a one-tender sale whose amount
+    /// is only known once the server has computed the total.
+    explicit_tenders: bool,
 }
 
 /// ¿Una tasa (%) dentro del rango sano 0..=100?
@@ -726,27 +757,121 @@ fn decide_checkout(payload: &Value, context: &Value, items: &[Value]) -> Result<
     //   - `type`  → lógica: `cash` | `card` | `transfer` | `other`, canónico. El cajón de
     //               cash_register lo usa para saber si una venta suma al efectivo esperado,
     //               sin depender del `name` localizado («Efectivo» ≠ «cash»).
-    let method_id = field(payload, "payment_method_id");
-    let (payment_method_name, payment_method_type) = match tax::read_rows(context, "sales.payment_methods") {
-        Some(catalog) if !catalog.is_empty() => {
+    let catalog = tax::read_rows(context, "sales.payment_methods");
+
+    // ── The legs of the payment (ADR-0386) ──
+    // `payments[]` is the mixed-payment form; the scalars are the one-tender form every caller
+    // alive today still speaks. BOTH end up as a `Vec<Tender>` so nothing downstream — the child
+    // rows, the header scalars, the event — has to know which door the sale came through.
+    let declared = payload.get("payments").and_then(|v| v.as_array());
+    let explicit_tenders = declared.map(|a| !a.is_empty()).unwrap_or(false);
+    let mut tenders: Vec<Tender> = Vec::new();
+
+    if explicit_tenders {
+        for (i, leg) in declared.unwrap().iter().enumerate() {
+            let id = field(leg, "payment_method_id");
+            let (name, kind) = resolve_method(
+                &catalog,
+                &id,
+                str_or(leg, "payment_method_name", ""),
+                str_or(leg, "payment_method_type", "cash"),
+            )?;
+            // A zero or negative leg is not a way of paying, it is noise that would make the
+            // "adds up to the total" check pass with a row that means nothing.
+            let amount = as_cents(leg.get("amount").unwrap_or(&Value::Null), 0);
+            if amount <= 0 {
+                return Err(reject("sales.amount_negative", format!("payment amount {amount}")));
+            }
+            let tendered = match leg.get("amount_tendered") {
+                Some(v) if !v.is_null() => as_cents(v, 0),
+                _ => amount,
+            };
+            if tendered < 0 {
+                return Err(reject("sales.amount_negative", format!("amount_tendered {tendered}")));
+            }
+            tenders.push(Tender {
+                method_id: if id.is_empty() { Value::Null } else { json!(id) },
+                name,
+                kind,
+                amount,
+                tendered,
+                change: 0,
+                sort_order: i as i64,
+                reference: str_or(leg, "reference", ""),
+            });
+        }
+    } else {
+        let method_id = field(payload, "payment_method_id");
+        let (name, kind) = resolve_method(
+            &catalog,
+            &method_id,
+            str_or(payload, "payment_method_name", ""),
+            str_or(payload, "payment_method_type", "cash"),
+        )?;
+        // `amount`/`tendered` stay at 0 here on purpose: a one-tender sale covers the TOTAL, and
+        // the total is not known until the lines have been priced. `complete_sale_pure` fills it.
+        tenders.push(Tender {
+            method_id: payload.get("payment_method_id").cloned().unwrap_or(Value::Null),
+            name,
+            kind,
+            amount: 0,
+            tendered: 0,
+            change: 0,
+            sort_order: 0,
+            reference: String::new(),
+        });
+    }
+
+    // THE PRINCIPAL TENDER is the largest leg — ties go to the one taken first. The header scalars
+    // are derived from it while consumers still read them (`sales.get`, the receipt, `invoice`);
+    // they stopped being an input the moment `payments[]` exists.
+    let principal = tenders
+        .iter()
+        .enumerate()
+        .max_by_key(|(i, t)| (t.amount, -(*i as i64)))
+        .map(|(_, t)| t)
+        .expect("a payment always has at least one leg");
+
+    Ok(ServerDecision {
+        payment_method_name: principal.name.clone(),
+        payment_method_type: principal.kind.clone(),
+        payment_method_id: principal.method_id.clone(),
+        tax_included,
+        tenders,
+        explicit_tenders,
+    })
+}
+
+/// Resolves ONE payment method against the hub catalog the runtime pre-loads.
+///
+/// The catalog query already filters active + not deleted + of this hub, so a catalog that arrives
+/// non-empty IS the legitimate list: an id that is not in it (deactivated, deleted, from another
+/// hub, invented) is refused, and the NAME and canonical TYPE come from the row, never from the
+/// browser (sales#20, hub#778).
+///
+/// Graceful degradation, same rule as the tax catalog: if the runtime delivered no catalog there is
+/// nothing to validate against and the POS still has to be able to charge, so the payload's own
+/// labels are used. Without a known `type` we assume `cash` — the default of
+/// `sales_payment_method.type`, and the assumption that damages the count least.
+fn resolve_method(
+    catalog: &Option<Vec<&Value>>,
+    method_id: &str,
+    fallback_name: String,
+    fallback_type: String,
+) -> Result<(String, String), String> {
+    match catalog {
+        Some(rows) if !rows.is_empty() => {
             if method_id.is_empty() {
                 return Err(reject("sales.payment_method_required", "the sale has no payment method"));
             }
-            let row = catalog
+            let row = rows
                 .iter()
                 .find(|row| field(row, "id") == method_id)
-                .ok_or_else(|| reject("sales.payment_method_not_available", &method_id))?;
-            (field(row, "name"), field(row, "type"))
+                .ok_or_else(|| reject("sales.payment_method_not_available", method_id))?;
+            Ok((field(row, "name"), field(row, "type")))
         }
-        // Degradación graceful (misma regla que el catálogo fiscal): sin catálogo de confianza no
-        // hay nada contra lo que validar, y el TPV tiene que poder cobrar igual. Sin `type` conocido
-        // asumimos `cash` (default de `sales_payment_method.type`): es el caso que menos daña al
-        // arqueo — una tarjeta sin catálogo se contaría como efectivo, pero sin catálogo no hay
-        // venta válida que llegue aquí de todos modos.
-        _ => (str_or(payload, "payment_method_name", ""), str_or(payload, "payment_method_type", "cash")),
-    };
-
-    Ok(ServerDecision { payment_method_name, payment_method_type, tax_included })
+        _ => Ok((fallback_name, fallback_type)),
+    }
 }
 
 pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
@@ -992,7 +1117,51 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     // que la cajera TECLEA (sales#24): su total en pantalla es un preview y no puede decidir el
     // entregado exacto (IVA excluido, cantidades a peso y descuentos redondean en el servidor).
     let tendered = if tendered == 0 { total } else { tendered };
-    let change = if tendered - total > 0 { tendered - total } else { 0 };
+
+    // ── ADR-0386 · the legs of the payment, closed against the total ─────────────────────────────
+    let mut tenders = decision.tenders.clone();
+    if !decision.explicit_tenders {
+        // One-tender sale (every caller until sales#159 lands): the single leg covers the total,
+        // and what was handed over is the `amount_tendered` already validated above.
+        tenders[0].amount = total;
+        tenders[0].tendered = tendered;
+    }
+
+    // THE LEGS MUST ADD UP TO THE CENT. A mismatch is refused, never absorbed: a sale that closes
+    // with legs summing to something other than what it charged is a till that ends the day with a
+    // number nobody can explain, and the difference surfaces days later as "the drawer is short".
+    let declared_total: i64 = tenders.iter().map(|t| t.amount).sum();
+    if declared_total != total {
+        return Err(reject(
+            "sales.payments_do_not_match_total",
+            format!("the payments add up to {declared_total} but the total is {total}"),
+        ));
+    }
+
+    // THE CHANGE COMES OUT OF THE CASH LEG, and it is never prorated (ADR-0386 decision 2).
+    // Odoo prorates it (PR#194284): 120 € paid with 100 by bank + 50 in notes books the 30 of
+    // change against the BANK, so the receipt and the database disagree and the count breaks. The
+    // change physically leaves the drawer, so it is charged to the drawer. With no cash leg there
+    // is no change at all — overpaying by card does not exist, the exact amount is charged.
+    for t in tenders.iter_mut() {
+        if t.kind == "cash" {
+            if t.tendered < t.amount {
+                return Err(reject(
+                    "sales.insufficient_tendered",
+                    format!("a cash leg covering {} was handed only {}", t.amount, t.tendered),
+                ));
+            }
+            t.change = t.tendered - t.amount;
+        } else {
+            t.tendered = t.amount;
+            t.change = 0;
+        }
+    }
+
+    // The header scalars are the AGGREGATE of the legs, so `amount_tendered - change_due == total`
+    // still holds on the row exactly as it did when a sale had one way of paying.
+    let tendered: i64 = tenders.iter().map(|t| t.tendered).sum();
+    let change: i64 = tenders.iter().map(|t| t.change).sum();
 
     // EL DESGLOSE SE CIERRA AQUÍ: la cuota se calcula UNA sola vez por TIPO IMPOSITIVO, sobre la
     // base AGREGADA — no sumando las cuotas ya redondeadas de cada línea (ADR-0123 §4).
@@ -1053,7 +1222,9 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     // Invitaciones (comp): coste total de las líneas regalo de esta venta, para el arqueo (a coste).
     h.insert("gift_total".into(), json!(gift_total));
     h.insert("tax_breakdown".into(), json!(tax_breakdown_json));
-    h.insert("payment_method_id".into(), payload.get("payment_method_id").cloned().unwrap_or(Value::Null));
+    // Principal tender (ADR-0386): with one leg this is exactly what the payload sent; with three
+    // it is the largest, so `sales.get` and the receipt keep showing a method that really paid.
+    h.insert("payment_method_id".into(), decision.payment_method_id.clone());
     // Nombre RESUELTO del catálogo del hub, no la etiqueta que mandó el navegador (sales#20).
     h.insert("payment_method_name".into(), json!(decision.payment_method_name));
     h.insert("amount_tendered".into(), json!(tendered));
@@ -1070,6 +1241,57 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     h.insert("staff_id".into(), payload.get("staff_id").cloned().unwrap_or(Value::Null));
     h.insert("appointment_id".into(), payload.get("appointment_id").cloned().unwrap_or(Value::Null));
     ops[header_idx] = Operation::sql("sales._insert_sale", h);
+
+    // ── One row per leg (ADR-0386) ──
+    // Ids come from the host's batch (`context.new_ids`): the sale takes [0], the lines [1..=n],
+    // and the legs continue from there. Running out is a LOUD refusal — `unwrap_or_default()` would
+    // hand the row an EMPTY primary key, and the second one would collide on it.
+    let first_payment_id = 1 + items.len();
+    if first_payment_id + tenders.len() > new_ids.len() {
+        return Err(reject(
+            "sales.too_many_rows",
+            format!(
+                "{} lines and {} payments need {} ids, the host gave {}",
+                items.len(),
+                tenders.len(),
+                first_payment_id + tenders.len(),
+                new_ids.len()
+            ),
+        ));
+    }
+    for (i, t) in tenders.iter().enumerate() {
+        let mut p = Map::new();
+        p.insert("payment_id".into(), json!(new_ids[first_payment_id + i].as_str().unwrap_or_default()));
+        p.insert("sale_id".into(), json!(sale_id));
+        p.insert("sort_order".into(), json!(t.sort_order));
+        p.insert("payment_method_id".into(), t.method_id.clone());
+        p.insert("payment_method_name".into(), json!(t.name));
+        p.insert("payment_method_type".into(), json!(t.kind));
+        p.insert("amount".into(), json!(t.amount));
+        p.insert("amount_tendered".into(), json!(t.tendered));
+        p.insert("change_due".into(), json!(t.change));
+        p.insert("reference".into(), json!(t.reference));
+        ops.push(Operation::sql("sales._insert_payment", p));
+    }
+
+    // The same legs, shaped for the listeners. `cash_register` cannot square a mixed sale from a
+    // single scalar: it needs each leg with its canonical TYPE to know how much of the total
+    // actually entered the drawer (the cash legs, net of their change) and how much never did.
+    let event_payments: Vec<Value> = tenders
+        .iter()
+        .map(|t| {
+            json!({
+                "payment_method_id": t.method_id,
+                "payment_method_name": t.name,
+                "payment_method_type": t.kind,
+                "amount": t.amount,
+                "amount_tendered": t.tendered,
+                "change_due": t.change,
+                "sort_order": t.sort_order,
+                "reference": t.reference,
+            })
+        })
+        .collect();
 
     // Líneas compactas para listeners cross-módulo (inventory descuenta stock por
     // product_id+quantity, saltando servicios; invoice factura por net/tax YA
@@ -1181,6 +1403,16 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         // cajón compara contra este, no contra el `name` localizado. «Efectivo» y «Cash» son el
         // mismo `type` («cash»), y solo las ventas así marcadadas suman al efectivo esperado.
         "payment_method_type": decision.payment_method_type,
+        // ADR-0386 — the legs of the payment, in the order the cashier took them. The scalars above
+        // are the PRINCIPAL leg and stay while consumers still read them; `payments[]` is the whole
+        // truth. It is always present and never empty: a one-tender sale is a list of one.
+        //
+        // 🔴 Nothing fiscal is in here, and that is the decision, not an omission: the AEAT record
+        // has no field for the means of payment (0 hits for `MedioPago`/`FormaPago` in the web
+        // service PDF and in `SuministroInformacion.xsd`, positive control of 91 for
+        // `IDFactura|RegistroAlta|Huella`). One sale = one `RegistroAlta`, one hash, one chain link,
+        // however many ways it was paid.
+        "payments": event_payments,
     }));
 
     let mut events = vec![event];
@@ -2214,7 +2446,11 @@ mod tests {
             { "product_name": "Agua", "price": 110, "quantity": 1_000_000, "tax_rate": 10.0 }
         ]);
         let out = sale(input(items, 8, 2000));
-        assert_eq!(out.operations.len(), 4); // counter + sale + 2 líneas
+        // ADR-0386: + la fila del cobro. Toda venta registra su tender, también la de un solo
+        // medio — si no, la tabla hija estaría vacía para todo lo cobrado antes de sales#159.
+        assert_eq!(out.operations.len(), 5); // counter + sale + 2 líneas + 1 cobro
+        assert_eq!(out.operations[4].command, "sales._insert_payment");
+        assert_eq!(out.operations[4].params["amount"], out.operations[1].params["total"]);
         assert_eq!(out.operations[0].command, "sales._bump_counter");
         assert_eq!(out.operations[1].command, "sales._insert_sale");
         assert_eq!(out.operations[2].command, "sales._insert_line");
@@ -3762,4 +3998,351 @@ mod tests {
         let out = fire_order_pure(fire_from_server(json!([corte]), None)).expect("fire ok");
         assert_eq!(out.events[0].payload["items"][0]["is_service"], json!(true));
     }
+
+    // ── ADR-0386 · one sale, N tenders: mixed payment is TREASURY, not fiscal ────────────────────
+    //
+    // The split-tender core (sales#158). Everything below states the same thing from a different
+    // angle: the money can arrive in N pieces, and NOTHING above the cash drawer is allowed to
+    // notice. The fiscal record, its hash and its chain link are byte-identical whether the
+    // customer paid with one card or with a card, a note and a transfer.
+
+    /// A hub that really has the three families a mixed payment mixes.
+    fn mixed_catalog() -> Value {
+        json!([
+            { "id": "pm-cash", "name": "Efectivo", "type": "cash" },
+            { "id": "pm-card", "name": "Tarjeta", "type": "card" },
+            { "id": "pm-wire", "name": "Transferencia", "type": "transfer" }
+        ])
+    }
+
+    /// 121,00 € gross (100,00 € base + 21,00 € VAT) — the cart every fiscal comparison below uses.
+    fn cart_121() -> Value {
+        json!([{ "product_name": "Menú", "price": 12100, "quantity": 1_000_000, "tax_rate": 21.0 }])
+    }
+
+    /// `complete_sale` input carrying `payments[]` against the mixed catalog.
+    fn input_with_payments(items: Value, ids: usize, payments: Value) -> Value {
+        let mut inp = input_with_catalogs(items, ids, mixed_catalog(), Value::Null, Value::Null);
+        inp["payload"]["payments"] = payments;
+        // The scalars are what a single-tender caller sends; with `payments[]` present they are
+        // DERIVED, never trusted — removing them here proves the derivation is real.
+        inp["payload"].as_object_mut().unwrap().remove("payment_method_id");
+        inp["payload"].as_object_mut().unwrap().remove("payment_method_name");
+        inp["payload"].as_object_mut().unwrap().remove("amount_tendered");
+        inp
+    }
+
+    fn payment_ops(out: &Output) -> Vec<&Operation> {
+        out.operations.iter().filter(|o| o.command == "sales._insert_payment").collect()
+    }
+
+    #[test]
+    fn every_tender_becomes_its_own_row() {
+        // The whole point of the child table: three ways of paying are three rows, in the order
+        // the cashier took them, each with the method the CATALOG says it is.
+        let out = sale(input_with_payments(
+            cart_121(),
+            8,
+            json!([
+                { "payment_method_id": "pm-card", "amount": 5000 },
+                { "payment_method_id": "pm-cash", "amount": 5000, "amount_tendered": 5000 },
+                { "payment_method_id": "pm-wire", "amount": 2100, "reference": "TRF-99" }
+            ]),
+        ));
+        let pays = payment_ops(&out);
+        assert_eq!(pays.len(), 3, "one row per tender");
+        assert_eq!(pays[0].params["amount"], json!(5000));
+        assert_eq!(pays[0].params["payment_method_type"], json!("card"));
+        assert_eq!(pays[0].params["sort_order"], json!(0));
+        assert_eq!(pays[1].params["payment_method_type"], json!("cash"));
+        assert_eq!(pays[1].params["sort_order"], json!(1));
+        assert_eq!(pays[2].params["amount"], json!(2100));
+        assert_eq!(pays[2].params["reference"], json!("TRF-99"));
+        assert_eq!(pays[2].params["sort_order"], json!(2));
+        // The NAME is the hub's, never the browser's (same rule as the scalar path, sales#20).
+        assert_eq!(pays[2].params["payment_method_name"], json!("Transferencia"));
+        // Each row is addressable and belongs to the sale being created.
+        assert_eq!(pays[0].params["sale_id"], json!("id-0"));
+        assert_ne!(pays[0].params["payment_id"], pays[1].params["payment_id"]);
+    }
+
+    #[test]
+    fn a_tender_outside_the_trusted_catalog_is_rejected() {
+        // Same door as the scalar path: the catalog the runtime pre-loads is the only authority,
+        // so a deleted, deactivated or foreign method cannot enter through `payments[]` instead.
+        let err = complete_sale_pure(input_with_payments(
+            cart_121(),
+            8,
+            json!([
+                { "payment_method_id": "pm-ghost", "amount": 12100 }
+            ]),
+        ))
+        .expect_err("unknown tender");
+        assert!(err.contains("sales.payment_method_not_available"), "{err}");
+    }
+
+    #[test]
+    fn the_change_comes_out_of_the_cash_tender_and_is_never_prorated() {
+        // 🔴 ADR-0386 decision 2, and the exact bug Odoo ships (PR#194284): paying 121,00 € with
+        // 50,00 € on card and 90,00 € in notes gives 19,00 € back — and that change came out of
+        // the DRAWER, so it belongs to the cash tender. Odoo prorates it onto the bank line, and
+        // from then on the receipt and the database disagree and the count never squares.
+        let out = sale(input_with_payments(
+            cart_121(),
+            8,
+            json!([
+                { "payment_method_id": "pm-card", "amount": 5000 },
+                { "payment_method_id": "pm-cash", "amount": 7100, "amount_tendered": 9000 }
+            ]),
+        ));
+        let pays = payment_ops(&out);
+        // The card leg is untouched: it covered 50,00 € and nothing came back through it.
+        assert_eq!(pays[0].params["amount"], json!(5000));
+        assert_eq!(pays[0].params["amount_tendered"], json!(5000));
+        assert_eq!(pays[0].params["change_due"], json!(0));
+        // The cash leg carries the whole 19,00 €.
+        assert_eq!(pays[1].params["amount"], json!(7100));
+        assert_eq!(pays[1].params["amount_tendered"], json!(9000));
+        assert_eq!(pays[1].params["change_due"], json!(1900));
+    }
+
+    #[test]
+    fn without_a_cash_tender_there_is_no_change_at_all() {
+        // ADR-0386: overpaying by card does not exist — the exact amount is charged. Handing the
+        // change to a card tender would invent money leaving a drawer that never opened.
+        let out = sale(input_with_payments(
+            cart_121(),
+            8,
+            json!([
+                { "payment_method_id": "pm-card", "amount": 6100, "amount_tendered": 9000 },
+                { "payment_method_id": "pm-wire", "amount": 6000 }
+            ]),
+        ));
+        let pays = payment_ops(&out);
+        assert_eq!(pays[0].params["change_due"], json!(0));
+        assert_eq!(pays[0].params["amount_tendered"], json!(6100), "normalised to the exact amount");
+        let header = out.operations.iter().find(|o| o.command == "sales._insert_sale").expect("header");
+        assert_eq!(header.params["change_due"], json!(0));
+        assert_eq!(header.params["amount_tendered"], json!(12100));
+    }
+
+    #[test]
+    fn tenders_that_do_not_add_up_to_the_total_are_refused_not_absorbed() {
+        // A cent short and a cent over are both a mismatch, and both are REFUSED. Accepting either
+        // one quietly is how a till ends the day with a number nobody can explain.
+        for (label, payments) in [
+            (
+                "short",
+                json!([
+                    { "payment_method_id": "pm-card", "amount": 5000 },
+                    { "payment_method_id": "pm-cash", "amount": 7099, "amount_tendered": 7099 }
+                ]),
+            ),
+            (
+                "over",
+                json!([
+                    { "payment_method_id": "pm-card", "amount": 5000 },
+                    { "payment_method_id": "pm-cash", "amount": 7101, "amount_tendered": 7101 }
+                ]),
+            ),
+        ] {
+            let err = complete_sale_pure(input_with_payments(cart_121(), 8, payments))
+                .expect_err("mismatch must be refused");
+            assert!(err.contains("sales.payments_do_not_match_total"), "{label}: {err}");
+        }
+    }
+
+    #[test]
+    fn a_cash_tender_handing_over_less_than_its_share_is_refused() {
+        // The per-tender twin of sales#24: a cash leg that covers 71,00 € but only 50,00 € was put
+        // on the counter used to close with the drawer silently short.
+        let err = complete_sale_pure(input_with_payments(
+            cart_121(),
+            8,
+            json!([
+                { "payment_method_id": "pm-card", "amount": 5000 },
+                { "payment_method_id": "pm-cash", "amount": 7100, "amount_tendered": 5000 }
+            ]),
+        ))
+        .expect_err("short cash leg");
+        assert!(err.contains("sales.insufficient_tendered"), "{err}");
+    }
+
+    #[test]
+    fn the_header_scalars_derive_from_the_principal_tender() {
+        // The scalars stay while consumers still read them, but they stop being an INPUT: they are
+        // the principal tender (the largest leg), resolved from the catalog. The two money scalars
+        // are the aggregate, so `amount_tendered - change_due == total` still holds on the header.
+        let out = sale(input_with_payments(
+            cart_121(),
+            8,
+            json!([
+                { "payment_method_id": "pm-cash", "amount": 2100, "amount_tendered": 5000 },
+                { "payment_method_id": "pm-card", "amount": 10000 }
+            ]),
+        ));
+        let header = out.operations.iter().find(|o| o.command == "sales._insert_sale").expect("header");
+        assert_eq!(header.params["payment_method_id"], json!("pm-card"), "the largest leg leads");
+        assert_eq!(header.params["payment_method_name"], json!("Tarjeta"));
+        // 50,00 € of notes for a 21,00 € leg + 100,00 € on card = 150,00 € handed over, 29,00 €
+        // back. The identity that has to hold is `tendered - change == total`, not `tendered == total`.
+        assert_eq!(header.params["amount_tendered"], json!(15000));
+        assert_eq!(header.params["change_due"], json!(2900));
+        let tendered = header.params["amount_tendered"].as_i64().unwrap();
+        let change = header.params["change_due"].as_i64().unwrap();
+        assert_eq!(tendered - change, header.params["total"].as_i64().unwrap());
+    }
+
+    #[test]
+    fn sale_completed_carries_every_tender() {
+        // `cash_register` cannot square a mixed sale from a single scalar: it needs the legs, with
+        // their canonical TYPE, to know how much of the 121,00 € actually entered the drawer.
+        let out = sale(input_with_payments(
+            cart_121(),
+            8,
+            json!([
+                { "payment_method_id": "pm-card", "amount": 10000 },
+                { "payment_method_id": "pm-cash", "amount": 2100, "amount_tendered": 5000 }
+            ]),
+        ));
+        let event = out.events.iter().find(|e| e.name == "sale.completed").expect("event");
+        let payments = event.payload["payments"].as_array().expect("payments[] in the event");
+        assert_eq!(payments.len(), 2);
+        assert_eq!(payments[0]["payment_method_type"], json!("card"));
+        assert_eq!(payments[0]["amount"], json!(10000));
+        assert_eq!(payments[1]["payment_method_type"], json!("cash"));
+        assert_eq!(payments[1]["amount"], json!(2100));
+        assert_eq!(payments[1]["change_due"], json!(2900));
+        // Only the cash leg net of its change reaches the drawer: 21,00 €. That is the number the
+        // count has to show, and it is derivable from the event alone.
+        let into_drawer: i64 = payments
+            .iter()
+            .filter(|p| p["payment_method_type"] == json!("cash"))
+            .map(|p| p["amount"].as_i64().unwrap_or(0))
+            .sum();
+        assert_eq!(into_drawer, 2100);
+    }
+
+    #[test]
+    fn a_sale_without_payments_still_records_its_single_tender() {
+        // Back-compat: every caller alive today (and the touch POS until sales#159 lands) sends the
+        // scalars. That sale is a one-tender sale, and it gets its row like any other — otherwise
+        // the child table would be empty for every sale taken before the new screen ships.
+        let mut inp = input_with_catalogs(cart_121(), 8, mixed_catalog(), Value::Null, Value::Null);
+        inp["payload"]["payment_method_id"] = json!("pm-card");
+        let out = sale(inp);
+        let pays = payment_ops(&out);
+        assert_eq!(pays.len(), 1, "the single tender is still a row");
+        assert_eq!(pays[0].params["amount"], json!(12100), "the single leg covers the whole total");
+        assert_eq!(pays[0].params["payment_method_id"], json!("pm-card"));
+        assert_eq!(pays[0].params["payment_method_type"], json!("card"));
+        assert_eq!(pays[0].params["sort_order"], json!(0));
+    }
+
+    #[test]
+    fn the_fiscal_chain_is_identical_with_one_tender_and_with_three() {
+        // 🔴🔴 THE point of ADR-0386, and the reason the table is a CHILD instead of a column on
+        // the record: how the money arrived is not a field of the fiscal record.
+        //
+        // Verified in the ADR against the AEAT web-service PDF (101 pages) and
+        // `SuministroInformacion.xsd`: ZERO occurrences of `MedioPago` / `FormaPago` / «medio de
+        // pago» / «forma de pago», with a POSITIVE CONTROL of 91 for `IDFactura|RegistroAlta|Huella`
+        // — so the extraction was working and the absence is real. None of the 31 children of
+        // `RegistroFacturacionAltaType` is a payment. Same in TicketBAI v1.1.
+        //
+        // Therefore: same `RegistroAlta`, same hash, ONE chain link. If this test ever goes red,
+        // something has leaked the tender into the fiscal record and the chain has forked.
+        let single = sale(input_with_payments(
+            cart_121(),
+            8,
+            json!([{ "payment_method_id": "pm-card", "amount": 12100 }]),
+        ));
+        let three = sale(input_with_payments(
+            cart_121(),
+            8,
+            json!([
+                { "payment_method_id": "pm-card", "amount": 5000 },
+                { "payment_method_id": "pm-cash", "amount": 5000, "amount_tendered": 5000 },
+                { "payment_method_id": "pm-wire", "amount": 2100 }
+            ]),
+        ));
+
+        let header = |o: &Output| {
+            o.operations
+                .iter()
+                .find(|op| op.command == "sales._insert_sale")
+                .expect("header")
+                .params
+                .clone()
+        };
+        let (a, b) = (header(&single), header(&three));
+
+        // Every input the fiscal record is built from — base, quota, per-rate breakdown, gross,
+        // document type and the invoice number itself. Not one of them may move.
+        for field in [
+            "subtotal",
+            "tax_amount",
+            "tax_breakdown",
+            "discount_amount",
+            "discount_percent",
+            "total",
+            "gift_total",
+            "document_type",
+            "status",
+            "day",
+        ] {
+            assert_eq!(a[field], b[field], "`{field}` moved between 1 and 3 tenders");
+        }
+
+        // ONE chain link, not three: a single `sale.completed`, carrying identical fiscal figures.
+        let fiscal_events = |o: &Output| {
+            o.events.iter().filter(|e| e.name == "sale.completed").count()
+        };
+        assert_eq!(fiscal_events(&single), 1);
+        assert_eq!(fiscal_events(&three), 1, "three tenders are still ONE fiscal event");
+
+        let ev = |o: &Output| {
+            let e = o.events.iter().find(|e| e.name == "sale.completed").expect("event");
+            json!({
+                "total": e.payload["total"],
+                "subtotal": e.payload["subtotal"],
+                "tax_amount": e.payload["tax_amount"],
+                "document_type": e.payload["document_type"],
+                "tax_included": e.payload["tax_included"],
+                "items": e.payload["items"],
+            })
+        };
+        assert_eq!(ev(&single), ev(&three), "the fiscal half of the event must not move");
+
+        // And the lines — the fiscal unit (ADR-0381) — are identical row for row.
+        let lines = |o: &Output| {
+            o.operations
+                .iter()
+                .filter(|op| op.command == "sales._insert_line")
+                .map(|op| {
+                    json!({
+                        "net_amount": op.params["net_amount"],
+                        "tax_amount": op.params["tax_amount"],
+                        "line_total": op.params["line_total"],
+                        "tax_rate": op.params["tax_rate"],
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(lines(&single), lines(&three));
+    }
+
+    #[test]
+    fn more_rows_than_the_host_gave_ids_for_is_refused_not_written_with_a_blank_id() {
+        // The host hands a fixed batch of ids (`NEW_IDS_BATCH`). Running out must be a LOUD
+        // refusal: taking `unwrap_or_default()` would write rows with an empty primary key.
+        let err = complete_sale_pure(input_with_payments(
+            cart_121(),
+            2, // sale + one line, and nothing left for a tender
+            json!([{ "payment_method_id": "pm-card", "amount": 12100 }]),
+        ))
+        .expect_err("not enough ids");
+        assert!(err.contains("sales.too_many_rows"), "{err}");
+    }
+
 }

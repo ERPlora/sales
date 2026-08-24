@@ -47,13 +47,21 @@
             "type": "integer",
             "minimum": 1,
             "description": "Cantidad en PUNTO FIJO entero, escala global 10⁶ (ADR-0147): 1 unidad = 1000000, media unidad = 500000, el mínimo representable (minimum 1) es 0,000001. NUNCA un float ni una cantidad en unidades humanas: 2 aquí no son «2 unidades», son 0,000002. El importe de la línea lo calcula el servidor con esta escala (SDK, KPEIN).",
-            "examples": [1000000, 500000, 2500000]
+            "examples": [
+              1000000,
+              500000,
+              2500000
+            ]
           },
           "price": {
             "type": "integer",
             "minimum": 0,
             "description": "Precio por unidad de venta, en UNIDADES MÍNIMAS enteras (céntimos, ADR-0007/0123): 250 = 2,50 €. Es el precio POR `price_quantity_value` de `pricing_unit_code` (KPEIN §2.3; por defecto, por 1 unidad del producto) — con precio por kilo (price_quantity 1 kg), 250 cobra 2,50 € por cada kilo. La base fiscal (IVA incluido o no) la decide el hub (`tax_included` es solo fallback).",
-            "examples": [250, 1895, 120]
+            "examples": [
+              250,
+              1895,
+              120
+            ]
           },
           "discount": {
             "type": "number",
@@ -84,7 +92,9 @@
             "type": "integer",
             "minimum": 0,
             "description": "Coste unitario en UNIDADES MÍNIMAS enteras (céntimos, ADR-0007/0123), como `price`: snapshot para margen, no afecta al importe cobrado.",
-            "examples": [90]
+            "examples": [
+              90
+            ]
           },
           "category_id": {
             "type": [
@@ -186,7 +196,62 @@
       "type": "integer",
       "minimum": 0,
       "description": "Importe ENTREGADO por el cliente en UNIDADES MÍNIMAS enteras (céntimos, ADR-0007/0123): 2000 = 20,00 €. Con efectivo decide el cambio; sin él (tarjeta, importe justo) se cobra el total.",
-      "examples": [2000]
+      "examples": [
+        2000
+      ]
+    },
+    "payments": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "description": "ADR-0386 (sales#158) — PAGO MIXTO: las patas del cobro, EN EL ORDEN en que se tomaron. Ausente = venta de un solo medio, que se describe con los escalares de abajo (es lo que manda todo el que llama hoy). Presente, MANDA: los escalares pasan a DERIVARSE del tender principal (la pata mayor) y dejan de ser una entrada. La suma de `amount` tiene que cuadrar AL CÉNTIMO con el total que calcula el servidor — el descuadre RECHAZA la venta, no se absorbe. El CAMBIO se imputa a la pata de EFECTIVO y nunca se prorratea (prorratearlo es el bug de Odoo PR#194284: el tique y la BD acaban diciendo cosas distintas y el arqueo descuadra); sin pata de efectivo NO hay cambio y se cobra el importe exacto. 🔴 Nada de esto toca la cadena fiscal: el medio de pago no es campo del registro de la AEAT, así que una venta cobrada de tres formas sigue siendo UN RegistroAlta, UNA huella y UN eslabón.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "payment_method_id",
+          "amount"
+        ],
+        "properties": {
+          "payment_method_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Id del método de pago de ESTA pata. El servidor lo valida contra el catálogo del hub (activo, no borrado, de este hub) exactamente igual que el escalar: un id ausente de ese catálogo RECHAZA la venta entera."
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Lo que ESTA pata cubre del total, en UNIDADES MÍNIMAS enteras (céntimos, ADR-0007/0123): 5000 = 50,00 €. Las patas suman el total al céntimo. Una pata de 0 no es una forma de pagar: es una fila que no significa nada.",
+            "examples": [
+              5000,
+              7100
+            ]
+          },
+          "amount_tendered": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Lo ENTREGADO en esta pata, en céntimos. Ausente = el importe exacto de la pata. Solo una pata de EFECTIVO puede superar su `amount` (la diferencia es el cambio, que sale del cajón); en cualquier otra el servidor lo normaliza al importe exacto. Por debajo de su `amount`, la pata de efectivo se RECHAZA (`sales.insufficient_tendered`): el cajón quedaría corto en silencio.",
+            "examples": [
+              9000
+            ]
+          },
+          "payment_method_name": {
+            "type": "string",
+            "description": "Solo FALLBACK, igual que el escalar (sales#20): con catálogo, el servidor resuelve el nombre desde la fila del hub y este valor se IGNORA."
+          },
+          "payment_method_type": {
+            "type": "string",
+            "description": "Solo FALLBACK: con catálogo, el tipo canónico (cash|card|transfer|other) sale de la fila del hub (hub#778) y este valor se IGNORA. Se acepta para el caso degradado en que el runtime no entregue el catálogo."
+          },
+          "reference": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Traza libre de la pata: código de autorización de la tarjeta, referencia de la transferencia. Opaca para `sales` — se guarda y se imprime, no se interpreta."
+          }
+        }
+      }
     },
     "payment_method_id": {
       "type": [
@@ -261,5 +326,5 @@
       "description": "Tipo de documento fiscal (ADR-0140): 'ticket' = factura simplificada (→ F2), 'invoice' = factura completa (→ F1). Se fija atómicamente al completar la venta y viaja en `sale.completed`; por defecto 'ticket'. Reemplaza al comando retro `sales.set_document_type`."
     }
   },
-  "description": "EL CLIENTE PROPONE, EL SERVIDOR DISPONE (sales#20). Este payload es una OFERTA cerrada: `additionalProperties:false` a los dos niveles, al menos una línea, importes no negativos y tasas acotadas a 0..100. El `status` de la venta YA NO se acepta — lo estampa el servidor (`completed`), que es quien emite `sale.completed`. El método de pago se valida contra el catálogo del hub y su NOMBRE se resuelve ahí. Los ajustes del TPV (`allow_discounts`, `require_customer`) se comprueban también en servidor. DINERO (`price`, `cost`, `amount_tendered`) = UNIDADES MÍNIMAS enteras (ADR-0007/0123): un 2.20 aquí serían 2 céntimos. `quantity` = PUNTO FIJO entero, escala global 10⁶ (ADR-0147): 0,5 kg es 500000 — nunca un float. `price` es «por price_quantity_value de pricing_unit_code» (KPEIN §2.3; por defecto, por 1 unidad). El contexto de unidades (unit_code, factor num/den, increment_value, pricing_*) se CONGELA en la línea (§2.4). Fuera de la rejilla del incremento el comando se RECHAZA (§2.2). Las TASAS (`discount`, `tax_rate`) sí llevan decimales; el `tax_rate` del cliente es una PISTA: el servidor resuelve el % real desde `tax_category_key` (ADR-0085/0069)."
+  "description": "EL CLIENTE PROPONE, EL SERVIDOR DISPONE (sales#20). Este payload es una OFERTA cerrada: `additionalProperties:false` a los dos niveles, al menos una línea, importes no negativos y tasas acotadas a 0..100. El `status` de la venta YA NO se acepta — lo estampa el servidor (`completed`), que es quien emite `sale.completed`. El método de pago se valida contra el catálogo del hub y su NOMBRE se resuelve ahí. PAGO MIXTO (ADR-0386): `payments[]` describe las N patas del cobro y, cuando viene, manda sobre los escalares, que pasan a derivarse del tender principal; las patas suman el total al céntimo o la venta se rechaza, y el cambio se imputa siempre a la pata de EFECTIVO. Los ajustes del TPV (`allow_discounts`, `require_customer`) se comprueban también en servidor. DINERO (`price`, `cost`, `amount_tendered`) = UNIDADES MÍNIMAS enteras (ADR-0007/0123): un 2.20 aquí serían 2 céntimos. `quantity` = PUNTO FIJO entero, escala global 10⁶ (ADR-0147): 0,5 kg es 500000 — nunca un float. `price` es «por price_quantity_value de pricing_unit_code» (KPEIN §2.3; por defecto, por 1 unidad). El contexto de unidades (unit_code, factor num/den, increment_value, pricing_*) se CONGELA en la línea (§2.4). Fuera de la rejilla del incremento el comando se RECHAZA (§2.2). Las TASAS (`discount`, `tax_rate`) sí llevan decimales; el `tax_rate` del cliente es una PISTA: el servidor resuelve el % real desde `tax_category_key` (ADR-0085/0069)."
 }
