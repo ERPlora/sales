@@ -54,16 +54,19 @@ const LINES: SaleLineRow[] = [
   { product_name: 'Cafe solo', quantity: 2, unit_price: 180, line_total: 360 },
 ];
 
-describe('saleToReceipt — dinero en céntimos → euros', () => {
-  it('convierte líneas, subtotal, impuestos, total y pago a euros', () => {
+// ADR-0400 (sales#188): the document keeps the row's MINOR UNITS and says its scale; nothing is
+// divided any more — <ok-receipt> paints the integer and would paint a float as «—».
+describe('saleToReceipt — dinero en céntimos, tal cual (ADR-0400)', () => {
+  it('lleva líneas, subtotal, impuestos, total y pago en céntimos, con su escala', () => {
     const r = saleToReceipt(SALE, LINES);
-    expect(r.lines[0].unit_price).toBe(1.8);
-    expect(r.lines[0].total).toBe(3.6);
-    expect(r.subtotal).toBe(3.27);
-    expect(r.taxes?.[0]).toEqual({ label: 'IVA 10%', base: 3.27, amount: 0.33 });
-    expect(r.total).toBe(3.6);
-    expect(r.payment?.paid).toBe(5);
-    expect(r.payment?.change).toBe(1.4);
+    expect(r.decimals).toBe(2);
+    expect(r.lines[0].unit_price).toBe(180);
+    expect(r.lines[0].total).toBe(360);
+    expect(r.subtotal).toBe(327);
+    expect(r.taxes?.[0]).toEqual({ label: 'IVA 10%', base: 327, amount: 33 });
+    expect(r.total).toBe(360);
+    expect(r.payment?.paid).toBe(500);
+    expect(r.payment?.change).toBe(140);
   });
 });
 
@@ -144,14 +147,15 @@ describe('el desglose del tique distingue el recargo de equivalencia (sales#54)'
 describe('saleToInvoice — mismos contratos', () => {
   it('convierte céntimos → euros en líneas y totales', () => {
     const inv = saleToInvoice({ ...SALE, discount_amount: 50 }, LINES);
-    expect(inv.lines[0].unit_price).toBe(1.8);
-    expect(inv.lines[0].total).toBe(3.6);
-    expect(inv.subtotal).toBe(3.27);
-    expect(inv.discount_total).toBe(0.5);
-    expect(inv.taxes[0].base).toBe(3.27);
-    expect(inv.taxes[0].amount).toBe(0.33);
-    expect(inv.tax_total).toBe(0.33);
-    expect(inv.total).toBe(3.6);
+    expect(inv.decimals).toBe(2);
+    expect(inv.lines[0].unit_price).toBe(180);
+    expect(inv.lines[0].total).toBe(360);
+    expect(inv.subtotal).toBe(327);
+    expect(inv.discount_total).toBe(50);
+    expect(inv.taxes[0].base).toBe(327);
+    expect(inv.taxes[0].amount).toBe(33);
+    expect(inv.tax_total).toBe(33);
+    expect(inv.total).toBe(360);
   });
 
   it('formatea issue_date legible', () => {
@@ -300,12 +304,13 @@ describe('cuenta previa (pre-bill) — NO es un documento fiscal', () => {
     expect((doc.footer || '').toLowerCase()).toContain('not an invoice');
   });
 
-  it('suma el total del pedido en euros (el TPV trabaja en céntimos)', () => {
+  it('suma el total del pedido en céntimos, con su escala (ADR-0400)', () => {
     const doc = orderToPrebill(lineas, {});
-    // 250*2 + 350 = 850 céntimos = 8,50 €
-    expect(doc.total).toBe(8.5);
+    // 250*2 + 350 = 850 céntimos; la pantalla los pinta como 8,50 €
+    expect(doc.total).toBe(850);
+    expect(doc.decimals).toBe(2);
     expect(doc.lines).toHaveLength(2);
-    expect(doc.lines[0]).toMatchObject({ name: 'Cerveza', qty: 2, unit_price: 2.5, total: 5 });
+    expect(doc.lines[0]).toMatchObject({ name: 'Cerveza', qty: 2, unit_price: 250, total: 500 });
   });
 
   it('las invitaciones no se cobran: van a 0', () => {
@@ -439,7 +444,7 @@ describe('los suplementos viajan al documento (sales#148)', () => {
       ]),
     }];
     const r = saleToReceipt(SALE, lines);
-    expect(r.lines[0].modifiers, 'el papel lee el nombre COMERCIAL, no el de cocina').toEqual([
+    expect(r.lines[0].printed_modifiers, 'el papel lee el nombre COMERCIAL, no el de cocina').toEqual([
       { option_id: 'o-queso', name: 'Extra queso', price_delta: 100 },
       { option_id: 'o-sin-cebolla', name: 'Sin cebolla', price_delta: 0 },
     ]);
@@ -448,7 +453,7 @@ describe('los suplementos viajan al documento (sales#148)', () => {
   it('conserva el ORDEN de elección: el cliente los lee como los pidió', () => {
     const snap = (names: string[]) => JSON.stringify(names.map((name, i) => ({ option_id: `o-${i}`, name })));
     const line = (s: string): SaleLineRow => ({ product_name: 'X', quantity: 1_000_000, unit_price: 100, line_total: 100, modifiers: s });
-    expect(saleToReceipt(SALE, [line(snap(['B', 'A']))]).lines[0].modifiers?.map((m) => m.name)).toEqual(['B', 'A']);
+    expect(saleToReceipt(SALE, [line(snap(['B', 'A']))]).lines[0].printed_modifiers?.map((m) => m.name)).toEqual(['B', 'A']);
   });
 
   it('una línea SIN suplementos no fabrica el campo: el tique de siempre sale igual', () => {
@@ -466,14 +471,16 @@ describe('los suplementos viajan al documento (sales#148)', () => {
       product_name: 'X', quantity: 1_000_000, unit_price: 100, line_total: 100,
       modifiers: JSON.stringify([{ option_id: 'o-huerfano', price_delta: 50 }]),
     }];
-    expect(saleToReceipt(SALE, lines).lines[0].modifiers).toEqual([{ option_id: 'o-huerfano', price_delta: 50 }]);
+    expect(saleToReceipt(SALE, lines).lines[0].printed_modifiers).toEqual([{ option_id: 'o-huerfano', price_delta: 50 }]);
   });
 
   it('la cuenta previa lleva los suyos tal cual se los dan (ya resueltos contra el catálogo vivo)', () => {
     const r = orderToPrebill([
       { name: 'Hamburguesa', price: 900, qty: 1, modifiers: [{ option_id: 'o-queso', name: 'Extra queso', price_delta: 100 }] },
     ]);
-    expect(r.lines[0].modifiers).toEqual([{ option_id: 'o-queso', name: 'Extra queso', price_delta: 100 }]);
+    expect(r.lines[0].printed_modifiers).toEqual([{ option_id: 'o-queso', name: 'Extra queso', price_delta: 100 }]);
+    // The supplement's delta is NOT printed (sales#148: it is already inside the line total).
+    expect(r.lines[0].modifiers, 'and the screen gets the label (sales#183)').toEqual(['Extra queso']);
   });
 });
 
@@ -576,8 +583,8 @@ describe('the menu reaches the document (sales#154)', () => {
     expect(r.lines, 'café + ONE menu line, not café + two halves').toHaveLength(2);
     expect(r.lines[1].name).toBe('Menú del día');
     expect(r.lines[1].qty).toBe(1);
-    expect(r.lines[1].unit_price, '8,10 + 5,40').toBe(13.5);
-    expect(r.lines[1].total).toBe(13.5);
+    expect(r.lines[1].unit_price, '810 + 540').toBe(1350);
+    expect(r.lines[1].total).toBe(1350);
     expect(r.lines[1].combo?.components.map((c) => c.name)).toEqual(['Bocadillo', 'Cerveza']);
   });
 
@@ -590,7 +597,7 @@ describe('the menu reaches the document (sales#154)', () => {
     const one: SaleLineRow[] = [{ product_name: 'Menú del día', quantity: 2_000_000, unit_price: 1350, line_total: 2700, combo_group_ref: 'grp-2', combo: snapshot }];
     const r = saleToReceipt(SALE, one);
     expect(r.lines).toHaveLength(1);
-    expect(r.lines[0]).toMatchObject({ name: 'Menú del día', qty: 2, unit_price: 13.5, total: 27 });
+    expect(r.lines[0]).toMatchObject({ name: 'Menú del día', qty: 2, unit_price: 1350, total: 2700 });
     expect(r.lines[0].combo?.components).toHaveLength(2);
   });
 
@@ -600,7 +607,7 @@ describe('the menu reaches the document (sales#154)', () => {
       { ...PACK[1], modifiers: JSON.stringify([{ option_id: 'o-cold', name: 'Muy fría', price_delta: 0 }]) },
     ];
     const r = saleToReceipt(SALE, withMods);
-    expect(r.lines[0].modifiers?.map((m) => m.name)).toEqual(['Muy fría']);
+    expect(r.lines[0].printed_modifiers?.map((m) => m.name)).toEqual(['Muy fría']);
     expect(r.lines[0].note).toBe('Bocadillo · Cerveza · Muy fría');
   });
 
@@ -622,7 +629,7 @@ describe('the menu reaches the document (sales#154)', () => {
     ]);
     expect(r.lines[0].combo?.components.map((c) => c.name)).toEqual(['Gazpacho', 'Solomillo']);
     expect(r.lines[0].note).toBe('Gazpacho · Solomillo (+3,00)');
-    expect(r.lines[0].total, 'the closed price, once').toBe(16.5);
+    expect(r.lines[0].total, 'the closed price, once').toBe(1650);
   });
 });
 

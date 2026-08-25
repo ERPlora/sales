@@ -105,9 +105,10 @@ describe('the bill on screen, built from the open cart', () => {
   it('totals what is on the table: 2×12,00 + 3×5,80 + 1×5,00 = 46,40', async () => {
     const doc = await openBill();
 
-    expect(doc.receipt!.total, 'in euros, as the document contract wants').toBe(46.4);
+    expect(doc.receipt!.total, 'in minor units, as the document contract wants (ADR-0400)').toBe(4640);
+    expect(doc.receipt!.decimals).toBe(2);
     expect(doc.receipt!.lines, 'one document line per cart line').toHaveLength(3);
-    expect(doc.receipt!.lines[1]).toMatchObject({ name: 'Caña', qty: 3, unit_price: 5.8, total: 17.4 });
+    expect(doc.receipt!.lines[1]).toMatchObject({ name: 'Caña', qty: 3, unit_price: 580, total: 1740 });
     expect(doc.shadowRoot!.textContent, 'and the total is PAINTED').toContain('46.40');
   });
 
