@@ -1983,7 +1983,12 @@ export class ErpPosTouch extends LitElement {
    *  `is_service`, que hace que el handler no lo mida contra el catálogo de `inventory` ni le
    *  descuente stock. `services` es la autoridad del precio y de la categoría fiscal. */
   private async loadServices(): Promise<Product[]> {
-    const rowsIn = await optionalRead((c) => c.queryOptional<unknown>('services.services.list', { page_size: 500 }));
+    // hub#1173: sin params. `page_size` NO es un parámetro del runtime (el motor lee `limit`), así
+    // que se descartaba en silencio y la llamada no hacía lo que aparentaba — y hoy el runtime lo
+    // rechaza con `unknown_filter`, que dejaría al TPV sin servicios que vender. Sin `limit`,
+    // `queryOptional` trae el CONJUNTO ENTERO (hub#650), que es justo lo que el TPV quiere: un
+    // cajero tiene que poder vender TODO lo que vende la casa.
+    const rowsIn = await optionalRead((c) => c.queryOptional<unknown>('services.services.list'));
     if (rowsIn === undefined) return []; // módulo no instalado: el TPV sigue siendo el de siempre
     return rows<ServiceRow>(rowsIn).map((s) => ({
       id: s.id,

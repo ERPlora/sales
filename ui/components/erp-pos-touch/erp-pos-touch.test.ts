@@ -1879,3 +1879,60 @@ describe('los departamentos hablan el idioma del hub (sales#120)', () => {
     expect(txt.some((s) => s.includes('Product — generic')), 'fallback al nombre crudo').toBe(true);
   });
 });
+
+// ── hub#1173: un parámetro que la query NO declara se ignoraba en silencio ────────────────────
+//
+// La rejilla pedía el catálogo de `services` con `{ page_size: 500 }`. `page_size` **no es un
+// parámetro del runtime** (el motor lee `limit`) y el módulo YA lo sabía: lo dice su propio
+// comentario en `ui/lib/pos-cart.ts`. El motor lo descartaba sin decir nada, así que la llamada no
+// hacía lo que aparentaba — y hoy el runtime lo RECHAZA con `unknown_filter`, que dejaría al TPV
+// sin servicios que vender.
+//
+// Sin `page_size` la lectura es la correcta y además la que el TPV quiere: `queryOptional` sin
+// `limit` trae el CONJUNTO ENTERO (hub#650), no una página.
+describe('hub#1173 — la lectura del catálogo de servicios no manda params que la query no declara', () => {
+  it('pide services.services.list sin `page_size`', async () => {
+    const consultas: { name: string; params: unknown }[] = [];
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    (globalThis as Record<string, unknown>).erplora = {
+      ...sdk,
+      // `undefined` = «módulo no instalado», que es exactamente lo que este harness contaba antes
+      // (no traía `queryOptional`): el WC sigue el mismo camino y solo añadimos la escucha.
+      queryOptional: async (name: string, params?: unknown) => {
+        consultas.push({ name, params });
+        return undefined;
+      },
+    };
+
+    await montarCarrito();
+
+    const llamada = consultas.find((c) => c.name === 'services.services.list');
+    expect(llamada, 'el TPV lee el catálogo vendible de `services`').toBeTruthy();
+    expect(
+      Object.keys((llamada?.params as Record<string, unknown>) ?? {}),
+      '`page_size` no existe en el runtime: mandarlo era pedir algo que nadie aplicaba',
+    ).not.toContain('page_size');
+  });
+
+  it('sigue pidiendo el catálogo entero: sin `limit`, `queryOptional` trae todas las filas', async () => {
+    const consultas: { name: string; params: unknown }[] = [];
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    (globalThis as Record<string, unknown>).erplora = {
+      ...sdk,
+      // `undefined` = «módulo no instalado», que es exactamente lo que este harness contaba antes
+      // (no traía `queryOptional`): el WC sigue el mismo camino y solo añadimos la escucha.
+      queryOptional: async (name: string, params?: unknown) => {
+        consultas.push({ name, params });
+        return undefined;
+      },
+    };
+
+    await montarCarrito();
+
+    const llamada = consultas.find((c) => c.name === 'services.services.list');
+    expect(
+      Object.keys((llamada?.params as Record<string, unknown>) ?? {}),
+      'un `limit` volvería a truncar el catálogo, que es el fallo que `page_size` tapaba',
+    ).not.toContain('limit');
+  });
+});
