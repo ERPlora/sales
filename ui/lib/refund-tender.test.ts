@@ -1,8 +1,8 @@
 // refund-tender — which SALE lines the refund screen offers to an external tender, and how each
 // one is told apart from its twin (sales#166 / ADR-0386).
 //
-// The mirror of `line-tender` on the other side of the counter. There, the till asks «does the
-// voucher pay this line?»; here, the refund screen asks «does this line's session go back?». And
+// The mirror of `line-tender` on the other side of the counter. There, the till asks "does the
+// voucher pay this line?"; here, the refund screen asks "does this line's session go back?". And
 // the reason `sales` cannot answer either question itself is the same one: `is_covered` is OPAQUE
 // by design (migration 025) — it says another tender already paid the line, never WHICH.
 //

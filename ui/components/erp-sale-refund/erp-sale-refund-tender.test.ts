@@ -160,29 +160,29 @@ function ready(el: Refund): void {
 beforeEach(() => install());
 afterEach(() => { document.body.innerHTML = ''; vi.resetModules(); });
 
-describe('el hueco: una línea CUBIERTA, un slot', () => {
-  it('pide el slot por su literal, como el TPV pide el suyo', async () => {
+describe('the hole: one COVERED line, one slot', () => {
+  it('asks for the slot by its literal, the way the till asks for its own', async () => {
     await mount();
     expect(slotsAsked).toContain('sales.refund.tender');
   });
 
-  it('monta UNA instancia por línea cubierta, y ninguna sobre la que se pagó en dinero', async () => {
+  it('mounts ONE instance per covered line, and none on the line paid in money', async () => {
     const el = await mount();
     expect(holes(el)).toHaveLength(1);
     expect(holes(el)[0].dataset.line).toBe('item-1');
     expect(fillersOf(el)).toHaveLength(1);
   });
 
-  it('las cuatro propiedades están puestas ANTES de entrar al DOM', async () => {
-    // El filler lee en `connectedCallback`: insertarlo primero le haría preguntar por una venta
-    // vacía y pintar «aquí no hay nada que devolver» sobre una sesión que sí vuelve.
+  it('has the four properties set BEFORE the element enters the DOM', async () => {
+    // The filler reads in `connectedCallback`: inserting it first would make it ask about an
+    // empty sale and paint "nothing to give back here" over a session that does go back.
     const el = await mount();
     expect(fillersOf(el)[0].seenOnConnect).toEqual({
       saleId: 'sale-1', lineRef: 'item-1', serviceId: 's-corte', lineIndex: 0,
     });
   });
 
-  it('dos líneas del MISMO servicio se numeran, para que cada hueco reclame SU sesión', async () => {
+  it('numbers two lines of the SAME service, so each hole claims ITS own session', async () => {
     install({ lines: [
       { id: 'item-1', product_id: 's-corte', product_name: 'Corte', is_covered: 1 },
       { id: 'item-2', product_id: 's-corte', product_name: 'Corte', is_covered: 1 },
@@ -191,9 +191,9 @@ describe('el hueco: una línea CUBIERTA, un slot', () => {
     expect(fillersOf(el).map((f) => f.seenOnConnect?.lineIndex)).toEqual([0, 1]);
   });
 
-  it('si `sales.lines` falla, la devolución del DINERO sigue en pie', async () => {
-    // La autoridad de esta pantalla es el dinero. Un fallo del lado accesorio no puede dejar al
-    // operador sin poder devolver 18,00 € que el cliente está esperando.
+  it('keeps the MONEY refund standing when `sales.lines` fails', async () => {
+    // Money is this screen's authority. A failure on the accessory side cannot leave the operator
+    // unable to hand back the 18,00 € the customer is standing there waiting for.
     install({ linesFail: true });
     const el = await mount();
     expect(el.shadowRoot?.querySelector('ok-inline-feedback[tone="danger"]')).toBeNull();
@@ -202,8 +202,8 @@ describe('el hueco: una línea CUBIERTA, un slot', () => {
   });
 });
 
-describe('el aviso: se lee ANTES de confirmar, y no bloquea', () => {
-  it('el aviso del filler se pinta junto al botón', async () => {
+describe('the warning: read BEFORE confirming, and it does not block', () => {
+  it('paints the filler warning next to the button', async () => {
     const el = await mount();
     fillersOf(el)[0].dispatchEvent(new CustomEvent('erp:tender-refund-armed', {
       detail: { lineRef: 'item-1', warning: 'El bono caducó el 31/07' },
@@ -214,7 +214,7 @@ describe('el aviso: se lee ANTES de confirmar, y no bloquea', () => {
     expect(notice?.textContent).toContain('El bono caducó el 31/07');
   });
 
-  it('un bono caducado AVISA pero deja confirmar (ADR-0386)', async () => {
+  it('an expired voucher WARNS but still lets the refund be confirmed (ADR-0386)', async () => {
     const el = await mount();
     ready(el);
     fillersOf(el)[0].dispatchEvent(new CustomEvent('erp:tender-refund-armed', {
@@ -225,7 +225,7 @@ describe('el aviso: se lee ANTES de confirmar, y no bloquea', () => {
     expect(confirmButton(el)?.getAttribute('data-blocked')).toBeNull();
   });
 
-  it('desarmar retira el aviso: lo que el filler deshizo deja de anunciarse', async () => {
+  it('drops the warning on disarm: what the filler undid stops being announced', async () => {
     const el = await mount();
     const f = fillersOf(el)[0];
     f.dispatchEvent(new CustomEvent('erp:tender-refund-armed', {
@@ -240,8 +240,8 @@ describe('el aviso: se lee ANTES de confirmar, y no bloquea', () => {
   });
 });
 
-describe('el documento: la referencia baja al filler, y la pantalla lo espera', () => {
-  it('tras `sales.refund`, cada filler recibe `refund_ref` — el id ESTABLE del documento', async () => {
+describe('the document: the reference goes down to the filler, and the screen waits for it', () => {
+  it('hands every filler `refund_ref` after `sales.refund` — the STABLE document id', async () => {
     const el = await mount();
     ready(el);
     await el.confirm();
@@ -252,7 +252,7 @@ describe('el documento: la referencia baja al filler, y la pantalla lo espera', 
     expect(typeof commit.waitFor).toBe('function');
   });
 
-  it('la referencia también queda como PROPIEDAD, para el filler que la lee en vez de escuchar', async () => {
+  it('also leaves the reference as a PROPERTY, for a filler that reads instead of listening', async () => {
     const el = await mount();
     ready(el);
     await el.confirm();
@@ -261,9 +261,9 @@ describe('el documento: la referencia baja al filler, y la pantalla lo espera', 
     expect(f.refundId).toBe('ref-9');
   });
 
-  it('la pantalla NO se cierra mientras el filler está devolviendo la sesión', async () => {
-    // Cerrar aquí desmonta el filler a mitad de su command, y la sesión se queda gastada sin que
-    // nadie en la caja pueda devolverla.
+  it('does NOT close while the filler is still giving the session back', async () => {
+    // Closing here unmounts the filler mid-command, and the session stays spent with nobody at
+    // the counter able to give it back.
     commitBehaviour = 'ok';
     const el = await mount();
     ready(el);
@@ -271,13 +271,13 @@ describe('el documento: la referencia baja al filler, y la pantalla lo espera', 
     el.addEventListener('refunded', () => { closed = true; });
     const done = el.confirm();
     await new Promise((r) => setTimeout(r, 0));
-    expect(closed, 'todavía no: el filler no ha terminado').toBe(false);
+    expect(closed, 'not yet: the filler has not finished').toBe(false);
     commitResolved?.();
     await done;
     expect(closed).toBe(true);
   });
 
-  it('si el filler falla, el DINERO ya devuelto se mantiene y la pantalla lo DICE', async () => {
+  it('keeps the MONEY already refunded and SAYS SO when the filler fails', async () => {
     commitBehaviour = 'fail';
     const el = await mount();
     ready(el);
@@ -291,13 +291,13 @@ describe('el documento: la referencia baja al filler, y la pantalla lo espera', 
     const said = notify.mock.calls.map((c) => (c[0] as { type: string; message: string }));
     expect(said.some((n) => n.type === 'success' && n.message === 'ui.refundDone')).toBe(true);
     expect(said.some((n) => n.type === 'error' && n.message === 'ui.refundTenderPending')).toBe(true);
-    expect(closed, 'la venta ESTÁ devuelta: la pantalla no puede quedarse abierta fingiendo que no').toBe(true);
+    expect(closed, 'the sale IS refunded: the screen cannot stay open pretending otherwise').toBe(true);
     expect(commands.filter((c) => c.name === 'sales.refund')).toHaveLength(1);
   });
 });
 
-describe('un hub SIN el módulo dueño', () => {
-  it('no pinta sección, no pregunta por las líneas y no monta nada', async () => {
+describe('a hub WITHOUT the owning module', () => {
+  it('paints no section, asks for no lines and mounts nothing', async () => {
     install({ fillers: false });
     const el = await mount();
     expect(holes(el)).toHaveLength(0);
@@ -305,7 +305,7 @@ describe('un hub SIN el módulo dueño', () => {
     expect(queriesAsked).not.toContain('sales.lines');
   });
 
-  it('la devolución viaja EXACTAMENTE igual que antes del slot', async () => {
+  it('sends the refund EXACTLY as it did before the slot existed', async () => {
     install({ fillers: false });
     const el = await mount();
     ready(el);

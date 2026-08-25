@@ -1,8 +1,8 @@
 // refund-tender — hosting an EXTERNAL per-line tender in the REFUND screen (sales#166 / ADR-0386).
 //
-// The mirror of `line-tender`. The till hosts `sales.pos.tender` to ask «does another tender pay
-// this line?»; the refund screen hosts `sales.refund.tender` to ask «does what paid it get it
-// back?». `sales` never learns what a voucher is on either side: it paints the line, cedes the
+// The mirror of `line-tender`. The till hosts `sales.pos.tender` to ask "does another tender pay
+// this line?"; the refund screen hosts `sales.refund.tender` to ask "does what paid it get it
+// back?". `sales` never learns what a voucher is on either side: it paints the line, cedes the
 // hole, and does arithmetic on money it can see.
 //
 // 🔴 IT CANNOT ANSWER THIS ALONE, AND THAT IS THE POINT. `sales_sale_item.is_covered` (migration
