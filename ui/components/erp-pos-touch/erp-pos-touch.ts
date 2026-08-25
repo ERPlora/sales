@@ -198,6 +198,14 @@ async function optionalRead(read: (c: ErploraClientLike) => Promise<unknown>): P
   }
 }
 
+/** Techo por petición del runtime, y lo que pedía sales#184: el repliegue para un shell que aún
+ *  no tiene `queryAllOptional`. Los módulos se auto-actualizan y la imagen del hub NO, así que esta
+ *  versión aterriza en hubs cuyo SDK todavía no sabe traer el conjunto entero. Ahí se pide como
+ *  hasta ahora —una página con tope explícito—: un TPV con 500 servicios sigue vendiendo, uno con
+ *  cero servicios no. El nombre de la query va LITERAL en las dos ramas porque el extractor de
+ *  contratos (ADR-0127) no sigue variables. */
+const LEGACY_PAGE_LIMIT = 500;
+
 /** Un grupo de suplementos con sus opciones, tal como lo entrega `modifiers.for_target`. */
 interface ModifierGroup {
   id: string;
@@ -2131,19 +2139,17 @@ export class ErpPosTouch extends LitElement {
    *  `is_service`, que hace que el handler no lo mida contra el catálogo de `inventory` ni le
    *  descuente stock. `services` es la autoridad del precio y de la categoría fiscal. */
   private async loadServices(): Promise<Product[]> {
-    // hub#1173: `page_size` NO es un parámetro del runtime (el motor lee `limit`), así que se
-    // descartaba en silencio y la llamada no hacía lo que aparentaba — y hoy el runtime lo rechaza
-    // con `unknown_filter`, que dejaría al TPV sin servicios que vender.
-    //
-    // Se manda `limit`, que SÍ es vocabulario del motor. Sin él tampoco vendría el catálogo entero:
-    // `/api/query` sobre una query con bloque `list` responde UNA PÁGINA (`execute_query_page` en
-    // `crates/server/src/lib.rs`), y sin `limit` el tamaño es el `page_size` del manifest — 50. Es
-    // decir: el `page_size: 500` de antes no truncaba «a 50 en vez de 500», truncaba a 50 creyendo
-    // pedir 500, y omitirlo truncaría igual en silencio. El tope explícito es lo único que hoy dice
-    // la verdad. Traer el conjunto entero por esta puerta necesita un `queryAllOptional` que el SDK
-    // aún no tiene (`queryAll` bajo `optionalRead` choca con el guard de ADR-0127 porque `services`
-    // no está en `depends_on`): ERPlora/sales#186.
-    const rowsIn = await optionalRead((c) => c.queryOptional<unknown>('services.services.list', { limit: 500 }));
+    // sales#186: el catálogo ENTERO, sin tope. Ninguna de las dos formas anteriores lo traía —
+    // `page_size` no es un parámetro del runtime (el motor lee `limit`) y se descartaba en silencio;
+    // el `limit: 500` que lo sustituyó al menos decía la verdad, pero seguía siendo un tope
+    // arbitrario: un negocio con más de 500 servicios no podía venderlos, que es el fallo que
+    // hub#650 arregló para los productos. `queryAllOptional` cierra las dos mitades: conjunto
+    // entero (dos viajes como mucho) y `undefined` si `services` no está instalado, que es lo que
+    // exige ADR-0127 porque `services` NO está en el `depends_on` de `sales`.
+    const rowsIn = await optionalRead((c) =>
+      typeof c.queryAllOptional === 'function'
+        ? c.queryAllOptional<unknown>('services.services.list')
+        : c.queryOptional<unknown>('services.services.list', { limit: LEGACY_PAGE_LIMIT }));
     if (rowsIn === undefined) return []; // módulo no instalado: el TPV sigue siendo el de siempre
     return rows<ServiceRow>(rowsIn).map((s) => ({
       id: s.id,
@@ -2161,7 +2167,13 @@ export class ErpPosTouch extends LitElement {
   /** Las categorías de servicio salen como una pestaña más: 40 servicios en un muro plano no son
    *  usables en una peluquería con cliente delante. */
   private async loadServiceCategories(): Promise<Category[]> {
-    const rowsIn = await optionalRead((c) => c.queryOptional<unknown>('services.categories.list', { sort: 'name', dir: 'asc' }));
+    // sales#186: igual que el catálogo, el conjunto entero. Esta lectura ni siquiera llevaba tope,
+    // así que se quedaba en la primera página —50— y una peluquería con más familias perdía las de
+    // abajo sin un solo aviso.
+    const rowsIn = await optionalRead((c) =>
+      typeof c.queryAllOptional === 'function'
+        ? c.queryAllOptional<unknown>('services.categories.list', { sort: 'name', dir: 'asc' })
+        : c.queryOptional<unknown>('services.categories.list', { sort: 'name', dir: 'asc', limit: LEGACY_PAGE_LIMIT }));
     if (rowsIn === undefined) return [];
     return rows<ServiceCat>(rowsIn).filter((c) => c.name).map((c) => ({ id: c.id, name: c.name }));
   }

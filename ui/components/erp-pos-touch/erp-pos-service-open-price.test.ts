@@ -45,6 +45,8 @@ function installSdk() {
       return [];
     },
     queryOptional: async (name: string) => (name === 'services.services.list' ? SERVICES : undefined),
+    // sales#186 — the catalogue comes in whole through `queryAllOptional`.
+    queryAllOptional: async (name: string) => (name === 'services.services.list' ? SERVICES : undefined),
     command: async (name: string, params: Record<string, unknown>) => {
       commands.push({ name, params });
       return { rows: [{ id: `row-${commands.length}` }] };

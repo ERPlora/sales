@@ -60,6 +60,12 @@ function installSdk() {
       if (name === 'services.categories.list') return SERVICE_CATS;
       return undefined;
     },
+    // sales#186 — the catalogue comes in whole through `queryAllOptional`, not one page at a time.
+    queryAllOptional: async (name: string) => {
+      if (name === 'services.services.list') return SERVICES;
+      if (name === 'services.categories.list') return SERVICE_CATS;
+      return undefined;
+    },
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
       if (name === 'sales.order.open') {

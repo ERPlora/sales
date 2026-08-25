@@ -1901,25 +1901,29 @@ describe('los departamentos hablan el idioma del hub (sales#120)', () => {
 // hacía lo que aparentaba — y hoy el runtime lo RECHAZA con `unknown_filter`, que dejaría al TPV
 // sin servicios que vender.
 //
-// Se manda `limit`, que SÍ es vocabulario del motor. Ojo con la creencia fácil: omitirlo NO trae el
-// catálogo entero — `/api/query` sobre una query con bloque `list` responde UNA PÁGINA
-// (`execute_query_page`), y sin `limit` el tamaño es el `page_size` del manifest, 50. O sea que el
-// `page_size: 500` de antes truncaba a 50 creyendo pedir 500, y omitirlo truncaría igual, en
-// silencio. El tope explícito es lo único que hoy dice la verdad; el conjunto entero necesita un
-// `queryAllOptional` que el SDK no tiene (ERPlora/sales#186).
-describe('hub#1173 — la lectura del catálogo de servicios no manda params que la query no declara', () => {
-  it('pide services.services.list sin `page_size`', async () => {
+// hub#1173 lo cambió por un `limit: 500` explícito, que al menos decía la verdad. sales#186 quita
+// también ese tope: `/api/query` sobre una query con bloque `list` responde UNA PÁGINA
+// (`execute_query_page`), así que cualquier número ahí es una truncación esperando a un negocio
+// más grande. La lectura va por `queryAllOptional` — conjunto entero + tolerancia de ADR-0127 —,
+// y lo que este bloque fija es que por el cable no viaja ningún tope. Que las filas de más allá
+// del tope LLEGUEN a la rejilla se prueba en `erp-pos-services.test.ts`.
+describe('sales#186 — la lectura del catálogo de servicios no manda ningún tope', () => {
+  /** Escucha lo que el TPV pide, contestando `undefined` = «módulo no instalado». */
+  function espiarLecturaOpcional(): { name: string; params: unknown }[] {
     const consultas: { name: string; params: unknown }[] = [];
     const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
     (globalThis as Record<string, unknown>).erplora = {
       ...sdk,
-      // `undefined` = «módulo no instalado», que es exactamente lo que este harness contaba antes
-      // (no traía `queryOptional`): el WC sigue el mismo camino y solo añadimos la escucha.
-      queryOptional: async (name: string, params?: unknown) => {
+      queryAllOptional: async (name: string, params?: unknown) => {
         consultas.push({ name, params });
         return undefined;
       },
     };
+    return consultas;
+  }
+
+  it('pide services.services.list sin `page_size`', async () => {
+    const consultas = espiarLecturaOpcional();
 
     await montarCarrito();
 
@@ -1931,25 +1935,18 @@ describe('hub#1173 — la lectura del catálogo de servicios no manda params que
     ).not.toContain('page_size');
   });
 
-  it('manda un `limit` EXPLÍCITO: sin él la página sería de 50 y el truncado volvería a ser mudo', async () => {
-    const consultas: { name: string; params: unknown }[] = [];
-    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
-    (globalThis as Record<string, unknown>).erplora = {
-      ...sdk,
-      // `undefined` = «módulo no instalado», que es exactamente lo que este harness contaba antes
-      // (no traía `queryOptional`): el WC sigue el mismo camino y solo añadimos la escucha.
-      queryOptional: async (name: string, params?: unknown) => {
-        consultas.push({ name, params });
-        return undefined;
-      },
-    };
+  it('tampoco manda `limit`: el conjunto entero no cabe en un número escrito a mano', async () => {
+    const consultas = espiarLecturaOpcional();
 
     await montarCarrito();
 
-    const llamada = consultas.find((c) => c.name === 'services.services.list');
-    expect(
-      (llamada?.params as Record<string, unknown>)?.limit,
-      '`limit` es vocabulario del motor (a diferencia de `page_size`) y es lo que fija el tope de verdad',
-    ).toBe(500);
+    for (const name of ['services.services.list', 'services.categories.list']) {
+      const llamada = consultas.find((c) => c.name === name);
+      expect(llamada, `el TPV lee ${name}`).toBeTruthy();
+      expect(
+        (llamada?.params as Record<string, unknown>)?.limit,
+        'un tope aquí vuelve a truncar en silencio en cuanto el negocio crece',
+      ).toBeUndefined();
+    }
   });
 });
