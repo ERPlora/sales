@@ -1983,12 +1983,19 @@ export class ErpPosTouch extends LitElement {
    *  `is_service`, que hace que el handler no lo mida contra el catálogo de `inventory` ni le
    *  descuente stock. `services` es la autoridad del precio y de la categoría fiscal. */
   private async loadServices(): Promise<Product[]> {
-    // hub#1173: sin params. `page_size` NO es un parámetro del runtime (el motor lee `limit`), así
-    // que se descartaba en silencio y la llamada no hacía lo que aparentaba — y hoy el runtime lo
-    // rechaza con `unknown_filter`, que dejaría al TPV sin servicios que vender. Sin `limit`,
-    // `queryOptional` trae el CONJUNTO ENTERO (hub#650), que es justo lo que el TPV quiere: un
-    // cajero tiene que poder vender TODO lo que vende la casa.
-    const rowsIn = await optionalRead((c) => c.queryOptional<unknown>('services.services.list'));
+    // hub#1173: `page_size` NO es un parámetro del runtime (el motor lee `limit`), así que se
+    // descartaba en silencio y la llamada no hacía lo que aparentaba — y hoy el runtime lo rechaza
+    // con `unknown_filter`, que dejaría al TPV sin servicios que vender.
+    //
+    // Se manda `limit`, que SÍ es vocabulario del motor. Sin él tampoco vendría el catálogo entero:
+    // `/api/query` sobre una query con bloque `list` responde UNA PÁGINA (`execute_query_page` en
+    // `crates/server/src/lib.rs`), y sin `limit` el tamaño es el `page_size` del manifest — 50. Es
+    // decir: el `page_size: 500` de antes no truncaba «a 50 en vez de 500», truncaba a 50 creyendo
+    // pedir 500, y omitirlo truncaría igual en silencio. El tope explícito es lo único que hoy dice
+    // la verdad. Traer el conjunto entero por esta puerta necesita un `queryAllOptional` que el SDK
+    // aún no tiene (`queryAll` bajo `optionalRead` choca con el guard de ADR-0127 porque `services`
+    // no está en `depends_on`): ERPlora/sales#186.
+    const rowsIn = await optionalRead((c) => c.queryOptional<unknown>('services.services.list', { limit: 500 }));
     if (rowsIn === undefined) return []; // módulo no instalado: el TPV sigue siendo el de siempre
     return rows<ServiceRow>(rowsIn).map((s) => ({
       id: s.id,

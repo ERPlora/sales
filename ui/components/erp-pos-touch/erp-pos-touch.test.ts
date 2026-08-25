@@ -1888,8 +1888,12 @@ describe('los departamentos hablan el idioma del hub (sales#120)', () => {
 // hacía lo que aparentaba — y hoy el runtime lo RECHAZA con `unknown_filter`, que dejaría al TPV
 // sin servicios que vender.
 //
-// Sin `page_size` la lectura es la correcta y además la que el TPV quiere: `queryOptional` sin
-// `limit` trae el CONJUNTO ENTERO (hub#650), no una página.
+// Se manda `limit`, que SÍ es vocabulario del motor. Ojo con la creencia fácil: omitirlo NO trae el
+// catálogo entero — `/api/query` sobre una query con bloque `list` responde UNA PÁGINA
+// (`execute_query_page`), y sin `limit` el tamaño es el `page_size` del manifest, 50. O sea que el
+// `page_size: 500` de antes truncaba a 50 creyendo pedir 500, y omitirlo truncaría igual, en
+// silencio. El tope explícito es lo único que hoy dice la verdad; el conjunto entero necesita un
+// `queryAllOptional` que el SDK no tiene (ERPlora/sales#186).
 describe('hub#1173 — la lectura del catálogo de servicios no manda params que la query no declara', () => {
   it('pide services.services.list sin `page_size`', async () => {
     const consultas: { name: string; params: unknown }[] = [];
@@ -1914,7 +1918,7 @@ describe('hub#1173 — la lectura del catálogo de servicios no manda params que
     ).not.toContain('page_size');
   });
 
-  it('sigue pidiendo el catálogo entero: sin `limit`, `queryOptional` trae todas las filas', async () => {
+  it('manda un `limit` EXPLÍCITO: sin él la página sería de 50 y el truncado volvería a ser mudo', async () => {
     const consultas: { name: string; params: unknown }[] = [];
     const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
     (globalThis as Record<string, unknown>).erplora = {
@@ -1931,8 +1935,8 @@ describe('hub#1173 — la lectura del catálogo de servicios no manda params que
 
     const llamada = consultas.find((c) => c.name === 'services.services.list');
     expect(
-      Object.keys((llamada?.params as Record<string, unknown>) ?? {}),
-      'un `limit` volvería a truncar el catálogo, que es el fallo que `page_size` tapaba',
-    ).not.toContain('limit');
+      (llamada?.params as Record<string, unknown>)?.limit,
+      '`limit` es vocabulario del motor (a diferencia de `page_size`) y es lo que fija el tope de verdad',
+    ).toBe(500);
   });
 });
