@@ -58,7 +58,7 @@ import { loadTaxCatalog, productSellability, resolveLineTax, type TaxCatalog } f
 import { buildOpenPriceLine } from '../../lib/pos-open-price.js';
 // La frontera de la ESCALA de cantidades (ADR-0147): la UI trabaja en lógico (0,5), el cable en 10⁶.
 import { toMicro, fromMicro, onGrid, formatQuantity } from '../../lib/quantity.js';
-import { checkoutErrorKey, newIdempotencyKey } from '../../lib/checkout-key.js';
+import { checkoutErrorKey, errorCode, newIdempotencyKey } from '../../lib/checkout-key.js';
 // sales#81: el transporte del SDK filtra el HTML del 502 del proxy como un SyntaxError crudo
 // («<!DOCTYPE … is not valid JSON»). Esta es la frontera del módulo: traducirlo a un mensaje de
 // negocio para el cajero (la guarda `res.ok` del SDK se persigue aparte, en el hub).
@@ -981,7 +981,11 @@ export class ErpPosTouch extends LitElement {
   private units = new Map<string, UnitRow>();
   /** Catálogo fiscal del hub: mapa tax_category_key → rate_pct (preview del IVA) + si LLEGÓ.
    *  Vacío y `available:false` mientras carga o si `taxes` no responde. ADR-0064/0066/0085. */
-  private taxCatalog: TaxCatalog = { rates: new Map<string, number>(), available: false };
+  private taxCatalog: TaxCatalog = { rates: new Map<string, number>(), available: false, installed: true };
+  /** sales#185 — la app que el cobro NECESITA no está en este hub (`taxes`, declarada `read`
+   *  obligatoria de `sales.complete_sale`). Se resuelve al montar, con el código estable que
+   *  devuelve el runtime, y es lo que convierte «falla al confirmar» en «se dice al entrar». */
+  @state() private missingChargeApp = '';
   /** Pista de overflow compartida con la bottom bar (fade dinámico + pequeño gesto inicial). */
   private categorySegment?: HTMLElement;
   private categorySegmentCleanup?: () => void;
@@ -1274,6 +1278,11 @@ export class ErpPosTouch extends LitElement {
       ]);
       if (connectionEpoch !== this.connectionEpoch || !this.isConnected) return;
       this.taxCatalog = taxCatalog;
+      // sales#185 — PREFLIGHT. `sales.complete_sale` declara `taxes.rules.list` como `read` con
+      // `required: true`: sin la app de impuestos NINGUNA venta puede cerrarse, y hasta ahora el
+      // TPV se veía sano hasta que el cajero ya había tecleado el importe, elegido medio de pago y
+      // confirmado. Se sabe AQUÍ, con el código estable del runtime, así que se dice AQUÍ.
+      this.missingChargeApp = taxCatalog.installed ? '' : 'taxes';
       // `?? null` y no `?? 0`: el core ya devuelve `null` cuando el país no pone techo, y un 0 que
       // se colara aquí como importe pararía TODAS las ventas del local.
       this.simplifiedMaxCents =
@@ -2649,6 +2658,14 @@ export class ErpPosTouch extends LitElement {
 
   private openPay() {
     if (!this.cart.length) return;
+    // sales#185 — la puerta de ENTRADA al cobro. El botón está `aria-disabled` (nunca `disabled`,
+    // que en Ionic es `pointer-events:none` y se tragaría el toque — sales#58), así que el toque
+    // llega hasta aquí y aquí es donde se contesta. Abrir el sheet solo para que el cobro muera al
+    // confirmar es exactamente el defecto que esto arregla.
+    if (this.missingChargeApp) {
+      this.notifyShell(t('ui.missingAppCharge', { app: this.chargeAppName }));
+      return;
+    }
     // Una clave por INTENTO de cobro (sales#20): todos los reintentos de ESTA pantalla comparten
     // clave, así que el servidor los resuelve a la misma venta en vez de duplicarla.
     this.checkoutKey = newIdempotencyKey();
@@ -2869,6 +2886,18 @@ export class ErpPosTouch extends LitElement {
     this.error = '';
   }
 
+  /** El nombre de la app que falta, tal y como el comercio la ve en el marketplace.
+   *
+   *  Se traduce (`ui.appTaxes`) porque el id (`taxes`) es una clave técnica y el cartel lo lee un
+   *  cajero, no un integrador. Sin traducción para un id que no conozcamos, cae al id: decir
+   *  `taxes` es feo, pero es cierto — inventar un nombre no lo sería.  */
+  private get chargeAppName(): string {
+    if (!this.missingChargeApp) return '';
+    const key = `ui.app${this.missingChargeApp.charAt(0).toUpperCase()}${this.missingChargeApp.slice(1)}`;
+    const name = t(key);
+    return name === key ? this.missingChargeApp : name;
+  }
+
   /** POR QUÉ no se puede cobrar todavía, en palabras. `undefined` = se puede.
    *
    *  🔴 Esto NO se resuelve con el `disabled` nativo de Ionic. `disabled` es `pointer-events:none`:
@@ -2876,6 +2905,15 @@ export class ErpPosTouch extends LitElement {
    *  y el motivo se queda en `title` — que necesita un hover que una tablet de mostrador no produce
    *  jamás. Es el bug de sales#58 y no vuelve por el botón más importante de la pantalla. */
   private get chargeBlock(): { short: string; reason: string } | undefined {
+    // sales#185 — lo primero, porque es lo único que no tiene arreglo en esta pantalla: sin la app
+    // de impuestos el runtime aborta `complete_sale` por su `read` obligatoria, así que no hay
+    // importe ni cliente que valga. Va antes que el resto para que el motivo escrito sea ESE.
+    if (this.missingChargeApp) {
+      return {
+        short: t('ui.missingAppChargeShort', { app: this.chargeAppName }),
+        reason: t('ui.missingAppCharge', { app: this.chargeAppName }),
+      };
+    }
     if (this.chargeBlocked) {
       // El motivo largo ya está escrito arriba, en el panel de captura del cliente.
       return { short: t('ui.limitChargeBlocked'), reason: '' };
@@ -3155,9 +3193,15 @@ export class ErpPosTouch extends LitElement {
     // OJO: `this.checkoutKey` NO se limpia en ninguna rama de fallo. Reintentar con la MISMA clave
     // es justo lo que impide que un timeout (la venta pudo entrar) acabe cobrando dos veces.
     if (transportErrorKey(e) !== SERVER_UNAVAILABLE_KEY) {
+      // sales#185 — se ramifica sobre el CÓDIGO del sobre, nunca sobre la frase. Buscar el código
+      // dentro del mensaje funcionaba solo mientras el mensaje lo llevara: en cuanto se traduce (o
+      // el SDK lo sustituye, ADR-0400) el mapeo deja de casar EN SILENCIO y el cajero cae al
+      // genérico sin que nada lo delate. Sin código —un fallo del navegador, no del hub— queda la
+      // frase, que es lo único que hay.
+      const code = errorCode(e);
+      const key = checkoutErrorKey(code);
       const raw = e instanceof Error ? e.message : String(e ?? '');
-      const key = checkoutErrorKey(raw);
-      this.error = key === 'ui.errorCharge' && raw ? raw : t(key);
+      this.error = key === 'ui.errorCharge' && !code && raw ? raw : t(key);
       return;
     }
 
@@ -3486,8 +3530,14 @@ export class ErpPosTouch extends LitElement {
                         @click=${() => { this.prebillOpen = true; void this.loadModifierCatalog(); }}>
               <ion-icon slot="icon-only" name="print-outline"></ion-icon>
             </ion-button>
+            <!-- sales#185 — con la app ausente el botón se anuncia bloqueado pero SIGUE VIVO:
+                 aria-disabled, jamás el disabled nativo, que en Ionic es pointer-events:none y
+                 dejaría el motivo encerrado en un title que una tablet nunca muestra (sales#58).
+                 openPay() recibe el toque y contesta con el aviso del shell. -->
             <ion-button class="charge" ?disabled=${!this.cart.length}
-                        title=${t('ui.charge')} aria-label=${t('ui.charge')}
+                        aria-disabled=${this.missingChargeApp ? 'true' : nothing}
+                        title=${this.missingChargeApp ? t('ui.missingAppCharge', { app: this.chargeAppName }) : t('ui.charge')}
+                        aria-label=${t('ui.charge')}
                         @click=${() => this.openPay()}>
               <ion-icon slot="start" name="card-outline"></ion-icon>
               ${t('ui.charge')} · ${this.money(this.owed)}
@@ -3637,7 +3687,20 @@ export class ErpPosTouch extends LitElement {
       <div class="body">
         <div class="catalog">
           ${this.renderCatBar()}
-          ${this.error ? html`<p class="err">${this.error}</p>${this.renderCheckSalesLink()}` : nothing}
+          <!-- sales#185 — el error del cobro vive en UN sitio a la vez. Con el sheet abierto esta
+               copia queda DETRÁS del scrim, atravesando la rejilla, y el borde del modal la
+               recorta a media frase («… is unavailable — the c…»): el cajero lee dos veces lo
+               mismo y ninguna de las dos entera. La del sheet es la que tiene delante. Al cerrar
+               el sheet el error vuelve aquí — no se pierde, se mueve. -->
+          ${this.error && !this.paying ? html`<p class="err">${this.error}</p>${this.renderCheckSalesLink()}` : nothing}
+          <!-- sales#185 — falta una app que el cobro NECESITA. El rol es alert y no status: no
+               es un aviso ambiental, es que hoy no se puede cobrar en esta caja. -->
+          ${this.missingChargeApp
+            ? html`<div class="blocked-notice missing-app-notice" role="alert">
+                <ion-icon name="alert-circle" aria-hidden="true"></ion-icon>
+                <span>${t('ui.missingAppCharge', { app: this.chargeAppName })}</span>
+              </div>`
+            : nothing}
           ${this.blockedNotice
             ? html`<div class="blocked-notice" role="status">
                 <ion-icon name="alert-circle" aria-hidden="true"></ion-icon><span>${this.blockedNotice}</span>

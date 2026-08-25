@@ -53,7 +53,11 @@ function installSdk() {
     queryOptional: async () => undefined,
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
-      if (name === 'sales.complete_sale' && refuseWith) throw new Error(`command failed: ${refuseWith}: nope`);
+      // sales#185 — el rechazo viaja TIPADO (`code`), como lo entrega `ErploraError`: la pantalla
+      // ramifica sobre el código, nunca sobre la frase, así que el doble tiene que llevarlo.
+      if (name === 'sales.complete_sale' && refuseWith) {
+        throw Object.assign(new Error(`command failed: ${refuseWith}: nope`), { code: refuseWith });
+      }
       if (name === 'sales.order.open') {
         const it = (payload.items as Record<string, unknown>[])[0];
         orderLines.push({ id: 'line-1', product_id: it.product_id, product_name: it.product_name, quantity: it.quantity, unit_price: it.price, line_total: it.price });

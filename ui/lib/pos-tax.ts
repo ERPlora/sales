@@ -17,6 +17,13 @@
 
 import type { ErploraClientLike } from './pos-cart.js';
 
+/** Los dos códigos con los que el runtime dice «esa app no está» (hub#1074, ADR-0400).
+ *
+ *  `module_inactive` cuenta como ausencia igual que `module_not_installed`: la cascada de ADR-0128
+ *  apaga un módulo con su dependencia, y un módulo apagado no responde a nadie. Es la MISMA pareja
+ *  sobre la que `queryOptional` del SDK devuelve `undefined`, y por eso no se inventa aquí. */
+const MODULE_ABSENT_CODES = new Set(['module_not_installed', 'module_inactive']);
+
 interface TaxRuleRow {
   id?: string;
   tax_category_key?: string;
@@ -45,6 +52,19 @@ export interface TaxCatalog {
    *  fallo de `taxes` se convertiría en un TPV que no deja vender nada. Es la misma distinción que
    *  hace el handler con `!rules.is_empty()` antes de rechazar por `sales.no_tax_rule`. */
   available: boolean;
+  /** sales#185 — la app de impuestos **no está en este hub**: desinstalada (a la fuerza, hub#1101)
+   *  o desactivada por la cascada (ADR-0128). Es un hecho distinto de `available: false`, que
+   *  también cubre «respondió mal» y «no hay reglas dadas de alta»:
+   *
+   *   - `available:false` + `installed:true`  → incidencia; el TPV sigue vendiendo (el servidor
+   *     resuelve el % real y es él quien rechaza si no puede).
+   *   - `installed:false`                     → `sales.complete_sale` declara `taxes.rules.list`
+   *     como `read` **obligatoria**, así que NINGUNA venta va a poder cerrarse. Eso se dice al
+   *     ENTRAR, no cuando el cliente ya tiene la tarjeta en la mano.
+   *
+   *  Confundirlos apagaría el TPV entero por un fallo pasajero de `taxes`, que es justo lo que el
+   *  flag `available` existe para evitar. */
+  installed: boolean;
 }
 
 /** Veredicto de una línea de catálogo ANTES de tocarla (sales#74):
@@ -65,11 +85,13 @@ export function productSellability(catalog: TaxCatalog, taxCategoryKey?: string 
   return catalog.rates.has(String(taxCategoryKey)) ? 'sellable' : 'no_tax_rule';
 }
 
-/** Carga el catálogo fiscal del hub: el mapa de tipos por categoría + si el catálogo llegó siquiera.
+/** Carga el catálogo fiscal del hub: el mapa de tipos por categoría, si el catálogo llegó siquiera
+ *  y si la app de impuestos está en este hub.
  *  Nunca lanza: ante cualquier fallo (taxes no instalado/sin responder) devuelve `available:false`. */
 export async function loadTaxCatalog(client: ErploraClientLike): Promise<TaxCatalog> {
   const map = new Map<string, number>();
   let available = false;
+  let installed = true;
   try {
     const all = await client.queryAll<TaxRuleRow>('taxes.rules.list');
     available = Array.isArray(all) && all.length > 0;
@@ -91,11 +113,16 @@ export async function loadTaxCatalog(client: ErploraClientLike): Promise<TaxCata
       }
       map.set(cat, pct);
     }
-  } catch {
+  } catch (e) {
     /* taxes puede no responder; preview 0% sin romper la venta (el servidor resuelve el % real) */
     available = false;
+    // sales#185: se lee el CÓDIGO del error, nunca su frase. Cualquier otro fallo (un handler roto,
+    // una query renombrada, la BD caída) deja `installed: true` a propósito: la app está, esto es
+    // una incidencia, y bloquear el mostrador por ella sería peor que el defecto que arregla.
+    const code = (e as { code?: unknown } | null | undefined)?.code;
+    installed = !(typeof code === 'string' && MODULE_ABSENT_CODES.has(code));
   }
-  return { rates: map, available };
+  return { rates: map, available, installed };
 }
 
 /** Preview del % de IVA de un producto desde su `tax_category_key` usando el mapa (0 si no resuelve). */
