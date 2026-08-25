@@ -1304,6 +1304,30 @@ fn resolve_method(
         _ => Ok((fallback_name, fallback_type)),
     }
 }
+/// **Quién atendió** (sales#179), resuelto por el servidor y nunca vacío mientras haya sesión.
+///
+/// Precedencia: el `field` del payload (el profesional de la cita, o el camarero al que se
+/// transfirió el ticket) → el usuario con SESIÓN (`context.current_user_id`). Solo devuelve `Null`
+/// si el runtime no dio usuario, que es un camino sin sesión (seed, tarea interna).
+///
+/// Una cadena VACÍA no es una atribución: el POS manda `null` cuando no hay cita y las
+/// integraciones mandan `""`. Los dos caen al usuario de la sesión.
+fn attributed_person(payload: &Value, field: &str, session_user: &str) -> Value {
+    let named = payload.get(field).map(as_str).unwrap_or_default();
+    if !named.is_empty() {
+        return json!(named);
+    }
+    if !session_user.is_empty() {
+        return json!(session_user);
+    }
+    Value::Null
+}
+
+/// El profesional al que se atribuye la VENTA (`sales_sale.staff_id`). Ver [`attributed_person`].
+fn attributed_staff(payload: &Value, session_user: &str) -> Value {
+    attributed_person(payload, "staff_id", session_user)
+}
+
 
 pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
@@ -1313,6 +1337,21 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     let now = context.get("now").map(as_str).unwrap_or_default();
     let day = day_from_now(&now);
     let sale_id = new_ids.first().map(as_str).unwrap_or_default();
+
+    // sales#179 — **QUIÉN ATENDIÓ no puede quedar en blanco.** El TPV nunca preguntaba el
+    // camarero y solo `appointments` mandaba `staff_id`, así que toda venta de mostrador quedaba
+    // sin atribuir: `sales.by_staff` salía vacía, la comanda no decía quién la mandó y no había
+    // base para propinas ni para auditar descuentos por persona. El mercado (Toast, Square for
+    // Restaurants, Lightspeed) pega el *server* al ticket desde que se abre y permite
+    // transferirlo. Aquí: manda quien lo diga el payload (la cita, o el ticket transferido) y, si
+    // no lo dice nadie, el usuario con SESIÓN — resuelto por el servidor con
+    // `context.current_user_id`, el mismo id no falsificable que ya escribe `employee_id`.
+    //
+    // `staff_id` (quien atendió) sigue siendo distinto de `employee_id` (quien cobró): en una
+    // venta atribuida a otra persona los dos difieren, y esa es la traza que pide el arqueo.
+    let session_user = context.get("current_user_id").map(as_str).unwrap_or_default();
+    let staff_id = attributed_staff(&payload, &session_user);
+
 
     let sale_disc = payload.get("discount_percent").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
     let sale_disc_amount = as_cents(payload.get("discount_amount").unwrap_or(&Value::Null), 0); // sales#113
@@ -1726,7 +1765,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     // Atribución por profesional (staff_member) y traza de la cita de origen (opacas; sin FK
     // cross-módulo). `staff_id` distinto de `employee_id` (= :current_user_id, el cajero). NULL
     // en TPV sin atribuir; `appointment_id` NULL salvo venta nacida de una cita.
-    h.insert("staff_id".into(), payload.get("staff_id").cloned().unwrap_or(Value::Null));
+    h.insert("staff_id".into(), staff_id.clone());
     h.insert("appointment_id".into(), payload.get("appointment_id").cloned().unwrap_or(Value::Null));
     ops[header_idx] = Operation::sql("sales._insert_sale", h);
 
@@ -1929,8 +1968,10 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         "customer_tax_id": str_or(&payload, "customer_tax_id", ""),
         "customer_address": str_or(&payload, "customer_address", ""),
         // staff_id viaja en el evento para que los consumidores (p.ej. cash_register, reporting)
-        // puedan atribuir la venta al profesional. NULL si la venta no se atribuye.
-        "staff_id": payload.get("staff_id").cloned().unwrap_or(Value::Null),
+        // puedan atribuir la venta a quien atendió. Ya RESUELTO (sales#179): el profesional que
+        // dijo el payload o, en su defecto, el usuario con sesión. Solo es NULL si el runtime no
+        // dio contexto de usuario, que es un hub sin sesión.
+        "staff_id": staff_id.clone(),
         // El MÉTODO DE PAGO viaja en el evento (QA restaurante 07-16, P0 del arqueo):
         // cash_register.record_sale decidía con default 'cash' → las ventas con TARJETA
         // se sumaban al efectivo esperado del cajón y el arqueo nunca cuadraba.
@@ -1966,7 +2007,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
             "sender": "sales",
             "sale_id": sale_id,
             "appointment_id": appointment_id,
-            "staff_id": payload.get("staff_id").cloned().unwrap_or(Value::Null),
+            "staff_id": staff_id.clone(),
             "total": total,
         })));
     }
@@ -2375,6 +2416,16 @@ pub fn fire_order_pure(input: Value) -> Result<Output, String> {
         // Opaca a propósito: `sales` no sabe (ni quiere saber) de dónde sale este texto.
         "label": str_or(&payload, "label", ""),
         "channel": channel,
+        // sales#179 — **la comanda dice quién la mandó.** `kitchen` ya guarda `waiter_id` en su
+        // ticket, pero nadie se lo daba: el KDS enseñaba la ronda sin camarero y el pase no sabe a
+        // quién llamar. Por defecto es el usuario con SESIÓN, resuelto por el SERVIDOR; si quien
+        // dispara manda el camarero de la mesa (`tables` es dueño de la sesión y de su camarero),
+        // manda ese — `sales` lo reenvía sin interpretarlo, igual que `label`.
+        "waiter_id": attributed_person(
+            &payload,
+            "waiter_id",
+            &context.get("current_user_id").map(as_str).unwrap_or_default(),
+        ),
         // pm#93: los suplementos salen con el nombre que resuelve el SERVIDOR, no el navegador.
         "items": name_modifiers_for_kitchen(
             &items,
@@ -3033,6 +3084,40 @@ mod tests {
     }
 
     #[test]
+    fn la_comanda_viaja_con_el_camarero_que_la_dispara() {
+        // sales#179 — la comanda de cocina no decía quién la mandó (`kitchen.orders.list`
+        // devolvía `waiter_id: null`), así que en el pase nadie sabe a quién llamar cuando el
+        // plato está listo. El camarero por defecto es el usuario con sesión en el terminal,
+        // resuelto por el SERVIDOR (`context.current_user_id`), y viaja en `order.fired` para que
+        // `kitchen` lo copie en su ticket. Es el mismo contrato que `sale.completed`.
+        let inp = json!({
+            "payload": {
+                "order_id": "ord-1", "label": "Mesa 4", "channel": "dine_in",
+                "items": [{ "product_name": "Croquetas", "quantity": 2_000_000 }]
+            },
+            "context": { "hub_id": "h1", "current_user_id": "u-waiter", "now": "2026-07-18T10:00:00+00:00", "new_ids": [] }
+        });
+        let out = fire_order_pure(inp).expect("disparar el pedido");
+        assert_eq!(out.events[0].payload["waiter_id"], json!("u-waiter"));
+    }
+
+    #[test]
+    fn el_camarero_de_la_mesa_manda_sobre_el_del_terminal() {
+        // sales#179 — con el ticket transferido, quien atiende la mesa NO es quien está delante
+        // del terminal. `tables` es dueño de la sesión y su camarero: si quien dispara lo manda,
+        // ese es el que viaja a cocina. `sales` no lo interpreta, igual que hace con `label`.
+        let inp = json!({
+            "payload": {
+                "order_id": "ord-1", "label": "Mesa 4", "channel": "dine_in", "waiter_id": "u-luis",
+                "items": [{ "product_name": "Croquetas", "quantity": 2_000_000 }]
+            },
+            "context": { "hub_id": "h1", "current_user_id": "u-waiter", "now": "2026-07-18T10:00:00+00:00", "new_ids": [] }
+        });
+        let out = fire_order_pure(inp).expect("disparar el pedido");
+        assert_eq!(out.events[0].payload["waiter_id"], json!("u-luis"));
+    }
+
+    #[test]
     fn disparar_sin_pedido_es_un_error_no_una_comanda_huerfana() {
         let inp = json!({
             "payload": { "label": "Mesa 4", "channel": "dine_in", "items": [] },
@@ -3625,13 +3710,65 @@ mod tests {
     }
 
     #[test]
-    fn sale_without_staff_has_null_attribution() {
-        // Venta de TPV sin profesional: staff_id NULL en cabecera y evento; sin evento extra.
+    fn sale_without_staff_is_attributed_to_the_session_user() {
+        // sales#179 — **una venta SIEMPRE dice quién la atendió.** Antes este test afirmaba lo
+        // contrario (`staff_id` NULL), y esa era exactamente la avería: el TPV no pregunta el
+        // camarero, así que ninguna venta de mostrador quedaba atribuida y `sales.by_staff` salía
+        // vacía. El mercado (Toast, Square for Restaurants, Lightspeed) pega el *server* al ticket
+        // desde que se abre, y ese server es por defecto el usuario con sesión en el terminal.
+        //
+        // Quien lo resuelve es el SERVIDOR, con `context.current_user_id` — el mismo id
+        // no falsificable que ya escribe `employee_id`. El navegador no puede inventarlo.
         let items = json!([{ "product_name": "Café", "price": 121, "quantity": 1_000_000, "tax_rate": 21.0 }]);
         let out = sale(input(items, 4, 200));
-        assert_eq!(out.operations[1].params["staff_id"], Value::Null);
+        assert_eq!(out.operations[1].params["staff_id"], json!("u1"));
         assert_eq!(out.events.len(), 1);
-        assert_eq!(out.events[0].payload["staff_id"], Value::Null);
+        assert_eq!(out.events[0].payload["staff_id"], json!("u1"));
+    }
+
+    #[test]
+    fn an_empty_staff_id_is_not_an_attribution_either() {
+        // sales#179 — el POS manda `staff_id: null` cuando no hay cita, y una integración manda
+        // `""`. Ninguno de los dos es «lo atendió nadie»: los dos caen al usuario de la sesión.
+        let items = json!([{ "product_name": "Café", "price": 121, "quantity": 1_000_000, "tax_rate": 21.0 }]);
+        let mut inp = input(items, 4, 200);
+        inp["payload"]["staff_id"] = json!("");
+        let out = sale(inp);
+        assert_eq!(out.operations[1].params["staff_id"], json!("u1"));
+        assert_eq!(out.events[0].payload["staff_id"], json!("u1"));
+    }
+
+    #[test]
+    fn staff_id_from_the_payload_wins_over_the_session_user() {
+        // sales#179 — el control opuesto: cuando la venta nace de una cita (o el cajero transfiere
+        // el ticket a otra persona), manda ese profesional, no quien está cobrando. El cajero sigue
+        // guardado aparte, en `employee_id` (`:current_user_id` en `_insert_sale`).
+        let items = json!([{ "product_name": "Tinte", "price": 4500, "quantity": 1_000_000, "tax_rate": 21.0 }]);
+        let mut inp = input(items, 4, 5000);
+        inp["payload"]["staff_id"] = json!("staff-7");
+        let out = sale(inp);
+        assert_eq!(out.operations[1].params["staff_id"], json!("staff-7"));
+        assert_eq!(out.events[0].payload["staff_id"], json!("staff-7"));
+    }
+
+    #[test]
+    fn the_appointment_trace_event_carries_the_resolved_staff() {
+        // sales#179 — `sales.sale.created_from_appointment` llevaba el `staff_id` CRUDO del
+        // payload. Una cita sin profesional asignado dejaba a `appointments` sin nadie a quien
+        // marcarle la conversión; ahora lleva el mismo valor RESUELTO que la cabecera.
+        let new_ids: Vec<Value> = (0..4).map(|i| json!(format!("id-{i}"))).collect();
+        let inp = json!({
+            "payload": {
+                "idempotency_key": "idem-test-179-appt",
+                "items": [{ "product_name": "Tinte", "price": 4500, "quantity": 1_000_000, "tax_rate": 21.0, "is_service": true }],
+                "tax_included": true, "amount_tendered": 0, "appointment_id": "appt-99"
+            },
+            "context": { "hub_id": "h1", "current_user_id": "u-ana", "now": "2026-05-31T10:00:00+00:00", "new_ids": new_ids }
+        });
+        let out = sale(inp);
+        assert_eq!(out.events.len(), 2);
+        assert_eq!(out.events[1].name, "sales.sale.created_from_appointment");
+        assert_eq!(out.events[1].payload["staff_id"], json!("u-ana"));
     }
 
     #[test]

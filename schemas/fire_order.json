@@ -61,6 +61,13 @@
         }
       }
     },
+    "waiter_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Quien atiende esta comanda (sales#179). OPACO: `sales` no lo interpreta, solo lo reenvía en `order.fired` para que `kitchen` lo copie en su ticket. Si no viene, el servidor lo resuelve al usuario con SESIÓN — la comanda nunca sale sin camarero. Lo manda quien dispara cuando la mesa tiene un camarero propio (`tables` es dueño de la sesión y de su camarero)."
+    },
     "round_no": {
       "type": "integer",
       "minimum": 1,
