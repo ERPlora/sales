@@ -27,6 +27,49 @@ fact, and the credit note is its document, issued from `invoice`.
 
 When the last cent goes back, the sale's status becomes **Devuelta**.
 
+### What was not paid in money goes back too (sales#166 / ADR-0386)
+
+The refund screen hosts a second slot, `sales.refund.tender` — the mirror of the till's
+`sales.pos.tender`. Under the split, the lines an **external tender** paid for get a card of their
+own with a hole in it: they cost no money, so they are not part of the split, and without that hole
+the only way to give a prepaid session back would be for the operator to remember to walk into the
+voucher module afterwards.
+
+`sales` cannot do it alone, and that is the whole point. `sales_sale_item.is_covered` is **opaque by
+design**: it says another tender already paid the line, never which one. Reading the other module
+from here would break exactly the modularity that lets a hub without it keep charging and refunding.
+
+**The contract of the host** (documented, not validated — a slot is a screen's implicit contract):
+
+| Direction | What travels |
+|---|---|
+| host → filler, **JS properties set before the element enters the DOM** | `sale-id` · `line-ref` (`sales_sale_item.id`) · `service-id` (the line's `product_id`) · `line-index` |
+| filler → host, `CustomEvent` (bubbles + composed) | `erp:tender-refund-armed` `{ lineRef, warning? }` · `erp:tender-refund-disarmed` `{ lineRef }` |
+| host → filler, once the refund document exists | `erp:tender-refund-commit` `{ saleId, refundId, refundRef, waitFor(promise) }`, plus `refundId` / `refundRef` as properties |
+
+Four details that are not cosmetic:
+
+* **The properties are set before the insert.** The filler reads in `connectedCallback`; inserting
+  first would make it ask about an empty sale and paint «nothing to give back here» over a session
+  that does go back.
+* **`line-index`** is the 0-based ordinal of the line among the covered lines of the **same
+  service**. A mother and her daughter get the same haircut on one ticket: two covered lines, two
+  sessions. A settled redemption keeps the **order** line id, and a sale item has no column pointing
+  back at it, so without the ordinal both holes would claim the first session.
+* **`refundRef` is the refund document's stable id**, which `sales.refund` already returns and
+  `idempotency_key` keeps stable across retries — it is the filler's idempotency key.
+* **The screen waits.** `waitFor(promise)` works like `respondWith`: whoever calls it delays the
+  close until it settles. Closing at confirm would unmount the filler mid-command and leave the
+  session spent with nobody at the counter able to give it back. If what was promised fails, the
+  money refund **stands** and the screen says the other side did not complete.
+
+A warning the filler sends with `erp:tender-refund-armed` is painted **next to the confirm button**,
+because the line's hole can be off-screen when the thumb is already on **Devolver**. It warns; it
+never blocks — an expired voucher does not veto undoing a past act.
+
+With nobody filling the slot there is no section, no header, no empty hole, and no extra call: the
+refund travels field for field as it did before.
+
 ## Vender — the till
 
 The touch point of sale. It opens **full screen**: the shell hides its own chrome and gives a
