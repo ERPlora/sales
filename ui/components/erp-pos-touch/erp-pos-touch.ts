@@ -390,6 +390,21 @@ export class ErpPosTouch extends LitElement {
     ion-button.charge.blocked { --background:var(--ion-color-medium,#92949c);
       --background-activated:var(--ion-color-medium-shade,#808289);
       --background-focused:var(--ion-color-medium-shade,#808289); }
+    /* sales#149 — el estado del CATÁLOGO. Deliberadamente MÁS callado que .blocked-notice: sin
+       caja de color, porque no es un incidente del toque que se acaba de dar sino una condición que
+       lleva ahí desde que abrió la caja, y a esa altura del ojo compite con el producto. */
+    /* Una FRASE, no una barra de tres cajas: en flex, un ancho estrecho (móvil, o la rejilla
+       reducida de una tablet en vertical) rompe la fila y deja el icono solo en un renglón y el
+       enlace en otro. Como texto corrido, el icono y el enlace viajan DENTRO de la frase y el
+       aviso ocupa las líneas que necesite sin desmontarse. */
+    .catalog-health { display:block; margin:0 0 .5rem; padding:0 .1rem;
+      color:var(--mut); font-size:.8rem; line-height:1.35; }
+    .catalog-health ion-icon { display:inline-block; vertical-align:-.15em; margin-right:.3rem;
+      font-size:1rem; color:var(--ion-color-warning-shade,#e0ac08); }
+    /* El botón de Ionic trae altura de barra: aquí es un enlace dentro de una frase. */
+    .catalog-health .ch-fix { display:inline-block; vertical-align:-.35em;
+      --padding-start:.25rem; --padding-end:.25rem; margin:0;
+      height:1.5rem; font-size:.8rem; text-transform:none; letter-spacing:0; }
     .tile .n { font-weight:600; font-size:.9rem; line-height:1.2; color:var(--tx); }
     .tile .p { font-weight:800; color:var(--accent); margin-top:.25rem; }
 
@@ -3371,6 +3386,60 @@ export class ErpPosTouch extends LitElement {
     window.dispatchEvent(new PopStateEvent('popstate'));
   }
 
+  /** sales#149 — cuántas líneas del catálogo NO se pueden cobrar, sobre el catálogo ENTERO.
+   *
+   *  Sobre `products`, no sobre `filtered`: la frase habla del negocio («al catálogo le falta
+   *  configurar el IVA»), no de la pestaña abierta. Contar lo filtrado haría que el mismo problema
+   *  dijera un número distinto en cada categoría y cero en la primera que estuviera bien. */
+  private get blockedCount(): number {
+    return this.products.reduce((n, p) => (this.blockedReason(p) ? n + 1 : n), 0);
+  }
+
+  /** ¿Puede ESTA sesión hacer algo con el aviso? Filtro, no muro (mismo criterio que
+   *  `canOpenManagement` del shell): la autoridad real es el runtime, esto solo decide qué se pinta.
+   *
+   *  `inventory.change_product` es el permiso que abre la ficha donde se asigna la categoría fiscal
+   *  (lo exige `erp-inventory-products` para editar), y lo llevan `manager`/`admin` — que es
+   *  exactamente el ENCARGADO al que va dirigido el aviso; un cajero no puede arreglarlo.
+   *
+   *  Un shell que NO expone el canal de permisos (preview, shell anterior) no está diciendo «no»:
+   *  está sin responder. Fallar cerrado ahí borraría en silencio el único sitio donde el negocio se
+   *  entera, y el aviso no le cuesta nada a un cajero. */
+  private canFixCatalog(): boolean {
+    const c = erplora() as Partial<{ hasPermission(perm: string): boolean }>;
+    if (typeof c.hasPermission !== 'function') return true;
+    return c.hasPermission('inventory.change_product');
+  }
+
+  private goToProductSetup() {
+    // `inventory` es `depends_on` DURO de `sales`, así que esta ruta no puede apuntar a un módulo
+    // que no esté instalado. Mismo canal módulo→shell que `goToSales`.
+    window.history.pushState({}, '', '/m/inventory/products');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }
+
+  /** El aviso AGREGADO, una vez y antes del servicio (sales#149).
+   *
+   *  Hasta aquí el catálogo a medio configurar solo se notaba baldosa a baldosa, con el cliente
+   *  delante: la mitad del cajero (sales#74/#58). Esta es la del encargado — el recuento y la
+   *  puerta por la que se arregla.
+   *
+   *  DISCRETO a propósito: una línea, no un modal ni un `alert`. Un TPV que se abre con una ventana
+   *  encima es un TPV que se aprende a cerrar sin leer, y el catálogo sigue vendiendo lo que sí
+   *  tiene IVA. Odoo y WooCommerce esconden el artículo mal configurado (la caja funciona, el
+   *  encargado no se entera); Square y Toast lo pintan en la baldosa pero tampoco avisan por
+   *  adelantado. Nosotros ya no lo escondemos (sales#74), así que lo que faltaba era la suma. */
+  private renderCatalogHealth() {
+    const n = this.blockedCount;
+    if (!n || !this.canFixCatalog()) return nothing;
+    return html`<div class="catalog-health" role="status" data-testid="catalog-blocked-summary">
+      <ion-icon name="alert-circle" aria-hidden="true"></ion-icon>
+      <span class="ch-text">${n === 1 ? t('ui.catalogBlockedOne') : t('ui.catalogBlocked', { count: n })}</span>
+      <ion-button size="small" fill="clear" class="ch-fix" data-testid="catalog-blocked-fix"
+        @click=${() => this.goToProductSetup()}>${t('ui.catalogBlockedFix')}</ion-button>
+    </div>`;
+  }
+
   /** hub#297 — la captura de NIF + domicilio cuando la venta pasa del techo de la simplificada.
    *
    *  **En la MISMA pantalla del cobro**, no en un modal encima: quien la tiene que rellenar está
@@ -3853,6 +3922,10 @@ export class ErpPosTouch extends LitElement {
                 <ion-icon name="alert-circle" aria-hidden="true"></ion-icon><span>${t('ui.comboCatalogUnavailable')}</span>
               </div>`
             : nothing}
+          <!-- sales#149: el estado del CATÁLOGO, una línea y al final de los avisos. Los dos de
+               arriba son del toque que se acaba de dar; este lleva ahí desde que abrió la caja, así
+               que no puede empujarlos hacia abajo cada vez que aparecen. -->
+          ${this.renderCatalogHealth()}
           <div class="grid">
             <!-- Los MENÚS van primero: en un local con menú del día es la primera comanda de la
                  hora punta. Solo en la pestaña «todo»: un combo no pertenece a ninguna categoría
