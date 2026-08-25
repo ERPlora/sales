@@ -359,3 +359,59 @@ describe('los suplementos en el documento del térmico (sales#148)', () => {
     expect(Object.keys(doc.items[0]).includes('notes'), 'ni la clave presente en `undefined`').toBe(false);
   });
 });
+
+// sales#154 / ADR-0381 — the menu on the THERMAL paper. The renderer (`escpos::render_receipt` /
+// `render_prebill`) reads `name`, `quantity`, `total` and `notes` per item — nothing else, and a key
+// it does not know prints NOTHING, silently (the sales#78 lesson). So the menu goes through the keys
+// every deployed hub already prints: ONE item with the closed price, and its components in the
+// indented `notes` sub-line — the same door sales#148 used for supplements. A structured, one-per-line
+// component list needs the renderer to learn it (ERPlora/hub issue in the PR), and this shape is
+// forward-compatible with that: the header item stays, the list is an extra optional key.
+describe('the menu on the thermal paper (sales#154)', () => {
+  const snapshot = JSON.stringify({
+    combo_id: 'c-menu', name: 'Menú del día', price: 1350, price_charged: 1350, supply_kind: 'goods',
+    components: [
+      { option_id: 'o-sandwich', name: 'Bocadillo', price_delta: 0 },
+      { option_id: 'o-beer', name: 'Cerveza', price_delta: 0 },
+    ],
+  });
+  const SALE = { id: 's1', sale_number: 'T-1', subtotal: 1182, tax_amount: 168, total: 1350 };
+  const PACK = [
+    { product_name: 'Bocadillo', quantity: 1_000_000, unit_price: 810, line_total: 810, combo_group_ref: 'grp-1', combo: snapshot },
+    { product_name: 'Cerveza', quantity: 1_000_000, unit_price: 540, line_total: 540, combo_group_ref: 'grp-1', combo: snapshot },
+  ];
+
+  it('a pack split in two rates prints ONE item: the menu, its closed price, and its components as the sub-line', () => {
+    const doc = saleToPrintDocument(SALE, PACK, SETTINGS);
+    expect(doc.items).toHaveLength(1);
+    expect(doc.items[0]).toMatchObject({ name: 'Menú del día', quantity: 1, total: 13.5, notes: 'Bocadillo · Cerveza' });
+    expect(doc.total, 'and the paper total is the sale total, untouched').toBe(13.5);
+    expect(doc.tax_amount, 'the tax line is the sale row: the real, two-rate amount').toBe(1.68);
+  });
+
+  it('the components are ALSO handed as a list, for a renderer that learns to indent them', () => {
+    const doc = saleToPrintDocument(SALE, PACK, SETTINGS);
+    expect(doc.items[0].components).toEqual(['Bocadillo', 'Cerveza']);
+  });
+
+  it('the bill prints the menu the same way (one composer, both papers)', () => {
+    const doc = prebillToPrintDocument([
+      { name: 'Menú del día', price: 1650, qty: 1, combo: { name: 'Menú del día', components: [{ name: 'Gazpacho' }, { name: 'Solomillo', price_delta: 300 }] } },
+    ], SETTINGS, {});
+    expect(doc.items[0]).toMatchObject({ name: 'Menú del día', quantity: 1, total: 16.5, notes: 'Gazpacho · Solomillo (+3,00)' });
+  });
+
+  it('a line without a menu does not grow `notes` nor `components`: byte-identical paper', () => {
+    const doc = prebillToPrintDocument(CART, SETTINGS, {});
+    expect(doc.items[0].notes).toBeUndefined();
+    expect(doc.items[0].components).toBeUndefined();
+  });
+
+  it('changing a component changes the bill fingerprint: the corrected bill is a NEW job', () => {
+    const menu = (second: string) => [
+      { name: 'Menú del día', price: 1350, qty: 1, combo: { name: 'Menú del día', components: [{ option_id: 'o-soup' }, { option_id: second }] } },
+    ];
+    expect(prebillJobId('order-1', menu('o-chicken'))).not.toBe(prebillJobId('order-1', menu('o-sirloin')));
+    expect(prebillJobId('order-1', menu('o-chicken')), 'and the same menu is the same job').toBe(prebillJobId('order-1', menu('o-chicken')));
+  });
+});

@@ -232,3 +232,36 @@ describe('los suplementos en la cuenta previa (sales#148)', () => {
     expect(items[0].notes).toBeUndefined();
   });
 });
+
+// sales#154 / ADR-0381 — the MENU on the bill. The cart line of a menu carries `combo_id` and the
+// chosen components (`combo_choices`, with the display name resolved when picked); the bill must
+// print the menu as ONE line with the closed price and the components under it, on BOTH papers.
+describe('the menu on the bill (sales#154)', () => {
+  const MENU_LINE = {
+    line_id: 'l9', name: 'Menú del día', price: 1650, qty: 1, combo_id: 'c-menu',
+    combo_choices: [
+      { option_id: 'o-soup', product_name: 'Gazpacho', category_id: null },
+      { option_id: 'o-sirloin', product_name: 'Solomillo', category_id: null },
+    ],
+  };
+
+  it('prints ONE item with the closed price and the components as its sub-line, on the thermal paper', async () => {
+    await printBill([...CART, MENU_LINE]);
+    const items = printed[0].data!.items as { name: string; total: number; notes?: string }[];
+    expect(items).toHaveLength(3);
+    expect(items[2]).toMatchObject({ name: 'Menú del día', total: 16.5, notes: 'Gazpacho · Solomillo' });
+    expect(printed[0].data!.total, '2×1,20 + 2,50 + 16,50').toBe(21.4);
+  });
+
+  it('and on the HTML paper the components are indented sub-lines of the menu', async () => {
+    await printBill([...CART, MENU_LINE]);
+    const comps = [...printed[0].html!.matchAll(/<div class="comp">([^<]*)<\/div>/g)].map((m) => m[1]);
+    expect(comps).toEqual(['Gazpacho', 'Solomillo']);
+  });
+
+  it('swapping a component is a NEW job: the corrected bill must come out of the printer', async () => {
+    await printBill([...CART, MENU_LINE]);
+    await printBill([...CART, { ...MENU_LINE, combo_choices: [MENU_LINE.combo_choices[0], { option_id: 'o-chicken', product_name: 'Pollo', category_id: null }] }]);
+    expect(printed[1].jobId).not.toBe(printed[0].jobId);
+  });
+});

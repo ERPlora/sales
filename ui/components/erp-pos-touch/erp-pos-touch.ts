@@ -10,6 +10,7 @@ import { orderToPrebill, receiptLabels } from '../../lib/document-mappers.js';
 // (sales#78): son dos documentos con el mismo contenido y distintas claves.
 import { prebillToPrintDocument, prebillJobId } from '../../lib/print-document.js';
 import type { PrintedModifier } from '../../lib/paper-modifiers.js';
+import type { PrintedCombo } from '../../lib/paper-combos.js';
 import { receiptToPrintableHtml, printHtmlInIframe } from '../../lib/receipt-html.js';
 import { decideOnTableChange } from '../../lib/table-switch.js';
 import { defaultParkLabel } from '../../lib/park-label.js';
@@ -2499,7 +2500,30 @@ export class ErpPosTouch extends LitElement {
       unit_code: l.unit_code, unit_name: l.unit_name,
       // sales#148: y sus suplementos, o el cliente paga un «+ queso» que su papel no nombra.
       ...(this.resolvedModifiers(l) ? { modifiers: this.resolvedModifiers(l) } : {}),
+      // sales#154: y la composición del menú, o la cuenta dice «Menú del día» sin decir cuál.
+      ...(this.prebillCombo(l) ? { combo: this.prebillCombo(l) } : {}),
     }));
+  }
+
+  /** The menu of a cart line as the bill prints it (sales#154): the components with the display
+   *  name resolved when they were picked, and the supplement of each one from the combo catalogue
+   *  the till already holds — never from the browser's arithmetic. A line that is not a menu yields
+   *  nothing, so the bill of always does not change. */
+  private prebillCombo(l: CartLine): PrintedCombo | undefined {
+    if (!l.combo_id) return undefined;
+    const combo = this.comboCatalog.find((c) => c.combo_id === l.combo_id);
+    const options = new Map(combo?.groups.flatMap((g) => g.options).map((o) => [o.option_id, o]) ?? []);
+    return {
+      name: l.name,
+      components: (l.combo_choices ?? []).map((c) => {
+        const delta = options.get(c.option_id)?.price_delta;
+        return {
+          option_id: c.option_id,
+          ...(c.product_name ? { name: c.product_name } : {}),
+          ...(delta ? { price_delta: delta } : {}),
+        };
+      }),
+    };
   }
 
   private async printPrebill() {

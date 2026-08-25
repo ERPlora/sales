@@ -11,6 +11,7 @@
 
 import { priceLabel, quantityLabel } from './price-label';
 import { modifierLabel, type PrintedModifier } from './paper-modifiers';
+import { componentLabel, type PrintedCombo } from './paper-combos';
 
 /** Línea del papel (misma forma que `ReceiptData.lines`). */
 export interface PrintableLine {
@@ -30,6 +31,10 @@ export interface PrintableLine {
    *  bajo su producto y SIN importe: el delta ya está dentro del total que va a la derecha (ver la
    *  cabecera de `paper-modifiers.ts` y las 10 referencias de la issue). */
   modifiers?: PrintedModifier[];
+  /** sales#154 — this line is a menu: the header carries the closed price and the components are
+   *  painted indented under it with no amount of their own (only the supplement, in the label),
+   *  ahead of the line's supplements. The market rationale lives in `paper-combos.ts`. */
+  combo?: PrintedCombo;
 }
 
 /** Documento imprimible (subconjunto de `ReceiptData`, todo opcional salvo lo mínimo). */
@@ -95,6 +100,17 @@ function modLines(l: PrintableLine): string {
     .join('');
 }
 
+/** The menu's components (sales#154): one indented sub-line each, inside the cell of the menu line
+ *  — never a row of their own, so the amount column stays exactly what adds up to the TOTAL. A
+ *  component at 0,00 would read as a gift and a prorated share as a price nobody agreed to. */
+function componentLines(l: PrintableLine): string {
+  return (l.combo?.components ?? [])
+    .map(componentLabel)
+    .filter(Boolean)
+    .map((label) => `<div class="comp">${esc(label)}</div>`)
+    .join('');
+}
+
 /**
  * Documento HTML completo del tiquet, listo para imprimir en un iframe aislado.
  * Ancho 80 mm (papel térmico) y tipografía monoespaciada, como el papel real.
@@ -105,7 +121,7 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
   const lbl = { subtotal: 'Subtotal', total: 'TOTAL', change: 'Cambio', document: 'Documento', ...doc.labels };
   const lineas = (doc.lines ?? []).map((l) => `
       <tr>
-        <td class="n">${esc(l.name)}<div class="q">${esc(qtyPrice(l, cur))}</div>${modLines(l)}</td>
+        <td class="n">${esc(l.name)}<div class="q">${esc(qtyPrice(l, cur))}</div>${componentLines(l)}${modLines(l)}</td>
         <td class="a">${money(l.total, cur)}</td>
       </tr>`).join('');
 
@@ -147,6 +163,10 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
      línea madre: es lo que hacen Odoo (margin-start), Shopify (li anidado) y LS Central (línea
      hija). Sin importe a la derecha: ya está dentro del total de la línea. */
   .mod { font-size: 11px; padding-left: 4mm; }
+  /* sales#154 — the menu's component, indented under the menu line like a supplement (same level:
+     LS Central «under the Deal line», WooCommerce «indented», Maitre'D «under the main combo
+     item»). No amount: the header carries the closed price the customer reconciles. */
+  .comp { font-size: 11px; padding-left: 4mm; }
   .tot td { font-size: 15px; font-weight: 700; padding-top: 1mm; }
   .foot { text-align: center; font-size: 10px; margin-top: 3mm; }
   /* El bloque del claim (sales#103): al pie y separado del QR fiscal, como en el papel térmico. */

@@ -20,8 +20,9 @@
 //
 // The field names are the wire contract of `escpos::render_receipt` / `render_prebill`. Changing
 // one here without changing it there prints a document with a missing field, silently.
-import { orderToPrebill, saleToReceipt, claimPrintFields } from './document-mappers.js';
-import { modifierIdentity, modifierNote } from './paper-modifiers.js';
+import { orderToPrebill, saleToReceipt, claimPrintFields, paperNote } from './document-mappers.js';
+import { modifierIdentity } from './paper-modifiers.js';
+import { comboIdentity, componentLabel, type PrintedCombo } from './paper-combos.js';
 import type { PrebillLine, SaleRow, SaleLineRow, SaleSettings, FiscalData } from './document-mappers.js';
 import { quantityLabel, unitTag } from './price-label.js';
 
@@ -38,6 +39,10 @@ export interface PrintDocumentItem {
   quantity: number | string;
   total: number;
   notes?: string;
+  /** sales#154 — the menu's components as a LIST, for a renderer that learns to indent them one per
+   *  line (ERPlora/hub). Today's `render_receipt`/`render_prebill` ignore unknown keys, so this is
+   *  additive: the text they DO print is the `notes` sub-line. Absent on a plain line. */
+  components?: string[];
 }
 
 /** Cantidad para la línea del papel térmico (sales#28).
@@ -61,10 +66,15 @@ function printQuantity(qty: number, unitCode?: string): number | string {
  * Va todo en una sub-línea porque el renderizador imprime UNA por artículo; una lista estructurada
  * con su importe alineado a la derecha necesita que el renderizador aprenda a leerla (ERPlora/hub).
  *
- * Sin suplementos NO se emite la clave: el papel sale byte a byte como salía. */
-function printNotes(l: { modifiers?: Parameters<typeof modifierNote>[0] }): { notes?: string } {
-  const notes = modifierNote(l.modifiers);
-  return notes ? { notes } : {};
+ * Sin suplementos NO se emite la clave: el papel sale byte a byte como salía.
+ *
+ * sales#154: the menu's components travel through the SAME sub-line, first, followed by the line's
+ * supplements — one composer (`paperNote`) for the screen's `note` and this `notes`. And as a list
+ * in `components`, for the renderer that will indent them (ignored by today's, by contract). */
+function printNotes(l: { modifiers?: Parameters<typeof paperNote>[1]; combo?: PrintedCombo }): { notes?: string; components?: string[] } {
+  const notes = paperNote(l.combo, l.modifiers);
+  const components = l.combo?.components.map(componentLabel).filter(Boolean);
+  return { ...(notes ? { notes } : {}), ...(components?.length ? { components } : {}) };
 }
 
 /**
@@ -188,7 +198,8 @@ export function saleToPrintDocument(
  */
 export function prebillJobId(orderId: string | undefined, lines: PrebillLine[]): string {
   const fingerprint = (lines || [])
-    .map((l) => `${l.name}${l.qty}${l.price}${l.is_gift ? 1 : 0}${modifierPrint(l.modifiers)}`)
+    // sales#154: and the menu's composition — swapping a component is a corrected bill, a new job.
+    .map((l) => `${l.name}${l.qty}${l.price}${l.is_gift ? 1 : 0}${modifierPrint(l.modifiers)}${comboIdentity(l.combo)}`)
     .join('');
   return `prebill-${orderId || 'open'}-${hash(fingerprint)}`;
 }
