@@ -1399,15 +1399,15 @@ describe('checkout idempotency (sales#20)', () => {
     expect(consultas.some((q) => q.name === 'sales.list'), 'no racy "last sale" lookup').toBe(false);
   });
 
-  // sales#185 — el rechazo viaja TIPADO, con su `code`, que es como lo entrega el SDK
-  // (`ErploraError`) y lo serializa el sobre del runtime. Antes este doble lanzaba un `Error`
-  // pelado y la pantalla sacaba el código buscándolo DENTRO de la frase; esa lectura se retiró
-  // porque deja de casar en silencio en cuanto la frase cambia o se traduce. La frase de aquí es
-  // deliberadamente inútil para un matcher de texto: si el test pasa, es por el código.
+  // sales#185 — the refusal travels TYPED, with its `code`, which is how the SDK delivers it
+  // (`ErploraError`) and how the runtime's envelope serialises it. This double used to throw a
+  // bare `Error` and the screen dug the code out of the SENTENCE; that reading was retired because
+  // it stops matching in silence as soon as the sentence changes or is translated. The sentence
+  // here is deliberately useless to a text matcher: if the test passes, it is because of the code.
   it('shows a domain rejection in the cashier own words', async () => {
     const pos = await posConUnaLinea();
     fallaElProximoCobro = Object.assign(
-      new Error('la forma de pago elegida ya no está disponible'),
+      new Error('the chosen payment method is no longer available'),
       { code: 'sales.payment_method_not_available' },
     );
     await pos.confirm();
@@ -1447,10 +1447,11 @@ describe('checkout idempotency (sales#20)', () => {
     // Un rechazo que NO es ni de dominio conocido ni de transporte: su frase original lleva el
     // código y el detalle interno, y eso es lo que el encargado necesita para diagnosticar. No se
     // traduce a un mensaje genérico que lo borraría.
-    // sales#185 — y aquí NO viene código: es un `throw` que no sale del sobre del hub (una
-    // librería, el propio navegador). Sin código no hay nada que traducir y la frase es lo único
-    // que hay, así que se enseña. Con código conocido manda el código; con código DESCONOCIDO se
-    // enseña el genérico, porque entonces la frase es del runtime y no es para el mostrador.
+    // sales#185 — and here NO code arrives: it is a `throw` that does not come out of the hub's
+    // envelope (a library, the browser itself). With no code there is nothing to translate and the
+    // sentence is all there is, so it is shown. With a known code the code wins; with an UNKNOWN
+    // code the generic message is shown, because then the sentence is the runtime's and it is not
+    // meant for the counter.
     const pos = await posConUnaLinea();
     fallaElProximoCobro = 'something_unexpected: details the manager needs';
     await pos.confirm();

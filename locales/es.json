@@ -320,7 +320,7 @@
     "comboGroupOverMax": "{group} admite solo {n}",
     "comboOptionRepeated": "{group} no admite el mismo artículo dos veces",
     "comboRemoveOne": "Quitar un {name}",
-    "missingAppCharge": "No se puede cobrar: la app {app} no está instalada en este negocio. Instálala desde el marketplace antes de cobrar.",
+    "missingAppCharge": "{app} no está instalada, así que no se puede cobrar. Instálala desde el marketplace.",
     "missingAppChargeShort": "Falta {app}",
     "appTaxes": "Impuestos",
     "errorMissingApp": "La venta se ha rechazado porque falta una app que necesita. No se ha cobrado nada."

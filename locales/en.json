@@ -319,7 +319,7 @@
     "comboGroupOverMax": "{group} allows only {n}",
     "comboOptionRepeated": "{group} cannot take the same item twice",
     "comboRemoveOne": "Remove one {name}",
-    "missingAppCharge": "Sales cannot be charged: the {app} app is not installed in this business. Install it from the marketplace before taking a payment.",
+    "missingAppCharge": "{app} is not installed, so nothing can be charged. Install it from the marketplace.",
     "missingAppChargeShort": "{app} is missing",
     "appTaxes": "Taxes",
     "errorMissingApp": "The sale was refused because an app it needs is not installed. Nothing was charged."

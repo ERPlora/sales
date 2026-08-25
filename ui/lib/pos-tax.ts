@@ -17,11 +17,12 @@
 
 import type { ErploraClientLike } from './pos-cart.js';
 
-/** Los dos códigos con los que el runtime dice «esa app no está» (hub#1074, ADR-0400).
+/** The two codes the runtime answers to say "that app is not here" (hub#1074, ADR-0400).
  *
- *  `module_inactive` cuenta como ausencia igual que `module_not_installed`: la cascada de ADR-0128
- *  apaga un módulo con su dependencia, y un módulo apagado no responde a nadie. Es la MISMA pareja
- *  sobre la que `queryOptional` del SDK devuelve `undefined`, y por eso no se inventa aquí. */
+ *  `module_inactive` counts as absence just like `module_not_installed`: the ADR-0128 cascade
+ *  switches a module off with its dependency, and a module that is off answers nobody. It is the
+ *  SAME pair the SDK's `queryOptional` returns `undefined` for, which is why it is not invented
+ *  here. */
 const MODULE_ABSENT_CODES = new Set(['module_not_installed', 'module_inactive']);
 
 interface TaxRuleRow {
@@ -52,18 +53,18 @@ export interface TaxCatalog {
    *  fallo de `taxes` se convertiría en un TPV que no deja vender nada. Es la misma distinción que
    *  hace el handler con `!rules.is_empty()` antes de rechazar por `sales.no_tax_rule`. */
   available: boolean;
-  /** sales#185 — la app de impuestos **no está en este hub**: desinstalada (a la fuerza, hub#1101)
-   *  o desactivada por la cascada (ADR-0128). Es un hecho distinto de `available: false`, que
-   *  también cubre «respondió mal» y «no hay reglas dadas de alta»:
+  /** sales#185 — the tax app is **not in this hub**: uninstalled (by force, hub#1101) or switched
+   *  off by the cascade (ADR-0128). That is a different fact from `available: false`, which also
+   *  covers "it answered badly" and "no rules have been set up":
    *
-   *   - `available:false` + `installed:true`  → incidencia; el TPV sigue vendiendo (el servidor
-   *     resuelve el % real y es él quien rechaza si no puede).
-   *   - `installed:false`                     → `sales.complete_sale` declara `taxes.rules.list`
-   *     como `read` **obligatoria**, así que NINGUNA venta va a poder cerrarse. Eso se dice al
-   *     ENTRAR, no cuando el cliente ya tiene la tarjeta en la mano.
+   *   - `available:false` + `installed:true`  → an incident; the POS keeps selling (the server
+   *     resolves the real rate and it is the server that refuses if it cannot).
+   *   - `installed:false`                     → `sales.complete_sale` declares `taxes.rules.list`
+   *     as a **required** read, so NO sale will be able to close. That is said ON ENTRY, not once
+   *     the customer already has the card in their hand.
    *
-   *  Confundirlos apagaría el TPV entero por un fallo pasajero de `taxes`, que es justo lo que el
-   *  flag `available` existe para evitar. */
+   *  Confusing the two would shut the whole POS down over a passing `taxes` failure, which is
+   *  exactly what the `available` flag exists to prevent. */
   installed: boolean;
 }
 
@@ -85,9 +86,9 @@ export function productSellability(catalog: TaxCatalog, taxCategoryKey?: string 
   return catalog.rates.has(String(taxCategoryKey)) ? 'sellable' : 'no_tax_rule';
 }
 
-/** Carga el catálogo fiscal del hub: el mapa de tipos por categoría, si el catálogo llegó siquiera
- *  y si la app de impuestos está en este hub.
- *  Nunca lanza: ante cualquier fallo (taxes no instalado/sin responder) devuelve `available:false`. */
+/** Loads the hub's tax catalogue: the rate-by-category map, whether the catalogue arrived at all,
+ *  and whether the tax app is even installed in this hub (sales#185).
+ *  Never throws: on any failure (taxes missing or not answering) it returns `available:false`. */
 export async function loadTaxCatalog(client: ErploraClientLike): Promise<TaxCatalog> {
   const map = new Map<string, number>();
   let available = false;
@@ -116,9 +117,10 @@ export async function loadTaxCatalog(client: ErploraClientLike): Promise<TaxCata
   } catch (e) {
     /* taxes puede no responder; preview 0% sin romper la venta (el servidor resuelve el % real) */
     available = false;
-    // sales#185: se lee el CÓDIGO del error, nunca su frase. Cualquier otro fallo (un handler roto,
-    // una query renombrada, la BD caída) deja `installed: true` a propósito: la app está, esto es
-    // una incidencia, y bloquear el mostrador por ella sería peor que el defecto que arregla.
+    // sales#185: the error's CODE is read, never its sentence. Any other failure (a broken
+    // handler, a renamed query, the DB down) deliberately leaves `installed: true`: the app IS
+    // there, this is an incident, and blocking the counter over it would be worse than the defect
+    // it fixes.
     const code = (e as { code?: unknown } | null | undefined)?.code;
     installed = !(typeof code === 'string' && MODULE_ABSENT_CODES.has(code));
   }

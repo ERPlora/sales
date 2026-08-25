@@ -32,13 +32,14 @@ export function newIdempotencyKey(source: Crypto | undefined = globalThis.crypto
 let seq = 0;
 
 /**
- * Códigos que un `sales.complete_sale` rechazado puede devolver → clave del catálogo i18n.
+ * Codes a refused `sales.complete_sale` can answer → key of the module's i18n catalogue.
  *
- * La UI se orienta por el CÓDIGO —el campo `code` del sobre—, **nunca** por la frase. Es la misma
- * deuda que hub#1070 está retirando del hub: mientras esto casaba subcadenas del mensaje, el día
- * que esa frase se tradujera (o que el SDK la sustituyera, que es justo lo que ADR-0400 acaba de
- * hacer con los códigos de plataforma) el mapeo dejaba de casar **en silencio** y el cajero volvía
- * al genérico «Error al cobrar» sin que nada lo delatara. El código no se traduce nunca.
+ * The UI orients itself by the CODE — the envelope's `code` field — and **never** by the sentence.
+ * This is the same debt hub#1070 is retiring from the hub: while this matched substrings of the
+ * message, the day that sentence got translated (or the SDK replaced it, which is exactly what
+ * ADR-0400 just did to the platform codes) the mapping stopped matching **in silence** and the
+ * cashier fell back to the generic "could not charge" with nothing to give it away. A code is
+ * never translated.
  */
 const MESSAGES: Record<string, string> = {
   'sales.empty_sale': 'ui.errorEmptySale',
@@ -75,30 +76,31 @@ const MESSAGES: Record<string, string> = {
   'sales.combo_component_price_unknown': 'ui.errorComboComponentPriceUnknown',
   'sales.combo_tax_category_missing': 'ui.errorComboTaxCategoryMissing',
   'sales.too_many_lines': 'ui.errorTooManyLines',
-  // sales#185 (hub#1074, ADR-0400) — códigos de PLATAFORMA, no de dominio. `complete_sale` declara
-  // `taxes.rules.list` como `read` con `required: true`, así que un hub al que le falta la app de
-  // impuestos (desinstalada a la fuerza, hub#1101, o desactivada por la cascada ADR-0128) rechaza
-  // la venta desde el runtime. El cajero no tiene por qué leer «module `taxes` is not installed»:
-  // lo que necesita saber es que falta una app y que NO se ha cobrado nada.
+  // sales#185 (hub#1074, ADR-0400) — PLATFORM codes, not domain ones. `complete_sale` declares
+  // `taxes.rules.list` as a read with `required: true`, so a hub missing the tax app (force
+  // uninstalled, hub#1101, or deactivated by the ADR-0128 cascade) has the sale refused by the
+  // runtime itself. The cashier has no business reading "module `taxes` is not installed": what
+  // they need to know is that an app is missing and that NOTHING was charged.
   module_not_installed: 'ui.errorMissingApp',
   module_inactive: 'ui.errorMissingApp',
-  // hub#701: la read obligatoria existe pero no resolvió. Para `complete_sale` la única `required`
-  // es el catálogo fiscal, así que es exactamente lo que ya se le dice al cajero desde sales#21.
+  // hub#701: the required read exists but did not resolve. The only `required` read of
+  // `complete_sale` is the tax catalogue, so this is exactly what sales#21 already says.
   read_unavailable: 'ui.errorTaxCatalogUnavailable',
 };
 
 /**
- * Traduce el **código** de un cobro rechazado a una clave del catálogo del módulo.
+ * Translates the **code** of a refused checkout into a key of the module's catalogue.
  *
- * Recibe el `code` del sobre (`ErploraError.code`), no el mensaje: el código es el contrato
- * publicado del runtime y de los handlers, y es lo único que no cambia cuando la frase cambia.
- * Un error sin código (un fallo del navegador, un `throw` de una librería) cae al genérico.
+ * It takes the envelope's `code` (`ErploraError.code`), not the message: the code is the published
+ * contract of the runtime and of the handlers, and it is the only thing that does not change when
+ * the sentence does. An error with no code (a browser failure, a library `throw`) falls back to
+ * the generic one.
  */
 export function checkoutErrorKey(code: string): string {
   return MESSAGES[code] ?? 'ui.errorCharge';
 }
 
-/** El `code` de un error del runtime, o `''` si lo que llegó no lo lleva (no es del hub). */
+/** The `code` of a runtime error, or `''` when what arrived carries none (it is not the hub's). */
 export function errorCode(e: unknown): string {
   const code = (e as { code?: unknown } | null | undefined)?.code;
   return typeof code === 'string' ? code : '';

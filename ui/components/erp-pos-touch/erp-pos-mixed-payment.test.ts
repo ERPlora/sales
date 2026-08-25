@@ -53,8 +53,8 @@ function installSdk() {
     queryOptional: async () => undefined,
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
-      // sales#185 — el rechazo viaja TIPADO (`code`), como lo entrega `ErploraError`: la pantalla
-      // ramifica sobre el código, nunca sobre la frase, así que el doble tiene que llevarlo.
+      // sales#185 — the refusal travels TYPED (`code`), the way `ErploraError` delivers it: the
+      // screen branches on the code and never on the sentence, so the double has to carry it.
       if (name === 'sales.complete_sale' && refuseWith) {
         throw Object.assign(new Error(`command failed: ${refuseWith}: nope`), { code: refuseWith });
       }

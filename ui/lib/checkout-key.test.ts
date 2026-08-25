@@ -27,15 +27,15 @@ describe('newIdempotencyKey', () => {
 });
 
 describe('checkoutErrorKey', () => {
-  // sales#185 — el contrato es el CÓDIGO, no la frase.
+  // sales#185 — the contract is the CODE, not the sentence.
   //
-  // Hasta 2.16.11 esto recibía el MENSAJE y buscaba el código dentro con `includes`. Funcionaba
-  // mientras el mensaje llevara el código, y ese «mientras» se acabó: el runtime dejó de mandar su
-  // frase interna y el SDK sustituyó los códigos de plataforma por prosa de negocio (ADR-0400).
-  // Un mapeo por subcadena no falla cuando eso pasa: deja de casar EN SILENCIO y todo el mundo cae
-  // al genérico «Error al cobrar». Por eso las llamadas de abajo pasan el código pelado — es lo
-  // que trae `ErploraError.code`, lo que serializa el sobre del runtime y lo único que no cambia
-  // cuando la frase cambia. Es la misma deuda que hub#1070 está retirando del hub.
+  // Up to 2.16.11 this took the MESSAGE and looked the code up inside it with `includes`. That
+  // worked while the message carried the code, and that "while" is over: the runtime stopped
+  // sending its internal sentence and the SDK replaced the platform codes with business prose
+  // (ADR-0400). A substring mapping does not fail when that happens: it stops matching IN SILENCE
+  // and everybody drops to the generic "could not charge". Hence the bare codes below — that is
+  // what `ErploraError.code` carries, what the runtime's envelope serialises, and the only thing
+  // that does not change when the sentence does. Same debt hub#1070 is retiring from the hub.
   it('translates a domain rejection into a catalog key the cashier understands', () => {
     expect(checkoutErrorKey('sales.empty_sale')).toBe('ui.errorEmptySale');
     expect(checkoutErrorKey('sales.payment_method_not_available')).toBe('ui.errorPaymentMethod');
@@ -83,7 +83,7 @@ describe('checkoutErrorKey', () => {
     // hub#1074/ADR-0400: `complete_sale` declares `taxes.rules.list` as a `required` read, so a hub
     // whose tax app was force-uninstalled (hub#1101) or deactivated by the cascade (ADR-0128) has
     // the runtime refuse the sale. The cashier is told an app is missing and that NOTHING was
-    // charged — never «required read `taxes.rules.list` is unavailable … (hub#701)».
+    // charged — never "required read `taxes.rules.list` is unavailable ... (hub#701)".
     expect(checkoutErrorKey('module_not_installed')).toBe('ui.errorMissingApp');
     expect(checkoutErrorKey('module_inactive')).toBe('ui.errorMissingApp');
     expect(checkoutErrorKey('read_unavailable')).toBe('ui.errorTaxCatalogUnavailable');
@@ -94,7 +94,7 @@ describe('checkoutErrorKey', () => {
 
   it('is EXACT: a code is not a prefix, a suffix or a substring of another', () => {
     // The old substring match is exactly what this rules out. A sentence is not a code, and a
-    // wrapped code («command `x` failed: sales.empty_sale») is a sentence.
+    // wrapped code ("command `x` failed: sales.empty_sale") is a sentence.
     expect(checkoutErrorKey('command `sales.complete_sale` failed: sales.empty_sale: no lines'))
       .toBe('ui.errorCharge');
     expect(checkoutErrorKey('sales.empty_sale: the sale has no lines')).toBe('ui.errorCharge');

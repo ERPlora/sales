@@ -4,7 +4,7 @@
 //
 //   1. ONE failure, TWO messages. `this.error` was painted both by the page (`p.err`, behind the
 //      modal, across the product grid) and by the pay sheet (`p.pay-err`). The copy behind the
-//      scrim is clipped by the modal's edge («… is unavailable — the c…»), so the cashier reads
+//      scrim is clipped by the modal's edge ("... is unavailable - the c..."), so the cashier reads
 //      half a sentence twice. While the sheet is open the checkout error belongs to the SHEET: it
 //      is the surface the eyes and the thumb are on, and it is the one that is not cut off.
 //
@@ -14,7 +14,9 @@
 //      `module_not_installed` / `module_inactive` codes on the read the POS does AT MOUNT
 //      (`taxes.rules.list`, declared `required: true` on `sales.complete_sale`), so the screen can
 //      say it before a payment is ever started. Same reasoning as sales#74 for the grid tile: the
-//      handler is the last net, not the first.
+//      handler is the last net, not the first. Note the runtime does NOT carry a `module` field on
+//      the envelope today (checked against hub@origin/develop `crates/server/src/lib.rs`), so the
+//      app is identified by the read we asked for, never by a field that does not exist.
 //
 //   3. And the twin debt inside the module: `handleCheckoutFailure` chose the message with
 //      `checkoutErrorKey(raw)` — over the PROSE. That is the pattern hub#1070 is retiring from the
@@ -22,7 +24,7 @@
 //      just did to the platform codes) the mapping stops matching IN SILENCE. The contract is the
 //      `code` the envelope carries, never the sentence.
 //
-// 🔴 The block on «Cobrar» is `aria-disabled`, NEVER the native `disabled`: on Ionic that is
+// 🔴 The block on Charge is `aria-disabled`, NEVER the native `disabled`: on Ionic that is
 // `pointer-events: none`, so on a counter tablet the tap dies with the reason stranded in `title`
 // (sales#58). The tap has to arrive and ANSWER.
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -64,7 +66,7 @@ function installSdk() {
       if (name === 'inventory.products.list') return PRODUCTS;
       if (name === 'taxes.rules.list') {
         if (taxesRefuseWith) {
-          throw new FakeErploraError(taxesRefuseWith, `module \`taxes\` is not installed in this hub`);
+          throw new FakeErploraError(taxesRefuseWith, 'module `taxes` is not installed in this hub');
         }
         return RULES;
       }
@@ -74,7 +76,7 @@ function installSdk() {
     command: async (name: string) => {
       if (name === 'sales.complete_sale' && refuseWith) {
         // The sentence is deliberately USELESS to a text matcher: only the code identifies it.
-        throw new FakeErploraError(refuseWith, 'la operación no se ha podido completar');
+        throw new FakeErploraError(refuseWith, 'the operation could not be completed');
       }
       return { ok: true, new_ids: ['ord-1', 'line-1'] };
     },
@@ -176,7 +178,7 @@ describe('2 · a missing app is said AT MOUNT, before a checkout can be started'
     expect($(el, '.missing-app-notice')).toBeTruthy();
   });
 
-  it('«Cobrar» is aria-disabled — NEVER natively disabled — and the tap ANSWERS', async () => {
+  it('Charge is aria-disabled — NEVER natively disabled — and the tap ANSWERS', async () => {
     taxesRefuseWith = 'module_not_installed';
     const el = await mount();
     $(el, 'ion-card.tile')!.click();
@@ -195,6 +197,63 @@ describe('2 · a missing app is said AT MOUNT, before a checkout can be started'
       .toContain('ui.missingAppCharge');
   });
 
+  // 🔴 MEASURED IN A REAL BROWSER (`erplora dev` + CDP, 2026-08-25), not deduced. Ionic (Stencil)
+  // takes the `ion-button` host over on hydration: it steals the `aria-*` and rewrites `className`
+  // with its own. Lit then never writes either of them again — its `AttributePart` caches the last
+  // value it emitted, sees no change and skips the write. Result: the attribute vanishes from the
+  // host, never lands on the inner button, and the block goes UNANNOUNCED — exactly the sales#58
+  // hole, through another door.
+  //
+  // happy-dom does not hydrate Ionic, so the theft itself cannot be reproduced here; what CAN be
+  // pinned down is the CONTRACT that neutralises it: if a third party strips the state, the next
+  // paint puts it back. That is what `updated()` does, and that is what this test demands.
+  it('puts `aria-disabled` and the blocked class back when a third party strips them', async () => {
+    taxesRefuseWith = 'module_not_installed';
+    const el = await mount();
+    $(el, 'ion-card.tile')!.click();
+    await el.queue(async () => undefined);
+    await el.updateComplete;
+
+    const charge = $(el, '.foot-actions ion-button.charge')!;
+    expect(charge.getAttribute('aria-disabled')).toBe('true');
+
+    // What Ionic really does on hydration: steal the aria-* and rewrite `className` with its own.
+    // Measured in `erplora dev`: the block was lost as soon as the first line was added.
+    charge.removeAttribute('aria-disabled');
+    charge.className = 'charge md button button-solid hydrated';
+    (el as unknown as { requestUpdate(): void }).requestUpdate();
+    await el.updateComplete;
+
+    expect(charge.getAttribute('aria-disabled'), 'one more paint and the block was invisible')
+      .toBe('true');
+    expect(charge.classList.contains('blocked'), 'and the colour has to come back with it').toBe(true);
+    expect(charge.classList.contains('button-solid'), 'without wiping Ionic own classes').toBe(true);
+  });
+
+  it('and REMOVES them once it is no longer blocked: the DOM never lies the other way', async () => {
+    const el = await withLine();
+    const charge = $(el, '.foot-actions ion-button.charge')!;
+    expect(charge.hasAttribute('aria-disabled')).toBe(false);
+
+    charge.setAttribute('aria-disabled', 'true'); // left over from an earlier paint
+    charge.classList.add('blocked');
+    (el as unknown as { requestUpdate(): void }).requestUpdate();
+    await el.updateComplete;
+
+    expect(charge.hasAttribute('aria-disabled')).toBe(false);
+    expect(charge.classList.contains('blocked')).toBe(false);
+  });
+
+  it('the blocked button LOOKS blocked, it is not only announced', async () => {
+    taxesRefuseWith = 'module_not_installed';
+    const el = await mount();
+    $(el, 'ion-card.tile')!.click();
+    await el.queue(async () => undefined);
+    await el.updateComplete;
+    // A full-colour primary button that does not charge is a promise the screen does not keep.
+    expect($(el, '.foot-actions ion-button.charge')!.classList.contains('blocked')).toBe(true);
+  });
+
   it('a healthy hub keeps the POS exactly as it was — no notice, no block', async () => {
     const el = await withLine();
     expect($(el, '.missing-app-notice')).toBeFalsy();
@@ -206,7 +265,7 @@ describe('2 · a missing app is said AT MOUNT, before a checkout can be started'
     expect($(el, '.sheet'), 'the sheet still opens on a hub with its apps in place').toBeTruthy();
   });
 
-  it('a tax catalogue that fails for ANY OTHER reason is NOT «the app is missing»', async () => {
+  it('a tax catalogue that fails for ANY OTHER reason is NOT "the app is missing"', async () => {
     // `taxes` is installed and answered badly (a broken handler, a renamed query). That is a
     // different incident: the POS keeps selling, exactly as it did before sales#185.
     taxesRefuseWith = 'db';
@@ -222,7 +281,7 @@ describe('3 · the checkout branches on the CODE, never on the sentence', () => 
     el.openPay();
     await el.updateComplete;
     // The prose carries no code at all — the old `checkoutErrorKey(raw)` would fall back to the
-    // generic «Error al cobrar» and, worse, print the server's sentence verbatim.
+    // generic "could not charge" and, worse, print the server's sentence verbatim.
     refuseWith = 'sales.payments_do_not_match_total';
 
     await el.confirm();
@@ -230,10 +289,10 @@ describe('3 · the checkout branches on the CODE, never on the sentence', () => 
 
     expect($(el, '.sheet .pay-err')?.textContent).toContain('ui.errorPaymentsMismatch');
     expect($(el, '.sheet .pay-err')?.textContent, 'the raw sentence never reaches the cashier')
-      .not.toContain('la operación no se ha podido completar');
+      .not.toContain('the operation could not be completed');
   });
 
-  it('a platform refusal at checkout time is explained as the missing app, not as «error»', async () => {
+  it('a platform refusal at checkout time is explained as the missing app, not as "error"', async () => {
     const el = await withLine();
     el.openPay();
     await el.updateComplete;
