@@ -138,8 +138,8 @@ export class ErpSalesList extends LitElement {
     if (this.kpiRow !== e.matches) this.kpiRow = e.matches;
   };
 
-  /** sales#181 — las formas de pago del hub, para que el FILTRO de la columna ofrezca lo mismo que
-   *  pinta la celda. Vacío = no se pudieron cargar: el filtro cae a caja de texto (ver `columns`). */
+  /** sales#181 — the hub's payment methods, so the column FILTER can offer the very labels the cell
+   *  paints. Empty = they could not be loaded: the filter falls back to a text box (see `columns`). */
   @state() private payMethods: PayMethodLike[] = [];
 
   /** Venta seleccionada para ver su documento (tiquet/factura) en el modal. */
@@ -240,8 +240,8 @@ export class ErpSalesList extends LitElement {
             filterType: 'select' as const,
             options: this.payMethods.map((m) => ({ value: m.name, label: payMethodDisplayName(m, t) })),
           }
-        // Sin métodos cargados, un desplegable vacío sería un filtro MUERTO: mejor la caja de texto,
-        // que al menos sigue casando con el nombre guardado.
+        // With no methods loaded an empty dropdown would be a DEAD filter: the text box is better,
+        // since it at least still matches against the stored name.
         : { filterType: 'text' as const }),
       format: (r) => (r.payment_method_name ? payMethodDisplayName({ id: '', name: r.payment_method_name as string }, t) : '—') },
     {
@@ -300,9 +300,9 @@ export class ErpSalesList extends LitElement {
     this.kpiMq?.removeEventListener('change', this.onKpiMqChange); // sales#126
     super.disconnectedCallback(); this.unsub?.(); }
 
-  /** sales#181 — las formas de pago activas, solo para poblar el filtro de la columna. Si la query
-   *  falla (permiso, módulo a medio instalar) la lista se queda vacía y el filtro sigue siendo una
-   *  caja de texto: el historial se abre igual, que es lo que vino a hacer el cajero. */
+  /** sales#181 — the active payment methods, only to populate the column filter. If the query fails
+   *  (no permission, a half-installed module) the list stays empty and the filter remains a text
+   *  box: the history still opens, which is what the cashier came here for. */
   private async loadPayMethods(): Promise<void> {
     try {
       const rows = await erplora().query<PayMethodLike[]>('sales.payment_methods');
