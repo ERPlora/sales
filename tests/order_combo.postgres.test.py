@@ -21,10 +21,15 @@ What is under test, and why each point is here:
   1. THE COLUMNS. `sales_order_item.combo_group_ref` (nullable) and `combo` (NOT NULL DEFAULT '{}'),
      both additive: every check already open came from no combo, which is the truth.
 
-  2. THE TWO DOORS. `sales.order.add_line` (declarative SQL, the line added to a check that already
-     exists) and `sales._insert_order_line` (what the `open_order` handler emits for the FIRST line
-     of every check). A statement Postgres cannot PREPARE is a command that does not exist in any
-     hub (ADR-0154), and these two carry every line of every open check — not only the combos.
+  2. THE DOOR. `sales._insert_order_line` — what BOTH handlers emit now (sales#175): the
+     `open_order` one for the first line of a check, and the `add_order_line` one for every line
+     after it. `sales.order.add_line` stopped being declarative SQL when the checkout started
+     honouring the row's `unit_price`: a column that decides money is resolved against the product
+     catalogue in the handler, never bound from the payload. A statement Postgres cannot PREPARE is
+     a command that does not exist in any hub (ADR-0154), and this one carries every line of every
+     open check — not only the combos. Its sibling `sales._recompute_order_total` is here for the
+     same reason: it is the second operation the handler emits, and it keeps the check's provisional
+     total from drifting away from its lines.
 
   3. THE GROUP IS MINTED BY THE SERVER. `combo_group_ref` comes from `:new_id`, the id the runtime
      just minted for this row. A payload that sends its own is ignored, exactly like a payload that
@@ -245,13 +250,17 @@ def seed_order(order_id: str = ORDER, hub: str = HUB) -> None:
     )
 
 
-# Every parameter `sales.order.add_line` binds, written out in full on purpose: this is the payload
-# shape the POS produces, so if the command grows a parameter and the POS does not — or the other
-# way round — this test is where it shows. `combo` is NOT NULL, so the drift shows up as a rejected
-# INSERT and not as a line that quietly loses its menu.
+# Every parameter `sales._insert_order_line` binds, written out in full on purpose: this is the
+# payload shape the handlers produce, so if the command grows a parameter and the handler does not —
+# or the other way round — this test is where it shows. `combo` is NOT NULL, so the drift shows up
+# as a rejected INSERT and not as a line that quietly loses its menu.
+#
+# ⚠️ NO lleva `unit_price` del TPV: desde sales#175 el precio de la fila lo resuelve el handler
+# contra `inventory.products.for_sale`. Aquí va el número que el handler YA resolvió.
 def add_line_params(new_id: str, order_id: str = ORDER, **over) -> dict:
     params = {
-        "new_id": new_id,
+        "id": new_id,
+        "combo_group_ref": new_id,
         "order_id": order_id,
         "product_id": "c-menu-dia",
         "product_name": "Men\u00fa del d\u00eda",
@@ -283,12 +292,11 @@ def add_line_params(new_id: str, order_id: str = ORDER, **over) -> dict:
     return params
 
 
-# What the `open_order` handler emits for the FIRST line of a check. Same columns, different door:
-# here the group ref is minted by the handler (`<order_id>-<position>`) and travels as a parameter.
+# What the `open_order` handler emits for the FIRST line of a check. Same command, same columns:
+# the only difference is WHO mints the group ref — the order and the position (`<order_id>-<pos>`)
+# when the check is born, the row's own id when the line is added to a check already open.
 def insert_order_line_params(line_id: str, order_id: str = ORDER, **over) -> dict:
     params = add_line_params(line_id, order_id)
-    params.pop("new_id")
-    params["id"] = line_id
     params["combo_group_ref"] = f"{order_id}-0"
     params.update(over)
     return params
@@ -324,17 +332,17 @@ def test_the_order_line_can_record_which_menu_it_came_from() -> None:
 def test_both_doors_write_the_menu_and_the_server_mints_the_group() -> None:
     print("\n2-4 · add_line and _insert_order_line bind the columns; the group is the server's")
     seed_order()
-    ok, err = run_command("sales.order.add_line", add_line_params("line-menu"))
-    check("`sales.order.add_line` runs the way the runtime runs it", (ok, err), (True, ""))
+    ok, err = run_command("sales._insert_order_line", add_line_params("line-menu"))
+    check("the add_order_line door runs the way the runtime runs it", (ok, err), (True, ""))
     # A different name on purpose: two identical rows would make every assertion below ambiguous
     # about WHICH door wrote what, which is the whole point of testing both.
     ok, err = run_command("sales._insert_order_line", insert_order_line_params(
         "line-menu-first", product_name="Men\u00fa del d\u00eda (1.\u00aa l\u00ednea)"))
     check("and so does `sales._insert_order_line` (the open_order door)", (ok, err), (True, ""))
     # The 100 % of checks that sell no menus: nothing changes for them.
-    ok, err = run_command("sales.order.add_line", add_line_params(
+    ok, err = run_command("sales._insert_order_line", add_line_params(
         "line-cana", product_id="p-cana", product_name="Ca\u00f1a", unit_price=250,
-        line_total=250, combo=None))
+        line_total=250, combo=None, combo_group_ref=None))
     check("a line with no menu still goes in untouched", (ok, err), (True, ""))
 
     check("the menu line remembers WHICH menu", json.loads(
@@ -344,7 +352,7 @@ def test_both_doors_write_the_menu_and_the_server_mints_the_group() -> None:
             q("SELECT combo FROM sales_order_item WHERE id='line-menu'"))["combo_choices"]],
         ["o-sopa", "o-merluza"])
     # 3 · the group is `:new_id`, the id the runtime minted — not anything the payload could say.
-    check("`add_line` mints the group from the row's own id", q(
+    check("the add_order_line door mints the group from the row's own id", q(
         "SELECT combo_group_ref FROM sales_order_item WHERE id='line-menu'"), "line-menu")
     check("and the open_order door keeps the ref the handler minted", q(
         "SELECT combo_group_ref FROM sales_order_item WHERE id='line-menu-first'"), f"{ORDER}-0")
@@ -361,6 +369,10 @@ def test_both_doors_write_the_menu_and_the_server_mints_the_group() -> None:
     check("no money anywhere in the frozen composition", money_keys, [])
     check("nor at the top of it", sorted(set(snapshot) & {"price", "price_charged"}), [])
     # And the provisional total is still the sum of the lines: the menu does not distort the check.
+    # sales#175: lo recompone `sales._recompute_order_total`, la 2ª operación que emite el handler
+    # (antes era la 2ª sentencia del command declarativo). Si no bindea, el total del TPV deriva.
+    ok, err = run_command("sales._recompute_order_total", {"order_id": ORDER})
+    check("`sales._recompute_order_total` runs the way the runtime runs it", (ok, err), (True, ""))
     check("the check's provisional total is still the plain sum of its lines", qi(
         f"SELECT provisional_total FROM sales_order WHERE id='{ORDER}'"), 1400 + 1400 + 250)
 
@@ -374,7 +386,7 @@ def test_the_menu_comes_back_out_and_never_crosses_hubs() -> None:
     # through the same enforcing door. Without a live neighbour this would be a scoping test that
     # passes because there is nothing to leak — which proves nothing at all.
     seed_order(order_id=OTHER_ORDER, hub=OTHER_HUB)
-    ok, err = run_command("sales.order.add_line", add_line_params(
+    ok, err = run_command("sales._insert_order_line", add_line_params(
         "line-menu-vecino", order_id=OTHER_ORDER, product_name="Men\u00fa del vecino"), hub=OTHER_HUB)
     check("the neighbour's menu line is really written", (ok, err), (True, ""))
 

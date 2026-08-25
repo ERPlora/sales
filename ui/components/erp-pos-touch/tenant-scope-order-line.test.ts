@@ -5,30 +5,40 @@
 // segunda sentencia del command recalcula el total de ESE pedido, de modo que el importe del
 // vecino cambiaba también.
 //
-// El command es de cara al cliente (`permission: sales.add_sale`), no un interno llamado por un
-// handler que ya validó: el `order_id` llega de quien pulsa en el TPV.
+// El comando es de cara al cliente (`permission: sales.add_sale` / `sales.sell_open_price`), no un
+// interno llamado por un handler que ya validó: el `order_id` llega de quien pulsa en el TPV.
 //
-// Las dos mitades de la receta (services#7):
+// 🔴 sales#175 CAMBIÓ DÓNDE VIVE LA CERRADURA, no si existe. El command dejó de ser SQL declarativo
+// cuando el cobro pasó a honrar el `unit_price` de la fila: una columna que decide dinero se
+// resuelve contra el catálogo en el handler, nunca se bindea del payload. Con ello se fue el
+// `expect_rows`, que solo aplica al camino declarativo. Las dos mitades de la receta (services#7)
+// siguen, en su sitio nuevo:
 //
-//   1. el pedido se resuelve contra el `:hub_id` que **inyecta el runtime**;
-//   2. y si no casa, **falla**. Sin `expect_rows` el command devuelve OK habiendo escrito cero
-//      líneas — y en un TPV eso es peor que un error: el camarero ve que "se añadió" y cobra sin
-//      ella.
+//   1. el pedido se resuelve contra el `:hub_id` que **inyecta el runtime** — ahora en la lectura
+//      `sales.order.get`, declarada `required` y parametrizada con `payload.order_id`;
+//   2. y si no casa, **falla**: el handler rechaza con `sales.order_unavailable`, el MISMO código de
+//      dominio que daba el `expect_rows` y que la UI ya traduce. Sin eso el command devolvería OK
+//      habiendo escrito cero líneas — y en un TPV eso es peor que un error: el camarero ve que "se
+//      añadió" y cobra sin ella. Ese rechazo lo prueba el handler
+//      (`anadir_una_linea_a_un_pedido_que_no_existe_se_rechaza_con_su_codigo`, handler/src/lib.rs);
+//      lo que este test guarda es que la cerradura SIGA DECLARADA en el manifiesto, que es lo que
+//      un refactor se lleva por delante sin enterarse.
 //
-// ⚠️ Lo que este test NO cubre: `product_id` apunta a `inventory`, otro módulo. Un `EXISTS` contra
-// `inventory_product` rompería el aislamiento de ADR-0263 y ataría `sales` a que `inventory` esté
-// instalado. Esa mitad no se arregla en SQL.
+// ⚠️ Lo que este test NO cubre: `product_id` apunta a `inventory`, otro módulo. El handler SÍ lo
+// contrasta ahora (lee `inventory.products.for_sale` para congelar el precio, sales#175), pero eso
+// es aritmética del handler y se prueba allí.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const ROOT = join(__dirname, '../../..');
+
+type Read = string | { query: string; params?: Record<string, string>; required?: boolean };
+
 const manifest = JSON.parse(readFileSync(join(ROOT, 'module.json'), 'utf8')) as {
   id: string;
-  commands: Record<
-    string,
-    { sql?: string[]; expect_rows?: { op: string; n: number; error: string; message?: string } }
-  >;
+  commands: Record<string, { reads?: Read[]; handler?: { function?: string }; sql?: string[] }>;
+  queries: Record<string, { sql: string }>;
 };
 
 const fileOf = (rel: string) =>
@@ -37,41 +47,43 @@ const fileOf = (rel: string) =>
     .filter((line) => !line.trim().startsWith('--'))
     .join('\n');
 
-/**
- * SOLO la sentencia que inserta la línea, no todo el SQL del command.
- *
- * ⚠️ Concatenar las dos sentencias hacía que este test PASARA en falso: la segunda
- * (`order_recompute_total.sql`) ya acota el pedido por `hub_id`, así que la aserción se cumplía
- * mientras el INSERT seguía tomando cualquier `order_id`. Un guard que se conforma con encontrar la
- * cadena en cualquier parte no guarda la parte que importa.
- */
-const insertOf = (name: string) => {
-  const rel = (manifest.commands[name].sql ?? []).find((f) => /add_line/.test(f));
-  expect(rel, `${name} ya no declara la sentencia que inserta la línea`).toBeTruthy();
-  return fileOf(rel!);
+/** La lectura que resuelve el pedido, con su forma completa. */
+const orderRead = (name: string) => {
+  const reads = manifest.commands[name].reads ?? [];
+  return reads.find(
+    (r): r is Exclude<Read, string> => typeof r !== 'string' && r.query === 'sales.order.get',
+  );
 };
 
-// Las dos comparten `order_add_line.sql`, así que el arreglo del SQL vale para ambas — pero
-// `expect_rows` es por command y hay que ponerlo en las dos.
+// Las dos puertas comparten handler (`add_order_line`), así que la cerradura vale para ambas — pero
+// las `reads` son POR comando y hay que declararlas en las dos.
 const COMMANDS = ['sales.order.add_line', 'sales.order.add_open_line'] as const;
 
 describe('una línea solo se añade a un pedido del mismo hub (pm#146)', () => {
   it.each(COMMANDS)('%s resuelve el pedido contra el hub inyectado', (name) => {
-    const sql = insertOf(name);
+    const read = orderRead(name);
 
-    expect(sql, 'toma cualquier order_id: también el de otro negocio').toMatch(/sales_order\b/);
+    expect(read, `${name} ya no lee el pedido: aceptaría cualquier order_id`).toBeTruthy();
+    expect(read!.params?.order_id, 'la lectura tiene que ir por el order_id del payload').toBe(
+      'payload.order_id',
+    );
+
+    const sql = fileOf(manifest.queries['sales.order.get'].sql);
     expect(sql, 'el pedido tiene que ser de ESTE hub').toMatch(/hub_id\s*=\s*:hub_id/);
+    expect(sql, 'y estar vivo: un pedido borrado no admite líneas').toMatch(/is_deleted\s*=\s*0/);
   });
 
   it.each(COMMANDS)('%s falla en vez de no escribir y decir que sí', (name) => {
-    const gate = manifest.commands[name].expect_rows;
+    const read = orderRead(name);
 
-    expect(gate, 'sin `expect_rows` el TPV cree que añadió la línea y cobra sin ella').toBeTruthy();
-    expect(gate!.op).toBe('min');
-    expect(gate!.n).toBeGreaterThanOrEqual(1);
-    expect(gate!.error.split('.')[0], 'el instalador exige el namespace del módulo').toBe(
-      manifest.id,
+    // `required: true` es lo que hace que una lectura que no resuelve ABORTE el command en el
+    // runtime en vez de entregar `None` y dejar al handler decidir a ciegas (hub#701).
+    expect(read!.required, 'sin `required` la lectura puede faltar y el handler priorizaría el vacío').toBe(
+      true,
     );
-    expect(gate!.message, 'ningún shell traduce estos códigos todavía: hace falta el texto').toBeTruthy();
+    // Y la puerta es el handler, no SQL suelto: si alguien la devolviera a `sql[]`, el
+    // `:unit_price` del payload volvería a decidir dinero (sales#175).
+    expect(manifest.commands[name].sql, 'volvió a ser SQL declarativo: el payload fijaría el precio').toBeUndefined();
+    expect(manifest.commands[name].handler?.function).toBe('add_order_line');
   });
 });

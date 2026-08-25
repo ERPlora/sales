@@ -33,6 +33,13 @@
               "null"
             ]
           },
+          "order_item_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "sales#175 — el id de la FILA de la cuenta abierta (`sales_order_item.id`) de la que viene esta línea. Cuando viaja, el servidor cobra el `unit_price` CONGELADO de esa fila —el precio que la línea tenía cuando se pidió— en vez de re-preciar contra el catálogo: una mesa se cobra al precio de la carta de cuando pidió, no al de cuando paga. La fila la escribió el servidor con el catálogo delante (`sales.order.open` / `sales.order.add_line`), así que honrarla NO es honrar el `price` del payload, que sigue sin decidir nada. Ausente = venta de mostrador: manda el catálogo. Un id que no esté entre las líneas VIVAS del pedido se RECHAZA (`sales.order_line_not_available`)."
+          },
           "product_name": {
             "type": "string",
             "minLength": 1
