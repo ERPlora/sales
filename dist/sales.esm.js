@@ -1526,6 +1526,72 @@ function modifierIdentity(m4) {
   return `${m4.option_id || m4.name || ""}:${m4.price_delta ?? 0}`;
 }
 
+// ui/lib/paper-combos.ts
+var SEP2 = " \xB7 ";
+function deltaLabel(cents2) {
+  const sign = cents2 < 0 ? "-" : "+";
+  return `${sign}${(Math.abs(cents2) / 100).toFixed(2).replace(".", ",")}`;
+}
+function componentLabel(c5) {
+  const name = (c5.name || "").trim() || (c5.option_id || "").trim();
+  const delta = Number(c5.price_delta);
+  return Number.isFinite(delta) && delta !== 0 ? `${name} (${deltaLabel(delta)})` : name;
+}
+function comboNote(combo) {
+  const parts = (combo?.components ?? []).map(componentLabel).filter(Boolean);
+  return parts.length ? parts.join(SEP2) : void 0;
+}
+function comboIdentity(combo) {
+  if (!combo) return "";
+  const parts = combo.components.map((c5) => `${c5.option_id || c5.name || ""}:${c5.price_delta ?? 0}`);
+  return `{${combo.name}|${parts.join("|")}}`;
+}
+function parseComboSnapshot(raw) {
+  if (typeof raw !== "string" || !raw.trim()) return void 0;
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return void 0;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return void 0;
+  const v3 = parsed;
+  const name = v3.name == null ? "" : String(v3.name).trim();
+  if (!name) return void 0;
+  const rawComponents = Array.isArray(v3.components) ? v3.components : [];
+  const components = rawComponents.filter((c5) => !!c5 && typeof c5 === "object").map((c5) => {
+    const option_id = c5.option_id == null ? void 0 : String(c5.option_id);
+    const cname = c5.name == null || String(c5.name) === "" ? void 0 : String(c5.name);
+    const delta = Number(c5.price_delta);
+    return {
+      ...option_id ? { option_id } : {},
+      ...cname ? { name: cname } : {},
+      ...Number.isFinite(delta) ? { price_delta: delta } : {}
+    };
+  }).filter((c5) => c5.name || c5.option_id);
+  return { name, components };
+}
+function groupComboLines(lines) {
+  const out = [];
+  const byRef = /* @__PURE__ */ new Map();
+  for (const line of lines) {
+    const ref = line.combo_group_ref ? String(line.combo_group_ref) : "";
+    if (!ref) {
+      out.push({ head: line, siblings: [line] });
+      continue;
+    }
+    const existing = byRef.get(ref);
+    if (existing) {
+      existing.siblings.push(line);
+      continue;
+    }
+    const group = { head: line, siblings: [line], combo: parseComboSnapshot(line.combo) };
+    byRef.set(ref, group);
+    out.push(group);
+  }
+  return out;
+}
+
 // ui/lib/receipt-html.ts
 function esc(v3) {
   return String(v3 ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -1540,12 +1606,15 @@ function qtyPrice(l3, currency) {
 function modLines(l3) {
   return (l3.modifiers ?? []).map(modifierLabel).filter(Boolean).map((label) => `<div class="mod">${esc(label)}</div>`).join("");
 }
+function componentLines(l3) {
+  return (l3.combo?.components ?? []).map(componentLabel).filter(Boolean).map((label) => `<div class="comp">${esc(label)}</div>`).join("");
+}
 function receiptToPrintableHtml(doc) {
   const cur = doc.currency || "\u20AC";
   const lbl = { subtotal: "Subtotal", total: "TOTAL", change: "Cambio", document: "Documento", ...doc.labels };
   const lineas = (doc.lines ?? []).map((l3) => `
       <tr>
-        <td class="n">${esc(l3.name)}<div class="q">${esc(qtyPrice(l3, cur))}</div>${modLines(l3)}</td>
+        <td class="n">${esc(l3.name)}<div class="q">${esc(qtyPrice(l3, cur))}</div>${componentLines(l3)}${modLines(l3)}</td>
         <td class="a">${money(l3.total, cur)}</td>
       </tr>`).join("");
   const impuestos = (doc.taxes ?? []).map((t7) => `
@@ -1572,6 +1641,10 @@ function receiptToPrintableHtml(doc) {
      l\xEDnea madre: es lo que hacen Odoo (margin-start), Shopify (li anidado) y LS Central (l\xEDnea
      hija). Sin importe a la derecha: ya est\xE1 dentro del total de la l\xEDnea. */
   .mod { font-size: 11px; padding-left: 4mm; }
+  /* sales#154 \u2014 the menu's component, indented under the menu line like a supplement (same level:
+     LS Central \xABunder the Deal line\xBB, WooCommerce \xABindented\xBB, Maitre'D \xABunder the main combo
+     item\xBB). No amount: the header carries the closed price the customer reconciles. */
+  .comp { font-size: 11px; padding-left: 4mm; }
   .tot td { font-size: 15px; font-weight: 700; padding-top: 1mm; }
   .foot { text-align: center; font-size: 10px; margin-top: 3mm; }
   /* El bloque del claim (sales#103): al pie y separado del QR fiscal, como en el papel t\xE9rmico. */
@@ -1831,10 +1904,31 @@ function paperUnit(l3) {
     ...l3.pricing_unit_code ? { pricing_unit_code: l3.pricing_unit_code } : {}
   };
 }
-function paperModifiers(mods) {
-  if (!mods?.length) return {};
-  const note = modifierNote(mods);
-  return { modifiers: mods, ...note ? { note } : {} };
+function paperModifiers(mods, combo) {
+  if (!mods?.length && !combo) return {};
+  const note = paperNote(combo, mods);
+  return {
+    ...mods?.length ? { modifiers: mods } : {},
+    ...combo ? { combo } : {},
+    ...note ? { note } : {}
+  };
+}
+function paperNote(combo, mods) {
+  const parts = [comboNote(combo), modifierNote(mods)].filter((s5) => !!s5);
+  return parts.length ? parts.join(" \xB7 ") : void 0;
+}
+function menuLine(siblings, combo, t7) {
+  const head = siblings[0];
+  const sum = (pick) => siblings.reduce((s5, l3) => s5 + Number(pick(l3) ?? 0), 0);
+  const mods = siblings.flatMap((l3) => parseModifierSnapshot(l3.modifiers) ?? []);
+  return {
+    name: lineLabel({ ...head, product_name: combo.name }, t7),
+    qty: fromMicro2(Number(head.quantity)),
+    unit_price: toEuros(sum((l3) => l3.unit_price)),
+    total: toEuros(sum((l3) => l3.line_total)),
+    ...paperModifiers(mods.length ? mods : void 0, combo),
+    ...paperUnit(head)
+  };
 }
 function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName = DEFAULT_BUSINESS_NAME, t7) {
   const header = splitHeader(settings.receipt_header);
@@ -1843,17 +1937,18 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", f
     number: fiscal.number || sale.sale_number,
     datetime: formatDateTime(sale.created_at, locale),
     customer: fiscal.customer_name || sale.customer_name || void 0,
-    lines: lines.map((l3) => ({
-      name: lineLabel(l3, t7),
-      qty: fromMicro2(Number(l3.quantity)),
+    // sales#154: the sibling rows of a menu collapse into ONE header line; a plain row is itself.
+    lines: groupComboLines(lines).map((g3) => g3.combo ? menuLine(g3.siblings, g3.combo, t7) : {
+      name: lineLabel(g3.head, t7),
+      qty: fromMicro2(Number(g3.head.quantity)),
       // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
-      unit_price: toEuros(l3.unit_price),
-      total: toEuros(l3.line_total),
-      ...paperModifiers(parseModifierSnapshot(l3.modifiers)),
+      unit_price: toEuros(g3.head.unit_price),
+      total: toEuros(g3.head.line_total),
+      ...paperModifiers(parseModifierSnapshot(g3.head.modifiers)),
       // sales#148: lo que se cobró, impreso
-      ...paperUnit(l3)
+      ...paperUnit(g3.head)
       // sales#28: la unidad congelada, para el papel
-    })),
+    }),
     subtotal: sale.subtotal != null ? toEuros(sale.subtotal) : void 0,
     taxes: parseTaxes(sale.tax_breakdown, t7).map((x2) => ({ label: x2.label, base: x2.base, amount: x2.amount })),
     total: toEuros(sale.total),
@@ -1923,7 +2018,8 @@ function orderToPrebill(lines, settings = {}, opts = {}) {
       total: toEuros(cents2(l3)),
       // sales#148: ya resueltos contra el catálogo VIVO por quien pide la cuenta (la fila del
       // pedido guarda solo los `option_id`; el nombre y el importe no son del navegador).
-      ...paperModifiers(l3.modifiers),
+      ...paperModifiers(l3.modifiers, l3.combo),
+      // sales#154: and the menu's components, same door
       ...paperUnit(l3)
       // sales#28: la unidad congelada, para el papel
     })),
@@ -1944,8 +2040,9 @@ function printQuantity(qty, unitCode) {
   return unitTag(unitCode) ? `${quantityLabel(qty, unitCode)} ` : qty;
 }
 function printNotes(l3) {
-  const notes = modifierNote(l3.modifiers);
-  return notes ? { notes } : {};
+  const notes = paperNote(l3.combo, l3.modifiers);
+  const components = l3.combo?.components.map(componentLabel).filter(Boolean);
+  return { ...notes ? { notes } : {}, ...components?.length ? { components } : {} };
 }
 function prebillToPrintDocument(lines, settings = {}, opts = {}) {
   const screen = orderToPrebill(lines, settings, opts);
@@ -1986,7 +2083,7 @@ function saleToPrintDocument(sale, lines, settings = {}, fiscal = {}, locale = "
   };
 }
 function prebillJobId(orderId, lines) {
-  const fingerprint = (lines || []).map((l3) => `${l3.name}${l3.qty}${l3.price}${l3.is_gift ? 1 : 0}${modifierPrint(l3.modifiers)}`).join("");
+  const fingerprint = (lines || []).map((l3) => `${l3.name}${l3.qty}${l3.price}${l3.is_gift ? 1 : 0}${modifierPrint(l3.modifiers)}${comboIdentity(l3.combo)}`).join("");
   return `prebill-${orderId || "open"}-${hash(fingerprint)}`;
 }
 function modifierPrint(mods) {
@@ -8069,8 +8166,30 @@ var ErpPosTouch = class extends i3 {
       unit_code: l3.unit_code,
       unit_name: l3.unit_name,
       // sales#148: y sus suplementos, o el cliente paga un «+ queso» que su papel no nombra.
-      ...this.resolvedModifiers(l3) ? { modifiers: this.resolvedModifiers(l3) } : {}
+      ...this.resolvedModifiers(l3) ? { modifiers: this.resolvedModifiers(l3) } : {},
+      // sales#154: y la composición del menú, o la cuenta dice «Menú del día» sin decir cuál.
+      ...this.prebillCombo(l3) ? { combo: this.prebillCombo(l3) } : {}
     }));
+  }
+  /** The menu of a cart line as the bill prints it (sales#154): the components with the display
+   *  name resolved when they were picked, and the supplement of each one from the combo catalogue
+   *  the till already holds — never from the browser's arithmetic. A line that is not a menu yields
+   *  nothing, so the bill of always does not change. */
+  prebillCombo(l3) {
+    if (!l3.combo_id) return void 0;
+    const combo = this.comboCatalog.find((c5) => c5.combo_id === l3.combo_id);
+    const options = new Map(combo?.groups.flatMap((g3) => g3.options).map((o9) => [o9.option_id, o9]) ?? []);
+    return {
+      name: l3.name,
+      components: (l3.combo_choices ?? []).map((c5) => {
+        const delta = options.get(c5.option_id)?.price_delta;
+        return {
+          option_id: c5.option_id,
+          ...c5.product_name ? { name: c5.product_name } : {},
+          ...delta ? { price_delta: delta } : {}
+        };
+      })
+    };
   }
   async printPrebill() {
     await this.loadModifierCatalog();

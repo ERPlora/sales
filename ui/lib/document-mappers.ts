@@ -14,8 +14,11 @@ import { payMethodDisplayName } from './pay-icons.js';
 // pantalla, el HTML, el térmico y la huella del jobId no puedan discrepar. Se re-exporta el tipo
 // porque quien consume estos mappers ya importa de aquí.
 import { modifierNote, type PrintedModifier } from './paper-modifiers.js';
+// sales#154 — the menu on the paper lives in ONE place too (`paper-combos.ts`), for the same reason.
+import { comboNote, groupComboLines, type PrintedCombo } from './paper-combos.js';
 
 export { modifierIdentity, modifierLabel, modifierNote, type PrintedModifier } from './paper-modifiers.js';
+export { comboIdentity, comboNote, componentLabel, parseComboSnapshot, type PrintedCombo, type PrintedComboComponent } from './paper-combos.js';
 import type {
   ReceiptData,
   ReceiptLine,
@@ -142,6 +145,13 @@ export interface SaleLineRow {
    *  (`authoritative_modifiers`, en el orden de elección). Llega como TEXT porque eso es la
    *  columna; el papel lo desempaqueta con `parseModifierSnapshot`. */
   modifiers?: string;
+  /** sales#154 / ADR-0381 — what makes this row a SIBLING of a menu (`NULL` on every row that is
+   *  not one). The rows of one menu share the ref; the paper groups them into one header line. */
+  combo_group_ref?: string | null;
+  /** The menu snapshot the server froze on EVERY sibling at checkout (`expand_combo`): name,
+   *  closed price, and the chosen components in order. TEXT, because that is the column; the
+   *  paper unpacks it with `parseComboSnapshot`. `'{}'` on a row that is not a menu. */
+  combo?: string;
 }
 
 /** El snapshot `sales_sale_item.modifiers` → lo que el papel imprime (sales#148).
@@ -325,6 +335,10 @@ export interface PaperReceiptLine extends ReceiptLine {
   /** pm#93 / sales#148 — los suplementos de la línea, EN EL ORDEN en que se eligieron. `ReceiptLine`
    *  (outfitkit) no los conoce: viajan como campo extra y los leen los papeles. */
   modifiers?: PrintedModifier[];
+  /** sales#154 / ADR-0381 — this line IS a menu: its components print indented under it, without
+   *  an amount (only their supplement). `<ok-receipt>` does not know menus: it reads the same text
+   *  through `note`; the two papers read the list. Absent on a plain line. */
+  combo?: PrintedCombo;
   unit_code?: string;
   unit_name?: string;
   /** Unidad en la que está expresado el `unit_price` (KPEIN): «12,00 € / kg». */
@@ -347,13 +361,47 @@ function paperUnit(l: { unit_code?: string; unit_name?: string; pricing_unit_cod
 
 /** Los suplementos en la forma del papel: sin ninguno, SIN campo — una línea que nunca tuvo
  *  suplementos no fabrica una lista vacía, y el tique de siempre sale byte a byte igual. */
-function paperModifiers(mods: PrintedModifier[] | undefined): Partial<PaperReceiptLine> {
-  if (!mods?.length) return {};
+function paperModifiers(mods: PrintedModifier[] | undefined, combo?: PrintedCombo): Partial<PaperReceiptLine> {
+  if (!mods?.length && !combo) return {};
   // `note` es la puerta que `<ok-receipt>` YA pinta bajo la línea: por ahí los ve la PANTALLA, con
   // el mismo texto que los dos papeles. Sin esto el camarero leería en pantalla algo distinto de lo
   // que el cliente lleva en la mano — y una de las dos personas estaría siendo engañada.
-  const note = modifierNote(mods);
-  return { modifiers: mods, ...(note ? { note } : {}) };
+  // sales#154: the menu's components go FIRST (they are the line), the supplements after.
+  const note = paperNote(combo, mods);
+  return {
+    ...(mods?.length ? { modifiers: mods } : {}),
+    ...(combo ? { combo } : {}),
+    ...(note ? { note } : {}),
+  };
+}
+
+/** The ONE sub-line text every surface that prints a single sub-line uses (`<ok-receipt>`'s `note`,
+ *  the ESC/POS `notes`): the menu's components, then the line's supplements. `undefined` when there
+ *  is nothing to say — a plain line never grows the field. */
+export function paperNote(combo: PrintedCombo | undefined, mods: PrintedModifier[] | undefined): string | undefined {
+  const parts = [comboNote(combo), modifierNote(mods)].filter((s): s is string => !!s);
+  return parts.length ? parts.join(' · ') : undefined;
+}
+
+/** The sibling rows of a menu → the ONE line the customer reads (sales#154 / ADR-0381).
+ *
+ * There is no parent row with money, by design: the header takes its name from the snapshot, its
+ * quantity from the siblings (they inherit the same one), and its amount as the SUM of theirs — so
+ * the paper says «Menú del día 13,50» while the sale keeps «8,10 at 10 % + 5,40 at 21 %» for the
+ * tax footer and for VeriFactu. The supplements of every sibling hang under the menu line, in row
+ * order, because the customer sees one line and that is where its changes belong. */
+function menuLine(siblings: SaleLineRow[], combo: PrintedCombo, t?: Translate): PaperReceiptLine {
+  const head = siblings[0];
+  const sum = (pick: (l: SaleLineRow) => number | undefined) => siblings.reduce((s, l) => s + Number(pick(l) ?? 0), 0);
+  const mods = siblings.flatMap((l) => parseModifierSnapshot(l.modifiers) ?? []);
+  return {
+    name: lineLabel({ ...head, product_name: combo.name }, t),
+    qty: fromMicro(Number(head.quantity)),
+    unit_price: toEuros(sum((l) => l.unit_price)),
+    total: toEuros(sum((l) => l.line_total)),
+    ...paperModifiers(mods.length ? mods : undefined, combo),
+    ...paperUnit(head),
+  };
 }
 
 /** Sale → 80mm thermal ticket (`<ok-receipt>`). Header: explicit `receipt_header` wins
@@ -374,14 +422,15 @@ export function saleToReceipt(
     number: fiscal.number || sale.sale_number,
     datetime: formatDateTime(sale.created_at, locale),
     customer: fiscal.customer_name || sale.customer_name || undefined,
-    lines: lines.map((l): PaperReceiptLine => ({
-      name: lineLabel(l, t),
-      qty: fromMicro(Number(l.quantity)), // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
-      unit_price: toEuros(l.unit_price),
-      total: toEuros(l.line_total),
-      ...paperModifiers(parseModifierSnapshot(l.modifiers)), // sales#148: lo que se cobró, impreso
-      ...paperUnit(l), // sales#28: la unidad congelada, para el papel
-    })),
+    // sales#154: the sibling rows of a menu collapse into ONE header line; a plain row is itself.
+    lines: groupComboLines(lines).map((g): PaperReceiptLine => g.combo ? menuLine(g.siblings, g.combo, t) : {
+      name: lineLabel(g.head, t),
+      qty: fromMicro(Number(g.head.quantity)), // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
+      unit_price: toEuros(g.head.unit_price),
+      total: toEuros(g.head.line_total),
+      ...paperModifiers(parseModifierSnapshot(g.head.modifiers)), // sales#148: lo que se cobró, impreso
+      ...paperUnit(g.head), // sales#28: la unidad congelada, para el papel
+    }),
     subtotal: sale.subtotal != null ? toEuros(sale.subtotal) : undefined,
     taxes: parseTaxes(sale.tax_breakdown, t).map((x) => ({ label: x.label, base: x.base, amount: x.amount })),
     total: toEuros(sale.total),
@@ -454,6 +503,10 @@ export interface PrebillLine {
    *  es contenido, no presentación: el cliente los lee como los pidió, y dos líneas con las mismas
    *  opciones en distinto orden no son la misma cuenta. */
   modifiers?: PrintedModifier[];
+  /** sales#154 — this cart line is a MENU: its name is the menu's, its `price` the closed price
+   *  (preview, the server decides at checkout), and here go the chosen components, resolved by
+   *  whoever asks for the bill. The bill prints it as the ticket will. */
+  combo?: PrintedCombo;
   /** Unidad congelada de la línea (ADR-0147 §2.4; sales#28): la cuenta que se lleva a la mesa
    *  pinta la cantidad con su unidad, como el tiquet. */
   unit_code?: string;
@@ -499,7 +552,7 @@ export function orderToPrebill(
       total: toEuros(cents(l)),
       // sales#148: ya resueltos contra el catálogo VIVO por quien pide la cuenta (la fila del
       // pedido guarda solo los `option_id`; el nombre y el importe no son del navegador).
-      ...paperModifiers(l.modifiers),
+      ...paperModifiers(l.modifiers, l.combo), // sales#154: and the menu's components, same door
       ...paperUnit(l), // sales#28: la unidad congelada, para el papel
     })),
     total: toEuros(total),

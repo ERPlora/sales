@@ -550,3 +550,91 @@ describe('a line covered by an external tender says so on the paper (sales#162)'
     expect(r.lines[0].name).toBe('Corte (Prepaid)');
   });
 });
+
+// sales#154 / ADR-0381 — the MENU reaches the paper: a combo is N sibling rows in the sale (one per
+// tax rate, never a parent row with money) and the customer reads ONE header line with the closed
+// price and the components indented under it. The header is painted FROM THE SNAPSHOT frozen on
+// every sibling (`sales_sale_item.combo`), and its amount is the SUM of the siblings — the tax
+// footer keeps the real breakdown untouched. Why the market decided it this way: `paper-combos.ts`.
+describe('the menu reaches the document (sales#154)', () => {
+  const snapshot = JSON.stringify({
+    combo_id: 'c-menu', name: 'Menú del día', kitchen_name: 'MENU', price: 1350, price_charged: 1350,
+    supply_kind: 'goods',
+    components: [
+      { option_id: 'o-sandwich', name: 'Bocadillo', price_delta: 0, tax_category_key: 'food', catalog_price: 600, share: 810 },
+      { option_id: 'o-beer', name: 'Cerveza', price_delta: 0, tax_category_key: 'drink', catalog_price: 400, share: 540 },
+    ],
+  });
+  /** A `goods` pack split in two rates: the server materialised TWO rows, one per component. */
+  const PACK: SaleLineRow[] = [
+    { product_name: 'Bocadillo', quantity: 1_000_000, unit_price: 810, tax_rate: 10, line_total: 810, combo_group_ref: 'grp-1', combo: snapshot },
+    { product_name: 'Cerveza', quantity: 1_000_000, unit_price: 540, tax_rate: 21, line_total: 540, combo_group_ref: 'grp-1', combo: snapshot },
+  ];
+
+  it('two sibling rows print as ONE line: the menu name, the closed price, the components', () => {
+    const r = saleToReceipt(SALE, [...LINES, ...PACK]);
+    expect(r.lines, 'café + ONE menu line, not café + two halves').toHaveLength(2);
+    expect(r.lines[1].name).toBe('Menú del día');
+    expect(r.lines[1].qty).toBe(1);
+    expect(r.lines[1].unit_price, '8,10 + 5,40').toBe(13.5);
+    expect(r.lines[1].total).toBe(13.5);
+    expect(r.lines[1].combo?.components.map((c) => c.name)).toEqual(['Bocadillo', 'Cerveza']);
+  });
+
+  it('the screen reads the components in the `note` <ok-receipt> already paints (parity with the paper)', () => {
+    const r = saleToReceipt(SALE, PACK);
+    expect(r.lines[0].note).toBe('Bocadillo · Cerveza');
+  });
+
+  it('a `service` menu — ONE row with the closed price — still gets its header and components', () => {
+    const one: SaleLineRow[] = [{ product_name: 'Menú del día', quantity: 2_000_000, unit_price: 1350, line_total: 2700, combo_group_ref: 'grp-2', combo: snapshot }];
+    const r = saleToReceipt(SALE, one);
+    expect(r.lines).toHaveLength(1);
+    expect(r.lines[0]).toMatchObject({ name: 'Menú del día', qty: 2, unit_price: 13.5, total: 27 });
+    expect(r.lines[0].combo?.components).toHaveLength(2);
+  });
+
+  it('a component with its own supplement keeps it under the MENU line, after the components', () => {
+    const withMods: SaleLineRow[] = [
+      PACK[0],
+      { ...PACK[1], modifiers: JSON.stringify([{ option_id: 'o-cold', name: 'Muy fría', price_delta: 0 }]) },
+    ];
+    const r = saleToReceipt(SALE, withMods);
+    expect(r.lines[0].modifiers?.map((m) => m.name)).toEqual(['Muy fría']);
+    expect(r.lines[0].note).toBe('Bocadillo · Cerveza · Muy fría');
+  });
+
+  it('the tax footer is NOT rewritten by the grouping: it is the sale row, the real breakdown', () => {
+    const sale: SaleRow = { ...SALE, tax_breakdown: '{"10.00": {"base": 736, "tax": 74}, "21.00": {"base": 446, "tax": 94}}' };
+    const r = saleToReceipt(sale, PACK);
+    expect(r.taxes.map((t) => t.label)).toEqual(['IVA 10%', 'IVA 21%']);
+  });
+
+  it('a line that is not a combo does not grow a `combo` field: the ticket of always is byte-identical', () => {
+    const r = saleToReceipt(SALE, LINES);
+    expect(r.lines[0].combo).toBeUndefined();
+    expect(r.lines[0].note).toBeUndefined();
+  });
+
+  it('the bill carries the menu the cart hands it, already resolved against the live catalogue', () => {
+    const r = orderToPrebill([
+      { name: 'Menú del día', price: 1650, qty: 1, combo: { name: 'Menú del día', components: [{ option_id: 'o-soup', name: 'Gazpacho' }, { option_id: 'o-sirloin', name: 'Solomillo', price_delta: 300 }] } },
+    ]);
+    expect(r.lines[0].combo?.components.map((c) => c.name)).toEqual(['Gazpacho', 'Solomillo']);
+    expect(r.lines[0].note).toBe('Gazpacho · Solomillo (+3,00)');
+    expect(r.lines[0].total, 'the closed price, once').toBe(16.5);
+  });
+});
+
+// The read gates of both papers must RETURN the columns (the `modifiers` lesson of sales#148).
+describe('the read gates return the menu columns (sales#154)', () => {
+  for (const file of ['queries/lines.sql', 'queries/order_lines.sql']) {
+    it(`\`${file}\` SELECTs \`combo_group_ref\` and \`combo\``, () => {
+      const noComments = readFileSync(join(salesRoot, file), 'utf8')
+        .split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');
+      const select = noComments.slice(noComments.toUpperCase().indexOf('SELECT'), noComments.toUpperCase().indexOf('FROM'));
+      expect(select).toMatch(/\bcombo_group_ref\b/);
+      expect(select).toMatch(/,\s*combo\b/);
+    });
+  }
+});

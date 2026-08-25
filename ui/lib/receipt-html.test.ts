@@ -276,3 +276,36 @@ describe('los suplementos en el papel HTML (sales#148)', () => {
     expect(receiptToPrintableHtml(sin)).not.toContain('class="mod"');
   });
 });
+
+// sales#154 / ADR-0381 — the menu on the HTML paper: the header row carries the name and the closed
+// price; the components go INDENTED under it, in their own sub-lines, WITHOUT an amount in the
+// amount column (only their supplement, in the label). Why: `paper-combos.ts`.
+describe('the menu on the HTML paper (sales#154)', () => {
+  const menu = receiptToPrintableHtml({
+    ...doc,
+    lines: [
+      { name: 'Menú del día', qty: 1, unit_price: 16.5, total: 16.5,
+        combo: { name: 'Menú del día', components: [{ name: 'Gazpacho' }, { name: 'Solomillo', price_delta: 300 }] },
+        modifiers: [{ name: 'Al punto' }] },
+    ],
+    total: 16.5,
+  });
+
+  it('paints the header with the closed price and each component on its own indented sub-line', () => {
+    expect(menu).toContain('Menú del día');
+    expect(menu).toContain('16,50 €');
+    const comps = [...menu.matchAll(/<div class="comp">([^<]*)<\/div>/g)].map((m) => m[1]);
+    expect(comps).toEqual(['Gazpacho', 'Solomillo (+3,00)']);
+  });
+
+  it('the components come BEFORE the supplements of the line, and none of them sits in the amount column', () => {
+    expect(menu.indexOf('class="comp">Gazpacho')).toBeLessThan(menu.indexOf('class="mod">Al punto'));
+    // Only two AMOUNT CELLS carry 16,50 on this paper: the row total and the TOTAL. (The «1 ×
+    // 16,50 €» quantity sub-line is not an amount cell — it is the same text, in the name column.)
+    expect(menu.match(/class="a">16,50 €/g)).toHaveLength(2);
+  });
+
+  it('a line without a menu paints no component block: the paper of always', () => {
+    expect(receiptToPrintableHtml(doc)).not.toContain('class="comp"');
+  });
+});
