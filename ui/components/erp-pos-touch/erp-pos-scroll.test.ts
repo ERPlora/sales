@@ -1,122 +1,124 @@
-// Contrato de SCROLL de la rejilla de producto y de anclaje del pie del carrito (sales#178).
+// SCROLL contract of the product grid and anchoring of the cart footer (sales#178).
 //
-// Por qué existe: con la carta completa de un restaurante (281 artículos) el TPV se recortaba
-// entero — no scrolleaba nada, se veían ~14 baldosas y «Cobrar» quedaba 10.000-20.000 px por
-// debajo del viewport. La causa era de CSS puro: `.catalog` es item de grid y sin `min-height:0`
-// su min-height efectivo es `auto`, así que no puede encogerse por debajo de su contenido y estira
-// la fila entera del grid al alto de la rejilla. `.grid` nunca llegaba a usar su `overflow:auto`
-// porque su padre ya había crecido, y `aside.cart` —misma fila— se estiraba con él, llevándose el
-// `ion-footer` al final de esos 20.000 px. `.card` es `overflow:hidden`, así que ni barra de scroll.
+// Why this exists: with a restaurant's full menu (281 items) the POS was cut off whole -- nothing
+// scrolled, about 14 tiles were reachable and CHARGE sat 10.000-20.000px below the viewport. The
+// cause is pure CSS and it has TWO halves, both needed:
 //
-// El mismo patrón ya estaba corregido en `.body` y en `.cart`; a `.catalog` se le puso `min-width:0`
-// pero no `min-height:0`. Estas tres reglas son UNA sola cadena: si falta un eslabón, el alto se
-// escapa otra vez. Por eso se fijan juntas.
+//   1. .body holds ONE implicit `auto` row, and an auto track is sized by its CONTENT: its base
+//      size is .catalog's min-content, ~6.800px at 1440 and ~13.600px at 834 with that menu. So the
+//      row itself grew to the height of the grid.
+//   2. .catalog is a grid item, and a grid item's automatic minimum size is its content: without
+//      min-height:0 it cannot shrink into the row even once the row is bounded.
 //
-// happy-dom NO hace layout ni evalúa media queries: aquí se fija el CONTRATO CSS declarado, como en
-// los demás contratos de estilo de este componente. Que la rejilla scrollee de verdad y que
-// «Cobrar» caiga dentro del viewport se verifica en un navegador real.
+// Either half alone leaves the screen broken -- measured, not assumed: with only min-height:0 the
+// browser bench still reported the grid at 6777/6777 and CHARGE at y=6810. .grid never reached its
+// own overflow:auto because its ancestor had already grown, aside.cart -- same row -- stretched
+// with it and carried its ion-footer to the end of those 20.000px, and .card is overflow:hidden, so
+// there was not even a scrollbar: the content simply did not exist for the cashier.
+//
+// happy-dom does NOT lay out and does not evaluate media queries: what is pinned here is the
+// DECLARED CSS contract, the same way the other style contracts of this component are written. That
+// the grid really scrolls and CHARGE really lands inside the viewport is verified in a browser.
 import { describe, expect, it } from 'vitest';
 
-/** CSS declarado por el componente (el `static styles` de Lit). */
-async function cssDelPos(): Promise<string> {
+/** The CSS the component declares (Lit's `static styles`). */
+async function posCss(): Promise<string> {
   await import('./erp-pos-touch');
-  const clase = customElements.get('erp-pos-touch') as unknown as {
+  const ctor = customElements.get('erp-pos-touch') as unknown as {
     styles: { cssText: string } | Array<{ cssText: string }>;
   };
-  return [clase.styles].flat().map((s) => s.cssText).join('\n');
+  return [ctor.styles].flat().map((s) => s.cssText).join('\n');
 }
 
-/** Todas las declaraciones de un selector, concatenadas (el componente lo redeclara por capas). */
-function reglas(css: string, selector: string): string {
-  const escapado = selector.replace(/[.[\]()]/g, '\\$&');
-  return (css.match(new RegExp(`${escapado}\\s*\\{[^}]*\\}`, 'g')) ?? []).join('\n');
+/** Every declaration of a selector, joined (the component redeclares it in layers). */
+function rules(css: string, selector: string): string {
+  const escaped = selector.replace(/[.[\]()]/g, '\\$&');
+  return (css.match(new RegExp(`${escaped}\\s*\\{[^}]*\\}`, 'g')) ?? []).join('\n');
 }
 
 /**
- * Los bloques `@media (max-width: 820px)` — donde el carrito se vuelve cajón y aparece el FAB.
- * Se recortan contando llaves: quedarse con «todo lo que sigue al @media» dejaría pasar una regla
- * escrita fuera de la media query, que es justo lo contrario de lo que aquí se quiere probar.
+ * The `@media (max-width: 820px)` blocks -- where the cart becomes a drawer and the FAB appears.
+ * They are cut by COUNTING BRACES: keeping "everything after the @media" would let a rule written
+ * outside the media query pass, which is the opposite of what these tests mean to prove.
  */
-function bloqueMovil(css: string): string {
-  const bloques: string[] = [];
-  const apertura = /@media[^{]*\(max-width:\s*820px\)[^{]*\{/g;
-  for (let m = apertura.exec(css); m; m = apertura.exec(css)) {
-    let profundidad = 1;
+function mobileBlock(css: string): string {
+  const blocks: string[] = [];
+  const opening = /@media[^{]*\(max-width:\s*820px\)[^{]*\{/g;
+  for (let m = opening.exec(css); m; m = opening.exec(css)) {
+    let depth = 1;
     let i = m.index + m[0].length;
-    const inicio = i;
-    for (; i < css.length && profundidad > 0; i += 1) {
-      if (css[i] === '{') profundidad += 1;
-      else if (css[i] === '}') profundidad -= 1;
+    const start = i;
+    for (; i < css.length && depth > 0; i += 1) {
+      if (css[i] === '{') depth += 1;
+      else if (css[i] === '}') depth -= 1;
     }
-    bloques.push(css.slice(inicio, i - 1));
+    blocks.push(css.slice(start, i - 1));
   }
-  return bloques.join('\n');
+  return blocks.join('\n');
 }
 
-describe('la rejilla de producto scrollea dentro de su columna (sales#178)', () => {
-  it('la cadena de contenedores puede encogerse: .body, .catalog y .cart declaran min-height:0', async () => {
-    const css = await cssDelPos();
+describe('the product grid scrolls inside its own column (sales#178)', () => {
+  it('the container chain can shrink: .body, .catalog and .cart all declare min-height:0', async () => {
+    const css = await posCss();
 
-    expect(reglas(css, '.body'), '.body es el grid de dos columnas y ya puede encoger')
+    expect(rules(css, '.body'), '.body is the two-column grid and could already shrink')
       .toMatch(/min-height\s*:\s*0/);
     expect(
-      reglas(css, '.catalog'),
-      '.catalog es item de grid: sin min-height:0 su mínimo es su contenido y estira la fila a los ~20.000 px de la rejilla',
+      rules(css, '.catalog'),
+      '.catalog is a grid item: without min-height:0 its minimum is its content and it overflows the row',
     ).toMatch(/min-height\s*:\s*0/);
-    expect(reglas(css, '.cart'), '.cart ya lo tenía: su ion-footer se ancla porque la columna no crece')
+    expect(rules(css, '.cart'), '.cart already had it: its ion-footer anchors because the column does not grow')
       .toMatch(/min-height\s*:\s*0/);
   });
 
-  // Medido en Chrome 151 sobre el montaje real del shell (ion-content > .outlet{height:100%} > WC)
-  // con 281 artículos: `min-height:0` en `.catalog` NO basta. `.body` es un grid con UNA fila
-  // implícita `auto`, y una pista `auto` se dimensiona por el CONTENIDO: su base es el min-content
-  // de `.catalog` (~6.800 px a 1440, ~13.600 a 834). Que el ITEM pueda encoger no impide que la
-  // PISTA crezca — el item simplemente se estira a una fila de 6.800 px. La fila tiene que ser
-  // acotada explícitamente: `minmax(0,1fr)` la ata al alto de `.body`, y ahí sí `.grid` alcanza su
-  // `overflow:auto` y el `ion-footer` del carrito se queda dentro de la pantalla.
-  it('la fila del grid está ACOTADA: no se dimensiona por el contenido de la rejilla', async () => {
-    const css = await cssDelPos();
-    const cuerpo = reglas(css, '.body');
-    const filas = cuerpo.match(/grid-template-rows\s*:\s*([^;}]+)/);
+  // Measured in Chrome 151 on the real shell mount (ion-content > .outlet{height:100%} > WC) with
+  // 281 items: min-height:0 on .catalog is NOT enough. Letting the ITEM shrink does not stop the
+  // TRACK from growing -- the item just stretches to fill a 6.800px row. The row has to be bounded
+  // explicitly: minmax(0,1fr) pins it to .body's own height, and only then does .grid reach its
+  // overflow:auto and the cart's ion-footer stay on screen.
+  it('the grid row is BOUNDED: it is not sized by the content of the grid', async () => {
+    const css = await posCss();
+    const body = rules(css, '.body');
+    const rows = body.match(/grid-template-rows\s*:\s*([^;}]+)/);
 
-    expect(filas, '.body declara su fila en vez de dejarla implícita (auto = alto del contenido)').toBeTruthy();
+    expect(rows, '.body declares its row instead of leaving it implicit (auto = height of the content)').toBeTruthy();
     expect(
-      filas![1].replace(/\s+/g, ''),
-      'minmax(0,1fr): mínimo 0 (la fila no crece con la rejilla) y máximo el alto de .body',
+      rows![1].replace(/\s+/g, ''),
+      'minmax(0,1fr): minimum 0 (the row does not grow with the grid) and maximum the height of .body',
     ).toBe('minmax(0,1fr)');
   });
 
-  it('.grid es quien scrollea: overflow:auto', async () => {
-    expect(reglas(await cssDelPos(), '.grid'), 'la rejilla se queda con el scroll del catálogo')
+  it('.grid is the one that scrolls: overflow:auto', async () => {
+    expect(rules(await posCss(), '.grid'), 'the grid keeps the catalogue scroll to itself')
       .toMatch(/overflow\s*:\s*auto/);
   });
 
-  it('la tarjeta sigue recortando: el scroll vive dentro, no en la página', async () => {
-    expect(reglas(await cssDelPos(), '.card')).toMatch(/overflow\s*:\s*hidden/);
+  it('the card still clips: the scroll lives inside it, not in the page', async () => {
+    expect(rules(await posCss(), '.card')).toMatch(/overflow\s*:\s*hidden/);
   });
 });
 
-// El FAB del carrito flota sobre la rejilla (`position:absolute; bottom:1rem`, 3.6rem de lado) y en
-// 390 px tapaba el precio de la baldosa de debajo — el último producto de la carta no se puede leer.
-// Square y Toast reservan ese hueco al final de la rejilla en vez de dejar que el botón pise el
-// contenido. Solo aplica donde el FAB existe: el bloque móvil.
-describe('el FAB del carrito no tapa la última fila de baldosas (sales#178)', () => {
-  it('en móvil la rejilla reserva bajo su contenido el hueco del FAB', async () => {
-    const movil = bloqueMovil(await cssDelPos());
-    const rejilla = reglas(movil, '.grid');
-    const relleno = rejilla.match(/padding-bottom\s*:\s*([\d.]+)rem/);
+// The cart FAB floats over the grid (position:absolute; bottom:1rem, 3.6rem a side) and at 390px it
+// covered the price of the tile underneath -- the last item of the menu cannot be read. Square and
+// Toast reserve that room at the end of the list instead of letting the button cover content. It
+// only applies where the FAB exists: the mobile block.
+describe('the cart FAB does not cover the last row of tiles (sales#178)', () => {
+  it('on mobile the grid reserves the room of the FAB below its content', async () => {
+    const mobile = mobileBlock(await posCss());
+    const grid = rules(mobile, '.grid');
+    const padding = grid.match(/padding-bottom\s*:\s*([\d.]+)rem/);
 
-    expect(relleno, 'el bloque móvil declara el padding-bottom de la rejilla').toBeTruthy();
+    expect(padding, 'the mobile block declares the padding-bottom of the grid').toBeTruthy();
     expect(
-      Number(relleno![1]),
-      'al menos el alto del FAB (3.6rem) más su separación al borde (1rem)',
+      Number(padding![1]),
+      'at least the height of the FAB (3.6rem) plus its gap to the edge (1rem)',
     ).toBeGreaterThanOrEqual(4.6);
   });
 
-  it('el FAB solo se pinta en ese bloque: en escritorio no hay nada que esquivar', async () => {
-    const css = await cssDelPos();
-    expect(reglas(css, '.fab'), 'oculto por defecto').toMatch(/display\s*:\s*none/);
-    expect(reglas(bloqueMovil(css), '.fab'), 'y solo el bloque móvil lo muestra')
+  it('the FAB is painted only in that block: on desktop there is nothing to dodge', async () => {
+    const css = await posCss();
+    expect(rules(css, '.fab'), 'hidden by default').toMatch(/display\s*:\s*none/);
+    expect(rules(mobileBlock(css), '.fab'), 'and only the mobile block shows it')
       .toMatch(/display\s*:\s*inline-flex/);
   });
 });
