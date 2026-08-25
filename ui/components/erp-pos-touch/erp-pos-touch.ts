@@ -850,6 +850,10 @@ export class ErpPosTouch extends LitElement {
   @state() private cart: CartLine[] = [];
   @state() private methods: PayMethod[] = [];
   @state() private settings: PosSettings = {};
+  /** sales#180 — the business's LEGAL name (`hub_settings.business_legal_name`, ADR-0061), the one
+   *  the fiscal ticket prints. The BILL needs it just the same and has no invoice to read it from,
+   *  so it asks for it live (`sales.business.get`, a cashier's permission). */
+  @state() private businessName = '';
   @state() private paying = false;
   @state() private tendered = '';
   // Precio libre / venta por departamento (fuera de catálogo): sheet propio con su importe tecleado
@@ -1229,11 +1233,16 @@ export class ErpPosTouch extends LitElement {
     super.connectedCallback();
     window.addEventListener('erplora:locale-changed', this.onLocaleChange);
     try {
-      const [prods, methods, settingsRows, savedCart, parked, cats, prodCats, taxCatalog, unitRows,
+      const [prods, methods, settingsRows, businessRows, savedCart, parked, cats, prodCats, taxCatalog, unitRows,
              svcRows, svcCats, taxCats, fiscalLimits] = await Promise.all([
         erplora().queryAll<Product>('inventory.products.list').catch(() => []),
         erplora().query('sales.payment_methods').catch(() => []),
         erplora().query('sales.settings.get').catch(() => []),
+        // sales#180 — the business identity for the BILL's header. Deliberately apart from the
+        // settings: those require `sales.manage_settings` (a cashier has none) and return zero rows
+        // until somebody saves them, which is exactly the freshly built hub where the bill came out
+        // headed with the generic default.
+        erplora().query('sales.business.get').catch(() => []),
         this.restoreOpenOrder(),
         listOpenChecks(erplora()),
         erplora().queryAll<Category>('inventory.categories.list', { sort: 'name', dir: 'asc' }).catch(() => []),
@@ -1281,6 +1290,7 @@ export class ErpPosTouch extends LitElement {
       }
       this.methods = rows<PayMethod>(methods);
       this.settings = rows<PosSettings>(settingsRows)[0] || {};
+      this.businessName = rows<{ name?: string }>(businessRows)[0]?.name || '';
       this.docFormat = this.settings.default_document_format === 'invoice' ? 'invoice' : 'ticket';
       this.payMethod = defaultPayMethod(this.payMethods);
       this.parked = parked;
@@ -2528,6 +2538,10 @@ export class ErpPosTouch extends LitElement {
     return this.cart.map((l) => ({
       name: l.name, price: l.price, qty: l.qty, is_gift: l.is_gift,
       unit_code: l.unit_code, unit_name: l.unit_name,
+      // sales#180: and its VAT rate (the same PREVIEW the cart line already carries), so the bill
+      // breaks the rates down the way Toast and Lightspeed do on a pre-bill. The real rate is
+      // resolved by the server on checkout (ADR-0085); that does not change.
+      tax_rate: l.tax_rate,
       // sales#148: y sus suplementos, o el cliente paga un «+ queso» que su papel no nombra.
       ...(this.resolvedModifiers(l) ? { modifiers: this.resolvedModifiers(l) } : {}),
       // sales#154: y la composición del menú, o la cuenta dice «Menú del día» sin decir cuál.
@@ -2556,18 +2570,46 @@ export class ErpPosTouch extends LitElement {
     };
   }
 
-  private async printPrebill() {
-    // El nombre de cada suplemento sale del catálogo, no del navegador (sales#148).
-    await this.loadModifierCatalog();
-    const lines = this.prebillLines();
-    const opts = {
+  /** The settings the BILL is built from: the till's, plus the business's LEGAL name, which heads
+   *  the paper when there is no deliberate ticket header (sales#180). The currency scale is not
+   *  passed: the mapper reads it from the SDK itself (`hubDecimals`). */
+  private get billSettings() {
+    return { ...this.settings, issuer_name: this.businessName };
+  }
+
+  /** Whose bill this is: the TABLE when the order is a dine-in one, the customer otherwise. It is
+   *  what goes in the only labelled meta slot `<ok-receipt>` has, and its label follows from it. */
+  private get billWho() {
+    return {
       tableLabel: this.tableLabel || undefined,
+      customerName: this.customerName || undefined,
       title: t('ui.prebillTitle'),
       notice: t('ui.prebillNotice'),
       fallbackName: t('ui.docDefaultBusiness'),
     };
+  }
+
+  /** The BILL on screen. It is composed once -- not twice in the template -- because both the
+   *  document and the LABEL of its meta slot come out of it: `<ok-receipt>` labels that slot with
+   *  `labels.customer`, and on a dine-in bill what sits there is the TABLE (sales#180). Until the
+   *  element has a slot of its own for the table (ERPlora/outfitkit#87), the document decides the
+   *  label. */
+  private renderPrebillDoc() {
+    const doc = orderToPrebill(this.prebillLines(), this.billSettings, this.billWho);
+    return html`<ok-receipt id="prebill-doc" .receipt=${doc} .labels=${receiptLabels(t, doc)}></ok-receipt>`;
+  }
+
+  private async printPrebill() {
+    // Every supplement's name comes from the catalogue, not from the browser (sales#148).
+    await this.loadModifierCatalog();
+    const lines = this.prebillLines();
+    const opts = this.billWho;
+    const settings = this.billSettings;
+    const doc = orderToPrebill(lines, settings, opts);
     const html = receiptToPrintableHtml({
-      ...(orderToPrebill(lines, this.settings, opts) as Parameters<typeof receiptToPrintableHtml>[0]),
+      ...(doc as Parameters<typeof receiptToPrintableHtml>[0]),
+      // sales#180: and the paper labels that datum for what it is -- "Table: S1", not a bare "S1".
+      customer_label: doc.customer ? (doc.customer_is_table ? t('ui.docTable') : t('ui.docCustomer')) : undefined,
       // sales#120: el papel de la cuenta sale en el idioma del hub (labels, no plantilla).
       labels: { subtotal: t('ui.docSubtotal'), total: t('ui.docTotal'), change: t('ui.docChange'), document: t('ui.document') },
     });
@@ -2581,7 +2623,7 @@ export class ErpPosTouch extends LitElement {
         role: 'receipt',
         documentType: 'prebill',
         jobId: prebillJobId(this.orderId, lines),
-        data: prebillToPrintDocument(lines, this.settings, opts),
+        data: prebillToPrintDocument(lines, settings, opts),
         html,
       })
       .catch((e: unknown) => ({ via: 'none', error: e instanceof Error ? e.message : String(e) }) as PrintOutcome);
@@ -4143,11 +4185,7 @@ export class ErpPosTouch extends LitElement {
                hub (sales#87). Both defects were that one line: no document AND no labels, so the
                component fell back to its own built-in English DEFAULT_LABELS.
                (No backticks in comments inside a Lit template: they close the literal.) -->
-          <ok-receipt id="prebill-doc" .receipt=${orderToPrebill(
-            this.prebillLines(),
-            this.settings,
-            { tableLabel: this.tableLabel || undefined, title: t('ui.prebillTitle'), notice: t('ui.prebillNotice'), fallbackName: t('ui.docDefaultBusiness') },
-          )} .labels=${receiptLabels(t)}></ok-receipt>
+          ${this.renderPrebillDoc()}
         </ion-content>
       </ion-modal>
     </div>`;

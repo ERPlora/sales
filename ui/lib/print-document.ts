@@ -95,6 +95,9 @@ export interface PrintDocument extends Record<string, unknown> {
   items: PrintDocumentItem[];
   subtotal?: number;
   tax_amount?: number;
+  /** How the renderer names that quota ("IVA 10%"). It defaults to "IVA"; naming a single rate is
+   *  only honest when there IS a single rate -- sales#180. */
+  tax_label?: string;
   discount?: number;
   total: number;
   payment_method?: string;
@@ -127,7 +130,7 @@ export interface PrintDocument extends Record<string, unknown> {
 export function prebillToPrintDocument(
   lines: PrebillLine[],
   settings: SaleSettings = {},
-  opts: { tableLabel?: string; datetime?: string; locale?: string; notice?: string; fallbackName?: string } = {},
+  opts: { tableLabel?: string; customerName?: string; datetime?: string; locale?: string; notice?: string; fallbackName?: string } = {},
 ): PrintDocument {
   const screen = orderToPrebill(lines, settings, opts);
   return {
@@ -137,6 +140,16 @@ export function prebillToPrintDocument(
     // waiter needs to know which paper goes where.
     customer_name: screen.customer,
     items: screen.lines.map((l) => ({ name: l.name, quantity: printQuantity(l.qty, l.unit_code), total: euros(l.total, screen.decimals)!, ...printNotes(l) })),
+    // sales#180 — the bill carries its provisional VAT too: `render_prebill` already prints
+    // `subtotal` + `tax_amount` under a `tax_label`, so this is data the paper knew how to show and
+    // was not being given. With more than one rate the aggregate is NOT labelled with one of them.
+    ...(screen.subtotal != null ? { subtotal: euros(screen.subtotal, screen.decimals) } : {}),
+    ...(screen.taxes?.length
+      ? {
+          tax_amount: euros(screen.taxes.reduce((s, t) => s + (t.amount ?? 0), 0), screen.decimals),
+          ...(screen.taxes.length === 1 ? { tax_label: screen.taxes[0].label } : {}),
+        }
+      : {}),
     total: euros(screen.total, screen.decimals)!,
     notice: screen.footer,
   };

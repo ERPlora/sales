@@ -315,3 +315,21 @@ describe('the menu on the HTML paper (sales#154)', () => {
     expect(receiptToPrintableHtml(doc)).not.toContain('class="comp"');
   });
 });
+
+// sales#180 — the bill's meta slot carries the TABLE, and the paper has to say so.
+describe('the bill labels the table as a table (sales#180)', () => {
+  const bill = {
+    business: { name: 'Bar Manolo' },
+    lines: [{ name: 'Menú del día', qty: 1, unit_price: 1650, total: 1650 }],
+    total: 1650,
+    currency: '€',
+  };
+
+  it('with a label, the datum comes out labelled: "Mesa: S1"', () => {
+    expect(receiptToPrintableHtml({ ...bill, customer: 'S1', customer_label: 'Mesa' })).toContain('Mesa: S1');
+  });
+
+  it('without a label the paper comes out as it did: the datum bare (ticket parity)', () => {
+    expect(receiptToPrintableHtml({ ...bill, customer: 'Ana Pérez' })).toContain('>Ana Pérez<');
+  });
+});

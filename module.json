@@ -268,6 +268,13 @@
         "description": "Retrieves the point-of-sale configuration settings (payment methods allowed, default sell screen, default document format)"
       }
     },
+    "sales.business.get": {
+      "permission": "sales.view_sale",
+      "sql": "queries/business_get.sql",
+      "ai": {
+        "description": "Returns the hub's legal business name and tax id, as printed on the receipt header"
+      }
+    },
     "sales.today": {
       "permission": "sales.view_reports",
       "sql": "queries/today.sql",

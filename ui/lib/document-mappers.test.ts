@@ -645,3 +645,114 @@ describe('the read gates return the menu columns (sales#154)', () => {
     });
   }
 });
+
+// -- sales#180: the bill taken to the table ---------------------------------------------------
+//
+// The paper the customer reads BEFORE paying came out headed with the generic default literal while
+// the ticket for the same sale printed "RESTAURANTE QA PM149 SL": the datum was there, the bill just
+// did not use it -- it was missing the fiscal-issuer step the ticket does have. And it called the
+// table a customer, which is the opposite of what Square, Toast and Lightspeed do on a pre-bill
+// (venue, table, server, time), where the customer is a field of its own.
+describe('the bill is headed like the ticket (sales#180)', () => {
+  const lineas = [{ name: 'Cerveza', price: 250, qty: 2 }];
+
+  it('without `receipt_header` the header is the LEGAL business name, not the default literal', () => {
+    const doc = orderToPrebill(lineas, { issuer_name: 'Restaurante QA PM149 SL' }, { fallbackName: 'Mi negocio' });
+    expect(doc.business.name).toBe('Restaurante QA PM149 SL');
+  });
+
+  it('the deliberate ticket branding (`receipt_header`) still wins over the legal name', () => {
+    const doc = orderToPrebill(lineas, { receipt_header: 'Bar Manolo\nC/ Mayor 1', issuer_name: 'Restaurante QA PM149 SL' });
+    expect(doc.business.name).toBe('Bar Manolo');
+    expect(doc.business.address).toBe('C/ Mayor 1');
+  });
+
+  it('and with neither of the two, the translated fallback stays, as until now', () => {
+    expect(orderToPrebill(lineas, {}, { fallbackName: 'Mi negocio' }).business.name).toBe('Mi negocio');
+  });
+
+  it('the SAME priority as the ticket: header, then fiscal issuer, then fallback', () => {
+    const sale = saleToReceipt(SALE, LINES, { issuer_name: 'Restaurante QA PM149 SL' }, {}, 'es', 'Mi negocio');
+    expect(sale.business.name).toBe('Restaurante QA PM149 SL');
+  });
+});
+
+describe('the table is labelled as a TABLE, not as a customer (sales#180)', () => {
+  const lineas = [{ name: 'Cerveza', price: 250, qty: 2 }];
+
+  it('with a table and no customer, the meta slot takes the table and says so', () => {
+    const doc = orderToPrebill(lineas, {}, { tableLabel: 'S1' });
+    expect(doc.customer).toBe('S1');
+    expect(doc.customer_is_table, 'whoever paints it has to label it Table').toBe(true);
+  });
+
+  it('with a customer assigned the customer wins, and then the label is Customer', () => {
+    const doc = orderToPrebill(lineas, {}, { customerName: 'Ana Pérez' });
+    expect(doc.customer).toBe('Ana Pérez');
+    expect(doc.customer_is_table).toBeUndefined();
+  });
+
+  it('with neither table nor customer there is no meta line to label', () => {
+    const doc = orderToPrebill(lineas, {});
+    expect(doc.customer).toBeUndefined();
+    expect(doc.customer_is_table).toBeUndefined();
+  });
+
+  it('`receiptLabels` swaps the slot label when what it carries is a table', () => {
+    const t = (k: string) => ({ 'ui.docCustomer': 'Cliente', 'ui.docTable': 'Mesa' }[k] ?? k);
+    expect(receiptLabels(t).customer, 'the ticket keeps saying Customer').toBe('Cliente');
+    expect(receiptLabels(t, { customer_is_table: true }).customer).toBe('Mesa');
+  });
+
+  it('the Table label lives in the catalog in en AND es (ADR-0055/0199)', () => {
+    for (const lang of ['en', 'es']) {
+      const cat = JSON.parse(readFileSync(join(salesRoot, `locales/${lang}.json`), 'utf8'));
+      expect(cat.ui?.docTable, `ui.docTable missing in ${lang}`).toBeTruthy();
+    }
+  });
+});
+
+// The bill's VAT breakdown: Toast and Lightspeed print it on the pre-bill too, because that is the
+// paper the customer reviews. It is a PREVIEW -- of the same standing as the cart total -- and it
+// mirrors the server (`calc_line_components`): with VAT-inclusive prices the base is worked out of
+// the charged amount and the quota is what is left; with VAT-exclusive ones the line IS COMPOSED of
+// base + quota.
+describe('the bill breaks the VAT down (sales#180)', () => {
+  const lineas = [
+    { name: 'Menú', price: 1100, qty: 1, tax_rate: 10 },
+    { name: 'Cerveza', price: 242, qty: 2, tax_rate: 21 },
+  ];
+
+  it('with VAT-INCLUSIVE prices (the default setting) it works out base and quota per rate', () => {
+    const doc = orderToPrebill(lineas, {});
+    expect(doc.taxes).toEqual([
+      { label: 'IVA 10%', base: 1000, amount: 100 },
+      { label: 'IVA 21%', base: 400, amount: 84 },
+    ]);
+    expect(doc.subtotal, 'the total taxable base').toBe(1400);
+    expect(doc.total, 'and the total is still what gets charged').toBe(1584);
+  });
+
+  it('with VAT-EXCLUSIVE prices the line is composed of base + quota, as the server does', () => {
+    const doc = orderToPrebill([{ name: 'Menú', price: 1000, qty: 1, tax_rate: 10 }], { default_tax_included: 0 });
+    expect(doc.taxes).toEqual([{ label: 'IVA 10%', base: 1000, amount: 100 }]);
+    expect(doc.subtotal).toBe(1000);
+    expect(doc.total).toBe(1100);
+  });
+
+  it('a comped line pays no VAT: neither base nor quota', () => {
+    const doc = orderToPrebill([{ name: 'Cerveza', price: 250, qty: 1, is_gift: true, tax_rate: 21 }], {});
+    expect(doc.taxes).toEqual([]);
+    expect(doc.total).toBe(0);
+  });
+
+  it('with no tax catalogue (0 % preview) no breakdown is invented', () => {
+    const doc = orderToPrebill([{ name: 'Cerveza', price: 250, qty: 1 }], {});
+    expect(doc.taxes).toEqual([]);
+    expect(doc.total).toBe(250);
+  });
+
+  it('the footer still says it is not an invoice: that is what makes it provisional', () => {
+    expect((orderToPrebill(lineas, {}).footer || '').toLowerCase()).toContain('not an invoice');
+  });
+});
