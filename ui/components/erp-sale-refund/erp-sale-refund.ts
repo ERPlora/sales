@@ -32,6 +32,7 @@ import {
   type RefundLeg,
   type RefundDraft,
 } from '../../lib/refund-allocation.js';
+import { coveredLines, serviceOrdinals, type SaleLine } from '../../lib/refund-tender.js';
 import { payMethodDisplayName } from '../../lib/pay-icons.js';
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
@@ -66,7 +67,12 @@ interface ErploraClientLike {
   formatMoney(cents: number): string;
   locale: string;
   t(catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>): string;
+  /** sales#166 — el registro de slots. Ausente en un shell viejo: entonces no hay hueco. */
+  loadSlot?(slot: string): Promise<Array<Record<string, unknown> & { component: string }>>;
 }
+
+/** Lo que `sales.refund` devuelve; `refund_ref` es el id ESTABLE del documento (sales#160). */
+interface RefundResult { refund_id?: string; refund_ref?: string }
 
 function erplora(): ErploraClientLike {
   const c = (globalThis as { erplora?: ErploraClientLike }).erplora;
@@ -108,6 +114,18 @@ export class ErpSaleRefund extends LitElement {
     .leg-figures { display:flex; gap:.9rem; flex-wrap:wrap; color:var(--ion-color-medium,#8b897f); font-size:.78rem; margin:.25rem 0 .1rem; }
     /* El motivo se LEE sin tocar nada y sin ratón: nunca en un title ni dentro del botón. */
     .leg-reason { margin:.35rem 0 0; color:var(--ion-color-warning-shade,#b26a00); font-size:.82rem; }
+    /* sales#166 — LO QUE NO SE PAGÓ EN DINERO: una tarjeta por línea cubierta, con el hueco del
+       slot debajo. Se separa del reparto de arriba con una regla, porque son dos preguntas
+       distintas: cuánto dinero vuelve, y qué vuelve a su tender. */
+    .rt-block { border-top:1px solid var(--ion-border-color,#e0ddd4); padding-top:.85rem;
+      display:flex; flex-direction:column; gap:.4rem; }
+    .rt-lbl { font-weight:700; }
+    .rt-list { list-style:none; margin:.2rem 0 0; padding:0; display:flex; flex-direction:column; gap:.5rem; }
+    .refund-tender-line { border:1px solid var(--ion-border-color,#e0ddd4);
+      border-radius:var(--ok-radius,12px); padding:.6rem .7rem; }
+    .rt-name { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .rt-slot { margin-top:.45rem; }
+    .rt-slot:empty { display:none; }
     .totals { display:flex; justify-content:space-between; align-items:baseline; font-size:1.05rem; }
     .totals .v { font-weight:800; }
     .block { margin:0; color:var(--ion-color-danger,#d9480f); font-size:.85rem; }
@@ -148,6 +166,16 @@ export class ErpSaleRefund extends LitElement {
   @state() private error = '';
   @state() private busy = false;
 
+  /** sales#166 — las líneas que pagó un TENDER EXTERNO (`is_covered`), en orden de lectura. */
+  @state() private covered: SaleLine[] = [];
+  /** Los componentes que rellenan `sales.refund.tender`. Vacío = nadie: no se pinta hueco. */
+  @state() private tenderFillers: string[] = [];
+  /** El aviso que cada filler quiere que se lea ANTES de confirmar, por línea. El texto es SUYO
+   *  (su módulo, su catálogo): el host solo lo reenvía, como ya hace con la etiqueta de mesa. */
+  @state() private tenderNotices = new Map<string, string>();
+  /** Una instancia por línea cubierta, guardada para no recrearla en cada render. */
+  private readonly tenderEls = new Map<string, HTMLElement>();
+
   /** La clave del intento, congelada: un reintento NO la renueva. */
   private key = '';
 
@@ -155,12 +183,43 @@ export class ErpSaleRefund extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
+    // Contrato del slot `sales.refund.tender`: el filler dice si lo que pagó esa línea VUELVE, y
+    // con qué aviso. Bubbles + composed, así que cruzan su Shadow DOM y llegan aquí sin que esta
+    // pantalla sepa qué es un bono.
+    this.addEventListener('erp:tender-refund-armed', this.onTenderRefundArmed);
+    this.addEventListener('erp:tender-refund-disarmed', this.onTenderRefundDisarmed);
     void this.load();
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.removeEventListener('erp:tender-refund-armed', this.onTenderRefundArmed);
+    this.removeEventListener('erp:tender-refund-disarmed', this.onTenderRefundDisarmed);
   }
 
   updated(changed: Map<string, unknown>): void {
     if (changed.has('saleId')) void this.load();
+    this.ensureTenderSlotsMounted();
   }
+
+  /** Esa línea vuelve a su tender externo. El aviso viaja con el evento porque el hueco de la
+   *  línea puede quedar fuera de pantalla cuando el pulgar ya está sobre «Devolver». */
+  private readonly onTenderRefundArmed = (e: Event): void => {
+    const d = (e as CustomEvent<{ lineRef?: string; warning?: string }>).detail;
+    if (!d?.lineRef) return;
+    const next = new Map(this.tenderNotices);
+    next.set(d.lineRef, String(d.warning ?? ''));
+    this.tenderNotices = next;
+  };
+
+  /** El filler lo deshizo, o dijo que esa línea no vuelve: su aviso deja de anunciarse. */
+  private readonly onTenderRefundDisarmed = (e: Event): void => {
+    const d = (e as CustomEvent<{ lineRef?: string }>).detail;
+    if (!d?.lineRef) return;
+    const next = new Map(this.tenderNotices);
+    next.delete(d.lineRef);
+    this.tenderNotices = next;
+  };
 
   private async load(): Promise<void> {
     const saleId = this.saleId;
@@ -182,10 +241,88 @@ export class ErpSaleRefund extends LitElement {
       // las veces; el 10 % restante lo edita, que es justo lo que Shopify no deja.
       const split = proportionalSplit(refundableTotal(this.legs), this.legs);
       this.draft = Object.fromEntries(Object.entries(split).map(([id, amount]) => [id, { amount }]));
+      await this.loadTenderLines(saleId);
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e ?? '');
     } finally {
       this.loading = false;
+    }
+  }
+
+  /**
+   * El lado ACCESORIO de la pantalla: las líneas que pagó otro tender y el hueco donde su dueño
+   * decide si vuelven (sales#166 / ADR-0386).
+   *
+   * 🔴 Nada de aquí puede tumbar la devolución del dinero, que es la autoridad de esta pantalla:
+   * un cliente esperando 18,00 € no se queda sin ellos porque un módulo accesorio no responda. Por
+   * eso cada paso trae su propio `catch` y el peor caso es una sección que no se pinta.
+   *
+   * Y no se pregunta por las líneas si nadie rellena el slot: sin dueño del tender no hay nada que
+   * ofrecer, así que la lectura sería una llamada que ningún píxel usa.
+   */
+  private async loadTenderLines(saleId: string): Promise<void> {
+    this.covered = [];
+    this.tenderNotices = new Map();
+    const sdk = erplora();
+    if (typeof sdk.loadSlot !== 'function') { this.tenderFillers = []; return; }
+    try {
+      const rows = (await sdk.loadSlot('sales.refund.tender')) ?? [];
+      this.tenderFillers = rows.map((f) => String(f.component));
+    } catch {
+      this.tenderFillers = [];
+    }
+    if (!this.tenderFillers.length) return;
+    try {
+      const lines = await sdk.query<SaleLine[]>('sales.lines', { sale_id: saleId });
+      this.covered = coveredLines(lines ?? []);
+    } catch {
+      this.covered = [];
+    }
+  }
+
+  /**
+   * Una instancia del filler por línea cubierta. Idempotente: la pantalla se re-renderiza con
+   * cada tecla del importe.
+   *
+   * 🔴 Las cuatro propiedades se ponen ANTES de insertar el elemento — misma razón que en el TPV
+   * (sales#162): el filler arranca su lectura en `connectedCallback`, así que insertarlo primero
+   * le haría preguntar por una venta vacía y pintar «aquí no hay nada que devolver» encima de una
+   * sesión que sí vuelve.
+   */
+  private ensureTenderSlotsMounted(): void {
+    if (!this.tenderFillers.length) return;
+    const ordinals = serviceOrdinals(this.covered);
+    const alive = new Set<string>();
+    for (const l of this.covered) {
+      const host = [...this.renderRoot.querySelectorAll<HTMLElement>('.refund-tender-line')]
+        .find((n) => n.dataset.line === l.id)
+        ?.querySelector<HTMLElement>('.rt-slot');
+      if (!host) continue;
+      for (const component of this.tenderFillers) {
+        const key = `${component}::${l.id}`;
+        alive.add(key);
+        let el = this.tenderEls.get(key);
+        if (!el) {
+          el = document.createElement(component);
+          this.tenderEls.set(key, el);
+        }
+        // Datos TIPADOS por propiedad JS, nunca por atributo (ADR-0043).
+        const props = el as HTMLElement & {
+          saleId?: string; lineRef?: string; serviceId?: string; lineIndex?: number;
+        };
+        props.saleId = this.saleId ?? '';
+        props.lineRef = l.id;
+        props.serviceId = l.product_id ?? '';
+        // El ordinal desempata a los gemelos: dos cortes iguales en el mismo tique son dos
+        // sesiones, y sin él los dos huecos reclamarían la primera.
+        props.lineIndex = ordinals.get(l.id) ?? 0;
+        if (el.parentElement !== host) host.appendChild(el);
+      }
+    }
+    for (const [key, el] of [...this.tenderEls]) {
+      if (alive.has(key)) continue;
+      el.remove();
+      this.tenderEls.delete(key);
     }
   }
 
@@ -241,7 +378,7 @@ export class ErpSaleRefund extends LitElement {
     if (this.busy) return;
     this.busy = true;
     try {
-      await erplora().command('sales.refund', {
+      const out = await erplora().command<RefundResult>('sales.refund', {
         sale_id: this.saleId,
         reason: this.reason.trim(),
         // La MISMA clave en cada intento: un reintento recupera el documento ya escrito en vez de
@@ -249,7 +386,14 @@ export class ErpSaleRefund extends LitElement {
         idempotency_key: this.key,
         allocations: buildAllocations(this.draft, this.legs),
       });
+      // sales#166 — el documento YA existe: se le pasa su referencia a quien tenga que devolver lo
+      // que no era dinero, y se le espera. Cerrar antes desmontaría al filler a mitad de su
+      // command, y la sesión se quedaría gastada sin que nadie en la caja pueda devolverla.
+      const committed = await this.commitTenderRefunds(out);
       erplora().notify?.({ type: 'success', message: t('ui.refundDone') });
+      // El dinero VOLVIÓ: eso no se deshace ni se esconde. Lo que falló se nombra aparte, porque
+      // un fallo que no se ve es el que nadie arregla.
+      if (!committed) erplora().notify?.({ type: 'error', message: t('ui.refundTenderPending') });
       this.dispatchEvent(new CustomEvent('refunded', { bubbles: true, composed: true, detail: { saleId: this.saleId } }));
     } catch (e) {
       const raw = e instanceof Error ? e.message : String(e ?? '');
@@ -257,6 +401,82 @@ export class ErpSaleRefund extends LitElement {
     } finally {
       this.busy = false;
     }
+  }
+
+  /**
+   * Le entrega a cada filler la referencia del documento y ESPERA a lo que se comprometa a hacer.
+   *
+   * El contrato es el de `respondWith`: el detalle lleva `waitFor(promise)` y quien la use retrasa
+   * el cierre de la pantalla hasta que termine. Un filler que no la usa no bloquea nada — el host
+   * no puede obligar a nadie a contestar, y una espera indefinida sería peor que no esperar.
+   *
+   * Devuelve si cuanto se prometió salió bien. Nunca lanza: aquí el dinero ya volvió.
+   */
+  private async commitTenderRefunds(out: RefundResult | undefined): Promise<boolean> {
+    const refundRef = String(out?.refund_ref ?? out?.refund_id ?? '');
+    if (!refundRef || !this.tenderEls.size) return true;
+    const refundId = String(out?.refund_id ?? refundRef);
+    const pending: Promise<unknown>[] = [];
+    let dispatched = true;
+    for (const el of this.tenderEls.values()) {
+      const props = el as HTMLElement & { refundId?: string; refundRef?: string };
+      // La referencia queda también como propiedad: un filler que la lee al montarse no necesita
+      // haber estado escuchando en el momento exacto del evento.
+      props.refundId = refundId;
+      props.refundRef = refundRef;
+      try {
+        el.dispatchEvent(new CustomEvent('erp:tender-refund-commit', {
+          detail: {
+            saleId: this.saleId,
+            refundId,
+            refundRef,
+            waitFor: (p: Promise<unknown>) => { pending.push(Promise.resolve(p)); },
+          },
+          bubbles: false,
+        }));
+      } catch {
+        // Un filler que revienta en su propio listener no puede hacer que esta pantalla declare
+        // fallida una devolución que el servidor ya escribió.
+        dispatched = false;
+      }
+    }
+    if (!pending.length) return dispatched;
+    const settled = await Promise.allSettled(pending);
+    return dispatched && settled.every((s) => s.status === 'fulfilled');
+  }
+
+  /**
+   * Las líneas que pagó un tender externo, con su hueco debajo (sales#166 / ADR-0386).
+   *
+   * No entran en el reparto de arriba porque no costaron dinero (`is_covered` → base 0, cuota 0),
+   * y por eso necesitan sitio propio: sin él, la única forma de devolver la sesión sería que el
+   * operador se acordara de ir al módulo del bono, que es exactamente lo que el mercado hace mal.
+   *
+   * Sin fillers no se pinta NADA: ni cabecera, ni lista, ni hueco vacío.
+   */
+  private renderTenderLines(): unknown {
+    const t = (k: string, p?: Record<string, unknown>): string => erplora().t(CATALOG, k, p);
+    if (!this.tenderFillers.length || !this.covered.length) return nothing;
+    return html`
+      <div class="rt-block">
+        <div class="rt-lbl">${t('ui.refundLineTenders')}</div>
+        <p class="hint">${t('ui.refundLineTendersHint')}</p>
+        <ul class="rt-list">
+          ${this.covered.map((l) => html`
+            <li class="refund-tender-line" data-line=${l.id}>
+              <div class="rt-name">${l.product_name ?? ''}</div>
+              <div class="rt-slot"></div>
+            </li>`)}
+        </ul>
+      </div>`;
+  }
+
+  /** Los avisos que los fillers quieren que se lean ANTES de confirmar. Avisan; no bloquean. */
+  private renderTenderNotices(): unknown {
+    const notices = [...this.tenderNotices.values()].filter((n) => !!n);
+    if (!notices.length) return nothing;
+    return notices.map((n) => html`
+      <ok-inline-feedback class="rt-notice" tone="warning" icon="alert-circle-outline">${n}</ok-inline-feedback>`);
   }
 
   private renderLeg(leg: RefundLeg): unknown {
@@ -320,6 +540,7 @@ export class ErpSaleRefund extends LitElement {
       <h3>${t('ui.refundTitle', { number: this.sale?.sale_number ?? '' })}</h3>
       <p class="hint">${t('ui.refundExplain')}</p>
       <div class="legs">${this.legs.map((l) => this.renderLeg(l))}</div>
+      ${this.renderTenderLines()}
       <ion-button class="refund-propose" size="small" fill="clear" @click=${() => this.proposeAll()}>
         ${t('ui.refundProposeAll')}
       </ion-button>
@@ -338,6 +559,9 @@ export class ErpSaleRefund extends LitElement {
       </div>
       <!-- EL MOTIVO DEL BLOQUEO, ESCRITO EN LA PANTALLA: se lee sin tocar nada y sin un ratón. -->
       ${block ? html`<p class="block">${block}</p>` : nothing}
+      <!-- Y los avisos de los tenders externos, junto al botón: el hueco de la línea puede quedar
+           fuera de pantalla cuando el pulgar ya está sobre «Devolver» (sales#166). -->
+      ${this.renderTenderNotices()}
       <!-- 🔴 aria-disabled, JAMÁS el disabled de Ionic: en modo ios es pointer-events:none y en
            una tablet de mostrador el toque muere en silencio (sales#58). El estado ocupado sí es
            disabled de verdad: ahí no hay nada que contestar y un segundo toque devolvería dos
