@@ -59,7 +59,8 @@ describe('visor del documento de venta', () => {
       receipt: ReceiptData;
     };
     expect(receipt.receipt.datetime, 'fecha legible, no ISO con nanosegundos').not.toContain('T');
-    expect(receipt.receipt.total, 'céntimos → euros').toBe(3.6);
+    expect(receipt.receipt.total, 'céntimos tal cual (ADR-0400): la pantalla los corta, no los divide').toBe(360);
+    expect(receipt.receipt.decimals).toBe(2);
   });
 
   it('NO pinta botón de imprimir: imprimir vive en el pie del modal anfitrión', async () => {
@@ -226,6 +227,7 @@ describe('la unidad de la línea llega al papel (sales#28)', () => {
   }
 
   it('printableHtml: la línea del papel dice «1,5 kg × 12,00 € / kg»', async () => {
+    document.documentElement.lang = 'es'; // the paper formats with the document language (ADR-0400)
     const el = await montarVentaConKilo();
     const html = (el as unknown as { printableHtml(): string }).printableHtml();
     expect(html).toContain('1,5 kg × 12,00 € / kg');

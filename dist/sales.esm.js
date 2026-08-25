@@ -462,7 +462,7 @@ var attributesForElement = (element) => {
   }
   return attrs;
 };
-var NodeShim = class Node extends EventTarget {
+var NodeShim = class Node2 extends EventTarget {
   getRootNode(options) {
     if (options?.composed) {
       return document2;
@@ -1592,34 +1592,112 @@ function groupComboLines(lines) {
   return out;
 }
 
+// ../../../outfitkit/dist/ok-money.js
+var __defProp2 = Object.defineProperty;
+var __decorateClass2 = (decorators, target, key, kind) => {
+  var result = void 0;
+  for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
+    if (decorator = decorators[i7])
+      result = decorator(target, key, result) || result;
+  if (result) __defProp2(target, key, result);
+  return result;
+};
+var NOT_AN_AMOUNT = "\u2014";
+function separatorsOf(locale) {
+  try {
+    const parts = new Intl.NumberFormat(locale).formatToParts(12345675e-1);
+    return {
+      decimal: parts.find((p4) => p4.type === "decimal")?.value ?? ".",
+      group: parts.find((p4) => p4.type === "group")?.value ?? ","
+    };
+  } catch {
+    return { decimal: ".", group: "," };
+  }
+}
+function documentLocale() {
+  if (typeof document === "undefined") return "en";
+  const lang = document.documentElement?.lang?.trim();
+  return lang || "en";
+}
+function formatMinor(value, opts) {
+  const raw = typeof value === "number" ? Number.isInteger(value) ? String(value) : "" : typeof value === "string" ? value.trim() : "";
+  if (!/^-?\d+$/.test(raw)) return opts.currency ? `${NOT_AN_AMOUNT} ${opts.currency}` : NOT_AN_AMOUNT;
+  const negative = raw.startsWith("-");
+  let digits = raw.replace(/^-0*/, "").replace(/^0+(?=\d)/, "");
+  if (digits === "" || digits === "-") digits = "0";
+  const decimals = Math.max(0, Math.floor(opts.decimals));
+  const padded = digits.padStart(decimals + 1, "0");
+  const intPart = padded.slice(0, padded.length - decimals);
+  const fracPart = padded.slice(padded.length - decimals);
+  const { decimal, group } = separatorsOf(opts.locale);
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, group);
+  const number = decimals > 0 ? `${grouped}${decimal}${fracPart}` : grouped;
+  const signed = negative && /[1-9]/.test(digits) ? `-${number}` : number;
+  return opts.currency ? `${signed} ${opts.currency}` : signed;
+}
+var OkMoney = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.value = void 0;
+    this.decimals = 2;
+    this.currency = "";
+    this.locale = "";
+  }
+  static {
+    this.styles = i`
+    :host { display: inline; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  `;
+  }
+  render() {
+    return b2`${formatMinor(this.value, {
+      decimals: this.decimals,
+      locale: this.locale || documentLocale(),
+      currency: this.currency
+    })}`;
+  }
+};
+__decorateClass2([
+  n4()
+], OkMoney.prototype, "value");
+__decorateClass2([
+  n4({ type: Number })
+], OkMoney.prototype, "decimals");
+__decorateClass2([
+  n4()
+], OkMoney.prototype, "currency");
+__decorateClass2([
+  n4()
+], OkMoney.prototype, "locale");
+define("ok-money", OkMoney);
+
 // ui/lib/receipt-html.ts
 function esc(v3) {
   return String(v3 ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
-function money(v3, currency) {
-  const n6 = Number(v3);
-  return `${(Number.isFinite(n6) ? n6 : 0).toFixed(2).replace(".", ",")} ${currency}`;
+function money(v3, currency, decimals) {
+  return formatMinor(v3, { decimals, locale: documentLocale(), currency });
 }
-function qtyPrice(l3, currency) {
-  return `${quantityLabel(l3.qty, l3.unit_code)} \xD7 ${priceLabel(money(l3.unit_price, currency), l3.pricing_unit_code || l3.unit_code)}`;
+function qtyPrice(l3, currency, decimals) {
+  return `${quantityLabel(l3.qty, l3.unit_code)} \xD7 ${priceLabel(money(l3.unit_price, currency, decimals), l3.pricing_unit_code || l3.unit_code)}`;
 }
 function modLines(l3) {
-  return (l3.modifiers ?? []).map(modifierLabel).filter(Boolean).map((label) => `<div class="mod">${esc(label)}</div>`).join("");
+  return (l3.printed_modifiers ?? []).map(modifierLabel).filter(Boolean).map((label) => `<div class="mod">${esc(label)}</div>`).join("");
 }
 function componentLines(l3) {
   return (l3.combo?.components ?? []).map(componentLabel).filter(Boolean).map((label) => `<div class="comp">${esc(label)}</div>`).join("");
 }
 function receiptToPrintableHtml(doc) {
   const cur = doc.currency || "\u20AC";
+  const dec = doc.decimals ?? 2;
   const lbl = { subtotal: "Subtotal", total: "TOTAL", change: "Cambio", document: "Documento", ...doc.labels };
   const lineas = (doc.lines ?? []).map((l3) => `
       <tr>
-        <td class="n">${esc(l3.name)}<div class="q">${esc(qtyPrice(l3, cur))}</div>${componentLines(l3)}${modLines(l3)}</td>
-        <td class="a">${money(l3.total, cur)}</td>
+        <td class="n">${esc(l3.name)}<div class="q">${esc(qtyPrice(l3, cur, dec))}</div>${componentLines(l3)}${modLines(l3)}</td>
+        <td class="a">${money(l3.total, cur, dec)}</td>
       </tr>`).join("");
   const impuestos = (doc.taxes ?? []).map((t7) => `
-      <tr><td>${esc(t7.label)}</td><td class="a">${money(t7.amount, cur)}</td></tr>`).join("");
-  const pago = doc.payment ? `<tr><td>${esc(doc.payment.method)}</td><td class="a">${money(doc.payment.paid ?? doc.total, cur)}</td></tr>` + (doc.payment.change != null ? `<tr><td>${esc(lbl.change)}</td><td class="a">${money(doc.payment.change, cur)}</td></tr>` : "") : "";
+      <tr><td>${esc(t7.label)}</td><td class="a">${money(t7.amount, cur, dec)}</td></tr>`).join("");
+  const pago = doc.payment ? `<tr><td>${esc(doc.payment.method)}</td><td class="a">${money(doc.payment.paid ?? doc.total, cur, dec)}</td></tr>` + (doc.payment.change != null ? `<tr><td>${esc(lbl.change)}</td><td class="a">${money(doc.payment.change, cur, dec)}</td></tr>` : "") : "";
   const claim = doc.claim_note || doc.claim_locator ? `<div class="claim">` + (doc.claim_note ? `<div class="claim-note">${esc(doc.claim_note)}</div>` : "") + (doc.claim_locator ? `<div class="claim-loc">${esc(doc.claim_locator)}</div>` : "") + (doc.claim_qr_data ? `<div class="claim-url">${esc(doc.claim_qr_data)}</div>` : "") + `</div>` : "";
   return `<!doctype html>
 <html><head><meta charset="utf-8"><title>${esc(doc.number || doc.business?.name || lbl.document)}</title>
@@ -1664,9 +1742,9 @@ function receiptToPrintableHtml(doc) {
   <table>${lineas}</table>
   <hr>
   <table>
-    ${doc.subtotal != null ? `<tr><td>${esc(lbl.subtotal)}</td><td class="a">${money(doc.subtotal, cur)}</td></tr>` : ""}
+    ${doc.subtotal != null ? `<tr><td>${esc(lbl.subtotal)}</td><td class="a">${money(doc.subtotal, cur, dec)}</td></tr>` : ""}
     ${impuestos}
-    <tr class="tot"><td>${esc(lbl.total)}</td><td class="a">${money(doc.total, cur)}</td></tr>
+    <tr class="tot"><td>${esc(lbl.total)}</td><td class="a">${money(doc.total, cur, dec)}</td></tr>
     ${pago}
   </table>
   ${doc.footer ? `<div class="foot">${esc(doc.footer)}</div>` : ""}
@@ -1765,8 +1843,12 @@ function defaultPayMethod(methods) {
 }
 
 // ui/lib/document-mappers.ts
-function toEuros(cents2) {
-  return Number(cents2 ?? 0) / 100;
+function minor(cents2) {
+  return Number(cents2 ?? 0);
+}
+function hubDecimals() {
+  const d3 = globalThis.erplora?.currencyDecimals;
+  return typeof d3 === "number" && Number.isInteger(d3) && d3 >= 0 ? d3 : 2;
 }
 function formatDateTime(iso, locale = "es") {
   if (!iso) return void 0;
@@ -1887,8 +1969,8 @@ function parseTaxes(tax_breakdown, t7) {
     return {
       label: taxLabel(rate, v3, t7),
       rate: Number.isFinite(r6) ? r6 : void 0,
-      base: toEuros(v3?.base),
-      amount: toEuros(v3?.tax)
+      base: minor(v3?.base),
+      amount: minor(v3?.tax)
     };
   }).filter((t8) => t8.amount || t8.base);
 }
@@ -1907,10 +1989,14 @@ function paperUnit(l3) {
 function paperModifiers(mods, combo) {
   if (!mods?.length && !combo) return {};
   const note = paperNote(combo, mods);
+  const components = (combo?.components ?? []).map(componentLabel).filter(Boolean);
+  const modifiers = (mods ?? []).map(modifierLabel).filter(Boolean);
   return {
-    ...mods?.length ? { modifiers: mods } : {},
+    ...mods?.length ? { printed_modifiers: mods } : {},
     ...combo ? { combo } : {},
-    ...note ? { note } : {}
+    ...note ? { note } : {},
+    ...components.length ? { components } : {},
+    ...modifiers.length ? { modifiers } : {}
   };
 }
 function paperNote(combo, mods) {
@@ -1924,8 +2010,8 @@ function menuLine(siblings, combo, t7) {
   return {
     name: lineLabel({ ...head, product_name: combo.name }, t7),
     qty: fromMicro2(Number(head.quantity)),
-    unit_price: toEuros(sum((l3) => l3.unit_price)),
-    total: toEuros(sum((l3) => l3.line_total)),
+    unit_price: minor(sum((l3) => l3.unit_price)),
+    total: minor(sum((l3) => l3.line_total)),
     ...paperModifiers(mods.length ? mods : void 0, combo),
     ...paperUnit(head)
   };
@@ -1942,18 +2028,19 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", f
       name: lineLabel(g3.head, t7),
       qty: fromMicro2(Number(g3.head.quantity)),
       // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
-      unit_price: toEuros(g3.head.unit_price),
-      total: toEuros(g3.head.line_total),
+      unit_price: minor(g3.head.unit_price),
+      total: minor(g3.head.line_total),
       ...paperModifiers(parseModifierSnapshot(g3.head.modifiers)),
       // sales#148: lo que se cobró, impreso
       ...paperUnit(g3.head)
       // sales#28: la unidad congelada, para el papel
     }),
-    subtotal: sale.subtotal != null ? toEuros(sale.subtotal) : void 0,
+    subtotal: sale.subtotal != null ? minor(sale.subtotal) : void 0,
     taxes: parseTaxes(sale.tax_breakdown, t7).map((x2) => ({ label: x2.label, base: x2.base, amount: x2.amount })),
-    total: toEuros(sale.total),
-    payment: sale.payment_method_name ? { method: payLabel(sale.payment_method_name, t7), paid: sale.amount_tendered != null ? toEuros(sale.amount_tendered) : void 0, change: sale.change_due != null ? toEuros(sale.change_due) : void 0 } : void 0,
+    total: minor(sale.total),
+    payment: sale.payment_method_name ? { method: payLabel(sale.payment_method_name, t7), paid: sale.amount_tendered != null ? minor(sale.amount_tendered) : void 0, change: sale.change_due != null ? minor(sale.change_due) : void 0 } : void 0,
     currency: settings.currency || "\u20AC",
+    decimals: hubDecimals(),
     footer: settings.receipt_footer || void 0,
     qr: fiscal.qr || void 0,
     qr_note: fiscal.qr_note || void 0,
@@ -1971,10 +2058,10 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", f
     description: unitTag(l3.unit_code) ? `${lineLabel(l3, t7)} (${unitTag(l3.unit_code)})` : lineLabel(l3, t7),
     qty: fromMicro2(Number(l3.quantity)),
     // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
-    unit_price: toEuros(l3.unit_price),
+    unit_price: minor(l3.unit_price),
     discount_percent: l3.discount_percent ? Number(l3.discount_percent) : void 0,
     tax_rate: l3.tax_rate != null ? Number(l3.tax_rate) : void 0,
-    total: toEuros(l3.line_total)
+    total: minor(l3.line_total)
   }));
   const taxes = parseTaxes(sale.tax_breakdown, t7);
   return {
@@ -1983,12 +2070,13 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", f
     number: fiscal.number || sale.sale_number,
     issue_date: formatDateTime(sale.created_at, locale) || "",
     lines: invLines,
-    subtotal: toEuros(sale.subtotal),
-    discount_total: sale.discount_amount ? toEuros(sale.discount_amount) : void 0,
+    subtotal: minor(sale.subtotal),
+    discount_total: sale.discount_amount ? minor(sale.discount_amount) : void 0,
     taxes: taxes.map((t8) => ({ label: t8.label, rate: t8.rate, base: t8.base, amount: t8.amount })),
-    tax_total: toEuros(sale.tax_amount),
-    total: toEuros(sale.total),
+    tax_total: minor(sale.tax_amount),
+    total: minor(sale.total),
     currency: settings.currency || "\u20AC",
+    decimals: hubDecimals(),
     payment_method: payLabel(sale.payment_method_name, t7),
     footer: settings.receipt_footer || void 0,
     qr: fiscal.qr || void 0,
@@ -2014,8 +2102,8 @@ function orderToPrebill(lines, settings = {}, opts = {}) {
     lines: lines.map((l3) => ({
       name: l3.is_gift ? `${l3.name} (invitaci\xF3n)` : l3.name,
       qty: l3.qty,
-      unit_price: toEuros(l3.price),
-      total: toEuros(cents2(l3)),
+      unit_price: minor(l3.price),
+      total: minor(cents2(l3)),
       // sales#148: ya resueltos contra el catálogo VIVO por quien pide la cuenta (la fila del
       // pedido guarda solo los `option_id`; el nombre y el importe no son del navegador).
       ...paperModifiers(l3.modifiers, l3.combo),
@@ -2023,9 +2111,10 @@ function orderToPrebill(lines, settings = {}, opts = {}) {
       ...paperUnit(l3)
       // sales#28: la unidad congelada, para el papel
     })),
-    total: toEuros(total),
+    total: minor(total),
     taxes: [],
     currency: settings.currency || "\u20AC",
+    decimals: hubDecimals(),
     // Inglés canónico (ADR-0055): la UI pasa el texto ya traducido en `opts.notice`; esto es solo
     // el respaldo para llamadas sin i18n (tests, integraciones).
     footer: opts.notice ?? "Bill \u2014 this is not an invoice. The fiscal receipt is issued on payment."
@@ -2033,14 +2122,14 @@ function orderToPrebill(lines, settings = {}, opts = {}) {
 }
 
 // ui/lib/print-document.ts
-function euros(cents2) {
-  return cents2 == null ? void 0 : Number(cents2) / 100;
+function euros(minor2, decimals = 2) {
+  return minor2 == null ? void 0 : Number(minor2) / 10 ** decimals;
 }
 function printQuantity(qty, unitCode) {
   return unitTag(unitCode) ? `${quantityLabel(qty, unitCode)} ` : qty;
 }
 function printNotes(l3) {
-  const notes = paperNote(l3.combo, l3.modifiers);
+  const notes = paperNote(l3.combo, l3.printed_modifiers);
   const components = l3.combo?.components.map(componentLabel).filter(Boolean);
   return { ...notes ? { notes } : {}, ...components?.length ? { components } : {} };
 }
@@ -2052,8 +2141,8 @@ function prebillToPrintDocument(lines, settings = {}, opts = {}) {
     // The renderer prints this as «Mesa/Cliente»: on a bill it is the table, which is what the
     // waiter needs to know which paper goes where.
     customer_name: screen.customer,
-    items: screen.lines.map((l3) => ({ name: l3.name, quantity: printQuantity(l3.qty, l3.unit_code), total: l3.total, ...printNotes(l3) })),
-    total: screen.total,
+    items: screen.lines.map((l3) => ({ name: l3.name, quantity: printQuantity(l3.qty, l3.unit_code), total: euros(l3.total, screen.decimals), ...printNotes(l3) })),
+    total: euros(screen.total, screen.decimals),
     notice: screen.footer
   };
 }
@@ -2065,16 +2154,16 @@ function saleToPrintDocument(sale, lines, settings = {}, fiscal = {}, locale = "
     vat_number: screen.business.tax_id,
     receipt_id: screen.number,
     customer_name: screen.customer,
-    items: screen.lines.map((l3) => ({ name: l3.name, quantity: printQuantity(l3.qty, l3.unit_code), total: l3.total, ...printNotes(l3) })),
-    subtotal: screen.subtotal,
+    items: screen.lines.map((l3) => ({ name: l3.name, quantity: printQuantity(l3.qty, l3.unit_code), total: euros(l3.total, screen.decimals), ...printNotes(l3) })),
+    subtotal: euros(screen.subtotal, screen.decimals),
     // The tax total comes from the sale row, not from the breakdown: a sale without
     // `tax_breakdown` still has `tax_amount`, and the paper must not lose it.
-    tax_amount: euros(sale.tax_amount),
-    discount: euros(sale.discount_amount),
-    total: screen.total,
+    tax_amount: euros(sale.tax_amount, screen.decimals),
+    discount: euros(sale.discount_amount, screen.decimals),
+    total: euros(screen.total, screen.decimals),
     payment_method: screen.payment?.method,
-    paid: screen.payment?.paid,
-    change: screen.payment?.change,
+    paid: euros(screen.payment?.paid, screen.decimals),
+    change: euros(screen.payment?.change, screen.decimals),
     qr_data: screen.qr,
     // sales#103: el bloque «pide tu factura», VACÍO sin locator acuñado — el renderer imprime
     // solo los campos presentes, así que un tique sin claim sale byte a byte como hoy.
@@ -2254,13 +2343,13 @@ function okIcon(value) {
 }
 
 // ../../../outfitkit/dist/ok-inline-feedback.js
-var __defProp2 = Object.defineProperty;
-var __decorateClass2 = (decorators, target, key, kind) => {
+var __defProp3 = Object.defineProperty;
+var __decorateClass3 = (decorators, target, key, kind) => {
   var result = void 0;
   for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
     if (decorator = decorators[i7])
       result = decorator(target, key, result) || result;
-  if (result) __defProp2(target, key, result);
+  if (result) __defProp3(target, key, result);
   return result;
 };
 var DEFAULT_LABELS = {
@@ -2447,37 +2536,37 @@ var OkInlineFeedback = class extends i3 {
     `;
   }
 };
-__decorateClass2([
+__decorateClass3([
   n4({ type: String, reflect: true })
 ], OkInlineFeedback.prototype, "tone");
-__decorateClass2([
+__decorateClass3([
   n4({ type: String })
 ], OkInlineFeedback.prototype, "heading");
-__decorateClass2([
+__decorateClass3([
   n4({ type: String })
 ], OkInlineFeedback.prototype, "icon");
-__decorateClass2([
+__decorateClass3([
   n4({ type: Boolean, reflect: true })
 ], OkInlineFeedback.prototype, "dismissible");
-__decorateClass2([
+__decorateClass3([
   n4({ type: Boolean, reflect: true })
 ], OkInlineFeedback.prototype, "hidden");
-__decorateClass2([
+__decorateClass3([
   n4({ attribute: false })
 ], OkInlineFeedback.prototype, "labels");
-__decorateClass2([
+__decorateClass3([
   r5()
 ], OkInlineFeedback.prototype, "hasActions");
 define("ok-inline-feedback", OkInlineFeedback);
 
 // ../../../outfitkit/dist/ok-qr.js
-var __defProp3 = Object.defineProperty;
-var __decorateClass3 = (decorators, target, key, kind) => {
+var __defProp4 = Object.defineProperty;
+var __decorateClass4 = (decorators, target, key, kind) => {
   var result = void 0;
   for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
     if (decorator = decorators[i7])
       result = decorator(target, key, result) || result;
-  if (result) __defProp3(target, key, result);
+  if (result) __defProp4(target, key, result);
   return result;
 };
 var GF_EXP = new Uint8Array(512);
@@ -3098,34 +3187,34 @@ var OkQr = class extends i3 {
     `;
   }
 };
-__decorateClass3([
+__decorateClass4([
   n4({ type: String })
 ], OkQr.prototype, "value");
-__decorateClass3([
+__decorateClass4([
   n4({ type: String })
 ], OkQr.prototype, "ec");
-__decorateClass3([
+__decorateClass4([
   n4({ type: Number })
 ], OkQr.prototype, "size");
-__decorateClass3([
+__decorateClass4([
   n4({ type: String })
 ], OkQr.prototype, "color");
-__decorateClass3([
+__decorateClass4([
   n4({ type: String })
 ], OkQr.prototype, "background");
-__decorateClass3([
+__decorateClass4([
   n4({ type: Number })
 ], OkQr.prototype, "margin");
 define("ok-qr", OkQr);
 
 // ../../../outfitkit/dist/ok-receipt.js
-var __defProp4 = Object.defineProperty;
-var __decorateClass4 = (decorators, target, key, kind) => {
+var __defProp5 = Object.defineProperty;
+var __decorateClass5 = (decorators, target, key, kind) => {
   var result = void 0;
   for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
     if (decorator = decorators[i7])
       result = decorator(target, key, result) || result;
-  if (result) __defProp4(target, key, result);
+  if (result) __defProp5(target, key, result);
   return result;
 };
 var DEFAULT_LABELS2 = {
@@ -3141,6 +3230,10 @@ var DEFAULT_LABELS2 = {
   total: "TOTAL",
   change: "Change"
 };
+function labelsOf(list) {
+  if (!Array.isArray(list)) return [];
+  return list.filter((x2) => typeof x2 === "string" && x2.trim() !== "");
+}
 var OkReceipt = class extends i3 {
   constructor() {
     super(...arguments);
@@ -3185,6 +3278,12 @@ var OkReceipt = class extends i3 {
     th.num, td.num { text-align: right; white-space: nowrap; }
     .line-name { word-break: break-word; }
     .line-note { font-size: 9px; padding-left: 2mm; opacity: .8; }
+    /* #77 — Sub-líneas del menú (componentes) y de los suplementos: una por línea, 11px y 4mm de
+       sangrado, como el papel HTML de sales. La nota (9px, una línea) era ilegible a un metro en
+       el modal de la cuenta previa y no tenía jerarquía; LS Central, WooCommerce y Maitre'D listan
+       los componentes sangrados bajo la línea del menú, sin importe. */
+    .line-sub { font-size: 11px; padding-left: 4mm; word-break: break-word; }
+    .line-sub::before { content: '› '; opacity: .6; }
     .qty-price { font-size: 9px; opacity: .85; }
     .totals { width: 100%; }
     .totals td { padding: .2mm 0; }
@@ -3205,8 +3304,10 @@ var OkReceipt = class extends i3 {
   cur() {
     return this.receipt?.currency ?? "\u20AC";
   }
+  /** outfitkit#81 — el mismo formateador por cadena que `<ok-money>`: el entero se corta por
+   *  `decimals` y se pinta con los separadores del idioma del documento. Sin `/100`, sin `toFixed`. */
   money(n6) {
-    return `${Number(n6 ?? 0).toFixed(2)} ${this.cur()}`;
+    return formatMinor(n6, { decimals: this.receipt?.decimals ?? 2, locale: documentLocale(), currency: this.cur() });
   }
   render() {
     const r6 = this.receipt;
@@ -3253,16 +3354,21 @@ var OkReceipt = class extends i3 {
         <tr><th>${this.t.item}</th><th class="num">${this.t.amount}</th></tr>
       </thead>
       <tbody>
-        ${lines.map(
-      (l3) => b2`<tr>
+        ${lines.map((l3) => {
+      const comps = labelsOf(l3.components);
+      const mods = labelsOf(l3.modifiers);
+      const hasSub = comps.length > 0 || mods.length > 0;
+      return b2`<tr>
               <td class="line-name">
                 <div>${l3.name}</div>
                 <div class="qty-price">${l3.qty} × ${this.money(l3.unit_price)}</div>
-                ${l3.note ? b2`<div class="line-note">${l3.note}</div>` : A}
+                ${comps.map((c5) => b2`<div class="line-sub comp">${c5}</div>`)}
+                ${mods.map((m4) => b2`<div class="line-sub mod">${m4}</div>`)}
+                ${!hasSub && l3.note ? b2`<div class="line-note">${l3.note}</div>` : A}
               </td>
               <td class="num">${this.money(l3.total)}</td>
-            </tr>`
-    )}
+            </tr>`;
+    })}
       </tbody>
     </table>`;
   }
@@ -3298,25 +3404,25 @@ var OkReceipt = class extends i3 {
     </div>`;
   }
 };
-__decorateClass4([
+__decorateClass5([
   n4({ attribute: false })
 ], OkReceipt.prototype, "receipt");
-__decorateClass4([
+__decorateClass5([
   n4({ type: Number, attribute: "qr-size" })
 ], OkReceipt.prototype, "qrSize");
-__decorateClass4([
+__decorateClass5([
   n4({ attribute: false })
 ], OkReceipt.prototype, "labels");
 define("ok-receipt", OkReceipt);
 
 // ../../../outfitkit/dist/ok-invoice.js
-var __defProp5 = Object.defineProperty;
-var __decorateClass5 = (decorators, target, key, kind) => {
+var __defProp6 = Object.defineProperty;
+var __decorateClass6 = (decorators, target, key, kind) => {
   var result = void 0;
   for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
     if (decorator = decorators[i7])
       result = decorator(target, key, result) || result;
-  if (result) __defProp5(target, key, result);
+  if (result) __defProp6(target, key, result);
   return result;
 };
 var DEFAULT_LABELS3 = {
@@ -3447,8 +3553,10 @@ var OkInvoice = class extends i3 {
   cur() {
     return this.invoice?.currency ?? "\u20AC";
   }
+  /** outfitkit#81 — importes ENTEROS en unidad mínima (ADR-0123), cortados por `decimals` y pintados
+   *  con los separadores del idioma del documento (mismo formateador que `<ok-money>`). */
   money(n6) {
-    return `${Number(n6 ?? 0).toFixed(2)} ${this.cur()}`;
+    return formatMinor(n6, { decimals: this.invoice?.decimals ?? 2, locale: documentLocale(), currency: this.cur() });
   }
   render() {
     const inv = this.invoice;
@@ -3553,13 +3661,13 @@ var OkInvoice = class extends i3 {
     </div>`;
   }
 };
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: false })
 ], OkInvoice.prototype, "invoice");
-__decorateClass5([
+__decorateClass6([
   n4({ type: Number, attribute: "qr-size" })
 ], OkInvoice.prototype, "qrSize");
-__decorateClass5([
+__decorateClass6([
   n4({ attribute: false })
 ], OkInvoice.prototype, "labels");
 define("ok-invoice", OkInvoice);
@@ -5227,13 +5335,13 @@ function uncoveredLines(lines, covered) {
 }
 
 // ../../../outfitkit/dist/ok-qty-stepper.js
-var __defProp6 = Object.defineProperty;
-var __decorateClass6 = (decorators, target, key, kind) => {
+var __defProp7 = Object.defineProperty;
+var __decorateClass7 = (decorators, target, key, kind) => {
   var result = void 0;
   for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
     if (decorator = decorators[i7])
       result = decorator(target, key, result) || result;
-  if (result) __defProp6(target, key, result);
+  if (result) __defProp7(target, key, result);
   return result;
 };
 var DEFAULT_LABELS4 = {
@@ -5414,34 +5522,34 @@ var OkQtyStepper = class extends i3 {
     </div>`;
   }
 };
-__decorateClass6([
+__decorateClass7([
   n4({ type: Number })
 ], OkQtyStepper.prototype, "value");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Number })
 ], OkQtyStepper.prototype, "min");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Number })
 ], OkQtyStepper.prototype, "max");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Number })
 ], OkQtyStepper.prototype, "step");
-__decorateClass6([
+__decorateClass7([
   n4({ type: Boolean, reflect: true })
 ], OkQtyStepper.prototype, "disabled");
-__decorateClass6([
+__decorateClass7([
   n4({ attribute: false })
 ], OkQtyStepper.prototype, "labels");
 define("ok-qty-stepper", OkQtyStepper);
 
 // ../../../outfitkit/dist/ok-spotlight-search.js
-var __defProp7 = Object.defineProperty;
-var __decorateClass7 = (decorators, target, key, kind) => {
+var __defProp8 = Object.defineProperty;
+var __decorateClass8 = (decorators, target, key, kind) => {
   var result = void 0;
   for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
     if (decorator = decorators[i7])
       result = decorator(target, key, result) || result;
-  if (result) __defProp7(target, key, result);
+  if (result) __defProp8(target, key, result);
   return result;
 };
 var OkSpotlightSearch = class extends i3 {
@@ -5620,34 +5728,34 @@ var OkSpotlightSearch = class extends i3 {
     `;
   }
 };
-__decorateClass7([
+__decorateClass8([
   n4({ type: Boolean, reflect: true })
 ], OkSpotlightSearch.prototype, "open");
-__decorateClass7([
+__decorateClass8([
   n4()
 ], OkSpotlightSearch.prototype, "placeholder");
-__decorateClass7([
+__decorateClass8([
   n4()
 ], OkSpotlightSearch.prototype, "value");
-__decorateClass7([
+__decorateClass8([
   n4({ attribute: "trigger-icon" })
 ], OkSpotlightSearch.prototype, "triggerIcon");
-__decorateClass7([
+__decorateClass8([
   n4({ attribute: "trigger-label" })
 ], OkSpotlightSearch.prototype, "triggerLabel");
-__decorateClass7([
+__decorateClass8([
   e4(".top input")
 ], OkSpotlightSearch.prototype, "input");
 define("ok-spotlight-search", OkSpotlightSearch);
 
 // ../../../outfitkit/dist/ok-empty-state.js
-var __defProp8 = Object.defineProperty;
-var __decorateClass8 = (decorators, target, key, kind) => {
+var __defProp9 = Object.defineProperty;
+var __decorateClass9 = (decorators, target, key, kind) => {
   var result = void 0;
   for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
     if (decorator = decorators[i7])
       result = decorator(target, key, result) || result;
-  if (result) __defProp8(target, key, result);
+  if (result) __defProp9(target, key, result);
   return result;
 };
 var OkEmptyState = class extends i3 {
@@ -5729,25 +5837,25 @@ var OkEmptyState = class extends i3 {
     `;
   }
 };
-__decorateClass8([
+__decorateClass9([
   n4()
 ], OkEmptyState.prototype, "icon");
-__decorateClass8([
+__decorateClass9([
   n4()
 ], OkEmptyState.prototype, "heading");
-__decorateClass8([
+__decorateClass9([
   n4()
 ], OkEmptyState.prototype, "message");
 define("ok-empty-state", OkEmptyState);
 
 // ../../../outfitkit/dist/ok-status-pill.js
-var __defProp9 = Object.defineProperty;
-var __decorateClass9 = (decorators, target, key, kind) => {
+var __defProp10 = Object.defineProperty;
+var __decorateClass10 = (decorators, target, key, kind) => {
   var result = void 0;
   for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
     if (decorator = decorators[i7])
       result = decorator(target, key, result) || result;
-  if (result) __defProp9(target, key, result);
+  if (result) __defProp10(target, key, result);
   return result;
 };
 var OkStatusPill = class extends i3 {
@@ -5842,19 +5950,19 @@ var OkStatusPill = class extends i3 {
     `;
   }
 };
-__decorateClass9([
+__decorateClass10([
   n4({ type: String, reflect: true })
 ], OkStatusPill.prototype, "tone");
-__decorateClass9([
+__decorateClass10([
   n4({ type: String })
 ], OkStatusPill.prototype, "label");
-__decorateClass9([
+__decorateClass10([
   n4({ type: String })
 ], OkStatusPill.prototype, "icon");
-__decorateClass9([
+__decorateClass10([
   n4({ type: Boolean, reflect: true })
 ], OkStatusPill.prototype, "dot");
-__decorateClass9([
+__decorateClass10([
   n4({ type: String, reflect: true })
 ], OkStatusPill.prototype, "size");
 define("ok-status-pill", OkStatusPill);
@@ -7718,7 +7826,7 @@ var ErpPosTouch = class extends i3 {
    *  `is_service`, que hace que el handler no lo mida contra el catálogo de `inventory` ni le
    *  descuente stock. `services` es la autoridad del precio y de la categoría fiscal. */
   async loadServices() {
-    const rowsIn = await optionalRead((c5) => c5.queryOptional("services.services.list", { page_size: 500 }));
+    const rowsIn = await optionalRead((c5) => c5.queryOptional("services.services.list", { limit: 500 }));
     if (rowsIn === void 0) return [];
     return rows2(rowsIn).map((s5) => ({
       id: s5.id,
@@ -10437,13 +10545,13 @@ function decodeCsvBuffer(buf) {
   }
   return text.charCodeAt(0) === 65279 ? text.slice(1) : text;
 }
-var __defProp10 = Object.defineProperty;
-var __decorateClass10 = (decorators, target, key, kind) => {
+var __defProp11 = Object.defineProperty;
+var __decorateClass11 = (decorators, target, key, kind) => {
   var result = void 0;
   for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
     if (decorator = decorators[i7])
       result = decorator(target, key, result) || result;
-  if (result) __defProp10(target, key, result);
+  if (result) __defProp11(target, key, result);
   return result;
 };
 var DEFAULT_LABELS5 = {
@@ -10612,13 +10720,37 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       box-shadow: none;
     }
 
-    /* Panel lateral derecho (drawer) DENTRO de la tabla: filtros / alta-edición. No empuja contenido. */
+    /* Panel lateral derecho (drawer) DENTRO de la tabla: filtros / alta-edición. Base (sin media):
+       overlay absoluto — es lo que había hasta #75 y lo que ve un navegador sin media queries. */
     .tk-scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.18); z-index: 19; }
     .drawer { position: absolute; top: 0; right: 0; height: 100%; width: 340px; max-width: 88%;
       background: var(--background); border-left: 1px solid var(--border-color);
       display: flex; flex-direction: column; z-index: 20;
       animation: tk-slide-in 0.18s ease; }
     @keyframes tk-slide-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
+    /* #75 — El panel EMPUJA en escritorio y es HOJA COMPLETA en móvil; nunca tapa a medias.
+       Medido en el hub (Servicios/Citas): a 1440 el overlay de 340px se pintaba ENCIMA de
+       «Duración», «Acciones» y el selector de columnas, con el 90% de la tabla vacío a la
+       izquierda; a 390 dejaba una tira de 45px de tabla (media lupa, medio «Co…») que hacía
+       parecer el formulario un pop-up mal puesto. Square Dashboard reduce la tabla con un panel
+       fijo; Fresha/Shopify/Odoo abren una hoja a pantalla completa en móvil.
+       ≥ 834px: mientras hay panel, .card pasa a rejilla de DOS columnas (tabla | panel 360px):
+       la tabla se estrecha (ya sabe hacer scroll-x, #67) y nada queda tapado. */
+    @media (min-width: 834px) {
+      .card.has-panel { display: grid; grid-template-columns: minmax(0, 1fr) 360px; grid-template-rows: auto minmax(0, 1fr) auto; }
+      .card.has-panel > .bar { grid-column: 1; grid-row: 1; }
+      .card.has-panel > .scroll, .card.has-panel > .cards-grid, .card.has-panel > .empty { grid-column: 1; grid-row: 2; min-height: 0; overflow: auto; }
+      .card.has-panel > .pager { grid-column: 1; grid-row: 3; }
+      .card.has-panel > .drawer { position: static; grid-column: 2; grid-row: 1 / -1; width: auto; max-width: none; height: auto; min-height: 0; animation: none; }
+      .card.has-panel > .tk-scrim { display: none; }
+    }
+    /* < 834px: hoja a pantalla completa con su cabecera (título + Cerrar); sin tira residual.
+       position:fixed dentro de ion-content se ancla al área de contenido (contain), que es justo el hueco
+       bajo la cabecera de la app: el usuario conserva el título de la página. */
+    @media (max-width: 833.98px) {
+      .drawer { position: fixed; inset: 0; top: var(--ok-sheet-top, 0px); width: 100%; max-width: none; height: auto; border-left: 0; z-index: 1000; }
+      .tk-scrim { display: none; }
+    }
     .drawer .dh { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
       padding: 0.6rem 0.5rem 0.6rem 1rem; border-bottom: 1px solid var(--border-color); font-size: 1rem; }
     .drawer .db { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 1rem; display: flex; flex-direction: column; gap: 0.85rem; }
@@ -10685,6 +10817,11 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
 
     /* Botón primario (primaryAction) */
     .primary-btn { --background: var(--primary); --color: var(--primary-contrast); }
+    /* #76 — El alta en MÓVIL: botón primario CON etiqueta y área táctil de 44px, en vez del «+»
+       icónico de 36px al final de la barra. Fresha/Square/Shopify POS ponen la acción primaria
+       de la lista como botón visible con texto (o FAB), nunca como icono anónimo. */
+    .add-btn { min-height: 44px; --border-radius: 10px; --padding-start: 0.9rem; --padding-end: 1rem; margin: 0; font-weight: 600; }
+    .add-btn ion-icon { margin-inline-end: 0.35rem; }
 
     /* Selects de la toolbar: fondo + borde visibles (como el buscador y la pastilla de fechas) para
      * que se distingan como controles en claro y oscuro (sin fondo eran invisibles en dark). */
@@ -10781,6 +10918,11 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
        que Ionic no trae (cabecera en fila, filas clave-valor, barra de acciones, resalte de selección). */
     ion-card.rcard { margin: 0; } /* la rejilla aporta el gap → sin esto el margin por defecto de ion-card lo duplica */
     ion-card.rcard.selected { outline: 2px solid var(--primary); outline-offset: -2px; }
+    /* #74 — Tarjeta clicable (opt-in row-clickable): la mitad de #67 que faltaba. La vista de
+       tarjetas es la que la tabla elige SOLA en móvil, así que sin esto el registro no se podía
+       abrir desde un teléfono (medido con combos 0.1.4: 0 rowClick a 390px). */
+    ion-card.rcard.clickable { cursor: pointer; }
+    ion-card.rcard.clickable:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
     @media (prefers-reduced-motion: reduce) {
       .gh.sortable:hover, .gh.sortable:active,
       .grow-data:hover, .grow-data:active { transform: none; }
@@ -10872,9 +11014,31 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     const grid = scroll.querySelector(".grid");
     if (grid) this.xObserver.observe(grid);
   }
-  updated() {
+  updated(changed) {
     this.observeXOverflow();
     this.measureXOverflow();
+    if (changed.has("panel")) this.syncSheetTop();
+  }
+  /** #75 — Where the mobile sheet starts. `position: fixed; inset: 0` painted it from y=0 and the
+   *  app's `ion-header` (its own stacking context, above the content) covered the sheet's title and
+   *  its only Close button — measured at 390×844 in the Appointments parity page. CSS inside a
+   *  shadow root cannot know where the content area begins, so on open the table measures the
+   *  closest `ion-content` (walking through shadow hosts) and hands the offset over as a custom
+   *  property; on close it is removed. Without an `ion-content` around, the sheet keeps y=0. */
+  syncSheetTop() {
+    if (this.panel === "none") {
+      this.style.removeProperty("--ok-sheet-top");
+      return;
+    }
+    let node = this;
+    let content = null;
+    while (node && !content) {
+      const parent = node.parentNode ?? node.getRootNode?.()?.host ?? null;
+      if (parent && parent.nodeType === Node.ELEMENT_NODE && parent.tagName === "ION-CONTENT") content = parent;
+      node = parent === node ? null : parent;
+    }
+    const top = content ? Math.max(0, Math.round(content.getBoundingClientRect().top)) : 0;
+    this.style.setProperty("--ok-sheet-top", `${top}px`);
   }
   disconnectedCallback() {
     if (typeof window !== "undefined") {
@@ -11499,7 +11663,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     const selCount = this.selection.size;
     const showTopbar = !!this.title || this.hasSearch || this.viewToggle || this.effColumnPicker || this.effExport || this.effImport || this.hasFilterRow || this.addable || !!this.primaryAction;
     return b2`
-      <div class="card">
+      <div class=${`card${this.panel !== "none" ? " has-panel" : ""}`}>
         ${showTopbar ? b2`
               <div class="bar">
                 <div class="bar-main">
@@ -11507,7 +11671,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                   ${this.hasSearch ? b2`<div class="search">${searchbar}</div>` : A}
                   ${this.inlineFilters ? this.renderInlineFilters() : A}
                   <span class="tk-spacer"></span>
-                    ${this.effColumnPicker ? b2`
+                    ${this.effColumnPicker && !this.isMobile ? b2`
                           <ion-select
                             class="tk-cols"
                             multiple
@@ -11520,7 +11684,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                             ${this.columns.map((c5) => b2`<ion-select-option value=${c5.key}>${c5.header}</ion-select-option>`)}
                           </ion-select>
                         ` : A}
-                    ${this.effPageSizes.length ? b2`
+                    ${this.effPageSizes.length && !this.isMobile ? b2`
                           <ion-select
                             class="tk-psize"
                             interface="popover"
@@ -11543,9 +11707,17 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                           <input class="tk-file" type="file" accept=".csv,text/csv" hidden @change=${(e7) => this.onImportFile(e7)} />
                         ` : A}
                     ${this.effExport ? this.toolButton("download-outline", false, () => this.exportCsv(), this.t.exportCsv) : A}
-                    ${this.addable ? this.toolButton("add", this.panel === "create", () => this.toggle("create"), this.t.add) : A}
+                    ${this.addable ? this.isMobile ? b2`
+                            <ion-button class="primary-btn add-btn" size="small" @click=${() => this.toggle("create")}>
+                              <ion-icon slot="start" .icon=${okIcon("add")}></ion-icon>${this.t.add}
+                            </ion-button>
+                          ` : this.toolButton("add", this.panel === "create", () => this.toggle("create"), this.t.add) : A}
                     ${this.renderOverflowMenu()}
-                    ${this.primaryAction ? b2`
+                    ${this.primaryAction ? this.isMobile ? b2`
+                            <ion-button class="primary-btn add-btn" size="small" @click=${() => this.emit("primaryAction", {})}>
+                              <ion-icon slot="start" .icon=${okIcon(this.primaryAction.icon ?? "add")}></ion-icon>${this.primaryAction.label}
+                            </ion-button>
+                          ` : b2`
                           <ion-button
                             class="primary-btn"
                             size="small"
@@ -11657,8 +11829,8 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       </div>
     `;
   }
-  /** #67 — Enter/Espacio activan la fila clicable: si se llega con el tabulador, el ratón no puede
-   *  ser el único camino. Espacio además NO debe desplazar la página. */
+  /** #67 — Enter/Espacio activan la fila clicable (y, desde #74, la tarjeta): si se llega con el
+   *  tabulador, el ratón no puede ser el único camino. Espacio además NO debe desplazar la página. */
   onRowKeydown(e7, row) {
     if (e7.key !== "Enter" && e7.key !== " " && e7.key !== "Spacebar") return;
     e7.preventDefault();
@@ -11746,12 +11918,18 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         const selected = this.selectable && this.selection.has(key);
         const icon = this.cardIcon?.(row);
         return b2`
-              <ion-card class=${`rcard${selected ? " selected" : ""}`}>
+              <ion-card
+                class=${`rcard${selected ? " selected" : ""}${this.rowClickable ? " clickable" : ""}`}
+                role=${this.rowClickable ? "button" : A}
+                tabindex=${this.rowClickable ? "0" : A}
+                @click=${this.rowClickable ? () => this.emit("rowClick", { row }) : A}
+                @keydown=${this.rowClickable ? (e7) => this.onRowKeydown(e7, row) : A}
+              >
                 ${hasHead ? b2`
                       <ion-card-header class="rcard-head">
                         ${icon != null && icon !== "" ? b2`<span class="rc-icon">${typeof icon === "string" ? b2`<ion-icon .icon=${okIcon(icon)}></ion-icon>` : icon}</span>` : A}
                         <span class="rc-title">${this.cardTitle ? this.cardTitle(row) : A}</span>
-                        ${this.selectable ? b2`<ion-checkbox .checked=${selected} aria-label=${this.t.select} @ionChange=${() => this.toggleRow(key)}></ion-checkbox>` : A}
+                        ${this.selectable ? b2`<ion-checkbox .checked=${selected} aria-label=${this.t.select} @click=${(e7) => e7.stopPropagation()} @ionChange=${() => this.toggleRow(key)}></ion-checkbox>` : A}
                       </ion-card-header>
                     ` : A}
                 <ion-card-content class="rcard-body">
@@ -11759,7 +11937,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
           (c5) => b2`<div class="rrow"><span class="rk">${c5.header}</span><span class="rv">${c5.render ? c5.render(row) : this.cell(c5, row)}</span></div>`
         )}
                 </ion-card-content>
-                ${this.actions.length ? b2`<div class="ractions">${this.actionButtons(row)}</div>` : A}
+                ${this.actions.length ? b2`<div class="ractions" @click=${(e7) => e7.stopPropagation()}>${this.actionButtons(row)}</div>` : A}
               </ion-card>
             `;
       }
@@ -11768,160 +11946,160 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     `;
   }
 };
-__decorateClass10([
+__decorateClass11([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "columns");
-__decorateClass10([
+__decorateClass11([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "rows");
-__decorateClass10([
+__decorateClass11([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "searchKeys");
-__decorateClass10([
+__decorateClass11([
   n4({ attribute: "row-key-field" })
 ], _OkDataTable.prototype, "rowKeyField");
-__decorateClass10([
+__decorateClass11([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "rowKey");
-__decorateClass10([
+__decorateClass11([
   n4({ type: Number, attribute: "page-size" })
 ], _OkDataTable.prototype, "pageSize");
-__decorateClass10([
+__decorateClass11([
   n4({ attribute: "empty-message" })
 ], _OkDataTable.prototype, "emptyMessage");
-__decorateClass10([
+__decorateClass11([
   n4({ attribute: "search-placeholder" })
 ], _OkDataTable.prototype, "searchPlaceholder");
-__decorateClass10([
+__decorateClass11([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "labels");
-__decorateClass10([
+__decorateClass11([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "actions");
-__decorateClass10([
+__decorateClass11([
   n4({ type: Boolean })
 ], _OkDataTable.prototype, "addable");
-__decorateClass10([
+__decorateClass11([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "pageSizeOptions");
-__decorateClass10([
+__decorateClass11([
   n4({ type: Boolean, reflect: true })
 ], _OkDataTable.prototype, "fill");
-__decorateClass10([
+__decorateClass11([
   n4({ type: Boolean, attribute: "column-picker" })
 ], _OkDataTable.prototype, "columnPicker");
-__decorateClass10([
+__decorateClass11([
   n4({ type: Boolean })
 ], _OkDataTable.prototype, "csv");
-__decorateClass10([
+__decorateClass11([
   n4({ attribute: "csv-name" })
 ], _OkDataTable.prototype, "csvName");
-__decorateClass10([
+__decorateClass11([
   n4({ type: Boolean, attribute: "server-side" })
 ], _OkDataTable.prototype, "serverSide");
-__decorateClass10([
+__decorateClass11([
   n4({ type: Number })
 ], _OkDataTable.prototype, "total");
-__decorateClass10([
+__decorateClass11([
   n4({ type: Number })
 ], _OkDataTable.prototype, "page");
-__decorateClass10([
+__decorateClass11([
   n4({ type: Boolean })
 ], _OkDataTable.prototype, "searchable");
-__decorateClass10([
+__decorateClass11([
   n4({ type: String })
 ], _OkDataTable.prototype, "sort");
-__decorateClass10([
+__decorateClass11([
   n4({ attribute: "sort-dir" })
 ], _OkDataTable.prototype, "sortDir");
-__decorateClass10([
+__decorateClass11([
   n4()
 ], _OkDataTable.prototype, "title");
-__decorateClass10([
+__decorateClass11([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "views");
-__decorateClass10([
+__decorateClass11([
   n4({ attribute: "default-view" })
 ], _OkDataTable.prototype, "defaultView");
-__decorateClass10([
+__decorateClass11([
   n4({ type: Boolean })
 ], _OkDataTable.prototype, "exportable");
-__decorateClass10([
+__decorateClass11([
   n4({ type: Boolean })
 ], _OkDataTable.prototype, "importable");
-__decorateClass10([
+__decorateClass11([
   n4({ type: Boolean, attribute: "column-selector" })
 ], _OkDataTable.prototype, "columnSelector");
-__decorateClass10([
+__decorateClass11([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "pageSizes");
-__decorateClass10([
+__decorateClass11([
   n4({ type: Boolean, attribute: "row-clickable" })
 ], _OkDataTable.prototype, "rowClickable");
-__decorateClass10([
+__decorateClass11([
   n4({ type: Boolean })
 ], _OkDataTable.prototype, "selectable");
-__decorateClass10([
+__decorateClass11([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "selectedKeys");
-__decorateClass10([
+__decorateClass11([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "primaryAction");
-__decorateClass10([
+__decorateClass11([
   n4({ type: Boolean })
 ], _OkDataTable.prototype, "inlineFilters");
-__decorateClass10([
+__decorateClass11([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "menuActions");
-__decorateClass10([
+__decorateClass11([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "cardTitle");
-__decorateClass10([
+__decorateClass11([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "cardIcon");
-__decorateClass10([
+__decorateClass11([
   n4({ attribute: false })
 ], _OkDataTable.prototype, "renderCard");
-__decorateClass10([
+__decorateClass11([
   r5()
 ], _OkDataTable.prototype, "q");
-__decorateClass10([
+__decorateClass11([
   r5()
 ], _OkDataTable.prototype, "clientPage");
-__decorateClass10([
+__decorateClass11([
   r5()
 ], _OkDataTable.prototype, "clientPageSize");
-__decorateClass10([
+__decorateClass11([
   r5()
 ], _OkDataTable.prototype, "clientSort");
-__decorateClass10([
+__decorateClass11([
   r5()
 ], _OkDataTable.prototype, "clientSortDir");
-__decorateClass10([
+__decorateClass11([
   r5()
 ], _OkDataTable.prototype, "clientFilters");
-__decorateClass10([
+__decorateClass11([
   r5()
 ], _OkDataTable.prototype, "filterDraft");
-__decorateClass10([
+__decorateClass11([
   r5()
 ], _OkDataTable.prototype, "panel");
-__decorateClass10([
+__decorateClass11([
   r5()
 ], _OkDataTable.prototype, "viewMode");
-__decorateClass10([
+__decorateClass11([
   r5()
 ], _OkDataTable.prototype, "isMobile");
-__decorateClass10([
+__decorateClass11([
   r5()
 ], _OkDataTable.prototype, "xOverflow");
-__decorateClass10([
+__decorateClass11([
   r5()
 ], _OkDataTable.prototype, "hiddenKeys");
-__decorateClass10([
+__decorateClass11([
   r5()
 ], _OkDataTable.prototype, "internalSelection");
-__decorateClass10([
+__decorateClass11([
   r5()
 ], _OkDataTable.prototype, "menuOpen");
 var OkDataTable = _OkDataTable;

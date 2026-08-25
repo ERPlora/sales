@@ -1,5 +1,9 @@
+// @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest';
 import { receiptToPrintableHtml } from './receipt-html';
+
+// The paper formats money with the document language (ADR-0400); these fixtures assert Spanish.
+document.documentElement.lang = 'es';
 
 // El tiquet como HTML PLANO y autocontenido: sin web components, sin CSS de la app. Es lo que se
 // imprime en el iframe aislado (y lo que alimentará el PDF desde Rust). Imprimir el DOM de la app
@@ -10,13 +14,14 @@ const doc = {
   datetime: '18/07/2026, 17:50',
   customer: 'Mesa 3',
   lines: [
-    { name: 'Cerveza', qty: 2, unit_price: 2.5, total: 5 },
-    { name: 'Tapa (invitación)', qty: 1, unit_price: 3, total: 0 },
+    // Minor units (ADR-0400): the paper cuts the integer, it never divides.
+    { name: 'Cerveza', qty: 2, unit_price: 250, total: 500 },
+    { name: 'Tapa (invitación)', qty: 1, unit_price: 300, total: 0 },
   ],
-  subtotal: 5,
-  taxes: [{ label: 'IVA 21%', base: 4.13, amount: 0.87 }],
-  total: 5,
-  payment: { method: 'Efectivo', paid: 10, change: 5 },
+  subtotal: 500,
+  taxes: [{ label: 'IVA 21%', base: 413, amount: 87 }],
+  total: 500,
+  payment: { method: 'Efectivo', paid: 1000, change: 500 },
   currency: '€',
   footer: 'Gracias por su visita',
 };
@@ -101,8 +106,8 @@ describe('el papel habla el idioma del hub (sales#120)', () => {
   it('el <title> de respaldo también: «Document» cuando llega traducido', () => {
     // El fallback solo entra sin número NI negocio (el título preferido es el número).
     const html = receiptToPrintableHtml({
-      lines: [{ name: 'Beer', qty: 1, unit_price: 5, total: 5 }],
-      total: 5,
+      lines: [{ name: 'Beer', qty: 1, unit_price: 500, total: 500 }],
+      total: 500,
       currency: '€',
       labels: { subtotal: 'Subtotal', total: 'TOTAL', change: 'Change', document: 'Document' },
     });
@@ -115,8 +120,8 @@ describe('el papel habla el idioma del hub (sales#120)', () => {
     expect(html).toContain('Subtotal');
     expect(html).toContain('TOTAL');
     const sinReferencia = receiptToPrintableHtml({
-      lines: [{ name: 'Café', qty: 1, unit_price: 1, total: 1 }],
-      total: 1,
+      lines: [{ name: 'Café', qty: 1, unit_price: 100, total: 100 }],
+      total: 100,
       currency: '€',
     });
     expect(sinReferencia).toMatch(/<title>Documento<\/title>/);
@@ -132,9 +137,9 @@ describe('la línea del papel lleva su unidad (sales#28)', () => {
   const pesable = {
     business: { name: 'Frutería Ana' },
     lines: [
-      { name: 'Tomate rosa', qty: 1.5, unit_price: 12, total: 18, unit_code: 'kg', pricing_unit_code: 'kg' },
+      { name: 'Tomate rosa', qty: 1.5, unit_price: 1200, total: 1800, unit_code: 'kg', pricing_unit_code: 'kg' },
     ],
-    total: 18,
+    total: 1800,
     currency: '€',
   };
 
@@ -147,7 +152,7 @@ describe('la línea del papel lleva su unidad (sales#28)', () => {
   it('cantidad entera con unidad suelta (`ud`): sin ruido, «2 × 3,00 €»', () => {
     const html = receiptToPrintableHtml({
       ...pesable,
-      lines: [{ name: 'Café', qty: 2, unit_price: 3, total: 6, unit_code: 'ud', pricing_unit_code: 'ud' }],
+      lines: [{ name: 'Café', qty: 2, unit_price: 300, total: 600, unit_code: 'ud', pricing_unit_code: 'ud' }],
     });
     expect(html).toContain('2 × 3,00 €');
     expect(html).not.toContain('/ ud');
@@ -157,7 +162,7 @@ describe('la línea del papel lleva su unidad (sales#28)', () => {
   it('línea antigua sin contexto de unidades: el papel de siempre, byte a byte', () => {
     const html = receiptToPrintableHtml({
       ...pesable,
-      lines: [{ name: 'Café', qty: 2, unit_price: 3, total: 6 }],
+      lines: [{ name: 'Café', qty: 2, unit_price: 300, total: 600 }],
     });
     expect(html).toContain('2 × 3,00 €');
   });
@@ -165,7 +170,7 @@ describe('la línea del papel lleva su unidad (sales#28)', () => {
   it('sin unidad de precio explícita, el precio hereda la unidad de la línea', () => {
     const html = receiptToPrintableHtml({
       ...pesable,
-      lines: [{ name: 'Tomate rosa', qty: 1.5, unit_price: 12, total: 18, unit_code: 'kg' }],
+      lines: [{ name: 'Tomate rosa', qty: 1.5, unit_price: 1200, total: 1800, unit_code: 'kg' }],
     });
     expect(html).toContain('1,5 kg × 12,00 € / kg');
   });
@@ -174,7 +179,7 @@ describe('la línea del papel lleva su unidad (sales#28)', () => {
     // Precio por kg, vendido en g: la cantidad dice «250 g» y el precio, a cuánto el kilo.
     const html = receiptToPrintableHtml({
       ...pesable,
-      lines: [{ name: 'Gamba blanca', qty: 250, unit_price: 12, total: 3, unit_code: 'g', pricing_unit_code: 'kg' }],
+      lines: [{ name: 'Gamba blanca', qty: 250, unit_price: 1200, total: 300, unit_code: 'g', pricing_unit_code: 'kg' }],
     });
     expect(html).toContain('250 g × 12,00 € / kg');
   });
@@ -220,10 +225,11 @@ describe('el bloque «pide tu factura» del papel HTML (sales#103)', () => {
 describe('los suplementos en el papel HTML (sales#148)', () => {
   const conSuplementos = {
     lines: [{
-      name: 'Hamburguesa', qty: 1, unit_price: 10, total: 10,
-      modifiers: [{ name: 'Extra queso', price_delta: 100 }, { name: 'Sin cebolla', price_delta: 0 }],
+      name: 'Hamburguesa', qty: 1, unit_price: 1000, total: 1000,
+      // The paper reads the OBJECTS under `printed_modifiers` (sales#183): `modifiers` is the screen's label list.
+      printed_modifiers: [{ name: 'Extra queso', price_delta: 100 }, { name: 'Sin cebolla', price_delta: 0 }],
     }],
-    total: 10,
+    total: 1000,
   };
 
   it('imprime cada suplemento, con su nombre', () => {
@@ -264,15 +270,15 @@ describe('los suplementos en el papel HTML (sales#148)', () => {
 
   it('un suplemento con un nombre malicioso se ESCAPA, como cualquier dato tecleado', () => {
     const html = receiptToPrintableHtml({
-      lines: [{ name: 'X', qty: 1, unit_price: 1, total: 1, modifiers: [{ name: '<script>alert(1)</script>' }] }],
-      total: 1,
+      lines: [{ name: 'X', qty: 1, unit_price: 100, total: 100, printed_modifiers: [{ name: '<script>alert(1)</script>' }] }],
+      total: 100,
     });
     expect(html).not.toContain('<script>alert(1)</script>');
     expect(html).toContain('&lt;script&gt;');
   });
 
   it('una línea SIN suplementos sale exactamente como salía antes', () => {
-    const sin = { lines: [{ name: 'Hamburguesa', qty: 1, unit_price: 10, total: 10 }], total: 10 };
+    const sin = { lines: [{ name: 'Hamburguesa', qty: 1, unit_price: 1000, total: 1000 }], total: 1000 };
     expect(receiptToPrintableHtml(sin)).not.toContain('class="mod"');
   });
 });
@@ -284,11 +290,11 @@ describe('the menu on the HTML paper (sales#154)', () => {
   const menu = receiptToPrintableHtml({
     ...doc,
     lines: [
-      { name: 'Menú del día', qty: 1, unit_price: 16.5, total: 16.5,
+      { name: 'Menú del día', qty: 1, unit_price: 1650, total: 1650,
         combo: { name: 'Menú del día', components: [{ name: 'Gazpacho' }, { name: 'Solomillo', price_delta: 300 }] },
-        modifiers: [{ name: 'Al punto' }] },
+        printed_modifiers: [{ name: 'Al punto' }] },
     ],
-    total: 16.5,
+    total: 1650,
   });
 
   it('paints the header with the closed price and each component on its own indented sub-line', () => {

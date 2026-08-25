@@ -82,8 +82,9 @@ describe('prebillToPrintDocument — the bill taken to the table', () => {
 
     expect(paper.items.map((i) => i.name)).toEqual(screen.lines.map((l) => l.name));
     expect(paper.items.map((i) => i.quantity)).toEqual(screen.lines.map((l) => l.qty));
-    expect(paper.items.map((i) => i.total)).toEqual(screen.lines.map((l) => l.total));
-    expect(paper.total).toBe(screen.total);
+    // The screen carries minor units (ADR-0400); the printer still wants euros — same number, divided once.
+    expect(paper.items.map((i) => i.total)).toEqual(screen.lines.map((l) => l.total / 100));
+    expect(paper.total).toBe(screen.total / 100);
   });
 
   it('falls back to a business name instead of printing a nameless bill', () => {

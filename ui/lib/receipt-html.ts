@@ -12,6 +12,8 @@
 import { priceLabel, quantityLabel } from './price-label';
 import { modifierLabel, type PrintedModifier } from './paper-modifiers';
 import { componentLabel, type PrintedCombo } from './paper-combos';
+// The same string formatter <ok-receipt> uses (ADR-0400): integers in, text out, no arithmetic.
+import { documentLocale, formatMinor } from '@erplora/outfitkit/ok-money';
 
 /** Línea del papel (misma forma que `ReceiptData.lines`). */
 export interface PrintableLine {
@@ -27,10 +29,11 @@ export interface PrintableLine {
   /** Unidad en la que está expresado el `unit_price`: «12,00 € / kg». Si falta, hereda la de la
    *  línea (la convención del carrito: `priceLabel`). */
   pricing_unit_code?: string;
-  /** sales#148 — los suplementos de la línea, EN EL ORDEN en que se eligieron. Se pintan sangrados
-   *  bajo su producto y SIN importe: el delta ya está dentro del total que va a la derecha (ver la
-   *  cabecera de `paper-modifiers.ts` y las 10 referencias de la issue). */
-  modifiers?: PrintedModifier[];
+  /** sales#148 — the line's supplements as OBJECTS, in the order they were chosen. Painted indented
+   *  under their product and WITHOUT an amount: the delta is already inside the total on the right
+   *  (see the header of `paper-modifiers.ts`). Under its own key since sales#183: `modifiers` is the
+   *  label list the screen paints, and the same object feeds the screen and this paper. */
+  printed_modifiers?: PrintedModifier[];
   /** sales#154 — this line is a menu: the header carries the closed price and the components are
    *  painted indented under it with no amount of their own (only the supplement, in the label),
    *  ahead of the line's supplements. The market rationale lives in `paper-combos.ts`. */
@@ -47,6 +50,8 @@ export interface PrintableReceipt {
   datetime?: string;
   customer?: string;
   lines?: PrintableLine[];
+  /** Scale of every amount (ADR-0400): EUR 2, JPY 0. Default 2. Amounts are INTEGERS in minor units. */
+  decimals?: number;
   subtotal?: number;
   taxes?: { label?: string; base?: number; amount?: number }[];
   total?: number;
@@ -76,24 +81,24 @@ function esc(v: unknown): string {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-/** Importe en euros con coma decimal y su moneda. Nunca imprime `NaN`. */
-function money(v: unknown, currency: string): string {
-  const n = Number(v);
-  return `${(Number.isFinite(n) ? n : 0).toFixed(2).replace('.', ',')} ${currency}`;
+/** Money on the paper: MINOR UNITS (ADR-0400) painted with the document's language — the same
+ *  text the screen shows, from the same integer. A non-integer paints «—», like the screen. */
+function money(v: unknown, currency: string, decimals: number): string {
+  return formatMinor(v, { decimals, locale: documentLocale(), currency });
 }
 
 /** La sublínea «cantidad × precio» (sales#28): la cantidad con su unidad congelada y el precio
  *  con su unidad de precio — la misma convención del carrito (`quantityLabel`/`priceLabel`).
  *  Sin unidad (o `ud`) queda como siempre: «2 × 3,00 €». */
-function qtyPrice(l: PrintableLine, currency: string): string {
-  return `${quantityLabel(l.qty, l.unit_code)} × ${priceLabel(money(l.unit_price, currency), l.pricing_unit_code || l.unit_code)}`;
+function qtyPrice(l: PrintableLine, currency: string, decimals: number): string {
+  return `${quantityLabel(l.qty, l.unit_code)} × ${priceLabel(money(l.unit_price, currency, decimals), l.pricing_unit_code || l.unit_code)}`;
 }
 
 /** Las sub-líneas de los suplementos (sales#148): una por suplemento, sangradas, dentro de la
  *  celda de su producto — no en una fila propia, para que la columna de importes siga siendo solo
  *  lo que suma al TOTAL. Sin suplementos no se emite nada y el papel sale como salía. */
 function modLines(l: PrintableLine): string {
-  return (l.modifiers ?? [])
+  return (l.printed_modifiers ?? [])
     .map(modifierLabel)
     .filter(Boolean)
     .map((label) => `<div class="mod">${esc(label)}</div>`)
@@ -117,20 +122,21 @@ function componentLines(l: PrintableLine): string {
  */
 export function receiptToPrintableHtml(doc: PrintableReceipt): string {
   const cur = doc.currency || '€';
+  const dec = doc.decimals ?? 2;
   // sales#120: las palabras del papel las trae quien lo pide, traducidas al idioma del hub.
   const lbl = { subtotal: 'Subtotal', total: 'TOTAL', change: 'Cambio', document: 'Documento', ...doc.labels };
   const lineas = (doc.lines ?? []).map((l) => `
       <tr>
-        <td class="n">${esc(l.name)}<div class="q">${esc(qtyPrice(l, cur))}</div>${componentLines(l)}${modLines(l)}</td>
-        <td class="a">${money(l.total, cur)}</td>
+        <td class="n">${esc(l.name)}<div class="q">${esc(qtyPrice(l, cur, dec))}</div>${componentLines(l)}${modLines(l)}</td>
+        <td class="a">${money(l.total, cur, dec)}</td>
       </tr>`).join('');
 
   const impuestos = (doc.taxes ?? []).map((t) => `
-      <tr><td>${esc(t.label)}</td><td class="a">${money(t.amount, cur)}</td></tr>`).join('');
+      <tr><td>${esc(t.label)}</td><td class="a">${money(t.amount, cur, dec)}</td></tr>`).join('');
 
   const pago = doc.payment
-    ? `<tr><td>${esc(doc.payment.method)}</td><td class="a">${money(doc.payment.paid ?? doc.total, cur)}</td></tr>` +
-      (doc.payment.change != null ? `<tr><td>${esc(lbl.change)}</td><td class="a">${money(doc.payment.change, cur)}</td></tr>` : '')
+    ? `<tr><td>${esc(doc.payment.method)}</td><td class="a">${money(doc.payment.paid ?? doc.total, cur, dec)}</td></tr>` +
+      (doc.payment.change != null ? `<tr><td>${esc(lbl.change)}</td><td class="a">${money(doc.payment.change, cur, dec)}</td></tr>` : '')
     : '';
 
   // sales#103 — «pide tu factura»: legend + locator EN TEXT + la URL (aquí no hay QR pintable
@@ -186,9 +192,9 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
   <table>${lineas}</table>
   <hr>
   <table>
-    ${doc.subtotal != null ? `<tr><td>${esc(lbl.subtotal)}</td><td class="a">${money(doc.subtotal, cur)}</td></tr>` : ''}
+    ${doc.subtotal != null ? `<tr><td>${esc(lbl.subtotal)}</td><td class="a">${money(doc.subtotal, cur, dec)}</td></tr>` : ''}
     ${impuestos}
-    <tr class="tot"><td>${esc(lbl.total)}</td><td class="a">${money(doc.total, cur)}</td></tr>
+    <tr class="tot"><td>${esc(lbl.total)}</td><td class="a">${money(doc.total, cur, dec)}</td></tr>
     ${pago}
   </table>
   ${doc.footer ? `<div class="foot">${esc(doc.footer)}</div>` : ''}

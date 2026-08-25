@@ -26,9 +26,11 @@ import { comboIdentity, componentLabel, type PrintedCombo } from './paper-combos
 import type { PrebillLine, SaleRow, SaleLineRow, SaleSettings, FiscalData } from './document-mappers.js';
 import { quantityLabel, unitTag } from './price-label.js';
 
-/** Cents (the row) → euros (the paper). The renderer formats with `{:.2}` and expects a number. */
-function euros(cents: number | undefined): number | undefined {
-  return cents == null ? undefined : Number(cents) / 100;
+/** Minor units (the document, ADR-0400) → major units (the paper). The thermal renderer formats
+ *  `{:.2}` over a float and expects a number (hub#1159) — this is the ONE place the document's
+ *  integers are divided, by the document's own scale (JPY 0, KWD 3), never by a blind 100. */
+function euros(minor: number | undefined, decimals = 2): number | undefined {
+  return minor == null ? undefined : Number(minor) / 10 ** decimals;
 }
 
 /** A line as `escpos` reads it. */
@@ -71,8 +73,8 @@ function printQuantity(qty: number, unitCode?: string): number | string {
  * sales#154: the menu's components travel through the SAME sub-line, first, followed by the line's
  * supplements — one composer (`paperNote`) for the screen's `note` and this `notes`. And as a list
  * in `components`, for the renderer that will indent them (ignored by today's, by contract). */
-function printNotes(l: { modifiers?: Parameters<typeof paperNote>[1]; combo?: PrintedCombo }): { notes?: string; components?: string[] } {
-  const notes = paperNote(l.combo, l.modifiers);
+function printNotes(l: { printed_modifiers?: Parameters<typeof paperNote>[1]; combo?: PrintedCombo }): { notes?: string; components?: string[] } {
+  const notes = paperNote(l.combo, l.printed_modifiers);
   const components = l.combo?.components.map(componentLabel).filter(Boolean);
   return { ...(notes ? { notes } : {}), ...(components?.length ? { components } : {}) };
 }
@@ -134,8 +136,8 @@ export function prebillToPrintDocument(
     // The renderer prints this as «Mesa/Cliente»: on a bill it is the table, which is what the
     // waiter needs to know which paper goes where.
     customer_name: screen.customer,
-    items: screen.lines.map((l) => ({ name: l.name, quantity: printQuantity(l.qty, l.unit_code), total: l.total, ...printNotes(l) })),
-    total: screen.total,
+    items: screen.lines.map((l) => ({ name: l.name, quantity: printQuantity(l.qty, l.unit_code), total: euros(l.total, screen.decimals)!, ...printNotes(l) })),
+    total: euros(screen.total, screen.decimals)!,
     notice: screen.footer,
   };
 }
@@ -163,16 +165,16 @@ export function saleToPrintDocument(
     vat_number: screen.business.tax_id,
     receipt_id: screen.number,
     customer_name: screen.customer,
-    items: screen.lines.map((l) => ({ name: l.name, quantity: printQuantity(l.qty, l.unit_code), total: l.total, ...printNotes(l) })),
-    subtotal: screen.subtotal,
+    items: screen.lines.map((l) => ({ name: l.name, quantity: printQuantity(l.qty, l.unit_code), total: euros(l.total, screen.decimals)!, ...printNotes(l) })),
+    subtotal: euros(screen.subtotal, screen.decimals),
     // The tax total comes from the sale row, not from the breakdown: a sale without
     // `tax_breakdown` still has `tax_amount`, and the paper must not lose it.
-    tax_amount: euros(sale.tax_amount),
-    discount: euros(sale.discount_amount),
-    total: screen.total,
+    tax_amount: euros(sale.tax_amount, screen.decimals),
+    discount: euros(sale.discount_amount, screen.decimals),
+    total: euros(screen.total, screen.decimals)!,
     payment_method: screen.payment?.method,
-    paid: screen.payment?.paid,
-    change: screen.payment?.change,
+    paid: euros(screen.payment?.paid, screen.decimals),
+    change: euros(screen.payment?.change, screen.decimals),
     qr_data: screen.qr,
     // sales#103: el bloque «pide tu factura», VACÍO sin locator acuñado — el renderer imprime
     // solo los campos presentes, así que un tique sin claim sale byte a byte como hoy.

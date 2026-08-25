@@ -13,9 +13,9 @@ import { payMethodDisplayName } from './pay-icons.js';
 // sales#148 — los suplementos del papel viven en UN sitio (`paper-modifiers.ts`) para que la
 // pantalla, el HTML, el térmico y la huella del jobId no puedan discrepar. Se re-exporta el tipo
 // porque quien consume estos mappers ya importa de aquí.
-import { modifierNote, type PrintedModifier } from './paper-modifiers.js';
+import { modifierLabel, modifierNote, type PrintedModifier } from './paper-modifiers.js';
 // sales#154 — the menu on the paper lives in ONE place too (`paper-combos.ts`), for the same reason.
-import { comboNote, groupComboLines, type PrintedCombo } from './paper-combos.js';
+import { comboNote, componentLabel, groupComboLines, type PrintedCombo } from './paper-combos.js';
 
 export { modifierIdentity, modifierLabel, modifierNote, type PrintedModifier } from './paper-modifiers.js';
 export { comboIdentity, comboNote, componentLabel, parseComboSnapshot, type PrintedCombo, type PrintedComboComponent } from './paper-combos.js';
@@ -28,9 +28,20 @@ import type {
   OkInvoiceLabels,
 } from '@erplora/outfitkit';
 
-/** Dinero: la venta guarda CÉNTIMOS (INTEGER, ADR-0007/0123); el documento pinta euros. */
-function toEuros(cents: number | undefined): number {
-  return Number(cents ?? 0) / 100;
+/** Money: the sale stores MINOR UNITS (INTEGER, ADR-0007/0123) and so does the document.
+ *  `<ok-receipt>`/`<ok-invoice>` (outfitkit ≥ 0.1.48, ADR-0400) take integers plus `decimals` and
+ *  paint a float as «—» — so nothing is divided here any more (sales#188). The only conversion
+ *  left is the thermal renderer's, by name, in `print-document.ts`. `Number()` only normalises a
+ *  string column; it never rounds — a float reaching here is an upstream bug the screen exposes. */
+function minor(cents: number | string | undefined): number {
+  return Number(cents ?? 0);
+}
+
+/** The hub currency's scale (ADR-0123 §7): what the SDK says when the shell injected it (JPY 0,
+ *  KWD 3), else 2. Read at mapping time, not at module load: the SDK arrives after the bundle. */
+export function hubDecimals(): number {
+  const d = (globalThis as { erplora?: { currencyDecimals?: unknown } }).erplora?.currencyDecimals;
+  return typeof d === 'number' && Number.isInteger(d) && d >= 0 ? d : 2;
 }
 
 /** Fecha legible según locale («16/07/2026, 19:00»). ISO no parseable → se devuelve tal cual;
@@ -315,8 +326,8 @@ function parseTaxes(tax_breakdown?: string, t?: Translate): TaxLine[] {
       return {
         label: taxLabel(rate, v, t),
         rate: Number.isFinite(r) ? r : undefined,
-        base: toEuros(v?.base),
-        amount: toEuros(v?.tax),
+        base: minor(v?.base),
+        amount: minor(v?.tax),
       };
     })
     .filter((t) => t.amount || t.base);
@@ -332,9 +343,10 @@ export function resolveFormat(sale: SaleRow, settings: SaleSettings): 'ticket' |
  *  (outfitkit) no conoce unidades: estos campos extra viajan con el objeto — la pantalla los
  *  ignora, `receiptToPrintableHtml` y el documento ESC/POS los componen en la línea impresa. */
 export interface PaperReceiptLine extends ReceiptLine {
-  /** pm#93 / sales#148 — los suplementos de la línea, EN EL ORDEN en que se eligieron. `ReceiptLine`
-   *  (outfitkit) no los conoce: viajan como campo extra y los leen los papeles. */
-  modifiers?: PrintedModifier[];
+  /** pm#93 / sales#148 — the line's supplements as OBJECTS, in the order they were chosen, for the
+   *  two papers (HTML, ESC/POS). Under its own key since sales#183: `modifiers` is now the LABEL list
+   *  `<ok-receipt>` paints (ADR-0396), and the same object feeds the screen and the papers. */
+  printed_modifiers?: PrintedModifier[];
   /** sales#154 / ADR-0381 — this line IS a menu: its components print indented under it, without
    *  an amount (only their supplement). `<ok-receipt>` does not know menus: it reads the same text
    *  through `note`; the two papers read the list. Absent on a plain line. */
@@ -368,10 +380,16 @@ function paperModifiers(mods: PrintedModifier[] | undefined, combo?: PrintedComb
   // que el cliente lleva en la mano — y una de las dos personas estaría siendo engañada.
   // sales#154: the menu's components go FIRST (they are the line), the supplements after.
   const note = paperNote(combo, mods);
+  // sales#183 / ADR-0396: the SCREEN gets the same texts as LISTS — one indented sub-line per
+  // component and per supplement, painted by `<ok-receipt>` — while the papers keep the objects.
+  const components = (combo?.components ?? []).map(componentLabel).filter(Boolean);
+  const modifiers = (mods ?? []).map(modifierLabel).filter(Boolean);
   return {
-    ...(mods?.length ? { modifiers: mods } : {}),
+    ...(mods?.length ? { printed_modifiers: mods } : {}),
     ...(combo ? { combo } : {}),
     ...(note ? { note } : {}),
+    ...(components.length ? { components } : {}),
+    ...(modifiers.length ? { modifiers } : {}),
   };
 }
 
@@ -397,8 +415,8 @@ function menuLine(siblings: SaleLineRow[], combo: PrintedCombo, t?: Translate): 
   return {
     name: lineLabel({ ...head, product_name: combo.name }, t),
     qty: fromMicro(Number(head.quantity)),
-    unit_price: toEuros(sum((l) => l.unit_price)),
-    total: toEuros(sum((l) => l.line_total)),
+    unit_price: minor(sum((l) => l.unit_price)),
+    total: minor(sum((l) => l.line_total)),
     ...paperModifiers(mods.length ? mods : undefined, combo),
     ...paperUnit(head),
   };
@@ -426,18 +444,19 @@ export function saleToReceipt(
     lines: groupComboLines(lines).map((g): PaperReceiptLine => g.combo ? menuLine(g.siblings, g.combo, t) : {
       name: lineLabel(g.head, t),
       qty: fromMicro(Number(g.head.quantity)), // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
-      unit_price: toEuros(g.head.unit_price),
-      total: toEuros(g.head.line_total),
+      unit_price: minor(g.head.unit_price),
+      total: minor(g.head.line_total),
       ...paperModifiers(parseModifierSnapshot(g.head.modifiers)), // sales#148: lo que se cobró, impreso
       ...paperUnit(g.head), // sales#28: la unidad congelada, para el papel
     }),
-    subtotal: sale.subtotal != null ? toEuros(sale.subtotal) : undefined,
+    subtotal: sale.subtotal != null ? minor(sale.subtotal) : undefined,
     taxes: parseTaxes(sale.tax_breakdown, t).map((x) => ({ label: x.label, base: x.base, amount: x.amount })),
-    total: toEuros(sale.total),
+    total: minor(sale.total),
     payment: sale.payment_method_name
-      ? { method: payLabel(sale.payment_method_name, t)!, paid: sale.amount_tendered != null ? toEuros(sale.amount_tendered) : undefined, change: sale.change_due != null ? toEuros(sale.change_due) : undefined }
+      ? { method: payLabel(sale.payment_method_name, t)!, paid: sale.amount_tendered != null ? minor(sale.amount_tendered) : undefined, change: sale.change_due != null ? minor(sale.change_due) : undefined }
       : undefined,
     currency: settings.currency || '€',
+    decimals: hubDecimals(),
     footer: settings.receipt_footer || undefined,
     qr: fiscal.qr || undefined,
     qr_note: fiscal.qr_note || undefined,
@@ -466,10 +485,10 @@ export function saleToInvoice(
     // «Tomate rosa (kg)». Sin unidad o con la suelta, la descripción queda como estaba.
     description: unitTag(l.unit_code) ? `${lineLabel(l, t)} (${unitTag(l.unit_code)})` : lineLabel(l, t),
     qty: fromMicro(Number(l.quantity)), // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
-    unit_price: toEuros(l.unit_price),
+    unit_price: minor(l.unit_price),
     discount_percent: l.discount_percent ? Number(l.discount_percent) : undefined,
     tax_rate: l.tax_rate != null ? Number(l.tax_rate) : undefined,
-    total: toEuros(l.line_total),
+    total: minor(l.line_total),
   }));
   const taxes = parseTaxes(sale.tax_breakdown, t);
   return {
@@ -478,12 +497,13 @@ export function saleToInvoice(
     number: fiscal.number || sale.sale_number,
     issue_date: formatDateTime(sale.created_at, locale) || '',
     lines: invLines,
-    subtotal: toEuros(sale.subtotal),
-    discount_total: sale.discount_amount ? toEuros(sale.discount_amount) : undefined,
+    subtotal: minor(sale.subtotal),
+    discount_total: sale.discount_amount ? minor(sale.discount_amount) : undefined,
     taxes: taxes.map((t) => ({ label: t.label, rate: t.rate, base: t.base, amount: t.amount })),
-    tax_total: toEuros(sale.tax_amount),
-    total: toEuros(sale.total),
+    tax_total: minor(sale.tax_amount),
+    total: minor(sale.total),
     currency: settings.currency || '€',
+    decimals: hubDecimals(),
     payment_method: payLabel(sale.payment_method_name, t),
     footer: settings.receipt_footer || undefined,
     qr: fiscal.qr || undefined,
@@ -548,16 +568,17 @@ export function orderToPrebill(
     lines: lines.map((l): PaperReceiptLine => ({
       name: l.is_gift ? `${l.name} (invitación)` : l.name,
       qty: l.qty,
-      unit_price: toEuros(l.price),
-      total: toEuros(cents(l)),
+      unit_price: minor(l.price),
+      total: minor(cents(l)),
       // sales#148: ya resueltos contra el catálogo VIVO por quien pide la cuenta (la fila del
       // pedido guarda solo los `option_id`; el nombre y el importe no son del navegador).
       ...paperModifiers(l.modifiers, l.combo), // sales#154: and the menu's components, same door
       ...paperUnit(l), // sales#28: la unidad congelada, para el papel
     })),
-    total: toEuros(total),
+    total: minor(total),
     taxes: [],
     currency: settings.currency || '€',
+    decimals: hubDecimals(),
     // Inglés canónico (ADR-0055): la UI pasa el texto ya traducido en `opts.notice`; esto es solo
     // el respaldo para llamadas sin i18n (tests, integraciones).
     footer: opts.notice ?? 'Bill — this is not an invoice. The fiscal receipt is issued on payment.',
