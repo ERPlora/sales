@@ -390,18 +390,19 @@ export class ErpPosTouch extends LitElement {
     ion-button.charge.blocked { --background:var(--ion-color-medium,#92949c);
       --background-activated:var(--ion-color-medium-shade,#808289);
       --background-focused:var(--ion-color-medium-shade,#808289); }
-    /* sales#149 — el estado del CATÁLOGO. Deliberadamente MÁS callado que .blocked-notice: sin
-       caja de color, porque no es un incidente del toque que se acaba de dar sino una condición que
-       lleva ahí desde que abrió la caja, y a esa altura del ojo compite con el producto. */
-    /* Una FRASE, no una barra de tres cajas: en flex, un ancho estrecho (móvil, o la rejilla
-       reducida de una tablet en vertical) rompe la fila y deja el icono solo en un renglón y el
-       enlace en otro. Como texto corrido, el icono y el enlace viajan DENTRO de la frase y el
-       aviso ocupa las líneas que necesite sin desmontarse. */
+    /* sales#149 — the state of the CATALOGUE. Deliberately QUIETER than .blocked-notice: no
+       coloured box, because this is not an incident raised by the tap that just happened but a
+       condition that has been true since the till opened, and at that height it competes with the
+       product. */
+    /* A SENTENCE, not a bar of three boxes: in flex, a narrow width (mobile, or the shrunken grid
+       of a tablet in portrait) breaks the row and leaves the icon alone on one line and the link on
+       another. As running text the icon and the link travel INSIDE the sentence, and the notice
+       takes as many lines as it needs without falling apart. */
     .catalog-health { display:block; margin:0 0 .5rem; padding:0 .1rem;
       color:var(--mut); font-size:.8rem; line-height:1.35; }
     .catalog-health ion-icon { display:inline-block; vertical-align:-.15em; margin-right:.3rem;
       font-size:1rem; color:var(--ion-color-warning-shade,#e0ac08); }
-    /* El botón de Ionic trae altura de barra: aquí es un enlace dentro de una frase. */
+    /* An Ionic button comes with toolbar height: here it is a link inside a sentence. */
     .catalog-health .ch-fix { display:inline-block; vertical-align:-.35em;
       --padding-start:.25rem; --padding-end:.25rem; margin:0;
       height:1.5rem; font-size:.8rem; text-transform:none; letter-spacing:0; }
@@ -3386,25 +3387,26 @@ export class ErpPosTouch extends LitElement {
     window.dispatchEvent(new PopStateEvent('popstate'));
   }
 
-  /** sales#149 — cuántas líneas del catálogo NO se pueden cobrar, sobre el catálogo ENTERO.
+  /** sales#149 — how many catalogue lines CANNOT be charged, over the WHOLE catalogue.
    *
-   *  Sobre `products`, no sobre `filtered`: la frase habla del negocio («al catálogo le falta
-   *  configurar el IVA»), no de la pestaña abierta. Contar lo filtrado haría que el mismo problema
-   *  dijera un número distinto en cada categoría y cero en la primera que estuviera bien. */
+   *  Over `products`, not over `filtered`: the sentence is about the business ("the catalogue still
+   *  has VAT to set up"), not about the open tab. Counting what is filtered would make the very same
+   *  problem report a different number in every category, and zero in the first one that was fine. */
   private get blockedCount(): number {
     return this.products.reduce((n, p) => (this.blockedReason(p) ? n + 1 : n), 0);
   }
 
-  /** ¿Puede ESTA sesión hacer algo con el aviso? Filtro, no muro (mismo criterio que
-   *  `canOpenManagement` del shell): la autoridad real es el runtime, esto solo decide qué se pinta.
+  /** Can THIS session do anything about the notice? A filter, not a wall (same criterion as the
+   *  shell's `canOpenManagement`): the real authority is the runtime, this only decides what is
+   *  painted.
    *
-   *  `inventory.change_product` es el permiso que abre la ficha donde se asigna la categoría fiscal
-   *  (lo exige `erp-inventory-products` para editar), y lo llevan `manager`/`admin` — que es
-   *  exactamente el ENCARGADO al que va dirigido el aviso; un cajero no puede arreglarlo.
+   *  `inventory.change_product` is the permission that opens the form where the fiscal category is
+   *  assigned (`erp-inventory-products` requires it to edit), and `manager`/`admin` carry it — which
+   *  is exactly the MANAGER this notice is addressed to; a cashier cannot fix it.
    *
-   *  Un shell que NO expone el canal de permisos (preview, shell anterior) no está diciendo «no»:
-   *  está sin responder. Fallar cerrado ahí borraría en silencio el único sitio donde el negocio se
-   *  entera, y el aviso no le cuesta nada a un cajero. */
+   *  A shell that does NOT expose the permission channel (preview, older shell) is not saying "no":
+   *  it is not answering. Failing closed there would silently remove the only place the business
+   *  learns about this, and the notice costs a cashier nothing. */
   private canFixCatalog(): boolean {
     const c = erplora() as Partial<{ hasPermission(perm: string): boolean }>;
     if (typeof c.hasPermission !== 'function') return true;
@@ -3412,23 +3414,23 @@ export class ErpPosTouch extends LitElement {
   }
 
   private goToProductSetup() {
-    // `inventory` es `depends_on` DURO de `sales`, así que esta ruta no puede apuntar a un módulo
-    // que no esté instalado. Mismo canal módulo→shell que `goToSales`.
+    // `inventory` is a HARD `depends_on` of `sales`, so this route cannot point at a module that is
+    // not installed. Same module→shell channel as `goToSales`.
     window.history.pushState({}, '', '/m/inventory/products');
     window.dispatchEvent(new PopStateEvent('popstate'));
   }
 
-  /** El aviso AGREGADO, una vez y antes del servicio (sales#149).
+  /** The AGGREGATE notice, once and before the shift (sales#149).
    *
-   *  Hasta aquí el catálogo a medio configurar solo se notaba baldosa a baldosa, con el cliente
-   *  delante: la mitad del cajero (sales#74/#58). Esta es la del encargado — el recuento y la
-   *  puerta por la que se arregla.
+   *  Until now a half configured catalogue was only noticeable tile by tile, with the customer
+   *  waiting: the cashier's half (sales#74/#58). This is the manager's — the count, and the door it
+   *  is fixed through.
    *
-   *  DISCRETO a propósito: una línea, no un modal ni un `alert`. Un TPV que se abre con una ventana
-   *  encima es un TPV que se aprende a cerrar sin leer, y el catálogo sigue vendiendo lo que sí
-   *  tiene IVA. Odoo y WooCommerce esconden el artículo mal configurado (la caja funciona, el
-   *  encargado no se entera); Square y Toast lo pintan en la baldosa pero tampoco avisan por
-   *  adelantado. Nosotros ya no lo escondemos (sales#74), así que lo que faltaba era la suma. */
+   *  DISCREET on purpose: one line, not a modal and not an `alert`. A till that opens with a window
+   *  on top is a till people learn to dismiss without reading, and the catalogue goes on selling
+   *  whatever does have VAT. Odoo and WooCommerce hide the misconfigured article (the till works,
+   *  the manager never finds out); Square and Toast paint it on the tile but do not warn ahead
+   *  either. We no longer hide it (sales#74), so what was missing was the sum. */
   private renderCatalogHealth() {
     const n = this.blockedCount;
     if (!n || !this.canFixCatalog()) return nothing;
@@ -3922,9 +3924,9 @@ export class ErpPosTouch extends LitElement {
                 <ion-icon name="alert-circle" aria-hidden="true"></ion-icon><span>${t('ui.comboCatalogUnavailable')}</span>
               </div>`
             : nothing}
-          <!-- sales#149: el estado del CATÁLOGO, una línea y al final de los avisos. Los dos de
-               arriba son del toque que se acaba de dar; este lleva ahí desde que abrió la caja, así
-               que no puede empujarlos hacia abajo cada vez que aparecen. -->
+          <!-- sales#149: the state of the CATALOGUE, one line and last among the notices. The two
+               above belong to the tap that just happened; this one has been true since the till
+               opened, so it must not push them down every time they appear. -->
           ${this.renderCatalogHealth()}
           <div class="grid">
             <!-- Los MENÚS van primero: en un local con menú del día es la primera comanda de la
