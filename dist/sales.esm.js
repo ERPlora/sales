@@ -6582,10 +6582,24 @@ var ErpPosTouch = class extends i3 {
 
     .card { height:100%; display:flex; flex-direction:column; overflow:hidden; background:var(--bg);
       border:1px solid var(--ion-border-color); border-radius:16px; }
-    .body { position:relative; flex:1; min-height:0; display:grid; grid-template-columns: 1fr 23rem; }
+    /* sales#178 - grid-template-rows is the load-bearing half of the fix. .body holds ONE row and
+       an implicit auto row is sized by its CONTENT: its base size is .catalog's min-content, which
+       with a full restaurant menu (281 items) is ~6.800px at 1440 and ~13.600px at 834. Letting the
+       ITEM shrink (min-height:0) does not stop the TRACK from growing - the item just stretches to
+       fill a 6.800px row. minmax(0,1fr) pins the row to .body's own height, and only then does
+       .grid ever reach its overflow:auto and the cart's ion-footer stay on screen. */
+    .body { position:relative; flex:1; min-height:0; display:grid; grid-template-columns: 1fr 23rem;
+      grid-template-rows: minmax(0, 1fr); }
 
     /* ── Catálogo ── */
-    .catalog { display:flex; flex-direction:column; min-width:0; padding:.8rem; }
+    /* sales#178 - min-height:0 is NOT decoration here: .catalog is a grid item, and a grid item's
+       default minimum size is its CONTENT. With a full restaurant menu (281 items) the tile grid is
+       ~20.000px tall, .catalog refused to shrink under it, and the whole .body row grew to match:
+       .grid never reached its own overflow:auto, the cart column stretched with it and its
+       ion-footer -- Total, Discount, Pre-bill, CHARGE -- ended up 20.000px below the viewport. And
+       .card is overflow:hidden, so there was not even a scrollbar: the content simply did not exist
+       for the cashier. Same pair .body and .cart already carry; only min-width:0 was set here. */
+    .catalog { display:flex; flex-direction:column; min-width:0; min-height:0; padding:.8rem; }
     .catbar { position:relative; display:flex; align-items:center; gap:.4rem; margin-bottom:.7rem; }
 
     /* Menú ⋮ de PANTALLA (no de venta): anclado bajo su botón, como cualquier kebab. La capa de
@@ -7086,7 +7100,11 @@ var ErpPosTouch = class extends i3 {
     @media (max-width:820px) {
       .body { grid-template-columns:1fr; }
       .catalog { padding:.58rem; }
-      .grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:.5rem; }
+      /* The cart FAB floats over the grid (position:absolute, 3.6rem wide, 1rem off the edge), so
+         at 390px it sat on top of the last tile's PRICE. Square and Toast reserve that room at the
+         end of the list instead of letting the button cover content: the grid keeps its own scroll
+         and simply ends above the FAB. Desktop has no FAB, so this belongs in the mobile block. */
+      .grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:.5rem; padding-bottom:5.2rem; }
       ion-card.tile { min-height:8rem; }
       ion-segment-button.cat-segment-button { flex-basis:7.8rem; min-width:7.8rem; }
       .cart { width:min(100%,27rem); }
