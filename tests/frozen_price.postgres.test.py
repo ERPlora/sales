@@ -1,36 +1,37 @@
 #!/usr/bin/env python3
 """The price an OPEN CHECK was opened at survives, in a REAL Postgres 18 (sales#175).
 
-Decidido por el mercado (8 referencias + foros, en la issue y en ADR-0402): una cuenta abierta se
-cobra al precio que tenía **cuando se pidió**, no al del catálogo cuando se paga. Square congela el
-pedido al crearlo, Simphony excluye del cambio de precio «menu items from a previous service round»,
-Odoo no recalcula las líneas de un pedido ya creado y Lightspeed exige permiso para re-preciar una a
-mano. Shopify probó lo contrario en enero de 2025 y acabó publicando su `price lock`.
+Decided by the market (8 references + forums, on the issue and in its ADR): an open check is
+charged at the price it had **when it was ordered**, not at the catalogue's when it is paid. Square
+snapshots the order when it is created, Simphony excludes "menu items from a previous service round"
+from a price change, Odoo does not recompute the lines of an order already created, and Lightspeed
+demands a permission to re-price one by hand. Shopify tried the opposite in January 2025 and ended
+up shipping its `price lock`.
 
-Eso convierte `sales_order_item.unit_price` en una columna que **decide dinero**. Hasta sales#175 era
-un provisional de display: el cobro re-preciaba contra `inventory.products.for_sale` y daba igual lo
-que pusiera ahí. Ahora no. Los tests del handler prueban la aritmética —cambiar el catálogo y cobrar
-igual— porque el catálogo es una lectura de OTRO módulo, no una tabla del esquema de `sales`. Lo que
-no pueden probar es lo que solo decide una base de datos de verdad, que es lo que hay aquí:
+That turns `sales_order_item.unit_price` into a column that **decides money**. Until sales#175 it
+was a display preview: the checkout re-priced against `inventory.products.for_sale` and whatever sat
+in there did not matter. Not any more. The handler tests prove the arithmetic — change the catalogue
+and charge the same — because the catalogue is a read from ANOTHER module, not a table of `sales`'
+own schema. What they cannot prove is what only a real database decides, which is what lives here:
 
-  1. LA COLUMNA QUE DECIDE. `unit_price` es entero (unidad mínima, ADR-0007/0123) y NOT NULL: un
-     NULL colándose ahí sería una cuenta que no se puede cobrar.
+  1. THE COLUMN THAT DECIDES. `unit_price` is an integer (minor units, ADR-0007/0123) and NOT NULL:
+     a NULL slipping in there would be a check that cannot be charged.
 
-  2. NADIE LA REESCRIBE. Ninguna sentencia del módulo hace `UPDATE ... SET unit_price`. Es el guard
-     que sostiene la decisión entera: el día que alguien añada un «refrescar precios» del pedido, la
-     congelación se rompe **en silencio** y ningún test de handler se entera.
+  2. NOBODY REWRITES IT. No statement of the module does `UPDATE ... SET unit_price`. This is the
+     guard that holds up the whole decision: the day someone adds a "refresh the order's prices",
+     the freeze breaks **in silence** and no handler test notices.
 
-  3. LOS TRES NÚMEROS CONGELADOS VUELVEN. `sales.order.lines` —la puerta por la que el cobro los
-     lee— devuelve `unit_price`, `cost` y `tax_category_key`. Si uno deja de viajar, el cobro no
-     re-precia: RECHAZA la venta, y la mesa no puede pagar.
+  3. THE THREE FROZEN NUMBERS COME BACK. `sales.order.lines` — the door the checkout reads them
+     through — returns `unit_price`, `cost` and `tax_category_key`. If one stops travelling, the
+     checkout does not re-price: it REFUSES the sale, and the table cannot pay.
 
-  4. UNA LÍNEA YA COBRADA NO VUELVE. La query filtra `sale_id IS NULL`. Con el precio congelado eso
-     deja de ser una comodidad de pantalla: es lo que hace que cobrar dos veces la misma línea sea
-     un rechazo (`sales.order_line_not_available`) en vez de un cargo repetido.
+  4. A LINE ALREADY PAID DOES NOT COME BACK. The query filters `sale_id IS NULL`. With the price
+     frozen that stops being a screen convenience: it is what makes charging the same line twice a
+     refusal (`sales.order_line_not_available`) instead of a repeated charge.
 
-  5. TENANCY, con un VECINO VIVO. Dos hubs, dos cuentas abiertas, un precio congelado cada una,
-     sembradas por la puerta que aplica el aislamiento: el precio del vecino no puede asomar. Un
-     test de aislamiento sin vecino, o sembrado con un helper, no prueba nada.
+  5. TENANCY, with a LIVE NEIGHBOUR. Two hubs, two open checks, a frozen price each, seeded through
+     the door that enforces the isolation: the neighbour's price cannot show up. A scoping test with
+     no neighbour, or seeded with a helper, proves nothing.
 
 Usage: tests/frozen_price.postgres.test.py
   Uses the `erplora-test-pg-5433` container by default (override: SALES_TEST_PG_CONTAINER).
@@ -204,9 +205,13 @@ def load_migrations() -> None:
 
 # ── the row, exactly as the handlers bind it ─────────────────────────────────────────────
 
-# Todos los parámetros que bindea `sales._insert_order_line`, escritos enteros a propósito: es la
-# forma del payload que producen los DOS handlers (`open_order` y `add_order_line`), así que si el
-# command crece un parámetro y el handler no —o al revés— es aquí donde se ve.
+# Every parameter `sales._insert_order_line` binds, written out in full on purpose: this is the
+# payload shape BOTH handlers produce (`open_order` and `add_order_line`), so if the command grows a
+# parameter and the handler does not — or the other way round — this is where it shows.
+#
+# ⚠️ The `unit_price` here is NOT the till's: since sales#175 the row's price is resolved by the
+# handler against `inventory.products.for_sale`. What travels here is the number it ALREADY
+# resolved, which is exactly how it arrives in production.
 def line_params(line_id: str, unit_price: int, order_id: str = ORDER, **over) -> dict:
     params = {
         "id": line_id,
@@ -215,8 +220,7 @@ def line_params(line_id: str, unit_price: int, order_id: str = ORDER, **over) ->
         "product_name": "Hamburguesa",
         "product_sku": "",
         "quantity": 1_000_000,
-        # 🔴 El número que decide el dinero. Lo resolvió el handler contra el catálogo; aquí llega ya
-        # resuelto, que es exactamente como llega en producción.
+        # 🔴 The number that decides the money.
         "unit_price": unit_price,
         "is_gift": 0,
         "gift_reason": "",
@@ -267,19 +271,19 @@ def test_the_column_that_decides_the_money_is_an_integer_and_not_null() -> None:
     check("`unit_price` exists", q(
         "SELECT count(*) FROM information_schema.columns"
         " WHERE table_name='sales_order_item' AND column_name='unit_price'"), "1")
-    # ADR-0007/0123: dinero SIEMPRE entero en la unidad mínima. Un float aquí es un céntimo que se
-    # pierde por cuenta y un arqueo que no cuadra al final del día.
+    # ADR-0007/0123: money is ALWAYS an integer in minor units. A float here is a cent lost per
+    # check and a cash-up that does not add up at the end of the day.
     check("and it is an integer, not a float (ADR-0007/0123)", q(
         "SELECT data_type FROM information_schema.columns"
         " WHERE table_name='sales_order_item' AND column_name='unit_price'"), "bigint")
-    check("and NOT NULL — una cuenta con precio nulo no se puede cobrar", q(
+    check("and NOT NULL — a check with a null price cannot be charged", q(
         "SELECT is_nullable FROM information_schema.columns"
         " WHERE table_name='sales_order_item' AND column_name='unit_price'"), "NO")
-    # Los otros dos números que el cobro honra desde sales#175 y que tampoco se re-derivan.
-    check("`cost` viaja con la línea (arqueo de invitaciones)", q(
+    # The other two numbers the checkout honours since sales#175, which are not re-derived either.
+    check("`cost` travels with the line (gift cash-up)", q(
         "SELECT count(*) FROM information_schema.columns"
         " WHERE table_name='sales_order_item' AND column_name='cost'"), "1")
-    check("`tax_category_key` también (autoridad del IVA, ADR-0085)", q(
+    check("`tax_category_key` too (VAT authority, ADR-0085)", q(
         "SELECT count(*) FROM information_schema.columns"
         " WHERE table_name='sales_order_item' AND column_name='tax_category_key'"), "1")
 
@@ -288,9 +292,10 @@ def test_the_column_that_decides_the_money_is_an_integer_and_not_null() -> None:
 
 
 def test_no_statement_of_the_module_rewrites_the_frozen_price() -> None:
-    print("\n2 · ninguna sentencia del módulo reescribe `unit_price`")
-    # El guard que sostiene la decisión entera. Un «refrescar precios del pedido» añadido mañana
-    # rompería la congelación EN SILENCIO: el handler seguiría verde y la mesa pagaría otra cosa.
+    print("\n2 · no statement of the module rewrites `unit_price`")
+    # The guard that holds up the whole decision. A "refresh the order's prices" added tomorrow
+    # would break the freeze IN SILENCE: the handler would stay green and the table would pay
+    # something else.
     setter = re.compile(r"\bset\b[^;]*?\bunit_price\s*=", re.IGNORECASE | re.DOTALL)
     offenders = []
     for sql_file in sorted((MODULE_DIR / "commands").glob("*.sql")):
@@ -299,70 +304,71 @@ def test_no_statement_of_the_module_rewrites_the_frozen_price() -> None:
             continue
         if setter.search(body):
             offenders.append(sql_file.name)
-    check("ningún UPDATE ... SET unit_price en `commands/`", offenders, [])
-    # Y la migración tampoco lo toca en un backfill: eso re-preciaría cuentas ya abiertas.
+    check("no UPDATE ... SET unit_price anywhere in `commands/`", offenders, [])
+    # And no migration touches it in a backfill either: that would re-price checks already open.
     mig_offenders = [
         m.name
         for m in sorted((MODULE_DIR / "migrations" / "postgres").glob("*.sql"))
         if setter.search(strip_comments(m.read_text()))
     ]
-    check("ni una migración que lo reescriba", mig_offenders, [])
+    check("nor a migration that rewrites it", mig_offenders, [])
 
 
 # ── 3-4 · the frozen numbers come back, and a paid line does not ─────────────────────────
 
 
 def test_the_frozen_numbers_come_back_and_a_paid_line_does_not() -> None:
-    print("\n3-4 · `sales.order.lines` devuelve lo congelado, y no lo ya cobrado")
+    print("\n3-4 · `sales.order.lines` returns what was frozen, and not what was already paid")
     seed_order()
     ok, err = run_command("sales._insert_order_line", line_params("line-1", 900))
-    check("la línea entra por la puerta que usan los dos handlers", (ok, err), (True, ""))
+    check("the line goes in through the door both handlers use", (ok, err), (True, ""))
     ok, err = run_command("sales._insert_order_line", line_params(
         "line-2", 250, product_id="p-cana", product_name="Caña"))
-    check("y la segunda también", (ok, err), (True, ""))
+    check("and so does the second one", (ok, err), (True, ""))
     ok, err = run_command("sales._recompute_order_total", {"order_id": ORDER})
-    check("el total provisional se recompone en su propio command", (ok, err), (True, ""))
-    check("y es la suma de las líneas vivas", qi(
+    check("the provisional total is recomposed by its own command", (ok, err), (True, ""))
+    check("and it is the sum of the live lines", qi(
         f"SELECT provisional_total FROM sales_order WHERE id='{ORDER}'"), 1150)
 
     rows = {r["id"]: r for r in run_query("sales.order.lines", {"order_id": ORDER})}
-    check("las dos líneas vuelven", sorted(rows), ["line-1", "line-2"])
-    # 🔴 EL PUNTO. Estos tres números son los que el cobro HONRA desde sales#175. Si uno deja de
-    # viajar, el cobro no re-precia: rechaza la venta y la mesa no puede pagar.
-    check("vuelve el precio CONGELADO", rows.get("line-1", {}).get("unit_price"), 900)
-    check("vuelve el coste congelado", rows.get("line-1", {}).get("cost"), 400)
-    check("vuelve la categoría fiscal congelada",
+    check("both lines come back", sorted(rows), ["line-1", "line-2"])
+    # 🔴 THE POINT. These three numbers are the ones the checkout HONOURS since sales#175. If one
+    # stops travelling, the checkout does not re-price: it refuses the sale and the table cannot pay.
+    check("the FROZEN price comes back", rows.get("line-1", {}).get("unit_price"), 900)
+    check("the frozen cost comes back", rows.get("line-1", {}).get("cost"), 400)
+    check("the frozen tax category comes back",
           rows.get("line-1", {}).get("tax_category_key"), "restaurant.food")
-    check("y el id de la fila, que es como la línea del cobro la nombra (`order_item_id`)",
+    check("and the row's id, which is how the checkout line names it (`order_item_id`)",
           rows.get("line-1", {}).get("id"), "line-1")
 
-    # 4 · una línea YA COBRADA no vuelve. Con el precio congelado eso deja de ser cosmético: es lo
-    # que convierte «cobrar dos veces la misma línea» en un rechazo y no en un cargo repetido.
+    # 4 · a line ALREADY PAID does not come back. With the price frozen that stops being cosmetic:
+    # it is what turns "charging the same line twice" into a refusal, not a repeated charge.
     psql(["-c", f"UPDATE sales_order_item SET sale_id='sale-1' WHERE id='line-2'"], db=DB)
     rows = run_query("sales.order.lines", {"order_id": ORDER})
-    check("la línea ya cobrada desaparece de la cuenta", [r["id"] for r in rows], ["line-1"])
+    check("the line already paid disappears from the check", [r["id"] for r in rows], ["line-1"])
 
 
 # ── 5 · tenancy, with a live neighbour ───────────────────────────────────────────────────
 
 
 def test_the_frozen_price_never_crosses_hubs() -> None:
-    print("\n5 · el precio congelado del vecino no asoma")
-    # El VECINO es real y está vivo: su hub, su cuenta abierta, su precio congelado, escrito por la
-    # MISMA puerta. Sin vecino, este test pasaría porque no hay nada que filtrar.
+    print("\n5 · the neighbour's frozen price never shows up")
+    # The NEIGHBOUR is real and alive: its own hub, its own open check, its own frozen price,
+    # written through the SAME door. With no neighbour this test would pass because there is nothing
+    # to filter.
     seed_order(order_id=OTHER_ORDER, hub=OTHER_HUB)
     ok, err = run_command("sales._insert_order_line", line_params(
         "line-vecino", 9900, order_id=OTHER_ORDER, product_name="Chuletón del vecino"), hub=OTHER_HUB)
-    check("la línea del vecino se escribe de verdad", (ok, err), (True, ""))
+    check("the neighbour's line is really written", (ok, err), (True, ""))
 
-    # Control positivo PRIMERO: si el vecino no pudiera leer la suya, el vacío de abajo no probaría
-    # el filtro, solo una query que no devuelve nada.
+    # Positive control FIRST: if the neighbour could not read its own, the empty result below would
+    # prove nothing about the filter — only that the query returns nothing.
     theirs = run_query("sales.order.lines", {"order_id": OTHER_ORDER}, hub=OTHER_HUB)
-    check("control: el vecino SÍ lee su línea", [r["unit_price"] for r in theirs], [9900])
+    check("control: the neighbour DOES read its line", [r["unit_price"] for r in theirs], [9900])
     leaked = run_query("sales.order.lines", {"order_id": OTHER_ORDER})
-    check("y nosotros nunca, ni pidiendo su cuenta por id", leaked, [])
+    check("and we never do, not even asking for its check by id", leaked, [])
     ours = run_query("sales.order.lines", {"order_id": ORDER})
-    check("y nuestra cuenta sigue con SU precio", [r["unit_price"] for r in ours], [900])
+    check("and our check keeps ITS price", [r["unit_price"] for r in ours], [900])
 
 
 def main() -> int:
@@ -391,7 +397,7 @@ def main() -> int:
         for f in failures:
             print(f"  - {f}")
         return 1
-    print("PASS — el precio con el que se abrió la cuenta sobrevive y nadie lo reescribe (sales#175)")
+    print("PASS — the price the check was opened at survives and nobody rewrites it (sales#175)")
     return 0
 
 

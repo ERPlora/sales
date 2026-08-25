@@ -38,7 +38,7 @@
               "string",
               "null"
             ],
-            "description": "sales#175 — el id de la FILA de la cuenta abierta (`sales_order_item.id`) de la que viene esta línea. Cuando viaja, el servidor cobra el `unit_price` CONGELADO de esa fila —el precio que la línea tenía cuando se pidió— en vez de re-preciar contra el catálogo: una mesa se cobra al precio de la carta de cuando pidió, no al de cuando paga. La fila la escribió el servidor con el catálogo delante (`sales.order.open` / `sales.order.add_line`), así que honrarla NO es honrar el `price` del payload, que sigue sin decidir nada. Ausente = venta de mostrador: manda el catálogo. Un id que no esté entre las líneas VIVAS del pedido se RECHAZA (`sales.order_line_not_available`)."
+            "description": "sales#175 — the id of the ROW in the open check (`sales_order_item.id`) this line comes from. When it travels, the server charges that row's FROZEN `unit_price` — the price the line had when it was ordered — instead of re-pricing against the catalogue: a table pays the menu price it ordered at, not the one in force when it pays. The row was written by the server with the catalogue in hand (`sales.order.open` / `sales.order.add_line`), so honouring it is NOT honouring the payload's `price`, which still decides nothing. Absent = counter sale: the catalogue rules. An id that is not among the order's LIVE lines is REFUSED (`sales.order_line_not_available`)."
           },
           "product_name": {
             "type": "string",

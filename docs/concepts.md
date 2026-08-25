@@ -68,7 +68,8 @@ does not recompute the lines of an order already created. Business Central puts 
 line and makes re-pricing an explicit action. Lightspeed lets you change the price of one order item
 by hand — and gates it behind a permission. The only sizeable experiment in the other direction,
 Shopify's draft-order change of January 2025, ended in a bug thread and a `price lock`. The full
-research, with the eight references and the forums, is in ADR-0402.
+research, with the eight references and the forums, is in the ADR on an open check being charged
+at the price it was opened at (sales#175).
 
 **Where it is frozen.** The price is stamped on `sales_order_item.unit_price` the moment the line is
 materialised — opening the check (`sales.order.open`) or adding a line to it

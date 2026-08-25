@@ -255,8 +255,9 @@ def seed_order(order_id: str = ORDER, hub: str = HUB) -> None:
 # or the other way round — this test is where it shows. `combo` is NOT NULL, so the drift shows up
 # as a rejected INSERT and not as a line that quietly loses its menu.
 #
-# ⚠️ NO lleva `unit_price` del TPV: desde sales#175 el precio de la fila lo resuelve el handler
-# contra `inventory.products.for_sale`. Aquí va el número que el handler YA resolvió.
+# ⚠️ The `unit_price` here is NOT the till's: since sales#175 the row's price is resolved by the
+# handler against `inventory.products.for_sale`. What travels here is the number it ALREADY
+# resolved, which is exactly how it arrives in production.
 def add_line_params(new_id: str, order_id: str = ORDER, **over) -> dict:
     params = {
         "id": new_id,
@@ -369,8 +370,9 @@ def test_both_doors_write_the_menu_and_the_server_mints_the_group() -> None:
     check("no money anywhere in the frozen composition", money_keys, [])
     check("nor at the top of it", sorted(set(snapshot) & {"price", "price_charged"}), [])
     # And the provisional total is still the sum of the lines: the menu does not distort the check.
-    # sales#175: lo recompone `sales._recompute_order_total`, la 2ª operación que emite el handler
-    # (antes era la 2ª sentencia del command declarativo). Si no bindea, el total del TPV deriva.
+    # sales#175: it is recomposed by `sales._recompute_order_total`, the 2nd operation the handler
+    # emits (it used to be the 2nd statement of the declarative command). If it does not bind, the
+    # total the till shows drifts away from its lines.
     ok, err = run_command("sales._recompute_order_total", {"order_id": ORDER})
     check("`sales._recompute_order_total` runs the way the runtime runs it", (ok, err), (True, ""))
     check("the check's provisional total is still the plain sum of its lines", qi(

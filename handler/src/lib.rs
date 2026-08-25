@@ -98,7 +98,7 @@ pub fn open_order(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output
     }
 }
 
-/// sales#175: añade una línea a una cuenta abierta CON el catálogo delante. Ver `add_order_line_pure`.
+/// sales#175: adds a line to an open check WITH the catalogue in hand. See `add_order_line_pure`.
 #[cfg(feature = "guest")]
 #[plugin_fn]
 pub fn add_order_line(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
@@ -574,26 +574,29 @@ fn authoritative_price(item: &Value, catalog: Option<&Vec<&Value>>) -> Result<Op
     )))
 }
 
-/// La FILA de la cuenta abierta de la que viene esta línea (sales#175), si la nombra.
+/// The ROW of the open check this line came from (sales#175), if it names one.
 ///
-/// Una cuenta abierta se cobra al precio que tenía **cuando se pidió**, no al que dice el catálogo
-/// cuando se paga: es lo que hacen Square (su Orders API congela el precio al crear el pedido),
-/// Simphony (un cambio de nivel de precio NO alcanza a «menu items from a previous service round»)
-/// y Odoo (las líneas de un pedido ya creado no se recalculan). Shopify probó lo contrario y acabó
-/// publicando el `price lock`. La decisión completa, con sus 8 referencias, está en ADR-0402.
+/// An open check is charged at the price it had **when it was ordered**, not at what the catalogue
+/// says when it is paid: that is what Square does (its Orders API snapshots the price when the
+/// order is created), what Simphony does (a price-level change never reaches "menu items from a
+/// previous service round") and what Odoo does (the lines of an order already created are not
+/// recomputed). Shopify tried the opposite and ended up shipping the `price lock`. The full
+/// decision, with its 8 references, is in the ADR on an open check being charged at the price it
+/// was opened at (sales#175).
 ///
-/// 🔴 Falla CERRADO por los dos lados: si la línea dice venir de la cuenta y la lectura de sus
-/// filas no llegó, o el id no está entre las filas VIVAS del pedido, se rechaza en vez de caer al
-/// catálogo. Caer sería re-preciar en silencio —lo que esta issue quita— y, en el caso de una fila
-/// ya cobrada (`sale_id IS NOT NULL`, que la query excluye), cobrarla dos veces.
+/// 🔴 Fails CLOSED on both sides: if the line claims to come from the check and the read of its
+/// rows did not arrive, or the id is not among the order's LIVE rows, it is refused instead of
+/// falling back to the catalogue. Falling back would re-price in silence — the very thing this
+/// issue removes — and, for a row already paid (`sale_id IS NOT NULL`, which the query excludes),
+/// it would charge it twice.
 fn frozen_order_line<'a>(
     item: &Value,
     rows: Option<&'a Vec<&'a Value>>,
 ) -> Result<Option<&'a Value>, String> {
     let id = field(item, "order_item_id");
     if id.is_empty() {
-        // Venta de mostrador: no hay «cuando se pidió» distinto de «cuando se paga». Manda el
-        // catálogo, exactamente igual que desde sales#68.
+        // Counter sale: there is no "when it was ordered" apart from "when it is paid". The
+        // catalogue decides, exactly as it has since sales#68.
         return Ok(None);
     }
     let rows = rows.ok_or_else(|| {
@@ -606,12 +609,12 @@ fn frozen_order_line<'a>(
         .ok_or_else(|| reject("sales.order_line_not_available", &id))
 }
 
-/// Precio, coste y categoría fiscal AUTORITATIVOS de una línea: la FILA congelada de la cuenta
-/// abierta si la línea nombra una, y el catálogo si no (sales#68).
+/// AUTHORITATIVE price, cost and tax category of a line: the frozen ROW of the open check when the
+/// line names one, and the catalogue when it does not (sales#68).
 ///
-/// Honrar la fila **no** es honrar el payload: la fila la escribió el servidor con el catálogo
-/// delante —`open_order` y `add_order_line` la resuelven contra `inventory.products.for_sale`—,
-/// el navegador no.
+/// Honouring the row is **not** honouring the payload: the row was written by the server with the
+/// catalogue in hand — `open_order` and `add_order_line` resolve it against
+/// `inventory.products.for_sale` — the browser was not.
 fn line_price(
     item: &Value,
     frozen: Option<&Value>,
@@ -877,11 +880,11 @@ fn expand_combo(
     for (_, row) in &chosen {
         dividend += as_cents(row.get("price_delta").unwrap_or(&Value::Null), 0);
     }
-    // sales#175 — un menú aparcado se cobra al precio CERRADO que tenía cuando se pidió. La cuenta
-    // abierta ya congeló ese dividendo en su fila (lo resolvió el servidor contra este mismo
-    // catálogo al añadir la línea), así que subir el pack mañana no re-precia la mesa de hoy.
-    // El REPARTO, en cambio, sigue siendo de hoy: los pesos y los tipos del art. 79.Dos son del
-    // devengo, y el devengo es la entrega (art. 75.Uno.1º LIVA).
+    // sales#175 — a parked set menu is charged at the CLOSED price it had when it was ordered. The
+    // open check already froze that dividend on its row (the server resolved it against this very
+    // catalogue when the line was added), so raising the pack tomorrow does not re-price today's
+    // table. The SPLIT, on the other hand, is still today's: the weights and rates of art. 79.Dos
+    // belong to the accrual, and the accrual is the delivery (art. 75.Uno.1º LIVA).
     if let Some(frozen) = frozen_dividend {
         dividend = frozen;
     }
@@ -1080,8 +1083,8 @@ fn expand_combos<'a>(
         // El ref que hermana las líneas de ESTE combo. Derivado (venta + posición) en vez de tomado
         // de `new_ids`: no consume ids de la tanda y es único fuera de la venta.
         let group_ref = format!("{sale_id}-{idx}");
-        // sales#175: el precio cerrado que congeló la fila de la cuenta abierta, si la línea viene
-        // de una. Sin cuenta abierta (mostrador) el precio lo pone el catálogo de `combos`.
+        // sales#175: the closed price the open check's row froze, when the line comes from one.
+        // With no open check (counter sale) the price comes from the `combos` catalogue.
         let frozen_dividend = frozen_order_line(item, order_lines)?
             .map(|row| as_cents(row.get("unit_price").unwrap_or(&Value::Null), 0));
         for (line, combo) in expand_combo(item, group_ref, combo_catalog, product_catalog, frozen_dividend)? {
@@ -1503,11 +1506,11 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     // `expand_combo` (falla cerrado). Sin bloque `list` en origen — es autoridad de precio, y una
     // read paginada entregaría 50 filas y callaría sobre el resto (hub#650).
     let combo_catalog = tax::read_rows(&context, "combos.options.all");
-    // sales#175 — LAS FILAS DE LA CUENTA ABIERTA. Es la lectura que hace que una mesa se cobre al
-    // precio que tenía cuando pidió: cada fila la escribió el SERVIDOR con el catálogo delante
-    // (`open_order` / `add_order_line`), así que honrarla no es honrar el payload. Se entrega
-    // parametrizada por `payload.order_id`, así que en una venta de mostrador no llega nada — y ahí
-    // sigue mandando el catálogo, que es lo correcto: no hay un «cuando se pidió» anterior.
+    // sales#175 — THE ROWS OF THE OPEN CHECK. This is the read that makes a table pay the price it
+    // had when it ordered: every row was written by the SERVER with the catalogue in hand
+    // (`open_order` / `add_order_line`), so honouring it is not honouring the payload. It is
+    // delivered parameterised by `payload.order_id`, so a counter sale gets nothing here — and
+    // there the catalogue still rules, which is right: there is no earlier "when it was ordered".
     let order_lines = tax::read_rows(&context, "sales.order.lines");
 
     // 🔴 EL COMBO SE ARMA UNA SOLA VEZ, aquí, y de esto beben las DOS rutas: las filas que se
@@ -2197,15 +2200,17 @@ fn order_modifiers_snapshot(item: &Value) -> Result<String, String> {
         .map_err(|e| format!("order_modifiers_snapshot_encode: {e}"))
 }
 
-/// El precio CERRADO de un menú (sales#175): el del catálogo de `combos` más los suplementos de
-/// SUSTITUCIÓN elegidos («+ solomillo 3 €»). Es lo que se congela en la fila de la cuenta abierta.
+/// The CLOSED price of a set menu (sales#175): the one in the `combos` catalogue plus the
+/// SUBSTITUTION supplements that were picked ("+ sirloin 3 €"). This is what gets frozen on the
+/// open check's row.
 ///
-/// El REPARTO entre líneas hermanas (art. 79.Dos) NO se congela aquí: lo sigue decidiendo el cobro,
-/// porque los pesos y los tipos son los del devengo — y el devengo es la entrega, no la comanda
-/// (art. 75.Uno.1º LIVA). Lo que queda fijo es el importe TOTAL del menú.
+/// The SPLIT across sibling lines (art. 79.Dos) is NOT frozen here: the checkout still decides it,
+/// because the weights and the rates belong to the accrual — and the accrual is the delivery, not
+/// the moment the waiter takes the order (art. 75.Uno.1º LIVA). What stays fixed is the menu's
+/// TOTAL amount.
 ///
-/// 🔴 Falla CERRADO igual que el cobro: sin catálogo de `combos` no se materializa una línea que
-/// dice ser un menú, porque su precio lo estaría poniendo el navegador.
+/// 🔴 Fails CLOSED just like the checkout: with no `combos` catalogue a line that claims to be a
+/// set menu is not materialised, because its price would be coming from the browser.
 fn combo_closed_price(item: &Value, combo_catalog: Option<&Vec<&Value>>) -> Result<i64, String> {
     let combo_id = field(item, "combo_id");
     let rows = combo_catalog.ok_or_else(|| {
@@ -2234,18 +2239,19 @@ fn combo_closed_price(item: &Value, combo_catalog: Option<&Vec<&Value>>) -> Resu
     Ok(total)
 }
 
-/// UNA fila de `sales_order_item` tal y como la escriben las DOS puertas que materializan una línea
-/// de cuenta abierta: `sales.order.open` (la primera línea) y `sales.order.add_line` (las demás).
+/// ONE row of `sales_order_item`, exactly as written by the TWO doors that materialise a line of an
+/// open check: `sales.order.open` (the first line) and `sales.order.add_line` (every one after it).
 ///
-/// 🔴 sales#175 — **aquí es donde se congela el precio.** Desde que el cobro honra el `unit_price`
-/// de la fila, esa columna decide dinero, así que la resuelve el SERVIDOR contra
-/// `inventory.products.for_sale` (y `combos.options.all` para un menú) con exactamente el mismo
-/// criterio que `complete_sale` desde sales#68: si la línea dice ser de catálogo, manda el catálogo;
-/// un id que no está se rechaza; sin catálogo no se materializa. El `price` del payload es una
-/// propuesta en las dos puertas, igual que lo era en el cobro.
+/// 🔴 sales#175 — **this is where the price is frozen.** Now that the checkout honours the row's
+/// `unit_price`, that column decides money, so the SERVER resolves it against
+/// `inventory.products.for_sale` (and `combos.options.all` for a set menu) with exactly the rule
+/// `complete_sale` has had since sales#68: if a line claims to come from the catalogue, the
+/// catalogue wins; an id that is not there is refused; with no catalogue the line is not
+/// materialised. The payload's `price` is a proposal at both doors, just as it already was at the
+/// checkout.
 ///
-/// Devuelve los params del command `sales._insert_order_line` y el `line_total` PROVISIONAL
-/// (display) que suma al total del pedido.
+/// Returns the params of the `sales._insert_order_line` command and the PROVISIONAL `line_total`
+/// (display) that adds up into the order's total.
 fn order_line_row(
     item: &Value,
     line_id: &str,
@@ -2254,21 +2260,21 @@ fn order_line_row(
     product_catalog: Option<&Vec<&Value>>,
     combo_catalog: Option<&Vec<&Value>>,
 ) -> Result<(Map<String, Value>, i64), String> {
-    // Un menú NO se mide contra el catálogo de productos: su id no está ahí (es de `combos`), y su
-    // precio es el cerrado del pack. Va primero justo por eso.
+    // A set menu is NOT measured against the product catalogue: its id is not there (it belongs to
+    // `combos`), and its price is the pack's closed one. It goes first for exactly that reason.
     let (unit_price, unit_cost, unit_cat) = if !field(item, "combo_id").is_empty() {
         (
             combo_closed_price(item, combo_catalog)?,
             as_cents(item.get("cost").unwrap_or(&Value::Null), 0),
-            // La categoría fiscal de un menú la decide el COBRO al repartir (una si es prestación
-            // única, la del componente si el pack se parte). La fila no puede fijar una sola.
+            // The tax category of a set menu is decided by the CHECKOUT when it splits it (one if
+            // it is a single supply, the component's if the pack is split). The row cannot pin one.
             str_or(item, "tax_category_key", ""),
         )
     } else {
         match authoritative_price(item, product_catalog)? {
             Some((price, cost, cat)) => (price, cost, cat),
-            // Precio libre o servicio: no hay catálogo que `sales` pueda contrastar. Es la misma
-            // puerta abierta a propósito que documenta `is_catalog_line`, con su propio permiso.
+            // Open price or service: there is no catalogue `sales` can check it against. It is the
+            // same deliberately open door `is_catalog_line` documents, with its own permission.
             None => (
                 as_cents(item.get("price").unwrap_or(&Value::Null), 0),
                 as_cents(item.get("cost").unwrap_or(&Value::Null), 0),
@@ -2276,11 +2282,11 @@ fn order_line_row(
             ),
         }
     };
-    // Punto fijo 10⁶ + rechazo fuera de rejilla (ADR-0147): el pedido habla el mismo idioma
-    // que la venta — abrir con 0,0005 kg y cobrar sería mover el error de sitio.
+    // Fixed point 10⁶ + refusal off the grid (ADR-0147): the order speaks the same language as the
+    // sale — opening at 0.0005 kg and charging later would just move the error somewhere else.
     let qty = line_qty(item)?;
     let is_gift = item.get("is_gift").map(as_bool).unwrap_or(false);
-    // sales#71: descuento manual de la línea (%), mismo rango y mismo rechazo que el cobro.
+    // sales#71: manual line discount (%), same range and same refusal as the checkout.
     let line_disc = item.get("discount").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
     if !rate_in_range(line_disc) {
         return Err(reject("sales.discount_out_of_range", format!("line discount {line_disc}")));
@@ -2288,16 +2294,16 @@ fn order_line_row(
     let line_total = if is_gift {
         0
     } else if line_disc > 0.0 {
-        // Con descuento: precio × factor exacto × cantidad, UN solo HALF_UP — la misma fórmula
-        // que `calc_line_components` en el cobro, para que el provisional no derive del tique.
+        // With a discount: price × exact factor × quantity, a SINGLE HALF_UP — the same formula
+        // `calc_line_components` uses at checkout, so the preview does not drift from the receipt.
         let pq_raw = line_price_qty(item);
         let pq = Decimal::from(if pq_raw > 0 { pq_raw } else { QUANTITY_SCALE }) / Decimal::from(QUANTITY_SCALE);
         let factor = Decimal::ONE - Decimal::from_f64(line_disc).unwrap_or(Decimal::ZERO) / Decimal::from(100);
         let exact = Decimal::from(unit_price) * factor * (Decimal::from(qty) / Decimal::from(QUANTITY_SCALE)) / pq;
         money::round(exact)
     } else {
-        // Provisional (display), pero con la MISMA aritmética del SDK que el cobro: dinero
-        // entero por cantidad de precio, un solo HALF_UP (ADR-0147 §2.3).
+        // Provisional (display), but with the SDK's very arithmetic: integer money over the price
+        // quantity, a single HALF_UP (ADR-0147 §2.3).
         calculate_line_amount(
             unit_price,
             QuantityValue::from_raw(qty),
@@ -2308,43 +2314,44 @@ fn order_line_row(
 
     let mut p = Map::new();
     p.insert("id".into(), json!(line_id));
-    p.insert("order_id".into(), json!(order_id)); // FK al pedido (materialización temprana)
+    p.insert("order_id".into(), json!(order_id)); // FK to the order (early materialisation)
     p.insert("product_id".into(), item.get("product_id").cloned().unwrap_or(Value::Null));
     p.insert("product_name".into(), json!(as_str(item.get("product_name").unwrap_or(&Value::Null))));
     p.insert("product_sku".into(), json!(str_or(item, "product_sku", "")));
-    p.insert("quantity".into(), json!(qty)); // punto fijo, escala 10⁶ (INTEGER, ADR-0147)
-    // Contexto de unidades CONGELADO (ADR-0147 §2.4): cerrar y reabrir el pedido no puede
-    // cambiar lo que significa la cantidad.
+    p.insert("quantity".into(), json!(qty)); // fixed point, scale 10⁶ (INTEGER, ADR-0147)
+    // Unit context FROZEN (ADR-0147 §2.4): closing and reopening the order cannot change what the
+    // quantity means.
     freeze_unit_context(item, &mut p);
-    p.insert("unit_price".into(), json!(unit_price)); // céntimos (INTEGER), del CATÁLOGO
+    p.insert("unit_price".into(), json!(unit_price)); // minor units (INTEGER), from the CATALOGUE
     p.insert("is_gift".into(), json!(is_gift as i64));
     p.insert("gift_reason".into(), json!(if is_gift { str_or(item, "gift_reason", "") } else { String::new() }));
-    p.insert("line_total".into(), json!(line_total)); // céntimos, provisional (display)
-    // El COBRO necesita estos dos y no se re-derivan al reanudar el pedido: la categoría fiscal
-    // es la AUTORIDAD del IVA en servidor (ADR-0085) y el coste alimenta el arqueo de
-    // invitaciones (gift_total). Sin ellos, un pedido reanudado facturaría con el IVA erróneo.
+    p.insert("line_total".into(), json!(line_total)); // minor units, provisional (display)
+    // The CHECKOUT needs these two and cannot re-derive them after a reload: the tax category is
+    // the server-side authority of VAT (ADR-0085) and the cost feeds the gift total of the cash-up.
+    // Without them, a resumed order would be invoiced with the wrong VAT.
     p.insert("tax_category_key".into(), json!(unit_cat));
     p.insert("cost".into(), json!(unit_cost));
-    // sales#89: SERVICIO o producto. La línea de servicio no se mide contra el catálogo de
-    // `inventory` ni descuenta stock, y el pedido tiene que recordarlo para que una cuenta
-    // RETOMADA lo siga cobrando como servicio.
+    // sales#89: SERVICE or product. A service line is not measured against `inventory`'s catalogue
+    // and moves no stock, and the order has to remember it so a RESUMED check keeps charging it as
+    // a service.
     p.insert("is_service".into(), json!(item.get("is_service").map(as_bool).unwrap_or(false) as i64));
-    // sales#12: la categoría del producto se CONGELA en la línea del pedido — es lo que enruta
-    // la comanda (kitchen: categoría→estación) y tiene que sobrevivir a retomar la cuenta y a
-    // que alguien recategorice el producto mañana. Misma regla que `tax_category_key`.
+    // sales#12: the product's category is FROZEN on the order line — it is what routes the kitchen
+    // ticket (category → station) and it has to survive resuming the check and someone
+    // recategorising the product tomorrow. Same rule as `tax_category_key`.
     p.insert("category_id".into(), category_snapshot(item));
     p.insert("discount_percent".into(), json!(line_disc)); // sales#71
-    // pm#93: los suplementos también son de la FILA. `sales.order.add_line` los guardaba desde
-    // el primer día, pero esta puerta —por la que entra la PRIMERA línea de toda cuenta— no los
-    // reenviaba: la hamburguesa «sin cebolla» que abría la mesa los perdía al retomarla.
+    // pm#93: the supplements belong to the ROW too. `sales.order.add_line` stored them from day
+    // one, but this door — the one every check's FIRST line comes through — did not forward them:
+    // the "no onion" burger that opened the table lost them when it was resumed.
     p.insert("modifiers".into(), json!(order_modifiers_snapshot(item)?));
-    // sales#169: y la composición del MENÚ, por el mismo motivo y con el mismo criterio.
+    // sales#169: and the composition of the SET MENU, for the same reason and with the same rule.
     match order_combo_snapshot(item)? {
         Some(text) => {
             p.insert("combo".into(), json!(text));
-            // 🔴 Lo que marca la fila como combo lo MINTA EL SERVIDOR, igual que el precio
-            // (sales#68) y con la misma forma que en la venta (`{sale_id}-{idx}`): del pedido y
-            // la posición. Tomarlo del payload dejaría que dos cuentas dijeran ser el mismo menú.
+            // 🔴 What marks the row as a combo is MINTED BY THE SERVER, just like the price
+            // (sales#68) and with the same shape as in the sale (`{sale_id}-{idx}`): from the order
+            // and the position. Taking it from the payload would let two checks claim to be the
+            // same menu.
             p.insert("combo_group_ref".into(), json!(group_seed));
         }
         None => {
@@ -2366,19 +2373,20 @@ pub fn open_order_pure(input: Value) -> Result<Output, String> {
     let new_ids = context.get("new_ids").and_then(|v| v.as_array()).unwrap_or(&empty);
     let items = payload.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
     let order_id = new_ids.first().map(as_str).unwrap_or_default();
-    // sales#175: los catálogos de confianza. Abrir una cuenta CONGELA el precio de sus líneas, así
-    // que esta puerta necesita las mismas lecturas que el cobro para no congelar lo que diga el TPV.
+    // sales#175: the trusted catalogues. Opening a check FREEZES the price of its lines, so this
+    // door needs the same reads as the checkout or it would freeze whatever the till proposed.
     let product_catalog = tax::read_rows(&context, "inventory.products.for_sale");
     let combo_catalog = tax::read_rows(&context, "combos.options.all");
 
     let mut ops: Vec<Operation> = Vec::new();
-    // Cabecera del pedido: placeholder; se rellena el total provisional tras recorrer las líneas.
+    // Order header: a placeholder; the provisional total is filled in after walking the lines.
     let header_idx = ops.len();
     ops.push(Operation::sql("sales._insert_order", Map::new()));
 
-    // Líneas materializadas TEMPRANO (filas reales `sales_order_item`). Un `order` es MUTABLE: sus
-    // importes son **provisionales** (display en el TPV). La cuota fiscal HALF_UP + el desglose por
-    // tipo (ADR-0123/0085) se congelan al COBRAR (`complete_sale`), no al abrir el pedido.
+    // Lines materialised EARLY (real `sales_order_item` rows). An `order` is MUTABLE: its amounts
+    // are **provisional** (display on the till). The HALF_UP tax and the per-rate breakdown
+    // (ADR-0123/0085) are frozen at CHECKOUT (`complete_sale`), not when the order is opened.
+    // What IS frozen here is the unit price of every line (sales#175).
     let mut provisional_total: i64 = 0;
     for (i, item) in items.iter().enumerate() {
         let line_id = new_ids.get(i + 1).map(as_str).unwrap_or_default();
@@ -2420,20 +2428,21 @@ pub fn open_order_pure(input: Value) -> Result<Output, String> {
     Ok(Output { operations: ops, events: vec![event], ..Default::default() })
 }
 
-/// sales#175 — normaliza el payload PLANO de `sales.order.add_line` a la forma de item que usan
-/// `sales.order.open` y el cobro.
+/// sales#175 — normalises the FLAT payload of `sales.order.add_line` into the item shape used by
+/// `sales.order.open` and the checkout.
 ///
-/// Las dos puertas nacieron distintas porque una era SQL declarativo (parámetros planos, columnas
-/// TEXT) y la otra un handler (objetos). Al pasar `add_line` a handler se acepta **la forma vieja y
-/// la nueva** a propósito: el TPV instalado sigue mandando `unit_price`/`discount_percent` y los
-/// `modifiers`/`combo` serializados, y un hub no actualiza su web y su imagen en el mismo segundo.
+/// The two doors were born different because one was declarative SQL (flat parameters, TEXT
+/// columns) and the other a handler (objects). Turning `add_line` into a handler accepts **both the
+/// old and the new shape** on purpose: the installed till still sends `unit_price`/
+/// `discount_percent` and the serialised `modifiers`/`combo`, and a hub does not update its web app
+/// and its image in the same second.
 fn add_line_item(payload: &Value) -> Value {
     let mut item = match payload {
         Value::Object(map) => map.clone(),
         _ => Map::new(),
     };
-    // `unit_price` (forma plana) → `price` (forma de item). El valor es una PROPUESTA en ambas: lo
-    // que se persiste sale del catálogo (`order_line_row`).
+    // `unit_price` (flat shape) → `price` (item shape). It is a PROPOSAL in both: what gets
+    // persisted comes from the catalogue (`order_line_row`).
     if item.get("price").is_none() {
         if let Some(v) = payload.get("unit_price") {
             item.insert("price".into(), v.clone());
@@ -2444,9 +2453,9 @@ fn add_line_item(payload: &Value) -> Value {
             item.insert("discount".into(), v.clone());
         }
     }
-    // `modifiers` y `combo` viajaban SERIALIZADOS porque bindeaban a una columna TEXT. Se
-    // deserializan aquí para que los mismos `order_modifiers_snapshot`/`order_combo_snapshot` de la
-    // otra puerta los vuelvan a congelar — una sola forma de escribir esas dos columnas.
+    // `modifiers` and `combo` travelled SERIALISED because they bound to a TEXT column. They are
+    // decoded here so the same `order_modifiers_snapshot`/`order_combo_snapshot` as the other door
+    // freeze them again — one single way of writing those two columns.
     if let Some(text) = payload.get("modifiers").and_then(|v| v.as_str()) {
         item.insert(
             "modifiers".into(),
@@ -2467,18 +2476,19 @@ fn add_line_item(payload: &Value) -> Value {
     Value::Object(item)
 }
 
-/// sales#175 — añade UNA línea a una cuenta ya abierta, **con el catálogo delante**.
+/// sales#175 — adds ONE line to a check already open, **with the catalogue in hand**.
 ///
-/// Era SQL declarativo y bindeaba `:unit_price` del payload. Mientras el cobro re-preciaba contra
-/// `inventory.products.for_sale`, ese parámetro solo movía un provisional de display; desde que el
-/// cobro HONRA el `unit_price` de la fila (la cuenta se cobra al precio de cuando se pidió), esa
-/// columna decide dinero — y una columna que decide dinero no la escribe el navegador (sales#68).
+/// It used to be declarative SQL and bound `:unit_price` from the payload. While the checkout
+/// re-priced against `inventory.products.for_sale`, that parameter only moved a display preview;
+/// now that the checkout HONOURS the row's `unit_price` (the check is charged at the price it was
+/// ordered at), that column decides money — and a column that decides money is not written by the
+/// browser (sales#68).
 ///
-/// La guarda de tenancy que daba el `expect_rows` del command declarativo (pm#146) la da ahora la
-/// lectura `sales.order.get`, parametrizada por `payload.order_id` y filtrada por `hub_id` en su
-/// SQL: si el pedido no es de este hub, está borrado o no existe, no vuelve ninguna fila y se
-/// rechaza con **el mismo código de dominio** que antes (`sales.order_unavailable`), que es el que
-/// la UI ya traduce.
+/// The tenancy guard the declarative command got from `expect_rows` (pm#146) now comes from the
+/// `sales.order.get` read, parameterised by `payload.order_id` and filtered by `hub_id` in its own
+/// SQL: if the order is not this hub's, is deleted or does not exist, no row comes back and it is
+/// refused with **the same domain code** as before (`sales.order_unavailable`), the one the UI
+/// already translates.
 pub fn add_order_line_pure(input: Value) -> Result<Output, String> {
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
     let context = input.get("context").cloned().unwrap_or(Value::Null);
@@ -2486,8 +2496,8 @@ pub fn add_order_line_pure(input: Value) -> Result<Output, String> {
     let new_ids = context.get("new_ids").and_then(|v| v.as_array()).unwrap_or(&empty);
     let order_id = as_str(payload.get("order_id").unwrap_or(&Value::Null));
 
-    // El pedido tiene que existir, ser de ESTE hub y estar vivo. La query ya filtra por `hub_id`
-    // (el runtime lo inyecta), así que cero filas significa exactamente eso.
+    // The order has to exist, belong to THIS hub and be alive. The query already filters by
+    // `hub_id` (the runtime injects it), so zero rows means exactly that.
     let order = tax::read_rows(&context, "sales.order.get").unwrap_or_default();
     if order.is_empty() {
         return Err(reject(
@@ -2500,8 +2510,8 @@ pub fn add_order_line_pure(input: Value) -> Result<Output, String> {
     let combo_catalog = tax::read_rows(&context, "combos.options.all");
     let line_id = new_ids.first().map(as_str).unwrap_or_default();
     let item = add_line_item(&payload);
-    // El `combo_group_ref` lo minta el SERVIDOR con el id que el runtime acaba de acuñar para esta
-    // fila — misma regla que en `open_order`, donde lo minta el pedido y la posición.
+    // The `combo_group_ref` is minted by the SERVER from the id the runtime just coined for this
+    // row — the same rule as in `open_order`, where the order and the position mint it.
     let (p, _line_total) =
         order_line_row(&item, &line_id, &order_id, &line_id, product_catalog.as_ref(), combo_catalog.as_ref())?;
 
@@ -2510,8 +2520,8 @@ pub fn add_order_line_pure(input: Value) -> Result<Output, String> {
     Ok(Output {
         operations: vec![
             Operation::sql("sales._insert_order_line", p),
-            // El total PROVISIONAL del pedido se recompone en la MISMA transacción, igual que hacía
-            // la 2ª sentencia del command declarativo: si no, el total deriva de sus líneas.
+            // The order's PROVISIONAL total is recomputed in the SAME transaction, just as the 2nd
+            // statement of the declarative command did: otherwise the total drifts from its lines.
             Operation::sql("sales._recompute_order_total", recompute),
         ],
         ..Default::default()
@@ -3108,11 +3118,11 @@ mod tests {
         })
     }
 
-    /// sales#175 — abrir una cuenta CONGELA el precio de sus líneas, así que esa puerta contrasta
-    /// contra `inventory.products.for_sale` con el mismo criterio que el cobro desde sales#68.
-    /// Este helper entrega el catálogo que el hub tendría: el MISMO precio que pintó el TPV, que es
-    /// el caso normal. El caso en que difieren —el de esta issue— tiene sus propios tests, y ahí el
-    /// catálogo se escribe a mano.
+    /// sales#175 — opening a check FREEZES the price of its lines, so that door checks against
+    /// `inventory.products.for_sale` with the same rule the checkout has had since sales#68. This
+    /// helper delivers the catalogue the hub would have: the SAME price the till painted, which is
+    /// the normal case. The case where they differ — the one this issue is about — has its own
+    /// tests, and there the catalogue is written by hand.
     fn order_input(items: Value, ids: usize) -> Value {
         let rows: Vec<Value> = items
             .as_array()
@@ -7021,8 +7031,8 @@ mod tests {
             "price": 600, "quantity": 1_000_000, "combo_choices": choices
         }]);
         let mut inp = input(items, ids, 0);
-        // sales#175: abrir la cuenta congela el precio CERRADO del menú, así que esta puerta
-        // necesita el catálogo de `combos` — el mismo que ya usaba el cobro.
+        // sales#175: opening the check freezes the menu's CLOSED price, so this door needs the
+        // `combos` catalogue — the very one the checkout already used.
         inp["context"]["reads"] = json!({
             "combos.options.all": [
                 combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
@@ -7138,14 +7148,14 @@ mod tests {
     }
 
     #[test]
-    fn el_precio_que_el_NAVEGADOR_aparco_no_decide_lo_que_se_cobra() {
-        // El navegador aparcó el menú a 99,99 € (un bundle viejo, una integración, un bug).
+    fn the_price_the_BROWSER_parked_decides_nothing_about_what_is_charged() {
+        // The browser parked the set menu at 99.99 € (an old bundle, an integration, a bug).
         //
-        // Hasta sales#175 la fila conservaba ese 99,99 € —era display— y el cobro lo ignoraba
-        // porque re-preciaba contra `combos.options.all`. Desde sales#175 el cobro HONRA la fila,
-        // así que la fila no puede seguir naciendo del navegador: la escribe el servidor con el
-        // catálogo de `combos` delante. Las dos mitades de la lección siguen aquí — el navegador no
-        // decide, ni al aparcar ni al cobrar — y el número que se cobra es exactamente el mismo.
+        // Until sales#175 the row kept that 99.99 € — it was display — and the checkout ignored it
+        // because it re-priced against `combos.options.all`. Since sales#175 the checkout HONOURS
+        // the row, so the row can no longer be born from the browser: the server writes it with the
+        // `combos` catalogue in hand. Both halves of the lesson are still here — the browser does
+        // not decide, neither when parking nor when charging — and the amount charged is the same.
         let choices = json!([{ "option_id": "o-sandwich" }, { "option_id": "o-beer" }]);
         let options = json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
                              combo_option("o-beer", "g-drink", 1, "p-beer", 0, "goods", 600, "")]);
@@ -7153,10 +7163,10 @@ mod tests {
                               combo_product("p-beer", 200, "product.generic")]);
         let mut abrir = combo_order_input(choices, 3);
         abrir["payload"]["items"][0]["price"] = json!(9999);
-        let aparcada = orden(abrir);
-        let fila = &order_lines(&aparcada)[0];
-        assert_eq!(fila["unit_price"], json!(600), "la fila nace del catálogo, no del payload");
-        assert_eq!(fila["line_total"], json!(600), "y el provisional se calcula con él");
+        let parked = orden(abrir);
+        let fila = &order_lines(&parked)[0];
+        assert_eq!(fila["unit_price"], json!(600), "the row is born from the catalogue, not the payload");
+        assert_eq!(fila["line_total"], json!(600), "and the preview is computed with it");
 
         let mut inp = combo_input(json!([]), options, products, 8);
         inp["payload"]["items"] = json!([resumed_item(fila)]);
@@ -7165,28 +7175,29 @@ mod tests {
     }
 
 
-    // ── sales#175 · UNA CUENTA ABIERTA SE COBRA AL PRECIO QUE TENÍA CUANDO SE PIDIÓ ────────────
+    // ── sales#175 · AN OPEN CHECK IS CHARGED AT THE PRICE IT HAD WHEN IT WAS ORDERED ───────────
     //
-    // Decisión de mercado (8 referencias + foros, escrita en la issue y en ADR-0402): la línea
-    // CONGELA su precio en el momento en que se añade a la cuenta, y el cobro lo HONRA. Square lo
-    // dice con todas las letras de su Orders API («Even if the price of the item changes before the
-    // transaction completes, the Orders API uses that original price»), Simphony excluye del cambio
-    // de nivel de precio «menu items from a previous service round», y Odoo no recalcula las líneas
-    // de un pedido ya creado. Shopify probó lo contrario en 2025-01 y acabó publicando el
-    // `price lock` tras el hilo [BUG] de su comunidad.
+    // Market decision (8 references + forums, written on the issue and in its ADR): the line
+    // FREEZES its price the moment it is added to the check, and the checkout HONOURS it. Square
+    // spells it out in its Orders API ("Even if the price of the item changes before the
+    // transaction completes, the Orders API uses that original price"), Simphony excludes "menu
+    // items from a previous service round" from a price-level change, and Odoo does not recompute
+    // the lines of an order already created. Shopify tried the opposite in 2025-01 and ended up
+    // shipping the `price lock` after the [BUG] thread in its community.
     //
-    // 🔴 Congelar el precio de la FILA solo es seguro si la fila la escribió el SERVIDOR con el
-    // catálogo delante. Por eso las dos puertas que materializan una línea —abrir la cuenta y
-    // añadirle una línea— pasan a resolver el precio contra `inventory.products.for_sale`, igual
-    // que el cobro desde sales#68. El `price` del payload sigue sin decidir nada en ningún punto.
+    // 🔴 Freezing the ROW's price is only safe if the SERVER wrote the row with the catalogue in
+    // hand. That is why the two doors that materialise a line — opening the check and adding a line
+    // to it — now resolve the price against `inventory.products.for_sale`, exactly as the checkout
+    // has since sales#68. The payload's `price` still decides nothing, at any door.
 
-    /// El catálogo tal y como lo entrega el runtime al ABRIR la cuenta: la hamburguesa a 9,00 €.
+    /// The catalogue as the runtime delivers it when the check is OPENED: the burger at 9.00 €.
     fn burger_catalog(price: i64) -> Value {
         json!([{ "id": "p-burger", "price": price, "cost": 400, "tax_category_key": "product.generic" }])
     }
 
-    /// Abrir una cuenta con UNA línea de catálogo, con el catálogo puesto (o sin él si `products`
-    /// es `Null`). El `price` del payload es siempre 1 a propósito: si acaba decidiendo algo, se ve.
+    /// Opening a check with ONE catalogue line, with the catalogue delivered (or without it when
+    /// `products` is `Null`). The payload's `price` is always 1 on purpose: if it ever decides
+    /// anything, it shows.
     fn open_input(products: Value) -> Value {
         let items = json!([{ "product_id": "p-burger", "product_name": "Hamburguesa",
                              "price": 1, "cost": 1, "quantity": 1_000_000,
@@ -7198,7 +7209,7 @@ mod tests {
         inp
     }
 
-    /// La fila del pedido tal y como la devuelve `sales.order.lines` al retomar la cuenta.
+    /// The order row exactly as `sales.order.lines` gives it back when the check is resumed.
     fn order_row(id: &str, unit_price: i64) -> Value {
         json!({ "id": id, "order_id": "ord-1", "product_id": "p-burger",
                 "product_name": "Hamburguesa", "quantity": 1_000_000,
@@ -7207,8 +7218,8 @@ mod tests {
                 "modifiers": "[]", "combo": "{}", "combo_group_ref": null })
     }
 
-    /// Cobrar la cuenta `ord-1`: el TPV manda la línea nombrando SU fila (`order_item_id`), y el
-    /// runtime entrega las filas vivas del pedido en `sales.order.lines`.
+    /// Charging check `ord-1`: the till sends the line naming ITS row (`order_item_id`), and the
+    /// runtime delivers the order's live rows in `sales.order.lines`.
     fn charge_open_check(catalog_now: i64, rows: Value, payload_price: i64) -> Value {
         let items = json!([{ "product_id": "p-burger", "product_name": "Hamburguesa",
                              "price": payload_price, "quantity": 1_000_000,
@@ -7222,92 +7233,93 @@ mod tests {
     }
 
     #[test]
-    fn abrir_una_cuenta_congela_el_precio_del_CATALOGO_no_el_del_payload() {
-        let fila = &order_lines(&orden(open_input(burger_catalog(900))))[0];
-        assert_eq!(fila["unit_price"], json!(900), "la fila nace con el precio del catálogo");
-        assert_eq!(fila["line_total"], json!(900), "y el provisional se calcula con él");
-        assert_eq!(fila["cost"], json!(400), "el coste también sale del catálogo (arqueo de invitaciones)");
-        assert_eq!(fila["tax_category_key"], json!("product.generic"),
-                   "y la categoría fiscal, que es la autoridad del IVA (ADR-0085)");
+    fn opening_a_check_freezes_the_CATALOGUE_price_not_the_payload_one() {
+        let row = &order_lines(&orden(open_input(burger_catalog(900))))[0];
+        assert_eq!(row["unit_price"], json!(900), "the row is born with the catalogue's price");
+        assert_eq!(row["line_total"], json!(900), "and the preview is computed with it");
+        assert_eq!(row["cost"], json!(400), "the cost comes from the catalogue too (gift cash-up)");
+        assert_eq!(row["tax_category_key"], json!("product.generic"),
+                   "and the tax category, which is the server-side authority of VAT (ADR-0085)");
     }
 
     #[test]
-    fn abrir_una_cuenta_con_un_producto_que_no_esta_a_la_venta_se_rechaza() {
-        let otro = json!([{ "id": "p-otro", "price": 900, "cost": 0, "tax_category_key": "x" }]);
-        let err = open_order_pure(open_input(otro)).expect_err("no se abre a ciegas");
-        assert!(err.starts_with("sales.product_not_available"), "código inesperado: {err}");
+    fn opening_a_check_with_a_product_that_is_not_on_sale_is_refused() {
+        let other = json!([{ "id": "p-otro", "price": 900, "cost": 0, "tax_category_key": "x" }]);
+        let err = open_order_pure(open_input(other)).expect_err("no check is opened blind");
+        assert!(err.starts_with("sales.product_not_available"), "unexpected code: {err}");
     }
 
     #[test]
-    fn abrir_una_cuenta_SIN_catalogo_no_congela_el_precio_del_navegador() {
-        // Misma degradación que el cobro (sales#68): sin catálogo, una línea que dice ser de
-        // catálogo no se puede sostener. Aceptarla congelaría el precio que propuso el navegador,
-        // y a partir de ahí el cobro lo honraría sin preguntar.
-        let err = open_order_pure(open_input(Value::Null)).expect_err("sin catálogo no se abre");
-        assert!(err.starts_with("sales.catalog_unavailable"), "código inesperado: {err}");
+    fn opening_a_check_WITHOUT_a_catalogue_does_not_freeze_the_browsers_price() {
+        // Same degradation as the checkout (sales#68): with no catalogue, a line that claims to
+        // come from the catalogue cannot be sustained. Accepting it would freeze the price the
+        // browser proposed, and from then on the checkout would honour it without asking.
+        let err = open_order_pure(open_input(Value::Null)).expect_err("no catalogue, no check");
+        assert!(err.starts_with("sales.catalog_unavailable"), "unexpected code: {err}");
     }
 
     #[test]
-    fn una_linea_de_PRECIO_LIBRE_sigue_entrando_por_su_puerta() {
-        // Sin `product_id` no hay nada contra lo que contrastar: es la venta por departamento, con
-        // su propio permiso (`sales.sell_open_price`). El precio tecleado se congela tal cual.
+    fn an_OPEN_PRICE_line_still_comes_in_through_its_own_door() {
+        // With no `product_id` there is nothing to check it against: it is selling by department,
+        // with its own permission (`sales.sell_open_price`). The typed price is frozen as it is.
         let items = json!([{ "product_id": null, "product_name": "Varios", "price": 250,
                              "quantity": 1_000_000 }]);
         let mut inp = input(items, 3, 0);
         inp["context"]["reads"] = json!({ "inventory.products.for_sale": burger_catalog(900) });
-        let fila = &order_lines(&orden(inp))[0];
-        assert_eq!(fila["unit_price"], json!(250));
+        let row = &order_lines(&orden(inp))[0];
+        assert_eq!(row["unit_price"], json!(250));
     }
 
     #[test]
-    fn cobrar_una_cuenta_abierta_usa_el_precio_CONGELADO_aunque_el_catalogo_haya_SUBIDO() {
-        // El síntoma exacto de la issue: la mesa 4 pidió a 9,00 €, el encargado sube a 10,00 €.
+    fn charging_an_open_check_uses_the_FROZEN_price_even_if_the_catalogue_went_UP() {
+        // The exact symptom of the issue: table 4 ordered at 9.00 €, the manager raises it to 10.00.
         let out = sale(charge_open_check(1000, json!([order_row("line-1", 900)]), 900));
         let l = &sale_lines(&out)[0];
-        assert_eq!(l["unit_price"], json!(900), "se cobró el precio de la carta de cuando pidió");
+        assert_eq!(l["unit_price"], json!(900), "it charged the menu price it ordered at");
         assert_eq!(l["line_total"], json!(900));
     }
 
     #[test]
-    fn y_tambien_cuando_el_catalogo_ha_BAJADO() {
-        // Congelar es simétrico o no es congelar: Shopify documenta justo esta contrapartida («a
+    fn and_also_when_the_catalogue_went_DOWN() {
+        // Freezing is symmetrical or it is not freezing: Shopify documents this very trade-off ("a
         // price lock prevents prices from being raised, but they also prevent prices from being
-        // automatically lowered»). La rebaja se aplica a mano, con el descuento de línea, que es
-        // una decisión de quien atiende y queda con su nombre.
+        // automatically lowered"). A markdown is applied by hand, with the line discount, which is
+        // a decision of whoever is serving and carries their name.
         let out = sale(charge_open_check(800, json!([order_row("line-1", 900)]), 800));
         assert_eq!(sale_lines(&out)[0]["line_total"], json!(900));
     }
 
     #[test]
-    fn el_precio_del_PAYLOAD_sigue_sin_decidir_nada_en_una_cuenta_abierta() {
-        // El agujero de sales#68 no se reabre por la puerta de atrás: honrar la FILA no es honrar
-        // el payload. Aquí el navegador manda 1 céntimo y la fila dice 900.
+    fn the_PAYLOAD_price_still_decides_nothing_on_an_open_check() {
+        // The hole of sales#68 does not reopen through the back door: honouring the ROW is not
+        // honouring the payload. Here the browser sends 1 cent and the row says 900.
         let out = sale(charge_open_check(1000, json!([order_row("line-1", 900)]), 1));
-        assert_eq!(sale_lines(&out)[0]["line_total"], json!(900), "mandó el navegador");
+        assert_eq!(sale_lines(&out)[0]["line_total"], json!(900), "the browser won");
     }
 
     #[test]
-    fn una_linea_que_dice_venir_de_la_cuenta_y_no_esta_en_ella_se_rechaza() {
-        // Una fila ya cobrada (`sale_id IS NOT NULL`) o de otra cuenta no vuelve en la lectura.
-        // Cobrarla «cayendo al catálogo» sería cobrar dos veces lo mismo sin decir nada.
+    fn a_line_that_claims_to_come_from_the_check_and_is_not_in_it_is_refused() {
+        // A row already paid (`sale_id IS NOT NULL`) or belonging to another check does not come
+        // back in the read. Charging it by "falling back to the catalogue" would charge the same
+        // thing twice without saying a word.
         let err = complete_sale_pure(charge_open_check(1000, json!([order_row("line-9", 900)]), 900))
-            .expect_err("la línea no está en la cuenta");
-        assert!(err.starts_with("sales.order_line_not_available"), "código inesperado: {err}");
+            .expect_err("the line is not in the check");
+        assert!(err.starts_with("sales.order_line_not_available"), "unexpected code: {err}");
     }
 
     #[test]
-    fn con_pedido_y_sin_sus_lineas_el_cobro_falla_CERRADO() {
-        // La lectura no llegó (pedido borrado, carrera, integración). Cobrar «con lo que haya»
-        // volvería a re-preciar en silencio, que es justo lo que esta issue quita.
+    fn with_an_order_and_without_its_lines_the_checkout_fails_CLOSED() {
+        // The read did not arrive (deleted order, a race, an integration). Charging "with whatever
+        // is there" would re-price in silence, which is exactly what this issue removes.
         let err = complete_sale_pure(charge_open_check(1000, Value::Null, 900))
-            .expect_err("sin las filas del pedido no se cobra");
-        assert!(err.starts_with("sales.order_lines_unavailable"), "código inesperado: {err}");
+            .expect_err("no rows of the order, no checkout");
+        assert!(err.starts_with("sales.order_lines_unavailable"), "unexpected code: {err}");
     }
 
     #[test]
-    fn una_venta_de_MOSTRADOR_se_sigue_cobrando_por_el_catalogo() {
-        // Sin cuenta abierta no hay «cuando se pidió» distinto de «cuando se paga»: se toca el
-        // artículo y se cobra. El catálogo manda, exactamente como desde sales#68.
+    fn a_COUNTER_sale_is_still_priced_by_the_catalogue() {
+        // With no open check there is no "when it was ordered" apart from "when it is paid": you
+        // tap the item and charge. The catalogue wins, exactly as it has since sales#68.
         let items = json!([{ "product_id": "p-burger", "product_name": "Hamburguesa",
                              "price": 1, "quantity": 1_000_000 }]);
         let out = sale(input_fiscal(items, burger_catalog(1000), tax_catalog()));
@@ -7315,54 +7327,54 @@ mod tests {
     }
 
     #[test]
-    fn un_menu_aparcado_se_cobra_al_precio_CERRADO_que_tenia_al_pedirlo() {
-        // El gemelo del menú (sales#169): la composición ya se congelaba; ahora también el precio
-        // cerrado. `combos.options.all` sube el pack a 8,00 € mientras la mesa está abierta y la
-        // cuenta se sigue cobrando a los 6,00 € de cuando se pidió — repartidos, eso sí, con los
-        // pesos y los tipos de HOY, porque el reparto del art. 79.Dos es del devengo.
+    fn a_parked_set_menu_is_charged_at_the_CLOSED_price_it_was_ordered_at() {
+        // The twin for the set menu (sales#169): the composition was already frozen; now the closed
+        // price is too. `combos.options.all` raises the pack to 8.00 € while the table is open and
+        // the check is still charged the 6.00 € it ordered at — split, mind you, with TODAY's
+        // weights and rates, because the art. 79.Dos apportionment belongs to the accrual.
         let choices = json!([{ "option_id": "o-sandwich" }, { "option_id": "o-beer" }]);
         let options = json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 800, ""),
                              combo_option("o-beer", "g-drink", 1, "p-beer", 0, "goods", 800, "")]);
         let products = json!([combo_product("p-sandwich", 450, "shop.food"),
                               combo_product("p-beer", 200, "product.generic")]);
-        let fila = json!({ "id": "line-c", "order_id": "ord-1", "product_id": "c-1",
-                           "product_name": "Pack merienda", "quantity": 1_000_000,
-                           "unit_price": 600, "cost": 0, "tax_category_key": "",
-                           "is_gift": 0, "is_service": 0, "line_total": 600, "discount_percent": 0,
-                           "modifiers": "[]", "combo_group_ref": "ord-1-0",
-                           "combo": "{\"combo_id\":\"c-1\",\"combo_choices\":[{\"option_id\":\"o-sandwich\"},{\"option_id\":\"o-beer\"}]}" });
+        let row = json!({ "id": "line-c", "order_id": "ord-1", "product_id": "c-1",
+                          "product_name": "Pack merienda", "quantity": 1_000_000,
+                          "unit_price": 600, "cost": 0, "tax_category_key": "",
+                          "is_gift": 0, "is_service": 0, "line_total": 600, "discount_percent": 0,
+                          "modifiers": "[]", "combo_group_ref": "ord-1-0",
+                          "combo": "{\"combo_id\":\"c-1\",\"combo_choices\":[{\"option_id\":\"o-sandwich\"},{\"option_id\":\"o-beer\"}]}" });
         let mut inp = combo_input(json!([]), options, products, 8);
         inp["payload"]["order_id"] = json!("ord-1");
         inp["payload"]["items"] = json!([{ "product_id": "c-1", "product_name": "Pack merienda",
                                            "price": 600, "quantity": 1_000_000, "combo_id": "c-1",
                                            "combo_choices": choices, "order_item_id": "line-c" }]);
-        inp["context"]["reads"]["sales.order.lines"] = json!([fila]);
-        let cobrado: i64 = line_totals(&sale(inp)).iter().sum();
-        assert_eq!(cobrado, 600, "el menú se cobró al precio cerrado de hoy, no al de cuando se pidió");
+        inp["context"]["reads"]["sales.order.lines"] = json!([row]);
+        let charged: i64 = line_totals(&sale(inp)).iter().sum();
+        assert_eq!(charged, 600, "the menu was charged at today's closed price, not the ordered one");
     }
 
     #[test]
-    fn abrir_una_cuenta_con_un_menu_congela_su_precio_CERRADO() {
+    fn opening_a_check_with_a_set_menu_freezes_its_CLOSED_price() {
         let choices = json!([{ "option_id": "o-sandwich" }, { "option_id": "o-beer" }]);
         let options = json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
                              combo_option("o-beer", "g-drink", 1, "p-beer", 0, "goods", 600, "")]);
         let products = json!([combo_product("p-sandwich", 450, "shop.food"),
                               combo_product("p-beer", 200, "product.generic")]);
         let mut inp = combo_order_input(choices, 3);
-        inp["payload"]["items"][0]["price"] = json!(9999); // el navegador miente
+        inp["payload"]["items"][0]["price"] = json!(9999); // the browser lies
         inp["context"]["reads"] = json!({ "inventory.products.for_sale": products,
                                           "combos.options.all": options });
-        let fila = &order_lines(&orden(inp))[0];
-        assert_eq!(fila["unit_price"], json!(600), "el precio cerrado lo pone `combos`, no el TPV");
-        assert_eq!(fila["line_total"], json!(600));
+        let row = &order_lines(&orden(inp))[0];
+        assert_eq!(row["unit_price"], json!(600), "the closed price is `combos`', not the till's");
+        assert_eq!(row["line_total"], json!(600));
     }
 
-    // ── `sales.order.add_line` deja de ser una puerta de dinero ────────────────────────────────
+    // ── `sales.order.add_line` stops being a money door ────────────────────────────────────────
     //
-    // Era SQL declarativo y bindeaba `:unit_price` del payload. Mientras el cobro re-preciaba
-    // contra el catálogo eso solo movía un provisional de display; en cuanto el cobro HONRA la
-    // fila, ese parámetro decide dinero. Pasa a handler WASM con el mismo catálogo delante que la
-    // otra puerta, y el error de pedido inexistente lo sigue dando el mismo código de dominio.
+    // It was declarative SQL and bound `:unit_price` from the payload. While the checkout re-priced
+    // against the catalogue that only moved a display preview; the moment the checkout HONOURS the
+    // row, that parameter decides money. It becomes a WASM handler with the same catalogue in hand
+    // as the other door, and a missing order still yields the same domain code.
 
     fn add_line_input(products: Value, order: Value) -> Value {
         let mut inp = input(json!([]), 2, 0);
@@ -7384,29 +7396,30 @@ mod tests {
     }
 
     #[test]
-    fn anadir_una_linea_congela_el_precio_del_catalogo() {
+    fn adding_a_line_freezes_the_catalogue_price() {
         let out = add_order_line_pure(add_line_input(burger_catalog(900), open_order_row()))
-            .expect("la línea entra");
-        let fila = &order_lines(&out)[0];
-        assert_eq!(fila["unit_price"], json!(900), "el `unit_price` del payload no decide nada");
-        assert_eq!(fila["line_total"], json!(900));
+            .expect("the line goes in");
+        let row = &order_lines(&out)[0];
+        assert_eq!(row["unit_price"], json!(900), "the payload's `unit_price` decides nothing");
+        assert_eq!(row["line_total"], json!(900));
         assert!(out.operations.iter().any(|o| o.command == "sales._recompute_order_total"),
-                "el total provisional del pedido se recompone en la misma transacción");
+                "the order's provisional total is recomposed in the same transaction");
     }
 
     #[test]
-    fn anadir_una_linea_a_un_pedido_que_no_existe_se_rechaza_con_su_codigo() {
+    fn adding_a_line_to_an_order_that_does_not_exist_is_refused_with_its_code() {
         let err = add_order_line_pure(add_line_input(burger_catalog(900), json!([])))
-            .expect_err("ese pedido no está abierto en este negocio");
-        assert!(err.starts_with("sales.order_unavailable"), "código inesperado: {err}");
+            .expect_err("that order is not open in this business");
+        assert!(err.starts_with("sales.order_unavailable"), "unexpected code: {err}");
     }
 
     #[test]
-    fn anadir_una_linea_de_un_producto_que_no_esta_a_la_venta_se_rechaza() {
-        let otro = json!([{ "id": "p-otro", "price": 900, "cost": 0, "tax_category_key": "x" }]);
-        let err = add_order_line_pure(add_line_input(otro, open_order_row()))
-            .expect_err("no se añade a ciegas");
-        assert!(err.starts_with("sales.product_not_available"), "código inesperado: {err}");
+    fn adding_a_line_of_a_product_that_is_not_on_sale_is_refused() {
+        let other = json!([{ "id": "p-otro", "price": 900, "cost": 0, "tax_category_key": "x" }]);
+        let err = add_order_line_pure(add_line_input(other, open_order_row()))
+            .expect_err("nothing is added blind");
+        assert!(err.starts_with("sales.product_not_available"), "unexpected code: {err}");
     }
 
 }
+

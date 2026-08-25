@@ -3194,13 +3194,13 @@ export class ErpPosTouch extends LitElement {
       // delta lo pone el catálogo al cobrar— y `sales_sale_item.modifiers` se congelaba VACÍO, de
       // modo que el tique no podía nombrarlos por mucho que el papel supiera leerlos. Va SOLO el
       // `option_id`: un `price_delta` del navegador sería un descuento que se hace el cliente solo.
-      // 🔴 sales#175: y el ID DE SU FILA en la cuenta abierta (`order_item_id`). Es lo que hace que
-      // la mesa se cobre al precio que tenía CUANDO PIDIÓ: con él, el servidor honra el
-      // `unit_price` que congeló la fila en vez de re-preciar contra el catálogo, así que subir la
-      // hamburguesa a media tarde ya no cambia las cuentas que están abiertas. Va condicional
-      // porque una venta de MOSTRADOR no tiene fila previa —no hay un «cuando se pidió» distinto
-      // del cobro— y ahí sigue mandando el catálogo. No es una puerta de precio: el importe sale de
-      // la fila que escribió el SERVIDOR, nunca del `price` de este payload (sales#68).
+      // 🔴 sales#175: and THE ID OF ITS ROW in the open check (`order_item_id`). This is what makes
+      // the table pay the price it had WHEN IT ORDERED: with it, the server honours the
+      // `unit_price` the row froze instead of re-pricing against the catalogue, so raising the
+      // burger mid-afternoon no longer moves the checks that are already open. It is conditional
+      // because a COUNTER sale has no previous row — there is no "when it was ordered" apart from
+      // the payment — and there the catalogue still rules. It is not a price door: the amount comes
+      // from the row the SERVER wrote, never from this payload's `price` (sales#68).
       // 🔴 sales#146: y su `is_service`. El carrito ya lo lleva y el PEDIDO ya lo mandaba, pero el
       // cobro se armaba en este `map()` aparte y aquí el campo no estaba: el handler tomaba la
       // línea del servicio por una línea de catálogo (`is_catalog_line`), no encontraba su id en
