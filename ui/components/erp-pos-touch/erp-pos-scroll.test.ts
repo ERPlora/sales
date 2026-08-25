@@ -67,6 +67,25 @@ describe('la rejilla de producto scrollea dentro de su columna (sales#178)', () 
       .toMatch(/min-height\s*:\s*0/);
   });
 
+  // Medido en Chrome 151 sobre el montaje real del shell (ion-content > .outlet{height:100%} > WC)
+  // con 281 artículos: `min-height:0` en `.catalog` NO basta. `.body` es un grid con UNA fila
+  // implícita `auto`, y una pista `auto` se dimensiona por el CONTENIDO: su base es el min-content
+  // de `.catalog` (~6.800 px a 1440, ~13.600 a 834). Que el ITEM pueda encoger no impide que la
+  // PISTA crezca — el item simplemente se estira a una fila de 6.800 px. La fila tiene que ser
+  // acotada explícitamente: `minmax(0,1fr)` la ata al alto de `.body`, y ahí sí `.grid` alcanza su
+  // `overflow:auto` y el `ion-footer` del carrito se queda dentro de la pantalla.
+  it('la fila del grid está ACOTADA: no se dimensiona por el contenido de la rejilla', async () => {
+    const css = await cssDelPos();
+    const cuerpo = reglas(css, '.body');
+    const filas = cuerpo.match(/grid-template-rows\s*:\s*([^;}]+)/);
+
+    expect(filas, '.body declara su fila en vez de dejarla implícita (auto = alto del contenido)').toBeTruthy();
+    expect(
+      filas![1].replace(/\s+/g, ''),
+      'minmax(0,1fr): mínimo 0 (la fila no crece con la rejilla) y máximo el alto de .body',
+    ).toBe('minmax(0,1fr)');
+  });
+
   it('.grid es quien scrollea: overflow:auto', async () => {
     expect(reglas(await cssDelPos(), '.grid'), 'la rejilla se queda con el scroll del catálogo')
       .toMatch(/overflow\s*:\s*auto/);

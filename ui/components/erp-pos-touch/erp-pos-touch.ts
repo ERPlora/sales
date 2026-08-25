@@ -271,7 +271,14 @@ export class ErpPosTouch extends LitElement {
 
     .card { height:100%; display:flex; flex-direction:column; overflow:hidden; background:var(--bg);
       border:1px solid var(--ion-border-color); border-radius:16px; }
-    .body { position:relative; flex:1; min-height:0; display:grid; grid-template-columns: 1fr 23rem; }
+    /* sales#178 - grid-template-rows is the load-bearing half of the fix. .body holds ONE row and
+       an implicit auto row is sized by its CONTENT: its base size is .catalog's min-content, which
+       with a full restaurant menu (281 items) is ~6.800px at 1440 and ~13.600px at 834. Letting the
+       ITEM shrink (min-height:0) does not stop the TRACK from growing - the item just stretches to
+       fill a 6.800px row. minmax(0,1fr) pins the row to .body's own height, and only then does
+       .grid ever reach its overflow:auto and the cart's ion-footer stay on screen. */
+    .body { position:relative; flex:1; min-height:0; display:grid; grid-template-columns: 1fr 23rem;
+      grid-template-rows: minmax(0, 1fr); }
 
     /* ── Catálogo ── */
     /* sales#178 - min-height:0 is NOT decoration here: .catalog is a grid item, and a grid item's
