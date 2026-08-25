@@ -103,3 +103,57 @@ export function resolveLineTax(catRatesMap: Map<string, number>, taxCategoryKey?
   if (!taxCategoryKey) return 0;
   return catRatesMap.get(String(taxCategoryKey)) ?? 0;
 }
+
+// -- The bill's PROVISIONAL tax breakdown (sales#180) ------------------------------------------
+//
+// The bill taken to the table is the paper the customer reviews BEFORE paying, and Toast and
+// Lightspeed break the rates down there just as they do on the ticket. The ticket's breakdown is
+// frozen by the SERVER on checkout (`tax_breakdown`, ADR-0085): this is a preview, of the same
+// standing as the cart total.
+//
+// It mirrors the handler's `calc_line_components` so the two figures cannot disagree:
+//   - VAT-INCLUSIVE price -> the base is worked out of the charged amount and the quota is what is
+//     LEFT (`line - base`), because the amount is already fixed (sales#124);
+//   - VAT-EXCLUSIVE price -> the line is COMPOSED (`base + quota`).
+// One HALF_UP rounding per line, before summing, never over the total.
+
+/** A cart line, in the minimum the breakdown needs: its amount and its rate. */
+export interface TaxableAmount {
+  /** Line amount in minor units. Gross when VAT is included, net when it is not. */
+  amount: number;
+  /** Combined rate of the line (root + components), the same preview `resolveLineTax` gives. */
+  tax_rate?: number;
+}
+
+/** One entry of the breakdown, in minor units. */
+export interface TaxBreakdownEntry {
+  rate: number;
+  base: number;
+  amount: number;
+}
+
+/** HALF_UP over minor units, immune to floating-point noise (same rule as `pos-cart`). */
+function roundHalfUp(x: number): number {
+  return Math.round(x + 1e-9);
+}
+
+/**
+ * Provisional breakdown by rate, in minor units and SORTED by ascending rate (the way anyone reads
+ * it: 10 % before 21 %). Lines with no rate -- tax catalogue down, 0 % preview -- stay out:
+ * inventing a 0 % for them would put on the paper a breakdown nobody computed.
+ */
+export function previewTaxBreakdown(lines: TaxableAmount[], taxIncluded = true): TaxBreakdownEntry[] {
+  const byRate = new Map<number, TaxBreakdownEntry>();
+  for (const l of lines) {
+    const rate = Number(l.tax_rate) || 0;
+    const amount = Number(l.amount) || 0;
+    if (rate <= 0 || amount === 0) continue;
+    const base = taxIncluded ? roundHalfUp(amount / (1 + rate / 100)) : amount;
+    const tax = taxIncluded ? amount - base : roundHalfUp(base * rate / 100);
+    const acc = byRate.get(rate) ?? { rate, base: 0, amount: 0 };
+    acc.base += base;
+    acc.amount += tax;
+    byRate.set(rate, acc);
+  }
+  return [...byRate.values()].sort((a, b) => a.rate - b.rate);
+}

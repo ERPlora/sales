@@ -416,3 +416,31 @@ describe('the menu on the thermal paper (sales#154)', () => {
     expect(prebillJobId('order-1', menu('o-chicken')), 'and the same menu is the same job').toBe(prebillJobId('order-1', menu('o-chicken')));
   });
 });
+
+// sales#180 — `render_prebill` already prints `subtotal` + `tax_amount` under a `tax_label`
+// (crates/peripherals/src/escpos.rs): the bill knew how to show its VAT and was not being given it.
+describe('the bill carries its provisional VAT to the thermal paper (sales#180)', () => {
+  it('one rate: base, quota and a label the paper can name', () => {
+    const doc = prebillToPrintDocument([{ name: 'Menú', price: 1100, qty: 1, tax_rate: 10 }], SETTINGS);
+    expect(doc.subtotal, '10,00 of base').toBe(10);
+    expect(doc.tax_amount, '1,00 of quota').toBe(1);
+    expect(doc.tax_label, 'with a single rate the paper can name it').toBe('IVA 10%');
+    expect(doc.total).toBe(11);
+  });
+
+  it('several rates: the sum is NOT labelled with one of them, it would be lying', () => {
+    const doc = prebillToPrintDocument(
+      [{ name: 'Menú', price: 1100, qty: 1, tax_rate: 10 }, { name: 'Caña', price: 242, qty: 1, tax_rate: 21 }],
+      SETTINGS,
+    );
+    expect(doc.tax_label).toBeUndefined();
+    expect(doc.tax_amount).toBe(1.42);
+  });
+
+  it('no tax catalogue: the bill of always, without subtotal or quota', () => {
+    const doc = prebillToPrintDocument(CART, SETTINGS);
+    expect(doc.subtotal).toBeUndefined();
+    expect(doc.tax_amount).toBeUndefined();
+    expect(doc.tax_label).toBeUndefined();
+  });
+});

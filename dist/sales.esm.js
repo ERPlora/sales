@@ -1737,7 +1737,7 @@ function receiptToPrintableHtml(doc) {
   ${doc.business?.address ? `<div class="meta">${esc(doc.business.address)}</div>` : ""}
   ${doc.business?.tax_id ? `<div class="meta">${esc(doc.business.tax_id)}</div>` : ""}
   ${doc.number || doc.datetime ? `<div class="meta">${esc(doc.number || "")}${doc.number && doc.datetime ? " \xB7 " : ""}${esc(doc.datetime || "")}</div>` : ""}
-  ${doc.customer ? `<div class="meta">${esc(doc.customer)}</div>` : ""}
+  ${doc.customer ? `<div class="meta">${doc.customer_label ? `${esc(doc.customer_label)}: ` : ""}${esc(doc.customer)}</div>` : ""}
   <hr>
   <table>${lineas}</table>
   <hr>
@@ -1842,6 +1842,65 @@ function defaultPayMethod(methods) {
   return methods.find((m4) => (m4.type || "").trim().toLowerCase() === "cash") ?? methods.find((m4) => /efectiv|cash|met[\u00e1a]lico/i.test(m4.name || "")) ?? methods[0];
 }
 
+// ui/lib/pos-tax.ts
+function isRoot(r6) {
+  return r6.parent_id == null || String(r6.parent_id) === "";
+}
+function productSellability(catalog, taxCategoryKey) {
+  if (!taxCategoryKey) return "no_tax_category";
+  if (!catalog.available) return "unknown";
+  return catalog.rates.has(String(taxCategoryKey)) ? "sellable" : "no_tax_rule";
+}
+async function loadTaxCatalog(client) {
+  const map = /* @__PURE__ */ new Map();
+  let available = false;
+  try {
+    const all = await client.queryAll("taxes.rules.list");
+    available = Array.isArray(all) && all.length > 0;
+    const rootByCat = /* @__PURE__ */ new Map();
+    for (const r6 of all) {
+      if (!r6 || !r6.tax_category_key || !isRoot(r6)) continue;
+      const cat = String(r6.tax_category_key);
+      const cur = rootByCat.get(cat);
+      if (!cur || String(r6.valid_from ?? "") > String(cur.valid_from ?? "")) rootByCat.set(cat, r6);
+    }
+    for (const [cat, root] of rootByCat) {
+      let pct = Number(root.rate_pct) || 0;
+      for (const r6 of all) {
+        if (r6 && String(r6.parent_id ?? "") === String(root.id ?? "__none__") && root.id != null) {
+          pct += Number(r6.rate_pct) || 0;
+        }
+      }
+      map.set(cat, pct);
+    }
+  } catch {
+    available = false;
+  }
+  return { rates: map, available };
+}
+function resolveLineTax(catRatesMap, taxCategoryKey) {
+  if (!taxCategoryKey) return 0;
+  return catRatesMap.get(String(taxCategoryKey)) ?? 0;
+}
+function roundHalfUp(x2) {
+  return Math.round(x2 + 1e-9);
+}
+function previewTaxBreakdown(lines, taxIncluded = true) {
+  const byRate = /* @__PURE__ */ new Map();
+  for (const l3 of lines) {
+    const rate = Number(l3.tax_rate) || 0;
+    const amount = Number(l3.amount) || 0;
+    if (rate <= 0 || amount === 0) continue;
+    const base = taxIncluded ? roundHalfUp(amount / (1 + rate / 100)) : amount;
+    const tax = taxIncluded ? amount - base : roundHalfUp(base * rate / 100);
+    const acc = byRate.get(rate) ?? { rate, base: 0, amount: 0 };
+    acc.base += base;
+    acc.amount += tax;
+    byRate.set(rate, acc);
+  }
+  return [...byRate.values()].sort((a3, b3) => a3.rate - b3.rate);
+}
+
 // ui/lib/document-mappers.ts
 function minor(cents2) {
   return Number(cents2 ?? 0);
@@ -1866,13 +1925,13 @@ function payLabel(name, t7) {
   if (!name) return void 0;
   return t7 ? payMethodDisplayName({ id: "", name }, t7) : name;
 }
-function receiptLabels(t7) {
+function receiptLabels(t7, doc) {
   return {
     empty: t7("ui.docEmpty"),
     phone: t7("ui.docPhone"),
     receipt: t7("ui.docReceipt"),
     servedBy: t7("ui.docServedBy"),
-    customer: t7("ui.docCustomer"),
+    customer: doc?.customer_is_table ? t7("ui.docTable") : t7("ui.docCustomer"),
     item: t7("ui.docItem"),
     amount: t7("ui.docAmount"),
     noLines: t7("ui.docNoLines"),
@@ -2019,7 +2078,9 @@ function menuLine(siblings, combo, t7) {
 function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName = DEFAULT_BUSINESS_NAME, t7) {
   const header = splitHeader(settings.receipt_header);
   return {
-    business: { name: header.name || fiscal.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || void 0 },
+    // sales#180 — the same priority as the bill: deliberate branding, then the legal name (the one
+    // frozen on the invoice, else the one the hub holds today), then the translated fallback.
+    business: { name: header.name || fiscal.issuer_name || settings.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || void 0 },
     number: fiscal.number || sale.sale_number,
     datetime: formatDateTime(sale.created_at, locale),
     customer: fiscal.customer_name || sale.customer_name || void 0,
@@ -2065,7 +2126,7 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", f
   }));
   const taxes = parseTaxes(sale.tax_breakdown, t7);
   return {
-    issuer: { name: fiscal.issuer_name || header.name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || void 0 },
+    issuer: { name: fiscal.issuer_name || header.name || settings.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || void 0 },
     customer: { name: fiscal.customer_name || sale.customer_name || "Cliente", tax_id: fiscal.customer_tax_id || void 0 },
     number: fiscal.number || sale.sale_number,
     issue_date: formatDateTime(sale.created_at, locale) || "",
@@ -2085,25 +2146,38 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", f
 }
 function orderToPrebill(lines, settings = {}, opts = {}) {
   const header = splitHeader(settings.receipt_header);
-  const cents2 = (l3) => l3.is_gift ? 0 : Math.round(l3.price * l3.qty);
-  const total = lines.reduce((s5, l3) => s5 + cents2(l3), 0);
+  const lineAmount2 = (l3) => l3.is_gift ? 0 : Math.round(l3.price * l3.qty);
+  const taxIncluded = settings.default_tax_included !== 0;
+  const taxes = previewTaxBreakdown(lines.map((l3) => ({ amount: lineAmount2(l3), tax_rate: l3.tax_rate })), taxIncluded);
+  const gross = lines.reduce((s5, l3) => s5 + lineAmount2(l3), 0);
+  const taxTotal = taxes.reduce((s5, x2) => s5 + x2.amount, 0);
+  const total = taxIncluded ? gross : gross + taxTotal;
+  const base = taxes.reduce((s5, x2) => s5 + x2.base, 0);
+  const table = opts.tableLabel || void 0;
+  const customer = table || opts.customerName || void 0;
   return {
     // Same job as the hardcoded «CUENTA» of the ESC/POS renderer: the first line tells this paper
     // from a fiscal ticket at a glance. The UI passes the translation; the fallback is canonical
     // English (ADR-0055).
     title: opts.title ?? "Bill",
     business: {
-      name: header.name || opts.fallbackName || DEFAULT_BUSINESS_NAME,
+      // sales#180 — the SAME priority as the ticket: the deliberate ticket branding
+      // (`receipt_header`), and failing that the business's LEGAL name (ADR-0061, which the ticket
+      // reads already frozen on its invoice). The generic default is the LAST resort, not the
+      // first: it was what the customer read on their bill while the ticket for the same sale
+      // came out right.
+      name: header.name || settings.issuer_name || opts.fallbackName || DEFAULT_BUSINESS_NAME,
       address: header.address
     },
     // number/qr/payment AUSENTES a propósito: esto no es una factura (ver doc de la función).
     datetime: formatDateTime(opts.datetime ?? (/* @__PURE__ */ new Date()).toISOString(), opts.locale ?? "es"),
-    customer: opts.tableLabel || void 0,
+    customer,
+    ...table ? { customer_is_table: true } : {},
     lines: lines.map((l3) => ({
       name: l3.is_gift ? `${l3.name} (invitaci\xF3n)` : l3.name,
       qty: l3.qty,
       unit_price: minor(l3.price),
-      total: minor(cents2(l3)),
+      total: minor(lineAmount2(l3)),
       // sales#148: ya resueltos contra el catálogo VIVO por quien pide la cuenta (la fila del
       // pedido guarda solo los `option_id`; el nombre y el importe no son del navegador).
       ...paperModifiers(l3.modifiers, l3.combo),
@@ -2111,8 +2185,11 @@ function orderToPrebill(lines, settings = {}, opts = {}) {
       ...paperUnit(l3)
       // sales#28: la unidad congelada, para el papel
     })),
+    // The subtotal only exists when there is something to break down: with no tax catalogue the
+    // bill comes out as it did, with its total and nothing else.
+    ...taxes.length ? { subtotal: base } : {},
+    taxes: taxes.map((x2) => ({ label: taxLabel(String(x2.rate), void 0), base: x2.base, amount: x2.amount })),
     total: minor(total),
-    taxes: [],
     currency: settings.currency || "\u20AC",
     decimals: hubDecimals(),
     // Inglés canónico (ADR-0055): la UI pasa el texto ya traducido en `opts.notice`; esto es solo
@@ -2142,6 +2219,14 @@ function prebillToPrintDocument(lines, settings = {}, opts = {}) {
     // waiter needs to know which paper goes where.
     customer_name: screen.customer,
     items: screen.lines.map((l3) => ({ name: l3.name, quantity: printQuantity(l3.qty, l3.unit_code), total: euros(l3.total, screen.decimals), ...printNotes(l3) })),
+    // sales#180 — the bill carries its provisional VAT too: `render_prebill` already prints
+    // `subtotal` + `tax_amount` under a `tax_label`, so this is data the paper knew how to show and
+    // was not being given. With more than one rate the aggregate is NOT labelled with one of them.
+    ...screen.subtotal != null ? { subtotal: euros(screen.subtotal, screen.decimals) } : {},
+    ...screen.taxes?.length ? {
+      tax_amount: euros(screen.taxes.reduce((s5, t7) => s5 + (t7.amount ?? 0), 0), screen.decimals),
+      ...screen.taxes.length === 1 ? { tax_label: screen.taxes[0].label } : {}
+    } : {},
     total: euros(screen.total, screen.decimals),
     notice: screen.footer
   };
@@ -3753,6 +3838,7 @@ var es_default = {
     docPhone: "Tel.",
     docReceipt: "Tiquet",
     docServedBy: "Atendido por",
+    docTable: "Mesa",
     docCustomer: "Cliente",
     docItem: "Concepto",
     docAmount: "Importe",
@@ -4093,6 +4179,7 @@ var en_default = {
     docPhone: "Tel.",
     docReceipt: "Receipt",
     docServedBy: "Served by",
+    docTable: "Table",
     docCustomer: "Customer",
     docItem: "Item",
     docAmount: "Amount",
@@ -4865,14 +4952,14 @@ function firstNewId(res) {
   return Array.isArray(ids) && typeof ids[0] === "string" ? ids[0] : "";
 }
 function provisionalLineTotal(unitPrice, qty, isGift, discount = 0) {
-  return isGift ? 0 : roundHalfUp(unitPrice * qty * (1 - discount / 100));
+  return isGift ? 0 : roundHalfUp2(unitPrice * qty * (1 - discount / 100));
 }
-function roundHalfUp(x2) {
+function roundHalfUp2(x2) {
   return Math.round(x2 + 1e-9);
 }
 function lineAmount(l3, ticketDiscount = 0) {
   if (l3.is_gift) return 0;
-  return roundHalfUp(l3.price * l3.qty * (1 - (l3.discount ?? 0) / 100) * (1 - ticketDiscount / 100));
+  return roundHalfUp2(l3.price * l3.qty * (1 - (l3.discount ?? 0) / 100) * (1 - ticketDiscount / 100));
 }
 function cartTotal(cart, ticketDiscount = 0) {
   return cart.reduce((s5, l3) => s5 + lineAmount(l3, ticketDiscount), 0);
@@ -5967,47 +6054,6 @@ __decorateClass10([
 ], OkStatusPill.prototype, "size");
 define("ok-status-pill", OkStatusPill);
 
-// ui/lib/pos-tax.ts
-function isRoot(r6) {
-  return r6.parent_id == null || String(r6.parent_id) === "";
-}
-function productSellability(catalog, taxCategoryKey) {
-  if (!taxCategoryKey) return "no_tax_category";
-  if (!catalog.available) return "unknown";
-  return catalog.rates.has(String(taxCategoryKey)) ? "sellable" : "no_tax_rule";
-}
-async function loadTaxCatalog(client) {
-  const map = /* @__PURE__ */ new Map();
-  let available = false;
-  try {
-    const all = await client.queryAll("taxes.rules.list");
-    available = Array.isArray(all) && all.length > 0;
-    const rootByCat = /* @__PURE__ */ new Map();
-    for (const r6 of all) {
-      if (!r6 || !r6.tax_category_key || !isRoot(r6)) continue;
-      const cat = String(r6.tax_category_key);
-      const cur = rootByCat.get(cat);
-      if (!cur || String(r6.valid_from ?? "") > String(cur.valid_from ?? "")) rootByCat.set(cat, r6);
-    }
-    for (const [cat, root] of rootByCat) {
-      let pct = Number(root.rate_pct) || 0;
-      for (const r6 of all) {
-        if (r6 && String(r6.parent_id ?? "") === String(root.id ?? "__none__") && root.id != null) {
-          pct += Number(r6.rate_pct) || 0;
-        }
-      }
-      map.set(cat, pct);
-    }
-  } catch {
-    available = false;
-  }
-  return { rates: map, available };
-}
-function resolveLineTax(catRatesMap, taxCategoryKey) {
-  if (!taxCategoryKey) return 0;
-  return catRatesMap.get(String(taxCategoryKey)) ?? 0;
-}
-
 // ui/lib/pos-open-price.ts
 function buildOpenPriceLine(input) {
   const name = input.name.trim();
@@ -6294,6 +6340,7 @@ var ErpPosTouch = class extends i3 {
     this.cart = [];
     this.methods = [];
     this.settings = {};
+    this.businessName = "";
     this.paying = false;
     this.tendered = "";
     this.openPriceOpen = false;
@@ -7132,6 +7179,7 @@ var ErpPosTouch = class extends i3 {
         prods,
         methods,
         settingsRows,
+        businessRows,
         savedCart,
         parked,
         cats,
@@ -7146,6 +7194,11 @@ var ErpPosTouch = class extends i3 {
         erplora2().queryAll("inventory.products.list").catch(() => []),
         erplora2().query("sales.payment_methods").catch(() => []),
         erplora2().query("sales.settings.get").catch(() => []),
+        // sales#180 — the business identity for the BILL's header. Deliberately apart from the
+        // settings: those require `sales.manage_settings` (a cashier has none) and return zero rows
+        // until somebody saves them, which is exactly the freshly built hub where the bill came out
+        // headed with the generic default.
+        erplora2().query("sales.business.get").catch(() => []),
         this.restoreOpenOrder(),
         listOpenChecks(erplora2()),
         erplora2().queryAll("inventory.categories.list", { sort: "name", dir: "asc" }).catch(() => []),
@@ -7188,6 +7241,7 @@ var ErpPosTouch = class extends i3 {
       }
       this.methods = rows2(methods);
       this.settings = rows2(settingsRows)[0] || {};
+      this.businessName = rows2(businessRows)[0]?.name || "";
       this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
       this.payMethod = defaultPayMethod(this.payMethods);
       this.parked = parked;
@@ -8291,6 +8345,10 @@ var ErpPosTouch = class extends i3 {
       is_gift: l3.is_gift,
       unit_code: l3.unit_code,
       unit_name: l3.unit_name,
+      // sales#180: and its VAT rate (the same PREVIEW the cart line already carries), so the bill
+      // breaks the rates down the way Toast and Lightspeed do on a pre-bill. The real rate is
+      // resolved by the server on checkout (ADR-0085); that does not change.
+      tax_rate: l3.tax_rate,
       // sales#148: y sus suplementos, o el cliente paga un «+ queso» que su papel no nombra.
       ...this.resolvedModifiers(l3) ? { modifiers: this.resolvedModifiers(l3) } : {},
       // sales#154: y la composición del menú, o la cuenta dice «Menú del día» sin decir cuál.
@@ -8317,17 +8375,42 @@ var ErpPosTouch = class extends i3 {
       })
     };
   }
-  async printPrebill() {
-    await this.loadModifierCatalog();
-    const lines = this.prebillLines();
-    const opts = {
+  /** The settings the BILL is built from: the till's, plus the business's LEGAL name, which heads
+   *  the paper when there is no deliberate ticket header (sales#180). The currency scale is not
+   *  passed: the mapper reads it from the SDK itself (`hubDecimals`). */
+  get billSettings() {
+    return { ...this.settings, issuer_name: this.businessName };
+  }
+  /** Whose bill this is: the TABLE when the order is a dine-in one, the customer otherwise. It is
+   *  what goes in the only labelled meta slot `<ok-receipt>` has, and its label follows from it. */
+  get billWho() {
+    return {
       tableLabel: this.tableLabel || void 0,
+      customerName: this.customerName || void 0,
       title: t5("ui.prebillTitle"),
       notice: t5("ui.prebillNotice"),
       fallbackName: t5("ui.docDefaultBusiness")
     };
+  }
+  /** The BILL on screen. It is composed once -- not twice in the template -- because both the
+   *  document and the LABEL of its meta slot come out of it: `<ok-receipt>` labels that slot with
+   *  `labels.customer`, and on a dine-in bill what sits there is the TABLE (sales#180). Until the
+   *  element has a slot of its own for the table (ERPlora/outfitkit#87), the document decides the
+   *  label. */
+  renderPrebillDoc() {
+    const doc = orderToPrebill(this.prebillLines(), this.billSettings, this.billWho);
+    return b2`<ok-receipt id="prebill-doc" .receipt=${doc} .labels=${receiptLabels(t5, doc)}></ok-receipt>`;
+  }
+  async printPrebill() {
+    await this.loadModifierCatalog();
+    const lines = this.prebillLines();
+    const opts = this.billWho;
+    const settings = this.billSettings;
+    const doc = orderToPrebill(lines, settings, opts);
     const html = receiptToPrintableHtml({
-      ...orderToPrebill(lines, this.settings, opts),
+      ...doc,
+      // sales#180: and the paper labels that datum for what it is -- "Table: S1", not a bare "S1".
+      customer_label: doc.customer ? doc.customer_is_table ? t5("ui.docTable") : t5("ui.docCustomer") : void 0,
       // sales#120: el papel de la cuenta sale en el idioma del hub (labels, no plantilla).
       labels: { subtotal: t5("ui.docSubtotal"), total: t5("ui.docTotal"), change: t5("ui.docChange"), document: t5("ui.document") }
     });
@@ -8340,7 +8423,7 @@ var ErpPosTouch = class extends i3 {
       role: "receipt",
       documentType: "prebill",
       jobId: prebillJobId(this.orderId, lines),
-      data: prebillToPrintDocument(lines, this.settings, opts),
+      data: prebillToPrintDocument(lines, settings, opts),
       html
     }).catch((e7) => ({ via: "none", error: e7 instanceof Error ? e7.message : String(e7) }));
     if (res?.via === "bridge" || res?.via === "queue") return;
@@ -9770,11 +9853,7 @@ var ErpPosTouch = class extends i3 {
                hub (sales#87). Both defects were that one line: no document AND no labels, so the
                component fell back to its own built-in English DEFAULT_LABELS.
                (No backticks in comments inside a Lit template: they close the literal.) -->
-          <ok-receipt id="prebill-doc" .receipt=${orderToPrebill(
-      this.prebillLines(),
-      this.settings,
-      { tableLabel: this.tableLabel || void 0, title: t5("ui.prebillTitle"), notice: t5("ui.prebillNotice"), fallbackName: t5("ui.docDefaultBusiness") }
-    )} .labels=${receiptLabels(t5)}></ok-receipt>
+          ${this.renderPrebillDoc()}
         </ion-content>
       </ion-modal>
     </div>`;
@@ -9813,6 +9892,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "settings", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "businessName", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "paying", 2);

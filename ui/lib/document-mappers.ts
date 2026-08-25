@@ -16,6 +16,9 @@ import { payMethodDisplayName } from './pay-icons.js';
 import { modifierLabel, modifierNote, type PrintedModifier } from './paper-modifiers.js';
 // sales#154 — the menu on the paper lives in ONE place too (`paper-combos.ts`), for the same reason.
 import { comboNote, componentLabel, groupComboLines, type PrintedCombo } from './paper-combos.js';
+// sales#180 — the bill's PROVISIONAL tax breakdown comes through the same door as the cart's tax
+// preview, not through a second arithmetic that would end up disagreeing with it.
+import { previewTaxBreakdown } from './pos-tax.js';
 
 export { modifierIdentity, modifierLabel, modifierNote, type PrintedModifier } from './paper-modifiers.js';
 export { comboIdentity, comboNote, componentLabel, parseComboSnapshot, type PrintedCombo, type PrintedComboComponent } from './paper-combos.js';
@@ -67,13 +70,13 @@ function payLabel(name: string | undefined, t?: Translate): string | undefined {
 }
 
 /** Labels del tiquet (`<ok-receipt .labels>`) desde el catálogo del módulo (ADR-0055). */
-export function receiptLabels(t: Translate): OkReceiptLabels {
+export function receiptLabels(t: Translate, doc?: { customer_is_table?: boolean }): OkReceiptLabels {
   return {
     empty: t('ui.docEmpty'),
     phone: t('ui.docPhone'),
     receipt: t('ui.docReceipt'),
     servedBy: t('ui.docServedBy'),
-    customer: t('ui.docCustomer'),
+    customer: doc?.customer_is_table ? t('ui.docTable') : t('ui.docCustomer'),
     item: t('ui.docItem'),
     amount: t('ui.docAmount'),
     noLines: t('ui.docNoLines'),
@@ -223,6 +226,13 @@ export interface SaleSettings {
   receipt_marketing_text?: string;
   default_document_format?: string; // 'ticket' | 'invoice'
   currency?: string;
+  /** sales#180 — the business's LEGAL name (`hub_settings.business_legal_name`, single source
+   *  ADR-0061), read live through `sales.business.get`. It is the same datum the ticket gets
+   *  already frozen on its invoice (`FiscalData.issuer_name`); a bill has no invoice yet. */
+  issuer_name?: string;
+  /** Do catalogue prices carry VAT inside? (`sales_settings.default_tax_included`, 1 by default.)
+   *  It decides how the bill's PROVISIONAL breakdown is worked out. */
+  default_tax_included?: number;
 }
 
 /** Datos fiscales (VeriFactu) del documento: QR de validación AEAT, número oficial y partes.
@@ -358,7 +368,13 @@ export interface PaperReceiptLine extends ReceiptLine {
 }
 
 /** `ReceiptData` con líneas que llevan su unidad — lo que devuelven los mappers de tiquet. */
-export type PaperReceiptData = ReceiptData & { lines: PaperReceiptLine[] };
+export type PaperReceiptData = ReceiptData & {
+  lines: PaperReceiptLine[];
+  /** sales#180 — what sits in the `customer` slot is the TABLE. `<ok-receipt>` labels that slot
+   *  with `labels.customer`, so whoever paints it has to ask for the right label
+   *  (`receiptLabels(t, doc)`); the HTML paper does the same through `customer_label`. */
+  customer_is_table?: boolean;
+};
 
 /** El contexto de unidades de la línea, en la forma del papel: sin unidad → sin campos (una
  *  línea antigua no fabrica unidades que nadie congeló). */
@@ -436,7 +452,9 @@ export function saleToReceipt(
 ): PaperReceiptData {
   const header = splitHeader(settings.receipt_header);
   return {
-    business: { name: header.name || fiscal.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || undefined },
+    // sales#180 — the same priority as the bill: deliberate branding, then the legal name (the one
+    // frozen on the invoice, else the one the hub holds today), then the translated fallback.
+    business: { name: header.name || fiscal.issuer_name || settings.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || undefined },
     number: fiscal.number || sale.sale_number,
     datetime: formatDateTime(sale.created_at, locale),
     customer: fiscal.customer_name || sale.customer_name || undefined,
@@ -492,7 +510,7 @@ export function saleToInvoice(
   }));
   const taxes = parseTaxes(sale.tax_breakdown, t);
   return {
-    issuer: { name: fiscal.issuer_name || header.name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || undefined },
+    issuer: { name: fiscal.issuer_name || header.name || settings.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || undefined },
     customer: { name: fiscal.customer_name || sale.customer_name || 'Cliente', tax_id: fiscal.customer_tax_id || undefined },
     number: fiscal.number || sale.sale_number,
     issue_date: formatDateTime(sale.created_at, locale) || '',
@@ -531,6 +549,10 @@ export interface PrebillLine {
    *  pinta la cantidad con su unidad, como el tiquet. */
   unit_code?: string;
   unit_name?: string;
+  /** sales#180 — the line's VAT rate, the same preview the cart line already carries
+   *  (`resolveLineTax`). It only feeds the bill's PROVISIONAL breakdown: the real rate is resolved
+   *  by the server on checkout (ADR-0085). Without it, the line stays out of the breakdown. */
+  tax_rate?: number;
 }
 
 /**
@@ -548,35 +570,67 @@ export interface PrebillLine {
 export function orderToPrebill(
   lines: PrebillLine[],
   settings: SaleSettings = {},
-  opts: { tableLabel?: string; datetime?: string; locale?: string; title?: string; notice?: string; fallbackName?: string } = {},
+  opts: {
+    tableLabel?: string;
+    customerName?: string;
+    datetime?: string;
+    locale?: string;
+    title?: string;
+    notice?: string;
+    fallbackName?: string;
+  } = {},
 ): PaperReceiptData {
   const header = splitHeader(settings.receipt_header);
-  const cents = (l: PrebillLine) => (l.is_gift ? 0 : Math.round(l.price * l.qty));
-  const total = lines.reduce((s, l) => s + cents(l), 0);
+  // Provisional amount of the line, in minor units. A comped line is not charged.
+  const lineAmount = (l: PrebillLine) => (l.is_gift ? 0 : Math.round(l.price * l.qty));
+  const taxIncluded = settings.default_tax_included !== 0;
+  // sales#180 — the breakdown the customer reviews before paying. With VAT-inclusive prices the
+  // lines ALREADY are the gross, so the total does not move; with VAT-exclusive ones the line is
+  // COMPOSED of base + quota and the total is that sum, which is what the server will charge
+  // (`calc_line_components`).
+  const taxes = previewTaxBreakdown(lines.map((l) => ({ amount: lineAmount(l), tax_rate: l.tax_rate })), taxIncluded);
+  const gross = lines.reduce((s, l) => s + lineAmount(l), 0);
+  const taxTotal = taxes.reduce((s, x) => s + x.amount, 0);
+  const total = taxIncluded ? gross : gross + taxTotal;
+  const base = taxes.reduce((s, x) => s + x.base, 0);
+  // The table wins over the customer in the ONLY labelled meta slot `<ok-receipt>` has: it is what
+  // tells this bill from the other five the waiter is carrying. Showing both at once needs a slot
+  // of its own in the element (ERPlora/outfitkit#87).
+  const table = opts.tableLabel || undefined;
+  const customer = table || opts.customerName || undefined;
   return {
     // Same job as the hardcoded «CUENTA» of the ESC/POS renderer: the first line tells this paper
     // from a fiscal ticket at a glance. The UI passes the translation; the fallback is canonical
     // English (ADR-0055).
     title: opts.title ?? 'Bill',
     business: {
-      name: header.name || opts.fallbackName || DEFAULT_BUSINESS_NAME,
+      // sales#180 — the SAME priority as the ticket: the deliberate ticket branding
+      // (`receipt_header`), and failing that the business's LEGAL name (ADR-0061, which the ticket
+      // reads already frozen on its invoice). The generic default is the LAST resort, not the
+      // first: it was what the customer read on their bill while the ticket for the same sale
+      // came out right.
+      name: header.name || settings.issuer_name || opts.fallbackName || DEFAULT_BUSINESS_NAME,
       address: header.address,
     },
     // number/qr/payment AUSENTES a propósito: esto no es una factura (ver doc de la función).
     datetime: formatDateTime(opts.datetime ?? new Date().toISOString(), opts.locale ?? 'es'),
-    customer: opts.tableLabel || undefined,
+    customer,
+    ...(table ? { customer_is_table: true as const } : {}),
     lines: lines.map((l): PaperReceiptLine => ({
       name: l.is_gift ? `${l.name} (invitación)` : l.name,
       qty: l.qty,
       unit_price: minor(l.price),
-      total: minor(cents(l)),
+      total: minor(lineAmount(l)),
       // sales#148: ya resueltos contra el catálogo VIVO por quien pide la cuenta (la fila del
       // pedido guarda solo los `option_id`; el nombre y el importe no son del navegador).
       ...paperModifiers(l.modifiers, l.combo), // sales#154: and the menu's components, same door
       ...paperUnit(l), // sales#28: la unidad congelada, para el papel
     })),
+    // The subtotal only exists when there is something to break down: with no tax catalogue the
+    // bill comes out as it did, with its total and nothing else.
+    ...(taxes.length ? { subtotal: base } : {}),
+    taxes: taxes.map((x) => ({ label: taxLabel(String(x.rate), undefined), base: x.base, amount: x.amount })),
     total: minor(total),
-    taxes: [],
     currency: settings.currency || '€',
     decimals: hubDecimals(),
     // Inglés canónico (ADR-0055): la UI pasa el texto ya traducido en `opts.notice`; esto es solo

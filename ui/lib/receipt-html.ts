@@ -49,6 +49,10 @@ export interface PrintableReceipt {
   number?: string;
   datetime?: string;
   customer?: string;
+  /** sales#180 — how that datum is labelled ("Table", "Customer"). Without a label the paper prints
+   *  it bare, which is what the ticket does today: what changes is the BILL, where that slot is
+   *  taken by the table and calling it a customer was the defect. Translated by the caller. */
+  customer_label?: string;
   lines?: PrintableLine[];
   /** Scale of every amount (ADR-0400): EUR 2, JPY 0. Default 2. Amounts are INTEGERS in minor units. */
   decimals?: number;
@@ -187,7 +191,7 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
   ${doc.business?.address ? `<div class="meta">${esc(doc.business.address)}</div>` : ''}
   ${doc.business?.tax_id ? `<div class="meta">${esc(doc.business.tax_id)}</div>` : ''}
   ${doc.number || doc.datetime ? `<div class="meta">${esc(doc.number || '')}${doc.number && doc.datetime ? ' · ' : ''}${esc(doc.datetime || '')}</div>` : ''}
-  ${doc.customer ? `<div class="meta">${esc(doc.customer)}</div>` : ''}
+  ${doc.customer ? `<div class="meta">${doc.customer_label ? `${esc(doc.customer_label)}: ` : ''}${esc(doc.customer)}</div>` : ''}
   <hr>
   <table>${lineas}</table>
   <hr>

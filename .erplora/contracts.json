@@ -8,6 +8,7 @@
       "inventory.product_categories",
       "inventory.products.list",
       "inventory.units.list",
+      "sales.business.get",
       "sales.by_idempotency_key",
       "sales.get",
       "sales.lines",
