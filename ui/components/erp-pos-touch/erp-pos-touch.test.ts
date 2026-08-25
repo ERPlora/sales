@@ -1895,57 +1895,57 @@ describe('los departamentos hablan el idioma del hub (sales#120)', () => {
 
 // ── hub#1173: un parámetro que la query NO declara se ignoraba en silencio ────────────────────
 //
-// La rejilla pedía el catálogo de `services` con `{ page_size: 500 }`. `page_size` **no es un
-// parámetro del runtime** (el motor lee `limit`) y el módulo YA lo sabía: lo dice su propio
-// comentario en `ui/lib/pos-cart.ts`. El motor lo descartaba sin decir nada, así que la llamada no
-// hacía lo que aparentaba — y hoy el runtime lo RECHAZA con `unknown_filter`, que dejaría al TPV
-// sin servicios que vender.
+// The grid asked `services` for its catalogue with `{ page_size: 500 }`. `page_size` is **not a
+// runtime parameter** (the engine reads `limit`) and the module ALREADY knew it: its own comment in
+// `ui/lib/pos-cart.ts` says so. The engine dropped it without a word, so the call did not do what it
+// looked like it did — and today the runtime REJECTS it with `unknown_filter`, which would leave the
+// till with no services to sell.
 //
-// hub#1173 lo cambió por un `limit: 500` explícito, que al menos decía la verdad. sales#186 quita
-// también ese tope: `/api/query` sobre una query con bloque `list` responde UNA PÁGINA
-// (`execute_query_page`), así que cualquier número ahí es una truncación esperando a un negocio
-// más grande. La lectura va por `queryAllOptional` — conjunto entero + tolerancia de ADR-0127 —,
-// y lo que este bloque fija es que por el cable no viaja ningún tope. Que las filas de más allá
-// del tope LLEGUEN a la rejilla se prueba en `erp-pos-services.test.ts`.
-describe('sales#186 — la lectura del catálogo de servicios no manda ningún tope', () => {
-  /** Escucha lo que el TPV pide, contestando `undefined` = «módulo no instalado». */
-  function espiarLecturaOpcional(): { name: string; params: unknown }[] {
-    const consultas: { name: string; params: unknown }[] = [];
+// hub#1173 swapped it for an explicit `limit: 500`, which at least told the truth. sales#186 removes
+// that cap too: `/api/query` on a query with a `list` block answers ONE PAGE (`execute_query_page`),
+// so any number there is a truncation waiting for a bigger business. The read now goes through
+// `queryAllOptional` — the whole set plus ADR-0127's tolerance — and what this block pins is that no
+// cap travels over the wire. That the rows beyond the cap REACH the grid is proved in
+// `erp-pos-services.test.ts`.
+describe('sales#186 — the service catalogue read sends no cap at all', () => {
+  /** Listens to what the till asks for, answering `undefined` = "module not installed". */
+  function spyOnOptionalRead(): { name: string; params: unknown }[] {
+    const calls: { name: string; params: unknown }[] = [];
     const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
     (globalThis as Record<string, unknown>).erplora = {
       ...sdk,
       queryAllOptional: async (name: string, params?: unknown) => {
-        consultas.push({ name, params });
+        calls.push({ name, params });
         return undefined;
       },
     };
-    return consultas;
+    return calls;
   }
 
-  it('pide services.services.list sin `page_size`', async () => {
-    const consultas = espiarLecturaOpcional();
+  it('asks services.services.list without `page_size`', async () => {
+    const calls = spyOnOptionalRead();
 
     await montarCarrito();
 
-    const llamada = consultas.find((c) => c.name === 'services.services.list');
-    expect(llamada, 'el TPV lee el catálogo vendible de `services`').toBeTruthy();
+    const call = calls.find((c) => c.name === 'services.services.list');
+    expect(call, 'the till reads the sellable catalogue of `services`').toBeTruthy();
     expect(
-      Object.keys((llamada?.params as Record<string, unknown>) ?? {}),
-      '`page_size` no existe en el runtime: mandarlo era pedir algo que nadie aplicaba',
+      Object.keys((call?.params as Record<string, unknown>) ?? {}),
+      '`page_size` does not exist in the runtime: sending it was asking for something nobody applied',
     ).not.toContain('page_size');
   });
 
-  it('tampoco manda `limit`: el conjunto entero no cabe en un número escrito a mano', async () => {
-    const consultas = espiarLecturaOpcional();
+  it('does not send `limit` either: the whole set does not fit in a hand-written number', async () => {
+    const calls = spyOnOptionalRead();
 
     await montarCarrito();
 
     for (const name of ['services.services.list', 'services.categories.list']) {
-      const llamada = consultas.find((c) => c.name === name);
-      expect(llamada, `el TPV lee ${name}`).toBeTruthy();
+      const call = calls.find((c) => c.name === name);
+      expect(call, `the till reads ${name}`).toBeTruthy();
       expect(
-        (llamada?.params as Record<string, unknown>)?.limit,
-        'un tope aquí vuelve a truncar en silencio en cuanto el negocio crece',
+        (call?.params as Record<string, unknown>)?.limit,
+        'a cap here truncates in silence again as soon as the business grows',
       ).toBeUndefined();
     }
   });
