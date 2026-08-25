@@ -92,10 +92,10 @@ interface AppointmentRow {
   service_id?: string; service_name?: string; service_price?: number;
 }
 
-/** Persona del hub (`hub.users.list`), el namespace RESERVADO del core (ADR-0192).
+/** A person of the hub (`hub.users.list`), the core's RESERVED namespace (ADR-0192).
  *
- *  El personal es del CORE, no del módulo `staff`: preguntárselo a `staff` convertiría en
- *  dependencia dura un TPV que tiene que funcionar en un hub que no lo tenga instalado. */
+ *  Personnel belongs to the CORE, not to the `staff` module: asking `staff` would turn into a hard
+ *  dependency a till that has to work in a hub where that module is not installed. */
 interface HubUser { id: string; name: string; role?: string; is_active?: boolean; }
 
 /** Formas de precio que el TPV sabe cobrar HOY. `from`/`hourly`/`variable` son un precio de
@@ -591,8 +591,8 @@ export class ErpPosTouch extends LitElement {
     dialog p { margin:0 0 .8rem; color:var(--mut); }
     dialog.park-dialog input { width:100%; box-sizing:border-box; font-size:1rem; padding:.6rem .7rem;
       border-radius:var(--ok-radius-sm,10px); border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); }
-    /* La lista de personas: filas altas de tocar con el pulgar, y la actual marcada — con
-       BORDE y color, no solo color, para que se distinga sin depender de verlo. */
+    /* The list of people: rows tall enough for a thumb, and the current one marked — with a BORDER
+       as well as colour, so it is distinguishable without relying on seeing the hue. */
     .staff-list { display:flex; flex-direction:column; gap:.35rem; max-height:min(50vh,18rem); overflow-y:auto; }
     .staff-opt { display:block; width:100%; text-align:left; padding:.7rem .8rem; font:inherit;
       border:1px solid var(--ion-border-color); border-radius:var(--ok-radius-sm,10px);
@@ -765,9 +765,9 @@ export class ErpPosTouch extends LitElement {
     .order-context { display:flex; gap:.3rem; flex-wrap:wrap; min-height:1.55rem; margin-top:.32rem; }
     .order-context ion-chip { height:1.55rem; margin:0; font-size:.68rem; --background:var(--tile); color:var(--mut); }
     .context-empty { color:var(--mut); font-size:.72rem; align-self:center; }
-    /* sales#179 — quién atiende. Es un BOTÓN (se toca para transferir), pero se lee como los otros
-       contextos de la cuenta: misma altura y mismo peso visual que los ion-chip de al lado, con el
-       objetivo táctil que pide un dedo (44 px de área efectiva vía el padding vertical). */
+    /* sales#179 — who is serving. It is a BUTTON (tapped to transfer), but it reads like the other
+       contexts of the check: same height and same visual weight as the ion-chips next to it, with
+       the touch target a finger needs. */
     .ctx-chip { display:inline-flex; align-items:center; gap:.25rem; height:1.55rem; padding:0 .55rem;
       border:1px solid var(--ion-border-color); border-radius:var(--ok-radius-pill,999px);
       background:var(--tile); color:var(--mut); font:inherit; font-size:.68rem; cursor:pointer; }
@@ -1005,16 +1005,16 @@ export class ErpPosTouch extends LitElement {
    *  `sales.sale.created_from_appointment`, con el que `appointments` marca la cita convertida;
    *  `staff_id` (≠ `employee_id`, el cajero) es lo que permite el cierre por profesional. */
   private appointmentId?: string;
-  /** sales#179 — es `@state()` porque ahora se PINTA (el chip de quién atiende) y se puede
-   *  cambiar en caliente; antes solo lo sembraba la cita y viajaba mudo al cobro. */
+  /** sales#179 — it is `@state()` because it is now PAINTED (the "who is serving" chip) and can be
+   *  changed live; before, only the appointment seeded it and it travelled mute to the checkout. */
   @state() private staffId?: string;
-  /** Nombre para pintar, cuando se conoce: el de la cita (`staff_name`) o el de la persona
-   *  elegida. Vacío no significa «nadie» — significa que lo resuelve el servidor. */
+  /** The name to paint, when it is known: the appointment's (`staff_name`) or the chosen person's.
+   *  Blank does not mean "nobody" — it means the server resolves it. */
   @state() private staffName = '';
   @state() private staffPickerOpen = false;
   @state() private hubUsers: HubUser[] = [];
-  /** Estado de la lista de personas: sin ella el selector sería una hoja en blanco (y un fallo
-   *  de permisos, mudo). Se carga al ABRIR el selector, no al arrancar el TPV. */
+  /** State of the list of people: without it the picker would be a blank sheet (and a permission
+   *  failure would be mute). It loads when the picker OPENS, not when the till boots. */
   @state() private staffPickerState: 'idle' | 'loading' | 'ready' | 'error' = 'idle';
 
   private prodCats = new Map<string, Set<string>>();
@@ -2047,8 +2047,9 @@ export class ErpPosTouch extends LitElement {
 
     this.appointmentId = ap.id || appointmentId;
     this.staffId = ap.staff_id || undefined;
-    // sales#179: la cita SÍ trae el nombre del profesional (`appointments.appointment_get`), y sin
-    // él el chip solo podría decir «el profesional asignado» sobre una cuenta que sabe quién es.
+    // sales#179: the appointment DOES carry the professional's name
+    // (`appointments.appointment_get`); without it the chip could only say "the assigned
+    // professional" about a check that knows perfectly well who it is.
     this.staffName = ap.staff_name || '';
     if (ap.customer_id) this.customerId = ap.customer_id;
     if (ap.customer_name) this.customerName = ap.customer_name;
@@ -2060,47 +2061,48 @@ export class ErpPosTouch extends LitElement {
     }));
   }
 
-  /** sales#179 — **quién atiende esta cuenta**, y cómo se transfiere.
+  /** sales#179 — **who is serving this check**, and how it is transferred.
    *
-   *  El DEFECTO no lo decide esta pantalla: `complete_sale` atribuye la venta al usuario con
-   *  sesión cuando el payload no nombra a nadie. El TPV no sabe quién está logueado (el SDK no lo
-   *  expone) y **no debe adivinarlo**: mandar un id inventado desde el navegador sería atribuir
-   *  ventas a quien quisiera quien llame. Lo que sí es de esta pantalla es la otra mitad de lo que
-   *  hacen Toast, Square for Restaurants y Lightspeed: el camarero queda pegado a la cuenta y se
-   *  puede TRANSFERIR — quien toma la mesa no siempre es quien está delante del terminal.
+   *  This screen does not decide the DEFAULT: `complete_sale` attributes the sale to the session
+   *  user when the payload names nobody. The till does not know who is signed in (the SDK does not
+   *  expose it) and **must not guess**: sending an id made up in the browser would attribute sales
+   *  to whoever the caller pleased. What does belong to this screen is the other half of what
+   *  Toast, Square for Restaurants and Lightspeed do: the waiter is pinned to the check and can be
+   *  TRANSFERRED — whoever takes the table is not always the one at the terminal.
    *
-   *  La lista sale de `hub.users.list`, el namespace RESERVADO del core (ADR-0192): el personal es
-   *  del hub, no del módulo `staff`. Se pide al ABRIR el selector, no al arrancar: el TPV ya hace
-   *  bastantes llamadas en el arranque y esta solo hace falta si alguien va a cambiar el camarero. */
+   *  The list comes from `hub.users.list`, the core's RESERVED namespace (ADR-0192): personnel
+   *  belongs to the hub, not to the `staff` module. It is asked for when the picker OPENS, not at
+   *  boot: the till already makes plenty of calls there, and this one is only needed if somebody is
+   *  about to change the waiter. */
   private async openStaffPicker(): Promise<void> {
     this.staffPickerOpen = true;
     if (this.staffPickerState === 'ready' || this.staffPickerState === 'loading') return;
     this.staffPickerState = 'loading';
     try {
       const rowsIn = await erplora().query<unknown>('hub.users.list');
-      // Una persona dada de baja no puede atender: sigue existiendo (la auditoría apunta a su id)
-      // pero no es una opción que ofrecer hoy.
+      // A deactivated person cannot serve: they still exist (the audit trail points at their id)
+      // but they are not an option to offer today.
       this.hubUsers = rows<HubUser>(rowsIn).filter((u) => u.is_active !== false && !!u.id);
       this.staffPickerState = 'ready';
     } catch {
-      // Un fallo aquí NO puede tumbar el cobro: se dice y se sigue cobrando con el defecto del
-      // servidor, que es exactamente lo que había antes de poder elegir.
+      // A failure here must NOT take the checkout down: it is said out loud and charging carries
+      // on with the server's default, which is exactly what there was before anyone could choose.
       this.hubUsers = [];
       this.staffPickerState = 'error';
     }
   }
 
-  /** Elige quién atiende. Sin argumento = **el usuario con sesión**: se borra la atribución
-   *  explícita y vuelve a decidirla el servidor. */
+  /** Choose who is serving. With no argument = **the session user**: the explicit attribution is
+   *  cleared and the server decides again. */
   private pickStaff(person?: HubUser): void {
     this.staffId = person?.id;
     this.staffName = person?.name ?? '';
     this.staffPickerOpen = false;
   }
 
-  /** Lo que se lee en el chip. Con una cita de origen se conoce el id pero puede no conocerse el
-   *  nombre (es un `staff_member`, no una persona del hub): se dice «el profesional asignado» en
-   *  vez de enseñar un UUID o mentir diciendo «yo». */
+  /** What the chip reads. With an originating appointment the id is known but the name may not be
+   *  (it is a `staff_member`, not a person of the hub): it says "the assigned professional" instead
+   *  of showing a UUID or lying with "me". */
   private get staffLabel(): string {
     const name = this.staffName || (this.staffId ? t('ui.staffAssigned') : t('ui.staffMe'));
     return t('ui.servedBy', { name });
@@ -3290,8 +3292,8 @@ export class ErpPosTouch extends LitElement {
       this.tableId = undefined; this.tableLabel = '';
       this.customerId = undefined; this.customerName = '';
       this.customerTaxId = ''; this.customerAddress = '';
-      // sales#179: la siguiente cuenta no hereda al camarero de la anterior — vuelve al defecto
-      // (quien tenga la sesión), que es lo que hace un TPV cuando el ticket se cierra.
+      // sales#179: the next check does not inherit the previous waiter — it goes back to the
+      // default (whoever holds the session), which is what a till does when a check closes.
       this.staffId = undefined; this.staffName = '';
       this.appointmentId = undefined;
       this.resetSlotContexts();
@@ -3554,8 +3556,9 @@ export class ErpPosTouch extends LitElement {
             ${this.customerName
               ? html`<ion-chip><ion-icon name="person-outline"></ion-icon><ion-label>${this.customerName}</ion-label></ion-chip>`
               : nothing}
-            <!-- sales#179 — QUIÉN ATIENDE. Está SIEMPRE, incluso sin elegir: si no se ve, nadie
-                 sabe que la venta se atribuye a alguien, y el camarero no se puede transferir. -->
+            <!-- sales#179 — WHO IS SERVING. Always there, even with nobody chosen: if it is not
+                 visible, nobody knows the sale is attributed at all, and the waiter cannot be
+                 transferred. -->
             <button class="ctx-chip" type="button" data-testid="staff-chip"
                     aria-label=${t('ui.staffPickerTitle')} title=${t('ui.staffPickerTitle')}
                     @click=${() => void this.openStaffPicker()}>
@@ -4321,9 +4324,9 @@ export class ErpPosTouch extends LitElement {
           </div>
         </dialog>` : nothing}
 
-      <!-- sales#179 — TRANSFERIR la cuenta a otra persona. Mismo <dialog> nativo que aparcar
-           (ion-action-sheet no aloja contenido rico y los overlays de Ionic en shadow Lit se
-           re-parentan al body, ADR-0028), así que en móvil sube como hoja. -->
+      <!-- sales#179 — TRANSFER the check to somebody else. Same native <dialog> as parking
+           (ion-action-sheet does not host rich content and Ionic overlays inside a Lit shadow root
+           get re-parented to the body, ADR-0028), so on mobile it rises as a sheet. -->
       ${this.staffPickerOpen ? html`
         <dialog class="staff-dialog" open>
           <h3>${t('ui.staffPickerTitle')}</h3>

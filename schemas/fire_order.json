@@ -66,7 +66,7 @@
         "string",
         "null"
       ],
-      "description": "Quien atiende esta comanda (sales#179). OPACO: `sales` no lo interpreta, solo lo reenvía en `order.fired` para que `kitchen` lo copie en su ticket. Si no viene, el servidor lo resuelve al usuario con SESIÓN — la comanda nunca sale sin camarero. Lo manda quien dispara cuando la mesa tiene un camarero propio (`tables` es dueño de la sesión y de su camarero)."
+      "description": "Who is serving this ticket (sales#179). OPAQUE: `sales` does not interpret it, it only forwards it in `order.fired` so `kitchen` can copy it onto its ticket. When absent, the server resolves it to the SESSION user — a ticket never leaves without a waiter. The caller sends it when the table has a waiter of its own (`tables` owns the session and its waiter)."
     },
     "round_no": {
       "type": "integer",

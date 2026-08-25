@@ -35,10 +35,10 @@ export interface FirePayload {
   /** Ronda LOCAL del pedido (tandas, 2026-07-19): el handler marca con ella las líneas
    *  pendientes. Ausente en el camino compat (sin tandas). */
   round_no?: number;
-  /** Quien atiende la cuenta (sales#179), cuando el cajero lo ha ELEGIDO. Viaja opaco a
-   *  `order.fired` y de ahí al ticket de `kitchen`, para que el pase sepa a quién llamar.
-   *  **Ausente cuando nadie lo eligió**: el id del usuario con sesión lo pone el SERVIDOR, y un
-   *  navegador que se lo inventara estaría atribuyendo comandas a quien quisiera. */
+  /** Who is serving the check (sales#179), when the cashier has CHOSEN somebody. It travels
+   *  opaque to `order.fired` and from there to the `kitchen` ticket, so the pass knows who to call.
+   *  **Absent when nobody was chosen**: the session user's id is put there by the SERVER, and a
+   *  browser making it up would be attributing tickets to whoever it liked. */
   waiter_id?: string;
 }
 

@@ -49,8 +49,8 @@ function installSdk(opts: { users?: unknown; usersFail?: boolean } = {}) {
         if (opts.usersFail) throw new Error('hub.users.forbidden');
         return opts.users ?? HUB_USERS;
       }
-      // Al abrir el pedido el TPV RELEE sus líneas del servidor (la fila es la autoridad), así
-      // que sin esto la comanda saldría vacía y no se dispararía nada.
+      // When the order opens, the till RE-READS its lines from the server (the row is the
+      // authority), so without this the ticket would come out empty and nothing would be fired.
       if (name === 'sales.order.lines') {
         return [{ id: 'line-1', product_id: 'p-x', product_name: 'Croquetas', unit_price: 900, quantity: 1_000_000 }];
       }
@@ -67,7 +67,7 @@ function installSdk(opts: { users?: unknown; usersFail?: boolean } = {}) {
     },
     command: async (name: string, params?: Record<string, unknown>) => {
       commands.push({ name, params });
-      // El id del pedido viene en `new_ids` (el host es la única autoridad de ids), no en `rows`.
+      // The order id comes back in `new_ids` (the host is the only authority on ids), not `rows`.
       if (name === 'sales.order.open') return { new_ids: ['ord-1'] };
       if (name === 'sales.order.add_line') return { new_ids: ['line-1'] };
       return { rows: [{ id: 'line-1' }] };
@@ -75,8 +75,8 @@ function installSdk(opts: { users?: unknown; usersFail?: boolean } = {}) {
     currency: 'EUR',
     formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
     formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-    // El `t` real INTERPOLA los params; el stub también, porque lo que se afirma aquí es el
-    // NOMBRE que se lee en el chip, no la clave.
+    // The real `t` INTERPOLATES its params; so does the stub, because what is asserted here is the
+    // NAME read on the chip, not the key.
     t: (_catalog: unknown, key: string, params?: Record<string, unknown>) =>
       (params ? `${key}:${Object.values(params).join(',')}` : key),
     loadSlot: async () => [],
@@ -115,9 +115,9 @@ function options(el: MountedPos): HTMLElement[] {
   return [...el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid="staff-option"]')];
 }
 
-// El módulo del TPV arrastra lit + OutfitKit: importarlo la primera vez cuesta segundos y, si eso
-// cae DENTRO del primer test, lo que se ve es un timeout que no tiene nada que ver con lo que se
-// afirma. Se paga aquí, fuera del reloj de los tests.
+// The till module pulls in lit + OutfitKit: importing it the first time costs seconds and, if that
+// falls INSIDE the first test, what you see is a timeout that has nothing to do with what is being
+// asserted. It is paid here, outside the tests' clock.
 beforeAll(async () => { await import('./erp-pos-touch'); }, 60_000);
 
 beforeEach(() => { document.body.innerHTML = ''; installSdk(); });
@@ -169,7 +169,7 @@ describe('who is serving this check', () => {
     expect(sale?.params?.staff_id).toBe('u-luis');
   });
 
-  it('hands the check back: choosing «me» returns to the server default', async () => {
+  it('hands the check back: choosing "me" returns to the server default', async () => {
     const el = await mount();
     chip(el)?.click();
     await settle(el);
