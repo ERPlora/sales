@@ -323,7 +323,16 @@
     "missingAppCharge": "{app} no está instalada, así que no se puede cobrar. Instálala desde el marketplace.",
     "missingAppChargeShort": "Falta {app}",
     "appTaxes": "Impuestos",
-    "errorMissingApp": "La venta se ha rechazado porque falta una app que necesita. No se ha cobrado nada."
+    "errorMissingApp": "La venta se ha rechazado porque falta una app que necesita. No se ha cobrado nada.",
+    "servedBy": "Atiende {name}",
+    "staffMe": "yo",
+    "staffMeOption": "Yo (quien tenga la sesión)",
+    "staffAssigned": "el profesional asignado",
+    "staffPickerTitle": "Quién atiende esta cuenta",
+    "staffPickerHint": "A esta persona se le atribuyen la venta, la comanda de cocina y el informe por persona. Si lo dejas en «Yo», el TPV usa a quien tenga la sesión.",
+    "staffPickerEmpty": "Este hub no tiene a nadie más para atender. Da de alta personal en Ajustes.",
+    "staffLoading": "Cargando el equipo…",
+    "staffLoadFailed": "No se ha podido cargar el equipo. La venta se sigue atribuyendo a quien tenga la sesión."
   },
   "widgets": {
     "sales.today": {

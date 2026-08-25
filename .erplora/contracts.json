@@ -4,6 +4,7 @@
   "consumes": {
     "queries": [
       "hub.fiscal.limits",
+      "hub.users.list",
       "inventory.categories.list",
       "inventory.product_categories",
       "inventory.products.list",

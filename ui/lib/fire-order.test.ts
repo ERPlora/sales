@@ -106,3 +106,21 @@ describe('suplementos en la comanda (pm#93)', () => {
     expect(p?.items[0].modifiers).toBeUndefined();
   });
 });
+
+// sales#179 — el CAMARERO de la comanda. `kitchen` guarda `waiter_id` en su ticket pero nadie se
+// lo daba, así que el pase no sabía a quién llamar cuando el plato salía. Lo manda el POS cuando
+// la cuenta tiene un camarero elegido; si no lo manda nadie, el handler lo resuelve al usuario con
+// sesión — el payload NO inventa un id desde el navegador.
+describe('el camarero en el payload del disparo', () => {
+  const linea = { id: 'p1', name: 'Entrecot', price: 2500, qty: 1 };
+
+  it('con camarero elegido, viaja en el payload', () => {
+    const p = buildFirePayload('ord-1', 'Mesa 4', [linea], 1, 'u-luis');
+    expect(p?.waiter_id).toBe('u-luis');
+  });
+
+  it('sin camarero elegido, el payload no lo inventa: lo pone el servidor', () => {
+    const p = buildFirePayload('ord-1', 'Mesa 4', [linea]);
+    expect(p && 'waiter_id' in p).toBe(false);
+  });
+});
