@@ -644,16 +644,17 @@ fn line_price(
 /// elección** (petición recurrente en cocina: el orden de catálogo no sirve) y congela el
 /// `kitchen_name`, que es el que se imprime.
 ///
-/// 🔴 **Y un suplemento que tributa DISTINTO no se pliega: se RECHAZA** (sales#147, enmienda de
-/// ADR-0376). `line_tax_category` es la categoría fiscal que el servidor le fijó a la línea
-/// —la del catálogo del producto, o la que decidió el reparto del combo—. Si la opción declara
-/// una categoría PROPIA que no es esa, el delta no puede entrar por el `unit_price` del padre:
-/// heredaría su tipo y la factura saldría mal desglosada **en silencio** (un refresco al 21 %
-/// cobrado al 10 % del menú). Eso es lo que cierra esta puerta hasta que exista la línea hija.
+/// 🔴 **And a supplement that taxes DIFFERENTLY is not folded: it is REFUSED** (sales#147, the
+/// amendment to ADR-0376). `line_tax_category` is the tax category the SERVER fixed for the line
+/// — the product catalogue's, or the one the combo split decided. If the option declares a
+/// category of its OWN that is not that one, the delta cannot go in through the parent's
+/// `unit_price`: it would inherit the parent's rate and the invoice would come out wrongly broken
+/// down **in silence** (a soft drink at 21 % charged at the menu's 10 %). That is what this door
+/// closes until the child line exists.
 ///
-/// `None` = la línea no tiene categoría de catálogo (venta a precio libre, sin `product_id`).
-/// Entonces no hay nada contra lo que comparar y la opción con categoría propia **también** se
-/// rechaza: falla CERRADO, igual que el resto de esta función.
+/// `None` = the line has no catalogue category (open-price sale, no `product_id`). Then there is
+/// nothing to compare against and an option with its own category is **also** refused: it fails
+/// CLOSED, like the rest of this function.
 fn authoritative_modifiers(
     item: &Value,
     catalog: Option<&Vec<&Value>>,
@@ -678,8 +679,8 @@ fn authoritative_modifiers(
             .iter()
             .find(|r| field(r, "option_id") == id)
             .ok_or_else(|| reject("sales.modifier_not_available", &id))?;
-        // sales#147 — la categoría propia de la opción. Vacía = hereda la de la línea (ADR-0376),
-        // que es el 99 % de los suplementos y el único caso que hoy se sabe cobrar bien.
+        // sales#147 — the option's own tax category. Empty = it inherits its line's (ADR-0376),
+        // which is 99 % of supplements and the only case that can be charged correctly today.
         let option_category = field(row, "tax_category_key");
         if !option_category.is_empty() && line_tax_category != Some(option_category.as_str()) {
             return Err(reject(
@@ -704,9 +705,9 @@ fn authoritative_modifiers(
             "name": name,
             "kitchen_name": kitchen,
             "price_delta": delta,
-            // Vacío = hereda la categoría fiscal de la línea (ADR-0376) — y, llegados aquí, es lo
-            // único que puede haber: una categoría propia distinta ya rechazó la venta. Se congela
-            // igual para que el histórico sepa qué se decidió.
+            // Empty = it inherits the line's tax category (ADR-0376) — and, by this point, it is
+            // the only thing it can be: a different category of its own already refused the sale.
+            // Frozen all the same so the history knows what was decided.
             "tax_category_key": option_category,
         }));
     }
@@ -1576,9 +1577,9 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         let unit_price = match combo { Some(c) => c.unit_price, None => unit_price };
         // La categoría de una línea de combo la fijó el servidor: la del combo si es prestación
         // única (art. 91.Uno.2.2º), la del componente si el pack se repartió (art. 79.Dos).
-        // Se resuelve ANTES de los suplementos porque es contra ella contra lo que se contrasta la
-        // categoría propia de una opción (sales#147): un suplemento que tributa distinto no puede
-        // plegarse en el precio de esta línea sin heredar su tipo.
+        // Resolved BEFORE the supplements because it is what an option's own category is checked
+        // against (sales#147): a supplement that taxes differently cannot be folded into this
+        // line's price without inheriting its rate.
         let catalog_cat = match combo {
             Some(c) => Some(c.tax_category_key.as_str()),
             None => from_catalog.as_ref().map(|(_, _, cat)| cat.as_str()),
@@ -5270,31 +5271,31 @@ mod tests {
         assert_eq!(line.params["modifiers"], json!("[]"), "sin suplementos, snapshot vacío");
     }
 
-    // ── sales#147 · un suplemento que tributa DISTINTO no se cobra al tipo del padre ──────────
+    // ── sales#147 · a supplement that taxes DIFFERENTLY is not charged at the parent's rate ───
 
-    /// Una opción de `modifiers.options.all` con la categoría fiscal que se le pase (`Value::Null`
-    /// = hereda la de su línea, que es el caso de la inmensa mayoría de los suplementos).
-    fn catalogo_refresco(tax_category_key: Value) -> Value {
+    /// An option of `modifiers.options.all` carrying whatever tax category it is given
+    /// (`Value::Null` = it inherits its line's, which is the case for the vast majority).
+    fn drink_option(tax_category_key: Value) -> Value {
         json!([{ "option_id": "o-refresco", "group_id": "g-bebida", "name": "Refresco",
                  "kitchen_name": "+REFRESCO", "price_delta": 200,
                  "tax_category_key": tax_category_key }])
     }
 
-    /// Menú del día de 10,00 € del catálogo (`restaurant.food`) con un refresco de 2,00 €. La
-    /// categoría de la OPCIÓN es lo único que cambia entre los casos de abajo.
-    fn menu_con_refresco(option_tax_category: Value) -> Value {
+    /// A 10,00 € set menu from the catalogue (`restaurant.food`) with a 2,00 € soft drink on it.
+    /// The OPTION's category is the only thing that changes between the cases below.
+    fn menu_with_drink(option_tax_category: Value) -> Value {
         let mut inp = con_suplementos(
             input(json!([{ "product_id": "p-menu", "product_name": "Menú del día",
                            "quantity": 1_000_000, "tax_rate": 10.0,
                            "modifiers": [{ "option_id": "o-refresco" }] }]), 3, 1200),
-            catalogo_refresco(option_tax_category),
+            drink_option(option_tax_category),
         );
         inp["context"]["reads"]["inventory.products.for_sale"] =
             json!([{ "id": "p-menu", "price": 1000, "cost": 0,
                      "tax_category_key": "restaurant.food" }]);
-        // Catálogo fiscal de confianza: el menú al 10 %, el refresco al 21 % (ADR-0085). Una línea
-        // de catálogo con categoría EXIGE este catálogo — sin él la venta se rechaza antes de
-        // llegar a lo que este bloque prueba.
+        // The trusted tax catalogue: the menu at 10 %, the drink at 21 % (ADR-0085). A catalogue
+        // line WITH a category REQUIRES it — without it the sale is refused before reaching what
+        // this block is about.
         inp["context"]["reads"]["taxes.rules.list"] = json!([
             { "id": "r-es-10", "country_code": "ES", "region_code": null,
               "tax_category_key": "restaurant.food", "rate_pct": 10.0, "tax_type": "vat" },
@@ -5306,52 +5307,52 @@ mod tests {
     }
 
     #[test]
-    fn un_suplemento_con_TIPO_FISCAL_PROPIO_rechaza_la_venta() {
-        // 🔴 El agujero de sales#147: el refresco al 21 % dentro de un menú al 10 % se plegaba en el
-        // `unit_price` del padre y HEREDABA su tipo. La factura salía mal desglosada y en silencio
-        // —ni error, ni aviso, ni log—, que es peor que no dejar cobrar. Hasta que exista la línea
-        // hija (parte 2 de la issue), la venta se RECHAZA por la misma puerta que ya rechaza una
-        // opción desconocida.
-        let err = complete_sale_pure(menu_con_refresco(json!("product.generic")))
-            .expect_err("debe rechazar");
+    fn a_supplement_with_a_TAX_CATEGORY_OF_ITS_OWN_refuses_the_sale() {
+        // 🔴 The hole sales#147 closes: the 21 % drink inside a 10 % menu was folded into the
+        // parent's `unit_price` and INHERITED its rate. The invoice came out wrongly broken down
+        // and it came out in silence — no error, no warning, no log — which is worse than not
+        // letting it be charged. Until the child line exists (part 2 of the issue), the sale is
+        // REFUSED through the same door that already refuses an unknown option.
+        let err = complete_sale_pure(menu_with_drink(json!("product.generic")))
+            .expect_err("must refuse");
         assert!(
             err.contains("sales.modifier_tax_override_unsupported"),
-            "código de dominio estable: {err}"
+            "stable domain code: {err}"
         );
     }
 
     #[test]
-    fn un_suplemento_con_el_MISMO_tipo_que_su_linea_se_sigue_plegando() {
-        // Declarar la categoría no es declarar una excepción: si es LA MISMA de la línea, no hay
-        // dos bases que desglosar y el suplemento se pliega como toda la vida.
-        let out = sale(menu_con_refresco(json!("restaurant.food")));
-        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("línea");
-        assert_eq!(line.params["line_total"], json!(1200), "10 € + 2 € al mismo tipo");
+    fn a_supplement_with_the_SAME_category_as_its_line_still_folds() {
+        // Declaring the category is not declaring an exception: if it is THE SAME as the line's,
+        // there are no two bases to break down and the supplement folds as it always did.
+        let out = sale(menu_with_drink(json!("restaurant.food")));
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("line");
+        assert_eq!(line.params["line_total"], json!(1200), "10 € + 2 € at the same rate");
     }
 
     #[test]
-    fn un_suplemento_SIN_categoria_sigue_plegandose_en_su_linea() {
-        // Control de NO REGRESIÓN sobre el 99 % de los suplementos: `tax_category_key` vacío =
-        // hereda (ADR-0376). Si este test se pusiera rojo, el arreglo habría roto «+queso».
-        let out = sale(menu_con_refresco(Value::Null));
-        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("línea");
-        assert_eq!(line.params["line_total"], json!(1200), "el delta entra por el precio unitario");
+    fn a_supplement_with_NO_category_keeps_folding_into_its_line() {
+        // NO-REGRESSION control over 99 % of supplements: an empty `tax_category_key` means it
+        // inherits (ADR-0376). If this test went red, the fix would have broken "+cheese".
+        let out = sale(menu_with_drink(Value::Null));
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("line");
+        assert_eq!(line.params["line_total"], json!(1200), "the delta goes in via the unit price");
     }
 
     #[test]
-    fn sobre_una_linea_de_PRECIO_LIBRE_el_suplemento_con_categoria_tambien_se_rechaza() {
-        // Una línea sin `product_id` no tiene categoría de catálogo contra la que comparar, así que
-        // NO se puede afirmar que el suplemento tribute igual. Falla CERRADO, como el resto de esta
-        // puerta: cobrar «suponiendo que hereda» es exactamente el silencio que cierra esta issue.
+    fn on_an_OPEN_PRICE_line_a_supplement_with_a_category_is_refused_too() {
+        // A line with no `product_id` has no catalogue category to compare against, so it cannot be
+        // asserted that the supplement taxes the same. It fails CLOSED, like the rest of this door:
+        // charging "assuming it inherits" is exactly the silence this issue closes.
         let inp = con_suplementos(
             input(json!([{ "product_name": "Menú del día", "price": 1000, "quantity": 1_000_000,
                            "tax_rate": 10.0, "modifiers": [{ "option_id": "o-refresco" }] }]), 3, 1200),
-            catalogo_refresco(json!("product.generic")),
+            drink_option(json!("product.generic")),
         );
-        let err = complete_sale_pure(inp).expect_err("debe rechazar");
+        let err = complete_sale_pure(inp).expect_err("must refuse");
         assert!(
             err.contains("sales.modifier_tax_override_unsupported"),
-            "código de dominio estable: {err}"
+            "stable domain code: {err}"
         );
     }
 
