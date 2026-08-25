@@ -274,7 +274,14 @@ export class ErpPosTouch extends LitElement {
     .body { position:relative; flex:1; min-height:0; display:grid; grid-template-columns: 1fr 23rem; }
 
     /* ── Catálogo ── */
-    .catalog { display:flex; flex-direction:column; min-width:0; padding:.8rem; }
+    /* sales#178 - min-height:0 is NOT decoration here: .catalog is a grid item, and a grid item's
+       default minimum size is its CONTENT. With a full restaurant menu (281 items) the tile grid is
+       ~20.000px tall, .catalog refused to shrink under it, and the whole .body row grew to match:
+       .grid never reached its own overflow:auto, the cart column stretched with it and its
+       ion-footer -- Total, Discount, Pre-bill, CHARGE -- ended up 20.000px below the viewport. And
+       .card is overflow:hidden, so there was not even a scrollbar: the content simply did not exist
+       for the cashier. Same pair .body and .cart already carry; only min-width:0 was set here. */
+    .catalog { display:flex; flex-direction:column; min-width:0; min-height:0; padding:.8rem; }
     .catbar { position:relative; display:flex; align-items:center; gap:.4rem; margin-bottom:.7rem; }
 
     /* Menú ⋮ de PANTALLA (no de venta): anclado bajo su botón, como cualquier kebab. La capa de
@@ -775,7 +782,11 @@ export class ErpPosTouch extends LitElement {
     @media (max-width:820px) {
       .body { grid-template-columns:1fr; }
       .catalog { padding:.58rem; }
-      .grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:.5rem; }
+      /* The cart FAB floats over the grid (position:absolute, 3.6rem wide, 1rem off the edge), so
+         at 390px it sat on top of the last tile's PRICE. Square and Toast reserve that room at the
+         end of the list instead of letting the button cover content: the grid keeps its own scroll
+         and simply ends above the FAB. Desktop has no FAB, so this belongs in the mobile block. */
+      .grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:.5rem; padding-bottom:5.2rem; }
       ion-card.tile { min-height:8rem; }
       ion-segment-button.cat-segment-button { flex-basis:7.8rem; min-width:7.8rem; }
       .cart { width:min(100%,27rem); }
