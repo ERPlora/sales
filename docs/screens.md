@@ -162,11 +162,15 @@ the empty one is voided. Lines are moved, never re-created. Doing it twice chang
 
 The list of recorded sales (`sales.list`, 50 rows per page). Requires `sales.view_sale`.
 
-- **Search** by sale number, payment method or customer name.
+- **Search** by sale number, payment method or customer name. The search matches what the row
+  STORES, so a factory method is matched by its canonical name (`Cash`, `Card`) — filter by payment
+  method instead to search it in your own language.
 - **Sort** by number, status, total, tax, payment method, customer, channel, professional or date.
   Default: date, newest first.
 - **Filter** by sale number, status, total range, tax range, payment method, customer, channel,
-  professional or date range.
+  professional or date range. Status and payment method are **pickers**: they show the label you see
+  in the cell and send the value the row stores, so a Spanish hub filters «Efectivo» and gets the
+  rows written as `Cash` (sales#181).
 
 Open a sale to see its full detail and its lines. From here you can **void** a sale — see
 [concepts.md](concepts.md) for what that means and why you cannot simply edit it. Voiding requires
