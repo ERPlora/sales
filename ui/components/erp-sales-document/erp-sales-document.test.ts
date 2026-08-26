@@ -442,3 +442,61 @@ describe('los suplementos sobreviven a la REIMPRESIÓN del tique (sales#148)', (
     expect(doc.items[0].total, 'el importe es el de la línea, con el suplemento ya dentro').toBe(10);
   });
 });
+
+// sales#181 — el PAPEL con el nombre de fábrica. El seed siembra «Cash»/«Card» en inglés canónico
+// (ADR-0055) y el handler guarda ESE nombre en la fila de la venta, así que el tiquet y la factura
+// del historial arrancan del dato en inglés. Los tests de este visor montaban con
+// `payment_method_name: 'Efectivo'` — el caso ya traducido—, de modo que nadie vigilaba que el
+// visor siga pasando el traductor al mapper: quitar ese argumento habría dejado «Cash» impreso en
+// un tique español sin romper un solo test.
+describe('the paper translates the factory payment method (sales#181)', () => {
+  const esCatalog = { ui: { cash: 'Efectivo', card: 'Tarjeta' } };
+
+  async function mountWithMethod(name: string, format?: 'ticket' | 'invoice') {
+    (globalThis as Record<string, unknown>).erplora = {
+      query: async () => [],
+      queryOptional: async () => undefined,
+      locale: 'es',
+      // El catálogo REAL (no la clave): lo que se mide es el idioma que sale impreso.
+      t: (_catalog: unknown, key: string) =>
+        key.split('.').reduce<unknown>((acc, part) => (acc as Record<string, unknown>)?.[part], esCatalog) ?? key,
+    };
+    document.body.innerHTML = '';
+    await import('./erp-sales-document');
+    const el = document.createElement('erp-sales-document') as HTMLElement & {
+      sale: unknown; lines: unknown; settings: unknown; format?: 'ticket' | 'invoice';
+      updateComplete: Promise<unknown>;
+    };
+    el.sale = {
+      id: 's1', sale_number: 'T-42', subtotal: 327, tax_amount: 33, total: 360,
+      payment_method_name: name, created_at: '2026-08-25T10:00:00Z',
+    };
+    el.lines = [{ product_name: 'Cafe solo', quantity: 2, unit_price: 180, line_total: 360 }];
+    el.settings = {};
+    if (format) el.format = format;
+    document.body.appendChild(el);
+    await el.updateComplete;
+    return el;
+  }
+
+  it('prints «Efectivo» on the receipt for a row that stores «Cash»', async () => {
+    const el = await mountWithMethod('Cash');
+    const receipt = el.shadowRoot!.querySelector('ok-receipt') as HTMLElement & { receipt: ReceiptData };
+    expect(receipt.receipt.payment?.method).toBe('Efectivo');
+  });
+
+  it('prints «Tarjeta» on the A4 invoice for a row that stores «Card»', async () => {
+    const el = await mountWithMethod('Card', 'invoice');
+    const invoice = el.shadowRoot!.querySelector('ok-invoice') as HTMLElement & {
+      invoice: { payment_method?: string };
+    };
+    expect(invoice, 'con format=invoice el visor pinta la factura').toBeTruthy();
+    expect(invoice.invoice.payment_method).toBe('Tarjeta');
+  });
+
+  it('a name the owner typed is printed verbatim, never guessed at', async () => {
+    const el = await mountWithMethod('BBVA TPV');
+    const receipt = el.shadowRoot!.querySelector('ok-receipt') as HTMLElement & { receipt: ReceiptData };
+    expect(receipt.receipt.payment?.method).toBe('BBVA TPV');
+  });
+});

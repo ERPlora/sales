@@ -11,6 +11,7 @@ import esCatalog from '../../../locales/es.json';
 interface Column {
   key: string;
   format?: (row: Record<string, unknown>) => unknown;
+  filterType?: string;
   options?: { value: string; label: string }[];
 }
 
@@ -500,5 +501,50 @@ describe('sales list — la vista gestiona su scroll y sus KPI en móvil (sales#
     mql.dispatch(false);
     await el.updateComplete;
     expect(el.shadowRoot.querySelector('.cards')!.classList.contains('kpi-row'), 'widened back → multi-column grid').toBe(false);
+  });
+});
+
+// sales#181 — the SAME column, the other half of it. The cell says «Efectivo», but the filter was
+// free text sent verbatim to the server, which matches the CANONICAL name the row stores («Cash»):
+// typing what you can read on screen returned ZERO sales, silently. Payment method is an
+// ENUMERATED dimension — Square, Toast, Lightspeed, Odoo, Shopify and Business Central all offer it
+// as a picker, never as a text box — so the filter offers the hub's methods by their visible name
+// and sends the value the row actually stores. Same shape the `status` column already uses.
+describe('sales list — filtering by payment method (sales#181)', () => {
+  const SEEDED = [
+    { id: 'h|paymethod|cash', name: 'Cash', type: 'cash' },
+    { id: 'h|paymethod|card', name: 'Card', type: 'card' },
+    { id: 'h|paymethod|bbva', name: 'BBVA TPV', type: 'card' },
+  ];
+
+  async function paymentColumn(methods: unknown[]): Promise<Column> {
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.query = async (name: string) => (name === 'sales.payment_methods' ? methods : []);
+    document.body.innerHTML = '';
+    await import('./erp-sales-list');
+    const el = document.createElement('erp-sales-list');
+    document.body.appendChild(el);
+    const view = el as unknown as { updateComplete: Promise<unknown> };
+    await view.updateComplete;
+    await new Promise((r) => setTimeout(r, 0)); // the methods land after the first paint
+    await view.updateComplete;
+    return (el as unknown as { columns: Column[] }).columns.find((c) => c.key === 'payment_method_name')!;
+  }
+
+  it('offers the methods as a picker, labelled the way the cell shows them', async () => {
+    const col = await paymentColumn(SEEDED);
+    expect(col.filterType, 'free text cannot match a name the user never sees').toBe('select');
+    expect(col.options).toEqual([
+      { value: 'Cash', label: 'Efectivo' },
+      { value: 'Card', label: 'Tarjeta' },
+      { value: 'BBVA TPV', label: 'BBVA TPV' },
+    ]);
+  });
+
+  it('falls back to a text box when the methods cannot be loaded', async () => {
+    // An empty dropdown is a dead filter: with no methods the free-text box is still usable.
+    const col = await paymentColumn([]);
+    expect(col.filterType).toBe('text');
+    expect(col.options).toBeUndefined();
   });
 });

@@ -7,6 +7,7 @@ import type { DataTableColumn, DataTableAction } from '@erplora/outfitkit';
 import { renderDocumentModal } from '../../lib/document-modal.js';
 import '../erp-sale-refund/erp-sale-refund.js';
 import { payMethodDisplayName } from '../../lib/pay-icons.js';
+import type { PayMethodLike } from '../../lib/pay-icons.js';
 import { formatDateTime } from '../../lib/document-mappers.js';
 import { createListController } from '@erplora/module-sdk';
 import type { ListController, ListClient, ListParams, ListPage } from '@erplora/module-sdk';
@@ -137,6 +138,10 @@ export class ErpSalesList extends LitElement {
     if (this.kpiRow !== e.matches) this.kpiRow = e.matches;
   };
 
+  /** sales#181 — the hub's payment methods, so the column FILTER can offer the very labels the cell
+   *  paints. Empty = they could not be loaded: the filter falls back to a text box (see `columns`). */
+  @state() private payMethods: PayMethodLike[] = [];
+
   /** Venta seleccionada para ver su documento (tiquet/factura) en el modal. */
   @state() docSaleId?: string;
 
@@ -224,7 +229,20 @@ export class ErpSalesList extends LitElement {
       format: (r) => formatDateTime(String(r.created_at ?? ''), erplora().locale) },
     { key: 'sale_number', header: t('ui.colNumber'), sortable: true, filterable: true, filterType: 'text' },
     { key: 'customer_name', header: t('ui.colCustomer'), sortable: true, filterable: true, filterType: 'text', format: (r) => (r.customer_name as string) || '—' },
-    { key: 'payment_method_name', header: t('ui.colPayment'), sortable: true, filterable: true, filterType: 'text', // sales#108: the row stores the canonical seed name («Cash»); the cell speaks the user's language.
+    // sales#108: the row stores the canonical seed name («Cash»); the cell speaks the user's language.
+    // sales#181: and so does the FILTER. Free text went to the server verbatim, against that same
+    // canonical name, so filtering by the «Efectivo» you can read returned zero sales without a
+    // word. Payment method is an enumerated dimension (Square, Toast, Odoo, Shopify all offer a
+    // picker): the options carry the visible name and send the stored one. Same shape as `status`.
+    { key: 'payment_method_name', header: t('ui.colPayment'), sortable: true, filterable: true,
+      ...(this.payMethods.length
+        ? {
+            filterType: 'select' as const,
+            options: this.payMethods.map((m) => ({ value: m.name, label: payMethodDisplayName(m, t) })),
+          }
+        // With no methods loaded an empty dropdown would be a DEAD filter: the text box is better,
+        // since it at least still matches against the stored name.
+        : { filterType: 'text' as const }),
       format: (r) => (r.payment_method_name ? payMethodDisplayName({ id: '', name: r.payment_method_name as string }, t) : '—') },
     {
       key: 'status',
@@ -272,7 +290,7 @@ export class ErpSalesList extends LitElement {
       // sí contaban el día en curso.
       filters: b.from ? { erp_date: { from: b.from, to: b.to } } : {},
     });
-    await Promise.all([this.ctrl.load(), this.loadStats()]);
+    await Promise.all([this.ctrl.load(), this.loadStats(), this.loadPayMethods()]);
     try { this.unsub = erplora().on('sale.completed', () => { this.ctrl.load(); this.loadStats(); }); }
     catch { /* preview sin SDK */ }
   }
@@ -281,6 +299,18 @@ export class ErpSalesList extends LitElement {
     window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
     this.kpiMq?.removeEventListener('change', this.onKpiMqChange); // sales#126
     super.disconnectedCallback(); this.unsub?.(); }
+
+  /** sales#181 — the active payment methods, only to populate the column filter. If the query fails
+   *  (no permission, a half-installed module) the list stays empty and the filter remains a text
+   *  box: the history still opens, which is what the cashier came here for. */
+  private async loadPayMethods(): Promise<void> {
+    try {
+      const rows = await erplora().query<PayMethodLike[]>('sales.payment_methods');
+      this.payMethods = Array.isArray(rows) ? rows : [];
+    } catch {
+      this.payMethods = [];
+    }
+  }
 
   /** El selector de fechas de la propia tabla (columna «Fecha») también filtra por DÍA: la
    *  columna pinta `created_at`, pero el rango que pide el usuario es de días y el filtro del
