@@ -31,11 +31,18 @@
 //!   país+categoría+vigencia es el tipo principal; sus **componentes** son filas con
 //!   `parent_id == raíz.id`. Cada componente (raíz incluida) aporta su `rate_pct` sobre la **misma
 //!   base**; el `tax_breakdown` lleva **una clave por tasa**. Réplica de `taxes::rule_components`.
-//! * **Snapshot inmutable de la línea (ADR-0085)**: cada línea congela `tax_category_key`,
-//!   `tax_rate` (= tax_rate_pct combinada), `tax_country_code`, `tax_region_code`, `tax_rule_id`
-//!   (id de la regla raíz, nullable). Una factura ya emitida no cambia aunque cambie el IVA.
-//! * **Backward-compat / graceful**: sin `context.reads`, o categoría ausente/sin regla → se cae al
-//!   `tax_rate` del payload si viene; si no, 0%. Nunca rompe la venta. Respeta `tax_included`.
+//! * **Immutable line snapshot (ADR-0085)**: every line freezes `tax_category_key`, `tax_rate`
+//!   (= combined tax_rate_pct), `tax_country_code`, `tax_region_code` and `tax_rule_id` (the root
+//!   rule's id, nullable). An invoice already issued does not change when the VAT does.
+//!   🔴 sales#195 — the frozen `tax_category_key` is the RESOLVED one, the same one that produced
+//!   `tax_rate` and `tax_rule_id`: the catalogue's (or the open check's row) when the line comes
+//!   from it, the payload's only when there is no row to check it against. It is one authority per
+//!   snapshot, in the row and in `sale.completed`.
+//! * **Fails CLOSED, not graceful** (sales#21/#67): a line that NAMES a category and does not
+//!   resolve a rule is refused (`sales.no_tax_rule`), and so is one whose fiscal catalogue never
+//!   arrived (`sales.tax_catalog_unavailable`). The payload's `tax_rate` is only honoured by a line
+//!   with NO category at all (open price / integration, sales#63) — the single door left open, and
+//!   left explicit. Respects `tax_included`.
 
 use erplora_guest_sdk::money;
 use erplora_guest_sdk::tax;
@@ -293,6 +300,12 @@ fn rate_key(rate_pct: f64) -> String {
 #[derive(Clone)]
 struct ResolvedTax {
     rule_id: String,
+    /// sales#195 — the tax category the snapshot must FREEZE: the catalogue's when the line comes
+    /// from it, the payload's only when there is no catalogue row to check it against. It travels
+    /// here so that the row and the `sale.completed` event have ONE source, the same one that
+    /// produced `rule_id` and the components: a rate resolved from `restaurant.food` next to a
+    /// column reading `product.generic` is a fiscal snapshot that contradicts itself.
+    category_key: String,
     components: Vec<TaxComponent>,
 }
 
@@ -348,7 +361,7 @@ fn resolve_line_tax(
                     TaxComponent { rate_pct: c.rate_pct, rate_key: rate_key(c.rate_pct), kind, label: c.label.clone() }
                 })
                 .collect();
-            return Ok(ResolvedTax { rule_id: tax::rule_field(root, "id"), components });
+            return Ok(ResolvedTax { rule_id: tax::rule_field(root, "id"), category_key: cat, components });
         }
         // Categoría que no resuelve regla (venga del catálogo o del payload): el hub está sin
         // configurar para esa categoría. Cobrar el tipo que propone el cliente sería inventarse el
@@ -358,7 +371,7 @@ fn resolve_line_tax(
     }
     // Sin categoría que resolver: preview del cliente. La única puerta que queda (ver doc).
     let pct = item.get("tax_rate").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
-    Ok(ResolvedTax { rule_id: String::new(), components: vec![TaxComponent { rate_pct: pct, rate_key: rate_key(pct), kind: "tax".to_string(), label: String::new() }] })
+    Ok(ResolvedTax { rule_id: String::new(), category_key: cat, components: vec![TaxComponent { rate_pct: pct, rate_key: rate_key(pct), kind: "tax".to_string(), label: String::new() }] })
 }
 
 /// sales#113 / ADR-0210 — reparte `total` entre `weights` por RESTO MAYOR (Hamilton), en enteros:
@@ -654,7 +667,23 @@ fn line_price(
 /// Devuelve `(delta total en céntimos, snapshot JSON)`. El snapshot conserva el **orden de
 /// elección** (petición recurrente en cocina: el orden de catálogo no sirve) y congela el
 /// `kitchen_name`, que es el que se imprime.
-fn authoritative_modifiers(item: &Value, catalog: Option<&Vec<&Value>>) -> Result<(i64, String), String> {
+///
+/// 🔴 **And a supplement that taxes DIFFERENTLY is not folded: it is REFUSED** (sales#147, the
+/// amendment to ADR-0376). `line_tax_category` is the tax category the SERVER fixed for the line
+/// — the product catalogue's, or the one the combo split decided. If the option declares a
+/// category of its OWN that is not that one, the delta cannot go in through the parent's
+/// `unit_price`: it would inherit the parent's rate and the invoice would come out wrongly broken
+/// down **in silence** (a soft drink at 21 % charged at the menu's 10 %). That is what this door
+/// closes until the child line exists.
+///
+/// `None` = the line has no catalogue category (open-price sale, no `product_id`). Then there is
+/// nothing to compare against and an option with its own category is **also** refused: it fails
+/// CLOSED, like the rest of this function.
+fn authoritative_modifiers(
+    item: &Value,
+    catalog: Option<&Vec<&Value>>,
+    line_tax_category: Option<&str>,
+) -> Result<(i64, String), String> {
     let chosen = match item.get("modifiers").and_then(|v| v.as_array()) {
         Some(a) if !a.is_empty() => a,
         // Sin suplementos no hace falta catálogo: la inmensa mayoría de las líneas.
@@ -674,6 +703,19 @@ fn authoritative_modifiers(item: &Value, catalog: Option<&Vec<&Value>>) -> Resul
             .iter()
             .find(|r| field(r, "option_id") == id)
             .ok_or_else(|| reject("sales.modifier_not_available", &id))?;
+        // sales#147 — the option's own tax category. Empty = it inherits its line's (ADR-0376),
+        // which is 99 % of supplements and the only case that can be charged correctly today.
+        let option_category = field(row, "tax_category_key");
+        if !option_category.is_empty() && line_tax_category != Some(option_category.as_str()) {
+            return Err(reject(
+                "sales.modifier_tax_override_unsupported",
+                format!(
+                    "`{id}` taxes as `{option_category}` and its line as `{}` — a supplement with \
+                     its own tax category needs a line of its own (ADR-0376), which is not written yet",
+                    line_tax_category.unwrap_or("<none>"),
+                ),
+            ));
+        }
         let delta = as_cents(row.get("price_delta").unwrap_or(&Value::Null), 0);
         delta_total += delta;
         let name = field(row, "name");
@@ -687,9 +729,10 @@ fn authoritative_modifiers(item: &Value, catalog: Option<&Vec<&Value>>) -> Resul
             "name": name,
             "kitchen_name": kitchen,
             "price_delta": delta,
-            // Vacío = hereda la categoría fiscal de la línea (ADR-0376). Se congela igual para que
-            // el histórico sepa qué se decidió, aunque hoy solo se use el caso que hereda.
-            "tax_category_key": field(row, "tax_category_key"),
+            // Empty = it inherits the line's tax category (ADR-0376) — and, by this point, it is
+            // the only thing it can be: a different category of its own already refused the sale.
+            // Frozen all the same so the history knows what was decided.
+            "tax_category_key": option_category,
         }));
     }
     let text = serde_json::to_string(&Value::Array(snapshot))
@@ -1612,15 +1655,18 @@ fn value_checkout(
         // cerrado; el del catálogo del producto es el PESO que ya se usó para repartirlo, no lo que
         // se cobra. Aquí no hay una segunda ruta del dinero: el resto de la maquinaria sigue igual.
         let unit_price = match combo { Some(c) => c.unit_price, None => unit_price };
-        let (modifier_delta, modifier_snapshot) =
-            authoritative_modifiers(item, modifier_catalog.as_ref())?;
-        let unit_price = unit_price + modifier_delta;
         // La categoría de una línea de combo la fijó el servidor: la del combo si es prestación
         // única (art. 91.Uno.2.2º), la del componente si el pack se repartió (art. 79.Dos).
+        // Resolved BEFORE the supplements because it is what an option's own category is checked
+        // against (sales#147): a supplement that taxes differently cannot be folded into this
+        // line's price without inheriting its rate.
         let catalog_cat = match combo {
             Some(c) => Some(c.tax_category_key.as_str()),
             None => from_catalog.as_ref().map(|(_, _, cat)| cat.as_str()),
         };
+        let (modifier_delta, modifier_snapshot) =
+            authoritative_modifiers(item, modifier_catalog.as_ref(), catalog_cat)?;
+        let unit_price = unit_price + modifier_delta;
         // Cantidad en punto fijo 10⁶ (ADR-0147) + rechazo fuera de rejilla; y la cantidad de
         // precio KPEIN («37 céntimos por 100 ud») que hace exacto el sub-céntimo sin tocar el dinero.
         let qty = line_qty(item)?;
@@ -1822,7 +1868,8 @@ pub fn preview_checkout_pure(input: Value) -> Result<Output, String> {
             json!({
                 "product_id": l.item.get("product_id").cloned().unwrap_or(Value::Null),
                 "product_name": as_str(l.item.get("product_name").unwrap_or(&Value::Null)),
-                "tax_category_key": field(&l.item, "tax_category_key"),
+                // sales#195: the RESOLVED category, the same one the sale freezes on its row.
+                "tax_category_key": l.resolved.category_key.clone(),
                 "tax_rate": l.combined_pct,          // tasa % combinada (server-authoritative)
                 "quantity": l.qty,                   // punto fijo 10⁶ (ADR-0147)
                 "unit_price": l.unit_price,          // céntimos: lo que decidió el SERVIDOR
@@ -1950,7 +1997,11 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         // papel no tiene con qué explicárselo al cliente.
         p.insert("is_covered".into(), json!(covered as i64));
         // ── Snapshot fiscal inmutable de la línea (ADR-0085) ──
-        p.insert("tax_category_key".into(), json!(field(item, "tax_category_key")));
+        // sales#195: the RESOLVED category, the very one that produced `tax_rate` and
+        // `tax_rule_id`. The catalogue's when the line comes from it (sales#68), the payload's only
+        // when there is no row to check it against. It used to be copied from the payload, so the
+        // row could freeze `product.generic` while charging the 10 % of `restaurant.food`.
+        p.insert("tax_category_key".into(), json!(resolved.category_key));
         // sales#12: la categoría del producto también se congela (routing de cocina; misma regla).
         p.insert("category_id".into(), category_snapshot(item));
         p.insert("tax_country_code".into(), json!(cc));
@@ -2172,6 +2223,8 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
             let combined_pct = l.combined_pct;
             let it_gift = l.is_gift;
             let it_covered = l.covered;
+            // sales#195: the frozen category is the RESOLVED one, the same that produced the rate.
+            let it_category_key = l.resolved.category_key.clone();
             json!({
                 "product_id": it.get("product_id").cloned().unwrap_or(Value::Null),
                 "product_name": as_str(it.get("product_name").unwrap_or(&Value::Null)),
@@ -2181,7 +2234,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
                 "unit_code": str_or(it, "unit_code", "ud"), // unidad congelada de la línea
                 "unit_price": unit_price,           // céntimos (bruto/unitario tal cual lo envió la UI)
                 "tax_rate": combined_pct,           // tasa % resuelta (server-authoritative)
-                "tax_category_key": field(it, "tax_category_key"), // categoría fiscal congelada (ADR-0085)
+                "tax_category_key": it_category_key, // RESOLVED tax category, frozen (ADR-0085, sales#195)
                 "net_amount": t.net,                // céntimos: base imponible YA extraída (0 si invitación)
                 "tax_amount": t.tax,                // céntimos: IVA YA calculado (0 si invitación)
                 "is_gift": it_gift,                 // invitación/regalo (comp)
@@ -4755,6 +4808,94 @@ mod tests {
         );
     }
 
+    // ── sales#195 · the frozen CATEGORY comes from the catalogue too ───────────────────────────
+    //
+    // ADR-0085: both the rate and the tax category are set by the hub's trusted catalogue. The rate
+    // already came from there (sales#67/#68), but the `tax_category_key` column that gets PERSISTED
+    // — and the one travelling in `sale.completed` towards the invoice and VeriFactu — was copied
+    // from the payload. Two authorities writing the same fiscal snapshot, and they could disagree:
+    // the row read "product.generic" while charging the 10 % of `restaurant.food`.
+
+    /// The catalogue says one thing and the till another: the product is `restaurant.food` (10 %)
+    /// and the payload claims `product.generic` (21 %).
+    fn mismatching_category_input() -> Value {
+        input_fiscal(
+            json!([{ "product_id": "p-menu", "product_name": "Menu", "price": 1000,
+                     "quantity": 1_000_000, "tax_category_key": "product.generic" }]),
+            json!([{ "id": "p-menu", "price": 1000, "cost": 0,
+                     "tax_category_key": "restaurant.food" }]),
+            json!([
+                { "id": "r-10", "country_code": "ES", "region_code": null,
+                  "tax_category_key": "restaurant.food", "rate_pct": 10.0, "tax_type": "vat" },
+                { "id": "r-21", "country_code": "ES", "region_code": null,
+                  "tax_category_key": "product.generic", "rate_pct": 21.0, "tax_type": "vat" }
+            ]),
+        )
+    }
+
+    #[test]
+    fn the_frozen_tax_category_comes_from_the_catalogue_not_from_the_payload() {
+        let out = sale(mismatching_category_input());
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("line");
+        assert_eq!(line.params["tax_rate"], json!(10.0), "the rate already comes from the catalogue");
+        assert_eq!(line.params["tax_rule_id"], json!("r-10"));
+        assert_eq!(
+            line.params["tax_category_key"], json!("restaurant.food"),
+            "the row froze the browser's category while charging the catalogue's rate"
+        );
+    }
+
+    #[test]
+    fn the_sale_completed_event_carries_the_resolved_tax_category() {
+        // This is the payload `invoice` and VeriFactu build the document from: the label that
+        // justifies the rate has to be the same one that produced it.
+        let out = sale(mismatching_category_input());
+        assert_eq!(out.events[0].name, "sale.completed");
+        let item = &out.events[0].payload["items"][0];
+        assert_eq!(item["tax_rate"], json!(10.0));
+        assert_eq!(
+            item["tax_category_key"], json!("restaurant.food"),
+            "the event carried the browser's category to invoice and to the AEAT"
+        );
+    }
+
+    #[test]
+    fn an_unclassified_catalogue_product_freezes_NO_category_rather_than_the_claimed_one() {
+        // Edge the fix makes explicit: the product IS in the catalogue but its row carries no tax
+        // category. `resolve_line_tax` already ignored the payload's category for the RATE here
+        // (it falls through to the open door of sales#63), so the row must say the same thing: no
+        // rule (`tax_rule_id` NULL) and no category. Freezing the claimed label next to a rate no
+        // category produced is the very contradiction sales#195 removes — and the browser is not
+        // the authority that classifies a product.
+        let out = sale(input_fiscal(
+            json!([{ "product_id": "p-plain", "product_name": "Unclassified", "price": 1000,
+                     "quantity": 1_000_000, "tax_category_key": "restaurant.food",
+                     "tax_rate": 21.0 }]),
+            json!([{ "id": "p-plain", "price": 1000, "cost": 0, "tax_category_key": "" }]),
+            tax_catalog(),
+        ));
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("line");
+        assert_eq!(line.params["tax_rule_id"], Value::Null);
+        assert_eq!(line.params["tax_category_key"], json!(""));
+        assert_eq!(out.events[0].payload["items"][0]["tax_category_key"], json!(""));
+    }
+
+    #[test]
+    fn a_line_with_no_catalogue_still_freezes_the_category_it_was_given() {
+        // Control: a service (or an open-price line) has no catalogue row `sales` can check it
+        // against, so the payload's category is the only one there is — and freezing it is right.
+        let out = sale(input_fiscal(
+            json!([{ "product_name": "Haircut", "price": 1800, "quantity": 1_000_000,
+                     "is_service": true, "tax_category_key": "service.generic" }]),
+            product_catalog(),
+            json!([{ "id": "r-svc", "country_code": "ES", "region_code": null,
+                     "tax_category_key": "service.generic", "rate_pct": 21.0, "tax_type": "vat" }]),
+        ));
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("line");
+        assert_eq!(line.params["tax_category_key"], json!("service.generic"));
+        assert_eq!(line.params["tax_rate"], json!(21.0));
+        assert_eq!(out.events[0].payload["items"][0]["tax_category_key"], json!("service.generic"));
+    }
     #[test]
     fn a_catalogue_line_whose_category_has_no_rule_is_refused() {
         // Hub sin regla para esa categoría: cobrar el tipo que propone el cliente es exactamente
@@ -5436,6 +5577,91 @@ mod tests {
         let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("línea");
         assert_eq!(line.params["line_total"], json!(500));
         assert_eq!(line.params["modifiers"], json!("[]"), "sin suplementos, snapshot vacío");
+    }
+
+    // ── sales#147 · a supplement that taxes DIFFERENTLY is not charged at the parent's rate ───
+
+    /// An option of `modifiers.options.all` carrying whatever tax category it is given
+    /// (`Value::Null` = it inherits its line's, which is the case for the vast majority).
+    fn drink_option(tax_category_key: Value) -> Value {
+        json!([{ "option_id": "o-refresco", "group_id": "g-bebida", "name": "Refresco",
+                 "kitchen_name": "+REFRESCO", "price_delta": 200,
+                 "tax_category_key": tax_category_key }])
+    }
+
+    /// A 10,00 € set menu from the catalogue (`restaurant.food`) with a 2,00 € soft drink on it.
+    /// The OPTION's category is the only thing that changes between the cases below.
+    fn menu_with_drink(option_tax_category: Value) -> Value {
+        let mut inp = con_suplementos(
+            input(json!([{ "product_id": "p-menu", "product_name": "Menú del día",
+                           "quantity": 1_000_000, "tax_rate": 10.0,
+                           "modifiers": [{ "option_id": "o-refresco" }] }]), 3, 1200),
+            drink_option(option_tax_category),
+        );
+        inp["context"]["reads"]["inventory.products.for_sale"] =
+            json!([{ "id": "p-menu", "price": 1000, "cost": 0,
+                     "tax_category_key": "restaurant.food" }]);
+        // The trusted tax catalogue: the menu at 10 %, the drink at 21 % (ADR-0085). A catalogue
+        // line WITH a category REQUIRES it — without it the sale is refused before reaching what
+        // this block is about.
+        inp["context"]["reads"]["taxes.rules.list"] = json!([
+            { "id": "r-es-10", "country_code": "ES", "region_code": null,
+              "tax_category_key": "restaurant.food", "rate_pct": 10.0, "tax_type": "vat" },
+            { "id": "r-es-21", "country_code": "ES", "region_code": null,
+              "tax_category_key": "product.generic", "rate_pct": 21.0, "tax_type": "vat" }
+        ]);
+        inp["context"]["country_code"] = json!("ES");
+        inp
+    }
+
+    #[test]
+    fn a_supplement_with_a_TAX_CATEGORY_OF_ITS_OWN_refuses_the_sale() {
+        // 🔴 The hole sales#147 closes: the 21 % drink inside a 10 % menu was folded into the
+        // parent's `unit_price` and INHERITED its rate. The invoice came out wrongly broken down
+        // and it came out in silence — no error, no warning, no log — which is worse than not
+        // letting it be charged. Until the child line exists (part 2 of the issue), the sale is
+        // REFUSED through the same door that already refuses an unknown option.
+        let err = complete_sale_pure(menu_with_drink(json!("product.generic")))
+            .expect_err("must refuse");
+        assert!(
+            err.contains("sales.modifier_tax_override_unsupported"),
+            "stable domain code: {err}"
+        );
+    }
+
+    #[test]
+    fn a_supplement_with_the_SAME_category_as_its_line_still_folds() {
+        // Declaring the category is not declaring an exception: if it is THE SAME as the line's,
+        // there are no two bases to break down and the supplement folds as it always did.
+        let out = sale(menu_with_drink(json!("restaurant.food")));
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("line");
+        assert_eq!(line.params["line_total"], json!(1200), "10 € + 2 € at the same rate");
+    }
+
+    #[test]
+    fn a_supplement_with_NO_category_keeps_folding_into_its_line() {
+        // NO-REGRESSION control over 99 % of supplements: an empty `tax_category_key` means it
+        // inherits (ADR-0376). If this test went red, the fix would have broken "+cheese".
+        let out = sale(menu_with_drink(Value::Null));
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("line");
+        assert_eq!(line.params["line_total"], json!(1200), "the delta goes in via the unit price");
+    }
+
+    #[test]
+    fn on_an_OPEN_PRICE_line_a_supplement_with_a_category_is_refused_too() {
+        // A line with no `product_id` has no catalogue category to compare against, so it cannot be
+        // asserted that the supplement taxes the same. It fails CLOSED, like the rest of this door:
+        // charging "assuming it inherits" is exactly the silence this issue closes.
+        let inp = con_suplementos(
+            input(json!([{ "product_name": "Menú del día", "price": 1000, "quantity": 1_000_000,
+                           "tax_rate": 10.0, "modifiers": [{ "option_id": "o-refresco" }] }]), 3, 1200),
+            drink_option(json!("product.generic")),
+        );
+        let err = complete_sale_pure(inp).expect_err("must refuse");
+        assert!(
+            err.contains("sales.modifier_tax_override_unsupported"),
+            "stable domain code: {err}"
+        );
     }
 
     // ── pm#93 · los suplementos llegan a COCINA con el nombre que resuelve el SERVIDOR ────────
@@ -7433,6 +7659,20 @@ mod tests {
     }
 
     #[test]
+    fn charging_a_resumed_check_freezes_the_ROWS_tax_category() {
+        // sales#195 · the restaurant path end to end: the waiter's row was written by the server
+        // (`product.generic`), and the till that pays it sends no category at all. Before, the
+        // sale line froze that EMPTY value while charging the 21 % the row's category resolved —
+        // and the same empty string travelled to `invoice` and to VeriFactu.
+        let out = sale(charge_open_check(900, json!([order_row("line-1", 900)]), 900));
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("line");
+        assert_eq!(line.params["tax_rate"], json!(21.0));
+        assert_eq!(line.params["tax_category_key"], json!("product.generic"),
+                   "the sale line did not inherit the category frozen on the check's row");
+        assert_eq!(out.events[0].payload["items"][0]["tax_category_key"], json!("product.generic"));
+    }
+
+    #[test]
     fn opening_a_check_freezes_the_CATALOGUE_price_not_the_payload_one() {
         let row = &order_lines(&orden(open_input(burger_catalog(900))))[0];
         assert_eq!(row["unit_price"], json!(900), "the row is born with the catalogue's price");
@@ -7604,6 +7844,19 @@ mod tests {
         assert_eq!(row["line_total"], json!(900));
         assert!(out.operations.iter().any(|o| o.command == "sales._recompute_order_total"),
                 "the order's provisional total is recomposed in the same transaction");
+    }
+
+    #[test]
+    fn adding_a_line_freezes_the_catalogue_tax_category_too() {
+        // sales#195 · guard for the OTHER door. `add_line_input`'s payload claims
+        // `restaurant.food` (10 %) for a burger the catalogue classifies as `product.generic`
+        // (21 %). sales#175 already made this row server-resolved; this pins it, because the
+        // checkout now HONOURS the row's category when the check is resumed.
+        let out = add_order_line_pure(add_line_input(burger_catalog(900), open_order_row()))
+            .expect("the line goes in");
+        let row = &order_lines(&out)[0];
+        assert_eq!(row["tax_category_key"], json!("product.generic"),
+                   "the row froze the till's category instead of the catalogue's");
     }
 
     #[test]

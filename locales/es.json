@@ -158,6 +158,7 @@
     "errorAmountNegative": "La venta no puede llevar importes negativos",
     "errorInsufficientTendered": "El importe entregado no cubre el total",
     "errorNoTaxRule": "Una línea tiene una categoría fiscal sin regla de IVA en este negocio: configúrala en Impuestos antes de cobrar",
+    "errorModifierTaxOverride": "Un suplemento de esa línea tributa a un IVA distinto del de la línea, y así todavía no se puede cobrar. Quítale la categoría fiscal en Suplementos, o quita el suplemento de la línea",
     "errorTaxCatalogUnavailable": "No se han podido cargar las reglas de IVA, así que no se ha cobrado nada. Vuelve a intentarlo y, si persiste, avisa al encargado",
     "all": "Todos",
     "categoryFilter": "Categorías",

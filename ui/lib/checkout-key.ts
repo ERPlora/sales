@@ -76,6 +76,12 @@ const MESSAGES: Record<string, string> = {
   'sales.combo_component_price_unknown': 'ui.errorComboComponentPriceUnknown',
   'sales.combo_tax_category_missing': 'ui.errorComboTaxCategoryMissing',
   'sales.too_many_lines': 'ui.errorTooManyLines',
+  // sales#147 (the amendment to ADR-0376) — the supplement declares a tax category of its OWN and
+  // there is nowhere to put it today: folding it into the parent would charge it at the PARENT's
+  // rate and the invoice would come out wrongly broken down, in silence. Its own message and not
+  // `ui.errorCharge` on purpose: this is fixed on the option in the Modifiers catalogue, in ten
+  // seconds, and only if the screen says which one.
+  'sales.modifier_tax_override_unsupported': 'ui.errorModifierTaxOverride',
   // sales#185 (hub#1074, ADR-0400) — PLATFORM codes, not domain ones. `complete_sale` declares
   // `taxes.rules.list` as a read with `required: true`, so a hub missing the tax app (force
   // uninstalled, hub#1101, or deactivated by the ADR-0128 cascade) has the sale refused by the
