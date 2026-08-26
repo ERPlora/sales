@@ -1243,14 +1243,8 @@ fn expand_combos<'a>(
     Ok(out)
 }
 
-/// Lógica pura: `{payload, context}` → Output (intenciones).
-///
-/// Devuelve `Err` si una cantidad es inválida (ADR-0147 §2.2): fuera de la rejilla del incremento
-/// congelado de su línea, o no positiva. El comando entero se RECHAZA — no se redondea en silencio.
 // ── sales#20 · el SERVIDOR cierra la venta; el cliente solo PROPONE ──────────────────────────
 
-/// Rechaza el cierre con un código de dominio estable y namespaced (`sales.<snake_case>`).
-///
 /// Why a command did not go through. Two kinds, because they leave the hub by two different
 /// doors and only one of them is translatable (sales#201).
 enum Refusal {
