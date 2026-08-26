@@ -56,6 +56,12 @@ use serde_json::{json, Map, Value};
 #[cfg(feature = "guest")]
 use extism_pdk::*;
 
+/// sales#201 — the two channels, and why the `Err` arm is NOT where a refusal goes.
+///
+/// A business rejection comes back inside the `Ok`, in `Output.error`: that is the only channel the
+/// host turns into `RuntimeError::Domain { code }`, and therefore the only one the browser receives
+/// as a translatable `code` instead of the flat `400 {code: "error"}`. The `Err` arm is reserved for
+/// a broken guest contract, which the host reports as a failed command — a bug, not an answer.
 #[cfg(feature = "guest")]
 #[plugin_fn]
 pub fn complete_sale(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
