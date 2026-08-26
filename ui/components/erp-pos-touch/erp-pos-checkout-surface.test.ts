@@ -318,3 +318,93 @@ describe('i18n (ADR-0055/0199)', () => {
     expect(es.missingAppCharge).toContain('{app}');
   });
 });
+
+// sales#201 — the END of the chain, mounted: the code the handler publishes has to become the
+// SENTENCE the cashier reads.
+//
+// The map of `checkout-key.ts` was already right and already tested in isolation; what was missing
+// was the producer. The handler refused with `Err("sales.x: …")`, the runtime turned that into
+// `RuntimeError::Wasm` and the server flattened it into HTTP 400 with `code: "error"` — so
+// `errorCode(e)` read `"error"`, `MESSAGES["error"]` was `undefined` and all 26 mappings fell
+// through to the generic «could not charge». Twenty-six different problems, one dead end.
+//
+// These tests mount the real screen and drive it with the envelope the SDK builds from that
+// answer, which is where the two halves finally meet.
+describe('4 · sales#201 — the domain code reaches the cashier as its own sentence', () => {
+  it('a split whose legs do not add up says SO, not «could not charge»', async () => {
+    const el = await withLine();
+    el.openPay();
+    await el.updateComplete;
+    // The exact code `complete_sale` now publishes through `Output.error` when the legs of a mixed
+    // payment do not add up to the total the SERVER priced (sales#159, ADR-0386).
+    refuseWith = 'sales.payments_do_not_match_total';
+
+    await el.confirm();
+    await el.updateComplete;
+
+    const shown = $(el, '.sheet .pay-err')?.textContent ?? '';
+    expect(shown, 'the legs are still on screen to be fixed — say which problem it is')
+      .toContain('ui.errorPaymentsMismatch');
+    expect(shown, 'the generic bucket is what this issue is about').not.toContain('ui.errorCharge');
+  });
+
+  it('and so does every other domain code the checkout can be refused with', async () => {
+    // One per screen the cashier would have to go and fix it on. Before sales#201 every one of
+    // these arrived as `code: "error"` and painted the same dead end.
+    const chain: [string, string][] = [
+      ['sales.empty_sale', 'ui.errorEmptySale'],
+      ['sales.combo_group_unresolved', 'ui.errorComboGroupUnresolved'],
+      ['sales.combo_not_on_sale', 'ui.errorComboNotOnSale'],
+      ['sales.insufficient_tendered', 'ui.errorInsufficientTendered'],
+      ['sales.customer_required', 'ui.errorCustomerRequired'],
+      ['sales.too_many_lines', 'ui.errorTooManyLines'],
+    ];
+    for (const [code, key] of chain) {
+      const el = await withLine();
+      el.openPay();
+      await el.updateComplete;
+      refuseWith = code;
+
+      await el.confirm();
+      await el.updateComplete;
+
+      expect($(el, '.sheet .pay-err')?.textContent, `${code} → ${key}`).toContain(key);
+    }
+  });
+
+  it('the flat `error` of the OLD chain is exactly what the cashier could not act on', async () => {
+    // The regression net: this is what the screen showed for all 26 codes while the handler
+    // refused with an `Err(String)`. If a change ever puts the flat code back, the test above goes
+    // red and this one explains why.
+    const el = await withLine();
+    el.openPay();
+    await el.updateComplete;
+    refuseWith = 'error';
+
+    await el.confirm();
+    await el.updateComplete;
+
+    expect($(el, '.sheet .pay-err')?.textContent).toContain('ui.errorCharge');
+  });
+
+  it('every key the code→message map points at exists in en AND in es', async () => {
+    const { checkoutErrorKey } = await import('../../lib/checkout-key.js');
+    const en = (enLocale as { ui: Record<string, string> }).ui;
+    const es = (esLocale as { ui: Record<string, string> }).ui;
+    const codes = [
+      'sales.empty_sale', 'sales.payment_method_required', 'sales.payment_method_not_available',
+      'sales.discounts_not_allowed', 'sales.discount_out_of_range', 'sales.tax_rate_out_of_range',
+      'sales.customer_required', 'sales.amount_negative', 'sales.insufficient_tendered',
+      'sales.payments_do_not_match_total', 'sales.no_tax_rule', 'sales.tax_catalog_unavailable',
+      'sales.idempotency_key_required', 'sales.combo_catalog_unavailable', 'sales.combo_not_available',
+      'sales.combo_not_on_sale', 'sales.combo_option_not_available', 'sales.combo_group_unresolved',
+      'sales.combo_group_over_max', 'sales.combo_option_repeated', 'sales.combo_component_price_unknown',
+      'sales.combo_tax_category_missing', 'sales.too_many_lines',
+    ];
+    for (const code of codes) {
+      const key = checkoutErrorKey(code).replace(/^ui\./, '');
+      expect(en[key], `en.ui.${key} (${code})`).toBeTruthy();
+      expect(es[key], `es.ui.${key} (${code})`).toBeTruthy();
+    }
+  });
+});

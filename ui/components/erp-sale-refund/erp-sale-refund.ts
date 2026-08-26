@@ -34,6 +34,7 @@ import {
 } from '../../lib/refund-allocation.js';
 import { coveredLines, serviceOrdinals, type SaleLine } from '../../lib/refund-tender.js';
 import { payMethodDisplayName } from '../../lib/pay-icons.js';
+import { errorCode } from '../../lib/checkout-key.js';
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
 
@@ -50,11 +51,19 @@ const REFUND_MESSAGES: Record<string, string> = {
   'sales.sale_not_found': 'ui.refundSaleNotFound',
 };
 
-export function refundErrorKey(message: string): string {
-  for (const [code, key] of Object.entries(REFUND_MESSAGES)) {
-    if (message.includes(code)) return key === 'ui.refundNeedsDestinationShort' ? 'ui.refundReasonNotEligible' : key;
-  }
-  return 'ui.refundFailed';
+/**
+ * sales#201 — the key for a refused refund, read from the CODE the envelope carries.
+ *
+ * Same debt as `voidErrorKey` and for the same reason: this used to search the code inside the
+ * MESSAGE, which only worked while the handler shipped its refusal as `"<code>: <detail>"`. With
+ * the refusal travelling through `Output.error` the message is the detail alone, so the lookup is
+ * on the code and it is EXACT.
+ */
+export function refundErrorKey(code: string): string {
+  const key = REFUND_MESSAGES[code];
+  if (!key) return 'ui.refundFailed';
+  // The short label belongs to the leg row; the toast has room for the whole reason.
+  return key === 'ui.refundNeedsDestinationShort' ? 'ui.refundReasonNotEligible' : key;
 }
 
 interface Sale { id: string; sale_number: string; status: string; total: number }
@@ -396,8 +405,7 @@ export class ErpSaleRefund extends LitElement {
       if (!committed) erplora().notify?.({ type: 'error', message: t('ui.refundTenderPending') });
       this.dispatchEvent(new CustomEvent('refunded', { bubbles: true, composed: true, detail: { saleId: this.saleId } }));
     } catch (e) {
-      const raw = e instanceof Error ? e.message : String(e ?? '');
-      erplora().notify?.({ type: 'error', message: t(refundErrorKey(raw)) });
+      erplora().notify?.({ type: 'error', message: t(refundErrorKey(errorCode(e))) });
     } finally {
       this.busy = false;
     }

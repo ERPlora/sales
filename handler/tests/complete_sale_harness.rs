@@ -25,15 +25,26 @@ use serde_json::{json, Value};
 
 /// The handler's decision as the batteries read it. A rejection is a RESULT, not a crash: the
 /// battery asserts on the CODE that was raised, so swallowing it would hide what is under test.
+///
+/// sales#201 — a business rejection travels inside `Output.error`, not as an `Err`: that is the
+/// only channel the runtime turns into a `code` the client can translate. `error` therefore carries
+/// the BARE code (`sales.empty_sale`), never the `"<code>: <detail>"` string it used to be, and the
+/// operations are dropped: a refused sale writes nothing.
+///
+/// An `Err` is still possible and still means something else entirely — the guest could not honour
+/// its contract — so it is reported as its own answer instead of being folded into a refusal.
 fn envelope(input: Value) -> Value {
     match complete_sale_pure(input) {
-        Ok(out) => json!({
-            "ok": true,
-            "error": "",
-            "operations": out.operations,
-            "events": out.events,
-        }),
-        Err(e) => json!({ "ok": false, "error": e, "operations": [], "events": [] }),
+        Ok(out) => match out.error {
+            Some(error) => json!({ "ok": false, "error": error.code, "operations": [], "events": [] }),
+            None => json!({
+                "ok": true,
+                "error": "",
+                "operations": out.operations,
+                "events": out.events,
+            }),
+        },
+        Err(detail) => json!({ "ok": false, "error": detail, "operations": [], "events": [] }),
     }
 }
 
@@ -42,10 +53,16 @@ fn the_envelope_reports_a_rejection_as_a_result_with_its_domain_code() {
     // The shape the Python side parses, pinned here: `ok: false` + the code + an EMPTY operation
     // list. That last one is the whole point of the batteries' «nothing was persisted» assertion —
     // if a rejection ever emitted an operation, the runtime would run it inside the transaction.
-    let refused = envelope(json!({ "payload": { "items": [] }, "context": { "hub_id": "h1" } }));
+    // With its key present, so what refuses it is the EMPTY CART and not the missing key: an
+    // assertion on the code is only worth anything if the code it names is the one under test.
+    let refused = envelope(json!({
+        "payload": { "items": [], "idempotency_key": "idem-harness-empty" },
+        "context": { "hub_id": "h1" }
+    }));
     assert_eq!(refused["ok"], json!(false), "an empty sale is refused");
-    let code = refused["error"].as_str().unwrap_or_default();
-    assert!(code.starts_with("sales."), "namespaced domain code (ADR-0205): {code}");
+    // The BARE code, not a sentence with the code buried in it (sales#201): what the battery
+    // compares against is the ABI, and the detail beside it is not part of the contract.
+    assert_eq!(refused["error"], json!("sales.empty_sale"), "the code the handler raised");
     assert_eq!(refused["operations"], json!([]), "a rejection emits nothing at all");
 }
 

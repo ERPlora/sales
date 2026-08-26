@@ -4095,6 +4095,7 @@ var es_default = {
     editTender: "Editar {name}, {amount}",
     removeTender: "Quitar {name}, {amount}",
     errorPaymentsMismatch: "El total ha cambiado mientras se repart\xEDa el cobro. Revisa los importes y vuelve a cobrar.",
+    errorQuantityNotPositive: "Una l\xEDnea no tiene cantidad: pon al menos una antes de cobrar",
     actionRefund: "Devolver",
     statusRefunded: "Devuelta",
     refundTitle: "Devolver la venta {number}",
@@ -4459,6 +4460,7 @@ var en_default = {
     editTender: "Edit {name}, {amount}",
     removeTender: "Remove {name}, {amount}",
     errorPaymentsMismatch: "The total changed while the payment was being split. Check the amounts and charge again.",
+    errorQuantityNotPositive: "A line has no quantity: set at least one before charging",
     actionRefund: "Refund",
     statusRefunded: "Refunded",
     refundTitle: "Refund sale {number}",
@@ -6201,6 +6203,11 @@ var MESSAGES = {
   // `ui.errorCharge` on purpose: this is fixed on the option in the Modifiers catalogue, in ten
   // seconds, and only if the screen says which one.
   "sales.modifier_tax_override_unsupported": "ui.errorModifierTaxOverride",
+  // sales#201 (ADR-0147 §2.2) — an invalid quantity. The quantity pad already refuses off-grid
+  // amounts before charging, so the handler is the last net; when it fires, the cashier gets the
+  // SAME sentence the pad gives instead of a bare «could not charge».
+  "sales.quantity_off_grid": "ui.qtyOffGrid",
+  "sales.quantity_not_positive": "ui.errorQuantityNotPositive",
   // sales#185 (hub#1074, ADR-0400) — PLATFORM codes, not domain ones. `complete_sale` declares
   // `taxes.rules.list` as a read with `required: true`, so a hub missing the tax app (force
   // uninstalled, hub#1101, or deactivated by the ADR-0128 cascade) has the sale refused by the
@@ -7959,8 +7966,7 @@ var ErpPosTouch = class extends i3 {
       erplora2().notify?.({ type: "success", message: t5("ui.firedToKitchen") });
       if (this.orderId) this.cart = await loadOrderLines(erplora2(), this.orderId);
     } catch (e7) {
-      const msg = e7 instanceof Error ? e7.message : String(e7 ?? "");
-      if (msg.includes("sales.nothing_to_fire")) {
+      if (errorCode(e7) === "sales.nothing_to_fire") {
         if (this.orderId) this.cart = await loadOrderLines(erplora2(), this.orderId).catch(() => this.cart);
         return;
       }
@@ -10630,11 +10636,10 @@ var REFUND_MESSAGES = {
   "sales.refund_requires_completed": "ui.refundRequiresCompleted",
   "sales.sale_not_found": "ui.refundSaleNotFound"
 };
-function refundErrorKey(message) {
-  for (const [code, key] of Object.entries(REFUND_MESSAGES)) {
-    if (message.includes(code)) return key === "ui.refundNeedsDestinationShort" ? "ui.refundReasonNotEligible" : key;
-  }
-  return "ui.refundFailed";
+function refundErrorKey(code) {
+  const key = REFUND_MESSAGES[code];
+  if (!key) return "ui.refundFailed";
+  return key === "ui.refundNeedsDestinationShort" ? "ui.refundReasonNotEligible" : key;
 }
 function erplora3() {
   const c5 = globalThis.erplora;
@@ -10918,8 +10923,7 @@ var ErpSaleRefund = class extends i3 {
       if (!committed) erplora3().notify?.({ type: "error", message: t7("ui.refundTenderPending") });
       this.dispatchEvent(new CustomEvent("refunded", { bubbles: true, composed: true, detail: { saleId: this.saleId } }));
     } catch (e7) {
-      const raw = e7 instanceof Error ? e7.message : String(e7 ?? "");
-      erplora3().notify?.({ type: "error", message: t7(refundErrorKey(raw)) });
+      erplora3().notify?.({ type: "error", message: t7(refundErrorKey(errorCode(e7))) });
     } finally {
       this.busy = false;
     }
@@ -12641,7 +12645,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       const caretIcon = !active ? iconSwapVerticalOutline : dir === "asc" ? iconChevronUpOutline : iconChevronDownOutline;
       return b2`
                 <div
-                  class=${`gcell gh ${alignCls(c5.align)}${sortable ? " sortable" : ""}`}
+                  class=${`gcell gh ${alignCls(c5.align)}${sortable ? " sortable" : ""}${c5.pinned === "end" ? " actions-col" : ""}`}
                   role="columnheader"
                   @click=${() => this.onHeaderClick(c5)}
                 >
@@ -12671,7 +12675,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                 >
                   ${this.selectable ? b2`<span class="selcb" @click=${(e7) => e7.stopPropagation()}><ion-checkbox .checked=${selected} aria-label=${this.t.selectRow} @ionChange=${() => this.toggleRow(key)}></ion-checkbox></span>` : A}
                   ${cols.map(
-          (c5) => b2`<div class=${`gcell ${alignCls(c5.align)}`} role="cell">${c5.render ? c5.render(row) : b2`<span>${this.cell(c5, row)}</span>`}</div>`
+          (c5) => b2`<div class=${`gcell ${alignCls(c5.align)}${c5.pinned === "end" ? " actions-col" : ""}`} role="cell">${c5.render ? c5.render(row) : b2`<span>${this.cell(c5, row)}</span>`}</div>`
         )}
                   ${this.actions.length ? b2`<div class="gcell right actions-col" role="cell" @click=${(e7) => e7.stopPropagation()}>${this.actionButtons(row)}</div>` : A}
                 </div>
@@ -12900,9 +12904,8 @@ var VOID_MESSAGES = {
   "sales.void_reason_required": "ui.voidReasonRequired",
   "sales.sale_not_found": "ui.voidSaleNotFound"
 };
-function voidErrorKey(message) {
-  for (const [code, key] of Object.entries(VOID_MESSAGES)) if (message.includes(code)) return key;
-  return "ui.voidFailed";
+function voidErrorKey(code) {
+  return VOID_MESSAGES[code] ?? "ui.voidFailed";
 }
 var RANGE_KEYS = { today: "ui.rangeToday", "7d": "ui.range7d", "30d": "ui.range30d", all: "ui.rangeAll" };
 function isoDay(daysAgo = 0) {
@@ -13029,8 +13032,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
       erplora4().notify?.({ type: "success", message: t7("ui.voidDone") });
       await Promise.all([this.ctrl.load(), this.loadStats()]);
     } catch (e7) {
-      const raw = e7 instanceof Error ? e7.message : String(e7 ?? "");
-      erplora4().notify?.({ type: "error", message: t7(voidErrorKey(raw)) });
+      erplora4().notify?.({ type: "error", message: t7(voidErrorKey(errorCode(e7))) });
     }
   }
   get columns() {
