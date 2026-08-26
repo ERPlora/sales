@@ -57,7 +57,8 @@
       "sales.pos.actions",
       "sales.pos.assign",
       "sales.pos.order_info",
-      "sales.pos.tender"
+      "sales.pos.tender",
+      "sales.refund.tender"
     ]
   }
 }

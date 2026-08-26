@@ -3312,6 +3312,7 @@ var DEFAULT_LABELS2 = {
   receipt: "Receipt",
   servedBy: "Served by",
   customer: "Customer",
+  table: "Table",
   item: "Item",
   amount: "Amount",
   noLines: "\u2014 No lines \u2014",
@@ -3430,8 +3431,9 @@ var OkReceipt = class extends i3 {
         ${r6.number ? b2`<span>${this.t.receipt}: <strong>${r6.number}</strong></span>` : b2`<span></span>`}
         ${r6.datetime ? b2`<span>${r6.datetime}</span>` : A}
       </div>
-      ${r6.cashier || r6.customer ? b2`<div class="meta">
+      ${r6.cashier || r6.customer || r6.table ? b2`<div class="meta">
             ${r6.cashier ? b2`<span>${this.t.servedBy}: ${r6.cashier}</span>` : b2`<span></span>`}
+            ${r6.table ? b2`<span>${this.t.table}: ${r6.table}</span>` : A}
             ${r6.customer ? b2`<span>${this.t.customer}: ${r6.customer}</span>` : A}
           </div>` : A}`;
   }
@@ -4098,6 +4100,9 @@ var es_default = {
     refundConfirm: "Devolver {amount}",
     refundDone: "Devoluci\xF3n registrada.",
     refundFailed: "No se ha podido registrar la devoluci\xF3n.",
+    refundLineTenders: "L\xEDneas pagadas de otra forma",
+    refundLineTendersHint: "Estas l\xEDneas no costaron dinero, as\xED que no entran en el reparto de arriba. Lo que vuelve a ellas se decide aqu\xED.",
+    refundTenderPending: "El dinero ha vuelto, pero lo que se pag\xF3 de otra forma no se ha podido devolver. Rev\xEDsalo desde su m\xF3dulo.",
     refundExceedsTender: "A un medio de pago se le est\xE1 devolviendo m\xE1s de lo que cobr\xF3.",
     refundSaleNotFound: "Esa venta no es de este negocio.",
     refundRequiresCompleted: "Solo se puede devolver una venta cerrada.",
@@ -4455,6 +4460,9 @@ var en_default = {
     refundConfirm: "Refund {amount}",
     refundDone: "Refund recorded.",
     refundFailed: "The refund could not be recorded.",
+    refundLineTenders: "Lines paid another way",
+    refundLineTendersHint: "These lines cost no money, so they are not part of the split above. What goes back to them is decided here.",
+    refundTenderPending: "The money is back, but what was paid another way could not be returned. Check it from its own module.",
     refundExceedsTender: "One tender is being given back more than it was charged.",
     refundSaleNotFound: "That sale is not in this business.",
     refundRequiresCompleted: "Only a completed sale can be refunded.",
@@ -9499,11 +9507,11 @@ var ErpPosTouch = class extends i3 {
       <div class="pay-lbl">${t5("ui.lineTenders")}</div>
       <ul class="tl-list">
         ${lines.map((l3) => {
-      const isCovered = !!l3.line_id && this.covered.has(l3.line_id);
+      const isCovered2 = !!l3.line_id && this.covered.has(l3.line_id);
       return b2`<li class="tender-line" data-line=${l3.line_id ?? ""}>
             <div class="tl-h">
               <span class="tl-name">${l3.name}</span>
-              <span class="tl-amount" ?data-covered=${isCovered}>${this.money(lineAmount(l3))}</span>
+              <span class="tl-amount" ?data-covered=${isCovered2}>${this.money(lineAmount(l3))}</span>
             </div>
             ${coverableLine(l3) ? b2`<div class="tl-slot"></div>` : b2`<div class="tl-note">${t5("ui.tenderOneSessionPerLine")}</div>`}
           </li>`;
@@ -10490,6 +10498,25 @@ function formatAmountInput(amount, locale) {
   return fixed.replace(".", decimal);
 }
 
+// ui/lib/refund-tender.ts
+function coveredLines(lines) {
+  return lines.filter((l3) => !!l3.id && !!l3.product_id && isCovered(l3));
+}
+function isCovered(l3) {
+  return l3.is_covered === true || Number(l3.is_covered ?? 0) > 0;
+}
+function serviceOrdinals(covered) {
+  const seen = /* @__PURE__ */ new Map();
+  const out = /* @__PURE__ */ new Map();
+  for (const l3 of covered) {
+    const service = l3.product_id ?? "";
+    const n6 = seen.get(service) ?? 0;
+    out.set(l3.id, n6);
+    seen.set(service, n6 + 1);
+  }
+  return out;
+}
+
 // ui/components/erp-sale-refund/erp-sale-refund.ts
 var CATALOG3 = { es: es_default, en: en_default };
 var REFUND_MESSAGES = {
@@ -10526,8 +10553,30 @@ var ErpSaleRefund = class extends i3 {
     this.loading = false;
     this.error = "";
     this.busy = false;
+    this.covered = [];
+    this.tenderFillers = [];
+    this.tenderNotices = /* @__PURE__ */ new Map();
+    /** One instance per covered line, kept so it is not recreated on every render. */
+    this.tenderEls = /* @__PURE__ */ new Map();
     /** La clave del intento, congelada: un reintento NO la renueva. */
     this.key = "";
+    /** That line goes back to its external tender. The warning travels with the event because the
+     *  line's hole can be off-screen when the thumb is already on the refund button. */
+    this.onTenderRefundArmed = (e7) => {
+      const d3 = e7.detail;
+      if (!d3?.lineRef) return;
+      const next = new Map(this.tenderNotices);
+      next.set(d3.lineRef, String(d3.warning ?? ""));
+      this.tenderNotices = next;
+    };
+    /** The filler undid it, or said that line does not go back: its warning stops being announced. */
+    this.onTenderRefundDisarmed = (e7) => {
+      const d3 = e7.detail;
+      if (!d3?.lineRef) return;
+      const next = new Map(this.tenderNotices);
+      next.delete(d3.lineRef);
+      this.tenderNotices = next;
+    };
   }
   static {
     this.styles = i`
@@ -10555,6 +10604,18 @@ var ErpSaleRefund = class extends i3 {
     .leg-figures { display:flex; gap:.9rem; flex-wrap:wrap; color:var(--ion-color-medium,#8b897f); font-size:.78rem; margin:.25rem 0 .1rem; }
     /* El motivo se LEE sin tocar nada y sin ratón: nunca en un title ni dentro del botón. */
     .leg-reason { margin:.35rem 0 0; color:var(--ion-color-warning-shade,#b26a00); font-size:.82rem; }
+    /* sales#166 - WHAT WAS NOT PAID IN MONEY: one card per covered line, with the slot hole
+       underneath. A rule separates it from the split above, because they answer two different
+       questions: how much money goes back, and what goes back to its tender. */
+    .rt-block { border-top:1px solid var(--ion-border-color,#e0ddd4); padding-top:.85rem;
+      display:flex; flex-direction:column; gap:.4rem; }
+    .rt-lbl { font-weight:700; }
+    .rt-list { list-style:none; margin:.2rem 0 0; padding:0; display:flex; flex-direction:column; gap:.5rem; }
+    .refund-tender-line { border:1px solid var(--ion-border-color,#e0ddd4);
+      border-radius:var(--ok-radius,12px); padding:.6rem .7rem; }
+    .rt-name { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .rt-slot { margin-top:.45rem; }
+    .rt-slot:empty { display:none; }
     .totals { display:flex; justify-content:space-between; align-items:baseline; font-size:1.05rem; }
     .totals .v { font-weight:800; }
     .block { margin:0; color:var(--ion-color-danger,#d9480f); font-size:.85rem; }
@@ -10585,10 +10646,18 @@ var ErpSaleRefund = class extends i3 {
   }
   connectedCallback() {
     super.connectedCallback();
+    this.addEventListener("erp:tender-refund-armed", this.onTenderRefundArmed);
+    this.addEventListener("erp:tender-refund-disarmed", this.onTenderRefundDisarmed);
     void this.load();
+  }
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.removeEventListener("erp:tender-refund-armed", this.onTenderRefundArmed);
+    this.removeEventListener("erp:tender-refund-disarmed", this.onTenderRefundDisarmed);
   }
   updated(changed) {
     if (changed.has("saleId")) void this.load();
+    this.ensureTenderSlotsMounted();
   }
   async load() {
     const saleId = this.saleId;
@@ -10608,10 +10677,82 @@ var ErpSaleRefund = class extends i3 {
       this.key = newKey(saleId);
       const split = proportionalSplit(refundableTotal(this.legs), this.legs);
       this.draft = Object.fromEntries(Object.entries(split).map(([id, amount]) => [id, { amount }]));
+      await this.loadTenderLines(saleId);
     } catch (e7) {
       this.error = e7 instanceof Error ? e7.message : String(e7 ?? "");
     } finally {
       this.loading = false;
+    }
+  }
+  /**
+   * The ACCESSORY side of the screen: the lines another tender paid for, and the hole where its
+   * owner decides whether they go back (sales#166 / ADR-0386).
+   *
+   * 🔴 Nothing here may bring down the money refund, which is this screen's authority: a customer
+   * waiting for 18,00 € does not go without them because an accessory module did not answer. Hence
+   * a `catch` of its own on every step, and the worst case is a section that is not painted.
+   *
+   * And the lines are not asked for when nobody fills the slot: with no tender owner there is
+   * nothing to offer, so the read would be a call no pixel uses.
+   */
+  async loadTenderLines(saleId) {
+    this.covered = [];
+    this.tenderNotices = /* @__PURE__ */ new Map();
+    const sdk = erplora3();
+    if (typeof sdk.loadSlot !== "function") {
+      this.tenderFillers = [];
+      return;
+    }
+    try {
+      const rows3 = await sdk.loadSlot("sales.refund.tender") ?? [];
+      this.tenderFillers = rows3.map((f3) => String(f3.component));
+    } catch {
+      this.tenderFillers = [];
+    }
+    if (!this.tenderFillers.length) return;
+    try {
+      const lines = await sdk.query("sales.lines", { sale_id: saleId });
+      this.covered = coveredLines(lines ?? []);
+    } catch {
+      this.covered = [];
+    }
+  }
+  /**
+   * One filler instance per covered line. Idempotent: the screen re-renders on every keystroke of
+   * an amount.
+   *
+   * 🔴 The four properties are set BEFORE the element is inserted - same reason as in the till
+   * (sales#162): the filler starts its read in `connectedCallback`, so inserting it first would
+   * make it ask about an empty sale and paint "nothing to give back here" over a session that
+   * does go back.
+   */
+  ensureTenderSlotsMounted() {
+    if (!this.tenderFillers.length) return;
+    const ordinals = serviceOrdinals(this.covered);
+    const alive = /* @__PURE__ */ new Set();
+    for (const l3 of this.covered) {
+      const host = [...this.renderRoot.querySelectorAll(".refund-tender-line")].find((n6) => n6.dataset.line === l3.id)?.querySelector(".rt-slot");
+      if (!host) continue;
+      for (const component of this.tenderFillers) {
+        const key = `${component}::${l3.id}`;
+        alive.add(key);
+        let el = this.tenderEls.get(key);
+        if (!el) {
+          el = document.createElement(component);
+          this.tenderEls.set(key, el);
+        }
+        const props = el;
+        props.saleId = this.saleId ?? "";
+        props.lineRef = l3.id;
+        props.serviceId = l3.product_id ?? "";
+        props.lineIndex = ordinals.get(l3.id) ?? 0;
+        if (el.parentElement !== host) host.appendChild(el);
+      }
+    }
+    for (const [key, el] of [...this.tenderEls]) {
+      if (alive.has(key)) continue;
+      el.remove();
+      this.tenderEls.delete(key);
     }
   }
   /** El operador teclea EUROS; lo que se guarda son céntimos. Nada más se recalcula: su reparto. */
@@ -10662,7 +10803,7 @@ var ErpSaleRefund = class extends i3 {
     if (this.busy) return;
     this.busy = true;
     try {
-      await erplora3().command("sales.refund", {
+      const out = await erplora3().command("sales.refund", {
         sale_id: this.saleId,
         reason: this.reason.trim(),
         // La MISMA clave en cada intento: un reintento recupera el documento ya escrito en vez de
@@ -10670,7 +10811,9 @@ var ErpSaleRefund = class extends i3 {
         idempotency_key: this.key,
         allocations: buildAllocations(this.draft, this.legs)
       });
+      const committed = await this.commitTenderRefunds(out);
       erplora3().notify?.({ type: "success", message: t7("ui.refundDone") });
+      if (!committed) erplora3().notify?.({ type: "error", message: t7("ui.refundTenderPending") });
       this.dispatchEvent(new CustomEvent("refunded", { bubbles: true, composed: true, detail: { saleId: this.saleId } }));
     } catch (e7) {
       const raw = e7 instanceof Error ? e7.message : String(e7 ?? "");
@@ -10678,6 +10821,78 @@ var ErpSaleRefund = class extends i3 {
     } finally {
       this.busy = false;
     }
+  }
+  /**
+   * Hands every filler the document reference and WAITS for whatever it commits to do.
+   *
+   * The contract is `respondWith`'s: the detail carries `waitFor(promise)`, and whoever calls it
+   * delays the screen's close until it settles. A filler that does not call it blocks nothing - the
+   * host cannot force anyone to answer, and waiting forever would be worse than not waiting.
+   *
+   * Returns whether everything promised went through. It never throws: the money is already back.
+   */
+  async commitTenderRefunds(out) {
+    const refundRef = String(out?.refund_ref ?? out?.refund_id ?? "");
+    if (!refundRef || !this.tenderEls.size) return true;
+    const refundId = String(out?.refund_id ?? refundRef);
+    const pending = [];
+    let dispatched = true;
+    for (const el of this.tenderEls.values()) {
+      const props = el;
+      props.refundId = refundId;
+      props.refundRef = refundRef;
+      try {
+        el.dispatchEvent(new CustomEvent("erp:tender-refund-commit", {
+          detail: {
+            saleId: this.saleId,
+            refundId,
+            refundRef,
+            waitFor: (p4) => {
+              pending.push(Promise.resolve(p4));
+            }
+          },
+          bubbles: false
+        }));
+      } catch {
+        dispatched = false;
+      }
+    }
+    if (!pending.length) return dispatched;
+    const settled = await Promise.allSettled(pending);
+    return dispatched && settled.every((s5) => s5.status === "fulfilled");
+  }
+  /**
+   * The lines an external tender paid for, with their hole underneath (sales#166 / ADR-0386).
+   *
+   * They are not part of the split above because they cost no money (`is_covered` -> net 0, tax 0),
+   * which is why they need a place of their own: without it, the only way to give a session back
+   * would be for the operator to remember to walk into the tender's module, which is exactly what
+   * the market gets wrong.
+   *
+   * With no fillers NOTHING is painted: no header, no list, no empty hole.
+   */
+  renderTenderLines() {
+    const t7 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
+    if (!this.tenderFillers.length || !this.covered.length) return A;
+    return b2`
+      <div class="rt-block">
+        <div class="rt-lbl">${t7("ui.refundLineTenders")}</div>
+        <p class="hint">${t7("ui.refundLineTendersHint")}</p>
+        <ul class="rt-list">
+          ${this.covered.map((l3) => b2`
+            <li class="refund-tender-line" data-line=${l3.id}>
+              <div class="rt-name">${l3.product_name ?? ""}</div>
+              <div class="rt-slot"></div>
+            </li>`)}
+        </ul>
+      </div>`;
+  }
+  /** The warnings the fillers want read BEFORE confirming. They warn; they never block. */
+  renderTenderNotices() {
+    const notices = [...this.tenderNotices.values()].filter((n6) => !!n6);
+    if (!notices.length) return A;
+    return notices.map((n6) => b2`
+      <ok-inline-feedback class="rt-notice" tone="warning" icon="alert-circle-outline">${n6}</ok-inline-feedback>`);
   }
   renderLeg(leg) {
     const t7 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
@@ -10734,6 +10949,7 @@ var ErpSaleRefund = class extends i3 {
       <h3>${t7("ui.refundTitle", { number: this.sale?.sale_number ?? "" })}</h3>
       <p class="hint">${t7("ui.refundExplain")}</p>
       <div class="legs">${this.legs.map((l3) => this.renderLeg(l3))}</div>
+      ${this.renderTenderLines()}
       <ion-button class="refund-propose" size="small" fill="clear" @click=${() => this.proposeAll()}>
         ${t7("ui.refundProposeAll")}
       </ion-button>
@@ -10754,6 +10970,9 @@ var ErpSaleRefund = class extends i3 {
       </div>
       <!-- EL MOTIVO DEL BLOQUEO, ESCRITO EN LA PANTALLA: se lee sin tocar nada y sin un ratón. -->
       ${block ? b2`<p class="block">${block}</p>` : A}
+      <!-- And the external tenders' warnings, next to the button: the line's hole can be
+           off-screen when the thumb is already on the refund button (sales#166). -->
+      ${this.renderTenderNotices()}
       <!-- 🔴 aria-disabled, JAMÁS el disabled de Ionic: en modo ios es pointer-events:none y en
            una tablet de mostrador el toque muere en silencio (sales#58). El estado ocupado sí es
            disabled de verdad: ahí no hay nada que contestar y un segundo toque devolvería dos
@@ -10799,6 +11018,15 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpSaleRefund.prototype, "busy", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "covered", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "tenderFillers", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "tenderNotices", 2);
 define("erp-sale-refund", ErpSaleRefund);
 
 // ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
@@ -11011,7 +11239,8 @@ var DEFAULT_LABELS5 = {
   select: "Select",
   showing: "Showing {from}\u2013{to} of",
   recordSingular: "record",
-  recordPlural: "records"
+  recordPlural: "records",
+  loadMore: "Load more"
 };
 var ES_LABELS = {
   search: "Buscar\u2026",
@@ -11047,7 +11276,8 @@ var ES_LABELS = {
   select: "Seleccionar",
   showing: "Mostrando {from}\u2013{to} de",
   recordSingular: "registro",
-  recordPlural: "registros"
+  recordPlural: "registros",
+  loadMore: "Cargar m\xE1s"
 };
 var _OkDataTable = class _OkDataTable2 extends i3 {
   constructor() {
@@ -11082,6 +11312,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     this.q = "";
     this.clientPage = 0;
     this.clientPageSize = 0;
+    this.mobileShown = 0;
     this.clientSort = "";
     this.clientSortDir = "asc";
     this.clientFilters = {};
@@ -11103,6 +11334,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       } else {
         this.q = value;
         this.clientPage = 0;
+        this.mobileShown = 0;
       }
     };
   }
@@ -11350,8 +11582,12 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       .gh.sortable:hover, .gh.sortable:active,
       .grow-data:hover, .grow-data:active { transform: none; }
     }
-    /* Cabecera: ion-card-header en fila (icono + título + checkbox); se conserva su padding Ionic. */
-    ion-card-header.rcard-head { display: flex; align-items: center; gap: 0.5rem; }
+    /* Header: ion-card-header as a single row (icon + title + checkbox), keeping Ionic's padding.
+       #79 — flex-direction/flex-wrap are SPELLED OUT on purpose: in ios mode (the mode the Hub
+       shell pins, ADR-0143) Ionic's own host CSS gives ion-card-header a column direction, so a
+       rule that only sets display:flex inherits it and the three children stack on three lines.
+       Under md the same rule looked right, which is why it shipped. */
+    ion-card-header.rcard-head { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 0.5rem; }
     .rcard-head .rc-icon { display: inline-flex; color: var(--primary); }
     .rcard-head .rc-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
     /* Cuerpo: ion-card-content (padding Ionic por defecto) con las filas clave-valor apiladas. */
@@ -11385,6 +11621,11 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     .pager .strong { font-weight: 600; color: var(--color); }
     .psize { font: inherit; font-size: 12.5px; padding: 0.2rem 0.35rem; border: 1px solid var(--border-color); border-radius: 6px; background: var(--background); color: var(--color); }
     .pager .nav { display: flex; align-items: center; gap: 0.2rem; }
+    /* #78 — Pie en MÓVIL: un solo control «Cargar más» en lugar del pager numerado (Shopify
+       IndexTable, Fresha, Square y Material hacen lo mismo: nadie pinta botones de página en un
+       teléfono). Sin atributo fill: el sólido por defecto de Ionic es el único que pinta caja en
+       modo ios (outfitkit#82 / ADR-0143). Los 44px son el área táctil mínima. */
+    .pager .load-more { min-height: 44px; margin: 0; --padding-start: 1rem; --padding-end: 1rem; font-size: 13px; }
     .pager .nav .pp { font-weight: 600; color: var(--color); padding: 0 0.25rem; }
     /* Pager numerado: botón por página + «…» en los saltos (look del Hub). */
     .pnum { min-width: 1.75rem; height: 1.75rem; padding: 0 0.4rem; border: 1px solid transparent; border-radius: 8px; background: none; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--color); cursor: pointer; transition: background 0.12s, border-color 0.12s; }
@@ -11649,6 +11890,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     }
     this.clientFilters = clean;
     this.clientPage = 0;
+    this.mobileShown = 0;
     this.panel = "none";
     this.emit("filterChange", { filters: this.serializeFilters(clean) });
   }
@@ -11769,6 +12011,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       this.emit("sortChange", { sort: col.key, dir });
       return;
     }
+    this.mobileShown = 0;
     if (this.clientSort === col.key) {
       this.clientSortDir = this.clientSortDir === "asc" ? "desc" : "asc";
     } else {
@@ -11800,6 +12043,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     else next[key] = merged;
     this.clientFilters = next;
     this.clientPage = 0;
+    this.mobileShown = 0;
   }
   // ion-select (select/multiselect) del panel de filtros (renderFilterControl). En servidor emite
   // `filterChange`; en cliente escribe `clientFilters` (multiselect ⇒ filtra por inclusión).
@@ -11847,8 +12091,9 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
    *   `views` antes de insertar  → tarjetas
    *   `views` después de insertar → tabla   ← lo que hace la página
    */
-  willUpdate() {
+  willUpdate(changed) {
     this.applyInitialView();
+    if (!this.serverSide && changed.has("rows") && this.mobileShown !== 0) this.mobileShown = 0;
   }
   applyInitialView() {
     if (this.viewChosenByUser) return;
@@ -11877,7 +12122,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         <ion-select
           label=${col.header}
           label-placement="stacked"
-          fill="outline"
+          fill="outline" mode="md"
           ?multiple=${multi}
           interface="modal"
           .interfaceOptions=${{ cssClass: "ok-overlay" }}
@@ -11896,9 +12141,9 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         <div class="fblock">
           <span class="flabel">${col.header}</span>
           <div class="frange">
-            <ion-input type=${t7} fill="outline" placeholder=${type === "daterange" ? this.t.from : this.t.gte}
+            <ion-input type=${t7} fill="outline" mode="md" placeholder=${type === "daterange" ? this.t.from : this.t.gte}
               @ionInput=${(e7) => onEdge(col, "from", e7)}></ion-input>
-            <ion-input type=${t7} fill="outline" placeholder=${type === "daterange" ? this.t.to : this.t.lte}
+            <ion-input type=${t7} fill="outline" mode="md" placeholder=${type === "daterange" ? this.t.to : this.t.lte}
               @ionInput=${(e7) => onEdge(col, "to", e7)}></ion-input>
           </div>
         </div>
@@ -11908,7 +12153,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     return b2`
       <ion-input
         type=${inputType}
-        fill="outline"
+        fill="outline" mode="md"
         label=${col.header}
         label-placement="stacked"
         placeholder=${this.t.filterPlaceholder}
@@ -12069,8 +12314,14 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       count = filtered.length;
       pages = Math.max(1, Math.ceil(filtered.length / ps));
       current = Math.min(this.clientPage, pages - 1);
-      visible = filtered.slice(current * ps, current * ps + ps);
+      visible = this.isMobile ? filtered.slice(0, Math.min(this.mobileShown || ps, count)) : filtered.slice(current * ps, current * ps + ps);
     }
+    const served = this.serverSide ? (current + 1) * ps : Math.min(this.mobileShown || ps, count);
+    const canLoadMore = this.isMobile && served < count;
+    const loadMore = () => {
+      if (this.serverSide) this.emit("pageChange", current + 1);
+      else this.mobileShown = Math.min((this.mobileShown || ps) + ps, count);
+    };
     const goTo = (p4) => {
       if (this.serverSide) this.emit("pageChange", p4);
       else this.clientPage = p4;
@@ -12080,6 +12331,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       else {
         this.clientPageSize = n6;
         this.clientPage = 0;
+        this.mobileShown = 0;
       }
     };
     const searchbar = this.serverSide ? b2`<ion-searchbar class="ion-no-border" placeholder=${this.effSearchPlaceholder} debounce="250" @ionInput=${this.onSearch}></ion-searchbar>` : b2`<ion-searchbar class="ion-no-border" .value=${this.q} placeholder=${this.effSearchPlaceholder} debounce="250" @ionInput=${this.onSearch}></ion-searchbar>`;
@@ -12169,7 +12421,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
               <div class="pager">
                 <div class="left">
                   <span>
-                    ${pages > 1 ? b2`${this.t.showing.replace("{from}", String(current * ps + 1)).replace("{to}", String(Math.min((current + 1) * ps, count)))} ` : A}
+                    ${pages > 1 ? b2`${this.t.showing.replace("{from}", String(this.isMobile && !this.serverSide ? 1 : current * ps + 1)).replace("{to}", String(Math.min(served, count)))} ` : A}
                     <span class="strong">${count}</span> ${count === 1 ? this.t.recordSingular : this.t.recordPlural}
                   </span>
                   ${!showTopbar && this.effPageSizes.length ? b2`
@@ -12178,7 +12430,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                         </select>
                       ` : A}
                 </div>
-                ${pages > 1 ? b2`
+                ${this.isMobile ? canLoadMore ? b2`<ion-button class="load-more" size="small" @click=${loadMore}>${this.t.loadMore}</ion-button>` : A : pages > 1 ? b2`
                       <div class="nav">
                         <ion-button size="small" fill="clear" ?disabled=${current === 0} @click=${() => goTo(current - 1)}><ion-icon slot="icon-only" .icon=${iconChevronBack}></ion-icon></ion-button>
                         ${this.pageList(current + 1, pages).map(
@@ -12226,8 +12478,8 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         <div class="fblock">
           <span class="flabel">${label}</span>
           <div class="daterange">
-            <ion-input type="date" label=${this.t.from} label-placement="stacked" fill="outline" .value=${f3.from ?? ""} @ionChange=${(e7) => this.setFilterRange(col.key, "from", e7.detail.value ?? "")}></ion-input>
-            <ion-input type="date" label=${this.t.to} label-placement="stacked" fill="outline" .value=${f3.to ?? ""} @ionChange=${(e7) => this.setFilterRange(col.key, "to", e7.detail.value ?? "")}></ion-input>
+            <ion-input type="date" label=${this.t.from} label-placement="stacked" fill="outline" mode="md" .value=${f3.from ?? ""} @ionChange=${(e7) => this.setFilterRange(col.key, "from", e7.detail.value ?? "")}></ion-input>
+            <ion-input type="date" label=${this.t.to} label-placement="stacked" fill="outline" mode="md" .value=${f3.to ?? ""} @ionChange=${(e7) => this.setFilterRange(col.key, "to", e7.detail.value ?? "")}></ion-input>
           </div>
         </div>
       `;
@@ -12239,7 +12491,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         <ion-select
           label=${label}
           label-placement="stacked"
-          fill="outline"
+          fill="outline" mode="md"
           multiple
           interface="modal"
           .interfaceOptions=${{ cssClass: "ok-overlay" }}
@@ -12492,6 +12744,9 @@ __decorateClass11([
 __decorateClass11([
   r5()
 ], _OkDataTable.prototype, "clientPageSize");
+__decorateClass11([
+  r5()
+], _OkDataTable.prototype, "mobileShown");
 __decorateClass11([
   r5()
 ], _OkDataTable.prototype, "clientSort");
