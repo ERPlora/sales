@@ -128,9 +128,21 @@ interface PayMethod {
   /** 1 = pide importe entregado y calcula cambio (efectivo); 0 = importe exacto (tarjeta, Bizum…). */
   requires_change?: number;
 }
+/** The counter's operational policy, as `sales.pos_settings.get` hands it back (sales#25/#203).
+ *  Every field here is read by the screen or printed on the paper, and every one of them arrives
+ *  through a door a `cashier` can open — the admin-only `sales.settings.get` is not used by the
+ *  till at all. */
 interface PosSettings {
   default_document_format?: string; currency?: string; enable_parked_tickets?: number;
   default_tax_included?: number;
+  /** sales#203 — the receipt, as the shop configured it. The paper mappers take them from here
+   *  (`billSettings`); through the admin door they were blank for whoever actually prints it. */
+  receipt_header?: string; receipt_footer?: string; receipt_footer_image?: string;
+  receipt_marketing_url?: string; receipt_marketing_text?: string;
+  /** sales#203 — the hub demands a customer on every sale. The RULE is the server's
+   *  (`sales.complete_sale` enforces it from its own declared `reads`, which run with system
+   *  permissions); the till carries it so screen and server decide from the same row. */
+  require_customer?: number;
   /** Formas de pago permitidas (Ajustes). 0 = desactivada. */
   allow_cash?: number; allow_card?: number; allow_transfer?: number;
   /** sales#71: descuentos manuales permitidos (Ajustes). 0 = sin botón; el servidor lo revalida. */
@@ -1405,15 +1417,14 @@ export class ErpPosTouch extends LitElement {
     const fromSource = async <T>(flag: 'sync_products' | 'sync_services', read: () => Promise<T[]>): Promise<T[]> =>
       (catalogSourceOn((await policy)[flag]) ? read() : []);
     try {
-      const [prods, methods, settingsRows, businessRows, savedCart, parked, cats, prodCats, taxCatalog, unitRows,
+      const [prods, methods, businessRows, savedCart, parked, cats, prodCats, taxCatalog, unitRows,
              svcRows, svcCats, taxCats, fiscalLimits] = await Promise.all([
         fromSource<Product>('sync_products', () => hardRead<Product>('inventory', () => erplora().queryAll<Product>('inventory.products.list'))),
         erplora().query('sales.payment_methods').catch(() => []),
-        erplora().query('sales.settings.get').catch(() => []),
         // sales#180 — the business identity for the BILL's header. Deliberately apart from the
-        // settings: those require `sales.manage_settings` (a cashier has none) and return zero rows
-        // until somebody saves them, which is exactly the freshly built hub where the bill came out
-        // headed with the generic default.
+        // settings: it lives in `hub_settings` (single source, ADR-0061), not in this module's
+        // table, and it answers on a freshly built hub where nobody has saved the till settings
+        // yet — which is exactly where the bill used to come out headed with the generic default.
         erplora().query('sales.business.get').catch(() => []),
         this.restoreOpenOrder(),
         listOpenChecks(erplora()),
@@ -1470,11 +1481,14 @@ export class ErpPosTouch extends LitElement {
         this.prodCats.get(s.id)!.add(s.category_id);
       }
       this.methods = rows<PayMethod>(methods);
-      // sales#25 — the policy read LAST-WRITES over the full settings row on the four fields it
-      // carries. It is not a duplicate: `sales.settings.get` needs `sales.manage_settings`, so for
-      // a cashier it answers nothing at all and every setting it feeds silently falls back to its
-      // default. The four the till decides WITH now come through a door the cashier can open.
-      this.settings = { ...(rows<PosSettings>(settingsRows)[0] || {}), ...(await policy) };
+      // sales#203 — ONE read for the whole policy, and it is the narrow one. `sales.settings.get`
+      // needs `sales.manage_settings`, so for a cashier it answered nothing at all and EVERY
+      // setting it fed fell back to its default without a word: card-only became all methods, no
+      // discounts became discounts, the shop's receipt became a blank one. Reading only through
+      // `sales.pos_settings.get` makes the screen identical for an admin and for a cashier — which
+      // is the property that matters, because a difference between the two is invisible to whoever
+      // tests it.
+      this.settings = await policy;
       this.businessName = rows<{ name?: string }>(businessRows)[0]?.name || '';
       this.docFormat = this.settings.default_document_format === 'invoice' ? 'invoice' : 'ticket';
       this.payMethod = defaultPayMethod(this.payMethods);
@@ -2248,8 +2262,9 @@ export class ErpPosTouch extends LitElement {
     return t('ui.servedBy', { name });
   }
 
-  /** The till's own policy row (sales#25): which catalogue sources feed the grid, and how the
-   *  checkout opens.
+  /** The till's own policy row (sales#25, widened by sales#203): which catalogue sources feed the
+   *  grid, which payment methods are offered, whether discounts and parked tickets exist, whether
+   *  prices carry VAT inside, how the checkout opens and what the receipt says.
    *
    *  Read through `sales.pos_settings.get` and NOT `sales.settings.get`: that one requires
    *  `sales.manage_settings`, which neither `cashier` nor `employee` has, so through it the till

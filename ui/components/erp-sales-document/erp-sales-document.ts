@@ -27,7 +27,7 @@ import enLocale from '../../../locales/en.json';
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
 // erp-sales-document — visor del documento de una venta (tiquet u factura) en el formato adecuado.
-// Carga `sales.get` + `sales.lines` + `sales.settings.get` por `sale-id`, mapea (document-mappers,
+// Carga `sales.get` + `sales.lines` + `sales.pos_settings.get` por `sale-id`, mapea (document-mappers,
 // con el locale del hub y las labels del catálogo ADR-0055) y renderiza <ok-receipt> o <ok-invoice>.
 // También acepta inyección directa (.sale/.lines/.settings) para previsualización/test sin SDK.
 // Pinta SOLO el documento: el botón de imprimir vive en el modal anfitrión (document-modal.ts).
@@ -126,7 +126,12 @@ export class ErpSalesDocument extends LitElement {
       const [sale, lines, settingsRows] = await Promise.all([
         erplora().query<SaleRow>('sales.get', { sale_id: this.saleId }),
         erplora().query<SaleLineRow[]>('sales.lines', { sale_id: this.saleId }),
-        erplora().query<SaleSettings[]>('sales.settings.get').catch(() => []),
+        // sales#203 — the RECEIPT's own settings (header, footer, promotional QR, whether prices
+        // carry VAT inside) through `sales.pos_settings.get`, not the admin-only
+        // `sales.settings.get`. Whoever prints a ticket is the cashier, and that query needs
+        // `sales.manage_settings`: through it the paper came out blank of everything the shop had
+        // configured for exactly the person who hands it over.
+        erplora().query<SaleSettings[]>('sales.pos_settings.get').catch(() => []),
       ]);
       this.sale = Array.isArray(sale) ? (sale as SaleRow[])[0] : sale;
       this.lines = lines || [];

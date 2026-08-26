@@ -1,4 +1,4 @@
-// Pure mappers: sale (`sales.get`) + lines (`sales.lines`) + settings (`sales.settings.get`)
+// Pure mappers: sale (`sales.get`) + lines (`sales.lines`) + settings (`sales.pos_settings.get`)
 // → OutfitKit document contract (`ReceiptData` / `InvoiceData`). No side effects, testable.
 //
 // Business identity does NOT live in the sales module: the runtime resolves the issuer from
@@ -278,7 +278,8 @@ function ref(l: SaleLineRow): boolean {
   return !!(l.parent_line_ref || '').trim();
 }
 
-/** Subconjunto de `sales.settings.get` que afecta al documento. */
+/** Subconjunto de `sales.pos_settings.get` que afecta al documento (sales#203: la lectura del
+ *  mostrador, no la del admin — quien imprime el tique es el cajero). */
 export interface SaleSettings {
   receipt_header?: string;
   receipt_footer?: string;

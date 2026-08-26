@@ -65,10 +65,16 @@ the number.
 | Create / change / delete a payment method | `sales.add_paymentmethod` / `sales.change_paymentmethod` / `sales.delete_paymentmethod` |
 | See reports, today's totals, the per-professional breakdown | `sales.view_reports` |
 | Change the TPV settings | `sales.manage_settings` |
+| **Read** the TPV settings the counter works by (`sales.pos_settings.get`) | `sales.view_sale` |
 
 By role: **admin** has everything. **manager** has everything except deleting sales, deleting payment
 methods and changing a recorded sale. **employee** can see sales, build a check and see payment
 methods — an employee **cannot void a sale**, cannot see reports and cannot change settings.
+
+Reading and changing the settings are two different things. Nobody who sells needs
+`sales.manage_settings` to be governed by the settings: the till and the receipt read the shop's
+operational policy through `sales.pos_settings.get` with plain `sales.view_sale`, so a `cashier`
+gets exactly the screen the owner configured (sales#203).
 
 Note that charging is its own permission, separate from building the check.
 

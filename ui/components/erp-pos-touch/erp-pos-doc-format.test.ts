@@ -19,7 +19,9 @@ let settings: Record<string, unknown> = {};
 
 function installSdk() {
   (globalThis as Record<string, unknown>).erplora = {
-    query: async (name: string) => (name === 'sales.settings.get' ? [settings] : []),
+    // sales#203 — the till reads its policy through `sales.pos_settings.get`, the door a cashier
+    // can open. The admin-only `sales.settings.get` is not asked for at all.
+    query: async (name: string) => (name === 'sales.pos_settings.get' ? [settings] : []),
     queryAll: async (name: string) => {
       if (name === 'taxes.rules.list') return RULES;
       if (name === 'taxes.categories.list') return TAX_CATS;

@@ -4823,7 +4823,12 @@ var ErpSalesDocument = class extends i3 {
       const [sale, lines, settingsRows] = await Promise.all([
         erplora().query("sales.get", { sale_id: this.saleId }),
         erplora().query("sales.lines", { sale_id: this.saleId }),
-        erplora().query("sales.settings.get").catch(() => [])
+        // sales#203 — the RECEIPT's own settings (header, footer, promotional QR, whether prices
+        // carry VAT inside) through `sales.pos_settings.get`, not the admin-only
+        // `sales.settings.get`. Whoever prints a ticket is the cashier, and that query needs
+        // `sales.manage_settings`: through it the paper came out blank of everything the shop had
+        // configured for exactly the person who hands it over.
+        erplora().query("sales.pos_settings.get").catch(() => [])
       ]);
       this.sale = Array.isArray(sale) ? sale[0] : sale;
       this.lines = lines || [];
@@ -7725,7 +7730,6 @@ var ErpPosTouch = class extends i3 {
       const [
         prods,
         methods,
-        settingsRows,
         businessRows,
         savedCart,
         parked,
@@ -7740,11 +7744,10 @@ var ErpPosTouch = class extends i3 {
       ] = await Promise.all([
         fromSource("sync_products", () => hardRead("inventory", () => erplora2().queryAll("inventory.products.list"))),
         erplora2().query("sales.payment_methods").catch(() => []),
-        erplora2().query("sales.settings.get").catch(() => []),
         // sales#180 — the business identity for the BILL's header. Deliberately apart from the
-        // settings: those require `sales.manage_settings` (a cashier has none) and return zero rows
-        // until somebody saves them, which is exactly the freshly built hub where the bill came out
-        // headed with the generic default.
+        // settings: it lives in `hub_settings` (single source, ADR-0061), not in this module's
+        // table, and it answers on a freshly built hub where nobody has saved the till settings
+        // yet — which is exactly where the bill used to come out headed with the generic default.
         erplora2().query("sales.business.get").catch(() => []),
         this.restoreOpenOrder(),
         listOpenChecks(erplora2()),
@@ -7790,7 +7793,7 @@ var ErpPosTouch = class extends i3 {
         this.prodCats.get(s5.id).add(s5.category_id);
       }
       this.methods = rows2(methods);
-      this.settings = { ...rows2(settingsRows)[0] || {}, ...await policy };
+      this.settings = await policy;
       this.businessName = rows2(businessRows)[0]?.name || "";
       this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
       this.payMethod = defaultPayMethod(this.payMethods);
@@ -8489,8 +8492,9 @@ var ErpPosTouch = class extends i3 {
     const name = this.staffName || (this.staffId ? t5("ui.staffAssigned") : t5("ui.staffMe"));
     return t5("ui.servedBy", { name });
   }
-  /** The till's own policy row (sales#25): which catalogue sources feed the grid, and how the
-   *  checkout opens.
+  /** The till's own policy row (sales#25, widened by sales#203): which catalogue sources feed the
+   *  grid, which payment methods are offered, whether discounts and parked tickets exist, whether
+   *  prices carry VAT inside, how the checkout opens and what the receipt says.
    *
    *  Read through `sales.pos_settings.get` and NOT `sales.settings.get`: that one requires
    *  `sales.manage_settings`, which neither `cashier` nor `employee` has, so through it the till
