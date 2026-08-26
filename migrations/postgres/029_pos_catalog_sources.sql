@@ -1,24 +1,24 @@
--- Sales · sales#25 — the two switches that decide WHICH catalogue feeds the till get a reader, and
+-- Sales - sales#25: the two switches that decide WHICH catalogue feeds the till get a reader, and
 -- the defaults stop disagreeing with the form.
 --
--- Tipos: subconjunto portable "ERPlora SQL" (ADR-0007):
---   * flags 0/1 -> INTEGER (los commands bindean 0/1, Postgres no castea entero->bool).
+-- Types: portable "ERPlora SQL" subset (ADR-0007):
+--   * 0/1 flags -> INTEGER (commands bind 0/1, Postgres does not cast integer to bool).
 --
--- 1) sync_services pasa a estar ENCENDIDO por defecto. Los servicios se muestran en el TPV desde
---    sales#89 siempre que el modulo services este instalado, sin mirar este flag. Al darle lector
---    de verdad, dejarlo en 0 apagaria el catalogo de servicios de TODAS las peluquerias en la
---    siguiente actualizacion del modulo. El flag existe para poder APAGARLO, no para tener que
---    acordarse de encenderlo.
+-- 1) sync_services becomes ON by default. Services have shown in the till since sales#89 whenever
+--    the services module was installed, without anyone looking at this flag. Now that it gets a
+--    real reader, leaving it at 0 would switch off the service catalogue of EVERY salon on the
+--    next update of the module. The flag exists so it can be turned OFF, not so somebody has to
+--    remember to turn it on.
 --
--- 2) Las filas ya guardadas se ponen en 1 por lo mismo: hasta hoy el valor no producia ningun
---    efecto observable, asi que un 0 guardado no expresa ninguna decision del comercio. Solo se
---    tocan las filas que estan en 0, y solo esta columna.
+-- 2) The rows already saved are set to 1 for the same reason: until today the value produced no
+--    observable effect, so a stored 0 expresses no decision by the business. Only the rows sitting
+--    at 0 are touched, and only this column.
 --
--- 3) auto_invoice_with_tax_id nacio con DEFAULT 1 en la columna y "false" en el schema del
---    formulario. Manda el formulario (es lo que ve y guarda el comercio) y es lo que hace el TPV
---    cuando no hay fila: por defecto se emite TIQUE, y la factura automatica por NIF se pide. Es
---    ademas lo que hace el mercado: Square, Shopify POS, Toast y Lightspeed emiten recibo y la
---    factura es una accion explicita; en Odoo hay que pulsar Invoice.
+-- 3) auto_invoice_with_tax_id was born with DEFAULT 1 in the column and "false" in the form's
+--    schema. The form wins -- it is what the business sees and saves, and it is what the till
+--    already does when there is no row: a TICKET by default, with the automatic invoice by tax id
+--    asked for. It is also what the market does. Square, Shopify POS, Toast and Lightspeed print a
+--    receipt and the invoice is an explicit action, and Odoo makes you press Invoice.
 
 ALTER TABLE sales_settings ALTER COLUMN sync_services SET DEFAULT 1;
 
