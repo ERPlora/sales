@@ -36,23 +36,51 @@ describe('sales.order.fire pre-loads the order lines (sales#80)', () => {
   });
 });
 
-// sales#111 — `sales.complete_sale` reads `inventory.products.for_sale`, a query that exists since
-// inventory 1.2.20. With an older `inventory` the read is silently omitted and every catalogue
-// line is refused: the till cannot charge (hub#960). The hub installer validates a version FLOOR
-// (`depends_on: [{id, min_version}]`, hub#681, `dependency_too_old`) and the marketplace accepts
-// the object form since saas#1535 — so the floor is declared, not hoped for.
-describe('sales declares the inventory version floor its reads need (sales#111)', () => {
+// sales#25 — `inventory` is an OPTIONAL capability (ADR-0127), not a hard dependency.
+//
+// It used to be `depends_on: [{ id: "inventory", min_version: "1.2.20" }]`, which is a HARD
+// contract: installing `sales` dragged the whole stock app in (ADR-0060) and the ADR-0128
+// deactivation cascade tied them together. A restaurant or a salon that only sells services got a
+// stock module they never wanted, and that is the complaint this issue was born from (sales#30).
+//
+// What replaces it: the till reads the catalogue OPTIONALLY, an absent `inventory` is a legitimate
+// state (services + free price, ADR-0085) and the checkout still refuses to price a CATALOGUE line
+// it cannot verify. `taxes` stays hard on purpose: with no tax rule no sale can close at all.
+//
+// ⚠️ What this MUST NOT lose is sales#111/hub#960: with an `inventory` older than 1.2.20 the query
+// `inventory.products.for_sale` does not exist, the read resolves to nothing and every catalogue
+// line is refused — a till that looks healthy and cannot charge. The install-time floor is gone
+// with the hard dependency, so the guard moved INTO the till: it preflights that very query and
+// paints the incident (`ui/components/erp-pos-touch/erp-pos-catalog-optional.test.ts`). The floor
+// protected only the install; the preflight also catches a broken or denied catalogue.
+describe('inventory is an OPTIONAL capability, taxes stays hard (sales#25)', () => {
   type WithDeps = { depends_on: (string | { id: string; min_version?: string })[] };
   const md = manifest as unknown as WithDeps;
+  const ids = md.depends_on.map((d) => (typeof d === 'string' ? d : d.id));
 
-  it('depends_on inventory carries min_version 1.2.20', () => {
-    const inv = md.depends_on.find((d) => (typeof d === 'string' ? d : d.id) === 'inventory');
-    expect(inv, 'inventory is a dependency').toBeTruthy();
-    expect(typeof inv).toBe('object');
-    expect((inv as { min_version?: string }).min_version).toBe('1.2.20');
+  it('inventory is NOT in depends_on: a salon does not install a stock app to sell haircuts', () => {
+    expect(ids).not.toContain('inventory');
   });
 
-  it('taxes stays a plain string: nothing sales reads there was born in a specific version', () => {
+  it('taxes stays a hard dependency: with no tax rule no sale can close', () => {
     expect(md.depends_on).toContain('taxes');
+  });
+
+  it('every read of inventory is declared OPTIONAL, so the command is never aborted by its absence', () => {
+    const inventoryReads = Object.entries(m.commands)
+      .flatMap(([cmd, def]) => (def.reads ?? []).map((r) => [cmd, r] as const))
+      .filter(([, r]) => (typeof r === 'string' ? r : r.query).startsWith('inventory.'));
+    expect(inventoryReads.length, 'the checkout still reads the catalogue, it just does not require it').toBeGreaterThan(0);
+    for (const [cmd, read] of inventoryReads) {
+      expect(typeof read, `${cmd}: the string form cannot declare optionality`).toBe('object');
+      expect((read as { required?: boolean }).required, `${cmd}: ${(read as { query: string }).query} must be optional`).toBe(false);
+    }
+  });
+
+  it('the checkout reads inventory.products.for_sale — dropping the dependency does not drop the price authority', () => {
+    for (const cmd of ['sales.complete_sale', 'sales.checkout.preview', 'sales.order.add_line']) {
+      const reads = (m.commands[cmd].reads ?? []).map((r) => (typeof r === 'string' ? r : r.query));
+      expect(reads, `${cmd} must price against the catalogue when it is there`).toContain('inventory.products.for_sale');
+    }
   });
 });

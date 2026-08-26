@@ -52,6 +52,11 @@ function installSdk(opts: SdkOptions = {}) {
   };
   (globalThis as Record<string, unknown>).erplora = {
     query: serve,
+    // sales#25 — the till reads `inventory` through the OPTIONAL door (ADR-0127). For an app that
+    // IS in this hub the optional door answers exactly like the required one, which is what this
+    // delegation models; absence and failure are still whatever `queryAll` does with them.
+    queryAllOptional: async (name: string, params?: Record<string, unknown>) =>
+      ((globalThis as Record<string, unknown>).erplora as { queryAll(n: string, p?: Record<string, unknown>): Promise<unknown> }).queryAll(name, params),
     queryAll: serve,
     queryOptional: async () => undefined,
     command: async () => ({}),

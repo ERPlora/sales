@@ -1944,6 +1944,16 @@ async function dependencyRead(read) {
     return { rows: [], absent, broken: !absent };
   }
 }
+async function capabilityRead(read) {
+  try {
+    const answer = await read();
+    if (answer === void 0) return { rows: [], absent: true, broken: false };
+    return { rows: toRows(answer), absent: false, broken: false };
+  } catch (e7) {
+    const absent = isModuleAbsent(e7);
+    return { rows: [], absent, broken: !absent };
+  }
+}
 
 // ui/lib/pos-tax.ts
 function isRoot(r6) {
@@ -4164,6 +4174,7 @@ var es_default = {
     searchAction: "Buscar",
     assign: "Asignar",
     noProducts: "Sin productos.",
+    catalogAppAbsent: "{app} no est\xE1 instalada, as\xED que no hay rejilla de productos. Puedes cobrar servicios y ventas a precio libre; inst\xE1lala desde el marketplace para vender desde un cat\xE1logo.",
     notSellableBadge: "Falta el IVA",
     notSellableNoTaxCategory: "No se puede vender: sin categor\xEDa fiscal. Falta configurar el IVA.",
     notSellableNoTaxRule: "No se puede vender: su categor\xEDa fiscal no tiene tipo. Falta configurar el IVA.",
@@ -4615,6 +4626,7 @@ var en_default = {
     searchAction: "Search",
     assign: "Assign",
     noProducts: "No products.",
+    catalogAppAbsent: "{app} is not installed, so there is no product grid. You can still charge services and free-price sales; install it from the marketplace to sell from a catalogue.",
     notSellableBadge: "VAT missing",
     notSellableNoTaxCategory: "Cannot be sold: no tax category. VAT needs to be set up.",
     notSellableNoTaxRule: "Cannot be sold: its tax category has no rate. VAT needs to be set up.",
@@ -6851,6 +6863,14 @@ function catalogSourceOn(v3) {
   return !(v3 === 0 || v3 === "0" || v3 === false);
 }
 var HARD_DEPENDENCIES = ["inventory", "taxes"];
+async function optionalCatalogRead(whole, page) {
+  return capabilityRead(async () => {
+    const c5 = erplora2();
+    if (typeof c5.queryAllOptional === "function") return await whole(c5);
+    if (typeof c5.queryOptional === "function") return await page(c5);
+    return void 0;
+  });
+}
 async function optionalReadAll(whole, page) {
   try {
     const c5 = erplora2();
@@ -6941,6 +6961,7 @@ var ErpPosTouch = class extends i3 {
     this.comboCatalog = [];
     this.comboCatalogFailed = false;
     this.brokenCatalogApps = [];
+    this.catalogAppAbsent = false;
     this.comboPicks = [];
     this.comboNeedsGroup = "";
     this.openDept = "";
@@ -7878,9 +7899,16 @@ var ErpPosTouch = class extends i3 {
     window.addEventListener("erplora:locale-changed", this.onLocaleChange);
     window.addEventListener(SCALE_WEIGHT_EVENT, this.onScaleWeight);
     const brokenApps = /* @__PURE__ */ new Set();
+    const absentApps = /* @__PURE__ */ new Set();
     const hardRead = async (app, read) => {
       const out = await dependencyRead(read);
       if (out.broken) brokenApps.add(app);
+      return out.rows;
+    };
+    const capabilityCatalogRead = async (app, whole, page) => {
+      const out = await optionalCatalogRead(whole, page);
+      if (out.broken) brokenApps.add(app);
+      if (out.absent) absentApps.add(app);
       return out.rows;
     };
     const policy = this.loadPosSettings();
@@ -7901,7 +7929,11 @@ var ErpPosTouch = class extends i3 {
         taxCats,
         fiscalLimits
       ] = await Promise.all([
-        fromSource("sync_products", () => hardRead("inventory", () => erplora2().queryAll("inventory.products.list"))),
+        fromSource("sync_products", () => capabilityCatalogRead(
+          "inventory",
+          (c5) => c5.queryAllOptional("inventory.products.list"),
+          (c5) => c5.queryOptional("inventory.products.list", { limit: LEGACY_PAGE_LIMIT })
+        )),
         erplora2().query("sales.payment_methods").catch(() => []),
         // sales#180 — the business identity for the BILL's header. Deliberately apart from the
         // settings: it lives in `hub_settings` (single source, ADR-0061), not in this module's
@@ -7910,10 +7942,22 @@ var ErpPosTouch = class extends i3 {
         erplora2().query("sales.business.get").catch(() => []),
         this.restoreOpenOrder(),
         listOpenChecks(erplora2()),
-        fromSource("sync_products", () => hardRead("inventory", () => erplora2().queryAll("inventory.categories.list", { sort: "name", dir: "asc" }))),
-        fromSource("sync_products", () => hardRead("inventory", () => erplora2().queryAll("inventory.product_categories"))),
+        fromSource("sync_products", () => capabilityCatalogRead(
+          "inventory",
+          (c5) => c5.queryAllOptional("inventory.categories.list", { sort: "name", dir: "asc" }),
+          (c5) => c5.queryOptional("inventory.categories.list", { sort: "name", dir: "asc", limit: LEGACY_PAGE_LIMIT })
+        )),
+        fromSource("sync_products", () => capabilityCatalogRead(
+          "inventory",
+          (c5) => c5.queryAllOptional("inventory.product_categories"),
+          (c5) => c5.queryOptional("inventory.product_categories")
+        )),
         loadTaxCatalog(erplora2()),
-        hardRead("inventory", () => erplora2().queryAll("inventory.units.list")),
+        capabilityCatalogRead(
+          "inventory",
+          (c5) => c5.queryAllOptional("inventory.units.list"),
+          (c5) => c5.queryOptional("inventory.units.list")
+        ),
         // sales#89 — el catálogo VENDIBLE de servicios. Lectura OPCIONAL (ADR-0127): `services` NO
         // está en `depends_on` a propósito, porque `depends_on` es un contrato DURO que obligaría a
         // todo restaurante a instalar el módulo y ataría `sales` a su cascada de desactivación. Un
@@ -7936,10 +7980,29 @@ var ErpPosTouch = class extends i3 {
         // sales#153 — los MENÚS que este hub vende. Una sola lectura (`combos.options.all`) da a la
         // vez las baldosas y sus grupos, así que es imposible ofrecer un menú cuyos cursos no se
         // hayan cargado: eso sería justo «ofrecer lo que el servidor va a rechazar».
-        this.loadCombos()
+        this.loadCombos(),
+        // sales#111 / hub#960 — THE PREFLIGHT OF THE QUERY THE CHECKOUT PRICES AGAINST.
+        //
+        // `sales.complete_sale` resolves every catalogue line against `inventory.products.for_sale`
+        // (sales#68), a query born in inventory 1.2.20. An older `inventory` answers the grid
+        // perfectly and does NOT answer this one, so the till looked healthy and refused every
+        // product at payment time. Until sales#25 that was bought at install time by the hard
+        // dependency's `min_version` floor; with the dependency gone the till asks the question
+        // itself — and gets an answer the floor never could give it, because a catalogue that is
+        // present, recent and BROKEN (or denied) lands here too.
+        //
+        // The rows are thrown away on purpose: what is being read is whether the answer EXISTS.
+        // It rides the `sync_products` switch because a till that shows no product grid has no
+        // catalogue line to price, so there is nothing to preflight and nothing to warn about.
+        fromSource("sync_products", () => capabilityCatalogRead(
+          "inventory",
+          (c5) => c5.queryAllOptional("inventory.products.for_sale"),
+          (c5) => c5.queryOptional("inventory.products.for_sale")
+        ))
       ]);
       if (connectionEpoch !== this.connectionEpoch || !this.isConnected) return;
       this.brokenCatalogApps = HARD_DEPENDENCIES.filter((app) => brokenApps.has(app));
+      this.catalogAppAbsent = absentApps.has("inventory") && catalogSourceOn((await policy).sync_products);
       this.taxCatalog = taxCatalog;
       this.missingChargeApp = taxCatalog.installed ? "" : "taxes";
       this.simplifiedMaxCents = rows2(fiscalLimits)[0]?.simplified_invoice_max_cents ?? null;
@@ -9945,6 +10008,24 @@ var ErpPosTouch = class extends i3 {
         @click=${() => this.goToProductSetup()}>${t5("ui.catalogBlockedFix")}</ion-button>
     </div>`;
   }
+  /** The empty grid, WITH ITS REASON (sales#25).
+   *
+   *  `inventory` is an optional capability (ADR-0127): a hub without it sells services and
+   *  free-price lines (ADR-0085) and that is a supported way to run a till — but it is the
+   *  DEGRADED mode, not the normal one, and the market says so out loud. The Shopify POS community
+   *  has been asking for variable prices per item since 2014 precisely because the free-price
+   *  escape "works but you have to type the name every time and it reports nothing per item or
+   *  category": the free line is not a substitute for a catalogue, so a till without one has to
+   *  say what it is missing and how to get it, not just show a blank rectangle.
+   *
+   *  `role="status"`, never `alert`: nothing broke. A broken app is the notice above, and mixing
+   *  the two is how an alert stops meaning anything. */
+  renderEmptyGrid() {
+    if (!this.catalogAppAbsent) return b2`<div class="empty">${t5("ui.noProducts")}</div>`;
+    return b2`<div class="empty catalog-absent" role="status" data-testid="catalog-app-absent">
+      ${t5("ui.catalogAppAbsent", { app: this.appName("inventory") })}
+    </div>`;
+  }
   /** hub#297 — la captura de NIF + domicilio cuando la venta pasa del techo de la simplificada.
    *
    *  **En la MISMA pantalla del cobro**, no en un modal encima: quien la tiene que rellenar está
@@ -10468,7 +10549,7 @@ var ErpPosTouch = class extends i3 {
               <div class="thumb op-thumb"><ion-icon name="pricetag-outline"></ion-icon></div>
               <div class="tinfo"><div class="n">${t5("ui.openPrice")}</div><div class="sku"></div><div class="p">+ €</div></div>
             </ion-card>
-            ${!this.filtered.length ? b2`<div class="empty">${t5("ui.noProducts")}</div>` : A}
+            ${!this.filtered.length ? this.renderEmptyGrid() : A}
           </div>
         </div>
 
@@ -11122,6 +11203,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "brokenCatalogApps", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "catalogAppAbsent", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "comboSheet", 2);

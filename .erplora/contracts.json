@@ -5,10 +5,6 @@
     "queries": [
       "hub.fiscal.limits",
       "hub.users.list",
-      "inventory.categories.list",
-      "inventory.product_categories",
-      "inventory.products.list",
-      "inventory.units.list",
       "sales.business.get",
       "sales.by_idempotency_key",
       "sales.get",
@@ -27,6 +23,11 @@
     "optional_queries": [
       "appointments.appointments.get",
       "combos.options.all",
+      "inventory.categories.list",
+      "inventory.product_categories",
+      "inventory.products.for_sale",
+      "inventory.products.list",
+      "inventory.units.list",
       "invoice.by_source",
       "invoice.lines",
       "modifiers.for_target",

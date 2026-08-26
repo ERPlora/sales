@@ -67,7 +67,7 @@ import {
   checkoutItems, fetchCheckoutPreview, previewSignature,
   type CheckoutPreview, type CheckoutShape,
 } from '../../lib/checkout-preview.js';
-import { dependencyRead } from '../../lib/dependency-read.js';
+import { capabilityRead, dependencyRead, type DependencyRead } from '../../lib/dependency-read.js';
 import { buildOpenPriceLine } from '../../lib/pos-open-price.js';
 // La frontera de la ESCALA de cantidades (ADR-0147): la UI trabaja en lógico (0,5), el cable en 10⁶.
 import { toMicro, fromMicro, onGrid, formatQuantity } from '../../lib/quantity.js';
@@ -250,10 +250,42 @@ function catalogSourceOn(v: unknown): boolean {
   return !(v === 0 || v === '0' || v === false);
 }
 
-/** The apps `sales` declares in `depends_on`, in the order their incidents are painted (sales#25).
- *  A HARD dependency should be here; when it is not, the till degrades, and when it is here and
- *  does not answer, the till says so. */
+/** The apps whose catalogue the till reads and whose FAILURE is an incident, in the order their
+ *  notices are painted (sales#25).
+ *
+ *  `taxes` is the one hard dependency left: with no tax rule no sale can close at all
+ *  (`sales.complete_sale` declares `taxes.rules.list` as a `required` read). `inventory` is here
+ *  too even though it is now an OPTIONAL capability (ADR-0127) — being optional makes its ABSENCE
+ *  legitimate, not its silence: an `inventory` that IS in this hub and does not answer is an
+ *  incident exactly as before, and it is the only thing standing between a cashier and a shift
+ *  spent wondering where the products went. */
 const HARD_DEPENDENCIES = ['inventory', 'taxes'] as const;
+
+/** OPTIONAL read (ADR-0127) of a WHOLE catalogue that keeps ABSENCE and INCIDENT apart (sales#25).
+ *
+ *  Same two doors as [`optionalReadAll`] — `queryAllOptional` when the shell has it, one capped
+ *  page through `queryOptional` when it does not (sales#186) — and the same reason for taking two
+ *  thunks instead of a name: the contract extractor does not follow variables, so the query name
+ *  has to stay LITERAL inside each SDK call or the read disappears from `.erplora/contracts.json`.
+ *
+ *  What it does NOT do is swallow the difference: `optionalReadAll` answers `undefined` to both
+ *  "the app is not here" and "the app broke", which is right for an accessory integration and
+ *  wrong for the grid the cashier sells from. Here absence degrades and a failure is said out loud.
+ *
+ *  A shell so old that it has NEITHER door is read as absence: it cannot ask optionally at all, so
+ *  there is no catalogue to be had and no incident to report — the till sells services and free
+ *  price, which is exactly the degraded mode. */
+async function optionalCatalogRead<T>(
+  whole: (c: ErploraClientLike) => Promise<unknown>,
+  page: (c: ErploraClientLike) => Promise<unknown>,
+): Promise<DependencyRead<T>> {
+  return capabilityRead<T>(async () => {
+    const c = erplora() as Partial<ErploraClientLike>;
+    if (typeof c.queryAllOptional === 'function') return await whole(c as ErploraClientLike);
+    if (typeof c.queryOptional === 'function') return await page(c as ErploraClientLike);
+    return undefined;
+  });
+}
 
 /** OPTIONAL read that wants the WHOLE set, not a page (sales#186).
  *
@@ -1054,6 +1086,8 @@ export class ErpPosTouch extends LitElement {
    *  app IS installed. Absence is not in here: an app the hub does not have degrades in silence,
    *  an app that is here and does not answer is an incident and gets said out loud. */
   @state() private brokenCatalogApps: string[] = [];
+  /** sales#25 — the catalogue app is not in this hub: the grid says so instead of showing nothing. */
+  @state() private catalogAppAbsent = false;
   @state() comboSheet?: { combo: Combo };
   /** Lo elegido, EN EL ORDEN de elección y con repeticiones si el grupo las permite. */
   @state() comboPicks: string[] = [];
@@ -1479,9 +1513,23 @@ export class ErpPosTouch extends LitElement {
     // (ADR-0127) does not follow variables, and moving the name into a parameter would erase these
     // reads from `.erplora/contracts.json`.
     const brokenApps = new Set<string>();
+    const absentApps = new Set<string>();
     const hardRead = async <T>(app: string, read: () => Promise<unknown>): Promise<T[]> => {
       const out = await dependencyRead<T>(read);
       if (out.broken) brokenApps.add(app);
+      return out.rows;
+    };
+    // sales#25 — the same classification for an app read through the OPTIONAL door. `inventory` is
+    // no longer in `depends_on`, so a hub without it is a legitimate hub: `undefined` degrades and
+    // is written down where the products would be, while a failure still raises the incident.
+    const capabilityCatalogRead = async <T>(
+      app: string,
+      whole: (c: ErploraClientLike) => Promise<unknown>,
+      page: (c: ErploraClientLike) => Promise<unknown>,
+    ): Promise<T[]> => {
+      const out = await optionalCatalogRead<T>(whole, page);
+      if (out.broken) brokenApps.add(app);
+      if (out.absent) absentApps.add(app);
       return out.rows;
     };
     // sales#25 — the till's OWN policy, started first because it decides which catalogues are
@@ -1493,7 +1541,9 @@ export class ErpPosTouch extends LitElement {
     try {
       const [prods, methods, businessRows, savedCart, parked, cats, prodCats, taxCatalog, unitRows,
              svcRows, svcCats, taxCats, fiscalLimits] = await Promise.all([
-        fromSource<Product>('sync_products', () => hardRead<Product>('inventory', () => erplora().queryAll<Product>('inventory.products.list'))),
+        fromSource<Product>('sync_products', () => capabilityCatalogRead<Product>('inventory',
+          (c) => c.queryAllOptional<Product>('inventory.products.list'),
+          (c) => c.queryOptional<Product>('inventory.products.list', { limit: LEGACY_PAGE_LIMIT }))),
         erplora().query('sales.payment_methods').catch(() => []),
         // sales#180 — the business identity for the BILL's header. Deliberately apart from the
         // settings: it lives in `hub_settings` (single source, ADR-0061), not in this module's
@@ -1502,10 +1552,16 @@ export class ErpPosTouch extends LitElement {
         erplora().query('sales.business.get').catch(() => []),
         this.restoreOpenOrder(),
         listOpenChecks(erplora()),
-        fromSource<Category>('sync_products', () => hardRead<Category>('inventory', () => erplora().queryAll<Category>('inventory.categories.list', { sort: 'name', dir: 'asc' }))),
-        fromSource<ProdCat>('sync_products', () => hardRead<ProdCat>('inventory', () => erplora().queryAll<ProdCat>('inventory.product_categories'))),
+        fromSource<Category>('sync_products', () => capabilityCatalogRead<Category>('inventory',
+          (c) => c.queryAllOptional<Category>('inventory.categories.list', { sort: 'name', dir: 'asc' }),
+          (c) => c.queryOptional<Category>('inventory.categories.list', { sort: 'name', dir: 'asc', limit: LEGACY_PAGE_LIMIT }))),
+        fromSource<ProdCat>('sync_products', () => capabilityCatalogRead<ProdCat>('inventory',
+          (c) => c.queryAllOptional<ProdCat>('inventory.product_categories'),
+          (c) => c.queryOptional<ProdCat>('inventory.product_categories'))),
         loadTaxCatalog(erplora()),
-        hardRead<UnitRow>('inventory', () => erplora().queryAll<UnitRow>('inventory.units.list')),
+        capabilityCatalogRead<UnitRow>('inventory',
+          (c) => c.queryAllOptional<UnitRow>('inventory.units.list'),
+          (c) => c.queryOptional<UnitRow>('inventory.units.list')),
         // sales#89 — el catálogo VENDIBLE de servicios. Lectura OPCIONAL (ADR-0127): `services` NO
         // está en `depends_on` a propósito, porque `depends_on` es un contrato DURO que obligaría a
         // todo restaurante a instalar el módulo y ataría `sales` a su cascada de desactivación. Un
@@ -1529,11 +1585,33 @@ export class ErpPosTouch extends LitElement {
         // vez las baldosas y sus grupos, así que es imposible ofrecer un menú cuyos cursos no se
         // hayan cargado: eso sería justo «ofrecer lo que el servidor va a rechazar».
         this.loadCombos(),
+        // sales#111 / hub#960 — THE PREFLIGHT OF THE QUERY THE CHECKOUT PRICES AGAINST.
+        //
+        // `sales.complete_sale` resolves every catalogue line against `inventory.products.for_sale`
+        // (sales#68), a query born in inventory 1.2.20. An older `inventory` answers the grid
+        // perfectly and does NOT answer this one, so the till looked healthy and refused every
+        // product at payment time. Until sales#25 that was bought at install time by the hard
+        // dependency's `min_version` floor; with the dependency gone the till asks the question
+        // itself — and gets an answer the floor never could give it, because a catalogue that is
+        // present, recent and BROKEN (or denied) lands here too.
+        //
+        // The rows are thrown away on purpose: what is being read is whether the answer EXISTS.
+        // It rides the `sync_products` switch because a till that shows no product grid has no
+        // catalogue line to price, so there is nothing to preflight and nothing to warn about.
+        fromSource<never>('sync_products', () => capabilityCatalogRead<never>('inventory',
+          (c) => c.queryAllOptional('inventory.products.for_sale'),
+          (c) => c.queryOptional('inventory.products.for_sale'))),
       ]);
       if (connectionEpoch !== this.connectionEpoch || !this.isConnected) return;
       // sales#25 — one notice per broken app, in a fixed order so the screen does not reshuffle
       // between loads. Absence never reaches this list.
       this.brokenCatalogApps = HARD_DEPENDENCIES.filter((app) => brokenApps.has(app));
+      // sales#25 — DEGRADED MODE, said where the products would have been. `inventory` is an
+      // optional capability now, so a hub without it is a legitimate hub that sells services and
+      // free-price lines (ADR-0085) — but that is not the NORMAL mode, and an empty grid with no
+      // explanation is how a business concludes the till is broken. Gated on the product source
+      // being ON: a shop that switched the product grid off asked for an empty grid.
+      this.catalogAppAbsent = absentApps.has('inventory') && catalogSourceOn((await policy).sync_products);
       this.taxCatalog = taxCatalog;
       // sales#185 — PREFLIGHT. `sales.complete_sale` declares `taxes.rules.list` as a read with
       // `required: true`: with no tax app NO sale can close, and until now the POS looked perfectly
@@ -3879,6 +3957,25 @@ export class ErpPosTouch extends LitElement {
     </div>`;
   }
 
+  /** The empty grid, WITH ITS REASON (sales#25).
+   *
+   *  `inventory` is an optional capability (ADR-0127): a hub without it sells services and
+   *  free-price lines (ADR-0085) and that is a supported way to run a till — but it is the
+   *  DEGRADED mode, not the normal one, and the market says so out loud. The Shopify POS community
+   *  has been asking for variable prices per item since 2014 precisely because the free-price
+   *  escape "works but you have to type the name every time and it reports nothing per item or
+   *  category": the free line is not a substitute for a catalogue, so a till without one has to
+   *  say what it is missing and how to get it, not just show a blank rectangle.
+   *
+   *  `role="status"`, never `alert`: nothing broke. A broken app is the notice above, and mixing
+   *  the two is how an alert stops meaning anything. */
+  private renderEmptyGrid() {
+    if (!this.catalogAppAbsent) return html`<div class="empty">${t('ui.noProducts')}</div>`;
+    return html`<div class="empty catalog-absent" role="status" data-testid="catalog-app-absent">
+      ${t('ui.catalogAppAbsent', { app: this.appName('inventory') })}
+    </div>`;
+  }
+
   /** hub#297 — la captura de NIF + domicilio cuando la venta pasa del techo de la simplificada.
    *
    *  **En la MISMA pantalla del cobro**, no en un modal encima: quien la tiene que rellenar está
@@ -4443,7 +4540,7 @@ export class ErpPosTouch extends LitElement {
               <div class="thumb op-thumb"><ion-icon name="pricetag-outline"></ion-icon></div>
               <div class="tinfo"><div class="n">${t('ui.openPrice')}</div><div class="sku"></div><div class="p">+ €</div></div>
             </ion-card>
-            ${!this.filtered.length ? html`<div class="empty">${t('ui.noProducts')}</div>` : nothing}
+            ${!this.filtered.length ? this.renderEmptyGrid() : nothing}
           </div>
         </div>
 

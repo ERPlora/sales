@@ -79,6 +79,9 @@ function installSdk(servicesInstalled = true) {
     },
     // sales#186 — the catalogue comes in whole through `queryAllOptional`, not one page at a time.
     queryAllOptional: async (name: string) => {
+      // sales#25 — `inventory` is an OPTIONAL capability now: same door, same answer for an app
+      // that IS in this hub.
+      if (name === 'inventory.products.list') return PRODUCTS;
       if (name === 'services.services.list') return servicesInstalled ? SERVICES : undefined;
       if (name === 'services.categories.list') return servicesInstalled ? SERVICE_CATS : undefined;
       return undefined;

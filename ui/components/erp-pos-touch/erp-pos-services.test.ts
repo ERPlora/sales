@@ -62,6 +62,8 @@ function installSdk(servicesInstalled: boolean) {
     // sales#186 — the whole set, `undefined` when `services` is not installed. This is the door the
     // till reads its catalogue through now; `queryOptional` stays for the point reads.
     queryAllOptional: async (name: string) => {
+      // sales#25 — `inventory` is an OPTIONAL capability too: same door, and this hub HAS it.
+      if (name === 'inventory.products.list') return PRODUCTS;
       if (name === 'services.services.list') return servicesInstalled ? SERVICES : undefined;
       if (name === 'services.categories.list') return servicesInstalled ? SERVICE_CATS : undefined;
       return undefined;
@@ -244,7 +246,9 @@ function installPagingSdk({ withQueryAllOptional = true } = {}) {
   const rowsOf = (name: string) =>
     name === 'services.services.list' ? BIG_SERVICES
       : name === 'services.categories.list' ? BIG_CATS
-        : undefined;
+        // sales#25 — the retail grid comes through the optional door as well, and this hub has it.
+        : name === 'inventory.products.list' ? PRODUCTS
+          : undefined;
   const sdk: Record<string, unknown> = {
     query: async () => [],
     queryAll: async (name: string) => (name === 'inventory.products.list' ? PRODUCTS : name === 'taxes.rules.list' ? RULES : []),

@@ -37,6 +37,12 @@ beforeEach(() => {
   (globalThis as Record<string, unknown>).erplora = {
     query: async () => [],
     queryAll: async (name: string) => catalogoFiscal(name),
+    // sales#25 — `inventory` stopped being a hard dependency: the till reads its catalogue through
+    // the OPTIONAL door (ADR-0127). This delegates to whatever `queryAll` the double has installed
+    // AT CALL TIME, so a test that replaces `sdk.queryAll` to serve the grid keeps serving it.
+    queryAllOptional: async (name: string, params?: Record<string, unknown>) =>
+      ((globalThis as Record<string, unknown>).erplora as
+        { queryAll(n: string, p?: Record<string, unknown>): Promise<unknown> }).queryAll(name, params),
     command: async () => ({}),
     // Moneda del hub + formateo (ADR-0059). Los DOS formateadores del SDK, con su contrato real:
     // `formatMoney` recibe CÉNTIMOS (divide entre 100) y es el que usan los WC porque el dinero es

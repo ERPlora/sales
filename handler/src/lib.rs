@@ -579,6 +579,13 @@ fn calc_line_components(
 // Y **sin catálogo no se cierra una venta de catálogo**. La degradación graceful que vale para el
 // método de pago —«cobrar es lo último que puede romperse»— aquí ES el agujero: sería aceptar el
 // precio que propone el caller para algo que dice ser un producto del hub.
+//
+// sales#25 — since `inventory` became an OPTIONAL capability (ADR-0127) instead of a hard
+// dependency, "no catalogue" stopped being an anomaly: it is the salon's hub, the one that only
+// sells services. The rule does NOT relax because of it — it is precisely what makes dropping the
+// dependency safe: without `inventory` a hub sells services and free-price lines (ADR-0085), and a
+// line that claims to come from the catalogue is still refused with `sales.catalog_unavailable`.
+// What changed is whose fault the absence is, not what gets charged.
 fn is_catalog_line(item: &Value) -> bool {
     !field(item, "product_id").is_empty() && !item.get("is_service").map(as_bool).unwrap_or(false)
 }
@@ -9390,6 +9397,182 @@ mod tests {
         let err = complete_sale_pure(split_pack(3)).refused("three ids cannot hold four rows");
         assert_eq!(err.code, "sales.too_many_rows", "unexpected code: {err:?}");
         assert_no_id_names_two_rows(&sale(split_pack(4)));
+    }
+
+
+    // ── sales#25 · THE MODULE MATRIX AT THE MONEY DOOR ────────────────────────────────────────
+    //
+    // `inventory` stopped being a hard dependency and became an OPTIONAL capability (ADR-0127), so
+    // "the catalogue read did not arrive" is no longer an anomaly to be sorry about: it is the hub
+    // of a salon that only sells haircuts, and of the bar that has not fichado a thing yet. That
+    // makes the runtime's `reads` a MATRIX, and this block walks it — one combination per test,
+    // through the three doors that decide money (`complete_sale`, `checkout.preview`,
+    // `add_order_line`).
+    //
+    // The rule under every row is the same and does not bend: what a line CLAIMS to be decides what
+    // has to back it. A line that says "I am product `p-wine` from this hub" needs the catalogue;
+    // a service line and an open-price line claim nothing of the sort and never did.
+    //
+    // The reads are built by ABSENCE — the key is simply not in `context.reads`, which is exactly
+    // what the runtime delivers when the owner module is not installed. Handing an empty array
+    // instead would be testing "installed with an empty catalogue", a different fact.
+    mod optional_catalogue_matrix {
+        use super::*;
+
+        /// The tax rules a hub with `taxes` really has: goods and services, both at 21 % in ES.
+        /// `taxes` is the one dependency that STAYS hard, so every row of the matrix has them.
+        fn rules() -> Value {
+            json!([{ "id": "r-es-21", "country_code": "ES", "region_code": null,
+                     "tax_category_key": "product.generic", "rate_pct": 21.0, "tax_type": "vat" },
+                   { "id": "r-es-s21", "country_code": "ES", "region_code": null,
+                     "tax_category_key": "service.generic", "rate_pct": 21.0, "tax_type": "vat" }])
+        }
+
+        /// A line that claims to come from the product catalogue.
+        fn catalogue_line() -> Value {
+            json!([{ "product_id": "p-wine", "product_name": "Vino", "price": 5000,
+                     "quantity": 1_000_000, "tax_category_key": "product.generic", "tax_rate": 21.0 }])
+        }
+
+        /// A SERVICE line: `services` owns it, and `sales` never had a catalogue to check it
+        /// against — that is why it carries its price (sales#89 keeps it an optional read).
+        fn service_line() -> Value {
+            json!([{ "product_id": "s-cut", "product_name": "Corte", "price": 2000,
+                     "quantity": 1_000_000, "tax_category_key": "service.generic", "tax_rate": 21.0,
+                     "is_service": true }])
+        }
+
+        /// An OPEN-PRICE line (ADR-0085): sold by department, claims no catalogue row. The
+        /// department IS its tax category — that is the whole shape of a free-price sale.
+        fn open_price_line() -> Value {
+            json!([{ "product_name": "Varios", "price": 250, "quantity": 1_000_000,
+                     "tax_category_key": "product.generic", "tax_rate": 21.0 }])
+        }
+
+        /// `sales` + `taxes` and nothing else: no `inventory.products.for_sale` read at all. The
+        /// key is ABSENT, not empty — an empty array would be "installed with nothing on sale".
+        fn without_catalogue(items: Value) -> Value {
+            input_fiscal(items, Value::Null, rules())
+        }
+
+        /// The same hub WITH the catalogue app.
+        fn with_catalogue(items: Value) -> Value {
+            input_fiscal(items, product_catalog(), rules())
+        }
+
+        // ── row 1 · `sales` + `taxes` only ───────────────────────────────────────────────────
+        #[test]
+        fn with_no_catalogue_app_an_open_price_line_is_charged() {
+            let out = complete_sale_pure(without_catalogue(open_price_line()))
+                .accepted("free price is the degraded mode, so it cannot need the catalogue");
+            let line = out.operations.iter().find(|o| o.command == "sales._insert_line").unwrap();
+            assert_eq!(line.params["unit_price"], json!(250));
+        }
+
+        #[test]
+        fn with_no_catalogue_app_a_catalogue_line_is_still_refused() {
+            // Optional does NOT mean lenient. Dropping the dependency changed who is expected to be
+            // there; it did not change who may set a price. Accepting this would let a caller sell
+            // a product of the hub at the price it typed, which is sales#68 reopened.
+            let err = complete_sale_pure(without_catalogue(catalogue_line()))
+                .refused("a line that claims to be from the catalogue needs the catalogue");
+            assert_eq!(err.code, "sales.catalog_unavailable", "unexpected code: {err:?}");
+        }
+
+        #[test]
+        fn the_preview_answers_the_same_two_ways_as_the_charge() {
+            // sales#209 — the preview is the SAME valuation, read-only. If it valued a ticket the
+            // charge is going to refuse, the till would show a total nobody can take money for.
+            preview_checkout_pure(as_preview_input(without_catalogue(open_price_line())))
+                .accepted("a free-price ticket is previewable with no catalogue app");
+            let err = preview_checkout_pure(as_preview_input(without_catalogue(catalogue_line())))
+                .refused("and a catalogue line is not");
+            assert_eq!(err.code, "sales.catalog_unavailable", "unexpected code: {err:?}");
+        }
+
+        #[test]
+        fn the_open_check_door_holds_the_same_line() {
+            // `add_order_line` freezes the price into the row, and the checkout then HONOURS that
+            // row (sales#175). A catalogue line let in here without a catalogue would launder the
+            // browser's price into a column the charge trusts.
+            let mut inp = order_input(catalogue_line(), 2);
+            inp["payload"]["order_id"] = json!("ord-1");
+            inp["context"]["reads"]["sales.order.get"] = json!([{ "id": "ord-1", "status": "open" }]);
+            inp["context"]["reads"].as_object_mut().unwrap().remove("inventory.products.for_sale");
+            let items = inp["payload"]["items"].as_array().cloned().unwrap();
+            inp["payload"]["items"] = json!([items[0]]);
+            for (k, v) in items[0].as_object().unwrap() {
+                inp["payload"][k] = v.clone();
+            }
+            let err = add_order_line_pure(inp).refused("no catalogue, no frozen row");
+            assert_eq!(err.code, "sales.catalog_unavailable", "unexpected code: {err:?}");
+        }
+
+        // ── row 2 · `+ inventory` ────────────────────────────────────────────────────────────
+        #[test]
+        fn with_the_catalogue_app_the_catalogue_prices_the_line() {
+            // The whole point of keeping the read: present, it MANDA. The payload said 50,00 €
+            // here because the till painted it; what is charged is the row's price either way.
+            let out = complete_sale_pure(with_catalogue(catalogue_line()))
+                .accepted("with the catalogue the line is priced and charged");
+            let line = out.operations.iter().find(|o| o.command == "sales._insert_line").unwrap();
+            assert_eq!(line.params["unit_price"], json!(5000), "the price came from the catalogue row");
+            assert_eq!(line.params["tax_category_key"], json!("product.generic"),
+                       "and so did the fiscal category, which is the other thing the browser may not set");
+        }
+
+        // ── row 3 · `+ services` ─────────────────────────────────────────────────────────────
+        #[test]
+        fn a_service_is_charged_with_no_product_catalogue_at_all() {
+            // The salon that made sales#30 exist: `services` + `taxes`, no stock app anywhere.
+            let out = complete_sale_pure(without_catalogue(service_line()))
+                .accepted("a salon must be able to charge a haircut");
+            let line = out.operations.iter().find(|o| o.command == "sales._insert_line").unwrap();
+            assert_eq!(line.params["unit_price"], json!(2000));
+            assert_eq!(line.params["is_service"], json!(1), "and it is written down as a service");
+        }
+
+        #[test]
+        fn a_service_and_a_free_line_ride_the_same_ticket_through_the_same_fiscal_door() {
+            let mut items = service_line().as_array().cloned().unwrap();
+            items.extend(open_price_line().as_array().cloned().unwrap());
+            let out = complete_sale_pure(without_catalogue(Value::Array(items)))
+                .accepted("mixing the two things a hub without a catalogue sells");
+            assert_eq!(sale_lines(&out).len(), 2, "both lines are persisted");
+            let header = out.operations.iter().find(|o| o.command == "sales._insert_sale").unwrap();
+            assert_eq!(header.params["total"], json!(2250), "one total, one tax breakdown, one door");
+        }
+
+        // ── row 4 · `+ customers` ────────────────────────────────────────────────────────────
+        #[test]
+        fn the_customers_fiscal_snapshot_travels_frozen_without_a_product_catalogue() {
+            // ADR-0132: the customer's fiscal identity travels in `sale.completed` so `invoice`
+            // can issue with NIF. It rides the payload, not a read, so it does not depend on the
+            // catalogue app either — which is what a salon invoicing a company needs.
+            let mut inp = without_catalogue(service_line());
+            inp["payload"]["customer_id"] = json!("cus-1");
+            inp["payload"]["customer_name"] = json!("Ana García");
+            inp["payload"]["customer_tax_id"] = json!("12345678Z");
+            inp["payload"]["customer_address"] = json!("Calle Mayor 1, 28013 Madrid, ES");
+            let out = complete_sale_pure(inp).accepted("the sale closes");
+            let ev = &out.events[0].payload;
+            assert_eq!(ev["customer_tax_id"], json!("12345678Z"));
+            assert_eq!(ev["customer_address"], json!("Calle Mayor 1, 28013 Madrid, ES"));
+        }
+
+        // ── the one dependency that STAYS hard ───────────────────────────────────────────────
+        #[test]
+        fn taxes_is_the_line_that_does_not_move() {
+            // `taxes.rules.list` is declared `required: true` (sales#21/hub#701), so with no tax
+            // app the runtime aborts the command before the handler runs. What the handler pins is
+            // the other half: a hub whose rules DID arrive and do not cover the line is refused
+            // too, and with its own code — nothing is ever charged with the browser's VAT.
+            let items = json!([{ "product_name": "Varios", "price": 250, "quantity": 1_000_000,
+                                 "tax_category_key": "product.generic", "tax_rate": 21.0 }]);
+            let err = complete_sale_pure(input_fiscal(items, Value::Null, json!([])))
+                .refused("no rule, no sale");
+            assert_eq!(err.code, "sales.no_tax_rule", "unexpected code: {err:?}");
+        }
     }
 
 }
