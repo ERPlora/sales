@@ -1,7 +1,8 @@
 # Sales & POS — Screens
 
-The module contributes two tabs to the hub navigation — **Vender** (the till) and **Sales** (the
-history) — plus a **TPV** settings tab the shell generates from the declarative settings block.
+The module contributes three tabs to the hub navigation — **Vender** (the till), **Sales** (the
+history) and **Notas rápidas** (the quick-note catalogue, only for who can configure the till) —
+plus a **TPV** settings tab the shell generates from the declarative settings block.
 
 ## Refunding a sale paid with several methods
 
@@ -233,6 +234,28 @@ came out when the voucher was sold, so redeeming it issues no second document.
 A line of more than one is **not** offered: one redemption covers one line and spends one session,
 so «Corte × 3» would hand out three sessions for one. The screen says that instead of hiding.
 
+### The note on a line (sales#156 / sales#206)
+
+The selected line carries a **Nota** button, next to the supplements and the comp. It opens a sheet
+with a free keyboard: what is typed reaches the kitchen on the docket and is frozen on the sale when
+the check is charged. Reopening it shows the note the line already has, so correcting it does not
+mean retyping the whole allergy. Emptying it removes it — a note that cannot be removed leaves the
+kitchen cooking to a request that was cancelled.
+
+Above the keyboard, the sheet paints the **quick notes** the business configured (see *Notas
+rápidas* below) as chips:
+
+- Tapping a chip **adds** its text to what is in the box, joined by «, ». It never replaces:
+  «poco hecho» + «sin sal» is one request and the line carries one note.
+- Tapping it again **takes it out**, so the same instruction is never printed twice. The chips that
+  are in the note are shown filled in.
+- The keyboard keeps working before and after any chip.
+- With **no** quick notes configured, no chip is painted and the sheet is the plain one. While they
+  load, or if the read fails, the sheet says so and the keyboard still works.
+
+The chips are read with `sales.quick_notes.list`, which only needs `sales.view_sale`: the people
+tapping them are the `cashier` and the `employee`, and neither has `sales.manage_settings`.
+
 ### Merge two checks
 
 When two tables that both ordered are merged, every unpaid line of one check moves into the other and
@@ -302,3 +325,26 @@ carry the settings row's `id` — **writing** stays on `sales.settings.update` b
 | Documento por defecto | `ticket` (simplified invoice) or `invoice` (full invoice) | ticket |
 | Cabecera / pie del recibo, imagen de pie | Free text and image printed on the receipt | empty |
 | URL y texto del QR promocional | A marketing QR on the receipt — reviews, social, website. Empty = no QR | empty |
+
+## Notas rápidas — the quick-note catalogue
+
+A tab of its own, served only to whoever holds `sales.manage_settings` (`navigation[].permission`,
+hub#1052): the cashier is never shown a door that is locked. It is the same CRUD as every catalogue
+of the hub — the **+** opens the create panel, tapping a row (or its **Editar**) pre-fills the same
+form, and **Eliminar** confirms before it runs.
+
+| Field | Meaning | Default |
+|---|---|---|
+| Nota | The text of the chip, up to 80 characters. It is what the kitchen reads | — |
+| Posición | The order the chips are painted in at the till. Ties break by text | 0 |
+
+Deleting is a **soft delete**: the chip stops being offered, and the notes already typed on open
+checks and on charged sales keep their text — they are text on their own rows and do not point at
+this catalogue. Editing or deleting a note that is no longer there fails with
+`sales.quick_note_not_found` instead of reporting a change it did not make.
+
+Where this comes from: of the eight tills surveyed, only **Lightspeed Restaurant (K-Series)** ships
+preconfigured notes as a feature — created in the Back Office (add, edit, delete, reorder), applied
+with one tap on the POS, printed on the docket and shown on the KDS. Toast, Square, Clover, Revel,
+Simphony and SumUp offer free text only, Odoo needs its configuration or an app, and Shopify POS
+needs an app. So this screen copies Lightspeed and nobody else.

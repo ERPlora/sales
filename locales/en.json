@@ -9,6 +9,9 @@
     },
     "settings": {
       "label": "POS Settings"
+    },
+    "quick_notes": {
+      "label": "Quick notes"
     }
   },
   "roles": {
@@ -51,6 +54,7 @@
     "sales.product_not_available": "A product on the ticket is no longer in the catalogue. Remove the line and add it again.",
     "sales.quantity_not_positive": "A line has no quantity: set at least one before charging.",
     "sales.quantity_off_grid": "The quantity does not fit the product's step.",
+    "sales.quick_note_not_found": "That quick note is not in this business any more. Reload the list and try again.",
     "sales.refund_amount_invalid": "Every leg of a refund needs a positive amount.",
     "sales.refund_exceeds_tender": "One tender is being given back more than it was charged.",
     "sales.refund_method_unavailable": "That payment method is not available in this business, so the money cannot go back through it.",
@@ -402,6 +406,28 @@
     "lineNotePlaceholder": "e.g. medium rare, shellfish allergy, no ice",
     "lineNoteHint": "The kitchen reads this note on the ticket.",
     "lineNoteSave": "Save",
-    "lineNoteRemove": "Remove"
+    "lineNoteRemove": "Remove",
+    "quickNotesTitle": "Quick notes",
+    "quickNotesIntro": "The notes the till offers with one tap on the line-note sheet. The waiter can still type anything by hand.",
+    "quickNoteText": "Note",
+    "quickNoteOrder": "Position",
+    "quickNotesEmpty": "No quick notes yet. Add the ones your kitchen hears every day — “no salt”, “medium rare”, “no ice”.",
+    "quickNotesLoading": "Loading quick notes…",
+    "quickNotesSearch": "Search a note…",
+    "quickNoteAdd": "Add",
+    "quickNoteSave": "Save",
+    "quickNoteSaving": "Saving…",
+    "quickNoteEdit": "Edit",
+    "quickNoteEditing": "Editing",
+    "quickNoteEditCancel": "Cancel edit",
+    "quickNoteDelete": "Delete",
+    "quickNoteDeleteTitle": "Delete quick note",
+    "quickNoteDeleteHint": "It stops being offered at the till. The notes already typed on checks and sales keep their text.",
+    "quickNoteCancel": "Cancel",
+    "quickNoteSaveFailed": "The quick note could not be saved.",
+    "quickNoteDeleteFailed": "The quick note could not be deleted.",
+    "quickNotesLoadFailed": "The quick notes could not be loaded.",
+    "lineNoteQuickLoading": "Loading quick notes…",
+    "lineNoteQuickError": "The quick notes could not be loaded — type the note by hand."
   }
 }

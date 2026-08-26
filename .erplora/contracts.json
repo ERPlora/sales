@@ -18,6 +18,7 @@
       "sales.orders.list",
       "sales.payment_methods",
       "sales.pos_settings.get",
+      "sales.quick_notes.list",
       "sales.refund_options",
       "sales.stats",
       "taxes.categories.list",
@@ -48,6 +49,9 @@
       "sales.order.split",
       "sales.order.update_line",
       "sales.order.void",
+      "sales.quick_notes.create",
+      "sales.quick_notes.delete",
+      "sales.quick_notes.update",
       "sales.refund",
       "sales.void"
     ],

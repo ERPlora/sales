@@ -92,6 +92,13 @@
       "label": "Sales",
       "icon": "cart-outline",
       "component": "erp-sales-list"
+    },
+    {
+      "id": "quick_notes",
+      "label": "Quick notes",
+      "icon": "chatbubble-ellipses-outline",
+      "component": "erp-pos-quick-notes",
+      "permission": "sales.manage_settings"
     }
   ],
   "settings": {
@@ -133,7 +140,8 @@
       "migrations/postgres/028_order_line_combo.sql",
       "migrations/postgres/029_pos_catalog_sources.sql",
       "migrations/postgres/030_order_line_note.sql",
-      "migrations/postgres/031_line_parent_ref.sql"
+      "migrations/postgres/031_line_parent_ref.sql",
+      "migrations/postgres/032_quick_notes.sql"
     ]
   },
   "seed": {
@@ -274,6 +282,30 @@
     "sales.pos_settings.get": {
       "permission": "sales.view_sale",
       "sql": "queries/pos_settings_get.sql"
+    },
+    "sales.quick_notes.list": {
+      "permission": "sales.view_sale",
+      "sql": "queries/quick_notes_list.sql",
+      "list": {
+        "search": [
+          "text"
+        ],
+        "sort": [
+          "text",
+          "sort_order"
+        ],
+        "default_sort": "sort_order",
+        "default_dir": "asc",
+        "filters": {
+          "text": {
+            "op": "like"
+          }
+        },
+        "page_size": 50
+      },
+      "ai": {
+        "description": "Lists the quick notes the business preconfigured for the line-note sheet of the till, in the order they are shown."
+      }
     },
     "sales.business.get": {
       "permission": "sales.view_sale",
@@ -753,6 +785,46 @@
         "description": "Updates the point-of-sale configuration settings of the sales module"
       }
     },
+    "sales.quick_notes.create": {
+      "permission": "sales.manage_settings",
+      "schema": "schemas/quick_note_create.json",
+      "sql": [
+        "commands/quick_note_create.sql"
+      ],
+      "ai": {
+        "description": "Adds a quick note to the till: the text becomes a chip on the line-note sheet, at the position given by sort_order."
+      }
+    },
+    "sales.quick_notes.update": {
+      "permission": "sales.manage_settings",
+      "schema": "schemas/quick_note_update.json",
+      "sql": [
+        "commands/quick_note_update.sql"
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "sales.quick_note_not_found"
+      },
+      "ai": {
+        "description": "Edits the text or the position of one of the till's quick notes."
+      }
+    },
+    "sales.quick_notes.delete": {
+      "permission": "sales.manage_settings",
+      "schema": "schemas/quick_note_delete.json",
+      "sql": [
+        "commands/quick_note_delete.sql"
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "sales.quick_note_not_found"
+      },
+      "ai": {
+        "description": "Retires one of the till's quick notes. The notes already typed on checks and sales keep their text."
+      }
+    },
     "sales._mark_order_line_paid": {
       "permission": "sales.add_sale",
       "sql": [
@@ -813,6 +885,7 @@
     "sales.product_not_available": {},
     "sales.quantity_not_positive": {},
     "sales.quantity_off_grid": {},
+    "sales.quick_note_not_found": {},
     "sales.refund_amount_invalid": {},
     "sales.refund_exceeds_tender": {},
     "sales.refund_method_unavailable": {},

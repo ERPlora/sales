@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sales.quick_notes.create",
+  "description": "A quick note the till offers as a chip on the line-note sheet.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["text"],
+  "properties": {
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "title": "Text"
+    },
+    "sort_order": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "title": "Position"
+    }
+  }
+}
