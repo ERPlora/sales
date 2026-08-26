@@ -79,14 +79,14 @@ describe('checkoutErrorKey', () => {
     }
   });
 
-  it('sales#147 — a supplement that taxes differently gets its OWN message, not «could not charge»', () => {
+  it('sales#147 — a supplement billed apart that is worth NOTHING gets its OWN message', () => {
     // The cashier can fix this in ten seconds ON THE MODIFIER, and only if the screen says which
     // one and why. Behind a generic «error charging» it looks like the till is broken, and the
     // usual answer to that is to charge it as a free line — which is the mis-declared invoice all
     // over again, this time typed in by hand.
-    expect(checkoutErrorKey('sales.modifier_tax_override_unsupported'))
-      .toBe('ui.errorModifierTaxOverride');
-    for (const catalogue of [en, es]) expect(catalogue.ui.errorModifierTaxOverride).toBeTruthy();
+    expect(checkoutErrorKey('sales.modifier_child_price_invalid'))
+      .toBe('ui.errorModifierChildPrice');
+    for (const catalogue of [en, es]) expect(catalogue.ui.errorModifierChildPrice).toBeTruthy();
   });
 
   it('sales#185 — a PLATFORM refusal is business words too, not a runtime sentence', () => {

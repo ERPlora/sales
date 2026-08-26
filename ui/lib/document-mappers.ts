@@ -132,6 +132,8 @@ export interface SaleRow {
 
 /** Fila de `sales.lines`. */
 export interface SaleLineRow {
+  /** `sales_sale_item.id`. Es lo que apunta el `parent_line_ref` de una hija (sales#147). */
+  id?: string;
   product_name: string;
   product_sku?: string;
   quantity: number;
@@ -170,6 +172,45 @@ export interface SaleLineRow {
    *  closed price, and the chosen components in order. TEXT, because that is the column; the
    *  paper unpacks it with `parseComboSnapshot`. `'{}'` on a row that is not a menu. */
   combo?: string;
+  /** sales#147 / la enmienda de ADR-0376 — el `id` de la fila de la que ESTA cuelga: la línea hija
+   *  de un suplemento que tributa a un IVA distinto del de su línea, y que por eso NO se pliega en
+   *  su precio. `null` en toda fila que no cuelgue de ninguna, que es la verdad de todas las ventas
+   *  escritas hasta esta issue. Es OTRA relación que `combo_group_ref` (que hermana filas SIN
+   *  padre) y COMPONEN: una hermana de menú puede traer su propia hija. */
+  parent_line_ref?: string | null;
+}
+
+/** Las líneas con cada HIJA justo detrás de SU padre (sales#147).
+ *
+ * El papel no puede ordenar por `created_at`: todas las líneas de una venta comparten el mismo
+ * instante, así que ordenar por él es un empate y Postgres devuelve el orden que quiera. La
+ * jerarquía la dice la fila (`parent_line_ref`), y aquí se convierte en la única cosa que el papel
+ * entiende: la posición.
+ *
+ * Una hija HUÉRFANA —su padre no está en esta lista, que es lo que ve media cuenta ya dividida— se
+ * queda donde estaba en vez de desaparecer: perder una línea de un documento fiscal es peor que
+ * pintarla suelta. Y una venta sin ninguna hija devuelve la MISMA lista, así que el tique de
+ * siempre sale byte a byte igual. */
+export function orderChildLines<T extends { id?: string; parent_line_ref?: string | null }>(
+  lines: T[],
+): T[] {
+  const ref = (l: T) => (l.parent_line_ref || '').trim();
+  const byParent = new Map<string, T[]>();
+  for (const l of lines) {
+    const r = ref(l);
+    if (!r) continue;
+    byParent.set(r, [...(byParent.get(r) ?? []), l]);
+  }
+  if (!byParent.size) return lines;
+  const present = new Set(lines.map((l) => l.id).filter(Boolean) as string[]);
+  const out: T[] = [];
+  for (const l of lines) {
+    // Una hija cuyo padre SÍ está aquí se emite detrás de él, no en su sitio original.
+    if (ref(l) && present.has(ref(l))) continue;
+    out.push(l);
+    for (const child of byParent.get(l.id ?? '') ?? []) out.push(child);
+  }
+  return out;
 }
 
 /** El snapshot `sales_sale_item.modifiers` → lo que el papel imprime (sales#148).
@@ -212,12 +253,29 @@ export function parseModifierSnapshot(raw: unknown): PrintedModifier[] | undefin
  *  externo (sales#162). Sin `t` —llamadas legadas— se imprime la fuente canónica en inglés
  *  (ADR-0055), nunca la clave: el papel sale de la impresora igual y tiene que ser legible. */
 function lineLabel(l: SaleLineRow, t?: Translate): string {
+  // sales#147 — una hija se lee como lo que es: el suplemento de la línea de encima. El «+» es el
+  // vocabulario que el papel YA usa para un suplemento («+ queso», y el `+3,00` de un componente de
+  // menú), es ASCII —así imprime en cualquier página de códigos del térmico, que es donde una
+  // flecha o una sangría se pierden— y en 32 columnas cuesta dos caracteres. La sangría por
+  // espacios no vale: el HTML los colapsa y `<ok-receipt>` pinta el nombre tal cual.
+  if (ref(l)) return `+ ${lineName(l, t)}`;
+  return lineName(l, t);
+}
+
+/** El nombre de la línea sin la marca de jerarquía: la invitación (comp) y la línea que pagó un
+ *  tender externo (sales#162). */
+function lineName(l: SaleLineRow, t?: Translate): string {
   if (Number(l.is_gift)) return `${l.product_name} (Invitación)`;
   if (Number(l.is_covered)) {
     const label = t?.('ui.linePaidElsewhere');
     return `${l.product_name} (${label && label !== 'ui.linePaidElsewhere' ? label : 'Prepaid'})`;
   }
   return l.product_name;
+}
+
+/** `true` cuando la fila cuelga de otra (sales#147). */
+function ref(l: SaleLineRow): boolean {
+  return !!(l.parent_line_ref || '').trim();
 }
 
 /** Subconjunto de `sales.settings.get` que afecta al documento. */
@@ -485,13 +543,18 @@ export function saleToReceipt(
     datetime: formatDateTime(sale.created_at, locale),
     customer: fiscal.customer_name || sale.customer_name || undefined,
     // sales#154: the sibling rows of a menu collapse into ONE header line; a plain row is itself.
-    lines: groupComboLines(lines).map((g): PaperReceiptLine => g.combo ? menuLine(g.siblings, g.combo, t) : {
+    // sales#147: cada hija va justo detrás de SU padre ANTES de agrupar los menús, para que el
+    // orden del papel sea el de la jerarquía y no el que devuelva la base de datos.
+    lines: groupComboLines(orderChildLines(lines)).map((g): PaperReceiptLine => g.combo ? menuLine(g.siblings, g.combo, t) : {
       name: lineLabel(g.head, t),
       qty: fromMicro(Number(g.head.quantity)), // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
       unit_price: minor(g.head.unit_price),
       total: minor(g.head.line_total),
       // sales#148: what was charged, printed. sales#156: and the note the kitchen was given.
-      ...paperModifiers(parseModifierSnapshot(g.head.modifiers), undefined, g.head.notes),
+      // sales#147: a CHILD paints no supplement sub-line — it IS the supplement, and its row keeps
+      // the snapshot only to be self-describing; repeating it underneath would read
+      // «+ Refresco / · Refresco».
+      ...(ref(g.head) ? {} : paperModifiers(parseModifierSnapshot(g.head.modifiers), undefined, g.head.notes)),
       ...paperUnit(g.head), // sales#28: la unidad congelada, para el papel
     }),
     subtotal: sale.subtotal != null ? minor(sale.subtotal) : undefined,
@@ -524,7 +587,7 @@ export function saleToInvoice(
   t?: Translate,
 ): InvoiceData {
   const header = splitHeader(settings.receipt_header);
-  const invLines: InvoiceLine[] = lines.map((l) => ({
+  const invLines: InvoiceLine[] = orderChildLines(lines).map((l) => ({
     // sales#28: `InvoiceLine` (outfitkit) no tiene campo de unidad, y la factura A4 debe decir
     // igualmente en qué va la línea — el hueco honesto es la descripción, como «Vino (botella)»:
     // «Tomate rosa (kg)». Sin unidad o con la suelta, la descripción queda como estaba.
