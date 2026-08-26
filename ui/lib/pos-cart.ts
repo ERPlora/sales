@@ -367,7 +367,7 @@ function roundHalfUp(x: number): number {
  *  Es dinero de PANTALLA: el servidor lo resuelve otra vez contra el catálogo (venta de mostrador)
  *  o contra el snapshot congelado de la fila (cuenta retomada, sales#200), y su cifra es la que se
  *  cobra. Aquí solo evita que la pantalla enseñe un número y el cajón cobre otro. */
-export function modifierDelta(l: CartLine): number {
+export function modifierDelta(l: Pick<CartLine, 'modifiers'>): number {
   return (l.modifiers ?? []).reduce((s, m) => s + (Number(m.price_delta) || 0), 0);
 }
 
@@ -550,7 +550,7 @@ export async function updateOrderLineQty(
 ): Promise<void> {
   await client.command('sales.order.update_line', {
     order_id: orderId, line_id: lineId, quantity: toMicro(qty), // punto fijo 10⁶ (ADR-0147)
-    line_total: provisionalLineTotal(unitPrice, qty, isGift, discount, modifierDelta({ modifiers } as CartLine)),
+    line_total: provisionalLineTotal(unitPrice, qty, isGift, discount, modifierDelta({ modifiers })),
     // Alternar invitación cambia el importe: viaja junto para que la fila quede coherente.
     is_gift: isGift === undefined ? null : (isGift ? 1 : 0),
     gift_reason: giftReason ?? null,
