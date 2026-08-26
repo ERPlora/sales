@@ -21,7 +21,11 @@ SELECT id, product_id, product_name, product_sku, is_service,
        -- la cabecera del menu en el tique se pinta agrupando por `combo_group_ref` y leyendo el
        -- snapshot congelado en `combo`. Sin devolverlas por AQUI, lo cobrado quedaria escrito y
        -- seria ilegible -- que es exactamente lo que le paso a `modifiers` hasta sales#148.
-       combo_group_ref, combo
+       combo_group_ref, combo,
+       -- sales#147: la fila de la que ESTA cuelga -- la hija de un suplemento con tipo fiscal
+       -- propio. El papel la imprime BAJO su padre leyendo esto, y no el orden de las filas: todas
+       -- las lineas de una venta comparten `created_at`, asi que ordenar por el es un empate.
+       parent_line_ref
 FROM sales_sale_item
 WHERE sale_id = :sale_id AND hub_id = :hub_id
 ORDER BY created_at ASC;

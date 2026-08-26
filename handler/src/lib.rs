@@ -660,7 +660,8 @@ fn line_price(
     }
 }
 
-/// The supplements of a line, **with the price the SERVER resolved** (pm#93 / ADR-0376).
+/// The supplements of a line, **with the price the SERVER resolved** (pm#93 / ADR-0376), split
+/// into the ones that FOLD into their line and the ones that get a LINE OF THEIR OWN (sales#147).
 ///
 /// Same principle as [`authoritative_price`]: the payload's `price_delta` is a proposal, not a
 /// fact. Without this, a client sending `price_delta: -500` would be giving itself a discount.
@@ -677,52 +678,71 @@ fn line_price(
 /// as sales#175 one floor above. Re-resolving here would re-price in silence every check that is
 /// open when someone edits the menu.
 ///
-/// A row written BEFORE that freeze carries only `option_id`s: those entries are resolved against
-/// the catalogue exactly as they were before, refusing an unknown option included. Reading their
-/// missing delta as 0 would undercharge, in silence, every check open at deploy time.
+/// # What the split decides (sales#147, the amendment to ADR-0376)
 ///
-/// Returns `(total delta in minor units, JSON snapshot)`. The snapshot preserves the ORDER OF
-/// CHOICE (a recurring request in the kitchen: the catalogue's order is useless on the pass) and
-/// freezes the `kitchen_name`, which is the one that gets printed.
+/// `line_tax_category` is the tax category the SERVER fixed for the line — the product catalogue's,
+/// or the one the combo split decided. Against it, every option:
 ///
-/// 🔴 **And a supplement that taxes DIFFERENTLY is not folded: it is REFUSED** (sales#147, the
-/// amendment to ADR-0376). `line_tax_category` is the tax category the SERVER fixed for the line
-/// — the product catalogue's, or the one the combo split decided. If the option declares a
-/// category of its OWN that is not that one, the delta cannot go in through the parent's
-/// `unit_price`: it would inherit the parent's rate and the invoice would come out wrongly broken
-/// down **in silence** (a soft drink at 21 % charged at the menu's 10 %). That is what this door
-/// closes until the child line exists.
+/// * **no category of its own, or the SAME one** → it FOLDS. That is 99 % of supplements ("+cheese"
+///   on a burger) and nothing about them changes: the delta goes into the parent's `unit_price`,
+///   one base, one row, exactly as before.
+/// * **a category of its OWN and DIFFERENT** → it is PROMOTED to a line of its own. Folding it
+///   would make it inherit the parent's rate and the invoice would come out wrongly broken down
+///   **in silence** (a soft drink at 21 % charged at the menu's 10 %). Declaring the category in the
+///   catalogue IS the business saying "this taxes differently", and the sale honours it.
 ///
-/// `None` = the line has no catalogue category (open-price sale, no `product_id`). Then there is
-/// nothing to compare against and an option with its own category is **also** refused: it fails
-/// CLOSED, like the rest of this function.
-fn authoritative_modifiers(
+/// A line with NO category of its own (an open-price sale) promotes too: there is nothing for the
+/// option to inherit, which is precisely why it needs a row of its own.
+fn split_modifiers(
     item: &Value,
     frozen: Option<&Value>,
     catalog: Option<&Vec<&Value>>,
     line_tax_category: Option<&str>,
-) -> Result<(i64, String), Refusal> {
+) -> Result<(Vec<Value>, Vec<Value>), Refusal> {
     let entries = resolve_modifiers(item, frozen, catalog)?;
-    let mut delta_total: i64 = 0;
-    for entry in &entries {
-        // sales#147 — the option's own tax category. Empty = it inherits its line's (ADR-0376),
-        // which is 99 % of supplements and the only case that can be charged correctly today. On a
-        // resumed check it is the FROZEN one: what the menu said when the table ordered.
-        let option_category = field(entry, "tax_category_key");
-        if !option_category.is_empty() && line_tax_category != Some(option_category.as_str()) {
+    let mut folded: Vec<Value> = Vec::with_capacity(entries.len());
+    let mut promoted: Vec<Value> = Vec::new();
+    for entry in entries {
+        // sales#147 — the option's own tax category. Empty = it inherits its line's (ADR-0376). On
+        // a resumed check it is the FROZEN one: what the menu said when the table ordered.
+        let option_category = field(&entry, "tax_category_key");
+        if option_category.is_empty() || line_tax_category == Some(option_category.as_str()) {
+            folded.push(entry);
+            continue;
+        }
+        // 🔴 A supplement billed APART has to BE something. A zero — or negative — row at another
+        // rate is not a supplement: it is a rebate wearing a tax category, and it would declare a
+        // base the customer never bought. A rebate belongs in the line's discount, which is the
+        // machinery that already knows how to prorate it to the cent (ADR-0210).
+        let delta = as_cents(entry.get("price_delta").unwrap_or(&Value::Null), 0);
+        if delta <= 0 {
             return Err(reject(
-                "sales.modifier_tax_override_unsupported",
+                "sales.modifier_child_price_invalid",
                 format!(
-                    "`{}` taxes as `{option_category}` and its line as `{}` — a supplement with \
-                     its own tax category needs a line of its own (ADR-0376), which is not written yet",
-                    field(entry, "option_id"),
-                    line_tax_category.unwrap_or("<none>"),
+                    "`{}` taxes as `{option_category}` so it bills on a line of its own, and a line \
+                     of its own cannot be worth {delta}",
+                    field(&entry, "option_id"),
                 ),
             ));
         }
-        delta_total += as_cents(entry.get("price_delta").unwrap_or(&Value::Null), 0);
+        promoted.push(entry);
     }
-    Ok((delta_total, encode_modifiers(entries)?))
+    Ok((folded, promoted))
+}
+
+/// The supplements that FOLD, as the line carries them: `(total delta in minor units, snapshot)`.
+///
+/// The snapshot preserves the ORDER OF CHOICE (a recurring request in the kitchen: the catalogue's
+/// order is useless on the pass) and freezes the `kitchen_name`, which is the one that gets
+/// printed. It holds what is INSIDE this row's `unit_price` and nothing else — which is why the
+/// paper prints no amount beside a supplement (sales#148), and why a PROMOTED option is not in it:
+/// that one is on its own row, with its own money.
+fn fold_modifiers(entries: &[Value]) -> Result<(i64, String), Refusal> {
+    let delta_total: i64 = entries
+        .iter()
+        .map(|e| as_cents(e.get("price_delta").unwrap_or(&Value::Null), 0))
+        .sum();
+    Ok((delta_total, encode_modifiers(entries.to_vec())?))
 }
 
 /// The picks of a line, RESOLVED into full entries (id, group, names, delta, tax category) — the
@@ -1254,6 +1274,145 @@ fn expand_combos<'a>(
     Ok(out)
 }
 
+/// UNA línea del cobro tal y como el SERVIDOR la expandió, antes de valorarla.
+///
+/// Dos expansiones viven aquí y las dos son del servidor, nunca del payload: un combo se convierte
+/// en sus líneas hermanas (sales#152 / ADR-0381) y un suplemento que tributa distinto se convierte
+/// en su propia línea hija (sales#147 / enmienda de ADR-0376).
+#[derive(Clone)]
+struct ExpandedLine {
+    /// La línea tal y como entra en la valoración.
+    item: Value,
+    /// De qué combo salió, con su snapshot congelado. `None` = no viene de ninguno.
+    combo: Option<ComboLine>,
+    /// Los suplementos que se PLIEGAN en el precio unitario de esta línea, en orden de elección.
+    folded: Vec<Value>,
+    /// La opción que ESTA línea ES (sales#147). Va al snapshot de la fila —así la hija dice de qué
+    /// suplemento salió, con su delta congelado, sin que nadie tenga que deducirlo del orden— pero
+    /// su delta NO se suma: ya ES el precio unitario de la línea.
+    own: Option<Value>,
+    /// La línea de la que ESTA cuelga, por índice en esta misma lista (sales#147). `None` = no
+    /// cuelga de ninguna, que es la verdad de todas las líneas que había hasta esta issue.
+    parent: Option<usize>,
+}
+
+/// La LÍNEA HIJA de un suplemento con tipo fiscal propio (sales#147 / enmienda de ADR-0376).
+///
+/// Todo lo que decide dinero sale del catálogo (`entry`, que resolvió el servidor) o del PADRE,
+/// jamás del payload:
+///
+/// * `price` = el `price_delta` congelado. La hija no tiene `product_id` —una opción no es un
+///   artículo del catálogo de productos— así que la valoración usa ese precio tal cual, por la
+///   misma puerta por la que ya pasa una línea de precio libre.
+/// * `quantity` (con la cantidad de precio KPEIN y el contexto de unidades) = las del padre: la
+///   hija no es una línea que el camarero teclease, es un trozo del padre. Dos menús, dos refrescos.
+/// * `tax_category_key` = la de la OPCIÓN. Es lo que hace que la fila lleve su propio `tax_rate` y
+///   que base + cuota cuadren al céntimo en las dos filas por separado.
+/// * el descuento de línea, la invitación y el cubierto se HEREDAN: si el menú se invita, su
+///   refresco se invita; si lleva un 10 %, su refresco lo lleva. Así el prorrateo de ADR-0210 cae
+///   sobre las dos y no hay descuadre.
+///
+/// 🔴 **NO lleva `order_item_id`.** La hija no es una fila de la cuenta abierta —`sales_order_item`
+/// no la tiene ni la necesita: se materializa AL COBRAR, igual que las hermanas de un combo— y
+/// dejarle el del padre la valoraría con el precio del padre.
+fn modifier_child_item(parent: &Value, entry: &Value) -> Value {
+    let name = {
+        let n = field(entry, "name");
+        if n.is_empty() { field(entry, "option_id") } else { n }
+    };
+    let mut p = Map::new();
+    // Sin `product_id`: una opción de `modifiers` no es un artículo de `inventory`, y ponerle uno
+    // haría que `inventory` descontase existencias que nadie declaró. Descontar los ingredientes de
+    // un suplemento es pm#116, post-MVP, y se dice en voz alta en vez de fingirlo.
+    p.insert("product_id".into(), Value::Null);
+    p.insert("product_name".into(), json!(name));
+    p.insert("is_service".into(), parent.get("is_service").cloned().unwrap_or(Value::Null));
+    p.insert("price".into(), json!(as_cents(entry.get("price_delta").unwrap_or(&Value::Null), 0)));
+    p.insert("tax_category_key".into(), json!(field(entry, "tax_category_key")));
+    // Sin categoría de producto: una opción no está clasificada para el routing de cocina, y una
+    // cadena vacía sería un id que no existe (sales#12).
+    p.insert("category_id".into(), Value::Null);
+    for key in [
+        "quantity",
+        "price_quantity_value",
+        "discount",
+        "is_gift",
+        "gift_reason",
+        "covered",
+        "unit_code",
+        "unit_name",
+        "factor_num",
+        "factor_den",
+        "increment_value",
+        "pricing_unit_code",
+        "pricing_unit_name",
+        "pricing_factor_num",
+        "pricing_factor_den",
+    ] {
+        if let Some(v) = parent.get(key) {
+            p.insert(key.into(), v.clone());
+        }
+    }
+    Value::Object(p)
+}
+
+/// Las líneas que el SERVIDOR va a cobrar de verdad: los combos ya repartidos (sales#152) y los
+/// suplementos con tipo fiscal propio ya sacados a su línea hija (sales#147).
+///
+/// 🔴 Se hace UNA sola vez, aquí, y de esto beben TODAS las rutas: las filas que se persisten, el
+/// evento `sale.completed` del que salen la factura y el registro de la AEAT, y la lectura
+/// autoritativa que responde el preview (sales#164). Si cada una expandiera por su cuenta, un día
+/// dirían cosas distintas — y «cuadra al céntimo» duraría hasta el primer cambio en una de ellas.
+///
+/// La hija va SIEMPRE inmediatamente detrás de su padre: el papel la imprime debajo, y el índice
+/// que guarda en `parent` es el que se convierte en `parent_line_ref` al repartir los ids.
+fn expand_lines<'a>(
+    items: &[Value],
+    sale_id: &str,
+    combo_catalog: Option<&Vec<&Value>>,
+    product_catalog: Option<&Vec<&Value>>,
+    modifier_catalog: Option<&Vec<&Value>>,
+    order_lines: Option<&'a Vec<&'a Value>>,
+) -> Result<Vec<ExpandedLine>, Refusal> {
+    let mut out: Vec<ExpandedLine> = Vec::with_capacity(items.len());
+    for (item, combo) in expand_combos(items, sale_id, combo_catalog, product_catalog, order_lines)? {
+        // sales#175/#200: the ROW of the open check this line comes from — the authority for both
+        // the base price and the supplements' frozen delta.
+        let frozen = frozen_order_line(&item, order_lines)?;
+        // The tax category the SERVER fixed for this line: the combo split's when it came from one
+        // (art. 91.Uno.2.2º or art. 79.Dos), the catalogue's otherwise, and `None` when the line has
+        // none to fix (an open-price sale). It is what an option's own category is checked against,
+        // so it has to be resolved BEFORE the supplements.
+        let line_category = match &combo {
+            Some(c) => Some(c.tax_category_key.clone()),
+            None => line_price(&item, frozen, product_catalog)?.map(|(_, _, cat)| cat),
+        };
+        let (folded, promoted) =
+            split_modifiers(&item, frozen, modifier_catalog, line_category.as_deref())?;
+        let parent_idx = out.len();
+        out.push(ExpandedLine { item, combo, folded, own: None, parent: None });
+        for entry in promoted {
+            let child = modifier_child_item(&out[parent_idx].item, &entry);
+            out.push(ExpandedLine {
+                item: child,
+                // NO es un combo: `combo_group_ref` hermana filas SIN padre (ADR-0381) y esto es la
+                // relación contraria — una fila que cuelga de otra que sí lleva el dinero. Además
+                // COMPONEN (un componente de menú puede traer su propio suplemento), así que una
+                // sola columna no puede con las dos sin que un grupo signifique dos cosas.
+                combo: None,
+                // Nada se pliega en una hija: su precio unitario ES el delta del suplemento.
+                folded: Vec::new(),
+                // La opción promocionada viaja en SU PROPIA fila: eso es lo que hace la fila
+                // autodescriptiva (qué opción, con qué delta congelado) sin duplicarla en el padre,
+                // donde ya no forma parte del precio.
+                own: Some(entry),
+                parent: Some(parent_idx),
+            });
+        }
+    }
+    Ok(out)
+}
+
 // ── sales#20 · el SERVIDOR cierra la venta; el cliente solo PROPONE ──────────────────────────
 
 /// Why a command did not go through. Two kinds, because they leave the hub by two different
@@ -1655,6 +1814,10 @@ struct ValuedLine {
     modifiers: String,
     /// Which set menu it came out of, with its frozen snapshot (ADR-0381). `None` = a plain line.
     combo: Option<ComboLine>,
+    /// The line THIS one hangs from, by index into [`Valuation::lines`] (sales#147). It becomes
+    /// `parent_line_ref` when the batch of ids is handed out, and it lets the preview answer the
+    /// same hierarchy the sale persists without inventing ids that do not exist.
+    parent: Option<usize>,
 }
 
 /// WHAT A TICKET IS WORTH: its priced lines, the breakdown by rate and the totals. Nothing in
@@ -1763,10 +1926,13 @@ fn value_checkout(
     // 🔴 EL COMBO SE ARMA UNA SOLA VEZ, aquí, y de esto beben las DOS rutas: las filas que se
     // persisten y el evento `sale.completed` del que salen la factura y el registro de la AEAT. Si
     // cada una expandiera por su cuenta, un día dirían cosas distintas.
-    let lines_in = expand_combos(items, sale_id, combo_catalog.as_ref(), product_catalog.as_ref(), order_lines.as_ref())?;
-    // La tanda de ids del host es finita (256, ARQUITECTURA.md §5.3) y un combo MULTIPLICA líneas.
-    // Sin este guard la línea 256 saldría con id vacío, y el fallo aparecería como una colisión de
-    // clave primaria en la BD, lejos de su causa.
+    // 🔴 Y con ellas SALE LA HIJA de todo suplemento que tribute distinto (sales#147): también una
+    // sola vez, también del lado del servidor, por la MISMA puerta. Una segunda ruta del dinero es
+    // una segunda ruta que mantener y auditar.
+    let lines_in = expand_lines(items, sale_id, combo_catalog.as_ref(), product_catalog.as_ref(), modifier_catalog.as_ref(), order_lines.as_ref())?;
+    // La tanda de ids del host es finita (256, ARQUITECTURA.md §5.3) y un combo —o un suplemento
+    // con tipo fiscal propio— MULTIPLICA líneas. Sin este guard la línea 256 saldría con id vacío,
+    // y el fallo aparecería como una colisión de clave primaria en la BD, lejos de su causa.
     if let Some(budget) = id_budget {
         if lines_in.len() + 1 > budget {
             return Err(reject(
@@ -1776,7 +1942,9 @@ fn value_checkout(
         }
     }
 
-    for (item, combo) in lines_in.iter() {
+    for expanded in lines_in.iter() {
+        let item = &expanded.item;
+        let combo = &expanded.combo;
         // El precio SALE DEL CATÁLOGO si la línea dice ser de catálogo. El del payload es una
         // propuesta, no un hecho.
         // sales#175/#200: the ROW of the open check this line comes from, resolved ONCE — it is
@@ -1806,8 +1974,13 @@ fn value_checkout(
             Some(c) => Some(c.tax_category_key.as_str()),
             None => from_catalog.as_ref().map(|(_, _, cat)| cat.as_str()),
         };
-        let (modifier_delta, modifier_snapshot) =
-            authoritative_modifiers(item, frozen, modifier_catalog.as_ref(), catalog_cat)?;
+        // sales#147: la promoción a línea hija ya la decidió `expand_lines`. En una línea normal
+        // aquí solo quedan los suplementos que SÍ se pliegan en su precio unitario; en una hija no
+        // se pliega ninguno —su precio ES el delta— y el snapshot solo dice de qué opción salió.
+        let (modifier_delta, modifier_snapshot) = match &expanded.own {
+            Some(entry) => (0, encode_modifiers(vec![entry.clone()])?),
+            None => fold_modifiers(&expanded.folded)?,
+        };
         let unit_price = unit_price + modifier_delta;
         // Cantidad en punto fijo 10⁶ (ADR-0147) + rechazo fuera de rejilla; y la cantidad de
         // precio KPEIN («37 céntimos por 100 ud») que hace exacto el sub-céntimo sin tocar el dinero.
@@ -1872,7 +2045,7 @@ fn value_checkout(
         };
         // sales#113: la línea se guarda calculada; el importe fijo se reparte cuando se conocen
         // TODAS (fase 2, más abajo) y solo entonces se agrega y se emite.
-        pending_lines.push(ValuedLine { t, parts, is_gift, covered, resolved, combined_pct, unit_price, qty, line_disc, item: item.clone(), modifiers: modifier_snapshot, combo: combo.clone() });
+        pending_lines.push(ValuedLine { t, parts, is_gift, covered, resolved, combined_pct, unit_price, qty, line_disc, item: item.clone(), modifiers: modifier_snapshot, combo: combo.clone(), parent: expanded.parent });
     }
 
     // ── Fase 2 (sales#113): reparto del importe fijo por RESTO MAYOR entre las líneas cobradas ──
@@ -1967,7 +2140,7 @@ fn value_checkout(
 ///   "tax_included": true,
 ///   "lines": [ { "product_id", "product_name", "tax_category_key", "tax_rate", "quantity",
 ///                "unit_price", "net_amount", "tax_amount", "line_total",
-///                "combo_group_ref", "is_gift", "covered" } ],
+///                "combo_group_ref", "parent_index", "is_gift", "covered" } ],
 ///   "tax_breakdown": { "10.00": { "base": 545, "tax": 55, "kind": "tax" } } }
 /// ```
 ///
@@ -2029,6 +2202,11 @@ fn preview_checkout_inner(input: Value) -> Result<Output, Refusal> {
                 "line_total": l.t.line,              // cents: what it adds to the total
                 // ADR-0381: what makes siblings of one set menu. `null` = a plain line.
                 "combo_group_ref": l.combo.as_ref().map(|c| json!(c.group_ref)).unwrap_or(Value::Null),
+                // sales#147 — la línea de la que ESTA cuelga, por POSICIÓN en esta misma lista. Un
+                // preview no gasta ids del host, así que aquí no hay `parent_line_ref` que dar: la
+                // jerarquía que devuelve es la misma que se persistirá, expresada con lo único que
+                // existe todavía. `null` = no cuelga de ninguna.
+                "parent_index": l.parent.map(|i| json!(i)).unwrap_or(Value::Null),
                 "is_gift": l.is_gift,
                 "covered": l.covered,
             })
@@ -2182,6 +2360,17 @@ fn complete_sale_inner(input: Value) -> Result<Output, Refusal> {
         p.insert(
             "combo".into(),
             json!(combo.as_ref().map(|c| c.snapshot.clone()).unwrap_or_else(|| "{}".to_string())),
+        );
+        // sales#147 / enmienda de ADR-0376: la fila de la que ESTA cuelga. La hija de un suplemento
+        // con tipo fiscal propio nombra a su padre, y por ahí el papel la imprime debajo y un
+        // informe las junta sin depender del orden de las filas (todas comparten `created_at`).
+        // NULL en toda línea que no cuelgue de ninguna — que es la verdad de las ventas ya escritas.
+        p.insert(
+            "parent_line_ref".into(),
+            l.parent
+                .and_then(|pi| new_ids.get(pi + 1))
+                .map(|v| json!(as_str(v)))
+                .unwrap_or(Value::Null),
         );
         p.insert("net_amount".into(), json!(t.net)); // céntimos
         p.insert("tax_amount".into(), json!(t.tax)); // céntimos
@@ -2437,6 +2626,13 @@ fn complete_sale_inner(input: Value) -> Result<Output, Refusal> {
                     })
                     .unwrap_or(Value::Null),
                 "combo_group_ref": it_combo.as_ref().map(|c| json!(c.group_ref)).unwrap_or(Value::Null),
+                // sales#147: la hija viaja al evento nombrando a su padre, con el MISMO id que la
+                // fila. `invoice` y el registro de la AEAT ven dos líneas con dos tipos —que es lo
+                // que hay que declarar— y saben cuál cuelga de cuál para pintarlas juntas.
+                "parent_line_ref": l.parent
+                    .and_then(|pi| new_ids.get(pi + 1))
+                    .map(|v| json!(as_str(v)))
+                    .unwrap_or(Value::Null),
                 "combo": it_combo
                     .as_ref()
                     .map(|c| serde_json::from_str::<Value>(&c.snapshot).unwrap_or(Value::Null))
@@ -5863,7 +6059,7 @@ mod tests {
         assert_eq!(line.params["modifiers"], json!("[]"), "sin suplementos, snapshot vacío");
     }
 
-    // ── sales#147 · a supplement that taxes DIFFERENTLY is not charged at the parent's rate ───
+    // ── sales#147 · a supplement that taxes DIFFERENTLY becomes ITS OWN LINE ──────────────────
 
     /// An option of `modifiers.options.all` carrying whatever tax category it is given
     /// (`Value::Null` = it inherits its line's, which is the case for the vast majority).
@@ -5873,41 +6069,129 @@ mod tests {
                  "tax_category_key": tax_category_key }])
     }
 
+    /// The trusted tax catalogue of these cases: the menu at 10 %, the drink at 21 % (ADR-0085).
+    fn menu_tax_rules() -> Value {
+        json!([
+            { "id": "r-es-10", "country_code": "ES", "region_code": null,
+              "tax_category_key": "restaurant.food", "rate_pct": 10.0, "tax_type": "vat" },
+            { "id": "r-es-21", "country_code": "ES", "region_code": null,
+              "tax_category_key": "product.generic", "rate_pct": 21.0, "tax_type": "vat" }
+        ])
+    }
+
     /// A 10,00 € set menu from the catalogue (`restaurant.food`) with a 2,00 € soft drink on it.
     /// The OPTION's category is the only thing that changes between the cases below.
     fn menu_with_drink(option_tax_category: Value) -> Value {
+        menu_with_drink_qty(option_tax_category, 1_000_000, 5)
+    }
+
+    /// The same menu with an arbitrary quantity and id budget: a promoted supplement needs one id
+    /// MORE than the lines the payload names.
+    fn menu_with_drink_qty(option_tax_category: Value, qty: i64, ids: usize) -> Value {
         let mut inp = con_suplementos(
             input(json!([{ "product_id": "p-menu", "product_name": "Menú del día",
-                           "quantity": 1_000_000, "tax_rate": 10.0,
-                           "modifiers": [{ "option_id": "o-refresco" }] }]), 3, 1200),
+                           "quantity": qty, "tax_rate": 10.0,
+                           "modifiers": [{ "option_id": "o-refresco" }] }]), ids, 0),
             drink_option(option_tax_category),
         );
         inp["context"]["reads"]["inventory.products.for_sale"] =
             json!([{ "id": "p-menu", "price": 1000, "cost": 0,
                      "tax_category_key": "restaurant.food" }]);
-        // The trusted tax catalogue: the menu at 10 %, the drink at 21 % (ADR-0085). A catalogue
-        // line WITH a category REQUIRES it — without it the sale is refused before reaching what
-        // this block is about.
-        inp["context"]["reads"]["taxes.rules.list"] = json!([
-            { "id": "r-es-10", "country_code": "ES", "region_code": null,
-              "tax_category_key": "restaurant.food", "rate_pct": 10.0, "tax_type": "vat" },
-            { "id": "r-es-21", "country_code": "ES", "region_code": null,
-              "tax_category_key": "product.generic", "rate_pct": 21.0, "tax_type": "vat" }
-        ]);
+        inp["context"]["reads"]["taxes.rules.list"] = menu_tax_rules();
         inp["context"]["country_code"] = json!("ES");
         inp
     }
 
     #[test]
-    fn a_supplement_with_a_TAX_CATEGORY_OF_ITS_OWN_refuses_the_sale() {
+    fn a_supplement_with_a_TAX_CATEGORY_OF_ITS_OWN_gets_a_LINE_OF_ITS_OWN() {
         // 🔴 The hole sales#147 closes: the 21 % drink inside a 10 % menu was folded into the
-        // parent's `unit_price` and INHERITED its rate. The invoice came out wrongly broken down
-        // and it came out in silence — no error, no warning, no log — which is worse than not
-        // letting it be charged. Until the child line exists (part 2 of the issue), the sale is
-        // REFUSED through the same door that already refuses an unknown option.
-        let err = complete_sale_pure(menu_with_drink(json!("product.generic")))
-            .refused("must refuse");
-        assert_eq!(err.code, "sales.modifier_tax_override_unsupported", "stable domain code: {err:?}");
+        // parent's `unit_price` and INHERITED its rate — a wrongly broken down invoice, in silence.
+        // Part 1 refused the sale; this is part 2, the line that lets it be charged RIGHT: two rows,
+        // each with its own rate, and base + quota adding up to the cent on both.
+        let out = sale(menu_with_drink(json!("product.generic")));
+        let lines = sale_lines(&out);
+        assert_eq!(lines.len(), 2, "the menu and its drink are two rows: {lines:?}");
+
+        assert_eq!(lines[0]["unit_price"], json!(1000), "the parent keeps the CATALOGUE price");
+        assert_eq!(lines[0]["tax_rate"], json!(10.0));
+        assert_eq!(lines[0]["net_amount"], json!(909));
+        assert_eq!(lines[0]["tax_amount"], json!(91)); // 909 + 91 = 1000, tax-included
+        assert_eq!(lines[0]["line_total"], json!(1000));
+        assert_eq!(lines[0]["parent_line_ref"], Value::Null, "a parent hangs from nobody");
+
+        assert_eq!(lines[1]["unit_price"], json!(200), "the catalogue's FROZEN delta");
+        assert_eq!(lines[1]["tax_rate"], json!(21.0));
+        assert_eq!(lines[1]["tax_category_key"], json!("product.generic"));
+        assert_eq!(lines[1]["net_amount"], json!(165));
+        assert_eq!(lines[1]["tax_amount"], json!(35)); // 165 + 35 = 200
+        assert_eq!(lines[1]["line_total"], json!(200));
+        assert_eq!(lines[1]["product_name"], json!("Refresco"), "the option is what is read");
+        assert_eq!(lines[1]["product_id"], Value::Null, "an option is not an article");
+        // The link: the child names the ROW it hangs from, so the paper can print it underneath and
+        // a report can put the two together without depending on row order — every line of a sale
+        // shares `created_at`, so ordering by it is a tie, not an answer.
+        assert_eq!(lines[1]["parent_line_ref"], lines[0]["line_id"]);
+        // Not a set menu: `combo_group_ref` groups SIBLINGS with no parent (ADR-0381) and this is
+        // the opposite relation. Overloading it would make one column mean two things.
+        assert_eq!(lines[1]["combo_group_ref"], Value::Null);
+
+        let ev = out.events.first().expect("sale.completed");
+        assert_eq!(ev.payload["total"], json!(1200));
+        assert_eq!(ev.payload["items_count"], json!(2), "the event carries BOTH lines");
+        assert_eq!(ev.payload["items"][1]["parent_line_ref"], lines[0]["line_id"]);
+
+        // The declared breakdown: TWO bases, each squaring with its own rate (ADR-0123 §4). This is
+        // what reaches VeriFactu, and it is the whole point of the child line.
+        let header = &out.operations[1].params;
+        let bd: Value = serde_json::from_str(header["tax_breakdown"].as_str().expect("TEXT")).unwrap();
+        assert_eq!(bd["10.00"]["base"], json!(909));
+        assert_eq!(bd["10.00"]["tax"], json!(91));
+        assert_eq!(bd["21.00"]["base"], json!(165));
+        assert_eq!(bd["21.00"]["tax"], json!(35));
+    }
+
+    #[test]
+    fn the_PREVIEW_answers_the_child_line_exactly_like_the_charge() {
+        // sales#164 — one valuation, two callers. If the preview did not expand the supplement the
+        // till would paint 12,00 € as ONE line at 10 % and the charge would write two: the cashier
+        // would be reconciling a ticket that does not exist, and the mixed-payment legs would stop
+        // adding up to the total the server demands to the cent.
+        let charged = sale(menu_with_drink(json!("product.generic")));
+        let out = preview_checkout_pure(menu_with_drink(json!("product.generic")))
+            .accepted("preview válido");
+        let result = out.result.as_ref().expect("the preview answers through `result`");
+        assert!(out.operations.is_empty(), "a preview writes nothing");
+        assert!(out.events.is_empty(), "a preview announces nothing");
+
+        let lines = result["lines"].as_array().expect("lines");
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[1]["tax_rate"], json!(21.0));
+        assert_eq!(lines[1]["net_amount"], json!(165));
+        assert_eq!(lines[1]["line_total"], json!(200));
+        assert_eq!(lines[1]["parent_index"], json!(0), "and it says which line it hangs from");
+        assert_eq!(lines[0]["parent_index"], Value::Null);
+        // The SAME arithmetic, cent for cent, as the rows the charge writes.
+        let charged_lines = sale_lines(&charged);
+        for (i, l) in lines.iter().enumerate() {
+            assert_eq!(l["net_amount"], charged_lines[i]["net_amount"], "line {i} net");
+            assert_eq!(l["tax_amount"], charged_lines[i]["tax_amount"], "line {i} quota");
+            assert_eq!(l["line_total"], charged_lines[i]["line_total"], "line {i} gross");
+        }
+        assert_eq!(result["total"], json!(1200));
+        assert_eq!(result["tax_breakdown"]["21.00"]["base"], json!(165));
+    }
+
+    #[test]
+    fn the_child_line_follows_the_QUANTITY_of_its_parent() {
+        // Two set menus are two drinks. The child is not a line the waiter typed: it is a piece of
+        // its parent, so its quantity is the parent's — anything else would charge one drink for
+        // two menus, or two for one.
+        let out = sale(menu_with_drink_qty(json!("product.generic"), 2_000_000, 5));
+        let lines = sale_lines(&out);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[1]["quantity"], json!(2_000_000), "2 menus ⇒ 2 drinks");
+        assert_eq!(lines[1]["line_total"], json!(400), "2 × 2,00 €");
+        assert_eq!(lines[0]["line_total"], json!(2000));
     }
 
     #[test]
@@ -5915,8 +6199,9 @@ mod tests {
         // Declaring the category is not declaring an exception: if it is THE SAME as the line's,
         // there are no two bases to break down and the supplement folds as it always did.
         let out = sale(menu_with_drink(json!("restaurant.food")));
-        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("line");
-        assert_eq!(line.params["line_total"], json!(1200), "10 € + 2 € at the same rate");
+        let lines = sale_lines(&out);
+        assert_eq!(lines.len(), 1, "one rate, one row");
+        assert_eq!(lines[0]["line_total"], json!(1200), "10 € + 2 € at the same rate");
     }
 
     #[test]
@@ -5924,22 +6209,116 @@ mod tests {
         // NO-REGRESSION control over 99 % of supplements: an empty `tax_category_key` means it
         // inherits (ADR-0376). If this test went red, the fix would have broken "+cheese".
         let out = sale(menu_with_drink(Value::Null));
-        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("line");
-        assert_eq!(line.params["line_total"], json!(1200), "the delta goes in via the unit price");
+        let lines = sale_lines(&out);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0]["line_total"], json!(1200), "the delta goes in via the unit price");
+        let snap: Value = serde_json::from_str(lines[0]["modifiers"].as_str().expect("TEXT")).unwrap();
+        assert_eq!(snap[0]["option_id"], json!("o-refresco"), "and it stays ON the line");
     }
 
     #[test]
-    fn on_an_OPEN_PRICE_line_a_supplement_with_a_category_is_refused_too() {
-        // A line with no `product_id` has no catalogue category to compare against, so it cannot be
-        // asserted that the supplement taxes the same. It fails CLOSED, like the rest of this door:
-        // charging "assuming it inherits" is exactly the silence this issue closes.
-        let inp = con_suplementos(
+    fn the_promoted_supplement_LEAVES_the_parents_snapshot_and_lands_on_the_child() {
+        // `sales_sale_item.modifiers` means «what is INSIDE this row's unit price» — that is the
+        // whole reason the paper prints no amount beside a supplement (sales#148). A promoted
+        // option is no longer inside it, so leaving it there would print it twice: once as a
+        // sub-line of the menu and once as its own row, with its own money.
+        let out = sale(menu_with_drink(json!("product.generic")));
+        let lines = sale_lines(&out);
+        assert_eq!(lines[0]["modifiers"], json!("[]"), "nothing folded into the parent");
+        let child: Value = serde_json::from_str(lines[1]["modifiers"].as_str().expect("TEXT")).unwrap();
+        assert_eq!(child[0]["option_id"], json!("o-refresco"), "the row says WHICH option it is");
+        assert_eq!(child[0]["kitchen_name"], json!("+REFRESCO"));
+        assert_eq!(child[0]["price_delta"], json!(200));
+    }
+
+    #[test]
+    fn a_line_discount_prorates_over_the_parent_AND_the_child() {
+        // ADR-0210: 10 % off the menu line is 10 % off what the menu costs, drink included. The
+        // child inherits the discount, so neither base escapes it.
+        let mut inp = menu_with_drink(json!("product.generic"));
+        inp["payload"]["items"][0]["discount"] = json!(10.0);
+        let lines = sale_lines(&sale(inp));
+        assert_eq!(lines[0]["line_total"], json!(900), "10,00 € − 10 %");
+        assert_eq!(lines[1]["line_total"], json!(180), "2,00 € − 10 %");
+        assert_eq!(lines[1]["discount_percent"], json!(10.0), "frozen on the child too");
+    }
+
+    #[test]
+    fn a_TICKET_discount_prorates_over_the_parent_AND_the_child_to_the_cent() {
+        // The fixed-amount ticket discount is shared out by LARGEST REMAINDER over every charged
+        // line (sales#113 / ADR-0210). The child is one of them: the two rows have to add up to
+        // EXACTLY the ticket's total, with no cent invented or lost, and the declared quota has to
+        // keep squaring with `base × rate` on both rates (ADR-0123 §4).
+        let mut inp = menu_with_drink(json!("product.generic"));
+        inp["payload"]["discount_amount"] = json!(101);
+        let out = sale(inp);
+        let lines = sale_lines(&out);
+        let total: i64 = lines.iter().map(|l| l["line_total"].as_i64().unwrap()).sum();
+        assert_eq!(total, 1099, "1200 − 1,01 €, to the cent");
+        let ev = out.events.first().expect("sale.completed");
+        assert_eq!(ev.payload["total"], json!(1099));
+        let header = &out.operations[1].params;
+        let bd: Value = serde_json::from_str(header["tax_breakdown"].as_str().expect("TEXT")).unwrap();
+        let bd = bd.as_object().expect("breakdown");
+        assert_eq!(bd.len(), 2, "the two rates survive the discount");
+        let declared: i64 = bd.values().map(|v| v["tax"].as_i64().unwrap()).sum();
+        assert_eq!(ev.payload["tax_amount"], json!(declared), "declared quota == the breakdown's");
+    }
+
+    #[test]
+    fn an_INVITED_menu_invites_its_child_too() {
+        // A comped set menu is comped whole: charging the drink of a menu that was given away
+        // would leave a 2,00 € row nobody can explain to the customer.
+        let mut inp = menu_with_drink(json!("product.generic"));
+        inp["payload"]["items"][0]["is_gift"] = json!(true);
+        let lines = sale_lines(&sale(inp));
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[1]["is_gift"], json!(1));
+        assert_eq!(lines[1]["line_total"], json!(0));
+    }
+
+    #[test]
+    fn on_an_OPEN_PRICE_line_the_supplement_gets_its_own_line_as_well() {
+        // A line with no `product_id` has no catalogue category, so there is nothing for the option
+        // to inherit — which is exactly why it needs a row of its own. Part 1 refused this case
+        // because folding it would have meant guessing; the child line removes the guess.
+        let mut inp = con_suplementos(
             input(json!([{ "product_name": "Menú del día", "price": 1000, "quantity": 1_000_000,
-                           "tax_rate": 10.0, "modifiers": [{ "option_id": "o-refresco" }] }]), 3, 1200),
+                           "tax_rate": 10.0, "tax_category_key": "restaurant.food",
+                           "modifiers": [{ "option_id": "o-refresco" }] }]), 5, 0),
             drink_option(json!("product.generic")),
         );
-        let err = complete_sale_pure(inp).refused("must refuse");
-        assert_eq!(err.code, "sales.modifier_tax_override_unsupported", "stable domain code: {err:?}");
+        inp["context"]["reads"]["taxes.rules.list"] = menu_tax_rules();
+        inp["context"]["country_code"] = json!("ES");
+        let lines = sale_lines(&sale(inp));
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[1]["tax_rate"], json!(21.0));
+        assert_eq!(lines[1]["line_total"], json!(200));
+    }
+
+    #[test]
+    fn a_promoted_supplement_that_is_worth_NOTHING_is_refused() {
+        // A supplement billed apart has to BE something. A 0 € — or negative — row at another rate
+        // is not a supplement: it is a rebate wearing a tax category, and it would declare a base
+        // the customer never bought. Fails CLOSED, like the rest of this door.
+        let mut inp = menu_with_drink(json!("product.generic"));
+        inp["payload"]["items"][0]["modifiers"] = json!([{ "option_id": "o-descuento" }]);
+        inp["context"]["reads"]["modifiers.options.all"] =
+            json!([{ "option_id": "o-descuento", "group_id": "g", "name": "Sin bebida",
+                     "price_delta": -100, "tax_category_key": "product.generic" }]);
+        let err = complete_sale_pure(inp).refused("un suplemento aparte que no vale nada");
+        assert_eq!(err.code, "sales.modifier_child_price_invalid", "{err:?}");
+    }
+
+    #[test]
+    fn the_child_line_COUNTS_against_the_batch_of_ids() {
+        // The host hands out a finite batch (256, ARQUITECTURA.md §5.3) and a promoted supplement
+        // multiplies rows just like a set menu does. Without counting it, the last line would be
+        // written with an empty primary key and the failure would surface as a collision in the
+        // database, far from its cause.
+        let err = complete_sale_pure(menu_with_drink_qty(json!("product.generic"), 1_000_000, 2))
+            .refused("la tanda de ids no da para la hija");
+        assert_eq!(err.code, "sales.too_many_lines", "{err:?}");
     }
 
     // ── pm#93 · los suplementos llegan a COCINA con el nombre que resuelve el SERVIDOR ────────
@@ -8469,19 +8848,39 @@ mod tests {
     }
 
     #[test]
-    fn a_frozen_supplement_that_taxes_DIFFERENTLY_still_refuses_the_sale() {
-        // sales#147 is not undone by the freeze: the option's own tax category travels FROZEN on
-        // the row and is compared against the row's category. A 21 % soft drink folded into a 10 %
-        // line would come out wrongly broken down, and it would come out in silence.
+    fn a_FROZEN_supplement_that_taxes_DIFFERENTLY_gets_its_child_line_at_the_FROZEN_delta() {
+        // sales#147 across the freeze of sales#200, which is where a restaurant actually lives: the
+        // waiter takes the order, the menu is edited, the table pays half an hour later. The
+        // option's own category AND its delta travel FROZEN on the row, so the child line is
+        // materialised from what the menu said WHEN IT WAS ORDERED — 2,00 €, not today's price —
+        // and the table is not re-priced in silence.
+        //
+        // The child is materialised HERE and not on `sales_order_item`, and that is the design:
+        // `sales_order_item` keeps carrying the picks, so splitting, transferring and merging a
+        // check move parent and supplement together for free — there is no orphan row to move,
+        // because the row does not exist until the money is decided.
         let row = json!({ "id": "line-1", "order_id": "ord-1", "product_id": "p-burger",
                           "product_name": "Hamburguesa", "quantity": 1_000_000,
                           "unit_price": 900, "cost": 400, "tax_category_key": "product.generic",
                           "is_gift": 0, "is_service": 0, "line_total": 900, "discount_percent": 0,
                           "modifiers": "[{\"option_id\":\"o-refresco\",\"group_id\":\"g\",\"name\":\"Refresco\",\"kitchen_name\":\"+REFRESCO\",\"price_delta\":200,\"tax_category_key\":\"restaurant.food\"}]",
                           "combo": "{}", "combo_group_ref": null });
-        let err = complete_sale_pure(charge_parked(row, 900, 300, json!([])))
-            .refused("must refuse");
-        assert_eq!(err.code, "sales.modifier_tax_override_unsupported", "stable code: {err:?}");
+        let mut inp = charge_parked(row, 900, 300, json!([]));
+        // The hub taxes both categories: 21 % for the burger, 10 % for the drink.
+        inp["context"]["reads"]["taxes.rules.list"] = json!([
+            { "id": "r-es-21", "country_code": "ES", "region_code": null,
+              "tax_category_key": "product.generic", "rate_pct": 21.0, "tax_type": "vat" },
+            { "id": "r-es-10", "country_code": "ES", "region_code": null,
+              "tax_category_key": "restaurant.food", "rate_pct": 10.0, "tax_type": "vat" }
+        ]);
+        inp["context"]["new_ids"] = json!(["id-0", "id-1", "id-2", "id-3", "id-4"]);
+        let lines = sale_lines(&sale(inp));
+        assert_eq!(lines.len(), 2, "the burger and its drink: {lines:?}");
+        assert_eq!(lines[0]["unit_price"], json!(900), "the price the check froze");
+        assert_eq!(lines[0]["tax_rate"], json!(21.0));
+        assert_eq!(lines[1]["unit_price"], json!(200), "the delta the check froze, not today's 300");
+        assert_eq!(lines[1]["tax_rate"], json!(10.0));
+        assert_eq!(lines[1]["parent_line_ref"], lines[0]["line_id"]);
     }
 
     #[test]

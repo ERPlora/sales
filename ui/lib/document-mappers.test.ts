@@ -20,6 +20,7 @@ import {
   receiptLabels,
   invoiceLabels,
   claimPrintFields,
+  orderChildLines,
   type SaleRow,
   type SaleLineRow,
 } from './document-mappers.js';
@@ -789,5 +790,71 @@ describe('sales#164 — the bill on the authoritative valuation', () => {
     const composedOnScreen = orderToPrebill(lines, { default_tax_included: 0 }, {});
     expect(composedOnScreen.total, 'base + quota composed on screen (sales#180)').toBe(12_100);
     expect(composedOnScreen.taxes).toEqual([{ label: 'IVA 21%', base: 10_000, amount: 2_100 }]);
+  });
+});
+
+
+// ── sales#147 · la LÍNEA HIJA del suplemento con tipo fiscal propio ─────────────────────────────
+//
+// Un refresco al 21 % dentro de un menú al 10 % deja de plegarse en el precio del menú y se cobra
+// como SU PROPIA línea, con su tipo. En el papel eso no puede leerse como dos artículos sueltos: la
+// hija se imprime BAJO su padre, marcada como lo que es, y no repite debajo el suplemento que ELLA
+// misma es.
+describe('sales#147 — the child line of a supplement that taxes differently', () => {
+  const sale: SaleRow = {
+    id: 's-1', sale_number: 'T-1', total: 1_200, subtotal: 1_074, tax_amount: 126,
+    tax_breakdown: '{"10.00":{"base":909,"tax":91},"21.00":{"base":165,"tax":35}}',
+  };
+  const parent: SaleLineRow = {
+    id: 'l-menu', product_name: 'Menú del día', quantity: 1_000_000, unit_price: 1_000,
+    line_total: 1_000, tax_rate: 10, modifiers: '[]',
+  };
+  const child: SaleLineRow = {
+    id: 'l-drink', product_name: 'Refresco', quantity: 1_000_000, unit_price: 200,
+    line_total: 200, tax_rate: 21, parent_line_ref: 'l-menu',
+    modifiers: '[{"option_id":"o-refresco","name":"Refresco","price_delta":200}]',
+  };
+
+  it('the child prints UNDER its parent, with its own amount and marked as a supplement', () => {
+    // Its own amount, because it IS its own line: that column is the one the customer reconciles
+    // against the TOTAL, and 10,00 + 2,00 has to make the 12,00 they are paying.
+    const doc = saleToReceipt(sale, [parent, child]);
+    expect(doc.lines.map((l) => l.name)).toEqual(['Menú del día', '+ Refresco']);
+    expect(doc.lines.map((l) => l.total)).toEqual([1_000, 200]);
+  });
+
+  it('and it prints under its parent even when the rows come back in another order', () => {
+    // Every line of a sale shares `created_at`, so `ORDER BY created_at` is a tie and Postgres is
+    // free to return whatever it likes. The hierarchy is on the row, not in the ordering.
+    const doc = saleToReceipt(sale, [child, parent]);
+    expect(doc.lines.map((l) => l.name)).toEqual(['Menú del día', '+ Refresco']);
+  });
+
+  it('the child does NOT repeat itself as a supplement sub-line', () => {
+    // Its row keeps the option snapshot so it is self-describing (which option, at what frozen
+    // delta), but printing it again underneath would read «+ Refresco / · Refresco».
+    const doc = saleToReceipt(sale, [parent, child]);
+    expect(doc.lines[1].note).toBeUndefined();
+    expect(doc.lines[1].printed_modifiers).toBeUndefined();
+  });
+
+  it('an ORPHAN child — half a split check — is still printed, in place', () => {
+    // Losing a line off a fiscal document is worse than painting it loose.
+    const doc = saleToReceipt(sale, [child]);
+    expect(doc.lines.map((l) => l.name)).toEqual(['+ Refresco']);
+  });
+
+  it('a sale with no children comes out EXACTLY as it did before', () => {
+    const plain = [parent, { ...parent, id: 'l-2', product_name: 'Caña', line_total: 250 }];
+    expect(orderChildLines(plain)).toBe(plain);
+    expect(saleToReceipt(sale, plain).lines.map((l) => l.name)).toEqual(['Menú del día', 'Caña']);
+  });
+
+  it('the A4 invoice carries the child as its own line, with its own rate', () => {
+    // Two bases with two rates is what has to be declared, and it is what `DetalleDesglose` of
+    // VeriFactu can represent — one entry PER RATE, never per article.
+    const doc = saleToInvoice(sale, [child, parent]);
+    expect(doc.lines.map((l) => l.description)).toEqual(['Menú del día', '+ Refresco']);
+    expect(doc.lines.map((l) => l.tax_rate)).toEqual([10, 21]);
   });
 });

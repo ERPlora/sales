@@ -131,7 +131,8 @@
       "migrations/postgres/026_sale_refund.sql",
       "migrations/postgres/027_line_combo_group.sql",
       "migrations/postgres/028_order_line_combo.sql",
-      "migrations/postgres/029_pos_catalog_sources.sql"
+      "migrations/postgres/029_pos_catalog_sources.sql",
+      "migrations/postgres/031_line_parent_ref.sql"
     ]
   },
   "seed": {
