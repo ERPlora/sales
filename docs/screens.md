@@ -153,6 +153,31 @@ transferred.
 Closing the sale returns the chip to the default: the next check does not inherit the previous
 waiter.
 
+### El cliente obligatorio se pide al COBRAR (sales#222)
+
+Con **«Exigir cliente en cada venta»** activado (`require_customer`, ajustes del TPV), el cobro
+**empieza pidiendo el cliente** en vez de terminar rechazado:
+
+- **«Cobrar» no abre la hoja de cobro** mientras falte el cliente. El botón se ve bloqueado, pero es
+  `aria-disabled` y **nunca** el `disabled` nativo (sales#58): el toque llega y **contesta** con el
+  aviso, y además dispara el enganche `erp:customer-required` sobre el relleno del slot
+  `sales.pos.assign` — `sales` no conoce a `customers`, solo se lo pide (ADR-0043).
+- En la fila de contextos de la cuenta, donde va el cliente, aparece el chip **«Falta el cliente»**,
+  que pide el cliente igual al tocarlo. Un bloqueo cuya única señal es un aviso que se va no lo puede
+  resolver nadie.
+- **La regla sigue siendo del servidor**: `sales.complete_sale` rechaza con `sales.customer_required`
+  desde sus propias `reads`. Esto es la primera cerradura, no la única — `confirm()` la revalida,
+  porque al cobro se llega también por atajo sin pasar por «Cobrar».
+- Sin el ajuste, el TPV se comporta exactamente igual que antes: un comercio que no lo pidió no se
+  entera de que esto existe.
+- Si la app **Clientes** no está instalada, no hay cliente que elegir en esta pantalla: el aviso lo
+  dice nombrando la app, como con la app de impuestos (sales#185).
+
+Es lo que hace el mercado: en Odoo (`pos_required_customer`) el aviso salta al pulsar **Pago**; en
+Shopify POS la información obligatoria se pide «antes de completar el cobro», no al montar el
+carrito; y los *service prompts* de Toast bloquean el paso de pago hasta cumplirse. Lo que **no** se
+hace en ningún sitio es un modal al abrir el TPV.
+
 ### An item the sale could not charge (sales#74 / sales#58)
 
 A catalogue line the checkout would reject — it carries no `tax_category_key`, or its category
@@ -317,7 +342,7 @@ carry the settings row's `id` — **writing** stays on `sales.settings.update` b
 | Permitir efectivo / tarjeta / transferencia | Which payment methods the till offers | cash on, card on, transfer off |
 | Mostrar productos en el TPV | Show the `inventory` catalogue in the grid. Off = the till sells services and free-price lines only | On |
 | Mostrar servicios en el TPV | Show the `services` catalogue in the grid. Off = the till sells products only | On |
-| Exigir cliente en cada venta | Refuse a sale with no customer | Off |
+| Exigir cliente en cada venta | El TPV pide el cliente al pulsar «Cobrar» y el servidor rechaza la venta sin él (sales#222) | Off |
 | Permitir descuentos | Allow discounts at the till | On |
 | Permitir tiques aparcados | Allow parking checks | On |
 | Precios con IVA incluido por defecto | Whether prices are gross or net by default | On |

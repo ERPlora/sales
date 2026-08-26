@@ -429,7 +429,11 @@
     "quickNoteDeleteFailed": "No se ha podido eliminar la nota rápida.",
     "quickNotesLoadFailed": "No se han podido cargar las notas rápidas.",
     "lineNoteQuickLoading": "Cargando notas rápidas…",
-    "lineNoteQuickError": "No se han podido cargar las notas rápidas: escribe la nota a mano."
+    "lineNoteQuickError": "No se han podido cargar las notas rápidas: escribe la nota a mano.",
+    "customerRequiredCharge": "Este negocio exige un cliente en cada venta. Elige uno para seguir con el cobro.",
+    "customerRequiredShort": "Falta el cliente",
+    "customerRequiredNoApp": "Este negocio exige un cliente en cada venta y la aplicación {app} no está instalada: esta venta no se puede cerrar desde aquí.",
+    "appCustomers": "Clientes"
   },
   "widgets": {
     "sales.today": {

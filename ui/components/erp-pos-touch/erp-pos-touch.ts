@@ -851,6 +851,11 @@ export class ErpPosTouch extends LitElement {
     .ctx-chip:hover { color:var(--tx); }
     .ctx-chip:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
     .ctx-chip ion-icon { font-size:.95rem; }
+    /* sales#222 — the customer this sale still owes. Warning, not danger: nothing has failed,
+       something is missing, and it is one tap away. */
+    .ctx-chip.needs-customer { border-color:var(--ion-color-warning, #ffc409); font-weight:700;
+      color:var(--ion-color-warning-shade, #e0ac08); background:var(--tile); }
+    .ctx-chip.needs-customer:hover { color:var(--ion-color-warning-shade, #e0ac08); }
 
     ion-segment.view-tabs { margin:.62rem .72rem .28rem; width:auto; border:1px solid var(--line);
       border-radius:var(--ok-radius-sm,11px); background:var(--tile); }
@@ -1754,6 +1759,28 @@ export class ErpPosTouch extends LitElement {
     }
   }
 
+  /** sales#222 — asks the counter for the customer the sale cannot be closed without.
+   *
+   *  `sales` does NOT know `customers` (ADR-0043): it never opens anybody's picker and never
+   *  touches its DOM. It fires `erp:customer-required` at whoever fills `sales.pos.assign` — the
+   *  same shape as `erp:customer-context-reset`, which that filler already honours — and brings
+   *  the slot into view. With nobody filling the slot there is no customer to choose here at all,
+   *  and that is said naming the app, like a missing charge app (sales#185): a block with no fix
+   *  on this screen has to name what would fix it. */
+  private askForCustomer(): void {
+    if (!this.assignFillers.length) {
+      this.notifyShell(t('ui.customerRequiredNoApp', { app: this.appName('customers') }));
+      return;
+    }
+    this.notifyShell(t('ui.customerRequiredCharge'));
+    for (const f of this.assignFillers) {
+      f.el.dispatchEvent(new CustomEvent('erp:customer-required', { bubbles: false }));
+    }
+    const host = this.renderRoot.querySelector('.cart-actions-slot') as HTMLElement | null;
+    // Guarded: happy-dom has no scroller, and a picker that opened is worth more than a scroll.
+    host?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }
+
   protected updated(_changed: Map<PropertyKey, unknown>) {
     this.ensureSlotsMounted();
     this.syncChargeState();
@@ -1814,6 +1841,20 @@ export class ErpPosTouch extends LitElement {
   /** Lo que el descuento de ticket quita (porcentaje + importe), para pintarlo. */
   private get ticketDiscountTotal() { return cartTotal(this.cart, 0) - this.total; }
   private get discountsAllowed(): boolean { return this.settings.allow_discounts !== 0; }
+  /** sales#222 — does this shop demand a customer on EVERY sale?
+   *
+   *  Read from the same row the server decides with (`sales.pos_settings.get`, sales#203) and with
+   *  the same reading as the handler (`hub_setting(..., "require_customer", false)`): absent or 0
+   *  is off, anything else is on. A freshly installed hub has no row, so it is off. */
+  private get customerRequired(): boolean {
+    const v = this.settings.require_customer;
+    return v !== undefined && v !== null && v !== 0 && v !== false;
+  }
+  /** ...and is this checkout missing it? The server's rule is `customer_id`, never the typed name:
+   *  the screen asks for exactly what `sales.complete_sale` refuses over. */
+  private get missingRequiredCustomer(): boolean {
+    return this.customerRequired && !this.customerId;
+  }
   private get itemCount() { return this.cart.reduce((s, l) => s + l.qty, 0); }
   private get parkingEnabled() { return this.settings.enable_parked_tickets !== 0; }
   /** La capacidad Cocina existe solo si el registro de slots ha montado alguno de sus fillers. */
@@ -3026,6 +3067,14 @@ export class ErpPosTouch extends LitElement {
       this.notifyShell(t('ui.missingAppCharge', { app: this.chargeAppName }));
       return;
     }
+    // sales#222 — with the customer mandatory the charge step STARTS by asking for it. Until
+    // now the till let the cashier type the amount, pick a method and confirm, and only the
+    // server's `sales.customer_required` said no — with the customer standing there and the
+    // checkout to redo. The rule stays the server's: this only stops the screen from hiding it.
+    if (this.missingRequiredCustomer) {
+      this.askForCustomer();
+      return;
+    }
     // Una clave por INTENTO de cobro (sales#20): todos los reintentos de ESTA pantalla comparten
     // clave, así que el servidor los resuelve a la misma venta en vez de duplicarla.
     this.checkoutKey = newIdempotencyKey();
@@ -3126,7 +3175,7 @@ export class ErpPosTouch extends LitElement {
    *  sheet's button too (sales#159), which carried the same defect. */
   private syncChargeState(): void {
     const blocked: Array<[string, boolean]> = [
-      ['.foot-actions ion-button.charge', !!this.missingChargeApp],
+      ['.foot-actions ion-button.charge', !!this.missingChargeApp || this.missingRequiredCustomer],
       ['.sheet-foot ion-button.charge', this.paying && !!this.chargeBlock],
     ];
     for (const [selector, isBlocked] of blocked) {
@@ -3388,6 +3437,12 @@ export class ErpPosTouch extends LitElement {
         short: t('ui.missingAppChargeShort', { app: this.chargeAppName }),
         reason: t('ui.missingAppCharge', { app: this.chargeAppName }),
       };
+    }
+    // sales#222 — the customer can also go away WITH the sheet open (the picker clears it), and
+    // `confirm` is reachable by shortcut without ever crossing `openPay`. A guard that only lives
+    // in the entry door is a guard the first other path walks around.
+    if (this.missingRequiredCustomer) {
+      return { short: t('ui.customerRequiredShort'), reason: t('ui.customerRequiredCharge') };
     }
     if (this.chargeBlocked) {
       // El motivo largo ya está escrito arriba, en el panel de captura del cliente.
@@ -4054,7 +4109,18 @@ export class ErpPosTouch extends LitElement {
               <ion-icon name="person-circle-outline"></ion-icon>
               <span>${this.staffLabel}</span>
             </button>
-            ${!this.tableLabel && !this.customerName
+            <!-- sales#222 — the shop demands a customer and there is none: it is said HERE, in the
+                 slot the customer occupies, and the chip is the shortcut to fill it. A block whose
+                 only sign is a toast is a block nobody can act on once the toast is gone. -->
+            ${this.missingRequiredCustomer
+              ? html`<button class="ctx-chip needs-customer" type="button" data-testid="needs-customer"
+                             title=${t('ui.customerRequiredCharge')} aria-label=${t('ui.customerRequiredCharge')}
+                             @click=${() => this.askForCustomer()}>
+                       <ion-icon name="person-add-outline"></ion-icon>
+                       <span>${t('ui.customerRequiredShort')}</span>
+                     </button>`
+              : nothing}
+            ${!this.tableLabel && !this.customerName && !this.missingRequiredCustomer
               ? html`<span class="context-empty">${t('ui.noCheckContext')}</span>` : nothing}
           </div>
         </div>
@@ -4164,7 +4230,9 @@ export class ErpPosTouch extends LitElement {
                  The blocked state itself is written by syncChargeState(), not here: Ionic steals
                  whatever the template puts on this host. -->
             <ion-button class="charge" ?disabled=${!this.cart.length}
-                        title=${this.missingChargeApp ? t('ui.missingAppCharge', { app: this.chargeAppName }) : t('ui.charge')}
+                        title=${this.missingChargeApp
+                          ? t('ui.missingAppCharge', { app: this.chargeAppName })
+                          : this.missingRequiredCustomer ? t('ui.customerRequiredCharge') : t('ui.charge')}
                         aria-label=${t('ui.charge')}
                         @click=${() => this.openPay()}>
               <ion-icon slot="start" name="card-outline"></ion-icon>

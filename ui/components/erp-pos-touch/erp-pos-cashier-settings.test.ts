@@ -152,6 +152,7 @@ interface Pos {
   openDept: string;
   openAmount: string;
   addOpenPrice(): Promise<void>;
+  dispatchEvent(e: Event): boolean;
   openPay(): Promise<void> | void;
   confirm(): Promise<void>;
 }
@@ -172,6 +173,17 @@ async function mount(): Promise<Pos> {
   await pos.addOpenPrice();
   await pos.updateComplete;
   return pos;
+}
+
+/** Picks the customer the way the counter really does: the `sales.pos.assign` filler emits its
+ *  context (ADR-0043). `CONFIGURED` requires one, and since sales#222 the charge does not even
+ *  open without it — so every scenario that reaches the pay sheet has to choose one. */
+async function chooseCustomer(pos: Pos) {
+  pos.dispatchEvent(new CustomEvent('erp:customer-context', {
+    detail: { customer_id: 'cus-1', customer_name: 'Ana', customer_tax_id: '', customer_address: '' },
+    bubbles: false,
+  }));
+  await pos.updateComplete;
 }
 
 /** Mounts the same policy as each role and hands both tills to the assertion. */
@@ -226,6 +238,7 @@ describe('the counter honours the shop policy for a CASHIER, not only for an adm
 
   it('default_tax_included = 0 travels to the server on the checkout', async () => {
     await forBothRoles(async (pos, role) => {
+      await chooseCustomer(pos);
       await pos.openPay();
       await pos.updateComplete;
       await pos.confirm();
@@ -237,6 +250,7 @@ describe('the counter honours the shop policy for a CASHIER, not only for an adm
 
   it('default_document_format = invoice opens the charge on an INVOICE', async () => {
     await forBothRoles(async (pos, role) => {
+      await chooseCustomer(pos);
       await pos.openPay();
       await pos.updateComplete;
       expect(pos.docFormat, role).toBe('invoice');
@@ -247,6 +261,7 @@ describe('the counter honours the shop policy for a CASHIER, not only for an adm
     for (const role of ['admin', 'cashier'] as Role[]) {
       installSdk(role, { ...CONFIGURED, default_document_format: 'ticket' });
       const pos = await mount();
+      await chooseCustomer(pos);
       pos.customerTaxId = 'B12345678';
       await pos.openPay();
       await pos.updateComplete;

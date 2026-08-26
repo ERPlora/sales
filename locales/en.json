@@ -428,6 +428,10 @@
     "quickNoteDeleteFailed": "The quick note could not be deleted.",
     "quickNotesLoadFailed": "The quick notes could not be loaded.",
     "lineNoteQuickLoading": "Loading quick notes…",
-    "lineNoteQuickError": "The quick notes could not be loaded — type the note by hand."
+    "lineNoteQuickError": "The quick notes could not be loaded — type the note by hand.",
+    "customerRequiredCharge": "This business requires a customer on every sale. Choose one to carry on with the charge.",
+    "customerRequiredShort": "Customer required",
+    "customerRequiredNoApp": "This business requires a customer on every sale, and the {app} app is not installed: this sale cannot be closed from here.",
+    "appCustomers": "Customers"
   }
 }
