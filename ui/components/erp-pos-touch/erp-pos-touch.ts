@@ -5,7 +5,7 @@ import { bindTabbar } from '@erplora/outfitkit/tabbar';
 // La frontera EUROS ↔ CÉNTIMOS vive en el SDK (ADR-0123), no copiada en cada WC (como el desktop).
 import { eurosToCents, centsToEuros } from '@erplora/module-sdk';
 import { renderDocumentModal } from '../../lib/document-modal.js';
-import { orderToPrebill, receiptLabels } from '../../lib/document-mappers.js';
+import { orderToPrebill, receiptLabels, type PrebillValuation } from '../../lib/document-mappers.js';
 // La CUENTA se imprime con la forma que lee el renderizador ESC/POS, no con la de la pantalla
 // (sales#78): son dos documentos con el mismo contenido y distintas claves.
 import { prebillToPrintDocument, prebillJobId } from '../../lib/print-document.js';
@@ -55,6 +55,11 @@ import {
   unitContextPayload, lineAmount, cartTotal, type CartLine, type ErploraClientLike,
 } from '../../lib/pos-cart.js';
 import { loadTaxCatalog, productSellability, resolveLineTax, type TaxCatalog } from '../../lib/pos-tax.js';
+// sales#164 — the total being charged is the SERVER's, with the very SAME arithmetic it charges.
+import {
+  checkoutItems, fetchCheckoutPreview, previewSignature,
+  type CheckoutPreview, type CheckoutShape,
+} from '../../lib/checkout-preview.js';
 import { dependencyRead } from '../../lib/dependency-read.js';
 import { buildOpenPriceLine } from '../../lib/pos-open-price.js';
 // La frontera de la ESCALA de cantidades (ADR-0147): la UI trabaja en lógico (0,5), el cable en 10⁶.
@@ -1100,6 +1105,15 @@ export class ErpPosTouch extends LitElement {
    *  of `sales.complete_sale`). Resolved at mount from the stable code the runtime answers, and it
    *  is what turns "it fails on confirm" into "it is said on entry". */
   @state() private missingChargeApp = '';
+  /** sales#164 — the AUTHORITATIVE valuation of the ticket being charged. `undefined` = it has not
+   *  arrived yet, the hub does not have the command, or the network went down: then the screen's
+   *  own preview rules, which is what there was before. Never a 0 — a free ticket is not a
+   *  degradation. */
+  @state() private authoritative?: CheckoutPreview;
+  /** Signature of the ticket already priced, so we do not re-ask on every repaint. */
+  private valuedSignature = '';
+  /** Request counter: an older answer must never overwrite a newer one. */
+  private valuationSeq = 0;
   /** Pista de overflow compartida con la bottom bar (fade dinámico + pequeño gesto inicial). */
   private categorySegment?: HTMLElement;
   private categorySegmentCleanup?: () => void;
@@ -1658,6 +1672,8 @@ export class ErpPosTouch extends LitElement {
   protected updated(_changed: Map<PropertyKey, unknown>) {
     this.ensureSlotsMounted();
     this.syncChargeState();
+    // sales#164 — while the charge or the bill is on screen, the total is the server's.
+    if (this.paying || this.prebillOpen) void this.refreshValuation();
     const categorySegment = this.renderRoot.querySelector<HTMLElement>('ion-segment.category-segment') ?? undefined;
     if (categorySegment !== this.categorySegment) {
       this.categorySegmentCleanup?.();
@@ -2827,8 +2843,19 @@ export class ErpPosTouch extends LitElement {
    *  `labels.customer`, and on a dine-in bill what sits there is the TABLE (sales#180). Until the
    *  element has a slot of its own for the table (ERPlora/outfitkit#87), the document decides the
    *  label. */
+  /** sales#164 — the hub's valuation, BUT only when it priced the same thing this paper shows.
+   *
+   *  The bill is for the WHOLE table; the valuation is for the charge in progress, which with a
+   *  line selection (ADR-0146) or a per-line redemption (sales#162) is a subset. Putting a total
+   *  for something else there would be worse than composing it on screen, so in that case it is
+   *  not passed and the paper comes out as it did. */
+  private get prebillValuation(): PrebillValuation | undefined {
+    if (this.splitSel.size || this.covered.size) return undefined;
+    return this.authoritative;
+  }
+
   private renderPrebillDoc() {
-    const doc = orderToPrebill(this.prebillLines(), this.billSettings, this.billWho);
+    const doc = orderToPrebill(this.prebillLines(), this.billSettings, this.billWho, this.prebillValuation);
     return html`<ok-receipt id="prebill-doc" .receipt=${doc} .labels=${receiptLabels(t, doc)}></ok-receipt>`;
   }
 
@@ -2838,7 +2865,8 @@ export class ErpPosTouch extends LitElement {
     const lines = this.prebillLines();
     const opts = this.billWho;
     const settings = this.billSettings;
-    const doc = orderToPrebill(lines, settings, opts);
+    const valuation = this.prebillValuation;
+    const doc = orderToPrebill(lines, settings, opts, valuation);
     const html = receiptToPrintableHtml({
       ...(doc as Parameters<typeof receiptToPrintableHtml>[0]),
       // sales#180: and the paper labels that datum for what it is -- "Table: S1", not a bare "S1".
@@ -2856,7 +2884,7 @@ export class ErpPosTouch extends LitElement {
         role: 'receipt',
         documentType: 'prebill',
         jobId: prebillJobId(this.orderId, lines),
-        data: prebillToPrintDocument(lines, settings, opts),
+        data: prebillToPrintDocument(lines, settings, opts, valuation),
         html,
       })
       .catch((e: unknown) => ({ via: 'none', error: e instanceof Error ? e.message : String(e) }) as PrintOutcome);
@@ -2908,6 +2936,14 @@ export class ErpPosTouch extends LitElement {
     // así que sin este `invoice` la venta saldría como F2 por muy completo que esté el cliente.
     if (this.overSimplifiedLimit) this.docFormat = 'invoice';
     this.paying = true;
+    // sales#164 — this charge's ticket is priced on the server. `updated()` asks for it anyway;
+    // starting it here saves the most important number on the screen one repaint of delay.
+    //
+    // The previous one is forgotten FIRST: closing and reopening is what anyone does when a number
+    // does not show up, and without this the ticket's signature stayed the same and it never
+    // retried — the till kept its own arithmetic until somebody touched the check.
+    this.dropValuation();
+    void this.refreshValuation();
   }
 
   /**
@@ -3205,13 +3241,80 @@ export class ErpPosTouch extends LitElement {
     return tenderableLines(this.billedLines);
   }
 
-  /** Lo que se cobra AHORA: la selección si la hay, o la cuenta entera (ADR-0146). */
+  /** What is being charged NOW: the selection when there is one, or the whole check (ADR-0146).
+   *
+   *  🔴 sales#164 — THE SERVER RULES. This number decides the legs of a mixed payment, the change,
+   *  the simplified-invoice ceiling and what the button promises, so it has to be the same one
+   *  `complete_sale` is going to charge: with prices that do NOT carry the VAT inside, the screen's
+   *  arithmetic showed the BASE and the drawer took base + quota (100.00 € → 121.00 €); and with a
+   *  fixed-amount discount, a quantity by weight or a goods set menu split across rates the two
+   *  drifted by a cent, which is exactly what fires `sales.payments_do_not_match_total`.
+   *
+   *  With no authoritative answer it falls back to the screen's own preview — what there was
+   *  before, which charges the normal case right — and the server's refusal goes back to being a
+   *  net, which is its place. */
   private get payable() {
+    if (this.authoritative) return this.authoritative.total;
+    return this.screenPayable;
+  }
+
+  /** What THIS screen works out on its own. Only used while there is no answer from the server,
+   *  and it is what the till always used before sales#164. */
+  private get screenPayable() {
     // sales#113: el importe fijo se resta del cobro entero (con split, el servidor lo reparte
     // igualmente sobre las líneas que se cobran; el preview resta lo que corresponda a lo cobrado).
     // sales#162: lo que un tender externo cubrió no se cobra dos veces.
     const base = cartTotal(this.chargedLines, this.ticketDiscount);
     return Math.max(0, base - (this.splitSel.size ? 0 : this.ticketDiscountAmount));
+  }
+
+  /** The ticket to price: EXACTLY the one that will be charged (`billedLines`, with the lines an
+   *  external tender covered flagged so the server prices them at 0). */
+  private get checkoutShape(): CheckoutShape {
+    return {
+      lines: this.billedLines,
+      ticketDiscount: this.ticketDiscount,
+      ticketDiscountAmount: this.ticketDiscountAmount,
+      covered: new Set(this.covered.keys()),
+      taxIncluded: this.settings.default_tax_included !== 0,
+      partial: this.splitSel.size > 0,
+    };
+  }
+
+  /** Asks the hub to price the ticket, if needed. Cheap to call on every repaint: it only goes to
+   *  the network when something that MOVES the total changes (`previewSignature`).
+   *
+   *  It is only asked with the charge or the bill on screen: the valuation reads the whole sale
+   *  catalogue, and doing it on every tap of the grid would put the till behind the network while
+   *  nobody is looking at the number yet. */
+  private async refreshValuation(): Promise<void> {
+    const shape = this.checkoutShape;
+    const signature = previewSignature(shape);
+    if (signature === this.valuedSignature) return;
+    this.valuedSignature = signature;
+    const seq = ++this.valuationSeq;
+    try {
+      const valued = await fetchCheckoutPreview(erplora(), shape, {
+        primaryCategory: (id) => this.primaryCategory(id),
+        orderId: this.orderId,
+      });
+      // An older answer never overwrites a newer one: the cashier changes the ticket faster than
+      // the network answers.
+      if (seq !== this.valuationSeq) return;
+      this.authoritative = valued;
+    } catch {
+      // The preview is NOT the charge: it failing does not block the till. It falls back to the
+      // screen's arithmetic and the server is still the last word when charging.
+      if (seq !== this.valuationSeq) return;
+      this.authoritative = undefined;
+    }
+  }
+
+  /** Forgets the valuation: the ticket left the screen, or it has just been charged. */
+  private dropValuation(): void {
+    this.valuationSeq += 1;
+    this.valuedSignature = '';
+    this.authoritative = undefined;
   }
 
   // ── Precio libre / venta por DEPARTAMENTO (fuera de catálogo) ──────────────────────────────
@@ -3324,7 +3427,14 @@ export class ErpPosTouch extends LitElement {
       // `inventory` y rechazaba la VENTA ENTERA con `sales.product_not_available`. Una peluquería
       // no podía cobrar un corte. Va condicional a propósito: marcarlo en una línea de catálogo le
       // saltaría la autoridad de precio y stock que el servidor sí tiene que aplicarle.
-      const items = cobradas.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: toMicro(l.qty), tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: l.category_id ?? this.primaryCategory(l.id) ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0, discount: l.discount ?? 0, ...(l.is_service ? { is_service: true } : {}), ...(l.modifiers?.length ? { modifiers: l.modifiers.map((m) => ({ option_id: m.option_id })) } : {}), ...(l.combo_id ? { combo_id: l.combo_id, combo_choices: (l.combo_choices ?? []).map((c) => ({ option_id: c.option_id, product_name: c.product_name ?? '', category_id: c.category_id ?? null })) } : {}), ...(l.line_id && this.covered.has(l.line_id) ? { covered: true } : {}), ...(l.line_id ? { order_item_id: l.line_id } : {}), ...unitContextPayload(l) }));
+      // 🔴 sales#164 — THE VERY SAME BUILDER THE PREVIEW USES (`lib/checkout-preview.ts`). It used
+      // to be written out by hand here, and a preview that priced a ticket slightly different from
+      // the one being charged would be worse than no preview: the mismatch would come back in
+      // through the door next to it.
+      const items = checkoutItems(cobradas, {
+        covered: new Set(this.covered.keys()),
+        primaryCategory: (id) => this.primaryCategory(id),
+      });
       await erplora().command('sales.complete_sale', {
         items,
         // sales#71: descuento de TICKET (%); el servidor lo prorratea por línea antes del IVA.
@@ -3411,6 +3521,9 @@ export class ErpPosTouch extends LitElement {
       if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = undefined; }
       this.paying = false;
       this.splitSel = new Set();
+      // sales#164: the valuation was for THIS ticket. Carrying it over would charge the next sale
+      // with the previous one's total.
+      this.dropValuation();
 
       // COBRO PARCIAL (ADR-0146): el pedido sigue abierto y en pantalla queda lo que falta por
       // pagar. Las líneas cobradas ya no vuelven —la query solo devuelve lo pendiente—, así que no

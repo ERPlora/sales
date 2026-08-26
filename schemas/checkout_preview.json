@@ -1,0 +1,251 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sales.checkout.preview payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "items"
+  ],
+  "properties": {
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "product_name",
+          "price",
+          "quantity"
+        ],
+        "properties": {
+          "product_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "order_item_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "sales#175 — the id of the ROW in the open check (`sales_order_item.id`) this line comes from. When it travels, the server charges that row's FROZEN `unit_price` — the price the line had when it was ordered — instead of re-pricing against the catalogue: a table pays the menu price it ordered at, not the one in force when it pays. The row was written by the server with the catalogue in hand (`sales.order.open` / `sales.order.add_line`), so honouring it is NOT honouring the payload's `price`, which still decides nothing. Absent = counter sale: the catalogue rules. An id that is not among the order's LIVE lines is REFUSED (`sales.order_line_not_available`)."
+          },
+          "product_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "product_sku": {
+            "type": "string"
+          },
+          "is_service": {
+            "type": "boolean"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Cantidad en PUNTO FIJO entero, escala global 10⁶ (ADR-0147): 1 unidad = 1000000, media unidad = 500000, el mínimo representable (minimum 1) es 0,000001. NUNCA un float ni una cantidad en unidades humanas: 2 aquí no son «2 unidades», son 0,000002. El importe de la línea lo calcula el servidor con esta escala (SDK, KPEIN).",
+            "examples": [
+              1000000,
+              500000,
+              2500000
+            ]
+          },
+          "price": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Precio por unidad de venta, en UNIDADES MÍNIMAS enteras (céntimos, ADR-0007/0123): 250 = 2,50 €. Es el precio POR `price_quantity_value` de `pricing_unit_code` (KPEIN §2.3; por defecto, por 1 unidad del producto) — con precio por kilo (price_quantity 1 kg), 250 cobra 2,50 € por cada kilo. La base fiscal (IVA incluido o no) la decide el hub (`tax_included` es solo fallback).",
+            "examples": [
+              250,
+              1895,
+              120
+            ]
+          },
+          "discount": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "tax_category_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tax_rate": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "tax_class_name": {
+            "type": "string"
+          },
+          "is_gift": {
+            "type": "boolean"
+          },
+          "gift_reason": {
+            "type": "string"
+          },
+          "covered": {
+            "type": "boolean",
+            "description": "sales#162 / ADR-0386: la línea la pagó un TENDER EXTERNO por línea (el bono de `services` cubre líneas enteras, no importes). Vale net/tax/total = 0 y sigue en la venta. No es un descuento ni una invitación."
+          },
+          "cost": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Coste unitario en UNIDADES MÍNIMAS enteras (céntimos, ADR-0007/0123), como `price`: snapshot para margen, no afecta al importe cobrado.",
+            "examples": [
+              90
+            ]
+          },
+          "category_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unit_code": {
+            "type": "string"
+          },
+          "unit_name": {
+            "type": "string"
+          },
+          "factor_num": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "factor_den": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "increment_value": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "price_quantity_value": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pricing_unit_code": {
+            "type": "string"
+          },
+          "pricing_unit_name": {
+            "type": "string"
+          },
+          "pricing_factor_num": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pricing_factor_den": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "modifiers": {
+            "type": "array",
+            "description": "Suplementos elegidos para esta línea (pm#93 / ADR-0376), EN EL ORDEN en que se eligieron. Solo se envía `option_id`: el precio y el nombre los pone el catálogo del servidor, nunca el cliente. Si el módulo `modifiers` no está instalado y esto llega con contenido, la venta se RECHAZA.",
+            "default": [],
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "option_id"
+              ],
+              "properties": {
+                "option_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "price_delta": {
+                  "type": "integer",
+                  "description": "IGNORADO. Se admite para que el TPV pueda mandar su preview sin que el contrato lo rechace, pero el importe que se cobra sale de `modifiers.options.all`."
+                }
+              }
+            }
+          },
+          "combo_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "sales#152 / ADR-0381 — esta línea es un COMBO (menú, pack) y el servidor la arma entera: lee `combos.options.all`, valida los grupos de elección y decide cuántas líneas de venta salen. Un solo tipo impositivo dentro → UNA línea con el precio cerrado; tipos distintos → UNA LÍNEA POR COMPONENTE con el precio cerrado repartido en proporción al precio de catálogo (art. 79.Dos LIVA). El `price` de esta línea se IGNORA. Si el módulo `combos` no está instalado y esto llega con contenido, la venta se RECHAZA."
+          },
+          "combo_choices": {
+            "type": "array",
+            "description": "Lo elegido en cada grupo del combo, EN EL ORDEN en que se eligió (el orden que lee cocina). Solo `option_id` decide dinero: el precio cerrado, el `price_delta` de la sustitución y la categoría fiscal salen del catálogo del servidor. Un grupo con `min_choices >= 1` sin resolver RECHAZA la venta — es una precondición, no un aviso.",
+            "default": [],
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "option_id"
+              ],
+              "properties": {
+                "option_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "product_name": {
+                  "type": "string",
+                  "description": "Nombre del componente para DISPLAY, igual que el `product_name` de cualquier línea: `combos` referencia el artículo de forma opaca (`source`/`source_ref`) y no conoce su nombre. No decide nada de dinero."
+                },
+                "category_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Categoría del componente, congelada en SU línea para que el KDS lo enrute a su estación — y no a la del primer plato, que es el fallo de TouchBistro."
+                },
+                "modifiers": {
+                  "type": "array",
+                  "description": "Suplementos de ESTE componente («el segundo, sin cebolla»). ADR-0376 sin cambios: el modificador cuelga de la línea de su componente, no del menú. Mismo contrato que `items[].modifiers`.",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "option_id"
+                    ],
+                    "properties": {
+                      "option_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "price_delta": {
+                        "type": "integer",
+                        "description": "IGNORADO: el importe sale de `modifiers.options.all`."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "discount_percent": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "discount_amount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Fixed ticket discount in minor units (cents), applied AFTER the percentages and split over the non-gift lines by largest remainder (ADR-0210, sales#113). Must not exceed the gross."
+    },
+    "tax_included": {
+      "type": "boolean",
+      "description": "Base fiscal de los precios (ADR-0210): true = brutos (IVA incluido), false = base imponible. Solo se usa como FALLBACK: si el hub tiene ajustes de TPV, manda su `default_tax_included` — la base decide lo que se declara y no la elige una petición. La autoridad última pasa a la lista de precios de `pricing` (herencia lista → hub → inclusive), pendiente en sales#23."
+    },
+    "order_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "description": "Lo que hay que valorar, sin nada de lo que hace falta para COBRAR (sin clave de idempotencia, sin formas de pago, sin entregado): el preview no escribe, así que no lo necesita. `order_id` viaja para que la valoración honre los precios CONGELADOS de una cuenta abierta (sales#175), igual que hará el cobro."
+}

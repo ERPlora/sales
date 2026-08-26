@@ -2166,15 +2166,18 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", f
     qr_note: fiscal.qr_note || void 0
   };
 }
-function orderToPrebill(lines, settings = {}, opts = {}) {
+function valuationBreakdown(v3) {
+  return Object.entries(v3.tax_breakdown ?? {}).map(([key, entry]) => ({ rate: Number(key) || 0, base: entry.base, amount: entry.tax })).sort((a3, b3) => a3.rate - b3.rate);
+}
+function orderToPrebill(lines, settings = {}, opts = {}, valuation) {
   const header = splitHeader(settings.receipt_header);
   const lineAmount2 = (l3) => l3.is_gift ? 0 : Math.round(l3.price * l3.qty);
-  const taxIncluded = settings.default_tax_included !== 0;
-  const taxes = previewTaxBreakdown(lines.map((l3) => ({ amount: lineAmount2(l3), tax_rate: l3.tax_rate })), taxIncluded);
+  const taxIncluded = valuation?.tax_included ?? settings.default_tax_included !== 0;
+  const taxes = valuation ? valuationBreakdown(valuation) : previewTaxBreakdown(lines.map((l3) => ({ amount: lineAmount2(l3), tax_rate: l3.tax_rate })), taxIncluded);
   const gross = lines.reduce((s5, l3) => s5 + lineAmount2(l3), 0);
   const taxTotal = taxes.reduce((s5, x2) => s5 + x2.amount, 0);
-  const total = taxIncluded ? gross : gross + taxTotal;
-  const base = taxes.reduce((s5, x2) => s5 + x2.base, 0);
+  const total = valuation ? valuation.total : taxIncluded ? gross : gross + taxTotal;
+  const base = valuation ? valuation.subtotal : taxes.reduce((s5, x2) => s5 + x2.base, 0);
   const table = opts.tableLabel || void 0;
   const customer = table || opts.customerName || void 0;
   return {
@@ -2232,8 +2235,8 @@ function printNotes(l3) {
   const components = l3.combo?.components.map(componentLabel).filter(Boolean);
   return { ...notes ? { notes } : {}, ...components?.length ? { components } : {} };
 }
-function prebillToPrintDocument(lines, settings = {}, opts = {}) {
-  const screen = orderToPrebill(lines, settings, opts);
+function prebillToPrintDocument(lines, settings = {}, opts = {}, valuation) {
+  const screen = orderToPrebill(lines, settings, opts, valuation);
   return {
     business_name: screen.business.name,
     business_address: screen.business.address,
@@ -6127,6 +6130,80 @@ __decorateClass10([
 ], OkStatusPill.prototype, "size");
 define("ok-status-pill", OkStatusPill);
 
+// ui/lib/checkout-preview.ts
+function checkoutItems(lines, opts) {
+  return lines.map((l3) => ({
+    product_id: l3.id,
+    product_name: l3.name,
+    product_sku: l3.sku || "",
+    price: l3.price,
+    quantity: toMicro2(l3.qty),
+    tax_category_key: l3.tax_category_key ?? null,
+    tax_rate: l3.tax_rate ?? 0,
+    category_id: l3.category_id ?? opts.primaryCategory?.(l3.id) ?? null,
+    is_gift: l3.is_gift ?? false,
+    gift_reason: l3.gift_reason ?? "",
+    cost: l3.cost ?? 0,
+    discount: l3.discount ?? 0,
+    ...l3.is_service ? { is_service: true } : {},
+    ...l3.modifiers?.length ? { modifiers: l3.modifiers.map((m4) => ({ option_id: m4.option_id })) } : {},
+    ...l3.combo_id ? {
+      combo_id: l3.combo_id,
+      combo_choices: (l3.combo_choices ?? []).map((c5) => ({
+        option_id: c5.option_id,
+        product_name: c5.product_name ?? "",
+        category_id: c5.category_id ?? null
+      }))
+    } : {},
+    ...l3.line_id && opts.covered.has(l3.line_id) ? { covered: true } : {},
+    ...l3.line_id ? { order_item_id: l3.line_id } : {},
+    ...unitContextPayload(l3)
+  }));
+}
+function checkoutPreviewPayload(shape, primaryCategory, orderId) {
+  return {
+    items: checkoutItems(shape.lines, { covered: shape.covered, primaryCategory }),
+    discount_percent: shape.ticketDiscount,
+    // sales#113: with a PARTIAL charge the fixed amount is not sent — it applies when the whole
+    // check is closed, exactly as `sales.complete_sale` receives it.
+    ...shape.ticketDiscountAmount > 0 && !shape.partial ? { discount_amount: shape.ticketDiscountAmount } : {},
+    tax_included: shape.taxIncluded,
+    ...orderId ? { order_id: orderId } : {}
+  };
+}
+async function fetchCheckoutPreview(client, shape, opts = {}) {
+  if (!shape.lines.length) return void 0;
+  const res = await client.command(
+    "sales.checkout.preview",
+    checkoutPreviewPayload(shape, opts.primaryCategory, opts.orderId)
+  );
+  const result = res?.result;
+  return result && typeof result.total === "number" ? result : void 0;
+}
+function previewSignature(shape) {
+  const lines = shape.lines.map((l3) => [
+    l3.line_id ?? l3.id,
+    l3.id,
+    l3.price,
+    l3.qty,
+    l3.discount ?? 0,
+    l3.tax_category_key ?? "",
+    l3.is_gift ? 1 : 0,
+    l3.is_service ? 1 : 0,
+    (l3.modifiers ?? []).map((m4) => m4.option_id).join("+"),
+    l3.combo_id ?? "",
+    (l3.combo_choices ?? []).map((c5) => c5.option_id).join("+")
+  ]);
+  return JSON.stringify([
+    lines,
+    shape.ticketDiscount,
+    shape.ticketDiscountAmount,
+    shape.taxIncluded,
+    shape.partial ?? false,
+    [...shape.covered].sort()
+  ]);
+}
+
 // ui/lib/pos-open-price.ts
 function buildOpenPriceLine(input) {
   const name = input.name.trim();
@@ -6509,6 +6586,10 @@ var ErpPosTouch = class extends i3 {
      *  Vacío y `available:false` mientras carga o si `taxes` no responde. ADR-0064/0066/0085. */
     this.taxCatalog = { rates: /* @__PURE__ */ new Map(), available: false, installed: true };
     this.missingChargeApp = "";
+    /** Signature of the ticket already priced, so we do not re-ask on every repaint. */
+    this.valuedSignature = "";
+    /** Request counter: an older answer must never overwrite a newer one. */
+    this.valuationSeq = 0;
     this.cartRestored = false;
     // Botones de asignación (ADR-0043 B): cada módulo que aporta a `sales.pos.assign` monta SU botón
     // (mesa, cliente…) en el header. Botones independientes: cada uno abre su propio modal. El POS no
@@ -7603,6 +7684,7 @@ var ErpPosTouch = class extends i3 {
   updated(_changed) {
     this.ensureSlotsMounted();
     this.syncChargeState();
+    if (this.paying || this.prebillOpen) void this.refreshValuation();
     const categorySegment = this.renderRoot.querySelector("ion-segment.category-segment") ?? void 0;
     if (categorySegment !== this.categorySegment) {
       this.categorySegmentCleanup?.();
@@ -8638,8 +8720,18 @@ var ErpPosTouch = class extends i3 {
    *  `labels.customer`, and on a dine-in bill what sits there is the TABLE (sales#180). Until the
    *  element has a slot of its own for the table (ERPlora/outfitkit#87), the document decides the
    *  label. */
+  /** sales#164 — the hub's valuation, BUT only when it priced the same thing this paper shows.
+   *
+   *  The bill is for the WHOLE table; the valuation is for the charge in progress, which with a
+   *  line selection (ADR-0146) or a per-line redemption (sales#162) is a subset. Putting a total
+   *  for something else there would be worse than composing it on screen, so in that case it is
+   *  not passed and the paper comes out as it did. */
+  get prebillValuation() {
+    if (this.splitSel.size || this.covered.size) return void 0;
+    return this.authoritative;
+  }
   renderPrebillDoc() {
-    const doc = orderToPrebill(this.prebillLines(), this.billSettings, this.billWho);
+    const doc = orderToPrebill(this.prebillLines(), this.billSettings, this.billWho, this.prebillValuation);
     return b2`<ok-receipt id="prebill-doc" .receipt=${doc} .labels=${receiptLabels(t5, doc)}></ok-receipt>`;
   }
   async printPrebill() {
@@ -8647,7 +8739,8 @@ var ErpPosTouch = class extends i3 {
     const lines = this.prebillLines();
     const opts = this.billWho;
     const settings = this.billSettings;
-    const doc = orderToPrebill(lines, settings, opts);
+    const valuation = this.prebillValuation;
+    const doc = orderToPrebill(lines, settings, opts, valuation);
     const html = receiptToPrintableHtml({
       ...doc,
       // sales#180: and the paper labels that datum for what it is -- "Table: S1", not a bare "S1".
@@ -8664,7 +8757,7 @@ var ErpPosTouch = class extends i3 {
       role: "receipt",
       documentType: "prebill",
       jobId: prebillJobId(this.orderId, lines),
-      data: prebillToPrintDocument(lines, settings, opts),
+      data: prebillToPrintDocument(lines, settings, opts, valuation),
       html
     }).catch((e7) => ({ via: "none", error: e7 instanceof Error ? e7.message : String(e7) }));
     if (res?.via === "bridge" || res?.via === "queue") return;
@@ -8697,6 +8790,8 @@ var ErpPosTouch = class extends i3 {
     this.docFormat = this.defaultDocFormat;
     if (this.overSimplifiedLimit) this.docFormat = "invoice";
     this.paying = true;
+    this.dropValuation();
+    void this.refreshValuation();
   }
   /**
    * Con qué formato se ABRE el cobro (hub#962).
@@ -8976,10 +9071,69 @@ var ErpPosTouch = class extends i3 {
     if (!this.tenderFillers.length || !this.customerId || !this.orderId) return [];
     return tenderableLines(this.billedLines);
   }
-  /** Lo que se cobra AHORA: la selección si la hay, o la cuenta entera (ADR-0146). */
+  /** What is being charged NOW: the selection when there is one, or the whole check (ADR-0146).
+   *
+   *  🔴 sales#164 — THE SERVER RULES. This number decides the legs of a mixed payment, the change,
+   *  the simplified-invoice ceiling and what the button promises, so it has to be the same one
+   *  `complete_sale` is going to charge: with prices that do NOT carry the VAT inside, the screen's
+   *  arithmetic showed the BASE and the drawer took base + quota (100.00 € → 121.00 €); and with a
+   *  fixed-amount discount, a quantity by weight or a goods set menu split across rates the two
+   *  drifted by a cent, which is exactly what fires `sales.payments_do_not_match_total`.
+   *
+   *  With no authoritative answer it falls back to the screen's own preview — what there was
+   *  before, which charges the normal case right — and the server's refusal goes back to being a
+   *  net, which is its place. */
   get payable() {
+    if (this.authoritative) return this.authoritative.total;
+    return this.screenPayable;
+  }
+  /** What THIS screen works out on its own. Only used while there is no answer from the server,
+   *  and it is what the till always used before sales#164. */
+  get screenPayable() {
     const base = cartTotal(this.chargedLines, this.ticketDiscount);
     return Math.max(0, base - (this.splitSel.size ? 0 : this.ticketDiscountAmount));
+  }
+  /** The ticket to price: EXACTLY the one that will be charged (`billedLines`, with the lines an
+   *  external tender covered flagged so the server prices them at 0). */
+  get checkoutShape() {
+    return {
+      lines: this.billedLines,
+      ticketDiscount: this.ticketDiscount,
+      ticketDiscountAmount: this.ticketDiscountAmount,
+      covered: new Set(this.covered.keys()),
+      taxIncluded: this.settings.default_tax_included !== 0,
+      partial: this.splitSel.size > 0
+    };
+  }
+  /** Asks the hub to price the ticket, if needed. Cheap to call on every repaint: it only goes to
+   *  the network when something that MOVES the total changes (`previewSignature`).
+   *
+   *  It is only asked with the charge or the bill on screen: the valuation reads the whole sale
+   *  catalogue, and doing it on every tap of the grid would put the till behind the network while
+   *  nobody is looking at the number yet. */
+  async refreshValuation() {
+    const shape = this.checkoutShape;
+    const signature = previewSignature(shape);
+    if (signature === this.valuedSignature) return;
+    this.valuedSignature = signature;
+    const seq2 = ++this.valuationSeq;
+    try {
+      const valued = await fetchCheckoutPreview(erplora2(), shape, {
+        primaryCategory: (id) => this.primaryCategory(id),
+        orderId: this.orderId
+      });
+      if (seq2 !== this.valuationSeq) return;
+      this.authoritative = valued;
+    } catch {
+      if (seq2 !== this.valuationSeq) return;
+      this.authoritative = void 0;
+    }
+  }
+  /** Forgets the valuation: the ticket left the screen, or it has just been charged. */
+  dropValuation() {
+    this.valuationSeq += 1;
+    this.valuedSignature = "";
+    this.authoritative = void 0;
   }
   // ── Precio libre / venta por DEPARTAMENTO (fuera de catálogo) ──────────────────────────────
   /** Abre la pregunta del importe. Sin argumentos es la tecla suelta «Precio libre» (en blanco);
@@ -9044,7 +9198,10 @@ var ErpPosTouch = class extends i3 {
     const split = splitPayload(this.cart, this.splitSel);
     try {
       const cobradas = this.billedLines;
-      const items = cobradas.map((l3) => ({ product_id: l3.id, product_name: l3.name, product_sku: l3.sku || "", price: l3.price, quantity: toMicro2(l3.qty), tax_category_key: l3.tax_category_key ?? null, tax_rate: l3.tax_rate ?? 0, category_id: l3.category_id ?? this.primaryCategory(l3.id) ?? null, is_gift: l3.is_gift ?? false, gift_reason: l3.gift_reason ?? "", cost: l3.cost ?? 0, discount: l3.discount ?? 0, ...l3.is_service ? { is_service: true } : {}, ...l3.modifiers?.length ? { modifiers: l3.modifiers.map((m4) => ({ option_id: m4.option_id })) } : {}, ...l3.combo_id ? { combo_id: l3.combo_id, combo_choices: (l3.combo_choices ?? []).map((c5) => ({ option_id: c5.option_id, product_name: c5.product_name ?? "", category_id: c5.category_id ?? null })) } : {}, ...l3.line_id && this.covered.has(l3.line_id) ? { covered: true } : {}, ...l3.line_id ? { order_item_id: l3.line_id } : {}, ...unitContextPayload(l3) }));
+      const items = checkoutItems(cobradas, {
+        covered: new Set(this.covered.keys()),
+        primaryCategory: (id) => this.primaryCategory(id)
+      });
       await erplora2().command("sales.complete_sale", {
         items,
         // sales#71: descuento de TICKET (%); el servidor lo prorratea por línea antes del IVA.
@@ -9125,6 +9282,7 @@ var ErpPosTouch = class extends i3 {
     }
     this.paying = false;
     this.splitSel = /* @__PURE__ */ new Set();
+    this.dropValuation();
     if (split.keep_order_open && this.orderId) {
       this.cart = await loadOrderLines(erplora2(), this.orderId);
       if (saleId) this.docSaleId = saleId;
@@ -10484,6 +10642,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "missingChargeApp", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "authoritative", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "padPrimed", 2);

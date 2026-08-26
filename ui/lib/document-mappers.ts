@@ -18,7 +18,7 @@ import { modifierLabel, modifierNote, type PrintedModifier } from './paper-modif
 import { comboNote, componentLabel, groupComboLines, type PrintedCombo } from './paper-combos.js';
 // sales#180 — the bill's PROVISIONAL tax breakdown comes through the same door as the cart's tax
 // preview, not through a second arithmetic that would end up disagreeing with it.
-import { previewTaxBreakdown } from './pos-tax.js';
+import { previewTaxBreakdown, type TaxBreakdownEntry } from './pos-tax.js';
 
 export { modifierIdentity, modifierLabel, modifierNote, type PrintedModifier } from './paper-modifiers.js';
 export { comboIdentity, comboNote, componentLabel, parseComboSnapshot, type PrintedCombo, type PrintedComboComponent } from './paper-combos.js';
@@ -567,6 +567,22 @@ export interface PrebillLine {
  * Emitir un papel que parezca factura sin serlo es un problema legal, no estético: la factura
  * (simplificada o completa) nace en `complete_sale` y la sella el módulo fiscal (ADR-0140).
  */
+/** The slice of `sales.checkout.preview` a bill needs. Cents everywhere (ADR-0007). */
+export interface PrebillValuation {
+  total: number;
+  subtotal: number;
+  tax_included: boolean;
+  /** By rate key, exactly as the sale persists it: `{ "21.00": { base, tax } }`. */
+  tax_breakdown: Record<string, { base: number; tax: number }>;
+}
+
+/** The hub's breakdown, in the shape the paper reads it — ascending rate, the way anyone reads it. */
+function valuationBreakdown(v: PrebillValuation): TaxBreakdownEntry[] {
+  return Object.entries(v.tax_breakdown ?? {})
+    .map(([key, entry]) => ({ rate: Number(key) || 0, base: entry.base, amount: entry.tax }))
+    .sort((a, b) => a.rate - b.rate);
+}
+
 export function orderToPrebill(
   lines: PrebillLine[],
   settings: SaleSettings = {},
@@ -579,20 +595,30 @@ export function orderToPrebill(
     notice?: string;
     fallbackName?: string;
   } = {},
+  /** sales#164 — the hub's AUTHORITATIVE valuation of this same ticket, when it has answered. */
+  valuation?: PrebillValuation,
 ): PaperReceiptData {
   const header = splitHeader(settings.receipt_header);
   // Provisional amount of the line, in minor units. A comped line is not charged.
   const lineAmount = (l: PrebillLine) => (l.is_gift ? 0 : Math.round(l.price * l.qty));
-  const taxIncluded = settings.default_tax_included !== 0;
+  const taxIncluded = valuation?.tax_included ?? settings.default_tax_included !== 0;
   // sales#180 — the breakdown the customer reviews before paying. With VAT-inclusive prices the
   // lines ALREADY are the gross, so the total does not move; with VAT-exclusive ones the line is
   // COMPOSED of base + quota and the total is that sum, which is what the server will charge
   // (`calc_line_components`).
-  const taxes = previewTaxBreakdown(lines.map((l) => ({ amount: lineAmount(l), tax_rate: l.tax_rate })), taxIncluded);
+  //
+  // 🔴 sales#164 — and when the hub has VALUED the ticket, that valuation wins over this one. What
+  // is composed here is a SECOND fiscal arithmetic in the browser: it drifts from the charge with a
+  // prorated fixed discount (ADR-0210), a quantity by weight (ADR-0147) or a goods combo split
+  // across rates (art. 79.Dos LIVA). The paper the customer checks has to say what the drawer will
+  // take, to the cent. Without a valuation nothing changes: the bill comes out as it did.
+  const taxes = valuation
+    ? valuationBreakdown(valuation)
+    : previewTaxBreakdown(lines.map((l) => ({ amount: lineAmount(l), tax_rate: l.tax_rate })), taxIncluded);
   const gross = lines.reduce((s, l) => s + lineAmount(l), 0);
   const taxTotal = taxes.reduce((s, x) => s + x.amount, 0);
-  const total = taxIncluded ? gross : gross + taxTotal;
-  const base = taxes.reduce((s, x) => s + x.base, 0);
+  const total = valuation ? valuation.total : (taxIncluded ? gross : gross + taxTotal);
+  const base = valuation ? valuation.subtotal : taxes.reduce((s, x) => s + x.base, 0);
   // The table wins over the customer in the ONLY labelled meta slot `<ok-receipt>` has: it is what
   // tells this bill from the other five the waiter is carrying. Showing both at once needs a slot
   // of its own in the element (ERPlora/outfitkit#87).

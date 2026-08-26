@@ -387,6 +387,41 @@
         "description": "Completes and records a sale with its line items and payment. Optional staff_id attributes the sale to the professional who performed it; optional appointment_id traces a sale created from an appointment (emits sales.sale.created_from_appointment)."
       }
     },
+    "sales.checkout.preview": {
+      "permission": "sales.view_sale",
+      "reads": [
+        {
+          "query": "taxes.rules.list",
+          "required": true
+        },
+        "inventory.products.for_sale",
+        "sales.settings.get",
+        {
+          "query": "modifiers.options.all",
+          "required": false
+        },
+        {
+          "query": "combos.options.all",
+          "required": false
+        },
+        {
+          "query": "sales.order.lines",
+          "params": {
+            "order_id": "payload.order_id"
+          },
+          "required": false
+        }
+      ],
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "preview_checkout"
+      },
+      "schema": "schemas/checkout_preview.json",
+      "ai": {
+        "description": "Values a ticket WITHOUT charging it and WITHOUT writing anything: same arithmetic as sales.complete_sale (same function), so the total, the taxable base, the quota and the per-line breakdown are the ones the sale would record. Answers total/subtotal/tax_total/discount_amount/gift_total in cents, tax_included as the hub has it, one row per resulting line (tax_category_key, tax_rate, unit_price, net_amount, tax_amount, line_total, combo_group_ref) and tax_breakdown by rate. Use it to show an authoritative total before charging, to split a mixed payment so the legs add up to the cent, and to preview how a goods combo splits across tax rates. It never creates a sale."
+      }
+    },
     "sales.order.open": {
       "permission": "sales.add_sale",
       "reads": [

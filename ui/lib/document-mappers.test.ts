@@ -756,3 +756,38 @@ describe('the bill breaks the VAT down (sales#180)', () => {
     expect((orderToPrebill(lineas, {}).footer || '').toLowerCase()).toContain('not an invoice');
   });
 });
+
+// ── sales#164 · THE BILL SAYS WHAT IS GOING TO BE CHARGED ────────────────────────────────────
+//
+// The paper taken to the table composes base + quota on its own (`previewTaxBreakdown`), and that
+// is a SECOND fiscal arithmetic in the browser: it drifts from the charge with a fixed-amount
+// discount, a quantity by weight or a goods set menu split across rates. When the hub has priced
+// the ticket (`sales.checkout.preview`), that valuation rules — the SAME one that will charge.
+describe('sales#164 — the bill on the authoritative valuation', () => {
+  const lines = [{ id: 'l1', name: 'Consultoría', price: 10_000, qty: 1, tax_rate: 21 }];
+  const valuation = {
+    total: 12_100, subtotal: 10_000, tax_total: 2_100, discount_amount: 0, gift_total: 0,
+    tax_included: false, lines: [],
+    tax_breakdown: { '21.00': { base: 10_000, tax: 2_100, kind: 'tax' } },
+  };
+
+  it('the total and the breakdown come from the valuation, not from the browser arithmetic', () => {
+    const doc = orderToPrebill(lines, { default_tax_included: 0 }, {}, valuation);
+    expect(doc.total, 'what the drawer is going to take').toBe(12_100);
+    expect(doc.subtotal).toBe(10_000);
+    expect(doc.taxes).toEqual([{ label: 'IVA 21%', base: 10_000, amount: 2_100 }]);
+  });
+
+  it('a valuation that differs by ONE CENT still rules: it is the one that charges', () => {
+    const doc = orderToPrebill(lines, {}, {}, { ...valuation, total: 9_999, subtotal: 8_264,
+      tax_breakdown: { '21.00': { base: 8_264, tax: 1_735 } } });
+    expect(doc.total).toBe(9_999);
+    expect(doc.taxes).toEqual([{ label: 'IVA 21%', base: 8_264, amount: 1_735 }]);
+  });
+
+  it('WITHOUT a valuation the bill comes out exactly as before', () => {
+    const composedOnScreen = orderToPrebill(lines, { default_tax_included: 0 }, {});
+    expect(composedOnScreen.total, 'base + quota composed on screen (sales#180)').toBe(12_100);
+    expect(composedOnScreen.taxes).toEqual([{ label: 'IVA 21%', base: 10_000, amount: 2_100 }]);
+  });
+});
