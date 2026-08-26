@@ -25,10 +25,20 @@ type Catalog = { errors?: Record<string, string> };
 const declared = (manifest as { errors?: Record<string, unknown> }).errors ?? {};
 
 /**
- * The codes the handler names literally, minus the ones that are not codes: an internal
- * sub-command (`sales._insert_sale`, the `_` marker of ADR-0166) and a QUERY or COMMAND the
- * handler reads by name (`sales.get`), which has the very same shape as a code —
- * ERPlora/module-toolkit#107.
+ * Every code the module can RAISE — which is not only the handler's.
+ *
+ * Two sources, because the contract has two — `schemas/module.schema.json → errors` says a code
+ * raised by the HANDLER *or by `expect_rows.error`* and not declared here is a broken contract:
+ *
+ *   1. the WASM handler, which names its codes as string literals;
+ *   2. `commands.*.expect_rows.error` — the runtime's translatable row gate (hub#139). The
+ *      declarative SQL commands have no Rust at all, and the runtime raises the code on their
+ *      behalf. Reading only the handler would have made a declared `expect_rows` code look
+ *      undeclared and any code raised ONLY by a SQL command impossible to write (sales#206).
+ *
+ * Minus what is not a code: an internal sub-command (`sales._insert_sale`, the `_` marker of
+ * ADR-0166) and a QUERY or COMMAND the handler reads by name (`sales.get`), which has the very
+ * same shape as a code — ERPlora/module-toolkit#107.
  */
 function emittedCodes(): string[] {
   const names = new Set([
@@ -42,6 +52,10 @@ function emittedCodes(): string[] {
     if (code.slice(MODULE_ID.length + 1).startsWith('_')) continue;
     if (names.has(code)) continue;
     found.add(code);
+  }
+  const commands = (manifest as { commands?: Record<string, { expect_rows?: { error?: string } }> }).commands ?? {};
+  for (const command of Object.values(commands)) {
+    if (command?.expect_rows?.error) found.add(command.expect_rows.error);
   }
   return [...found].sort();
 }

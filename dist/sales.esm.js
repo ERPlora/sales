@@ -3947,6 +3947,9 @@ var es_default = {
     },
     settings: {
       label: "Ajustes TPV"
+    },
+    quick_notes: {
+      label: "Notas r\xE1pidas"
     }
   },
   roles: {
@@ -3989,6 +3992,7 @@ var es_default = {
     "sales.product_not_available": "Un producto del tique ya no est\xE1 en el cat\xE1logo. Quita la l\xEDnea y vuelve a a\xF1adirla.",
     "sales.quantity_not_positive": "Una l\xEDnea no tiene cantidad: pon al menos una antes de cobrar.",
     "sales.quantity_off_grid": "La cantidad no encaja con el escal\xF3n del producto.",
+    "sales.quick_note_not_found": "Esa nota r\xE1pida ya no est\xE1 en este negocio. Recarga la lista y vuelve a intentarlo.",
     "sales.refund_amount_invalid": "Cada pata de una devoluci\xF3n necesita un importe positivo.",
     "sales.refund_exceeds_tender": "A un medio de pago se le est\xE1 devolviendo m\xE1s de lo que cobr\xF3.",
     "sales.refund_method_unavailable": "Ese medio de pago no est\xE1 disponible en este negocio, as\xED que el dinero no puede volver por ah\xED.",
@@ -4340,7 +4344,29 @@ var es_default = {
     lineNotePlaceholder: "p. ej. poco hecho, alergia al marisco, sin hielo",
     lineNoteHint: "Cocina lee esta nota en la comanda.",
     lineNoteSave: "Guardar",
-    lineNoteRemove: "Quitar"
+    lineNoteRemove: "Quitar",
+    quickNotesTitle: "Notas r\xE1pidas",
+    quickNotesIntro: "Las notas que el TPV ofrece de un toque en la hoja de nota de la l\xEDnea. Escribir a mano sigue funcionando.",
+    quickNoteText: "Nota",
+    quickNoteOrder: "Posici\xF3n",
+    quickNotesEmpty: "Todav\xEDa no hay notas r\xE1pidas. A\xF1ade las que tu cocina oye a diario: \xABsin sal\xBB, \xABpoco hecho\xBB, \xABsin hielo\xBB.",
+    quickNotesLoading: "Cargando notas r\xE1pidas\u2026",
+    quickNotesSearch: "Buscar una nota\u2026",
+    quickNoteAdd: "A\xF1adir",
+    quickNoteSave: "Guardar",
+    quickNoteSaving: "Guardando\u2026",
+    quickNoteEdit: "Editar",
+    quickNoteEditing: "Editando",
+    quickNoteEditCancel: "Cancelar edici\xF3n",
+    quickNoteDelete: "Eliminar",
+    quickNoteDeleteTitle: "Eliminar nota r\xE1pida",
+    quickNoteDeleteHint: "Deja de ofrecerse en el TPV. Las notas ya escritas en cuentas y ventas conservan su texto.",
+    quickNoteCancel: "Cancelar",
+    quickNoteSaveFailed: "No se ha podido guardar la nota r\xE1pida.",
+    quickNoteDeleteFailed: "No se ha podido eliminar la nota r\xE1pida.",
+    quickNotesLoadFailed: "No se han podido cargar las notas r\xE1pidas.",
+    lineNoteQuickLoading: "Cargando notas r\xE1pidas\u2026",
+    lineNoteQuickError: "No se han podido cargar las notas r\xE1pidas: escribe la nota a mano."
   },
   widgets: {
     "sales.today": {
@@ -4372,6 +4398,9 @@ var en_default = {
     },
     settings: {
       label: "POS Settings"
+    },
+    quick_notes: {
+      label: "Quick notes"
     }
   },
   roles: {
@@ -4414,6 +4443,7 @@ var en_default = {
     "sales.product_not_available": "A product on the ticket is no longer in the catalogue. Remove the line and add it again.",
     "sales.quantity_not_positive": "A line has no quantity: set at least one before charging.",
     "sales.quantity_off_grid": "The quantity does not fit the product's step.",
+    "sales.quick_note_not_found": "That quick note is not in this business any more. Reload the list and try again.",
     "sales.refund_amount_invalid": "Every leg of a refund needs a positive amount.",
     "sales.refund_exceeds_tender": "One tender is being given back more than it was charged.",
     "sales.refund_method_unavailable": "That payment method is not available in this business, so the money cannot go back through it.",
@@ -4765,7 +4795,29 @@ var en_default = {
     lineNotePlaceholder: "e.g. medium rare, shellfish allergy, no ice",
     lineNoteHint: "The kitchen reads this note on the ticket.",
     lineNoteSave: "Save",
-    lineNoteRemove: "Remove"
+    lineNoteRemove: "Remove",
+    quickNotesTitle: "Quick notes",
+    quickNotesIntro: "The notes the till offers with one tap on the line-note sheet. The waiter can still type anything by hand.",
+    quickNoteText: "Note",
+    quickNoteOrder: "Position",
+    quickNotesEmpty: "No quick notes yet. Add the ones your kitchen hears every day \u2014 \u201Cno salt\u201D, \u201Cmedium rare\u201D, \u201Cno ice\u201D.",
+    quickNotesLoading: "Loading quick notes\u2026",
+    quickNotesSearch: "Search a note\u2026",
+    quickNoteAdd: "Add",
+    quickNoteSave: "Save",
+    quickNoteSaving: "Saving\u2026",
+    quickNoteEdit: "Edit",
+    quickNoteEditing: "Editing",
+    quickNoteEditCancel: "Cancel edit",
+    quickNoteDelete: "Delete",
+    quickNoteDeleteTitle: "Delete quick note",
+    quickNoteDeleteHint: "It stops being offered at the till. The notes already typed on checks and sales keep their text.",
+    quickNoteCancel: "Cancel",
+    quickNoteSaveFailed: "The quick note could not be saved.",
+    quickNoteDeleteFailed: "The quick note could not be deleted.",
+    quickNotesLoadFailed: "The quick notes could not be loaded.",
+    lineNoteQuickLoading: "Loading quick notes\u2026",
+    lineNoteQuickError: "The quick notes could not be loaded \u2014 type the note by hand."
   }
 };
 
@@ -5626,6 +5678,24 @@ function scaleVerdict(line, reading) {
   }
   if (reading.value <= 0) return { ok: false, reason: "zero" };
   return { ok: true, qty: reading.value };
+}
+
+// ui/lib/quick-note-text.ts
+function segments(note) {
+  return note.split(",").map((s5) => s5.trim()).filter((s5) => s5.length > 0);
+}
+function hasQuickNote(note, text) {
+  const wanted = text.trim();
+  return wanted.length > 0 && segments(note).includes(wanted);
+}
+function toggleQuickNote(note, text) {
+  const wanted = text.trim();
+  if (!wanted) return note.trim();
+  const parts = segments(note);
+  const at = parts.indexOf(wanted);
+  if (at >= 0) parts.splice(at, 1);
+  else parts.push(wanted);
+  return parts.join(", ");
 }
 
 // ui/lib/combo-picker.ts
@@ -6861,6 +6931,8 @@ var ErpPosTouch = class extends i3 {
     this.openPriceOpen = false;
     this.ticketDiscount = 0;
     this.noteInput = "";
+    this.quickNotes = [];
+    this.quickNotesState = "idle";
     this.discountInput = "";
     this.ticketDiscountAmount = 0;
     this.discountMode = "percent";
@@ -7710,6 +7782,20 @@ var ErpPosTouch = class extends i3 {
       background:var(--ion-item-background, var(--panel)); color:var(--tx); }
     .note-sheet .note-input:focus-visible { outline:2px solid var(--ion-color-primary); outline-offset:1px; }
     .note-sheet .note-hint { margin:.5rem 0 0; font-size:.78rem; color:var(--ion-color-medium); }
+    /* sales#206 — the chips the business preconfigured, ABOVE the keyboard: on a phone the
+       keyboard eats the bottom half of the screen, so anything under the textarea would be the
+       first thing to disappear. They wrap because a business with eight notes has eight. */
+    .note-sheet .note-chips { display:flex; flex-wrap:wrap; gap:.4rem; margin:0 0 .6rem; }
+    .note-sheet .note-chip { font:inherit; font-size:.85rem; line-height:1.2; cursor:pointer;
+      min-height:2.25rem; padding:.45rem .75rem; border-radius:999px;
+      border:1px solid var(--ion-border-color, var(--line)); color:var(--tx);
+      background:var(--ion-item-background, var(--panel)); }
+    /* Applied = filled, not merely outlined: at arm's length on a busy pass a thicker border is
+       not a state anybody reads. */
+    .note-sheet .note-chip[aria-pressed='true'] { border-color:var(--ion-color-primary);
+      background:var(--ion-color-primary); color:var(--ion-color-primary-contrast, #fff); }
+    .note-sheet .note-chip:focus-visible { outline:2px solid var(--ion-color-primary); outline-offset:2px; }
+    .note-sheet .note-chips-state { margin:0 0 .6rem; font-size:.78rem; color:var(--ion-color-medium); }
     .secs { padding:.32rem .48rem .65rem; gap:.52rem; }
     .sec { border-radius:var(--ok-radius,12px); }
     .sec-h { padding:.48rem .58rem; font-size:.7rem; background:transparent; border-bottom:1px solid var(--line); }
@@ -9289,6 +9375,37 @@ var ErpPosTouch = class extends i3 {
   openLineNote(lineId) {
     this.noteInput = this.cart.find((l3) => l3.line_id === lineId)?.note ?? "";
     this.noteSheet = { lineId };
+    if (this.quickNotesState === "idle") void this.loadQuickNotes();
+  }
+  // ── sales#206 · the QUICK NOTES the business preconfigured ─────────────────────────────────
+  //
+  // Market shape (8 refs + forums, table in the PR): only Lightspeed Restaurant (K-Series) ships
+  // this as a feature — notes created in the Back Office (add/edit/delete/reorder), applied with
+  // one tap on the POS, printed on the docket and shown on the KDS. Toast, Square, Clover, Revel,
+  // Simphony and SumUp give free text only, Odoo needs its configuration/app and Shopify POS needs
+  // an app. So we copy Lightspeed, and only the part that survives our contract: the line carries
+  // ONE note, so several chips COMPOSE that one string instead of several notes.
+  /** Reads the catalogue through the till's own door.
+   *
+   *  `sales.quick_notes.list` reads with `sales.view_sale` and NOT with `sales.manage_settings`
+   *  for the same reason `sales.pos_settings.get` exists (sales#205): the people tapping these
+   *  chips are the `cashier` and the `employee`, and neither holds `manage_settings` — behind it
+   *  the chips would be painted for whoever configured them and for nobody at the till. */
+  async loadQuickNotes() {
+    this.quickNotesState = "loading";
+    try {
+      this.quickNotes = rows2(
+        await erplora2().queryAll("sales.quick_notes.list", { sort: "sort_order", dir: "asc" })
+      ).slice().sort((a3, b3) => Number(a3.sort_order ?? 0) - Number(b3.sort_order ?? 0) || a3.text.localeCompare(b3.text));
+      this.quickNotesState = "ready";
+    } catch {
+      this.quickNotes = [];
+      this.quickNotesState = "error";
+    }
+  }
+  /** A chip ADDS its text to what is in the box, and takes it out if it is already there. */
+  toggleQuickNoteChip(text) {
+    this.noteInput = toggleQuickNote(this.noteInput, text);
   }
   /** Saves the note on the line and on its order row. Empty (or whitespace only) REMOVES it: a
    *  note that cannot be deleted leaves the kitchen cooking to a request that was cancelled. */
@@ -10707,6 +10824,18 @@ var ErpPosTouch = class extends i3 {
     }}>✕</button>
               </div>
               <div class="sheet-top">
+                <!-- sales#206 — the chips the business preconfigured. With none configured
+                     NOTHING is painted here and the sheet is exactly the one sales#156 shipped:
+                     a business that never configures anything pays nothing for this existing. -->
+                ${this.quickNotesState === "loading" || this.quickNotesState === "error" ? b2`<p class="note-chips-state">
+                      ${t5(this.quickNotesState === "loading" ? "ui.lineNoteQuickLoading" : "ui.lineNoteQuickError")}
+                    </p>` : A}
+                ${this.quickNotes.length ? b2`<div class="note-chips">
+                      ${this.quickNotes.map((n6) => b2`
+                        <button type="button" class="note-chip"
+                                aria-pressed=${hasQuickNote(this.noteInput, n6.text) ? "true" : "false"}
+                                @click=${() => this.toggleQuickNoteChip(n6.text)}>${n6.text}</button>`)}
+                    </div>` : A}
                 <textarea class="note-input" rows="3" maxlength="255" autofocus
                           aria-label=${t5("ui.lineNote")} placeholder=${t5("ui.lineNotePlaceholder")}
                           .value=${this.noteInput}
@@ -10962,6 +11091,12 @@ __decorateClass([
 ], ErpPosTouch.prototype, "noteInput", 2);
 __decorateClass([
   r5()
+], ErpPosTouch.prototype, "quickNotes", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "quickNotesState", 2);
+__decorateClass([
+  r5()
 ], ErpPosTouch.prototype, "discountInput", 2);
 __decorateClass([
   r5()
@@ -11148,642 +11283,6 @@ __decorateClass([
   n4({ type: Boolean })
 ], ErpPos.prototype, "fullscreen", 2);
 define("erp-pos", ErpPos);
-
-// ui/lib/refund-allocation.ts
-var cents = (n6) => Math.max(0, Math.round(Number(n6) || 0));
-function refundableTotal(legs) {
-  return legs.reduce((sum, l3) => sum + cents(l3.remaining), 0);
-}
-function draftTotal(draft) {
-  return Object.values(draft).reduce((sum, e7) => sum + cents(e7?.amount), 0);
-}
-function proportionalSplit(amount, legs) {
-  const split = {};
-  for (const l3 of legs) split[l3.payment_id] = 0;
-  const weights = legs.map((l3) => cents(l3.remaining));
-  const totalWeight = weights.reduce((a3, b3) => a3 + b3, 0);
-  const magnitude = Math.min(cents(amount), totalWeight);
-  if (magnitude <= 0 || totalWeight <= 0) return split;
-  const remainders = [];
-  let assigned = 0;
-  legs.forEach((l3, i7) => {
-    const numerator = magnitude * weights[i7];
-    const part = Math.floor(numerator / totalWeight);
-    split[l3.payment_id] = part;
-    assigned += part;
-    remainders.push({ rest: numerator % totalWeight, index: i7 });
-  });
-  remainders.sort((a3, b3) => b3.rest - a3.rest || a3.index - b3.index);
-  let left = magnitude - assigned;
-  for (const { index } of remainders) {
-    if (left <= 0) break;
-    split[legs[index].payment_id] += 1;
-    left -= 1;
-  }
-  return split;
-}
-function refundBlock(draft, legs) {
-  const known = legs.reduce((sum, l3) => sum + cents(draft[l3.payment_id]?.amount), 0);
-  if (known <= 0) return { reason: "nothing" };
-  const ordered = [...legs].sort((a3, b3) => a3.sort_order - b3.sort_order);
-  for (const leg of ordered) {
-    const amount = cents(draft[leg.payment_id]?.amount);
-    if (amount > cents(leg.remaining)) {
-      return { reason: "over-cap", leg, amount, remaining: cents(leg.remaining) };
-    }
-  }
-  for (const leg of ordered) {
-    const entry = draft[leg.payment_id];
-    const amount = cents(entry?.amount);
-    if (amount > 0 && Number(leg.refundable) !== 1 && !entry?.to) {
-      return { reason: "needs-destination", leg, why: leg.reason };
-    }
-  }
-  return void 0;
-}
-function buildAllocations(draft, legs) {
-  return [...legs].sort((a3, b3) => a3.sort_order - b3.sort_order).flatMap((leg) => {
-    const entry = draft[leg.payment_id];
-    const amount = cents(entry?.amount);
-    if (amount <= 0) return [];
-    const changed = entry?.to && entry.to !== leg.payment_method_id;
-    return [{ payment_id: leg.payment_id, amount, ...changed ? { to_payment_method_id: entry.to } : {} }];
-  });
-}
-var REASON_KEYS = {
-  already_refunded: "ui.refundReasonAlreadyRefunded",
-  method_unavailable: "ui.refundReasonMethodUnavailable"
-};
-function reasonKey(reason) {
-  return REASON_KEYS[reason] ?? "ui.refundReasonNotEligible";
-}
-function parseAmountToCents(text) {
-  const raw = String(text ?? "").replace(/[^\d.,-]/g, "");
-  if (!raw || raw.startsWith("-")) return 0;
-  const cut = Math.max(raw.lastIndexOf(","), raw.lastIndexOf("."));
-  const digits = (part) => part.replace(/[^\d]/g, "");
-  const whole = digits(cut >= 0 ? raw.slice(0, cut) : raw);
-  const frac = cut >= 0 ? digits(raw.slice(cut + 1)) : "";
-  const padded = (frac + "000").slice(0, 3);
-  const units = Number(whole || "0");
-  if (!Number.isFinite(units)) return 0;
-  const cents2 = units * 100 + Number(padded.slice(0, 2));
-  return Number(padded[2]) >= 5 ? cents2 + 1 : cents2;
-}
-function formatAmountInput(amount, locale) {
-  const fixed = (Math.max(0, Math.round(Number(amount) || 0)) / 100).toFixed(2);
-  let decimal = ".";
-  try {
-    decimal = new Intl.NumberFormat(locale || void 0).formatToParts(1.1).find((p4) => p4.type === "decimal")?.value ?? ".";
-  } catch {
-    decimal = ".";
-  }
-  return fixed.replace(".", decimal);
-}
-
-// ui/lib/refund-tender.ts
-function coveredLines(lines) {
-  return lines.filter((l3) => !!l3.id && !!l3.product_id && isCovered(l3));
-}
-function isCovered(l3) {
-  return l3.is_covered === true || Number(l3.is_covered ?? 0) > 0;
-}
-function serviceOrdinals(covered) {
-  const seen = /* @__PURE__ */ new Map();
-  const out = /* @__PURE__ */ new Map();
-  for (const l3 of covered) {
-    const service = l3.product_id ?? "";
-    const n6 = seen.get(service) ?? 0;
-    out.set(l3.id, n6);
-    seen.set(service, n6 + 1);
-  }
-  return out;
-}
-
-// ui/lib/domain-error-text.ts
-var SOURCE_LANG = "en";
-function textFor(catalog, lang, code) {
-  const dict = catalog[lang];
-  const text = dict?.errors?.[code];
-  return typeof text === "string" && text.trim() ? text : "";
-}
-function domainErrorText(catalog, locale, e7) {
-  const code = e7?.code;
-  if (typeof code !== "string" || !code) return "";
-  return textFor(catalog, locale, code) || textFor(catalog, SOURCE_LANG, code);
-}
-
-// ui/components/erp-sale-refund/erp-sale-refund.ts
-var CATALOG3 = { es: es_default, en: en_default };
-var REFUND_MESSAGES = {
-  "sales.refund_exceeds_tender": "ui.refundExceedsTender",
-  "sales.refund_tender_not_eligible": "ui.refundNeedsDestinationShort",
-  "sales.refund_method_unavailable": "ui.refundMethodUnavailable",
-  "sales.refund_reason_required": "ui.refundReasonRequired",
-  "sales.refund_nothing_to_return": "ui.refundNothingToReturn",
-  "sales.refund_requires_completed": "ui.refundRequiresCompleted",
-  "sales.sale_not_found": "ui.refundSaleNotFound"
-};
-function refundErrorKey(code) {
-  const key = REFUND_MESSAGES[code];
-  if (!key) return "ui.refundFailed";
-  return key === "ui.refundNeedsDestinationShort" ? "ui.refundReasonNotEligible" : key;
-}
-function erplora3() {
-  const c5 = globalThis.erplora;
-  if (!c5) throw new Error("erplora SDK no inicializado por el shell");
-  return c5;
-}
-function newKey(saleId) {
-  const rnd = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  return `refund-${saleId}-${rnd}`;
-}
-var ErpSaleRefund = class extends i3 {
-  constructor() {
-    super(...arguments);
-    this.legs = [];
-    this.methods = [];
-    this.draft = {};
-    this.reason = "";
-    this.loading = false;
-    this.error = "";
-    this.busy = false;
-    this.covered = [];
-    this.tenderFillers = [];
-    this.tenderNotices = /* @__PURE__ */ new Map();
-    /** One instance per covered line, kept so it is not recreated on every render. */
-    this.tenderEls = /* @__PURE__ */ new Map();
-    /** La clave del intento, congelada: un reintento NO la renueva. */
-    this.key = "";
-    /** That line goes back to its external tender. The warning travels with the event because the
-     *  line's hole can be off-screen when the thumb is already on the refund button. */
-    this.onTenderRefundArmed = (e7) => {
-      const d3 = e7.detail;
-      if (!d3?.lineRef) return;
-      const next = new Map(this.tenderNotices);
-      next.set(d3.lineRef, String(d3.warning ?? ""));
-      this.tenderNotices = next;
-    };
-    /** The filler undid it, or said that line does not go back: its warning stops being announced. */
-    this.onTenderRefundDisarmed = (e7) => {
-      const d3 = e7.detail;
-      if (!d3?.lineRef) return;
-      const next = new Map(this.tenderNotices);
-      next.delete(d3.lineRef);
-      this.tenderNotices = next;
-    };
-  }
-  static {
-    this.styles = i`
-    :host { display:block; }
-    /* 🔴 El padding es PROPIO, no la clase ion-padding: esa clase vive en el stylesheet GLOBAL de Ionic y
-       NO atraviesa el shadow DOM, así que dentro de un módulo no aplica jamás. Medido en un
-       Chromium real contra el preview: el cuerpo salia con padding 0 y el boton pegado al borde en
-       los tres viewports. (Y no metas acentos graves en un comentario dentro de una plantilla css:
-       cierran el literal.) */
-    .refund-body, .refund-loading { padding:1rem; }
-    /* A 1440 px la ficha se estiraba a 1.404 px de ancho: un formulario de importes con el nombre
-       del medio a la izquierda y el campo a un metro a la derecha no se lee de un vistazo. Se
-       centra con un ancho de lectura, y por debajo de eso ocupa lo que haya. */
-    .refund-body { display:flex; flex-direction:column; gap:.85rem; max-width:46rem; margin:0 auto; }
-    .refund-loading { display:flex; align-items:center; gap:.6rem; }
-    h3 { margin:0; font-size:1.1rem; }
-    .hint { margin:0; color:var(--ion-color-medium,#8b897f); font-size:.85rem; }
-    .legs { display:flex; flex-direction:column; gap:.7rem; }
-    .leg { border:1px solid var(--ion-border-color,#e0ddd4); border-radius:var(--ok-radius,12px); padding:.7rem .8rem; }
-    .leg-head { display:flex; justify-content:space-between; align-items:baseline; gap:.5rem; }
-    /* El dinero se lee en columna y a la derecha, como en cualquier ERP: alineado a la izquierda
-       pegado al nombre del medio, la vista no tiene donde apoyarse para comparar dos importes. */
-    .leg-head ion-input { margin-left:auto; max-width:12rem; --padding-end:0; text-align:right; }
-    .leg-name { font-weight:700; }
-    .leg-figures { display:flex; gap:.9rem; flex-wrap:wrap; color:var(--ion-color-medium,#8b897f); font-size:.78rem; margin:.25rem 0 .1rem; }
-    /* El motivo se LEE sin tocar nada y sin ratón: nunca en un title ni dentro del botón. */
-    .leg-reason { margin:.35rem 0 0; color:var(--ion-color-warning-shade,#b26a00); font-size:.82rem; }
-    /* sales#166 - WHAT WAS NOT PAID IN MONEY: one card per covered line, with the slot hole
-       underneath. A rule separates it from the split above, because they answer two different
-       questions: how much money goes back, and what goes back to its tender. */
-    .rt-block { border-top:1px solid var(--ion-border-color,#e0ddd4); padding-top:.85rem;
-      display:flex; flex-direction:column; gap:.4rem; }
-    .rt-lbl { font-weight:700; }
-    .rt-list { list-style:none; margin:.2rem 0 0; padding:0; display:flex; flex-direction:column; gap:.5rem; }
-    .refund-tender-line { border:1px solid var(--ion-border-color,#e0ddd4);
-      border-radius:var(--ok-radius,12px); padding:.6rem .7rem; }
-    .rt-name { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .rt-slot { margin-top:.45rem; }
-    .rt-slot:empty { display:none; }
-    .totals { display:flex; justify-content:space-between; align-items:baseline; font-size:1.05rem; }
-    .totals .v { font-weight:800; }
-    .block { margin:0; color:var(--ion-color-danger,#d9480f); font-size:.85rem; }
-    /* El color de un ion-button dentro de shadow DOM NO puede venir del atributo color="danger":
-       esa via pasa por las reglas globales .ion-color-*, que tampoco atraviesan el shadow. Medido: el
-       boton salia con fondo transparente y texto blanco, o sea INVISIBLE sobre fondo claro. Las
-       custom properties de Ionic si entran, asi que el color se pone por ahi. */
-    ion-button.refund-confirm { --background:var(--ion-color-danger,#eb445a);
-      --background-activated:var(--ion-color-danger-shade,#cf3c4f);
-      --color:var(--ion-color-danger-contrast,#fff); --border-radius:12px; min-height:48px; }
-    /* Bloqueado se ve apagado, pero SIGUE recibiendo el toque (aria-disabled, no disabled).
-       🔴 El selector va sobre data-blocked, NO sobre [aria-disabled]: medido en un Chromium de
-       verdad contra el preview, Ionic MUEVE los aria-* del host al <button> nativo de su shadow
-       (el host se queda con class/expand/color y el interior recibe aria-disabled="true"). Es
-       decir: el contrato de accesibilidad se cumple, pero un CSS colgado de [aria-disabled] en el
-       host no casa NUNCA y el botón se ve encendido estando bloqueado.
-       (Y no metas acentos graves en un comentario dentro de una plantilla css: cierran el
-       literal.) */
-    ion-button.refund-confirm[data-blocked='true'] { opacity:.75; }
-    /* Tres viewports: por debajo de 560 px la ficha de la pata apila cifras e importe, que en una
-       tablet de mostrador en vertical se salían de la caja. */
-    @media (max-width: 559.98px) {
-      .leg-head { flex-direction:column; align-items:stretch; }
-      .leg-head ion-input { max-width:none; margin-left:0; }
-      .leg-figures { gap:.5rem; }
-    }
-  `;
-  }
-  connectedCallback() {
-    super.connectedCallback();
-    this.addEventListener("erp:tender-refund-armed", this.onTenderRefundArmed);
-    this.addEventListener("erp:tender-refund-disarmed", this.onTenderRefundDisarmed);
-    void this.load();
-  }
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    this.removeEventListener("erp:tender-refund-armed", this.onTenderRefundArmed);
-    this.removeEventListener("erp:tender-refund-disarmed", this.onTenderRefundDisarmed);
-  }
-  updated(changed) {
-    if (changed.has("saleId")) void this.load();
-    this.ensureTenderSlotsMounted();
-  }
-  async load() {
-    const saleId = this.saleId;
-    if (!saleId || this.loadedFor === saleId) return;
-    this.loadedFor = saleId;
-    this.loading = true;
-    this.error = "";
-    try {
-      const [sales, legs, methods] = await Promise.all([
-        erplora3().query("sales.get", { sale_id: saleId }),
-        erplora3().query("sales.refund_options", { sale_id: saleId }),
-        erplora3().query("sales.payment_methods")
-      ]);
-      this.sale = sales?.[0];
-      this.legs = (legs ?? []).filter((l3) => Number(l3.remaining) > 0 || Number(l3.charged) > 0);
-      this.methods = methods ?? [];
-      this.key = newKey(saleId);
-      const split = proportionalSplit(refundableTotal(this.legs), this.legs);
-      this.draft = Object.fromEntries(Object.entries(split).map(([id, amount]) => [id, { amount }]));
-      await this.loadTenderLines(saleId);
-    } catch (e7) {
-      const t7 = (k2) => erplora3().t(CATALOG3, k2);
-      const transport = transportErrorKey(e7);
-      this.error = transport ? t7(transport) : domainErrorText(CATALOG3, erplora3().locale, e7) || t7("ui.errorLoadSale");
-    } finally {
-      this.loading = false;
-    }
-  }
-  /**
-   * The ACCESSORY side of the screen: the lines another tender paid for, and the hole where its
-   * owner decides whether they go back (sales#166 / ADR-0386).
-   *
-   * 🔴 Nothing here may bring down the money refund, which is this screen's authority: a customer
-   * waiting for 18,00 € does not go without them because an accessory module did not answer. Hence
-   * a `catch` of its own on every step, and the worst case is a section that is not painted.
-   *
-   * And the lines are not asked for when nobody fills the slot: with no tender owner there is
-   * nothing to offer, so the read would be a call no pixel uses.
-   */
-  async loadTenderLines(saleId) {
-    this.covered = [];
-    this.tenderNotices = /* @__PURE__ */ new Map();
-    const sdk = erplora3();
-    if (typeof sdk.loadSlot !== "function") {
-      this.tenderFillers = [];
-      return;
-    }
-    try {
-      const rows3 = await sdk.loadSlot("sales.refund.tender") ?? [];
-      this.tenderFillers = rows3.map((f3) => String(f3.component));
-    } catch {
-      this.tenderFillers = [];
-    }
-    if (!this.tenderFillers.length) return;
-    try {
-      const lines = await sdk.query("sales.lines", { sale_id: saleId });
-      this.covered = coveredLines(lines ?? []);
-    } catch {
-      this.covered = [];
-    }
-  }
-  /**
-   * One filler instance per covered line. Idempotent: the screen re-renders on every keystroke of
-   * an amount.
-   *
-   * 🔴 The four properties are set BEFORE the element is inserted - same reason as in the till
-   * (sales#162): the filler starts its read in `connectedCallback`, so inserting it first would
-   * make it ask about an empty sale and paint "nothing to give back here" over a session that
-   * does go back.
-   */
-  ensureTenderSlotsMounted() {
-    if (!this.tenderFillers.length) return;
-    const ordinals = serviceOrdinals(this.covered);
-    const alive = /* @__PURE__ */ new Set();
-    for (const l3 of this.covered) {
-      const host = [...this.renderRoot.querySelectorAll(".refund-tender-line")].find((n6) => n6.dataset.line === l3.id)?.querySelector(".rt-slot");
-      if (!host) continue;
-      for (const component of this.tenderFillers) {
-        const key = `${component}::${l3.id}`;
-        alive.add(key);
-        let el = this.tenderEls.get(key);
-        if (!el) {
-          el = document.createElement(component);
-          this.tenderEls.set(key, el);
-        }
-        const props = el;
-        props.saleId = this.saleId ?? "";
-        props.lineRef = l3.id;
-        props.serviceId = l3.product_id ?? "";
-        props.lineIndex = ordinals.get(l3.id) ?? 0;
-        if (el.parentElement !== host) host.appendChild(el);
-      }
-    }
-    for (const [key, el] of [...this.tenderEls]) {
-      if (alive.has(key)) continue;
-      el.remove();
-      this.tenderEls.delete(key);
-    }
-  }
-  /** El operador teclea EUROS; lo que se guarda son céntimos. Nada más se recalcula: su reparto. */
-  setAmount(paymentId, text) {
-    this.draft = { ...this.draft, [paymentId]: { ...this.draft[paymentId], amount: parseAmountToCents(text) } };
-  }
-  setDestination(paymentId, methodId) {
-    this.draft = { ...this.draft, [paymentId]: { ...this.draft[paymentId], to: methodId || void 0 } };
-  }
-  proposeAll() {
-    const split = proportionalSplit(refundableTotal(this.legs), this.legs);
-    this.draft = Object.fromEntries(
-      Object.entries(split).map(([id, amount]) => [id, { ...this.draft[id], amount }])
-    );
-  }
-  /** Por qué no se puede confirmar, ya escrito. `undefined` = adelante. */
-  get blockText() {
-    const t7 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
-    const block = refundBlock(this.draft, this.legs);
-    if (block?.reason === "nothing") return t7("ui.refundNothingToReturn");
-    if (block?.reason === "over-cap") {
-      return t7("ui.refundOverCap", {
-        method: this.legName(block.leg),
-        amount: erplora3().formatMoney(block.amount),
-        remaining: erplora3().formatMoney(block.remaining)
-      });
-    }
-    if (block?.reason === "needs-destination") {
-      return t7("ui.refundNeedsDestination", { method: this.legName(block.leg) });
-    }
-    if (!this.reason.trim()) return t7("ui.refundReasonRequired");
-    return void 0;
-  }
-  /** El nombre del método en el idioma del usuario: la fila guarda el nombre canónico del seed. */
-  legName(leg) {
-    return payMethodDisplayName(
-      { id: leg.payment_method_id ?? "", name: leg.payment_method_name },
-      (k2) => erplora3().t(CATALOG3, k2)
-    );
-  }
-  async confirm() {
-    const t7 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
-    const why = this.blockText;
-    if (why) {
-      erplora3().notify?.({ type: "error", message: why });
-      return;
-    }
-    if (this.busy) return;
-    this.busy = true;
-    try {
-      const out = await erplora3().command("sales.refund", {
-        sale_id: this.saleId,
-        reason: this.reason.trim(),
-        // La MISMA clave en cada intento: un reintento recupera el documento ya escrito en vez de
-        // devolver el dinero por segunda vez (y `refund_ref` sigue siendo el mismo para services).
-        idempotency_key: this.key,
-        allocations: buildAllocations(this.draft, this.legs)
-      });
-      const committed = await this.commitTenderRefunds(out);
-      erplora3().notify?.({ type: "success", message: t7("ui.refundDone") });
-      if (!committed) erplora3().notify?.({ type: "error", message: t7("ui.refundTenderPending") });
-      this.dispatchEvent(new CustomEvent("refunded", { bubbles: true, composed: true, detail: { saleId: this.saleId } }));
-    } catch (e7) {
-      erplora3().notify?.({ type: "error", message: t7(refundErrorKey(errorCode(e7))) });
-    } finally {
-      this.busy = false;
-    }
-  }
-  /**
-   * Hands every filler the document reference and WAITS for whatever it commits to do.
-   *
-   * The contract is `respondWith`'s: the detail carries `waitFor(promise)`, and whoever calls it
-   * delays the screen's close until it settles. A filler that does not call it blocks nothing - the
-   * host cannot force anyone to answer, and waiting forever would be worse than not waiting.
-   *
-   * Returns whether everything promised went through. It never throws: the money is already back.
-   */
-  async commitTenderRefunds(out) {
-    const refundRef = String(out?.refund_ref ?? out?.refund_id ?? "");
-    if (!refundRef || !this.tenderEls.size) return true;
-    const refundId = String(out?.refund_id ?? refundRef);
-    const pending = [];
-    let dispatched = true;
-    for (const el of this.tenderEls.values()) {
-      const props = el;
-      props.refundId = refundId;
-      props.refundRef = refundRef;
-      try {
-        el.dispatchEvent(new CustomEvent("erp:tender-refund-commit", {
-          detail: {
-            saleId: this.saleId,
-            refundId,
-            refundRef,
-            waitFor: (p4) => {
-              pending.push(Promise.resolve(p4));
-            }
-          },
-          bubbles: false
-        }));
-      } catch {
-        dispatched = false;
-      }
-    }
-    if (!pending.length) return dispatched;
-    const settled = await Promise.allSettled(pending);
-    return dispatched && settled.every((s5) => s5.status === "fulfilled");
-  }
-  /**
-   * The lines an external tender paid for, with their hole underneath (sales#166 / ADR-0386).
-   *
-   * They are not part of the split above because they cost no money (`is_covered` -> net 0, tax 0),
-   * which is why they need a place of their own: without it, the only way to give a session back
-   * would be for the operator to remember to walk into the tender's module, which is exactly what
-   * the market gets wrong.
-   *
-   * With no fillers NOTHING is painted: no header, no list, no empty hole.
-   */
-  renderTenderLines() {
-    const t7 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
-    if (!this.tenderFillers.length || !this.covered.length) return A;
-    return b2`
-      <div class="rt-block">
-        <div class="rt-lbl">${t7("ui.refundLineTenders")}</div>
-        <p class="hint">${t7("ui.refundLineTendersHint")}</p>
-        <ul class="rt-list">
-          ${this.covered.map((l3) => b2`
-            <li class="refund-tender-line" data-line=${l3.id}>
-              <div class="rt-name">${l3.product_name ?? ""}</div>
-              <div class="rt-slot"></div>
-            </li>`)}
-        </ul>
-      </div>`;
-  }
-  /** The warnings the fillers want read BEFORE confirming. They warn; they never block. */
-  renderTenderNotices() {
-    const notices = [...this.tenderNotices.values()].filter((n6) => !!n6);
-    if (!notices.length) return A;
-    return notices.map((n6) => b2`
-      <ok-inline-feedback class="rt-notice" tone="warning" icon="alert-circle-outline">${n6}</ok-inline-feedback>`);
-  }
-  renderLeg(leg) {
-    const t7 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
-    const money2 = (c5) => erplora3().formatMoney(c5);
-    const entry = this.draft[leg.payment_id];
-    const eligible = Number(leg.refundable) === 1;
-    return b2`<div class="leg" data-leg=${leg.payment_id}>
-      <div class="leg-head">
-        <span class="leg-name">${this.legName(leg)}</span>
-        <ion-input
-          class="refund-amount"
-          type="text"
-          inputmode="decimal"
-          label=${t7("ui.refundLegAmount")}
-          label-placement="stacked"
-          .value=${formatAmountInput(entry?.amount ?? 0, erplora3().locale)}
-          @ionInput=${(e7) => this.setAmount(leg.payment_id, e7.detail?.value ?? "")}
-        ></ion-input>
-      </div>
-      <div class="leg-figures">
-        <span>${t7("ui.refundLegCharged")}: ${money2(leg.charged)}</span>
-        ${leg.refunded > 0 ? b2`<span>${t7("ui.refundLegRefunded")}: ${money2(leg.refunded)}</span>` : A}
-        <span>${t7("ui.refundLegRemaining")}: ${money2(leg.remaining)}</span>
-      </div>
-      ${eligible ? A : b2`<p class="leg-reason">${t7(reasonKey(leg.reason))}</p>
-            ${leg.remaining > 0 ? b2`<ion-select
-                  class="refund-destination"
-                  label=${t7("ui.refundDestination")}
-                  label-placement="stacked"
-                  .value=${entry?.to ?? ""}
-                  @ionChange=${(e7) => this.setDestination(leg.payment_id, e7.detail?.value ?? "")}
-                >
-                  ${this.methods.map((m4) => b2`<ion-select-option value=${m4.id}>${payMethodDisplayName(m4, (k2) => erplora3().t(CATALOG3, k2))}</ion-select-option>`)}
-                </ion-select>` : A}`}
-    </div>`;
-  }
-  render() {
-    const t7 = (k2, p4) => erplora3().t(CATALOG3, k2, p4);
-    if (this.loading) {
-      return b2`<div class="refund-loading">
-        <ion-spinner name="crescent"></ion-spinner>
-        <span>${t7("ui.refundLoading")}</span>
-      </div>`;
-    }
-    if (this.error) {
-      return b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>`;
-    }
-    if (!this.legs.length) {
-      return b2`<ok-inline-feedback tone="warning" icon="information-circle-outline">${t7("ui.refundNothing")}</ok-inline-feedback>`;
-    }
-    const total = draftTotal(this.draft);
-    const block = this.blockText;
-    return b2`<div class="refund-body">
-      <h3>${t7("ui.refundTitle", { number: this.sale?.sale_number ?? "" })}</h3>
-      <p class="hint">${t7("ui.refundExplain")}</p>
-      <div class="legs">${this.legs.map((l3) => this.renderLeg(l3))}</div>
-      ${this.renderTenderLines()}
-      <ion-button class="refund-propose" size="small" fill="clear" @click=${() => this.proposeAll()}>
-        ${t7("ui.refundProposeAll")}
-      </ion-button>
-      <ion-textarea
-        class="refund-reason"
-        label=${t7("ui.refundReasonLabel")}
-        label-placement="stacked"
-        maxlength="500"
-        placeholder=${t7("ui.refundReasonPlaceholder")}
-        .value=${this.reason}
-        @ionInput=${(e7) => {
-      this.reason = e7.detail?.value ?? "";
-    }}
-      ></ion-textarea>
-      <div class="totals">
-        <span>${t7("ui.refundTotalLabel")}</span>
-        <span class="v">${erplora3().formatMoney(total)}</span>
-      </div>
-      <!-- EL MOTIVO DEL BLOQUEO, ESCRITO EN LA PANTALLA: se lee sin tocar nada y sin un ratón. -->
-      ${block ? b2`<p class="block">${block}</p>` : A}
-      <!-- And the external tenders' warnings, next to the button: the line's hole can be
-           off-screen when the thumb is already on the refund button (sales#166). -->
-      ${this.renderTenderNotices()}
-      <!-- 🔴 aria-disabled, JAMÁS el disabled de Ionic: en modo ios es pointer-events:none y en
-           una tablet de mostrador el toque muere en silencio (sales#58). El estado ocupado sí es
-           disabled de verdad: ahí no hay nada que contestar y un segundo toque devolvería dos
-           veces. (Y no metas acentos graves en un comentario dentro de una plantilla Lit: cierran
-           el literal.) -->
-      <ion-button
-        class="refund-confirm"
-        expand="block"
-        ?disabled=${this.busy}
-        aria-disabled=${block ? "true" : A}
-        data-blocked=${block ? "true" : A}
-        @click=${() => {
-      void this.confirm();
-    }}
-      >${t7("ui.refundConfirm", { amount: erplora3().formatMoney(total) })}</ion-button>
-    </div>`;
-  }
-};
-__decorateClass([
-  n4({ attribute: "sale-id" })
-], ErpSaleRefund.prototype, "saleId", 2);
-__decorateClass([
-  r5()
-], ErpSaleRefund.prototype, "sale", 2);
-__decorateClass([
-  r5()
-], ErpSaleRefund.prototype, "legs", 2);
-__decorateClass([
-  r5()
-], ErpSaleRefund.prototype, "methods", 2);
-__decorateClass([
-  r5()
-], ErpSaleRefund.prototype, "draft", 2);
-__decorateClass([
-  r5()
-], ErpSaleRefund.prototype, "reason", 2);
-__decorateClass([
-  r5()
-], ErpSaleRefund.prototype, "loading", 2);
-__decorateClass([
-  r5()
-], ErpSaleRefund.prototype, "error", 2);
-__decorateClass([
-  r5()
-], ErpSaleRefund.prototype, "busy", 2);
-__decorateClass([
-  r5()
-], ErpSaleRefund.prototype, "covered", 2);
-__decorateClass([
-  r5()
-], ErpSaleRefund.prototype, "tenderFillers", 2);
-__decorateClass([
-  r5()
-], ErpSaleRefund.prototype, "tenderNotices", 2);
-define("erp-sale-refund", ErpSaleRefund);
 
 // ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
 var { I: t6 } = j;
@@ -13541,8 +13040,877 @@ __decorateClass11([
 var OkDataTable = _OkDataTable;
 define("ok-data-table", OkDataTable);
 
-// ui/components/erp-sales-list/erp-sales-list.ts
+// ui/lib/domain-error-text.ts
+var SOURCE_LANG = "en";
+function textFor(catalog, lang, code) {
+  const dict = catalog[lang];
+  const text = dict?.errors?.[code];
+  return typeof text === "string" && text.trim() ? text : "";
+}
+function domainErrorText(catalog, locale, e7) {
+  const code = e7?.code;
+  if (typeof code !== "string" || !code) return "";
+  return textFor(catalog, locale, code) || textFor(catalog, SOURCE_LANG, code);
+}
+
+// ui/components/erp-pos-quick-notes/erp-pos-quick-notes.ts
+var CATALOG3 = { es: es_default, en: en_default };
+function erplora3() {
+  const c5 = globalThis.erplora;
+  if (!c5) throw new Error("erplora SDK not initialised by the shell");
+  return c5;
+}
+function can(permission) {
+  const client = erplora3();
+  return typeof client.hasPermission === "function" ? client.hasPermission(permission) : true;
+}
+var ErpPosQuickNotes = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.newText = "";
+    this.newSortOrder = "";
+    this.saving = false;
+    this.formError = "";
+    this.editingId = null;
+    this.deleteTarget = null;
+    this.onLocaleChange = () => this.requestUpdate();
+  }
+  static {
+    this.styles = i`
+    :host { display:flex; flex-direction:column; height:100%; min-height:0;
+            font-family: system-ui, sans-serif; color: var(--ion-text-color, #1c1b18); }
+    .page { display:flex; flex-direction:column; min-height:0; flex:1 1 auto; }
+    .page > ok-data-table { flex:1 1 auto; min-height:0; }
+    .intro { margin:0 0 .6rem; font-size:.85rem; color: var(--ion-color-medium, #6b6b6b); }
+    .form { display:flex; flex-direction:column; gap:.7rem; }
+    .form ion-button[type='submit'] { align-self:flex-end; }
+  `;
+  }
+  get columns() {
+    const t7 = (k2) => erplora3().t(CATALOG3, k2);
+    return [
+      { key: "text", header: t7("ui.quickNoteText"), sortable: true, filterable: true, filterType: "text" },
+      // The position is the ONLY thing that decides the order of the chips at the till, so it is a
+      // column and not a hidden field: the business has to see what it is changing.
+      { key: "sort_order", header: t7("ui.quickNoteOrder"), align: "right", sortable: true }
+    ];
+  }
+  get actions() {
+    const t7 = (k2) => erplora3().t(CATALOG3, k2);
+    return can("sales.manage_settings") ? [
+      { id: "edit", label: t7("ui.quickNoteEdit"), icon: "create-outline" },
+      { id: "delete", label: t7("ui.quickNoteDelete"), icon: "trash-outline", color: "danger" }
+    ] : [];
+  }
+  async connectedCallback() {
+    super.connectedCallback();
+    window.addEventListener("erplora:locale-changed", this.onLocaleChange);
+    this.ctrl = createListController(
+      erplora3(),
+      "sales.quick_notes.list",
+      () => this.requestUpdate(),
+      { pageSize: 50, sort: "sort_order", dir: "asc" }
+    );
+    await this.ctrl.load();
+  }
+  disconnectedCallback() {
+    window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
+    super.disconnectedCallback();
+  }
+  dataTable() {
+    return this.renderRoot.querySelector("ok-data-table");
+  }
+  async onRowAction(ev) {
+    if (!can("sales.manage_settings")) return;
+    const { actionId, row } = ev.detail;
+    const note = row;
+    if (actionId === "edit") {
+      this.editingId = note.id;
+      this.newText = note.text ?? "";
+      this.newSortOrder = String(note.sort_order ?? 0);
+      this.formError = "";
+      this.dataTable()?.open("create");
+    } else if (actionId === "delete") {
+      this.deleteTarget = note;
+    }
+  }
+  /** Back to a clean CREATE form. */
+  cancelEdit() {
+    this.editingId = null;
+    this.newText = "";
+    this.newSortOrder = "";
+    this.formError = "";
+  }
+  /** Submit: create OR update by `editingId`. */
+  async save(ev) {
+    ev.preventDefault();
+    if (!can("sales.manage_settings")) return;
+    const text = this.newText.trim();
+    if (!text) return;
+    this.saving = true;
+    this.formError = "";
+    try {
+      const fields = { text, sort_order: Number(this.newSortOrder) || 0 };
+      if (this.editingId) {
+        await erplora3().command("sales.quick_notes.update", { quick_note_id: this.editingId, ...fields });
+      } else {
+        await erplora3().command("sales.quick_notes.create", fields);
+      }
+      this.cancelEdit();
+      this.dataTable()?.close();
+      await this.ctrl.load();
+    } catch (e7) {
+      this.formError = domainErrorText(CATALOG3, erplora3().locale, e7) || erplora3().t(CATALOG3, "ui.quickNoteSaveFailed");
+    } finally {
+      this.saving = false;
+    }
+  }
+  async confirmDelete() {
+    const target = this.deleteTarget;
+    if (!target || !can("sales.manage_settings")) return;
+    this.saving = true;
+    try {
+      await erplora3().command("sales.quick_notes.delete", { quick_note_id: target.id });
+      this.deleteTarget = null;
+      await this.ctrl.load();
+    } catch (e7) {
+      this.formError = domainErrorText(CATALOG3, erplora3().locale, e7) || erplora3().t(CATALOG3, "ui.quickNoteDeleteFailed");
+      this.deleteTarget = null;
+    } finally {
+      this.saving = false;
+    }
+  }
+  renderDeleteConfirm() {
+    const t7 = (k2) => erplora3().t(CATALOG3, k2);
+    return b2`<ion-modal .isOpen=${!!this.deleteTarget}
+        @ionModalDidDismiss=${() => {
+      this.deleteTarget = null;
+    }}>
+      <ion-header class="ion-no-border">
+        <ion-toolbar><ion-title>${t7("ui.quickNoteDeleteTitle")}</ion-title></ion-toolbar>
+      </ion-header>
+      <!-- Self-styled: ion-modal is reparented to <body>, this component's CSS does not reach it. -->
+      <ion-content class="ion-padding">
+        <ion-list lines="none">
+          <ion-item>
+            <ion-label class="ion-text-wrap">
+              <b>${this.deleteTarget?.text ?? ""}</b> — ${t7("ui.quickNoteDeleteHint")}
+            </ion-label>
+          </ion-item>
+        </ion-list>
+        <ion-button class="ion-margin-top" expand="block" color="danger" ?disabled=${this.saving}
+          @click=${() => this.confirmDelete()}>${t7("ui.quickNoteDelete")}</ion-button>
+        <ion-button expand="block" fill="outline" ?disabled=${this.saving}
+          @click=${() => {
+      this.deleteTarget = null;
+    }}>${t7("ui.quickNoteCancel")}</ion-button>
+      </ion-content>
+    </ion-modal>`;
+  }
+  render() {
+    const t7 = (k2) => erplora3().t(CATALOG3, k2);
+    const editable = can("sales.manage_settings");
+    return b2`<div class="page">
+      <p class="intro">${t7("ui.quickNotesIntro")}</p>
+      ${this.formError ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>` : A}
+      ${this.ctrl?.error ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : A}
+      <ok-data-table
+        .serverSide=${true}
+        .fill=${true}
+        .views=${true}
+        .addable=${editable}
+        .cardTitle=${(row) => String(row.text ?? "")}
+        .columns=${this.columns}
+        .rows=${this.ctrl?.rows ?? []}
+        .total=${this.ctrl?.total ?? 0}
+        .page=${this.ctrl?.state.page ?? 0}
+        .pageSize=${this.ctrl?.state.pageSize ?? 50}
+        .sort=${this.ctrl?.state.sort}
+        .sortDir=${this.ctrl?.state.dir ?? "asc"}
+        .searchable=${true}
+        .searchPlaceholder=${t7("ui.quickNotesSearch")}
+        .actions=${this.actions}
+        .rowClickable=${editable}
+        .emptyMessage=${this.ctrl?.loading ? t7("ui.quickNotesLoading") : t7("ui.quickNotesEmpty")}
+        @rowAction=${(e7) => this.onRowAction(e7)}
+        @rowClick=${(e7) => this.onRowAction({ detail: { actionId: "edit", row: e7.detail.row } })}
+        @pageChange=${(e7) => this.ctrl.setPage(e7.detail)}
+        @pageSizeChange=${(e7) => this.ctrl.setPageSize(e7.detail)}
+        @sortChange=${(e7) => this.ctrl.setSort(e7.detail.sort, e7.detail.dir)}
+        @searchChange=${(e7) => this.ctrl.setSearch(e7.detail)}
+        @filterChange=${(e7) => this.ctrl.setFilter(e7.detail.col, e7.detail.value)}>
+        <form slot="create" class="form" @submit=${(e7) => this.save(e7)}>
+          ${this.editingId ? b2`<ok-inline-feedback tone="info" icon="create-outline">
+                <b>${t7("ui.quickNoteEditing")}</b> — ${this.newText}
+                <ion-button size="small" fill="clear" @click=${() => this.cancelEdit()}>${t7("ui.quickNoteEditCancel")}</ion-button>
+              </ok-inline-feedback>` : A}
+          <!-- mode="md" is not decoration: the shell pins Ionic's ios mode (ADR-0143) and fill
+               paints in md only, so without it the box has no border and the person cannot see
+               where to type. -->
+          <ion-input mode="md" fill="outline" label-placement="floating" maxlength="80"
+            label=${t7("ui.quickNoteText")} .value=${this.newText}
+            @ionInput=${(e7) => {
+      this.newText = e7.target.value;
+    }}></ion-input>
+          <ion-input mode="md" fill="outline" label-placement="floating" type="number" min="0" step="1"
+            label=${t7("ui.quickNoteOrder")} .value=${this.newSortOrder}
+            @ionInput=${(e7) => {
+      this.newSortOrder = e7.target.value;
+    }}></ion-input>
+          <ion-button type="submit" ?disabled=${this.saving || !this.newText.trim()}>
+            ${this.saving ? t7("ui.quickNoteSaving") : this.editingId ? t7("ui.quickNoteSave") : t7("ui.quickNoteAdd")}
+          </ion-button>
+        </form>
+      </ok-data-table>
+      ${this.renderDeleteConfirm()}
+    </div>`;
+  }
+};
+__decorateClass([
+  r5()
+], ErpPosQuickNotes.prototype, "newText", 2);
+__decorateClass([
+  r5()
+], ErpPosQuickNotes.prototype, "newSortOrder", 2);
+__decorateClass([
+  r5()
+], ErpPosQuickNotes.prototype, "saving", 2);
+__decorateClass([
+  r5()
+], ErpPosQuickNotes.prototype, "formError", 2);
+__decorateClass([
+  r5()
+], ErpPosQuickNotes.prototype, "editingId", 2);
+__decorateClass([
+  r5()
+], ErpPosQuickNotes.prototype, "deleteTarget", 2);
+define("erp-pos-quick-notes", ErpPosQuickNotes);
+
+// ui/lib/refund-allocation.ts
+var cents = (n6) => Math.max(0, Math.round(Number(n6) || 0));
+function refundableTotal(legs) {
+  return legs.reduce((sum, l3) => sum + cents(l3.remaining), 0);
+}
+function draftTotal(draft) {
+  return Object.values(draft).reduce((sum, e7) => sum + cents(e7?.amount), 0);
+}
+function proportionalSplit(amount, legs) {
+  const split = {};
+  for (const l3 of legs) split[l3.payment_id] = 0;
+  const weights = legs.map((l3) => cents(l3.remaining));
+  const totalWeight = weights.reduce((a3, b3) => a3 + b3, 0);
+  const magnitude = Math.min(cents(amount), totalWeight);
+  if (magnitude <= 0 || totalWeight <= 0) return split;
+  const remainders = [];
+  let assigned = 0;
+  legs.forEach((l3, i7) => {
+    const numerator = magnitude * weights[i7];
+    const part = Math.floor(numerator / totalWeight);
+    split[l3.payment_id] = part;
+    assigned += part;
+    remainders.push({ rest: numerator % totalWeight, index: i7 });
+  });
+  remainders.sort((a3, b3) => b3.rest - a3.rest || a3.index - b3.index);
+  let left = magnitude - assigned;
+  for (const { index } of remainders) {
+    if (left <= 0) break;
+    split[legs[index].payment_id] += 1;
+    left -= 1;
+  }
+  return split;
+}
+function refundBlock(draft, legs) {
+  const known = legs.reduce((sum, l3) => sum + cents(draft[l3.payment_id]?.amount), 0);
+  if (known <= 0) return { reason: "nothing" };
+  const ordered = [...legs].sort((a3, b3) => a3.sort_order - b3.sort_order);
+  for (const leg of ordered) {
+    const amount = cents(draft[leg.payment_id]?.amount);
+    if (amount > cents(leg.remaining)) {
+      return { reason: "over-cap", leg, amount, remaining: cents(leg.remaining) };
+    }
+  }
+  for (const leg of ordered) {
+    const entry = draft[leg.payment_id];
+    const amount = cents(entry?.amount);
+    if (amount > 0 && Number(leg.refundable) !== 1 && !entry?.to) {
+      return { reason: "needs-destination", leg, why: leg.reason };
+    }
+  }
+  return void 0;
+}
+function buildAllocations(draft, legs) {
+  return [...legs].sort((a3, b3) => a3.sort_order - b3.sort_order).flatMap((leg) => {
+    const entry = draft[leg.payment_id];
+    const amount = cents(entry?.amount);
+    if (amount <= 0) return [];
+    const changed = entry?.to && entry.to !== leg.payment_method_id;
+    return [{ payment_id: leg.payment_id, amount, ...changed ? { to_payment_method_id: entry.to } : {} }];
+  });
+}
+var REASON_KEYS = {
+  already_refunded: "ui.refundReasonAlreadyRefunded",
+  method_unavailable: "ui.refundReasonMethodUnavailable"
+};
+function reasonKey(reason) {
+  return REASON_KEYS[reason] ?? "ui.refundReasonNotEligible";
+}
+function parseAmountToCents(text) {
+  const raw = String(text ?? "").replace(/[^\d.,-]/g, "");
+  if (!raw || raw.startsWith("-")) return 0;
+  const cut = Math.max(raw.lastIndexOf(","), raw.lastIndexOf("."));
+  const digits = (part) => part.replace(/[^\d]/g, "");
+  const whole = digits(cut >= 0 ? raw.slice(0, cut) : raw);
+  const frac = cut >= 0 ? digits(raw.slice(cut + 1)) : "";
+  const padded = (frac + "000").slice(0, 3);
+  const units = Number(whole || "0");
+  if (!Number.isFinite(units)) return 0;
+  const cents2 = units * 100 + Number(padded.slice(0, 2));
+  return Number(padded[2]) >= 5 ? cents2 + 1 : cents2;
+}
+function formatAmountInput(amount, locale) {
+  const fixed = (Math.max(0, Math.round(Number(amount) || 0)) / 100).toFixed(2);
+  let decimal = ".";
+  try {
+    decimal = new Intl.NumberFormat(locale || void 0).formatToParts(1.1).find((p4) => p4.type === "decimal")?.value ?? ".";
+  } catch {
+    decimal = ".";
+  }
+  return fixed.replace(".", decimal);
+}
+
+// ui/lib/refund-tender.ts
+function coveredLines(lines) {
+  return lines.filter((l3) => !!l3.id && !!l3.product_id && isCovered(l3));
+}
+function isCovered(l3) {
+  return l3.is_covered === true || Number(l3.is_covered ?? 0) > 0;
+}
+function serviceOrdinals(covered) {
+  const seen = /* @__PURE__ */ new Map();
+  const out = /* @__PURE__ */ new Map();
+  for (const l3 of covered) {
+    const service = l3.product_id ?? "";
+    const n6 = seen.get(service) ?? 0;
+    out.set(l3.id, n6);
+    seen.set(service, n6 + 1);
+  }
+  return out;
+}
+
+// ui/components/erp-sale-refund/erp-sale-refund.ts
 var CATALOG4 = { es: es_default, en: en_default };
+var REFUND_MESSAGES = {
+  "sales.refund_exceeds_tender": "ui.refundExceedsTender",
+  "sales.refund_tender_not_eligible": "ui.refundNeedsDestinationShort",
+  "sales.refund_method_unavailable": "ui.refundMethodUnavailable",
+  "sales.refund_reason_required": "ui.refundReasonRequired",
+  "sales.refund_nothing_to_return": "ui.refundNothingToReturn",
+  "sales.refund_requires_completed": "ui.refundRequiresCompleted",
+  "sales.sale_not_found": "ui.refundSaleNotFound"
+};
+function refundErrorKey(code) {
+  const key = REFUND_MESSAGES[code];
+  if (!key) return "ui.refundFailed";
+  return key === "ui.refundNeedsDestinationShort" ? "ui.refundReasonNotEligible" : key;
+}
+function erplora4() {
+  const c5 = globalThis.erplora;
+  if (!c5) throw new Error("erplora SDK no inicializado por el shell");
+  return c5;
+}
+function newKey(saleId) {
+  const rnd = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `refund-${saleId}-${rnd}`;
+}
+var ErpSaleRefund = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.legs = [];
+    this.methods = [];
+    this.draft = {};
+    this.reason = "";
+    this.loading = false;
+    this.error = "";
+    this.busy = false;
+    this.covered = [];
+    this.tenderFillers = [];
+    this.tenderNotices = /* @__PURE__ */ new Map();
+    /** One instance per covered line, kept so it is not recreated on every render. */
+    this.tenderEls = /* @__PURE__ */ new Map();
+    /** La clave del intento, congelada: un reintento NO la renueva. */
+    this.key = "";
+    /** That line goes back to its external tender. The warning travels with the event because the
+     *  line's hole can be off-screen when the thumb is already on the refund button. */
+    this.onTenderRefundArmed = (e7) => {
+      const d3 = e7.detail;
+      if (!d3?.lineRef) return;
+      const next = new Map(this.tenderNotices);
+      next.set(d3.lineRef, String(d3.warning ?? ""));
+      this.tenderNotices = next;
+    };
+    /** The filler undid it, or said that line does not go back: its warning stops being announced. */
+    this.onTenderRefundDisarmed = (e7) => {
+      const d3 = e7.detail;
+      if (!d3?.lineRef) return;
+      const next = new Map(this.tenderNotices);
+      next.delete(d3.lineRef);
+      this.tenderNotices = next;
+    };
+  }
+  static {
+    this.styles = i`
+    :host { display:block; }
+    /* 🔴 El padding es PROPIO, no la clase ion-padding: esa clase vive en el stylesheet GLOBAL de Ionic y
+       NO atraviesa el shadow DOM, así que dentro de un módulo no aplica jamás. Medido en un
+       Chromium real contra el preview: el cuerpo salia con padding 0 y el boton pegado al borde en
+       los tres viewports. (Y no metas acentos graves en un comentario dentro de una plantilla css:
+       cierran el literal.) */
+    .refund-body, .refund-loading { padding:1rem; }
+    /* A 1440 px la ficha se estiraba a 1.404 px de ancho: un formulario de importes con el nombre
+       del medio a la izquierda y el campo a un metro a la derecha no se lee de un vistazo. Se
+       centra con un ancho de lectura, y por debajo de eso ocupa lo que haya. */
+    .refund-body { display:flex; flex-direction:column; gap:.85rem; max-width:46rem; margin:0 auto; }
+    .refund-loading { display:flex; align-items:center; gap:.6rem; }
+    h3 { margin:0; font-size:1.1rem; }
+    .hint { margin:0; color:var(--ion-color-medium,#8b897f); font-size:.85rem; }
+    .legs { display:flex; flex-direction:column; gap:.7rem; }
+    .leg { border:1px solid var(--ion-border-color,#e0ddd4); border-radius:var(--ok-radius,12px); padding:.7rem .8rem; }
+    .leg-head { display:flex; justify-content:space-between; align-items:baseline; gap:.5rem; }
+    /* El dinero se lee en columna y a la derecha, como en cualquier ERP: alineado a la izquierda
+       pegado al nombre del medio, la vista no tiene donde apoyarse para comparar dos importes. */
+    .leg-head ion-input { margin-left:auto; max-width:12rem; --padding-end:0; text-align:right; }
+    .leg-name { font-weight:700; }
+    .leg-figures { display:flex; gap:.9rem; flex-wrap:wrap; color:var(--ion-color-medium,#8b897f); font-size:.78rem; margin:.25rem 0 .1rem; }
+    /* El motivo se LEE sin tocar nada y sin ratón: nunca en un title ni dentro del botón. */
+    .leg-reason { margin:.35rem 0 0; color:var(--ion-color-warning-shade,#b26a00); font-size:.82rem; }
+    /* sales#166 - WHAT WAS NOT PAID IN MONEY: one card per covered line, with the slot hole
+       underneath. A rule separates it from the split above, because they answer two different
+       questions: how much money goes back, and what goes back to its tender. */
+    .rt-block { border-top:1px solid var(--ion-border-color,#e0ddd4); padding-top:.85rem;
+      display:flex; flex-direction:column; gap:.4rem; }
+    .rt-lbl { font-weight:700; }
+    .rt-list { list-style:none; margin:.2rem 0 0; padding:0; display:flex; flex-direction:column; gap:.5rem; }
+    .refund-tender-line { border:1px solid var(--ion-border-color,#e0ddd4);
+      border-radius:var(--ok-radius,12px); padding:.6rem .7rem; }
+    .rt-name { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .rt-slot { margin-top:.45rem; }
+    .rt-slot:empty { display:none; }
+    .totals { display:flex; justify-content:space-between; align-items:baseline; font-size:1.05rem; }
+    .totals .v { font-weight:800; }
+    .block { margin:0; color:var(--ion-color-danger,#d9480f); font-size:.85rem; }
+    /* El color de un ion-button dentro de shadow DOM NO puede venir del atributo color="danger":
+       esa via pasa por las reglas globales .ion-color-*, que tampoco atraviesan el shadow. Medido: el
+       boton salia con fondo transparente y texto blanco, o sea INVISIBLE sobre fondo claro. Las
+       custom properties de Ionic si entran, asi que el color se pone por ahi. */
+    ion-button.refund-confirm { --background:var(--ion-color-danger,#eb445a);
+      --background-activated:var(--ion-color-danger-shade,#cf3c4f);
+      --color:var(--ion-color-danger-contrast,#fff); --border-radius:12px; min-height:48px; }
+    /* Bloqueado se ve apagado, pero SIGUE recibiendo el toque (aria-disabled, no disabled).
+       🔴 El selector va sobre data-blocked, NO sobre [aria-disabled]: medido en un Chromium de
+       verdad contra el preview, Ionic MUEVE los aria-* del host al <button> nativo de su shadow
+       (el host se queda con class/expand/color y el interior recibe aria-disabled="true"). Es
+       decir: el contrato de accesibilidad se cumple, pero un CSS colgado de [aria-disabled] en el
+       host no casa NUNCA y el botón se ve encendido estando bloqueado.
+       (Y no metas acentos graves en un comentario dentro de una plantilla css: cierran el
+       literal.) */
+    ion-button.refund-confirm[data-blocked='true'] { opacity:.75; }
+    /* Tres viewports: por debajo de 560 px la ficha de la pata apila cifras e importe, que en una
+       tablet de mostrador en vertical se salían de la caja. */
+    @media (max-width: 559.98px) {
+      .leg-head { flex-direction:column; align-items:stretch; }
+      .leg-head ion-input { max-width:none; margin-left:0; }
+      .leg-figures { gap:.5rem; }
+    }
+  `;
+  }
+  connectedCallback() {
+    super.connectedCallback();
+    this.addEventListener("erp:tender-refund-armed", this.onTenderRefundArmed);
+    this.addEventListener("erp:tender-refund-disarmed", this.onTenderRefundDisarmed);
+    void this.load();
+  }
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.removeEventListener("erp:tender-refund-armed", this.onTenderRefundArmed);
+    this.removeEventListener("erp:tender-refund-disarmed", this.onTenderRefundDisarmed);
+  }
+  updated(changed) {
+    if (changed.has("saleId")) void this.load();
+    this.ensureTenderSlotsMounted();
+  }
+  async load() {
+    const saleId = this.saleId;
+    if (!saleId || this.loadedFor === saleId) return;
+    this.loadedFor = saleId;
+    this.loading = true;
+    this.error = "";
+    try {
+      const [sales, legs, methods] = await Promise.all([
+        erplora4().query("sales.get", { sale_id: saleId }),
+        erplora4().query("sales.refund_options", { sale_id: saleId }),
+        erplora4().query("sales.payment_methods")
+      ]);
+      this.sale = sales?.[0];
+      this.legs = (legs ?? []).filter((l3) => Number(l3.remaining) > 0 || Number(l3.charged) > 0);
+      this.methods = methods ?? [];
+      this.key = newKey(saleId);
+      const split = proportionalSplit(refundableTotal(this.legs), this.legs);
+      this.draft = Object.fromEntries(Object.entries(split).map(([id, amount]) => [id, { amount }]));
+      await this.loadTenderLines(saleId);
+    } catch (e7) {
+      const t7 = (k2) => erplora4().t(CATALOG4, k2);
+      const transport = transportErrorKey(e7);
+      this.error = transport ? t7(transport) : domainErrorText(CATALOG4, erplora4().locale, e7) || t7("ui.errorLoadSale");
+    } finally {
+      this.loading = false;
+    }
+  }
+  /**
+   * The ACCESSORY side of the screen: the lines another tender paid for, and the hole where its
+   * owner decides whether they go back (sales#166 / ADR-0386).
+   *
+   * 🔴 Nothing here may bring down the money refund, which is this screen's authority: a customer
+   * waiting for 18,00 € does not go without them because an accessory module did not answer. Hence
+   * a `catch` of its own on every step, and the worst case is a section that is not painted.
+   *
+   * And the lines are not asked for when nobody fills the slot: with no tender owner there is
+   * nothing to offer, so the read would be a call no pixel uses.
+   */
+  async loadTenderLines(saleId) {
+    this.covered = [];
+    this.tenderNotices = /* @__PURE__ */ new Map();
+    const sdk = erplora4();
+    if (typeof sdk.loadSlot !== "function") {
+      this.tenderFillers = [];
+      return;
+    }
+    try {
+      const rows3 = await sdk.loadSlot("sales.refund.tender") ?? [];
+      this.tenderFillers = rows3.map((f3) => String(f3.component));
+    } catch {
+      this.tenderFillers = [];
+    }
+    if (!this.tenderFillers.length) return;
+    try {
+      const lines = await sdk.query("sales.lines", { sale_id: saleId });
+      this.covered = coveredLines(lines ?? []);
+    } catch {
+      this.covered = [];
+    }
+  }
+  /**
+   * One filler instance per covered line. Idempotent: the screen re-renders on every keystroke of
+   * an amount.
+   *
+   * 🔴 The four properties are set BEFORE the element is inserted - same reason as in the till
+   * (sales#162): the filler starts its read in `connectedCallback`, so inserting it first would
+   * make it ask about an empty sale and paint "nothing to give back here" over a session that
+   * does go back.
+   */
+  ensureTenderSlotsMounted() {
+    if (!this.tenderFillers.length) return;
+    const ordinals = serviceOrdinals(this.covered);
+    const alive = /* @__PURE__ */ new Set();
+    for (const l3 of this.covered) {
+      const host = [...this.renderRoot.querySelectorAll(".refund-tender-line")].find((n6) => n6.dataset.line === l3.id)?.querySelector(".rt-slot");
+      if (!host) continue;
+      for (const component of this.tenderFillers) {
+        const key = `${component}::${l3.id}`;
+        alive.add(key);
+        let el = this.tenderEls.get(key);
+        if (!el) {
+          el = document.createElement(component);
+          this.tenderEls.set(key, el);
+        }
+        const props = el;
+        props.saleId = this.saleId ?? "";
+        props.lineRef = l3.id;
+        props.serviceId = l3.product_id ?? "";
+        props.lineIndex = ordinals.get(l3.id) ?? 0;
+        if (el.parentElement !== host) host.appendChild(el);
+      }
+    }
+    for (const [key, el] of [...this.tenderEls]) {
+      if (alive.has(key)) continue;
+      el.remove();
+      this.tenderEls.delete(key);
+    }
+  }
+  /** El operador teclea EUROS; lo que se guarda son céntimos. Nada más se recalcula: su reparto. */
+  setAmount(paymentId, text) {
+    this.draft = { ...this.draft, [paymentId]: { ...this.draft[paymentId], amount: parseAmountToCents(text) } };
+  }
+  setDestination(paymentId, methodId) {
+    this.draft = { ...this.draft, [paymentId]: { ...this.draft[paymentId], to: methodId || void 0 } };
+  }
+  proposeAll() {
+    const split = proportionalSplit(refundableTotal(this.legs), this.legs);
+    this.draft = Object.fromEntries(
+      Object.entries(split).map(([id, amount]) => [id, { ...this.draft[id], amount }])
+    );
+  }
+  /** Por qué no se puede confirmar, ya escrito. `undefined` = adelante. */
+  get blockText() {
+    const t7 = (k2, p4) => erplora4().t(CATALOG4, k2, p4);
+    const block = refundBlock(this.draft, this.legs);
+    if (block?.reason === "nothing") return t7("ui.refundNothingToReturn");
+    if (block?.reason === "over-cap") {
+      return t7("ui.refundOverCap", {
+        method: this.legName(block.leg),
+        amount: erplora4().formatMoney(block.amount),
+        remaining: erplora4().formatMoney(block.remaining)
+      });
+    }
+    if (block?.reason === "needs-destination") {
+      return t7("ui.refundNeedsDestination", { method: this.legName(block.leg) });
+    }
+    if (!this.reason.trim()) return t7("ui.refundReasonRequired");
+    return void 0;
+  }
+  /** El nombre del método en el idioma del usuario: la fila guarda el nombre canónico del seed. */
+  legName(leg) {
+    return payMethodDisplayName(
+      { id: leg.payment_method_id ?? "", name: leg.payment_method_name },
+      (k2) => erplora4().t(CATALOG4, k2)
+    );
+  }
+  async confirm() {
+    const t7 = (k2, p4) => erplora4().t(CATALOG4, k2, p4);
+    const why = this.blockText;
+    if (why) {
+      erplora4().notify?.({ type: "error", message: why });
+      return;
+    }
+    if (this.busy) return;
+    this.busy = true;
+    try {
+      const out = await erplora4().command("sales.refund", {
+        sale_id: this.saleId,
+        reason: this.reason.trim(),
+        // La MISMA clave en cada intento: un reintento recupera el documento ya escrito en vez de
+        // devolver el dinero por segunda vez (y `refund_ref` sigue siendo el mismo para services).
+        idempotency_key: this.key,
+        allocations: buildAllocations(this.draft, this.legs)
+      });
+      const committed = await this.commitTenderRefunds(out);
+      erplora4().notify?.({ type: "success", message: t7("ui.refundDone") });
+      if (!committed) erplora4().notify?.({ type: "error", message: t7("ui.refundTenderPending") });
+      this.dispatchEvent(new CustomEvent("refunded", { bubbles: true, composed: true, detail: { saleId: this.saleId } }));
+    } catch (e7) {
+      erplora4().notify?.({ type: "error", message: t7(refundErrorKey(errorCode(e7))) });
+    } finally {
+      this.busy = false;
+    }
+  }
+  /**
+   * Hands every filler the document reference and WAITS for whatever it commits to do.
+   *
+   * The contract is `respondWith`'s: the detail carries `waitFor(promise)`, and whoever calls it
+   * delays the screen's close until it settles. A filler that does not call it blocks nothing - the
+   * host cannot force anyone to answer, and waiting forever would be worse than not waiting.
+   *
+   * Returns whether everything promised went through. It never throws: the money is already back.
+   */
+  async commitTenderRefunds(out) {
+    const refundRef = String(out?.refund_ref ?? out?.refund_id ?? "");
+    if (!refundRef || !this.tenderEls.size) return true;
+    const refundId = String(out?.refund_id ?? refundRef);
+    const pending = [];
+    let dispatched = true;
+    for (const el of this.tenderEls.values()) {
+      const props = el;
+      props.refundId = refundId;
+      props.refundRef = refundRef;
+      try {
+        el.dispatchEvent(new CustomEvent("erp:tender-refund-commit", {
+          detail: {
+            saleId: this.saleId,
+            refundId,
+            refundRef,
+            waitFor: (p4) => {
+              pending.push(Promise.resolve(p4));
+            }
+          },
+          bubbles: false
+        }));
+      } catch {
+        dispatched = false;
+      }
+    }
+    if (!pending.length) return dispatched;
+    const settled = await Promise.allSettled(pending);
+    return dispatched && settled.every((s5) => s5.status === "fulfilled");
+  }
+  /**
+   * The lines an external tender paid for, with their hole underneath (sales#166 / ADR-0386).
+   *
+   * They are not part of the split above because they cost no money (`is_covered` -> net 0, tax 0),
+   * which is why they need a place of their own: without it, the only way to give a session back
+   * would be for the operator to remember to walk into the tender's module, which is exactly what
+   * the market gets wrong.
+   *
+   * With no fillers NOTHING is painted: no header, no list, no empty hole.
+   */
+  renderTenderLines() {
+    const t7 = (k2, p4) => erplora4().t(CATALOG4, k2, p4);
+    if (!this.tenderFillers.length || !this.covered.length) return A;
+    return b2`
+      <div class="rt-block">
+        <div class="rt-lbl">${t7("ui.refundLineTenders")}</div>
+        <p class="hint">${t7("ui.refundLineTendersHint")}</p>
+        <ul class="rt-list">
+          ${this.covered.map((l3) => b2`
+            <li class="refund-tender-line" data-line=${l3.id}>
+              <div class="rt-name">${l3.product_name ?? ""}</div>
+              <div class="rt-slot"></div>
+            </li>`)}
+        </ul>
+      </div>`;
+  }
+  /** The warnings the fillers want read BEFORE confirming. They warn; they never block. */
+  renderTenderNotices() {
+    const notices = [...this.tenderNotices.values()].filter((n6) => !!n6);
+    if (!notices.length) return A;
+    return notices.map((n6) => b2`
+      <ok-inline-feedback class="rt-notice" tone="warning" icon="alert-circle-outline">${n6}</ok-inline-feedback>`);
+  }
+  renderLeg(leg) {
+    const t7 = (k2, p4) => erplora4().t(CATALOG4, k2, p4);
+    const money2 = (c5) => erplora4().formatMoney(c5);
+    const entry = this.draft[leg.payment_id];
+    const eligible = Number(leg.refundable) === 1;
+    return b2`<div class="leg" data-leg=${leg.payment_id}>
+      <div class="leg-head">
+        <span class="leg-name">${this.legName(leg)}</span>
+        <ion-input
+          class="refund-amount"
+          type="text"
+          inputmode="decimal"
+          label=${t7("ui.refundLegAmount")}
+          label-placement="stacked"
+          .value=${formatAmountInput(entry?.amount ?? 0, erplora4().locale)}
+          @ionInput=${(e7) => this.setAmount(leg.payment_id, e7.detail?.value ?? "")}
+        ></ion-input>
+      </div>
+      <div class="leg-figures">
+        <span>${t7("ui.refundLegCharged")}: ${money2(leg.charged)}</span>
+        ${leg.refunded > 0 ? b2`<span>${t7("ui.refundLegRefunded")}: ${money2(leg.refunded)}</span>` : A}
+        <span>${t7("ui.refundLegRemaining")}: ${money2(leg.remaining)}</span>
+      </div>
+      ${eligible ? A : b2`<p class="leg-reason">${t7(reasonKey(leg.reason))}</p>
+            ${leg.remaining > 0 ? b2`<ion-select
+                  class="refund-destination"
+                  label=${t7("ui.refundDestination")}
+                  label-placement="stacked"
+                  .value=${entry?.to ?? ""}
+                  @ionChange=${(e7) => this.setDestination(leg.payment_id, e7.detail?.value ?? "")}
+                >
+                  ${this.methods.map((m4) => b2`<ion-select-option value=${m4.id}>${payMethodDisplayName(m4, (k2) => erplora4().t(CATALOG4, k2))}</ion-select-option>`)}
+                </ion-select>` : A}`}
+    </div>`;
+  }
+  render() {
+    const t7 = (k2, p4) => erplora4().t(CATALOG4, k2, p4);
+    if (this.loading) {
+      return b2`<div class="refund-loading">
+        <ion-spinner name="crescent"></ion-spinner>
+        <span>${t7("ui.refundLoading")}</span>
+      </div>`;
+    }
+    if (this.error) {
+      return b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>`;
+    }
+    if (!this.legs.length) {
+      return b2`<ok-inline-feedback tone="warning" icon="information-circle-outline">${t7("ui.refundNothing")}</ok-inline-feedback>`;
+    }
+    const total = draftTotal(this.draft);
+    const block = this.blockText;
+    return b2`<div class="refund-body">
+      <h3>${t7("ui.refundTitle", { number: this.sale?.sale_number ?? "" })}</h3>
+      <p class="hint">${t7("ui.refundExplain")}</p>
+      <div class="legs">${this.legs.map((l3) => this.renderLeg(l3))}</div>
+      ${this.renderTenderLines()}
+      <ion-button class="refund-propose" size="small" fill="clear" @click=${() => this.proposeAll()}>
+        ${t7("ui.refundProposeAll")}
+      </ion-button>
+      <ion-textarea
+        class="refund-reason"
+        label=${t7("ui.refundReasonLabel")}
+        label-placement="stacked"
+        maxlength="500"
+        placeholder=${t7("ui.refundReasonPlaceholder")}
+        .value=${this.reason}
+        @ionInput=${(e7) => {
+      this.reason = e7.detail?.value ?? "";
+    }}
+      ></ion-textarea>
+      <div class="totals">
+        <span>${t7("ui.refundTotalLabel")}</span>
+        <span class="v">${erplora4().formatMoney(total)}</span>
+      </div>
+      <!-- EL MOTIVO DEL BLOQUEO, ESCRITO EN LA PANTALLA: se lee sin tocar nada y sin un ratón. -->
+      ${block ? b2`<p class="block">${block}</p>` : A}
+      <!-- And the external tenders' warnings, next to the button: the line's hole can be
+           off-screen when the thumb is already on the refund button (sales#166). -->
+      ${this.renderTenderNotices()}
+      <!-- 🔴 aria-disabled, JAMÁS el disabled de Ionic: en modo ios es pointer-events:none y en
+           una tablet de mostrador el toque muere en silencio (sales#58). El estado ocupado sí es
+           disabled de verdad: ahí no hay nada que contestar y un segundo toque devolvería dos
+           veces. (Y no metas acentos graves en un comentario dentro de una plantilla Lit: cierran
+           el literal.) -->
+      <ion-button
+        class="refund-confirm"
+        expand="block"
+        ?disabled=${this.busy}
+        aria-disabled=${block ? "true" : A}
+        data-blocked=${block ? "true" : A}
+        @click=${() => {
+      void this.confirm();
+    }}
+      >${t7("ui.refundConfirm", { amount: erplora4().formatMoney(total) })}</ion-button>
+    </div>`;
+  }
+};
+__decorateClass([
+  n4({ attribute: "sale-id" })
+], ErpSaleRefund.prototype, "saleId", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "sale", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "legs", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "methods", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "draft", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "reason", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "loading", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "error", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "busy", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "covered", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "tenderFillers", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "tenderNotices", 2);
+define("erp-sale-refund", ErpSaleRefund);
+
+// ui/components/erp-sales-list/erp-sales-list.ts
+var CATALOG5 = { es: es_default, en: en_default };
 var STATUS_KEYS = {
   completed: "ui.statusCompleted",
   voided: "ui.statusVoided",
@@ -13571,7 +13939,7 @@ function rangeBounds(range) {
   const days = range === "today" ? 0 : range === "7d" ? 6 : 29;
   return { from: isoDay(days), to: isoDay(0) };
 }
-function erplora4() {
+function erplora5() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
   return c5;
@@ -13623,11 +13991,11 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
   // Getter (no campo): se re-evalúa en cada render, así los textos cambian con el idioma activo
   // (ADR-0055). El listener `erplora:locale-changed` re-renderiza.
   get documentActions() {
-    const t7 = (k2) => erplora4().t(CATALOG4, k2);
+    const t7 = (k2) => erplora5().t(CATALOG5, k2);
     const actions = [
       { id: "document", label: t7("ui.actionDocument"), icon: "receipt-outline" }
     ];
-    if (erplora4().hasPermission?.("sales.void_sale")) {
+    if (erplora5().hasPermission?.("sales.void_sale")) {
       actions.push({
         id: "void",
         label: t7("ui.actionVoid"),
@@ -13636,7 +14004,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
         disabled: (r6) => r6.status !== "completed"
       });
     }
-    if (erplora4().hasPermission?.("sales.refund_sale")) {
+    if (erplora5().hasPermission?.("sales.refund_sale")) {
       actions.push({
         id: "refund",
         label: t7("ui.actionRefund"),
@@ -13650,7 +14018,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
   /** sales#26 — pide el MOTIVO (obligatorio: Toast, Lightspeed y el software fiscal español lo
    *  exigen; es lo que luego se lee en el historial) y anula. Overlay global de Ionic, como el TPV. */
   async confirmVoid(sale) {
-    const t7 = (k2, p4) => erplora4().t(CATALOG4, k2, p4);
+    const t7 = (k2, p4) => erplora5().t(CATALOG5, k2, p4);
     const alert = document.createElement("ion-alert");
     alert.header = t7("ui.voidTitle", { number: sale.sale_number });
     alert.message = t7("ui.voidExplain");
@@ -13660,7 +14028,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
       { text: t7("ui.actionVoid"), role: "destructive", handler: (data) => {
         const reason = (data?.reason ?? "").trim();
         if (!reason) {
-          erplora4().notify?.({ type: "error", message: t7("ui.voidReasonRequired") });
+          erplora5().notify?.({ type: "error", message: t7("ui.voidReasonRequired") });
           return false;
         }
         void this.voidSale(sale.id, reason);
@@ -13678,17 +14046,17 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
   }
   /** Ejecuta `sales.void`; el servidor decide (motivo, estado, factura) y aquí solo se cuenta. */
   async voidSale(saleId, reason) {
-    const t7 = (k2) => erplora4().t(CATALOG4, k2);
+    const t7 = (k2) => erplora5().t(CATALOG5, k2);
     try {
-      await erplora4().command("sales.void", { sale_id: saleId, reason });
-      erplora4().notify?.({ type: "success", message: t7("ui.voidDone") });
+      await erplora5().command("sales.void", { sale_id: saleId, reason });
+      erplora5().notify?.({ type: "success", message: t7("ui.voidDone") });
       await Promise.all([this.ctrl.load(), this.loadStats()]);
     } catch (e7) {
-      erplora4().notify?.({ type: "error", message: t7(voidErrorKey(errorCode(e7))) });
+      erplora5().notify?.({ type: "error", message: t7(voidErrorKey(errorCode(e7))) });
     }
   }
   get columns() {
-    const t7 = (k2) => erplora4().t(CATALOG4, k2);
+    const t7 = (k2) => erplora5().t(CATALOG5, k2);
     return [
       // sales#27: la hora de cada venta a la vista (antes se ordenaba por ella y no se pintaba).
       {
@@ -13697,7 +14065,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
         sortable: true,
         filterable: true,
         filterType: "daterange",
-        format: (r6) => formatDateTime(String(r6.created_at ?? ""), erplora4().locale)
+        format: (r6) => formatDateTime(String(r6.created_at ?? ""), erplora5().locale)
       },
       { key: "sale_number", header: t7("ui.colNumber"), sortable: true, filterable: true, filterType: "text" },
       { key: "customer_name", header: t7("ui.colCustomer"), sortable: true, filterable: true, filterType: "text", format: (r6) => r6.customer_name || "\u2014" },
@@ -13735,7 +14103,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
         // una celda vacía, que esconde el estado de la fila.
         format: (r6) => STATUS_KEYS[String(r6.status ?? "")] ? t7(STATUS_KEYS[String(r6.status)]) : String(r6.status ?? "")
       },
-      { key: "total", header: t7("ui.colTotal"), align: "right", sortable: true, filterable: true, filterType: "range", format: (r6) => erplora4().formatMoney(Number(r6.total || 0)) }
+      { key: "total", header: t7("ui.colTotal"), align: "right", sortable: true, filterable: true, filterType: "range", format: (r6) => erplora5().formatMoney(Number(r6.total || 0)) }
     ];
   }
   // TODO-LIT: componentWillLoad → connectedCallback. Recuerda: connectedCallback se dispara
@@ -13750,7 +14118,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
       this.kpiMq.addEventListener("change", this.onKpiMqChange);
     }
     const b3 = rangeBounds(this.range);
-    this.ctrl = createListController(erplora4(), "sales.list", () => this.requestUpdate(), {
+    this.ctrl = createListController(erplora5(), "sales.list", () => this.requestUpdate(), {
       pageSize: 50,
       sort: "created_at",
       dir: "desc",
@@ -13763,7 +14131,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
     });
     await Promise.all([this.ctrl.load(), this.loadStats(), this.loadPayMethods()]);
     try {
-      this.unsub = erplora4().on("sale.completed", () => {
+      this.unsub = erplora5().on("sale.completed", () => {
         this.ctrl.load();
         this.loadStats();
       });
@@ -13781,7 +14149,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
    *  box: the history still opens, which is what the cashier came here for. */
   async loadPayMethods() {
     try {
-      const rows3 = await erplora4().query("sales.payment_methods");
+      const rows3 = await erplora5().query("sales.payment_methods");
       this.payMethods = Array.isArray(rows3) ? rows3 : [];
     } catch {
       this.payMethods = [];
@@ -13804,16 +14172,16 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
   async loadStats() {
     try {
       const b3 = rangeBounds(this.range);
-      const rows3 = await erplora4().query("sales.stats", { date_from: b3.from ?? null, date_to: b3.to ?? null });
+      const rows3 = await erplora5().query("sales.stats", { date_from: b3.from ?? null, date_to: b3.to ?? null });
       this.stats = rows3 && rows3[0] || { count: 0, total_revenue: 0, avg_ticket: 0 };
     } catch (e7) {
-      const t7 = (k2) => erplora4().t(CATALOG4, k2);
+      const t7 = (k2) => erplora5().t(CATALOG5, k2);
       const transport = transportErrorKey(e7);
-      this.statsError = transport ? t7(transport) : domainErrorText(CATALOG4, erplora4().locale, e7) || t7("ui.errorStats");
+      this.statsError = transport ? t7(transport) : domainErrorText(CATALOG5, erplora5().locale, e7) || t7("ui.errorStats");
     }
   }
   render() {
-    const t7 = (k2) => erplora4().t(CATALOG4, k2);
+    const t7 = (k2) => erplora5().t(CATALOG5, k2);
     return b2`<div class="scroll">
         <h2>${t7("ui.sales")}</h2>
         <ion-segment class="range-segment" value=${this.range} aria-label=${t7("ui.rangeLabel")}
@@ -13829,19 +14197,19 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
           </div>
           <div class="card">
             <div class="k">${t7("ui.revenue")}</div>
-            <div class="v">${erplora4().formatMoney(Number(this.stats.total_revenue || 0))}</div>
+            <div class="v">${erplora5().formatMoney(Number(this.stats.total_revenue || 0))}</div>
           </div>
           <div class="card">
             <div class="k">${t7("ui.avgTicket")}</div>
-            <div class="v">${erplora4().formatMoney(Number(this.stats.avg_ticket || 0))}</div>
+            <div class="v">${erplora5().formatMoney(Number(this.stats.avg_ticket || 0))}</div>
           </div>
           <div class="card">
             <div class="k">${t7("ui.kpiTax")}</div>
-            <div class="v">${erplora4().formatMoney(Number(this.stats.tax_total || 0))}</div>
+            <div class="v">${erplora5().formatMoney(Number(this.stats.tax_total || 0))}</div>
           </div>
           <div class="card">
             <div class="k">${t7("ui.kpiDiscounts")}</div>
-            <div class="v">${erplora4().formatMoney(Number(this.stats.discount_total || 0))}</div>
+            <div class="v">${erplora5().formatMoney(Number(this.stats.discount_total || 0))}</div>
           </div>
           <div class="card">
             <div class="k">${t7("ui.kpiVoided")}</div>

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sales.quick_notes.delete",
+  "description": "Retires a quick note; the notes already typed keep their text.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["quick_note_id"],
+  "properties": {
+    "quick_note_id": {
+      "type": "string",
+      "minLength": 1,
+      "title": "Quick note"
+    }
+  }
+}

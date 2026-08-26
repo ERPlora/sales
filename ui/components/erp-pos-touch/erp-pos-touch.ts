@@ -30,6 +30,7 @@ import { priceLabel } from '../../lib/price-label.js';
 import {
   SCALE_WEIGHT_EVENT, parseScaleReading, scaleTargetLine, scaleVerdict,
 } from '../../lib/scale-entry.js';
+import { hasQuickNote, toggleQuickNote } from '../../lib/quick-note-text.js';
 // sales#153 (ADR-0381) — las REGLAS del picker del menú viven en lib, probadas sin DOM: qué
 // elecciones son legales, qué grupo queda sin resolver y qué total se MUESTRA. El precio que se
 // cobra lo pone el servidor contra `combos.options.all`; esto es la propuesta, no la decisión.
@@ -163,6 +164,8 @@ interface PosSettings {
   /** hub#962: a customer who identified themselves with a tax id wants an invoice. */
   auto_invoice_with_tax_id?: number | boolean;
 }
+/** sales#206 — a note the business preconfigured for the line-note sheet. */
+interface QuickNote { id: string; text: string; sort_order?: number; }
 interface Category { id: string; name: string; icon?: string; color?: string; image?: string; product_count?: number; }
 interface ProdCat { product_id: string; category_id: string; }
 /** Categoría fiscal (`taxes.categories.list`, ADR-0085) = el "departamento" de la venta por precio
@@ -903,6 +906,20 @@ export class ErpPosTouch extends LitElement {
       background:var(--ion-item-background, var(--panel)); color:var(--tx); }
     .note-sheet .note-input:focus-visible { outline:2px solid var(--ion-color-primary); outline-offset:1px; }
     .note-sheet .note-hint { margin:.5rem 0 0; font-size:.78rem; color:var(--ion-color-medium); }
+    /* sales#206 — the chips the business preconfigured, ABOVE the keyboard: on a phone the
+       keyboard eats the bottom half of the screen, so anything under the textarea would be the
+       first thing to disappear. They wrap because a business with eight notes has eight. */
+    .note-sheet .note-chips { display:flex; flex-wrap:wrap; gap:.4rem; margin:0 0 .6rem; }
+    .note-sheet .note-chip { font:inherit; font-size:.85rem; line-height:1.2; cursor:pointer;
+      min-height:2.25rem; padding:.45rem .75rem; border-radius:999px;
+      border:1px solid var(--ion-border-color, var(--line)); color:var(--tx);
+      background:var(--ion-item-background, var(--panel)); }
+    /* Applied = filled, not merely outlined: at arm's length on a busy pass a thicker border is
+       not a state anybody reads. */
+    .note-sheet .note-chip[aria-pressed='true'] { border-color:var(--ion-color-primary);
+      background:var(--ion-color-primary); color:var(--ion-color-primary-contrast, #fff); }
+    .note-sheet .note-chip:focus-visible { outline:2px solid var(--ion-color-primary); outline-offset:2px; }
+    .note-sheet .note-chips-state { margin:0 0 .6rem; font-size:.78rem; color:var(--ion-color-medium); }
     .secs { padding:.32rem .48rem .65rem; gap:.52rem; }
     .sec { border-radius:var(--ok-radius,12px); }
     .sec-h { padding:.48rem .58rem; font-size:.7rem; background:transparent; border-bottom:1px solid var(--line); }
@@ -1011,6 +1028,12 @@ export class ErpPosTouch extends LitElement {
   /** What has been typed in the sheet, not applied yet: closing it without saving touches
    *  nothing. */
   @state() noteInput = '';
+  /** sales#206 — the notes the business preconfigured, in the order it gave them. */
+  @state() quickNotes: QuickNote[] = [];
+  /** Where that read stands. `idle` = never asked; it is asked the FIRST time the sheet opens and
+   *  not at boot, because a till that never annotates a line should not pay for a catalogue it
+   *  does not use, and not on every open either — the catalogue does not change during a service. */
+  @state() quickNotesState: 'idle' | 'loading' | 'ready' | 'error' = 'idle';
   @state() private discountInput = '';
   /** sales#113 — importe FIJO al ticket (céntimos); el servidor lo reparte por resto mayor. */
   @state() ticketDiscountAmount = 0;
@@ -3163,6 +3186,48 @@ export class ErpPosTouch extends LitElement {
   openLineNote(lineId?: string): void {
     this.noteInput = this.cart.find((l) => l.line_id === lineId)?.note ?? '';
     this.noteSheet = { lineId };
+    if (this.quickNotesState === 'idle') void this.loadQuickNotes();
+  }
+
+  // ── sales#206 · the QUICK NOTES the business preconfigured ─────────────────────────────────
+  //
+  // Market shape (8 refs + forums, table in the PR): only Lightspeed Restaurant (K-Series) ships
+  // this as a feature — notes created in the Back Office (add/edit/delete/reorder), applied with
+  // one tap on the POS, printed on the docket and shown on the KDS. Toast, Square, Clover, Revel,
+  // Simphony and SumUp give free text only, Odoo needs its configuration/app and Shopify POS needs
+  // an app. So we copy Lightspeed, and only the part that survives our contract: the line carries
+  // ONE note, so several chips COMPOSE that one string instead of several notes.
+
+  /** Reads the catalogue through the till's own door.
+   *
+   *  `sales.quick_notes.list` reads with `sales.view_sale` and NOT with `sales.manage_settings`
+   *  for the same reason `sales.pos_settings.get` exists (sales#205): the people tapping these
+   *  chips are the `cashier` and the `employee`, and neither holds `manage_settings` — behind it
+   *  the chips would be painted for whoever configured them and for nobody at the till. */
+  async loadQuickNotes(): Promise<void> {
+    this.quickNotesState = 'loading';
+    try {
+      // Sorted here as well as asked for in the read: the order is the ONLY thing the business
+      // configures beyond the text (Lightspeed's Back Office reorders them for exactly this), so
+      // the chips must not depend on a page of a list arriving in the order it was asked for.
+      this.quickNotes = rows<QuickNote>(
+        await erplora().queryAll<QuickNote>('sales.quick_notes.list', { sort: 'sort_order', dir: 'asc' }),
+      )
+        .slice()
+        .sort((a, b) => (Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0)) || a.text.localeCompare(b.text));
+      this.quickNotesState = 'ready';
+    } catch {
+      // Not swallowed and not fatal: the sheet says so and the keyboard keeps working, which is
+      // the whole sheet as it shipped in sales#156. A failed convenience must never take the
+      // feature it decorates down with it.
+      this.quickNotes = [];
+      this.quickNotesState = 'error';
+    }
+  }
+
+  /** A chip ADDS its text to what is in the box, and takes it out if it is already there. */
+  toggleQuickNoteChip(text: string): void {
+    this.noteInput = toggleQuickNote(this.noteInput, text);
   }
 
   /** Saves the note on the line and on its order row. Empty (or whitespace only) REMOVES it: a
@@ -4745,6 +4810,22 @@ export class ErpPosTouch extends LitElement {
                 <button class="x" aria-label=${t('ui.closeAction')} @click=${() => { this.noteSheet = undefined; }}>✕</button>
               </div>
               <div class="sheet-top">
+                <!-- sales#206 — the chips the business preconfigured. With none configured
+                     NOTHING is painted here and the sheet is exactly the one sales#156 shipped:
+                     a business that never configures anything pays nothing for this existing. -->
+                ${this.quickNotesState === 'loading' || this.quickNotesState === 'error'
+                  ? html`<p class="note-chips-state">
+                      ${t(this.quickNotesState === 'loading' ? 'ui.lineNoteQuickLoading' : 'ui.lineNoteQuickError')}
+                    </p>`
+                  : nothing}
+                ${this.quickNotes.length
+                  ? html`<div class="note-chips">
+                      ${this.quickNotes.map((n) => html`
+                        <button type="button" class="note-chip"
+                                aria-pressed=${hasQuickNote(this.noteInput, n.text) ? 'true' : 'false'}
+                                @click=${() => this.toggleQuickNoteChip(n.text)}>${n.text}</button>`)}
+                    </div>`
+                  : nothing}
                 <textarea class="note-input" rows="3" maxlength="255" autofocus
                           aria-label=${t('ui.lineNote')} placeholder=${t('ui.lineNotePlaceholder')}
                           .value=${this.noteInput}

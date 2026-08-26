@@ -10,6 +10,9 @@
     },
     "settings": {
       "label": "Ajustes TPV"
+    },
+    "quick_notes": {
+      "label": "Notas rápidas"
     }
   },
   "roles": {
@@ -52,6 +55,7 @@
     "sales.product_not_available": "Un producto del tique ya no está en el catálogo. Quita la línea y vuelve a añadirla.",
     "sales.quantity_not_positive": "Una línea no tiene cantidad: pon al menos una antes de cobrar.",
     "sales.quantity_off_grid": "La cantidad no encaja con el escalón del producto.",
+    "sales.quick_note_not_found": "Esa nota rápida ya no está en este negocio. Recarga la lista y vuelve a intentarlo.",
     "sales.refund_amount_invalid": "Cada pata de una devolución necesita un importe positivo.",
     "sales.refund_exceeds_tender": "A un medio de pago se le está devolviendo más de lo que cobró.",
     "sales.refund_method_unavailable": "Ese medio de pago no está disponible en este negocio, así que el dinero no puede volver por ahí.",
@@ -403,7 +407,29 @@
     "lineNotePlaceholder": "p. ej. poco hecho, alergia al marisco, sin hielo",
     "lineNoteHint": "Cocina lee esta nota en la comanda.",
     "lineNoteSave": "Guardar",
-    "lineNoteRemove": "Quitar"
+    "lineNoteRemove": "Quitar",
+    "quickNotesTitle": "Notas rápidas",
+    "quickNotesIntro": "Las notas que el TPV ofrece de un toque en la hoja de nota de la línea. Escribir a mano sigue funcionando.",
+    "quickNoteText": "Nota",
+    "quickNoteOrder": "Posición",
+    "quickNotesEmpty": "Todavía no hay notas rápidas. Añade las que tu cocina oye a diario: «sin sal», «poco hecho», «sin hielo».",
+    "quickNotesLoading": "Cargando notas rápidas…",
+    "quickNotesSearch": "Buscar una nota…",
+    "quickNoteAdd": "Añadir",
+    "quickNoteSave": "Guardar",
+    "quickNoteSaving": "Guardando…",
+    "quickNoteEdit": "Editar",
+    "quickNoteEditing": "Editando",
+    "quickNoteEditCancel": "Cancelar edición",
+    "quickNoteDelete": "Eliminar",
+    "quickNoteDeleteTitle": "Eliminar nota rápida",
+    "quickNoteDeleteHint": "Deja de ofrecerse en el TPV. Las notas ya escritas en cuentas y ventas conservan su texto.",
+    "quickNoteCancel": "Cancelar",
+    "quickNoteSaveFailed": "No se ha podido guardar la nota rápida.",
+    "quickNoteDeleteFailed": "No se ha podido eliminar la nota rápida.",
+    "quickNotesLoadFailed": "No se han podido cargar las notas rápidas.",
+    "lineNoteQuickLoading": "Cargando notas rápidas…",
+    "lineNoteQuickError": "No se han podido cargar las notas rápidas: escribe la nota a mano."
   },
   "widgets": {
     "sales.today": {

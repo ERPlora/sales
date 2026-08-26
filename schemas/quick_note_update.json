@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sales.quick_notes.update",
+  "description": "Edits the text or the position of a quick note.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["quick_note_id", "text"],
+  "properties": {
+    "quick_note_id": {
+      "type": "string",
+      "minLength": 1,
+      "title": "Quick note"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "title": "Text"
+    },
+    "sort_order": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "title": "Position"
+    }
+  }
+}
