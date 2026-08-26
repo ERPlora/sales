@@ -5,7 +5,7 @@ import { bindTabbar } from '@erplora/outfitkit/tabbar';
 // La frontera EUROS ↔ CÉNTIMOS vive en el SDK (ADR-0123), no copiada en cada WC (como el desktop).
 import { eurosToCents, centsToEuros } from '@erplora/module-sdk';
 import { renderDocumentModal } from '../../lib/document-modal.js';
-import { orderToPrebill, receiptLabels } from '../../lib/document-mappers.js';
+import { orderToPrebill, receiptLabels, type PrebillValuation } from '../../lib/document-mappers.js';
 // La CUENTA se imprime con la forma que lee el renderizador ESC/POS, no con la de la pantalla
 // (sales#78): son dos documentos con el mismo contenido y distintas claves.
 import { prebillToPrintDocument, prebillJobId } from '../../lib/print-document.js';
@@ -2763,8 +2763,19 @@ export class ErpPosTouch extends LitElement {
    *  `labels.customer`, and on a dine-in bill what sits there is the TABLE (sales#180). Until the
    *  element has a slot of its own for the table (ERPlora/outfitkit#87), the document decides the
    *  label. */
+  /** sales#164 — la valoración del hub, PERO solo cuando valoró lo mismo que enseña este papel.
+   *
+   *  La cuenta previa es de la mesa ENTERA; la valoración es del cobro que hay en curso, que con
+   *  una selección de líneas (ADR-0146) o con un canje por línea (sales#162) es un subconjunto.
+   *  Poner ahí un total de otra cosa sería peor que componerlo en pantalla, así que en ese caso
+   *  no se pasa y el papel sale como salía. */
+  private get prebillValuation(): PrebillValuation | undefined {
+    if (this.splitSel.size || this.covered.size) return undefined;
+    return this.authoritative;
+  }
+
   private renderPrebillDoc() {
-    const doc = orderToPrebill(this.prebillLines(), this.billSettings, this.billWho);
+    const doc = orderToPrebill(this.prebillLines(), this.billSettings, this.billWho, this.prebillValuation);
     return html`<ok-receipt id="prebill-doc" .receipt=${doc} .labels=${receiptLabels(t, doc)}></ok-receipt>`;
   }
 
@@ -2774,7 +2785,8 @@ export class ErpPosTouch extends LitElement {
     const lines = this.prebillLines();
     const opts = this.billWho;
     const settings = this.billSettings;
-    const doc = orderToPrebill(lines, settings, opts);
+    const valuation = this.prebillValuation;
+    const doc = orderToPrebill(lines, settings, opts, valuation);
     const html = receiptToPrintableHtml({
       ...(doc as Parameters<typeof receiptToPrintableHtml>[0]),
       // sales#180: and the paper labels that datum for what it is -- "Table: S1", not a bare "S1".
@@ -2792,7 +2804,7 @@ export class ErpPosTouch extends LitElement {
         role: 'receipt',
         documentType: 'prebill',
         jobId: prebillJobId(this.orderId, lines),
-        data: prebillToPrintDocument(lines, settings, opts),
+        data: prebillToPrintDocument(lines, settings, opts, valuation),
         html,
       })
       .catch((e: unknown) => ({ via: 'none', error: e instanceof Error ? e.message : String(e) }) as PrintOutcome);

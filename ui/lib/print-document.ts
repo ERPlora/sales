@@ -23,7 +23,7 @@
 import { orderToPrebill, saleToReceipt, claimPrintFields, paperNote } from './document-mappers.js';
 import { modifierIdentity } from './paper-modifiers.js';
 import { comboIdentity, componentLabel, type PrintedCombo } from './paper-combos.js';
-import type { PrebillLine, SaleRow, SaleLineRow, SaleSettings, FiscalData } from './document-mappers.js';
+import type { PrebillLine, PrebillValuation, SaleRow, SaleLineRow, SaleSettings, FiscalData } from './document-mappers.js';
 import { quantityLabel, unitTag } from './price-label.js';
 
 /** Minor units (the document, ADR-0400) → major units (the paper). The thermal renderer formats
@@ -131,8 +131,10 @@ export function prebillToPrintDocument(
   lines: PrebillLine[],
   settings: SaleSettings = {},
   opts: { tableLabel?: string; customerName?: string; datetime?: string; locale?: string; notice?: string; fallbackName?: string } = {},
+  /** sales#164 — the hub's authoritative valuation, so paper and screen say the same number. */
+  valuation?: PrebillValuation,
 ): PrintDocument {
-  const screen = orderToPrebill(lines, settings, opts);
+  const screen = orderToPrebill(lines, settings, opts, valuation);
   return {
     business_name: screen.business.name,
     business_address: screen.business.address,

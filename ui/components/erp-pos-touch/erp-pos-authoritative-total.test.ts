@@ -169,4 +169,32 @@ describe('sales#164 — the authoritative total', () => {
     const charged = commands.find((c) => c.name === 'sales.complete_sale')!.payload.items;
     expect(charged, 'a preview of a different ticket is worse than no preview').toEqual(previewed);
   });
+  it('la CUENTA PREVIA que se lleva a la mesa dice el mismo número que el cajón', async () => {
+    // Un céntimo de diferencia a propósito: es exactamente lo que separa a la aritmética de
+    // pantalla del cobro cuando hay un descuento prorrateado, una cantidad a peso o un combo de
+    // bienes a tipos distintos. Componiendo en pantalla saldrían 121,00 €; el hub cobra 120,99 €.
+    previewAnswer = {
+      ...TAX_EXCLUDED_PREVIEW, total: 12_099, subtotal: 9_999,
+      tax_breakdown: { '21.00': { base: 9_999, tax: 2_100, kind: 'tax' } },
+    };
+    const el = await tillCharging();
+    (el as unknown as { paying: boolean }).paying = false;
+    (el as unknown as { prebillOpen: boolean }).prebillOpen = true;
+    await settle(el);
+    const doc = (el.shadowRoot.querySelector('#prebill-doc') as unknown as { receipt?: { total?: number; subtotal?: number } })?.receipt;
+    expect(doc?.total, 'el papel que revisa el cliente dice lo que se va a cobrar').toBe(12_099);
+    expect(doc?.subtotal).toBe(9_999);
+  });
+
+  it('con una SELECCIÓN de líneas la cuenta previa NO usa la valoración: valoró otra cosa', async () => {
+    previewAnswer = { ...TAX_EXCLUDED_PREVIEW, total: 99_999, subtotal: 99_999 };
+    const el = await tillCharging();
+    (el as unknown as { paying: boolean }).paying = false;
+    (el as unknown as { splitSel: Set<string> }).splitSel = new Set(['l-1']);
+    (el as unknown as { prebillOpen: boolean }).prebillOpen = true;
+    await settle(el);
+    const doc = (el.shadowRoot.querySelector('#prebill-doc') as unknown as { receipt?: { total?: number } })?.receipt;
+    expect(doc?.total, 'un total de otro conjunto de líneas sería peor que componerlo en pantalla')
+      .not.toBe(99_999);
+  });
 });
