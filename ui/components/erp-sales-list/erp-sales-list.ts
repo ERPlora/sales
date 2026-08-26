@@ -10,6 +10,8 @@ import { payMethodDisplayName } from '../../lib/pay-icons.js';
 import type { PayMethodLike } from '../../lib/pay-icons.js';
 import { formatDateTime } from '../../lib/document-mappers.js';
 import { errorCode } from '../../lib/checkout-key.js';
+import { domainErrorText } from '../../lib/domain-error-text.js';
+import { transportErrorKey } from '../../lib/transport-error.js';
 import { createListController } from '@erplora/module-sdk';
 import type { ListController, ListClient, ListParams, ListPage } from '@erplora/module-sdk';
 // Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC.
@@ -344,7 +346,13 @@ export class ErpSalesList extends LitElement {
       const rows = await erplora().query<Stats[]>('sales.stats', { date_from: b.from ?? null, date_to: b.to ?? null });
       this.stats = (rows && rows[0]) || { count: 0, total_revenue: 0, avg_ticket: 0 };
     } catch (e) {
-      this.statsError = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errorStats');
+      // sales#207 (ADR-0398/0055): same door as the refund screen — the declared sentence of the
+      // code, the screen's own line otherwise, and the server's message never.
+      const t = (k: string): string => erplora().t(CATALOG, k);
+      const transport = transportErrorKey(e);
+      this.statsError = transport
+        ? t(transport)
+        : domainErrorText(CATALOG, erplora().locale, e) || t('ui.errorStats');
     }
   }
 

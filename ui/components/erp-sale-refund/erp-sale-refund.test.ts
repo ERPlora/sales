@@ -34,13 +34,13 @@ const METHODS = [
 
 let sdk: Sdk;
 
-function install(over: Partial<Record<string, unknown[]>> = {}, fail?: string): void {
+function install(over: Partial<Record<string, unknown[]>> = {}, fail?: string, thrown?: unknown): void {
   const table: Record<string, unknown[]> = {
     'sales.get': SALE, 'sales.refund_options': LEGS, 'sales.payment_methods': METHODS, ...over,
   };
   sdk = {
     query: vi.fn(async (name: string) => {
-      if (fail && name === fail) throw new Error('boom');
+      if (fail && name === fail) throw thrown ?? new Error('boom');
       return table[name] ?? [];
     }),
     command: vi.fn(async () => ({ refund_id: 'ref-1', refund_ref: 'ref-1' })),
@@ -302,5 +302,35 @@ describe('la cadena i18n está COMPLETA (ADR-0055/0199)', () => {
       expect((enCatalog.ui as Record<string, string>)[k], `en.${k}`).toBeTruthy();
       expect((esCatalog.ui as Record<string, string>)[k], `es.${k}`).toBeTruthy();
     }
+  });
+});
+
+// sales#207 (ADR-0398) — what the screen SAYS when the read is refused.
+//
+// This path painted `e.message`: the server's own detail, straight onto the screen, written for
+// whoever reads a log and in the language the handler was written in. With the catalogue declared,
+// a code has a sentence of its own in `es`, and there is nothing left for the raw message to do.
+describe('una lectura rechazada se cuenta con el CATÁLOGO, nunca con el mensaje del servidor', () => {
+  const refusal = (code: string, message: string) => Object.assign(new Error(message), { code });
+
+  it('pinta la frase DECLARADA del código, no el detalle del servidor', async () => {
+    install({}, 'sales.get', refusal('sales.sale_not_found', 'sale sale-1 is not in this hub'));
+    const el = await mount();
+    expect(text(el)).toContain(esCatalog.errors['sales.sale_not_found']);
+    expect(text(el)).not.toContain('is not in this hub');
+  });
+
+  it('un fallo SIN código de dominio cae en la frase de la pantalla, jamás en el mensaje crudo', async () => {
+    install({}, 'sales.refund_options', new Error('boom'));
+    const el = await mount();
+    expect(text(el)).toContain(esCatalog.ui.errorLoadSale);
+    expect(text(el)).not.toContain('boom');
+  });
+
+  it('el servidor caído se cuenta como servidor caído (sales#81), no como un error de negocio', async () => {
+    install({}, 'sales.payment_methods', new TypeError('Failed to fetch'));
+    const el = await mount();
+    expect(text(el)).toContain(esCatalog.ui.serverUnavailable);
+    expect(text(el)).not.toContain('Failed to fetch');
   });
 });
