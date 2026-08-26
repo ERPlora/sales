@@ -1335,6 +1335,7 @@ function bindDrag(segment) {
   let disarm = null;
   const onDown = (e7) => {
     if (e7.pointerType === "touch") return;
+    if (e7.button !== 0) return;
     pointerId = e7.pointerId;
     startX = e7.clientX;
     startScroll = segment.scrollLeft;
@@ -1343,6 +1344,10 @@ function bindDrag(segment) {
   };
   const onMove = (e7) => {
     if (pointerId === null || e7.pointerId !== pointerId) return;
+    if (e7.buttons === 0) {
+      endDrag();
+      return;
+    }
     const delta = e7.clientX - startX;
     if (!dragging) {
       if (Math.abs(delta) < DRAG_THRESHOLD_PX) return;
@@ -1351,6 +1356,14 @@ function bindDrag(segment) {
       segment.setPointerCapture?.(pointerId);
     }
     segment.scrollLeft = startScroll - delta;
+  };
+  const endDrag = () => {
+    if (dragging) {
+      if (pointerId !== null) segment.releasePointerCapture?.(pointerId);
+      segment.classList.remove(DRAGGING_CLASS);
+    }
+    pointerId = null;
+    dragging = false;
   };
   const onUp = (e7) => {
     if (pointerId === null || e7.pointerId !== pointerId) return;
