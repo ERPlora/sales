@@ -22,9 +22,16 @@ export interface ComboChoice {
 export interface CartLine {
   id: string;
   name: string;
-  /** pm#93 — suplementos elegidos, EN EL ORDEN en que se eligieron. Solo el `option_id`: el
-   *  precio y el nombre los pone el catálogo del servidor al cobrar, nunca el navegador. */
-  modifiers?: { option_id: string }[];
+  /** pm#93 — suplementos elegidos, EN EL ORDEN en que se eligieron. Solo el `option_id` VIAJA: el
+   *  precio y el nombre definitivos los pone el catálogo del servidor al cobrar, nunca el navegador.
+   *
+   *  sales#208 — `price_delta` (céntimos POR UNIDAD) es DISPLAY: lo que la pantalla necesita para
+   *  pintar la línea por lo que se va a cobrar. Sale del catálogo que enseñó el selector, o del
+   *  snapshot que el SERVIDOR congeló en la fila al PEDIR (sales#200), que es el que manda al
+   *  retomar una cuenta. Nunca entra en un payload: un delta del navegador sería un descuento que
+   *  se hace el cliente solo (sales#68). Ausente = elección gratuita, o una fila escrita antes de
+   *  que el delta se congelara — y esas las sigue preciando el servidor contra el catálogo. */
+  modifiers?: { option_id: string; price_delta?: number }[];
   /** sales#153 / ADR-0381 — esta línea ES un combo (menú, pack). El servidor la arma entera al
    *  cobrar: lee `combos.options.all`, valida los grupos y decide cuántas líneas hermanas salen.
    *  `price` es un PREVIEW de pantalla y el servidor lo ignora. */
@@ -134,16 +141,27 @@ function rows<T>(r: unknown): T[] {
  *  líneas con las mismas opciones en distinto orden imprimen distinto y no son la misma unidad. */
 /** Lee la columna `modifiers` de una fila de pedido. Defensivo a propósito: una fila escrita antes
  *  de que existiera la columna, o media escrita, NO puede dejar al camarero sin poder abrir su
- *  mesa. Se pierde el suplemento de esa línea; nunca la cuenta entera. */
-function parseModifiers(raw: unknown): { option_id: string }[] | undefined {
+ *  mesa. Se pierde el suplemento de esa línea; nunca la cuenta entera.
+ *
+ *  sales#208 — vuelve también el `price_delta` que el SERVIDOR congeló al pedir (sales#200), que es
+ *  con lo que la pantalla pinta la línea de una cuenta RETOMADA. Tiene que ser el congelado y no el
+ *  del catálogo de hoy: subir el «+ queso» por la tarde repreciaría en pantalla las mesas de
+ *  mediodía, que es justo lo que ese snapshot quitó al cobrar. Una fila ANTERIOR al snapshot no lo
+ *  trae y no se inventa: esas las sigue preciando el servidor contra el catálogo. */
+function parseModifiers(raw: unknown): { option_id: string; price_delta?: number }[] | undefined {
   if (typeof raw !== 'string' || !raw.trim()) return undefined;
   try {
     const v = JSON.parse(raw);
     if (!Array.isArray(v)) return undefined;
     const out = v
-      .map((m) => (m && typeof m === 'object' ? String((m as { option_id?: unknown }).option_id ?? '') : ''))
-      .filter(Boolean)
-      .map((option_id) => ({ option_id }));
+      .map((m) => (m && typeof m === 'object' ? (m as Record<string, unknown>) : {}))
+      .filter((m) => String(m.option_id ?? ''))
+      .map((m) => ({
+        option_id: String(m.option_id),
+        ...(typeof m.price_delta === 'number' && Number.isFinite(m.price_delta)
+          ? { price_delta: m.price_delta }
+          : {}),
+      }));
     return out.length ? out : undefined;
   } catch {
     return undefined;
@@ -207,8 +225,14 @@ function comboPayload(l: CartLine): Record<string, unknown> {
   };
 }
 
+/** sales#208 — y su DELTA, por el mismo motivo por el que `price` entra en la identidad
+ *  (sales#175): el mismo «+ queso» congelado a 3,00 € en una mesa y a 5,00 € en otra no es la misma
+ *  unidad de cobro, y fusionarlas cobraría las dos al delta que sobreviviera. Sin delta congelado
+ *  la huella es la de siempre, así que nada cambia para el 99 % de las líneas. */
 function modifierFingerprint(l: CartLine): string {
-  return (l.modifiers ?? []).map((m) => m.option_id).join('\u0000');
+  return (l.modifiers ?? [])
+    .map((m) => (m.price_delta ? `${m.option_id}\u0002${m.price_delta}` : m.option_id))
+    .join('\u0000');
 }
 
 /** sales#153 — la COMPOSICIÓN de un menú, con su orden. Vacío cuando la línea no es un combo, así
@@ -321,9 +345,16 @@ function firstNewId(res: unknown): string {
 }
 
 /** Importe provisional de una línea (céntimos). Las invitaciones no se cobran. NO es fiscal: la
- *  cuota HALF_UP + el desglose por tipo los congela el servidor al COBRAR. */
-function provisionalLineTotal(unitPrice: number, qty: number, isGift?: boolean, discount = 0): number {
-  return isGift ? 0 : roundHalfUp(unitPrice * qty * (1 - discount / 100));
+ *  cuota HALF_UP + el desglose por tipo los congela el servidor al COBRAR.
+ *
+ *  sales#208 — el suplemento entra por el PRECIO UNITARIO, igual que en el servidor
+ *  (`unit_price + modifier_delta`): un solo redondeo y una sola aritmética. Es lo que el SQL
+ *  `order_recompute_total.sql` suma en el `provisional_total` de la cuenta abierta, así que sin
+ *  esto la lista de cuentas abiertas enseñaba menos de lo que se iba a cobrar. */
+function provisionalLineTotal(
+  unitPrice: number, qty: number, isGift?: boolean, discount = 0, modifierDelta = 0,
+): number {
+  return isGift ? 0 : roundHalfUp((unitPrice + modifierDelta) * qty * (1 - discount / 100));
 }
 
 /** HALF_UP sobre céntimos, inmune al ruido de coma flotante (2,4999999… es 2,5). */
@@ -331,13 +362,38 @@ function roundHalfUp(x: number): number {
   return Math.round(x + 1e-9);
 }
 
+/** sales#208 — lo que suman los SUPLEMENTOS de la línea, por unidad y en céntimos.
+ *
+ *  Es dinero de PANTALLA: el servidor lo resuelve otra vez contra el catálogo (venta de mostrador)
+ *  o contra el snapshot congelado de la fila (cuenta retomada, sales#200), y su cifra es la que se
+ *  cobra. Aquí solo evita que la pantalla enseñe un número y el cajón cobre otro. */
+export function modifierDelta(l: CartLine): number {
+  return (l.modifiers ?? []).reduce((s, m) => s + (Number(m.price_delta) || 0), 0);
+}
+
+/** El precio unitario que se PINTA: el de catálogo más lo que suman sus suplementos.
+ *
+ *  Es el mismo que acaba en el tique — el cobro mete el delta por el precio unitario de la línea
+ *  (`unit_price + modifier_delta`, handler/src/lib.rs), y por eso el papel no imprime un importe al
+ *  lado de cada suplemento (sales#148). `l.price` a secas sigue siendo la BASE, y es lo único que
+ *  viaja en los payloads. */
+export function unitPriceWithModifiers(l: CartLine): number {
+  return l.price + modifierDelta(l);
+}
+
 /** sales#71 — importe PREVIEW de una línea (céntimos): precio × cantidad × (1 − línea %) ×
  *  (1 − ticket %), UN solo redondeo HALF_UP — exactamente como el servidor compone el descuento
  *  global con el de la línea (`complete_sale`), para que «Cobrar 9,50 €» sea la cifra del tique.
- *  Una invitación es 0. La autoridad sigue siendo el servidor (ADR-0085). */
+ *  Una invitación es 0. La autoridad sigue siendo el servidor (ADR-0085).
+ *
+ *  sales#208 — «precio» aquí incluye los suplementos elegidos: una hamburguesa de 9,00 € con
+ *  «+ queso 3,00 €» vale 12,00 €, que es lo que se cobra. Antes la línea pintaba la base y el
+ *  cliente leía 9,00 € en la cuenta que se le llevaba a la mesa. */
 export function lineAmount(l: CartLine, ticketDiscount = 0): number {
   if (l.is_gift) return 0;
-  return roundHalfUp(l.price * l.qty * (1 - (l.discount ?? 0) / 100) * (1 - ticketDiscount / 100));
+  return roundHalfUp(
+    unitPriceWithModifiers(l) * l.qty * (1 - (l.discount ?? 0) / 100) * (1 - ticketDiscount / 100),
+  );
 }
 
 /** Total PREVIEW del carrito con los descuentos aplicados (sales#71). */
@@ -434,7 +490,7 @@ function orderLinePayload(orderId: string, l: CartLine): Record<string, unknown>
     // la línea no es un menú — y entonces el SQL deja `combo_group_ref` en NULL, así que una línea
     // normal no cambia en nada. El grupo NO se manda: lo minta el servidor con el id de la fila.
     combo: comboColumn(l),
-    line_total: provisionalLineTotal(l.price, l.qty, l.is_gift, l.discount ?? 0),
+    line_total: provisionalLineTotal(l.price, l.qty, l.is_gift, l.discount ?? 0, modifierDelta(l)),
     ...unitContextPayload(l),
   };
 }
@@ -478,17 +534,23 @@ export async function persistLineQty(
   }
   if (!lineId) return false;
   line.line_id = lineId;
-  await updateOrderLineQty(client, orderId, lineId, qty, line.price, line.is_gift, line.gift_reason);
+  await updateOrderLineQty(
+    client, orderId, lineId, qty, line.price, line.is_gift, line.gift_reason,
+    line.discount ?? 0, line.modifiers,
+  );
   return true;
 }
 
 export async function updateOrderLineQty(
   client: ErploraClientLike, orderId: string, lineId: string, qty: number, unitPrice: number,
   isGift?: boolean, giftReason?: string, discount = 0,
+  /** sales#208 — los suplementos de la línea: sin ellos el stepper reescribía el `line_total` a la
+   *  base y la cuenta abierta perdía el suplemento cada vez que alguien tocaba la cantidad. */
+  modifiers?: { option_id: string; price_delta?: number }[],
 ): Promise<void> {
   await client.command('sales.order.update_line', {
     order_id: orderId, line_id: lineId, quantity: toMicro(qty), // punto fijo 10⁶ (ADR-0147)
-    line_total: provisionalLineTotal(unitPrice, qty, isGift, discount),
+    line_total: provisionalLineTotal(unitPrice, qty, isGift, discount, modifierDelta({ modifiers } as CartLine)),
     // Alternar invitación cambia el importe: viaja junto para que la fila quede coherente.
     is_gift: isGift === undefined ? null : (isGift ? 1 : 0),
     gift_reason: giftReason ?? null,
@@ -502,7 +564,7 @@ export async function updateOrderLineDiscount(
   if (!line.line_id) return;
   await client.command('sales.order.update_line', {
     order_id: orderId, line_id: line.line_id, quantity: toMicro(line.qty),
-    line_total: provisionalLineTotal(line.price, line.qty, line.is_gift, discount),
+    line_total: provisionalLineTotal(line.price, line.qty, line.is_gift, discount, modifierDelta(line)),
     discount_percent: discount,
     is_gift: null, gift_reason: null,
   });
@@ -523,7 +585,7 @@ export async function updateOrderLineNote(
   if (!line.line_id) return;
   await client.command('sales.order.update_line', {
     order_id: orderId, line_id: line.line_id, quantity: toMicro(line.qty),
-    line_total: provisionalLineTotal(line.price, line.qty, line.is_gift, line.discount ?? 0),
+    line_total: provisionalLineTotal(line.price, line.qty, line.is_gift, line.discount ?? 0, modifierDelta(line)),
     notes: note,
     is_gift: null, gift_reason: null,
   });

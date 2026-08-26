@@ -693,8 +693,15 @@ export function orderToPrebill(
   valuation?: PrebillValuation,
 ): PaperReceiptData {
   const header = splitHeader(settings.receipt_header);
+  // sales#208 — what the line is worth PER UNIT: the price plus what its supplements add. The
+  // amount is the one the receipt will print (the checkout puts the delta into the line's unit
+  // price), which is why no amount is printed beside each supplement (sales#148) — and why the
+  // bill used to read 9,00 € for a burger the drawer charged 12,00 € for. A set menu is NOT
+  // touched here: its `price` is already the closed one, substitutions included.
+  const unitPrice = (l: PrebillLine) =>
+    l.price + (l.modifiers ?? []).reduce((s, m) => s + (Number(m.price_delta) || 0), 0);
   // Provisional amount of the line, in minor units. A comped line is not charged.
-  const lineAmount = (l: PrebillLine) => (l.is_gift ? 0 : Math.round(l.price * l.qty));
+  const lineAmount = (l: PrebillLine) => (l.is_gift ? 0 : Math.round(unitPrice(l) * l.qty));
   const taxIncluded = valuation?.tax_included ?? settings.default_tax_included !== 0;
   // sales#180 — the breakdown the customer reviews before paying. With VAT-inclusive prices the
   // lines ALREADY are the gross, so the total does not move; with VAT-exclusive ones the line is
@@ -739,7 +746,7 @@ export function orderToPrebill(
     lines: lines.map((l): PaperReceiptLine => ({
       name: l.is_gift ? `${l.name} (invitación)` : l.name,
       qty: l.qty,
-      unit_price: minor(l.price),
+      unit_price: minor(unitPrice(l)),
       total: minor(lineAmount(l)),
       // sales#148: ya resueltos contra el catálogo VIVO por quien pide la cuenta (la fila del
       // pedido guarda solo los `option_id`; el nombre y el importe no son del navegador).
