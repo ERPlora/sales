@@ -12801,7 +12801,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       const caretIcon = !active ? iconSwapVerticalOutline : dir === "asc" ? iconChevronUpOutline : iconChevronDownOutline;
       return b2`
                 <div
-                  class=${`gcell gh ${alignCls(c5.align)}${sortable ? " sortable" : ""}`}
+                  class=${`gcell gh ${alignCls(c5.align)}${sortable ? " sortable" : ""}${c5.pinned === "end" ? " actions-col" : ""}`}
                   role="columnheader"
                   @click=${() => this.onHeaderClick(c5)}
                 >
@@ -12831,7 +12831,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                 >
                   ${this.selectable ? b2`<span class="selcb" @click=${(e7) => e7.stopPropagation()}><ion-checkbox .checked=${selected} aria-label=${this.t.selectRow} @ionChange=${() => this.toggleRow(key)}></ion-checkbox></span>` : A}
                   ${cols.map(
-          (c5) => b2`<div class=${`gcell ${alignCls(c5.align)}`} role="cell">${c5.render ? c5.render(row) : b2`<span>${this.cell(c5, row)}</span>`}</div>`
+          (c5) => b2`<div class=${`gcell ${alignCls(c5.align)}${c5.pinned === "end" ? " actions-col" : ""}`} role="cell">${c5.render ? c5.render(row) : b2`<span>${this.cell(c5, row)}</span>`}</div>`
         )}
                   ${this.actions.length ? b2`<div class="gcell right actions-col" role="cell" @click=${(e7) => e7.stopPropagation()}>${this.actionButtons(row)}</div>` : A}
                 </div>
