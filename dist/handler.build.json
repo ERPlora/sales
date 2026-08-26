@@ -1,15 +1,9 @@
 {
   "file": "dist/handler.wasm",
   "target": "wasm32-unknown-unknown",
-<<<<<<< HEAD
-  "sources_sha256": "ec12094c7af893f2d04747815200b74024c80a82850cd8f2e82ef682ae129036",
-  "wasm_sha256": "639b825b6a3c69bca5c40da0512981be46ac5f5c0ce51c2286ac60304d50a886",
-  "built_at": "2026-08-26T09:26:20.907Z",
-=======
-  "sources_sha256": "fe714bb7f617aaaa1150016a4f0f4d862a6d2d08a44970ed92b66b0510adc4c1",
-  "wasm_sha256": "eb496f5cd90a7fc7962ca9a5e1a1ca0c31db62625ac58a0521656dc034922cd4",
-  "built_at": "2026-08-26T09:42:12.790Z",
->>>>>>> f098c70 (test(pos): batería Postgres de la línea hija + papel térmico y dist/ (#147))
+  "sources_sha256": "728ac49b3d1c64d53df6d132ca4e708c03f46bbd434ddd47b9337d3693f8ab28",
+  "wasm_sha256": "ff710ba27ea7e58434f85cb4bca288a395f21c349fd36471bc22d10d4305d60e",
+  "built_at": "2026-08-26T10:10:47.396Z",
   "features": [
     "guest"
   ]
