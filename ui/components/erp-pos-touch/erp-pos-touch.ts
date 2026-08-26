@@ -51,7 +51,7 @@ import '@erplora/outfitkit/ok-status-pill';
 import {
   mergeCartLines, listOpenChecks, type OpenCheck,
   // ADR-0141: el carrito lo respalda un PEDIDO real (filas), no un blob con debounce.
-  openOrderWithLines, addOrderLine, addOpenPriceLine, updateOrderLineQty, updateOrderLineDiscount, persistLineQty, removeOrderLine, loadOrderLines, mergeOrders, splitOrder,
+  openOrderWithLines, addOrderLine, addOpenPriceLine, updateOrderLineQty, updateOrderLineDiscount, updateOrderLineNote, persistLineQty, removeOrderLine, loadOrderLines, mergeOrders, splitOrder,
   unitContextPayload, lineAmount, cartTotal, type CartLine, type ErploraClientLike,
 } from '../../lib/pos-cart.js';
 import { loadTaxCatalog, productSellability, resolveLineTax, type TaxCatalog } from '../../lib/pos-tax.js';
@@ -867,6 +867,19 @@ export class ErpPosTouch extends LitElement {
     ok-status-pill { vertical-align:middle; }
     .lineend .lt { font-size:.84rem; }
     .lineend .lt.is-gift { text-decoration:line-through; opacity:.55; }
+    /* sales#156 — the note under its item, with the same visual weight as a sub-line on paper: it
+       reads, but it does not compete with the product name or the amount. It wraps anywhere because
+       "shellfish and nut allergy" does not fit on one line at 390 px. */
+    .line-note-text { display:flex; align-items:flex-start; gap:.3rem; margin:.15rem 0 0;
+      font-size:.8rem; color:var(--ion-color-medium); overflow-wrap:anywhere; }
+    .line-note-text ion-icon { flex:none; font-size:.9rem; margin-top:.1rem; }
+    /* The note sheet: the textarea takes the full width and is tall enough to read what was
+       written without scrolling inside a field, which on touch is where text gets lost. */
+    .note-sheet .note-input { width:100%; box-sizing:border-box; resize:none; font:inherit;
+      padding:.6rem .7rem; border-radius:10px; border:1px solid var(--ion-border-color);
+      background:var(--ion-item-background, var(--panel)); color:var(--tx); }
+    .note-sheet .note-input:focus-visible { outline:2px solid var(--ion-color-primary); outline-offset:1px; }
+    .note-sheet .note-hint { margin:.5rem 0 0; font-size:.78rem; color:var(--ion-color-medium); }
     .secs { padding:.32rem .48rem .65rem; gap:.52rem; }
     .sec { border-radius:var(--ok-radius,12px); }
     .sec-h { padding:.48rem .58rem; font-size:.7rem; background:transparent; border-bottom:1px solid var(--line); }
@@ -969,6 +982,12 @@ export class ErpPosTouch extends LitElement {
   @state() ticketDiscount = 0;
   /** El sheet de descuento: sobre una LÍNEA o sobre el TICKET. */
   @state() private discountSheet?: { target: 'line' | 'ticket'; lineId?: string };
+  /** sales#156 — the sheet for a line's NOTE. `lineId` is the order row being annotated; without
+   *  it there is nowhere to write (the line is not materialised yet). */
+  @state() noteSheet?: { lineId?: string };
+  /** What has been typed in the sheet, not applied yet: closing it without saving touches
+   *  nothing. */
+  @state() noteInput = '';
   @state() private discountInput = '';
   /** sales#113 — importe FIJO al ticket (céntimos); el servidor lo reparte por resto mayor. */
   @state() ticketDiscountAmount = 0;
@@ -2795,6 +2814,9 @@ export class ErpPosTouch extends LitElement {
       ...(this.resolvedModifiers(l) ? { modifiers: this.resolvedModifiers(l) } : {}),
       // sales#154: y la composición del menú, o la cuenta dice «Menú del día» sin decir cuál.
       ...(this.prebillCombo(l) ? { combo: this.prebillCombo(l) } : {}),
+      // sales#156: and its note, or the bill taken to the table says less than the ticket the
+      // kitchen got — the customer reads one thing while the pass cooked another.
+      ...(l.note ? { note: l.note } : {}),
     }));
   }
 
@@ -3045,6 +3067,37 @@ export class ErpPosTouch extends LitElement {
   }
   /** ¿Está el importe tecleado a la espera de ser sustituido por la siguiente tecla? */
   @state() private padPrimed = false;
+
+  // ── sales#156 · the LINE NOTE ──────────────────────────────────────────────────────────────
+  //
+  // Market shape (8 refs + forums, table in the PR): a button on the SELECTED LINE, next to the
+  // supplements and the comp — Toast's "Special Request", Square's per-item Notes, Lightspeed's
+  // line note, Odoo's "Customer Note", Clover's `lineItem.note`, Revel's special requests. Shopify
+  // POS is the odd one out (order-level only, per line needs an app) and it loses: a note on the
+  // ORDER does not say which plate it is about, which is the one thing the kitchen needs.
+
+  /** Opens the sheet with the note the line ALREADY has: reopening to CORRECT is half the use,
+   *  and a blank sheet would force retyping the whole allergy just to add a word to it. */
+  openLineNote(lineId?: string): void {
+    this.noteInput = this.cart.find((l) => l.line_id === lineId)?.note ?? '';
+    this.noteSheet = { lineId };
+  }
+
+  /** Saves the note on the line and on its order row. Empty (or whitespace only) REMOVES it: a
+   *  note that cannot be deleted leaves the kitchen cooking to a request that was cancelled. */
+  async applyLineNote(note: string): Promise<void> {
+    const sheet = this.noteSheet;
+    this.noteSheet = undefined;
+    if (!sheet) return;
+    const line = this.cart.find((l) => l.line_id === sheet.lineId);
+    if (!line) return;
+    const clean = note.trim();
+    this.cart = this.cart.map((l) => (l === line ? { ...l, note: clean || undefined } : l));
+    if (this.orderId) {
+      try { await updateOrderLineNote(erplora(), this.orderId, line, clean); }
+      catch (e) { this.error = e instanceof Error ? e.message : String(e); }
+    }
+  }
 
   // ── sales#71 · descuentos manuales ─────────────────────────────────────────────────────────
   openDiscount(target: 'line' | 'ticket', lineId?: string): void {
@@ -4076,6 +4129,10 @@ export class ErpPosTouch extends LitElement {
             ? html` <ion-badge color="success">${t('ui.giftBadge')}</ion-badge>` : nothing}</h3>
         <p>${priceLabel(this.money(l.price), l.unit_code)}${l.is_gift && l.gift_reason ? html` · ${l.gift_reason}` : nothing}${l.discount
           ? html` <ion-badge class="line-discount-badge" color="warning">−${l.discount}%</ion-badge>` : nothing}</p>
+        <!-- sales#156: if the note is not visible the waiter does not know whether it was typed,
+             so it gets typed twice or taken for granted. It goes on a sub-line of its own, the way
+             the supplements do on paper. -->
+        ${l.note ? html`<p class="line-note-text"><ion-icon name="chatbox-ellipses-outline"></ion-icon> ${l.note}</p>` : nothing}
       </ion-label>
       <div slot="end" class="lineend">
         <span class="lt ${l.is_gift ? 'is-gift' : ''}">${this.money(lineAmount(l))}</span>
@@ -4087,6 +4144,11 @@ export class ErpPosTouch extends LitElement {
                         @click=${() => this.openDiscount('line', l.line_id)}>
               <ion-icon name=${l.discount ? 'pricetag' : 'pricetag-outline'} slot="icon-only" color=${l.discount ? 'warning' : 'medium'}></ion-icon>
             </ion-button>` : nothing}
+            <ion-button class="line-note" fill="clear" size="small" title=${t('ui.lineNote')} aria-label=${t('ui.lineNote')}
+                        @click=${() => this.openLineNote(l.line_id)}>
+              <ion-icon name=${l.note ? 'chatbox-ellipses' : 'chatbox-ellipses-outline'} slot="icon-only"
+                        color=${l.note ? 'primary' : 'medium'}></ion-icon>
+            </ion-button>
             <ion-button fill="clear" size="small" title=${t('ui.giftAction')} @click=${() => this.toggleGift(l.id)}>
               <ion-icon name=${l.is_gift ? 'gift' : 'gift-outline'} slot="icon-only" color=${l.is_gift ? 'success' : 'medium'}></ion-icon>
             </ion-button>
@@ -4580,6 +4642,35 @@ export class ErpPosTouch extends LitElement {
                             @click=${() => this.addOpenPrice()}>
                   ${t('ui.add')}${this.openAmountCents > 0 ? ` ${this.money(this.openAmountCents)}` : ''}
                 </ion-button>
+              </div>
+            </div>
+          </div>`
+        : nothing}
+
+      <!-- LINE NOTE (sales#156): the free-text sheet the line's button opens. Same
+           <div class="scrim"><div class="sheet"> as the discount — it rises from the bottom with
+           its handle — because ion-action-sheet does not host rich content and Ionic overlays
+           inside a shadow root get re-parented to the body (ADR-0028). Focus lands on the
+           textarea: writing is what one comes here to do. -->
+      ${this.noteSheet
+        ? html`<div class="scrim" @click=${(e: Event) => { if ((e.target as HTMLElement).classList.contains('scrim')) this.noteSheet = undefined; }}>
+            <div class="sheet note-sheet">
+              <div class="sheet-h">
+                <span class="t">${t('ui.lineNoteOf', { name: this.cart.find((l) => l.line_id === this.noteSheet?.lineId)?.name ?? '' })}</span>
+                <button class="x" aria-label=${t('ui.closeAction')} @click=${() => { this.noteSheet = undefined; }}>✕</button>
+              </div>
+              <div class="sheet-top">
+                <textarea class="note-input" rows="3" maxlength="255" autofocus
+                          aria-label=${t('ui.lineNote')} placeholder=${t('ui.lineNotePlaceholder')}
+                          .value=${this.noteInput}
+                          @input=${(e: Event) => { this.noteInput = (e.target as HTMLTextAreaElement).value; }}></textarea>
+                <p class="note-hint">${t('ui.lineNoteHint')}</p>
+              </div>
+              <div class="sheet-foot discount-foot">
+                <ion-button fill="clear" color="medium"
+                  @click=${() => this.applyLineNote('')}>${t('ui.lineNoteRemove')}</ion-button>
+                <ion-button class="charge note-save" expand="block"
+                  @click=${() => this.applyLineNote(this.noteInput)}>${t('ui.lineNoteSave')}</ion-button>
               </div>
             </div>
           </div>`

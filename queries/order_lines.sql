@@ -16,6 +16,12 @@ SELECT id, order_id, product_id, product_name, product_sku, quantity, unit_price
        -- pm#93: los suplementos tienen que sobrevivir a retomar la cuenta, como el IVA o el
        -- contexto de unidades. Sin esto el camarero elige «sin cebolla» y al volver ya no está.
        modifiers,
+       -- sales#156: the waiter's free-text note («medium rare», «shellfish allergy») has to come
+       -- back with the line for the same reason as the supplements. It is what the KITCHEN reads,
+       -- so the fire command builds its ticket from HERE (`kitchen_items_from_lines`), not from
+       -- the browser's payload: a resumed check that lost the note would send the plate out wrong
+       -- and nothing would say so.
+       notes,
        -- sales#169: la COMPOSICIÓN del menú tiene que volver con la línea o la cuenta retomada no
        -- se puede ni cobrar (el cobro busca el id del combo en el catálogo de productos y rechaza
        -- la venta entera). Es el error que costó sales#148 con los suplementos: escritos, cobrados

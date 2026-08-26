@@ -42,6 +42,22 @@ export interface FirePayload {
   waiter_id?: string;
 }
 
+/** sales#156 — the ONE sub-line the pass reads for an item: **what to cook, and why it is going
+ *  out free.**
+ *
+ *  Two different facts, and the kitchen needs both. They are joined instead of one winning because
+ *  `kitchen::modifiers_for_display` prints exactly ONE indented sub-line per item (`  > {notes}`),
+ *  so a second field would be dropped in silence. The separator is the same « · » the paper uses
+ *  between supplements: in the 32 columns of a thermal printer a comma reads as a decimal point.
+ *
+ *  The SERVER composes the very same text from the row (`kitchen_note`, handler/src/lib.rs). This
+ *  copy is what the compat path sends when the runtime cannot pre-load the read — the two have to
+ *  agree, or the same check would print differently depending on which way it was fired. */
+export function kitchenNote(note: string | undefined, isGift?: boolean, giftReason?: string): string {
+  const reason = isGift ? (giftReason ?? '').trim() : '';
+  return [(note ?? '').trim(), reason].filter(Boolean).join(' · ');
+}
+
 /** Carga útil de `sales.order.fire`, o `undefined` si no hay nada que mandar (sin pedido abierto o
  *  con el carrito vacío): disparar en vacío imprimiría una comanda en blanco en cocina. */
 export function buildFirePayload(
@@ -65,8 +81,9 @@ export function buildFirePayload(
       // Punto fijo 10⁶ (ADR-0147): cocina recibe 500000 y pinta 0,5 — su frontera, su formato.
       quantity: toMicro(l.qty),
       unit_price: l.price,
-      // El motivo de una invitación es información de sala que el cocinero necesita ver.
-      notes: l.is_gift ? (l.gift_reason ?? '') : '',
+      // sales#156: what the waiter typed and — when the line is comped — the reason, which is
+      // floor information the cook needs to see.
+      notes: kitchenNote(l.note, l.is_gift, l.gift_reason),
       // sales#12: la CATEGORÍA (snapshot de la línea) es lo que deja a kitchen aplicar
       // categoría→estación; sin ella solo enrutaba lo que tuviera mapeo producto→estación.
       category_id: l.category_id ?? null,

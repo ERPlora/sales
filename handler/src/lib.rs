@@ -1144,6 +1144,11 @@ fn expand_combo(
         p.insert("is_gift".into(), item.get("is_gift").cloned().unwrap_or(Value::Null));
         p.insert("gift_reason".into(), item.get("gift_reason").cloned().unwrap_or(Value::Null));
         p.insert("covered".into(), item.get("covered").cloned().unwrap_or(Value::Null));
+        // sales#156: and the note. A set menu has no parent row with money (there is none by
+        // design), so a note kept only on the head would have nowhere to live: the paper builds
+        // the menu's header line by GROUPING the siblings, and the kitchen routes each component
+        // to its own station. «No ice» belongs on both, exactly like the comp reason above.
+        p.insert("notes".into(), item.get("notes").cloned().unwrap_or(Value::Null));
     };
 
     if !distinct {
@@ -1245,9 +1250,16 @@ fn expand_combos<'a>(
         let group_ref = format!("{sale_id}-{idx}");
         // sales#175: the closed price the open check's row froze, when the line comes from one.
         // With no open check (counter sale) the price comes from the `combos` catalogue.
-        let frozen_dividend = frozen_order_line(item, order_lines)?
-            .map(|row| as_cents(row.get("unit_price").unwrap_or(&Value::Null), 0));
-        for (line, combo) in expand_combo(item, group_ref, combo_catalog, product_catalog, frozen_dividend)? {
+        let frozen = frozen_order_line(item, order_lines)?;
+        let frozen_dividend = frozen.map(|row| as_cents(row.get("unit_price").unwrap_or(&Value::Null), 0));
+        // sales#156: the note travels down to the siblings from the ROW when the check was open —
+        // the same authority as the closed price just above. Without an open check it is the
+        // call's own, because at the counter there is no row yet.
+        let mut head = item.clone();
+        if let (Some(row), Some(obj)) = (frozen, head.as_object_mut()) {
+            obj.insert("notes".into(), json!(field(row, "notes")));
+        }
+        for (line, combo) in expand_combo(&head, group_ref, combo_catalog, product_catalog, frozen_dividend)? {
             out.push((line, Some(combo)));
         }
     }
@@ -1653,6 +1665,10 @@ struct ValuedLine {
     item: Value,
     /// Immutable snapshot of the supplements, in the order they were chosen (pm#93).
     modifiers: String,
+    /// sales#156 — the line's free-text note, taken from the open check's ROW when there is one.
+    /// It decides no money (the valuation ignores it): it rides here so the row that gets written
+    /// says the same thing the kitchen ticket said.
+    note: String,
     /// Which set menu it came out of, with its frozen snapshot (ADR-0381). `None` = a plain line.
     combo: Option<ComboLine>,
 }
@@ -1783,6 +1799,16 @@ fn value_checkout(
         // the authority for both the base price and the supplements' frozen delta.
         let frozen = frozen_order_line(item, order_lines.as_ref())?;
         let from_catalog = line_price(item, frozen, product_catalog.as_ref())?;
+        // sales#156 — the line's NOTE rides the SAME row, for the same reason: the check was
+        // charged what it was ordered at, and it must be cooked what it was ordered as. With no
+        // open check (counter sale) the note comes from the call itself, because the line is born
+        // and charged in the same breath. It decides no money, so there is nothing to verify it
+        // against — but where a row DOES exist, the row is what the kitchen was given and what
+        // the customer's paper has to agree with.
+        let note = match frozen {
+            Some(row) => field(row, "notes"),
+            None => line_note(item),
+        };
         let (unit_price, item_cost) = match &from_catalog {
             Some((price, cost, _)) => (*price, *cost),
             None => (
@@ -1872,7 +1898,7 @@ fn value_checkout(
         };
         // sales#113: la línea se guarda calculada; el importe fijo se reparte cuando se conocen
         // TODAS (fase 2, más abajo) y solo entonces se agrega y se emite.
-        pending_lines.push(ValuedLine { t, parts, is_gift, covered, resolved, combined_pct, unit_price, qty, line_disc, item: item.clone(), modifiers: modifier_snapshot, combo: combo.clone() });
+        pending_lines.push(ValuedLine { t, parts, is_gift, covered, resolved, combined_pct, unit_price, qty, line_disc, item: item.clone(), modifiers: modifier_snapshot, note, combo: combo.clone() });
     }
 
     // ── Fase 2 (sales#113): reparto del importe fijo por RESTO MAYOR entre las líneas cobradas ──
@@ -2128,6 +2154,7 @@ fn complete_sale_inner(input: Value) -> Result<Output, Refusal> {
         let combo = &l.combo;
         let resolved = &l.resolved;
         let modifiers = &l.modifiers;
+        let note = &l.note; // sales#156
         let (is_gift, covered, combined_pct, unit_price, qty, line_disc) =
             (l.is_gift, l.covered, l.combined_pct, l.unit_price, l.qty, l.line_disc);
 
@@ -2172,6 +2199,10 @@ fn complete_sale_inner(input: Value) -> Result<Output, Refusal> {
         // pm#93: snapshot inmutable de los suplementos, en el ORDEN en que se eligieron. La columna
         // `sales_sale_item.modifiers` existía desde el principio y no la escribía nadie.
         p.insert("modifiers".into(), json!(modifiers));
+        // sales#156: and the line's free-text note. `sales_sale_item.notes` has existed since the
+        // 001 and nobody ever wrote it — the same orphan column this issue is about, one table
+        // over. Frozen here so a REPRINT of the ticket says what the kitchen was told.
+        p.insert("notes".into(), json!(note));
         // sales#152 / ADR-0381: lo que HERMANA las líneas de un mismo combo, y el snapshot del
         // combo congelado en cada una. NO hay línea padre con dinero: la cabecera del tique se
         // pinta de este snapshot, no de una fila a cero (el fallo de Odoo, odoo#187509).
@@ -2667,6 +2698,34 @@ fn combo_closed_price(item: &Value, combo_catalog: Option<&Vec<&Value>>) -> Resu
 ///
 /// Returns the params of the `sales._insert_order_line` command and the PROVISIONAL `line_total`
 /// (display) that adds up into the order's total.
+/// sales#156 — the line's free-text NOTE, as the row stores it.
+///
+/// Unlike the price, the supplements or the tax category, there is nothing to verify this against:
+/// it IS the waiter's own words, and that is the whole point of the field. It is display and
+/// production text — the cook reads it at the pass — and `sales` interprets none of it. So the only
+/// thing done to it is a trim, so that a stray space does not turn "no note" into a note.
+fn line_note(item: &Value) -> String {
+    str_or(item, "notes", "").trim().to_string()
+}
+
+/// The ONE sub-line the pass reads for an item: **what to cook, and why it is going out free.**
+///
+/// The two are different facts and the kitchen needs both: "medium rare" is an instruction, "on
+/// the house" is why a plate nobody is paying for leaves the kitchen. They are joined
+/// instead of one winning because `kitchen::modifiers_for_display` prints exactly ONE indented
+/// sub-line per item (`  > {notes}`, crates/peripherals/src/escpos.rs), so a second field would be
+/// dropped in silence. The separator is the same « · » the paper already uses between supplements:
+/// in the 32 columns of a thermal printer a comma reads as a decimal point.
+fn kitchen_note(note: &str, is_gift: bool, gift_reason: &str) -> String {
+    let reason = if is_gift { gift_reason.trim() } else { "" };
+    [note.trim(), reason]
+        .iter()
+        .filter(|s| !s.is_empty())
+        .copied()
+        .collect::<Vec<&str>>()
+        .join(" · ")
+}
+
 fn order_line_row(
     item: &Value,
     line_id: &str,
@@ -2756,6 +2815,8 @@ fn order_line_row(
     // recategorising the product tomorrow. Same rule as `tax_category_key`.
     p.insert("category_id".into(), category_snapshot(item));
     p.insert("discount_percent".into(), json!(line_disc)); // sales#71
+    // sales#156: and so does the waiter's free-text note («medium rare», «shellfish allergy»).
+    p.insert("notes".into(), json!(line_note(item)));
     // pm#93: the supplements belong to the ROW too. `sales.order.add_line` stored them from day
     // one, but this door — the one every check's FIRST line comes through — did not forward them:
     // the "no onion" burger that opened the table lost them when it was resumed.
@@ -3038,19 +3099,23 @@ fn name_modifiers_for_kitchen(items: &[Value], catalog: Option<&Vec<&Value>>) ->
 /// La fila del pedido ya trae TODO lo que cocina necesita, y mejor que el payload: producto,
 /// nombre, cantidad en punto fijo 10⁶ (ADR-0147), precio, `category_id` (sales#12, lo que enruta a
 /// la estación), el id de la línea con el que `kitchen` reparte una anulación, `is_service` y el
-/// snapshot de suplementos. Hasta la nota del cocinero —el motivo de la invitación, lo único que
-/// el POS metía en `notes`— sale de `is_gift`/`gift_reason`, que sí están en la fila.
+/// snapshot de suplementos. And the cook's note too (sales#156): the free text the waiter typed
+/// lives in `notes` on the row, and the comp reason is derived from `is_gift`/`gift_reason`, which
+/// are on the row as well — the browser proposes neither.
 fn kitchen_items_from_lines(rows: &[&Value], round_no: i64) -> Vec<Value> {
     rows.iter()
         // Con tandas, la ronda manda SOLO lo nuevo: la línea que ya salió no se vuelve a cocinar.
         // Sin `round_no` (compat) va el pedido entero, como siempre.
         .filter(|l| round_no < 1 || l.get("fired_at").map_or(true, Value::is_null))
         .map(|l| {
-            let notes = if as_bool(l.get("is_gift").unwrap_or(&Value::Null)) {
-                field(l, "gift_reason")
-            } else {
-                String::new()
-            };
+            // sales#156: the note the waiter typed now lives on the ROW, so it comes from HERE —
+            // the same authority as the rest of the ticket. It shares its sub-line with the comp
+            // reason, which is what used to be the only thing `notes` ever carried.
+            let notes = kitchen_note(
+                &field(l, "notes"),
+                as_bool(l.get("is_gift").unwrap_or(&Value::Null)),
+                &field(l, "gift_reason"),
+            );
             json!({
                 "product_id": l.get("product_id").cloned().unwrap_or(Value::Null),
                 "product_name": field(l, "product_name"),
@@ -8340,6 +8405,143 @@ mod tests {
         // The CHARGE still refuses: the preview relaxes nothing about what closes a sale.
         let err = complete_sale_pure(inp).refused("the charge still needs the customer");
         assert_eq!(err.code, "sales.customer_required");
+    }
+
+    // ── sales#156 · the LINE NOTE, end to end ──────────────────────────────────────────────────
+    //
+    // `kitchen_order_item` has had a `notes` column since day one and the KDS paints it, but there
+    // was nowhere to fill it from: the note never existed on `sales_order_item`, so «medium rare»
+    // or «shellfish allergy» had no way of reaching the pass. The market is unanimous about the
+    // shape — Toast's «Special Request» on the selected item, Square's per-item Notes, Lightspeed's
+    // notes on the order line, Odoo's «Customer Note», Clover's `lineItem.note`, Revel's special
+    // requests printed in red — and every one of them sends it to the kitchen.
+    //
+    // What is NOT market and is ours: the note is a WORKING column, like `modifiers` and `combo`.
+    // It carries no money, `sales` interprets none of it, and it lives on the row so that resuming
+    // the check, splitting it or transferring it keeps it.
+
+    /// The order row exactly as `sales.order.lines` gives it back, with the note on it.
+    fn noted_row(note: &str) -> Value {
+        json!({ "id": "line-n", "order_id": "ord-1", "product_id": "p-burger",
+                "product_name": "Hamburguesa", "quantity": 1_000_000, "unit_price": 900,
+                "cost": 400, "tax_category_key": "product.generic", "is_gift": 0,
+                "is_service": 0, "line_total": 900, "discount_percent": 0, "modifiers": "[]",
+                "category_id": "cat-food", "notes": note })
+    }
+
+    #[test]
+    fn opening_a_check_writes_the_lines_note() {
+        let mut inp = open_input(burger_catalog(900));
+        inp["payload"]["items"][0]["notes"] = json!("medium rare");
+        let row = &order_lines(&orden(inp))[0];
+        assert_eq!(row["notes"], json!("medium rare"), "the note belongs to the ROW, not the browser");
+    }
+
+    #[test]
+    fn a_line_without_a_note_writes_an_empty_string_not_null() {
+        // Every line of every check open today. The column is NOT NULL DEFAULT '' precisely so
+        // nothing downstream has to learn a third state.
+        let row = &order_lines(&orden(open_input(burger_catalog(900))))[0];
+        assert_eq!(row["notes"], json!(""));
+    }
+
+    #[test]
+    fn adding_a_line_to_an_open_check_writes_its_note_too() {
+        // The door EVERY line but the first comes through. `add_line`'s payload is FLAT (it was
+        // declarative SQL until sales#175), so the note arrives as a plain key.
+        let mut inp = add_line_input(burger_catalog(900), open_order_row());
+        inp["payload"]["notes"] = json!("no onion");
+        let row = &order_lines(&add_order_line_pure(inp).expect("the line goes in"))[0];
+        assert_eq!(row["notes"], json!("no onion"));
+    }
+
+    #[test]
+    fn the_kitchen_ticket_carries_the_note_of_the_ROW() {
+        // kitchen#54 put the fired lines under the server's authority: they come from the read,
+        // not from `payload.items`. So the note has to come from there too, or a check fired from
+        // the API — or from a POS that reloaded — would print a ticket with the note missing.
+        let out = fire_order_pure(fire_input_with_lines(1, json!([noted_row("medium rare")])))
+            .expect("there is a round to fire");
+        let ev = &out.events[0];
+        assert_eq!(ev.payload["items"][0]["notes"], json!("medium rare"));
+    }
+
+    #[test]
+    fn the_note_and_the_comp_reason_travel_together_on_one_sub_line() {
+        // They are two different things and the pass needs BOTH: what to cook, and why a plate
+        // nobody is paying for is going out. `kitchen::modifiers_for_display` prints ONE indented
+        // sub-line per item, so they are joined with the same « · » the paper already uses rather
+        // than one of them silently winning.
+        let mut row = noted_row("medium rare");
+        row["is_gift"] = json!(1);
+        row["gift_reason"] = json!("On the house");
+        let out = fire_order_pure(fire_input_with_lines(1, json!([row]))).expect("fired");
+        assert_eq!(
+            out.events[0].payload["items"][0]["notes"],
+            json!("medium rare · On the house"),
+        );
+    }
+
+    #[test]
+    fn a_comped_line_with_no_note_still_says_only_why() {
+        // The behaviour before this issue, unchanged: a comp without a note prints just the reason.
+        let mut row = noted_row("");
+        row["is_gift"] = json!(1);
+        row["gift_reason"] = json!("Kitchen error");
+        let out = fire_order_pure(fire_input_with_lines(1, json!([row]))).expect("fired");
+        assert_eq!(out.events[0].payload["items"][0]["notes"], json!("Kitchen error"));
+    }
+
+    #[test]
+    fn charging_the_check_freezes_the_ROWS_note_on_the_sale_line() {
+        // `sales_sale_item.notes` has existed since 001 and nobody ever wrote it — the same orphan
+        // column this issue is about, one table over. It is frozen from the ROW, not from the
+        // payload: the browser proposes nothing that the server did not already write down.
+        let items = json!([{ "product_id": "p-burger", "product_name": "Hamburguesa",
+                             "price": 900, "quantity": 1_000_000, "order_item_id": "line-n",
+                             "notes": "the browser making things up" }]);
+        let mut inp = input_fiscal(items, burger_catalog(900), tax_catalog());
+        inp["payload"]["order_id"] = json!("ord-1");
+        inp["context"]["reads"]["sales.order.lines"] = json!([noted_row("medium rare")]);
+        assert_eq!(sale_lines(&sale(inp))[0]["notes"], json!("medium rare"));
+    }
+
+    #[test]
+    fn a_counter_sale_has_no_row_so_its_note_comes_from_the_payload() {
+        // There is no open check at the counter: the line is born and charged in the same call, so
+        // the only place the note can come from is the call itself. It decides no money, so there
+        // is nothing to verify it against — same door `is_catalog_line` already documents.
+        let items = json!([{ "product_id": "p-burger", "product_name": "Hamburguesa",
+                             "price": 900, "quantity": 1_000_000, "notes": "to go" }]);
+        let out = sale(input_fiscal(items, burger_catalog(900), tax_catalog()));
+        assert_eq!(sale_lines(&out)[0]["notes"], json!("to go"));
+    }
+
+    #[test]
+    fn a_sale_line_without_a_note_writes_an_empty_string() {
+        let items = json!([{ "product_id": "p-burger", "product_name": "Hamburguesa",
+                             "price": 900, "quantity": 1_000_000 }]);
+        let out = sale(input_fiscal(items, burger_catalog(900), tax_catalog()));
+        assert_eq!(sale_lines(&out)[0]["notes"], json!(""));
+    }
+
+
+    #[test]
+    fn every_sibling_of_a_set_menu_carries_the_menus_note() {
+        // A set menu has no parent row with money (ADR-0381): the paper builds its header line by
+        // grouping the siblings. So a note left only on the head would have nowhere to live and
+        // would disappear from the ticket — the same rule the comp reason already follows.
+        let choices = json!([{ "option_id": "o-sandwich" }, { "option_id": "o-beer" }]);
+        let options = json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
+                             combo_option("o-beer", "g-drink", 1, "p-beer", 0, "goods", 600, "")]);
+        let products = json!([combo_product("p-sandwich", 450, "shop.food"),
+                              combo_product("p-beer", 200, "product.generic")]);
+        let mut inp = combo_input(json!([]), options, products, 8);
+        inp["payload"]["items"] = json!([{ "product_id": "c-1", "product_name": "Pack merienda",
+                                           "price": 600, "quantity": 1_000_000, "combo_id": "c-1",
+                                           "combo_choices": choices, "notes": "no ice" }]);
+        let notes: Vec<Value> = sale_lines(&sale(inp)).iter().map(|l| l["notes"].clone()).collect();
+        assert_eq!(notes, vec![json!("no ice"), json!("no ice")]);
     }
 
     // ── sales#200 · A SUPPLEMENT OF AN OPEN CHECK IS CHARGED AT THE PRICE IT WAS ORDERED AT ────

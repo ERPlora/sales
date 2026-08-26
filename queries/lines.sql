@@ -17,6 +17,10 @@ SELECT id, product_id, product_name, product_sku, is_service,
        -- reimpresion leen la venta por AQUI, asi que lo cobrado estaba escrito y era ilegible,
        -- y el cliente pagaba un «+ queso» que su papel no nombraba.
        modifiers,
+       -- sales#156: the line's free-text note, frozen at checkout. The ticket and its REPRINT
+       -- read the sale through HERE, so without it the customer's paper would say less than the
+       -- kitchen ticket did — the exact failure sales#148 fixed for the supplements.
+       notes,
        -- sales#152 / ADR-0381: las lineas de un combo son HERMANAS y no hay fila padre, asi que
        -- la cabecera del menu en el tique se pinta agrupando por `combo_group_ref` y leyendo el
        -- snapshot congelado en `combo`. Sin devolverlas por AQUI, lo cobrado quedaria escrito y
