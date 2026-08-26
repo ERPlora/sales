@@ -12500,6 +12500,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
     this.onKpiMqChange = (e7) => {
       if (this.kpiRow !== e7.matches) this.kpiRow = e7.matches;
     };
+    this.payMethods = [];
     this.onLocaleChange = () => this.requestUpdate();
   }
   static {
@@ -12614,13 +12615,20 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
       },
       { key: "sale_number", header: t7("ui.colNumber"), sortable: true, filterable: true, filterType: "text" },
       { key: "customer_name", header: t7("ui.colCustomer"), sortable: true, filterable: true, filterType: "text", format: (r6) => r6.customer_name || "\u2014" },
+      // sales#108: the row stores the canonical seed name («Cash»); the cell speaks the user's language.
+      // sales#181: and so does the FILTER. Free text went to the server verbatim, against that same
+      // canonical name, so filtering by the «Efectivo» you can read returned zero sales without a
+      // word. Payment method is an enumerated dimension (Square, Toast, Odoo, Shopify all offer a
+      // picker): the options carry the visible name and send the stored one. Same shape as `status`.
       {
         key: "payment_method_name",
         header: t7("ui.colPayment"),
         sortable: true,
         filterable: true,
-        filterType: "text",
-        // sales#108: the row stores the canonical seed name («Cash»); the cell speaks the user's language.
+        ...this.payMethods.length ? {
+          filterType: "select",
+          options: this.payMethods.map((m4) => ({ value: m4.name, label: payMethodDisplayName(m4, t7) }))
+        } : { filterType: "text" },
         format: (r6) => r6.payment_method_name ? payMethodDisplayName({ id: "", name: r6.payment_method_name }, t7) : "\u2014"
       },
       {
@@ -12667,7 +12675,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
       // sí contaban el día en curso.
       filters: b3.from ? { erp_date: { from: b3.from, to: b3.to } } : {}
     });
-    await Promise.all([this.ctrl.load(), this.loadStats()]);
+    await Promise.all([this.ctrl.load(), this.loadStats(), this.loadPayMethods()]);
     try {
       this.unsub = erplora4().on("sale.completed", () => {
         this.ctrl.load();
@@ -12681,6 +12689,17 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
     this.kpiMq?.removeEventListener("change", this.onKpiMqChange);
     super.disconnectedCallback();
     this.unsub?.();
+  }
+  /** sales#181 — the active payment methods, only to populate the column filter. If the query fails
+   *  (no permission, a half-installed module) the list stays empty and the filter remains a text
+   *  box: the history still opens, which is what the cashier came here for. */
+  async loadPayMethods() {
+    try {
+      const rows3 = await erplora4().query("sales.payment_methods");
+      this.payMethods = Array.isArray(rows3) ? rows3 : [];
+    } catch {
+      this.payMethods = [];
+    }
   }
   /** El selector de fechas de la propia tabla (columna «Fecha») también filtra por DÍA: la
    *  columna pinta `created_at`, pero el rango que pide el usuario es de días y el filtro del
@@ -12789,6 +12808,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], _ErpSalesList.prototype, "kpiRow", 2);
+__decorateClass([
+  r5()
+], _ErpSalesList.prototype, "payMethods", 2);
 __decorateClass([
   r5()
 ], _ErpSalesList.prototype, "docSaleId", 2);
