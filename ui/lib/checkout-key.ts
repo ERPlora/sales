@@ -76,12 +76,13 @@ const MESSAGES: Record<string, string> = {
   'sales.combo_component_price_unknown': 'ui.errorComboComponentPriceUnknown',
   'sales.combo_tax_category_missing': 'ui.errorComboTaxCategoryMissing',
   'sales.too_many_lines': 'ui.errorTooManyLines',
-  // sales#147 (the amendment to ADR-0376) — the supplement declares a tax category of its OWN and
-  // there is nowhere to put it today: folding it into the parent would charge it at the PARENT's
-  // rate and the invoice would come out wrongly broken down, in silence. Its own message and not
-  // `ui.errorCharge` on purpose: this is fixed on the option in the Modifiers catalogue, in ten
+  // sales#147 (the amendment to ADR-0376) — a supplement that taxes differently now gets a LINE OF
+  // ITS OWN, so it is charged instead of refused. What is still refused is a supplement that bills
+  // apart and is worth NOTHING: a 0 € — or negative — row at another rate is a rebate wearing a tax
+  // category, and it would declare a base the customer never bought. Its own message and not
+  // `ui.errorCharge` on purpose: it is fixed on the option in the Modifiers catalogue, in ten
   // seconds, and only if the screen says which one.
-  'sales.modifier_tax_override_unsupported': 'ui.errorModifierTaxOverride',
+  'sales.modifier_child_price_invalid': 'ui.errorModifierChildPrice',
   // sales#201 (ADR-0147 §2.2) — an invalid quantity. The quantity pad already refuses off-grid
   // amounts before charging, so the handler is the last net; when it fires, the cashier gets the
   // SAME sentence the pad gives instead of a bare «could not charge».
