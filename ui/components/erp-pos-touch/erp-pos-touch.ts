@@ -130,6 +130,10 @@ interface PosSettings {
   allow_cash?: number; allow_card?: number; allow_transfer?: number;
   /** sales#71: descuentos manuales permitidos (Ajustes). 0 = sin botón; el servidor lo revalida. */
   allow_discounts?: number;
+  /** sales#25 — which catalogue providers feed the grid. 0 = that provider is not read at all. */
+  sync_products?: number; sync_services?: number;
+  /** hub#962: a customer who identified themselves with a tax id wants an invoice. */
+  auto_invoice_with_tax_id?: number | boolean;
 }
 interface Category { id: string; name: string; icon?: string; color?: string; image?: string; product_count?: number; }
 interface ProdCat { product_id: string; category_id: string; }
@@ -201,6 +205,19 @@ async function optionalRead(read: (c: ErploraClientLike) => Promise<unknown>): P
 
 /** The runtime's per-request ceiling, and what sales#184 used to ask for: see `optionalReadAll`. */
 const LEGACY_PAGE_LIMIT = 500;
+
+/** Is a catalogue source switched ON? (sales#25)
+ *
+ *  The row carries the flag as the 0/1 INTEGER of the portable SQL subset (ADR-0007), so both the
+ *  number and the string form are answered. `undefined`/`null` means there is no saved settings
+ *  row and the DEFAULTS apply — and BOTH sources default to ON: products always did, and services
+ *  have shown ever since sales#89 whenever `services` was installed. Landing this switch with the
+ *  old `false` default for services would have emptied the grid of every salon on the next update
+ *  of the module, which nobody asked for. */
+function catalogSourceOn(v: unknown): boolean {
+  if (v === undefined || v === null || v === '') return true;
+  return !(v === 0 || v === '0' || v === false);
+}
 
 /** The apps `sales` declares in `depends_on`, in the order their incidents are painted (sales#25).
  *  A HARD dependency should be here; when it is not, the till degrades, and when it is here and
@@ -1348,10 +1365,16 @@ export class ErpPosTouch extends LitElement {
       if (out.broken) brokenApps.add(app);
       return out.rows;
     };
+    // sales#25 — the till's OWN policy, started first because it decides which catalogues are
+    // worth reading at all. It is ONE narrow read on this module's own table, and only the two
+    // catalogue reads wait on it: everything else below still starts at once.
+    const policy = this.loadPosSettings();
+    const fromSource = async <T>(flag: 'sync_products' | 'sync_services', read: () => Promise<T[]>): Promise<T[]> =>
+      (catalogSourceOn((await policy)[flag]) ? read() : []);
     try {
       const [prods, methods, settingsRows, businessRows, savedCart, parked, cats, prodCats, taxCatalog, unitRows,
              svcRows, svcCats, taxCats, fiscalLimits] = await Promise.all([
-        hardRead<Product>('inventory', () => erplora().queryAll<Product>('inventory.products.list')),
+        fromSource<Product>('sync_products', () => hardRead<Product>('inventory', () => erplora().queryAll<Product>('inventory.products.list'))),
         erplora().query('sales.payment_methods').catch(() => []),
         erplora().query('sales.settings.get').catch(() => []),
         // sales#180 — the business identity for the BILL's header. Deliberately apart from the
@@ -1361,16 +1384,16 @@ export class ErpPosTouch extends LitElement {
         erplora().query('sales.business.get').catch(() => []),
         this.restoreOpenOrder(),
         listOpenChecks(erplora()),
-        hardRead<Category>('inventory', () => erplora().queryAll<Category>('inventory.categories.list', { sort: 'name', dir: 'asc' })),
-        hardRead<ProdCat>('inventory', () => erplora().queryAll<ProdCat>('inventory.product_categories')),
+        fromSource<Category>('sync_products', () => hardRead<Category>('inventory', () => erplora().queryAll<Category>('inventory.categories.list', { sort: 'name', dir: 'asc' }))),
+        fromSource<ProdCat>('sync_products', () => hardRead<ProdCat>('inventory', () => erplora().queryAll<ProdCat>('inventory.product_categories'))),
         loadTaxCatalog(erplora()),
         hardRead<UnitRow>('inventory', () => erplora().queryAll<UnitRow>('inventory.units.list')),
         // sales#89 — el catálogo VENDIBLE de servicios. Lectura OPCIONAL (ADR-0127): `services` NO
         // está en `depends_on` a propósito, porque `depends_on` es un contrato DURO que obligaría a
         // todo restaurante a instalar el módulo y ataría `sales` a su cascada de desactivación. Un
         // hub sin `services` recibe `undefined` y el TPV sigue siendo exactamente el de antes.
-        this.loadServices(),
-        this.loadServiceCategories(),
+        fromSource<Product>('sync_services', () => this.loadServices()),
+        fromSource<Category>('sync_services', () => this.loadServiceCategories()),
         // Departments for the free-price sale (ADR-0085). It never breaks the till: with no
         // departments the sheet says so. But a `taxes` that IS installed and does not answer is an
         // incident, not the absence of departments, and sales#25 makes that difference visible.
@@ -1414,7 +1437,11 @@ export class ErpPosTouch extends LitElement {
         this.prodCats.get(s.id)!.add(s.category_id);
       }
       this.methods = rows<PayMethod>(methods);
-      this.settings = rows<PosSettings>(settingsRows)[0] || {};
+      // sales#25 — the policy read LAST-WRITES over the full settings row on the four fields it
+      // carries. It is not a duplicate: `sales.settings.get` needs `sales.manage_settings`, so for
+      // a cashier it answers nothing at all and every setting it feeds silently falls back to its
+      // default. The four the till decides WITH now come through a door the cashier can open.
+      this.settings = { ...(rows<PosSettings>(settingsRows)[0] || {}), ...(await policy) };
       this.businessName = rows<{ name?: string }>(businessRows)[0]?.name || '';
       this.docFormat = this.settings.default_document_format === 'invoice' ? 'invoice' : 'ticket';
       this.payMethod = defaultPayMethod(this.payMethods);
@@ -2181,6 +2208,26 @@ export class ErpPosTouch extends LitElement {
   private get staffLabel(): string {
     const name = this.staffName || (this.staffId ? t('ui.staffAssigned') : t('ui.staffMe'));
     return t('ui.servedBy', { name });
+  }
+
+  /** The till's own policy row (sales#25): which catalogue sources feed the grid, and how the
+   *  checkout opens.
+   *
+   *  Read through `sales.pos_settings.get` and NOT `sales.settings.get`: that one requires
+   *  `sales.manage_settings`, which neither `cashier` nor `employee` has, so through it the till
+   *  is blind to its own configuration for the two roles that use it all day.
+   *
+   *  A FAILURE falls back to the defaults — a till that opens with an empty grid because a
+   *  settings read hiccuped is worse than one that shows everything — but it is not swallowed:
+   *  the shell is told, because a policy nobody could read means the switches on the settings
+   *  screen are not being honoured right now. */
+  private async loadPosSettings(): Promise<PosSettings> {
+    try {
+      return rows<PosSettings>(await erplora().query('sales.pos_settings.get'))[0] ?? {};
+    } catch {
+      this.notifyShell(t('ui.posSettingsUnavailable'));
+      return {};
+    }
   }
 
   /** El catálogo VENDIBLE de `services`, mapeado a la forma de la rejilla (sales#89).

@@ -130,7 +130,8 @@
       "migrations/postgres/025_line_covered.sql",
       "migrations/postgres/026_sale_refund.sql",
       "migrations/postgres/027_line_combo_group.sql",
-      "migrations/postgres/028_order_line_combo.sql"
+      "migrations/postgres/028_order_line_combo.sql",
+      "migrations/postgres/029_pos_catalog_sources.sql"
     ]
   },
   "seed": {
@@ -267,6 +268,10 @@
       "ai": {
         "description": "Retrieves the point-of-sale configuration settings (payment methods allowed, default sell screen, default document format)"
       }
+    },
+    "sales.pos_settings.get": {
+      "permission": "sales.view_sale",
+      "sql": "queries/pos_settings_get.sql"
     },
     "sales.business.get": {
       "permission": "sales.view_sale",
