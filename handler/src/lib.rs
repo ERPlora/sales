@@ -1624,7 +1624,7 @@ fn value_checkout(
     // 🔴 EL COMBO SE ARMA UNA SOLA VEZ, aquí, y de esto beben las DOS rutas: las filas que se
     // persisten y el evento `sale.completed` del que salen la factura y el registro de la AEAT. Si
     // cada una expandiera por su cuenta, un día dirían cosas distintas.
-    let lines_in = expand_combos(items, &sale_id, combo_catalog.as_ref(), product_catalog.as_ref(), order_lines.as_ref())?;
+    let lines_in = expand_combos(items, sale_id, combo_catalog.as_ref(), product_catalog.as_ref(), order_lines.as_ref())?;
     // La tanda de ids del host es finita (256, ARQUITECTURA.md §5.3) y un combo MULTIPLICA líneas.
     // Sin este guard la línea 256 saldría con id vacío, y el fallo aparecería como una colisión de
     // clave primaria en la BD, lejos de su causa.
