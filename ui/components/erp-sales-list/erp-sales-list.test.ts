@@ -21,6 +21,10 @@ beforeEach(() => {
     queryAll: async () => [],
     command: async () => ({}),
     currency: 'EUR',
+    // The shell always carries the active language; without it here the fake would resolve every
+    // catalogue against the source language and the Spanish assertions would pass for the wrong
+    // reason.
+    locale: 'es',
     formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
     // Devuelve la traducción REAL del catálogo español: lo que se mide es que la celda deje de
     // enseñar el valor crudo de la base de datos.
@@ -549,5 +553,47 @@ describe('sales list — filtering by payment method (sales#181)', () => {
     const col = await paymentColumn([]);
     expect(col.filterType).toBe('text');
     expect(col.options).toBeUndefined();
+  });
+});
+
+// sales#207 (ADR-0398) — the KPI strip failed with the server's own sentence.
+//
+// `loadStats` painted `e.message`, so a refusal reached the screen as whatever detail the handler
+// wrote — English prose on a Spanish UI, and sometimes an id nobody outside a log can use. With
+// the catalogue declared, a domain code has a sentence of its own; anything else falls back to the
+// screen's own line, and the raw message never reaches a pixel.
+describe('las métricas fallan con el CATÁLOGO, nunca con el mensaje del servidor (sales#207)', () => {
+  async function mountFailing(thrown: unknown): Promise<string> {
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.query = async (name: string) => {
+      if (name === 'sales.stats') throw thrown;
+      return [];
+    };
+    document.body.innerHTML = '';
+    await import('./erp-sales-list');
+    const el = document.createElement('erp-sales-list');
+    document.body.appendChild(el);
+    const view = el as unknown as { updateComplete: Promise<unknown>; statsError: string };
+    await view.updateComplete;
+    await new Promise((r) => setTimeout(r, 0));
+    await view.updateComplete;
+    return view.statsError;
+  }
+
+  it('cuenta el código DECLARADO cuando el rechazo trae uno', async () => {
+    const shown = await mountFailing(Object.assign(new Error('sale sale-9 is not in this hub'), { code: 'sales.sale_not_found' }));
+    expect(shown).toBe(esCatalog.errors['sales.sale_not_found']);
+    expect(shown).not.toContain('sale-9');
+  });
+
+  it('sin código de dominio, la línea de la pantalla — y NUNCA el mensaje crudo', async () => {
+    const shown = await mountFailing(new Error('relation "sales" does not exist'));
+    expect(shown).toBe(esCatalog.ui.errorStats);
+    expect(shown).not.toContain('relation');
+  });
+
+  it('el servidor caído se cuenta como servidor caído (sales#81)', async () => {
+    const shown = await mountFailing(new TypeError('Failed to fetch'));
+    expect(shown).toBe(esCatalog.ui.serverUnavailable);
   });
 });

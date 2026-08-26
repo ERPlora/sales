@@ -5,6 +5,11 @@
 These are the domain errors the checkout returns. They are refusals, not crashes: nothing is
 recorded when one of them fires.
 
+Since sales#207 the **complete** list is declared in `module.json → errors` (ADR-0398) — that block
+is the contract, and `erplora validate` fails if the handler raises a code that is not in it. The
+sentence each code shows the user lives in `locales/en.json` / `locales/es.json` under
+`errors.<code>`. The table below is the subset worth explaining at length, not the catalogue.
+
 | Error | What happened | What to do |
 |---|---|---|
 | `sales.empty_sale` | The sale has no lines | Add at least one line |

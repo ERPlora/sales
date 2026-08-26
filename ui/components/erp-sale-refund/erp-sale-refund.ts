@@ -35,6 +35,8 @@ import {
 import { coveredLines, serviceOrdinals, type SaleLine } from '../../lib/refund-tender.js';
 import { payMethodDisplayName } from '../../lib/pay-icons.js';
 import { errorCode } from '../../lib/checkout-key.js';
+import { domainErrorText } from '../../lib/domain-error-text.js';
+import { transportErrorKey } from '../../lib/transport-error.js';
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
 
@@ -252,7 +254,14 @@ export class ErpSaleRefund extends LitElement {
       this.draft = Object.fromEntries(Object.entries(split).map(([id, amount]) => [id, { amount }]));
       await this.loadTenderLines(saleId);
     } catch (e) {
-      this.error = e instanceof Error ? e.message : String(e ?? '');
+      // sales#207 (ADR-0398/0055): the CODE decides the sentence, never the server's detail.
+      // `e.message` is written for whoever reads a log, in the language the handler was written
+      // in, and it used to land here verbatim ("`sale-1` is not in this hub").
+      const t = (k: string): string => erplora().t(CATALOG, k);
+      const transport = transportErrorKey(e);
+      this.error = transport
+        ? t(transport)
+        : domainErrorText(CATALOG, erplora().locale, e) || t('ui.errorLoadSale');
     } finally {
       this.loading = false;
     }

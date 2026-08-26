@@ -3934,6 +3934,58 @@ var es_default = {
       label: "Cajero"
     }
   },
+  errors: {
+    "sales.already_voided": "Esta venta ya est\xE1 anulada.",
+    "sales.amount_negative": "La venta no puede llevar importes negativos.",
+    "sales.catalog_unavailable": "No se ha podido cargar el cat\xE1logo de productos, as\xED que no se ha valorado ni cobrado nada.",
+    "sales.combo_catalog_unavailable": "No se han podido cargar los men\xFAs, as\xED que no se ha cobrado nada. Comprueba que la app Combos est\xE1 instalada y vuelve a intentarlo.",
+    "sales.combo_component_price_unknown": "Un componente del men\xFA no tiene precio de cat\xE1logo, as\xED que no se puede repartir su IVA. Ponle precio en el cat\xE1logo.",
+    "sales.combo_group_over_max": "El men\xFA admite menos elecciones en ese plato. Quita una antes de cobrar.",
+    "sales.combo_group_unresolved": "Al men\xFA le falta un plato por elegir. Compl\xE9talo antes de cobrar.",
+    "sales.combo_not_available": "Ese men\xFA ya no est\xE1 en el cat\xE1logo. Quita la l\xEDnea y vuelve a a\xF1adirla.",
+    "sales.combo_not_on_sale": "Ese men\xFA ya no est\xE1 a la venta. Qu\xEDtalo del tique o vuelve a activarlo en Combos.",
+    "sales.combo_option_not_available": "Una de las elecciones del men\xFA ya no est\xE1 en el cat\xE1logo. Vuelve a elegirla.",
+    "sales.combo_option_repeated": "Ese plato no admite elegir dos veces lo mismo.",
+    "sales.combo_tax_category_missing": "Ese men\xFA no tiene categor\xEDa fiscal, as\xED que no se puede cobrar. Config\xFArala en Combos.",
+    "sales.customer_required": "Este negocio exige un cliente en cada venta.",
+    "sales.discount_out_of_range": "El descuento debe estar entre 0 % y 100 %, y nunca por encima del importe bruto.",
+    "sales.discounts_not_allowed": "Este negocio no permite descuentos.",
+    "sales.empty_sale": "A\xF1ade al menos una l\xEDnea antes de cobrar.",
+    "sales.idempotency_key_required": "El cobro ha llegado sin clave de idempotencia, as\xED que se ha rechazado antes que arriesgarse a cobrar dos veces.",
+    "sales.insufficient_tendered": "El importe entregado no cubre el total.",
+    "sales.modifier_catalog_unavailable": "No se han podido cargar los suplementos, as\xED que no se ha podido valorar la l\xEDnea.",
+    "sales.modifier_child_price_invalid": "Un suplemento se factura en l\xEDnea propia porque tributa a otro IVA, y esa l\xEDnea no puede valer cero o menos. Ponle precio en Suplementos, o qu\xEDtale la categor\xEDa fiscal.",
+    "sales.modifier_not_available": "Uno de los suplementos de la l\xEDnea ya no est\xE1 en el cat\xE1logo. Vuelve a elegirlo.",
+    "sales.no_tax_rule": "Una l\xEDnea tiene una categor\xEDa fiscal sin regla de IVA en este negocio. Config\xFArala en Impuestos antes de cobrar.",
+    "sales.nothing_to_fire": "No hay nada que mandar a cocina: la comanda est\xE1 vac\xEDa, esta tanda ya se lanz\xF3, o el pedido no es de este negocio.",
+    "sales.order_id_required": "Para mandar a cocina hace falta el pedido que se lanza.",
+    "sales.order_line_modifiers_unreadable": "No se han podido leer los suplementos congelados en una l\xEDnea de la cuenta abierta, as\xED que no se ha valorado.",
+    "sales.order_line_not_available": "Una l\xEDnea de la cuenta abierta ya no est\xE1. Vuelve a cargar la cuenta.",
+    "sales.order_lines_unavailable": "No se han podido cargar las l\xEDneas de la cuenta abierta, as\xED que no se ha valorado nada.",
+    "sales.order_unavailable": "Esa cuenta no es un pedido abierto de este negocio.",
+    "sales.payment_method_not_available": "Ese medio de pago no est\xE1 disponible en este negocio.",
+    "sales.payment_method_required": "Elige un medio de pago antes de cobrar.",
+    "sales.payments_do_not_match_total": "Los pagos repartidos no suman el total de la venta. Revisa los importes y vuelve a cobrar.",
+    "sales.product_not_available": "Un producto del tique ya no est\xE1 en el cat\xE1logo. Quita la l\xEDnea y vuelve a a\xF1adirla.",
+    "sales.quantity_not_positive": "Una l\xEDnea no tiene cantidad: pon al menos una antes de cobrar.",
+    "sales.quantity_off_grid": "La cantidad no encaja con el escal\xF3n del producto.",
+    "sales.refund_amount_invalid": "Cada pata de una devoluci\xF3n necesita un importe positivo.",
+    "sales.refund_exceeds_tender": "A un medio de pago se le est\xE1 devolviendo m\xE1s de lo que cobr\xF3.",
+    "sales.refund_method_unavailable": "Ese medio de pago no est\xE1 disponible en este negocio, as\xED que el dinero no puede volver por ah\xED.",
+    "sales.refund_nothing_to_return": "No queda nada por devolver en esta venta.",
+    "sales.refund_reason_required": "Una devoluci\xF3n necesita un motivo.",
+    "sales.refund_requires_completed": "Solo se puede devolver una venta cerrada.",
+    "sales.refund_tender_duplicated": "El mismo medio de pago aparece dos veces en la devoluci\xF3n. Ponlo en una sola pata.",
+    "sales.refund_tender_not_eligible": "Ese medio de pago no puede recuperar su propio dinero. Elige otro destino.",
+    "sales.refund_tender_unknown": "Ese medio de pago no es una de las formas en que se cobr\xF3 esta venta.",
+    "sales.sale_not_found": "Esa venta no es de este negocio.",
+    "sales.tax_catalog_unavailable": "No se han podido cargar las reglas de IVA, as\xED que no se ha cobrado nada. Vuelve a intentarlo y, si persiste, avisa al encargado.",
+    "sales.tax_rate_out_of_range": "Un tipo de IVA del tique est\xE1 fuera de rango.",
+    "sales.too_many_lines": "El tique tiene demasiadas l\xEDneas para cobrarlo de una vez. Div\xEDdelo en dos.",
+    "sales.too_many_rows": "La venta necesita m\xE1s filas de las que el servidor puede escribir de una vez. Div\xEDdela en dos.",
+    "sales.void_reason_required": "Hace falta un motivo para anular una venta.",
+    "sales.void_requires_credit_note": "Esta venta lleva factura completa: emite una factura rectificativa en vez de anularla."
+  },
   ui: {
     sales: "Ventas",
     tickets: "Tickets",
@@ -3953,6 +4005,7 @@ var es_default = {
     saleDocument: "Documento de venta",
     close: "Cerrar",
     errorStats: "Error cargando m\xE9tricas",
+    errorLoadSale: "No se ha podido cargar la venta, as\xED que todav\xEDa no hay nada que devolver. Vuelve a intentarlo.",
     print: "Imprimir",
     printFailed: "No se pudo imprimir",
     qrValidateNote: "Escanea para validar la factura en la AEAT",
@@ -4305,6 +4358,58 @@ var en_default = {
       label: "Cashier"
     }
   },
+  errors: {
+    "sales.already_voided": "This sale is already voided.",
+    "sales.amount_negative": "The sale cannot carry negative amounts.",
+    "sales.catalog_unavailable": "The product catalogue could not be loaded, so nothing was priced and nothing was charged.",
+    "sales.combo_catalog_unavailable": "The menus could not be loaded, so nothing was charged. Check that the Combos app is installed and try again.",
+    "sales.combo_component_price_unknown": "A component of the menu has no catalogue price, so its share of the VAT cannot be worked out. Give it a price in the catalogue.",
+    "sales.combo_group_over_max": "The menu allows fewer choices in that course. Remove one before charging.",
+    "sales.combo_group_unresolved": "The menu has a course still to be chosen. Complete it before charging.",
+    "sales.combo_not_available": "That menu is not in the catalogue any more. Remove the line and add it again.",
+    "sales.combo_not_on_sale": "That menu is no longer on sale. Remove it from the ticket, or put it back on sale in Combos.",
+    "sales.combo_option_not_available": "One of the choices in the menu is no longer in the catalogue. Pick it again.",
+    "sales.combo_option_repeated": "That course does not allow choosing the same item twice.",
+    "sales.combo_tax_category_missing": "That menu has no tax category, so it cannot be charged. Set it in Combos.",
+    "sales.customer_required": "This business requires a customer on every sale.",
+    "sales.discount_out_of_range": "The discount must be between 0 % and 100 %, and never more than the gross amount.",
+    "sales.discounts_not_allowed": "This business does not allow discounts.",
+    "sales.empty_sale": "Add at least one line before charging.",
+    "sales.idempotency_key_required": "The checkout arrived with no idempotency key, so it was refused rather than risk charging twice.",
+    "sales.insufficient_tendered": "The amount tendered does not cover the total.",
+    "sales.modifier_catalog_unavailable": "The supplements could not be loaded, so the line could not be priced.",
+    "sales.modifier_child_price_invalid": "A supplement bills on a line of its own because it taxes at a different VAT rate, and that line cannot be worth zero or less. Give it a price in Modifiers, or take its tax category off.",
+    "sales.modifier_not_available": "One of the supplements on the line is no longer in the catalogue. Pick it again.",
+    "sales.no_tax_rule": "A line has a tax category with no VAT rule in this business. Set it up in Taxes before charging.",
+    "sales.nothing_to_fire": "There is nothing to send to the kitchen: the check is empty, this round was already fired, or the order is not in this business.",
+    "sales.order_id_required": "Sending to the kitchen needs the order it fires.",
+    "sales.order_line_modifiers_unreadable": "The supplements frozen on a line of the open check could not be read, so the check was not priced.",
+    "sales.order_line_not_available": "A line of the open check is no longer there. Load the check again.",
+    "sales.order_lines_unavailable": "The lines of the open check could not be loaded, so nothing was priced.",
+    "sales.order_unavailable": "That check is not an open order of this business.",
+    "sales.payment_method_not_available": "That payment method is not available in this business.",
+    "sales.payment_method_required": "Pick a payment method before charging.",
+    "sales.payments_do_not_match_total": "The split payments do not add up to the total of the sale. Check the amounts and charge again.",
+    "sales.product_not_available": "A product on the ticket is no longer in the catalogue. Remove the line and add it again.",
+    "sales.quantity_not_positive": "A line has no quantity: set at least one before charging.",
+    "sales.quantity_off_grid": "The quantity does not fit the product's step.",
+    "sales.refund_amount_invalid": "Every leg of a refund needs a positive amount.",
+    "sales.refund_exceeds_tender": "One tender is being given back more than it was charged.",
+    "sales.refund_method_unavailable": "That payment method is not available in this business, so the money cannot go back through it.",
+    "sales.refund_nothing_to_return": "There is nothing left to refund on this sale.",
+    "sales.refund_reason_required": "A refund needs a reason.",
+    "sales.refund_requires_completed": "Only a completed sale can be refunded.",
+    "sales.refund_tender_duplicated": "The same tender appears twice in the refund. Put it on a single leg.",
+    "sales.refund_tender_not_eligible": "That tender cannot take its own money back. Choose another destination.",
+    "sales.refund_tender_unknown": "That tender is not one of the ways this sale was paid.",
+    "sales.sale_not_found": "That sale is not in this business.",
+    "sales.tax_catalog_unavailable": "The VAT rules could not be loaded, so nothing was charged. Try again; if it keeps happening, call the manager.",
+    "sales.tax_rate_out_of_range": "A VAT rate on the ticket is out of range.",
+    "sales.too_many_lines": "The ticket has too many lines to be charged in one go. Split it into two.",
+    "sales.too_many_rows": "The sale needs more rows than the server can write in one go. Split it into two.",
+    "sales.void_reason_required": "A reason is required to void a sale.",
+    "sales.void_requires_credit_note": "This sale carries a full invoice: issue a credit note instead of voiding it."
+  },
   ui: {
     sales: "Sales",
     tickets: "Tickets",
@@ -4324,6 +4429,7 @@ var en_default = {
     saleDocument: "Sale document",
     close: "Close",
     errorStats: "Error loading metrics",
+    errorLoadSale: "The sale could not be loaded, so there is nothing to refund yet. Try again.",
     print: "Print",
     printFailed: "Could not print",
     qrValidateNote: "Scan to validate the invoice at the AEAT",
@@ -11056,6 +11162,19 @@ function serviceOrdinals(covered) {
   return out;
 }
 
+// ui/lib/domain-error-text.ts
+var SOURCE_LANG = "en";
+function textFor(catalog, lang, code) {
+  const dict = catalog[lang];
+  const text = dict?.errors?.[code];
+  return typeof text === "string" && text.trim() ? text : "";
+}
+function domainErrorText(catalog, locale, e7) {
+  const code = e7?.code;
+  if (typeof code !== "string" || !code) return "";
+  return textFor(catalog, locale, code) || textFor(catalog, SOURCE_LANG, code);
+}
+
 // ui/components/erp-sale-refund/erp-sale-refund.ts
 var CATALOG3 = { es: es_default, en: en_default };
 var REFUND_MESSAGES = {
@@ -11217,7 +11336,9 @@ var ErpSaleRefund = class extends i3 {
       this.draft = Object.fromEntries(Object.entries(split).map(([id, amount]) => [id, { amount }]));
       await this.loadTenderLines(saleId);
     } catch (e7) {
-      this.error = e7 instanceof Error ? e7.message : String(e7 ?? "");
+      const t7 = (k2) => erplora3().t(CATALOG3, k2);
+      const transport = transportErrorKey(e7);
+      this.error = transport ? t7(transport) : domainErrorText(CATALOG3, erplora3().locale, e7) || t7("ui.errorLoadSale");
     } finally {
       this.loading = false;
     }
@@ -13588,7 +13709,9 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
       const rows3 = await erplora4().query("sales.stats", { date_from: b3.from ?? null, date_to: b3.to ?? null });
       this.stats = rows3 && rows3[0] || { count: 0, total_revenue: 0, avg_ticket: 0 };
     } catch (e7) {
-      this.statsError = e7 instanceof Error ? e7.message : erplora4().t(CATALOG4, "ui.errorStats");
+      const t7 = (k2) => erplora4().t(CATALOG4, k2);
+      const transport = transportErrorKey(e7);
+      this.statsError = transport ? t7(transport) : domainErrorText(CATALOG4, erplora4().locale, e7) || t7("ui.errorStats");
     }
   }
   render() {
