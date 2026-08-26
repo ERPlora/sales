@@ -35,6 +35,7 @@
       "verifactu.records.by_invoice"
     ],
     "commands": [
+      "sales.checkout.preview",
       "sales.complete_sale",
       "sales.order.add_line",
       "sales.order.add_open_line",
