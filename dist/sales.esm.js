@@ -2081,8 +2081,8 @@ function paperModifiers(mods, combo, lineNote) {
     ...mods?.length ? { printed_modifiers: mods } : {},
     ...combo ? { combo } : {},
     ...note ? { note } : {},
-    // sales#156: y la nota EN CRUDO, para el papel HTML — que la pinta en su propia sub-línea, no
-    // encadenada — y para la huella del `jobId` de la cuenta previa.
+    // sales#156: and the RAW note, for the HTML paper — which paints it on a sub-line of its own
+    // rather than chained — and for the bill's `jobId` fingerprint.
     ...note_raw ? { line_note: note_raw } : {},
     ...components.length ? { components } : {},
     ...modifiers.length ? { modifiers } : {}
@@ -2121,7 +2121,7 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", f
       // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
       unit_price: minor(g3.head.unit_price),
       total: minor(g3.head.line_total),
-      // sales#148: lo que se cobró, impreso. sales#156: y la nota que se le dio a cocina.
+      // sales#148: what was charged, printed. sales#156: and the note the kitchen was given.
       ...paperModifiers(parseModifierSnapshot(g3.head.modifiers), void 0, g3.head.notes),
       ...paperUnit(g3.head)
       // sales#28: la unidad congelada, para el papel
@@ -4950,8 +4950,8 @@ function buildFirePayload(orderId, label, lines, roundNo, waiterId) {
       // Punto fijo 10⁶ (ADR-0147): cocina recibe 500000 y pinta 0,5 — su frontera, su formato.
       quantity: toMicro2(l3.qty),
       unit_price: l3.price,
-      // sales#156: lo que el camarero escribió, y —cuando la línea está invitada— el motivo, que
-      // es información de sala que el cocinero necesita ver.
+      // sales#156: what the waiter typed and — when the line is comped — the reason, which is
+      // floor information the cook needs to see.
       notes: kitchenNote(l3.note, l3.is_gift, l3.gift_reason),
       // sales#12: la CATEGORÍA (snapshot de la línea) es lo que deja a kitchen aplicar
       // categoría→estación; sin ella solo enrutaba lo que tuviera mapeo producto→estación.
@@ -5097,8 +5097,8 @@ function toItemPayload(l3) {
     category_id: l3.category_id ?? null,
     // sales#71: descuento manual de la línea, en %.
     discount: l3.discount ?? 0,
-    // sales#156: la nota libre. Siempre presente (cadena vacía = sin nota) para que la forma del
-    // payload no dependa de si el camarero escribió algo.
+    // sales#156: the free-text note. Always present (empty string = no note) so the shape of the
+    // payload does not depend on whether the waiter typed anything.
     notes: l3.note ?? "",
     // pm#93: solo los ids, en su orden. El importe lo resuelve el servidor contra
     // `modifiers.options.all` — el navegador no es autoridad del precio de un suplemento.
@@ -5136,7 +5136,7 @@ function orderLinePayload(orderId, l3) {
     category_id: l3.category_id ?? null,
     // sales#71: descuento manual de la línea (%), persistido con ella.
     discount_percent: l3.discount ?? 0,
-    // sales#156: la nota libre de la línea, persistida con ella.
+    // sales#156: the line's free-text note, persisted with it.
     notes: l3.note ?? "",
     // pm#93: `order.add_line` es DECLARATIVO — el payload bindea a una columna TEXT, así que viaja
     // serializado. Solo los ids: el nombre y el precio definitivos los resuelve el cobro contra
@@ -5233,9 +5233,9 @@ async function loadOrderLines(client, orderId) {
       category_id: x2.category_id ? String(x2.category_id) : void 0,
       // sales#71: el descuento de la línea vuelve al retomar la cuenta.
       discount: Number(x2.discount_percent) > 0 ? Number(x2.discount_percent) : void 0,
-      // sales#156: la nota vuelve con la línea. `undefined` —y no ''— cuando no hay: la línea
-      // queda idéntica a las de toda cuenta abierta antes de la columna, y nada pinta una
-      // sub-línea vacía debajo.
+      // sales#156: the note comes back with the line. `undefined` and NOT '' when there is none:
+      // the line then looks identical to those of every check opened before the column, and
+      // nothing paints an empty sub-line under it.
       note: x2.notes ? String(x2.notes) : void 0,
       // pm#93: los suplementos vuelven con la línea. Una fila ANTERIOR a la columna, o un JSON
       // corrupto, devuelven `undefined` — se pierde el suplemento de esa línea, nunca la comanda.
@@ -7406,14 +7406,14 @@ var ErpPosTouch = class extends i3 {
     ok-status-pill { vertical-align:middle; }
     .lineend .lt { font-size:.84rem; }
     .lineend .lt.is-gift { text-decoration:line-through; opacity:.55; }
-    /* sales#156 — la nota bajo su artículo, con el mismo peso visual que una sub-línea del papel:
-       se lee, pero no compite con el nombre del producto ni con el importe. Se parte por palabra porque
-       «alergia al marisco y a los frutos secos» no cabe en una línea de 390 px. */
+    /* sales#156 — the note under its item, with the same visual weight as a sub-line on paper: it
+       reads, but it does not compete with the product name or the amount. It wraps anywhere because
+       "shellfish and nut allergy" does not fit on one line at 390 px. */
     .line-note-text { display:flex; align-items:flex-start; gap:.3rem; margin:.15rem 0 0;
       font-size:.8rem; color:var(--ion-color-medium); overflow-wrap:anywhere; }
     .line-note-text ion-icon { flex:none; font-size:.9rem; margin-top:.1rem; }
-    /* La hoja de la nota: el textarea ocupa el ancho y es lo bastante alto para ver lo escrito sin
-       hacer scroll dentro de un campo, que en táctil es donde se pierde el texto. */
+    /* The note sheet: the textarea takes the full width and is tall enough to read what was
+       written without scrolling inside a field, which on touch is where text gets lost. */
     .note-sheet .note-input { width:100%; box-sizing:border-box; resize:none; font:inherit;
       padding:.6rem .7rem; border-radius:10px; border:1px solid var(--ion-border-color);
       background:var(--ion-item-background, var(--panel)); color:var(--tx); }
@@ -8736,8 +8736,8 @@ var ErpPosTouch = class extends i3 {
       ...this.resolvedModifiers(l3) ? { modifiers: this.resolvedModifiers(l3) } : {},
       // sales#154: y la composición del menú, o la cuenta dice «Menú del día» sin decir cuál.
       ...this.prebillCombo(l3) ? { combo: this.prebillCombo(l3) } : {},
-      // sales#156: y su nota, o la cuenta que se lleva a la mesa dice menos que la comanda que
-      // recibió la cocina — y el cliente lee una cosa mientras en el pase se cocinó otra.
+      // sales#156: and its note, or the bill taken to the table says less than the ticket the
+      // kitchen got — the customer reads one thing while the pass cooked another.
       ...l3.note ? { note: l3.note } : {}
     }));
   }
@@ -8948,21 +8948,21 @@ var ErpPosTouch = class extends i3 {
     this.padPrimed = false;
     this.tendered = pushDigit(base, k2);
   }
-  // ── sales#156 · la NOTA de la línea ────────────────────────────────────────────────────────
+  // ── sales#156 · the LINE NOTE ──────────────────────────────────────────────────────────────
   //
   // Market shape (8 refs + forums, table in the PR): a button on the SELECTED LINE, next to the
-  // supplements and the comp — Toast's «Special Request», Square's per-item Notes, Lightspeed's
-  // line note, Odoo's «Customer Note», Clover's `lineItem.note`, Revel's special requests. Shopify
+  // supplements and the comp — Toast's "Special Request", Square's per-item Notes, Lightspeed's
+  // line note, Odoo's "Customer Note", Clover's `lineItem.note`, Revel's special requests. Shopify
   // POS is the odd one out (order-level only, per line needs an app) and it loses: a note on the
   // ORDER does not say which plate it is about, which is the one thing the kitchen needs.
-  /** Abre la hoja con la nota que la línea YA tiene: reabrir para CORREGIR es la mitad del uso, y
-   *  una hoja en blanco obligaría a reescribir la alergia entera para añadirle una palabra. */
+  /** Opens the sheet with the note the line ALREADY has: reopening to CORRECT is half the use,
+   *  and a blank sheet would force retyping the whole allergy just to add a word to it. */
   openLineNote(lineId) {
     this.noteInput = this.cart.find((l3) => l3.line_id === lineId)?.note ?? "";
     this.noteSheet = { lineId };
   }
-  /** Guarda la nota en la línea y en su fila del pedido. Vacía (o solo espacios) la QUITA: una
-   *  nota que no se puede borrar deja a cocina cocinando a una petición que se canceló. */
+  /** Saves the note on the line and on its order row. Empty (or whitespace only) REMOVES it: a
+   *  note that cannot be deleted leaves the kitchen cooking to a request that was cancelled. */
   async applyLineNote(note) {
     const sheet = this.noteSheet;
     this.noteSheet = void 0;
@@ -9875,8 +9875,9 @@ var ErpPosTouch = class extends i3 {
           ${this.hasKitchen ? locked ? b2`<ok-status-pill tone="success" size="sm" dot>${t5("ui.commandRound", { n: String(l3.round_no ?? "") })}</ok-status-pill>` : b2`<ok-status-pill tone="warning" size="sm" dot>${t5("ui.pendingStatus")}</ok-status-pill>` : A}
           <span>${l3.name}</span>${l3.is_gift ? b2` <ion-badge color="success">${t5("ui.giftBadge")}</ion-badge>` : A}</h3>
         <p>${priceLabel(this.money(l3.price), l3.unit_code)}${l3.is_gift && l3.gift_reason ? b2` · ${l3.gift_reason}` : A}${l3.discount ? b2` <ion-badge class="line-discount-badge" color="warning">−${l3.discount}%</ion-badge>` : A}</p>
-        <!-- sales#156: si la nota no se ve, el camarero no sabe si la escribió: la reescribe, o la
-             da por hecha. Va en su propia sub-línea, como los suplementos en el papel. -->
+        <!-- sales#156: if the note is not visible the waiter does not know whether it was typed,
+             so it gets typed twice or taken for granted. It goes on a sub-line of its own, the way
+             the supplements do on paper. -->
         ${l3.note ? b2`<p class="line-note-text"><ion-icon name="chatbox-ellipses-outline"></ion-icon> ${l3.note}</p>` : A}
       </ion-label>
       <div slot="end" class="lineend">
@@ -10358,11 +10359,11 @@ var ErpPosTouch = class extends i3 {
             </div>
           </div>` : A}
 
-      <!-- NOTA DE LÍNEA (sales#156): la hoja de texto libre que abre el botón de la línea. Mismo
-           <div class="scrim"><div class="sheet"> que el descuento — sube desde abajo, con su asa —
-           porque ion-action-sheet no aloja contenido rico y los overlays de Ionic dentro de un
-           shadow root se re-parentan al body (ADR-0028). El foco entra en el textarea: la acción
-           que se viene a hacer es escribir. -->
+      <!-- LINE NOTE (sales#156): the free-text sheet the line's button opens. Same
+           <div class="scrim"><div class="sheet"> as the discount — it rises from the bottom with
+           its handle — because ion-action-sheet does not host rich content and Ionic overlays
+           inside a shadow root get re-parented to the body (ADR-0028). Focus lands on the
+           textarea: writing is what one comes here to do. -->
       ${this.noteSheet ? b2`<div class="scrim" @click=${(e7) => {
       if (e7.target.classList.contains("scrim")) this.noteSheet = void 0;
     }}>
