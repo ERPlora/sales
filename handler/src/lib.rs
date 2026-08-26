@@ -2843,11 +2843,17 @@ fn order_combo_snapshot(item: &Value) -> Result<Option<String>, Refusal> {
 /// against, and freezing what the browser proposed is the hole sales#68 closed. The tax category is
 /// NOT compared here (that is `authoritative_modifiers`' job at the checkout): a set menu's
 /// category is only decided when the checkout splits it.
+///
+/// Returns `(delta of the whole line in minor units, the snapshot)` — sales#208. The delta is what
+/// the row's PROVISIONAL `line_total` is worth on top of the base price, and
+/// `order_recompute_total.sql` adds exactly those up into the open check's total. The split of
+/// sales#147 is NOT applied here: whether an option is billed on a line of its own is decided by
+/// the checkout, and either way the table pays the same, which is all a provisional total claims.
 fn order_modifiers_snapshot(
     item: &Value,
     modifier_catalog: Option<&Vec<&Value>>,
-) -> Result<String, Refusal> {
-    encode_modifiers(resolve_modifiers(item, None, modifier_catalog)?)
+) -> Result<(i64, String), Refusal> {
+    fold_modifiers(&resolve_modifiers(item, None, modifier_catalog)?)
 }
 
 /// The CLOSED price of a set menu (sales#175): the one in the `combos` catalogue plus the
@@ -2970,6 +2976,16 @@ fn order_line_row(
     if !rate_in_range(line_disc) {
         return Err(reject("sales.discount_out_of_range", format!("line discount {line_disc}")));
     }
+    // pm#93 / sales#200: the supplements, resolved against the catalogue by the SERVER — with the
+    // delta they are worth. sales#208: that delta is part of what the line COSTS, so it is resolved
+    // before the amount instead of after it.
+    let (modifier_delta, modifier_snapshot) = order_modifiers_snapshot(item, modifier_catalog)?;
+    // 🔴 The delta rides on the PRICE, exactly as the checkout does it (`unit_price +
+    // modifier_delta`), so quantity, price quantity and discount go through the very same
+    // arithmetic — there is no second money path to keep in step. What it does NOT do is move
+    // `unit_price`: that column is the frozen BASE the checkout starts from, and adding the delta
+    // there would charge it twice.
+    let priced_unit = unit_price + modifier_delta;
     let line_total = if is_gift {
         0
     } else if line_disc > 0.0 {
@@ -2978,13 +2994,13 @@ fn order_line_row(
         let pq_raw = line_price_qty(item);
         let pq = Decimal::from(if pq_raw > 0 { pq_raw } else { QUANTITY_SCALE }) / Decimal::from(QUANTITY_SCALE);
         let factor = Decimal::ONE - Decimal::from_f64(line_disc).unwrap_or(Decimal::ZERO) / Decimal::from(100);
-        let exact = Decimal::from(unit_price) * factor * (Decimal::from(qty) / Decimal::from(QUANTITY_SCALE)) / pq;
+        let exact = Decimal::from(priced_unit) * factor * (Decimal::from(qty) / Decimal::from(QUANTITY_SCALE)) / pq;
         money::round(exact)
     } else {
         // Provisional (display), but with the SDK's very arithmetic: integer money over the price
         // quantity, a single HALF_UP (ADR-0147 §2.3).
         calculate_line_amount(
-            unit_price,
+            priced_unit,
             QuantityValue::from_raw(qty),
             QuantityValue::from_raw(line_price_qty(item)),
         )
@@ -3024,7 +3040,7 @@ fn order_line_row(
     // pm#93: the supplements belong to the ROW too. `sales.order.add_line` stored them from day
     // one, but this door — the one every check's FIRST line comes through — did not forward them:
     // the "no onion" burger that opened the table lost them when it was resumed.
-    p.insert("modifiers".into(), json!(order_modifiers_snapshot(item, modifier_catalog)?));
+    p.insert("modifiers".into(), json!(modifier_snapshot));
     // sales#169: and the composition of the SET MENU, for the same reason and with the same rule.
     match order_combo_snapshot(item)? {
         Some(text) => {
@@ -9009,6 +9025,44 @@ mod tests {
         assert_eq!(snap[0]["kitchen_name"], json!("+QUESO"), "and the name that gets printed");
         assert_eq!(row["unit_price"], json!(900),
                    "the delta does NOT go into `unit_price`: the checkout adds it on top");
+    }
+
+    // ── sales#208 · and that frozen delta is what the OPEN CHECK is worth ───────────────────
+    //
+    // `order_recompute_total.sql` adds up the rows' `line_total`, and that column carried the BASE
+    // price alone: the list of open checks — and the bill the waiter carried to the table — read
+    // 9,00 € while the drawer took 12,00 €. It is PROVISIONAL money (display), so it is composed
+    // with the same arithmetic as the row's own amount and stays out of the fiscal path: the
+    // checkout re-derives everything from `unit_price` plus this very snapshot.
+
+    #[test]
+    fn the_rows_PROVISIONAL_total_carries_the_supplement_too() {
+        let row = &order_lines(&orden(open_with_cheese(300)))[0];
+        assert_eq!(row["line_total"], json!(1200), "9,00 € of burger + 3,00 € of cheese");
+        assert_eq!(row["unit_price"], json!(900),
+                   "and the BASE price stays in its own column: the checkout adds the delta on top");
+    }
+
+    #[test]
+    fn the_delta_is_per_UNIT_in_the_rows_total() {
+        let mut inp = open_with_cheese(300);
+        inp["payload"]["items"][0]["quantity"] = json!(2_000_000);
+        assert_eq!(order_lines(&orden(inp))[0]["line_total"], json!(2400), "2 × (9,00 + 3,00)");
+    }
+
+    #[test]
+    fn a_COMPED_line_is_still_worth_nothing_however_many_supplements_it_carries() {
+        let mut inp = open_with_cheese(300);
+        inp["payload"]["items"][0]["is_gift"] = json!(true);
+        assert_eq!(order_lines(&orden(inp))[0]["line_total"], json!(0));
+    }
+
+    #[test]
+    fn the_line_discount_applies_to_the_supplement_too_in_ONE_rounding() {
+        // The same single HALF_UP the checkout does: (900 + 300) × 0,9 = 1080, not 810 + 270.
+        let mut inp = open_with_cheese(300);
+        inp["payload"]["items"][0]["discount"] = json!(10.0);
+        assert_eq!(order_lines(&orden(inp))[0]["line_total"], json!(1080));
     }
 
     #[test]

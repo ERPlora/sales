@@ -52,7 +52,7 @@ import {
   mergeCartLines, listOpenChecks, type OpenCheck,
   // ADR-0141: el carrito lo respalda un PEDIDO real (filas), no un blob con debounce.
   openOrderWithLines, addOrderLine, addOpenPriceLine, updateOrderLineQty, updateOrderLineDiscount, updateOrderLineNote, persistLineQty, removeOrderLine, loadOrderLines, mergeOrders, splitOrder,
-  unitContextPayload, lineAmount, cartTotal, type CartLine, type ErploraClientLike,
+  unitContextPayload, lineAmount, cartTotal, unitPriceWithModifiers, type CartLine, type ErploraClientLike,
 } from '../../lib/pos-cart.js';
 import { loadTaxCatalog, productSellability, resolveLineTax, type TaxCatalog } from '../../lib/pos-tax.js';
 // sales#164 — the total being charged is the SERVER's, with the very SAME arithmetic it charges.
@@ -2400,12 +2400,20 @@ export class ErpPosTouch extends LitElement {
     });
   }
 
-  /** Confirma la hoja y añade la línea con sus suplementos. Solo viajan los `option_id`, en el
-   *  ORDEN elegido: el importe lo resuelve el servidor contra `modifiers.options.all`. */
+  /** Confirma la hoja y añade la línea con sus suplementos, en el ORDEN elegido.
+   *
+   *  🔴 Solo viaja el `option_id`: el importe que se COBRA lo resuelve el servidor contra
+   *  `modifiers.options.all` (sales#68). El `price_delta` se queda EN LA PANTALLA (sales#208) —
+   *  es el que la hoja acaba de enseñar y el que hace que la línea del carrito valga lo que se va
+   *  a cobrar en vez del precio pelado del producto. */
   async confirmModifiers(): Promise<void> {
     const sheet = this.modifierSheet;
     if (!sheet || !this.canConfirmModifiers()) return;
-    const picks = this.modifierPicks.map((option_id) => ({ option_id }));
+    const options = new Map(sheet.groups.flatMap((g) => g.options).map((o) => [o.id, o]));
+    const picks = this.modifierPicks.map((option_id) => ({
+      option_id,
+      ...(options.get(option_id)?.price_delta ? { price_delta: options.get(option_id)!.price_delta } : {}),
+    }));
     this.modifierSheet = undefined;
     this.modifierPicks = [];
     await this.addNow(sheet.product, picks);
@@ -2795,7 +2803,14 @@ export class ErpPosTouch extends LitElement {
    *  id: la línea sale fea, pero sale. */
   private resolvedModifiers(l: CartLine): PrintedModifier[] | undefined {
     if (!l.modifiers?.length) return undefined;
-    return l.modifiers.map((m) => this.modifierCatalog.get(m.option_id) ?? { option_id: m.option_id });
+    return l.modifiers.map((m) => {
+      const named = this.modifierCatalog.get(m.option_id) ?? { option_id: m.option_id };
+      // sales#208 — el NOMBRE sale del catálogo vivo; el DINERO, de la línea, que lleva el delta
+      // que el servidor congeló al pedir (sales#200). Al revés, la cuenta de una mesa abierta se
+      // repreciaría sola en cuanto alguien tocara la carta. Sin delta congelado (fila anterior al
+      // snapshot) manda el catálogo, que es con lo que el servidor va a cobrarla.
+      return m.price_delta != null ? { ...named, price_delta: m.price_delta } : named;
+    });
   }
 
   /** El carrito en la forma de la CUENTA. Una sola fuente para el papel y para la pantalla del
@@ -4127,7 +4142,10 @@ export class ErpPosTouch extends LitElement {
             : nothing}
           <span>${l.name}</span>${l.is_gift
             ? html` <ion-badge color="success">${t('ui.giftBadge')}</ion-badge>` : nothing}</h3>
-        <p>${priceLabel(this.money(l.price), l.unit_code)}${l.is_gift && l.gift_reason ? html` · ${l.gift_reason}` : nothing}${l.discount
+        <!-- sales#208: el precio unitario que se enseña YA lleva los suplementos, que es el que
+             va a salir impreso (el cobro mete el delta por el precio unitario de la línea). Con la
+             base a secas, «9,00 €» debajo de un importe de «12,00 €» se lee como un fallo. -->
+        <p>${priceLabel(this.money(unitPriceWithModifiers(l)), l.unit_code)}${l.is_gift && l.gift_reason ? html` · ${l.gift_reason}` : nothing}${l.discount
           ? html` <ion-badge class="line-discount-badge" color="warning">−${l.discount}%</ion-badge>` : nothing}</p>
         <!-- sales#156: if the note is not visible the waiter does not know whether it was typed,
              so it gets typed twice or taken for granted. It goes on a sub-line of its own, the way

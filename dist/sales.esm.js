@@ -1300,6 +1300,8 @@ var EPSILON = 1;
 var HINT_PX = 28;
 var HINT_VUELTA_MS = 420;
 var CLASE = "ok-tabbar";
+var DRAGGING_CLASS = "ok-tabbar-dragging";
+var DRAG_THRESHOLD_PX = 4;
 function tabbarOverflow(segment) {
   if (!segment) return "none";
   const maximo = segment.scrollWidth - segment.clientWidth;
@@ -1324,6 +1326,61 @@ function hintScroll(segment) {
   segment.scrollTo({ left: HINT_PX, behavior: "smooth" });
   setTimeout(() => segment.scrollTo({ left: 0, behavior: "smooth" }), HINT_VUELTA_MS);
 }
+function bindDrag(segment) {
+  let pointerId = null;
+  let startX = 0;
+  let startScroll = 0;
+  let dragging = false;
+  let swallowClick = false;
+  const onDown = (e7) => {
+    if (e7.pointerType === "touch") return;
+    pointerId = e7.pointerId;
+    startX = e7.clientX;
+    startScroll = segment.scrollLeft;
+    dragging = false;
+    swallowClick = false;
+  };
+  const onMove = (e7) => {
+    if (pointerId === null || e7.pointerId !== pointerId) return;
+    const delta = e7.clientX - startX;
+    if (!dragging) {
+      if (Math.abs(delta) < DRAG_THRESHOLD_PX) return;
+      dragging = true;
+      segment.classList.add(DRAGGING_CLASS);
+      segment.setPointerCapture?.(pointerId);
+    }
+    segment.scrollLeft = startScroll - delta;
+  };
+  const onUp = (e7) => {
+    if (pointerId === null || e7.pointerId !== pointerId) return;
+    if (dragging) {
+      swallowClick = true;
+      segment.releasePointerCapture?.(pointerId);
+      segment.classList.remove(DRAGGING_CLASS);
+    }
+    pointerId = null;
+    dragging = false;
+  };
+  const onClick = (e7) => {
+    if (!swallowClick) return;
+    swallowClick = false;
+    e7.stopPropagation();
+    e7.preventDefault();
+  };
+  segment.addEventListener("pointerdown", onDown);
+  segment.addEventListener("pointermove", onMove);
+  segment.addEventListener("pointerup", onUp);
+  segment.addEventListener("pointercancel", onUp);
+  segment.addEventListener("click", onClick, true);
+  return () => {
+    segment.removeEventListener("pointerdown", onDown);
+    segment.removeEventListener("pointermove", onMove);
+    segment.removeEventListener("pointerup", onUp);
+    segment.removeEventListener("pointercancel", onUp);
+    segment.removeEventListener("click", onClick, true);
+    segment.classList.remove(DRAGGING_CLASS);
+  };
+}
 function bindTabbar(segment, opts = {}) {
   if (!segment) return () => {
   };
@@ -1331,6 +1388,7 @@ function bindTabbar(segment, opts = {}) {
   const sync = () => syncTabbarOverflow(segment);
   sync();
   segment.addEventListener("scroll", sync, { passive: true });
+  const desatarArrastre = bindDrag(segment);
   const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(sync) : null;
   ro?.observe(segment);
   const mo = typeof MutationObserver !== "undefined" ? new MutationObserver(sync) : null;
@@ -1347,6 +1405,7 @@ function bindTabbar(segment, opts = {}) {
   }
   return () => {
     segment.removeEventListener("scroll", sync);
+    desatarArrastre();
     ro?.disconnect();
     mo?.disconnect();
     if (pista) clearTimeout(pista);
@@ -2209,7 +2268,8 @@ function valuationBreakdown(v3) {
 }
 function orderToPrebill(lines, settings = {}, opts = {}, valuation) {
   const header = splitHeader(settings.receipt_header);
-  const lineAmount2 = (l3) => l3.is_gift ? 0 : Math.round(l3.price * l3.qty);
+  const unitPrice = (l3) => l3.price + (l3.modifiers ?? []).reduce((s5, m4) => s5 + (Number(m4.price_delta) || 0), 0);
+  const lineAmount2 = (l3) => l3.is_gift ? 0 : Math.round(unitPrice(l3) * l3.qty);
   const taxIncluded = valuation?.tax_included ?? settings.default_tax_included !== 0;
   const taxes = valuation ? valuationBreakdown(valuation) : previewTaxBreakdown(lines.map((l3) => ({ amount: lineAmount2(l3), tax_rate: l3.tax_rate })), taxIncluded);
   const gross = lines.reduce((s5, l3) => s5 + lineAmount2(l3), 0);
@@ -2239,7 +2299,7 @@ function orderToPrebill(lines, settings = {}, opts = {}, valuation) {
     lines: lines.map((l3) => ({
       name: l3.is_gift ? `${l3.name} (invitaci\xF3n)` : l3.name,
       qty: l3.qty,
-      unit_price: minor(l3.price),
+      unit_price: minor(unitPrice(l3)),
       total: minor(lineAmount2(l3)),
       // sales#148: ya resueltos contra el catálogo VIVO por quien pide la cuenta (la fila del
       // pedido guarda solo los `option_id`; el nombre y el importe no son del navegador).
@@ -5015,7 +5075,10 @@ function parseModifiers(raw) {
   try {
     const v3 = JSON.parse(raw);
     if (!Array.isArray(v3)) return void 0;
-    const out = v3.map((m4) => m4 && typeof m4 === "object" ? String(m4.option_id ?? "") : "").filter(Boolean).map((option_id) => ({ option_id }));
+    const out = v3.map((m4) => m4 && typeof m4 === "object" ? m4 : {}).filter((m4) => String(m4.option_id ?? "")).map((m4) => ({
+      option_id: String(m4.option_id),
+      ...typeof m4.price_delta === "number" && Number.isFinite(m4.price_delta) ? { price_delta: m4.price_delta } : {}
+    }));
     return out.length ? out : void 0;
   } catch {
     return void 0;
@@ -5082,15 +5145,23 @@ function firstNewId(res) {
   const ids = res?.new_ids;
   return Array.isArray(ids) && typeof ids[0] === "string" ? ids[0] : "";
 }
-function provisionalLineTotal(unitPrice, qty, isGift, discount = 0) {
-  return isGift ? 0 : roundHalfUp2(unitPrice * qty * (1 - discount / 100));
+function provisionalLineTotal(unitPrice, qty, isGift, discount = 0, modifierDelta2 = 0) {
+  return isGift ? 0 : roundHalfUp2((unitPrice + modifierDelta2) * qty * (1 - discount / 100));
 }
 function roundHalfUp2(x2) {
   return Math.round(x2 + 1e-9);
 }
+function modifierDelta(l3) {
+  return (l3.modifiers ?? []).reduce((s5, m4) => s5 + (Number(m4.price_delta) || 0), 0);
+}
+function unitPriceWithModifiers(l3) {
+  return l3.price + modifierDelta(l3);
+}
 function lineAmount(l3, ticketDiscount = 0) {
   if (l3.is_gift) return 0;
-  return roundHalfUp2(l3.price * l3.qty * (1 - (l3.discount ?? 0) / 100) * (1 - ticketDiscount / 100));
+  return roundHalfUp2(
+    unitPriceWithModifiers(l3) * l3.qty * (1 - (l3.discount ?? 0) / 100) * (1 - ticketDiscount / 100)
+  );
 }
 function cartTotal(cart, ticketDiscount = 0) {
   return cart.reduce((s5, l3) => s5 + lineAmount(l3, ticketDiscount), 0);
@@ -5176,7 +5247,7 @@ function orderLinePayload(orderId, l3) {
     // la línea no es un menú — y entonces el SQL deja `combo_group_ref` en NULL, así que una línea
     // normal no cambia en nada. El grupo NO se manda: lo minta el servidor con el id de la fila.
     combo: comboColumn(l3),
-    line_total: provisionalLineTotal(l3.price, l3.qty, l3.is_gift, l3.discount ?? 0),
+    line_total: provisionalLineTotal(l3.price, l3.qty, l3.is_gift, l3.discount ?? 0, modifierDelta(l3)),
     ...unitContextPayload(l3)
   };
 }
@@ -5196,16 +5267,26 @@ async function persistLineQty(client, orderId, line, qty) {
   }
   if (!lineId) return false;
   line.line_id = lineId;
-  await updateOrderLineQty(client, orderId, lineId, qty, line.price, line.is_gift, line.gift_reason);
+  await updateOrderLineQty(
+    client,
+    orderId,
+    lineId,
+    qty,
+    line.price,
+    line.is_gift,
+    line.gift_reason,
+    line.discount ?? 0,
+    line.modifiers
+  );
   return true;
 }
-async function updateOrderLineQty(client, orderId, lineId, qty, unitPrice, isGift, giftReason, discount = 0) {
+async function updateOrderLineQty(client, orderId, lineId, qty, unitPrice, isGift, giftReason, discount = 0, modifiers) {
   await client.command("sales.order.update_line", {
     order_id: orderId,
     line_id: lineId,
     quantity: toMicro2(qty),
     // punto fijo 10⁶ (ADR-0147)
-    line_total: provisionalLineTotal(unitPrice, qty, isGift, discount),
+    line_total: provisionalLineTotal(unitPrice, qty, isGift, discount, modifierDelta({ modifiers })),
     // Alternar invitación cambia el importe: viaja junto para que la fila quede coherente.
     is_gift: isGift === void 0 ? null : isGift ? 1 : 0,
     gift_reason: giftReason ?? null
@@ -5217,7 +5298,7 @@ async function updateOrderLineDiscount(client, orderId, line, discount) {
     order_id: orderId,
     line_id: line.line_id,
     quantity: toMicro2(line.qty),
-    line_total: provisionalLineTotal(line.price, line.qty, line.is_gift, discount),
+    line_total: provisionalLineTotal(line.price, line.qty, line.is_gift, discount, modifierDelta(line)),
     discount_percent: discount,
     is_gift: null,
     gift_reason: null
@@ -5229,7 +5310,7 @@ async function updateOrderLineNote(client, orderId, line, note) {
     order_id: orderId,
     line_id: line.line_id,
     quantity: toMicro2(line.qty),
-    line_total: provisionalLineTotal(line.price, line.qty, line.is_gift, line.discount ?? 0),
+    line_total: provisionalLineTotal(line.price, line.qty, line.is_gift, line.discount ?? 0, modifierDelta(line)),
     notes: note,
     is_gift: null,
     gift_reason: null
@@ -5814,13 +5895,13 @@ var OkSpotlightSearch = class extends i3 {
       display: contents;
     }
 
-    /* Botón-trigger opcional (icon-only). */
+    /* Botón-trigger opcional (icon-only). #92 -- 44px, sin vecino con el que solapar. */
     button.trigger {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 2.4rem;
-      height: 2.4rem;
+      width: var(--ok-tap-min, 44px);
+      height: var(--ok-tap-min, 44px);
       padding: 0;
       border: 0;
       border-radius: 10px;
@@ -5874,13 +5955,15 @@ var OkSpotlightSearch = class extends i3 {
       font-size: 1.05rem;
     }
     .top input::placeholder { color: var(--color-muted); }
+    /* #92 -- 44px; the middle of the row is a flexible <input>, so a bigger close button just
+       grows into free space, no overlap. */
     .top .close {
       flex: 0 0 auto;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 2rem;
-      height: 2rem;
+      width: var(--ok-tap-min, 44px);
+      height: var(--ok-tap-min, 44px);
       padding: 0;
       border: 0;
       border-radius: 8px;
@@ -8409,12 +8492,20 @@ var ErpPosTouch = class extends i3 {
       return n6 >= g3.min && (g3.max === 0 || n6 <= g3.max);
     });
   }
-  /** Confirma la hoja y añade la línea con sus suplementos. Solo viajan los `option_id`, en el
-   *  ORDEN elegido: el importe lo resuelve el servidor contra `modifiers.options.all`. */
+  /** Confirma la hoja y añade la línea con sus suplementos, en el ORDEN elegido.
+   *
+   *  🔴 Solo viaja el `option_id`: el importe que se COBRA lo resuelve el servidor contra
+   *  `modifiers.options.all` (sales#68). El `price_delta` se queda EN LA PANTALLA (sales#208) —
+   *  es el que la hoja acaba de enseñar y el que hace que la línea del carrito valga lo que se va
+   *  a cobrar en vez del precio pelado del producto. */
   async confirmModifiers() {
     const sheet = this.modifierSheet;
     if (!sheet || !this.canConfirmModifiers()) return;
-    const picks = this.modifierPicks.map((option_id) => ({ option_id }));
+    const options = new Map(sheet.groups.flatMap((g3) => g3.options).map((o9) => [o9.id, o9]));
+    const picks = this.modifierPicks.map((option_id) => ({
+      option_id,
+      ...options.get(option_id)?.price_delta ? { price_delta: options.get(option_id).price_delta } : {}
+    }));
     this.modifierSheet = void 0;
     this.modifierPicks = [];
     await this.addNow(sheet.product, picks);
@@ -8747,7 +8838,10 @@ var ErpPosTouch = class extends i3 {
    *  id: la línea sale fea, pero sale. */
   resolvedModifiers(l3) {
     if (!l3.modifiers?.length) return void 0;
-    return l3.modifiers.map((m4) => this.modifierCatalog.get(m4.option_id) ?? { option_id: m4.option_id });
+    return l3.modifiers.map((m4) => {
+      const named = this.modifierCatalog.get(m4.option_id) ?? { option_id: m4.option_id };
+      return m4.price_delta != null ? { ...named, price_delta: m4.price_delta } : named;
+    });
   }
   /** El carrito en la forma de la CUENTA. Una sola fuente para el papel y para la pantalla del
    *  modal: si cada uno compusiera la suya, el camarero vería algo distinto de lo que imprime. */
@@ -9905,7 +9999,10 @@ var ErpPosTouch = class extends i3 {
         <h3>
           ${this.hasKitchen ? locked ? b2`<ok-status-pill tone="success" size="sm" dot>${t5("ui.commandRound", { n: String(l3.round_no ?? "") })}</ok-status-pill>` : b2`<ok-status-pill tone="warning" size="sm" dot>${t5("ui.pendingStatus")}</ok-status-pill>` : A}
           <span>${l3.name}</span>${l3.is_gift ? b2` <ion-badge color="success">${t5("ui.giftBadge")}</ion-badge>` : A}</h3>
-        <p>${priceLabel(this.money(l3.price), l3.unit_code)}${l3.is_gift && l3.gift_reason ? b2` · ${l3.gift_reason}` : A}${l3.discount ? b2` <ion-badge class="line-discount-badge" color="warning">−${l3.discount}%</ion-badge>` : A}</p>
+        <!-- sales#208: el precio unitario que se enseña YA lleva los suplementos, que es el que
+             va a salir impreso (el cobro mete el delta por el precio unitario de la línea). Con la
+             base a secas, «9,00 €» debajo de un importe de «12,00 €» se lee como un fallo. -->
+        <p>${priceLabel(this.money(unitPriceWithModifiers(l3)), l3.unit_code)}${l3.is_gift && l3.gift_reason ? b2` · ${l3.gift_reason}` : A}${l3.discount ? b2` <ion-badge class="line-discount-badge" color="warning">−${l3.discount}%</ion-badge>` : A}</p>
         <!-- sales#156: if the note is not visible the waiter does not know whether it was typed,
              so it gets typed twice or taken for granted. It goes on a sub-line of its own, the way
              the supplements do on paper. -->
@@ -12068,7 +12165,9 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     .pager .load-more { min-height: 44px; margin: 0; --padding-start: 1rem; --padding-end: 1rem; font-size: 13px; }
     .pager .nav .pp { font-weight: 600; color: var(--color); padding: 0 0.25rem; }
     /* Pager numerado: botón por página + «…» en los saltos (look del Hub). */
-    .pnum { min-width: 1.75rem; height: 1.75rem; padding: 0 0.4rem; border: 1px solid transparent; border-radius: 8px; background: none; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--color); cursor: pointer; transition: background 0.12s, border-color 0.12s; }
+    /* #92 — min-width/height at 44px so a numbered page button matches the prev/next ion-button's
+       own 44px tap target (line above): before this they were visibly smaller than their neighbors. */
+    .pnum { min-width: var(--ok-tap-min, 44px); height: var(--ok-tap-min, 44px); padding: 0 0.4rem; border: 1px solid transparent; border-radius: 8px; background: none; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--color); cursor: pointer; transition: background 0.12s, border-color 0.12s; }
     .pnum:hover { background: var(--row-hover); }
     .pnum.on { background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary); border-color: color-mix(in srgb, var(--primary) 40%, transparent); }
     .pgap { padding: 0 0.15rem; color: var(--color-muted); }

@@ -398,9 +398,19 @@ def test_the_frozen_supplement_survives_and_nobody_rewrites_it() -> None:
     # Its own check so the counts of the other blocks do not move.
     seed_order(order_id=CHEESE_ORDER)
     ok, err = run_command("sales._insert_order_line", line_params(
-        "line-cheese", 900, order_id=CHEESE_ORDER,
+        "line-cheese", 900, order_id=CHEESE_ORDER, line_total=1200,
         modifiers=json.dumps(FROZEN_CHEESE, separators=(",", ":"))))
     check("the line with its frozen supplement goes in", (ok, err), (True, ""))
+    # sales#208 — the OTHER half of the chain, and the half only a database settles. The handler
+    # tests prove the row's `line_total` is 9,00 + 3,00; what has to hold here is that
+    # `order_recompute_total.sql` adds up THAT column — the open check's `provisional_total` is the
+    # number the waiter reads in the list of open tables, and it read 9,00 € for a table that was
+    # going to pay 12,00 €. The two halves are tested where each one lives, and they meet on this
+    # column.
+    ok, err = run_command("sales._recompute_order_total", {"order_id": CHEESE_ORDER})
+    check("the check's provisional total is recomposed", (ok, err), (True, ""))
+    check("and it carries the supplement", qi(
+        f"SELECT provisional_total FROM sales_order WHERE id='{CHEESE_ORDER}'"), 1200)
     rows = {r["id"]: r for r in run_query("sales.order.lines", {"order_id": CHEESE_ORDER})}
     raw = rows.get("line-cheese", {}).get("modifiers")
     # 🔴 THE POINT. Without this column the checkout cannot tell "no supplements" from "the column

@@ -349,9 +349,13 @@ describe('los suplementos en el documento del térmico (sales#148)', () => {
   });
 
   it('SIN importe en el papel: el delta ya viaja dentro del total de la línea', () => {
+    // sales#208 — este caso afirmaba lo que su propio nombre dice y comprobaba lo contrario: el
+    // total esperado era 10,00 €, o sea la base PELADA, con lo que el papel no llevaba el delta ni
+    // al lado del suplemento ni dentro del importe. El contrato de la cabecera de
+    // `paper-modifiers.ts` (y el de Toast y Shopify POS que cita) es que va DENTRO: 10,00 + 1,00.
     const doc = prebillToPrintDocument([{ name: 'Hamburguesa', price: 1000, qty: 1, modifiers: MODS }], SETTINGS, {});
     expect(doc.items[0].notes).not.toMatch(/\d/);
-    expect(doc.items[0].total, 'el importe cobrado es el de la línea, con el suplemento dentro').toBe(10);
+    expect(doc.items[0].total, 'el importe cobrado es el de la línea, con el suplemento dentro').toBe(11);
   });
 
   it('una línea sin suplementos NO gana la clave: el papel de siempre sale byte a byte igual', () => {
