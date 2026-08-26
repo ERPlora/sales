@@ -79,6 +79,16 @@ describe('checkoutErrorKey', () => {
     }
   });
 
+  it('sales#147 — a supplement that taxes differently gets its OWN message, not «could not charge»', () => {
+    // The cashier can fix this in ten seconds ON THE MODIFIER, and only if the screen says which
+    // one and why. Behind a generic «error charging» it looks like the till is broken, and the
+    // usual answer to that is to charge it as a free line — which is the mis-declared invoice all
+    // over again, this time typed in by hand.
+    expect(checkoutErrorKey('sales.modifier_tax_override_unsupported'))
+      .toBe('ui.errorModifierTaxOverride');
+    for (const catalogue of [en, es]) expect(catalogue.ui.errorModifierTaxOverride).toBeTruthy();
+  });
+
   it('sales#185 — a PLATFORM refusal is business words too, not a runtime sentence', () => {
     // hub#1074/ADR-0400: `complete_sale` declares `taxes.rules.list` as a `required` read, so a hub
     // whose tax app was force-uninstalled (hub#1101) or deactivated by the cascade (ADR-0128) has

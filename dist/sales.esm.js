@@ -3956,6 +3956,7 @@ var es_default = {
     errorAmountNegative: "La venta no puede llevar importes negativos",
     errorInsufficientTendered: "El importe entregado no cubre el total",
     errorNoTaxRule: "Una l\xEDnea tiene una categor\xEDa fiscal sin regla de IVA en este negocio: config\xFArala en Impuestos antes de cobrar",
+    errorModifierTaxOverride: "Un suplemento de esa l\xEDnea tributa a un IVA distinto del de la l\xEDnea, y as\xED todav\xEDa no se puede cobrar. Qu\xEDtale la categor\xEDa fiscal en Suplementos, o quita el suplemento de la l\xEDnea",
     errorTaxCatalogUnavailable: "No se han podido cargar las reglas de IVA, as\xED que no se ha cobrado nada. Vuelve a intentarlo y, si persiste, avisa al encargado",
     all: "Todos",
     categoryFilter: "Categor\xEDas",
@@ -4316,6 +4317,7 @@ var en_default = {
     errorAmountNegative: "The sale cannot carry negative amounts",
     errorInsufficientTendered: "The amount tendered does not cover the total",
     errorNoTaxRule: "A line has a tax category with no VAT rule in this business \u2014 set it up in Taxes before charging",
+    errorModifierTaxOverride: "A supplement on that line taxes at a different VAT rate than the line itself, and it cannot be charged that way yet. Remove its tax category in Modifiers, or take the supplement off the line",
     errorTaxCatalogUnavailable: "The VAT rules could not be loaded, so nothing was charged. Try again; if it keeps happening, call the manager",
     all: "All",
     categoryFilter: "Categories",
@@ -6169,6 +6171,12 @@ var MESSAGES = {
   "sales.combo_component_price_unknown": "ui.errorComboComponentPriceUnknown",
   "sales.combo_tax_category_missing": "ui.errorComboTaxCategoryMissing",
   "sales.too_many_lines": "ui.errorTooManyLines",
+  // sales#147 (the amendment to ADR-0376) — the supplement declares a tax category of its OWN and
+  // there is nowhere to put it today: folding it into the parent would charge it at the PARENT's
+  // rate and the invoice would come out wrongly broken down, in silence. Its own message and not
+  // `ui.errorCharge` on purpose: this is fixed on the option in the Modifiers catalogue, in ten
+  // seconds, and only if the screen says which one.
+  "sales.modifier_tax_override_unsupported": "ui.errorModifierTaxOverride",
   // sales#185 (hub#1074, ADR-0400) — PLATFORM codes, not domain ones. `complete_sale` declares
   // `taxes.rules.list` as a read with `required: true`, so a hub missing the tax app (force
   // uninstalled, hub#1101, or deactivated by the ADR-0128 cascade) has the sale refused by the

@@ -157,6 +157,7 @@
     "errorAmountNegative": "The sale cannot carry negative amounts",
     "errorInsufficientTendered": "The amount tendered does not cover the total",
     "errorNoTaxRule": "A line has a tax category with no VAT rule in this business — set it up in Taxes before charging",
+    "errorModifierTaxOverride": "A supplement on that line taxes at a different VAT rate than the line itself, and it cannot be charged that way yet. Remove its tax category in Modifiers, or take the supplement off the line",
     "errorTaxCatalogUnavailable": "The VAT rules could not be loaded, so nothing was charged. Try again; if it keeps happening, call the manager",
     "all": "All",
     "categoryFilter": "Categories",
