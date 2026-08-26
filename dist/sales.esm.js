@@ -3312,6 +3312,7 @@ var DEFAULT_LABELS2 = {
   receipt: "Receipt",
   servedBy: "Served by",
   customer: "Customer",
+  table: "Table",
   item: "Item",
   amount: "Amount",
   noLines: "\u2014 No lines \u2014",
@@ -3430,8 +3431,9 @@ var OkReceipt = class extends i3 {
         ${r6.number ? b2`<span>${this.t.receipt}: <strong>${r6.number}</strong></span>` : b2`<span></span>`}
         ${r6.datetime ? b2`<span>${r6.datetime}</span>` : A}
       </div>
-      ${r6.cashier || r6.customer ? b2`<div class="meta">
+      ${r6.cashier || r6.customer || r6.table ? b2`<div class="meta">
             ${r6.cashier ? b2`<span>${this.t.servedBy}: ${r6.cashier}</span>` : b2`<span></span>`}
+            ${r6.table ? b2`<span>${this.t.table}: ${r6.table}</span>` : A}
             ${r6.customer ? b2`<span>${this.t.customer}: ${r6.customer}</span>` : A}
           </div>` : A}`;
   }
@@ -11237,7 +11239,8 @@ var DEFAULT_LABELS5 = {
   select: "Select",
   showing: "Showing {from}\u2013{to} of",
   recordSingular: "record",
-  recordPlural: "records"
+  recordPlural: "records",
+  loadMore: "Load more"
 };
 var ES_LABELS = {
   search: "Buscar\u2026",
@@ -11273,7 +11276,8 @@ var ES_LABELS = {
   select: "Seleccionar",
   showing: "Mostrando {from}\u2013{to} de",
   recordSingular: "registro",
-  recordPlural: "registros"
+  recordPlural: "registros",
+  loadMore: "Cargar m\xE1s"
 };
 var _OkDataTable = class _OkDataTable2 extends i3 {
   constructor() {
@@ -11308,6 +11312,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     this.q = "";
     this.clientPage = 0;
     this.clientPageSize = 0;
+    this.mobileShown = 0;
     this.clientSort = "";
     this.clientSortDir = "asc";
     this.clientFilters = {};
@@ -11329,6 +11334,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       } else {
         this.q = value;
         this.clientPage = 0;
+        this.mobileShown = 0;
       }
     };
   }
@@ -11576,8 +11582,12 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       .gh.sortable:hover, .gh.sortable:active,
       .grow-data:hover, .grow-data:active { transform: none; }
     }
-    /* Cabecera: ion-card-header en fila (icono + título + checkbox); se conserva su padding Ionic. */
-    ion-card-header.rcard-head { display: flex; align-items: center; gap: 0.5rem; }
+    /* Header: ion-card-header as a single row (icon + title + checkbox), keeping Ionic's padding.
+       #79 — flex-direction/flex-wrap are SPELLED OUT on purpose: in ios mode (the mode the Hub
+       shell pins, ADR-0143) Ionic's own host CSS gives ion-card-header a column direction, so a
+       rule that only sets display:flex inherits it and the three children stack on three lines.
+       Under md the same rule looked right, which is why it shipped. */
+    ion-card-header.rcard-head { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 0.5rem; }
     .rcard-head .rc-icon { display: inline-flex; color: var(--primary); }
     .rcard-head .rc-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
     /* Cuerpo: ion-card-content (padding Ionic por defecto) con las filas clave-valor apiladas. */
@@ -11611,6 +11621,11 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     .pager .strong { font-weight: 600; color: var(--color); }
     .psize { font: inherit; font-size: 12.5px; padding: 0.2rem 0.35rem; border: 1px solid var(--border-color); border-radius: 6px; background: var(--background); color: var(--color); }
     .pager .nav { display: flex; align-items: center; gap: 0.2rem; }
+    /* #78 — Pie en MÓVIL: un solo control «Cargar más» en lugar del pager numerado (Shopify
+       IndexTable, Fresha, Square y Material hacen lo mismo: nadie pinta botones de página en un
+       teléfono). Sin atributo fill: el sólido por defecto de Ionic es el único que pinta caja en
+       modo ios (outfitkit#82 / ADR-0143). Los 44px son el área táctil mínima. */
+    .pager .load-more { min-height: 44px; margin: 0; --padding-start: 1rem; --padding-end: 1rem; font-size: 13px; }
     .pager .nav .pp { font-weight: 600; color: var(--color); padding: 0 0.25rem; }
     /* Pager numerado: botón por página + «…» en los saltos (look del Hub). */
     .pnum { min-width: 1.75rem; height: 1.75rem; padding: 0 0.4rem; border: 1px solid transparent; border-radius: 8px; background: none; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--color); cursor: pointer; transition: background 0.12s, border-color 0.12s; }
@@ -11875,6 +11890,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     }
     this.clientFilters = clean;
     this.clientPage = 0;
+    this.mobileShown = 0;
     this.panel = "none";
     this.emit("filterChange", { filters: this.serializeFilters(clean) });
   }
@@ -11995,6 +12011,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       this.emit("sortChange", { sort: col.key, dir });
       return;
     }
+    this.mobileShown = 0;
     if (this.clientSort === col.key) {
       this.clientSortDir = this.clientSortDir === "asc" ? "desc" : "asc";
     } else {
@@ -12026,6 +12043,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     else next[key] = merged;
     this.clientFilters = next;
     this.clientPage = 0;
+    this.mobileShown = 0;
   }
   // ion-select (select/multiselect) del panel de filtros (renderFilterControl). En servidor emite
   // `filterChange`; en cliente escribe `clientFilters` (multiselect ⇒ filtra por inclusión).
@@ -12073,8 +12091,9 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
    *   `views` antes de insertar  → tarjetas
    *   `views` después de insertar → tabla   ← lo que hace la página
    */
-  willUpdate() {
+  willUpdate(changed) {
     this.applyInitialView();
+    if (!this.serverSide && changed.has("rows") && this.mobileShown !== 0) this.mobileShown = 0;
   }
   applyInitialView() {
     if (this.viewChosenByUser) return;
@@ -12103,7 +12122,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         <ion-select
           label=${col.header}
           label-placement="stacked"
-          fill="outline"
+          fill="outline" mode="md"
           ?multiple=${multi}
           interface="modal"
           .interfaceOptions=${{ cssClass: "ok-overlay" }}
@@ -12122,9 +12141,9 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         <div class="fblock">
           <span class="flabel">${col.header}</span>
           <div class="frange">
-            <ion-input type=${t7} fill="outline" placeholder=${type === "daterange" ? this.t.from : this.t.gte}
+            <ion-input type=${t7} fill="outline" mode="md" placeholder=${type === "daterange" ? this.t.from : this.t.gte}
               @ionInput=${(e7) => onEdge(col, "from", e7)}></ion-input>
-            <ion-input type=${t7} fill="outline" placeholder=${type === "daterange" ? this.t.to : this.t.lte}
+            <ion-input type=${t7} fill="outline" mode="md" placeholder=${type === "daterange" ? this.t.to : this.t.lte}
               @ionInput=${(e7) => onEdge(col, "to", e7)}></ion-input>
           </div>
         </div>
@@ -12134,7 +12153,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     return b2`
       <ion-input
         type=${inputType}
-        fill="outline"
+        fill="outline" mode="md"
         label=${col.header}
         label-placement="stacked"
         placeholder=${this.t.filterPlaceholder}
@@ -12295,8 +12314,14 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       count = filtered.length;
       pages = Math.max(1, Math.ceil(filtered.length / ps));
       current = Math.min(this.clientPage, pages - 1);
-      visible = filtered.slice(current * ps, current * ps + ps);
+      visible = this.isMobile ? filtered.slice(0, Math.min(this.mobileShown || ps, count)) : filtered.slice(current * ps, current * ps + ps);
     }
+    const served = this.serverSide ? (current + 1) * ps : Math.min(this.mobileShown || ps, count);
+    const canLoadMore = this.isMobile && served < count;
+    const loadMore = () => {
+      if (this.serverSide) this.emit("pageChange", current + 1);
+      else this.mobileShown = Math.min((this.mobileShown || ps) + ps, count);
+    };
     const goTo = (p4) => {
       if (this.serverSide) this.emit("pageChange", p4);
       else this.clientPage = p4;
@@ -12306,6 +12331,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       else {
         this.clientPageSize = n6;
         this.clientPage = 0;
+        this.mobileShown = 0;
       }
     };
     const searchbar = this.serverSide ? b2`<ion-searchbar class="ion-no-border" placeholder=${this.effSearchPlaceholder} debounce="250" @ionInput=${this.onSearch}></ion-searchbar>` : b2`<ion-searchbar class="ion-no-border" .value=${this.q} placeholder=${this.effSearchPlaceholder} debounce="250" @ionInput=${this.onSearch}></ion-searchbar>`;
@@ -12395,7 +12421,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
               <div class="pager">
                 <div class="left">
                   <span>
-                    ${pages > 1 ? b2`${this.t.showing.replace("{from}", String(current * ps + 1)).replace("{to}", String(Math.min((current + 1) * ps, count)))} ` : A}
+                    ${pages > 1 ? b2`${this.t.showing.replace("{from}", String(this.isMobile && !this.serverSide ? 1 : current * ps + 1)).replace("{to}", String(Math.min(served, count)))} ` : A}
                     <span class="strong">${count}</span> ${count === 1 ? this.t.recordSingular : this.t.recordPlural}
                   </span>
                   ${!showTopbar && this.effPageSizes.length ? b2`
@@ -12404,7 +12430,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                         </select>
                       ` : A}
                 </div>
-                ${pages > 1 ? b2`
+                ${this.isMobile ? canLoadMore ? b2`<ion-button class="load-more" size="small" @click=${loadMore}>${this.t.loadMore}</ion-button>` : A : pages > 1 ? b2`
                       <div class="nav">
                         <ion-button size="small" fill="clear" ?disabled=${current === 0} @click=${() => goTo(current - 1)}><ion-icon slot="icon-only" .icon=${iconChevronBack}></ion-icon></ion-button>
                         ${this.pageList(current + 1, pages).map(
@@ -12452,8 +12478,8 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         <div class="fblock">
           <span class="flabel">${label}</span>
           <div class="daterange">
-            <ion-input type="date" label=${this.t.from} label-placement="stacked" fill="outline" .value=${f3.from ?? ""} @ionChange=${(e7) => this.setFilterRange(col.key, "from", e7.detail.value ?? "")}></ion-input>
-            <ion-input type="date" label=${this.t.to} label-placement="stacked" fill="outline" .value=${f3.to ?? ""} @ionChange=${(e7) => this.setFilterRange(col.key, "to", e7.detail.value ?? "")}></ion-input>
+            <ion-input type="date" label=${this.t.from} label-placement="stacked" fill="outline" mode="md" .value=${f3.from ?? ""} @ionChange=${(e7) => this.setFilterRange(col.key, "from", e7.detail.value ?? "")}></ion-input>
+            <ion-input type="date" label=${this.t.to} label-placement="stacked" fill="outline" mode="md" .value=${f3.to ?? ""} @ionChange=${(e7) => this.setFilterRange(col.key, "to", e7.detail.value ?? "")}></ion-input>
           </div>
         </div>
       `;
@@ -12465,7 +12491,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         <ion-select
           label=${label}
           label-placement="stacked"
-          fill="outline"
+          fill="outline" mode="md"
           multiple
           interface="modal"
           .interfaceOptions=${{ cssClass: "ok-overlay" }}
@@ -12718,6 +12744,9 @@ __decorateClass11([
 __decorateClass11([
   r5()
 ], _OkDataTable.prototype, "clientPageSize");
+__decorateClass11([
+  r5()
+], _OkDataTable.prototype, "mobileShown");
 __decorateClass11([
   r5()
 ], _OkDataTable.prototype, "clientSort");
