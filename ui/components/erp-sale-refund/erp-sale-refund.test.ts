@@ -276,7 +276,10 @@ describe('confirmar', () => {
   it('un rechazo del servidor se traduce por CÓDIGO, no por la frase', async () => {
     const el = await mount();
     el.reason = 'devolución';
-    sdk.command.mockRejectedValueOnce(new Error('sales.refund_exceeds_tender: Efectivo …'));
+    // sales#201 — el sobre del runtime: el código en su CAMPO, y una frase que nadie lee.
+    sdk.command.mockRejectedValueOnce(
+      Object.assign(new Error('Efectivo was refunded beyond what it took'), { code: 'sales.refund_exceeds_tender' }),
+    );
     await el.confirm();
     expect(sdk.notify).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'error', message: esCatalog.ui.refundExceedsTender }),

@@ -9,6 +9,7 @@ import '../erp-sale-refund/erp-sale-refund.js';
 import { payMethodDisplayName } from '../../lib/pay-icons.js';
 import type { PayMethodLike } from '../../lib/pay-icons.js';
 import { formatDateTime } from '../../lib/document-mappers.js';
+import { errorCode } from '../../lib/checkout-key.js';
 import { createListController } from '@erplora/module-sdk';
 import type { ListController, ListClient, ListParams, ListPage } from '@erplora/module-sdk';
 // Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC.
@@ -54,9 +55,18 @@ const VOID_MESSAGES: Record<string, string> = {
   'sales.void_reason_required': 'ui.voidReasonRequired',
   'sales.sale_not_found': 'ui.voidSaleNotFound',
 };
-export function voidErrorKey(message: string): string {
-  for (const [code, key] of Object.entries(VOID_MESSAGES)) if (message.includes(code)) return key;
-  return 'ui.voidFailed';
+/**
+ * sales#201 — the key for a refused void, read from the CODE the envelope carries.
+ *
+ * It used to take the MESSAGE and look each code up inside it with `includes`, which worked only
+ * while the handler formatted its refusal as `"<code>: <detail>"` and the runtime carried that
+ * whole string. Now the refusal travels through `Output.error`, so the runtime answers
+ * `{code, message}` and the message is the detail ALONE — a substring search would stop matching
+ * in silence and every void refusal would collapse into the generic one. The lookup is EXACT:
+ * a code is a field, never a prefix of a sentence.
+ */
+export function voidErrorKey(code: string): string {
+  return VOID_MESSAGES[code] ?? 'ui.voidFailed';
 }
 
 interface Sale {
@@ -210,8 +220,7 @@ export class ErpSalesList extends LitElement {
       erplora().notify?.({ type: 'success', message: t('ui.voidDone') });
       await Promise.all([this.ctrl.load(), this.loadStats()]);
     } catch (e) {
-      const raw = e instanceof Error ? e.message : String(e ?? '');
-      erplora().notify?.({ type: 'error', message: t(voidErrorKey(raw)) });
+      erplora().notify?.({ type: 'error', message: t(voidErrorKey(errorCode(e))) });
     }
   }
 

@@ -50,12 +50,18 @@ use erplora_guest_sdk::units::{calculate_line_amount, QuantityValue, QUANTITY_SC
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use std::str::FromStr;
-use erplora_guest_sdk::{Event, Operation, Output};
+use erplora_guest_sdk::{DomainError, Event, Operation, Output};
 use serde_json::{json, Map, Value};
 
 #[cfg(feature = "guest")]
 use extism_pdk::*;
 
+/// sales#201 — the two channels, and why the `Err` arm is NOT where a refusal goes.
+///
+/// A business rejection comes back inside the `Ok`, in `Output.error`: that is the only channel the
+/// host turns into `RuntimeError::Domain { code }`, and therefore the only one the browser receives
+/// as a translatable `code` instead of the flat `400 {code: "error"}`. The `Err` arm is reserved for
+/// a broken guest contract, which the host reports as a failed command — a bug, not an answer.
 #[cfg(feature = "guest")]
 #[plugin_fn]
 pub fn complete_sale(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
@@ -174,16 +180,16 @@ fn item_i64(item: &Value, key: &str, d: i64) -> i64 {
 /// RECHAZA — redondear aquí modificaría calladamente lo vendido, el stock y el importe. Solo se
 /// valida si la línea declara su incremento (contexto congelado); sin contexto no se bloquea la
 /// venta (mismo criterio graceful que `inventory::increment_for_product`).
-fn line_qty(item: &Value) -> Result<i64, String> {
+fn line_qty(item: &Value) -> Result<i64, Refusal> {
     let qty = item.get("quantity").map(|v| as_qty(v, QUANTITY_SCALE)).unwrap_or(QUANTITY_SCALE);
     if qty <= 0 {
-        return Err(format!("quantity_not_positive: {qty}"));
+        return Err(reject("sales.quantity_not_positive", format!("quantity {qty}")));
     }
     let inc = item_i64(item, "increment_value", 0);
     if inc > 0 && qty % inc != 0 {
         // El error nombra ambos valores para que la UI pueda decir «0,0005 kg no vale en una
         // unidad configurada en incrementos de 0,001 kg».
-        return Err(format!("quantity_off_grid: {qty} % {inc} != 0"));
+        return Err(reject("sales.quantity_off_grid", format!("{qty} % {inc} != 0")));
     }
     Ok(qty)
 }
@@ -338,7 +344,7 @@ fn resolve_line_tax(
     cc: &str,
     rc: &str,
     date: &str,
-) -> Result<ResolvedTax, String> {
+) -> Result<ResolvedTax, Refusal> {
     // La categoría de una línea de catálogo la pone el catálogo; si no, la que venga.
     let cat = catalog_cat
         .map(|c| c.to_string())
@@ -579,7 +585,7 @@ fn is_catalog_line(item: &Value) -> bool {
 
 /// Precio y coste AUTORITATIVOS de una línea de catálogo. `Err` con código de dominio si la línea
 /// dice ser de catálogo y no se puede sostener.
-fn authoritative_price(item: &Value, catalog: Option<&Vec<&Value>>) -> Result<Option<(i64, i64, String)>, String> {
+fn authoritative_price(item: &Value, catalog: Option<&Vec<&Value>>) -> Result<Option<(i64, i64, String)>, Refusal> {
     if !is_catalog_line(item) {
         return Ok(None);
     }
@@ -616,7 +622,7 @@ fn authoritative_price(item: &Value, catalog: Option<&Vec<&Value>>) -> Result<Op
 fn frozen_order_line<'a>(
     item: &Value,
     rows: Option<&'a Vec<&'a Value>>,
-) -> Result<Option<&'a Value>, String> {
+) -> Result<Option<&'a Value>, Refusal> {
     let id = field(item, "order_item_id");
     if id.is_empty() {
         // Counter sale: there is no "when it was ordered" apart from "when it is paid". The
@@ -643,7 +649,7 @@ fn line_price(
     item: &Value,
     frozen: Option<&Value>,
     catalog: Option<&Vec<&Value>>,
-) -> Result<Option<(i64, i64, String)>, String> {
+) -> Result<Option<(i64, i64, String)>, Refusal> {
     match frozen {
         Some(row) => Ok(Some((
             as_cents(row.get("unit_price").unwrap_or(&Value::Null), 0),
@@ -695,7 +701,7 @@ fn authoritative_modifiers(
     frozen: Option<&Value>,
     catalog: Option<&Vec<&Value>>,
     line_tax_category: Option<&str>,
-) -> Result<(i64, String), String> {
+) -> Result<(i64, String), Refusal> {
     let entries = resolve_modifiers(item, frozen, catalog)?;
     let mut delta_total: i64 = 0;
     for entry in &entries {
@@ -731,7 +737,7 @@ fn resolve_modifiers(
     item: &Value,
     frozen: Option<&Value>,
     catalog: Option<&Vec<&Value>>,
-) -> Result<Vec<Value>, String> {
+) -> Result<Vec<Value>, Refusal> {
     let chosen = chosen_modifiers(item, frozen)?;
     if chosen.is_empty() {
         // No supplements, no catalogue needed: the vast majority of lines.
@@ -755,7 +761,7 @@ fn resolve_modifiers(
 /// read as "no supplements": that silence would undercharge the check by the whole delta, and a
 /// column that stopped travelling in `sales.order.lines` is indistinguishable from a check that
 /// carries none.
-fn chosen_modifiers(item: &Value, frozen: Option<&Value>) -> Result<Vec<Value>, String> {
+fn chosen_modifiers(item: &Value, frozen: Option<&Value>) -> Result<Vec<Value>, Refusal> {
     match frozen {
         Some(row) => match row.get("modifiers") {
             None => Err(reject(
@@ -804,7 +810,7 @@ fn frozen_modifier(pick: &Value) -> Option<Value> {
 /// One entry resolved against `modifiers.options.all`: the catalogue is the authority for a counter
 /// sale, for the two doors that materialise a line of an open check, and for a row written before
 /// sales#200.
-fn catalog_modifier(pick: &Value, catalog: Option<&Vec<&Value>>) -> Result<Value, String> {
+fn catalog_modifier(pick: &Value, catalog: Option<&Vec<&Value>>) -> Result<Value, Refusal> {
     let rows = catalog.ok_or_else(|| {
         reject(
             "sales.modifier_catalog_unavailable",
@@ -835,9 +841,9 @@ fn catalog_modifier(pick: &Value, catalog: Option<&Vec<&Value>>) -> Result<Value
 
 /// The snapshot as it binds to the TEXT column (migration 023): a JSON list, in the order of
 /// choice.
-fn encode_modifiers(entries: Vec<Value>) -> Result<String, String> {
+fn encode_modifiers(entries: Vec<Value>) -> Result<String, Refusal> {
     serde_json::to_string(&Value::Array(entries))
-        .map_err(|e| format!("modifier_snapshot_encode: {e}"))
+        .map_err(|e| broken(format!("modifier_snapshot_encode: {e}")))
 }
 
 /// Una línea que el SERVIDOR materializó a partir de un combo (sales#152 / ADR-0381).
@@ -898,7 +904,7 @@ fn combo_component_catalog(
     source: &str,
     source_ref: &str,
     catalog: Option<&Vec<&Value>>,
-) -> Result<(i64, String), String> {
+) -> Result<(i64, String), Refusal> {
     // Un componente que no es un producto (un servicio del pack de peluquería) no tiene catálogo
     // que `sales` pueda leer: `services` no está en su `depends_on`. Un combo `service` no lo
     // necesita —va entero a un tipo—, pero uno de bienes SÍ, y ahí se rechaza en vez de estimar.
@@ -941,7 +947,7 @@ fn expand_combo(
     combo_catalog: Option<&Vec<&Value>>,
     product_catalog: Option<&Vec<&Value>>,
     frozen_dividend: Option<i64>,
-) -> Result<Vec<(Value, ComboLine)>, String> {
+) -> Result<Vec<(Value, ComboLine)>, Refusal> {
     let combo_id = field(item, "combo_id");
     // FALLA CERRADO (ADR-0127). La read es OPCIONAL —`sales` no depende de `combos`—, así que su
     // ausencia significa «el módulo no está instalado». Sin catálogo no se conocen ni el precio
@@ -1127,7 +1133,7 @@ fn expand_combo(
         "supply_kind": supply_kind,
         "components": snapshot_components,
     }))
-    .map_err(|e| format!("combo_snapshot_encode: {e}"))?;
+    .map_err(|e| broken(format!("combo_snapshot_encode: {e}")))?;
 
     // Lo que la línea hereda del combo: si el menú se invita o lo cubre un bono, se invita o se
     // cubre ENTERO; un descuento de línea sobre el menú lo llevan por igual todas sus hermanas, así
@@ -1227,7 +1233,7 @@ fn expand_combos<'a>(
     combo_catalog: Option<&Vec<&Value>>,
     product_catalog: Option<&Vec<&Value>>,
     order_lines: Option<&'a Vec<&'a Value>>,
-) -> Result<Vec<(Value, Option<ComboLine>)>, String> {
+) -> Result<Vec<(Value, Option<ComboLine>)>, Refusal> {
     let mut out: Vec<(Value, Option<ComboLine>)> = Vec::with_capacity(items.len());
     for (idx, item) in items.iter().enumerate() {
         if field(item, "combo_id").is_empty() {
@@ -1248,21 +1254,52 @@ fn expand_combos<'a>(
     Ok(out)
 }
 
-/// Lógica pura: `{payload, context}` → Output (intenciones).
-///
-/// Devuelve `Err` si una cantidad es inválida (ADR-0147 §2.2): fuera de la rejilla del incremento
-/// congelado de su línea, o no positiva. El comando entero se RECHAZA — no se redondea en silencio.
 // ── sales#20 · el SERVIDOR cierra la venta; el cliente solo PROPONE ──────────────────────────
 
-/// Rechaza el cierre con un código de dominio estable y namespaced (`sales.<snake_case>`).
+/// Why a command did not go through. Two kinds, because they leave the hub by two different
+/// doors and only one of them is translatable (sales#201).
+enum Refusal {
+    /// A BUSINESS rejection — «the menu is missing a dish», «what was handed over does not cover
+    /// the total». It travels to the caller inside `Output.error`, which is the ONLY channel the
+    /// runtime turns into `RuntimeError::Domain { code }` and therefore the only one that reaches
+    /// the browser as a `code` (`crates/runtime/src/commands.rs`, hub#139). The host still drops
+    /// every operation and every event, so a rejected sale NEVER moves stock, cash or invoicing.
+    ///
+    /// It used to travel as `Err("<code>: <detail>")`, which the runtime mapped to
+    /// `RuntimeError::Wasm` and the server flattened into HTTP 400 with `code: "error"`: the
+    /// cashier was told «could not charge» and nothing else, and the whole code→message map of
+    /// `ui/lib/checkout-key.ts` was dead. Recovering the code by parsing that prefix is the
+    /// anti-pattern ADR-0398 §6 retired — the producer publishes the code, nobody reads prose.
+    Domain(DomainError),
+    /// A BROKEN CONTRACT — the guest could not do its job at all (a snapshot that will not encode,
+    /// an overflow). This is a bug, not an answer for the cashier, so it stays an `Err` and traps:
+    /// a translated screen for it would be a lie, and swallowing it would hide the bug.
+    Broken(String),
+}
+
+/// A business rejection with its ADR-0205 code (`sales.<snake_case>`). The runtime validates the
+/// namespace (`valid_domain_code`, hub#139), so a foreign code is caught at the door.
 ///
-/// El runtime convierte este `Err` en un command fallido: no aplica ni una operación ni escribe
-/// una sola fila en el outbox, así que una venta rechazada NUNCA mueve stock, caja ni facturación.
-/// El prefijo tiene la MISMA forma que el `Output.error` de ADR-0205 (hub#139) a propósito: el día
-/// que este módulo compile contra un runtime que lo lleve, esto pasa a ser un error de dominio
-/// traducible sin tocar a quien llama — la UI ya se orienta por el CÓDIGO, no por la frase.
-fn reject(code: &str, detail: impl std::fmt::Display) -> String {
-    format!("{code}: {detail}")
+/// The `detail` is the ENGLISH source sentence for developers and logs. What the cashier reads is
+/// resolved by the UI from the CODE (`ui/lib/checkout-key.ts` → `locales/<lang>.json`, ADR-0055):
+/// nothing downstream may branch on this text.
+fn reject(code: &str, detail: impl std::fmt::Display) -> Refusal {
+    Refusal::Domain(DomainError::new(code, detail.to_string()))
+}
+
+/// The guest could not honour its own contract. See [`Refusal::Broken`].
+fn broken(detail: impl std::fmt::Display) -> Refusal {
+    Refusal::Broken(detail.to_string())
+}
+
+/// Hands a refusal to the caller the way each kind has to leave: a business rejection as a normal
+/// output carrying its code, a broken contract as an `Err` the runtime turns into a failed command.
+fn finish(result: Result<Output, Refusal>) -> Result<Output, String> {
+    match result {
+        Ok(out) => Ok(out),
+        Err(Refusal::Domain(error)) => Ok(Output::new().with_error(error)),
+        Err(Refusal::Broken(detail)) => Err(detail),
+    }
 }
 
 /// sales#12 — the product's category, frozen on the line for kitchen routing. Opaque to `sales`
@@ -1325,35 +1362,13 @@ fn rate_in_range(pct: f64) -> bool {
     pct.is_finite() && (0.0..=100.0).contains(&pct)
 }
 
-/// Valida el cobro propuesto y devuelve lo que el servidor decide.
-///
-/// # Por qué existe
-///
-/// `complete_sale` recalculaba la aritmética pero aceptaba como AUTORIDAD lo que mandaba el
-/// navegador: estado de la venta, método de pago, descuentos sin techo, cero líneas. Una UI con un
-/// bug, una integración o una petición manipulada creaba ventas vacías, negativas o infravaloradas
-/// y aun así disparaba `inventory`, `cash_register` e `invoice` — porque el handler emitía
-/// `sale.completed` pasara lo que pasara.
-///
-/// Aquí se cierra el contrato en el único sitio donde el cliente no llega:
-///
-/// 1. **Estructura**: al menos una línea, importes no negativos, tasas en 0..=100. El JSON Schema
-///    del payload ya lo exige (el runtime valida ANTES de invocarnos); esto es la segunda cerradura
-///    para quien entre por otro camino.
-/// 2. **Ajustes del hub** (`sales.settings.get`): `allow_discounts` y `require_customer` dejan de
-///    ser un botón escondido en la UI y pasan a ser una regla.
-/// 3. **Método de pago** (`sales.payment_methods`): la query ya filtra activo + no borrado + del
-///    hub, así que el catálogo pre-cargado ES la lista legítima. Si el runtime lo entrega y no está
-///    vacío, manda: un id que no esté ahí (inactivo, borrado, de otro hub, inventado) se rechaza y
-///    el NOMBRE del recibo sale de la fila, no del payload. Si no lo entrega —runtime sin `reads` o
-///    hub sin métodos sembrados— se degrada al payload: cobrar es lo último que puede romperse.
 /// STRUCTURE of the offer: what has to hold for the arithmetic to mean anything, whether the
 /// ticket is being charged or merely valued (sales#164). Returns whether it carries ANY discount —
 /// the hub setting that forbids them is a policy gate, and it lives with the other ones.
 ///
 /// The JSON Schema of the payload already demands this and the runtime validates BEFORE invoking
 /// us; this is the second lock, for whoever comes in through another door.
-fn validate_checkout_shape(payload: &Value, items: &[Value]) -> Result<bool, String> {
+fn validate_checkout_shape(payload: &Value, items: &[Value]) -> Result<bool, Refusal> {
     if items.is_empty() {
         return Err(reject("sales.empty_sale", "a sale needs at least one line"));
     }
@@ -1394,10 +1409,10 @@ fn validate_checkout_shape(payload: &Value, items: &[Value]) -> Result<bool, Str
     Ok(discounted)
 }
 
-/// ── Ajustes del TPV: la regla vive en el servidor, no en el botón ──
+/// ── POS settings: the rule lives on the server, not in the button ──
 ///
-/// Sin fila de ajustes valen los defaults del esquema (`allow_discounts` sí, `require_customer`
-/// no), que es justo lo que hace un hub recién instalado.
+/// With no settings row the schema defaults apply (`allow_discounts` yes, `require_customer` no),
+/// which is exactly what a freshly installed hub does.
 fn hub_setting(context: &Value, key: &str, default: bool) -> bool {
     tax::read_rows(context, "sales.settings.get")
         .unwrap_or_default()
@@ -1408,16 +1423,16 @@ fn hub_setting(context: &Value, key: &str, default: bool) -> bool {
         .unwrap_or(default)
 }
 
-/// BASE FISCAL (ADR-0210): que un precio lleve ya el impuesto dentro es una decisión del NEGOCIO,
-/// y decide lo que se DECLARA — los mismos 100,00 € son base 100 + 21 de cuota con precios netos,
-/// y base 82,64 + 17,35 con precios brutos. Aceptarla del payload era regalarle al navegador la
-/// base imponible de la factura. `None` = sin fila de ajustes → manda el payload, como hasta ahora.
-/// (ADR-0210 mueve la autoridad última a la LISTA DE PRECIOS de `pricing`, con herencia lista →
-/// hub → inclusive; consumir esa lista es sales#23.)
+/// FISCAL BASE (ADR-0210): whether a price already carries the tax inside is a BUSINESS decision,
+/// and it decides what gets DECLARED — the same 100.00 € are base 100 + 21 of quota with net
+/// prices, and base 82.64 + 17.35 with gross ones. Taking it from the payload was handing the
+/// browser the taxable base of the invoice. `None` = no settings row → the payload rules, as it
+/// always did. (ADR-0210 moves the ultimate authority to `pricing`'s PRICE LIST, with list → hub →
+/// inclusive inheritance; consuming that list is sales#23.)
 ///
-/// 🔴 sales#164: lo lee TAMBIÉN el preview. Cuando solo lo leía el cobro, un hub con el ajuste a 0
-/// veía «Cobrar 100,00 €» y se le cobraban 121,00 €: el botón enseñaba la base y el servidor
-/// cobraba base + cuota.
+/// 🔴 sales#164: the preview reads it TOO. While only the checkout read it, a hub with the setting
+/// at 0 saw «Cobrar 100,00 €» and was charged 121,00 €: the button showed the base and the server
+/// charged base + quota.
 fn hub_tax_included(context: &Value) -> Option<bool> {
     tax::read_rows(context, "sales.settings.get")
         .unwrap_or_default()
@@ -1427,17 +1442,40 @@ fn hub_tax_included(context: &Value) -> Option<bool> {
         .map(as_bool)
 }
 
-/// Un hub puede tener los descuentos APAGADOS. La misma puerta para el cobro y para el preview:
-/// si el ticket no se va a poder cobrar así, el preview tampoco lo valora — es un motivo que se
-/// corrige en la misma pantalla, y decirlo antes es mejor que decirlo con la tarjeta en la mano.
-fn enforce_discount_policy(context: &Value, discounted: bool) -> Result<(), String> {
+/// A hub can have discounts switched OFF. The same door for the checkout and for the preview: if
+/// the ticket will not be chargeable like this, the preview does not price it either — it is a
+/// reason that is fixed on the same screen, and saying it early beats saying it with the card
+/// already in hand.
+fn enforce_discount_policy(context: &Value, discounted: bool) -> Result<(), Refusal> {
     if discounted && !hub_setting(context, "allow_discounts", true) {
         return Err(reject("sales.discounts_not_allowed", "this hub disabled discounts"));
     }
     Ok(())
 }
 
-fn decide_checkout(payload: &Value, context: &Value, items: &[Value]) -> Result<ServerDecision, String> {
+/// Valida el cobro propuesto y devuelve lo que el servidor decide.
+///
+/// # Por qué existe
+///
+/// `complete_sale` recalculaba la aritmética pero aceptaba como AUTORIDAD lo que mandaba el
+/// navegador: estado de la venta, método de pago, descuentos sin techo, cero líneas. Una UI con un
+/// bug, una integración o una petición manipulada creaba ventas vacías, negativas o infravaloradas
+/// y aun así disparaba `inventory`, `cash_register` e `invoice` — porque el handler emitía
+/// `sale.completed` pasara lo que pasara.
+///
+/// Aquí se cierra el contrato en el único sitio donde el cliente no llega:
+///
+/// 1. **Estructura**: al menos una línea, importes no negativos, tasas en 0..=100. El JSON Schema
+///    del payload ya lo exige (el runtime valida ANTES de invocarnos); esto es la segunda cerradura
+///    para quien entre por otro camino.
+/// 2. **Ajustes del hub** (`sales.settings.get`): `allow_discounts` y `require_customer` dejan de
+///    ser un botón escondido en la UI y pasan a ser una regla.
+/// 3. **Método de pago** (`sales.payment_methods`): la query ya filtra activo + no borrado + del
+///    hub, así que el catálogo pre-cargado ES la lista legítima. Si el runtime lo entrega y no está
+///    vacío, manda: un id que no esté ahí (inactivo, borrado, de otro hub, inventado) se rechaza y
+///    el NOMBRE del recibo sale de la fila, no del payload. Si no lo entrega —runtime sin `reads` o
+///    hub sin métodos sembrados— se degrada al payload: cobrar es lo último que puede romperse.
+fn decide_checkout(payload: &Value, context: &Value, items: &[Value]) -> Result<ServerDecision, Refusal> {
     let discounted = validate_checkout_shape(payload, items)?;
     enforce_discount_policy(context, discounted)?;
     if hub_setting(context, "require_customer", false) && field(payload, "customer_id").is_empty() {
@@ -1552,7 +1590,7 @@ fn resolve_method(
     method_id: &str,
     fallback_name: String,
     fallback_type: String,
-) -> Result<(String, String), String> {
+) -> Result<(String, String), Refusal> {
     match catalog {
         Some(rows) if !rows.is_empty() => {
             if method_id.is_empty() {
@@ -1592,84 +1630,85 @@ fn attributed_staff(payload: &Value, session_user: &str) -> Value {
 }
 
 
-/// UNA línea ya valorada: exactamente las cifras que la venta escribiría en su fila.
+/// ONE line already priced: exactly the figures the sale would write on its row.
 #[derive(Clone)]
 struct ValuedLine {
-    /// Base, cuota y bruto de la línea, con los descuentos (de línea, global y de importe fijo) YA
-    /// aplicados. Es lo que se persiste y lo que viaja en `sale.completed`.
+    /// Net, quota and gross of the line, with every discount (line, ticket-wide and fixed amount)
+    /// ALREADY applied. It is what gets persisted and what travels in `sale.completed`.
     t: LineTotals,
-    /// Desglose por TASA de esta línea: `(clave, base, cuota)`. Agrega al desglose de la venta.
+    /// This line's breakdown by RATE: `(key, net, quota)`. Aggregates into the sale's breakdown.
     parts: Vec<(String, i64, i64)>,
     is_gift: bool,
     covered: bool,
-    /// Regla fiscal resuelta contra el catálogo de confianza (ADR-0085), con sus componentes.
+    /// Tax rule resolved against the trusted catalogue (ADR-0085), with its components.
     resolved: ResolvedTax,
-    /// Tasa combinada (suma de componentes), la que se congela en la fila y viaja en el evento.
+    /// Combined rate (sum of the components) — the one frozen on the row and sent in the event.
     combined_pct: f64,
-    /// Precio unitario que DECIDIÓ EL SERVIDOR (catálogo, o reparto del combo), con suplementos.
+    /// Unit price THE SERVER decided (catalogue, or the combo's split), supplements included.
     unit_price: i64,
-    /// Cantidad en punto fijo 10⁶ (ADR-0147).
+    /// Quantity in fixed point, scale 10⁶ (ADR-0147).
     qty: i64,
     line_disc: f64,
-    /// La línea tal y como entró (ya expandida si venía de un combo).
+    /// The line as it came in (already expanded when it came from a set menu).
     item: Value,
-    /// Snapshot inmutable de los suplementos, en el orden en que se eligieron (pm#93).
+    /// Immutable snapshot of the supplements, in the order they were chosen (pm#93).
     modifiers: String,
-    /// De qué combo salió, con su snapshot congelado (ADR-0381). `None` = línea suelta.
+    /// Which set menu it came out of, with its frozen snapshot (ADR-0381). `None` = a plain line.
     combo: Option<ComboLine>,
 }
 
-/// LO QUE VALE UN TICKET: sus líneas valoradas, el desglose por tipo y los totales. Nada de esto
-/// sabe escribir en ningún sitio.
+/// WHAT A TICKET IS WORTH: its priced lines, the breakdown by rate and the totals. Nothing in
+/// here knows how to write anywhere.
 struct Valuation {
     lines: Vec<ValuedLine>,
-    /// Base imponible agregada (céntimos).
+    /// Aggregate taxable base (cents).
     subtotal: i64,
-    /// Lo que se cobra (céntimos), con los descuentos ya prorrateados en las líneas.
+    /// What is charged (cents), with the discounts already prorated across the lines.
     total: i64,
-    /// Lo que los descuentos quitaron, informativo para el tique (céntimos).
+    /// What the discounts took off — informative, for the receipt (cents).
     discount_amount: i64,
-    /// Coste de las líneas invitadas, para el arqueo (céntimos).
+    /// Cost of the comped lines, for the cash count (cents).
     gift_total: i64,
-    /// Cuota DECLARADA: una sola vez por tipo impositivo sobre la base agregada (ADR-0123 §4).
+    /// DECLARED quota: computed once per tax rate over the aggregate base (ADR-0123 §4).
     tax_total: i64,
-    /// El desglose cerrado, tal cual se persiste y viaja: `{ "21.00": { base, tax, kind, label } }`.
+    /// The closed breakdown, exactly as it is persisted and travels:
+    /// `{ "21.00": { base, tax, kind, label } }`.
     tax_breakdown: Value,
-    /// Base fiscal efectiva de este ticket (`true` = los precios llevan el impuesto dentro).
+    /// Effective fiscal base of this ticket (`true` = the prices carry the tax inside).
     tax_included: bool,
-    /// Identidad fiscal del hub con la que se resolvieron las reglas (ADR-0085).
+    /// Fiscal identity of the hub the rules were resolved with (ADR-0085).
     country_code: String,
     region_code: String,
 }
 
-/// ── sales#164 / #172 · LA VALORACIÓN, EN UN SOLO SITIO ───────────────────────────────────────
+/// ── sales#164 / #172 · THE VALUATION, IN ONE SINGLE PLACE ────────────────────────────────────
 ///
-/// Valora un ticket con la aritmética del cobro y **sin cobrar**: expande los combos, resuelve el
-/// precio y el tipo de cada línea contra los catálogos de confianza, prorratea los descuentos
-/// (ADR-0210) y cierra el desglose por tipo (ADR-0123 §4).
+/// Prices a ticket with the arithmetic of the checkout and **without charging it**: expands the set
+/// menus, resolves each line's price and rate against the trusted catalogues, prorates the
+/// discounts (ADR-0210) and closes the breakdown by rate (ADR-0123 §4).
 ///
-/// # Por qué existe
+/// # Why it exists
 ///
-/// No había puerta para preguntar «¿cuánto suma esto de verdad?» sin cobrar. El TPV respondía con
-/// SU propia aritmética (`cartTotal`) y el servidor rechaza las patas de un pago mixto que no
-/// sumen **al céntimo** (`sales.payments_do_not_match_total`); con precios que NO llevan el
-/// impuesto dentro las dos respuestas no se separaban por un céntimo de redondeo, sino por el IVA
-/// entero, en toda venta. El arreglo NO es una segunda implementación en el navegador: una segunda
-/// implementación de la aritmética fiscal es justo el bug que ese rechazo existe para cazar.
+/// There was no door to ask "how much does this really add up to?" without charging. The till
+/// answered with ITS OWN arithmetic (`cartTotal`), and the server refuses legs of a mixed payment
+/// that do not add up **to the cent** (`sales.payments_do_not_match_total`). With prices that do
+/// NOT carry the tax inside, the two answers did not differ by a rounding cent but by the WHOLE
+/// VAT, on every sale. The fix is emphatically NOT a second implementation in the browser: a
+/// second implementation of the fiscal arithmetic is the very bug that refusal exists to catch.
 ///
-/// Por eso: **una función, dos llamadores** — [`complete_sale_pure`], que cobra, y
-/// [`preview_checkout_pure`], que solo responde.
+/// Hence: **one function, two callers** — [`complete_sale_pure`], which charges, and
+/// [`preview_checkout_pure`], which only answers.
 ///
-/// `id_budget` = cuántos ids trae la tanda del host (`context.new_ids`). Un combo MULTIPLICA
-/// líneas, así que la expansión puede desbordarla y se rechaza aquí, en el mismo punto y en el
-/// mismo orden que antes. `None` = un preview, que no consume ni un id.
+/// `id_budget` = how many ids the host's batch carries (`context.new_ids`). A set menu MULTIPLIES
+/// lines, so the expansion can overflow it and is refused here, at the same point and in the same
+/// order as before. `None` = a preview, which consumes no id at all.
 fn value_checkout(
     payload: &Value,
     context: &Value,
     sale_id: &str,
     tax_incl: bool,
     id_budget: Option<usize>,
-) -> Result<Valuation, String> {
+) -> Result<Valuation, Refusal> {
     let empty: Vec<Value> = Vec::new();
     let items = payload.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
     let now = context.get("now").map(as_str).unwrap_or_default();
@@ -1819,7 +1858,7 @@ fn value_checkout(
                 QuantityValue::from_raw(qty),
                 QuantityValue::from_raw(QUANTITY_SCALE),
             )
-            .map_err(|e| format!("gift_cost_overflow: {e:?}"))?;
+            .map_err(|e| broken(format!("gift_cost_overflow: {e:?}")))?;
             (LineTotals { net: 0, tax: 0, line: 0 }, Vec::<(String, i64, i64)>::new())
         } else {
             calc_line_components(unit_price, qty, price_qty, eff_disc, tax_incl, components)
@@ -1852,9 +1891,9 @@ fn value_checkout(
         }
     }
 
-    // ── Fase 3: agregar. La cuota que se DECLARA sale del desglose, una sola vez por tipo
-    // impositivo, sobre la base AGREGADA (ADR-0123 §4) — no sumando las cuotas ya redondeadas de
-    // cada línea. `t.tax` queda como informativo de la línea.
+    // ── Phase 3: aggregate. The quota that gets DECLARED comes out of the breakdown, once per tax
+    // rate over the AGGREGATE base (ADR-0123 §4) — never by summing the already-rounded quotas of
+    // each line. `t.tax` stays as the line's own informative figure.
     for l in pending_lines.iter() {
         subtotal += l.t.net;
         gross += l.t.line;
@@ -1902,8 +1941,9 @@ fn value_checkout(
         lines: pending_lines,
         subtotal,
         total: gross,
-        // El descuento global YA está prorrateado en las líneas: `gross` es lo cobrado y el
-        // `discount_amount` (informativo, para el ticket) es la diferencia con el bruto sin descuento.
+        // The ticket-wide discount is ALREADY prorated across the lines: `gross` is what gets
+        // charged, and `discount_amount` (informative, for the receipt) is the difference against
+        // the gross before it.
         discount_amount: gross_pre_disc - gross,
         gift_total,
         tax_total,
@@ -1914,12 +1954,13 @@ fn value_checkout(
     })
 }
 
-/// ── sales#164 / #172 · EL PREVIEW AUTORITATIVO ───────────────────────────────────────────────
+/// ── sales#164 / #172 · THE AUTHORITATIVE PREVIEW ─────────────────────────────────────────────
 ///
-/// Valora el ticket con la aritmética del cobro y **no cobra**: cero operaciones, cero eventos,
-/// cero número de cadena gastado. La respuesta viaja por el canal `result` del handler (hub#70).
+/// Prices the ticket with the arithmetic of the checkout and **does not charge**: zero operations,
+/// zero events, not one number of the fiscal chain spent. The answer travels through the handler's
+/// `result` channel (hub#70).
 ///
-/// # Qué devuelve
+/// # What it answers
 ///
 /// ```json
 /// { "total": 600, "subtotal": 545, "tax_total": 55, "discount_amount": 0, "gift_total": 0,
@@ -1930,25 +1971,32 @@ fn value_checkout(
 ///   "tax_breakdown": { "10.00": { "base": 545, "tax": 55, "kind": "tax" } } }
 /// ```
 ///
-/// Todo en CÉNTIMOS (ADR-0007/0123) y todo lo que la venta escribiría: la suma de `line_total` ES
-/// `total`, y para un combo de bienes a tipos distintos el reparto del art. 79.Dos ya trae el
-/// céntimo residual asignado por resto mayor (ADR-0210).
+/// Everything in CENTS (ADR-0007/0123) and everything the sale would write: the sum of
+/// `line_total` IS `total`, and for a goods set menu split across rates the art. 79.Dos allocation
+/// already carries the residual cent assigned by largest remainder (ADR-0210).
 ///
-/// # Qué NO hace
+/// # What it does NOT do
 ///
-/// * **No exige el cliente.** `require_customer` es una regla sobre CERRAR una venta y se corrige
-///   en la misma pantalla; negarse a valorar hasta capturarlo dejaría al TPV sin total durante
-///   todo el rato en que se está montando la cuenta, que es justo cuando lo necesita.
-/// * **No mira las formas de pago.** Un preview no tiene patas: quién paga se decide después, y
-///   precisamente CON este número (`sales.payments_do_not_match_total` deja de saltar en el camino
-///   normal).
-/// * **No es idempotente ni lo necesita**: no escribe.
+/// * **It does not demand the customer.** `require_customer` is a rule about CLOSING a sale and is
+///   fixed on the same screen; refusing to price until it is captured would leave the till without
+///   a total for the whole time the check is being built, which is exactly when it needs one.
+/// * **It does not look at the ways of paying.** A preview has no legs: who pays is decided
+///   afterwards, and precisely WITH this number (`sales.payments_do_not_match_total` stops firing
+///   on the normal path).
+/// * **It is not idempotent and does not need to be**: it writes nothing.
 ///
-/// Lo demás lo rechaza igual que el cobro y con el MISMO código de dominio (`sales.empty_sale`,
-/// `sales.discounts_not_allowed`, `sales.product_not_available`, `sales.no_tax_rule`,
-/// `sales.combo_catalog_unavailable`…): si el ticket no se va a poder cobrar, decirlo antes es
-/// mejor que decirlo con la tarjeta ya en la mano.
+/// Everything else it refuses exactly like the checkout and with the SAME domain code
+/// (`sales.empty_sale`, `sales.discounts_not_allowed`, `sales.product_not_available`,
+/// `sales.no_tax_rule`, `sales.combo_catalog_unavailable`…): if the ticket is not going to be
+/// chargeable, saying so early beats saying it with the card already in hand.
 pub fn preview_checkout_pure(input: Value) -> Result<Output, String> {
+    finish(preview_checkout_inner(input))
+}
+
+/// The valuation itself (sales#201). A business rejection comes back as `Refusal::Domain` and
+/// [`finish`] hands it to the caller inside `Output.error` — the preview refuses with the SAME
+/// code the charge would, and the till can translate it without parsing prose.
+fn preview_checkout_inner(input: Value) -> Result<Output, Refusal> {
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
     let context = input.get("context").cloned().unwrap_or(Value::Null);
     let empty: Vec<Value> = Vec::new();
@@ -1959,9 +2007,9 @@ pub fn preview_checkout_pure(input: Value) -> Result<Output, String> {
     let tax_incl = hub_tax_included(&context)
         .unwrap_or_else(|| payload.get("tax_included").map(as_bool).unwrap_or(true));
 
-    // `sale_id` sintético: un preview no consume ids del host (`id_budget = None`), pero un combo
-    // de bienes partido necesita un `combo_group_ref` con el que la pantalla pueda agrupar sus
-    // hermanas. `preview` deja claro en el propio valor que esa venta no existe.
+    // Synthetic `sale_id`: a preview consumes no host ids (`id_budget = None`), but a split goods
+    // set menu still needs a `combo_group_ref` the screen can group its siblings by. `preview`
+    // makes it plain in the value itself that no such sale exists.
     let valuation = value_checkout(&payload, &context, "preview", tax_incl, None)?;
 
     let lines: Vec<Value> = valuation
@@ -1973,13 +2021,13 @@ pub fn preview_checkout_pure(input: Value) -> Result<Output, String> {
                 "product_name": as_str(l.item.get("product_name").unwrap_or(&Value::Null)),
                 // sales#195: the RESOLVED category, the same one the sale freezes on its row.
                 "tax_category_key": l.resolved.category_key.clone(),
-                "tax_rate": l.combined_pct,          // tasa % combinada (server-authoritative)
-                "quantity": l.qty,                   // punto fijo 10⁶ (ADR-0147)
-                "unit_price": l.unit_price,          // céntimos: lo que decidió el SERVIDOR
-                "net_amount": l.t.net,               // céntimos: base imponible
-                "tax_amount": l.t.tax,               // céntimos: cuota de la línea
-                "line_total": l.t.line,              // céntimos: lo que suma al total
-                // ADR-0381: lo que hermana las líneas de un mismo combo. `null` = línea suelta.
+                "tax_rate": l.combined_pct,          // combined rate % (server-authoritative)
+                "quantity": l.qty,                   // fixed point, scale 10⁶ (ADR-0147)
+                "unit_price": l.unit_price,          // cents: what the SERVER decided
+                "net_amount": l.t.net,               // cents: taxable base
+                "tax_amount": l.t.tax,               // cents: the line's quota
+                "line_total": l.t.line,              // cents: what it adds to the total
+                // ADR-0381: what makes siblings of one set menu. `null` = a plain line.
                 "combo_group_ref": l.combo.as_ref().map(|c| json!(c.group_ref)).unwrap_or(Value::Null),
                 "is_gift": l.is_gift,
                 "covered": l.covered,
@@ -2000,6 +2048,13 @@ pub fn preview_checkout_pure(input: Value) -> Result<Output, String> {
 }
 
 pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
+    finish(complete_sale_inner(input))
+}
+
+/// The decision itself (sales#201). A business rejection comes back as `Refusal::Domain`
+/// and [`finish`] hands it to the caller inside `Output.error`, which is the only channel
+/// that reaches the browser as a translatable `code`.
+fn complete_sale_inner(input: Value) -> Result<Output, Refusal> {
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
     let context = input.get("context").cloned().unwrap_or(Value::Null);
     let empty: Vec<Value> = Vec::new();
@@ -2048,9 +2103,9 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         .tax_included
         .unwrap_or_else(|| payload.get("tax_included").map(as_bool).unwrap_or(true));
 
-    // 🔴 LA MISMA VALORACIÓN QUE RESPONDE EL PREVIEW (sales#164/#172). Una sola función: si el
-    // preview y el cobro no compartieran código, «cuadra al céntimo» duraría hasta el primer
-    // cambio en uno de los dos.
+    // 🔴 THE VERY SAME VALUATION THE PREVIEW ANSWERS WITH (sales#164/#172). One function: if the
+    // preview and the checkout did not share code, "adds up to the cent" would last until the
+    // first change to either of them.
     let valuation = value_checkout(&payload, &context, &sale_id, tax_incl, Some(new_ids.len()))?;
     let cc = valuation.country_code.as_str();
     let rc = valuation.region_code.as_str();
@@ -2065,7 +2120,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     let header_idx = ops.len();
     ops.push(Operation::sql("sales._insert_sale", Map::new())); // placeholder
 
-    // ── Fase 3: emitir las líneas YA VALORADAS ──
+    // ── Phase 3: emit the lines ALREADY PRICED ──
     let mut line_results: Vec<LineTotals> = Vec::with_capacity(valuation.lines.len());
     for (i, l) in valuation.lines.iter().enumerate() {
         let t = l.t;
@@ -2136,7 +2191,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     }
 
     let discount_amount: i64 = valuation.discount_amount;
-    let total = valuation.total; // céntimos
+    let total = valuation.total; // cents
     let tendered = as_cents(payload.get("amount_tendered").unwrap_or(&Value::Null), 0); // céntimos
     // sales#24 — a POSITIVE amount below the total is a short payment: the sale used to close
     // anyway with `change = 0` and the drawer silently short. `0` keeps meaning «not stated»
@@ -2199,8 +2254,8 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     let tendered: i64 = tenders.iter().map(|t| t.tendered).sum();
     let change: i64 = tenders.iter().map(|t| t.change).sum();
 
-    // El desglose lo cerró la valoración, una sola vez por TIPO IMPOSITIVO sobre la base AGREGADA
-    // (ADR-0123 §4) — y es el MISMO que responde el preview (sales#164/#172).
+    // The breakdown was closed by the valuation, once per TAX RATE over the AGGREGATE base
+    // (ADR-0123 §4) — and it is the SAME one the preview answers with (sales#164/#172).
     let tax_total = valuation.tax_total;
     let tax_breakdown_json = valuation.tax_breakdown.to_string();
 
@@ -2304,16 +2359,16 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         })
         .collect();
 
-    // Líneas compactas para listeners cross-módulo (inventory descuenta stock por
-    // product_id+quantity, saltando servicios; invoice factura por net/tax YA calculados). El
-    // payload del evento ES lo que recibe el listener; por eso viaja la lista, no solo los totales.
-    // `unit_price` viaja en céntimos (contrato inter-módulo). `net_amount`/`tax_amount` por línea
-    // (céntimos) respetan `tax_included`: invoice NO debe re-sumar IVA sobre el bruto.
+    // Compact lines for cross-module listeners (inventory takes stock out by product_id+quantity,
+    // skipping services; invoice bills from the net/tax ALREADY computed). The event payload IS
+    // what the listener receives, which is why the list travels and not only the totals.
+    // `unit_price` travels in cents (inter-module contract). Per-line `net_amount`/`tax_amount`
+    // (cents) honour `tax_included`: invoice must NOT re-add VAT on top of the gross.
     //
-    // 🔴 Las MISMAS líneas expandidas Y VALORADAS que se persistieron (sales#152 / sales#164): esto
-    // recorría `lines_in` y RECALCULABA precio, tipo y base para el evento, dejando dos caminos del
-    // dinero que había que mantener sincronizados a mano — y solo cuadraban porque el resultado se
-    // pisaba al final con `line_results`. Ahora se lee lo ya valorado y no hay segundo camino.
+    // 🔴 The very SAME expanded AND PRICED lines that were persisted (sales#152 / sales#164): this
+    // used to walk `lines_in` and RECOMPUTE price, rate and base for the event, leaving two paths
+    // for the money to keep in sync by hand — and they only agreed because the result was
+    // overwritten at the end with `line_results`. Now it reads what was priced: no second path.
     let event_items: Vec<Value> = valuation
         .lines
         .iter()
@@ -2515,7 +2570,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
 /// (el fallo de TouchBistro que nombra ADR-0381).
 ///
 /// `Ok(None)` = la línea no es un combo, que es el 100 % de las líneas de casi todas las cuentas.
-fn order_combo_snapshot(item: &Value) -> Result<Option<String>, String> {
+fn order_combo_snapshot(item: &Value) -> Result<Option<String>, Refusal> {
     let combo_id = field(item, "combo_id");
     if combo_id.is_empty() {
         return Ok(None);
@@ -2538,7 +2593,7 @@ fn order_combo_snapshot(item: &Value) -> Result<Option<String>, String> {
     // una segunda cerradura que mantener, con su propio riesgo de decir algo distinto.
     serde_json::to_string(&json!({ "combo_id": combo_id, "combo_choices": choices }))
         .map(Some)
-        .map_err(|e| format!("order_combo_snapshot_encode: {e}"))
+        .map_err(|e| broken(format!("order_combo_snapshot_encode: {e}")))
 }
 
 /// pm#93 / sales#200 — the supplements chosen, in their order, serialised for the TEXT column of
@@ -2556,7 +2611,7 @@ fn order_combo_snapshot(item: &Value) -> Result<Option<String>, String> {
 fn order_modifiers_snapshot(
     item: &Value,
     modifier_catalog: Option<&Vec<&Value>>,
-) -> Result<String, String> {
+) -> Result<String, Refusal> {
     encode_modifiers(resolve_modifiers(item, None, modifier_catalog)?)
 }
 
@@ -2571,7 +2626,7 @@ fn order_modifiers_snapshot(
 ///
 /// 🔴 Fails CLOSED just like the checkout: with no `combos` catalogue a line that claims to be a
 /// set menu is not materialised, because its price would be coming from the browser.
-fn combo_closed_price(item: &Value, combo_catalog: Option<&Vec<&Value>>) -> Result<i64, String> {
+fn combo_closed_price(item: &Value, combo_catalog: Option<&Vec<&Value>>) -> Result<i64, Refusal> {
     let combo_id = field(item, "combo_id");
     let rows = combo_catalog.ok_or_else(|| {
         reject("sales.combo_catalog_unavailable", format!("no combo catalogue to price `{combo_id}`"))
@@ -2620,7 +2675,7 @@ fn order_line_row(
     product_catalog: Option<&Vec<&Value>>,
     combo_catalog: Option<&Vec<&Value>>,
     modifier_catalog: Option<&Vec<&Value>>,
-) -> Result<(Map<String, Value>, i64), String> {
+) -> Result<(Map<String, Value>, i64), Refusal> {
     // A set menu is NOT measured against the product catalogue: its id is not there (it belongs to
     // `combos`), and its price is the pack's closed one. It goes first for exactly that reason.
     let (unit_price, unit_cost, unit_cat) = if !field(item, "combo_id").is_empty() {
@@ -2670,7 +2725,7 @@ fn order_line_row(
             QuantityValue::from_raw(qty),
             QuantityValue::from_raw(line_price_qty(item)),
         )
-        .map_err(|e| format!("line_amount_overflow: {e:?}"))?
+        .map_err(|e| broken(format!("line_amount_overflow: {e:?}")))?
     };
 
     let mut p = Map::new();
@@ -2728,6 +2783,13 @@ fn order_line_row(
 /// al cobrar producirá 1..N `sale` inmutables (split-bill). `sales` es **agnóstico de la mesa**: NO
 /// conoce `table_id` — la asociación mesa↔pedido la OWNea `tables` en `table_session.order_id`.
 pub fn open_order_pure(input: Value) -> Result<Output, String> {
+    finish(open_order_inner(input))
+}
+
+/// The decision itself (sales#201). A business rejection comes back as `Refusal::Domain`
+/// and [`finish`] hands it to the caller inside `Output.error`, which is the only channel
+/// that reaches the browser as a translatable `code`.
+fn open_order_inner(input: Value) -> Result<Output, Refusal> {
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
     let context = input.get("context").cloned().unwrap_or(Value::Null);
     let empty: Vec<Value> = Vec::new();
@@ -2856,6 +2918,13 @@ fn add_line_item(payload: &Value) -> Value {
 /// refused with **the same domain code** as before (`sales.order_unavailable`), the one the UI
 /// already translates.
 pub fn add_order_line_pure(input: Value) -> Result<Output, String> {
+    finish(add_order_line_inner(input))
+}
+
+/// The decision itself (sales#201). A business rejection comes back as `Refusal::Domain`
+/// and [`finish`] hands it to the caller inside `Output.error`, which is the only channel
+/// that reaches the browser as a translatable `code`.
+fn add_order_line_inner(input: Value) -> Result<Output, Refusal> {
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
     let context = input.get("context").cloned().unwrap_or(Value::Null);
     let empty: Vec<Value> = Vec::new();
@@ -3019,10 +3088,17 @@ fn stored_modifiers(line: &Value) -> Value {
 }
 
 pub fn fire_order_pure(input: Value) -> Result<Output, String> {
+    finish(fire_order_inner(input))
+}
+
+/// The decision itself (sales#201). A business rejection comes back as `Refusal::Domain`
+/// and [`finish`] hands it to the caller inside `Output.error`, which is the only channel
+/// that reaches the browser as a translatable `code`.
+fn fire_order_inner(input: Value) -> Result<Output, Refusal> {
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
     let order_id = as_str(payload.get("order_id").unwrap_or(&Value::Null));
     if order_id.is_empty() {
-        return Err("missing_order_id".to_string());
+        return Err(reject("sales.order_id_required", "a fire needs the order it fires"));
     }
     let channel = match as_str(payload.get("channel").unwrap_or(&Value::Null)).as_str() {
         "" => "dine_in".to_string(),
@@ -3123,6 +3199,13 @@ pub fn fire_order_pure(input: Value) -> Result<Output, String> {
 /// Si aplica: `sales._void_sale` (status + `voided_at/voided_by/void_reason`, el resto de la
 /// fila intacto) y `sale.voided` con la identidad de la operación.
 pub fn void_sale_pure(input: Value) -> Result<Output, String> {
+    finish(void_sale_inner(input))
+}
+
+/// The decision itself (sales#201). A business rejection comes back as `Refusal::Domain`
+/// and [`finish`] hands it to the caller inside `Output.error`, which is the only channel
+/// that reaches the browser as a translatable `code`.
+fn void_sale_inner(input: Value) -> Result<Output, Refusal> {
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
     let context = input.get("context").cloned().unwrap_or(Value::Null);
     let sale_id = field(&payload, "sale_id");
@@ -3196,6 +3279,13 @@ pub fn void_sale_pure(input: Value) -> Result<Output, String> {
 /// idempotencia para devolver la sesión al bono, así que es **estable por documento**: un reintento
 /// con la misma `idempotency_key` no escribe nada y responde con el MISMO id.
 pub fn refund_sale_pure(input: Value) -> Result<Output, String> {
+    finish(refund_sale_inner(input))
+}
+
+/// The decision itself (sales#201). A business rejection comes back as `Refusal::Domain`
+/// and [`finish`] hands it to the caller inside `Output.error`, which is the only channel
+/// that reaches the browser as a translatable `code`.
+fn refund_sale_inner(input: Value) -> Result<Output, Refusal> {
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
     let context = input.get("context").cloned().unwrap_or(Value::Null);
 
@@ -3470,10 +3560,86 @@ pub fn refund_sale_pure(input: Value) -> Result<Output, String> {
 mod tests {
     use super::*;
 
+    /// How a test reads what a command answered (sales#201).
+    ///
+    /// A business rejection is NOT an `Err`: it is a normal output carrying `Output.error`, which
+    /// is the only channel that reaches the browser as a translatable `code`. So `.expect()` on
+    /// the result would swallow a refusal — the sale would look accepted and the test would go
+    /// green over nothing. These three read the answer for what it is.
+    ///
+    /// An `Err` still exists and still fails the test loudly: it means the guest could not honour
+    /// its contract (a snapshot that will not encode), which is a bug, never an answer.
+    trait Answered {
+        /// The output of a command that went THROUGH. Fails if the handler refused it.
+        fn accepted(self, what: &str) -> Output;
+        /// The domain error of a REFUSED command. Fails if the command went through.
+        fn refused(self, what: &str) -> DomainError;
+        /// Whether the command was refused, for the tests that only care that it did not go in.
+        fn was_refused(self) -> bool;
+    }
+
+    impl Answered for Result<Output, String> {
+        fn accepted(self, what: &str) -> Output {
+            match self {
+                Ok(out) => {
+                    assert!(out.error.is_none(), "{what}: refused with {:?}", out.error);
+                    out
+                }
+                Err(e) => panic!("{what}: broken guest contract, not an answer: {e}"),
+            }
+        }
+
+        fn refused(self, what: &str) -> DomainError {
+            match self {
+                Ok(out) => match out.error {
+                    Some(error) => {
+                        assert!(out.operations.is_empty(), "{what}: a refusal persists nothing");
+                        assert!(out.events.is_empty(), "{what}: a refusal announces nothing");
+                        error
+                    }
+                    None => panic!("{what}: the command went through instead of being refused"),
+                },
+                Err(e) => panic!("{what}: broken guest contract, not a refusal: {e}"),
+            }
+        }
+
+        fn was_refused(self) -> bool {
+            matches!(self, Ok(out) if out.error.is_some())
+        }
+    }
+
     /// Los comandos ahora RECHAZAN cantidades inválidas (ADR-0147 §2.2): los tests del camino
     /// feliz desenvuelven aquí para no repetir `.expect` en cada uno.
-    fn sale(inp: Value) -> Output { complete_sale_pure(inp).expect("venta válida") }
-    fn orden(inp: Value) -> Output { open_order_pure(inp).expect("pedido válido") }
+    fn sale(inp: Value) -> Output { complete_sale_pure(inp).accepted("venta válida") }
+    fn orden(inp: Value) -> Output { open_order_pure(inp).accepted("pedido válido") }
+
+    // ── sales#201: the CHANNEL a refusal travels through ─────────────────────────────────
+    //
+    // A business refusal is a normal guest output (`Output.error`), never an `Err`. That is not a
+    // stylistic choice: `Output.error` is the ONLY channel the runtime turns into
+    // `RuntimeError::Domain { code }` (`crates/runtime/src/commands.rs`), and therefore the only
+    // one that reaches the browser as a `code`. An `Err` from the guest becomes
+    // `RuntimeError::Wasm`, which the server answers as HTTP 400 with the flat `code: "error"` —
+    // so the cashier cannot be told whether the menu is missing a dish or the till lost its
+    // connection, and the 26 mappings of `ui/lib/checkout-key.ts` never fire.
+    //
+    // The assertion is on the CODE and on the SHAPE, never on the sentence (ADR-0398 §6): the
+    // sentence is translated, the code is the ABI.
+
+    #[test]
+    fn a_refusal_publishes_its_code_through_output_error() {
+        let out = complete_sale_pure(input(json!([]), 3, 0)).expect("a refusal is NOT an Err");
+        let err = out.error.as_ref().expect("a refusal carries its domain error");
+        assert_eq!(err.code, "sales.empty_sale");
+        assert!(out.operations.is_empty(), "a refusal persists nothing");
+        assert!(out.events.is_empty(), "a refusal announces nothing");
+
+        // And the same answer, read the way the runtime reads it before it becomes HTTP: the code
+        // travels in `Output.error`, so it survives serialisation to the guest ABI.
+        let wire: Value = serde_json::from_slice(&serde_json::to_vec(&out).expect("Output encodes"))
+            .expect("Output is JSON");
+        assert_eq!(wire["error"]["code"], json!("sales.empty_sale"));
+    }
 
     fn input(items: Value, ids: usize, tendered: i64) -> Value {
         let new_ids: Vec<Value> = (0..ids).map(|i| json!(format!("id-{i}"))).collect();
@@ -3594,7 +3760,7 @@ mod tests {
             },
             "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-07-19T14:25:00+00:00", "new_ids": [] }
         });
-        let out = fire_order_pure(inp).expect("disparar la ronda");
+        let out = fire_order_pure(inp).accepted("disparar la ronda");
 
         let marca = out.operations.iter().find(|o| o.command == "sales._mark_lines_fired")
             .expect("el disparo con ronda marca las líneas pendientes");
@@ -3631,7 +3797,7 @@ mod tests {
 
     #[test]
     fn voiding_a_completed_ticket_writes_the_audit_fields_and_emits_once() {
-        let out = void_sale_pure(void_input("customer changed their mind", completed_ticket())).expect("void ok");
+        let out = void_sale_pure(void_input("customer changed their mind", completed_ticket())).accepted("void ok");
         let op = out.operations.iter().find(|o| o.command == "sales._void_sale").expect("the void op");
         assert_eq!(op.params["sale_id"], json!("sale-1"));
         assert_eq!(op.params["void_reason"], json!("customer changed their mind"));
@@ -3649,35 +3815,35 @@ mod tests {
     fn voiding_twice_is_refused_and_emits_nothing_the_second_time() {
         let mut already = completed_ticket();
         already[0]["status"] = json!("voided");
-        let err = void_sale_pure(void_input("again", already)).expect_err("second void");
-        assert!(err.starts_with("sales.already_voided"), "{err}");
+        let err = void_sale_pure(void_input("again", already)).refused("second void");
+        assert_eq!(err.code, "sales.already_voided", "{err:?}");
     }
 
     #[test]
     fn a_reason_is_mandatory() {
-        let err = void_sale_pure(void_input("   ", completed_ticket())).expect_err("no reason");
-        assert!(err.starts_with("sales.void_reason_required"), "{err}");
+        let err = void_sale_pure(void_input("   ", completed_ticket())).refused("no reason");
+        assert_eq!(err.code, "sales.void_reason_required", "{err:?}");
     }
 
     #[test]
     fn a_sale_that_does_not_exist_here_cannot_be_voided() {
-        let err = void_sale_pure(void_input("x", json!([]))).expect_err("unknown sale");
-        assert!(err.starts_with("sales.sale_not_found"), "{err}");
+        let err = void_sale_pure(void_input("x", json!([]))).refused("unknown sale");
+        assert_eq!(err.code, "sales.sale_not_found", "{err:?}");
     }
 
     #[test]
     fn a_full_invoice_needs_a_credit_note_not_a_void() {
         let mut inv = completed_ticket();
         inv[0]["document_type"] = json!("invoice");
-        let err = void_sale_pure(void_input("x", inv)).expect_err("invoice");
-        assert!(err.starts_with("sales.void_requires_credit_note"), "{err}");
+        let err = void_sale_pure(void_input("x", inv)).refused("invoice");
+        assert_eq!(err.code, "sales.void_requires_credit_note", "{err:?}");
     }
 
     #[test]
     fn without_the_sale_read_the_void_is_refused_not_guessed() {
         // La read es `required`; si aun así falta (runtime viejo) no se anula a ciegas.
-        let err = void_sale_pure(void_input("x", Value::Null)).expect_err("no read");
-        assert!(err.starts_with("sales.sale_not_found"), "{err}");
+        let err = void_sale_pure(void_input("x", Value::Null)).refused("no read");
+        assert_eq!(err.code, "sales.sale_not_found", "{err:?}");
     }
 
     // ── sales#80 · el doble toque en «Enviar a cocina» no puede crear dos comandas ────────────
@@ -3706,8 +3872,8 @@ mod tests {
         let lines = json!([
             { "id": "l-1", "order_id": "ord-1", "product_name": "Entrecot", "round_no": 1, "fired_at": "2026-07-19T14:24:59+00:00" }
         ]);
-        let err = fire_order_pure(fire_input_with_lines(1, lines)).expect_err("nada pendiente → no se dispara");
-        assert!(err.contains("sales.nothing_to_fire"), "{err}");
+        let err = fire_order_pure(fire_input_with_lines(1, lines)).refused("nada pendiente → no se dispara");
+        assert_eq!(err.code, "sales.nothing_to_fire", "{err:?}");
     }
 
     #[test]
@@ -3716,7 +3882,7 @@ mod tests {
             { "id": "l-1", "order_id": "ord-1", "product_name": "Entrecot", "round_no": 1, "fired_at": "2026-07-19T14:20:00+00:00" },
             { "id": "l-2", "order_id": "ord-1", "product_name": "Postre", "round_no": null, "fired_at": null }
         ]);
-        let out = fire_order_pure(fire_input_with_lines(2, lines)).expect("hay una línea nueva → se dispara");
+        let out = fire_order_pure(fire_input_with_lines(2, lines)).accepted("hay una línea nueva → se dispara");
         assert!(out.operations.iter().any(|o| o.command == "sales._mark_lines_fired"));
         assert_eq!(out.events.len(), 1);
     }
@@ -3728,7 +3894,7 @@ mod tests {
             "payload": { "order_id": "ord-1", "round_no": 1, "items": [{ "product_name": "Entrecot", "quantity": 1_000_000 }] },
             "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-07-19T14:25:00+00:00", "new_ids": [] }
         });
-        let out = fire_order_pure(inp).expect("compat");
+        let out = fire_order_pure(inp).accepted("compat");
         assert_eq!(out.events.len(), 1);
     }
 
@@ -3740,7 +3906,7 @@ mod tests {
             "payload": { "order_id": "ord-1", "label": "", "items": [{ "product_name": "Café", "quantity": 1_000_000 }] },
             "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-07-19T10:00:00+00:00", "new_ids": [] }
         });
-        let out = fire_order_pure(inp).expect("disparo compat");
+        let out = fire_order_pure(inp).accepted("disparo compat");
         assert!(out.operations.is_empty(), "sin ronda no se marca nada: {:?}", out.operations);
     }
 
@@ -3759,7 +3925,7 @@ mod tests {
             },
             "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-07-18T10:00:00+00:00", "new_ids": [] }
         });
-        let out = fire_order_pure(inp).expect("disparar el pedido");
+        let out = fire_order_pure(inp).accepted("disparar el pedido");
 
         // El disparo NO escribe en `sales`: el pedido no cambia de estado por mandar comida.
         assert!(out.operations.is_empty(), "disparar no muta el pedido: {:?}", out.operations);
@@ -3788,7 +3954,7 @@ mod tests {
             },
             "context": { "hub_id": "h1", "current_user_id": "u-waiter", "now": "2026-07-18T10:00:00+00:00", "new_ids": [] }
         });
-        let out = fire_order_pure(inp).expect("disparar el pedido");
+        let out = fire_order_pure(inp).accepted("disparar el pedido");
         assert_eq!(out.events[0].payload["waiter_id"], json!("u-waiter"));
     }
 
@@ -3804,7 +3970,7 @@ mod tests {
             },
             "context": { "hub_id": "h1", "current_user_id": "u-waiter", "now": "2026-07-18T10:00:00+00:00", "new_ids": [] }
         });
-        let out = fire_order_pure(inp).expect("disparar el pedido");
+        let out = fire_order_pure(inp).accepted("disparar el pedido");
         assert_eq!(out.events[0].payload["waiter_id"], json!("u-luis"));
     }
 
@@ -3814,7 +3980,7 @@ mod tests {
             "payload": { "label": "Mesa 4", "channel": "dine_in", "items": [] },
             "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-07-18T10:00:00+00:00", "new_ids": [] }
         });
-        assert!(fire_order_pure(inp).is_err(), "sin order_id no hay comanda que colgar de nada");
+        assert!(fire_order_pure(inp).was_refused(), "sin order_id no hay comanda que colgar de nada");
     }
 
     #[test]
@@ -4338,8 +4504,8 @@ mod tests {
             { "id": "r-21", "country_code": "ES", "region_code": null, "tax_category_key": "product.generic", "rate_pct": 21.0, "tax_type": "vat", "parent_id": null, "is_active": 1 }
         ]);
         let err = complete_sale_pure(input_with_rules(items, 4, rules, "array", "ES", ""))
-            .expect_err("categoría desconocida → rechazo");
-        assert!(err.starts_with("sales.no_tax_rule"), "{err}");
+            .refused("categoría desconocida → rechazo");
+        assert_eq!(err.code, "sales.no_tax_rule", "{err:?}");
     }
 
     // ── Atribución por profesional + cita→venta ──────────────────────────────
@@ -4506,8 +4672,8 @@ mod tests {
             "context": { "hub_id": "h1", "now": "2026-05-31T10:00:00+00:00", "country_code": "ES",
                 "new_ids": [json!("id-0"), json!("id-1"), json!("id-2"), json!("id-3")] }
         });
-        let err = complete_sale_pure(inp).expect_err("sin catálogo fiscal no se cobra");
-        assert!(err.starts_with("sales.tax_catalog_unavailable"), "{err}");
+        let err = complete_sale_pure(inp).refused("sin catálogo fiscal no se cobra");
+        assert_eq!(err.code, "sales.tax_catalog_unavailable", "{err:?}");
     }
 
     #[test]
@@ -4772,8 +4938,8 @@ mod tests {
         assert_eq!(h.params["provisional_total"], json!(324));
 
         let bad = json!([{ "product_name": "Café", "price": 180, "quantity": 1_000_000, "discount": 120 }]);
-        let err = open_order_pure(input(bad, 3, 0)).expect_err("120 % no es un descuento");
-        assert!(err.contains("sales.discount_out_of_range"), "{err}");
+        let err = open_order_pure(input(bad, 3, 0)).refused("120 % no es un descuento");
+        assert_eq!(err.code, "sales.discount_out_of_range", "{err:?}");
     }
 
     #[test]
@@ -4804,21 +4970,23 @@ mod tests {
             "product_name": "Gambas", "price": 1200, "quantity": 500, // 0,0005 kg
             "unit_code": "kg", "increment_value": 1_000, "tax_rate": 21.0
         }]);
-        let err = complete_sale_pure(input(items.clone(), 3, 0)).expect_err("fuera de rejilla");
-        assert!(err.contains("quantity_off_grid"), "nombra el problema: {err}");
-        assert!(err.contains("500") && err.contains("1000"), "nombra ambos valores: {err}");
+        let err = complete_sale_pure(input(items.clone(), 3, 0)).refused("fuera de rejilla");
+        assert_eq!(err.code, "sales.quantity_off_grid", "{err:?}");
+        // The detail names both values so a developer reading the log sees the offending pair; what
+        // the till shows is resolved from the CODE (ADR-0055), never from this sentence.
+        assert!(err.message.contains("500") && err.message.contains("1000"), "nombra ambos valores: {err:?}");
 
         // Y el pedido tampoco lo acepta: abrir con una cantidad inválida y cobrarla después
         // sería mover el error de sitio.
-        assert!(open_order_pure(input(items, 3, 0)).is_err());
+        assert!(open_order_pure(input(items, 3, 0)).was_refused());
     }
 
     #[test]
     fn una_cantidad_no_positiva_se_rechaza() {
         // Una línea de 0 unidades no es una venta de nada: es un bug de quien llama.
         let items = json!([{ "product_name": "X", "price": 100, "quantity": 0, "tax_rate": 21.0 }]);
-        let err = complete_sale_pure(input(items, 3, 0)).expect_err("cantidad 0");
-        assert!(err.contains("quantity_not_positive"), "{err}");
+        let err = complete_sale_pure(input(items, 3, 0)).refused("cantidad 0");
+        assert_eq!(err.code, "sales.quantity_not_positive", "{err:?}");
     }
 
     #[test]
@@ -4916,7 +5084,7 @@ mod tests {
                              "quantity": 1_000_000, "tax_category_key": "restaurant.food",
                              "tax_rate": 10.0 }]);
         let out = complete_sale_pure(input_fiscal(items, product_catalog(), tax_catalog()))
-            .expect("la venta se cierra");
+            .accepted("la venta se cierra");
         let line = out.operations.iter().find(|o| o.command == "sales._insert_line").unwrap();
         assert_eq!(
             line.params["tax_rate"], json!(21.0),
@@ -5025,8 +5193,8 @@ mod tests {
                                     "tax_category_key": "restaurant.food", "rate_pct": 10.0,
                                     "tax_type": "vat" }]);
         let err = complete_sale_pure(input_fiscal(items, product_catalog(), otras_reglas))
-            .expect_err("sin regla aplicable no se cierra la venta");
-        assert!(err.starts_with("sales.no_tax_rule"), "código inesperado: {err}");
+            .refused("sin regla aplicable no se cierra la venta");
+        assert_eq!(err.code, "sales.no_tax_rule", "código inesperado: {err:?}");
     }
 
     // ── sales#21 · sin catálogo fiscal NO se cobra con el IVA del navegador ────────────────────
@@ -5044,8 +5212,8 @@ mod tests {
         let items = json!([{ "product_id": "p-wine", "product_name": "Vino", "price": 5000,
                              "quantity": 1_000_000, "tax_rate": 21.0 }]);
         let err = complete_sale_pure(input_fiscal(items, product_catalog(), json!([])))
-            .expect_err("catálogo fiscal vacío: no hay regla → no se cierra la venta");
-        assert!(err.starts_with("sales.no_tax_rule"), "código inesperado: {err}");
+            .refused("catálogo fiscal vacío: no hay regla → no se cierra la venta");
+        assert_eq!(err.code, "sales.no_tax_rule", "código inesperado: {err:?}");
     }
 
     #[test]
@@ -5055,8 +5223,8 @@ mod tests {
         let items = json!([{ "product_id": "p-wine", "product_name": "Vino", "price": 5000,
                              "quantity": 1_000_000, "tax_rate": 21.0 }]);
         let err = complete_sale_pure(input_fiscal(items, product_catalog(), Value::Null))
-            .expect_err("sin la read fiscal no se cobra con la pista del cliente");
-        assert!(err.starts_with("sales.tax_catalog_unavailable"), "código inesperado: {err}");
+            .refused("sin la read fiscal no se cobra con la pista del cliente");
+        assert_eq!(err.code, "sales.tax_catalog_unavailable", "código inesperado: {err:?}");
     }
 
     #[test]
@@ -5068,8 +5236,8 @@ mod tests {
                              "is_service": true, "tax_category_key": "service.generic",
                              "tax_rate": 21.0 }]);
         let err = complete_sale_pure(input_fiscal(items, product_catalog(), tax_catalog()))
-            .expect_err("service.generic no tiene regla en este catálogo");
-        assert!(err.starts_with("sales.no_tax_rule"), "código inesperado: {err}");
+            .refused("service.generic no tiene regla en este catálogo");
+        assert_eq!(err.code, "sales.no_tax_rule", "código inesperado: {err:?}");
     }
 
     #[test]
@@ -5079,7 +5247,7 @@ mod tests {
         let items = json!([{ "product_name": "Varios", "price": 250, "quantity": 1_000_000,
                              "tax_rate": 21.0 }]);
         let out = complete_sale_pure(input_fiscal(items, product_catalog(), tax_catalog()))
-            .expect("una línea libre se sigue cobrando");
+            .accepted("una línea libre se sigue cobrando");
         let line = out.operations.iter().find(|o| o.command == "sales._insert_line").unwrap();
         assert_eq!(line.params["tax_rate"], json!(21.0));
     }
@@ -5101,7 +5269,7 @@ mod tests {
     fn the_catalogue_price_wins_over_the_one_the_caller_sent() {
         // Con catálogo fiscal, porque desde sales#67 una línea de catálogo exige regla resuelta.
         let out = complete_sale_pure(input_fiscal(underpriced_line(), product_catalog(), tax_catalog()))
-            .expect("la venta se cierra");
+            .accepted("la venta se cierra");
         let line = out
             .operations
             .iter()
@@ -5118,8 +5286,8 @@ mod tests {
         let items = json!([{ "product_id": "p-inventado", "product_name": "X", "price": 100,
                              "quantity": 1_000_000, "tax_rate": 21.0 }]);
         let err = complete_sale_pure(input_with_products(items, 4, product_catalog()))
-            .expect_err("un producto que no está en el catálogo no se vende");
-        assert!(err.starts_with("sales.product_not_available"), "código inesperado: {err}");
+            .refused("un producto que no está en el catálogo no se vende");
+        assert_eq!(err.code, "sales.product_not_available", "código inesperado: {err:?}");
     }
 
     #[test]
@@ -5128,8 +5296,8 @@ mod tests {
         // romperse»— aquí ES el agujero: aceptar el precio del caller para un producto que dice
         // ser del catálogo. Sin catálogo no hay nada contra lo que contrastar, así que no se cierra.
         let err = complete_sale_pure(input_with_products(underpriced_line(), 4, Value::Null))
-            .expect_err("sin catálogo no se cierra una venta de catálogo");
-        assert!(err.starts_with("sales.catalog_unavailable"), "código inesperado: {err}");
+            .refused("sin catálogo no se cierra una venta de catálogo");
+        assert_eq!(err.code, "sales.catalog_unavailable", "código inesperado: {err:?}");
     }
 
     #[test]
@@ -5139,7 +5307,7 @@ mod tests {
         let items = json!([{ "product_name": "Varios", "price": 250, "quantity": 1_000_000,
                              "tax_rate": 21.0 }]);
         let out = complete_sale_pure(input_with_products(items, 4, product_catalog()))
-            .expect("una línea libre se sigue pudiendo vender");
+            .accepted("una línea libre se sigue pudiendo vender");
         let line = out.operations.iter().find(|o| o.command == "sales._insert_line").unwrap();
         assert_eq!(line.params["unit_price"], json!(250));
     }
@@ -5152,7 +5320,7 @@ mod tests {
         let items = json!([{ "product_id": "svc-1", "product_name": "Tinte", "price": 4500,
                              "quantity": 1_000_000, "tax_rate": 21.0, "is_service": true }]);
         let out = complete_sale_pure(input_with_products(items, 4, product_catalog()))
-            .expect("un servicio se cobra aunque no esté en el catálogo de productos");
+            .accepted("un servicio se cobra aunque no esté en el catálogo de productos");
         let line = out.operations.iter().find(|o| o.command == "sales._insert_line").unwrap();
         assert_eq!(line.params["unit_price"], json!(4500));
     }
@@ -5165,28 +5333,28 @@ mod tests {
     fn a_sale_with_no_lines_is_rejected() {
         // An empty basket is not a sale: it used to be accepted and it still fired inventory,
         // cash register and invoice with a 0,00 € document.
-        let err = complete_sale_pure(input(json!([]), 3, 0)).expect_err("a sale needs lines");
-        assert!(err.contains("sales.empty_sale"), "{err}");
+        let err = complete_sale_pure(input(json!([]), 3, 0)).refused("a sale needs lines");
+        assert_eq!(err.code, "sales.empty_sale", "{err:?}");
     }
 
     #[test]
     fn a_line_discount_out_of_range_is_rejected() {
         // 120 % off turns the line into a refund the cashier never authorised.
         let items = json!([{ "product_name": "Menú", "price": 500, "quantity": 1_000_000, "discount": 120.0 }]);
-        let err = complete_sale_pure(input(items, 3, 0)).expect_err("discount > 100");
-        assert!(err.contains("sales.discount_out_of_range"), "{err}");
+        let err = complete_sale_pure(input(items, 3, 0)).refused("discount > 100");
+        assert_eq!(err.code, "sales.discount_out_of_range", "{err:?}");
 
         let items = json!([{ "product_name": "Menú", "price": 500, "quantity": 1_000_000, "discount": -5.0 }]);
-        let err = complete_sale_pure(input(items, 3, 0)).expect_err("negative discount");
-        assert!(err.contains("sales.discount_out_of_range"), "{err}");
+        let err = complete_sale_pure(input(items, 3, 0)).refused("negative discount");
+        assert_eq!(err.code, "sales.discount_out_of_range", "{err:?}");
     }
 
     #[test]
     fn a_sale_discount_out_of_range_is_rejected() {
         let mut inp = input(one_line(), 3, 0);
         inp["payload"]["discount_percent"] = json!(101.0);
-        let err = complete_sale_pure(inp).expect_err("global discount > 100");
-        assert!(err.contains("sales.discount_out_of_range"), "{err}");
+        let err = complete_sale_pure(inp).refused("global discount > 100");
+        assert_eq!(err.code, "sales.discount_out_of_range", "{err:?}");
     }
 
     // ── sales#113 · descuento de IMPORTE FIJO al ticket, repartido por RESTO MAYOR (ADR-0210) ──
@@ -5263,13 +5431,13 @@ mod tests {
     fn a_fixed_amount_above_the_gross_is_refused_and_it_needs_discounts_allowed() {
         let mut inp = input(three_equal_lines(), 5, 0);
         inp["payload"]["discount_amount"] = json!(301);
-        let err = complete_sale_pure(inp).expect_err("más descuento que venta");
-        assert!(err.contains("sales.discount_out_of_range"), "{err}");
+        let err = complete_sale_pure(inp).refused("más descuento que venta");
+        assert_eq!(err.code, "sales.discount_out_of_range", "{err:?}");
 
         let mut inp = input_with_catalogs(three_equal_lines(), 5, Value::Null, json!([{ "allow_discounts": 0 }]), Value::Null);
         inp["payload"]["discount_amount"] = json!(10);
-        let err = complete_sale_pure(inp).expect_err("descuentos apagados");
-        assert!(err.contains("sales.discounts_not_allowed"), "{err}");
+        let err = complete_sale_pure(inp).refused("descuentos apagados");
+        assert_eq!(err.code, "sales.discounts_not_allowed", "{err:?}");
     }
 
     #[test]
@@ -5277,17 +5445,17 @@ mod tests {
         // Money is unsigned in a sale: a negative price or cost is a refund, and refunds have
         // their own flow. Belt and braces with the JSON Schema (`minimum: 0`).
         let items = json!([{ "product_name": "Menú", "price": -500, "quantity": 1_000_000 }]);
-        let err = complete_sale_pure(input(items, 3, 0)).expect_err("negative price");
-        assert!(err.contains("sales.amount_negative"), "{err}");
+        let err = complete_sale_pure(input(items, 3, 0)).refused("negative price");
+        assert_eq!(err.code, "sales.amount_negative", "{err:?}");
 
         let items = json!([{ "product_name": "Menú", "price": 500, "quantity": 1_000_000, "cost": -1 }]);
-        let err = complete_sale_pure(input(items, 3, 0)).expect_err("negative cost");
-        assert!(err.contains("sales.amount_negative"), "{err}");
+        let err = complete_sale_pure(input(items, 3, 0)).refused("negative cost");
+        assert_eq!(err.code, "sales.amount_negative", "{err:?}");
 
         let mut inp = input(one_line(), 3, 0);
         inp["payload"]["amount_tendered"] = json!(-100);
-        let err = complete_sale_pure(inp).expect_err("negative tendered");
-        assert!(err.contains("sales.amount_negative"), "{err}");
+        let err = complete_sale_pure(inp).refused("negative tendered");
+        assert_eq!(err.code, "sales.amount_negative", "{err:?}");
     }
 
     #[test]
@@ -5296,8 +5464,8 @@ mod tests {
         // anyway, with `change = 0` and the drawer silently short. The server is the authority on
         // the total (ADR-0085), so it is the server that refuses: 5,00 € due, 1,00 € tendered.
         let items = json!([{ "product_name": "Menú", "price": 500, "quantity": 1_000_000, "tax_rate": 21.0 }]);
-        let err = complete_sale_pure(input(items, 3, 100)).expect_err("tendered below total");
-        assert!(err.contains("sales.insufficient_tendered"), "{err}");
+        let err = complete_sale_pure(input(items, 3, 100)).refused("tendered below total");
+        assert_eq!(err.code, "sales.insufficient_tendered", "{err:?}");
     }
 
     #[test]
@@ -5338,16 +5506,16 @@ mod tests {
         // belonging to another hub. The catalog the runtime pre-loads is the only authority.
         let mut inp = input_with_catalogs(one_line(), 3, cash_catalog(), Value::Null, Value::Null);
         inp["payload"]["payment_method_id"] = json!("pm-ghost");
-        let err = complete_sale_pure(inp).expect_err("unknown payment method");
-        assert!(err.contains("sales.payment_method_not_available"), "{err}");
+        let err = complete_sale_pure(inp).refused("unknown payment method");
+        assert_eq!(err.code, "sales.payment_method_not_available", "{err:?}");
     }
 
     #[test]
     fn a_sale_without_payment_method_is_rejected_when_the_hub_has_a_catalog() {
         let mut inp = input_with_catalogs(one_line(), 3, cash_catalog(), Value::Null, Value::Null);
         inp["payload"]["payment_method_id"] = Value::Null;
-        let err = complete_sale_pure(inp).expect_err("no payment method");
-        assert!(err.contains("sales.payment_method_required"), "{err}");
+        let err = complete_sale_pure(inp).refused("no payment method");
+        assert_eq!(err.code, "sales.payment_method_required", "{err:?}");
     }
 
     #[test]
@@ -5417,16 +5585,16 @@ mod tests {
         let settings = json!([{ "allow_discounts": 0, "require_customer": 0 }]);
         let items = json!([{ "product_name": "Menú", "price": 500, "quantity": 1_000_000, "discount": 10.0 }]);
         let inp = input_with_catalogs(items, 3, cash_catalog(), settings, Value::Null);
-        let err = complete_sale_pure(inp).expect_err("discounts disabled");
-        assert!(err.contains("sales.discounts_not_allowed"), "{err}");
+        let err = complete_sale_pure(inp).refused("discounts disabled");
+        assert_eq!(err.code, "sales.discounts_not_allowed", "{err:?}");
     }
 
     #[test]
     fn a_sale_without_customer_is_rejected_when_the_hub_requires_one() {
         let settings = json!([{ "allow_discounts": 1, "require_customer": 1 }]);
         let inp = input_with_catalogs(one_line(), 3, cash_catalog(), settings, Value::Null);
-        let err = complete_sale_pure(inp).expect_err("customer required");
-        assert!(err.contains("sales.customer_required"), "{err}");
+        let err = complete_sale_pure(inp).refused("customer required");
+        assert_eq!(err.code, "sales.customer_required", "{err:?}");
     }
 
     #[test]
@@ -5480,8 +5648,8 @@ mod tests {
     fn the_idempotency_key_is_mandatory() {
         let mut inp = input(one_line(), 3, 0);
         inp["payload"]["idempotency_key"] = json!("");
-        let err = complete_sale_pure(inp).expect_err("no idempotency key");
-        assert!(err.contains("sales.idempotency_key_required"), "{err}");
+        let err = complete_sale_pure(inp).refused("no idempotency key");
+        assert_eq!(err.code, "sales.idempotency_key_required", "{err:?}");
     }
 
     #[test]
@@ -5669,8 +5837,8 @@ mod tests {
                            "tax_rate": 10.0, "modifiers": [{ "option_id": "o-inventado" }] }]), 3, 600),
             catalogo_queso(),
         );
-        let err = complete_sale_pure(inp).expect_err("debe rechazar");
-        assert!(err.contains("sales.modifier_not_available"), "código de dominio estable: {err}");
+        let err = complete_sale_pure(inp).refused("debe rechazar");
+        assert_eq!(err.code, "sales.modifier_not_available", "código de dominio estable: {err:?}");
     }
 
     #[test]
@@ -5680,8 +5848,8 @@ mod tests {
         // suplementos sigue cobrándose igual (lo fija el test de abajo).
         let inp = input(json!([{ "product_name": "Hamburguesa", "price": 500, "quantity": 1_000_000,
                                  "tax_rate": 10.0, "modifiers": [{ "option_id": "o-queso" }] }]), 3, 600);
-        let err = complete_sale_pure(inp).expect_err("debe rechazar");
-        assert!(err.contains("sales.modifier_catalog_unavailable"), "código estable: {err}");
+        let err = complete_sale_pure(inp).refused("debe rechazar");
+        assert_eq!(err.code, "sales.modifier_catalog_unavailable", "código estable: {err:?}");
     }
 
     #[test]
@@ -5738,11 +5906,8 @@ mod tests {
         // letting it be charged. Until the child line exists (part 2 of the issue), the sale is
         // REFUSED through the same door that already refuses an unknown option.
         let err = complete_sale_pure(menu_with_drink(json!("product.generic")))
-            .expect_err("must refuse");
-        assert!(
-            err.contains("sales.modifier_tax_override_unsupported"),
-            "stable domain code: {err}"
-        );
+            .refused("must refuse");
+        assert_eq!(err.code, "sales.modifier_tax_override_unsupported", "stable domain code: {err:?}");
     }
 
     #[test]
@@ -5773,11 +5938,8 @@ mod tests {
                            "tax_rate": 10.0, "modifiers": [{ "option_id": "o-refresco" }] }]), 3, 1200),
             drink_option(json!("product.generic")),
         );
-        let err = complete_sale_pure(inp).expect_err("must refuse");
-        assert!(
-            err.contains("sales.modifier_tax_override_unsupported"),
-            "stable domain code: {err}"
-        );
+        let err = complete_sale_pure(inp).refused("must refuse");
+        assert_eq!(err.code, "sales.modifier_tax_override_unsupported", "stable domain code: {err:?}");
     }
 
     // ── pm#93 · los suplementos llegan a COCINA con el nombre que resuelve el SERVIDOR ────────
@@ -5816,7 +5978,7 @@ mod tests {
         // si lo pusiera el navegador, un cliente podría escribir lo que quisiera en la comanda.
         let out = fire_order_pure(fire_con_suplementos(
             json!([{ "option_id": "o-no-onion" }]), Some(catalogo_cocina()),
-        )).expect("fire ok");
+        )).accepted("fire ok");
         let ev = &out.events[0];
         let m = &ev.payload["items"][0]["modifiers"][0];
         assert_eq!(m["kitchen_name"], json!("SIN CEBOLLA"));
@@ -5826,7 +5988,7 @@ mod tests {
     fn sin_kitchen_name_cocina_imprime_el_nombre_comercial() {
         let out = fire_order_pure(fire_con_suplementos(
             json!([{ "option_id": "o-cheese" }]), Some(catalogo_cocina()),
-        )).expect("fire ok");
+        )).accepted("fire ok");
         let m = &out.events[0].payload["items"][0]["modifiers"][0];
         assert_eq!(m["kitchen_name"], json!("Extra de queso"), "hueco en la comanda = comanda inútil");
     }
@@ -5837,7 +5999,7 @@ mod tests {
         // en el del catálogo.
         let out = fire_order_pure(fire_con_suplementos(
             json!([{ "option_id": "o-cheese" }, { "option_id": "o-no-onion" }]), Some(catalogo_cocina()),
-        )).expect("fire ok");
+        )).accepted("fire ok");
         let ms = out.events[0].payload["items"][0]["modifiers"].as_array().expect("array").clone();
         let names: Vec<String> = ms.iter().map(|m| as_str(&m["kitchen_name"])).collect();
         assert_eq!(names, vec!["Extra de queso".to_string(), "SIN CEBOLLA".to_string()]);
@@ -5851,7 +6013,7 @@ mod tests {
         // accesoria. Se imprime lo que se sabe: el id, que es mejor que nada y que un silencio.
         let out = fire_order_pure(fire_con_suplementos(
             json!([{ "option_id": "o-no-onion" }]), None,
-        )).expect("la comanda tiene que salir igual");
+        )).accepted("la comanda tiene que salir igual");
         let m = &out.events[0].payload["items"][0]["modifiers"][0];
         assert_eq!(m["option_id"], json!("o-no-onion"));
     }
@@ -5860,7 +6022,7 @@ mod tests {
     fn una_comanda_SIN_suplementos_no_cambia() {
         // Control: el 99 % de las comandas. Si esto se rompiera, se rompería cocina entera.
         let out = fire_order_pure(fire_con_suplementos(json!([]), Some(catalogo_cocina())))
-            .expect("fire ok");
+            .accepted("fire ok");
         let item = &out.events[0].payload["items"][0];
         assert_eq!(item["product_name"], json!("Hamburguesa"));
         assert_eq!(out.events[0].name, "order.fired");
@@ -6258,8 +6420,8 @@ mod tests {
                    combo_product("p-beer", 200, "product.generic")]),
             8,
         );
-        let err = complete_sale_pure(inp).expect_err("un curso sin resolver no se cobra");
-        assert!(err.contains("sales.combo_group_unresolved"), "código de dominio estable: {err}");
+        let err = complete_sale_pure(inp).refused("un curso sin resolver no se cobra");
+        assert_eq!(err.code, "sales.combo_group_unresolved", "código de dominio estable: {err:?}");
     }
 
     #[test]
@@ -6276,8 +6438,8 @@ mod tests {
                    combo_product("p-beer", 200, "product.generic")]),
             8,
         );
-        let err = complete_sale_pure(inp).expect_err("dos de un grupo de máximo uno");
-        assert!(err.contains("sales.combo_group_over_max"), "código de dominio estable: {err}");
+        let err = complete_sale_pure(inp).refused("dos de un grupo de máximo uno");
+        assert_eq!(err.code, "sales.combo_group_over_max", "código de dominio estable: {err:?}");
     }
 
     #[test]
@@ -6296,8 +6458,8 @@ mod tests {
                    combo_product("p-beer", 200, "product.generic")]),
             8,
         );
-        let err = complete_sale_pure(inp).expect_err("un menú retirado no se vende");
-        assert!(err.contains("sales.combo_not_on_sale"), "código propio y RUIDOSO: {err}");
+        let err = complete_sale_pure(inp).refused("un menú retirado no se vende");
+        assert_eq!(err.code, "sales.combo_not_on_sale", "código propio y RUIDOSO: {err:?}");
     }
 
     #[test]
@@ -6308,8 +6470,8 @@ mod tests {
             json!([combo_product("p-sandwich", 450, "shop.food")]),
             8,
         );
-        let err = complete_sale_pure(inp).expect_err("opción inventada");
-        assert!(err.contains("sales.combo_option_not_available"), "código estable: {err}");
+        let err = complete_sale_pure(inp).refused("opción inventada");
+        assert_eq!(err.code, "sales.combo_option_not_available", "código estable: {err:?}");
     }
 
     #[test]
@@ -6321,8 +6483,8 @@ mod tests {
             8,
         );
         inp["payload"]["items"][0]["combo_id"] = json!("c-inventado");
-        let err = complete_sale_pure(inp).expect_err("combo inventado");
-        assert!(err.contains("sales.combo_not_available"), "código estable: {err}");
+        let err = complete_sale_pure(inp).refused("combo inventado");
+        assert_eq!(err.code, "sales.combo_not_available", "código estable: {err:?}");
     }
 
     #[test]
@@ -6338,8 +6500,8 @@ mod tests {
             8,
         );
         inp["context"]["reads"]["combos.options.all"] = Value::Null;
-        let err = complete_sale_pure(inp).expect_err("sin catálogo no se cobra un combo");
-        assert!(err.contains("sales.combo_catalog_unavailable"), "código estable: {err}");
+        let err = complete_sale_pure(inp).refused("sin catálogo no se cobra un combo");
+        assert_eq!(err.code, "sales.combo_catalog_unavailable", "código estable: {err:?}");
     }
 
     #[test]
@@ -6354,8 +6516,8 @@ mod tests {
             json!([combo_product("p-sandwich", 450, "shop.food")]),
             8,
         );
-        let err = complete_sale_pure(inp).expect_err("sin peso no hay reparto");
-        assert!(err.contains("sales.combo_component_price_unknown"), "código estable: {err}");
+        let err = complete_sale_pure(inp).refused("sin peso no hay reparto");
+        assert_eq!(err.code, "sales.combo_component_price_unknown", "código estable: {err:?}");
     }
 
     #[test]
@@ -6488,8 +6650,8 @@ mod tests {
             json!([combo_product("p-a", 600, "shop.food")]),
             8,
         );
-        let err = complete_sale_pure(inp).expect_err("un menú sin categoría fiscal no se cobra");
-        assert!(err.contains("sales.combo_tax_category_missing"), "código estable: {err}");
+        let err = complete_sale_pure(inp).refused("un menú sin categoría fiscal no se cobra");
+        assert_eq!(err.code, "sales.combo_tax_category_missing", "código estable: {err:?}");
     }
 
     #[test]
@@ -6505,8 +6667,8 @@ mod tests {
             json!([combo_product("p-sandwich", 450, "shop.food")]),
             8,
         );
-        let err = complete_sale_pure(inp).expect_err("opción repetida");
-        assert!(err.contains("sales.combo_option_repeated"), "código estable: {err}");
+        let err = complete_sale_pure(inp).refused("opción repetida");
+        assert_eq!(err.code, "sales.combo_option_repeated", "código estable: {err:?}");
     }
 
     #[test]
@@ -6679,8 +6841,8 @@ mod tests {
             .map(|i| json!({ "product_name": format!("Item {i}"), "price": 100,
                              "quantity": 1_000_000, "tax_rate": 10.0 }))
             .collect();
-        let err = complete_sale_pure(input(json!(items), 256, 0)).expect_err("no caben");
-        assert!(err.contains("sales.too_many_lines"), "código estable: {err}");
+        let err = complete_sale_pure(input(json!(items), 256, 0)).refused("no caben");
+        assert_eq!(err.code, "sales.too_many_lines", "código estable: {err:?}");
     }
 
     // ── kitchen#54 · las líneas de la comanda las pone el SERVIDOR ────────────────────────────
@@ -6726,7 +6888,7 @@ mod tests {
                    line_row("li-2", "Vermut", 2_000_000, 300)]),
             None,
         ))
-        .expect("fire ok");
+        .accepted("fire ok");
 
         let items = out.events[0].payload["items"].as_array().expect("items");
         assert_eq!(items.len(), 2, "la comanda sale con las dos líneas del pedido: {items:?}");
@@ -6744,8 +6906,8 @@ mod tests {
         // Fabricar igualmente una comanda es lo que dejó pasar un id BASURA y colgó de él una
         // tarjeta en blanco en el KDS. Sin líneas no hay nada que cocinar: se rechaza y NO se emite.
         let err = fire_order_pure(fire_from_server(json!([]), None))
-            .expect_err("un pedido sin líneas no es una comanda");
-        assert!(err.contains("sales.nothing_to_fire"), "{err}");
+            .refused("un pedido sin líneas no es una comanda");
+        assert_eq!(err.code, "sales.nothing_to_fire", "{err:?}");
     }
 
     #[test]
@@ -6757,7 +6919,7 @@ mod tests {
         let mut row = line_row("li-1", "Hamburguesa", 1_000_000, 900);
         row["modifiers"] = json!(r#"[{"option_id":"o-cheese"},{"option_id":"o-no-onion"}]"#);
         let out = fire_order_pure(fire_from_server(json!([row]), Some(catalogo_cocina())))
-            .expect("fire ok");
+            .accepted("fire ok");
 
         let ms = out.events[0].payload["items"][0]["modifiers"].as_array().expect("lista de suplementos").clone();
         assert_eq!(ms.len(), 2, "en su ORDEN de elección: {ms:?}");
@@ -6774,7 +6936,7 @@ mod tests {
         let mut row = line_row("li-1", "Postre", 1_000_000, 400);
         row["is_gift"] = json!(1);
         row["gift_reason"] = json!("cumpleaños");
-        let out = fire_order_pure(fire_from_server(json!([row]), None)).expect("fire ok");
+        let out = fire_order_pure(fire_from_server(json!([row]), None)).accepted("fire ok");
         assert_eq!(out.events[0].payload["items"][0]["notes"], json!("cumpleaños"));
     }
 
@@ -6787,7 +6949,7 @@ mod tests {
         let mut inp = fire_from_server(json!([ya, line_row("li-2", "Postre", 1_000_000, 400)]), None);
         inp["payload"]["round_no"] = json!(2);
 
-        let out = fire_order_pure(inp).expect("hay una línea nueva");
+        let out = fire_order_pure(inp).accepted("hay una línea nueva");
         let items = out.events[0].payload["items"].as_array().expect("items");
         assert_eq!(items.len(), 1, "solo lo pendiente: {items:?}");
         assert_eq!(items[0]["product_name"], json!("Postre"));
@@ -6798,7 +6960,7 @@ mod tests {
         // `is_service` viaja con la línea: quien filtra es cocina (mismo criterio que inventory).
         let mut corte = line_row("li-1", "Corte de pelo", 1_000_000, 1500);
         corte["is_service"] = json!(1);
-        let out = fire_order_pure(fire_from_server(json!([corte]), None)).expect("fire ok");
+        let out = fire_order_pure(fire_from_server(json!([corte]), None)).accepted("fire ok");
         assert_eq!(out.events[0].payload["items"][0]["is_service"], json!(true));
     }
 
@@ -6880,8 +7042,8 @@ mod tests {
                 { "payment_method_id": "pm-ghost", "amount": 12100 }
             ]),
         ))
-        .expect_err("unknown tender");
-        assert!(err.contains("sales.payment_method_not_available"), "{err}");
+        .refused("unknown tender");
+        assert_eq!(err.code, "sales.payment_method_not_available", "{err:?}");
     }
 
     #[test]
@@ -6950,8 +7112,8 @@ mod tests {
             ),
         ] {
             let err = complete_sale_pure(input_with_payments(cart_121(), 8, payments))
-                .expect_err("mismatch must be refused");
-            assert!(err.contains("sales.payments_do_not_match_total"), "{label}: {err}");
+                .refused("mismatch must be refused");
+            assert_eq!(err.code, "sales.payments_do_not_match_total", "{label}: {err:?}");
         }
     }
 
@@ -6967,8 +7129,8 @@ mod tests {
                 { "payment_method_id": "pm-cash", "amount": 7100, "amount_tendered": 5000 }
             ]),
         ))
-        .expect_err("short cash leg");
-        assert!(err.contains("sales.insufficient_tendered"), "{err}");
+        .refused("short cash leg");
+        assert_eq!(err.code, "sales.insufficient_tendered", "{err:?}");
     }
 
     #[test]
@@ -7144,8 +7306,8 @@ mod tests {
             2, // sale + one line, and nothing left for a tender
             json!([{ "payment_method_id": "pm-card", "amount": 12100 }]),
         ))
-        .expect_err("not enough ids");
-        assert!(err.contains("sales.too_many_rows"), "{err}");
+        .refused("not enough ids");
+        assert_eq!(err.code, "sales.too_many_rows", "{err:?}");
     }
 
     // ── sales#160 · devolver una venta cobrada con VARIOS medios (ADR-0386, decisión 3) ────────
@@ -7221,13 +7383,13 @@ mod tests {
             { "payment_id": "pay-card", "amount": 5000 },
             { "payment_id": "pay-cash", "amount": 2500 }
         ])))
-        .expect_err("25,00 € sobre una pata que cobró 20,00 €");
+        .refused("25,00 € sobre una pata que cobró 20,00 €");
 
-        assert!(err.starts_with("sales.refund_exceeds_tender"), "{err}");
-        assert!(err.contains("Efectivo"), "el rechazo dice CUÁL se pasó: {err}");
-        assert!(err.contains("2500") && err.contains("2000"), "y con cuánto se pasó: {err}");
+        assert_eq!(err.code, "sales.refund_exceeds_tender", "{err:?}");
+        assert!(err.message.contains("Efectivo"), "el rechazo dice CUÁL se pasó: {err:?}");
+        assert!(err.message.contains("2500") && err.message.contains("2000"), "y con cuánto se pasó: {err:?}");
         // Y no nombra a la inocente: la tarjeta iba justa de tope.
-        assert!(!err.contains("Tarjeta"), "solo se nombra la pata que se pasó: {err}");
+        assert!(!err.message.contains("Tarjeta"), "solo se nombra la pata que se pasó: {err:?}");
     }
 
     #[test]
@@ -7245,9 +7407,9 @@ mod tests {
             options,
             refunded_sale(),
         ))
-        .expect_err("40,00 € sobre un resto de 35,00 €");
-        assert!(err.starts_with("sales.refund_exceeds_tender"), "{err}");
-        assert!(err.contains("Tarjeta"), "{err}");
+        .refused("40,00 € sobre un resto de 35,00 €");
+        assert_eq!(err.code, "sales.refund_exceeds_tender", "{err:?}");
+        assert!(err.message.contains("Tarjeta"), "{err:?}");
     }
 
     #[test]
@@ -7257,7 +7419,7 @@ mod tests {
         let out = refund_sale_pure(refund_input(json!([
             { "payment_id": "pay-card", "amount": 3000 }
         ])))
-        .expect("devolución válida");
+        .accepted("devolución válida");
 
         let head = out.operations.iter().find(|o| o.command == "sales._insert_refund").expect("cabecera");
         assert_eq!(head.params["refund_id"], json!("ref-1"));
@@ -7290,10 +7452,10 @@ mod tests {
             options,
             refunded_sale(),
         ))
-        .expect_err("la pata no admite su propio método");
-        assert!(err.starts_with("sales.refund_tender_not_eligible"), "{err}");
-        assert!(err.contains("method_unavailable"), "el motivo viaja: {err}");
-        assert!(err.contains("Tarjeta"), "y CUÁL: {err}");
+        .refused("la pata no admite su propio método");
+        assert_eq!(err.code, "sales.refund_tender_not_eligible", "{err:?}");
+        assert!(err.message.contains("method_unavailable"), "el motivo viaja: {err:?}");
+        assert!(err.message.contains("Tarjeta"), "y CUÁL: {err:?}");
     }
 
     #[test]
@@ -7311,7 +7473,7 @@ mod tests {
             options,
             refunded_sale(),
         ))
-        .expect("con destino explícito, la devolución sale");
+        .accepted("con destino explícito, la devolución sale");
 
         let leg = out.operations.iter()
             .find(|o| o.command == "sales._insert_refund_payment").expect("la pata");
@@ -7326,8 +7488,8 @@ mod tests {
         let err = refund_sale_pure(refund_input(json!([
             { "payment_id": "pay-card", "amount": 1000, "to_payment_method_id": "pm-ghost" }
         ])))
-        .expect_err("destino inventado");
-        assert!(err.starts_with("sales.refund_method_unavailable"), "{err}");
+        .refused("destino inventado");
+        assert_eq!(err.code, "sales.refund_method_unavailable", "{err:?}");
     }
 
     #[test]
@@ -7343,9 +7505,9 @@ mod tests {
             options,
             refunded_sale(),
         ))
-        .expect_err("ya devuelta");
-        assert!(err.starts_with("sales.refund_exceeds_tender"), "{err}");
-        assert!(err.contains("Efectivo"), "{err}");
+        .refused("ya devuelta");
+        assert_eq!(err.code, "sales.refund_exceeds_tender", "{err:?}");
+        assert!(err.message.contains("Efectivo"), "{err:?}");
     }
 
     #[test]
@@ -7353,8 +7515,8 @@ mod tests {
         let err = refund_sale_pure(refund_input(json!([
             { "payment_id": "pay-de-otra-venta", "amount": 100 }
         ])))
-        .expect_err("pata ajena");
-        assert!(err.starts_with("sales.refund_tender_unknown"), "{err}");
+        .refused("pata ajena");
+        assert_eq!(err.code, "sales.refund_tender_unknown", "{err:?}");
     }
 
     #[test]
@@ -7364,8 +7526,8 @@ mod tests {
             { "payment_id": "pay-cash", "amount": 2000 },
             { "payment_id": "pay-cash", "amount": 2000 }
         ])))
-        .expect_err("pata repetida");
-        assert!(err.starts_with("sales.refund_tender_duplicated"), "{err}");
+        .refused("pata repetida");
+        assert_eq!(err.code, "sales.refund_tender_duplicated", "{err:?}");
     }
 
     #[test]
@@ -7374,23 +7536,23 @@ mod tests {
             let err = refund_sale_pure(refund_input(json!([
                 { "payment_id": "pay-cash", "amount": amount }
             ])))
-            .expect_err("importe inválido");
-            assert!(err.starts_with("sales.refund_amount_invalid"), "{err}");
+            .refused("importe inválido");
+            assert_eq!(err.code, "sales.refund_amount_invalid", "{err:?}");
         }
     }
 
     #[test]
     fn una_devolucion_sin_nada_que_devolver_se_rechaza() {
-        let err = refund_sale_pure(refund_input(json!([]))).expect_err("sin reparto");
-        assert!(err.starts_with("sales.refund_nothing_to_return"), "{err}");
+        let err = refund_sale_pure(refund_input(json!([]))).refused("sin reparto");
+        assert_eq!(err.code, "sales.refund_nothing_to_return", "{err:?}");
     }
 
     #[test]
     fn el_motivo_es_obligatorio() {
         let mut inp = refund_input(json!([{ "payment_id": "pay-cash", "amount": 100 }]));
         inp["payload"]["reason"] = json!("   ");
-        let err = refund_sale_pure(inp).expect_err("sin motivo");
-        assert!(err.starts_with("sales.refund_reason_required"), "{err}");
+        let err = refund_sale_pure(inp).refused("sin motivo");
+        assert_eq!(err.code, "sales.refund_reason_required", "{err:?}");
     }
 
     #[test]
@@ -7402,8 +7564,8 @@ mod tests {
             refund_options(),
             sale,
         ))
-        .expect_err("venta anulada");
-        assert!(err.starts_with("sales.refund_requires_completed"), "{err}");
+        .refused("venta anulada");
+        assert_eq!(err.code, "sales.refund_requires_completed", "{err:?}");
     }
 
     #[test]
@@ -7419,7 +7581,7 @@ mod tests {
             refund_options(),
             sale,
         ))
-        .expect("una venta facturada se devuelve");
+        .accepted("una venta facturada se devuelve");
         let ev = out.events.iter().find(|e| e.name == "sale.refunded").expect("evento");
         assert_eq!(ev.payload["document_type"], json!("invoice"),
                    "el consumidor fiscal necesita saber que detrás hay una factura que rectificar");
@@ -7432,8 +7594,8 @@ mod tests {
             Value::Null,
             refunded_sale(),
         ))
-        .expect_err("sin patas");
-        assert!(err.starts_with("sales.refund_tender_unknown"), "{err}");
+        .refused("sin patas");
+        assert_eq!(err.code, "sales.refund_tender_unknown", "{err:?}");
     }
 
     #[test]
@@ -7443,8 +7605,8 @@ mod tests {
             refund_options(),
             json!([]),
         ))
-        .expect_err("venta ajena");
-        assert!(err.starts_with("sales.sale_not_found"), "{err}");
+        .refused("venta ajena");
+        assert_eq!(err.code, "sales.sale_not_found", "{err:?}");
     }
 
     #[test]
@@ -7456,7 +7618,7 @@ mod tests {
             { "payment_id": "pay-card", "amount": 5000 },
             { "payment_id": "pay-cash", "amount": 2000 }
         ])))
-        .expect("devolución total");
+        .accepted("devolución total");
 
         let ev = out.events.iter().find(|e| e.name == "sale.refunded").expect("evento");
         assert_eq!(ev.payload["refund_id"], json!("ref-1"));
@@ -7483,7 +7645,7 @@ mod tests {
         let out = refund_sale_pure(refund_input(json!([
             { "payment_id": "pay-cash", "amount": 1000 }
         ])))
-        .expect("parcial");
+        .accepted("parcial");
         let ev = out.events.iter().find(|e| e.name == "sale.refunded").expect("evento");
         assert_eq!(ev.payload["fully_refunded"], json!(false));
         assert!(!out.operations.iter().any(|o| o.command == "sales._mark_refunded"),
@@ -7498,7 +7660,7 @@ mod tests {
             { "payment_id": "pay-card", "amount": 5000 },
             { "payment_id": "pay-cash", "amount": 2000 }
         ])))
-        .expect("total");
+        .accepted("total");
         let mark = out.operations.iter().find(|o| o.command == "sales._mark_refunded").expect("la marca");
         assert_eq!(mark.params["sale_id"], json!("sale-1"));
     }
@@ -7511,7 +7673,7 @@ mod tests {
         inp["context"]["reads"]["sales.refund_by_idempotency_key"] =
             json!([{ "id": "ref-ya-escrito", "sale_id": "sale-1", "total": 2000 }]);
 
-        let out = refund_sale_pure(inp).expect("reintento limpio");
+        let out = refund_sale_pure(inp).accepted("reintento limpio");
         assert!(out.operations.is_empty(), "un reintento no escribe: {:?}", out.operations);
         assert!(out.events.is_empty(), "ni vuelve a emitir");
         let res = out.result.expect("un reintento SÍ responde: el que llama necesita la referencia");
@@ -7524,8 +7686,8 @@ mod tests {
     fn sin_ids_del_host_no_se_escriben_filas_con_clave_vacia() {
         let mut inp = refund_input(json!([{ "payment_id": "pay-cash", "amount": 100 }]));
         inp["context"]["new_ids"] = json!(["ref-1"]); // cabecera sí, pata no
-        let err = refund_sale_pure(inp).expect_err("sin ids");
-        assert!(err.contains("sales.too_many_rows"), "{err}");
+        let err = refund_sale_pure(inp).refused("sin ids");
+        assert_eq!(err.code, "sales.too_many_rows", "{err:?}");
     }
 
     // ── sales#169 · el MENÚ sobrevive en una CUENTA ABIERTA ──────────────────────────────────
@@ -7808,8 +7970,8 @@ mod tests {
     #[test]
     fn opening_a_check_with_a_product_that_is_not_on_sale_is_refused() {
         let other = json!([{ "id": "p-otro", "price": 900, "cost": 0, "tax_category_key": "x" }]);
-        let err = open_order_pure(open_input(other)).expect_err("no check is opened blind");
-        assert!(err.starts_with("sales.product_not_available"), "unexpected code: {err}");
+        let err = open_order_pure(open_input(other)).refused("no check is opened blind");
+        assert_eq!(err.code, "sales.product_not_available", "unexpected code: {err:?}");
     }
 
     #[test]
@@ -7817,8 +7979,8 @@ mod tests {
         // Same degradation as the checkout (sales#68): with no catalogue, a line that claims to
         // come from the catalogue cannot be sustained. Accepting it would freeze the price the
         // browser proposed, and from then on the checkout would honour it without asking.
-        let err = open_order_pure(open_input(Value::Null)).expect_err("no catalogue, no check");
-        assert!(err.starts_with("sales.catalog_unavailable"), "unexpected code: {err}");
+        let err = open_order_pure(open_input(Value::Null)).refused("no catalogue, no check");
+        assert_eq!(err.code, "sales.catalog_unavailable", "unexpected code: {err:?}");
     }
 
     #[test]
@@ -7866,8 +8028,8 @@ mod tests {
         // back in the read. Charging it by "falling back to the catalogue" would charge the same
         // thing twice without saying a word.
         let err = complete_sale_pure(charge_open_check(1000, json!([order_row("line-9", 900)]), 900))
-            .expect_err("the line is not in the check");
-        assert!(err.starts_with("sales.order_line_not_available"), "unexpected code: {err}");
+            .refused("the line is not in the check");
+        assert_eq!(err.code, "sales.order_line_not_available", "unexpected code: {err:?}");
     }
 
     #[test]
@@ -7875,8 +8037,8 @@ mod tests {
         // The read did not arrive (deleted order, a race, an integration). Charging "with whatever
         // is there" would re-price in silence, which is exactly what this issue removes.
         let err = complete_sale_pure(charge_open_check(1000, Value::Null, 900))
-            .expect_err("no rows of the order, no checkout");
-        assert!(err.starts_with("sales.order_lines_unavailable"), "unexpected code: {err}");
+            .refused("no rows of the order, no checkout");
+        assert_eq!(err.code, "sales.order_lines_unavailable", "unexpected code: {err:?}");
     }
 
     #[test]
@@ -7961,7 +8123,7 @@ mod tests {
     #[test]
     fn adding_a_line_freezes_the_catalogue_price() {
         let out = add_order_line_pure(add_line_input(burger_catalog(900), open_order_row()))
-            .expect("the line goes in");
+            .accepted("the line goes in");
         let row = &order_lines(&out)[0];
         assert_eq!(row["unit_price"], json!(900), "the payload's `unit_price` decides nothing");
         assert_eq!(row["line_total"], json!(900));
@@ -7976,7 +8138,7 @@ mod tests {
         // (21 %). sales#175 already made this row server-resolved; this pins it, because the
         // checkout now HONOURS the row's category when the check is resumed.
         let out = add_order_line_pure(add_line_input(burger_catalog(900), open_order_row()))
-            .expect("the line goes in");
+            .accepted("the line goes in");
         let row = &order_lines(&out)[0];
         assert_eq!(row["tax_category_key"], json!("product.generic"),
                    "the row froze the till's category instead of the catalogue's");
@@ -7985,16 +8147,16 @@ mod tests {
     #[test]
     fn adding_a_line_to_an_order_that_does_not_exist_is_refused_with_its_code() {
         let err = add_order_line_pure(add_line_input(burger_catalog(900), json!([])))
-            .expect_err("that order is not open in this business");
-        assert!(err.starts_with("sales.order_unavailable"), "unexpected code: {err}");
+            .refused("that order is not open in this business");
+        assert_eq!(err.code, "sales.order_unavailable", "unexpected code: {err:?}");
     }
 
     #[test]
     fn adding_a_line_of_a_product_that_is_not_on_sale_is_refused() {
         let other = json!([{ "id": "p-otro", "price": 900, "cost": 0, "tax_category_key": "x" }]);
         let err = add_order_line_pure(add_line_input(other, open_order_row()))
-            .expect_err("nothing is added blind");
-        assert!(err.starts_with("sales.product_not_available"), "unexpected code: {err}");
+            .refused("nothing is added blind");
+        assert_eq!(err.code, "sales.product_not_available", "unexpected code: {err:?}");
     }
 
     // ── sales#164 / #172 · THE AUTHORITATIVE PREVIEW ─────────────────────────────────────────────
@@ -8012,7 +8174,7 @@ mod tests {
 
     /// The preview of an input that would ALSO be a valid checkout.
     fn preview(inp: Value) -> Value {
-        preview_checkout_pure(inp).expect("the preview values the ticket")
+        preview_checkout_pure(inp).accepted("the preview values the ticket")
             .result.expect("the preview answers through the result channel (hub#70)")
     }
 
@@ -8079,7 +8241,7 @@ mod tests {
     fn the_preview_writes_nothing_and_spends_no_number() {
         let out = preview_checkout_pure(as_preview_input(input(
             json!([{ "product_name": "Café", "price": 150, "quantity": 1_000_000, "tax_rate": 10.0 }]), 3, 0,
-        ))).expect("the preview values the ticket");
+        ))).accepted("the preview values the ticket");
         assert!(out.operations.is_empty(), "a preview writes no row and bumps no counter");
         assert!(out.events.is_empty(), "a preview moves no stock, no till and no invoice");
         assert!(out.result.is_some(), "and it answers through the result channel");
@@ -8160,8 +8322,8 @@ mod tests {
     #[test]
     fn a_preview_of_an_empty_ticket_is_refused_with_the_same_code_as_the_sale() {
         let err = preview_checkout_pure(as_preview_input(input(json!([]), 2, 0)))
-            .expect_err("there is nothing to value");
-        assert!(err.starts_with("sales.empty_sale"), "unexpected code: {err}");
+            .refused("there is nothing to value");
+        assert_eq!(err.code, "sales.empty_sale");
     }
 
     #[test]
@@ -8176,8 +8338,8 @@ mod tests {
         let previewed = preview(as_preview_input(inp.clone()));
         assert_eq!(previewed["total"], json!(150));
         // The CHARGE still refuses: the preview relaxes nothing about what closes a sale.
-        let err = complete_sale_pure(inp).expect_err("the charge still needs the customer");
-        assert!(err.starts_with("sales.customer_required"), "unexpected code: {err}");
+        let err = complete_sale_pure(inp).refused("the charge still needs the customer");
+        assert_eq!(err.code, "sales.customer_required");
     }
 
     // ── sales#200 · A SUPPLEMENT OF AN OPEN CHECK IS CHARGED AT THE PRICE IT WAS ORDERED AT ────
@@ -8318,8 +8480,8 @@ mod tests {
                           "modifiers": "[{\"option_id\":\"o-refresco\",\"group_id\":\"g\",\"name\":\"Refresco\",\"kitchen_name\":\"+REFRESCO\",\"price_delta\":200,\"tax_category_key\":\"restaurant.food\"}]",
                           "combo": "{}", "combo_group_ref": null });
         let err = complete_sale_pure(charge_parked(row, 900, 300, json!([])))
-            .expect_err("must refuse");
-        assert!(err.contains("sales.modifier_tax_override_unsupported"), "stable code: {err}");
+            .refused("must refuse");
+        assert_eq!(err.code, "sales.modifier_tax_override_unsupported", "stable code: {err:?}");
     }
 
     #[test]
@@ -8347,8 +8509,8 @@ mod tests {
                           "modifiers": "[{\"option_id\":\"o-inventado\"}]",
                           "combo": "{}", "combo_group_ref": null });
         let err = complete_sale_pure(charge_parked(row, 900, 300, json!([])))
-            .expect_err("must refuse");
-        assert!(err.contains("sales.modifier_not_available"), "stable code: {err}");
+            .refused("must refuse");
+        assert_eq!(err.code, "sales.modifier_not_available", "stable code: {err:?}");
     }
 
     #[test]
@@ -8363,8 +8525,8 @@ mod tests {
                           "is_gift": 0, "is_service": 0, "line_total": 900, "discount_percent": 0,
                           "modifiers": "sin cebolla", "combo": "{}", "combo_group_ref": null });
         let err = complete_sale_pure(charge_parked(row, 900, 300, json!([])))
-            .expect_err("must refuse");
-        assert!(err.contains("sales.order_line_modifiers_unreadable"), "stable code: {err}");
+            .refused("must refuse");
+        assert_eq!(err.code, "sales.order_line_modifiers_unreadable", "stable code: {err:?}");
     }
 
     #[test]
@@ -8378,8 +8540,8 @@ mod tests {
                               "is_gift": 0, "is_service": 0, "line_total": 900,
                               "discount_percent": 0, "combo": "{}", "combo_group_ref": null });
         let err = complete_sale_pure(charge_parked(row.take(), 900, 300, json!([])))
-            .expect_err("must refuse");
-        assert!(err.contains("sales.order_line_modifiers_unreadable"), "stable code: {err}");
+            .refused("must refuse");
+        assert_eq!(err.code, "sales.order_line_modifiers_unreadable", "stable code: {err:?}");
     }
 
     #[test]
@@ -8401,8 +8563,8 @@ mod tests {
         // now, so it is checked where it is written.
         let mut inp = open_with_cheese(300);
         inp["payload"]["items"][0]["modifiers"] = json!([{ "option_id": "o-inventado" }]);
-        let err = open_order_pure(inp).expect_err("nothing is frozen blind");
-        assert!(err.starts_with("sales.modifier_not_available"), "unexpected code: {err}");
+        let err = open_order_pure(inp).refused("nothing is frozen blind");
+        assert_eq!(err.code, "sales.modifier_not_available", "unexpected code: {err:?}");
     }
 
     #[test]
@@ -8411,8 +8573,8 @@ mod tests {
         // supplement, and freezing "what the browser said" is the hole sales#68 closed.
         let mut inp = open_input(burger_catalog(900));
         inp["payload"]["items"][0]["modifiers"] = json!([{ "option_id": "o-queso" }]);
-        let err = open_order_pure(inp).expect_err("no catalogue, no freeze");
-        assert!(err.starts_with("sales.modifier_catalog_unavailable"), "unexpected code: {err}");
+        let err = open_order_pure(inp).refused("no catalogue, no freeze");
+        assert_eq!(err.code, "sales.modifier_catalog_unavailable", "unexpected code: {err:?}");
     }
 
     #[test]
@@ -8431,7 +8593,7 @@ mod tests {
         let mut inp = add_line_input(burger_catalog(900), open_order_row());
         inp["payload"]["modifiers"] = json!("[{\"option_id\":\"o-queso\"}]"); // serialised (flat shape)
         inp["context"]["reads"]["modifiers.options.all"] = cheese_catalog(300);
-        let out = add_order_line_pure(inp).expect("the line goes in");
+        let out = add_order_line_pure(inp).accepted("the line goes in");
         let snap: Value = serde_json::from_str(order_lines(&out)[0]["modifiers"].as_str().expect("TEXT"))
             .expect("JSON");
         assert_eq!(snap[0]["price_delta"], json!(300));

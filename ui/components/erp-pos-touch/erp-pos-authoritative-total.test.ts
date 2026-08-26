@@ -169,10 +169,10 @@ describe('sales#164 — the authoritative total', () => {
     const charged = commands.find((c) => c.name === 'sales.complete_sale')!.payload.items;
     expect(charged, 'a preview of a different ticket is worse than no preview').toEqual(previewed);
   });
-  it('la CUENTA PREVIA que se lleva a la mesa dice el mismo número que el cajón', async () => {
-    // Un céntimo de diferencia a propósito: es exactamente lo que separa a la aritmética de
-    // pantalla del cobro cuando hay un descuento prorrateado, una cantidad a peso o un combo de
-    // bienes a tipos distintos. Componiendo en pantalla saldrían 121,00 €; el hub cobra 120,99 €.
+  it('the BILL taken to the table says the same number the drawer will take', async () => {
+    // One cent of difference on purpose: that is exactly what separates the screen's arithmetic
+    // from the charge when there is a prorated discount, a quantity by weight or a goods set menu
+    // split across rates. Composing on screen would give 121.00 €; the hub charges 120.99 €.
     previewAnswer = {
       ...TAX_EXCLUDED_PREVIEW, total: 12_099, subtotal: 9_999,
       tax_breakdown: { '21.00': { base: 9_999, tax: 2_100, kind: 'tax' } },
@@ -182,11 +182,11 @@ describe('sales#164 — the authoritative total', () => {
     (el as unknown as { prebillOpen: boolean }).prebillOpen = true;
     await settle(el);
     const doc = (el.shadowRoot.querySelector('#prebill-doc') as unknown as { receipt?: { total?: number; subtotal?: number } })?.receipt;
-    expect(doc?.total, 'el papel que revisa el cliente dice lo que se va a cobrar').toBe(12_099);
+    expect(doc?.total, 'the paper the customer checks says what will be charged').toBe(12_099);
     expect(doc?.subtotal).toBe(9_999);
   });
 
-  it('con una SELECCIÓN de líneas la cuenta previa NO usa la valoración: valoró otra cosa', async () => {
+  it('with a line SELECTION the bill does NOT use the valuation: it priced something else', async () => {
     previewAnswer = { ...TAX_EXCLUDED_PREVIEW, total: 99_999, subtotal: 99_999 };
     const el = await tillCharging();
     (el as unknown as { paying: boolean }).paying = false;
@@ -194,13 +194,13 @@ describe('sales#164 — the authoritative total', () => {
     (el as unknown as { prebillOpen: boolean }).prebillOpen = true;
     await settle(el);
     const doc = (el.shadowRoot.querySelector('#prebill-doc') as unknown as { receipt?: { total?: number } })?.receipt;
-    expect(doc?.total, 'un total de otro conjunto de líneas sería peor que componerlo en pantalla')
+    expect(doc?.total, 'a total for a different set of lines would be worse than composing on screen')
       .not.toBe(99_999);
   });
-  it('si la valoración FALLA, volver a abrir el cobro la vuelve a pedir', async () => {
-    // Cerrar y volver a abrir es lo que hace cualquiera cuando un número no aparece. Sin esto la
-    // huella del ticket seguía siendo la misma y el TPV no reintentaba nunca: se quedaba con la
-    // aritmética de pantalla hasta que alguien tocase la cuenta.
+  it('if the valuation FAILS, reopening the charge asks for it again', async () => {
+    // Closing and reopening is what anyone does when a number does not show up. Without this the
+    // ticket's signature stayed the same and the till never retried: it kept its own arithmetic
+    // until somebody touched the check.
     previewAnswer = null;
     const el = await tillCharging();
     const asked = () => commands.filter((c) => c.name === 'sales.checkout.preview').length;
@@ -212,7 +212,7 @@ describe('sales#164 — the authoritative total', () => {
     previewAnswer = TAX_EXCLUDED_PREVIEW; // la red vuelve
     el.openPay();
     await settle(el);
-    expect(asked(), 'el reintento sale').toBeGreaterThan(first);
-    expect(chargeCta(el), 'y ahora sí manda el servidor').toContain('121.00 €');
+    expect(asked(), 'the retry goes out').toBeGreaterThan(first);
+    expect(chargeCta(el), 'and now the server rules').toContain('121.00 €');
   });
 });

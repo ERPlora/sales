@@ -757,13 +757,13 @@ describe('the bill breaks the VAT down (sales#180)', () => {
   });
 });
 
-// ── sales#164 · LA CUENTA PREVIA DICE LO QUE SE VA A COBRAR ──────────────────────────────────
+// ── sales#164 · THE BILL SAYS WHAT IS GOING TO BE CHARGED ────────────────────────────────────
 //
-// El papel que se lleva a la mesa compone base + cuota por su cuenta (`previewTaxBreakdown`), y esa
-// es una SEGUNDA aritmética fiscal en el navegador: se separa del cobro con un descuento de importe
-// fijo, una cantidad a peso o un combo de bienes a tipos distintos. Cuando el hub ha valorado el
-// ticket (`sales.checkout.preview`), manda esa valoración — la MISMA que va a cobrar.
-describe('sales#164 — la cuenta previa sobre la valoración autoritativa', () => {
+// The paper taken to the table composes base + quota on its own (`previewTaxBreakdown`), and that
+// is a SECOND fiscal arithmetic in the browser: it drifts from the charge with a fixed-amount
+// discount, a quantity by weight or a goods set menu split across rates. When the hub has priced
+// the ticket (`sales.checkout.preview`), that valuation rules — the SAME one that will charge.
+describe('sales#164 — the bill on the authoritative valuation', () => {
   const lines = [{ id: 'l1', name: 'Consultoría', price: 10_000, qty: 1, tax_rate: 21 }];
   const valuation = {
     total: 12_100, subtotal: 10_000, tax_total: 2_100, discount_amount: 0, gift_total: 0,
@@ -771,23 +771,23 @@ describe('sales#164 — la cuenta previa sobre la valoración autoritativa', () 
     tax_breakdown: { '21.00': { base: 10_000, tax: 2_100, kind: 'tax' } },
   };
 
-  it('el total y el desglose salen de la valoración, no de la aritmética del navegador', () => {
+  it('the total and the breakdown come from the valuation, not from the browser arithmetic', () => {
     const doc = orderToPrebill(lines, { default_tax_included: 0 }, {}, valuation);
-    expect(doc.total, 'lo que el cajón se va a llevar').toBe(12_100);
+    expect(doc.total, 'what the drawer is going to take').toBe(12_100);
     expect(doc.subtotal).toBe(10_000);
     expect(doc.taxes).toEqual([{ label: 'IVA 21%', base: 10_000, amount: 2_100 }]);
   });
 
-  it('una valoración que difiere en UN CÉNTIMO manda igual: es la del cobro', () => {
+  it('a valuation that differs by ONE CENT still rules: it is the one that charges', () => {
     const doc = orderToPrebill(lines, {}, {}, { ...valuation, total: 9_999, subtotal: 8_264,
       tax_breakdown: { '21.00': { base: 8_264, tax: 1_735 } } });
     expect(doc.total).toBe(9_999);
     expect(doc.taxes).toEqual([{ label: 'IVA 21%', base: 8_264, amount: 1_735 }]);
   });
 
-  it('SIN valoración la cuenta sale exactamente como antes', () => {
-    const conValoracion = orderToPrebill(lines, { default_tax_included: 0 }, {});
-    expect(conValoracion.total, 'base + cuota compuestos en pantalla (sales#180)').toBe(12_100);
-    expect(conValoracion.taxes).toEqual([{ label: 'IVA 21%', base: 10_000, amount: 2_100 }]);
+  it('WITHOUT a valuation the bill comes out exactly as before', () => {
+    const composedOnScreen = orderToPrebill(lines, { default_tax_included: 0 }, {});
+    expect(composedOnScreen.total, 'base + quota composed on screen (sales#180)').toBe(12_100);
+    expect(composedOnScreen.taxes).toEqual([{ label: 'IVA 21%', base: 10_000, amount: 2_100 }]);
   });
 });

@@ -4098,6 +4098,7 @@ var es_default = {
     editTender: "Editar {name}, {amount}",
     removeTender: "Quitar {name}, {amount}",
     errorPaymentsMismatch: "El total ha cambiado mientras se repart\xEDa el cobro. Revisa los importes y vuelve a cobrar.",
+    errorQuantityNotPositive: "Una l\xEDnea no tiene cantidad: pon al menos una antes de cobrar",
     actionRefund: "Devolver",
     statusRefunded: "Devuelta",
     refundTitle: "Devolver la venta {number}",
@@ -4462,6 +4463,7 @@ var en_default = {
     editTender: "Edit {name}, {amount}",
     removeTender: "Remove {name}, {amount}",
     errorPaymentsMismatch: "The total changed while the payment was being split. Check the amounts and charge again.",
+    errorQuantityNotPositive: "A line has no quantity: set at least one before charging",
     actionRefund: "Refund",
     statusRefunded: "Refunded",
     refundTitle: "Refund sale {number}",
@@ -6278,6 +6280,11 @@ var MESSAGES = {
   // `ui.errorCharge` on purpose: this is fixed on the option in the Modifiers catalogue, in ten
   // seconds, and only if the screen says which one.
   "sales.modifier_tax_override_unsupported": "ui.errorModifierTaxOverride",
+  // sales#201 (ADR-0147 §2.2) — an invalid quantity. The quantity pad already refuses off-grid
+  // amounts before charging, so the handler is the last net; when it fires, the cashier gets the
+  // SAME sentence the pad gives instead of a bare «could not charge».
+  "sales.quantity_off_grid": "ui.qtyOffGrid",
+  "sales.quantity_not_positive": "ui.errorQuantityNotPositive",
   // sales#185 (hub#1074, ADR-0400) — PLATFORM codes, not domain ones. `complete_sale` declares
   // `taxes.rules.list` as a read with `required: true`, so a hub missing the tax app (force
   // uninstalled, hub#1101, or deactivated by the ADR-0128 cascade) has the sale refused by the
@@ -6579,9 +6586,9 @@ var ErpPosTouch = class extends i3 {
      *  Vacío y `available:false` mientras carga o si `taxes` no responde. ADR-0064/0066/0085. */
     this.taxCatalog = { rates: /* @__PURE__ */ new Map(), available: false, installed: true };
     this.missingChargeApp = "";
-    /** Huella del ticket ya valorado, para no repreguntar en cada repintado. */
+    /** Signature of the ticket already priced, so we do not re-ask on every repaint. */
     this.valuedSignature = "";
-    /** Contador de peticiones: una respuesta vieja no puede pisar a una nueva. */
+    /** Request counter: an older answer must never overwrite a newer one. */
     this.valuationSeq = 0;
     this.cartRestored = false;
     // Botones de asignación (ADR-0043 B): cada módulo que aporta a `sales.pos.assign` monta SU botón
@@ -8041,8 +8048,7 @@ var ErpPosTouch = class extends i3 {
       erplora2().notify?.({ type: "success", message: t5("ui.firedToKitchen") });
       if (this.orderId) this.cart = await loadOrderLines(erplora2(), this.orderId);
     } catch (e7) {
-      const msg = e7 instanceof Error ? e7.message : String(e7 ?? "");
-      if (msg.includes("sales.nothing_to_fire")) {
+      if (errorCode(e7) === "sales.nothing_to_fire") {
         if (this.orderId) this.cart = await loadOrderLines(erplora2(), this.orderId).catch(() => this.cart);
         return;
       }
@@ -8714,12 +8720,12 @@ var ErpPosTouch = class extends i3 {
    *  `labels.customer`, and on a dine-in bill what sits there is the TABLE (sales#180). Until the
    *  element has a slot of its own for the table (ERPlora/outfitkit#87), the document decides the
    *  label. */
-  /** sales#164 — la valoración del hub, PERO solo cuando valoró lo mismo que enseña este papel.
+  /** sales#164 — the hub's valuation, BUT only when it priced the same thing this paper shows.
    *
-   *  La cuenta previa es de la mesa ENTERA; la valoración es del cobro que hay en curso, que con
-   *  una selección de líneas (ADR-0146) o con un canje por línea (sales#162) es un subconjunto.
-   *  Poner ahí un total de otra cosa sería peor que componerlo en pantalla, así que en ese caso
-   *  no se pasa y el papel sale como salía. */
+   *  The bill is for the WHOLE table; the valuation is for the charge in progress, which with a
+   *  line selection (ADR-0146) or a per-line redemption (sales#162) is a subset. Putting a total
+   *  for something else there would be worse than composing it on screen, so in that case it is
+   *  not passed and the paper comes out as it did. */
   get prebillValuation() {
     if (this.splitSel.size || this.covered.size) return void 0;
     return this.authoritative;
@@ -9065,29 +9071,30 @@ var ErpPosTouch = class extends i3 {
     if (!this.tenderFillers.length || !this.customerId || !this.orderId) return [];
     return tenderableLines(this.billedLines);
   }
-  /** Lo que se cobra AHORA: la selección si la hay, o la cuenta entera (ADR-0146).
+  /** What is being charged NOW: the selection when there is one, or the whole check (ADR-0146).
    *
-   *  🔴 sales#164 — MANDA EL SERVIDOR. Este número decide las patas del pago mixto, el cambio, el
-   *  techo de la simplificada y lo que promete el botón, así que tiene que ser el mismo que va a
-   *  cobrar `complete_sale`: con precios que NO llevan el IVA dentro, la aritmética de pantalla
-   *  enseñaba la BASE y el cajón se llevaba base + cuota (100,00 € → 121,00 €); y con un descuento
-   *  de importe fijo, una cantidad a peso o un combo de bienes a tipos distintos se separaban un
-   *  céntimo, que es justo lo que hace saltar `sales.payments_do_not_match_total`.
+   *  🔴 sales#164 — THE SERVER RULES. This number decides the legs of a mixed payment, the change,
+   *  the simplified-invoice ceiling and what the button promises, so it has to be the same one
+   *  `complete_sale` is going to charge: with prices that do NOT carry the VAT inside, the screen's
+   *  arithmetic showed the BASE and the drawer took base + quota (100.00 € → 121.00 €); and with a
+   *  fixed-amount discount, a quantity by weight or a goods set menu split across rates the two
+   *  drifted by a cent, which is exactly what fires `sales.payments_do_not_match_total`.
    *
-   *  Sin respuesta autoritativa se cae al preview de pantalla — lo que había antes, que cobra bien
-   *  el caso normal — y el rechazo del servidor se queda de red, que es su sitio. */
+   *  With no authoritative answer it falls back to the screen's own preview — what there was
+   *  before, which charges the normal case right — and the server's refusal goes back to being a
+   *  net, which is its place. */
   get payable() {
     if (this.authoritative) return this.authoritative.total;
     return this.screenPayable;
   }
-  /** Lo que ESTA pantalla calcula por su cuenta. Solo se usa mientras no hay respuesta del
-   *  servidor, y es lo que el TPV usaba siempre antes de sales#164. */
+  /** What THIS screen works out on its own. Only used while there is no answer from the server,
+   *  and it is what the till always used before sales#164. */
   get screenPayable() {
     const base = cartTotal(this.chargedLines, this.ticketDiscount);
     return Math.max(0, base - (this.splitSel.size ? 0 : this.ticketDiscountAmount));
   }
-  /** El ticket que hay que valorar: EXACTAMENTE el que se va a cobrar (`billedLines`, con las
-   *  líneas que cubrió un tender externo marcadas para que el servidor las valore a 0). */
+  /** The ticket to price: EXACTLY the one that will be charged (`billedLines`, with the lines an
+   *  external tender covered flagged so the server prices them at 0). */
   get checkoutShape() {
     return {
       lines: this.billedLines,
@@ -9098,12 +9105,12 @@ var ErpPosTouch = class extends i3 {
       partial: this.splitSel.size > 0
     };
   }
-  /** Pide al hub que valore el ticket, si hace falta. Barato de llamar en cada repintado: solo sale
-   *  a la red cuando cambia algo que MUEVE el total (`previewSignature`).
+  /** Asks the hub to price the ticket, if needed. Cheap to call on every repaint: it only goes to
+   *  the network when something that MOVES the total changes (`previewSignature`).
    *
-   *  Se pregunta únicamente con el cobro o la cuenta previa en pantalla: la valoración lee el
-   *  catálogo de venta entero, y hacerlo en cada toque de la rejilla pondría la caja detrás de la
-   *  red sin que nadie mire el número todavía. */
+   *  It is only asked with the charge or the bill on screen: the valuation reads the whole sale
+   *  catalogue, and doing it on every tap of the grid would put the till behind the network while
+   *  nobody is looking at the number yet. */
   async refreshValuation() {
     const shape = this.checkoutShape;
     const signature = previewSignature(shape);
@@ -9122,7 +9129,7 @@ var ErpPosTouch = class extends i3 {
       this.authoritative = void 0;
     }
   }
-  /** Olvida la valoración: el ticket dejó de estar en pantalla o acaba de cobrarse. */
+  /** Forgets the valuation: the ticket left the screen, or it has just been charged. */
   dropValuation() {
     this.valuationSeq += 1;
     this.valuedSignature = "";
@@ -10790,11 +10797,10 @@ var REFUND_MESSAGES = {
   "sales.refund_requires_completed": "ui.refundRequiresCompleted",
   "sales.sale_not_found": "ui.refundSaleNotFound"
 };
-function refundErrorKey(message) {
-  for (const [code, key] of Object.entries(REFUND_MESSAGES)) {
-    if (message.includes(code)) return key === "ui.refundNeedsDestinationShort" ? "ui.refundReasonNotEligible" : key;
-  }
-  return "ui.refundFailed";
+function refundErrorKey(code) {
+  const key = REFUND_MESSAGES[code];
+  if (!key) return "ui.refundFailed";
+  return key === "ui.refundNeedsDestinationShort" ? "ui.refundReasonNotEligible" : key;
 }
 function erplora3() {
   const c5 = globalThis.erplora;
@@ -11078,8 +11084,7 @@ var ErpSaleRefund = class extends i3 {
       if (!committed) erplora3().notify?.({ type: "error", message: t7("ui.refundTenderPending") });
       this.dispatchEvent(new CustomEvent("refunded", { bubbles: true, composed: true, detail: { saleId: this.saleId } }));
     } catch (e7) {
-      const raw = e7 instanceof Error ? e7.message : String(e7 ?? "");
-      erplora3().notify?.({ type: "error", message: t7(refundErrorKey(raw)) });
+      erplora3().notify?.({ type: "error", message: t7(refundErrorKey(errorCode(e7))) });
     } finally {
       this.busy = false;
     }
@@ -13060,9 +13065,8 @@ var VOID_MESSAGES = {
   "sales.void_reason_required": "ui.voidReasonRequired",
   "sales.sale_not_found": "ui.voidSaleNotFound"
 };
-function voidErrorKey(message) {
-  for (const [code, key] of Object.entries(VOID_MESSAGES)) if (message.includes(code)) return key;
-  return "ui.voidFailed";
+function voidErrorKey(code) {
+  return VOID_MESSAGES[code] ?? "ui.voidFailed";
 }
 var RANGE_KEYS = { today: "ui.rangeToday", "7d": "ui.range7d", "30d": "ui.range30d", all: "ui.rangeAll" };
 function isoDay(daysAgo = 0) {
@@ -13189,8 +13193,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
       erplora4().notify?.({ type: "success", message: t7("ui.voidDone") });
       await Promise.all([this.ctrl.load(), this.loadStats()]);
     } catch (e7) {
-      const raw = e7 instanceof Error ? e7.message : String(e7 ?? "");
-      erplora4().notify?.({ type: "error", message: t7(voidErrorKey(raw)) });
+      erplora4().notify?.({ type: "error", message: t7(voidErrorKey(errorCode(e7))) });
     }
   }
   get columns() {

@@ -279,6 +279,7 @@
     "editTender": "Editar {name}, {amount}",
     "removeTender": "Quitar {name}, {amount}",
     "errorPaymentsMismatch": "El total ha cambiado mientras se repartía el cobro. Revisa los importes y vuelve a cobrar.",
+    "errorQuantityNotPositive": "Una línea no tiene cantidad: pon al menos una antes de cobrar",
     "actionRefund": "Devolver",
     "statusRefunded": "Devuelta",
     "refundTitle": "Devolver la venta {number}",

@@ -278,6 +278,7 @@
     "editTender": "Edit {name}, {amount}",
     "removeTender": "Remove {name}, {amount}",
     "errorPaymentsMismatch": "The total changed while the payment was being split. Check the amounts and charge again.",
+    "errorQuantityNotPositive": "A line has no quantity: set at least one before charging",
     "actionRefund": "Refund",
     "statusRefunded": "Refunded",
     "refundTitle": "Refund sale {number}",
