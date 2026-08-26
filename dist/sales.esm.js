@@ -7421,7 +7421,10 @@ var ErpPosTouch = class extends i3 {
     .lineend { display:flex; flex-direction:column; align-items:flex-end; gap:.3rem; }
     .lineend .lt { font-weight:700; white-space:nowrap; }
     ok-qty-stepper { --ok-qty-field-width:2.3rem; --ok-surface:var(--tile); --ok-text:var(--tx); --ok-border:var(--ion-border-color); }
-    .empty { color:var(--mut); text-align:center; padding:2.5rem 1rem; }
+    /* sales#25 — el vacío de la REJILLA es una celda del grid, así que sin esto una frase de dos
+       líneas se metía en una columna de 9rem y salía en vertical. Ahora ocupa toda la fila: cabe
+       tanto «Sin productos.» como el motivo escrito del modo degradado, en los tres viewports. */
+    .empty { color:var(--mut); text-align:center; padding:2.5rem 1rem; grid-column:1 / -1; max-width:34rem; margin-inline:auto; line-height:1.45; }
     /* El PIE. ion-footer se queda abajo por su cuenta (es un pie de verdad, no un div con flex). */
     .cart ion-footer { flex:none; }
     .cart ion-footer ion-toolbar { --background:var(--panel); }
