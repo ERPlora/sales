@@ -4119,7 +4119,16 @@ var es_default = {
     missingAppCharge: "{app} no est\xE1 instalada, as\xED que no se puede cobrar. Inst\xE1lala desde el marketplace.",
     missingAppChargeShort: "Falta {app}",
     appTaxes: "Impuestos",
-    errorMissingApp: "La venta se ha rechazado porque falta una app que necesita. No se ha cobrado nada."
+    errorMissingApp: "La venta se ha rechazado porque falta una app que necesita. No se ha cobrado nada.",
+    servedBy: "Atiende {name}",
+    staffMe: "yo",
+    staffMeOption: "Yo (quien tenga la sesi\xF3n)",
+    staffAssigned: "el profesional asignado",
+    staffPickerTitle: "Qui\xE9n atiende esta cuenta",
+    staffPickerHint: "A esta persona se le atribuyen la venta, la comanda de cocina y el informe por persona. Si lo dejas en \xABYo\xBB, el TPV usa a quien tenga la sesi\xF3n.",
+    staffPickerEmpty: "Este hub no tiene a nadie m\xE1s para atender. Da de alta personal en Ajustes.",
+    staffLoading: "Cargando el equipo\u2026",
+    staffLoadFailed: "No se ha podido cargar el equipo. La venta se sigue atribuyendo a quien tenga la sesi\xF3n."
   },
   widgets: {
     "sales.today": {
@@ -4464,7 +4473,16 @@ var en_default = {
     missingAppCharge: "{app} is not installed, so nothing can be charged. Install it from the marketplace.",
     missingAppChargeShort: "{app} is missing",
     appTaxes: "Taxes",
-    errorMissingApp: "The sale was refused because an app it needs is not installed. Nothing was charged."
+    errorMissingApp: "The sale was refused because an app it needs is not installed. Nothing was charged.",
+    servedBy: "Served by {name}",
+    staffMe: "me",
+    staffMeOption: "Me (whoever is signed in)",
+    staffAssigned: "the assigned professional",
+    staffPickerTitle: "Who is serving this check",
+    staffPickerHint: "The sale, the kitchen ticket and the per-person report are attributed to them. Leave it on \xABMe\xBB and the till uses whoever is signed in.",
+    staffPickerEmpty: "This hub has nobody else to serve. Add staff from Settings.",
+    staffLoading: "Loading the team\u2026",
+    staffLoadFailed: "The team could not be loaded. The sale is still attributed to whoever is signed in."
   }
 };
 
@@ -4848,12 +4866,13 @@ function nextRoundNo(lines) {
 }
 
 // ui/lib/fire-order.ts
-function buildFirePayload(orderId, label, lines, roundNo) {
+function buildFirePayload(orderId, label, lines, roundNo, waiterId) {
   if (!orderId || lines.length === 0) return void 0;
   return {
     order_id: orderId,
     label,
     ...roundNo && roundNo >= 1 ? { round_no: roundNo } : {},
+    ...waiterId ? { waiter_id: waiterId } : {},
     // Sin mesa no es servicio de sala: barra, mostrador o para llevar.
     channel: label ? "dine_in" : "takeaway",
     items: lines.map((l3) => ({
@@ -6409,6 +6428,10 @@ var ErpPosTouch = class extends i3 {
     this.customerTaxId = "";
     this.customerAddress = "";
     this.simplifiedMaxCents = null;
+    this.staffName = "";
+    this.staffPickerOpen = false;
+    this.hubUsers = [];
+    this.staffPickerState = "idle";
     this.prodCats = /* @__PURE__ */ new Map();
     /** Registro de unidades (ADR-0147): code → fila, para congelar el contexto al añadir línea. */
     this.units = /* @__PURE__ */ new Map();
@@ -6951,14 +6974,14 @@ var ErpPosTouch = class extends i3 {
        ASPECTO de sheet (suben desde abajo, asa, esquinas solo arriba — pregunta de Ioan
        2026-07-19): mismo <dialog> nativo, que ion-action-sheet no aloja contenido rico y los
        overlays de Ionic en shadow Lit se re-parentan al body (ADR-0028). */
-    dialog.park-dialog, dialog.dirty-dialog { border:1px solid var(--ion-border-color); border-radius:var(--ok-radius,14px);
+    dialog.park-dialog, dialog.dirty-dialog, dialog.staff-dialog { border:1px solid var(--ion-border-color); border-radius:var(--ok-radius,14px);
       background:var(--panel); color:var(--tx); padding:1rem 1.1rem; width:min(94vw,24rem);
       box-shadow:var(--ok-shadow-modal, 0 18px 50px rgba(0,0,0,.35)); }
-    dialog.park-dialog::backdrop, dialog.dirty-dialog::backdrop { background:var(--ok-scrim, rgba(0,0,0,.45)); }
+    dialog.park-dialog::backdrop, dialog.dirty-dialog::backdrop, dialog.staff-dialog::backdrop { background:var(--ok-scrim, rgba(0,0,0,.45)); }
     @media (max-width: 820px) {
-      dialog.park-dialog, dialog.dirty-dialog { width:100vw; max-width:100vw; margin:auto 0 0;
+      dialog.park-dialog, dialog.dirty-dialog, dialog.staff-dialog { width:100vw; max-width:100vw; margin:auto 0 0;
         border-radius:var(--ok-radius-sheet-top, 18px 18px 0 0); border-bottom:none; padding-bottom:max(1rem, env(safe-area-inset-bottom)); }
-      dialog.park-dialog::before, dialog.dirty-dialog::before { content:''; display:block;
+      dialog.park-dialog::before, dialog.dirty-dialog::before, dialog.staff-dialog::before { content:''; display:block;
         width:2.4rem; height:.3rem; border-radius:var(--ok-radius-pill,999px); background:var(--ion-border-color);
         margin:0 auto .7rem; }
       .dlg-actions ion-button { flex:1; }
@@ -6967,6 +6990,16 @@ var ErpPosTouch = class extends i3 {
     dialog p { margin:0 0 .8rem; color:var(--mut); }
     dialog.park-dialog input { width:100%; box-sizing:border-box; font-size:1rem; padding:.6rem .7rem;
       border-radius:var(--ok-radius-sm,10px); border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); }
+    /* The list of people: rows tall enough for a thumb, and the current one marked — with a BORDER
+       as well as colour, so it is distinguishable without relying on seeing the hue. */
+    .staff-list { display:flex; flex-direction:column; gap:.35rem; max-height:min(50vh,18rem); overflow-y:auto; }
+    .staff-opt { display:block; width:100%; text-align:left; padding:.7rem .8rem; font:inherit;
+      border:1px solid var(--ion-border-color); border-radius:var(--ok-radius-sm,10px);
+      background:var(--tile); color:var(--tx); cursor:pointer; }
+    .staff-opt:hover { border-color:var(--accent); }
+    .staff-opt:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    .staff-opt[data-current] { border-color:var(--accent); color:var(--accent); font-weight:700; }
+    .staff-note { margin:.2rem 0 0; color:var(--mut); font-size:.82rem; }
     .dlg-actions { display:flex; justify-content:flex-end; gap:.4rem; margin-top:.9rem; flex-wrap:wrap; }
     .badge-num { font-size:.62rem; min-width:1rem; height:1rem; padding:0 .2rem; border-radius:var(--ok-radius-pill,999px); background:var(--accent); color:var(--ok-on-accent,#fff); display:inline-flex; align-items:center; justify-content:center; position:absolute; top:.2rem; right:.2rem; }
 
@@ -7131,6 +7164,15 @@ var ErpPosTouch = class extends i3 {
     .order-context { display:flex; gap:.3rem; flex-wrap:wrap; min-height:1.55rem; margin-top:.32rem; }
     .order-context ion-chip { height:1.55rem; margin:0; font-size:.68rem; --background:var(--tile); color:var(--mut); }
     .context-empty { color:var(--mut); font-size:.72rem; align-self:center; }
+    /* sales#179 — who is serving. It is a BUTTON (tapped to transfer), but it reads like the other
+       contexts of the check: same height and same visual weight as the ion-chips next to it, with
+       the touch target a finger needs. */
+    .ctx-chip { display:inline-flex; align-items:center; gap:.25rem; height:1.55rem; padding:0 .55rem;
+      border:1px solid var(--ion-border-color); border-radius:var(--ok-radius-pill,999px);
+      background:var(--tile); color:var(--mut); font:inherit; font-size:.68rem; cursor:pointer; }
+    .ctx-chip:hover { color:var(--tx); }
+    .ctx-chip:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    .ctx-chip ion-icon { font-size:.95rem; }
 
     ion-segment.view-tabs { margin:.62rem .72rem .28rem; width:auto; border:1px solid var(--line);
       border-radius:var(--ok-radius-sm,11px); background:var(--tile); }
@@ -7472,7 +7514,7 @@ var ErpPosTouch = class extends i3 {
       this.categorySegmentCleanup = bindTabbar(categorySegment ?? null);
     }
     this.emitPosState();
-    for (const d3 of this.renderRoot.querySelectorAll("dialog.park-dialog, dialog.dirty-dialog")) {
+    for (const d3 of this.renderRoot.querySelectorAll("dialog.park-dialog, dialog.dirty-dialog, dialog.staff-dialog")) {
       try {
         if (typeof d3.showModal === "function" && !d3.matches(":modal")) {
           d3.close();
@@ -7815,7 +7857,13 @@ var ErpPosTouch = class extends i3 {
   async fireToKitchenNow() {
     const orderId = await this.ensureOrder(this.cart[0]);
     const pendientes = pendingLines(this.cart);
-    const payload = buildFirePayload(orderId, this.tableLabel, pendientes, nextRoundNo(this.cart));
+    const payload = buildFirePayload(
+      orderId,
+      this.tableLabel,
+      pendientes,
+      nextRoundNo(this.cart),
+      this.staffId
+    );
     if (!payload) return;
     try {
       await erplora2().command("sales.order.fire", payload);
@@ -7910,6 +7958,7 @@ var ErpPosTouch = class extends i3 {
     if (!name) return;
     this.appointmentId = ap.id || appointmentId;
     this.staffId = ap.staff_id || void 0;
+    this.staffName = ap.staff_name || "";
     if (ap.customer_id) this.customerId = ap.customer_id;
     if (ap.customer_name) this.customerName = ap.customer_name;
     const tax_category_key = svc?.tax_category_key;
@@ -7922,6 +7971,46 @@ var ErpPosTouch = class extends i3 {
       pricing_type: "fixed",
       is_active: 1
     }));
+  }
+  /** sales#179 — **who is serving this check**, and how it is transferred.
+   *
+   *  This screen does not decide the DEFAULT: `complete_sale` attributes the sale to the session
+   *  user when the payload names nobody. The till does not know who is signed in (the SDK does not
+   *  expose it) and **must not guess**: sending an id made up in the browser would attribute sales
+   *  to whoever the caller pleased. What does belong to this screen is the other half of what
+   *  Toast, Square for Restaurants and Lightspeed do: the waiter is pinned to the check and can be
+   *  TRANSFERRED — whoever takes the table is not always the one at the terminal.
+   *
+   *  The list comes from `hub.users.list`, the core's RESERVED namespace (ADR-0192): personnel
+   *  belongs to the hub, not to the `staff` module. It is asked for when the picker OPENS, not at
+   *  boot: the till already makes plenty of calls there, and this one is only needed if somebody is
+   *  about to change the waiter. */
+  async openStaffPicker() {
+    this.staffPickerOpen = true;
+    if (this.staffPickerState === "ready" || this.staffPickerState === "loading") return;
+    this.staffPickerState = "loading";
+    try {
+      const rowsIn = await erplora2().query("hub.users.list");
+      this.hubUsers = rows2(rowsIn).filter((u5) => u5.is_active !== false && !!u5.id);
+      this.staffPickerState = "ready";
+    } catch {
+      this.hubUsers = [];
+      this.staffPickerState = "error";
+    }
+  }
+  /** Choose who is serving. With no argument = **the session user**: the explicit attribution is
+   *  cleared and the server decides again. */
+  pickStaff(person) {
+    this.staffId = person?.id;
+    this.staffName = person?.name ?? "";
+    this.staffPickerOpen = false;
+  }
+  /** What the chip reads. With an originating appointment the id is known but the name may not be
+   *  (it is a `staff_member`, not a person of the hub): it says "the assigned professional" instead
+   *  of showing a UUID or lying with "me". */
+  get staffLabel() {
+    const name = this.staffName || (this.staffId ? t5("ui.staffAssigned") : t5("ui.staffMe"));
+    return t5("ui.servedBy", { name });
   }
   /** El catálogo VENDIBLE de `services`, mapeado a la forma de la rejilla (sales#89).
    *
@@ -8929,6 +9018,9 @@ var ErpPosTouch = class extends i3 {
     this.customerName = "";
     this.customerTaxId = "";
     this.customerAddress = "";
+    this.staffId = void 0;
+    this.staffName = "";
+    this.appointmentId = void 0;
     this.resetSlotContexts();
     if (saleId) this.docSaleId = saleId;
   }
@@ -9169,6 +9261,15 @@ var ErpPosTouch = class extends i3 {
                  botones permanecen libres arriba para asignar/cambiar cada contexto. -->
             ${this.tableLabel ? b2`<ion-chip><ion-icon name="grid-outline"></ion-icon><ion-label>${this.tableLabel}</ion-label></ion-chip>` : A}
             ${this.customerName ? b2`<ion-chip><ion-icon name="person-outline"></ion-icon><ion-label>${this.customerName}</ion-label></ion-chip>` : A}
+            <!-- sales#179 — WHO IS SERVING. Always there, even with nobody chosen: if it is not
+                 visible, nobody knows the sale is attributed at all, and the waiter cannot be
+                 transferred. -->
+            <button class="ctx-chip" type="button" data-testid="staff-chip"
+                    aria-label=${t5("ui.staffPickerTitle")} title=${t5("ui.staffPickerTitle")}
+                    @click=${() => void this.openStaffPicker()}>
+              <ion-icon name="person-circle-outline"></ion-icon>
+              <span>${this.staffLabel}</span>
+            </button>
             ${!this.tableLabel && !this.customerName ? b2`<span class="context-empty">${t5("ui.noCheckContext")}</span>` : A}
           </div>
         </div>
@@ -9880,6 +9981,34 @@ var ErpPosTouch = class extends i3 {
           </div>
         </dialog>` : A}
 
+      <!-- sales#179 — TRANSFER the check to somebody else. Same native <dialog> as parking
+           (ion-action-sheet does not host rich content and Ionic overlays inside a Lit shadow root
+           get re-parented to the body, ADR-0028), so on mobile it rises as a sheet. -->
+      ${this.staffPickerOpen ? b2`
+        <dialog class="staff-dialog" open>
+          <h3>${t5("ui.staffPickerTitle")}</h3>
+          <p>${t5("ui.staffPickerHint")}</p>
+          <div class="staff-list">
+            <button class="staff-opt" type="button" data-testid="staff-option-me"
+                    ?data-current=${!this.staffId} @click=${() => this.pickStaff()}>
+              ${t5("ui.staffMeOption")}
+            </button>
+            ${this.staffPickerState === "loading" ? b2`<p class="staff-note" data-testid="staff-loading">${t5("ui.staffLoading")}</p>` : A}
+            ${this.staffPickerState === "error" ? b2`<p class="staff-note" data-testid="staff-error">${t5("ui.staffLoadFailed")}</p>` : A}
+            ${this.staffPickerState === "ready" && !this.hubUsers.length ? b2`<p class="staff-note" data-testid="staff-empty">${t5("ui.staffPickerEmpty")}</p>` : A}
+            ${this.hubUsers.map((u5) => b2`
+              <button class="staff-opt" type="button" data-testid="staff-option"
+                      ?data-current=${this.staffId === u5.id} @click=${() => this.pickStaff(u5)}>
+                ${u5.name}
+              </button>`)}
+          </div>
+          <div class="dlg-actions">
+            <ion-button fill="clear" @click=${() => {
+      this.staffPickerOpen = false;
+    }}>${t5("ui.cancel")}</ion-button>
+          </div>
+        </dialog>` : A}
+
       <!-- CARRITO SUCIO al recuperar/tocar mesa: ¿qué hacemos con la cuenta actual? Aparcar es la
            salida segura (primario); eliminar anula con rastro (danger). Cancelar solo desde la
            lista — al tocar una mesa el filler ya cambió su selección y cancelar los descoordina. -->
@@ -10146,6 +10275,21 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "simplifiedMaxCents", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "staffId", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "staffName", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "staffPickerOpen", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "hubUsers", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "staffPickerState", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "missingChargeApp", 2);
