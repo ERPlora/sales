@@ -2858,6 +2858,11 @@ export class ErpPosTouch extends LitElement {
     this.paying = true;
     // sales#164 — el ticket de este cobro se valora en el servidor. `updated()` lo pide igualmente;
     // arrancarlo aquí le quita un repintado de retraso al número más importante de la pantalla.
+    //
+    // Se olvida la anterior PRIMERO: cerrar y volver a abrir es lo que hace cualquiera cuando un
+    // número no aparece, y sin esto la huella del ticket seguía siendo la misma y no se reintentaba
+    // nunca — el TPV se quedaba en su propia aritmética hasta que alguien tocase la cuenta.
+    this.dropValuation();
     void this.refreshValuation();
   }
 

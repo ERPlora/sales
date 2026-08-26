@@ -197,4 +197,22 @@ describe('sales#164 — the authoritative total', () => {
     expect(doc?.total, 'un total de otro conjunto de líneas sería peor que componerlo en pantalla')
       .not.toBe(99_999);
   });
+  it('si la valoración FALLA, volver a abrir el cobro la vuelve a pedir', async () => {
+    // Cerrar y volver a abrir es lo que hace cualquiera cuando un número no aparece. Sin esto la
+    // huella del ticket seguía siendo la misma y el TPV no reintentaba nunca: se quedaba con la
+    // aritmética de pantalla hasta que alguien tocase la cuenta.
+    previewAnswer = null;
+    const el = await tillCharging();
+    const asked = () => commands.filter((c) => c.name === 'sales.checkout.preview').length;
+    const first = asked();
+    expect(first).toBeGreaterThan(0);
+
+    (el as unknown as { paying: boolean }).paying = false;
+    await settle(el);
+    previewAnswer = TAX_EXCLUDED_PREVIEW; // la red vuelve
+    el.openPay();
+    await settle(el);
+    expect(asked(), 'el reintento sale').toBeGreaterThan(first);
+    expect(chargeCta(el), 'y ahora sí manda el servidor').toContain('121.00 €');
+  });
 });

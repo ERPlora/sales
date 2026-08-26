@@ -8725,6 +8725,7 @@ var ErpPosTouch = class extends i3 {
     this.docFormat = this.defaultDocFormat;
     if (this.overSimplifiedLimit) this.docFormat = "invoice";
     this.paying = true;
+    this.dropValuation();
     void this.refreshValuation();
   }
   /**
