@@ -55,6 +55,11 @@ import {
   unitContextPayload, lineAmount, cartTotal, type CartLine, type ErploraClientLike,
 } from '../../lib/pos-cart.js';
 import { loadTaxCatalog, productSellability, resolveLineTax, type TaxCatalog } from '../../lib/pos-tax.js';
+// sales#164 — el total que se cobra lo dice el SERVIDOR, con la MISMA aritmética del cobro.
+import {
+  checkoutItems, fetchCheckoutPreview, previewSignature,
+  type CheckoutPreview, type CheckoutShape,
+} from '../../lib/checkout-preview.js';
 import { buildOpenPriceLine } from '../../lib/pos-open-price.js';
 // La frontera de la ESCALA de cantidades (ADR-0147): la UI trabaja en lógico (0,5), el cable en 10⁶.
 import { toMicro, fromMicro, onGrid, formatQuantity } from '../../lib/quantity.js';
@@ -1073,6 +1078,14 @@ export class ErpPosTouch extends LitElement {
    *  of `sales.complete_sale`). Resolved at mount from the stable code the runtime answers, and it
    *  is what turns "it fails on confirm" into "it is said on entry". */
   @state() private missingChargeApp = '';
+  /** sales#164 — la valoración AUTORITATIVA del ticket que se está cobrando. `undefined` = todavía
+   *  no ha llegado, el hub no tiene el comando, o la red cayó: entonces manda el preview de
+   *  pantalla, que es lo que había antes. Nunca un 0: un ticket gratis no es una degradación. */
+  @state() private authoritative?: CheckoutPreview;
+  /** Huella del ticket ya valorado, para no repreguntar en cada repintado. */
+  private valuedSignature = '';
+  /** Contador de peticiones: una respuesta vieja no puede pisar a una nueva. */
+  private valuationSeq = 0;
   /** Pista de overflow compartida con la bottom bar (fade dinámico + pequeño gesto inicial). */
   private categorySegment?: HTMLElement;
   private categorySegmentCleanup?: () => void;
@@ -1602,6 +1615,8 @@ export class ErpPosTouch extends LitElement {
   protected updated(_changed: Map<PropertyKey, unknown>) {
     this.ensureSlotsMounted();
     this.syncChargeState();
+    // sales#164 — mientras el cobro o la cuenta previa estén delante, el total lo dice el servidor.
+    if (this.paying || this.prebillOpen) void this.refreshValuation();
     const categorySegment = this.renderRoot.querySelector<HTMLElement>('ion-segment.category-segment') ?? undefined;
     if (categorySegment !== this.categorySegment) {
       this.categorySegmentCleanup?.();
@@ -2829,6 +2844,9 @@ export class ErpPosTouch extends LitElement {
     // así que sin este `invoice` la venta saldría como F2 por muy completo que esté el cliente.
     if (this.overSimplifiedLimit) this.docFormat = 'invoice';
     this.paying = true;
+    // sales#164 — el ticket de este cobro se valora en el servidor. `updated()` lo pide igualmente;
+    // arrancarlo aquí le quita un repintado de retraso al número más importante de la pantalla.
+    void this.refreshValuation();
   }
 
   /**
@@ -3122,13 +3140,78 @@ export class ErpPosTouch extends LitElement {
     return tenderableLines(this.billedLines);
   }
 
-  /** Lo que se cobra AHORA: la selección si la hay, o la cuenta entera (ADR-0146). */
+  /** Lo que se cobra AHORA: la selección si la hay, o la cuenta entera (ADR-0146).
+   *
+   *  🔴 sales#164 — MANDA EL SERVIDOR. Este número decide las patas del pago mixto, el cambio, el
+   *  techo de la simplificada y lo que promete el botón, así que tiene que ser el mismo que va a
+   *  cobrar `complete_sale`: con precios que NO llevan el IVA dentro, la aritmética de pantalla
+   *  enseñaba la BASE y el cajón se llevaba base + cuota (100,00 € → 121,00 €); y con un descuento
+   *  de importe fijo, una cantidad a peso o un combo de bienes a tipos distintos se separaban un
+   *  céntimo, que es justo lo que hace saltar `sales.payments_do_not_match_total`.
+   *
+   *  Sin respuesta autoritativa se cae al preview de pantalla — lo que había antes, que cobra bien
+   *  el caso normal — y el rechazo del servidor se queda de red, que es su sitio. */
   private get payable() {
+    if (this.authoritative) return this.authoritative.total;
+    return this.screenPayable;
+  }
+
+  /** Lo que ESTA pantalla calcula por su cuenta. Solo se usa mientras no hay respuesta del
+   *  servidor, y es lo que el TPV usaba siempre antes de sales#164. */
+  private get screenPayable() {
     // sales#113: el importe fijo se resta del cobro entero (con split, el servidor lo reparte
     // igualmente sobre las líneas que se cobran; el preview resta lo que corresponda a lo cobrado).
     // sales#162: lo que un tender externo cubrió no se cobra dos veces.
     const base = cartTotal(this.chargedLines, this.ticketDiscount);
     return Math.max(0, base - (this.splitSel.size ? 0 : this.ticketDiscountAmount));
+  }
+
+  /** El ticket que hay que valorar: EXACTAMENTE el que se va a cobrar (`billedLines`, con las
+   *  líneas que cubrió un tender externo marcadas para que el servidor las valore a 0). */
+  private get checkoutShape(): CheckoutShape {
+    return {
+      lines: this.billedLines,
+      ticketDiscount: this.ticketDiscount,
+      ticketDiscountAmount: this.ticketDiscountAmount,
+      covered: new Set(this.covered.keys()),
+      taxIncluded: this.settings.default_tax_included !== 0,
+      partial: this.splitSel.size > 0,
+    };
+  }
+
+  /** Pide al hub que valore el ticket, si hace falta. Barato de llamar en cada repintado: solo sale
+   *  a la red cuando cambia algo que MUEVE el total (`previewSignature`).
+   *
+   *  Se pregunta únicamente con el cobro o la cuenta previa en pantalla: la valoración lee el
+   *  catálogo de venta entero, y hacerlo en cada toque de la rejilla pondría la caja detrás de la
+   *  red sin que nadie mire el número todavía. */
+  private async refreshValuation(): Promise<void> {
+    const shape = this.checkoutShape;
+    const signature = previewSignature(shape);
+    if (signature === this.valuedSignature) return;
+    this.valuedSignature = signature;
+    const seq = ++this.valuationSeq;
+    try {
+      const valued = await fetchCheckoutPreview(erplora(), shape, {
+        primaryCategory: (id) => this.primaryCategory(id),
+        orderId: this.orderId,
+      });
+      // Una respuesta vieja no pisa a una nueva: el cajero cambia el ticket más rápido que la red.
+      if (seq !== this.valuationSeq) return;
+      this.authoritative = valued;
+    } catch {
+      // El preview NO es el cobro: que falle no bloquea la caja. Se cae a la aritmética de
+      // pantalla y el servidor sigue siendo la última palabra al cobrar.
+      if (seq !== this.valuationSeq) return;
+      this.authoritative = undefined;
+    }
+  }
+
+  /** Olvida la valoración: el ticket dejó de estar en pantalla o acaba de cobrarse. */
+  private dropValuation(): void {
+    this.valuationSeq += 1;
+    this.valuedSignature = '';
+    this.authoritative = undefined;
   }
 
   // ── Precio libre / venta por DEPARTAMENTO (fuera de catálogo) ──────────────────────────────
@@ -3241,7 +3324,13 @@ export class ErpPosTouch extends LitElement {
       // `inventory` y rechazaba la VENTA ENTERA con `sales.product_not_available`. Una peluquería
       // no podía cobrar un corte. Va condicional a propósito: marcarlo en una línea de catálogo le
       // saltaría la autoridad de precio y stock que el servidor sí tiene que aplicarle.
-      const items = cobradas.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: toMicro(l.qty), tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: l.category_id ?? this.primaryCategory(l.id) ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0, discount: l.discount ?? 0, ...(l.is_service ? { is_service: true } : {}), ...(l.modifiers?.length ? { modifiers: l.modifiers.map((m) => ({ option_id: m.option_id })) } : {}), ...(l.combo_id ? { combo_id: l.combo_id, combo_choices: (l.combo_choices ?? []).map((c) => ({ option_id: c.option_id, product_name: c.product_name ?? '', category_id: c.category_id ?? null })) } : {}), ...(l.line_id && this.covered.has(l.line_id) ? { covered: true } : {}), ...(l.line_id ? { order_item_id: l.line_id } : {}), ...unitContextPayload(l) }));
+      // 🔴 sales#164 — EL MISMO CONSTRUCTOR QUE USA EL PREVIEW (`lib/checkout-preview.ts`). Estaba
+      // escrito aquí a mano, y un preview que valorase un ticket ligeramente distinto del que se
+      // cobra sería peor que no tener preview: el descuadre volvería por la puerta de al lado.
+      const items = checkoutItems(cobradas, {
+        covered: new Set(this.covered.keys()),
+        primaryCategory: (id) => this.primaryCategory(id),
+      });
       await erplora().command('sales.complete_sale', {
         items,
         // sales#71: descuento de TICKET (%); el servidor lo prorratea por línea antes del IVA.
@@ -3328,6 +3417,9 @@ export class ErpPosTouch extends LitElement {
       if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = undefined; }
       this.paying = false;
       this.splitSel = new Set();
+      // sales#164: la valoración era de ESTE ticket. Arrastrarla al siguiente sería cobrar la
+      // próxima venta con el total de la anterior.
+      this.dropValuation();
 
       // COBRO PARCIAL (ADR-0146): el pedido sigue abierto y en pantalla queda lo que falta por
       // pagar. Las líneas cobradas ya no vuelven —la query solo devuelve lo pendiente—, así que no

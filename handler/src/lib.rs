@@ -98,6 +98,16 @@ pub fn open_order(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output
     }
 }
 
+/// sales#164/#172: values a ticket WITHOUT charging it. See `preview_checkout_pure`.
+#[cfg(feature = "guest")]
+#[plugin_fn]
+pub fn preview_checkout(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
+    match preview_checkout_pure(input.into_inner().into_value()) {
+        Ok(out) => Ok(Json(out)),
+        Err(e) => Err(Error::msg(e).into()),
+    }
+}
+
 /// sales#175: adds a line to an open check WITH the catalogue in hand. See `add_order_line_pure`.
 #[cfg(feature = "guest")]
 #[plugin_fn]
@@ -280,6 +290,7 @@ fn rate_key(rate_pct: f64) -> String {
 
 /// El tipo resuelto para una línea (ADR-0085): el id de la regla raíz (para el snapshot) y sus
 /// componentes a aplicar (raíz + hijos). `rule_id` vacío = no se resolvió por catálogo (fallback).
+#[derive(Clone)]
 struct ResolvedTax {
     rule_id: String,
     components: Vec<TaxComponent>,
@@ -1193,7 +1204,13 @@ fn rate_in_range(pct: f64) -> bool {
 ///    vacío, manda: un id que no esté ahí (inactivo, borrado, de otro hub, inventado) se rechaza y
 ///    el NOMBRE del recibo sale de la fila, no del payload. Si no lo entrega —runtime sin `reads` o
 ///    hub sin métodos sembrados— se degrada al payload: cobrar es lo último que puede romperse.
-fn decide_checkout(payload: &Value, context: &Value, items: &[Value]) -> Result<ServerDecision, String> {
+/// STRUCTURE of the offer: what has to hold for the arithmetic to mean anything, whether the
+/// ticket is being charged or merely valued (sales#164). Returns whether it carries ANY discount —
+/// the hub setting that forbids them is a policy gate, and it lives with the other ones.
+///
+/// The JSON Schema of the payload already demands this and the runtime validates BEFORE invoking
+/// us; this is the second lock, for whoever comes in through another door.
+fn validate_checkout_shape(payload: &Value, items: &[Value]) -> Result<bool, String> {
     if items.is_empty() {
         return Err(reject("sales.empty_sale", "a sale needs at least one line"));
     }
@@ -1231,36 +1248,59 @@ fn decide_checkout(payload: &Value, context: &Value, items: &[Value]) -> Result<
             }
         }
     }
+    Ok(discounted)
+}
 
-    // ── Ajustes del TPV: la regla vive en el servidor, no en el botón ──
-    // Sin fila de ajustes valen los defaults del esquema (`allow_discounts` sí, `require_customer`
-    // no), que es justo lo que hace un hub recién instalado.
-    let settings = tax::read_rows(context, "sales.settings.get").unwrap_or_default();
-    let setting = |key: &str, default: bool| -> bool {
-        settings
-            .first()
-            .and_then(|row| row.get(key))
-            .filter(|v| !v.is_null())
-            .map(as_bool)
-            .unwrap_or(default)
-    };
-    if discounted && !setting("allow_discounts", true) {
-        return Err(reject("sales.discounts_not_allowed", "this hub disabled discounts"));
-    }
-    if setting("require_customer", false) && field(payload, "customer_id").is_empty() {
-        return Err(reject("sales.customer_required", "this hub requires a customer on every sale"));
-    }
-    // BASE FISCAL (ADR-0210): que un precio lleve ya el impuesto dentro es una decisión del
-    // NEGOCIO, y decide lo que se DECLARA — los mismos 100,00 € son base 100 + 21 de cuota con
-    // precios netos, y base 82,64 + 17,35 con precios brutos. Aceptarla del payload era regalarle
-    // al navegador la base imponible de la factura. Sin fila de ajustes manda el payload, como
-    // hasta ahora. (ADR-0210 mueve la autoridad última a la LISTA DE PRECIOS de `pricing`, con
-    // herencia lista → hub → inclusive; consumir esa lista es sales#23.)
-    let tax_included = settings
+/// ── Ajustes del TPV: la regla vive en el servidor, no en el botón ──
+///
+/// Sin fila de ajustes valen los defaults del esquema (`allow_discounts` sí, `require_customer`
+/// no), que es justo lo que hace un hub recién instalado.
+fn hub_setting(context: &Value, key: &str, default: bool) -> bool {
+    tax::read_rows(context, "sales.settings.get")
+        .unwrap_or_default()
+        .first()
+        .and_then(|row| row.get(key))
+        .filter(|v| !v.is_null())
+        .map(as_bool)
+        .unwrap_or(default)
+}
+
+/// BASE FISCAL (ADR-0210): que un precio lleve ya el impuesto dentro es una decisión del NEGOCIO,
+/// y decide lo que se DECLARA — los mismos 100,00 € son base 100 + 21 de cuota con precios netos,
+/// y base 82,64 + 17,35 con precios brutos. Aceptarla del payload era regalarle al navegador la
+/// base imponible de la factura. `None` = sin fila de ajustes → manda el payload, como hasta ahora.
+/// (ADR-0210 mueve la autoridad última a la LISTA DE PRECIOS de `pricing`, con herencia lista →
+/// hub → inclusive; consumir esa lista es sales#23.)
+///
+/// 🔴 sales#164: lo lee TAMBIÉN el preview. Cuando solo lo leía el cobro, un hub con el ajuste a 0
+/// veía «Cobrar 100,00 €» y se le cobraban 121,00 €: el botón enseñaba la base y el servidor
+/// cobraba base + cuota.
+fn hub_tax_included(context: &Value) -> Option<bool> {
+    tax::read_rows(context, "sales.settings.get")
+        .unwrap_or_default()
         .first()
         .and_then(|row| row.get("default_tax_included"))
         .filter(|v| !v.is_null())
-        .map(as_bool);
+        .map(as_bool)
+}
+
+/// Un hub puede tener los descuentos APAGADOS. La misma puerta para el cobro y para el preview:
+/// si el ticket no se va a poder cobrar así, el preview tampoco lo valora — es un motivo que se
+/// corrige en la misma pantalla, y decirlo antes es mejor que decirlo con la tarjeta en la mano.
+fn enforce_discount_policy(context: &Value, discounted: bool) -> Result<(), String> {
+    if discounted && !hub_setting(context, "allow_discounts", true) {
+        return Err(reject("sales.discounts_not_allowed", "this hub disabled discounts"));
+    }
+    Ok(())
+}
+
+fn decide_checkout(payload: &Value, context: &Value, items: &[Value]) -> Result<ServerDecision, String> {
+    let discounted = validate_checkout_shape(payload, items)?;
+    enforce_discount_policy(context, discounted)?;
+    if hub_setting(context, "require_customer", false) && field(payload, "customer_id").is_empty() {
+        return Err(reject("sales.customer_required", "this hub requires a customer on every sale"));
+    }
+    let tax_included = hub_tax_included(context);
 
     // ── Método de pago: del catálogo del hub o de ningún sitio ──
     // El catálogo es la fuente de confianza para DOS cosas a la vez (hub#778):
@@ -1409,55 +1449,89 @@ fn attributed_staff(payload: &Value, session_user: &str) -> Value {
 }
 
 
-pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
-    let payload = input.get("payload").cloned().unwrap_or(Value::Null);
-    let context = input.get("context").cloned().unwrap_or(Value::Null);
+/// UNA línea ya valorada: exactamente las cifras que la venta escribiría en su fila.
+#[derive(Clone)]
+struct ValuedLine {
+    /// Base, cuota y bruto de la línea, con los descuentos (de línea, global y de importe fijo) YA
+    /// aplicados. Es lo que se persiste y lo que viaja en `sale.completed`.
+    t: LineTotals,
+    /// Desglose por TASA de esta línea: `(clave, base, cuota)`. Agrega al desglose de la venta.
+    parts: Vec<(String, i64, i64)>,
+    is_gift: bool,
+    covered: bool,
+    /// Regla fiscal resuelta contra el catálogo de confianza (ADR-0085), con sus componentes.
+    resolved: ResolvedTax,
+    /// Tasa combinada (suma de componentes), la que se congela en la fila y viaja en el evento.
+    combined_pct: f64,
+    /// Precio unitario que DECIDIÓ EL SERVIDOR (catálogo, o reparto del combo), con suplementos.
+    unit_price: i64,
+    /// Cantidad en punto fijo 10⁶ (ADR-0147).
+    qty: i64,
+    line_disc: f64,
+    /// La línea tal y como entró (ya expandida si venía de un combo).
+    item: Value,
+    /// Snapshot inmutable de los suplementos, en el orden en que se eligieron (pm#93).
+    modifiers: String,
+    /// De qué combo salió, con su snapshot congelado (ADR-0381). `None` = línea suelta.
+    combo: Option<ComboLine>,
+}
+
+/// LO QUE VALE UN TICKET: sus líneas valoradas, el desglose por tipo y los totales. Nada de esto
+/// sabe escribir en ningún sitio.
+struct Valuation {
+    lines: Vec<ValuedLine>,
+    /// Base imponible agregada (céntimos).
+    subtotal: i64,
+    /// Lo que se cobra (céntimos), con los descuentos ya prorrateados en las líneas.
+    total: i64,
+    /// Lo que los descuentos quitaron, informativo para el tique (céntimos).
+    discount_amount: i64,
+    /// Coste de las líneas invitadas, para el arqueo (céntimos).
+    gift_total: i64,
+    /// Cuota DECLARADA: una sola vez por tipo impositivo sobre la base agregada (ADR-0123 §4).
+    tax_total: i64,
+    /// El desglose cerrado, tal cual se persiste y viaja: `{ "21.00": { base, tax, kind, label } }`.
+    tax_breakdown: Value,
+    /// Base fiscal efectiva de este ticket (`true` = los precios llevan el impuesto dentro).
+    tax_included: bool,
+    /// Identidad fiscal del hub con la que se resolvieron las reglas (ADR-0085).
+    country_code: String,
+    region_code: String,
+}
+
+/// ── sales#164 / #172 · LA VALORACIÓN, EN UN SOLO SITIO ───────────────────────────────────────
+///
+/// Valora un ticket con la aritmética del cobro y **sin cobrar**: expande los combos, resuelve el
+/// precio y el tipo de cada línea contra los catálogos de confianza, prorratea los descuentos
+/// (ADR-0210) y cierra el desglose por tipo (ADR-0123 §4).
+///
+/// # Por qué existe
+///
+/// No había puerta para preguntar «¿cuánto suma esto de verdad?» sin cobrar. El TPV respondía con
+/// SU propia aritmética (`cartTotal`) y el servidor rechaza las patas de un pago mixto que no
+/// sumen **al céntimo** (`sales.payments_do_not_match_total`); con precios que NO llevan el
+/// impuesto dentro las dos respuestas no se separaban por un céntimo de redondeo, sino por el IVA
+/// entero, en toda venta. El arreglo NO es una segunda implementación en el navegador: una segunda
+/// implementación de la aritmética fiscal es justo el bug que ese rechazo existe para cazar.
+///
+/// Por eso: **una función, dos llamadores** — [`complete_sale_pure`], que cobra, y
+/// [`preview_checkout_pure`], que solo responde.
+///
+/// `id_budget` = cuántos ids trae la tanda del host (`context.new_ids`). Un combo MULTIPLICA
+/// líneas, así que la expansión puede desbordarla y se rechaza aquí, en el mismo punto y en el
+/// mismo orden que antes. `None` = un preview, que no consume ni un id.
+fn value_checkout(
+    payload: &Value,
+    context: &Value,
+    sale_id: &str,
+    tax_incl: bool,
+    id_budget: Option<usize>,
+) -> Result<Valuation, String> {
     let empty: Vec<Value> = Vec::new();
-    let new_ids = context.get("new_ids").and_then(|v| v.as_array()).unwrap_or(&empty);
+    let items = payload.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
     let now = context.get("now").map(as_str).unwrap_or_default();
-    let day = day_from_now(&now);
-    let sale_id = new_ids.first().map(as_str).unwrap_or_default();
-
-    // sales#179 — **WHO ATTENDED cannot be left blank.** The till never asked for the waiter and
-    // only `appointments` sent `staff_id`, so every counter sale stayed unattributed:
-    // `sales.by_staff` came back empty, the kitchen ticket did not say who fired it, and there was
-    // no basis for tips nor for auditing discounts per person. The market (Toast, Square for
-    // Restaurants, Lightspeed) pins the *server* to the check from the moment it opens, and lets
-    // it be transferred. Here: whoever the payload names wins (the appointment, or a transferred
-    // check) and, when nobody is named, the user holding the SESSION — resolved on the server from
-    // `context.current_user_id`, the same non-forgeable id that already writes `employee_id`.
-    //
-    // `staff_id` (who attended) is still a different thing from `employee_id` (who charged): on a
-    // sale attributed to somebody else the two differ, and that difference is the audit trail.
-    let session_user = context.get("current_user_id").map(as_str).unwrap_or_default();
-    let staff_id = attributed_staff(&payload, &session_user);
-
-
     let sale_disc = payload.get("discount_percent").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
     let sale_disc_amount = as_cents(payload.get("discount_amount").unwrap_or(&Value::Null), 0); // sales#113
-    let items = payload.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
-
-    // ── IDEMPOTENCIA (sales#20) ──────────────────────────────────────────────────────────────
-    // Un cobro se reintenta: se va el wifi, el camarero vuelve a pulsar, el navegador reenvía. Sin
-    // clave, cada reintento era una venta NUEVA — con su stock descontado, su apunte de caja y su
-    // factura. La clave la genera el cliente por INTENTO de cobro y la congela la fila; el índice
-    // único (hub_id, idempotency_key) es la autoridad final ante dos peticiones a la vez.
-    let idempotency_key = field(&payload, "idempotency_key");
-    if idempotency_key.is_empty() {
-        return Err(reject("sales.idempotency_key_required", "every checkout needs its key"));
-    }
-    // La sonda que el runtime pre-carga (`reads`, filtrada por la clave del payload) dice si ESTA
-    // clave ya se cobró. Si ya está, el reintento es un no-op LIMPIO: cero operaciones, cero
-    // eventos. El cliente recupera la venta consultando `sales.by_idempotency_key` con su clave.
-    if tax::read_rows(&context, "sales.by_idempotency_key").is_some_and(|rows| !rows.is_empty()) {
-        return Ok(Output::new());
-    }
-
-    // El servidor valida la oferta del cliente y decide lo que no le corresponde decidir a él.
-    let decision = decide_checkout(&payload, &context, items)?;
-    let tax_incl = decision
-        .tax_included
-        .unwrap_or_else(|| payload.get("tax_included").map(as_bool).unwrap_or(true));
 
     // Identidad fiscal del hub (ADR-0085): país/región DEL CONTEXTO (hub_settings, inyectado por el
     // runtime — no del cliente). Con ellos + la categoría de la línea se resuelve la regla de tipo.
@@ -1472,8 +1546,8 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     // `catalog_delivered` distingue «la read llegó (aunque vacía)» de «no llegó»: lo primero es un
     // hub sin reglas, lo segundo un runtime que no honra `required` — ninguno cobra con el IVA del
     // navegador, pero se rechazan con códigos distintos para que el encargado sepa qué mirar.
-    let catalog_delivered = tax::CATALOG_READS.iter().any(|q| tax::read_rows(&context, q).is_some());
-    let catalog = tax::rule_catalog(&context, &Value::Null);
+    let catalog_delivered = tax::CATALOG_READS.iter().any(|q| tax::read_rows(context, q).is_some());
+    let catalog = tax::rule_catalog(context, &Value::Null);
 
     let mut subtotal: i64 = 0; // céntimos
     let mut gross: i64 = 0; // céntimos (CON descuento global ya prorrateado)
@@ -1482,36 +1556,27 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     let mut breakdown: Vec<(String, i64, i64)> = Vec::new();
     // sales#54: qué es cada clave del desglose (`kind`, `label`) — la primera línea que la aporta manda.
     let mut breakdown_meta: std::collections::HashMap<String, (String, String)> = std::collections::HashMap::new();
-    let mut ops: Vec<Operation> = Vec::new();
     // sales#113: las líneas se calculan primero y se emiten después (el importe fijo se reparte
     // cuando se conocen todas).
-    struct PendingLine { t: LineTotals, parts: Vec<(String, i64, i64)>, is_gift: bool, covered: bool, resolved: ResolvedTax, combined_pct: f64, unit_price: i64, qty: i64, line_disc: f64, item: Value, modifiers: String, combo: Option<ComboLine> }
-    let mut pending_lines: Vec<PendingLine> = Vec::new();
-
-    let mut bump = Map::new();
-    bump.insert("day".into(), json!(day));
-    ops.push(Operation::sql("sales._bump_counter", bump));
-
-    let header_idx = ops.len();
-    ops.push(Operation::sql("sales._insert_sale", Map::new())); // placeholder
+    let mut pending_lines: Vec<ValuedLine> = Vec::new();
 
     // El catálogo de venta que el runtime pre-carga (`inventory.products.for_sale`, sales#68). Sin
     // bloque `list` a propósito: una read paginada entregaría solo 50 filas, en silencio (hub#650).
-    let product_catalog = tax::read_rows(&context, "inventory.products.for_sale");
+    let product_catalog = tax::read_rows(context, "inventory.products.for_sale");
     // Catálogo de suplementos (pm#93). Lectura OPCIONAL: `None` = `modifiers` no está instalado,
     // y entonces una línea CON suplementos se rechaza en `authoritative_modifiers` (falla cerrado).
-    let modifier_catalog = tax::read_rows(&context, "modifiers.options.all");
+    let modifier_catalog = tax::read_rows(context, "modifiers.options.all");
     // Catálogo de combos (sales#152 / ADR-0381). Lectura OPCIONAL igual que la de suplementos:
     // `None` = `combos` no está instalado, y entonces una línea CON `combo_id` se rechaza en
     // `expand_combo` (falla cerrado). Sin bloque `list` en origen — es autoridad de precio, y una
     // read paginada entregaría 50 filas y callaría sobre el resto (hub#650).
-    let combo_catalog = tax::read_rows(&context, "combos.options.all");
+    let combo_catalog = tax::read_rows(context, "combos.options.all");
     // sales#175 — THE ROWS OF THE OPEN CHECK. This is the read that makes a table pay the price it
     // had when it ordered: every row was written by the SERVER with the catalogue in hand
     // (`open_order` / `add_order_line`), so honouring it is not honouring the payload. It is
     // delivered parameterised by `payload.order_id`, so a counter sale gets nothing here — and
     // there the catalogue still rules, which is right: there is no earlier "when it was ordered".
-    let order_lines = tax::read_rows(&context, "sales.order.lines");
+    let order_lines = tax::read_rows(context, "sales.order.lines");
 
     // 🔴 EL COMBO SE ARMA UNA SOLA VEZ, aquí, y de esto beben las DOS rutas: las filas que se
     // persisten y el evento `sale.completed` del que salen la factura y el registro de la AEAT. Si
@@ -1520,11 +1585,13 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     // La tanda de ids del host es finita (256, ARQUITECTURA.md §5.3) y un combo MULTIPLICA líneas.
     // Sin este guard la línea 256 saldría con id vacío, y el fallo aparecería como una colisión de
     // clave primaria en la BD, lejos de su causa.
-    if lines_in.len() + 1 > new_ids.len() {
-        return Err(reject(
-            "sales.too_many_lines",
-            format!("{} lines need {} ids, the batch has {}", lines_in.len(), lines_in.len() + 1, new_ids.len()),
-        ));
+    if let Some(budget) = id_budget {
+        if lines_in.len() + 1 > budget {
+            return Err(reject(
+                "sales.too_many_lines",
+                format!("{} lines need {} ids, the batch has {}", lines_in.len(), lines_in.len() + 1, budget),
+            ));
+        }
     }
 
     for (item, combo) in lines_in.iter() {
@@ -1617,7 +1684,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         };
         // sales#113: la línea se guarda calculada; el importe fijo se reparte cuando se conocen
         // TODAS (fase 2, más abajo) y solo entonces se agrega y se emite.
-        pending_lines.push(PendingLine { t, parts, is_gift, covered, resolved, combined_pct, unit_price, qty, line_disc, item: item.clone(), modifiers: modifier_snapshot, combo: combo.clone() });
+        pending_lines.push(ValuedLine { t, parts, is_gift, covered, resolved, combined_pct, unit_price, qty, line_disc, item: item.clone(), modifiers: modifier_snapshot, combo: combo.clone() });
     }
 
     // ── Fase 2 (sales#113): reparto del importe fijo por RESTO MAYOR entre las líneas cobradas ──
@@ -1636,24 +1703,228 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         }
     }
 
-    // ── Fase 3: agregar y emitir las líneas ──
-    let mut line_results: Vec<LineTotals> = Vec::with_capacity(pending_lines.len());
-    for (i, l) in pending_lines.into_iter().enumerate() {
-        let PendingLine { t, parts, is_gift, covered, resolved, combined_pct, unit_price, qty, line_disc, item, modifiers, combo } = l;
-        let item = &item;
-        // `tax_total` YA NO se acumula por línea: la cuota que se DECLARA sale del desglose, una
-        // sola vez por tipo impositivo (ADR-0123 §4). `t.tax` queda como informativo de la línea.
-        subtotal += t.net; gross += t.line;
-
+    // ── Fase 3: agregar. La cuota que se DECLARA sale del desglose, una sola vez por tipo
+    // impositivo, sobre la base AGREGADA (ADR-0123 §4) — no sumando las cuotas ya redondeadas de
+    // cada línea. `t.tax` queda como informativo de la línea.
+    for l in pending_lines.iter() {
+        subtotal += l.t.net;
+        gross += l.t.line;
         // Desglose por componente: una clave por tasa (los grupos aportan varias, p.ej.
         // "21.00" + "5.20"). Agrega sobre el desglose global de la venta.
-        for (k, base, tax) in parts {
-            if let Some(e) = breakdown.iter_mut().find(|(ek, _, _)| *ek == k) {
-                e.1 += base; e.2 += tax;
+        for (k, base, tax) in l.parts.iter() {
+            if let Some(e) = breakdown.iter_mut().find(|(ek, _, _)| ek == k) {
+                e.1 += base;
+                e.2 += tax;
             } else {
-                breakdown.push((k, base, tax));
+                breakdown.push((k.clone(), *base, *tax));
             }
         }
+    }
+
+    // EL DESGLOSE SE CIERRA AQUÍ: la cuota se calcula UNA sola vez por TIPO IMPOSITIVO, sobre la
+    // base AGREGADA (ADR-0123 §4).
+    //
+    // Es lo único que el XML de VeriFactu sabe representar (`DetalleDesglose` es por tipo, máx. 12
+    // — no hay detalle por artículo) y evita el error acumulado que censura el TEAC (RG 2233/2022).
+    // Antes, 7 chicles de 0,05 € al 21 % declaraban base 28 / cuota 7 — pero 28 × 21 % = 5,88 → 6,
+    // NO 7: el desglose no cuadraba con `cuota = base × tipo` y solo colaba por la tolerancia de
+    // ±10 € de la AEAT. Ahora declara 29 / 6, que sí cuadra.
+    //
+    // (sales#33: las bases del desglose ya llegan CON el descuento global — prorrateado por
+    // línea arriba — así que aquí no hay nada que descontar: solo cerrar la cuota por tipo.)
+    let mut tb = Map::new();
+    let mut tax_total: i64 = 0;
+    for (k, base, _tax_por_linea) in &breakdown {
+        let rate = Decimal::from_str(k).unwrap_or(Decimal::ZERO);
+        let cuota = money::percent_of(*base, rate);
+        tax_total += cuota;
+        let (kind, label) = breakdown_meta.get(k).cloned().unwrap_or_else(|| ("tax".to_string(), String::new()));
+        let mut entry = Map::new();
+        entry.insert("base".into(), json!(*base));
+        entry.insert("tax".into(), json!(cuota));
+        entry.insert("kind".into(), json!(kind)); // sales#54: `tax` | `surcharge` | …
+        if !label.is_empty() {
+            entry.insert("label".into(), json!(label));
+        }
+        tb.insert(k.clone(), Value::Object(entry));
+    }
+
+    Ok(Valuation {
+        lines: pending_lines,
+        subtotal,
+        total: gross,
+        // El descuento global YA está prorrateado en las líneas: `gross` es lo cobrado y el
+        // `discount_amount` (informativo, para el ticket) es la diferencia con el bruto sin descuento.
+        discount_amount: gross_pre_disc - gross,
+        gift_total,
+        tax_total,
+        tax_breakdown: Value::Object(tb),
+        tax_included: tax_incl,
+        country_code: cc,
+        region_code: rc,
+    })
+}
+
+/// ── sales#164 / #172 · EL PREVIEW AUTORITATIVO ───────────────────────────────────────────────
+///
+/// Valora el ticket con la aritmética del cobro y **no cobra**: cero operaciones, cero eventos,
+/// cero número de cadena gastado. La respuesta viaja por el canal `result` del handler (hub#70).
+///
+/// # Qué devuelve
+///
+/// ```json
+/// { "total": 600, "subtotal": 545, "tax_total": 55, "discount_amount": 0, "gift_total": 0,
+///   "tax_included": true,
+///   "lines": [ { "product_id", "product_name", "tax_category_key", "tax_rate", "quantity",
+///                "unit_price", "net_amount", "tax_amount", "line_total",
+///                "combo_group_ref", "is_gift", "covered" } ],
+///   "tax_breakdown": { "10.00": { "base": 545, "tax": 55, "kind": "tax" } } }
+/// ```
+///
+/// Todo en CÉNTIMOS (ADR-0007/0123) y todo lo que la venta escribiría: la suma de `line_total` ES
+/// `total`, y para un combo de bienes a tipos distintos el reparto del art. 79.Dos ya trae el
+/// céntimo residual asignado por resto mayor (ADR-0210).
+///
+/// # Qué NO hace
+///
+/// * **No exige el cliente.** `require_customer` es una regla sobre CERRAR una venta y se corrige
+///   en la misma pantalla; negarse a valorar hasta capturarlo dejaría al TPV sin total durante
+///   todo el rato en que se está montando la cuenta, que es justo cuando lo necesita.
+/// * **No mira las formas de pago.** Un preview no tiene patas: quién paga se decide después, y
+///   precisamente CON este número (`sales.payments_do_not_match_total` deja de saltar en el camino
+///   normal).
+/// * **No es idempotente ni lo necesita**: no escribe.
+///
+/// Lo demás lo rechaza igual que el cobro y con el MISMO código de dominio (`sales.empty_sale`,
+/// `sales.discounts_not_allowed`, `sales.product_not_available`, `sales.no_tax_rule`,
+/// `sales.combo_catalog_unavailable`…): si el ticket no se va a poder cobrar, decirlo antes es
+/// mejor que decirlo con la tarjeta ya en la mano.
+pub fn preview_checkout_pure(input: Value) -> Result<Output, String> {
+    let payload = input.get("payload").cloned().unwrap_or(Value::Null);
+    let context = input.get("context").cloned().unwrap_or(Value::Null);
+    let empty: Vec<Value> = Vec::new();
+    let items = payload.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
+
+    let discounted = validate_checkout_shape(&payload, items)?;
+    enforce_discount_policy(&context, discounted)?;
+    let tax_incl = hub_tax_included(&context)
+        .unwrap_or_else(|| payload.get("tax_included").map(as_bool).unwrap_or(true));
+
+    // `sale_id` sintético: un preview no consume ids del host (`id_budget = None`), pero un combo
+    // de bienes partido necesita un `combo_group_ref` con el que la pantalla pueda agrupar sus
+    // hermanas. `preview` deja claro en el propio valor que esa venta no existe.
+    let valuation = value_checkout(&payload, &context, "preview", tax_incl, None)?;
+
+    let lines: Vec<Value> = valuation
+        .lines
+        .iter()
+        .map(|l| {
+            json!({
+                "product_id": l.item.get("product_id").cloned().unwrap_or(Value::Null),
+                "product_name": as_str(l.item.get("product_name").unwrap_or(&Value::Null)),
+                "tax_category_key": field(&l.item, "tax_category_key"),
+                "tax_rate": l.combined_pct,          // tasa % combinada (server-authoritative)
+                "quantity": l.qty,                   // punto fijo 10⁶ (ADR-0147)
+                "unit_price": l.unit_price,          // céntimos: lo que decidió el SERVIDOR
+                "net_amount": l.t.net,               // céntimos: base imponible
+                "tax_amount": l.t.tax,               // céntimos: cuota de la línea
+                "line_total": l.t.line,              // céntimos: lo que suma al total
+                // ADR-0381: lo que hermana las líneas de un mismo combo. `null` = línea suelta.
+                "combo_group_ref": l.combo.as_ref().map(|c| json!(c.group_ref)).unwrap_or(Value::Null),
+                "is_gift": l.is_gift,
+                "covered": l.covered,
+            })
+        })
+        .collect();
+
+    Ok(Output::new().with_result(json!({
+        "total": valuation.total,
+        "subtotal": valuation.subtotal,
+        "tax_total": valuation.tax_total,
+        "discount_amount": valuation.discount_amount,
+        "gift_total": valuation.gift_total,
+        "tax_included": valuation.tax_included,
+        "lines": lines,
+        "tax_breakdown": valuation.tax_breakdown,
+    })))
+}
+
+pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
+    let payload = input.get("payload").cloned().unwrap_or(Value::Null);
+    let context = input.get("context").cloned().unwrap_or(Value::Null);
+    let empty: Vec<Value> = Vec::new();
+    let new_ids = context.get("new_ids").and_then(|v| v.as_array()).unwrap_or(&empty);
+    let now = context.get("now").map(as_str).unwrap_or_default();
+    let day = day_from_now(&now);
+    let sale_id = new_ids.first().map(as_str).unwrap_or_default();
+
+    // sales#179 — **WHO ATTENDED cannot be left blank.** The till never asked for the waiter and
+    // only `appointments` sent `staff_id`, so every counter sale stayed unattributed:
+    // `sales.by_staff` came back empty, the kitchen ticket did not say who fired it, and there was
+    // no basis for tips nor for auditing discounts per person. The market (Toast, Square for
+    // Restaurants, Lightspeed) pins the *server* to the check from the moment it opens, and lets
+    // it be transferred. Here: whoever the payload names wins (the appointment, or a transferred
+    // check) and, when nobody is named, the user holding the SESSION — resolved on the server from
+    // `context.current_user_id`, the same non-forgeable id that already writes `employee_id`.
+    //
+    // `staff_id` (who attended) is still a different thing from `employee_id` (who charged): on a
+    // sale attributed to somebody else the two differ, and that difference is the audit trail.
+    let session_user = context.get("current_user_id").map(as_str).unwrap_or_default();
+    let staff_id = attributed_staff(&payload, &session_user);
+
+
+    let sale_disc = payload.get("discount_percent").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
+    let items = payload.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
+
+    // ── IDEMPOTENCIA (sales#20) ──────────────────────────────────────────────────────────────
+    // Un cobro se reintenta: se va el wifi, el camarero vuelve a pulsar, el navegador reenvía. Sin
+    // clave, cada reintento era una venta NUEVA — con su stock descontado, su apunte de caja y su
+    // factura. La clave la genera el cliente por INTENTO de cobro y la congela la fila; el índice
+    // único (hub_id, idempotency_key) es la autoridad final ante dos peticiones a la vez.
+    let idempotency_key = field(&payload, "idempotency_key");
+    if idempotency_key.is_empty() {
+        return Err(reject("sales.idempotency_key_required", "every checkout needs its key"));
+    }
+    // La sonda que el runtime pre-carga (`reads`, filtrada por la clave del payload) dice si ESTA
+    // clave ya se cobró. Si ya está, el reintento es un no-op LIMPIO: cero operaciones, cero
+    // eventos. El cliente recupera la venta consultando `sales.by_idempotency_key` con su clave.
+    if tax::read_rows(&context, "sales.by_idempotency_key").is_some_and(|rows| !rows.is_empty()) {
+        return Ok(Output::new());
+    }
+
+    // El servidor valida la oferta del cliente y decide lo que no le corresponde decidir a él.
+    let decision = decide_checkout(&payload, &context, items)?;
+    let tax_incl = decision
+        .tax_included
+        .unwrap_or_else(|| payload.get("tax_included").map(as_bool).unwrap_or(true));
+
+    // 🔴 LA MISMA VALORACIÓN QUE RESPONDE EL PREVIEW (sales#164/#172). Una sola función: si el
+    // preview y el cobro no compartieran código, «cuadra al céntimo» duraría hasta el primer
+    // cambio en uno de los dos.
+    let valuation = value_checkout(&payload, &context, &sale_id, tax_incl, Some(new_ids.len()))?;
+    let cc = valuation.country_code.as_str();
+    let rc = valuation.region_code.as_str();
+    let subtotal = valuation.subtotal;
+    let gift_total = valuation.gift_total;
+
+    let mut ops: Vec<Operation> = Vec::new();
+    let mut bump = Map::new();
+    bump.insert("day".into(), json!(day));
+    ops.push(Operation::sql("sales._bump_counter", bump));
+
+    let header_idx = ops.len();
+    ops.push(Operation::sql("sales._insert_sale", Map::new())); // placeholder
+
+    // ── Fase 3: emitir las líneas YA VALORADAS ──
+    let mut line_results: Vec<LineTotals> = Vec::with_capacity(valuation.lines.len());
+    for (i, l) in valuation.lines.iter().enumerate() {
+        let t = l.t;
+        let item = &l.item;
+        let combo = &l.combo;
+        let resolved = &l.resolved;
+        let modifiers = &l.modifiers;
+        let (is_gift, covered, combined_pct, unit_price, qty, line_disc) =
+            (l.is_gift, l.covered, l.combined_pct, l.unit_price, l.qty, l.line_disc);
 
         let line_id = new_ids.get(i + 1).map(as_str).unwrap_or_default();
         let mut p = Map::new();
@@ -1710,10 +1981,8 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         line_results.push(t);
     }
 
-    // El descuento global YA está prorrateado en las líneas: `gross` es lo cobrado y el
-    // `discount_amount` (informativo, para el ticket) es la diferencia con el bruto sin descuento.
-    let discount_amount: i64 = gross_pre_disc - gross;
-    let total = gross; // céntimos
+    let discount_amount: i64 = valuation.discount_amount;
+    let total = valuation.total; // céntimos
     let tendered = as_cents(payload.get("amount_tendered").unwrap_or(&Value::Null), 0); // céntimos
     // sales#24 — a POSITIVE amount below the total is a short payment: the sale used to close
     // anyway with `change = 0` and the drawer silently short. `0` keeps meaning «not stated»
@@ -1776,35 +2045,10 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     let tendered: i64 = tenders.iter().map(|t| t.tendered).sum();
     let change: i64 = tenders.iter().map(|t| t.change).sum();
 
-    // EL DESGLOSE SE CIERRA AQUÍ: la cuota se calcula UNA sola vez por TIPO IMPOSITIVO, sobre la
-    // base AGREGADA — no sumando las cuotas ya redondeadas de cada línea (ADR-0123 §4).
-    //
-    // Es lo único que el XML de VeriFactu sabe representar (`DetalleDesglose` es por tipo, máx. 12
-    // — no hay detalle por artículo) y evita el error acumulado que censura el TEAC (RG 2233/2022).
-    // Antes, 7 chicles de 0,05 € al 21 % declaraban base 28 / cuota 7 — pero 28 × 21 % = 5,88 → 6,
-    // NO 7: el desglose no cuadraba con `cuota = base × tipo` y solo colaba por la tolerancia de
-    // ±10 € de la AEAT. Ahora declara 29 / 6, que sí cuadra.
-    //
-    // (sales#33: las bases del desglose ya llegan CON el descuento global — prorrateado por
-    // línea arriba — así que aquí no hay nada que descontar: solo cerrar la cuota por tipo.)
-    let mut tb = Map::new();
-    let mut tax_total_declarado: i64 = 0;
-    for (k, base, _tax_por_linea) in &breakdown {
-        let rate = Decimal::from_str(k).unwrap_or(Decimal::ZERO);
-        let cuota = money::percent_of(*base, rate);
-        tax_total_declarado += cuota;
-        let (kind, label) = breakdown_meta.get(k).cloned().unwrap_or_else(|| ("tax".to_string(), String::new()));
-        let mut entry = Map::new();
-        entry.insert("base".into(), json!(*base));
-        entry.insert("tax".into(), json!(cuota));
-        entry.insert("kind".into(), json!(kind)); // sales#54: `tax` | `surcharge` | …
-        if !label.is_empty() {
-            entry.insert("label".into(), json!(label));
-        }
-        tb.insert(k.clone(), Value::Object(entry));
-    }
-    let tax_total = tax_total_declarado;
-    let tax_breakdown_json = Value::Object(tb).to_string();
+    // El desglose lo cerró la valoración, una sola vez por TIPO IMPOSITIVO sobre la base AGREGADA
+    // (ADR-0123 §4) — y es el MISMO que responde el preview (sales#164/#172).
+    let tax_total = valuation.tax_total;
+    let tax_breakdown_json = valuation.tax_breakdown.to_string();
 
     // Tipo de documento fiscal (ADR-0140): 'invoice' = factura completa (→ F1), 'ticket' =
     // simplificada (→ F2). Se fija ATÓMICAMENTE aquí (una sola escritura) en vez del UPDATE retro
@@ -1907,71 +2151,27 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         .collect();
 
     // Líneas compactas para listeners cross-módulo (inventory descuenta stock por
-    // product_id+quantity, saltando servicios; invoice factura por net/tax YA
-    // calculados). El payload del evento ES lo que recibe el listener; por eso viaja
-    // la lista, no solo los totales. `unit_price` viaja en céntimos (contrato
-    // inter-módulo). `net_amount`/`tax_amount` por línea (céntimos) los recalculó
-    // `calc_line` respetando `tax_included`: invoice NO debe re-sumar IVA sobre el
-    // bruto (precios IVA-incluido), debe USAR estos importes. Recomputamos aquí en
-    // el mismo orden que arriba para emitir la base/IVA por línea sin reestructurar.
-    // 🔴 Las MISMAS líneas expandidas que se persistieron (sales#152): si esto recorriera
-    // `payload.items`, un combo llegaría a `invoice` y a la AEAT con el precio del navegador.
-    let event_items: Vec<Value> = lines_in
+    // product_id+quantity, saltando servicios; invoice factura por net/tax YA calculados). El
+    // payload del evento ES lo que recibe el listener; por eso viaja la lista, no solo los totales.
+    // `unit_price` viaja en céntimos (contrato inter-módulo). `net_amount`/`tax_amount` por línea
+    // (céntimos) respetan `tax_included`: invoice NO debe re-sumar IVA sobre el bruto.
+    //
+    // 🔴 Las MISMAS líneas expandidas Y VALORADAS que se persistieron (sales#152 / sales#164): esto
+    // recorría `lines_in` y RECALCULABA precio, tipo y base para el evento, dejando dos caminos del
+    // dinero que había que mantener sincronizados a mano — y solo cuadraban porque el resultado se
+    // pisaba al final con `line_results`. Ahora se lee lo ya valorado y no hay segundo camino.
+    let event_items: Vec<Value> = valuation
+        .lines
         .iter()
-        .enumerate()
-        .map(|(idx, (it, it_combo))| {
-            // MISMAS cifras de confianza que la línea que se persiste (sales#67/#68): si el evento
-            // llevara el precio o la categoría del payload, `invoice` facturaría una cosa y la venta
-            // guardaría otra. Ya validado en el bucle de arriba (mismo item), así que aquí no falla.
-            let it_from_catalog = frozen_order_line(it, order_lines.as_ref())
-                .ok()
-                .flatten()
-                .map_or_else(
-                    || authoritative_price(it, product_catalog.as_ref()).unwrap_or(None),
-                    |row| {
-                        Some((
-                            as_cents(row.get("unit_price").unwrap_or(&Value::Null), 0),
-                            as_cents(row.get("cost").unwrap_or(&Value::Null), 0),
-                            field(row, "tax_category_key"),
-                        ))
-                    },
-                );
-            let unit_price = match &it_from_catalog {
-                Some((price, _, _)) => *price,
-                None => as_cents(it.get("price").unwrap_or(&Value::Null), 0), // céntimos
-            };
-            let unit_price = match it_combo { Some(c) => c.unit_price, None => unit_price };
-            let it_catalog_cat = match it_combo {
-                Some(c) => Some(c.tax_category_key.as_str()),
-                None => it_from_catalog.as_ref().map(|(_, _, cat)| cat.as_str()),
-            };
-            let qty = line_qty(it).unwrap_or(QUANTITY_SCALE);
-            let price_qty = line_price_qty(it);
-            let line_disc = it.get("discount").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
-            // Mismo resolver server-authoritative que arriba (ADR-0085): el evento lleva el %
-            // y los net/tax RESUELTOS del catálogo, no la pista del cliente, para que
-            // invoice/inventory reaccionen con cifras de confianza.
-            let resolved = resolve_line_tax(it, it_catalog_cat, &catalog, catalog_delivered, &cc, &rc, &date)
-                .unwrap_or_else(|_| ResolvedTax { rule_id: String::new(), components: vec![] });
-            let combined_pct: f64 = resolved.components.iter().map(|c| c.rate_pct).sum();
-            // Invitación: net/tax = 0 en el evento (invoice/customers no facturan la cortesía). Sigue
-            // descontando stock (inventory usa product_id+quantity). Mismo gating que arriba.
-            let it_gift = it.get("is_gift").map(as_bool).unwrap_or(false);
-            // sales#162: cubierta por un tender externo → net/tax 0 en el evento, igual que la fila.
-            // `invoice` construye el documento de ESTOS números: sin esto declararía IVA por una
-            // sesión que ya se gravó al vender el bono.
-            let it_covered = it.get("covered").map(as_bool).unwrap_or(false);
-            // El descuento GLOBAL también viaja prorrateado en el evento (sales#33): `invoice`
-            // construye la factura de estos net/tax — sin esto declararía la base sin descontar.
-            let eff_disc = 100.0 * (1.0 - (1.0 - line_disc / 100.0) * (1.0 - sale_disc / 100.0));
-            let (t, _parts) = if it_gift || it_covered {
-                (LineTotals { net: 0, tax: 0, line: 0 }, Vec::<(String, i64, i64)>::new())
-            } else {
-                calc_line_components(unit_price, qty, price_qty, eff_disc, tax_incl, &resolved.components)
-            };
-            // sales#113: si hubo importe fijo, la línea persistida ya lleva su parte repartida; el
-            // evento (lo que factura `invoice`) tiene que decir lo MISMO que la fila.
-            let t = line_results.get(idx).copied().unwrap_or(t);
+        .map(|l| {
+            let it = &l.item;
+            let it_combo = &l.combo;
+            let t = l.t;
+            let qty = l.qty;
+            let unit_price = l.unit_price;
+            let combined_pct = l.combined_pct;
+            let it_gift = l.is_gift;
+            let it_covered = l.covered;
             json!({
                 "product_id": it.get("product_id").cloned().unwrap_or(Value::Null),
                 "product_name": as_str(it.get("product_name").unwrap_or(&Value::Null)),
@@ -2057,7 +2257,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
         "gift_total": gift_total, // coste de invitaciones (céntimos) → cash_register lo suma al arqueo
 
         // Las líneas REALES de la venta: un combo de bienes a tipos distintos son N, no una.
-        "items_count": lines_in.len(),
+        "items_count": valuation.lines.len(),
         "items": event_items,
         "customer_id": payload.get("customer_id").cloned().unwrap_or(Value::Null),
         "customer_name": str_or(&payload, "customer_name", ""),
@@ -7421,5 +7621,186 @@ mod tests {
         assert!(err.starts_with("sales.product_not_available"), "unexpected code: {err}");
     }
 
-}
+    // ── sales#164 / #172 · THE AUTHORITATIVE PREVIEW ─────────────────────────────────────────────
+    //
+    // The till used to build the legs of a mixed payment on its OWN arithmetic (`cartTotal`), and
+    // the server refuses legs that do not add up to the cent. Worse, with `default_tax_included =
+    // 0` the divergence is not a rounding cent: it is the whole VAT, on every sale.
+    //
+    // The remedy is not a second implementation of the fiscal arithmetic in the browser — that is
+    // the very bug the "adds up to the cent" check exists to catch. It is a READ-ONLY door onto
+    // THE SAME valuation the checkout charges with: `value_checkout`, one function, two callers.
+    //
+    // These tests are the contract: for each shape of ticket, the preview and the sale agree cent
+    // by cent. If the two ever drift, the ones that fail are these, not the customer's receipt.
 
+    /// The preview of an input that would ALSO be a valid checkout.
+    fn preview(inp: Value) -> Value {
+        preview_checkout_pure(inp).expect("the preview values the ticket")
+            .result.expect("the preview answers through the result channel (hub#70)")
+    }
+
+    /// The figures the SALE writes, reduced to what the preview claims: total, base, quota and one
+    /// row per line with its tax category. Read off the persisted operations — not off some
+    /// intermediate value — so a drift between what is valued and what is written also fails here.
+    fn sale_figures(out: &Output) -> Value {
+        let header = out.operations.iter().find(|o| o.command == "sales._insert_sale")
+            .expect("the sale header").params.clone();
+        let lines: Vec<Value> = sale_lines(out).iter().map(|p| json!({
+            "tax_category_key": p["tax_category_key"],
+            "net_amount": p["net_amount"],
+            "tax_amount": p["tax_amount"],
+            "line_total": p["line_total"],
+        })).collect();
+        json!({
+            "total": header["total"],
+            "subtotal": header["subtotal"],
+            "tax_total": header["tax_amount"],
+            "discount_amount": header["discount_amount"],
+            "lines": lines,
+            "tax_breakdown": serde_json::from_str::<Value>(header["tax_breakdown"].as_str().unwrap_or("{}")).unwrap_or(Value::Null),
+        })
+    }
+
+    /// The same reduction over the PREVIEW's answer.
+    fn preview_figures(result: &Value) -> Value {
+        let lines: Vec<Value> = result["lines"].as_array().cloned().unwrap_or_default().iter().map(|l| json!({
+            "tax_category_key": l["tax_category_key"],
+            "net_amount": l["net_amount"],
+            "tax_amount": l["tax_amount"],
+            "line_total": l["line_total"],
+        })).collect();
+        json!({
+            "total": result["total"],
+            "subtotal": result["subtotal"],
+            "tax_total": result["tax_total"],
+            "discount_amount": result["discount_amount"],
+            "lines": lines,
+            "tax_breakdown": result["tax_breakdown"],
+        })
+    }
+
+    /// Strips from a checkout payload what only a CHARGE needs, leaving the valuation untouched.
+    fn as_preview_input(mut inp: Value) -> Value {
+        for key in ["idempotency_key", "payment_method_id", "payment_method_name", "amount_tendered", "payments"] {
+            inp["payload"].as_object_mut().expect("payload").remove(key);
+        }
+        inp
+    }
+
+    /// The preview and the sale value the SAME ticket. One assertion, four shapes.
+    fn preview_agrees_with_the_sale(inp: Value) -> Value {
+        let sold = sale(inp.clone());
+        let previewed = preview(as_preview_input(inp));
+        assert_eq!(
+            preview_figures(&previewed), sale_figures(&sold),
+            "the preview and the charge must agree to the cent",
+        );
+        previewed
+    }
+
+    #[test]
+    fn the_preview_writes_nothing_and_spends_no_number() {
+        let out = preview_checkout_pure(as_preview_input(input(
+            json!([{ "product_name": "Café", "price": 150, "quantity": 1_000_000, "tax_rate": 10.0 }]), 3, 0,
+        ))).expect("the preview values the ticket");
+        assert!(out.operations.is_empty(), "a preview writes no row and bumps no counter");
+        assert!(out.events.is_empty(), "a preview moves no stock, no till and no invoice");
+        assert!(out.result.is_some(), "and it answers through the result channel");
+    }
+
+    #[test]
+    fn preview_agrees_on_a_plain_ticket() {
+        preview_agrees_with_the_sale(input(
+            json!([{ "product_name": "Café", "price": 150, "quantity": 2_000_000, "tax_rate": 10.0 },
+                   { "product_name": "Copa", "price": 495, "quantity": 1_000_000, "tax_rate": 21.0 }]), 4, 0,
+        ));
+    }
+
+    #[test]
+    fn preview_agrees_when_a_fixed_discount_is_prorated() {
+        // ADR-0210 / sales#113: the fixed amount is split by largest remainder over the charged
+        // lines, and the residual cent lands on ONE of them. This is the shape the till could never
+        // reproduce, and the one that made a mixed payment bounce.
+        let mut inp = input(
+            json!([{ "product_name": "Café", "price": 150, "quantity": 3_000_000, "tax_rate": 10.0 },
+                   { "product_name": "Tostada", "price": 235, "quantity": 1_000_000, "tax_rate": 10.0 }]), 4, 0,
+        );
+        inp["payload"]["discount_amount"] = json!(101);
+        preview_agrees_with_the_sale(inp);
+    }
+
+    #[test]
+    fn preview_agrees_on_a_goods_combo_split_across_two_rates() {
+        // sales#172 — the discriminating vector of pm#156: sandwich 4,50 € (10 %) + beer 2,00 €
+        // (21 %) sold as a 6,00 € pack. Art. 79.Dos LIVA splits it in proportion to the catalogue
+        // price and the residual cent goes to the LARGEST remainder (the beer).
+        let previewed = preview_agrees_with_the_sale(combo_input(
+            json!([{ "option_id": "o-sandwich", "product_name": "Bocadillo" },
+                   { "option_id": "o-beer", "product_name": "Cerveza" }]),
+            json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
+                   combo_option("o-beer", "g-drink", 1, "p-beer", 0, "goods", 600, "")]),
+            json!([combo_product("p-sandwich", 450, "shop.food"),
+                   combo_product("p-beer", 200, "product.generic")]),
+            8,
+        ));
+        // The number of lines is decided by the number of TAX RATES, not of components.
+        let lines = previewed["lines"].as_array().expect("lines").clone();
+        assert_eq!(lines.len(), 2, "two rates inside the pack, two lines");
+        let sum: i64 = lines.iter().map(|l| l["line_total"].as_i64().unwrap_or(0)).sum();
+        assert_eq!(sum, 600, "the lines add up EXACTLY to the closed price");
+        assert_eq!(previewed["total"], json!(600));
+        let cats: Vec<&str> = lines.iter().map(|l| l["tax_category_key"].as_str().unwrap_or("")).collect();
+        assert_eq!(cats, vec!["shop.food", "product.generic"], "each line keeps its own rate");
+    }
+
+    #[test]
+    fn preview_agrees_on_a_service_combo_which_is_a_single_line() {
+        // Art. 91.Uno.2.2º LIVA: a `service` set menu is ONE supply at the combo's own rate — no
+        // split, no residual cent, however the wine inside is labelled.
+        let previewed = preview_agrees_with_the_sale(menu_del_dia(1_000_000));
+        let lines = previewed["lines"].as_array().expect("lines").clone();
+        assert_eq!(lines.len(), 1, "a single supply is a single line");
+        assert_eq!(lines[0]["line_total"], json!(1350));
+        assert_eq!(lines[0]["tax_category_key"], json!("shop.food"));
+    }
+
+    #[test]
+    fn with_prices_that_EXCLUDE_tax_the_preview_answers_the_gross_the_sale_charges() {
+        // sales#164 (comment of 2026-08-25). With `default_tax_included = 0` the till's own total
+        // is the BASE and the server charges base + quota: «Cobrar 100,00 €» charged 121,00 €.
+        // The preview reads the SAME hub setting the checkout reads, so there is one truth again.
+        let mut inp = input(
+            json!([{ "product_name": "Consultoría", "price": 10_000, "quantity": 1_000_000, "tax_rate": 21.0 }]), 3, 0,
+        );
+        inp["payload"]["tax_included"] = json!(true); // the browser's hint, which must NOT win
+        inp["context"]["reads"] = json!({ "sales.settings.get": [{ "default_tax_included": 0 }] });
+        let previewed = preview_agrees_with_the_sale(inp);
+        assert_eq!(previewed["tax_included"], json!(false), "the hub setting decides, not the payload");
+        assert_eq!(previewed["subtotal"], json!(10_000), "the base is what the line said");
+        assert_eq!(previewed["total"], json!(12_100), "and the charge is base + quota");
+    }
+
+    #[test]
+    fn a_preview_of_an_empty_ticket_is_refused_with_the_same_code_as_the_sale() {
+        let err = preview_checkout_pure(as_preview_input(input(json!([]), 2, 0)))
+            .expect_err("there is nothing to value");
+        assert!(err.starts_with("sales.empty_sale"), "unexpected code: {err}");
+    }
+
+    #[test]
+    fn a_preview_does_NOT_demand_the_customer_the_charge_will_demand() {
+        // `require_customer` is a rule about CLOSING a sale, and it is curable on the same screen.
+        // Refusing to value the ticket until the customer is captured would leave the till without
+        // a total during the whole time it is being built — which is when it needs one.
+        let mut inp = input(
+            json!([{ "product_name": "Café", "price": 150, "quantity": 1_000_000, "tax_rate": 10.0 }]), 3, 0,
+        );
+        inp["context"]["reads"] = json!({ "sales.settings.get": [{ "require_customer": 1 }] });
+        let previewed = preview(as_preview_input(inp.clone()));
+        assert_eq!(previewed["total"], json!(150));
+        // The CHARGE still refuses: the preview relaxes nothing about what closes a sale.
+        let err = complete_sale_pure(inp).expect_err("the charge still needs the customer");
+        assert!(err.starts_with("sales.customer_required"), "unexpected code: {err}");
+    }
+}
