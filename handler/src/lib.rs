@@ -6311,6 +6311,18 @@ mod tests {
     }
 
     #[test]
+    fn a_parent_line_ref_SENT_BY_THE_CLIENT_is_ignored() {
+        // The link is minted by the SERVER from the batch of ids, like `combo_group_ref` and like
+        // the price (sales#68). A payload that could name its own parent could hang a line it
+        // invented off a line it did not pay for.
+        let mut inp = menu_with_drink(Value::Null);
+        inp["payload"]["items"][0]["parent_line_ref"] = json!("me-lo-invento");
+        let lines = sale_lines(&sale(inp));
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0]["parent_line_ref"], Value::Null, "el payload no engancha nada");
+    }
+
+    #[test]
     fn the_child_line_COUNTS_against_the_batch_of_ids() {
         // The host hands out a finite batch (256, ARQUITECTURA.md §5.3) and a promoted supplement
         // multiplies rows just like a set menu does. Without counting it, the last line would be
