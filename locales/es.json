@@ -343,7 +343,13 @@
     "staffPickerHint": "A esta persona se le atribuyen la venta, la comanda de cocina y el informe por persona. Si lo dejas en «Yo», el TPV usa a quien tenga la sesión.",
     "staffPickerEmpty": "Este hub no tiene a nadie más para atender. Da de alta personal en Ajustes.",
     "staffLoading": "Cargando el equipo…",
-    "staffLoadFailed": "No se ha podido cargar el equipo. La venta se sigue atribuyendo a quien tenga la sesión."
+    "staffLoadFailed": "No se ha podido cargar el equipo. La venta se sigue atribuyendo a quien tenga la sesión.",
+    "lineNote": "Nota",
+    "lineNoteOf": "Nota en {name}",
+    "lineNotePlaceholder": "p. ej. poco hecho, alergia al marisco, sin hielo",
+    "lineNoteHint": "Cocina lee esta nota en la comanda.",
+    "lineNoteSave": "Guardar",
+    "lineNoteRemove": "Quitar"
   },
   "widgets": {
     "sales.today": {

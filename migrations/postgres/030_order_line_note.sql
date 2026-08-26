@@ -1,0 +1,26 @@
+-- sales#156 -- the ORDER line keeps its free-text note.
+ALTER TABLE sales_order_item ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT '';
+
+-- WHY. `kitchen_order_item` has had a `notes` column since day one and the KDS paints it, but
+-- there was nowhere to fill it from. `sales_order_item` had no column, so "medium rare",
+-- "shellfish allergy" or "no ice" lived only in the browser: the waiter typed nothing because
+-- there was no field, and had there been one it would have died on the first reload -- exactly
+-- like the supplements before the 023 and the set menu before the 028.
+--
+-- Until kitchen#54 an external caller could smuggle text into `order.fired`'s `notes` through the
+-- payload. That was never the feature: it was the same hole that let anyone fabricate an empty
+-- kitchen ticket (the handler trusting the browser for business data). The column is the way.
+--
+-- Same criterion as `modifiers` and `combo`: THIS ROW IS A WORKING ROW, IT CARRIES NO MONEY. The
+-- note is display and production text -- what the cook reads at the pass -- so it is stored
+-- verbatim and interpreted by nobody. What it is NOT is the reason for a comp: `is_gift` /
+-- `gift_reason` already live on the row and stay where they are. The kitchen ticket puts the two
+-- together (`kitchen_note`, handler/src/lib.rs) so the pass reads one sub-line, which is the only
+-- shape `kitchen::modifiers_for_display` can print.
+--
+-- ADDITIVE and `DEFAULT ''`, never NULL: every line of every check open right now reads back as
+-- "no note" without anybody downstream learning a third state, and no row is rewritten. Reverting
+-- it is dropping the column, and that is the migration guard's job (ADR-0387).
+--
+-- No index: a note is never a filter. Nobody looks up checks by the text of a request, and an
+-- index on free text would cost every write of the busiest table in the module for nothing.

@@ -38,6 +38,10 @@ export interface PrintableLine {
    *  painted indented under it with no amount of their own (only the supplement, in the label),
    *  ahead of the line's supplements. The market rationale lives in `paper-combos.ts`. */
   combo?: PrintedCombo;
+  /** sales#156 — the line's free-text note, painted on an indented sub-line of its own, AFTER the
+   *  components and the supplements: those describe the item, the note is an instruction about it.
+   *  With no note nothing is emitted and the paper comes out as it came out. */
+  line_note?: string;
 }
 
 /** Documento imprimible (subconjunto de `ReceiptData`, todo opcional salvo lo mínimo). */
@@ -109,6 +113,13 @@ function modLines(l: PrintableLine): string {
     .join('');
 }
 
+/** The line's free-text note (sales#156): one more sub-line, inside its product's cell — never a
+ *  row of its own, so the amount column stays exactly what adds up to the TOTAL. */
+function noteLine(l: PrintableLine): string {
+  const note = (l.line_note ?? '').trim();
+  return note ? `<div class="mod">${esc(note)}</div>` : '';
+}
+
 /** The menu's components (sales#154): one indented sub-line each, inside the cell of the menu line
  *  — never a row of their own, so the amount column stays exactly what adds up to the TOTAL. A
  *  component at 0,00 would read as a gift and a prorated share as a price nobody agreed to. */
@@ -131,7 +142,7 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
   const lbl = { subtotal: 'Subtotal', total: 'TOTAL', change: 'Cambio', document: 'Documento', ...doc.labels };
   const lineas = (doc.lines ?? []).map((l) => `
       <tr>
-        <td class="n">${esc(l.name)}<div class="q">${esc(qtyPrice(l, cur, dec))}</div>${componentLines(l)}${modLines(l)}</td>
+        <td class="n">${esc(l.name)}<div class="q">${esc(qtyPrice(l, cur, dec))}</div>${componentLines(l)}${modLines(l)}${noteLine(l)}</td>
         <td class="a">${money(l.total, cur, dec)}</td>
       </tr>`).join('');
 

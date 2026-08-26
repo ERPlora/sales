@@ -1683,6 +1683,10 @@ function qtyPrice(l3, currency, decimals) {
 function modLines(l3) {
   return (l3.printed_modifiers ?? []).map(modifierLabel).filter(Boolean).map((label) => `<div class="mod">${esc(label)}</div>`).join("");
 }
+function noteLine(l3) {
+  const note = (l3.line_note ?? "").trim();
+  return note ? `<div class="mod">${esc(note)}</div>` : "";
+}
 function componentLines(l3) {
   return (l3.combo?.components ?? []).map(componentLabel).filter(Boolean).map((label) => `<div class="comp">${esc(label)}</div>`).join("");
 }
@@ -1692,7 +1696,7 @@ function receiptToPrintableHtml(doc) {
   const lbl = { subtotal: "Subtotal", total: "TOTAL", change: "Cambio", document: "Documento", ...doc.labels };
   const lineas = (doc.lines ?? []).map((l3) => `
       <tr>
-        <td class="n">${esc(l3.name)}<div class="q">${esc(qtyPrice(l3, cur, dec))}</div>${componentLines(l3)}${modLines(l3)}</td>
+        <td class="n">${esc(l3.name)}<div class="q">${esc(qtyPrice(l3, cur, dec))}</div>${componentLines(l3)}${modLines(l3)}${noteLine(l3)}</td>
         <td class="a">${money(l3.total, cur, dec)}</td>
       </tr>`).join("");
   const impuestos = (doc.taxes ?? []).map((t7) => `
@@ -2067,21 +2071,25 @@ function paperUnit(l3) {
     ...l3.pricing_unit_code ? { pricing_unit_code: l3.pricing_unit_code } : {}
   };
 }
-function paperModifiers(mods, combo) {
-  if (!mods?.length && !combo) return {};
-  const note = paperNote(combo, mods);
+function paperModifiers(mods, combo, lineNote) {
+  const note_raw = (lineNote ?? "").trim();
+  if (!mods?.length && !combo && !note_raw) return {};
+  const note = paperNote(combo, mods, note_raw);
   const components = (combo?.components ?? []).map(componentLabel).filter(Boolean);
   const modifiers = (mods ?? []).map(modifierLabel).filter(Boolean);
   return {
     ...mods?.length ? { printed_modifiers: mods } : {},
     ...combo ? { combo } : {},
     ...note ? { note } : {},
+    // sales#156: y la nota EN CRUDO, para el papel HTML — que la pinta en su propia sub-línea, no
+    // encadenada — y para la huella del `jobId` de la cuenta previa.
+    ...note_raw ? { line_note: note_raw } : {},
     ...components.length ? { components } : {},
     ...modifiers.length ? { modifiers } : {}
   };
 }
-function paperNote(combo, mods) {
-  const parts = [comboNote(combo), modifierNote(mods)].filter((s5) => !!s5);
+function paperNote(combo, mods, lineNote) {
+  const parts = [comboNote(combo), modifierNote(mods), (lineNote ?? "").trim() || void 0].filter((s5) => !!s5);
   return parts.length ? parts.join(" \xB7 ") : void 0;
 }
 function menuLine(siblings, combo, t7) {
@@ -2093,7 +2101,7 @@ function menuLine(siblings, combo, t7) {
     qty: fromMicro2(Number(head.quantity)),
     unit_price: minor(sum((l3) => l3.unit_price)),
     total: minor(sum((l3) => l3.line_total)),
-    ...paperModifiers(mods.length ? mods : void 0, combo),
+    ...paperModifiers(mods.length ? mods : void 0, combo, head.notes),
     ...paperUnit(head)
   };
 }
@@ -2113,8 +2121,8 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", f
       // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
       unit_price: minor(g3.head.unit_price),
       total: minor(g3.head.line_total),
-      ...paperModifiers(parseModifierSnapshot(g3.head.modifiers)),
-      // sales#148: lo que se cobró, impreso
+      // sales#148: lo que se cobró, impreso. sales#156: y la nota que se le dio a cocina.
+      ...paperModifiers(parseModifierSnapshot(g3.head.modifiers), void 0, g3.head.notes),
       ...paperUnit(g3.head)
       // sales#28: la unidad congelada, para el papel
     }),
@@ -2205,8 +2213,8 @@ function orderToPrebill(lines, settings = {}, opts = {}, valuation) {
       total: minor(lineAmount2(l3)),
       // sales#148: ya resueltos contra el catálogo VIVO por quien pide la cuenta (la fila del
       // pedido guarda solo los `option_id`; el nombre y el importe no son del navegador).
-      ...paperModifiers(l3.modifiers, l3.combo),
-      // sales#154: and the menu's components, same door
+      // sales#154: and the menu's components, same door. sales#156: and the line's own note.
+      ...paperModifiers(l3.modifiers, l3.combo, l3.note),
       ...paperUnit(l3)
       // sales#28: la unidad congelada, para el papel
     })),
@@ -2231,7 +2239,7 @@ function printQuantity(qty, unitCode) {
   return unitTag(unitCode) ? `${quantityLabel(qty, unitCode)} ` : qty;
 }
 function printNotes(l3) {
-  const notes = paperNote(l3.combo, l3.printed_modifiers);
+  const notes = paperNote(l3.combo, l3.printed_modifiers, l3.line_note);
   const components = l3.combo?.components.map(componentLabel).filter(Boolean);
   return { ...notes ? { notes } : {}, ...components?.length ? { components } : {} };
 }
@@ -2282,7 +2290,7 @@ function saleToPrintDocument(sale, lines, settings = {}, fiscal = {}, locale = "
   };
 }
 function prebillJobId(orderId, lines) {
-  const fingerprint = (lines || []).map((l3) => `${l3.name}${l3.qty}${l3.price}${l3.is_gift ? 1 : 0}${modifierPrint(l3.modifiers)}${comboIdentity(l3.combo)}`).join("");
+  const fingerprint = (lines || []).map((l3) => `${l3.name}${l3.qty}${l3.price}${l3.is_gift ? 1 : 0}${modifierPrint(l3.modifiers)}${comboIdentity(l3.combo)}${(l3.note ?? "").trim()}`).join("");
   return `prebill-${orderId || "open"}-${hash(fingerprint)}`;
 }
 function modifierPrint(mods) {
@@ -4162,7 +4170,13 @@ var es_default = {
     staffPickerHint: "A esta persona se le atribuyen la venta, la comanda de cocina y el informe por persona. Si lo dejas en \xABYo\xBB, el TPV usa a quien tenga la sesi\xF3n.",
     staffPickerEmpty: "Este hub no tiene a nadie m\xE1s para atender. Da de alta personal en Ajustes.",
     staffLoading: "Cargando el equipo\u2026",
-    staffLoadFailed: "No se ha podido cargar el equipo. La venta se sigue atribuyendo a quien tenga la sesi\xF3n."
+    staffLoadFailed: "No se ha podido cargar el equipo. La venta se sigue atribuyendo a quien tenga la sesi\xF3n.",
+    lineNote: "Nota",
+    lineNoteOf: "Nota en {name}",
+    lineNotePlaceholder: "p. ej. poco hecho, alergia al marisco, sin hielo",
+    lineNoteHint: "Cocina lee esta nota en la comanda.",
+    lineNoteSave: "Guardar",
+    lineNoteRemove: "Quitar"
   },
   widgets: {
     "sales.today": {
@@ -4527,7 +4541,13 @@ var en_default = {
     staffPickerHint: "The sale, the kitchen ticket and the per-person report are attributed to them. Leave it on \xABMe\xBB and the till uses whoever is signed in.",
     staffPickerEmpty: "This hub has nobody else to serve. Add staff from Settings.",
     staffLoading: "Loading the team\u2026",
-    staffLoadFailed: "The team could not be loaded. The sale is still attributed to whoever is signed in."
+    staffLoadFailed: "The team could not be loaded. The sale is still attributed to whoever is signed in.",
+    lineNote: "Note",
+    lineNoteOf: "Note on {name}",
+    lineNotePlaceholder: "e.g. medium rare, shellfish allergy, no ice",
+    lineNoteHint: "The kitchen reads this note on the ticket.",
+    lineNoteSave: "Save",
+    lineNoteRemove: "Remove"
   }
 };
 
@@ -4911,6 +4931,10 @@ function nextRoundNo(lines) {
 }
 
 // ui/lib/fire-order.ts
+function kitchenNote(note, isGift, giftReason) {
+  const reason = isGift ? (giftReason ?? "").trim() : "";
+  return [(note ?? "").trim(), reason].filter(Boolean).join(" \xB7 ");
+}
 function buildFirePayload(orderId, label, lines, roundNo, waiterId) {
   if (!orderId || lines.length === 0) return void 0;
   return {
@@ -4926,8 +4950,9 @@ function buildFirePayload(orderId, label, lines, roundNo, waiterId) {
       // Punto fijo 10⁶ (ADR-0147): cocina recibe 500000 y pinta 0,5 — su frontera, su formato.
       quantity: toMicro2(l3.qty),
       unit_price: l3.price,
-      // El motivo de una invitación es información de sala que el cocinero necesita ver.
-      notes: l3.is_gift ? l3.gift_reason ?? "" : "",
+      // sales#156: lo que el camarero escribió, y —cuando la línea está invitada— el motivo, que
+      // es información de sala que el cocinero necesita ver.
+      notes: kitchenNote(l3.note, l3.is_gift, l3.gift_reason),
       // sales#12: la CATEGORÍA (snapshot de la línea) es lo que deja a kitchen aplicar
       // categoría→estación; sin ella solo enrutaba lo que tuviera mapeo producto→estación.
       category_id: l3.category_id ?? null,
@@ -5072,6 +5097,9 @@ function toItemPayload(l3) {
     category_id: l3.category_id ?? null,
     // sales#71: descuento manual de la línea, en %.
     discount: l3.discount ?? 0,
+    // sales#156: la nota libre. Siempre presente (cadena vacía = sin nota) para que la forma del
+    // payload no dependa de si el camarero escribió algo.
+    notes: l3.note ?? "",
     // pm#93: solo los ids, en su orden. El importe lo resuelve el servidor contra
     // `modifiers.options.all` — el navegador no es autoridad del precio de un suplemento.
     modifiers: (l3.modifiers ?? []).map((m4) => ({ option_id: m4.option_id })),
@@ -5108,6 +5136,8 @@ function orderLinePayload(orderId, l3) {
     category_id: l3.category_id ?? null,
     // sales#71: descuento manual de la línea (%), persistido con ella.
     discount_percent: l3.discount ?? 0,
+    // sales#156: la nota libre de la línea, persistida con ella.
+    notes: l3.note ?? "",
     // pm#93: `order.add_line` es DECLARATIVO — el payload bindea a una columna TEXT, así que viaja
     // serializado. Solo los ids: el nombre y el precio definitivos los resuelve el cobro contra
     // `modifiers.options.all`. Esta fila es de trabajo, como su `line_total` provisional.
@@ -5163,6 +5193,18 @@ async function updateOrderLineDiscount(client, orderId, line, discount) {
     gift_reason: null
   });
 }
+async function updateOrderLineNote(client, orderId, line, note) {
+  if (!line.line_id) return;
+  await client.command("sales.order.update_line", {
+    order_id: orderId,
+    line_id: line.line_id,
+    quantity: toMicro2(line.qty),
+    line_total: provisionalLineTotal(line.price, line.qty, line.is_gift, line.discount ?? 0),
+    notes: note,
+    is_gift: null,
+    gift_reason: null
+  });
+}
 async function removeOrderLine(client, orderId, lineId) {
   await client.command("sales.order.remove_line", { order_id: orderId, line_id: lineId });
 }
@@ -5191,6 +5233,10 @@ async function loadOrderLines(client, orderId) {
       category_id: x2.category_id ? String(x2.category_id) : void 0,
       // sales#71: el descuento de la línea vuelve al retomar la cuenta.
       discount: Number(x2.discount_percent) > 0 ? Number(x2.discount_percent) : void 0,
+      // sales#156: la nota vuelve con la línea. `undefined` —y no ''— cuando no hay: la línea
+      // queda idéntica a las de toda cuenta abierta antes de la columna, y nada pinta una
+      // sub-línea vacía debajo.
+      note: x2.notes ? String(x2.notes) : void 0,
       // pm#93: los suplementos vuelven con la línea. Una fila ANTERIOR a la columna, o un JSON
       // corrupto, devuelven `undefined` — se pierde el suplemento de esa línea, nunca la comanda.
       modifiers: parseModifiers(x2.modifiers),
@@ -6533,6 +6579,7 @@ var ErpPosTouch = class extends i3 {
     this.tendered = "";
     this.openPriceOpen = false;
     this.ticketDiscount = 0;
+    this.noteInput = "";
     this.discountInput = "";
     this.ticketDiscountAmount = 0;
     this.discountMode = "percent";
@@ -7359,6 +7406,19 @@ var ErpPosTouch = class extends i3 {
     ok-status-pill { vertical-align:middle; }
     .lineend .lt { font-size:.84rem; }
     .lineend .lt.is-gift { text-decoration:line-through; opacity:.55; }
+    /* sales#156 — la nota bajo su artículo, con el mismo peso visual que una sub-línea del papel:
+       se lee, pero no compite con el nombre del producto ni con el importe. Se parte por palabra porque
+       «alergia al marisco y a los frutos secos» no cabe en una línea de 390 px. */
+    .line-note-text { display:flex; align-items:flex-start; gap:.3rem; margin:.15rem 0 0;
+      font-size:.8rem; color:var(--ion-color-medium); overflow-wrap:anywhere; }
+    .line-note-text ion-icon { flex:none; font-size:.9rem; margin-top:.1rem; }
+    /* La hoja de la nota: el textarea ocupa el ancho y es lo bastante alto para ver lo escrito sin
+       hacer scroll dentro de un campo, que en táctil es donde se pierde el texto. */
+    .note-sheet .note-input { width:100%; box-sizing:border-box; resize:none; font:inherit;
+      padding:.6rem .7rem; border-radius:10px; border:1px solid var(--ion-border-color);
+      background:var(--ion-item-background, var(--panel)); color:var(--tx); }
+    .note-sheet .note-input:focus-visible { outline:2px solid var(--ion-color-primary); outline-offset:1px; }
+    .note-sheet .note-hint { margin:.5rem 0 0; font-size:.78rem; color:var(--ion-color-medium); }
     .secs { padding:.32rem .48rem .65rem; gap:.52rem; }
     .sec { border-radius:var(--ok-radius,12px); }
     .sec-h { padding:.48rem .58rem; font-size:.7rem; background:transparent; border-bottom:1px solid var(--line); }
@@ -8675,7 +8735,10 @@ var ErpPosTouch = class extends i3 {
       // sales#148: y sus suplementos, o el cliente paga un «+ queso» que su papel no nombra.
       ...this.resolvedModifiers(l3) ? { modifiers: this.resolvedModifiers(l3) } : {},
       // sales#154: y la composición del menú, o la cuenta dice «Menú del día» sin decir cuál.
-      ...this.prebillCombo(l3) ? { combo: this.prebillCombo(l3) } : {}
+      ...this.prebillCombo(l3) ? { combo: this.prebillCombo(l3) } : {},
+      // sales#156: y su nota, o la cuenta que se lleva a la mesa dice menos que la comanda que
+      // recibió la cocina — y el cliente lee una cosa mientras en el pase se cocinó otra.
+      ...l3.note ? { note: l3.note } : {}
     }));
   }
   /** The menu of a cart line as the bill prints it (sales#154): the components with the display
@@ -8884,6 +8947,37 @@ var ErpPosTouch = class extends i3 {
     const base = this.padPrimed ? "" : this.tendered;
     this.padPrimed = false;
     this.tendered = pushDigit(base, k2);
+  }
+  // ── sales#156 · la NOTA de la línea ────────────────────────────────────────────────────────
+  //
+  // Market shape (8 refs + forums, table in the PR): a button on the SELECTED LINE, next to the
+  // supplements and the comp — Toast's «Special Request», Square's per-item Notes, Lightspeed's
+  // line note, Odoo's «Customer Note», Clover's `lineItem.note`, Revel's special requests. Shopify
+  // POS is the odd one out (order-level only, per line needs an app) and it loses: a note on the
+  // ORDER does not say which plate it is about, which is the one thing the kitchen needs.
+  /** Abre la hoja con la nota que la línea YA tiene: reabrir para CORREGIR es la mitad del uso, y
+   *  una hoja en blanco obligaría a reescribir la alergia entera para añadirle una palabra. */
+  openLineNote(lineId) {
+    this.noteInput = this.cart.find((l3) => l3.line_id === lineId)?.note ?? "";
+    this.noteSheet = { lineId };
+  }
+  /** Guarda la nota en la línea y en su fila del pedido. Vacía (o solo espacios) la QUITA: una
+   *  nota que no se puede borrar deja a cocina cocinando a una petición que se canceló. */
+  async applyLineNote(note) {
+    const sheet = this.noteSheet;
+    this.noteSheet = void 0;
+    if (!sheet) return;
+    const line = this.cart.find((l3) => l3.line_id === sheet.lineId);
+    if (!line) return;
+    const clean = note.trim();
+    this.cart = this.cart.map((l3) => l3 === line ? { ...l3, note: clean || void 0 } : l3);
+    if (this.orderId) {
+      try {
+        await updateOrderLineNote(erplora2(), this.orderId, line, clean);
+      } catch (e7) {
+        this.error = e7 instanceof Error ? e7.message : String(e7);
+      }
+    }
   }
   // ── sales#71 · descuentos manuales ─────────────────────────────────────────────────────────
   openDiscount(target, lineId) {
@@ -9781,6 +9875,9 @@ var ErpPosTouch = class extends i3 {
           ${this.hasKitchen ? locked ? b2`<ok-status-pill tone="success" size="sm" dot>${t5("ui.commandRound", { n: String(l3.round_no ?? "") })}</ok-status-pill>` : b2`<ok-status-pill tone="warning" size="sm" dot>${t5("ui.pendingStatus")}</ok-status-pill>` : A}
           <span>${l3.name}</span>${l3.is_gift ? b2` <ion-badge color="success">${t5("ui.giftBadge")}</ion-badge>` : A}</h3>
         <p>${priceLabel(this.money(l3.price), l3.unit_code)}${l3.is_gift && l3.gift_reason ? b2` · ${l3.gift_reason}` : A}${l3.discount ? b2` <ion-badge class="line-discount-badge" color="warning">−${l3.discount}%</ion-badge>` : A}</p>
+        <!-- sales#156: si la nota no se ve, el camarero no sabe si la escribió: la reescribe, o la
+             da por hecha. Va en su propia sub-línea, como los suplementos en el papel. -->
+        ${l3.note ? b2`<p class="line-note-text"><ion-icon name="chatbox-ellipses-outline"></ion-icon> ${l3.note}</p>` : A}
       </ion-label>
       <div slot="end" class="lineend">
         <span class="lt ${l3.is_gift ? "is-gift" : ""}">${this.money(lineAmount(l3))}</span>
@@ -9790,6 +9887,11 @@ var ErpPosTouch = class extends i3 {
                         @click=${() => this.openDiscount("line", l3.line_id)}>
               <ion-icon name=${l3.discount ? "pricetag" : "pricetag-outline"} slot="icon-only" color=${l3.discount ? "warning" : "medium"}></ion-icon>
             </ion-button>` : A}
+            <ion-button class="line-note" fill="clear" size="small" title=${t5("ui.lineNote")} aria-label=${t5("ui.lineNote")}
+                        @click=${() => this.openLineNote(l3.line_id)}>
+              <ion-icon name=${l3.note ? "chatbox-ellipses" : "chatbox-ellipses-outline"} slot="icon-only"
+                        color=${l3.note ? "primary" : "medium"}></ion-icon>
+            </ion-button>
             <ion-button fill="clear" size="small" title=${t5("ui.giftAction")} @click=${() => this.toggleGift(l3.id)}>
               <ion-icon name=${l3.is_gift ? "gift" : "gift-outline"} slot="icon-only" color=${l3.is_gift ? "success" : "medium"}></ion-icon>
             </ion-button>
@@ -10256,6 +10358,39 @@ var ErpPosTouch = class extends i3 {
             </div>
           </div>` : A}
 
+      <!-- NOTA DE LÍNEA (sales#156): la hoja de texto libre que abre el botón de la línea. Mismo
+           <div class="scrim"><div class="sheet"> que el descuento — sube desde abajo, con su asa —
+           porque ion-action-sheet no aloja contenido rico y los overlays de Ionic dentro de un
+           shadow root se re-parentan al body (ADR-0028). El foco entra en el textarea: la acción
+           que se viene a hacer es escribir. -->
+      ${this.noteSheet ? b2`<div class="scrim" @click=${(e7) => {
+      if (e7.target.classList.contains("scrim")) this.noteSheet = void 0;
+    }}>
+            <div class="sheet note-sheet">
+              <div class="sheet-h">
+                <span class="t">${t5("ui.lineNoteOf", { name: this.cart.find((l3) => l3.line_id === this.noteSheet?.lineId)?.name ?? "" })}</span>
+                <button class="x" aria-label=${t5("ui.closeAction")} @click=${() => {
+      this.noteSheet = void 0;
+    }}>✕</button>
+              </div>
+              <div class="sheet-top">
+                <textarea class="note-input" rows="3" maxlength="255" autofocus
+                          aria-label=${t5("ui.lineNote")} placeholder=${t5("ui.lineNotePlaceholder")}
+                          .value=${this.noteInput}
+                          @input=${(e7) => {
+      this.noteInput = e7.target.value;
+    }}></textarea>
+                <p class="note-hint">${t5("ui.lineNoteHint")}</p>
+              </div>
+              <div class="sheet-foot discount-foot">
+                <ion-button fill="clear" color="medium"
+                  @click=${() => this.applyLineNote("")}>${t5("ui.lineNoteRemove")}</ion-button>
+                <ion-button class="charge note-save" expand="block"
+                  @click=${() => this.applyLineNote(this.noteInput)}>${t5("ui.lineNoteSave")}</ion-button>
+              </div>
+            </div>
+          </div>` : A}
+
       <!-- DESCUENTO (sales#71): mismo sheet/numpad del cobro. Se teclea el %, y Aplicar; 0 = quitar.
            Sobre la LÍNEA elegida o sobre el TICKET entero. El servidor prorratea y revalida
            allow_discounts; aquí solo se recoge la cifra. -->
@@ -10486,6 +10621,12 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "discountSheet", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "noteSheet", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "noteInput", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "discountInput", 2);

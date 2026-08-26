@@ -342,6 +342,12 @@
     "staffPickerHint": "The sale, the kitchen ticket and the per-person report are attributed to them. Leave it on «Me» and the till uses whoever is signed in.",
     "staffPickerEmpty": "This hub has nobody else to serve. Add staff from Settings.",
     "staffLoading": "Loading the team…",
-    "staffLoadFailed": "The team could not be loaded. The sale is still attributed to whoever is signed in."
+    "staffLoadFailed": "The team could not be loaded. The sale is still attributed to whoever is signed in.",
+    "lineNote": "Note",
+    "lineNoteOf": "Note on {name}",
+    "lineNotePlaceholder": "e.g. medium rare, shellfish allergy, no ice",
+    "lineNoteHint": "The kitchen reads this note on the ticket.",
+    "lineNoteSave": "Save",
+    "lineNoteRemove": "Remove"
   }
 }

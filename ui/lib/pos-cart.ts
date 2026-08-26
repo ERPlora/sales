@@ -82,6 +82,12 @@ export interface CartLine {
   is_gift?: boolean;
   /** Motivo de la invitación (cortesía/error cocina/fidelización…). */
   gift_reason?: string;
+  /** sales#156 — the line's free-text NOTE ("medium rare", "shellfish allergy", "no ice").
+   *  PRODUCTION text: the cook reads it at the pass and `sales` interprets none of it. Persisted on
+   *  the order row (`sales_order_item.notes`) so it survives resuming the check, splitting it and
+   *  transferring it, exactly like the supplements. Absent = no note, which is what every line
+   *  written before the column carries. */
+  note?: string;
   /** TANDAS (2026-07-19): ronda LOCAL en la que la línea salió a cocina (≥1). Ausente/0 = aún
    *  sin enviar (la ronda en curso, editable). `kitchen` numera lo suyo (ADR-0144). */
   round_no?: number;
@@ -228,6 +234,11 @@ function sameCartLine(a: CartLine, b: CartLine): boolean {
     && a.tax_rate === b.tax_rate
     && !!a.is_gift === !!b.is_gift
     && a.gift_reason === b.gift_reason
+    // sales#156: the NOTE enters the identity for the same reason the supplements did — without
+    // it, "medium rare" and "well done" merge into "2 x Steak" and the kitchen gets one of the two
+    // wrong with no way of telling which. No note and an empty note are the same thing: the waiter
+    // never touched the field, and splitting the line over that would be a defect, not precision.
+    && (a.note ?? '') === (b.note ?? '')
     && modifierFingerprint(a) === modifierFingerprint(b)
     // sales#153: dos menús con primeros distintos son dos líneas. Sin esto se fusionarían en
     // «2 × Menú del día» y cocina recibiría dos veces el mismo plato, uno de ellos mal.
@@ -367,6 +378,9 @@ function toItemPayload(l: CartLine): Record<string, unknown> {
     category_id: l.category_id ?? null,
     // sales#71: descuento manual de la línea, en %.
     discount: l.discount ?? 0,
+    // sales#156: the free-text note. Always present (empty string = no note) so the shape of the
+    // payload does not depend on whether the waiter typed anything.
+    notes: l.note ?? '',
     // pm#93: solo los ids, en su orden. El importe lo resuelve el servidor contra
     // `modifiers.options.all` — el navegador no es autoridad del precio de un suplemento.
     modifiers: (l.modifiers ?? []).map((m) => ({ option_id: m.option_id })),
@@ -410,6 +424,8 @@ function orderLinePayload(orderId: string, l: CartLine): Record<string, unknown>
     category_id: l.category_id ?? null,
     // sales#71: descuento manual de la línea (%), persistido con ella.
     discount_percent: l.discount ?? 0,
+    // sales#156: the line's free-text note, persisted with it.
+    notes: l.note ?? '',
     // pm#93: `order.add_line` es DECLARATIVO — el payload bindea a una columna TEXT, así que viaja
     // serializado. Solo los ids: el nombre y el precio definitivos los resuelve el cobro contra
     // `modifiers.options.all`. Esta fila es de trabajo, como su `line_total` provisional.
@@ -492,6 +508,27 @@ export async function updateOrderLineDiscount(
   });
 }
 
+/** sales#156 — changes the free-text NOTE of an order line.
+ *
+ * It goes through the same `update_line` as the quantity and the discount, which is why it sends
+ * the quantity and total the line ALREADY has: the statement always writes them, so omitting them
+ * would rewrite the row to a quantity nobody asked for. Every other field travels as `null` so the
+ * SQL's `COALESCE` leaves it alone.
+ *
+ * Without a `line_id` there is no row to address and NOTHING is written: inventing the write would
+ * send it against whatever row the server guessed — or against none, in silence. */
+export async function updateOrderLineNote(
+  client: ErploraClientLike, orderId: string, line: CartLine, note: string,
+): Promise<void> {
+  if (!line.line_id) return;
+  await client.command('sales.order.update_line', {
+    order_id: orderId, line_id: line.line_id, quantity: toMicro(line.qty),
+    line_total: provisionalLineTotal(line.price, line.qty, line.is_gift, line.discount ?? 0),
+    notes: note,
+    is_gift: null, gift_reason: null,
+  });
+}
+
 /** Quita una línea del pedido (soft-delete); el servidor recompone el total. */
 export async function removeOrderLine(client: ErploraClientLike, orderId: string, lineId: string): Promise<void> {
   await client.command('sales.order.remove_line', { order_id: orderId, line_id: lineId });
@@ -523,6 +560,10 @@ export async function loadOrderLines(client: ErploraClientLike, orderId: string)
       category_id: x.category_id ? String(x.category_id) : undefined,
       // sales#71: el descuento de la línea vuelve al retomar la cuenta.
       discount: Number(x.discount_percent) > 0 ? Number(x.discount_percent) : undefined,
+      // sales#156: the note comes back with the line. `undefined` and NOT '' when there is none:
+      // the line then looks identical to those of every check opened before the column, and
+      // nothing paints an empty sub-line under it.
+      note: x.notes ? String(x.notes) : undefined,
       // pm#93: los suplementos vuelven con la línea. Una fila ANTERIOR a la columna, o un JSON
       // corrupto, devuelven `undefined` — se pierde el suplemento de esa línea, nunca la comanda.
       modifiers: parseModifiers(x.modifiers),

@@ -159,6 +159,10 @@ export interface SaleLineRow {
    *  (`authoritative_modifiers`, en el orden de elección). Llega como TEXT porque eso es la
    *  columna; el papel lo desempaqueta con `parseModifierSnapshot`. */
   modifiers?: string;
+  /** sales#156 — the free-text NOTE the checkout froze on the line ("medium rare", "no ice"). The
+   *  column has been there since the 001 and nobody ever wrote it, so a REPRINT could not say what
+   *  the kitchen had been told. */
+  notes?: string;
   /** sales#154 / ADR-0381 — what makes this row a SIBLING of a menu (`NULL` on every row that is
    *  not one). The rows of one menu share the ref; the paper groups them into one header line. */
   combo_group_ref?: string | null;
@@ -365,6 +369,11 @@ export interface PaperReceiptLine extends ReceiptLine {
   unit_name?: string;
   /** Unidad en la que está expresado el `unit_price` (KPEIN): «12,00 € / kg». */
   pricing_unit_code?: string;
+  /** sales#156 — the line's free-text note, RAW. `note` (above) is the already-composed text the
+   *  screen paints; this is the loose piece, so the HTML paper can paint it on a sub-line of its
+   *  own and the thermal one recomposes it through the same door (`paperNote`). Absent with no
+   *  note. */
+  line_note?: string;
 }
 
 /** `ReceiptData` con líneas que llevan su unidad — lo que devuelven los mappers de tiquet. */
@@ -389,13 +398,18 @@ function paperUnit(l: { unit_code?: string; unit_name?: string; pricing_unit_cod
 
 /** Los suplementos en la forma del papel: sin ninguno, SIN campo — una línea que nunca tuvo
  *  suplementos no fabrica una lista vacía, y el tique de siempre sale byte a byte igual. */
-function paperModifiers(mods: PrintedModifier[] | undefined, combo?: PrintedCombo): Partial<PaperReceiptLine> {
-  if (!mods?.length && !combo) return {};
+function paperModifiers(
+  mods: PrintedModifier[] | undefined,
+  combo?: PrintedCombo,
+  lineNote?: string,
+): Partial<PaperReceiptLine> {
+  const note_raw = (lineNote ?? '').trim();
+  if (!mods?.length && !combo && !note_raw) return {};
   // `note` es la puerta que `<ok-receipt>` YA pinta bajo la línea: por ahí los ve la PANTALLA, con
   // el mismo texto que los dos papeles. Sin esto el camarero leería en pantalla algo distinto de lo
   // que el cliente lleva en la mano — y una de las dos personas estaría siendo engañada.
   // sales#154: the menu's components go FIRST (they are the line), the supplements after.
-  const note = paperNote(combo, mods);
+  const note = paperNote(combo, mods, note_raw);
   // sales#183 / ADR-0396: the SCREEN gets the same texts as LISTS — one indented sub-line per
   // component and per supplement, painted by `<ok-receipt>` — while the papers keep the objects.
   const components = (combo?.components ?? []).map(componentLabel).filter(Boolean);
@@ -404,6 +418,9 @@ function paperModifiers(mods: PrintedModifier[] | undefined, combo?: PrintedComb
     ...(mods?.length ? { printed_modifiers: mods } : {}),
     ...(combo ? { combo } : {}),
     ...(note ? { note } : {}),
+    // sales#156: and the RAW note, for the HTML paper — which paints it on a sub-line of its own
+    // rather than chained — and for the bill's `jobId` fingerprint.
+    ...(note_raw ? { line_note: note_raw } : {}),
     ...(components.length ? { components } : {}),
     ...(modifiers.length ? { modifiers } : {}),
   };
@@ -412,8 +429,17 @@ function paperModifiers(mods: PrintedModifier[] | undefined, combo?: PrintedComb
 /** The ONE sub-line text every surface that prints a single sub-line uses (`<ok-receipt>`'s `note`,
  *  the ESC/POS `notes`): the menu's components, then the line's supplements. `undefined` when there
  *  is nothing to say — a plain line never grows the field. */
-export function paperNote(combo: PrintedCombo | undefined, mods: PrintedModifier[] | undefined): string | undefined {
-  const parts = [comboNote(combo), modifierNote(mods)].filter((s): s is string => !!s);
+export function paperNote(
+  combo: PrintedCombo | undefined,
+  mods: PrintedModifier[] | undefined,
+  lineNote?: string,
+): string | undefined {
+  // sales#156: the waiter's free note goes LAST. The menu's components and the supplements
+  // DESCRIBE the item — they are the line — while the note is an instruction about it, and that is
+  // the order it is read in. Putting it last also leaves the paper of a line without a note byte
+  // for byte as it was.
+  const parts = [comboNote(combo), modifierNote(mods), (lineNote ?? '').trim() || undefined]
+    .filter((s): s is string => !!s);
   return parts.length ? parts.join(' · ') : undefined;
 }
 
@@ -433,7 +459,7 @@ function menuLine(siblings: SaleLineRow[], combo: PrintedCombo, t?: Translate): 
     qty: fromMicro(Number(head.quantity)),
     unit_price: minor(sum((l) => l.unit_price)),
     total: minor(sum((l) => l.line_total)),
-    ...paperModifiers(mods.length ? mods : undefined, combo),
+    ...paperModifiers(mods.length ? mods : undefined, combo, head.notes),
     ...paperUnit(head),
   };
 }
@@ -464,7 +490,8 @@ export function saleToReceipt(
       qty: fromMicro(Number(g.head.quantity)), // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
       unit_price: minor(g.head.unit_price),
       total: minor(g.head.line_total),
-      ...paperModifiers(parseModifierSnapshot(g.head.modifiers)), // sales#148: lo que se cobró, impreso
+      // sales#148: what was charged, printed. sales#156: and the note the kitchen was given.
+      ...paperModifiers(parseModifierSnapshot(g.head.modifiers), undefined, g.head.notes),
       ...paperUnit(g.head), // sales#28: la unidad congelada, para el papel
     }),
     subtotal: sale.subtotal != null ? minor(sale.subtotal) : undefined,
@@ -549,6 +576,10 @@ export interface PrebillLine {
    *  pinta la cantidad con su unidad, como el tiquet. */
   unit_code?: string;
   unit_name?: string;
+  /** sales#156 — the line's free note, straight off the cart line. The bill the waiter carries to
+   *  the table has to say what the kitchen was told, or the customer reads one thing and the pass
+   *  cooked another. */
+  note?: string;
   /** sales#180 — the line's VAT rate, the same preview the cart line already carries
    *  (`resolveLineTax`). It only feeds the bill's PROVISIONAL breakdown: the real rate is resolved
    *  by the server on checkout (ADR-0085). Without it, the line stays out of the breakdown. */
@@ -649,7 +680,8 @@ export function orderToPrebill(
       total: minor(lineAmount(l)),
       // sales#148: ya resueltos contra el catálogo VIVO por quien pide la cuenta (la fila del
       // pedido guarda solo los `option_id`; el nombre y el importe no son del navegador).
-      ...paperModifiers(l.modifiers, l.combo), // sales#154: and the menu's components, same door
+      // sales#154: and the menu's components, same door. sales#156: and the line's own note.
+      ...paperModifiers(l.modifiers, l.combo, l.note),
       ...paperUnit(l), // sales#28: la unidad congelada, para el papel
     })),
     // The subtotal only exists when there is something to break down: with no tax catalogue the

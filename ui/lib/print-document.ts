@@ -73,8 +73,12 @@ function printQuantity(qty: number, unitCode?: string): number | string {
  * sales#154: the menu's components travel through the SAME sub-line, first, followed by the line's
  * supplements — one composer (`paperNote`) for the screen's `note` and this `notes`. And as a list
  * in `components`, for the renderer that will indent them (ignored by today's, by contract). */
-function printNotes(l: { printed_modifiers?: Parameters<typeof paperNote>[1]; combo?: PrintedCombo }): { notes?: string; components?: string[] } {
-  const notes = paperNote(l.combo, l.printed_modifiers);
+function printNotes(
+  l: { printed_modifiers?: Parameters<typeof paperNote>[1]; combo?: PrintedCombo; line_note?: string },
+): { notes?: string; components?: string[] } {
+  // sales#156: the waiter's free note shares this sub-line, last. It is the same composer the
+  // screen uses, so paper and screen cannot drift apart.
+  const notes = paperNote(l.combo, l.printed_modifiers, l.line_note);
   const components = l.combo?.components.map(componentLabel).filter(Boolean);
   return { ...(notes ? { notes } : {}), ...(components?.length ? { components } : {}) };
 }
@@ -216,7 +220,9 @@ export function saleToPrintDocument(
 export function prebillJobId(orderId: string | undefined, lines: PrebillLine[]): string {
   const fingerprint = (lines || [])
     // sales#154: and the menu's composition — swapping a component is a corrected bill, a new job.
-    .map((l) => `${l.name}${l.qty}${l.price}${l.is_gift ? 1 : 0}${modifierPrint(l.modifiers)}${comboIdentity(l.combo)}`)
+    // sales#156: and the note — correcting «poco hecho» to «muy hecho» is a corrected bill, and a
+    // corrected bill that hashes the same never comes out of the queue.
+    .map((l) => `${l.name}${l.qty}${l.price}${l.is_gift ? 1 : 0}${modifierPrint(l.modifiers)}${comboIdentity(l.combo)}${(l.note ?? '').trim()}`)
     .join('');
   return `prebill-${orderId || 'open'}-${hash(fingerprint)}`;
 }

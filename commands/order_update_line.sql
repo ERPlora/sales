@@ -10,6 +10,12 @@ SET quantity    = :quantity,
     is_gift     = COALESCE(:is_gift, is_gift),
     gift_reason = COALESCE(:gift_reason, gift_reason),
     discount_percent = COALESCE(:discount_percent, discount_percent), -- sales#71
+    -- sales#156: the line's free-text note. COALESCE is load-bearing here, not decoration: the
+    -- quantity stepper sends no `notes` at all, so binding NULL has to leave the stored text
+    -- alone. Without it, bumping a burger from 1 to 2 would silently erase the allergy the waiter
+    -- typed, and nobody would find out until the plate reached the table. Clearing it is an
+    -- explicit empty string, which this does honour.
+    notes       = COALESCE(:notes, notes),
     updated_by  = :current_user_id,
     updated_at  = :now
 -- `fired_at IS NULL`: una línea YA ENVIADA a cocina no se edita desde el TPV (tandas,
