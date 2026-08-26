@@ -1861,6 +1861,46 @@ function printHtmlInIframe(html, doc = document) {
   else w2.addEventListener("load", () => setTimeout(lanzar, 50), { once: true });
 }
 
+// ui/lib/pos-settings.ts
+var POS_SETTINGS_DEFAULTS = Object.freeze({
+  allow_cash: 1,
+  allow_card: 1,
+  allow_transfer: 0,
+  sync_products: 1,
+  sync_services: 1,
+  require_customer: 0,
+  allow_discounts: 1,
+  enable_parked_tickets: 1,
+  default_tax_included: 1,
+  auto_invoice_with_tax_id: 0,
+  default_document_format: "ticket",
+  receipt_header: "",
+  receipt_footer: "",
+  receipt_footer_image: "",
+  receipt_marketing_url: "",
+  receipt_marketing_text: ""
+});
+function saved(v3) {
+  return v3 !== void 0 && v3 !== null;
+}
+function asFlag(v3) {
+  if (v3 === false || v3 === 0 || v3 === "0" || v3 === "") return 0;
+  return 1;
+}
+function withPosSettingsDefaults(row) {
+  const raw = row ?? {};
+  const out = { ...raw };
+  for (const [key, fallback] of Object.entries(POS_SETTINGS_DEFAULTS)) {
+    const v3 = raw[key];
+    if (!saved(v3)) {
+      out[key] = fallback;
+      continue;
+    }
+    out[key] = typeof fallback === "string" ? String(v3) : asFlag(v3);
+  }
+  return out;
+}
+
 // ui/lib/pay-icons.ts
 var PAY_ICON_FALLBACK = "ellipsis-horizontal-circle-outline";
 var BY_TYPE = {
@@ -1900,11 +1940,12 @@ function needsTendered(method) {
   return (method.type || "").trim().toLowerCase() === "cash";
 }
 function enabledPayMethods(methods, policy = {}) {
+  const p4 = withPosSettingsDefaults(policy);
   const allowed = (m4) => {
     const t7 = (m4.type || "").trim().toLowerCase();
-    if (t7 === "cash") return policy.allow_cash !== 0;
-    if (t7 === "card" || t7 === "credit" || t7 === "debit") return policy.allow_card !== 0;
-    if (t7 === "transfer" || t7 === "bank") return policy.allow_transfer !== 0;
+    if (t7 === "cash") return p4.allow_cash !== 0;
+    if (t7 === "card" || t7 === "credit" || t7 === "debit") return p4.allow_card !== 0;
+    if (t7 === "transfer" || t7 === "bank") return p4.allow_transfer !== 0;
     return true;
   };
   const out = methods.filter(allowed);
@@ -1990,7 +2031,7 @@ function resolveLineTax(catRatesMap, taxCategoryKey) {
 function roundHalfUp(x2) {
   return Math.round(x2 + 1e-9);
 }
-function previewTaxBreakdown(lines, taxIncluded = true) {
+function previewTaxBreakdown(lines, taxIncluded = POS_SETTINGS_DEFAULTS.default_tax_included !== 0) {
   const byRate = /* @__PURE__ */ new Map();
   for (const l3 of lines) {
     const rate = Number(l3.tax_rate) || 0;
@@ -4886,7 +4927,9 @@ var ErpSalesDocument = class extends i3 {
       ]);
       this.sale = Array.isArray(sale) ? sale[0] : sale;
       this.lines = lines || [];
-      this.settings = (Array.isArray(settingsRows) ? settingsRows[0] : settingsRows) || {};
+      this.settings = withPosSettingsDefaults(
+        Array.isArray(settingsRows) ? settingsRows[0] : settingsRows
+      );
       void this.watchFiscal(this.saleId);
     } catch (e7) {
       this.error = e7 instanceof Error ? e7.message : erplora().t(CATALOG, "ui.errorDocument");
@@ -6847,8 +6890,7 @@ async function optionalRead(read) {
 }
 var LEGACY_PAGE_LIMIT = 500;
 function catalogSourceOn(v3) {
-  if (v3 === void 0 || v3 === null || v3 === "") return true;
-  return !(v3 === 0 || v3 === "0" || v3 === false);
+  return v3 !== 0;
 }
 var HARD_DEPENDENCIES = ["inventory", "taxes"];
 async function optionalReadAll(whole, page) {
@@ -8663,13 +8705,17 @@ var ErpPosTouch = class extends i3 {
    *  A FAILURE falls back to the defaults — a till that opens with an empty grid because a
    *  settings read hiccuped is worse than one that shows everything — but it is not swallowed:
    *  the shell is told, because a policy nobody could read means the switches on the settings
-   *  screen are not being honoured right now. */
+   *  screen are not being honoured right now.
+   *
+   *  sales#223 — absence and failure both come out of `withPosSettingsDefaults`, which is the ONE
+   *  place the UI declares what the till is out of the box. No reader below sees `undefined` again:
+   *  they used to, and `undefined !== 0` turned every switch that ships OFF into an ON. */
   async loadPosSettings() {
     try {
-      return rows2(await erplora2().query("sales.pos_settings.get"))[0] ?? {};
+      return withPosSettingsDefaults(rows2(await erplora2().query("sales.pos_settings.get"))[0]);
     } catch {
       this.notifyShell(t5("ui.posSettingsUnavailable"));
-      return {};
+      return withPosSettingsDefaults(void 0);
     }
   }
   /** El catálogo VENDIBLE de `services`, mapeado a la forma de la rejilla (sales#89).
