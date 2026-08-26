@@ -24,6 +24,12 @@ import { isOverSimplifiedLimit, ticketIsBlocked, recipientIsComplete } from '../
 import { forgetCurrentCheck, rememberCurrentCheck, resolveCurrentCheck } from '../../lib/current-check.js';
 import { brandSvgFor } from '../../lib/brand-icons.js';
 import { priceLabel } from '../../lib/price-label.js';
+// sales#28 — the OPTIONAL scale contract. `sales` never talks to hardware: whoever CAN weigh
+// (`erplora-app` → `crates/peripherals`, ADR-0196/0204) dispatches one `window` event and this
+// screen decides which line it belongs to. Nobody dispatching = the POS of today.
+import {
+  SCALE_WEIGHT_EVENT, parseScaleReading, scaleTargetLine, scaleVerdict,
+} from '../../lib/scale-entry.js';
 // sales#153 (ADR-0381) — las REGLAS del picker del menú viven en lib, probadas sin DOM: qué
 // elecciones son legales, qué grupo queda sin resolver y qué total se MUESTRA. El precio que se
 // cobra lo pone el servidor contra `combos.options.all`; esto es la propuesta, no la decisión.
@@ -122,7 +128,12 @@ interface Product {
   unit_code?: string; price_quantity_value?: number; pricing_unit_code?: string;
 }
 /** Fila de `inventory.units.list` (registro de unidades, ADR-0147). */
-interface UnitRow { code: string; name?: string; increment_value?: number; factor_num?: number; factor_den?: number; }
+interface UnitRow {
+  code: string; name?: string; increment_value?: number; factor_num?: number; factor_den?: number;
+  /** `count|mass|volume|time`. `mass` is what makes a line weighable (sales#28): the registry
+   *  already knows it, so the till never hard-codes `kg` nor asks the catalogue for a new flag. */
+  category?: string;
+}
 interface PayMethod {
   id: string; name: string; type?: string;
   /** 1 = pide importe entregado y calcula cambio (efectivo); 0 = importe exacto (tarjeta, Bizum…). */
@@ -1391,10 +1402,50 @@ export class ErpPosTouch extends LitElement {
   };
   private readonly onLocaleChange = (): void => this.requestUpdate();
 
+  // ══ sales#28 · THE SCALE ═════════════════════════════════════════════════════════════════════
+  //
+  // Decided with the market (9 references + 2 forums; the table is in `lib/scale-entry.ts` and in
+  // `architecture/modules/sales.md`). Square, Odoo, Clover, Toast, Lightspeed and Glop all do the
+  // same thing: the cashier picks the article, THEN the platter, and the reading becomes that
+  // line's quantity. Nothing here creates a line, and nothing here converts a unit.
+
+  /** A weight the hardware measured. Fire-and-forget: the shell never waits for an answer. */
+  private readonly onScaleWeight = (e: Event): void => {
+    void this.applyScaleWeight((e as CustomEvent).detail);
+  };
+
+  /**
+   * Turns a measured weight into the quantity of the line it belongs to.
+   *
+   * 🔴 It goes through `setQtyAbs`, the very door the stepper uses — so `toMicro` and `onGrid`
+   * judge a weighed 0,5 exactly as they judge a typed one, and an off-grid weight is refused with
+   * `ui.qtyOffGrid` without altering the check. Opening a second path into the cart is the whole
+   * mistake this contract exists to avoid.
+   *
+   * Most refusals are SILENT on purpose: a scale streams while a hand is still on the platter and
+   * while nothing is selected, so turning that into a banner would train the cashier to ignore the
+   * banner. The one that is said out loud is the unit mismatch — that is a misconfigured shop, and
+   * it is the refusal standing between «532 g» and a kilo and a half on a fiscal document.
+   */
+  async applyScaleWeight(detail: unknown): Promise<void> {
+    const reading = parseScaleReading(detail);
+    if (!reading) return;
+    const target = scaleTargetLine(this.cart, (code) => !!code && this.units.get(code)?.category === 'mass');
+    const verdict = scaleVerdict(target, reading);
+    if (!verdict.ok) {
+      if (verdict.reason === 'unit_mismatch') {
+        this.error = t('ui.scaleUnitMismatch', { scale: verdict.got, line: verdict.expected });
+      }
+      return;
+    }
+    await this.queue(() => this.setQtyAbs(target!.id, verdict.qty));
+  }
+
   async connectedCallback() {
     const connectionEpoch = ++this.connectionEpoch;
     super.connectedCallback();
     window.addEventListener('erplora:locale-changed', this.onLocaleChange);
+    window.addEventListener(SCALE_WEIGHT_EVENT, this.onScaleWeight);
     // sales#25 — the reads against a HARD dependency (`inventory`, `taxes`). Every one of them used
     // to end in `.catch(() => [])`, which answers "the app is not in this hub" and "the app is here
     // and its query broke" with the SAME empty catalogue: the shift opens with an empty grid and
@@ -1533,6 +1584,7 @@ export class ErpPosTouch extends LitElement {
     ++this.connectionEpoch;
     this.photos.dispose();
     window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
+    window.removeEventListener(SCALE_WEIGHT_EVENT, this.onScaleWeight);
     this.removeEventListener('erp:order-context', this.onOrderContext);
     this.removeEventListener('erp:order-merge', this.onOrderMerge);
     this.removeEventListener('erp:order-split', this.onOrderSplit);

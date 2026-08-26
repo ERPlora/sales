@@ -4216,6 +4216,7 @@ var es_default = {
     deleteCheckConfirm: "Toca otra vez para eliminar \u2014 anula la cuenta",
     courseInProgress: "Pendiente de enviar",
     qtyOffGrid: "La cantidad no encaja con el escal\xF3n del producto",
+    scaleUnitMismatch: "La b\xE1scula pesa en {scale} y esta l\xEDnea va en {line}",
     leaveAtTable: "Dejar en la mesa",
     sentHeader: "Enviado",
     limitBlockedTitle: "Esta venta no puede ser un tique",
@@ -4623,6 +4624,7 @@ var en_default = {
     checkSales: "Check in Sales",
     payingPart: "Paying {n} of {total}",
     qtyOffGrid: "Quantity doesn't fit the product's step",
+    scaleUnitMismatch: "The scale weighs in {scale} and this line is priced in {line}",
     payExact: "Exact amount",
     payCardHint: "Charge {amount} on the card terminal, then confirm.",
     chargeWithCard: "Charge {amount} by card",
@@ -5590,6 +5592,40 @@ function brandSvgFor(type, name) {
   const n6 = (name || "").trim().toLowerCase();
   if (t7 === "bizum" || n6 === "bizum") return BIZUM_SVG;
   return void 0;
+}
+
+// ui/lib/scale-entry.ts
+var SCALE_WEIGHT_EVENT = "erplora:scale-weight";
+function parseScaleReading(detail) {
+  if (!detail || typeof detail !== "object") return null;
+  const d3 = detail;
+  const value = d3.value;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+  const unit = typeof d3.unit_code === "string" ? d3.unit_code.trim() : "";
+  if (!unit) return null;
+  const device = typeof d3.device_id === "string" && d3.device_id.trim() ? d3.device_id.trim() : void 0;
+  return {
+    value,
+    unit_code: unit,
+    stable: d3.stable === true,
+    ...device ? { device_id: device } : {}
+  };
+}
+function scaleTargetLine(cart, weighable) {
+  for (let i7 = cart.length - 1; i7 >= 0; i7--) {
+    const line = cart[i7];
+    if (weighable(line.unit_code) && !isLineLocked(line)) return line;
+  }
+  return void 0;
+}
+function scaleVerdict(line, reading) {
+  if (!line) return { ok: false, reason: "no_weighable_line" };
+  if (!reading.stable) return { ok: false, reason: "unstable" };
+  if ((line.unit_code ?? "") !== reading.unit_code) {
+    return { ok: false, reason: "unit_mismatch", expected: line.unit_code ?? "", got: reading.unit_code };
+  }
+  if (reading.value <= 0) return { ok: false, reason: "zero" };
+  return { ok: true, qty: reading.value };
 }
 
 // ui/lib/combo-picker.ts
@@ -7080,6 +7116,16 @@ var ErpPosTouch = class extends i3 {
       this.covered = next;
     };
     this.onLocaleChange = () => this.requestUpdate();
+    // ══ sales#28 · THE SCALE ═════════════════════════════════════════════════════════════════════
+    //
+    // Decided with the market (9 references + 2 forums; the table is in `lib/scale-entry.ts` and in
+    // `architecture/modules/sales.md`). Square, Odoo, Clover, Toast, Lightspeed and Glop all do the
+    // same thing: the cashier picks the article, THEN the platter, and the reading becomes that
+    // line's quantity. Nothing here creates a line, and nothing here converts a unit.
+    /** A weight the hardware measured. Fire-and-forget: the shell never waits for an answer. */
+    this.onScaleWeight = (e7) => {
+      void this.applyScaleWeight(e7.detail);
+    };
     /** Asegura que existe un pedido abierto que respalde el carrito; devuelve su id ('' si falla).
      *  Si hay una MESA seleccionada, avisa a los fillers (`tables`) para que escriban la junction
      *  mesa↔pedido — `sales` no toca `tables`: es un contrato por evento (ADR-0043/0141). */
@@ -7714,10 +7760,37 @@ var ErpPosTouch = class extends i3 {
     }
   `;
   }
+  /**
+   * Turns a measured weight into the quantity of the line it belongs to.
+   *
+   * 🔴 It goes through `setQtyAbs`, the very door the stepper uses — so `toMicro` and `onGrid`
+   * judge a weighed 0,5 exactly as they judge a typed one, and an off-grid weight is refused with
+   * `ui.qtyOffGrid` without altering the check. Opening a second path into the cart is the whole
+   * mistake this contract exists to avoid.
+   *
+   * Most refusals are SILENT on purpose: a scale streams while a hand is still on the platter and
+   * while nothing is selected, so turning that into a banner would train the cashier to ignore the
+   * banner. The one that is said out loud is the unit mismatch — that is a misconfigured shop, and
+   * it is the refusal standing between «532 g» and a kilo and a half on a fiscal document.
+   */
+  async applyScaleWeight(detail) {
+    const reading = parseScaleReading(detail);
+    if (!reading) return;
+    const target = scaleTargetLine(this.cart, (code) => !!code && this.units.get(code)?.category === "mass");
+    const verdict = scaleVerdict(target, reading);
+    if (!verdict.ok) {
+      if (verdict.reason === "unit_mismatch") {
+        this.error = t5("ui.scaleUnitMismatch", { scale: verdict.got, line: verdict.expected });
+      }
+      return;
+    }
+    await this.queue(() => this.setQtyAbs(target.id, verdict.qty));
+  }
   async connectedCallback() {
     const connectionEpoch = ++this.connectionEpoch;
     super.connectedCallback();
     window.addEventListener("erplora:locale-changed", this.onLocaleChange);
+    window.addEventListener(SCALE_WEIGHT_EVENT, this.onScaleWeight);
     const brokenApps = /* @__PURE__ */ new Set();
     const hardRead = async (app, read) => {
       const out = await dependencyRead(read);
@@ -7828,6 +7901,7 @@ var ErpPosTouch = class extends i3 {
     ++this.connectionEpoch;
     this.photos.dispose();
     window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
+    window.removeEventListener(SCALE_WEIGHT_EVENT, this.onScaleWeight);
     this.removeEventListener("erp:order-context", this.onOrderContext);
     this.removeEventListener("erp:order-merge", this.onOrderMerge);
     this.removeEventListener("erp:order-split", this.onOrderSplit);

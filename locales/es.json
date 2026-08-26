@@ -279,6 +279,7 @@
     "deleteCheckConfirm": "Toca otra vez para eliminar — anula la cuenta",
     "courseInProgress": "Pendiente de enviar",
     "qtyOffGrid": "La cantidad no encaja con el escalón del producto",
+    "scaleUnitMismatch": "La báscula pesa en {scale} y esta línea va en {line}",
     "leaveAtTable": "Dejar en la mesa",
     "sentHeader": "Enviado",
     "limitBlockedTitle": "Esta venta no puede ser un tique",
