@@ -110,6 +110,15 @@ describe('checkoutErrorKey', () => {
     expect(checkoutErrorKey('sales.empty_sale: the sale has no lines')).toBe('ui.errorCharge');
   });
 
+  // sales#201 — the two refusals of `line_qty` had NO namespaced code at all: they left as
+  // `Err("quantity_off_grid: …")`, which the runtime could only report as `code: "error"`. Now they
+  // are domain codes like the rest, so the cashier gets the same answer the quantity pad already
+  // gives before charging instead of a bare «could not charge».
+  it('sales#201 — an invalid quantity says WHICH problem, not «could not charge»', () => {
+    expect(checkoutErrorKey('sales.quantity_off_grid')).toBe('ui.qtyOffGrid');
+    expect(checkoutErrorKey('sales.quantity_not_positive')).toBe('ui.errorQuantityNotPositive');
+  });
+
   it('falls back to the generic charge error for anything it does not know', () => {
     expect(checkoutErrorKey('connection refused')).toBe('ui.errorCharge');
     expect(checkoutErrorKey('')).toBe('ui.errorCharge');

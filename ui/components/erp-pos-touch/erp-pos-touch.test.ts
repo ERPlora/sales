@@ -822,12 +822,21 @@ describe('slot sales.pos.actions: cocina inyectada dentro de Comanda actual', ()
     expect(comandos.filter((c) => c === 'sales.order.fire')).toHaveLength(1);
   });
 
+  // sales#201 — el rechazo llega por `Output.error`, así que el código viaja en el CAMPO `code`
+  // del sobre y el mensaje es solo el detalle. Mirar el código dentro de la frase funcionaba
+  // únicamente mientras el handler la formateaba como «<code>: <detalle>».
   it('si el servidor dice que no había nada pendiente (sales.nothing_to_fire), no es un error para el cajero', async () => {
     const el = await conCafe();
     const sdk = (globalThis as Record<string, unknown>).erplora as { command: (n: string, p?: unknown) => Promise<unknown> };
     const original = sdk.command;
     sdk.command = async (n: string, p?: unknown) => {
-      if (n === 'sales.order.fire') throw new Error('command `sales.order.fire` failed: sales.nothing_to_fire: already fired');
+      if (n === 'sales.order.fire') {
+        // Lo que lanza de verdad el SDK: un error TIPADO con su `code` y una frase que ningún
+        // buscador de subcadenas reconoce.
+        const e = new Error('this round was already fired') as Error & { code: string };
+        e.code = 'sales.nothing_to_fire';
+        throw e;
+      }
       return original(n, p);
     };
     const filler = el.shadowRoot!.querySelector('.draft-actions-slot erp-fake-fire')!;
@@ -835,6 +844,26 @@ describe('slot sales.pos.actions: cocina inyectada dentro de Comanda actual', ()
     await new Promise((r) => setTimeout(r, 0));
     await new Promise((r) => setTimeout(r, 0));
     expect((el as unknown as { error: string }).error, 'la comanda ya estaba enviada: no hay nada que arreglar').toBe('');
+    sdk.command = original;
+  });
+
+  it('y un fallo REAL de la comanda sí se dice, con su mensaje traducido', async () => {
+    const el = await conCafe();
+    const sdk = (globalThis as Record<string, unknown>).erplora as { command: (n: string, p?: unknown) => Promise<unknown> };
+    const original = sdk.command;
+    sdk.command = async (n: string, p?: unknown) => {
+      if (n === 'sales.order.fire') {
+        const e = new Error('the kitchen queue is unreachable') as Error & { code: string };
+        e.code = 'sales.order_id_required';
+        throw e;
+      }
+      return original(n, p);
+    };
+    const filler = el.shadowRoot!.querySelector('.draft-actions-slot erp-fake-fire')!;
+    filler.dispatchEvent(new CustomEvent('erp:order-fire', { detail: {}, bubbles: true, composed: true }));
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect((el as unknown as { error: string }).error, 'un fallo que sí hay que arreglar no se traga').toContain('ui.fireFailed');
     sdk.command = original;
   });
 

@@ -133,7 +133,10 @@ describe('sales list — the void action (sales#26)', () => {
 
   it('a refusal is explained in the user words, by its code', async () => {
     const el = await mountList(['sales.void_sale']);
-    sdk().command = async () => { throw new Error('command `sales.void` failed: sales.void_requires_credit_note: …'); };
+    // sales#201 — el sobre del runtime: el código en su CAMPO, y una frase que nadie lee.
+    sdk().command = async () => {
+      throw Object.assign(new Error('this sale carries a full invoice'), { code: 'sales.void_requires_credit_note' });
+    };
     await el.voidSale('sale-1', 'x');
     const err = notes.find((n) => n.type === 'error');
     expect(err?.message).toBe('Esta venta lleva factura completa: emite una factura rectificativa en vez de anularla');

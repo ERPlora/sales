@@ -82,6 +82,11 @@ const MESSAGES: Record<string, string> = {
   // `ui.errorCharge` on purpose: this is fixed on the option in the Modifiers catalogue, in ten
   // seconds, and only if the screen says which one.
   'sales.modifier_tax_override_unsupported': 'ui.errorModifierTaxOverride',
+  // sales#201 (ADR-0147 §2.2) — an invalid quantity. The quantity pad already refuses off-grid
+  // amounts before charging, so the handler is the last net; when it fires, the cashier gets the
+  // SAME sentence the pad gives instead of a bare «could not charge».
+  'sales.quantity_off_grid': 'ui.qtyOffGrid',
+  'sales.quantity_not_positive': 'ui.errorQuantityNotPositive',
   // sales#185 (hub#1074, ADR-0400) — PLATFORM codes, not domain ones. `complete_sale` declares
   // `taxes.rules.list` as a read with `required: true`, so a hub missing the tax app (force
   // uninstalled, hub#1101, or deactivated by the ADR-0128 cascade) has the sale refused by the

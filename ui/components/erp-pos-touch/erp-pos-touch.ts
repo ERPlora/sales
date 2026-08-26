@@ -2046,8 +2046,11 @@ export class ErpPosTouch extends LitElement {
     } catch (e) {
       // sales#80: «no había nada pendiente» significa que la tanda YA se envió (doble toque que
       // se coló, u otra caja): no es un fallo para el cajero — se relee el pedido y ya.
-      const msg = e instanceof Error ? e.message : String(e ?? '');
-      if (msg.includes('sales.nothing_to_fire')) {
+      //
+      // sales#201: se decide por el CÓDIGO del sobre, nunca buscándolo dentro de la frase. Eso
+      // último solo funcionaba mientras el handler formateaba el rechazo como «<code>: <detalle>»;
+      // ahora el rechazo viaja por `Output.error` y el mensaje es el detalle solo.
+      if (errorCode(e) === 'sales.nothing_to_fire') {
         if (this.orderId) this.cart = await loadOrderLines(erplora(), this.orderId).catch(() => this.cart);
         return;
       }
