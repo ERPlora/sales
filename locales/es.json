@@ -330,6 +330,8 @@
     "missingAppCharge": "{app} no está instalada, así que no se puede cobrar. Instálala desde el marketplace.",
     "missingAppChargeShort": "Falta {app}",
     "appTaxes": "Impuestos",
+    "appInventory": "Inventario",
+    "appCatalogUnavailable": "{app} no ha respondido, así que su catálogo puede estar incompleto. Revisa la aplicación y vuelve a cargar el TPV.",
     "errorMissingApp": "La venta se ha rechazado porque falta una app que necesita. No se ha cobrado nada.",
     "servedBy": "Atiende {name}",
     "staffMe": "yo",

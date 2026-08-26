@@ -329,6 +329,8 @@
     "missingAppCharge": "{app} is not installed, so nothing can be charged. Install it from the marketplace.",
     "missingAppChargeShort": "{app} is missing",
     "appTaxes": "Taxes",
+    "appInventory": "Inventory",
+    "appCatalogUnavailable": "{app} did not answer, so its catalogue may be incomplete. Check the app and reload the till.",
     "errorMissingApp": "The sale was refused because an app it needs is not installed. Nothing was charged.",
     "servedBy": "Served by {name}",
     "staffMe": "me",

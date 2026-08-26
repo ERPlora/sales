@@ -55,6 +55,7 @@ import {
   unitContextPayload, lineAmount, cartTotal, type CartLine, type ErploraClientLike,
 } from '../../lib/pos-cart.js';
 import { loadTaxCatalog, productSellability, resolveLineTax, type TaxCatalog } from '../../lib/pos-tax.js';
+import { dependencyRead } from '../../lib/dependency-read.js';
 import { buildOpenPriceLine } from '../../lib/pos-open-price.js';
 // La frontera de la ESCALA de cantidades (ADR-0147): la UI trabaja en lógico (0,5), el cable en 10⁶.
 import { toMicro, fromMicro, onGrid, formatQuantity } from '../../lib/quantity.js';
@@ -200,6 +201,11 @@ async function optionalRead(read: (c: ErploraClientLike) => Promise<unknown>): P
 
 /** The runtime's per-request ceiling, and what sales#184 used to ask for: see `optionalReadAll`. */
 const LEGACY_PAGE_LIMIT = 500;
+
+/** The apps `sales` declares in `depends_on`, in the order their incidents are painted (sales#25).
+ *  A HARD dependency should be here; when it is not, the till degrades, and when it is here and
+ *  does not answer, the till says so. */
+const HARD_DEPENDENCIES = ['inventory', 'taxes'] as const;
 
 /** OPTIONAL read that wants the WHOLE set, not a page (sales#186).
  *
@@ -957,6 +963,10 @@ export class ErpPosTouch extends LitElement {
   /** La lectura del catálogo FALLÓ (≠ «no está instalado»). Se pinta: un menú que no se puede
    *  componer no se ofrece, y el motivo se dice en vez de dejar la rejilla misteriosamente corta. */
   @state() private comboCatalogFailed = false;
+  /** sales#25 — the HARD dependencies (`inventory`, `taxes`) whose catalogue read FAILED while the
+   *  app IS installed. Absence is not in here: an app the hub does not have degrades in silence,
+   *  an app that is here and does not answer is an incident and gets said out loud. */
+  @state() private brokenCatalogApps: string[] = [];
   @state() comboSheet?: { combo: Combo };
   /** Lo elegido, EN EL ORDEN de elección y con repeticiones si el grupo las permite. */
   @state() comboPicks: string[] = [];
@@ -1323,10 +1333,25 @@ export class ErpPosTouch extends LitElement {
     const connectionEpoch = ++this.connectionEpoch;
     super.connectedCallback();
     window.addEventListener('erplora:locale-changed', this.onLocaleChange);
+    // sales#25 — the reads against a HARD dependency (`inventory`, `taxes`). Every one of them used
+    // to end in `.catch(() => [])`, which answers "the app is not in this hub" and "the app is here
+    // and its query broke" with the SAME empty catalogue: the shift opens with an empty grid and
+    // nobody can tell an uninstall from an incident. `dependencyRead` classifies (hub#1074,
+    // ADR-0400) and this set carries the incident up to the screen.
+    //
+    // The query name stays LITERAL inside each SDK call on purpose: the contract extractor
+    // (ADR-0127) does not follow variables, and moving the name into a parameter would erase these
+    // reads from `.erplora/contracts.json`.
+    const brokenApps = new Set<string>();
+    const hardRead = async <T>(app: string, read: () => Promise<unknown>): Promise<T[]> => {
+      const out = await dependencyRead<T>(read);
+      if (out.broken) brokenApps.add(app);
+      return out.rows;
+    };
     try {
       const [prods, methods, settingsRows, businessRows, savedCart, parked, cats, prodCats, taxCatalog, unitRows,
              svcRows, svcCats, taxCats, fiscalLimits] = await Promise.all([
-        erplora().queryAll<Product>('inventory.products.list').catch(() => []),
+        hardRead<Product>('inventory', () => erplora().queryAll<Product>('inventory.products.list')),
         erplora().query('sales.payment_methods').catch(() => []),
         erplora().query('sales.settings.get').catch(() => []),
         // sales#180 — the business identity for the BILL's header. Deliberately apart from the
@@ -1336,19 +1361,20 @@ export class ErpPosTouch extends LitElement {
         erplora().query('sales.business.get').catch(() => []),
         this.restoreOpenOrder(),
         listOpenChecks(erplora()),
-        erplora().queryAll<Category>('inventory.categories.list', { sort: 'name', dir: 'asc' }).catch(() => []),
-        erplora().queryAll<ProdCat>('inventory.product_categories').catch(() => []),
+        hardRead<Category>('inventory', () => erplora().queryAll<Category>('inventory.categories.list', { sort: 'name', dir: 'asc' })),
+        hardRead<ProdCat>('inventory', () => erplora().queryAll<ProdCat>('inventory.product_categories')),
         loadTaxCatalog(erplora()),
-        erplora().queryAll<UnitRow>('inventory.units.list').catch(() => [] as UnitRow[]),
+        hardRead<UnitRow>('inventory', () => erplora().queryAll<UnitRow>('inventory.units.list')),
         // sales#89 — el catálogo VENDIBLE de servicios. Lectura OPCIONAL (ADR-0127): `services` NO
         // está en `depends_on` a propósito, porque `depends_on` es un contrato DURO que obligaría a
         // todo restaurante a instalar el módulo y ataría `sales` a su cascada de desactivación. Un
         // hub sin `services` recibe `undefined` y el TPV sigue siendo exactamente el de antes.
         this.loadServices(),
         this.loadServiceCategories(),
-        // Departamentos para la venta por precio libre (ADR-0085). Best-effort: si taxes no responde,
-        // el sheet queda sin departamentos y avisa (no rompe el TPV).
-        erplora().queryAll<TaxCategory>('taxes.categories.list').catch(() => [] as TaxCategory[]),
+        // Departments for the free-price sale (ADR-0085). It never breaks the till: with no
+        // departments the sheet says so. But a `taxes` that IS installed and does not answer is an
+        // incident, not the absence of departments, and sales#25 makes that difference visible.
+        hardRead<TaxCategory>('taxes', () => erplora().queryAll<TaxCategory>('taxes.categories.list')),
         // hub#297 — qué techo pone el régimen fiscal de ESTE hub. Es una query del CORE
         // (`hub.`), no de `verifactu`: así el TPV no gana una dependencia del módulo fiscal y la
         // respuesta no desaparece el día que alguien lo desinstale.
@@ -1364,6 +1390,9 @@ export class ErpPosTouch extends LitElement {
         this.loadCombos(),
       ]);
       if (connectionEpoch !== this.connectionEpoch || !this.isConnected) return;
+      // sales#25 — one notice per broken app, in a fixed order so the screen does not reshuffle
+      // between loads. Absence never reaches this list.
+      this.brokenCatalogApps = HARD_DEPENDENCIES.filter((app) => brokenApps.has(app));
       this.taxCatalog = taxCatalog;
       // sales#185 — PREFLIGHT. `sales.complete_sale` declares `taxes.rules.list` as a read with
       // `required: true`: with no tax app NO sale can close, and until now the POS looked perfectly
@@ -1374,10 +1403,10 @@ export class ErpPosTouch extends LitElement {
       // se colara aquí como importe pararía TODAS las ventas del local.
       this.simplifiedMaxCents =
         rows<{ simplified_invoice_max_cents?: number | null }>(fiscalLimits)[0]?.simplified_invoice_max_cents ?? null;
-      for (const u of rows<UnitRow>(unitRows)) if (u.code) this.units.set(u.code, u);
+      for (const u of unitRows) if (u.code) this.units.set(u.code, u);
       // sales#89: retail + servicios en la MISMA rejilla. Los servicios van detrás para que una
       // tienda sin `services` vea exactamente el orden de siempre.
-      this.products = [...rows<Product>(prods).filter((p) => p.is_active !== 0), ...svcRows];
+      this.products = [...prods.filter((p) => p.is_active !== 0), ...svcRows];
       void this.photos.replace(this.products.map((p) => p.image));
       for (const s of svcRows) {
         if (!s.category_id) continue;
@@ -1390,10 +1419,10 @@ export class ErpPosTouch extends LitElement {
       this.docFormat = this.settings.default_document_format === 'invoice' ? 'invoice' : 'ticket';
       this.payMethod = defaultPayMethod(this.payMethods);
       this.parked = parked;
-      this.categories = [...rows<Category>(cats).filter((c) => c.name), ...svcCats];
+      this.categories = [...cats.filter((c) => c.name), ...svcCats];
       // Departamentos = categorías fiscales ACTIVAS (el inactivo no se ofrece para vender).
-      this.taxCategories = rows<TaxCategory>(taxCats).filter((c) => c.key && c.is_active !== 0);
-      for (const pc of rows<ProdCat>(prodCats)) {
+      this.taxCategories = taxCats.filter((c) => c.key && c.is_active !== 0);
+      for (const pc of prodCats) {
         if (!this.prodCats.has(pc.product_id)) this.prodCats.set(pc.product_id, new Set());
         this.prodCats.get(pc.product_id)!.add(pc.category_id);
       }
@@ -3067,10 +3096,14 @@ export class ErpPosTouch extends LitElement {
    *  falls back to the id: saying `taxes` is ugly, but it is true — inventing a name would not
    *  be. */
   private get chargeAppName(): string {
-    if (!this.missingChargeApp) return '';
-    const key = `ui.app${this.missingChargeApp.charAt(0).toUpperCase()}${this.missingChargeApp.slice(1)}`;
+    return this.missingChargeApp ? this.appName(this.missingChargeApp) : '';
+  }
+
+  /** The same translation for any app id the till has to name (sales#25). */
+  private appName(id: string): string {
+    const key = `ui.app${id.charAt(0).toUpperCase()}${id.slice(1)}`;
     const name = t(key);
-    return name === key ? this.missingChargeApp : name;
+    return name === key ? id : name;
   }
 
   /** POR QUÉ no se puede cobrar todavía, en palabras. `undefined` = se puede.
@@ -3965,6 +3998,18 @@ export class ErpPosTouch extends LitElement {
                 <ion-icon name="alert-circle" aria-hidden="true"></ion-icon><span>${t('ui.comboCatalogUnavailable')}</span>
               </div>`
             : nothing}
+          <!-- sales#25: a HARD dependency (inventory, taxes) that IS installed and whose catalogue
+               read FAILED. It is an alert, like the missing-app notice: the grid in front of the
+               cashier is incomplete and no tap on it will say why. Its ABSENCE is not here — an
+               app the hub does not have is a legitimate state that degrades in silence, and
+               alarming about it would train the notice away.
+               NOTE: no backticks in this comment. Inside an html tagged template a backtick ends
+               the template literal and the whole file stops parsing. -->
+          ${this.brokenCatalogApps.map((app) => html`
+            <div class="blocked-notice catalog-unavailable" role="alert" data-testid="dependency-read-failed">
+              <ion-icon name="alert-circle" aria-hidden="true"></ion-icon>
+              <span>${t('ui.appCatalogUnavailable', { app: this.appName(app) })}</span>
+            </div>`)}
           <!-- sales#149: the state of the CATALOGUE, one line and last among the notices. The two
                above belong to the tap that just happened; this one has been true since the till
                opened, so it must not push them down every time they appear. -->
