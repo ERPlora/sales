@@ -363,6 +363,13 @@
         {
           "query": "combos.options.all",
           "required": false
+        },
+        {
+          "query": "sales.order.lines",
+          "params": {
+            "order_id": "payload.order_id"
+          },
+          "required": false
         }
       ],
       "handler": {
@@ -377,6 +384,13 @@
     },
     "sales.order.open": {
       "permission": "sales.add_sale",
+      "reads": [
+        "inventory.products.for_sale",
+        {
+          "query": "combos.options.all",
+          "required": false
+        }
+      ],
       "handler": {
         "type": "wasm",
         "file": "dist/handler.wasm",
@@ -522,6 +536,12 @@
         "commands/_insert_order_line.sql"
       ]
     },
+    "sales._recompute_order_total": {
+      "permission": "sales.add_sale",
+      "sql": [
+        "commands/order_recompute_total.sql"
+      ]
+    },
     "sales._mark_lines_fired": {
       "permission": "sales.add_sale",
       "sql": [
@@ -536,36 +556,52 @@
     },
     "sales.order.add_line": {
       "permission": "sales.add_sale",
-      "transaction": true,
-      "sql": [
-        "commands/order_add_line.sql",
-        "commands/order_recompute_total.sql"
+      "reads": [
+        {
+          "query": "sales.order.get",
+          "params": {
+            "order_id": "payload.order_id"
+          },
+          "required": true
+        },
+        "inventory.products.for_sale",
+        {
+          "query": "combos.options.all",
+          "required": false
+        }
       ],
-      "ai": {
-        "description": "Adds a line item to an open order and recomputes its provisional total (ADR-0141). Provisional amount; the fiscal breakdown is frozen at checkout."
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "add_order_line"
       },
-      "expect_rows": {
-        "op": "min",
-        "n": 1,
-        "error": "sales.order_unavailable",
-        "message": "That order is not available: it does not exist in this business or it has been deleted."
+      "ai": {
+        "description": "Adds a line item to an open order and recomputes its provisional total (ADR-0141). The unit price is resolved SERVER-SIDE from the product catalogue (and, for a set menu, from the combo catalogue): the check is charged at the price the line had when it was ordered (sales#175), so the price on the row decides money and the caller does not set it."
       }
     },
     "sales.order.add_open_line": {
       "permission": "sales.sell_open_price",
-      "transaction": true,
-      "sql": [
-        "commands/order_add_line.sql",
-        "commands/order_recompute_total.sql"
+      "reads": [
+        {
+          "query": "sales.order.get",
+          "params": {
+            "order_id": "payload.order_id"
+          },
+          "required": true
+        },
+        "inventory.products.for_sale",
+        {
+          "query": "combos.options.all",
+          "required": false
+        }
       ],
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "add_order_line"
+      },
       "ai": {
         "description": "Adds an OPEN-PRICE line (free amount, no catalogue product) to an open order and recomputes its provisional total. Same effect as sales.order.add_line but gated by sales.sell_open_price: nothing contradicts a typed amount, so the cashier needs the permission or a manager's PIN approval (ADR-0238)."
-      },
-      "expect_rows": {
-        "op": "min",
-        "n": 1,
-        "error": "sales.order_unavailable",
-        "message": "That order is not available: it does not exist in this business or it has been deleted."
       }
     },
     "sales.order.update_line": {

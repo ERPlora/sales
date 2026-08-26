@@ -33,6 +33,13 @@
               "null"
             ]
           },
+          "order_item_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "sales#175 — the id of the ROW in the open check (`sales_order_item.id`) this line comes from. When it travels, the server charges that row's FROZEN `unit_price` — the price the line had when it was ordered — instead of re-pricing against the catalogue: a table pays the menu price it ordered at, not the one in force when it pays. The row was written by the server with the catalogue in hand (`sales.order.open` / `sales.order.add_line`), so honouring it is NOT honouring the payload's `price`, which still decides nothing. Absent = counter sale: the catalogue rules. An id that is not among the order's LIVE lines is REFUSED (`sales.order_line_not_available`)."
+          },
           "product_name": {
             "type": "string",
             "minLength": 1

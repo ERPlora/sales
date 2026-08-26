@@ -3194,13 +3194,20 @@ export class ErpPosTouch extends LitElement {
       // delta lo pone el catálogo al cobrar— y `sales_sale_item.modifiers` se congelaba VACÍO, de
       // modo que el tique no podía nombrarlos por mucho que el papel supiera leerlos. Va SOLO el
       // `option_id`: un `price_delta` del navegador sería un descuento que se hace el cliente solo.
+      // 🔴 sales#175: and THE ID OF ITS ROW in the open check (`order_item_id`). This is what makes
+      // the table pay the price it had WHEN IT ORDERED: with it, the server honours the
+      // `unit_price` the row froze instead of re-pricing against the catalogue, so raising the
+      // burger mid-afternoon no longer moves the checks that are already open. It is conditional
+      // because a COUNTER sale has no previous row — there is no "when it was ordered" apart from
+      // the payment — and there the catalogue still rules. It is not a price door: the amount comes
+      // from the row the SERVER wrote, never from this payload's `price` (sales#68).
       // 🔴 sales#146: y su `is_service`. El carrito ya lo lleva y el PEDIDO ya lo mandaba, pero el
       // cobro se armaba en este `map()` aparte y aquí el campo no estaba: el handler tomaba la
       // línea del servicio por una línea de catálogo (`is_catalog_line`), no encontraba su id en
       // `inventory` y rechazaba la VENTA ENTERA con `sales.product_not_available`. Una peluquería
       // no podía cobrar un corte. Va condicional a propósito: marcarlo en una línea de catálogo le
       // saltaría la autoridad de precio y stock que el servidor sí tiene que aplicarle.
-      const items = cobradas.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: toMicro(l.qty), tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: l.category_id ?? this.primaryCategory(l.id) ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0, discount: l.discount ?? 0, ...(l.is_service ? { is_service: true } : {}), ...(l.modifiers?.length ? { modifiers: l.modifiers.map((m) => ({ option_id: m.option_id })) } : {}), ...(l.combo_id ? { combo_id: l.combo_id, combo_choices: (l.combo_choices ?? []).map((c) => ({ option_id: c.option_id, product_name: c.product_name ?? '', category_id: c.category_id ?? null })) } : {}), ...(l.line_id && this.covered.has(l.line_id) ? { covered: true } : {}), ...unitContextPayload(l) }));
+      const items = cobradas.map((l) => ({ product_id: l.id, product_name: l.name, product_sku: l.sku || '', price: l.price, quantity: toMicro(l.qty), tax_category_key: l.tax_category_key ?? null, tax_rate: l.tax_rate ?? 0, category_id: l.category_id ?? this.primaryCategory(l.id) ?? null, is_gift: l.is_gift ?? false, gift_reason: l.gift_reason ?? '', cost: l.cost ?? 0, discount: l.discount ?? 0, ...(l.is_service ? { is_service: true } : {}), ...(l.modifiers?.length ? { modifiers: l.modifiers.map((m) => ({ option_id: m.option_id })) } : {}), ...(l.combo_id ? { combo_id: l.combo_id, combo_choices: (l.combo_choices ?? []).map((c) => ({ option_id: c.option_id, product_name: c.product_name ?? '', category_id: c.category_id ?? null })) } : {}), ...(l.line_id && this.covered.has(l.line_id) ? { covered: true } : {}), ...(l.line_id ? { order_item_id: l.line_id } : {}), ...unitContextPayload(l) }));
       await erplora().command('sales.complete_sale', {
         items,
         // sales#71: descuento de TICKET (%); el servidor lo prorratea por línea antes del IVA.
