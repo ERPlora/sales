@@ -3968,6 +3968,9 @@ var es_default = {
     notSellableBadge: "Falta el IVA",
     notSellableNoTaxCategory: "No se puede vender: sin categor\xEDa fiscal. Falta configurar el IVA.",
     notSellableNoTaxRule: "No se puede vender: su categor\xEDa fiscal no tiene tipo. Falta configurar el IVA.",
+    catalogBlockedOne: "1 art\xEDculo no se puede vender: le falta configurar el IVA.",
+    catalogBlocked: "{count} art\xEDculos no se pueden vender: les falta configurar el IVA.",
+    catalogBlockedFix: "Revisar el cat\xE1logo",
     openPrice: "Precio libre",
     department: "Departamento (IVA)",
     noDepartments: "Sin departamentos configurados.",
@@ -4322,6 +4325,9 @@ var en_default = {
     notSellableBadge: "VAT missing",
     notSellableNoTaxCategory: "Cannot be sold: no tax category. VAT needs to be set up.",
     notSellableNoTaxRule: "Cannot be sold: its tax category has no rate. VAT needs to be set up.",
+    catalogBlockedOne: "1 item cannot be sold: its VAT is not set up.",
+    catalogBlocked: "{count} items cannot be sold: their VAT is not set up.",
+    catalogBlockedFix: "Review the catalogue",
     openPrice: "Open price",
     department: "Department (VAT)",
     noDepartments: "No departments configured.",
@@ -6789,6 +6795,22 @@ var ErpPosTouch = class extends i3 {
     ion-button.charge.blocked { --background:var(--ion-color-medium,#92949c);
       --background-activated:var(--ion-color-medium-shade,#808289);
       --background-focused:var(--ion-color-medium-shade,#808289); }
+    /* sales#149 — the state of the CATALOGUE. Deliberately QUIETER than .blocked-notice: no
+       coloured box, because this is not an incident raised by the tap that just happened but a
+       condition that has been true since the till opened, and at that height it competes with the
+       product. */
+    /* A SENTENCE, not a bar of three boxes: in flex, a narrow width (mobile, or the shrunken grid
+       of a tablet in portrait) breaks the row and leaves the icon alone on one line and the link on
+       another. As running text the icon and the link travel INSIDE the sentence, and the notice
+       takes as many lines as it needs without falling apart. */
+    .catalog-health { display:block; margin:0 0 .5rem; padding:0 .1rem;
+      color:var(--mut); font-size:.8rem; line-height:1.35; }
+    .catalog-health ion-icon { display:inline-block; vertical-align:-.15em; margin-right:.3rem;
+      font-size:1rem; color:var(--ion-color-warning-shade,#e0ac08); }
+    /* An Ionic button comes with toolbar height: here it is a link inside a sentence. */
+    .catalog-health .ch-fix { display:inline-block; vertical-align:-.35em;
+      --padding-start:.25rem; --padding-end:.25rem; margin:0;
+      height:1.5rem; font-size:.8rem; text-transform:none; letter-spacing:0; }
     .tile .n { font-weight:600; font-size:.9rem; line-height:1.2; color:var(--tx); }
     .tile .p { font-weight:800; color:var(--accent); margin-top:.25rem; }
 
@@ -9075,6 +9097,55 @@ var ErpPosTouch = class extends i3 {
     window.history.pushState({}, "", "/m/sales/sales");
     window.dispatchEvent(new PopStateEvent("popstate"));
   }
+  /** sales#149 — how many catalogue lines CANNOT be charged, over the WHOLE catalogue.
+   *
+   *  Over `products`, not over `filtered`: the sentence is about the business ("the catalogue still
+   *  has VAT to set up"), not about the open tab. Counting what is filtered would make the very same
+   *  problem report a different number in every category, and zero in the first one that was fine. */
+  get blockedCount() {
+    return this.products.reduce((n6, p4) => this.blockedReason(p4) ? n6 + 1 : n6, 0);
+  }
+  /** Can THIS session do anything about the notice? A filter, not a wall (same criterion as the
+   *  shell's `canOpenManagement`): the real authority is the runtime, this only decides what is
+   *  painted.
+   *
+   *  `inventory.change_product` is the permission that opens the form where the fiscal category is
+   *  assigned (`erp-inventory-products` requires it to edit), and `manager`/`admin` carry it — which
+   *  is exactly the MANAGER this notice is addressed to; a cashier cannot fix it.
+   *
+   *  A shell that does NOT expose the permission channel (preview, older shell) is not saying "no":
+   *  it is not answering. Failing closed there would silently remove the only place the business
+   *  learns about this, and the notice costs a cashier nothing. */
+  canFixCatalog() {
+    const c5 = erplora2();
+    if (typeof c5.hasPermission !== "function") return true;
+    return c5.hasPermission("inventory.change_product");
+  }
+  goToProductSetup() {
+    window.history.pushState({}, "", "/m/inventory/products");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }
+  /** The AGGREGATE notice, once and before the shift (sales#149).
+   *
+   *  Until now a half configured catalogue was only noticeable tile by tile, with the customer
+   *  waiting: the cashier's half (sales#74/#58). This is the manager's — the count, and the door it
+   *  is fixed through.
+   *
+   *  DISCREET on purpose: one line, not a modal and not an `alert`. A till that opens with a window
+   *  on top is a till people learn to dismiss without reading, and the catalogue goes on selling
+   *  whatever does have VAT. Odoo and WooCommerce hide the misconfigured article (the till works,
+   *  the manager never finds out); Square and Toast paint it on the tile but do not warn ahead
+   *  either. We no longer hide it (sales#74), so what was missing was the sum. */
+  renderCatalogHealth() {
+    const n6 = this.blockedCount;
+    if (!n6 || !this.canFixCatalog()) return A;
+    return b2`<div class="catalog-health" role="status" data-testid="catalog-blocked-summary">
+      <ion-icon name="alert-circle" aria-hidden="true"></ion-icon>
+      <span class="ch-text">${n6 === 1 ? t5("ui.catalogBlockedOne") : t5("ui.catalogBlocked", { count: n6 })}</span>
+      <ion-button size="small" fill="clear" class="ch-fix" data-testid="catalog-blocked-fix"
+        @click=${() => this.goToProductSetup()}>${t5("ui.catalogBlockedFix")}</ion-button>
+    </div>`;
+  }
   /** hub#297 — la captura de NIF + domicilio cuando la venta pasa del techo de la simplificada.
    *
    *  **En la MISMA pantalla del cobro**, no en un modal encima: quien la tiene que rellenar está
@@ -9527,6 +9598,10 @@ var ErpPosTouch = class extends i3 {
           ${this.comboCatalogFailed ? b2`<div class="blocked-notice combo-unavailable" role="status">
                 <ion-icon name="alert-circle" aria-hidden="true"></ion-icon><span>${t5("ui.comboCatalogUnavailable")}</span>
               </div>` : A}
+          <!-- sales#149: the state of the CATALOGUE, one line and last among the notices. The two
+               above belong to the tap that just happened; this one has been true since the till
+               opened, so it must not push them down every time they appear. -->
+          ${this.renderCatalogHealth()}
           <div class="grid">
             <!-- Los MENÚS van primero: en un local con menú del día es la primera comanda de la
                  hora punta. Solo en la pestaña «todo»: un combo no pertenece a ninguna categoría
