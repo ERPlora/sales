@@ -261,6 +261,7 @@
     "checkSales": "Check in Sales",
     "payingPart": "Paying {n} of {total}",
     "qtyOffGrid": "Quantity doesn't fit the product's step",
+    "scaleUnitMismatch": "The scale weighs in {scale} and this line is priced in {line}",
     "payExact": "Exact amount",
     "payCardHint": "Charge {amount} on the card terminal, then confirm.",
     "chargeWithCard": "Charge {amount} by card",
