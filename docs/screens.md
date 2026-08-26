@@ -94,6 +94,43 @@ and a fixed footer with the running total and the **Cobrar** (charge) button.
 
 Requires `sales.add_sale` to build the check and `sales.take_payment` to charge it.
 
+### Selling by weight, with or without a scale (sales#28)
+
+An article whose unit belongs to the **mass** category of the hub's unit registry
+(`inventory.units.list` → `category = 'mass'`: `kg`, `g`) is sold by weight. Nothing else has to be
+configured: the till reads the unit the article already carries.
+
+**Without a scale — this is the product, and it always works.** Tap the article and type the
+quantity on the line's stepper: `0,532`. The step of the unit validates it (`increment_value`), the
+line freezes its unit, and the paper prints «0,532 kg × 12,00 € / kg».
+
+**With a scale**, the gesture is the one every till in the market uses (Square, Odoo, Clover, Toast,
+Lightspeed, Glop): **tap the article first, then put it on the platter**. The weight lands on that
+line by itself.
+
+1. Tap the article. It becomes a line, as always.
+2. Put it on the scale. When the platter settles, the weight becomes that line's quantity and the
+   amount is recomputed.
+3. Press **Cobrar** as usual.
+
+Details that are decisions, not accidents:
+
+- **The last open line priced by weight** is the one that takes the reading — the one just tapped.
+  A line already fired to the kitchen is skipped, and a reading never creates a line: with nothing
+  weighable on the check, the platter can hold whatever it likes and nothing happens.
+- **The tare belongs to the scale.** What reaches the till is the net weight; the till has no
+  container registry.
+- **The unit is never converted.** A scale weighing in `g` against a line priced in `kg` is refused
+  out loud («La báscula pesa en g y esta línea va en kg»): dividing silently is how a 1000× error
+  reaches a fiscal document.
+- **A weight is judged exactly like a typed quantity.** It goes through the same door, so one that
+  does not fit the article's step is refused with the same message and the check is left untouched.
+- **A hub without a scale is the till of today**, byte for byte. There is nothing to install, no
+  setting to switch on, and no screen that changes.
+
+Reading a scale is the **installed app**'s job (`erplora-app` → `crates/peripherals`, ADR-0196/0204);
+`sales` only owns the door the measured weight comes in through.
+
 ### Who is serving this check (sales#179)
 
 Next to the table and customer chips there is a **«Atiende …»** chip. It is always there, even on a
