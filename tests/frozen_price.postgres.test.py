@@ -29,7 +29,14 @@ own schema. What they cannot prove is what only a real database decides, which i
      frozen that stops being a screen convenience: it is what makes charging the same line twice a
      refusal (`sales.order_line_not_available`) instead of a repeated charge.
 
-  5. TENANCY, with a LIVE NEIGHBOUR. Two hubs, two open checks, a frozen price each, seeded through
+  5. THE SUPPLEMENT IS FROZEN TOO (sales#200). `sales_order_item.modifiers` stopped being "ids
+     without money": it carries each supplement's delta and its printed name, resolved by the
+     server when the line was ordered. Two facts only a database gives: the snapshot ROUND-TRIPS
+     through the TEXT column and comes back through `sales.order.lines` — if that column stopped
+     travelling the checkout would charge the check without its supplements, in silence — and no
+     statement of the module rewrites it, which is the same silent break as re-pricing.
+
+  6. TENANCY, with a LIVE NEIGHBOUR. Two hubs, two open checks, a frozen price each, seeded through
      the door that enforces the isolation: the neighbour's price cannot show up. A scoping test with
      no neighbour, or seeded with a helper, proves nothing.
 
@@ -54,6 +61,7 @@ OTHER_HUB = "hub-neighbour"
 USER = "u-waiter"
 ORDER = "ord-table-4"
 OTHER_ORDER = "ord-next-door"
+CHEESE_ORDER = "ord-table-7"
 
 MANIFEST = json.loads((MODULE_DIR / "module.json").read_text())
 
@@ -348,11 +356,67 @@ def test_the_frozen_numbers_come_back_and_a_paid_line_does_not() -> None:
     check("the line already paid disappears from the check", [r["id"] for r in rows], ["line-1"])
 
 
-# ── 5 · tenancy, with a live neighbour ───────────────────────────────────────────────────
+# ── 5 · the supplement is frozen too (sales#200) ─────────────────────────────────────────
+
+# A real snapshot as `order_line_row` writes it: the delta the catalogue said when the waiter took
+# the order, and the name that gets printed. Quotes and a non-ASCII name on purpose — it binds to a
+# TEXT column, and the round trip is half of what this test is for.
+FROZEN_CHEESE = [
+    {
+        "option_id": "o-queso",
+        "group_id": "g-extras",
+        "name": "Extra de queso",
+        "kitchen_name": "+QUESO",
+        "price_delta": 300,
+        "tax_category_key": "",
+    }
+]
+
+
+def test_the_frozen_supplement_survives_and_nobody_rewrites_it() -> None:
+    print("\n5 · the supplement is frozen on the row and comes back whole (sales#200)")
+    check("`modifiers` exists on the row", q(
+        "SELECT count(*) FROM information_schema.columns"
+        " WHERE table_name='sales_order_item' AND column_name='modifiers'"), "1")
+    # The guard that holds up the decision, the twin of the one on `unit_price`: an "update the
+    # line's supplements" added tomorrow would re-price every open check IN SILENCE.
+    setter = re.compile(r"\bset\b[^;]*?\bmodifiers\s*=", re.IGNORECASE | re.DOTALL)
+    offenders = [
+        f.name
+        for f in sorted((MODULE_DIR / "commands").glob("*.sql"))
+        if "update" in strip_comments(f.read_text()).lower()
+        and setter.search(strip_comments(f.read_text()))
+    ]
+    check("no UPDATE ... SET modifiers anywhere in `commands/`", offenders, [])
+    mig_offenders = [
+        m.name
+        for m in sorted((MODULE_DIR / "migrations" / "postgres").glob("*.sql"))
+        if setter.search(strip_comments(m.read_text()))
+    ]
+    check("nor a migration that rewrites it", mig_offenders, [])
+
+    # Its own check so the counts of the other blocks do not move.
+    seed_order(order_id=CHEESE_ORDER)
+    ok, err = run_command("sales._insert_order_line", line_params(
+        "line-cheese", 900, order_id=CHEESE_ORDER,
+        modifiers=json.dumps(FROZEN_CHEESE, separators=(",", ":"))))
+    check("the line with its frozen supplement goes in", (ok, err), (True, ""))
+    rows = {r["id"]: r for r in run_query("sales.order.lines", {"order_id": CHEESE_ORDER})}
+    raw = rows.get("line-cheese", {}).get("modifiers")
+    # 🔴 THE POINT. Without this column the checkout cannot tell "no supplements" from "the column
+    # stopped travelling", and a table would pay 3,00 € less on every line that carries one.
+    check("the snapshot comes back through `sales.order.lines`", raw is not None, True)
+    back = json.loads(raw) if raw else []
+    check("with the DELTA the check was opened at", [m.get("price_delta") for m in back], [300])
+    check("and the name that gets printed", [m.get("kitchen_name") for m in back], ["+QUESO"])
+    check("and it is still a list, not a string of a string", isinstance(back, list), True)
+
+
+# ── 6 · tenancy, with a live neighbour ───────────────────────────────────────────────────
 
 
 def test_the_frozen_price_never_crosses_hubs() -> None:
-    print("\n5 · the neighbour's frozen price never shows up")
+    print("\n6 · the neighbour's frozen price never shows up")
     # The NEIGHBOUR is real and alive: its own hub, its own open check, its own frozen price,
     # written through the SAME door. With no neighbour this test would pass because there is nothing
     # to filter.
@@ -387,6 +451,7 @@ def main() -> int:
         test_the_column_that_decides_the_money_is_an_integer_and_not_null()
         test_no_statement_of_the_module_rewrites_the_frozen_price()
         test_the_frozen_numbers_come_back_and_a_paid_line_does_not()
+        test_the_frozen_supplement_survives_and_nobody_rewrites_it()
         test_the_frozen_price_never_crosses_hubs()
     finally:
         psql(["-c", f"DROP DATABASE IF EXISTS {DB} WITH (FORCE)"])
@@ -397,7 +462,8 @@ def main() -> int:
         for f in failures:
             print(f"  - {f}")
         return 1
-    print("PASS — the price the check was opened at survives and nobody rewrites it (sales#175)")
+    print("PASS — the price and the supplements the check was opened at survive, and nobody"
+          " rewrites them (sales#175/#200)")
     return 0
 
 

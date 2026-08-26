@@ -394,6 +394,10 @@
         {
           "query": "combos.options.all",
           "required": false
+        },
+        {
+          "query": "modifiers.options.all",
+          "required": false
         }
       ],
       "handler": {
@@ -573,6 +577,10 @@
         {
           "query": "combos.options.all",
           "required": false
+        },
+        {
+          "query": "modifiers.options.all",
+          "required": false
         }
       ],
       "handler": {
@@ -581,7 +589,7 @@
         "function": "add_order_line"
       },
       "ai": {
-        "description": "Adds a line item to an open order and recomputes its provisional total (ADR-0141). The unit price is resolved SERVER-SIDE from the product catalogue (and, for a set menu, from the combo catalogue): the check is charged at the price the line had when it was ordered (sales#175), so the price on the row decides money and the caller does not set it."
+        "description": "Adds a line item to an open order and recomputes its provisional total (ADR-0141). The unit price is resolved SERVER-SIDE from the product catalogue (and, for a set menu, from the combo catalogue), and each supplement's delta from the modifier catalogue (sales#200): the check is charged at the price the line had when it was ordered (sales#175), so the price on the row decides money and the caller does not set it."
       }
     },
     "sales.order.add_open_line": {
@@ -597,6 +605,10 @@
         "inventory.products.for_sale",
         {
           "query": "combos.options.all",
+          "required": false
+        },
+        {
+          "query": "modifiers.options.all",
           "required": false
         }
       ],

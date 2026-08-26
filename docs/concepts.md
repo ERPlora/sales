@@ -79,8 +79,19 @@ sales#68: if a line claims to come from the catalogue, the catalogue wins; an id
 rejected; without a catalogue the line is not written at all. **The `price` in the payload is a
 proposal at every door**, never a fact — honouring the row is not honouring the till.
 
+**And its supplements too** (sales#200). The row does not keep only the ids of what was chosen: it
+freezes each supplement's **delta and its printed name**, resolved server-side against
+`modifiers.options.all` at that same door. Raising "+ cheese" from 3.00 to 5.00 in the evening does
+not move the table that ordered it at lunchtime — before, the row kept only `option_id`s and the
+money was resolved when the check was **paid**, which was the same symptom one floor down. The door
+fails closed like the price: with no modifier catalogue a line carrying supplements is not written.
+A row written before this — an open check at the moment of the deploy — carries no delta, and those
+entries are still priced by the catalogue at checkout, unknown option refused included; reading their
+missing delta as zero would undercharge the check without saying a word.
+
 **How the checkout honours it.** The line names its row (`order_item_id`), the checkout reads
-`sales.order.lines` and takes `unit_price`, `cost` and `tax_category_key` from it. It fails closed:
+`sales.order.lines` and takes `unit_price`, `cost`, `tax_category_key` and the frozen supplements
+from it. It fails closed:
 if that read did not arrive, or the id is not among the check's **live** lines, the sale is
 **refused** rather than re-priced — and a line already paid is not live, so charging it twice is a
 rejection instead of a second charge. A counter sale carries no `order_item_id` and is priced by the
@@ -98,7 +109,7 @@ audit trail to keep.
 The row of an open check is a **working row**. Besides its frozen price it carries everything the
 checkout cannot re-derive after a reload — the tax category, the cost, whether it is a service, the
 product category the kitchen routes by, the line discount, the frozen unit context, the supplements
-chosen, and **which menu the line came from and what was picked inside it, in the order it was
+chosen **with the price they were ordered at**, and **which menu the line came from and what was picked inside it, in the order it was
 picked**. Its `line_total`, on the other hand, is still a *preview*: it is what the screen painted,
 and it decides nothing — the cents are recomputed at checkout from the frozen unit price.
 
@@ -124,6 +135,8 @@ overrules the payload:
 | What | Decided by |
 |---|---|
 | Price and cost of a line of an OPEN CHECK | its own row, frozen when the line was added |
+| Supplements of a line of an OPEN CHECK | its own row, frozen when the line was added |
+| Supplements of a counter-sale line | `modifiers`, resolved at checkout |
 | Price and cost of a counter-sale catalogue line | `inventory` |
 | Tax rate of a line | `taxes`, resolved at checkout |
 | Payment method and the name printed on the receipt | the hub's payment method catalogue |

@@ -81,7 +81,7 @@
           },
           "modifiers": {
             "type": "array",
-            "description": "Suplementos elegidos para esta línea (pm#93 / ADR-0376), EN EL ORDEN en que se eligieron. Solo se envía `option_id`: el nombre y el precio definitivos los resuelve el servidor AL COBRAR, contra `modifiers.options.all`. La fila del pedido es de trabajo —su `line_total` también es provisional—, no el registro fiscal.",
+            "description": "The supplements chosen for this line (pm#93 / ADR-0376), IN THE ORDER they were chosen. Only `option_id` is sent: the SERVER resolves the final name and price against `modifiers.options.all` and FREEZES them on the row (sales#200), so the check is charged the supplement at the price it was ordered at. Without that catalogue a line carrying supplements is refused. The order's row is a working row — its `line_total` is provisional too —, not the fiscal record.",
             "default": [],
             "items": {
               "type": "object",

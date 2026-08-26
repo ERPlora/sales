@@ -643,19 +643,30 @@ fn line_price(
     }
 }
 
-/// Los suplementos de una línea, **con el precio del CATÁLOGO** (pm#93 / ADR-0376).
+/// The supplements of a line, **with the price the SERVER resolved** (pm#93 / ADR-0376).
 ///
-/// Mismo principio que [`authoritative_price`]: el `price_delta` del payload es una propuesta, no
-/// un hecho. Sin esto, un cliente que enviara `price_delta: -500` se estaría haciendo un descuento.
+/// Same principle as [`authoritative_price`]: the payload's `price_delta` is a proposal, not a
+/// fact. Without this, a client sending `price_delta: -500` would be giving itself a discount.
 ///
-/// 🔴 **Falla CERRADO.** Si la línea trae suplementos y el catálogo no llegó —porque `modifiers` no
-/// está instalado, o porque el `read` opcional no se entregó— la venta se RECHAZA. Cobrar
-/// «confiando» sería abrir el agujero por la puerta de atrás, y una lectura ausente es
-/// indistinguible de una manipulada.
+/// 🔴 **Fails CLOSED.** If the line carries supplements and the catalogue did not arrive — because
+/// `modifiers` is not installed, or because the optional `read` was not delivered — the sale is
+/// REFUSED. Charging "on trust" would open the hole through the back door, and an absent read is
+/// indistinguishable from a tampered one.
 ///
-/// Devuelve `(delta total en céntimos, snapshot JSON)`. El snapshot conserva el **orden de
-/// elección** (petición recurrente en cocina: el orden de catálogo no sirve) y congela el
-/// `kitchen_name`, que es el que se imprime.
+/// 🔴 **sales#200 — on an OPEN CHECK the picks and their money come from the ROW, not from the
+/// payload and not from today's catalogue.** The row was written by the server with the catalogue
+/// in hand (`open_order` / `add_order_line` freeze the delta the moment the waiter takes the
+/// order), so a table pays the supplement at the price it ORDERED it at — the same market decision
+/// as sales#175 one floor above. Re-resolving here would re-price in silence every check that is
+/// open when someone edits the menu.
+///
+/// A row written BEFORE that freeze carries only `option_id`s: those entries are resolved against
+/// the catalogue exactly as they were before, refusing an unknown option included. Reading their
+/// missing delta as 0 would undercharge, in silence, every check open at deploy time.
+///
+/// Returns `(total delta in minor units, JSON snapshot)`. The snapshot preserves the ORDER OF
+/// CHOICE (a recurring request in the kitchen: the catalogue's order is useless on the pass) and
+/// freezes the `kitchen_name`, which is the one that gets printed.
 ///
 /// 🔴 **And a supplement that taxes DIFFERENTLY is not folded: it is REFUSED** (sales#147, the
 /// amendment to ADR-0376). `line_tax_category` is the tax category the SERVER fixed for the line
@@ -670,63 +681,152 @@ fn line_price(
 /// CLOSED, like the rest of this function.
 fn authoritative_modifiers(
     item: &Value,
+    frozen: Option<&Value>,
     catalog: Option<&Vec<&Value>>,
     line_tax_category: Option<&str>,
 ) -> Result<(i64, String), String> {
-    let chosen = match item.get("modifiers").and_then(|v| v.as_array()) {
-        Some(a) if !a.is_empty() => a,
-        // Sin suplementos no hace falta catálogo: la inmensa mayoría de las líneas.
-        _ => return Ok((0, "[]".to_string())),
+    let entries = resolve_modifiers(item, frozen, catalog)?;
+    let mut delta_total: i64 = 0;
+    for entry in &entries {
+        // sales#147 — the option's own tax category. Empty = it inherits its line's (ADR-0376),
+        // which is 99 % of supplements and the only case that can be charged correctly today. On a
+        // resumed check it is the FROZEN one: what the menu said when the table ordered.
+        let option_category = field(entry, "tax_category_key");
+        if !option_category.is_empty() && line_tax_category != Some(option_category.as_str()) {
+            return Err(reject(
+                "sales.modifier_tax_override_unsupported",
+                format!(
+                    "`{}` taxes as `{option_category}` and its line as `{}` — a supplement with \
+                     its own tax category needs a line of its own (ADR-0376), which is not written yet",
+                    field(entry, "option_id"),
+                    line_tax_category.unwrap_or("<none>"),
+                ),
+            ));
+        }
+        delta_total += as_cents(entry.get("price_delta").unwrap_or(&Value::Null), 0);
+    }
+    Ok((delta_total, encode_modifiers(entries)?))
+}
+
+/// The picks of a line, RESOLVED into full entries (id, group, names, delta, tax category) — the
+/// single place where a supplement turns into money, for both doors of an open check and for the
+/// checkout.
+///
+/// It does NOT check the tax category: that refusal belongs to the door that decides the money
+/// (`authoritative_modifiers`). The doors that materialise a row cannot check it — a set menu's
+/// category is decided by the checkout when it splits it — and refusing there would leave a waiter
+/// unable to take an order for a rule that only bites when paying.
+fn resolve_modifiers(
+    item: &Value,
+    frozen: Option<&Value>,
+    catalog: Option<&Vec<&Value>>,
+) -> Result<Vec<Value>, String> {
+    let chosen = chosen_modifiers(item, frozen)?;
+    if chosen.is_empty() {
+        // No supplements, no catalogue needed: the vast majority of lines.
+        return Ok(Vec::new());
+    }
+    let mut entries: Vec<Value> = Vec::with_capacity(chosen.len());
+    for pick in &chosen {
+        // sales#200: the row of an open check already froze the money. The payload's `price_delta`
+        // never gets this branch — `frozen` is `None` for a counter sale — so sales#68 stands.
+        match frozen.and_then(|_| frozen_modifier(pick)) {
+            Some(entry) => entries.push(entry),
+            None => entries.push(catalog_modifier(pick, catalog)?),
+        }
+    }
+    Ok(entries)
+}
+
+/// The picks to value: the ROW's on an open check (sales#200), the payload's on a counter sale.
+///
+/// 🔴 A row whose `modifiers` column is missing, or is not the list we wrote, is REFUSED instead of
+/// read as "no supplements": that silence would undercharge the check by the whole delta, and a
+/// column that stopped travelling in `sales.order.lines` is indistinguishable from a check that
+/// carries none.
+fn chosen_modifiers(item: &Value, frozen: Option<&Value>) -> Result<Vec<Value>, String> {
+    match frozen {
+        Some(row) => match row.get("modifiers") {
+            None => Err(reject(
+                "sales.order_line_modifiers_unreadable",
+                format!("`{}` came back without its supplements column", field(row, "id")),
+            )),
+            Some(_) => match stored_modifiers(row) {
+                Value::Array(a) => Ok(a),
+                other => Err(reject(
+                    "sales.order_line_modifiers_unreadable",
+                    format!("the supplements frozen on `{}` are not a list: {other}", field(row, "id")),
+                )),
+            },
+        },
+        None => Ok(item
+            .get("modifiers")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default()),
+    }
+}
+
+/// One entry of the snapshot a row of an open check already froze (sales#200). `None` = it is not
+/// frozen money — a row written before the freeze, which carries only the `option_id` — and then
+/// the catalogue resolves it, exactly as it did before.
+fn frozen_modifier(pick: &Value) -> Option<Value> {
+    let id = field(pick, "option_id");
+    if id.is_empty() || !pick.get("price_delta").map(Value::is_number).unwrap_or(false) {
+        return None;
+    }
+    let name = field(pick, "name");
+    let kitchen = {
+        let k = field(pick, "kitchen_name");
+        if k.is_empty() { name.clone() } else { k }
     };
+    Some(json!({
+        "option_id": id,
+        "group_id": field(pick, "group_id"),
+        "name": name,
+        "kitchen_name": kitchen,
+        "price_delta": as_cents(pick.get("price_delta").unwrap_or(&Value::Null), 0),
+        "tax_category_key": field(pick, "tax_category_key"),
+    }))
+}
+
+/// One entry resolved against `modifiers.options.all`: the catalogue is the authority for a counter
+/// sale, for the two doors that materialise a line of an open check, and for a row written before
+/// sales#200.
+fn catalog_modifier(pick: &Value, catalog: Option<&Vec<&Value>>) -> Result<Value, String> {
     let rows = catalog.ok_or_else(|| {
         reject(
             "sales.modifier_catalog_unavailable",
             "the modifier catalogue was not available to price this line",
         )
     })?;
-    let mut delta_total: i64 = 0;
-    let mut snapshot: Vec<Value> = Vec::with_capacity(chosen.len());
-    for pick in chosen {
-        let id = field(pick, "option_id");
-        let row = rows
-            .iter()
-            .find(|r| field(r, "option_id") == id)
-            .ok_or_else(|| reject("sales.modifier_not_available", &id))?;
-        // sales#147 — the option's own tax category. Empty = it inherits its line's (ADR-0376),
-        // which is 99 % of supplements and the only case that can be charged correctly today.
-        let option_category = field(row, "tax_category_key");
-        if !option_category.is_empty() && line_tax_category != Some(option_category.as_str()) {
-            return Err(reject(
-                "sales.modifier_tax_override_unsupported",
-                format!(
-                    "`{id}` taxes as `{option_category}` and its line as `{}` — a supplement with \
-                     its own tax category needs a line of its own (ADR-0376), which is not written yet",
-                    line_tax_category.unwrap_or("<none>"),
-                ),
-            ));
-        }
-        let delta = as_cents(row.get("price_delta").unwrap_or(&Value::Null), 0);
-        delta_total += delta;
-        let name = field(row, "name");
-        let kitchen = {
-            let k = field(row, "kitchen_name");
-            if k.is_empty() { name.clone() } else { k }
-        };
-        snapshot.push(json!({
-            "option_id": id,
-            "group_id": field(row, "group_id"),
-            "name": name,
-            "kitchen_name": kitchen,
-            "price_delta": delta,
-            // Empty = it inherits the line's tax category (ADR-0376) — and, by this point, it is
-            // the only thing it can be: a different category of its own already refused the sale.
-            // Frozen all the same so the history knows what was decided.
-            "tax_category_key": option_category,
-        }));
-    }
-    let text = serde_json::to_string(&Value::Array(snapshot))
-        .map_err(|e| format!("modifier_snapshot_encode: {e}"))?;
-    Ok((delta_total, text))
+    let id = field(pick, "option_id");
+    let row = rows
+        .iter()
+        .find(|r| field(r, "option_id") == id)
+        .ok_or_else(|| reject("sales.modifier_not_available", &id))?;
+    let name = field(row, "name");
+    let kitchen = {
+        let k = field(row, "kitchen_name");
+        if k.is_empty() { name.clone() } else { k }
+    };
+    Ok(json!({
+        "option_id": id,
+        "group_id": field(row, "group_id"),
+        "name": name,
+        "kitchen_name": kitchen,
+        "price_delta": as_cents(row.get("price_delta").unwrap_or(&Value::Null), 0),
+        // Empty = it inherits the line's tax category (ADR-0376). Frozen all the same so the
+        // history knows what was decided.
+        "tax_category_key": field(row, "tax_category_key"),
+    }))
+}
+
+/// The snapshot as it binds to the TEXT column (migration 023): a JSON list, in the order of
+/// choice.
+fn encode_modifiers(entries: Vec<Value>) -> Result<String, String> {
+    serde_json::to_string(&Value::Array(entries))
+        .map_err(|e| format!("modifier_snapshot_encode: {e}"))
 }
 
 /// Una línea que el SERVIDOR materializó a partir de un combo (sales#152 / ADR-0381).
@@ -1573,7 +1673,10 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
     for (item, combo) in lines_in.iter() {
         // El precio SALE DEL CATÁLOGO si la línea dice ser de catálogo. El del payload es una
         // propuesta, no un hecho.
-        let from_catalog = line_price(item, frozen_order_line(item, order_lines.as_ref())?, product_catalog.as_ref())?;
+        // sales#175/#200: the ROW of the open check this line comes from, resolved ONCE — it is
+        // the authority for both the base price and the supplements' frozen delta.
+        let frozen = frozen_order_line(item, order_lines.as_ref())?;
+        let from_catalog = line_price(item, frozen, product_catalog.as_ref())?;
         let (unit_price, item_cost) = match &from_catalog {
             Some((price, cost, _)) => (*price, *cost),
             None => (
@@ -1598,7 +1701,7 @@ pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
             None => from_catalog.as_ref().map(|(_, _, cat)| cat.as_str()),
         };
         let (modifier_delta, modifier_snapshot) =
-            authoritative_modifiers(item, modifier_catalog.as_ref(), catalog_cat)?;
+            authoritative_modifiers(item, frozen, modifier_catalog.as_ref(), catalog_cat)?;
         let unit_price = unit_price + modifier_delta;
         // Cantidad en punto fijo 10⁶ (ADR-0147) + rechazo fuera de rejilla; y la cantidad de
         // precio KPEIN («37 céntimos por 100 ud») que hace exacto el sub-céntimo sin tocar el dinero.
@@ -2235,19 +2338,23 @@ fn order_combo_snapshot(item: &Value) -> Result<Option<String>, String> {
         .map_err(|e| format!("order_combo_snapshot_encode: {e}"))
 }
 
-/// pm#93 — los suplementos elegidos, en su orden, serializados para la columna TEXT de la fila del
-/// pedido. Solo los `option_id`: el nombre y el precio los resuelve el cobro contra
-/// `modifiers.options.all` (`authoritative_modifiers`), nunca el navegador.
-fn order_modifiers_snapshot(item: &Value) -> Result<String, String> {
-    let empty: Vec<Value> = Vec::new();
-    let picks = item.get("modifiers").and_then(|v| v.as_array()).unwrap_or(&empty);
-    let ids: Vec<Value> = picks
-        .iter()
-        .filter(|m| !field(m, "option_id").is_empty())
-        .map(|m| json!({ "option_id": field(m, "option_id") }))
-        .collect();
-    serde_json::to_string(&Value::Array(ids))
-        .map_err(|e| format!("order_modifiers_snapshot_encode: {e}"))
+/// pm#93 / sales#200 — the supplements chosen, in their order, serialised for the TEXT column of
+/// the order's row, **with the delta and the name the SERVER resolved**.
+///
+/// 🔴 The row used to keep only the `option_id`s and the checkout resolved the money against
+/// `modifiers.options.all` when the check was PAID: raising "+ cheese" at 8 p.m. re-priced the
+/// table that had ordered it at lunchtime. Now the delta is frozen the moment the waiter takes the
+/// order — the same rule, and the same market decision, as the base price (sales#175).
+///
+/// It fails CLOSED like the price: with no catalogue there is nothing to value the supplement
+/// against, and freezing what the browser proposed is the hole sales#68 closed. The tax category is
+/// NOT compared here (that is `authoritative_modifiers`' job at the checkout): a set menu's
+/// category is only decided when the checkout splits it.
+fn order_modifiers_snapshot(
+    item: &Value,
+    modifier_catalog: Option<&Vec<&Value>>,
+) -> Result<String, String> {
+    encode_modifiers(resolve_modifiers(item, None, modifier_catalog)?)
 }
 
 /// The CLOSED price of a set menu (sales#175): the one in the `combos` catalogue plus the
@@ -2309,6 +2416,7 @@ fn order_line_row(
     group_seed: &str,
     product_catalog: Option<&Vec<&Value>>,
     combo_catalog: Option<&Vec<&Value>>,
+    modifier_catalog: Option<&Vec<&Value>>,
 ) -> Result<(Map<String, Value>, i64), String> {
     // A set menu is NOT measured against the product catalogue: its id is not there (it belongs to
     // `combos`), and its price is the pack's closed one. It goes first for exactly that reason.
@@ -2393,7 +2501,7 @@ fn order_line_row(
     // pm#93: the supplements belong to the ROW too. `sales.order.add_line` stored them from day
     // one, but this door — the one every check's FIRST line comes through — did not forward them:
     // the "no onion" burger that opened the table lost them when it was resumed.
-    p.insert("modifiers".into(), json!(order_modifiers_snapshot(item)?));
+    p.insert("modifiers".into(), json!(order_modifiers_snapshot(item, modifier_catalog)?));
     // sales#169: and the composition of the SET MENU, for the same reason and with the same rule.
     match order_combo_snapshot(item)? {
         Some(text) => {
@@ -2427,6 +2535,10 @@ pub fn open_order_pure(input: Value) -> Result<Output, String> {
     // door needs the same reads as the checkout or it would freeze whatever the till proposed.
     let product_catalog = tax::read_rows(&context, "inventory.products.for_sale");
     let combo_catalog = tax::read_rows(&context, "combos.options.all");
+    // sales#200: and the supplements'. OPTIONAL like the combos' — `None` = `modifiers` is not
+    // installed, and then a line WITH supplements is refused (it fails closed, same as the
+    // checkout): its delta is money and money is not frozen from the browser.
+    let modifier_catalog = tax::read_rows(&context, "modifiers.options.all");
 
     let mut ops: Vec<Operation> = Vec::new();
     // Order header: a placeholder; the provisional total is filled in after walking the lines.
@@ -2447,6 +2559,7 @@ pub fn open_order_pure(input: Value) -> Result<Output, String> {
             &format!("{order_id}-{i}"),
             product_catalog.as_ref(),
             combo_catalog.as_ref(),
+            modifier_catalog.as_ref(),
         )?;
         provisional_total += line_total;
         ops.push(Operation::sql("sales._insert_order_line", p));
@@ -2558,12 +2671,15 @@ pub fn add_order_line_pure(input: Value) -> Result<Output, String> {
 
     let product_catalog = tax::read_rows(&context, "inventory.products.for_sale");
     let combo_catalog = tax::read_rows(&context, "combos.options.all");
+    // sales#200: the supplements' catalogue, with the same rule as the other door.
+    let modifier_catalog = tax::read_rows(&context, "modifiers.options.all");
     let line_id = new_ids.first().map(as_str).unwrap_or_default();
     let item = add_line_item(&payload);
     // The `combo_group_ref` is minted by the SERVER from the id the runtime just coined for this
     // row — the same rule as in `open_order`, where the order and the position mint it.
     let (p, _line_total) =
-        order_line_row(&item, &line_id, &order_id, &line_id, product_catalog.as_ref(), combo_catalog.as_ref())?;
+        order_line_row(&item, &line_id, &order_id, &line_id, product_catalog.as_ref(),
+                       combo_catalog.as_ref(), modifier_catalog.as_ref())?;
 
     let mut recompute = Map::new();
     recompute.insert("order_id".into(), json!(order_id));
@@ -7321,19 +7437,26 @@ mod tests {
     }
 
     #[test]
-    fn abrir_un_pedido_tambien_congela_los_SUPLEMENTOS_de_la_linea() {
-        // pm#93 cerró `sales.order.add_line`, pero `sales.order.open` —la puerta por la que entra
-        // la PRIMERA línea de toda cuenta— nunca reenvió `modifiers` a la fila: la hamburguesa
-        // «sin cebolla» que abría la mesa perdía su suplemento al retomarla. Misma columna, mismo
-        // contrato, mismo test.
-        let out = orden(order_input(
+    fn opening_a_check_freezes_the_lines_SUPPLEMENTS_too() {
+        // pm#93 closed `sales.order.add_line`, but `sales.order.open` — the door every check's
+        // FIRST line comes through — never forwarded `modifiers` to the row: the "no onion" burger
+        // that opened the table lost its supplement when the check was resumed. Same column, same
+        // contract, same test.
+        //
+        // sales#200: and the catalogue travels with it, because the row now freezes the DELTA too.
+        let mut inp = order_input(
             json!([{ "product_id": "p-burger", "product_name": "Hamburguesa", "price": 900,
                      "quantity": 1_000_000, "modifiers": [{ "option_id": "m-sin-cebolla" }] }]),
             3,
-        ));
-        let l = &order_lines(&out)[0];
+        );
+        inp["context"]["reads"]["modifiers.options.all"] = json!([
+            { "option_id": "m-sin-cebolla", "group_id": "g", "name": "Sin cebolla",
+              "kitchen_name": "SIN CEBOLLA", "price_delta": 0, "tax_category_key": null }
+        ]);
+        let l = &order_lines(&orden(inp))[0];
         let mods: Value = serde_json::from_str(l["modifiers"].as_str().expect("TEXT")).expect("JSON");
         assert_eq!(mods[0]["option_id"], json!("m-sin-cebolla"));
+        assert_eq!(mods[0]["kitchen_name"], json!("SIN CEBOLLA"));
     }
 
     #[test]
@@ -7671,5 +7794,263 @@ mod tests {
         assert!(err.starts_with("sales.product_not_available"), "unexpected code: {err}");
     }
 
-}
 
+    // ── sales#200 · A SUPPLEMENT OF AN OPEN CHECK IS CHARGED AT THE PRICE IT WAS ORDERED AT ────
+    //
+    // The half sales#175 left out. The base price of a parked line was already frozen on its row;
+    // the supplement's delta was NOT: the row kept only the `option_id`s and the checkout resolved
+    // the money against `modifiers.options.all` **when the check was paid**. Raising "+ cheese"
+    // from 3.00 to 5.00 at 8 p.m. re-priced every table that had ordered it at lunchtime — exactly
+    // the symptom sales#175 removed one floor above. The market decision is the same one, with the
+    // same 8 references: the delta is frozen when the line is ORDERED.
+    //
+    // 🔴 Freezing the row's delta is only safe because the SERVER writes the row: the two doors
+    // that materialise a line now resolve the supplements against the catalogue, exactly as they
+    // already resolve the product's price (sales#175) — the payload decides nothing at any door.
+
+    /// The `modifiers` catalogue as the runtime delivers it (`modifiers.options.all`).
+    fn cheese_catalog(price_delta: i64) -> Value {
+        json!([{ "option_id": "o-queso", "group_id": "g-extras", "name": "Extra de queso",
+                 "kitchen_name": "+QUESO", "price_delta": price_delta, "tax_category_key": null }])
+    }
+
+    /// Opening a check with ONE burger AND its supplement, with both catalogues delivered.
+    fn open_with_cheese(delta: i64) -> Value {
+        let mut inp = open_input(burger_catalog(900));
+        inp["payload"]["items"][0]["modifiers"] = json!([{ "option_id": "o-queso" }]);
+        inp["context"]["reads"]["modifiers.options.all"] = cheese_catalog(delta);
+        inp
+    }
+
+    /// The row of the open check as `sales.order.lines` gives it back, built from what the ordering
+    /// door ACTUALLY wrote. It goes through the TEXT column on purpose: rebuilding the snapshot by
+    /// hand would prove the test agrees with itself, not that the check survives the round trip.
+    fn parked_row(out: &Output) -> Value {
+        let written = &order_lines(out)[0];
+        json!({ "id": "line-1", "order_id": "ord-1", "product_id": "p-burger",
+                "product_name": "Hamburguesa", "quantity": 1_000_000,
+                "unit_price": written["unit_price"].clone(), "cost": 400,
+                "tax_category_key": written["tax_category_key"].clone(),
+                "is_gift": 0, "is_service": 0, "line_total": written["line_total"].clone(),
+                "discount_percent": 0, "modifiers": written["modifiers"].clone(),
+                "combo": "{}", "combo_group_ref": null })
+    }
+
+    /// Charging that check: the till names the row and BOTH catalogues have moved since. The
+    /// payload's picks are whatever the caller wants to try — they decide nothing.
+    fn charge_parked(row: Value, catalog_now: i64, delta_now: i64, payload_picks: Value) -> Value {
+        let items = json!([{ "product_id": "p-burger", "product_name": "Hamburguesa",
+                             "price": 1, "quantity": 1_000_000, "order_item_id": "line-1",
+                             "modifiers": payload_picks }]);
+        let mut inp = input_fiscal(items, burger_catalog(catalog_now), tax_catalog());
+        inp["payload"]["order_id"] = json!("ord-1");
+        inp["context"]["reads"]["sales.order.lines"] = json!([row]);
+        inp["context"]["reads"]["modifiers.options.all"] = cheese_catalog(delta_now);
+        inp
+    }
+
+    #[test]
+    fn ordering_a_supplement_freezes_its_DELTA_and_its_kitchen_name_on_the_row() {
+        // The row stopped being "ids without money": the delta that will be charged is resolved
+        // against the catalogue by the SERVER, at the moment the waiter takes the order.
+        let row = &order_lines(&orden(open_with_cheese(300)))[0];
+        let snap: Value = serde_json::from_str(row["modifiers"].as_str().expect("TEXT"))
+            .expect("the column is a JSON list");
+        assert_eq!(snap[0]["option_id"], json!("o-queso"));
+        assert_eq!(snap[0]["price_delta"], json!(300), "the delta is frozen when it is ORDERED");
+        assert_eq!(snap[0]["kitchen_name"], json!("+QUESO"), "and the name that gets printed");
+        assert_eq!(row["unit_price"], json!(900),
+                   "the delta does NOT go into `unit_price`: the checkout adds it on top");
+    }
+
+    #[test]
+    fn charging_a_resumed_check_uses_the_FROZEN_delta_even_if_the_catalogue_went_UP() {
+        // 🔴 THE SYMPTOM OF THE ISSUE: table 4 ordered "+ cheese" at 3.00 €, the manager raises it
+        // to 5.00 € while the table is still open, and the check is charged 9.00 + 3.00.
+        let parked = parked_row(&orden(open_with_cheese(300)));
+        let out = sale(charge_parked(parked, 900, 500, json!([{ "option_id": "o-queso" }])));
+        assert_eq!(sale_lines(&out)[0]["line_total"], json!(1200),
+                   "it charged the supplement at TODAY's price, not the one it was ordered at");
+    }
+
+    #[test]
+    fn and_also_when_the_supplement_went_DOWN() {
+        // Freezing is symmetrical or it is not freezing (the same trade-off sales#175 documents):
+        // a markdown is applied by hand, with the line discount, and carries a name.
+        let parked = parked_row(&orden(open_with_cheese(300)));
+        let out = sale(charge_parked(parked, 900, 100, json!([{ "option_id": "o-queso" }])));
+        assert_eq!(sale_lines(&out)[0]["line_total"], json!(1200));
+    }
+
+    #[test]
+    fn the_frozen_NAME_travels_to_the_sale_line_too() {
+        // The receipt names what was ordered, with the name the menu had then: the snapshot of the
+        // sale line is copied from the row's, not resolved again against today's catalogue.
+        let parked = parked_row(&orden(open_with_cheese(300)));
+        let out = sale(charge_parked(parked, 900, 500, json!([{ "option_id": "o-queso" }])));
+        let snap: Value = serde_json::from_str(sale_lines(&out)[0]["modifiers"].as_str().expect("TEXT"))
+            .expect("JSON");
+        assert_eq!(snap[0]["kitchen_name"], json!("+QUESO"));
+        assert_eq!(snap[0]["price_delta"], json!(300), "the sale line declares what was charged");
+    }
+
+    #[test]
+    fn the_PAYLOAD_supplements_still_decide_nothing_on_an_open_check() {
+        // The hole of sales#68 does not reopen through the back door. The browser sends a delta of
+        // its own AND an extra pick that is not on the row: the row is what is charged.
+        let parked = parked_row(&orden(open_with_cheese(300)));
+        let picks = json!([{ "option_id": "o-queso", "price_delta": -500 },
+                           { "option_id": "o-queso" }]);
+        let out = sale(charge_parked(parked, 900, 300, picks));
+        assert_eq!(sale_lines(&out)[0]["line_total"], json!(1200), "the browser won");
+    }
+
+    #[test]
+    fn a_supplement_WITHDRAWN_from_the_menu_after_it_was_ordered_is_still_charged() {
+        // The consequence of freezing, and it is the wanted one: the row is the proof the option
+        // existed when it was ordered. Re-checking it against today's catalogue would leave a table
+        // unable to pay because someone tidied up the menu mid-service.
+        let parked = parked_row(&orden(open_with_cheese(300)));
+        let items = json!([{ "product_id": "p-burger", "product_name": "Hamburguesa",
+                             "price": 1, "quantity": 1_000_000, "order_item_id": "line-1",
+                             "modifiers": [{ "option_id": "o-queso" }] }]);
+        let mut inp = input_fiscal(items, burger_catalog(900), tax_catalog());
+        inp["payload"]["order_id"] = json!("ord-1");
+        inp["context"]["reads"]["sales.order.lines"] = json!([parked]);
+        inp["context"]["reads"]["modifiers.options.all"] = json!([]);
+        assert_eq!(sale_lines(&sale(inp))[0]["line_total"], json!(1200));
+    }
+
+    #[test]
+    fn a_frozen_supplement_that_taxes_DIFFERENTLY_still_refuses_the_sale() {
+        // sales#147 is not undone by the freeze: the option's own tax category travels FROZEN on
+        // the row and is compared against the row's category. A 21 % soft drink folded into a 10 %
+        // line would come out wrongly broken down, and it would come out in silence.
+        let row = json!({ "id": "line-1", "order_id": "ord-1", "product_id": "p-burger",
+                          "product_name": "Hamburguesa", "quantity": 1_000_000,
+                          "unit_price": 900, "cost": 400, "tax_category_key": "product.generic",
+                          "is_gift": 0, "is_service": 0, "line_total": 900, "discount_percent": 0,
+                          "modifiers": "[{\"option_id\":\"o-refresco\",\"group_id\":\"g\",\"name\":\"Refresco\",\"kitchen_name\":\"+REFRESCO\",\"price_delta\":200,\"tax_category_key\":\"restaurant.food\"}]",
+                          "combo": "{}", "combo_group_ref": null });
+        let err = complete_sale_pure(charge_parked(row, 900, 300, json!([])))
+            .expect_err("must refuse");
+        assert!(err.contains("sales.modifier_tax_override_unsupported"), "stable code: {err}");
+    }
+
+    #[test]
+    fn a_row_written_BEFORE_the_freeze_is_still_priced_by_the_catalogue() {
+        // Backward compatibility that decides money: the checks open in production right now carry
+        // `[{"option_id":"…"}]`, with no delta. An entry with no frozen delta is resolved against
+        // the catalogue exactly as it was before this issue — refusing an unknown option included.
+        // Reading a missing delta as 0 would undercharge every one of those tables in silence.
+        let row = json!({ "id": "line-1", "order_id": "ord-1", "product_id": "p-burger",
+                          "product_name": "Hamburguesa", "quantity": 1_000_000,
+                          "unit_price": 900, "cost": 400, "tax_category_key": "product.generic",
+                          "is_gift": 0, "is_service": 0, "line_total": 900, "discount_percent": 0,
+                          "modifiers": "[{\"option_id\":\"o-queso\"}]",
+                          "combo": "{}", "combo_group_ref": null });
+        let out = sale(charge_parked(row, 900, 500, json!([])));
+        assert_eq!(sale_lines(&out)[0]["line_total"], json!(1400), "9.00 + today's 5.00");
+    }
+
+    #[test]
+    fn a_legacy_row_naming_an_option_that_is_gone_is_refused_like_it_always_was() {
+        let row = json!({ "id": "line-1", "order_id": "ord-1", "product_id": "p-burger",
+                          "product_name": "Hamburguesa", "quantity": 1_000_000,
+                          "unit_price": 900, "cost": 400, "tax_category_key": "product.generic",
+                          "is_gift": 0, "is_service": 0, "line_total": 900, "discount_percent": 0,
+                          "modifiers": "[{\"option_id\":\"o-inventado\"}]",
+                          "combo": "{}", "combo_group_ref": null });
+        let err = complete_sale_pure(charge_parked(row, 900, 300, json!([])))
+            .expect_err("must refuse");
+        assert!(err.contains("sales.modifier_not_available"), "stable code: {err}");
+    }
+
+    #[test]
+    fn a_row_whose_supplements_cannot_be_READ_refuses_the_sale() {
+        // The column is TEXT (migration 023) and kitchen prints a bare string verbatim ("old
+        // format"). Money cannot: reading what is not our list as "no supplements" would charge the
+        // check short by the whole delta and say nothing. Falling back to the payload would be
+        // worse — that is the browser deciding money (sales#68).
+        let row = json!({ "id": "line-1", "order_id": "ord-1", "product_id": "p-burger",
+                          "product_name": "Hamburguesa", "quantity": 1_000_000,
+                          "unit_price": 900, "cost": 400, "tax_category_key": "product.generic",
+                          "is_gift": 0, "is_service": 0, "line_total": 900, "discount_percent": 0,
+                          "modifiers": "sin cebolla", "combo": "{}", "combo_group_ref": null });
+        let err = complete_sale_pure(charge_parked(row, 900, 300, json!([])))
+            .expect_err("must refuse");
+        assert!(err.contains("sales.order_line_modifiers_unreadable"), "stable code: {err}");
+    }
+
+    #[test]
+    fn a_row_that_comes_back_WITHOUT_its_supplements_column_refuses_the_sale() {
+        // If `sales.order.lines` ever stopped returning `modifiers`, a check with supplements would
+        // be charged as if it had none — the whole delta lost, in silence, on every table. The
+        // absent column is told apart from an empty list on purpose: only one of the two is a bug.
+        let mut row = json!({ "id": "line-1", "order_id": "ord-1", "product_id": "p-burger",
+                              "product_name": "Hamburguesa", "quantity": 1_000_000,
+                              "unit_price": 900, "cost": 400, "tax_category_key": "product.generic",
+                              "is_gift": 0, "is_service": 0, "line_total": 900,
+                              "discount_percent": 0, "combo": "{}", "combo_group_ref": null });
+        let err = complete_sale_pure(charge_parked(row.take(), 900, 300, json!([])))
+            .expect_err("must refuse");
+        assert!(err.contains("sales.order_line_modifiers_unreadable"), "stable code: {err}");
+    }
+
+    #[test]
+    fn a_COUNTER_sale_still_prices_its_supplements_from_the_CATALOGUE() {
+        // Control over the other half of the world: with no open check there is no "when it was
+        // ordered" apart from "when it is paid", so the catalogue rules — as it has since sales#68.
+        let items = json!([{ "product_id": "p-burger", "product_name": "Hamburguesa",
+                             "price": 1, "quantity": 1_000_000,
+                             "modifiers": [{ "option_id": "o-queso", "price_delta": -500 }] }]);
+        let mut inp = input_fiscal(items, burger_catalog(900), tax_catalog());
+        inp["context"]["reads"]["modifiers.options.all"] = cheese_catalog(500);
+        assert_eq!(sale_lines(&sale(inp))[0]["line_total"], json!(1400), "9.00 + today's 5.00");
+    }
+
+    #[test]
+    fn ordering_an_unknown_supplement_is_refused_at_the_ORDERING_door() {
+        // It used to be refused only when paying: the waiter parked a check that could not be
+        // charged and nobody found out until the customer was at the till. The row decides money
+        // now, so it is checked where it is written.
+        let mut inp = open_with_cheese(300);
+        inp["payload"]["items"][0]["modifiers"] = json!([{ "option_id": "o-inventado" }]);
+        let err = open_order_pure(inp).expect_err("nothing is frozen blind");
+        assert!(err.starts_with("sales.modifier_not_available"), "unexpected code: {err}");
+    }
+
+    #[test]
+    fn ordering_a_supplement_WITHOUT_its_catalogue_fails_CLOSED() {
+        // The same degradation as the checkout: with no catalogue there is no way to value the
+        // supplement, and freezing "what the browser said" is the hole sales#68 closed.
+        let mut inp = open_input(burger_catalog(900));
+        inp["payload"]["items"][0]["modifiers"] = json!([{ "option_id": "o-queso" }]);
+        let err = open_order_pure(inp).expect_err("no catalogue, no freeze");
+        assert!(err.starts_with("sales.modifier_catalog_unavailable"), "unexpected code: {err}");
+    }
+
+    #[test]
+    fn a_line_ordered_WITHOUT_supplements_does_not_change_at_all() {
+        // No-regression control over the 99 % of lines: no supplements, no catalogue needed, empty
+        // snapshot. If this went red, ordering anything at all would be broken.
+        let row = &order_lines(&orden(open_input(burger_catalog(900))))[0];
+        assert_eq!(row["modifiers"], json!("[]"));
+        assert_eq!(row["unit_price"], json!(900));
+    }
+
+    #[test]
+    fn adding_a_line_freezes_its_supplements_DELTA_too() {
+        // The OTHER door of an open check (`sales.order.add_line`), with the same rule: the check
+        // that grows during service freezes each supplement as it is ordered.
+        let mut inp = add_line_input(burger_catalog(900), open_order_row());
+        inp["payload"]["modifiers"] = json!("[{\"option_id\":\"o-queso\"}]"); // serialised (flat shape)
+        inp["context"]["reads"]["modifiers.options.all"] = cheese_catalog(300);
+        let out = add_order_line_pure(inp).expect("the line goes in");
+        let snap: Value = serde_json::from_str(order_lines(&out)[0]["modifiers"].as_str().expect("TEXT"))
+            .expect("JSON");
+        assert_eq!(snap[0]["price_delta"], json!(300));
+        assert_eq!(snap[0]["kitchen_name"], json!("+QUESO"));
+    }
+
+}
