@@ -19,7 +19,6 @@
       "sales.payment_methods",
       "sales.pos_settings.get",
       "sales.refund_options",
-      "sales.settings.get",
       "sales.stats",
       "taxes.categories.list",
       "taxes.rules.list"

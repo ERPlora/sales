@@ -23,7 +23,10 @@ function installSdk(allowDiscounts: 0 | 1) {
   const orderLines: Record<string, unknown>[] = [];
   (globalThis as Record<string, unknown>).erplora = {
     query: async (name: string) => {
-      if (name === 'sales.settings.get') return [{ allow_discounts: allowDiscounts }];
+      // sales#203 — the policy comes through the COUNTER read. Stubbing `sales.settings.get`
+      // here used to make this file green over a screen that, for a real cashier, showed the
+      // discount button anyway: that query needs `sales.manage_settings`.
+      if (name === 'sales.pos_settings.get') return [{ allow_discounts: allowDiscounts }];
       if (name === 'sales.order.lines') return orderLines;
       return [];
     },

@@ -17,10 +17,11 @@ salon:
      `ui/lib/settings-defaults-contract.test.ts` pins the two files against each other; this one
      asks the live column, which is the only authority on what a hub actually gets.)
 
-  3. THE DOOR. `sales.pos_settings.get` projects the four fields the POS decides with, and it is
-     scoped by `hub_id` with a LIVE neighbour hub in the table. It exists apart from
-     `sales.settings.get` because that one needs `sales.manage_settings` and a cashier has none —
-     the permission itself is the runtime's to enforce, but the row it hands back is ours.
+  3. THE DOOR. `sales.pos_settings.get` carries the catalogue switches, and it is scoped by
+     `hub_id` with a LIVE neighbour hub in the table. It exists apart from `sales.settings.get`
+     because that one needs `sales.manage_settings` and a cashier has none — the permission itself
+     is the runtime's to enforce, but the row it hands back is ours. (sales#203 widened it to the
+     whole operational policy; its full projection is pinned by `pos_settings_read.postgres.test.py`.)
 
 Usage: tests/pos_catalog_sources.postgres.test.py
   Uses the `erplora-test-pg-5433` container by default (override: SALES_TEST_PG_CONTAINER).
@@ -213,16 +214,12 @@ def test_the_pos_reads_its_policy_scoped_to_its_own_hub() -> None:
     mine = run_query("sales.pos_settings.get", hub=HUB)
     check("exactly one row", len(mine), 1)
     if mine:
-        check(
-            "the four fields the till decides with",
-            sorted(mine[0].keys()),
-            [
-                "auto_invoice_with_tax_id",
-                "default_document_format",
-                "sync_products",
-                "sync_services",
-            ],
-        )
+        # sales#203 widened this read to the WHOLE operational policy, so the exact projection is
+        # pinned by `tests/pos_settings_read.postgres.test.py` (and by the manifest guard
+        # `ui/lib/pos-settings-door.test.ts`). What THIS battery owns is the catalogue half: the
+        # two switches whose migration it replays must still travel through the door.
+        for column in ("sync_products", "sync_services", "default_document_format", "auto_invoice_with_tax_id"):
+            check(f"the till still gets {column}", column in mine[0], True)
         check(
             "products come from MY hub, not the neighbour's",
             mine[0]["sync_products"],

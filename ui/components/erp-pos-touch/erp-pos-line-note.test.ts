@@ -33,7 +33,7 @@ function installSdk() {
   const orderLines: Record<string, unknown>[] = [];
   (globalThis as Record<string, unknown>).erplora = {
     query: async (name: string) => {
-      if (name === 'sales.settings.get') return [{ allow_discounts: 1 }];
+      if (name === 'sales.pos_settings.get') return [{ allow_discounts: 1 }];
       if (name === 'sales.order.lines') return orderLines;
       return [];
     },
