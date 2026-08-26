@@ -127,6 +127,21 @@ What losing the composition costs you is not subtle: the till puts the menu id i
 line that loses it is taken for a catalogue line, the menu is looked up in the product catalogue, it
 is not there, and **the whole sale is rejected** — the table that ordered the set menu cannot pay.
 
+**A supplement that taxes DIFFERENTLY gets a line of its own** (sales#147, the amendment to
+ADR-0376). `modifiers_option.tax_category_key` is optional and means exactly that: a soft drink at
+21 % inside a menu at 10 %. `sales_sale_item` carries ONE rate per row, so folding it into the
+parent's `unit_price` charged it at the PARENT's rate and the invoice came out wrongly broken down,
+in silence. Now the checkout materialises it as its own row — `unit_price` = the frozen delta, the
+parent's quantity, its own `tax_category_key` — linked to its parent by `parent_line_ref`
+(migration 031). Two rows, two bases, `base + quota` squaring to the cent on both, which is the only
+thing VeriFactu's `DetalleDesglose` knows how to represent. A supplement with **no** category of its
+own, or with the same one as its line, folds exactly as before: that is 99 % of them.
+
+The child row is materialised **at checkout**, never on `sales_order_item` — the same rule the set
+menu's sibling rows follow. That is why splitting, joining, transferring and reopening a check move
+the supplement with its line for free: there is no child row to leave orphaned, because it does not
+exist until the money is decided.
+
 ## The server decides the price, not the till
 
 What the screen sends is a proposal. At checkout the server re-reads the trusted catalogues and
@@ -137,6 +152,7 @@ overrules the payload:
 | Price and cost of a line of an OPEN CHECK | its own row, frozen when the line was added |
 | Supplements of a line of an OPEN CHECK | its own row, frozen when the line was added |
 | Supplements of a counter-sale line | `modifiers`, resolved at checkout |
+| Whether a supplement folds or gets its own line | its `tax_category_key` vs the line's (sales#147) |
 | Price and cost of a counter-sale catalogue line | `inventory` |
 | Tax rate of a line | `taxes`, resolved at checkout |
 | Payment method and the name printed on the receipt | the hub's payment method catalogue |
