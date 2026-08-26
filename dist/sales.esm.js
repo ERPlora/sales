@@ -1843,6 +1843,7 @@ function defaultPayMethod(methods) {
 }
 
 // ui/lib/pos-tax.ts
+var MODULE_ABSENT_CODES = /* @__PURE__ */ new Set(["module_not_installed", "module_inactive"]);
 function isRoot(r6) {
   return r6.parent_id == null || String(r6.parent_id) === "";
 }
@@ -1854,6 +1855,7 @@ function productSellability(catalog, taxCategoryKey) {
 async function loadTaxCatalog(client) {
   const map = /* @__PURE__ */ new Map();
   let available = false;
+  let installed = true;
   try {
     const all = await client.queryAll("taxes.rules.list");
     available = Array.isArray(all) && all.length > 0;
@@ -1873,10 +1875,12 @@ async function loadTaxCatalog(client) {
       }
       map.set(cat, pct);
     }
-  } catch {
+  } catch (e7) {
     available = false;
+    const code = e7?.code;
+    installed = !(typeof code === "string" && MODULE_ABSENT_CODES.has(code));
   }
-  return { rates: map, available };
+  return { rates: map, available, installed };
 }
 function resolveLineTax(catRatesMap, taxCategoryKey) {
   if (!taxCategoryKey) return 0;
@@ -4111,7 +4115,11 @@ var es_default = {
     comboGroupUnresolved: "Elige {n} en {group}",
     comboGroupOverMax: "{group} admite solo {n}",
     comboOptionRepeated: "{group} no admite el mismo art\xEDculo dos veces",
-    comboRemoveOne: "Quitar un {name}"
+    comboRemoveOne: "Quitar un {name}",
+    missingAppCharge: "{app} no est\xE1 instalada, as\xED que no se puede cobrar. Inst\xE1lala desde el marketplace.",
+    missingAppChargeShort: "Falta {app}",
+    appTaxes: "Impuestos",
+    errorMissingApp: "La venta se ha rechazado porque falta una app que necesita. No se ha cobrado nada."
   },
   widgets: {
     "sales.today": {
@@ -4452,7 +4460,11 @@ var en_default = {
     comboGroupUnresolved: "Choose {n} in {group}",
     comboGroupOverMax: "{group} allows only {n}",
     comboOptionRepeated: "{group} cannot take the same item twice",
-    comboRemoveOne: "Remove one {name}"
+    comboRemoveOne: "Remove one {name}",
+    missingAppCharge: "{app} is not installed, so nothing can be charged. Install it from the marketplace.",
+    missingAppChargeShort: "{app} is missing",
+    appTaxes: "Taxes",
+    errorMissingApp: "The sale was refused because an app it needs is not installed. Nothing was charged."
   }
 };
 
@@ -6123,13 +6135,24 @@ var MESSAGES = {
   "sales.combo_option_repeated": "ui.errorComboOptionRepeated",
   "sales.combo_component_price_unknown": "ui.errorComboComponentPriceUnknown",
   "sales.combo_tax_category_missing": "ui.errorComboTaxCategoryMissing",
-  "sales.too_many_lines": "ui.errorTooManyLines"
+  "sales.too_many_lines": "ui.errorTooManyLines",
+  // sales#185 (hub#1074, ADR-0400) — PLATFORM codes, not domain ones. `complete_sale` declares
+  // `taxes.rules.list` as a read with `required: true`, so a hub missing the tax app (force
+  // uninstalled, hub#1101, or deactivated by the ADR-0128 cascade) has the sale refused by the
+  // runtime itself. The cashier has no business reading "module `taxes` is not installed": what
+  // they need to know is that an app is missing and that NOTHING was charged.
+  module_not_installed: "ui.errorMissingApp",
+  module_inactive: "ui.errorMissingApp",
+  // hub#701: the required read exists but did not resolve. The only `required` read of
+  // `complete_sale` is the tax catalogue, so this is exactly what sales#21 already says.
+  read_unavailable: "ui.errorTaxCatalogUnavailable"
 };
-function checkoutErrorKey(message) {
-  for (const [code, key] of Object.entries(MESSAGES)) {
-    if (message.includes(code)) return key;
-  }
-  return "ui.errorCharge";
+function checkoutErrorKey(code) {
+  return MESSAGES[code] ?? "ui.errorCharge";
+}
+function errorCode(e7) {
+  const code = e7?.code;
+  return typeof code === "string" ? code : "";
 }
 
 // ui/lib/transport-error.ts
@@ -6391,7 +6414,8 @@ var ErpPosTouch = class extends i3 {
     this.units = /* @__PURE__ */ new Map();
     /** Catálogo fiscal del hub: mapa tax_category_key → rate_pct (preview del IVA) + si LLEGÓ.
      *  Vacío y `available:false` mientras carga o si `taxes` no responde. ADR-0064/0066/0085. */
-    this.taxCatalog = { rates: /* @__PURE__ */ new Map(), available: false };
+    this.taxCatalog = { rates: /* @__PURE__ */ new Map(), available: false, installed: true };
+    this.missingChargeApp = "";
     this.cartRestored = false;
     // Botones de asignación (ADR-0043 B): cada módulo que aporta a `sales.pos.assign` monta SU botón
     // (mesa, cliente…) en el header. Botones independientes: cada uno abre su propio modal. El POS no
@@ -6736,6 +6760,12 @@ var ErpPosTouch = class extends i3 {
       background:color-mix(in srgb, var(--ion-color-warning,#ffc409) 16%, transparent);
       color:var(--tx); font-size:.82rem; line-height:1.25; }
     .blocked-notice ion-icon { flex:none; font-size:1.05rem; color:var(--ion-color-warning-shade,#e0ac08); }
+    /* sales#185 — a full-colour primary button that is NOT going to charge is a promise the
+       screen does not keep. It is dimmed, and stays live to the tap: openPay() answers with the
+       reason. */
+    ion-button.charge.blocked { --background:var(--ion-color-medium,#92949c);
+      --background-activated:var(--ion-color-medium-shade,#808289);
+      --background-focused:var(--ion-color-medium-shade,#808289); }
     .tile .n { font-weight:600; font-size:.9rem; line-height:1.2; color:var(--tx); }
     .tile .p { font-weight:800; color:var(--accent); margin-top:.25rem; }
 
@@ -7230,6 +7260,7 @@ var ErpPosTouch = class extends i3 {
       ]);
       if (connectionEpoch !== this.connectionEpoch || !this.isConnected) return;
       this.taxCatalog = taxCatalog;
+      this.missingChargeApp = taxCatalog.installed ? "" : "taxes";
       this.simplifiedMaxCents = rows2(fiscalLimits)[0]?.simplified_invoice_max_cents ?? null;
       for (const u5 of rows2(unitRows)) if (u5.code) this.units.set(u5.code, u5);
       this.products = [...rows2(prods).filter((p4) => p4.is_active !== 0), ...svcRows];
@@ -7433,6 +7464,7 @@ var ErpPosTouch = class extends i3 {
   }
   updated(_changed) {
     this.ensureSlotsMounted();
+    this.syncChargeState();
     const categorySegment = this.renderRoot.querySelector("ion-segment.category-segment") ?? void 0;
     if (categorySegment !== this.categorySegment) {
       this.categorySegmentCleanup?.();
@@ -8443,6 +8475,10 @@ var ErpPosTouch = class extends i3 {
   }
   openPay() {
     if (!this.cart.length) return;
+    if (this.missingChargeApp) {
+      this.notifyShell(t5("ui.missingAppCharge", { app: this.chargeAppName }));
+      return;
+    }
     this.checkoutKey = newIdempotencyKey();
     this.tendered = "";
     this.padPrimed = false;
@@ -8502,6 +8538,34 @@ var ErpPosTouch = class extends i3 {
   /** ¿Se puede cerrar este cobro tal y como está? Ver `lib/simplified-limit.ts`. */
   get chargeBlocked() {
     return ticketIsBlocked(this.limitState);
+  }
+  /** 🔴 Re-asserts the state of the charge buttons in the DOM AFTER every paint.
+   *
+   *  Measured in a real browser (`erplora dev` + CDP, sales#185), not deduced: on an `ion-button`
+   *  neither `aria-disabled` nor a class set by Lit survives. Ionic (Stencil) takes the host over
+   *  on hydration — it steals the `aria-*` and rewrites `className` with its own
+   *  (`md button button-solid …`) — and Lit never writes either of them again: its `AttributePart`
+   *  caches the last value it emitted, sees it has not changed and skips the write. Measured
+   *  result: the block vanished from the DOM and from the colour as soon as the first line was
+   *  added. It is the sales#58 hole through another door, and happy-dom cannot show it because
+   *  Ionic does not hydrate there.
+   *
+   *  That is why the state is written HERE and not in the template, and with `classList`
+   *  (surgical) instead of `class=` (which would wipe Ionic's own classes). It decides nothing the
+   *  screen does not already say: it only stops the DOM from saying something else. It covers the
+   *  sheet's button too (sales#159), which carried the same defect. */
+  syncChargeState() {
+    const blocked = [
+      [".foot-actions ion-button.charge", !!this.missingChargeApp],
+      [".sheet-foot ion-button.charge", this.paying && !!this.chargeBlock]
+    ];
+    for (const [selector, isBlocked] of blocked) {
+      const btn = this.renderRoot.querySelector(selector);
+      if (!btn) continue;
+      if (isBlocked) btn.setAttribute("aria-disabled", "true");
+      else btn.removeAttribute("aria-disabled");
+      btn.classList.toggle("blocked", isBlocked);
+    }
   }
   willUpdate(changed) {
     if (changed.has("orderId") && !this.orderId) {
@@ -8648,6 +8712,18 @@ var ErpPosTouch = class extends i3 {
     this.padPrimed = true;
     this.error = "";
   }
+  /** The name of the missing app, as the business sees it in the marketplace.
+   *
+   *  It is translated (`ui.appTaxes`) because the id (`taxes`) is a technical key and the notice is
+   *  read by a cashier, not by an integrator. With no translation for an id we do not know it
+   *  falls back to the id: saying `taxes` is ugly, but it is true — inventing a name would not
+   *  be. */
+  get chargeAppName() {
+    if (!this.missingChargeApp) return "";
+    const key = `ui.app${this.missingChargeApp.charAt(0).toUpperCase()}${this.missingChargeApp.slice(1)}`;
+    const name = t5(key);
+    return name === key ? this.missingChargeApp : name;
+  }
   /** POR QUÉ no se puede cobrar todavía, en palabras. `undefined` = se puede.
    *
    *  🔴 Esto NO se resuelve con el `disabled` nativo de Ionic. `disabled` es `pointer-events:none`:
@@ -8655,6 +8731,12 @@ var ErpPosTouch = class extends i3 {
    *  y el motivo se queda en `title` — que necesita un hover que una tablet de mostrador no produce
    *  jamás. Es el bug de sales#58 y no vuelve por el botón más importante de la pantalla. */
   get chargeBlock() {
+    if (this.missingChargeApp) {
+      return {
+        short: t5("ui.missingAppChargeShort", { app: this.chargeAppName }),
+        reason: t5("ui.missingAppCharge", { app: this.chargeAppName })
+      };
+    }
     if (this.chargeBlocked) {
       return { short: t5("ui.limitChargeBlocked"), reason: "" };
     }
@@ -8865,9 +8947,10 @@ var ErpPosTouch = class extends i3 {
    *  el encargado necesita y se enseña tal cual. */
   async handleCheckoutFailure(e7, checkoutKey, split) {
     if (transportErrorKey(e7) !== SERVER_UNAVAILABLE_KEY) {
+      const code = errorCode(e7);
+      const key = checkoutErrorKey(code);
       const raw = e7 instanceof Error ? e7.message : String(e7 ?? "");
-      const key = checkoutErrorKey(raw);
-      this.error = key === "ui.errorCharge" && raw ? raw : t5(key);
+      this.error = key === "ui.errorCharge" && !code && raw ? raw : t5(key);
       return;
     }
     const recovery = await recoverCheckout(
@@ -9189,8 +9272,15 @@ var ErpPosTouch = class extends i3 {
     }}>
               <ion-icon slot="icon-only" name="print-outline"></ion-icon>
             </ion-button>
+            <!-- sales#185 — with the app missing the button announces itself blocked but STAYS
+                 ALIVE: aria-disabled, never the native disabled, which on Ionic is
+                 pointer-events:none and would strand the reason in a title that a tablet never
+                 shows (sales#58). openPay() takes the tap and answers with the shell's toast.
+                 The blocked state itself is written by syncChargeState(), not here: Ionic steals
+                 whatever the template puts on this host. -->
             <ion-button class="charge" ?disabled=${!this.cart.length}
-                        title=${t5("ui.charge")} aria-label=${t5("ui.charge")}
+                        title=${this.missingChargeApp ? t5("ui.missingAppCharge", { app: this.chargeAppName }) : t5("ui.charge")}
+                        aria-label=${t5("ui.charge")}
                         @click=${() => this.openPay()}>
               <ion-icon slot="start" name="card-outline"></ion-icon>
               ${t5("ui.charge")} · ${this.money(this.owed)}
@@ -9315,7 +9405,18 @@ var ErpPosTouch = class extends i3 {
       <div class="body">
         <div class="catalog">
           ${this.renderCatBar()}
-          ${this.error ? b2`<p class="err">${this.error}</p>${this.renderCheckSalesLink()}` : A}
+          <!-- sales#185 — the checkout error lives in ONE place at a time. With the sheet open
+               this copy sits BEHIND the scrim, across the product grid, and the modal's edge clips
+               it to half a sentence: the cashier reads the same thing twice and neither of them
+               whole. The sheet's copy is the one in front of them. Closing the sheet hands the
+               error back here: it is not lost, it is moved. -->
+          ${this.error && !this.paying ? b2`<p class="err">${this.error}</p>${this.renderCheckSalesLink()}` : A}
+          <!-- sales#185 — an app the checkout NEEDS is missing. The role is alert, not status:
+               this is not ambient information, it is that this till cannot charge today. -->
+          ${this.missingChargeApp ? b2`<div class="blocked-notice missing-app-notice" role="alert">
+                <ion-icon name="alert-circle" aria-hidden="true"></ion-icon>
+                <span>${t5("ui.missingAppCharge", { app: this.chargeAppName })}</span>
+              </div>` : A}
           ${this.blockedNotice ? b2`<div class="blocked-notice" role="status">
                 <ion-icon name="alert-circle" aria-hidden="true"></ion-icon><span>${this.blockedNotice}</span>
               </div>` : A}
@@ -10045,6 +10146,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "simplifiedMaxCents", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "missingChargeApp", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "padPrimed", 2);

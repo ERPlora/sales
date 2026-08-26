@@ -1399,9 +1399,17 @@ describe('checkout idempotency (sales#20)', () => {
     expect(consultas.some((q) => q.name === 'sales.list'), 'no racy "last sale" lookup').toBe(false);
   });
 
+  // sales#185 — the refusal travels TYPED, with its `code`, which is how the SDK delivers it
+  // (`ErploraError`) and how the runtime's envelope serialises it. This double used to throw a
+  // bare `Error` and the screen dug the code out of the SENTENCE; that reading was retired because
+  // it stops matching in silence as soon as the sentence changes or is translated. The sentence
+  // here is deliberately useless to a text matcher: if the test passes, it is because of the code.
   it('shows a domain rejection in the cashier own words', async () => {
     const pos = await posConUnaLinea();
-    fallaElProximoCobro = 'sales.payment_method_not_available: pm-ghost';
+    fallaElProximoCobro = Object.assign(
+      new Error('the chosen payment method is no longer available'),
+      { code: 'sales.payment_method_not_available' },
+    );
     await pos.confirm();
     expect(pos.error).toBe('ui.errorPaymentMethod');
   });
@@ -1439,6 +1447,11 @@ describe('checkout idempotency (sales#20)', () => {
     // Un rechazo que NO es ni de dominio conocido ni de transporte: su frase original lleva el
     // código y el detalle interno, y eso es lo que el encargado necesita para diagnosticar. No se
     // traduce a un mensaje genérico que lo borraría.
+    // sales#185 — and here NO code arrives: it is a `throw` that does not come out of the hub's
+    // envelope (a library, the browser itself). With no code there is nothing to translate and the
+    // sentence is all there is, so it is shown. With a known code the code wins; with an UNKNOWN
+    // code the generic message is shown, because then the sentence is the runtime's and it is not
+    // meant for the counter.
     const pos = await posConUnaLinea();
     fallaElProximoCobro = 'something_unexpected: details the manager needs';
     await pos.confirm();

@@ -32,11 +32,14 @@ export function newIdempotencyKey(source: Crypto | undefined = globalThis.crypto
 let seq = 0;
 
 /**
- * Códigos de dominio que `sales.complete_sale` puede devolver → clave del catálogo i18n.
+ * Codes a refused `sales.complete_sale` can answer → key of the module's i18n catalogue.
  *
- * La UI se orienta por el CÓDIGO, nunca por la frase: la frase del servidor está en inglés (idioma
- * fuente) y lleva detalle interno, y el día que el runtime traiga el canal de errores de dominio
- * traducibles (ADR-0205) el código será exactamente el mismo.
+ * The UI orients itself by the CODE — the envelope's `code` field — and **never** by the sentence.
+ * This is the same debt hub#1070 is retiring from the hub: while this matched substrings of the
+ * message, the day that sentence got translated (or the SDK replaced it, which is exactly what
+ * ADR-0400 just did to the platform codes) the mapping stopped matching **in silence** and the
+ * cashier fell back to the generic "could not charge" with nothing to give it away. A code is
+ * never translated.
  */
 const MESSAGES: Record<string, string> = {
   'sales.empty_sale': 'ui.errorEmptySale',
@@ -73,14 +76,32 @@ const MESSAGES: Record<string, string> = {
   'sales.combo_component_price_unknown': 'ui.errorComboComponentPriceUnknown',
   'sales.combo_tax_category_missing': 'ui.errorComboTaxCategoryMissing',
   'sales.too_many_lines': 'ui.errorTooManyLines',
+  // sales#185 (hub#1074, ADR-0400) — PLATFORM codes, not domain ones. `complete_sale` declares
+  // `taxes.rules.list` as a read with `required: true`, so a hub missing the tax app (force
+  // uninstalled, hub#1101, or deactivated by the ADR-0128 cascade) has the sale refused by the
+  // runtime itself. The cashier has no business reading "module `taxes` is not installed": what
+  // they need to know is that an app is missing and that NOTHING was charged.
+  module_not_installed: 'ui.errorMissingApp',
+  module_inactive: 'ui.errorMissingApp',
+  // hub#701: the required read exists but did not resolve. The only `required` read of
+  // `complete_sale` is the tax catalogue, so this is exactly what sales#21 already says.
+  read_unavailable: 'ui.errorTaxCatalogUnavailable',
 };
 
-/** Traduce el mensaje de error de un cobro rechazado a una clave del catálogo del módulo. */
-export function checkoutErrorKey(message: string): string {
-  for (const [code, key] of Object.entries(MESSAGES)) {
-    // El runtime puede envolver el error del handler («command `x` failed: …»), así que se busca
-    // el código dentro del mensaje en vez de exigir que lo encabece.
-    if (message.includes(code)) return key;
-  }
-  return 'ui.errorCharge';
+/**
+ * Translates the **code** of a refused checkout into a key of the module's catalogue.
+ *
+ * It takes the envelope's `code` (`ErploraError.code`), not the message: the code is the published
+ * contract of the runtime and of the handlers, and it is the only thing that does not change when
+ * the sentence does. An error with no code (a browser failure, a library `throw`) falls back to
+ * the generic one.
+ */
+export function checkoutErrorKey(code: string): string {
+  return MESSAGES[code] ?? 'ui.errorCharge';
+}
+
+/** The `code` of a runtime error, or `''` when what arrived carries none (it is not the hub's). */
+export function errorCode(e: unknown): string {
+  const code = (e as { code?: unknown } | null | undefined)?.code;
+  return typeof code === 'string' ? code : '';
 }

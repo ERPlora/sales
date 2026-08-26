@@ -319,7 +319,11 @@
     "comboGroupUnresolved": "Elige {n} en {group}",
     "comboGroupOverMax": "{group} admite solo {n}",
     "comboOptionRepeated": "{group} no admite el mismo artículo dos veces",
-    "comboRemoveOne": "Quitar un {name}"
+    "comboRemoveOne": "Quitar un {name}",
+    "missingAppCharge": "{app} no está instalada, así que no se puede cobrar. Instálala desde el marketplace.",
+    "missingAppChargeShort": "Falta {app}",
+    "appTaxes": "Impuestos",
+    "errorMissingApp": "La venta se ha rechazado porque falta una app que necesita. No se ha cobrado nada."
   },
   "widgets": {
     "sales.today": {
