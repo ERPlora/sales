@@ -19,6 +19,8 @@ import {
   type SaleSettings,
   type FiscalData,
 } from '../../lib/document-mappers.js';
+// sales#223 — the settings row is resolved through ONE set of defaults, never read raw.
+import { withPosSettingsDefaults } from '../../lib/pos-settings.js';
 // sales#103 — el acuñado del claim «pide tu factura» contra la puerta pública del hub.
 import { mintInvoiceRequestClaim, type MintedClaim } from '../../lib/public-claim.js';
 // Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC.
@@ -135,7 +137,12 @@ export class ErpSalesDocument extends LitElement {
       ]);
       this.sale = Array.isArray(sale) ? (sale as SaleRow[])[0] : sale;
       this.lines = lines || [];
-      this.settings = (Array.isArray(settingsRows) ? settingsRows[0] : settingsRows) || {};
+      // sales#223 — resolved through the ONE set of UI defaults. A hub where nobody ever saved
+      // the settings answers no row at all, and every reader below used to decide on its own
+      // what that absence meant.
+      this.settings = withPosSettingsDefaults(
+        (Array.isArray(settingsRows) ? settingsRows[0] : settingsRows) as Record<string, unknown>,
+      ) as SaleSettings;
       // Datos fiscales (QR VeriFactu) — best-effort y SIN bloquear el primer pintado: el Outbox es
       // asíncrono (la factura/registro se crean unos ms después de cobrar), así que se observa con
       // reintentos y el QR aparece solo cuando llega.
