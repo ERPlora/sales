@@ -444,3 +444,37 @@ describe('the bill carries its provisional VAT to the thermal paper (sales#180)'
     expect(doc.tax_label).toBeUndefined();
   });
 });
+
+// ── sales#147 · the child line reaches the THERMAL paper too ────────────────────────────────────
+//
+// The two papers and the screen have to say the same thing (that is why this file composes through
+// `document-mappers.ts` instead of building its own document). A supplement that taxes differently
+// is a LINE now, with its own amount: if it reached the customer's ticket but not the till roll,
+// the two totals would still add up while the papers disagreed about what was bought.
+describe('sales#147 — the supplement billed apart, on the thermal paper', () => {
+  const sale = { id: 's-1', sale_number: 'T-1', total: 1_200, subtotal: 1_074, tax_amount: 126 };
+  const lines = [
+    { id: 'l-menu', product_name: 'Menú del día', quantity: 1_000_000, unit_price: 1_000,
+      line_total: 1_000, tax_rate: 10, modifiers: '[]' },
+    { id: 'l-drink', product_name: 'Refresco', quantity: 1_000_000, unit_price: 200,
+      line_total: 200, tax_rate: 21, parent_line_ref: 'l-menu',
+      modifiers: '[{"option_id":"o-refresco","name":"Refresco","price_delta":200}]' },
+  ];
+
+  it('prints the child right under its parent, with its own euros', () => {
+    const doc = saleToPrintDocument(sale, lines, SETTINGS);
+    expect(doc.items.map((i) => i.name)).toEqual(['Menú del día', '+ Refresco']);
+    expect(doc.items.map((i) => i.total)).toEqual([10, 2]);
+    expect(doc.total).toBe(12);
+  });
+
+  it('and does not print the supplement a second time as a note under itself', () => {
+    const doc = saleToPrintDocument(sale, [lines[0], lines[1]], SETTINGS);
+    expect(doc.items[1].notes).toBeUndefined();
+  });
+
+  it('the rows can come back in any order: the paper follows the LINK, not the ordering', () => {
+    const doc = saleToPrintDocument(sale, [lines[1], lines[0]], SETTINGS);
+    expect(doc.items.map((i) => i.name)).toEqual(['Menú del día', '+ Refresco']);
+  });
+});

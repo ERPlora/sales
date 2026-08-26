@@ -1575,18 +1575,18 @@ function groupComboLines(lines) {
   const out = [];
   const byRef = /* @__PURE__ */ new Map();
   for (const line of lines) {
-    const ref = line.combo_group_ref ? String(line.combo_group_ref) : "";
-    if (!ref) {
+    const ref2 = line.combo_group_ref ? String(line.combo_group_ref) : "";
+    if (!ref2) {
       out.push({ head: line, siblings: [line] });
       continue;
     }
-    const existing = byRef.get(ref);
+    const existing = byRef.get(ref2);
     if (existing) {
       existing.siblings.push(line);
       continue;
     }
     const group = { head: line, siblings: [line], combo: parseComboSnapshot(line.combo) };
-    byRef.set(ref, group);
+    byRef.set(ref2, group);
     out.push(group);
   }
   return out;
@@ -1987,6 +1987,24 @@ function invoiceLabels(t7) {
     paymentMethod: t7("ui.docPaymentMethod")
   };
 }
+function orderChildLines(lines) {
+  const ref2 = (l3) => (l3.parent_line_ref || "").trim();
+  const byParent = /* @__PURE__ */ new Map();
+  for (const l3 of lines) {
+    const r6 = ref2(l3);
+    if (!r6) continue;
+    byParent.set(r6, [...byParent.get(r6) ?? [], l3]);
+  }
+  if (!byParent.size) return lines;
+  const present = new Set(lines.map((l3) => l3.id).filter(Boolean));
+  const out = [];
+  for (const l3 of lines) {
+    if (ref2(l3) && present.has(ref2(l3))) continue;
+    out.push(l3);
+    for (const child of byParent.get(l3.id ?? "") ?? []) out.push(child);
+  }
+  return out;
+}
 function parseModifierSnapshot(raw) {
   if (typeof raw !== "string" || !raw.trim()) return void 0;
   let parsed;
@@ -2009,12 +2027,19 @@ function parseModifierSnapshot(raw) {
   return out.length ? out : void 0;
 }
 function lineLabel(l3, t7) {
+  if (ref(l3)) return `+ ${lineName(l3, t7)}`;
+  return lineName(l3, t7);
+}
+function lineName(l3, t7) {
   if (Number(l3.is_gift)) return `${l3.product_name} (Invitaci\xF3n)`;
   if (Number(l3.is_covered)) {
     const label = t7?.("ui.linePaidElsewhere");
     return `${l3.product_name} (${label && label !== "ui.linePaidElsewhere" ? label : "Prepaid"})`;
   }
   return l3.product_name;
+}
+function ref(l3) {
+  return !!(l3.parent_line_ref || "").trim();
 }
 var CLAIM_NOTE_FALLBACK = "Get your invoice";
 function claimPrintFields(fiscal, t7) {
@@ -2115,14 +2140,19 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", f
     datetime: formatDateTime(sale.created_at, locale),
     customer: fiscal.customer_name || sale.customer_name || void 0,
     // sales#154: the sibling rows of a menu collapse into ONE header line; a plain row is itself.
-    lines: groupComboLines(lines).map((g3) => g3.combo ? menuLine(g3.siblings, g3.combo, t7) : {
+    // sales#147: cada hija va justo detrás de SU padre ANTES de agrupar los menús, para que el
+    // orden del papel sea el de la jerarquía y no el que devuelva la base de datos.
+    lines: groupComboLines(orderChildLines(lines)).map((g3) => g3.combo ? menuLine(g3.siblings, g3.combo, t7) : {
       name: lineLabel(g3.head, t7),
       qty: fromMicro2(Number(g3.head.quantity)),
       // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
       unit_price: minor(g3.head.unit_price),
       total: minor(g3.head.line_total),
       // sales#148: what was charged, printed. sales#156: and the note the kitchen was given.
-      ...paperModifiers(parseModifierSnapshot(g3.head.modifiers), void 0, g3.head.notes),
+      // sales#147: a CHILD paints no supplement sub-line — it IS the supplement, and its row keeps
+      // the snapshot only to be self-describing; repeating it underneath would read
+      // «+ Refresco / · Refresco».
+      ...ref(g3.head) ? {} : paperModifiers(parseModifierSnapshot(g3.head.modifiers), void 0, g3.head.notes),
       ...paperUnit(g3.head)
       // sales#28: la unidad congelada, para el papel
     }),
@@ -2142,7 +2172,7 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", f
 }
 function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName = DEFAULT_BUSINESS_NAME, t7) {
   const header = splitHeader(settings.receipt_header);
-  const invLines = lines.map((l3) => ({
+  const invLines = orderChildLines(lines).map((l3) => ({
     // sales#28: `InvoiceLine` (outfitkit) no tiene campo de unidad, y la factura A4 debe decir
     // igualmente en qué va la línea — el hueco honesto es la descripción, como «Vino (botella)»:
     // «Tomate rosa (kg)». Sin unidad o con la suelta, la descripción queda como estaba.
@@ -3985,7 +4015,7 @@ var es_default = {
     errorAmountNegative: "La venta no puede llevar importes negativos",
     errorInsufficientTendered: "El importe entregado no cubre el total",
     errorNoTaxRule: "Una l\xEDnea tiene una categor\xEDa fiscal sin regla de IVA en este negocio: config\xFArala en Impuestos antes de cobrar",
-    errorModifierTaxOverride: "Un suplemento de esa l\xEDnea tributa a un IVA distinto del de la l\xEDnea, y as\xED todav\xEDa no se puede cobrar. Qu\xEDtale la categor\xEDa fiscal en Suplementos, o quita el suplemento de la l\xEDnea",
+    errorModifierChildPrice: "Un suplemento de esa l\xEDnea se factura aparte porque tributa a otro IVA, y una l\xEDnea propia no puede valer cero o menos. Ponle precio en Suplementos, o qu\xEDtale la categor\xEDa fiscal",
     errorTaxCatalogUnavailable: "No se han podido cargar las reglas de IVA, as\xED que no se ha cobrado nada. Vuelve a intentarlo y, si persiste, avisa al encargado",
     all: "Todos",
     categoryFilter: "Categor\xEDas",
@@ -4356,7 +4386,7 @@ var en_default = {
     errorAmountNegative: "The sale cannot carry negative amounts",
     errorInsufficientTendered: "The amount tendered does not cover the total",
     errorNoTaxRule: "A line has a tax category with no VAT rule in this business \u2014 set it up in Taxes before charging",
-    errorModifierTaxOverride: "A supplement on that line taxes at a different VAT rate than the line itself, and it cannot be charged that way yet. Remove its tax category in Modifiers, or take the supplement off the line",
+    errorModifierChildPrice: "A supplement on that line bills on a line of its own because it taxes at a different VAT rate, and a line of its own cannot be worth zero or less. Give it a price in Modifiers, or take its tax category off",
     errorTaxCatalogUnavailable: "The VAT rules could not be loaded, so nothing was charged. Try again; if it keeps happening, call the manager",
     all: "All",
     categoryFilter: "Categories",
@@ -6320,12 +6350,13 @@ var MESSAGES = {
   "sales.combo_component_price_unknown": "ui.errorComboComponentPriceUnknown",
   "sales.combo_tax_category_missing": "ui.errorComboTaxCategoryMissing",
   "sales.too_many_lines": "ui.errorTooManyLines",
-  // sales#147 (the amendment to ADR-0376) — the supplement declares a tax category of its OWN and
-  // there is nowhere to put it today: folding it into the parent would charge it at the PARENT's
-  // rate and the invoice would come out wrongly broken down, in silence. Its own message and not
-  // `ui.errorCharge` on purpose: this is fixed on the option in the Modifiers catalogue, in ten
+  // sales#147 (the amendment to ADR-0376) — a supplement that taxes differently now gets a LINE OF
+  // ITS OWN, so it is charged instead of refused. What is still refused is a supplement that bills
+  // apart and is worth NOTHING: a 0 € — or negative — row at another rate is a rebate wearing a tax
+  // category, and it would declare a base the customer never bought. Its own message and not
+  // `ui.errorCharge` on purpose: it is fixed on the option in the Modifiers catalogue, in ten
   // seconds, and only if the screen says which one.
-  "sales.modifier_tax_override_unsupported": "ui.errorModifierTaxOverride",
+  "sales.modifier_child_price_invalid": "ui.errorModifierChildPrice",
   // sales#201 (ADR-0147 §2.2) — an invalid quantity. The quantity pad already refuses off-grid
   // amounts before charging, so the handler is the last net; when it fires, the cashier gets the
   // SAME sentence the pad gives instead of a bare «could not charge».
@@ -6397,14 +6428,14 @@ var MediaPhotoCache = class {
     this.generation = 0;
     this.changeScheduled = false;
   }
-  get(ref) {
-    return ref ? this.urls.get(ref) : void 0;
+  get(ref2) {
+    return ref2 ? this.urls.get(ref2) : void 0;
   }
   /** Retira sólo la foto que el navegador no pudo decodificar; el resto del muro sigue intacto. */
-  drop(ref, expectedUrl) {
-    const url = this.urls.get(ref);
+  drop(ref2, expectedUrl) {
+    const url = this.urls.get(ref2);
     if (!url || expectedUrl !== void 0 && url !== expectedUrl) return;
-    this.urls.delete(ref);
+    this.urls.delete(ref2);
     this.revokeObjectUrl(url);
     this.notifyChanged();
   }
@@ -6414,7 +6445,7 @@ var MediaPhotoCache = class {
     const controller = new AbortController();
     this.controller = controller;
     this.revokeAll();
-    const unique = [...new Set(refs.filter((ref) => !!ref?.trim()))];
+    const unique = [...new Set(refs.filter((ref2) => !!ref2?.trim()))];
     const client = this.client();
     const loader = client?.fetchMediaBlob;
     if (typeof loader !== "function" || unique.length === 0) return;
@@ -6422,10 +6453,10 @@ var MediaPhotoCache = class {
     const work = async () => {
       while (cursor < unique.length) {
         if (generation !== this.generation || controller.signal.aborted) return;
-        const ref = unique[cursor++];
+        const ref2 = unique[cursor++];
         let blob;
         try {
-          blob = await loader.call(client, ref, { signal: controller.signal });
+          blob = await loader.call(client, ref2, { signal: controller.signal });
         } catch {
           if (generation !== this.generation || controller.signal.aborted) return;
           continue;
@@ -6436,7 +6467,7 @@ var MediaPhotoCache = class {
           this.revokeObjectUrl(url);
           continue;
         }
-        this.urls.set(ref, url);
+        this.urls.set(ref2, url);
         this.notifyChanged();
       }
     };
