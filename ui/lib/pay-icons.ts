@@ -5,6 +5,9 @@
 // si no basta, por el NOMBRE. Todo lo que no encaje cae a un icono genérico: un icono sin mapear
 // se pinta VACÍO y el botón queda mudo — con formas de pago eso es un cobro a ciegas.
 
+// sales#223 — the fallback for a flag the policy does not carry lives in ONE place.
+import { withPosSettingsDefaults } from './pos-settings.js';
+
 /** Icono cuando no se reconoce ni el tipo ni el nombre. NUNCA se devuelve cadena vacía. */
 export const PAY_ICON_FALLBACK = 'ellipsis-horizontal-circle-outline';
 
@@ -104,13 +107,21 @@ export interface PayPolicy { allow_cash?: number; allow_card?: number; allow_tra
  * Las que no tienen flag propio (Bizum, vales…) se dejan: desactivarlas es cosa de `is_active`.
  * Guardarraíl: si el filtro dejara el TPV SIN ninguna forma de pago, se devuelve la lista tal cual
  * — un TPV que no puede cobrar es peor que uno que ofrece de más.
+ *
+ * sales#223 — a flag the policy does NOT carry is resolved through `POS_SETTINGS_DEFAULTS`, not
+ * through `undefined !== 0`. A hub with no settings row used to be offered bank transfer, which
+ * `allow_transfer` has shipped OFF since the first migration; the same hub hid it the moment
+ * somebody opened Ajustes and pressed Save without changing anything. Resolving here and not only
+ * at the caller's door is deliberate: this is an exported function, and a caller that hands it a
+ * bare `{}` must not be able to bring the defect back.
  */
 export function enabledPayMethods<T extends PayMethodLike>(methods: T[], policy: PayPolicy = {}): T[] {
+  const p = withPosSettingsDefaults(policy);
   const allowed = (m: T): boolean => {
     const t = (m.type || '').trim().toLowerCase();
-    if (t === 'cash') return policy.allow_cash !== 0;
-    if (t === 'card' || t === 'credit' || t === 'debit') return policy.allow_card !== 0;
-    if (t === 'transfer' || t === 'bank') return policy.allow_transfer !== 0;
+    if (t === 'cash') return p.allow_cash !== 0;
+    if (t === 'card' || t === 'credit' || t === 'debit') return p.allow_card !== 0;
+    if (t === 'transfer' || t === 'bank') return p.allow_transfer !== 0;
     return true;
   };
   const out = methods.filter(allowed);

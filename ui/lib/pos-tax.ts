@@ -19,6 +19,8 @@ import type { ErploraClientLike } from './pos-cart.js';
 // The two codes that mean "that app is not here" live in ONE place (sales#25): a second copy is
 // how one door starts calling absence what the other calls an incident.
 import { isModuleAbsent } from './dependency-read.js';
+// sales#223 — the till's defaults live in ONE place; the preview reads its own from there.
+import { POS_SETTINGS_DEFAULTS } from './pos-settings.js';
 
 interface TaxRuleRow {
   id?: string;
@@ -165,7 +167,12 @@ function roundHalfUp(x: number): number {
  * it: 10 % before 21 %). Lines with no rate -- tax catalogue down, 0 % preview -- stay out:
  * inventing a 0 % for them would put on the paper a breakdown nobody computed.
  */
-export function previewTaxBreakdown(lines: TaxableAmount[], taxIncluded = true): TaxBreakdownEntry[] {
+export function previewTaxBreakdown(
+  lines: TaxableAmount[],
+  // sales#223 — not a hardcoded `true`: whether catalogue prices carry VAT inside is a SETTING,
+  // and its default is declared once, next to the column's and the form's.
+  taxIncluded = POS_SETTINGS_DEFAULTS.default_tax_included !== 0,
+): TaxBreakdownEntry[] {
   const byRate = new Map<number, TaxBreakdownEntry>();
   for (const l of lines) {
     const rate = Number(l.tax_rate) || 0;

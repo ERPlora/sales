@@ -105,8 +105,21 @@ describe('formas de pago habilitadas', () => {
     { id: '4', name: 'Bizum', type: 'other' },
   ];
 
-  it('sin ajustes las deja todas (hub recién instalado)', () => {
-    expect(enabledPayMethods(todas, {}).map((m) => m.name)).toEqual(['Efectivo','Tarjeta','Transferencia','Bizum']);
+  // sales#223 — this case USED to assert that a freshly installed hub was offered all four,
+  // bank transfer included. That was the defect written down as a contract: `allow_transfer` has
+  // shipped `DEFAULT 0` since the first migration and `false` in `schemas/settings_update.json`,
+  // so the same hub hid it as soon as anybody pressed Save on Ajustes without changing a thing.
+  // A flag the policy does not carry now resolves through `POS_SETTINGS_DEFAULTS`, so absence and
+  // the saved defaults answer the same.
+  it('with no settings row, the DECLARED defaults apply — bank transfer is off out of the box', () => {
+    expect(enabledPayMethods(todas, {}).map((m) => m.name)).toEqual(['Efectivo','Tarjeta','Bizum']);
+    expect(enabledPayMethods(todas).map((m) => m.name), 'no policy at all reads the same')
+      .toEqual(['Efectivo','Tarjeta','Bizum']);
+  });
+
+  it('a hub that SAVED the defaults gets exactly the same list', () => {
+    const saved = enabledPayMethods(todas, { allow_cash: 1, allow_card: 1, allow_transfer: 0 });
+    expect(saved.map((m) => m.name)).toEqual(enabledPayMethods(todas, {}).map((m) => m.name));
   });
 
   it('respeta cada allow_* de Ajustes', () => {

@@ -40,6 +40,9 @@ import {
 } from '../../lib/combo-picker.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod, payMethodDisplayName } from '../../lib/pay-icons.js';
+// sales#223 — the policy is resolved at the door: ONE set of defaults for the whole screen, so a
+// hub with no settings row is the same till as one that saved the defaults.
+import { withPosSettingsDefaults, type PosSettings } from '../../lib/pos-settings.js';
 // sales#159 (ADR-0386) — una venta, N cobros. La ARITMÉTICA del reparto vive en lib (probada sin
 // DOM): el restante, lo que cubre cada pata, el cambio —que sale SOLO del efectivo— y el
 // `payments[]` que se le entrega al servidor.
@@ -140,30 +143,6 @@ interface PayMethod {
   /** 1 = pide importe entregado y calcula cambio (efectivo); 0 = importe exacto (tarjeta, Bizum…). */
   requires_change?: number;
 }
-/** The counter's operational policy, as `sales.pos_settings.get` hands it back (sales#25/#203).
- *  Every field here is read by the screen or printed on the paper, and every one of them arrives
- *  through a door a `cashier` can open — the admin-only `sales.settings.get` is not used by the
- *  till at all. */
-interface PosSettings {
-  default_document_format?: string; currency?: string; enable_parked_tickets?: number;
-  default_tax_included?: number;
-  /** sales#203 — the receipt, as the shop configured it. The paper mappers take them from here
-   *  (`billSettings`); through the admin door they were blank for whoever actually prints it. */
-  receipt_header?: string; receipt_footer?: string; receipt_footer_image?: string;
-  receipt_marketing_url?: string; receipt_marketing_text?: string;
-  /** sales#203 — the hub demands a customer on every sale. The RULE is the server's
-   *  (`sales.complete_sale` enforces it from its own declared `reads`, which run with system
-   *  permissions); the till carries it so screen and server decide from the same row. */
-  require_customer?: number;
-  /** Formas de pago permitidas (Ajustes). 0 = desactivada. */
-  allow_cash?: number; allow_card?: number; allow_transfer?: number;
-  /** sales#71: descuentos manuales permitidos (Ajustes). 0 = sin botón; el servidor lo revalida. */
-  allow_discounts?: number;
-  /** sales#25 — which catalogue providers feed the grid. 0 = that provider is not read at all. */
-  sync_products?: number; sync_services?: number;
-  /** hub#962: a customer who identified themselves with a tax id wants an invoice. */
-  auto_invoice_with_tax_id?: number | boolean;
-}
 /** sales#206 — a note the business preconfigured for the line-note sheet. */
 interface QuickNote { id: string; text: string; sort_order?: number; }
 interface Category { id: string; name: string; icon?: string; color?: string; image?: string; product_count?: number; }
@@ -239,15 +218,13 @@ const LEGACY_PAGE_LIMIT = 500;
 
 /** Is a catalogue source switched ON? (sales#25)
  *
- *  The row carries the flag as the 0/1 INTEGER of the portable SQL subset (ADR-0007), so both the
- *  number and the string form are answered. `undefined`/`null` means there is no saved settings
- *  row and the DEFAULTS apply — and BOTH sources default to ON: products always did, and services
- *  have shown ever since sales#89 whenever `services` was installed. Landing this switch with the
- *  old `false` default for services would have emptied the grid of every salon on the next update
- *  of the module, which nobody asked for. */
+ *  The flag is the 0/1 INTEGER of the portable SQL subset (ADR-0007). It arrives already resolved
+ *  by `withPosSettingsDefaults` (sales#223), so absence is not a case here any more: both sources
+ *  default to ON — products always did, and services have shown ever since sales#89 whenever
+ *  `services` was installed — and that default is declared ONCE, in `POS_SETTINGS_DEFAULTS`.
+ *  Declaring it a second time here is exactly the shape of defect sales#223 was. */
 function catalogSourceOn(v: unknown): boolean {
-  if (v === undefined || v === null || v === '') return true;
-  return !(v === 0 || v === '0' || v === false);
+  return v !== 0;
 }
 
 /** The apps `sales` declares in `depends_on`, in the order their incidents are painted (sales#25).
@@ -2348,13 +2325,17 @@ export class ErpPosTouch extends LitElement {
    *  A FAILURE falls back to the defaults — a till that opens with an empty grid because a
    *  settings read hiccuped is worse than one that shows everything — but it is not swallowed:
    *  the shell is told, because a policy nobody could read means the switches on the settings
-   *  screen are not being honoured right now. */
+   *  screen are not being honoured right now.
+   *
+   *  sales#223 — absence and failure both come out of `withPosSettingsDefaults`, which is the ONE
+   *  place the UI declares what the till is out of the box. No reader below sees `undefined` again:
+   *  they used to, and `undefined !== 0` turned every switch that ships OFF into an ON. */
   private async loadPosSettings(): Promise<PosSettings> {
     try {
-      return rows<PosSettings>(await erplora().query('sales.pos_settings.get'))[0] ?? {};
+      return withPosSettingsDefaults(rows<Record<string, unknown>>(await erplora().query('sales.pos_settings.get'))[0]);
     } catch {
       this.notifyShell(t('ui.posSettingsUnavailable'));
-      return {};
+      return withPosSettingsDefaults(undefined);
     }
   }
 
