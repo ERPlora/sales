@@ -106,3 +106,21 @@ describe('suplementos en la comanda (pm#93)', () => {
     expect(p?.items[0].modifiers).toBeUndefined();
   });
 });
+
+// sales#179 — the WAITER on the ticket. `kitchen` stores `waiter_id` on its ticket but nobody ever
+// gave it one, so the pass did not know who to call when a plate came out. The till sends it when
+// the check has a chosen waiter; when nobody sends it, the handler resolves it to the session user
+// — the payload does NOT make up an id in the browser.
+describe('the waiter in the fire payload', () => {
+  const line = { id: 'p1', name: 'Entrecot', price: 2500, qty: 1 };
+
+  it('travels in the payload when a waiter was chosen', () => {
+    const p = buildFirePayload('ord-1', 'Mesa 4', [line], 1, 'u-luis');
+    expect(p?.waiter_id).toBe('u-luis');
+  });
+
+  it('is not invented when nobody was chosen: the server puts it there', () => {
+    const p = buildFirePayload('ord-1', 'Mesa 4', [line]);
+    expect(p && 'waiter_id' in p).toBe(false);
+  });
+});

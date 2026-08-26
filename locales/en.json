@@ -322,6 +322,15 @@
     "missingAppCharge": "{app} is not installed, so nothing can be charged. Install it from the marketplace.",
     "missingAppChargeShort": "{app} is missing",
     "appTaxes": "Taxes",
-    "errorMissingApp": "The sale was refused because an app it needs is not installed. Nothing was charged."
+    "errorMissingApp": "The sale was refused because an app it needs is not installed. Nothing was charged.",
+    "servedBy": "Served by {name}",
+    "staffMe": "me",
+    "staffMeOption": "Me (whoever is signed in)",
+    "staffAssigned": "the assigned professional",
+    "staffPickerTitle": "Who is serving this check",
+    "staffPickerHint": "The sale, the kitchen ticket and the per-person report are attributed to them. Leave it on «Me» and the till uses whoever is signed in.",
+    "staffPickerEmpty": "This hub has nobody else to serve. Add staff from Settings.",
+    "staffLoading": "Loading the team…",
+    "staffLoadFailed": "The team could not be loaded. The sale is still attributed to whoever is signed in."
   }
 }

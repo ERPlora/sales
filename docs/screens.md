@@ -51,6 +51,27 @@ and a fixed footer with the running total and the **Cobrar** (charge) button.
 
 Requires `sales.add_sale` to build the check and `sales.take_payment` to charge it.
 
+### Who is serving this check (sales#179)
+
+Next to the table and customer chips there is a **«Atiende …»** chip. It is always there, even on a
+counter sale: without it nobody knows the sale is attributed to anyone, and the check cannot be
+transferred.
+
+- By **default** it reads «Atiende yo» and the till sends **no** `staff_id`. The attribution is a
+  SERVER decision: `sales.complete_sale` writes whoever holds the session (`current_user_id`), the
+  same id it already writes into `employee_id`. The browser never invents it.
+- Tap the chip to **transfer the check** to somebody else. The list is the hub's own people
+  (`hub.users.list`, the core namespace — personnel belongs to the hub, not to the `staff` module,
+  so this works in a hub without it). Choosing **«Yo (quien tenga la sesión)»** hands it back to the
+  default.
+- A till opened from an **appointment** shows the booked professional, and that is who the sale is
+  attributed to.
+- The chosen person travels to the **kitchen ticket** too (`order.fired` carries `waiter_id`), and
+  is what makes the per-person report (`sales.by_staff`) come back with data.
+
+Closing the sale returns the chip to the default: the next check does not inherit the previous
+waiter.
+
 ### An item the sale could not charge (sales#74 / sales#58)
 
 A catalogue line the checkout would reject — it carries no `tax_category_key`, or its category

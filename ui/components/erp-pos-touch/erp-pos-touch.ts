@@ -88,9 +88,15 @@ interface ServiceCat { id: string; name: string; }
 /** Fila de `appointments.appointments.get` (ADR-0077). `sales` lee SOLO lo que necesita para
  *  armar la línea y atribuir la venta; el resto del dominio de citas no le incumbe. */
 interface AppointmentRow {
-  id?: string; customer_id?: string; customer_name?: string; staff_id?: string;
+  id?: string; customer_id?: string; customer_name?: string; staff_id?: string; staff_name?: string;
   service_id?: string; service_name?: string; service_price?: number;
 }
+
+/** A person of the hub (`hub.users.list`), the core's RESERVED namespace (ADR-0192).
+ *
+ *  Personnel belongs to the CORE, not to the `staff` module: asking `staff` would turn into a hard
+ *  dependency a till that has to work in a hub where that module is not installed. */
+interface HubUser { id: string; name: string; role?: string; is_active?: boolean; }
 
 /** Formas de precio que el TPV sabe cobrar HOY. `from`/`hourly`/`variable` son un precio de
  *  PARTIDA, no el precio: cobrarlos tal cual sería equivocarse en silencio, y aún no hay flujo de
@@ -569,14 +575,14 @@ export class ErpPosTouch extends LitElement {
        ASPECTO de sheet (suben desde abajo, asa, esquinas solo arriba — pregunta de Ioan
        2026-07-19): mismo <dialog> nativo, que ion-action-sheet no aloja contenido rico y los
        overlays de Ionic en shadow Lit se re-parentan al body (ADR-0028). */
-    dialog.park-dialog, dialog.dirty-dialog { border:1px solid var(--ion-border-color); border-radius:var(--ok-radius,14px);
+    dialog.park-dialog, dialog.dirty-dialog, dialog.staff-dialog { border:1px solid var(--ion-border-color); border-radius:var(--ok-radius,14px);
       background:var(--panel); color:var(--tx); padding:1rem 1.1rem; width:min(94vw,24rem);
       box-shadow:var(--ok-shadow-modal, 0 18px 50px rgba(0,0,0,.35)); }
-    dialog.park-dialog::backdrop, dialog.dirty-dialog::backdrop { background:var(--ok-scrim, rgba(0,0,0,.45)); }
+    dialog.park-dialog::backdrop, dialog.dirty-dialog::backdrop, dialog.staff-dialog::backdrop { background:var(--ok-scrim, rgba(0,0,0,.45)); }
     @media (max-width: 820px) {
-      dialog.park-dialog, dialog.dirty-dialog { width:100vw; max-width:100vw; margin:auto 0 0;
+      dialog.park-dialog, dialog.dirty-dialog, dialog.staff-dialog { width:100vw; max-width:100vw; margin:auto 0 0;
         border-radius:var(--ok-radius-sheet-top, 18px 18px 0 0); border-bottom:none; padding-bottom:max(1rem, env(safe-area-inset-bottom)); }
-      dialog.park-dialog::before, dialog.dirty-dialog::before { content:''; display:block;
+      dialog.park-dialog::before, dialog.dirty-dialog::before, dialog.staff-dialog::before { content:''; display:block;
         width:2.4rem; height:.3rem; border-radius:var(--ok-radius-pill,999px); background:var(--ion-border-color);
         margin:0 auto .7rem; }
       .dlg-actions ion-button { flex:1; }
@@ -585,6 +591,16 @@ export class ErpPosTouch extends LitElement {
     dialog p { margin:0 0 .8rem; color:var(--mut); }
     dialog.park-dialog input { width:100%; box-sizing:border-box; font-size:1rem; padding:.6rem .7rem;
       border-radius:var(--ok-radius-sm,10px); border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); }
+    /* The list of people: rows tall enough for a thumb, and the current one marked — with a BORDER
+       as well as colour, so it is distinguishable without relying on seeing the hue. */
+    .staff-list { display:flex; flex-direction:column; gap:.35rem; max-height:min(50vh,18rem); overflow-y:auto; }
+    .staff-opt { display:block; width:100%; text-align:left; padding:.7rem .8rem; font:inherit;
+      border:1px solid var(--ion-border-color); border-radius:var(--ok-radius-sm,10px);
+      background:var(--tile); color:var(--tx); cursor:pointer; }
+    .staff-opt:hover { border-color:var(--accent); }
+    .staff-opt:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    .staff-opt[data-current] { border-color:var(--accent); color:var(--accent); font-weight:700; }
+    .staff-note { margin:.2rem 0 0; color:var(--mut); font-size:.82rem; }
     .dlg-actions { display:flex; justify-content:flex-end; gap:.4rem; margin-top:.9rem; flex-wrap:wrap; }
     .badge-num { font-size:.62rem; min-width:1rem; height:1rem; padding:0 .2rem; border-radius:var(--ok-radius-pill,999px); background:var(--accent); color:var(--ok-on-accent,#fff); display:inline-flex; align-items:center; justify-content:center; position:absolute; top:.2rem; right:.2rem; }
 
@@ -749,6 +765,15 @@ export class ErpPosTouch extends LitElement {
     .order-context { display:flex; gap:.3rem; flex-wrap:wrap; min-height:1.55rem; margin-top:.32rem; }
     .order-context ion-chip { height:1.55rem; margin:0; font-size:.68rem; --background:var(--tile); color:var(--mut); }
     .context-empty { color:var(--mut); font-size:.72rem; align-self:center; }
+    /* sales#179 — who is serving. It is a BUTTON (tapped to transfer), but it reads like the other
+       contexts of the check: same height and same visual weight as the ion-chips next to it, with
+       the touch target a finger needs. */
+    .ctx-chip { display:inline-flex; align-items:center; gap:.25rem; height:1.55rem; padding:0 .55rem;
+      border:1px solid var(--ion-border-color); border-radius:var(--ok-radius-pill,999px);
+      background:var(--tile); color:var(--mut); font:inherit; font-size:.68rem; cursor:pointer; }
+    .ctx-chip:hover { color:var(--tx); }
+    .ctx-chip:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    .ctx-chip ion-icon { font-size:.95rem; }
 
     ion-segment.view-tabs { margin:.62rem .72rem .28rem; width:auto; border:1px solid var(--line);
       border-radius:var(--ok-radius-sm,11px); background:var(--tile); }
@@ -980,7 +1005,17 @@ export class ErpPosTouch extends LitElement {
    *  `sales.sale.created_from_appointment`, con el que `appointments` marca la cita convertida;
    *  `staff_id` (≠ `employee_id`, el cajero) es lo que permite el cierre por profesional. */
   private appointmentId?: string;
-  private staffId?: string;
+  /** sales#179 — it is `@state()` because it is now PAINTED (the "who is serving" chip) and can be
+   *  changed live; before, only the appointment seeded it and it travelled mute to the checkout. */
+  @state() private staffId?: string;
+  /** The name to paint, when it is known: the appointment's (`staff_name`) or the chosen person's.
+   *  Blank does not mean "nobody" — it means the server resolves it. */
+  @state() private staffName = '';
+  @state() private staffPickerOpen = false;
+  @state() private hubUsers: HubUser[] = [];
+  /** State of the list of people: without it the picker would be a blank sheet (and a permission
+   *  failure would be mute). It loads when the picker OPENS, not when the till boots. */
+  @state() private staffPickerState: 'idle' | 'loading' | 'ready' | 'error' = 'idle';
 
   private prodCats = new Map<string, Set<string>>();
   /** Registro de unidades (ADR-0147): code → fila, para congelar el contexto al añadir línea. */
@@ -1533,7 +1568,7 @@ export class ErpPosTouch extends LitElement {
     // Los <dialog> se abren MODALES (top layer): inmunes al transform del drawer del carrito
     // (gotcha conocido: un overlay fixed dentro de un ancestro con transform queda atrapado).
     // El atributo `open` del markup ya los muestra donde showModal no exista (happy-dom).
-    for (const d of this.renderRoot.querySelectorAll<HTMLDialogElement>('dialog.park-dialog, dialog.dirty-dialog')) {
+    for (const d of this.renderRoot.querySelectorAll<HTMLDialogElement>('dialog.park-dialog, dialog.dirty-dialog, dialog.staff-dialog')) {
       try {
         if (typeof d.showModal === 'function' && !d.matches(':modal')) { d.close(); d.showModal(); }
       } catch { /* sin soporte (happy-dom) o pseudo-clase desconocida: el atributo open basta */ }
@@ -1894,7 +1929,9 @@ export class ErpPosTouch extends LitElement {
     // comida duplicada en cocina. Vale para todo el TPV, con o sin modo restaurante — el modo
     // solo cambia lo que se VE (pestaña Tandas), no lo que se envía.
     const pendientes = pendingLines(this.cart);
-    const payload = buildFirePayload(orderId, this.tableLabel, pendientes, nextRoundNo(this.cart));
+    const payload = buildFirePayload(
+      orderId, this.tableLabel, pendientes, nextRoundNo(this.cart), this.staffId,
+    );
     if (!payload) return;
     try {
       await erplora().command('sales.order.fire', payload as unknown as Record<string, unknown>);
@@ -2010,6 +2047,10 @@ export class ErpPosTouch extends LitElement {
 
     this.appointmentId = ap.id || appointmentId;
     this.staffId = ap.staff_id || undefined;
+    // sales#179: the appointment DOES carry the professional's name
+    // (`appointments.appointment_get`); without it the chip could only say "the assigned
+    // professional" about a check that knows perfectly well who it is.
+    this.staffName = ap.staff_name || '';
     if (ap.customer_id) this.customerId = ap.customer_id;
     if (ap.customer_name) this.customerName = ap.customer_name;
 
@@ -2018,6 +2059,53 @@ export class ErpPosTouch extends LitElement {
       id: svc?.id ?? '', name, price, tax_category_key,
       is_service: true, pricing_type: 'fixed', is_active: 1,
     }));
+  }
+
+  /** sales#179 — **who is serving this check**, and how it is transferred.
+   *
+   *  This screen does not decide the DEFAULT: `complete_sale` attributes the sale to the session
+   *  user when the payload names nobody. The till does not know who is signed in (the SDK does not
+   *  expose it) and **must not guess**: sending an id made up in the browser would attribute sales
+   *  to whoever the caller pleased. What does belong to this screen is the other half of what
+   *  Toast, Square for Restaurants and Lightspeed do: the waiter is pinned to the check and can be
+   *  TRANSFERRED — whoever takes the table is not always the one at the terminal.
+   *
+   *  The list comes from `hub.users.list`, the core's RESERVED namespace (ADR-0192): personnel
+   *  belongs to the hub, not to the `staff` module. It is asked for when the picker OPENS, not at
+   *  boot: the till already makes plenty of calls there, and this one is only needed if somebody is
+   *  about to change the waiter. */
+  private async openStaffPicker(): Promise<void> {
+    this.staffPickerOpen = true;
+    if (this.staffPickerState === 'ready' || this.staffPickerState === 'loading') return;
+    this.staffPickerState = 'loading';
+    try {
+      const rowsIn = await erplora().query<unknown>('hub.users.list');
+      // A deactivated person cannot serve: they still exist (the audit trail points at their id)
+      // but they are not an option to offer today.
+      this.hubUsers = rows<HubUser>(rowsIn).filter((u) => u.is_active !== false && !!u.id);
+      this.staffPickerState = 'ready';
+    } catch {
+      // A failure here must NOT take the checkout down: it is said out loud and charging carries
+      // on with the server's default, which is exactly what there was before anyone could choose.
+      this.hubUsers = [];
+      this.staffPickerState = 'error';
+    }
+  }
+
+  /** Choose who is serving. With no argument = **the session user**: the explicit attribution is
+   *  cleared and the server decides again. */
+  private pickStaff(person?: HubUser): void {
+    this.staffId = person?.id;
+    this.staffName = person?.name ?? '';
+    this.staffPickerOpen = false;
+  }
+
+  /** What the chip reads. With an originating appointment the id is known but the name may not be
+   *  (it is a `staff_member`, not a person of the hub): it says "the assigned professional" instead
+   *  of showing a UUID or lying with "me". */
+  private get staffLabel(): string {
+    const name = this.staffName || (this.staffId ? t('ui.staffAssigned') : t('ui.staffMe'));
+    return t('ui.servedBy', { name });
   }
 
   /** El catálogo VENDIBLE de `services`, mapeado a la forma de la rejilla (sales#89).
@@ -3204,6 +3292,10 @@ export class ErpPosTouch extends LitElement {
       this.tableId = undefined; this.tableLabel = '';
       this.customerId = undefined; this.customerName = '';
       this.customerTaxId = ''; this.customerAddress = '';
+      // sales#179: the next check does not inherit the previous waiter — it goes back to the
+      // default (whoever holds the session), which is what a till does when a check closes.
+      this.staffId = undefined; this.staffName = '';
+      this.appointmentId = undefined;
       this.resetSlotContexts();
       if (saleId) this.docSaleId = saleId;
       // NOTA (impresión): aquí NO se llama a window.print(). El tiquet lo imprime el SHELL por el
@@ -3464,6 +3556,15 @@ export class ErpPosTouch extends LitElement {
             ${this.customerName
               ? html`<ion-chip><ion-icon name="person-outline"></ion-icon><ion-label>${this.customerName}</ion-label></ion-chip>`
               : nothing}
+            <!-- sales#179 — WHO IS SERVING. Always there, even with nobody chosen: if it is not
+                 visible, nobody knows the sale is attributed at all, and the waiter cannot be
+                 transferred. -->
+            <button class="ctx-chip" type="button" data-testid="staff-chip"
+                    aria-label=${t('ui.staffPickerTitle')} title=${t('ui.staffPickerTitle')}
+                    @click=${() => void this.openStaffPicker()}>
+              <ion-icon name="person-circle-outline"></ion-icon>
+              <span>${this.staffLabel}</span>
+            </button>
             ${!this.tableLabel && !this.customerName
               ? html`<span class="context-empty">${t('ui.noCheckContext')}</span>` : nothing}
           </div>
@@ -4220,6 +4321,38 @@ export class ErpPosTouch extends LitElement {
                         @click=${() => { this.parkPromptOpen = false; void this.parkWith(this.parkName); }}>
               ${t('ui.parkCurrentSale')}
             </ion-button>
+          </div>
+        </dialog>` : nothing}
+
+      <!-- sales#179 — TRANSFER the check to somebody else. Same native <dialog> as parking
+           (ion-action-sheet does not host rich content and Ionic overlays inside a Lit shadow root
+           get re-parented to the body, ADR-0028), so on mobile it rises as a sheet. -->
+      ${this.staffPickerOpen ? html`
+        <dialog class="staff-dialog" open>
+          <h3>${t('ui.staffPickerTitle')}</h3>
+          <p>${t('ui.staffPickerHint')}</p>
+          <div class="staff-list">
+            <button class="staff-opt" type="button" data-testid="staff-option-me"
+                    ?data-current=${!this.staffId} @click=${() => this.pickStaff()}>
+              ${t('ui.staffMeOption')}
+            </button>
+            ${this.staffPickerState === 'loading'
+              ? html`<p class="staff-note" data-testid="staff-loading">${t('ui.staffLoading')}</p>`
+              : nothing}
+            ${this.staffPickerState === 'error'
+              ? html`<p class="staff-note" data-testid="staff-error">${t('ui.staffLoadFailed')}</p>`
+              : nothing}
+            ${this.staffPickerState === 'ready' && !this.hubUsers.length
+              ? html`<p class="staff-note" data-testid="staff-empty">${t('ui.staffPickerEmpty')}</p>`
+              : nothing}
+            ${this.hubUsers.map((u) => html`
+              <button class="staff-opt" type="button" data-testid="staff-option"
+                      ?data-current=${this.staffId === u.id} @click=${() => this.pickStaff(u)}>
+                ${u.name}
+              </button>`)}
+          </div>
+          <div class="dlg-actions">
+            <ion-button fill="clear" @click=${() => { this.staffPickerOpen = false; }}>${t('ui.cancel')}</ion-button>
           </div>
         </dialog>` : nothing}
 

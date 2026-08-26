@@ -35,6 +35,11 @@ export interface FirePayload {
   /** Ronda LOCAL del pedido (tandas, 2026-07-19): el handler marca con ella las líneas
    *  pendientes. Ausente en el camino compat (sin tandas). */
   round_no?: number;
+  /** Who is serving the check (sales#179), when the cashier has CHOSEN somebody. It travels
+   *  opaque to `order.fired` and from there to the `kitchen` ticket, so the pass knows who to call.
+   *  **Absent when nobody was chosen**: the session user's id is put there by the SERVER, and a
+   *  browser making it up would be attributing tickets to whoever it liked. */
+  waiter_id?: string;
 }
 
 /** Carga útil de `sales.order.fire`, o `undefined` si no hay nada que mandar (sin pedido abierto o
@@ -44,12 +49,14 @@ export function buildFirePayload(
   label: string,
   lines: CartLine[],
   roundNo?: number,
+  waiterId?: string,
 ): FirePayload | undefined {
   if (!orderId || lines.length === 0) return undefined;
   return {
     order_id: orderId,
     label,
     ...(roundNo && roundNo >= 1 ? { round_no: roundNo } : {}),
+    ...(waiterId ? { waiter_id: waiterId } : {}),
     // Sin mesa no es servicio de sala: barra, mostrador o para llevar.
     channel: label ? 'dine_in' : 'takeaway',
     items: lines.map((l) => ({
