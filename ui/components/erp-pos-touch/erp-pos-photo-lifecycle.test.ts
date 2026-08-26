@@ -34,7 +34,11 @@ describe('catalogue photo lifecycle', () => {
     await import('./erp-pos-touch');
     const element = document.createElement('erp-pos-touch') as HTMLElement & { updateComplete: Promise<unknown> };
     document.body.appendChild(element);
-    await Promise.resolve();
+    // A macrotask, not a single microtask: since sales#25 the catalogue read waits for the till's
+    // own policy (`sales.pos_settings.get`) to say whether products feed the grid at all, so the
+    // query starts one turn later. What this test is about is unchanged — the read resolving
+    // AFTER unmount must not start downloads.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(releaseProducts).toBeTypeOf('function');
 
     element.remove();

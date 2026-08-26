@@ -16,14 +16,9 @@
 // el caído es `taxes`. `productSellability` es el veredicto por producto.
 
 import type { ErploraClientLike } from './pos-cart.js';
-
-/** The two codes the runtime answers to say "that app is not here" (hub#1074, ADR-0400).
- *
- *  `module_inactive` counts as absence just like `module_not_installed`: the ADR-0128 cascade
- *  switches a module off with its dependency, and a module that is off answers nobody. It is the
- *  SAME pair the SDK's `queryOptional` returns `undefined` for, which is why it is not invented
- *  here. */
-const MODULE_ABSENT_CODES = new Set(['module_not_installed', 'module_inactive']);
+// The two codes that mean "that app is not here" live in ONE place (sales#25): a second copy is
+// how one door starts calling absence what the other calls an incident.
+import { isModuleAbsent } from './dependency-read.js';
 
 interface TaxRuleRow {
   id?: string;
@@ -121,8 +116,7 @@ export async function loadTaxCatalog(client: ErploraClientLike): Promise<TaxCata
     // handler, a renamed query, the DB down) deliberately leaves `installed: true`: the app IS
     // there, this is an incident, and blocking the counter over it would be worse than the defect
     // it fixes.
-    const code = (e as { code?: unknown } | null | undefined)?.code;
-    installed = !(typeof code === 'string' && MODULE_ABSENT_CODES.has(code));
+    installed = !isModuleAbsent(e);
   }
   return { rates: map, available, installed };
 }

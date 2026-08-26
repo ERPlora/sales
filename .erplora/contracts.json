@@ -17,6 +17,7 @@
       "sales.order.lines",
       "sales.orders.list",
       "sales.payment_methods",
+      "sales.pos_settings.get",
       "sales.refund_options",
       "sales.settings.get",
       "sales.stats",

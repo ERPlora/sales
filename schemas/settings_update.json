@@ -23,12 +23,14 @@
     "sync_products": {
       "type": "boolean",
       "default": true,
-      "title": "Mostrar productos en el TPV"
+      "title": "Mostrar productos en el TPV",
+      "description": "Los productos se muestran cuando el módulo Inventory está instalado. Apágalo para vender solo servicios o líneas de precio libre."
     },
     "sync_services": {
       "type": "boolean",
-      "default": false,
-      "title": "Mostrar servicios en el TPV"
+      "default": true,
+      "title": "Mostrar servicios en el TPV",
+      "description": "Los servicios se muestran cuando el módulo Services está instalado. Apágalo para vender solo productos."
     },
     "require_customer": {
       "type": "boolean",

@@ -1842,8 +1842,27 @@ function defaultPayMethod(methods) {
   return methods.find((m4) => (m4.type || "").trim().toLowerCase() === "cash") ?? methods.find((m4) => /efectiv|cash|met[\u00e1a]lico/i.test(m4.name || "")) ?? methods[0];
 }
 
-// ui/lib/pos-tax.ts
+// ui/lib/dependency-read.ts
 var MODULE_ABSENT_CODES = /* @__PURE__ */ new Set(["module_not_installed", "module_inactive"]);
+function isModuleAbsent(e7) {
+  const code = e7?.code;
+  return typeof code === "string" && MODULE_ABSENT_CODES.has(code);
+}
+function toRows(r6) {
+  if (Array.isArray(r6)) return r6;
+  if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
+  return [];
+}
+async function dependencyRead(read) {
+  try {
+    return { rows: toRows(await read()), absent: false, broken: false };
+  } catch (e7) {
+    const absent = isModuleAbsent(e7);
+    return { rows: [], absent, broken: !absent };
+  }
+}
+
+// ui/lib/pos-tax.ts
 function isRoot(r6) {
   return r6.parent_id == null || String(r6.parent_id) === "";
 }
@@ -1877,8 +1896,7 @@ async function loadTaxCatalog(client) {
     }
   } catch (e7) {
     available = false;
-    const code = e7?.code;
-    installed = !(typeof code === "string" && MODULE_ABSENT_CODES.has(code));
+    installed = !isModuleAbsent(e7);
   }
   return { rates: map, available, installed };
 }
@@ -4131,6 +4149,9 @@ var es_default = {
     missingAppCharge: "{app} no est\xE1 instalada, as\xED que no se puede cobrar. Inst\xE1lala desde el marketplace.",
     missingAppChargeShort: "Falta {app}",
     appTaxes: "Impuestos",
+    appInventory: "Inventario",
+    appCatalogUnavailable: "{app} no ha respondido, as\xED que su cat\xE1logo puede estar incompleto. Revisa la aplicaci\xF3n y vuelve a cargar el TPV.",
+    posSettingsUnavailable: "El TPV no ha podido leer sus propios ajustes, as\xED que muestra los valores por defecto. Vuelve a cargar para reintentarlo.",
     errorMissingApp: "La venta se ha rechazado porque falta una app que necesita. No se ha cobrado nada.",
     servedBy: "Atiende {name}",
     staffMe: "yo",
@@ -4492,6 +4513,9 @@ var en_default = {
     missingAppCharge: "{app} is not installed, so nothing can be charged. Install it from the marketplace.",
     missingAppChargeShort: "{app} is missing",
     appTaxes: "Taxes",
+    appInventory: "Inventory",
+    appCatalogUnavailable: "{app} did not answer, so its catalogue may be incomplete. Check the app and reload the till.",
+    posSettingsUnavailable: "The till could not read its own settings, so it is showing the defaults. Reload to try again.",
     errorMissingApp: "The sale was refused because an app it needs is not installed. Nothing was charged.",
     servedBy: "Served by {name}",
     staffMe: "me",
@@ -6418,6 +6442,11 @@ async function optionalRead(read) {
   }
 }
 var LEGACY_PAGE_LIMIT = 500;
+function catalogSourceOn(v3) {
+  if (v3 === void 0 || v3 === null || v3 === "") return true;
+  return !(v3 === 0 || v3 === "0" || v3 === false);
+}
+var HARD_DEPENDENCIES = ["inventory", "taxes"];
 async function optionalReadAll(whole, page) {
   try {
     const c5 = erplora2();
@@ -6504,6 +6533,7 @@ var ErpPosTouch = class extends i3 {
     this.modifierPicks = [];
     this.comboCatalog = [];
     this.comboCatalogFailed = false;
+    this.brokenCatalogApps = [];
     this.comboPicks = [];
     this.comboNeedsGroup = "";
     this.openDept = "";
@@ -7376,6 +7406,14 @@ var ErpPosTouch = class extends i3 {
     const connectionEpoch = ++this.connectionEpoch;
     super.connectedCallback();
     window.addEventListener("erplora:locale-changed", this.onLocaleChange);
+    const brokenApps = /* @__PURE__ */ new Set();
+    const hardRead = async (app, read) => {
+      const out = await dependencyRead(read);
+      if (out.broken) brokenApps.add(app);
+      return out.rows;
+    };
+    const policy = this.loadPosSettings();
+    const fromSource = async (flag, read) => catalogSourceOn((await policy)[flag]) ? read() : [];
     try {
       const [
         prods,
@@ -7393,7 +7431,7 @@ var ErpPosTouch = class extends i3 {
         taxCats,
         fiscalLimits
       ] = await Promise.all([
-        erplora2().queryAll("inventory.products.list").catch(() => []),
+        fromSource("sync_products", () => hardRead("inventory", () => erplora2().queryAll("inventory.products.list"))),
         erplora2().query("sales.payment_methods").catch(() => []),
         erplora2().query("sales.settings.get").catch(() => []),
         // sales#180 — the business identity for the BILL's header. Deliberately apart from the
@@ -7403,19 +7441,20 @@ var ErpPosTouch = class extends i3 {
         erplora2().query("sales.business.get").catch(() => []),
         this.restoreOpenOrder(),
         listOpenChecks(erplora2()),
-        erplora2().queryAll("inventory.categories.list", { sort: "name", dir: "asc" }).catch(() => []),
-        erplora2().queryAll("inventory.product_categories").catch(() => []),
+        fromSource("sync_products", () => hardRead("inventory", () => erplora2().queryAll("inventory.categories.list", { sort: "name", dir: "asc" }))),
+        fromSource("sync_products", () => hardRead("inventory", () => erplora2().queryAll("inventory.product_categories"))),
         loadTaxCatalog(erplora2()),
-        erplora2().queryAll("inventory.units.list").catch(() => []),
+        hardRead("inventory", () => erplora2().queryAll("inventory.units.list")),
         // sales#89 — el catálogo VENDIBLE de servicios. Lectura OPCIONAL (ADR-0127): `services` NO
         // está en `depends_on` a propósito, porque `depends_on` es un contrato DURO que obligaría a
         // todo restaurante a instalar el módulo y ataría `sales` a su cascada de desactivación. Un
         // hub sin `services` recibe `undefined` y el TPV sigue siendo exactamente el de antes.
-        this.loadServices(),
-        this.loadServiceCategories(),
-        // Departamentos para la venta por precio libre (ADR-0085). Best-effort: si taxes no responde,
-        // el sheet queda sin departamentos y avisa (no rompe el TPV).
-        erplora2().queryAll("taxes.categories.list").catch(() => []),
+        fromSource("sync_services", () => this.loadServices()),
+        fromSource("sync_services", () => this.loadServiceCategories()),
+        // Departments for the free-price sale (ADR-0085). It never breaks the till: with no
+        // departments the sheet says so. But a `taxes` that IS installed and does not answer is an
+        // incident, not the absence of departments, and sales#25 makes that difference visible.
+        hardRead("taxes", () => erplora2().queryAll("taxes.categories.list")),
         // hub#297 — qué techo pone el régimen fiscal de ESTE hub. Es una query del CORE
         // (`hub.`), no de `verifactu`: así el TPV no gana una dependencia del módulo fiscal y la
         // respuesta no desaparece el día que alguien lo desinstale.
@@ -7431,11 +7470,12 @@ var ErpPosTouch = class extends i3 {
         this.loadCombos()
       ]);
       if (connectionEpoch !== this.connectionEpoch || !this.isConnected) return;
+      this.brokenCatalogApps = HARD_DEPENDENCIES.filter((app) => brokenApps.has(app));
       this.taxCatalog = taxCatalog;
       this.missingChargeApp = taxCatalog.installed ? "" : "taxes";
       this.simplifiedMaxCents = rows2(fiscalLimits)[0]?.simplified_invoice_max_cents ?? null;
-      for (const u5 of rows2(unitRows)) if (u5.code) this.units.set(u5.code, u5);
-      this.products = [...rows2(prods).filter((p4) => p4.is_active !== 0), ...svcRows];
+      for (const u5 of unitRows) if (u5.code) this.units.set(u5.code, u5);
+      this.products = [...prods.filter((p4) => p4.is_active !== 0), ...svcRows];
       void this.photos.replace(this.products.map((p4) => p4.image));
       for (const s5 of svcRows) {
         if (!s5.category_id) continue;
@@ -7443,14 +7483,14 @@ var ErpPosTouch = class extends i3 {
         this.prodCats.get(s5.id).add(s5.category_id);
       }
       this.methods = rows2(methods);
-      this.settings = rows2(settingsRows)[0] || {};
+      this.settings = { ...rows2(settingsRows)[0] || {}, ...await policy };
       this.businessName = rows2(businessRows)[0]?.name || "";
       this.docFormat = this.settings.default_document_format === "invoice" ? "invoice" : "ticket";
       this.payMethod = defaultPayMethod(this.payMethods);
       this.parked = parked;
-      this.categories = [...rows2(cats).filter((c5) => c5.name), ...svcCats];
-      this.taxCategories = rows2(taxCats).filter((c5) => c5.key && c5.is_active !== 0);
-      for (const pc of rows2(prodCats)) {
+      this.categories = [...cats.filter((c5) => c5.name), ...svcCats];
+      this.taxCategories = taxCats.filter((c5) => c5.key && c5.is_active !== 0);
+      for (const pc of prodCats) {
         if (!this.prodCats.has(pc.product_id)) this.prodCats.set(pc.product_id, /* @__PURE__ */ new Set());
         this.prodCats.get(pc.product_id).add(pc.category_id);
       }
@@ -8142,6 +8182,25 @@ var ErpPosTouch = class extends i3 {
   get staffLabel() {
     const name = this.staffName || (this.staffId ? t5("ui.staffAssigned") : t5("ui.staffMe"));
     return t5("ui.servedBy", { name });
+  }
+  /** The till's own policy row (sales#25): which catalogue sources feed the grid, and how the
+   *  checkout opens.
+   *
+   *  Read through `sales.pos_settings.get` and NOT `sales.settings.get`: that one requires
+   *  `sales.manage_settings`, which neither `cashier` nor `employee` has, so through it the till
+   *  is blind to its own configuration for the two roles that use it all day.
+   *
+   *  A FAILURE falls back to the defaults — a till that opens with an empty grid because a
+   *  settings read hiccuped is worse than one that shows everything — but it is not swallowed:
+   *  the shell is told, because a policy nobody could read means the switches on the settings
+   *  screen are not being honoured right now. */
+  async loadPosSettings() {
+    try {
+      return rows2(await erplora2().query("sales.pos_settings.get"))[0] ?? {};
+    } catch {
+      this.notifyShell(t5("ui.posSettingsUnavailable"));
+      return {};
+    }
   }
   /** El catálogo VENDIBLE de `services`, mapeado a la forma de la rejilla (sales#89).
    *
@@ -8958,10 +9017,13 @@ var ErpPosTouch = class extends i3 {
    *  falls back to the id: saying `taxes` is ugly, but it is true — inventing a name would not
    *  be. */
   get chargeAppName() {
-    if (!this.missingChargeApp) return "";
-    const key = `ui.app${this.missingChargeApp.charAt(0).toUpperCase()}${this.missingChargeApp.slice(1)}`;
+    return this.missingChargeApp ? this.appName(this.missingChargeApp) : "";
+  }
+  /** The same translation for any app id the till has to name (sales#25). */
+  appName(id) {
+    const key = `ui.app${id.charAt(0).toUpperCase()}${id.slice(1)}`;
     const name = t5(key);
-    return name === key ? this.missingChargeApp : name;
+    return name === key ? id : name;
   }
   /** POR QUÉ no se puede cobrar todavía, en palabras. `undefined` = se puede.
    *
@@ -9788,6 +9850,18 @@ var ErpPosTouch = class extends i3 {
           ${this.comboCatalogFailed ? b2`<div class="blocked-notice combo-unavailable" role="status">
                 <ion-icon name="alert-circle" aria-hidden="true"></ion-icon><span>${t5("ui.comboCatalogUnavailable")}</span>
               </div>` : A}
+          <!-- sales#25: a HARD dependency (inventory, taxes) that IS installed and whose catalogue
+               read FAILED. It is an alert, like the missing-app notice: the grid in front of the
+               cashier is incomplete and no tap on it will say why. Its ABSENCE is not here — an
+               app the hub does not have is a legitimate state that degrades in silence, and
+               alarming about it would train the notice away.
+               NOTE: no backticks in this comment. Inside an html tagged template a backtick ends
+               the template literal and the whole file stops parsing. -->
+          ${this.brokenCatalogApps.map((app) => b2`
+            <div class="blocked-notice catalog-unavailable" role="alert" data-testid="dependency-read-failed">
+              <ion-icon name="alert-circle" aria-hidden="true"></ion-icon>
+              <span>${t5("ui.appCatalogUnavailable", { app: this.appName(app) })}</span>
+            </div>`)}
           <!-- sales#149: the state of the CATALOGUE, one line and last among the notices. The two
                above belong to the tap that just happened; this one has been true since the till
                opened, so it must not push them down every time they appear. -->
@@ -10429,6 +10503,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "comboCatalogFailed", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "brokenCatalogApps", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "comboSheet", 2);
