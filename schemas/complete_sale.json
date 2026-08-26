@@ -151,7 +151,7 @@
           },
           "modifiers": {
             "type": "array",
-            "description": "Suplementos elegidos para esta línea (pm#93 / ADR-0376), EN EL ORDEN en que se eligieron. Solo se envía `option_id`: el precio y el nombre los pone el catálogo del servidor, nunca el cliente. Si el módulo `modifiers` no está instalado y esto llega con contenido, la venta se RECHAZA.",
+            "description": "The supplements chosen for this line (pm#93 / ADR-0376), IN THE ORDER they were chosen. Only `option_id` is sent: the price and the name come from the server's catalogue, never from the client. If the `modifiers` module is not installed and this arrives with content, the sale is REFUSED. On an OPEN CHECK (`order_item_id`) this field decides nothing at all: what is charged is what the row froze when the line was ordered (sales#200).",
             "default": [],
             "items": {
               "type": "object",
