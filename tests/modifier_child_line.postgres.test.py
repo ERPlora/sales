@@ -32,7 +32,10 @@ Six points:
      because the child is materialised when the money is decided. Joining it back (`order.merge`)
      brings it whole.
   5. REOPENING CHANGES NOTHING. A line that goes back to a live check keeps its supplements.
-  6. AND NONE OF IT CROSSES HUBS. A neighbour hub sees no row, no link and no supplement.
+  6. AND THE FOLD IS UNTOUCHED. A supplement with NO category of its own — the 99 % of them — still
+     lands as ONE row with the delta inside its unit price. This is the control: if it went red, the
+     fix would have broken every ticket with a «+cheese» on it.
+  7. NONE OF IT CROSSES HUBS. A neighbour hub sees no row, no link and no supplement.
 
 Usage: tests/modifier_child_line.postgres.test.py
   Uses the `erplora-test-pg-5433` container by default (override: SALES_TEST_PG_CONTAINER).
@@ -565,11 +568,54 @@ def test_reopening_keeps_the_supplement() -> None:
           [("o-refresco", 200)])
 
 
-# ── 6 · And none of it crosses hubs ──────────────────────────────────────────────────────
+# ── 6 · The FOLD still lands, untouched ──────────────────────────────────────────────────
+
+FOLDED_SALE = "sale-folded"
+FOLDED_LINE = "line-folded"
+
+
+def test_a_supplement_that_folds_still_lands_as_ONE_row() -> None:
+    print("\n6. The 99 % of supplements — no category of their own — still land as ONE row")
+    # The no-regression control, and it is the one that matters most: a «+cheese» has no tax
+    # category, so its delta goes on folding into the parent's unit price. If this went red, the fix
+    # would have broken every ticket with a supplement on it.
+    command_ok("counter of the day", "sales._bump_counter", {"day": DAY, "new_id": "cnt-folded"})
+    command_ok("sale header", "sales._insert_sale", {
+        "sale_id": FOLDED_SALE, "day": DAY, "status": "completed", "subtotal": 1091,
+        "tax_amount": 109,
+        "tax_breakdown": '{"10.00":{"base":1091,"tax":109,"kind":"tax"}}',
+        "discount_amount": 0, "discount_percent": 0, "total": 1200, "gift_total": 0,
+        "payment_method_id": "pm-1", "payment_method_name": "Efectivo", "amount_tendered": 1200,
+        "change_due": 0, "customer_id": None, "customer_name": "", "notes": "",
+        "source_module": "pos", "channel": "dine_in", "order_id": None, "staff_id": USER,
+        "appointment_id": None, "document_type": "ticket", "idempotency_key": "idem-folded",
+    })
+    command_ok("one line, 12,00 € at 10 %", "sales._insert_line", line_params(
+        line_id=FOLDED_LINE, sale_id=FOLDED_SALE, product_id="p-menu",
+        product_name="Menú del día", unit_price=1200, tax_rate=10.0,
+        tax_category_key="restaurant.food", tax_rule_id="r-es-10",
+        net_amount=1091, tax_amount=109, line_total=1200,
+        modifiers='[{"option_id":"o-queso","name":"Queso","price_delta":200}]',
+    ))
+    check("ONE row, not two", qi(
+        f"SELECT count(*) FROM sales_sale_item WHERE sale_id = '{FOLDED_SALE}' "
+        f"AND hub_id = '{HUB}'"), 1)
+    check("the delta is INSIDE the unit price", qi(
+        f"SELECT unit_price FROM sales_sale_item WHERE id = '{FOLDED_LINE}'"), 1200)
+    check("and nothing hangs from it", q(
+        f"SELECT COALESCE(parent_line_ref, '<null>') FROM sales_sale_item "
+        f"WHERE id = '{FOLDED_LINE}'"), "<null>")
+    rows = run_query("sales.lines", {"sale_id": FOLDED_SALE})
+    check("the ticket still names the supplement under its line",
+          [o["option_id"] for o in json.loads(rows[0]["modifiers"])] if rows else [],
+          ["o-queso"])
+
+
+# ── 7 · And none of it crosses hubs ──────────────────────────────────────────────────────
 
 
 def test_nothing_crosses_hubs() -> None:
-    print("\n6. A neighbour hub sees no row, no link and no supplement")
+    print("\n7. A neighbour hub sees no row, no link and no supplement")
     checkout(hub=OTHER_HUB, sale_id="sale-neighbour")
     check("the neighbour's sale does not reach this hub through the ticket's door",
           len(run_query("sales.lines", {"sale_id": "sale-neighbour"}, hub=HUB)), 0)
@@ -603,6 +649,7 @@ def main() -> int:
         test_the_reprint_reads_the_link()
         test_the_check_splits_and_joins_with_its_supplements()
         test_reopening_keeps_the_supplement()
+        test_a_supplement_that_folds_still_lands_as_ONE_row()
         test_nothing_crosses_hubs()
     finally:
         psql(["-c", f"DROP DATABASE IF EXISTS {DB} WITH (FORCE)"])
