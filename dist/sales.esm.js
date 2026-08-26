@@ -1332,6 +1332,7 @@ function bindDrag(segment) {
   let startScroll = 0;
   let dragging = false;
   let swallowClick = false;
+  let disarm = null;
   const onDown = (e7) => {
     if (e7.pointerType === "touch") return;
     pointerId = e7.pointerId;
@@ -1355,6 +1356,11 @@ function bindDrag(segment) {
     if (pointerId === null || e7.pointerId !== pointerId) return;
     if (dragging) {
       swallowClick = true;
+      if (disarm !== null) clearTimeout(disarm);
+      disarm = setTimeout(() => {
+        swallowClick = false;
+        disarm = null;
+      }, 0);
       segment.releasePointerCapture?.(pointerId);
       segment.classList.remove(DRAGGING_CLASS);
     }
@@ -1368,16 +1374,17 @@ function bindDrag(segment) {
     e7.preventDefault();
   };
   segment.addEventListener("pointerdown", onDown);
-  segment.addEventListener("pointermove", onMove);
-  segment.addEventListener("pointerup", onUp);
-  segment.addEventListener("pointercancel", onUp);
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
+  window.addEventListener("pointercancel", onUp);
   segment.addEventListener("click", onClick, true);
   return () => {
     segment.removeEventListener("pointerdown", onDown);
-    segment.removeEventListener("pointermove", onMove);
-    segment.removeEventListener("pointerup", onUp);
-    segment.removeEventListener("pointercancel", onUp);
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    window.removeEventListener("pointercancel", onUp);
     segment.removeEventListener("click", onClick, true);
+    if (disarm !== null) clearTimeout(disarm);
     segment.classList.remove(DRAGGING_CLASS);
   };
 }
