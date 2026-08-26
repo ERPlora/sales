@@ -6332,6 +6332,17 @@ async function optionalRead(read) {
     return void 0;
   }
 }
+var LEGACY_PAGE_LIMIT = 500;
+async function optionalReadAll(whole, page) {
+  try {
+    const c5 = erplora2();
+    if (typeof c5.queryAllOptional === "function") return await whole(c5);
+    if (typeof c5.queryOptional === "function") return await page(c5);
+    return void 0;
+  } catch {
+    return void 0;
+  }
+}
 function groupModifierRows(rows3) {
   const out = [];
   for (const raw of rows3) {
@@ -8049,7 +8060,10 @@ var ErpPosTouch = class extends i3 {
    *  `is_service`, que hace que el handler no lo mida contra el catálogo de `inventory` ni le
    *  descuente stock. `services` es la autoridad del precio y de la categoría fiscal. */
   async loadServices() {
-    const rowsIn = await optionalRead((c5) => c5.queryOptional("services.services.list", { limit: 500 }));
+    const rowsIn = await optionalReadAll(
+      (c5) => c5.queryAllOptional("services.services.list"),
+      (c5) => c5.queryOptional("services.services.list", { limit: LEGACY_PAGE_LIMIT })
+    );
     if (rowsIn === void 0) return [];
     return rows2(rowsIn).map((s5) => ({
       id: s5.id,
@@ -8066,7 +8080,10 @@ var ErpPosTouch = class extends i3 {
   /** Las categorías de servicio salen como una pestaña más: 40 servicios en un muro plano no son
    *  usables en una peluquería con cliente delante. */
   async loadServiceCategories() {
-    const rowsIn = await optionalRead((c5) => c5.queryOptional("services.categories.list", { sort: "name", dir: "asc" }));
+    const rowsIn = await optionalReadAll(
+      (c5) => c5.queryAllOptional("services.categories.list", { sort: "name", dir: "asc" }),
+      (c5) => c5.queryOptional("services.categories.list", { sort: "name", dir: "asc", limit: LEGACY_PAGE_LIMIT })
+    );
     if (rowsIn === void 0) return [];
     return rows2(rowsIn).filter((c5) => c5.name).map((c5) => ({ id: c5.id, name: c5.name }));
   }

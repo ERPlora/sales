@@ -98,6 +98,11 @@ export interface ErploraClientLike {
    *  rejilla de productos del TPV, un `<ion-select>` de categorías fiscales, el mapa
    *  producto↔categoría. El viejo `page_size` NO era un parámetro del runtime: truncaba a 50. */
   queryAll<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T[]>;
+  /** EVERY row of an OPTIONAL integration (ADR-0127, sales#186): `queryAll` plus `queryOptional`'s
+   *  tolerance. `undefined` ONLY when the owner module is not installed; a broken contract against
+   *  a module that IS there still explodes. Without this there was no way to ask a module that may
+   *  be missing for the whole set: `queryOptional` answers ONE PAGE and truncated in silence. */
+  queryAllOptional<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T[] | undefined>;
   command<T = unknown>(name: string, payload?: Record<string, unknown>): Promise<T>;
   /** Media autenticada por el shell; opcional para que un Hub anterior degrade a iniciales. */
   fetchMediaBlob?(ref: string, opts?: { signal?: AbortSignal }): Promise<Blob | null>;

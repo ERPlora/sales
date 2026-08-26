@@ -198,6 +198,36 @@ async function optionalRead(read: (c: ErploraClientLike) => Promise<unknown>): P
   }
 }
 
+/** The runtime's per-request ceiling, and what sales#184 used to ask for: see `optionalReadAll`. */
+const LEGACY_PAGE_LIMIT = 500;
+
+/** OPTIONAL read that wants the WHOLE set, not a page (sales#186).
+ *
+ *  `whole` is the good path (`queryAllOptional`). `page` is the fallback for a shell that does not
+ *  have it yet: modules update themselves and the hub IMAGE does NOT, so this version lands on hubs
+ *  whose SDK cannot bring the whole set. There it asks the way it did until now —one page with an
+ *  explicit cap—, because a till with 500 services keeps selling and one with zero does not.
+ *
+ *  Two thunks instead of a query name argument on purpose: the contract extractor (ADR-0127) does
+ *  not follow variables, so the name has to stay LITERAL inside each SDK call — `queryAllOptional`
+ *  for the good path and `queryOptional` for the fallback both register, and `.erplora/contracts.json`
+ *  keeps listing the query as an optional consumption whichever door is taken.
+ *
+ *  Absence and failure answer the same: `undefined`, and the till sells what it always sold. */
+async function optionalReadAll(
+  whole: (c: ErploraClientLike) => Promise<unknown>,
+  page: (c: ErploraClientLike) => Promise<unknown>,
+): Promise<unknown | undefined> {
+  try {
+    const c = erplora() as Partial<ErploraClientLike>;
+    if (typeof c.queryAllOptional === 'function') return await whole(c as ErploraClientLike);
+    if (typeof c.queryOptional === 'function') return await page(c as ErploraClientLike);
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Un grupo de suplementos con sus opciones, tal como lo entrega `modifiers.for_target`. */
 interface ModifierGroup {
   id: string;
@@ -2131,19 +2161,17 @@ export class ErpPosTouch extends LitElement {
    *  `is_service`, que hace que el handler no lo mida contra el catálogo de `inventory` ni le
    *  descuente stock. `services` es la autoridad del precio y de la categoría fiscal. */
   private async loadServices(): Promise<Product[]> {
-    // hub#1173: `page_size` NO es un parámetro del runtime (el motor lee `limit`), así que se
-    // descartaba en silencio y la llamada no hacía lo que aparentaba — y hoy el runtime lo rechaza
-    // con `unknown_filter`, que dejaría al TPV sin servicios que vender.
-    //
-    // Se manda `limit`, que SÍ es vocabulario del motor. Sin él tampoco vendría el catálogo entero:
-    // `/api/query` sobre una query con bloque `list` responde UNA PÁGINA (`execute_query_page` en
-    // `crates/server/src/lib.rs`), y sin `limit` el tamaño es el `page_size` del manifest — 50. Es
-    // decir: el `page_size: 500` de antes no truncaba «a 50 en vez de 500», truncaba a 50 creyendo
-    // pedir 500, y omitirlo truncaría igual en silencio. El tope explícito es lo único que hoy dice
-    // la verdad. Traer el conjunto entero por esta puerta necesita un `queryAllOptional` que el SDK
-    // aún no tiene (`queryAll` bajo `optionalRead` choca con el guard de ADR-0127 porque `services`
-    // no está en `depends_on`): ERPlora/sales#186.
-    const rowsIn = await optionalRead((c) => c.queryOptional<unknown>('services.services.list', { limit: 500 }));
+    // sales#186: the WHOLE catalogue, no cap. Neither earlier shape brought it — `page_size` is not
+    // a runtime parameter (the engine reads `limit`) and was dropped in silence; the `limit: 500`
+    // that replaced it at least told the truth, but it was still an arbitrary ceiling: a business
+    // with more than 500 services could not sell them, which is the bug hub#650 fixed for products.
+    // `queryAllOptional` closes both halves: the whole set (two round trips at most) and `undefined`
+    // when `services` is not installed, which is what ADR-0127 demands because `services` is NOT in
+    // the `depends_on` of `sales`.
+    const rowsIn = await optionalReadAll(
+      (c) => c.queryAllOptional<unknown>('services.services.list'),
+      (c) => c.queryOptional<unknown>('services.services.list', { limit: LEGACY_PAGE_LIMIT }),
+    );
     if (rowsIn === undefined) return []; // módulo no instalado: el TPV sigue siendo el de siempre
     return rows<ServiceRow>(rowsIn).map((s) => ({
       id: s.id,
@@ -2161,7 +2189,13 @@ export class ErpPosTouch extends LitElement {
   /** Las categorías de servicio salen como una pestaña más: 40 servicios en un muro plano no son
    *  usables en una peluquería con cliente delante. */
   private async loadServiceCategories(): Promise<Category[]> {
-    const rowsIn = await optionalRead((c) => c.queryOptional<unknown>('services.categories.list', { sort: 'name', dir: 'asc' }));
+    // sales#186: the whole set, same as the catalogue. This read did not even carry a cap, so it
+    // stopped at the first page —50— and a salon with more families lost the ones at the bottom
+    // without a single warning.
+    const rowsIn = await optionalReadAll(
+      (c) => c.queryAllOptional<unknown>('services.categories.list', { sort: 'name', dir: 'asc' }),
+      (c) => c.queryOptional<unknown>('services.categories.list', { sort: 'name', dir: 'asc', limit: LEGACY_PAGE_LIMIT }),
+    );
     if (rowsIn === undefined) return [];
     return rows<ServiceCat>(rowsIn).filter((c) => c.name).map((c) => ({ id: c.id, name: c.name }));
   }

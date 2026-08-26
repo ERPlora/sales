@@ -45,6 +45,13 @@ function installSdk(opts: { appointmentsInstalled?: boolean } = {}) {
       return [];
     },
     queryAll: async (name: string) => (name === 'taxes.rules.list' ? RULES : []),
+    queryAllOptional: async (name: string) => {
+      // sales#186 — the till reads its catalogue whole; `appointments.appointments.get` is a POINT
+      // read and stays on `queryOptional`.
+      if (name === 'services.services.list') return SERVICES;
+      if (name === 'services.categories.list') return [];
+      return undefined;
+    },
     queryOptional: async (name: string) => {
       if (name === 'services.services.list') return SERVICES;
       if (name === 'services.categories.list') return [];

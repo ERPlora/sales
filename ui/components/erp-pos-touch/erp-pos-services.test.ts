@@ -59,6 +59,13 @@ function installSdk(servicesInstalled: boolean) {
       if (name === 'services.categories.list') return servicesInstalled ? SERVICE_CATS : undefined;
       return undefined;
     },
+    // sales#186 — the whole set, `undefined` when `services` is not installed. This is the door the
+    // till reads its catalogue through now; `queryOptional` stays for the point reads.
+    queryAllOptional: async (name: string) => {
+      if (name === 'services.services.list') return servicesInstalled ? SERVICES : undefined;
+      if (name === 'services.categories.list') return servicesInstalled ? SERVICE_CATS : undefined;
+      return undefined;
+    },
     command: async (name: string, params?: Record<string, unknown>) => {
       commands.push({ name, params });
       return { rows: [{ id: 'line-1' }] };
@@ -200,5 +207,108 @@ describe('a hub without the services module', () => {
     for (const name of ['Corte de señora', 'Balayage', 'Ritual sin IVA']) {
       expect(() => tileOf(el, name), `${name} must not be offered`).toThrow();
     }
+  });
+});
+
+// sales#186 — the till reads the WHOLE service catalogue, or it cannot sell what it does not see.
+//
+// `/api/query` on a query with a `list` block answers ONE PAGE (`execute_query_page`): with no
+// `limit` the size is the manifest's `page_size` — 50 — and the hard ceiling per request is 500.
+// So neither shape the till used ever brought the catalogue: `{ page_size: 500 }` was a parameter
+// the runtime does not read (50 rows, while asking for 500), `{ limit: 500 }` at least says what it
+// gets (500), and the categories, asked with no `limit` at all, stopped at 50. Every one of them
+// truncates WITHOUT SAYING SO: the service simply is not on the screen, and nobody can charge it.
+//
+// The fix is `queryAllOptional` in the SDK — the whole set, `undefined` when `services` is not
+// installed — and these tests are the POSITIVE: with more rows than a page, the grid has them all.
+const PAGE_SIZE = 50; // the manifest's `page_size`: what a `list` query answers with no `limit`
+const MAX_LIMIT = 500; // the runtime's hard ceiling per request
+
+/** A catalogue bigger than any single request can carry — a clinic's service list. */
+const BIG_SERVICES = Array.from({ length: 620 }, (_, i) => ({
+  id: `s-${i}`, name: `Servicio ${i}`, price: 1500, pricing_type: 'fixed',
+  category_id: 'sc-pelo', tax_category_key: 'service.generic', status: 'active',
+}));
+const BIG_CATS = Array.from({ length: 63 }, (_, i) => ({ id: `sc-${i}`, name: `Familia ${i}` }));
+
+/**
+ * SDK double that pages like the runtime really pages, so a cap that truncates cannot come back
+ * green: `queryOptional` answers ONE page (clamped to `MAX_LIMIT`), `queryAllOptional` answers the
+ * whole set — which is what the real SDK gets out of its two trips.
+ *
+ * `withQueryAllOptional: false` is a hub still running an older image: modules auto-update, the
+ * image does not, so that shell exists in the wild and the till has to keep selling on it.
+ */
+function installPagingSdk({ withQueryAllOptional = true } = {}) {
+  const calls: { name: string; params?: Record<string, unknown> }[] = [];
+  const rowsOf = (name: string) =>
+    name === 'services.services.list' ? BIG_SERVICES
+      : name === 'services.categories.list' ? BIG_CATS
+        : undefined;
+  const sdk: Record<string, unknown> = {
+    query: async () => [],
+    queryAll: async (name: string) => (name === 'inventory.products.list' ? PRODUCTS : name === 'taxes.rules.list' ? RULES : []),
+    queryOptional: async (name: string, params?: Record<string, unknown>) => {
+      calls.push({ name, params });
+      const all = rowsOf(name);
+      if (!all) return undefined;
+      const limit = Math.min(Number(params?.limit ?? PAGE_SIZE), MAX_LIMIT);
+      return { rows: all.slice(0, limit), total: all.length, limit, offset: 0 };
+    },
+    command: async () => ({ rows: [{ id: 'line-1' }] }),
+    currency: 'EUR',
+    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
+    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
+    t: (_catalog: unknown, key: string) => key,
+    loadSlot: async () => [],
+    notify: () => {},
+  };
+  if (withQueryAllOptional) {
+    sdk.queryAllOptional = async (name: string, params?: Record<string, unknown>) => {
+      calls.push({ name, params });
+      return rowsOf(name); // the whole set, `undefined` if the module is not installed
+    };
+  }
+  (globalThis as Record<string, unknown>).erplora = sdk;
+  return calls;
+}
+
+describe('the whole service catalogue reaches the grid (sales#186)', () => {
+  it('paints the service that lives past the request ceiling', async () => {
+    installPagingSdk();
+    const el = await mount();
+
+    expect(() => tileOf(el, 'Servicio 619'),
+      'a business with 620 services must be able to charge the 620th').not.toThrow();
+  });
+
+  it('offers the category that lives past the first page', async () => {
+    installPagingSdk();
+    const el = await mount();
+
+    const labels = [...el.shadowRoot.querySelectorAll('.cc-n')].map((n) => n.textContent?.trim());
+    expect(labels, 'a salon with 63 families does not lose the last 13').toContain('Familia 62');
+  });
+
+  it('asks for the whole set: no `limit`, no `page_size`', async () => {
+    const calls = installPagingSdk();
+    await mount();
+
+    for (const name of ['services.services.list', 'services.categories.list']) {
+      const call = calls.find((c) => c.name === name);
+      expect(call, `the till reads ${name}`).toBeTruthy();
+      const params = (call?.params ?? {}) as Record<string, unknown>;
+      expect(params.limit, `an explicit cap on ${name} is a truncation waiting to happen`).toBeUndefined();
+      expect(Object.keys(params), '`page_size` is not a runtime parameter').not.toContain('page_size');
+    }
+  });
+
+  it('on a shell without `queryAllOptional` it still sells: one page instead of nothing', async () => {
+    // The hub image lags behind the modules it serves. Degrading to what sales#184 shipped keeps
+    // that till selling; degrading to `undefined` would empty its service grid on update day.
+    installPagingSdk({ withQueryAllOptional: false });
+    const el = await mount();
+
+    expect(() => tileOf(el, 'Servicio 0'), 'an older shell still gets a catalogue').not.toThrow();
   });
 });
