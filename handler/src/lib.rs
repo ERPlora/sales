@@ -2532,13 +2532,21 @@ fn complete_sale_inner(input: Value) -> Result<Output, Refusal> {
     // Ids come from the host's batch (`context.new_ids`): the sale takes [0], the lines [1..=n],
     // and the legs continue from there. Running out is a LOUD refusal — `unwrap_or_default()` would
     // hand the row an EMPTY primary key, and the second one would collide on it.
-    let first_payment_id = 1 + items.len();
+    //
+    // 🔴 sales#204 — `n` is how many lines were EMITTED, never how many items the payload carried.
+    // A `goods` combo split into siblings (art. 79.Dos LIVA) and a supplement with a tax rate of
+    // its own (sales#147) both turn ONE item into SEVERAL lines, and the loop above spends one id
+    // per line (`new_ids[i + 1]`). Counting the payload made the first leg land back on the last
+    // line's id: two rows of the same sale answering to the same name, which breaks the premise of
+    // `consumed_new_ids` (hub#776) and leaves every trace that joins lines to legs by id ambiguous.
+    let line_count = valuation.lines.len();
+    let first_payment_id = 1 + line_count;
     if first_payment_id + tenders.len() > new_ids.len() {
         return Err(reject(
             "sales.too_many_rows",
             format!(
                 "{} lines and {} payments need {} ids, the host gave {}",
-                items.len(),
+                line_count,
                 tenders.len(),
                 first_payment_id + tenders.len(),
                 new_ids.len()
@@ -9211,6 +9219,123 @@ mod tests {
             .expect("JSON");
         assert_eq!(snap[0]["price_delta"], json!(300));
         assert_eq!(snap[0]["kitchen_name"], json!("+QUESO"));
+    }
+
+    // ── sales#204 · UN ID DE LA TANDA NOMBRA UNA FILA ─────────────────────────────────────────
+    //
+    // `context.new_ids` es la autoridad de ids (hub#776): la tanda que entrega el host se reparte
+    // entre las filas de la venta y cada id nombra UNA. El reparto contaba los items del PAYLOAD,
+    // y un combo `goods` partido en hermanas (art. 79.Dos LIVA) hace que las líneas EXPANDIDAS
+    // sean más que los items — así que la primera pata del pago volvía a tomar el id de la última
+    // línea. `sales_sale_item` y `sales_sale_payment` son tablas distintas, de modo que nada
+    // reventaba a la vista: lo que quedaba era una venta con dos filas llamadas igual.
+
+    /// Every id of the host's batch this checkout STAMPED on a row, in emission order: the sale
+    /// header, then the lines, then the payment legs. References to OTHER rows
+    /// (`parent_line_ref`, `combo_group_ref`) are deliberately out — they name an id, they do not
+    /// consume one.
+    fn stamped_row_ids(out: &Output) -> Vec<String> {
+        out.operations
+            .iter()
+            .filter_map(|o| match o.command.as_str() {
+                "sales._insert_sale" => o.params.get("sale_id"),
+                "sales._insert_line" => o.params.get("line_id"),
+                "sales._insert_payment" => o.params.get("payment_id"),
+                _ => None,
+            })
+            .map(as_str)
+            .collect()
+    }
+
+    /// The invariant, in one place: no id of the batch may name two rows of the same sale.
+    fn assert_no_id_names_two_rows(out: &Output) -> Vec<String> {
+        let ids = stamped_row_ids(out);
+        let unique: std::collections::HashSet<&String> = ids.iter().collect();
+        assert!(!ids.iter().any(|id| id.is_empty()), "no row goes out with an EMPTY id: {ids:?}");
+        assert_eq!(unique.len(), ids.len(), "one id of the batch = ONE row, but: {ids:?}");
+        ids
+    }
+
+    #[test]
+    fn a_SPLIT_combo_does_not_give_the_payment_the_id_of_its_last_line() {
+        // 🔴 The reproducer of sales#204. One item in the payload (a 6,00 € pack) that the server
+        // splits into two sibling lines, and a single tender. Counting the payload's items handed
+        // the payment `id-2`, which is the beer's line.
+        let out = sale(combo_input(
+            json!([{ "option_id": "o-sandwich", "product_name": "Bocadillo" },
+                   { "option_id": "o-beer", "product_name": "Cerveza" }]),
+            json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
+                   combo_option("o-beer", "g-drink", 1, "p-beer", 0, "goods", 600, "")]),
+            json!([combo_product("p-sandwich", 450, "shop.food"),
+                   combo_product("p-beer", 200, "product.generic")]),
+            8,
+        ));
+        assert_eq!(sale_lines(&out).len(), 2, "the pack splits: this test needs the split");
+        let ids = assert_no_id_names_two_rows(&out);
+        // And the exact layout, so a future reshuffle of the batch is a red test and not a silent
+        // change: header, the two siblings, then the leg.
+        assert_eq!(ids, vec!["id-0", "id-1", "id-2", "id-3"]);
+    }
+
+    #[test]
+    fn a_PLAIN_sale_still_puts_the_payment_right_after_its_only_line() {
+        // Control: the 99 % of tickets, where the payload's items and the expanded lines are the
+        // same thing. The fix must not shift the batch by one here.
+        let out = sale(input(
+            json!([{ "product_name": "Café", "price": 150, "quantity": 1_000_000, "tax_rate": 10.0 }]),
+            3,
+            150,
+        ));
+        let ids = assert_no_id_names_two_rows(&out);
+        assert_eq!(ids, vec!["id-0", "id-1", "id-2"]);
+    }
+
+    #[test]
+    fn three_siblings_and_TWO_legs_keep_one_id_per_row() {
+        // ADR-0386 — a mixed payment over a combo split in three: the drift used to GROW with the
+        // legs, so the first leg landed on the third line and the second on nothing of its own.
+        let mut inp = combo_input(
+            json!([{ "option_id": "o-a" }, { "option_id": "o-b" }, { "option_id": "o-c" }]),
+            json!([combo_option("o-a", "g1", 1, "p-a", 0, "goods", 1000, ""),
+                   combo_option("o-b", "g2", 1, "p-b", 0, "goods", 1000, ""),
+                   combo_option("o-c", "g3", 1, "p-c", 0, "goods", 1000, "")]),
+            json!([combo_product("p-a", 500, "shop.food"),
+                   combo_product("p-b", 500, "shop.food"),
+                   combo_product("p-c", 500, "product.generic")]),
+            8,
+        );
+        inp["context"]["reads"]["sales.payment_methods"] = mixed_catalog();
+        inp["payload"]["payments"] = json!([
+            { "payment_method_id": "pm-card", "amount": 600 },
+            { "payment_method_id": "pm-cash", "amount": 400, "amount_tendered": 400 }
+        ]);
+        for key in ["payment_method_id", "payment_method_name", "amount_tendered"] {
+            inp["payload"].as_object_mut().expect("payload").remove(key);
+        }
+        let out = sale(inp);
+        assert_eq!(sale_lines(&out).len(), 3, "three tax-split siblings");
+        assert_eq!(payment_ops(&out).len(), 2, "two legs");
+        let ids = assert_no_id_names_two_rows(&out);
+        assert_eq!(ids, vec!["id-0", "id-1", "id-2", "id-3", "id-4", "id-5"]);
+    }
+
+    #[test]
+    fn the_batch_running_out_is_still_a_LOUD_refusal_counted_over_the_EXPANDED_lines() {
+        // The guard counted the same thing wrong, so it never caught this. With two siblings and
+        // one leg the sale needs FOUR ids: three are a refusal, four go through.
+        let split_pack = |ids: usize| {
+            combo_input(
+                json!([{ "option_id": "o-sandwich" }, { "option_id": "o-beer" }]),
+                json!([combo_option("o-sandwich", "g-food", 1, "p-sandwich", 0, "goods", 600, ""),
+                       combo_option("o-beer", "g-drink", 1, "p-beer", 0, "goods", 600, "")]),
+                json!([combo_product("p-sandwich", 450, "shop.food"),
+                       combo_product("p-beer", 200, "product.generic")]),
+                ids,
+            )
+        };
+        let err = complete_sale_pure(split_pack(3)).refused("three ids cannot hold four rows");
+        assert_eq!(err.code, "sales.too_many_rows", "unexpected code: {err:?}");
+        assert_no_id_names_two_rows(&sale(split_pack(4)));
     }
 
 }
