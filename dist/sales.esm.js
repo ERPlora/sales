@@ -4407,7 +4407,11 @@ var es_default = {
     quickNoteDeleteFailed: "No se ha podido eliminar la nota r\xE1pida.",
     quickNotesLoadFailed: "No se han podido cargar las notas r\xE1pidas.",
     lineNoteQuickLoading: "Cargando notas r\xE1pidas\u2026",
-    lineNoteQuickError: "No se han podido cargar las notas r\xE1pidas: escribe la nota a mano."
+    lineNoteQuickError: "No se han podido cargar las notas r\xE1pidas: escribe la nota a mano.",
+    customerRequiredCharge: "Este negocio exige un cliente en cada venta. Elige uno para seguir con el cobro.",
+    customerRequiredShort: "Falta el cliente",
+    customerRequiredNoApp: "Este negocio exige un cliente en cada venta y la aplicaci\xF3n {app} no est\xE1 instalada: esta venta no se puede cerrar desde aqu\xED.",
+    appCustomers: "Clientes"
   },
   widgets: {
     "sales.today": {
@@ -4858,7 +4862,11 @@ var en_default = {
     quickNoteDeleteFailed: "The quick note could not be deleted.",
     quickNotesLoadFailed: "The quick notes could not be loaded.",
     lineNoteQuickLoading: "Loading quick notes\u2026",
-    lineNoteQuickError: "The quick notes could not be loaded \u2014 type the note by hand."
+    lineNoteQuickError: "The quick notes could not be loaded \u2014 type the note by hand.",
+    customerRequiredCharge: "This business requires a customer on every sale. Choose one to carry on with the charge.",
+    customerRequiredShort: "Customer required",
+    customerRequiredNoApp: "This business requires a customer on every sale, and the {app} app is not installed: this sale cannot be closed from here.",
+    appCustomers: "Customers"
   }
 };
 
@@ -7792,6 +7800,11 @@ var ErpPosTouch = class extends i3 {
     .ctx-chip:hover { color:var(--tx); }
     .ctx-chip:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
     .ctx-chip ion-icon { font-size:.95rem; }
+    /* sales#222 — the customer this sale still owes. Warning, not danger: nothing has failed,
+       something is missing, and it is one tap away. */
+    .ctx-chip.needs-customer { border-color:var(--ion-color-warning, #ffc409); font-weight:700;
+      color:var(--ion-color-warning-shade, #e0ac08); background:var(--tile); }
+    .ctx-chip.needs-customer:hover { color:var(--ion-color-warning-shade, #e0ac08); }
 
     ion-segment.view-tabs { margin:.62rem .72rem .28rem; width:auto; border:1px solid var(--line);
       border-radius:var(--ok-radius-sm,11px); background:var(--tile); }
@@ -8186,6 +8199,26 @@ var ErpPosTouch = class extends i3 {
       f3.el.dispatchEvent(new CustomEvent("erp:customer-context-reset", { bubbles: false }));
     }
   }
+  /** sales#222 — asks the counter for the customer the sale cannot be closed without.
+   *
+   *  `sales` does NOT know `customers` (ADR-0043): it never opens anybody's picker and never
+   *  touches its DOM. It fires `erp:customer-required` at whoever fills `sales.pos.assign` — the
+   *  same shape as `erp:customer-context-reset`, which that filler already honours — and brings
+   *  the slot into view. With nobody filling the slot there is no customer to choose here at all,
+   *  and that is said naming the app, like a missing charge app (sales#185): a block with no fix
+   *  on this screen has to name what would fix it. */
+  askForCustomer() {
+    if (!this.assignFillers.length) {
+      this.notifyShell(t5("ui.customerRequiredNoApp", { app: this.appName("customers") }));
+      return;
+    }
+    this.notifyShell(t5("ui.customerRequiredCharge"));
+    for (const f3 of this.assignFillers) {
+      f3.el.dispatchEvent(new CustomEvent("erp:customer-required", { bubbles: false }));
+    }
+    const host = this.renderRoot.querySelector(".cart-actions-slot");
+    host?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }
   updated(_changed) {
     this.ensureSlotsMounted();
     this.syncChargeState();
@@ -8247,6 +8280,20 @@ var ErpPosTouch = class extends i3 {
   }
   get discountsAllowed() {
     return this.settings.allow_discounts !== 0;
+  }
+  /** sales#222 — does this shop demand a customer on EVERY sale?
+   *
+   *  Read from the same row the server decides with (`sales.pos_settings.get`, sales#203) and with
+   *  the same reading as the handler (`hub_setting(..., "require_customer", false)`): absent or 0
+   *  is off, anything else is on. A freshly installed hub has no row, so it is off. */
+  get customerRequired() {
+    const v3 = this.settings.require_customer;
+    return v3 !== void 0 && v3 !== null && v3 !== 0 && v3 !== false;
+  }
+  /** ...and is this checkout missing it? The server's rule is `customer_id`, never the typed name:
+   *  the screen asks for exactly what `sales.complete_sale` refuses over. */
+  get missingRequiredCustomer() {
+    return this.customerRequired && !this.customerId;
   }
   get itemCount() {
     return this.cart.reduce((s5, l3) => s5 + l3.qty, 0);
@@ -9305,6 +9352,10 @@ var ErpPosTouch = class extends i3 {
       this.notifyShell(t5("ui.missingAppCharge", { app: this.chargeAppName }));
       return;
     }
+    if (this.missingRequiredCustomer) {
+      this.askForCustomer();
+      return;
+    }
     this.checkoutKey = newIdempotencyKey();
     this.tendered = "";
     this.padPrimed = false;
@@ -9384,7 +9435,7 @@ var ErpPosTouch = class extends i3 {
    *  sheet's button too (sales#159), which carried the same defect. */
   syncChargeState() {
     const blocked = [
-      [".foot-actions ion-button.charge", !!this.missingChargeApp],
+      [".foot-actions ion-button.charge", !!this.missingChargeApp || this.missingRequiredCustomer],
       [".sheet-foot ion-button.charge", this.paying && !!this.chargeBlock]
     ];
     for (const [selector, isBlocked] of blocked) {
@@ -9629,6 +9680,9 @@ var ErpPosTouch = class extends i3 {
         short: t5("ui.missingAppChargeShort", { app: this.chargeAppName }),
         reason: t5("ui.missingAppCharge", { app: this.chargeAppName })
       };
+    }
+    if (this.missingRequiredCustomer) {
+      return { short: t5("ui.customerRequiredShort"), reason: t5("ui.customerRequiredCharge") };
     }
     if (this.chargeBlocked) {
       return { short: t5("ui.limitChargeBlocked"), reason: "" };
@@ -10186,7 +10240,16 @@ var ErpPosTouch = class extends i3 {
               <ion-icon name="person-circle-outline"></ion-icon>
               <span>${this.staffLabel}</span>
             </button>
-            ${!this.tableLabel && !this.customerName ? b2`<span class="context-empty">${t5("ui.noCheckContext")}</span>` : A}
+            <!-- sales#222 — the shop demands a customer and there is none: it is said HERE, in the
+                 slot the customer occupies, and the chip is the shortcut to fill it. A block whose
+                 only sign is a toast is a block nobody can act on once the toast is gone. -->
+            ${this.missingRequiredCustomer ? b2`<button class="ctx-chip needs-customer" type="button" data-testid="needs-customer"
+                             title=${t5("ui.customerRequiredCharge")} aria-label=${t5("ui.customerRequiredCharge")}
+                             @click=${() => this.askForCustomer()}>
+                       <ion-icon name="person-add-outline"></ion-icon>
+                       <span>${t5("ui.customerRequiredShort")}</span>
+                     </button>` : A}
+            ${!this.tableLabel && !this.customerName && !this.missingRequiredCustomer ? b2`<span class="context-empty">${t5("ui.noCheckContext")}</span>` : A}
           </div>
         </div>
 
@@ -10296,7 +10359,7 @@ var ErpPosTouch = class extends i3 {
                  The blocked state itself is written by syncChargeState(), not here: Ionic steals
                  whatever the template puts on this host. -->
             <ion-button class="charge" ?disabled=${!this.cart.length}
-                        title=${this.missingChargeApp ? t5("ui.missingAppCharge", { app: this.chargeAppName }) : t5("ui.charge")}
+                        title=${this.missingChargeApp ? t5("ui.missingAppCharge", { app: this.chargeAppName }) : this.missingRequiredCustomer ? t5("ui.customerRequiredCharge") : t5("ui.charge")}
                         aria-label=${t5("ui.charge")}
                         @click=${() => this.openPay()}>
               <ion-icon slot="start" name="card-outline"></ion-icon>
