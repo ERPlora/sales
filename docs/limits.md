@@ -73,6 +73,12 @@ Note that charging is its own permission, separate from building the check.
 uninstall either while Sales is installed**: without `inventory` there is no authoritative price and
 a catalogue sale is refused; without `taxes` no line can resolve its rate.
 
+**A required app that IS installed and does not answer is said out loud.** The till used to swallow
+every failure of those two catalogues into an empty grid, so a forced uninstall (which the hub does
+allow) and a broken query looked identical to the cashier. Now they do not: absence degrades in
+silence (the till sells services and free-price lines), and a failure paints a notice naming the
+app. With `taxes` gone the till refuses to charge at all — no sale can close without it.
+
 Everything else is optional and degrades by disappearing:
 
 | Missing | Effect |
