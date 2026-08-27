@@ -11,7 +11,7 @@
 // The assertions below are on the SHAPE of the outcome (`absent` / `broken` / rows), never on
 // prose: the wording of the notice lives in `locales/`.
 import { describe, expect, it } from 'vitest';
-import { dependencyRead, isModuleAbsent } from './dependency-read.js';
+import { capabilityRead, dependencyRead, isModuleAbsent } from './dependency-read.js';
 
 /** A rejection the way the SDK surfaces a runtime refusal: an Error carrying the stable code. */
 function runtimeError(code: string): Error & { code: string } {
@@ -81,5 +81,44 @@ describe('isModuleAbsent reads the CODE, never the sentence', () => {
     expect(isModuleAbsent(null)).toBe(false);
     expect(isModuleAbsent(undefined)).toBe(false);
     expect(isModuleAbsent('module_not_installed')).toBe(false);
+  });
+});
+
+// sales#25 — the SAME classification when the read is asked through the OPTIONAL door.
+//
+// `dependencyRead` learns absence from the runtime's rejection CODE, which is what a required
+// `query`/`queryAll` throws. `queryAllOptional`/`queryOptional` (ADR-0127) swallow that rejection
+// and answer `undefined` instead, so a caller that switched doors would see "no rows" and lose the
+// distinction the till was given in the first place. `capabilityRead` keeps the three outcomes:
+// `undefined` IS absence, a rejection with an absence code is absence too (an older shell whose
+// SDK has no optional door), and anything else is still an incident.
+describe('capabilityRead classifies the OPTIONAL door the same way (sales#25)', () => {
+  it('undefined is the module being absent, not an empty catalogue', async () => {
+    const out = await capabilityRead(async () => undefined);
+    expect(out).toEqual({ rows: [], absent: true, broken: false });
+  });
+
+  it('an EMPTY array is the module being here with nothing to offer', async () => {
+    const out = await capabilityRead(async () => []);
+    expect(out, 'installed and empty is a different fact from not installed').toEqual({ rows: [], absent: false, broken: false });
+  });
+
+  it('rows come through untouched, in both shapes the runtime answers with', async () => {
+    expect((await capabilityRead<{ id: string }>(async () => [{ id: 'p-1' }])).rows).toEqual([{ id: 'p-1' }]);
+    expect((await capabilityRead<{ id: string }>(async () => ({ rows: [{ id: 'p-2' }], total: 1 }))).rows).toEqual([{ id: 'p-2' }]);
+  });
+
+  it('a rejection that is NOT absence is an incident, exactly as through the hard door', async () => {
+    const out = await capabilityRead(async () => { throw runtimeError('permission_denied'); });
+    expect(out).toEqual({ rows: [], absent: false, broken: true });
+  });
+
+  it('an absence CODE still reads as absence: an old shell has no optional door to answer through', async () => {
+    const out = await capabilityRead(async () => { throw runtimeError('module_not_installed'); });
+    expect(out).toEqual({ rows: [], absent: true, broken: false });
+  });
+
+  it('never throws: the till is the screen that cannot break', async () => {
+    await expect(capabilityRead(async () => { throw new Error('boom'); })).resolves.toEqual({ rows: [], absent: false, broken: true });
   });
 });

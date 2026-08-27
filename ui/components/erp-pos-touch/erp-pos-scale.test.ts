@@ -40,7 +40,14 @@ function installSdk() {
             : []
     ),
     queryOptional: async () => undefined,
-    queryAllOptional: async () => undefined,
+    // sales#25 — `inventory` is an OPTIONAL capability now: the till reads its catalogue through
+    // this door, and for an app that IS in this hub it answers like the required one.
+    queryAllOptional: async (name: string) => (
+      name === 'inventory.products.list' ? PRODUCTS
+        : name === 'inventory.units.list' ? UNITS
+          : undefined
+    ),
+
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
       if (name === 'sales.order.open') {

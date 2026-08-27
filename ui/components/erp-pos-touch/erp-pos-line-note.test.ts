@@ -40,7 +40,8 @@ function installSdk() {
     queryAll: async (name: string) =>
       (name === 'inventory.products.list' ? PRODUCTS : name === 'taxes.rules.list' ? RULES : []),
     queryOptional: async () => undefined,
-    queryAllOptional: async () => undefined,
+    // sales#25 — `inventory` is an OPTIONAL capability now, so the grid comes in through this door.
+    queryAllOptional: async (name: string) => (name === 'inventory.products.list' ? PRODUCTS : undefined),
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
       if (name === 'sales.order.open') {

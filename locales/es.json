@@ -227,6 +227,7 @@
     "searchAction": "Buscar",
     "assign": "Asignar",
     "noProducts": "Sin productos.",
+    "catalogAppAbsent": "{app} no está instalada, así que no hay rejilla de productos. Puedes cobrar servicios y ventas a precio libre; instálala desde el marketplace para vender desde un catálogo.",
     "notSellableBadge": "Falta el IVA",
     "notSellableNoTaxCategory": "No se puede vender: sin categoría fiscal. Falta configurar el IVA.",
     "notSellableNoTaxRule": "No se puede vender: su categoría fiscal no tiene tipo. Falta configurar el IVA.",

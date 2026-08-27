@@ -50,6 +50,9 @@ function installSdk(opts: SdkOptions = {}) {
     },
     queryAllOptional: async (name: string) => {
       asked.push(name);
+      // sales#25 — `inventory` is an OPTIONAL capability now, so its catalogue comes in through
+      // this door. For an app that IS in this hub it answers exactly like the required one.
+      if (name === 'inventory.products.list') return PRODUCTS;
       if (name === 'services.services.list') return SERVICES;
       return [];
     },

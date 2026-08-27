@@ -62,6 +62,9 @@ function installSdk() {
     },
     // sales#186 — the catalogue comes in whole through `queryAllOptional`, not one page at a time.
     queryAllOptional: async (name: string) => {
+      // sales#25 — `inventory` is an OPTIONAL capability now: same door, same answer for an app
+      // that IS in this hub.
+      if (name === 'inventory.products.list') return PRODUCTS;
       if (name === 'services.services.list') return SERVICES;
       if (name === 'services.categories.list') return SERVICE_CATS;
       return undefined;

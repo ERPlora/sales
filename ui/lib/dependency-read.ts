@@ -58,3 +58,26 @@ export async function dependencyRead<T>(read: () => Promise<unknown>): Promise<D
     return { rows: [], absent, broken: !absent };
   }
 }
+
+/** Runs an OPTIONAL read (ADR-0127) and classifies it with the same three outcomes as
+ *  [`dependencyRead`] (sales#25).
+ *
+ *  `queryAllOptional`/`queryOptional` answer `undefined` when the owner module is not in this hub,
+ *  instead of rejecting with `module_not_installed`. That is the whole point of the optional door —
+ *  and it is also how the distinction gets lost: a caller that just did `?? []` would answer "the
+ *  app is not here" and "the app is here and its query broke" with the same empty catalogue, which
+ *  is the `.catch(() => [])` this file exists to remove.
+ *
+ *  So `undefined` IS absence, an absence CODE is absence too (an older shell whose SDK has no
+ *  optional door still rejects), and everything else is an incident that has to reach the screen.
+ *  Never throws, for the same reason as [`dependencyRead`]. */
+export async function capabilityRead<T>(read: () => Promise<unknown>): Promise<DependencyRead<T>> {
+  try {
+    const answer = await read();
+    if (answer === undefined) return { rows: [], absent: true, broken: false };
+    return { rows: toRows<T>(answer), absent: false, broken: false };
+  } catch (e) {
+    const absent = isModuleAbsent(e);
+    return { rows: [], absent, broken: !absent };
+  }
+}

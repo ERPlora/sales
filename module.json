@@ -17,10 +17,6 @@
     ]
   },
   "depends_on": [
-    {
-      "id": "inventory",
-      "min_version": "1.2.20"
-    },
     "taxes"
   ],
   "permissions": [
@@ -386,7 +382,10 @@
           "query": "taxes.rules.list",
           "required": true
         },
-        "inventory.products.for_sale",
+        {
+          "query": "inventory.products.for_sale",
+          "required": false
+        },
         "sales.payment_methods",
         "sales.settings.get",
         {
@@ -428,7 +427,10 @@
           "query": "taxes.rules.list",
           "required": true
         },
-        "inventory.products.for_sale",
+        {
+          "query": "inventory.products.for_sale",
+          "required": false
+        },
         "sales.settings.get",
         {
           "query": "modifiers.options.all",
@@ -459,7 +461,10 @@
     "sales.order.open": {
       "permission": "sales.add_sale",
       "reads": [
-        "inventory.products.for_sale",
+        {
+          "query": "inventory.products.for_sale",
+          "required": false
+        },
         {
           "query": "combos.options.all",
           "required": false
@@ -642,7 +647,10 @@
           },
           "required": true
         },
-        "inventory.products.for_sale",
+        {
+          "query": "inventory.products.for_sale",
+          "required": false
+        },
         {
           "query": "combos.options.all",
           "required": false
@@ -671,7 +679,10 @@
           },
           "required": true
         },
-        "inventory.products.for_sale",
+        {
+          "query": "inventory.products.for_sale",
+          "required": false
+        },
         {
           "query": "combos.options.all",
           "required": false
