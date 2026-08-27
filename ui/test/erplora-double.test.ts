@@ -138,6 +138,31 @@ describe('4 · `broken` is a broken CONTRACT, and never degrades into absence', 
   });
 });
 
+describe('4b · `failing` names the runtime CODE, for the tests that assert on the classification', () => {
+  it('the ADR-0128 cascade (`module_inactive`) is an absence, like an uninstall', async () => {
+    installErploraDouble({ failing: { 'inventory.products.list': 'module_inactive' } });
+
+    expect(await sdk().queryAllOptional('inventory.products.list')).toBeUndefined();
+  });
+
+  it('any other code explodes through the optional doors too', async () => {
+    installErploraDouble({ failing: { 'inventory.products.for_sale': 'query_not_found' } });
+
+    const error = await sdk().queryAllOptional('inventory.products.for_sale').catch((e: unknown) => e as { code?: string });
+
+    expect(error.code).toBe('query_not_found');
+  });
+
+  it('a failure with NO code is a broken contract too, not an absence', async () => {
+    installErploraDouble({ failing: { 'inventory.products.list': undefined } });
+
+    const error = await sdk().queryAllOptional('inventory.products.list').catch((e: unknown) => e as { code?: string });
+
+    expect(error.code).toBeUndefined();
+    expect(error).toBeInstanceOf(Error);
+  });
+});
+
 describe('5 · the paged door and the whole-set door differ, as they do in the SDK (sales#186)', () => {
   const MANY = Array.from({ length: 120 }, (_, i) => ({ id: `s-${i}`, name: `Servicio ${i}` }));
 

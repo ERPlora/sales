@@ -16,7 +16,11 @@ const UI_DIR = join(import.meta.dirname, '..');
 const HELPER = join('test', 'erplora-double.ts');
 /** …and its own suite, which asserts on what the helper answers. This guard is exempt too: the
  *  shapes it forbids have to be written down somewhere to be forbidden. */
-const EXEMPT = new Set([join('test', 'erplora-double.test.ts'), join('test', 'no-ad-hoc-erplora-double.test.ts')]);
+const EXEMPT = new Set([
+  join('test', 'erplora-double.test.ts'),
+  join('test', 'pos-double.test.ts'),
+  join('test', 'no-ad-hoc-erplora-double.test.ts'),
+]);
 
 /** Installing the double by hand: the assignment that starts every one of the old copies. */
 const HAND_INSTALL = /\(\s*globalThis[^)]*\)\s*(?:as[^=]*)?\.erplora\s*=|globalThis\.erplora\s*=/;

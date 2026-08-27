@@ -45,6 +45,13 @@ export interface ErploraDoubleSpec {
   absent?: string[];
   /** Queries whose contract is broken: renamed query, denied permission, dead handler. */
   broken?: string[];
+  /**
+   * The runtime CODE each named query rejects with, for the suites that assert on how the screen
+   * CLASSIFIES a failure (ADR-0400). `module_not_installed`/`module_inactive` are absences, so the
+   * optional doors turn them into `undefined` exactly like the SDK; anything else — including
+   * `undefined`, a failure carrying no code at all — explodes through all four.
+   */
+  failing?: Record<string, string | undefined>;
   /** Answers a command. The default records it and answers `{}`. */
   command?: (name: string, payload: Record<string, unknown>) => unknown | Promise<unknown>;
   /** The fillers the shell mounts in a slot. Defaults to none. */
@@ -103,6 +110,8 @@ const DEFAULT_PAGE_SIZE = 50;
 
 /** The code the runtime rejects with when the owner module is not in this hub (hub#1074). */
 const MODULE_NOT_INSTALLED = 'module_not_installed';
+/** The code the ADR-0128 cascade leaves behind: a module switched off is just as unavailable. */
+const MODULE_INACTIVE = 'module_inactive';
 /** A broken contract: not an absence, so the screen reports an incident (ADR-0400). */
 const QUERY_FAILED = 'query_failed';
 
@@ -181,8 +190,11 @@ async function rowsFor(answer: QueryAnswer, params?: Record<string, unknown>): P
  */
 export function installErploraDouble(spec: ErploraDoubleSpec = {}): ErploraDouble {
   const queries = new Map<string, QueryAnswer>(Object.entries(spec.queries ?? {}));
-  const absent = new Set(spec.absent ?? []);
-  const broken = new Set(spec.broken ?? []);
+  // One table for all three ways of saying "this read does not answer": what changes between them
+  // is only the CODE, and the code is what the screen classifies on.
+  const failing = new Map<string, string | undefined>(Object.entries(spec.failing ?? {}));
+  for (const name of spec.absent ?? []) failing.set(name, MODULE_NOT_INSTALLED);
+  for (const name of spec.broken ?? []) failing.set(name, QUERY_FAILED);
   const pageSize = spec.pageSize ?? DEFAULT_PAGE_SIZE;
   const without = new Set<OptionalDoor>(spec.without ?? []);
   if (spec.allowUnconfiguredReads) netSuppressed = true;
@@ -200,12 +212,12 @@ export function installErploraDouble(spec: ErploraDoubleSpec = {}): ErploraDoubl
     params?: Record<string, unknown>,
   ): Promise<unknown> {
     reads.push({ door, name, ...(params === undefined ? {} : { params }) });
-    if (broken.has(name)) {
-      throw new DoubleError(QUERY_FAILED, `the contract of \`${name}\` is broken in this test`);
-    }
-    if (absent.has(name)) {
-      if (optional) return undefined;
-      throw new DoubleError(MODULE_NOT_INSTALLED, `the app that owns \`${name}\` is not installed`);
+    if (failing.has(name)) {
+      const code = failing.get(name);
+      const gone = code === MODULE_NOT_INSTALLED || code === MODULE_INACTIVE;
+      if (gone && optional) return undefined;
+      if (code === undefined) throw new Error(`the read \`${name}\` failed in this test`);
+      throw new DoubleError(code, `the read \`${name}\` answers \`${code}\` in this test`);
     }
     const answer = queries.get(name);
     if (answer === undefined) return unconfiguredRead(door, name, params);
@@ -248,14 +260,12 @@ export function installErploraDouble(spec: ErploraDoubleSpec = {}): ErploraDoubl
     commands,
     notices,
     setQuery: (name: string, answer: QueryAnswer) => {
-      absent.delete(name);
-      broken.delete(name);
+      failing.delete(name);
       queries.set(name, answer);
     },
     setAbsent: (name: string) => {
       queries.delete(name);
-      broken.delete(name);
-      absent.add(name);
+      failing.set(name, MODULE_NOT_INSTALLED);
     },
     sdk,
   };

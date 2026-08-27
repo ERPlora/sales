@@ -81,6 +81,8 @@ export interface PosDoubleSpec extends PosCatalogue, Omit<ErploraDoubleSpec, 'qu
   brokenModules?: string[];
   /** Reads only this screen makes, on top of the till's surface. */
   queries?: Record<string, QueryAnswer>;
+  /** The runtime code a named read rejects with — see `ErploraDoubleSpec.failing`. */
+  failing?: Record<string, string | undefined>;
 }
 
 /**
@@ -90,7 +92,7 @@ export interface PosDoubleSpec extends PosCatalogue, Omit<ErploraDoubleSpec, 'qu
  */
 export function installPosDouble(spec: PosDoubleSpec = {}): ErploraDouble {
   const {
-    settings, absentModules = [], brokenModules = [], queries: extraQueries = {},
+    settings, absentModules = [], brokenModules = [], queries: extraQueries = {}, failing = {},
     products, forSale, categories, productCategories, units, rules, taxCategories,
     paymentMethods, quickNotes, business, orders, orderLines, byIdempotencyKey, users, fiscalLimits,
     services, serviceCategories, modifierGroups, modifierOptions, comboOptions, appointment,
@@ -122,5 +124,5 @@ export function installPosDouble(spec: PosDoubleSpec = {}): ErploraDouble {
   // is a hub the till has to work on exactly as if it had saved the defaults (sales#223).
   queries['sales.pos_settings.get'] = settings ? [settings] : [];
 
-  return installErploraDouble({ ...rest, queries: { ...queries, ...extraQueries }, absent, broken });
+  return installErploraDouble({ ...rest, queries: { ...queries, ...extraQueries }, absent, broken, failing });
 }
