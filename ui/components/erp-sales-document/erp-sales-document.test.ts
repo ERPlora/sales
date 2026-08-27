@@ -293,7 +293,7 @@ describe('claim «pide tu factura» — acuñar al resolver la F2 e imprimir el 
     installDocDouble({
       'sales.get': [SALE],
       'sales.lines': [{ product_name: 'Cafe', quantity: 2, unit_price: 120, line_total: 240 }],
-      // `undefined` = módulo ausente (ADR-0127), que aquí se dice por su nombre.
+      // Absence (ADR-0127) is said by name here instead of inferred from an `undefined`.
       ...(opts.invoice ? { 'invoice.by_source': [opts.invoice] } : {}),
       'invoice.lines': F2_LINES,
       'verifactu.records.by_invoice': [{ qr_url: 'https://aeat/qr', aeat_csv: '' }],

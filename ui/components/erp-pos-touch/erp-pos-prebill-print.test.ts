@@ -210,7 +210,7 @@ describe('los suplementos en la cuenta previa (sales#148)', () => {
   });
 
   it('sin el módulo `modifiers` instalado la cuenta sale igual, con el id por delante del silencio', async () => {
-    pos.setAbsent('modifiers.options.all'); // el módulo no está
+    pos.setAbsent('modifiers.options.all'); // the module is not in this hub
     await printBill(BURGER);
     const items = printed[0].data!.items as { name: string; notes?: string }[];
     expect(items[0].notes, 'un cobro invisible es peor que una línea fea').toBe('o-queso · o-sin-cebolla');
@@ -220,7 +220,7 @@ describe('los suplementos en la cuenta previa (sales#148)', () => {
   it('una cuenta SIN suplementos no pide el catálogo ni cambia de papel', async () => {
     withCatalog();
     await printBill();
-    expect(pos.reads.map((r) => r.name), 'ni una lectura de más en el 99 % de las cuentas')
+    expect(pos.reads.map((r) => r.name), 'not one extra read on 99 % of the bills')
       .not.toContain('modifiers.options.all');
     const items = printed[0].data!.items as { notes?: string }[];
     expect(items[0].notes).toBeUndefined();

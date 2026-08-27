@@ -165,7 +165,7 @@ describe('sales list — the void action (sales#26)', () => {
 // server filter) and `sales.stats` (which now takes an optional `date_from`/`date_to`).
 describe('sales list — today by default, date/time on the row, KPIs for the same range (sales#27)', () => {
   let listSdk: ReturnType<typeof installList>;
-  /** Lo que la vista preguntó, tal como lo apunta el doble compartido. */
+  /** What the view asked for, as the shared double records it. */
   const queries = () => listSdk.reads;
 
   async function mountList() {

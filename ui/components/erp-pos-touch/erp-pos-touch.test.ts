@@ -30,18 +30,18 @@ const catalogoFiscal = (name: string) => (name === 'taxes.rules.list' ? REGLAS_I
 
 // El WC llama al SDK en cuanto se monta. Sin esto, `connectedCallback` peta y no pinta nada.
 const slotsPedidos: string[] = [];
-/** El doble compartido de esta suite: `posSdk.setQuery(...)` reemplaza lo que antes era escribir a
- *  mano sobre `sdk.queryAll`, que es como una puerta nueva del SDK dejaba atrás un fichero. */
+/** The shared double of this suite: `posSdk.setQuery(...)` replaces what used to be writing on
+ *  `sdk.queryAll` by hand, which is how a new SDK door left a file behind (sales#231). */
 let posSdk: ReturnType<typeof installPosDouble>;
 beforeEach(() => {
   slotsPedidos.length = 0;
   // El doble imita el contrato del CLIENTE (`ErploraClient`), no el del transporte: `query()` pasa
   // por `unwrapPage()` y entrega ya el array; `queryAll()` trae TODAS las filas (el TPV necesita
   // todo su catálogo, no una página — con `page_size` se quedaba en 50 y no se podía vender más).
-  // sales#233 — el doble lo monta `installPosDouble`, compartido por todas las suites del TPV: las
-  // puertas del SDK (`query`/`queryAll`/`queryOptional`/`queryAllOptional`), la moneda, los DOS
-  // formateadores con su contrato real (`formatMoney` recibe CÉNTIMOS, `formatAmount` EUROS —
-  // ADR-0059/ADR-0007) y la `t` que devuelve la CLAVE (ADR-0055) viven ahí, no aquí.
+  // sales#233 — the double is built by `installPosDouble`, shared by every till suite: the SDK
+  // doors (`query`/`queryAll`/`queryOptional`/`queryAllOptional`), the currency, the TWO formatters
+  // with their real contract (`formatMoney` takes CENTS, `formatAmount` takes euros — ADR-0059 /
+  // ADR-0007) and the `t` that answers the KEY (ADR-0055) all live there, not here.
   posSdk = installPosDouble({
     rules: REGLAS_IVA,
     // Slots cross-módulo (ADR-0043): el POS pregunta al SDK quién quiere pintar en cada hook.
@@ -1330,7 +1330,7 @@ describe('carrito cerrado en móvil: ni puntero ni árbol accesible (sales#58)',
 // else's ticket.
 describe('checkout idempotency (sales#20)', () => {
   let comandos: { name: string; payload: Record<string, unknown> }[];
-  /** Lo que el TPV preguntó, tal como lo apunta el doble compartido. */
+  /** What the till asked for, as the shared double records it. */
   const consultas = () => posSdk.reads;
   let fallaElProximoCobro: string | Error | null;
   /** Lo que el servidor responde cuando se le pregunta por la clave del intento.
@@ -1735,7 +1735,7 @@ describe('venta por precio libre (fuera de catálogo)', () => {
   });
 
   it('añadir crea una línea libre (id vacío → product_id null) con el nombre del departamento', async () => {
-    // Abrir pedido sin id → la línea cae al carrito local, suficiente aquí.
+    // Opening the order with no id → the line falls into the local cart, which is enough here.
     posSdk = installPosDouble({
       taxCategories: [{ key: 'product.generic', name: 'General', is_active: 1 }],
       rules: [{ id: 'r1', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, valid_from: '2020-01-01', is_active: 1 }],
@@ -1817,7 +1817,7 @@ describe('los departamentos hablan el idioma del hub (sales#120)', () => {
     { id: 'r1', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, valid_from: '2020-01-01', is_active: 1 },
     { id: 'r2', tax_category_key: 'restaurant.food', rate_pct: 10, parent_id: null, valid_from: '2020-01-01', is_active: 1 },
   ];
-  /** Un hub en español: `taxes` resuelve `display_name` al idioma de quien pregunta (taxes#38). */
+  /** A Spanish hub: `taxes` resolves `display_name` into the asker's language (taxes#38). */
   const installEs = (cats: Record<string, unknown>[] = CATS_ES) =>
     installPosDouble({ taxCategories: cats, rules: RULES_ES });
 

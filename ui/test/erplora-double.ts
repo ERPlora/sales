@@ -242,8 +242,12 @@ export function installErploraDouble(spec: ErploraDoubleSpec = {}): ErploraDoubl
     queryAllOptional: (name: string, params?: Record<string, unknown>) => read('queryAllOptional', true, true, name, params),
     command: async (name: string, payload: Record<string, unknown> = {}) => {
       commands.push({ name, payload });
+      // This is the TEST double answering, not a call to the SDK: the literal query and command
+      // names live in the suites, and a dynamic dispatch here is the whole point.
+      // erplora-contracts: ignore
       return spec.command ? await spec.command(name, payload) : {};
     },
+    // erplora-contracts: ignore — same reason as `command` above.
     loadSlot: async (slot: string) => (spec.loadSlot ? await spec.loadSlot(slot) : []),
     notify: (n: Notice) => {
       notices.push(n);
