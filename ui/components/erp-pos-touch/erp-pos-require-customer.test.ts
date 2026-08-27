@@ -61,8 +61,20 @@ function installSdk(policy: Record<string, unknown> | null, withPicker = true) {
       if (name === 'taxes.rules.list') return RULES;
       return [];
     },
-    queryAllOptional: async () => [],
-    queryOptional: async () => undefined,
+    // sales#25 — the till reads `inventory` through the OPTIONAL door (ADR-0127). For an app that
+    // IS in this hub the optional door answers exactly like the required one, which is what this
+    // delegation models; absence and failure are still whatever `queryAll` does with them.
+    //
+    // sales#231: this double answered `[]` to everything through that door. It was written before
+    // sales#25 moved the catalog reads onto it, so from that merge on the grid had NO products, the
+    // cart could not be filled, and the five cases of the `require_customer` guard below stopped
+    // testing the guard — they died on the empty grid. A green suite is not the point: these cases
+    // are the only thing standing between «Charge ASKS for the customer» and a sale that closes
+    // without one, so a double that starves them is worse than no double.
+    queryAllOptional: async (name: string, params?: Record<string, unknown>) =>
+      ((globalThis as Record<string, unknown>).erplora as { queryAll(n: string, p?: Record<string, unknown>): Promise<unknown> }).queryAll(name, params),
+    queryOptional: async (name: string, params?: Record<string, unknown>) =>
+      ((globalThis as Record<string, unknown>).erplora as { query(n: string, p?: Record<string, unknown>): Promise<unknown[]> }).query(name, params).then((r) => r[0]),
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
       if (name === 'sales.order.open') return { ok: true, new_ids: ['ord-1', 'line-1'] };
