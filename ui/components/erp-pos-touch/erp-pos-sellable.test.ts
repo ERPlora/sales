@@ -28,6 +28,7 @@
 // about taxes": if the whole catalogue fails to arrive that is a different incident, already covered
 // by the handler, and the grid stays open.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { installPosDouble } from '../../test/pos-double';
 
 const commands: string[] = [];
 /** Toasts the component asked the shell for, in order. */
@@ -49,28 +50,15 @@ const RULES = [
 function installSdk(rules: unknown[], opts: { withNotify?: boolean } = {}) {
   commands.length = 0;
   notices.length = 0;
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async () => [],
-    // sales#25 — the till reads `inventory` through the OPTIONAL door (ADR-0127). For an app that
-    // IS in this hub the optional door answers exactly like the required one, which is what this
-    // delegation models; absence and failure are still whatever `queryAll` does with them.
-    queryAllOptional: async (name: string, params?: Record<string, unknown>) =>
-      ((globalThis as Record<string, unknown>).erplora as { queryAll(n: string, p?: Record<string, unknown>): Promise<unknown> }).queryAll(name, params),
-    queryAll: async (name: string) => {
-      if (name === 'inventory.products.list') return PRODUCTS;
-      if (name === 'taxes.rules.list') return rules;
-      return [];
-    },
+  installPosDouble({
+    products: PRODUCTS,
+    rules,
     command: async (name: string) => { commands.push(name); return {}; },
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-    t: (_catalog: unknown, key: string) => key,
-    loadSlot: async () => [],
+    // A shell with no notifier at all: the screen has to answer on its own surface (sales#185).
     ...(opts.withNotify === false
-      ? {}
+      ? { without: ['notify' as const] }
       : { notify: (n: { type: string; message: string }) => { notices.push(n); } }),
-  };
+  });
 }
 
 interface MountedPos {

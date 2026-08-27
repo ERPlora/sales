@@ -16,6 +16,7 @@
 // quede visualmente abajo se verifica en un navegador real.
 import { beforeEach, describe, expect, it } from 'vitest';
 import esCatalog from '../../../locales/es.json';
+import { installPosDouble } from '../../test/pos-double';
 
 // sales#74 — la rejilla ya no deja añadir lo que el cobro rechazaría: un producto es vendible si
 // tiene categoría fiscal Y esa categoría resuelve tipo. Los dobles de este fichero describen un hub
@@ -29,36 +30,26 @@ const catalogoFiscal = (name: string) => (name === 'taxes.rules.list' ? REGLAS_I
 
 // El WC llama al SDK en cuanto se monta. Sin esto, `connectedCallback` peta y no pinta nada.
 const slotsPedidos: string[] = [];
+/** The shared double of this suite: `posSdk.setQuery(...)` replaces what used to be writing on
+ *  `sdk.queryAll` by hand, which is how a new SDK door left a file behind (sales#231). */
+let posSdk: ReturnType<typeof installPosDouble>;
 beforeEach(() => {
   slotsPedidos.length = 0;
   // El doble imita el contrato del CLIENTE (`ErploraClient`), no el del transporte: `query()` pasa
   // por `unwrapPage()` y entrega ya el array; `queryAll()` trae TODAS las filas (el TPV necesita
   // todo su catálogo, no una página — con `page_size` se quedaba en 50 y no se podía vender más).
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async () => [],
-    queryAll: async (name: string) => catalogoFiscal(name),
-    // sales#25 — `inventory` stopped being a hard dependency: the till reads its catalogue through
-    // the OPTIONAL door (ADR-0127). This delegates to whatever `queryAll` the double has installed
-    // AT CALL TIME, so a test that replaces `sdk.queryAll` to serve the grid keeps serving it.
-    queryAllOptional: async (name: string, params?: Record<string, unknown>) =>
-      ((globalThis as Record<string, unknown>).erplora as
-        { queryAll(n: string, p?: Record<string, unknown>): Promise<unknown> }).queryAll(name, params),
-    command: async () => ({}),
-    // Moneda del hub + formateo (ADR-0059). Los DOS formateadores del SDK, con su contrato real:
-    // `formatMoney` recibe CÉNTIMOS (divide entre 100) y es el que usan los WC porque el dinero es
-    // INTEGER (ADR-0007); `formatAmount` recibe EUROS y no divide.
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-    // i18n del módulo (ADR-0055): el WC hace `erplora().t(CATALOG, key)`. Devolvemos la clave: al
-    // test le da igual el idioma, lo que mira es la ESTRUCTURA de lo que se pinta.
-    t: (_catalog: unknown, key: string) => key,
+  // sales#233 — the double is built by `installPosDouble`, shared by every till suite: the SDK
+  // doors (`query`/`queryAll`/`queryOptional`/`queryAllOptional`), the currency, the TWO formatters
+  // with their real contract (`formatMoney` takes CENTS, `formatAmount` takes euros — ADR-0059 /
+  // ADR-0007) and the `t` that answers the KEY (ADR-0055) all live there, not here.
+  posSdk = installPosDouble({
+    rules: REGLAS_IVA,
     // Slots cross-módulo (ADR-0043): el POS pregunta al SDK quién quiere pintar en cada hook.
-    loadSlot: async (slot: string) => {
+    loadSlot: (slot: string) => {
       slotsPedidos.push(slot);
       return [];
     },
-  };
+  });
 });
 
 /** Monta el WC y espera a que Lit termine de pintar. */
@@ -139,14 +130,11 @@ describe('carrito del TPV', () => {
     // El POS no conoce a tables/customers: pide el slot `sales.pos.assign` y monta el WC de cada
     // aportante como un botón independiente en el header (cada uno abre su propio modal). Aquí dos
     // dobles aportan sus botones (mesa y cliente).
-    (globalThis as Record<string, unknown>).erplora = {
-      ...((globalThis as Record<string, unknown>).erplora as object),
-      loadSlot: async (slot: string) => {
-        slotsPedidos.push(slot);
-        return slot === 'sales.pos.assign'
-          ? [{ component: 'erp-fake-mesa' }, { component: 'erp-fake-cliente' }]
-          : [];
-      },
+    posSdk.sdk.loadSlot = async (slot: string) => {
+      slotsPedidos.push(slot);
+      return slot === 'sales.pos.assign'
+        ? [{ component: 'erp-fake-mesa' }, { component: 'erp-fake-cliente' }]
+        : [];
     };
 
     const el = await montarCarrito();
@@ -351,12 +339,11 @@ describe('modal del documento de venta', () => {
 // formateador equivocado se ve.
 describe('precios del TPV (dinero = céntimos, ADR-0007)', () => {
   beforeEach(() => {
-    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    const sdk = posSdk.sdk;
     sdk.formatMoney = (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`;
     sdk.formatAmount = (units: number) => `${(units || 0).toFixed(2)} €`;
     const productos = [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }];
-    sdk.query = async () => [];
-    sdk.queryAll = async (name: string) => (name === 'inventory.products.list' ? productos : catalogoFiscal(name));
+    posSdk.setQuery('inventory.products.list', productos);
     // ADR-0141: añadir al carrito ya no muta un array en memoria — abre/actualiza un PEDIDO real y
     // espera a que la fila esté escrita. El runtime devuelve los ids creados en `new_ids`.
     sdk.command = async () => ({ ok: true, new_ids: ['ord-1', 'line-1'] });
@@ -456,10 +443,9 @@ describe('cobro táctil: lo entregado viaja en CÉNTIMOS (ADR-0007)', () => {
 
   beforeEach(() => {
     comandos = [];
-    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    const sdk = posSdk.sdk;
     const productos = [{ id: 'p1', name: 'Champú reparador', sku: 'CR', price: 1250, is_active: 1, tax_category_key: CATEGORIA_IVA }];
-    sdk.query = async () => [];
-    sdk.queryAll = async (name: string) => (name === 'inventory.products.list' ? productos : catalogoFiscal(name));
+    posSdk.setQuery('inventory.products.list', productos);
     sdk.command = async (name: string, payload: Record<string, unknown>) => {
       comandos.push({ name, payload });
       return {};
@@ -490,10 +476,9 @@ describe('snapshot fiscal del cliente (ADR-0132)', () => {
 
   beforeEach(() => {
     comandos = [];
-    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    const sdk = posSdk.sdk;
     const productos = [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }];
-    sdk.query = async () => [];
-    sdk.queryAll = async (name: string) => (name === 'inventory.products.list' ? productos : catalogoFiscal(name));
+    posSdk.setQuery('inventory.products.list', productos);
     sdk.command = async (name: string, payload: Record<string, unknown>) => {
       comandos.push({ name, payload });
       return {};
@@ -562,9 +547,8 @@ describe('avisos de éxito: van por notify(), no por el hueco rojo de error', ()
   beforeEach(() => {
     avisos = [];
     comandos = [];
-    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
-    sdk.queryAll = async (name: string) =>
-      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }] : catalogoFiscal(name));
+    const sdk = posSdk.sdk;
+    posSdk.setQuery('inventory.products.list', [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }]);
     sdk.command = async (name: string) => {
       comandos.push(name);
       return name === 'sales.order.open' ? { ok: true, new_ids: ['o1', 'l1'] } : { ok: true };
@@ -590,7 +574,7 @@ describe('avisos de éxito: van por notify(), no por el hueco rojo de error', ()
   });
 
   it('si cocina falla, eso SÍ es un error y va en rojo', async () => {
-    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    const sdk = posSdk.sdk;
     sdk.command = async (name: string) => {
       if (name === 'sales.order.fire') throw new Error('sin kitchen');
       return name === 'sales.order.open' ? { ok: true, new_ids: ['o1', 'l1'] } : { ok: true };
@@ -623,12 +607,10 @@ describe('carrito universal: secciones Pendiente/Enviado emergen del dato', () =
 
   beforeEach(() => {
     comandos = [];
-    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    const sdk = posSdk.sdk;
     sdk.t = (_catalog: unknown, key: string, params?: Record<string, unknown>) =>
       (params ? `${key} ${Object.values(params).join(' ')}` : key);
-    sdk.queryAll = async (name: string) =>
-      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Entrecot', sku: 'ENT', price: 2500, is_active: 1, tax_category_key: CATEGORIA_IVA }] : catalogoFiscal(name));
-    sdk.query = async () => [];
+    posSdk.setQuery('inventory.products.list', [{ id: 'p1', name: 'Entrecot', sku: 'ENT', price: 2500, is_active: 1, tax_category_key: CATEGORIA_IVA }]);
     sdk.command = async (name: string, payload: Record<string, unknown>) => {
       comandos.push({ name, payload });
       return name === 'sales.order.open' ? { ok: true, new_ids: ['o1', 'l1'] } : { ok: true };
@@ -724,10 +706,8 @@ describe('slot sales.pos.actions: cocina inyectada dentro de Comanda actual', ()
 
   beforeEach(() => {
     comandos = [];
-    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
-    sdk.queryAll = async (name: string) =>
-      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }] : catalogoFiscal(name));
-    sdk.query = async () => [];
+    const sdk = posSdk.sdk;
+    posSdk.setQuery('inventory.products.list', [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }]);
     sdk.command = async (name: string) => {
       comandos.push(name);
       return name === 'sales.order.open' ? { ok: true, new_ids: ['o1', 'l1'] } : { ok: true };
@@ -762,7 +742,7 @@ describe('slot sales.pos.actions: cocina inyectada dentro de Comanda actual', ()
   });
 
   it('sin fillers desaparecen Cocina, su segmento y su hueco', async () => {
-    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    const sdk = posSdk.sdk;
     sdk.loadSlot = async () => [];
     const el = await montarCarrito();
 
@@ -833,7 +813,7 @@ describe('slot sales.pos.actions: cocina inyectada dentro de Comanda actual', ()
   // únicamente mientras el handler la formateaba como «<code>: <detalle>».
   it('si el servidor dice que no había nada pendiente (sales.nothing_to_fire), no es un error para el cajero', async () => {
     const el = await conCafe();
-    const sdk = (globalThis as Record<string, unknown>).erplora as { command: (n: string, p?: unknown) => Promise<unknown> };
+    const sdk = posSdk.sdk as unknown as { command: (n: string, p?: unknown) => Promise<unknown> };
     const original = sdk.command;
     sdk.command = async (n: string, p?: unknown) => {
       if (n === 'sales.order.fire') {
@@ -855,7 +835,7 @@ describe('slot sales.pos.actions: cocina inyectada dentro de Comanda actual', ()
 
   it('y un fallo REAL de la comanda sí se dice, con su mensaje traducido', async () => {
     const el = await conCafe();
-    const sdk = (globalThis as Record<string, unknown>).erplora as { command: (n: string, p?: unknown) => Promise<unknown> };
+    const sdk = posSdk.sdk as unknown as { command: (n: string, p?: unknown) => Promise<unknown> };
     const original = sdk.command;
     sdk.command = async (n: string, p?: unknown) => {
       if (n === 'sales.order.fire') {
@@ -909,10 +889,8 @@ describe('cuentas abiertas: aparcar con nombre, recuperar sin perder nada', () =
     avisos = [];
     parqueados = 0;
     soltados = 0;
-    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
-    sdk.queryAll = async (name: string) =>
-      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }] : catalogoFiscal(name));
-    sdk.query = async () => [];
+    const sdk = posSdk.sdk;
+    posSdk.setQuery('inventory.products.list', [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }]);
     sdk.command = async (name: string, payload: Record<string, unknown>) => {
       comandos.push({ name, payload });
       return name === 'sales.order.open' ? { ok: true, new_ids: ['o1', 'l1'] } : { ok: true };
@@ -1108,11 +1086,10 @@ describe('sheet de cobro (tender): método dentro, tarjeta sin numpad, atajos de
   beforeEach(() => {
     comandos = [];
     avisosCobro = [];
-    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    const sdk = posSdk.sdk;
     sdk.notify = (n: { type: string; message: string }) => { avisosCobro.push(n); };
-    sdk.query = async (name: string) => (name === 'sales.payment_methods' ? METODOS : []);
-    sdk.queryAll = async (name: string) =>
-      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }] : catalogoFiscal(name));
+    posSdk.setQuery('sales.payment_methods', METODOS);
+    posSdk.setQuery('inventory.products.list', [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }]);
     sdk.command = async (name: string, payload: Record<string, unknown>) => {
       comandos.push({ name, payload });
       return { ok: true, new_ids: ['o1', 'l1'] };
@@ -1353,7 +1330,8 @@ describe('carrito cerrado en móvil: ni puntero ni árbol accesible (sales#58)',
 // else's ticket.
 describe('checkout idempotency (sales#20)', () => {
   let comandos: { name: string; payload: Record<string, unknown> }[];
-  let consultas: { name: string; params: Record<string, unknown> }[];
+  /** What the till asked for, as the shared double records it. */
+  const consultas = () => posSdk.reads;
   let fallaElProximoCobro: string | Error | null;
   /** Lo que el servidor responde cuando se le pregunta por la clave del intento.
    *
@@ -1365,16 +1343,12 @@ describe('checkout idempotency (sales#20)', () => {
 
   beforeEach(() => {
     comandos = [];
-    consultas = [];
     fallaElProximoCobro = null;
     ventaEnServidor = [{ id: 'sale-7' }];
-    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    const sdk = posSdk.sdk;
     const productos = [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }];
-    sdk.query = async (name: string, params: Record<string, unknown>) => {
-      consultas.push({ name, params });
-      return name === 'sales.by_idempotency_key' ? ventaEnServidor : [];
-    };
-    sdk.queryAll = async (name: string) => (name === 'inventory.products.list' ? productos : catalogoFiscal(name));
+    posSdk.setQuery('sales.by_idempotency_key', () => ventaEnServidor);
+    posSdk.setQuery('inventory.products.list', productos);
     sdk.command = async (name: string, payload: Record<string, unknown>) => {
       comandos.push({ name, payload });
       if (name === 'sales.complete_sale' && fallaElProximoCobro) {
@@ -1428,10 +1402,10 @@ describe('checkout idempotency (sales#20)', () => {
     const pos = await posConUnaLinea();
     await pos.confirm();
 
-    const sonda = consultas.find((q) => q.name === 'sales.by_idempotency_key');
+    const sonda = consultas().find((q) => q.name === 'sales.by_idempotency_key');
     expect(sonda, 'the POS resolves its own sale').toBeTruthy();
-    expect(sonda!.params.idempotency_key).toBe(ventas()[0].payload.idempotency_key);
-    expect(consultas.some((q) => q.name === 'sales.list'), 'no racy "last sale" lookup').toBe(false);
+    expect((sonda!.params ?? {}).idempotency_key).toBe(ventas()[0].payload.idempotency_key);
+    expect(consultas().some((q) => q.name === 'sales.list'), 'no racy "last sale" lookup').toBe(false);
   });
 
   // sales#185 — the refusal travels TYPED, with its `code`, which is how the SDK delivers it
@@ -1507,10 +1481,8 @@ describe('sales#61 — dividir la cuenta desde el plano de sala', () => {
   beforeEach(() => {
     comandos = [];
     enlaces = [];
-    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
-    sdk.queryAll = async (name: string) =>
-      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }] : catalogoFiscal(name));
-    sdk.query = async () => [];
+    const sdk = posSdk.sdk;
+    posSdk.setQuery('inventory.products.list', [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }]);
     sdk.command = async (name: string, payload: Record<string, unknown>) => {
       comandos.push({ name, payload });
       if (name === 'sales.order.open') return { ok: true, new_ids: ['o1', 'l1'] };
@@ -1607,10 +1579,8 @@ describe('sales#61 — dividir una mesa que no es la que hay en pantalla', () =>
 
   beforeEach(() => {
     comandos = [];
-    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
-    sdk.queryAll = async (name: string) =>
-      (name === 'inventory.products.list' ? [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }] : catalogoFiscal(name));
-    sdk.query = async () => [];
+    const sdk = posSdk.sdk;
+    posSdk.setQuery('inventory.products.list', [{ id: 'p1', name: 'Café solo', sku: 'CAF', price: 180, is_active: 1, tax_category_key: CATEGORIA_IVA }]);
     sdk.command = async (name: string, payload: Record<string, unknown>) => {
       comandos.push({ name, payload });
       if (name === 'sales.order.open') return { ok: true, new_ids: ['o1', 'l1'] };
@@ -1654,10 +1624,9 @@ describe('el cobro pierde la respuesta: la caja nunca deja al cajero sin saber (
   /** Doble del SDK: el comando de cobro falla como falló en producción; la sonda decide el caso. */
   function montarConCobroRoto(fallo: unknown, sonda: (key: string) => Promise<Record<string, unknown>[]>) {
     const productos = [{ id: 'p1', name: 'Champú profesional 300ml', sku: 'CH', price: 1290, is_active: 1, tax_category_key: CATEGORIA_IVA }];
-    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
-    sdk.queryAll = async (name: string) => (name === 'inventory.products.list' ? productos : catalogoFiscal(name));
-    sdk.query = async (name: string, params?: Record<string, unknown>) =>
-      name === 'sales.by_idempotency_key' ? sonda(String(params?.idempotency_key ?? '')) : [];
+    const sdk = posSdk.sdk;
+    posSdk.setQuery('inventory.products.list', productos);
+    posSdk.setQuery('sales.by_idempotency_key', (params) => sonda(String(params?.idempotency_key ?? '')));
     sdk.command = async () => {
       throw fallo;
     };
@@ -1743,27 +1712,17 @@ describe('venta por precio libre (fuera de catálogo)', () => {
   });
 
   it('el sheet lista un departamento por categoría fiscal ACTIVA, con su %', async () => {
-    (globalThis as Record<string, unknown>).erplora = {
-      query: async () => [],
-      queryAll: async (name: string) => {
-        if (name === 'taxes.categories.list') return [
-          { key: 'product.generic', name: 'General', is_active: 1 },
-          { key: 'restaurant.food', name: 'Comida', is_active: 1 },
-          { key: 'old.zero', name: 'Antiguo', is_active: 0 }, // inactivo → NO sale
-        ];
-        if (name === 'taxes.rules.list') return [
-          { id: 'r1', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, valid_from: '2020-01-01', is_active: 1 },
-          { id: 'r2', tax_category_key: 'restaurant.food', rate_pct: 10, parent_id: null, valid_from: '2020-01-01', is_active: 1 },
-        ];
-        return [];
-      },
-      command: async () => ({}),
-      currency: 'EUR',
-      formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-      formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-      t: (_c: unknown, k: string) => k,
-      loadSlot: async () => [],
-    };
+    posSdk = installPosDouble({
+      taxCategories: [
+        { key: 'product.generic', name: 'General', is_active: 1 },
+        { key: 'restaurant.food', name: 'Comida', is_active: 1 },
+        { key: 'old.zero', name: 'Antiguo', is_active: 0 }, // inactivo → NO sale
+      ],
+      rules: [
+        { id: 'r1', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, valid_from: '2020-01-01', is_active: 1 },
+        { id: 'r2', tax_category_key: 'restaurant.food', rate_pct: 10, parent_id: null, valid_from: '2020-01-01', is_active: 1 },
+      ],
+    });
     const el = await montarCarrito();
     (el.shadowRoot!.querySelector('.tile.open-price') as HTMLElement).click();
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
@@ -1776,19 +1735,11 @@ describe('venta por precio libre (fuera de catálogo)', () => {
   });
 
   it('añadir crea una línea libre (id vacío → product_id null) con el nombre del departamento', async () => {
-    (globalThis as Record<string, unknown>).erplora = {
-      query: async () => [],
-      queryAll: async (name: string) =>
-        name === 'taxes.categories.list' ? [{ key: 'product.generic', name: 'General', is_active: 1 }]
-        : name === 'taxes.rules.list' ? [{ id: 'r1', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, valid_from: '2020-01-01', is_active: 1 }]
-        : [],
-      command: async () => ({}), // abrir pedido sin id → la línea cae al carrito local, suficiente aquí
-      currency: 'EUR',
-      formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-      formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-      t: (_c: unknown, k: string) => k,
-      loadSlot: async () => [],
-    };
+    // Opening the order with no id → the line falls into the local cart, which is enough here.
+    posSdk = installPosDouble({
+      taxCategories: [{ key: 'product.generic', name: 'General', is_active: 1 }],
+      rules: [{ id: 'r1', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, valid_from: '2020-01-01', is_active: 1 }],
+    });
     const el = await montarCarrito();
     const c = el as unknown as {
       openPriceOpen: boolean; openDept: string; openAmount: string;
@@ -1818,14 +1769,11 @@ describe('la categoría del producto viaja con la línea hasta cocina (sales#12)
 
   beforeEach(() => {
     comandos = [];
-    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    const sdk = posSdk.sdk;
     const productos = [{ id: 'p-cerveza', name: 'Cerveza', price: 250, is_active: 1, tax_category_key: CATEGORIA_IVA }];
-    sdk.queryAll = async (name: string) => {
-      if (name === 'inventory.products.list') return productos;
-      if (name === 'inventory.categories.list') return [{ id: 'cat-bebidas', name: 'Bebidas' }];
-      if (name === 'inventory.product_categories') return [{ product_id: 'p-cerveza', category_id: 'cat-bebidas' }];
-      return catalogoFiscal(name);
-    };
+    posSdk.setQuery('inventory.products.list', productos);
+    posSdk.setQuery('inventory.categories.list', [{ id: 'cat-bebidas', name: 'Bebidas' }]);
+    posSdk.setQuery('inventory.product_categories', [{ product_id: 'p-cerveza', category_id: 'cat-bebidas' }]);
     sdk.command = async (name: string, payload: Record<string, unknown>) => {
       comandos.push({ name, payload });
       return { ok: true, new_ids: ['ord-1', 'line-1'] };
@@ -1861,29 +1809,20 @@ describe('la categoría del producto viaja con la línea hasta cocina (sales#12)
 // ADR-0043): el TPV solo tiene que pintarlo y congelarlo. Sin `display_name` (un taxes más
 // viejo) degrada al nombre crudo — peor sería una tecla vacía.
 describe('los departamentos hablan el idioma del hub (sales#120)', () => {
-  const SDK_ES = {
-    query: async () => [],
-    queryAll: async (name: string) => {
-      if (name === 'taxes.categories.list') return [
-        { key: 'product.generic', name: 'Product — generic', display_name: 'Producto — general', is_active: 1 },
-        { key: 'restaurant.food', name: 'Restaurant — food', display_name: 'Restauración — comida', is_active: 1 },
-      ];
-      if (name === 'taxes.rules.list') return [
-        { id: 'r1', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, valid_from: '2020-01-01', is_active: 1 },
-        { id: 'r2', tax_category_key: 'restaurant.food', rate_pct: 10, parent_id: null, valid_from: '2020-01-01', is_active: 1 },
-      ];
-      return [];
-    },
-    command: async () => ({}),
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-    t: (_c: unknown, k: string) => k,
-    loadSlot: async () => [],
-  };
+  const CATS_ES = [
+    { key: 'product.generic', name: 'Product — generic', display_name: 'Producto — general', is_active: 1 },
+    { key: 'restaurant.food', name: 'Restaurant — food', display_name: 'Restauración — comida', is_active: 1 },
+  ];
+  const RULES_ES = [
+    { id: 'r1', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, valid_from: '2020-01-01', is_active: 1 },
+    { id: 'r2', tax_category_key: 'restaurant.food', rate_pct: 10, parent_id: null, valid_from: '2020-01-01', is_active: 1 },
+  ];
+  /** A Spanish hub: `taxes` resolves `display_name` into the asker's language (taxes#38). */
+  const installEs = (cats: Record<string, unknown>[] = CATS_ES) =>
+    installPosDouble({ taxCategories: cats, rules: RULES_ES });
 
   it('la tecla del departamento pinta display_name (el idioma del hub), no el nombre canónico', async () => {
-    (globalThis as Record<string, unknown>).erplora = { ...SDK_ES };
+    installEs();
     const el = await montarCarrito();
     (el.shadowRoot!.querySelector('.tile.open-price') as HTMLElement).click();
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
@@ -1895,7 +1834,7 @@ describe('los departamentos hablan el idioma del hub (sales#120)', () => {
   });
 
   it('la línea libre congela el nombre en el idioma del hub — es el que viaja al tique impreso', async () => {
-    (globalThis as Record<string, unknown>).erplora = { ...SDK_ES };
+    installEs();
     const el = await montarCarrito();
     const c = el as unknown as {
       openPriceOpen: boolean; openDept: string; openAmount: string;
@@ -1913,13 +1852,7 @@ describe('los departamentos hablan el idioma del hub (sales#120)', () => {
   });
 
   it('sin display_name (taxes más viejo) degrada al nombre crudo — la tecla nunca queda vacía', async () => {
-    (globalThis as Record<string, unknown>).erplora = {
-      ...SDK_ES,
-      queryAll: async (name: string) => {
-        if (name === 'taxes.categories.list') return [{ key: 'product.generic', name: 'Product — generic', is_active: 1 }];
-        return SDK_ES.queryAll(name);
-      },
-    };
+    installEs([{ key: 'product.generic', name: 'Product — generic', is_active: 1 }]);
     const el = await montarCarrito();
     (el.shadowRoot!.querySelector('.tile.open-price') as HTMLElement).click();
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
@@ -1943,18 +1876,11 @@ describe('los departamentos hablan el idioma del hub (sales#120)', () => {
 // cap travels over the wire. That the rows beyond the cap REACH the grid is proved in
 // `erp-pos-services.test.ts`.
 describe('sales#186 — the service catalogue read sends no cap at all', () => {
-  /** Listens to what the till asks for, answering `undefined` = "module not installed". */
-  function spyOnOptionalRead(): { name: string; params: unknown }[] {
-    const calls: { name: string; params: unknown }[] = [];
-    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
-    (globalThis as Record<string, unknown>).erplora = {
-      ...sdk,
-      queryAllOptional: async (name: string, params?: unknown) => {
-        calls.push({ name, params });
-        return undefined;
-      },
-    };
-    return calls;
+  /** Listens to what the till asks for, with `services` NOT installed — the optional door answers
+   *  `undefined` and the record of reads is the double's own. */
+  function spyOnOptionalRead(): { name: string; params?: Record<string, unknown> }[] {
+    posSdk = installPosDouble({ rules: REGLAS_IVA, absentModules: ['services'] });
+    return posSdk.reads;
   }
 
   it('asks services.services.list without `page_size`', async () => {

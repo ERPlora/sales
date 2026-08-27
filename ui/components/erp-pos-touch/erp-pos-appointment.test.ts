@@ -15,6 +15,7 @@
 //    till resolves it from the services catalogue it already loads for walk-ins — one source of
 //    fiscal truth for both doors.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { installPosDouble } from '../../test/pos-double';
 
 const APPOINTMENT = {
   id: 'ap-1', customer_id: 'c-ana', customer_name: 'Ana Ruiz',
@@ -36,41 +37,21 @@ let commands: { name: string; params?: Record<string, unknown> }[] = [];
 function installSdk(opts: { appointmentsInstalled?: boolean } = {}) {
   const hasAppointments = opts.appointmentsInstalled !== false;
   commands = [];
-  (globalThis as Record<string, unknown>).erplora = {
-    // Filas planas, como las entrega el SDK real: el documento que se pinta tras cobrar mapea
-    // `sales.lines` directamente, y un `{rows: []}` aquí le estallaba en un rechazo suelto.
-    query: async (name: string) => {
-      if (name === 'sales.by_idempotency_key') return [{ id: 'sale-1' }];
-      if (name === 'sales.get') return [{ id: 'sale-1', created_at: '2026-08-14T10:00:00Z' }];
-      return [];
-    },
-    queryAll: async (name: string) => (name === 'taxes.rules.list' ? RULES : []),
-    queryAllOptional: async (name: string) => {
-      // sales#186 — the till reads its catalogue whole; `appointments.appointments.get` is a POINT
-      // read and stays on `queryOptional`.
-      if (name === 'services.services.list') return SERVICES;
-      if (name === 'services.categories.list') return [];
-      return undefined;
-    },
-    queryOptional: async (name: string) => {
-      if (name === 'services.services.list') return SERVICES;
-      if (name === 'services.categories.list') return [];
-      if (name === 'appointments.appointments.get') {
-        return hasAppointments ? { rows: [APPOINTMENT] } : undefined;
-      }
-      return undefined;
-    },
+  // Flat rows, the way the real SDK hands them over: the document painted after charging maps
+  // `sales.lines` straight, and a `{rows: []}` here blew up on it as a loose rejection.
+  installPosDouble({
+    byIdempotencyKey: [{ id: 'sale-1' }],
+    sale: [{ id: 'sale-1', created_at: '2026-08-14T10:00:00Z' }],
+    rules: RULES,
+    services: SERVICES,
+    serviceCategories: [],
+    // `appointments.appointments.get` is a POINT read and stays on `queryOptional` (sales#186).
+    ...(hasAppointments ? { appointment: [APPOINTMENT] } : { absentModules: ['appointments'] }),
     command: async (name: string, params?: Record<string, unknown>) => {
       commands.push({ name, params });
       return { rows: [{ id: 'line-1' }] };
     },
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-    t: (_catalog: unknown, key: string) => key,
-    loadSlot: async () => [],
-    notify: () => {},
-  };
+  });
 }
 
 interface MountedPos {

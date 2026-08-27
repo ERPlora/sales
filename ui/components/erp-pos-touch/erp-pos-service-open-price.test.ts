@@ -18,6 +18,7 @@
 // The amount still travels through the gated command (sales#63): the cashier typing a figure that
 // no catalogue contradicts is exactly what needs the manager's PIN.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { installPosDouble } from '../../test/pos-double';
 
 const RULES = [{ id: 'r-21', tax_category_key: 'service.generic', rate_pct: 21, parent_id: null, is_active: 1 }];
 const TAX_CATS = [{ key: 'service.generic', name: 'Servicios', is_active: 1 }];
@@ -37,27 +38,15 @@ let commands: { name: string; params: Record<string, unknown> }[] = [];
 
 function installSdk() {
   commands = [];
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async () => [],
-    queryAll: async (name: string) => {
-      if (name === 'taxes.rules.list') return RULES;
-      if (name === 'taxes.categories.list') return TAX_CATS;
-      return [];
-    },
-    queryOptional: async (name: string) => (name === 'services.services.list' ? SERVICES : undefined),
-    // sales#186 — the catalogue comes in whole through `queryAllOptional`.
-    queryAllOptional: async (name: string) => (name === 'services.services.list' ? SERVICES : undefined),
+  installPosDouble({
+    rules: RULES,
+    taxCategories: TAX_CATS,
+    services: SERVICES,
     command: async (name: string, params: Record<string, unknown>) => {
       commands.push({ name, params });
       return { rows: [{ id: `row-${commands.length}` }] };
     },
-    currency: 'EUR',
-    formatMoney: (c: number) => `${((c || 0) / 100).toFixed(2)} €`,
-    formatAmount: (u: number) => `${(u || 0).toFixed(2)} €`,
-    t: (_c: unknown, k: string) => k,
-    loadSlot: async () => [],
-    notify: () => {},
-  };
+  });
 }
 
 interface Pos {

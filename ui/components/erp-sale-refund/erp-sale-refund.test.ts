@@ -7,9 +7,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import esCatalog from '../../../locales/es.json';
 import enCatalog from '../../../locales/en.json';
+import { installErploraDouble } from '../../test/erplora-double';
 
 interface Sdk {
-  query: ReturnType<typeof vi.fn>;
   command: ReturnType<typeof vi.fn>;
   notify: ReturnType<typeof vi.fn>;
 }
@@ -39,22 +39,20 @@ function install(over: Partial<Record<string, unknown[]>> = {}, fail?: string, t
     'sales.get': SALE, 'sales.refund_options': LEGS, 'sales.payment_methods': METHODS, ...over,
   };
   sdk = {
-    query: vi.fn(async (name: string) => {
-      if (fail && name === fail) throw thrown ?? new Error('boom');
-      return table[name] ?? [];
-    }),
     command: vi.fn(async () => ({ refund_id: 'ref-1', refund_ref: 'ref-1' })),
     notify: vi.fn(),
   };
-  (globalThis as Record<string, unknown>).erplora = {
-    ...sdk,
-    currency: 'EUR',
+  installErploraDouble({
+    queries: Object.fromEntries(Object.entries(table).map(([name, rows]) => [name, () => {
+      if (fail === name) throw thrown ?? new Error('boom');
+      return rows;
+    }])),
+    command: (name: string, payload: Record<string, unknown>) => sdk.command(name, payload),
+    notify: (n) => sdk.notify(n),
     locale: 'es',
     // Formato ESPAÑOL, que es el de la UI que se está probando: con punto decimal, un «25,00 €»
     // en pantalla habría pasado el test sin existir.
     formatMoney: (c: number) => `${((c || 0) / 100).toFixed(2).replace('.', ',')} €`,
-    hasPermission: () => true,
-    on: () => () => {},
     t: (catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>) => {
       const raw = key.split('.').reduce<unknown>(
         (acc, part) => (acc as Record<string, unknown>)?.[part],
@@ -63,7 +61,7 @@ function install(over: Partial<Record<string, unknown[]>> = {}, fail?: string, t
       const text = typeof raw === 'string' ? raw : key;
       return text.replace(/\{(\w+)\}/g, (_m, k: string) => String(params?.[k] ?? ''));
     },
-  };
+  });
 }
 
 type Refund = HTMLElement & {

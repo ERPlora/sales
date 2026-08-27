@@ -16,6 +16,7 @@
 //     servidor va a rechazar.
 import { beforeEach, describe, expect, it } from 'vitest';
 import enLocale from '../../../locales/en.json';
+import { installPosDouble } from '../../test/pos-double';
 
 const SOUP = { id: 'p-soup', name: 'Sopa', price: 450, tax_category_key: 'food' };
 const SALAD = { id: 'p-salad', name: 'Ensalada', price: 500, tax_category_key: 'food' };
@@ -47,42 +48,27 @@ let commands: { name: string; params: Record<string, unknown> }[] = [];
  *  está pero la lectura falla — que NO es lo mismo y no se puede pintar igual). */
 function installSdk(combo?: unknown[] | 'throw') {
   commands = [];
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async (name: string) => {
-      if (name === 'sales.payment_methods') return METHODS;
-      if (name === 'sales.by_idempotency_key') return [{ id: 'sale-1' }];
-      return [];
-    },
-    // sales#25 — the till reads `inventory` through the OPTIONAL door (ADR-0127). For an app that
-    // IS in this hub the optional door answers exactly like the required one, which is what this
-    // delegation models; absence and failure are still whatever `queryAll` does with them.
-    queryAllOptional: async (name: string, params?: Record<string, unknown>) =>
-      ((globalThis as Record<string, unknown>).erplora as { queryAll(n: string, p?: Record<string, unknown>): Promise<unknown> }).queryAll(name, params),
-    queryAll: async (name: string) => (name === 'inventory.products.list' ? PRODUCTS : []),
-    queryOptional: async (name: string) => {
-      if (name !== 'combos.options.all') return undefined;
-      if (combo === 'throw') throw new Error('combos is down');
-      return combo;
-    },
+  installPosDouble({
+    paymentMethods: METHODS,
+    byIdempotencyKey: [{ id: 'sale-1' }],
+    products: PRODUCTS,
+    ...(combo === 'throw'
+      ? { failing: { 'combos.options.all': 'boom' } }
+      : { comboOptions: combo as unknown[] }),
     command: async (name: string, params: Record<string, unknown>) => {
       commands.push({ name, params });
       return { rows: [{ id: `row-${commands.length}` }] };
     },
-    currency: 'EUR',
-    formatMoney: (c: number) => `${((c || 0) / 100).toFixed(2)} €`,
-    formatAmount: (u: number) => `${(u || 0).toFixed(2)} €`,
-    // El `t` de mentira resuelve contra el catálogo EN DE VERDAD e interpola, como el del shell.
-    // Devolver la clave a secas haría pasar dos bugs que aquí importan: una clave que no existe en
-    // `locales/` (el camarero vería «ui.comboGroupUnresolved») y un mensaje que se olvida de pasar
-    // el grupo (lo vería como «Elige 1 en {group}»).
-    t: (_c: unknown, k: string, params?: Record<string, unknown>) => {
+    // The fake `t` resolves against the REAL catalogue and interpolates, like the shell's. Answering
+    // the bare key would let two bugs through that matter here: a key missing from `locales/` (the
+    // waiter would read «ui.comboGroupUnresolved») and a message that forgets to pass the group
+    // (they would read «Choose 1 in {group}»).
+    t: (_c: Record<string, unknown>, k: string, params?: Record<string, unknown>) => {
       const raw = (enLocale as { ui: Record<string, string> }).ui[k.replace(/^ui\./, '')] ?? k;
       return Object.entries(params ?? {}).reduce(
         (acc, [pk, pv]) => acc.split(`{${pk}}`).join(String(pv)), raw);
     },
-    loadSlot: async () => [],
-    notify: () => {},
-  };
+  });
 }
 
 interface Pos {

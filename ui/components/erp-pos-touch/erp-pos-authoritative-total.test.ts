@@ -13,6 +13,7 @@
 // SAME function that charges it, and this file is the contract that the till uses that answer —
 // and that it degrades to its own arithmetic, never to a zero, when there is no answer.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { installPosDouble } from '../../test/pos-double';
 
 const RULES = [{ id: 'r-21', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, is_active: 1 }];
 const METHODS = [
@@ -28,15 +29,10 @@ let previewAnswer: Record<string, unknown> | null = null;
 function installSdk() {
   commands = [];
   let seq = 0;
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async (name: string) => (name === 'sales.payment_methods' ? METHODS : []),
-    queryAll: async (name: string) => {
-      if (name === 'inventory.products.list') return PRODUCTS;
-      if (name === 'taxes.rules.list') return RULES;
-      return [];
-    },
-    queryOptional: async () => undefined,
-    queryAllOptional: async () => undefined,
+  installPosDouble({
+    paymentMethods: METHODS,
+    products: PRODUCTS,
+    rules: RULES,
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
       if (name === 'sales.checkout.preview') {
@@ -44,14 +40,7 @@ function installSdk() {
       }
       return { ok: true, new_ids: [`x-${++seq}`] };
     },
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-    t: (_c: unknown, key: string) => key,
-    loadSlot: async () => [],
-    notify: () => {},
-    hasPermission: () => true,
-  };
+  });
 }
 
 interface Pos extends HTMLElement {

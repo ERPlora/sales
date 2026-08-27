@@ -18,6 +18,7 @@
 // open the sheet, pick a method, confirm) and read what left through `erplora().command`.
 import { beforeEach, describe, expect, it } from 'vitest';
 import schema from '../../../schemas/complete_sale.json';
+import { installPosDouble } from '../../test/pos-double';
 
 // ⚠️ Every sellable carries its `tax_category_key`: without it the tile is BLOCKED (sales#74/#58)
 // and the grid is dead by data, which looks exactly like "the POS does not respond".
@@ -46,29 +47,14 @@ let commands: { name: string; payload: Record<string, unknown> }[] = [];
 function installSdk() {
   commands = [];
   const orderLines: Record<string, unknown>[] = [];
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async (name: string) => {
-      if (name === 'sales.payment_methods') return METHODS;
-      if (name === 'sales.order.lines') return orderLines;
-      if (name === 'sales.by_idempotency_key') return [{ id: 'sale-1' }];
-      return [];
-    },
-    queryAll: async (name: string) =>
-      (name === 'inventory.products.list' ? PRODUCTS : name === 'taxes.rules.list' ? RULES : []),
-    queryOptional: async (name: string) => {
-      if (name === 'services.services.list') return SERVICES;
-      if (name === 'services.categories.list') return SERVICE_CATS;
-      return undefined;
-    },
-    // sales#186 — the catalogue comes in whole through `queryAllOptional`, not one page at a time.
-    queryAllOptional: async (name: string) => {
-      // sales#25 — `inventory` is an OPTIONAL capability now: same door, same answer for an app
-      // that IS in this hub.
-      if (name === 'inventory.products.list') return PRODUCTS;
-      if (name === 'services.services.list') return SERVICES;
-      if (name === 'services.categories.list') return SERVICE_CATS;
-      return undefined;
-    },
+  installPosDouble({
+    paymentMethods: METHODS,
+    orderLines: () => orderLines,
+    byIdempotencyKey: [{ id: 'sale-1' }],
+    products: PRODUCTS,
+    rules: RULES,
+    services: SERVICES,
+    serviceCategories: SERVICE_CATS,
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
       if (name === 'sales.order.open') {
@@ -83,14 +69,7 @@ function installSdk() {
       }
       return { ok: true, new_ids: ['ord-1', 'line-1'] };
     },
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-    t: (_c: unknown, key: string) => key,
-    loadSlot: async () => [],
-    notify: () => {},
-    hasPermission: () => true,
-  };
+  });
 }
 
 interface Pos extends HTMLElement {

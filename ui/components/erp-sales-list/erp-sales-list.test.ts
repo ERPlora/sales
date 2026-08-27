@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import esCatalog from '../../../locales/es.json';
+import { installErploraDouble } from '../../test/erplora-double';
 
 interface Column {
   key: string;
@@ -15,24 +16,34 @@ interface Column {
   options?: { value: string; label: string }[];
 }
 
-beforeEach(() => {
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async () => [],
-    queryAll: async () => [],
-    command: async () => ({}),
-    currency: 'EUR',
+/** The shared double, with the reads this view makes. `overrides` names the rows one test needs. */
+function installList(overrides: Record<string, unknown[] | (() => unknown[])> = {}) {
+  return installErploraDouble({
+    queries: {
+      'sales.list': [],
+      'sales.stats': [],
+      'sales.payment_methods': [],
+      // The list opens the sale document, which resolves the sale, its lines and its policy.
+      'sales.get': [],
+      'sales.lines': [],
+      'sales.pos_settings.get': [],
+      ...overrides,
+    },
+    // `invoice`/`verifactu` are optional apps (ADR-0127) and this hub does not have them.
+    absent: ['invoice.by_source', 'invoice.lines', 'verifactu.records.by_invoice'],
     // The shell always carries the active language; without it here the fake would resolve every
     // catalogue against the source language and the Spanish assertions would pass for the wrong
     // reason.
     locale: 'es',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
     // Devuelve la traducción REAL del catálogo español: lo que se mide es que la celda deje de
     // enseñar el valor crudo de la base de datos.
-    t: (_catalog: unknown, key: string) =>
-      key.split('.').reduce<unknown>((acc, part) => (acc as Record<string, unknown>)?.[part], esCatalog) ?? key,
-    on: () => () => {},
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-  };
+    t: (_catalog: Record<string, unknown>, key: string) =>
+      key.split('.').reduce<unknown>((acc, part) => (acc as Record<string, unknown>)?.[part], esCatalog) as string ?? key,
+  });
+}
+
+beforeEach(() => {
+  installList();
 });
 
 async function column(key: string): Promise<Column> {
@@ -153,17 +164,14 @@ describe('sales list — the void action (sales#26)', () => {
 // (today · 7 days · 30 days · all) that drives BOTH the list filter (`created_at` range, already a
 // server filter) and `sales.stats` (which now takes an optional `date_from`/`date_to`).
 describe('sales list — today by default, date/time on the row, KPIs for the same range (sales#27)', () => {
-  const sdk = () => (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
-  let queries: { name: string; params?: Record<string, unknown> }[] = [];
+  let listSdk: ReturnType<typeof installList>;
+  /** What the view asked for, as the shared double records it. */
+  const queries = () => listSdk.reads;
 
   async function mountList() {
-    queries = [];
-    sdk().query = async (name: string, params?: Record<string, unknown>) => {
-      queries.push({ name, params });
-      if (name === 'sales.stats') return [{ count: 3, total_revenue: 4500, avg_ticket: 1500, tax_total: 780, discount_total: 200, voided_count: 1 }];
-      return [];
-    };
-    sdk().queryPage = async (name: string, params: Record<string, unknown>) => { queries.push({ name, params }); return { rows: [], total: 0 }; };
+    listSdk = installList({
+      'sales.stats': [{ count: 3, total_revenue: 4500, avg_ticket: 1500, tax_total: 780, discount_total: 200, voided_count: 1 }],
+    });
     document.body.innerHTML = '';
     await import('./erp-sales-list');
     const el = document.createElement('erp-sales-list');
@@ -199,20 +207,20 @@ describe('sales list — today by default, date/time on the row, KPIs for the sa
     const el = await mountList();
     expect(el.range).toBe('today');
     const day = await today();
-    const stats = queries.find((q) => q.name === 'sales.stats');
+    const stats = queries().find((q) => q.name === 'sales.stats');
     expect(stats?.params).toMatchObject({ date_from: day, date_to: day });
-    const list = queries.find((q) => q.name === 'sales.list');
+    const list = queries().find((q) => q.name === 'sales.list');
     expect(JSON.stringify(list?.params)).toContain(day);
   });
 
   it('«all» clears the range from both, and the segment is on screen', async () => {
     const el = await mountList();
     expect(el.shadowRoot.querySelector('.range-segment'), 'range segment').toBeTruthy();
-    queries = [];
+    listSdk.reads.splice(0);
     await el.setRange('all');
-    const stats = queries.find((q) => q.name === 'sales.stats');
+    const stats = queries().find((q) => q.name === 'sales.stats');
     expect(stats?.params?.date_from ?? null).toBeNull();
-    const list = queries.find((q) => q.name === 'sales.list');
+    const list = queries().find((q) => q.name === 'sales.list');
     expect(JSON.stringify(list?.params ?? {})).not.toContain(await today());
   });
 
@@ -289,16 +297,11 @@ describe('sales list — «today» is the LOCAL day, never the UTC day (sales#13
 // `erp_date` helper stats uses) and declares the range filter on THAT column — days compared
 // with days, both ends inclusive. The screen must ask for that column.
 describe('sales list — the range filter asks for DAYS, not timestamps (sales#125)', () => {
-  const sdk = () => (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
-  let listQueries: { name: string; params?: Record<string, unknown> }[] = [];
+  let listSdk: ReturnType<typeof installList>;
+  const listQueries = () => listSdk.reads;
 
   async function mountList() {
-    listQueries = [];
-    sdk().query = async () => [];
-    sdk().queryPage = async (name: string, params: Record<string, unknown>) => {
-      listQueries.push({ name, params });
-      return { rows: [], total: 0 };
-    };
+    listSdk = installList();
     document.body.innerHTML = '';
     await import('./erp-sales-list');
     const el = document.createElement('erp-sales-list');
@@ -320,7 +323,7 @@ describe('sales list — the range filter asks for DAYS, not timestamps (sales#1
     await mountList();
     const { rangeBounds } = await import('./erp-sales-list');
     const day = rangeBounds('today').from!;
-    const filters = filtersOf(listQueries.find((q) => q.name === 'sales.list'));
+    const filters = filtersOf(listQueries().find((q) => q.name === 'sales.list'));
     // Day-granularity column with ISO days on both ends: comparing the timestamp with a day
     // is what emptied the screen (the engine reads `<=`, so «today» stopped at 00:00).
     expect(filters.erp_date).toEqual({ from: day, to: day });
@@ -330,14 +333,14 @@ describe('sales list — the range filter asks for DAYS, not timestamps (sales#1
   it('setRange re-points the SAME day column («7 días», «all» clears it)', async () => {
     const el = await mountList();
     const { rangeBounds } = await import('./erp-sales-list');
-    listQueries = [];
+    listSdk.reads.splice(0);
     await el.setRange('7d');
-    let filters = filtersOf(listQueries.find((q) => q.name === 'sales.list'));
+    let filters = filtersOf(listQueries().find((q) => q.name === 'sales.list'));
     expect(filters.erp_date).toEqual(rangeBounds('7d'));
 
-    listQueries = [];
+    listSdk.reads.splice(0);
     await el.setRange('all');
-    filters = filtersOf(listQueries.find((q) => q.name === 'sales.list'));
+    filters = filtersOf(listQueries().find((q) => q.name === 'sales.list'));
     expect(filters.erp_date, '«all» drops the day filter entirely').toBeUndefined();
   });
 
@@ -346,7 +349,7 @@ describe('sales list — the range filter asks for DAYS, not timestamps (sales#1
     const table = (el as unknown as { shadowRoot: ShadowRoot }).shadowRoot.querySelector('ok-data-table');
     table!.dispatchEvent(new CustomEvent('filterChange', { detail: { col: 'created_at', value: { from: '2026-01-01', to: '2026-01-31' } } }));
     await new Promise((r) => setTimeout(r, 0));
-    const filters = filtersOf(listQueries.find((q) => q.name === 'sales.list'));
+    const filters = filtersOf(listQueries().find((q) => q.name === 'sales.list'));
     expect(filters.erp_date, 'a day picked on the date column filters by day').toEqual({ from: '2026-01-01', to: '2026-01-31' });
     expect(filters.created_at).toBeUndefined();
   });
@@ -431,8 +434,7 @@ describe('sales list — la vista gestiona su scroll y sus KPI en móvil (sales#
   }
 
   async function mountList(mobile: boolean): Promise<{ el: HTMLElement & { shadowRoot: ShadowRoot; updateComplete: Promise<unknown> }; mql: { dispatch(matches: boolean): void } }> {
-    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
-    sdk.queryPage = async () => ({ rows: [], total: 0 });
+    installList();
     const { mql } = stubMatchMedia(mobile);
     document.body.innerHTML = '';
     await import('./erp-sales-list');
@@ -525,8 +527,7 @@ describe('sales list — filtering by payment method (sales#181)', () => {
   ];
 
   async function paymentColumn(methods: unknown[]): Promise<Column> {
-    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
-    sdk.query = async (name: string) => (name === 'sales.payment_methods' ? methods : []);
+    installList({ 'sales.payment_methods': methods });
     document.body.innerHTML = '';
     await import('./erp-sales-list');
     const el = document.createElement('erp-sales-list');
@@ -564,11 +565,7 @@ describe('sales list — filtering by payment method (sales#181)', () => {
 // screen's own line, and the raw message never reaches a pixel.
 describe('las métricas fallan con el CATÁLOGO, nunca con el mensaje del servidor (sales#207)', () => {
   async function mountFailing(thrown: unknown): Promise<string> {
-    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
-    sdk.query = async (name: string) => {
-      if (name === 'sales.stats') throw thrown;
-      return [];
-    };
+    installList({ 'sales.stats': () => { throw thrown; } });
     document.body.innerHTML = '';
     await import('./erp-sales-list');
     const el = document.createElement('erp-sales-list');

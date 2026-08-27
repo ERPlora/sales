@@ -20,6 +20,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { installPosDouble } from '../../test/pos-double';
 
 function moduleRoot(): string {
   let dir = dirname(fileURLToPath(import.meta.url));
@@ -80,33 +81,18 @@ let commands: { name: string; payload: Record<string, unknown> }[] = [];
 /** The SDK for a hub whose settings read answers `policy` — `null` meaning there is no row. */
 function installSdk(policy: Record<string, unknown> | null) {
   commands = [];
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async (name: string) => {
-      if (name === 'sales.pos_settings.get') return policy ? [policy] : [];
-      if (name === 'sales.payment_methods') return PAY_METHODS;
-      if (name === 'sales.business.get') return [{ name: 'Pepe Ltd' }];
-      return [];
-    },
-    queryAll: async (name: string) => {
-      if (name === 'taxes.rules.list') return RULES;
-      if (name === 'taxes.categories.list') return TAX_CATS;
-      return [];
-    },
-    queryAllOptional: async () => [],
-    queryOptional: async () => undefined,
+  installPosDouble({
+    settings: policy,
+    paymentMethods: PAY_METHODS,
+    business: [{ name: 'Pepe Ltd' }],
+    rules: RULES,
+    taxCategories: TAX_CATS,
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
       if (name === 'sales.order.open') return { ok: true, new_ids: ['ord-1', 'line-1'] };
       return { rows: [{ id: 'sale-1' }] };
     },
-    currency: 'EUR',
-    formatMoney: (c: number) => `${((c || 0) / 100).toFixed(2)} €`,
-    formatAmount: (u: number) => `${(u || 0).toFixed(2)} €`,
-    t: (_c: unknown, k: string) => k,
-    loadSlot: async () => [],
-    notify: () => {},
-    hasPermission: () => true,
-  };
+  });
 }
 
 interface Pos {

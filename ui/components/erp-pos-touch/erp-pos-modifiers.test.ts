@@ -13,6 +13,7 @@
 // (`cart.find(l => l.id === p.id)`), distinta de `sameCartLine`. Si no mira los suplementos, la
 // hamburguesa «sin cebolla» sube la cantidad de la normal y cocina nunca se entera.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { installPosDouble } from '../../test/pos-double';
 
 const BURGER = { id: 'p-burger', name: 'Hamburguesa', price: 500, tax_category_key: 'product.generic' };
 const COFFEE = { id: 'p-coffee', name: 'Café', price: 120, tax_category_key: 'product.generic' };
@@ -34,27 +35,14 @@ let commands: { name: string; params: Record<string, unknown> }[] = [];
 
 function installSdk(groupsByProduct: Record<string, unknown[]> = {}) {
   commands = [];
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async () => [],
-    queryAll: async (name: string) => {
-      if (name === 'inventory.products.for_sale') return [BURGER, COFFEE];
-      return [];
-    },
-    queryOptional: async (name: string, params?: Record<string, unknown>) => {
-      if (name !== 'modifiers.for_target') return undefined;
-      return groupsByProduct[String(params?.target_ref ?? '')] ?? [];
-    },
+  installPosDouble({
+    forSale: [BURGER, COFFEE],
+    modifierGroups: (params) => groupsByProduct[String(params?.target_ref ?? '')] ?? [],
     command: async (name: string, params: Record<string, unknown>) => {
       commands.push({ name, params });
       return { rows: [{ id: `row-${commands.length}` }] };
     },
-    currency: 'EUR',
-    formatMoney: (c: number) => `${((c || 0) / 100).toFixed(2)} €`,
-    formatAmount: (u: number) => `${(u || 0).toFixed(2)} €`,
-    t: (_c: unknown, k: string) => k,
-    loadSlot: async () => [],
-    notify: () => {},
-  };
+  });
 }
 
 interface Pos {
@@ -93,10 +81,9 @@ describe('un producto SIN suplementos se añade de un toque (el 99 % de las puls
   it('tampoco la abre si el módulo `modifiers` NO está instalado', async () => {
     // `queryOptional` devuelve undefined: el TPV sigue cobrando como siempre (ADR-0127).
     installSdk();
-    (globalThis as Record<string, unknown>).erplora = {
-      ...(globalThis as Record<string, { erplora: object }> & { erplora: object }).erplora as object,
-      queryOptional: async () => undefined,
-    };
+    // `modifiers` is not in this hub: the optional door answers absence, and the till adds
+    // straight to the cart without asking anything (ADR-0127).
+    installPosDouble({ forSale: [BURGER, COFFEE], absentModules: ['modifiers'] });
     const el = await mount();
     await el.add(BURGER);
     await el.updateComplete;

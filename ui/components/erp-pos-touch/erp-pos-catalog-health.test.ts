@@ -19,6 +19,7 @@
 // The assertions below are on FORM (the i18n key and the count that travels with it), never on
 // prose: the wording lives in `locales/` and changing it must not turn this file red.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { installPosDouble } from '../../test/pos-double';
 
 /** Two sellable, three blocked: one without a tax category and two whose category resolves no rule. */
 const PRODUCTS = [
@@ -49,27 +50,13 @@ function renderKey(key: string, params?: Record<string, unknown>): string {
 
 function installSdk(opts: SdkOptions = {}) {
   const products = opts.products ?? PRODUCTS;
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async () => [],
-    // sales#25 — the till reads `inventory` through the OPTIONAL door (ADR-0127). For an app that
-    // IS in this hub the optional door answers exactly like the required one, which is what this
-    // delegation models; absence and failure are still whatever `queryAll` does with them.
-    queryAllOptional: async (name: string, params?: Record<string, unknown>) =>
-      ((globalThis as Record<string, unknown>).erplora as { queryAll(n: string, p?: Record<string, unknown>): Promise<unknown> }).queryAll(name, params),
-    queryAll: async (name: string) => {
-      if (name === 'inventory.products.list') return products;
-      if (name === 'taxes.rules.list') return RULES;
-      return [];
-    },
-    command: async () => ({}),
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-    t: (_catalog: unknown, key: string, params?: Record<string, unknown>) => renderKey(key, params),
-    loadSlot: async () => [],
-    notify: () => {},
-    ...(opts.can ? { hasPermission: opts.can } : {}),
-  };
+  installPosDouble({
+    products,
+    rules: RULES,
+    t: (_catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>) => renderKey(key, params),
+    // `undefined` = a shell that exposes no permission channel at all (preview, older shell).
+    ...(opts.can ? { hasPermission: opts.can } : { without: ['hasPermission' as const] }),
+  });
 }
 
 interface MountedPos {

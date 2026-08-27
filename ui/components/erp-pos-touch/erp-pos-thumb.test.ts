@@ -23,6 +23,7 @@
 // happy-dom does no layout and never fetches the image, so what is fixed here is the CONTRACT (what
 // is painted, with which classes). That the photo visually covers the initials is a browser matter.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { installPosDouble } from '../../test/pos-double';
 
 /** A product WITH a photo and one WITHOUT, so both branches are compared in one place. */
 const PRODUCTS = [
@@ -48,6 +49,7 @@ const RULES = [
 ];
 
 const fetchMediaBlob = vi.fn(async () => new Blob(['webp'], { type: 'image/webp' }));
+let double: ReturnType<typeof installPosDouble>;
 let nextObjectUrl = 0;
 
 beforeEach(() => {
@@ -55,27 +57,7 @@ beforeEach(() => {
   nextObjectUrl = 0;
   vi.spyOn(URL, 'createObjectURL').mockImplementation(() => `blob:catalogue-${++nextObjectUrl}`);
   vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async () => [],
-    // sales#25 — the till reads `inventory` through the OPTIONAL door (ADR-0127). For an app that
-    // IS in this hub the optional door answers exactly like the required one, which is what this
-    // delegation models; absence and failure are still whatever `queryAll` does with them.
-    queryAllOptional: async (name: string, params?: Record<string, unknown>) =>
-      ((globalThis as Record<string, unknown>).erplora as { queryAll(n: string, p?: Record<string, unknown>): Promise<unknown> }).queryAll(name, params),
-    queryAll: async (name: string) => {
-      if (name === 'inventory.products.list') return PRODUCTS;
-      if (name === 'taxes.rules.list') return RULES;
-      return [];
-    },
-    command: async () => ({}),
-    fetchMediaBlob,
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-    t: (_catalog: unknown, key: string) => key,
-    loadSlot: async () => [],
-    notify: () => {},
-  };
+  double = installPosDouble({ products: PRODUCTS, rules: RULES, extra: { fetchMediaBlob } });
 });
 
 interface MountedPos {
@@ -177,8 +159,7 @@ describe('the tile always keeps something to look at', () => {
 // del botón. Square, Toast y Lightspeed pintan nombre + precio; el SKU vive en la búsqueda y en la
 // ficha. Se conserva la UNIDAD cuando no es la pieza («kg», «l»): eso sí lo lee la cajera.
 async function mountWith(products: Record<string, unknown>[]): Promise<MountedPos> {
-  const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
-  sdk.queryAll = async (name: string) => (name === 'inventory.products.list' ? products : name === 'taxes.rules.list' ? RULES : []);
+  double.setQuery('inventory.products.list', products);
   document.body.innerHTML = '';
   return mount();
 }

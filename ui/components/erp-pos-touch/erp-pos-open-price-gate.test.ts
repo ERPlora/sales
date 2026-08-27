@@ -13,6 +13,7 @@
 // `requires_elevation` and the shell raises the manager-PIN dialog at transport level (ADR-0238),
 // exactly the default Toast, Shopify and Vagaro ship.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { installPosDouble } from '../../test/pos-double';
 
 const RULES = [{ id: 'r-21', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, is_active: 1 }];
 const TAX_CATS = [{ key: 'product.generic', name: 'General', is_active: 1 }];
@@ -21,25 +22,14 @@ let commands: { name: string; params: Record<string, unknown> }[] = [];
 
 function installSdk() {
   commands = [];
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async () => [],
-    queryAll: async (name: string) => {
-      if (name === 'taxes.rules.list') return RULES;
-      if (name === 'taxes.categories.list') return TAX_CATS;
-      return [];
-    },
-    queryOptional: async () => undefined,
+  installPosDouble({
+    rules: RULES,
+    taxCategories: TAX_CATS,
     command: async (name: string, params: Record<string, unknown>) => {
       commands.push({ name, params });
       return { rows: [{ id: `row-${commands.length}` }] };
     },
-    currency: 'EUR',
-    formatMoney: (c: number) => `${((c || 0) / 100).toFixed(2)} €`,
-    formatAmount: (u: number) => `${(u || 0).toFixed(2)} €`,
-    t: (_c: unknown, k: string) => k,
-    loadSlot: async () => [],
-    notify: () => {},
-  };
+  });
 }
 
 interface Pos {

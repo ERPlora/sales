@@ -20,6 +20,7 @@
 // seven do, and it stands on its own.
 
 import { beforeEach, describe, expect, it } from 'vitest';
+import { installPosDouble } from '../../test/pos-double';
 
 const PRODUCTS = [
   { id: 'p-coffee', name: 'Coffee', price: 180, is_active: 1, tax_category_key: 'product.generic' },
@@ -31,17 +32,13 @@ let commands: { name: string; payload: Record<string, unknown> }[] = [];
 function installSdk() {
   commands = [];
   const orderLines: Record<string, unknown>[] = [];
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async (name: string) => {
-      if (name === 'sales.pos_settings.get') return [{ allow_discounts: 1 }];
-      if (name === 'sales.order.lines') return orderLines;
-      return [];
-    },
-    queryAll: async (name: string) =>
-      (name === 'inventory.products.list' ? PRODUCTS : name === 'taxes.rules.list' ? RULES : []),
-    queryOptional: async () => undefined,
-    // sales#25 — `inventory` is an OPTIONAL capability now, so the grid comes in through this door.
-    queryAllOptional: async (name: string) => (name === 'inventory.products.list' ? PRODUCTS : undefined),
+  installPosDouble({
+    settings: { allow_discounts: 1 },
+    orderLines: () => orderLines,
+    products: PRODUCTS,
+    rules: RULES,
+    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} EUR`,
+    formatAmount: (units: number) => `${(units || 0).toFixed(2)} EUR`,
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
       if (name === 'sales.order.open') {
@@ -53,14 +50,7 @@ function installSdk() {
       }
       return { ok: true, new_ids: ['line-2'] };
     },
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} EUR`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} EUR`,
-    t: (_c: unknown, key: string) => key,
-    loadSlot: async () => [],
-    notify: () => {},
-    hasPermission: () => true,
-  };
+  });
 }
 
 interface Pos {

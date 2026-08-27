@@ -7,6 +7,7 @@
 // e inmediato. El usuario ve qué falló en vez de un silencio confuso.
 import { beforeEach, describe, expect, it } from 'vitest';
 import esCatalog from '../../../locales/es.json';
+import { installPosDouble } from '../../test/pos-double';
 
 const notifyCalls: { type: string; message: string }[] = [];
 const CATEGORIA_IVA = 'product.generic';
@@ -14,20 +15,10 @@ const REGLAS_IVA = [{ id: 'r-21', tax_category_key: CATEGORIA_IVA, rate_pct: 21,
 
 beforeEach(() => {
   notifyCalls.length = 0;
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async () => [],
-    // sales#74: la rejilla solo deja añadir lo que se puede cobrar → el hub del doble está
-    // configurado (el producto trae categoría fiscal y el catálogo la resuelve).
-    queryAll: async (name: string) => (name === 'taxes.rules.list' ? REGLAS_IVA : []),
-    command: async () => ({}),
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-    t: (_catalog: unknown, key: string) => key,
-    loadSlot: async () => [],
-    // Canal de toasts del shell. El TPV ya lo usa para avisos de éxito (p.ej. enviar a cocina).
-    notify: (n: { type: string; message: string }) => notifyCalls.push(n),
-  };
+  // sales#74: the grid only lets you add what can be charged → this hub is configured (the product
+  // carries its tax category and the catalogue resolves it). `notify` is the shell's toast channel,
+  // which the till already uses for success notices (e.g. firing to the kitchen).
+  installPosDouble({ rules: REGLAS_IVA, notify: (n) => notifyCalls.push(n) });
 });
 
 async function montar() {

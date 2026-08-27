@@ -12,6 +12,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
+import { installPosDouble } from '../../test/pos-double';
 
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
@@ -36,26 +37,14 @@ function translate(locale: string) {
 }
 
 function installSdk(locale: string): void {
-  (globalThis as Record<string, unknown>).erplora = {
+  installPosDouble({
     locale,
-    query: async (name: string) => (name === 'sales.payment_methods' ? SEEDED_METHODS : []),
-    // sales#25 — the till reads `inventory` through the OPTIONAL door (ADR-0127). For an app that
-    // IS in this hub the optional door answers exactly like the required one, which is what this
-    // delegation models; absence and failure are still whatever `queryAll` does with them.
-    queryAllOptional: async (name: string, params?: Record<string, unknown>) =>
-      ((globalThis as Record<string, unknown>).erplora as { queryAll(n: string, p?: Record<string, unknown>): Promise<unknown> }).queryAll(name, params),
-    queryAll: async (name: string) =>
-      (name === 'inventory.products.list' ? PRODUCTS : name === 'taxes.rules.list' ? RULES : []),
-    queryOptional: async () => undefined,
-    command: async () => ({ ok: true, new_ids: ['ord-1', 'line-1'] }),
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
+    paymentMethods: SEEDED_METHODS,
+    products: PRODUCTS,
+    rules: RULES,
     t: translate(locale),
-    loadSlot: async () => [],
-    notify: () => {},
-    hasPermission: () => true,
-  };
+    command: async () => ({ ok: true, new_ids: ['ord-1', 'line-1'] }),
+  });
 }
 
 interface Pos extends HTMLElement {

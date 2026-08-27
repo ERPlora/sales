@@ -16,6 +16,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { orderToPrebill, saleToInvoice, saleToReceipt, type PrebillLine, type SaleLineRow, type SaleRow } from './document-mappers';
 import { prebillToPrintDocument, saleToPrintDocument } from './print-document';
 import { receiptToPrintableHtml } from './receipt-html';
+import { installErploraDouble } from '../test/erplora-double';
 
 const SALE: SaleRow = {
   id: 's1', sale_number: 'T-1', subtotal: 327, tax_amount: 33,
@@ -64,7 +65,7 @@ describe('the document carries integers in minor units and its scale (sales#188)
   });
 
   it('the scale is the hub currency\'s, read from the SDK when it is there (JPY: 0)', () => {
-    (globalThis as { erplora?: unknown }).erplora = { currencyDecimals: 0 };
+    installErploraDouble({ extra: { currencyDecimals: 0 } });
     expect(saleToReceipt(SALE, LINES).decimals).toBe(0);
     expect(orderToPrebill([{ id: 'p1', name: 'Ramen', price: 1999, qty: 1 }], {}).decimals).toBe(0);
   });
@@ -125,7 +126,7 @@ describe('the thermal printer keeps getting euros: the ONE conversion left, by n
   });
 
   it('a 0-decimal currency is not divided', () => {
-    (globalThis as { erplora?: unknown }).erplora = { currencyDecimals: 0 };
+    installErploraDouble({ extra: { currencyDecimals: 0 } });
     const doc = prebillToPrintDocument([{ id: 'p1', name: 'Ramen', price: 1999, qty: 1 }], {});
     expect(doc.total).toBe(1999);
   });

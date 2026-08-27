@@ -14,6 +14,7 @@
 //  * Choosing nobody sends `staff_id: null` — on purpose. The till must not guess the session user
 //    and send an id it invented; the server resolves it, and it is the only one that can.
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { installPosDouble } from '../../test/pos-double';
 
 const HUB_USERS = [
   { id: 'u-ana', name: 'Ana', role: 'employee', is_active: true },
@@ -37,34 +38,23 @@ const RULES = [
 ];
 
 let commands: { name: string; params?: Record<string, unknown> }[] = [];
-let queried: string[] = [];
+let pos: ReturnType<typeof installPosDouble>;
+/** Every query name the till asked for, in order. */
+const queried = (): string[] => pos.reads.map((r) => r.name);
 
-function installSdk(opts: { users?: unknown; usersFail?: boolean } = {}) {
+function installSdk(opts: { users?: unknown[]; usersFail?: boolean } = {}) {
   commands = [];
-  queried = [];
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async (name: string) => {
-      queried.push(name);
-      if (name === 'hub.users.list') {
-        if (opts.usersFail) throw new Error('hub.users.forbidden');
-        return opts.users ?? HUB_USERS;
-      }
-      // When the order opens, the till RE-READS its lines from the server (the row is the
-      // authority), so without this the ticket would come out empty and nothing would be fired.
-      if (name === 'sales.order.lines') {
-        return [{ id: 'line-1', product_id: 'p-x', product_name: 'Croquetas', unit_price: 900, quantity: 1_000_000 }];
-      }
-      if (name === 'sales.by_idempotency_key') return [{ id: 'sale-1' }];
-      if (name === 'sales.get') return [{ id: 'sale-1', created_at: '2026-08-25T10:00:00Z' }];
-      return [];
-    },
-    queryAll: async (name: string) => (name === 'taxes.rules.list' ? RULES : []),
-    queryOptional: async (name: string) => {
-      if (name === 'services.services.list') return SERVICES;
-      if (name === 'services.categories.list') return [];
-      if (name === 'appointments.appointments.get') return { rows: [APPOINTMENT] };
-      return undefined;
-    },
+  pos = installPosDouble({
+    users: opts.users ?? HUB_USERS,
+    ...(opts.usersFail ? { failing: { 'hub.users.list': 'permission_denied' } } : {}),
+    // When the order opens, the till RE-READS its lines from the server (the row is the authority),
+    // so without this the ticket would come out empty and nothing would be fired.
+    orderLines: [{ id: 'line-1', product_id: 'p-x', product_name: 'Croquetas', unit_price: 900, quantity: 1_000_000 }],
+    byIdempotencyKey: [{ id: 'sale-1' }],
+    rules: RULES,
+    services: SERVICES,
+    serviceCategories: [],
+    appointment: [APPOINTMENT],
     command: async (name: string, params?: Record<string, unknown>) => {
       commands.push({ name, params });
       // The order id comes back in `new_ids` (the host is the only authority on ids), not `rows`.
@@ -72,16 +62,11 @@ function installSdk(opts: { users?: unknown; usersFail?: boolean } = {}) {
       if (name === 'sales.order.add_line') return { new_ids: ['line-1'] };
       return { rows: [{ id: 'line-1' }] };
     },
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
     // The real `t` INTERPOLATES its params; so does the stub, because what is asserted here is the
     // NAME read on the chip, not the key.
-    t: (_catalog: unknown, key: string, params?: Record<string, unknown>) =>
+    t: (_catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>) =>
       (params ? `${key}:${Object.values(params).join(',')}` : key),
-    loadSlot: async () => [],
-    notify: () => {},
-  };
+  });
 }
 
 interface MountedPos {
@@ -131,10 +116,10 @@ describe('who is serving this check', () => {
 
   it('asks nobody until the chip is tapped: the till does not query the staff on boot', async () => {
     const el = await mount();
-    expect(queried).not.toContain('hub.users.list');
+    expect(queried()).not.toContain('hub.users.list');
     chip(el)?.click();
     await settle(el);
-    expect(queried).toContain('hub.users.list');
+    expect(queried()).toContain('hub.users.list');
   });
 
   it('lists the hub users who can still serve, and leaves the deactivated out', async () => {

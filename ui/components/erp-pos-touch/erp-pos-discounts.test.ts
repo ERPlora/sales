@@ -6,6 +6,7 @@
 // every POS offers a manual discount per LINE and per TICKET; the gate is a permission/setting,
 // never free-for-all. Here the gate is `allow_discounts` (Ajustes TPV), enforced by the server.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { installPosDouble } from '../../test/pos-double';
 
 const PRODUCTS = [
   { id: 'p-cafe', name: 'Café', price: 180, is_active: 1, tax_category_key: 'product.generic' },
@@ -21,22 +22,14 @@ function installSdk(allowDiscounts: 0 | 1) {
   // The order lines the "server" holds: the first line is materialized by sales.order.open and read
   // back (that is how the till learns its line_id, ADR-0141).
   const orderLines: Record<string, unknown>[] = [];
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async (name: string) => {
-      // sales#203 — the policy comes through the COUNTER read. Stubbing `sales.settings.get`
-      // here used to make this file green over a screen that, for a real cashier, showed the
-      // discount button anyway: that query needs `sales.manage_settings`.
-      if (name === 'sales.pos_settings.get') return [{ allow_discounts: allowDiscounts }];
-      if (name === 'sales.order.lines') return orderLines;
-      return [];
-    },
-    // sales#25 — the till reads `inventory` through the OPTIONAL door (ADR-0127). For an app that
-    // IS in this hub the optional door answers exactly like the required one, which is what this
-    // delegation models; absence and failure are still whatever `queryAll` does with them.
-    queryAllOptional: async (name: string, params?: Record<string, unknown>) =>
-      ((globalThis as Record<string, unknown>).erplora as { queryAll(n: string, p?: Record<string, unknown>): Promise<unknown> }).queryAll(name, params),
-    queryAll: async (name: string) => (name === 'inventory.products.list' ? PRODUCTS : name === 'taxes.rules.list' ? RULES : []),
-    queryOptional: async () => undefined,
+  // sales#203 — the policy comes through the COUNTER read. Stubbing `sales.settings.get` here used
+  // to make this file green over a screen that, for a real cashier, showed the discount button
+  // anyway: that query needs `sales.manage_settings`.
+  installPosDouble({
+    settings: () => ({ allow_discounts: allowDiscounts }),
+    orderLines: () => orderLines,
+    products: PRODUCTS,
+    rules: RULES,
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
       if (name === 'sales.order.open') {
@@ -47,14 +40,7 @@ function installSdk(allowDiscounts: 0 | 1) {
       if (name === 'sales.order.add_line') return { ok: true, new_ids: [`line-${++lineSeq + 1}`] };
       return { rows: [{ id: 'sale-1' }] };
     },
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-    t: (_c: unknown, key: string) => key,
-    loadSlot: async () => [],
-    notify: () => {},
-    hasPermission: () => true,
-  };
+  });
 }
 
 interface Pos {

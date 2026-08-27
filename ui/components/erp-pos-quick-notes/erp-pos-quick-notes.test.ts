@@ -7,36 +7,36 @@
 // `modifiers.groups`). Reusing it is what gives loading, empty, search and the phone/tablet/desktop
 // layouts for free, instead of a fourth hand-rolled list.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { installErploraDouble } from '../../test/erplora-double';
 
 const ROWS = [
   { id: 'qn-1', text: 'medium rare', sort_order: 10 },
   { id: 'qn-2', text: 'no salt', sort_order: 20 },
 ];
 const commands: { name: string; payload: Record<string, unknown> }[] = [];
-let sdk: Record<string, unknown>;
 let pageFails = false;
+let double: ReturnType<typeof installErploraDouble>;
 
 beforeEach(() => {
   commands.length = 0;
   pageFails = false;
-  sdk = {
-    query: async () => [],
-    queryPage: async () => {
-      if (pageFails) throw new Error('boom');
-      return { rows: ROWS, total: ROWS.length };
+  double = installErploraDouble({
+    // Read on every call: `pageFails` is flipped by the test AFTER the double is installed.
+    queries: {
+      'sales.quick_notes.list': () => {
+        if (pageFails) throw new Error('boom');
+        return ROWS;
+      },
     },
-    queryAll: async (name: string) => (name === 'sales.quick_notes.list' ? ROWS : []),
+    pageSize: ROWS.length,
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
       return {};
     },
-    on: () => () => {},
-    hasPermission: () => true,
     locale: 'en',
-    t: (_c: unknown, key: string, params?: Record<string, unknown>) =>
-      params ? `${key}:${JSON.stringify(params)}` : key,
-  };
-  (globalThis as Record<string, unknown>).erplora = sdk;
+    t: (_c: Record<string, unknown>, key: string, params?: Record<string, unknown>) =>
+      (params ? `${key}:${JSON.stringify(params)}` : key),
+  });
 });
 
 type Mounted = HTMLElement & {
@@ -82,7 +82,7 @@ describe('the list', () => {
   });
 
   it('is empty-stated, not blank, when nothing is configured yet', async () => {
-    sdk.queryPage = async () => ({ rows: [], total: 0 });
+    double.setQuery('sales.quick_notes.list', []);
     const el = await mount();
     expect(table(el)?.rows).toEqual([]);
     expect(table(el)?.emptyMessage).toBe('ui.quickNotesEmpty');
@@ -107,7 +107,7 @@ describe('the CRUD lives inside the data-table', () => {
     let el = await mount();
     expect(el.actions.map((a) => a.id)).toEqual(['edit', 'delete']);
     el.remove();
-    sdk.hasPermission = (p: string) => p === 'sales.view_sale';
+    double.sdk.hasPermission = (p: string) => p === 'sales.view_sale';
     el = await mount();
     expect(el.actions).toEqual([]);
     expect(table(el)?.addable, 'no «+» without sales.manage_settings').toBe(false);
@@ -172,7 +172,7 @@ describe('create · edit · delete', () => {
 
   it('a command that fails is SHOWN, never swallowed', async () => {
     const el = await mount();
-    sdk.command = async () => {
+    double.sdk.command = async () => {
       throw new Error('nope');
     };
     el.newText = 'no ice';
