@@ -14,21 +14,16 @@
 // This is the seam these tests hold: what goes into the order line comes back out of it.
 import { describe, it, expect } from 'vitest';
 import { addOrderLine, loadOrderLines, type CartLine, type ErploraClientLike } from './pos-cart';
+import { makeErploraDouble } from '../test/erplora-double';
 
-/** Client double: records commands, and serves `sales.order.lines` from `stored`. */
+/** The shared double as the client argument (sales#234): it records the commands, and serves
+ *  `sales.order.lines` from `stored`. */
 function client(stored: Record<string, unknown>[] = []) {
-  const calls: { name: string; params?: Record<string, unknown> }[] = [];
-  const c = {
-    query: async (name: string, params?: Record<string, unknown>) => {
-      calls.push({ name, params });
-      return name === 'sales.order.lines' ? { rows: stored } : { rows: [] };
-    },
-    command: async (name: string, params?: Record<string, unknown>) => {
-      calls.push({ name, params });
-      return { rows: [{ id: 'line-1' }] };
-    },
-  } as unknown as ErploraClientLike;
-  return { client: c, calls };
+  const double = makeErploraDouble({
+    queries: { 'sales.order.lines': stored },
+    command: () => ({ rows: [{ id: 'line-1' }] }),
+  });
+  return { client: double.sdk as unknown as ErploraClientLike, calls: double.commands };
 }
 
 const serviceLine = (over: Partial<CartLine> = {}): CartLine => ({
@@ -41,14 +36,14 @@ describe('a service line persisted into the order', () => {
     const { client: c, calls } = client();
     await addOrderLine(c, 'order-1', serviceLine());
     const add = calls.find((x) => x.name === 'sales.order.add_line');
-    expect(add?.params?.is_service).toBe(true);
+    expect(add?.payload?.is_service).toBe(true);
   });
 
   it('sends is_service false for a plain product, never undefined', async () => {
     const { client: c, calls } = client();
     await addOrderLine(c, 'order-1', { id: 'p-cafe', name: 'Café', price: 150, qty: 1 });
     const add = calls.find((x) => x.name === 'sales.order.add_line');
-    expect(add?.params?.is_service).toBe(false);
+    expect(add?.payload?.is_service).toBe(false);
   });
 });
 

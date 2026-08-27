@@ -12,18 +12,18 @@
 import { describe, expect, it } from 'vitest';
 import { loadTaxCatalog, productSellability } from './pos-tax';
 import type { ErploraClientLike } from './pos-cart';
+import { makeErploraDouble } from '../test/erplora-double';
 
-/** Client double: only `queryAll('taxes.rules.list')` matters here. */
-function client(rules: () => Promise<unknown[]>): ErploraClientLike {
-  return {
-    queryAll: async (name: string) => (name === 'taxes.rules.list' ? await rules() : []),
-    query: async () => [],
-    queryOptional: async () => undefined,
-    command: async () => ({}),
-    currency: 'EUR',
-    formatMoney: (c: number) => String(c),
-    formatAmount: (u: number) => String(u),
-  } as unknown as ErploraClientLike;
+/** The shared double, handed over as the client argument (sales#234). The only read that matters
+ *  here is `taxes.rules.list`; anything else this function starts asking for is a red test and not
+ *  an empty answer, which is the whole point of the helper. */
+function client(rules: unknown[]): ErploraClientLike {
+  return makeErploraDouble({ queries: { 'taxes.rules.list': rules } }).sdk as unknown as ErploraClientLike;
+}
+
+/** The `taxes` app is there but its contract is broken — a rejection, never an empty catalogue. */
+function brokenClient(): ErploraClientLike {
+  return makeErploraDouble({ broken: ['taxes.rules.list'] }).sdk as unknown as ErploraClientLike;
 }
 
 const ES_RULES = [
@@ -33,14 +33,14 @@ const ES_RULES = [
 
 describe('loadTaxCatalog — the rates map plus whether the catalogue actually arrived', () => {
   it('taxes answers: the catalogue is available and the rates are mapped by category', async () => {
-    const catalog = await loadTaxCatalog(client(async () => ES_RULES));
+    const catalog = await loadTaxCatalog(client(ES_RULES));
 
     expect(catalog.available, 'taxes answered with rules → the catalogue is trustworthy').toBe(true);
     expect(catalog.rates.get('product.generic')).toBe(21);
   });
 
-  it('taxes throws: the catalogue is NOT available (we know nothing, we judge nothing)', async () => {
-    const catalog = await loadTaxCatalog(client(async () => { throw new Error('module taxes is down'); }));
+  it('taxes rejects: the catalogue is NOT available (we know nothing, we judge nothing)', async () => {
+    const catalog = await loadTaxCatalog(brokenClient());
 
     expect(catalog.available, 'an outage must never read as "no rule exists"').toBe(false);
     expect(catalog.rates.size).toBe(0);
@@ -48,7 +48,7 @@ describe('loadTaxCatalog — the rates map plus whether the catalogue actually a
 
   it('taxes answers with zero rules: same as an outage — nothing to judge with', async () => {
     // Mirrors the handler guard `!rules.is_empty()`: with an empty catalogue nothing gets rejected.
-    const catalog = await loadTaxCatalog(client(async () => []));
+    const catalog = await loadTaxCatalog(client([]));
 
     expect(catalog.available).toBe(false);
   });

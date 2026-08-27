@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest';
 import { lineAmount, cartTotal, addOrderLine, updateOrderLineDiscount, loadOrderLines, openOrderWithLines } from './pos-cart';
 import type { CartLine, ErploraClientLike } from './pos-cart';
 import { splitTotal } from './split-selection';
+import { makeErploraDouble } from '../test/erplora-double';
 
 const line = (over: Partial<CartLine> = {}): CartLine => ({ id: 'p1', name: 'Café', price: 180, qty: 1, ...over });
 
@@ -36,28 +37,30 @@ describe('lineAmount / cartTotal — the preview rounds like the server', () => 
   });
 });
 
-function orderClient(rows: Record<string, unknown>[] = []) {
-  const calls: { name: string; params?: Record<string, unknown> }[] = [];
-  const client = {
-    query: async () => ({ rows }),
-    command: async (name: string, params?: Record<string, unknown>) => { calls.push({ name, params }); return { ok: true, new_ids: ['x'] }; },
-  } as unknown as ErploraClientLike;
-  return { client, calls };
+/** The shared double handed over as the client argument (sales#234). It records every command
+ *  itself, so `calls` IS its list — and a read this file never declared fails the test instead of
+ *  answering an empty page. */
+function orderClient(orderLines: Record<string, unknown>[] = []) {
+  const double = makeErploraDouble({
+    queries: { 'sales.order.lines': orderLines },
+    command: () => ({ ok: true, new_ids: ['x'] }),
+  });
+  return { client: double.sdk as unknown as ErploraClientLike, calls: double.commands };
 }
 
 describe('the line discount is persisted with the order line and comes back on resume', () => {
   it('travels in sales.order.open and sales.order.add_line, with the discounted line_total', async () => {
     const { client, calls } = orderClient();
     await openOrderWithLines(client, [line({ discount: 10 })]);
-    expect((calls[0].params!.items as Record<string, unknown>[])[0]).toMatchObject({ discount: 10 });
+    expect((calls[0].payload.items as Record<string, unknown>[])[0]).toMatchObject({ discount: 10 });
     await addOrderLine(client, 'ord-1', line({ discount: 10 }));
-    expect(calls[1].params).toMatchObject({ discount_percent: 10, line_total: 162 });
+    expect(calls[1].payload).toMatchObject({ discount_percent: 10, line_total: 162 });
   });
   it('updateOrderLineDiscount rewrites the percent and the provisional total of the line', async () => {
     const { client, calls } = orderClient();
     await updateOrderLineDiscount(client, 'ord-1', line({ line_id: 'l1', qty: 2 }), 25);
     expect(calls[0].name).toBe('sales.order.update_line');
-    expect(calls[0].params).toMatchObject({ order_id: 'ord-1', line_id: 'l1', discount_percent: 25, line_total: 270 });
+    expect(calls[0].payload).toMatchObject({ order_id: 'ord-1', line_id: 'l1', discount_percent: 25, line_total: 270 });
   });
   it('loadOrderLines restores it (0 → undefined: no badge on an undiscounted line)', async () => {
     const { client } = orderClient([

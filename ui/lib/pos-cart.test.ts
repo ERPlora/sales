@@ -1,22 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { mergeCartLines, listOpenChecks, persistLineQty, type CartLine, type ErploraClientLike } from './pos-cart';
+import { makeErploraDouble } from '../test/erplora-double';
 
-// Cliente de prueba que registra las llamadas a query/command (lo único que nos importa aquí:
-// que la comanda se pida/guarde ATADA a la mesa — `table_id`).
-function recordingClient(cartData?: string) {
-  const calls: { kind: 'query' | 'command'; name: string; params?: Record<string, unknown> }[] = [];
-  const client = {
-    query: async (name: string, params?: Record<string, unknown>) => {
-      calls.push({ kind: 'query', name, params });
-      return { rows: cartData != null ? [{ cart_data: cartData }] : [] };
-    },
-    command: async (name: string, params?: Record<string, unknown>) => {
-      calls.push({ kind: 'command', name, params });
-      return {};
-    },
-  } as unknown as ErploraClientLike;
-  return { client, calls };
-}
+// `recordingClient` served the cart-blob-per-table of ADR-0139, which went away with it: it had no
+// caller left when sales#234 moved this file onto the shared double.
 
 // mergeCartLines — fusiona dos comandas al FUSIONAR mesas (punto 3). Decisión de Ioan:
 // "sumar idénticas" — los productos iguales suman cantidad; lo que difiere se mantiene separado.
@@ -75,20 +62,15 @@ import {
   openOrderWithLines, addOrderLine, updateOrderLineQty, removeOrderLine, loadOrderLines, findOpenOrder,
 } from './pos-cart';
 
-/** Cliente que devuelve `new_ids` en los commands (el runtime es la autoridad de ids) y filas en queries. */
+/** The shared double handed over as the client argument (sales#234): it answers `new_ids` to the
+ *  commands (the runtime owns the ids) and `queryRows` to the two reads the cart makes. It records
+ *  the commands itself, so `calls` IS its list. */
 function orderClient(newIds: string[] = [], queryRows: Record<string, unknown>[] = []) {
-  const calls: { kind: 'query' | 'command'; name: string; params?: Record<string, unknown> }[] = [];
-  const client = {
-    query: async (name: string, params?: Record<string, unknown>) => {
-      calls.push({ kind: 'query', name, params });
-      return { rows: queryRows };
-    },
-    command: async (name: string, params?: Record<string, unknown>) => {
-      calls.push({ kind: 'command', name, params });
-      return { ok: true, new_ids: newIds };
-    },
-  } as unknown as ErploraClientLike;
-  return { client, calls };
+  const double = makeErploraDouble({
+    queries: { 'sales.order.lines': queryRows, 'sales.orders.list': queryRows },
+    command: () => ({ ok: true, new_ids: newIds }),
+  });
+  return { client: double.sdk as unknown as ErploraClientLike, calls: double.commands };
 }
 
 describe('carrito respaldado por pedido (ADR-0141)', () => {
@@ -98,14 +80,14 @@ describe('carrito respaldado por pedido (ADR-0141)', () => {
     expect(id).toBe('ord-1');
     const cmd = calls.find((c) => c.name === 'sales.order.open');
     expect(cmd).toBeTruthy();
-    expect((cmd!.params!.items as unknown[])).toHaveLength(1);
+    expect((cmd!.payload.items as unknown[])).toHaveLength(1);
   });
 
   it('añade una línea INMEDIATAMENTE y devuelve su line_id (sin debounce, sin blob)', async () => {
     const { client, calls } = orderClient(['line-9']);
     const lineId = await addOrderLine(client, 'ord-1', line({ qty: 3 }));
     expect(lineId).toBe('line-9');
-    expect(calls.find((c) => c.name === 'sales.order.add_line')!.params).toMatchObject({
+    expect(calls.find((c) => c.name === 'sales.order.add_line')!.payload).toMatchObject({
       order_id: 'ord-1', quantity: 3_000_000, unit_price: 250, line_total: 750, // cable en 10⁶ (ADR-0147); el dinero NO se reescala
     });
   });
@@ -113,7 +95,7 @@ describe('carrito respaldado por pedido (ADR-0141)', () => {
   it('actualiza la cantidad por line_id recalculando el total provisional', async () => {
     const { client, calls } = orderClient();
     await updateOrderLineQty(client, 'ord-1', 'line-9', 4, 250);
-    expect(calls.find((c) => c.name === 'sales.order.update_line')!.params).toMatchObject({
+    expect(calls.find((c) => c.name === 'sales.order.update_line')!.payload).toMatchObject({
       order_id: 'ord-1', line_id: 'line-9', quantity: 4_000_000, line_total: 1000,
     });
   });
@@ -121,7 +103,7 @@ describe('carrito respaldado por pedido (ADR-0141)', () => {
   it('elimina una línea por line_id', async () => {
     const { client, calls } = orderClient();
     await removeOrderLine(client, 'ord-1', 'line-9');
-    expect(calls.find((c) => c.name === 'sales.order.remove_line')!.params).toMatchObject({
+    expect(calls.find((c) => c.name === 'sales.order.remove_line')!.payload).toMatchObject({
       order_id: 'ord-1', line_id: 'line-9',
     });
   });
@@ -142,10 +124,10 @@ describe('carrito respaldado por pedido (ADR-0141)', () => {
     ]);
     // Al añadir: viaja en el payload de la línea (abrir el pedido y añadir a uno abierto).
     await openOrderWithLines(client, [{ id: 'p1', name: 'Cerveza', price: 250, qty: 1, category_id: 'cat-bebidas' }]);
-    expect((calls.find((c) => c.name === 'sales.order.open')!.params.items as Record<string, unknown>[])[0])
+    expect((calls.find((c) => c.name === 'sales.order.open')!.payload.items as Record<string, unknown>[])[0])
       .toMatchObject({ category_id: 'cat-bebidas' });
     await addOrderLine(client, 'ord-1', { id: 'p1', name: 'Cerveza', price: 250, qty: 1, category_id: 'cat-bebidas' });
-    expect(calls.find((c) => c.name === 'sales.order.add_line')!.params).toMatchObject({ category_id: 'cat-bebidas' });
+    expect(calls.find((c) => c.name === 'sales.order.add_line')!.payload).toMatchObject({ category_id: 'cat-bebidas' });
     // Al retomar: vuelve con la línea (y una línea sin clasificar vuelve sin ella, no con '').
     const lines = await loadOrderLines(client, 'ord-1');
     expect(lines[0].category_id).toBe('cat-bebidas');
@@ -180,20 +162,11 @@ describe('persistLineQty — la pantalla no puede mentir (ADR-0144)', () => {
   // se callaba. La comanda es la fuente de verdad: si no se puede escribir, hay que recuperar el id
   // (releyendo el pedido) y escribir, o fallar a la vista — nunca fingir.
   const clientSpy = (lines: Array<Record<string, unknown>>) => {
-    const calls: Array<{ name: string; payload: unknown }> = [];
-    return {
-      calls,
-      client: {
-        query: async () => lines,
-        queryOptional: async () => undefined,
-        queryAll: async () => lines,
-        command: async (name: string, payload?: Record<string, unknown>) => {
-          calls.push({ name, payload });
-          return { ok: true, new_ids: ['nueva-1'] };
-        },
-        currency: 'EUR',
-      } as unknown as ErploraClientLike,
-    };
+    const double = makeErploraDouble({
+      queries: { 'sales.order.lines': lines },
+      command: () => ({ ok: true, new_ids: ['nueva-1'] }),
+    });
+    return { calls: double.commands, client: double.sdk as unknown as ErploraClientLike };
   };
 
   it('con line_id conocido, actualiza esa fila', async () => {
@@ -229,13 +202,9 @@ describe('cuentas abiertas: un aparcado es un pedido abierto (ADR-0146)', () => 
   // Ahora la lista de aparcados es la de CUENTAS ABIERTAS: salen todas —barra y mesa—, y recuperar
   // una es cambiar de cuenta, igual que tocar otra mesa. Antes estaba bloqueado si tenías algo
   // marcado, que es justo lo que chirriaba en sala.
-  const cliente = (pedidos: Array<Record<string, unknown>>) => ({
-    query: async (name: string) => (name === 'sales.orders.list' ? pedidos : []),
-    queryAll: async (name: string) => (name === 'sales.orders.list' ? pedidos : []),
-    queryOptional: async () => undefined,
-    command: async () => ({ ok: true }),
-    currency: 'EUR',
-  } as unknown as ErploraClientLike);
+  const cliente = (pedidos: Array<Record<string, unknown>>) =>
+    makeErploraDouble({ queries: { 'sales.orders.list': pedidos } })
+      .sdk as unknown as ErploraClientLike;
 
   it('lista solo las cuentas ABIERTAS, la más reciente primero', async () => {
     const abiertas = await listOpenChecks(cliente([
@@ -269,19 +238,24 @@ describe('cuentas abiertas: un aparcado es un pedido abierto (ADR-0146)', () => 
 import { splitOrder } from './pos-cart';
 
 describe('sales#61 — dividir y juntar cuentas', () => {
+  // These cases assert on EVERYTHING the client was asked — reads and writes in one list, in
+  // order — which is how they show that merging is ONE write and nothing else. That is why the
+  // recording happens here and not through the double's two separate lists.
   function spyClient(lines: Record<string, unknown>[] = [], newId = 'ord-nuevo') {
     const calls: { name: string; params?: Record<string, unknown> }[] = [];
-    const client = {
-      query: async (name: string, params?: Record<string, unknown>) => {
-        calls.push({ name, params });
-        return { rows: name === 'sales.order.lines' ? lines : [] };
+    const double = makeErploraDouble({
+      queries: {
+        'sales.order.lines': (params) => {
+          calls.push({ name: 'sales.order.lines', params });
+          return lines;
+        },
       },
-      command: async (name: string, params?: Record<string, unknown>) => {
+      command: (name: string, params: Record<string, unknown>) => {
         calls.push({ name, params });
         return { ok: true, new_ids: [newId] };
       },
-    } as unknown as ErploraClientLike;
-    return { client, calls };
+    });
+    return { client: double.sdk as unknown as ErploraClientLike, calls };
   }
 
   it('fusionar es UN comando atómico del servidor, no un bucle de líneas', async () => {
@@ -401,7 +375,7 @@ describe('los suplementos sobreviven a retomar la cuenta (pm#93)', () => {
     // columna TEXT, así que viaja serializado. Y viajan solo los `option_id`: el nombre y el precio
     // definitivos los resuelve el servidor AL COBRAR, contra `modifiers.options.all`. La línea de
     // pedido es de trabajo —su `line_total` también es provisional—, no el registro fiscal.
-    expect(add.params?.modifiers).toBe(JSON.stringify([{ option_id: 'o-sin-cebolla' }, { option_id: 'o-queso' }]));
+    expect(add.payload?.modifiers).toBe(JSON.stringify([{ option_id: 'o-sin-cebolla' }, { option_id: 'o-queso' }]));
   });
 
   it('vuelven al releer las líneas del pedido, EN SU ORDEN', async () => {
@@ -513,28 +487,28 @@ describe('el menú sobrevive a retomar la cuenta (sales#169)', () => {
     // `order.add_line` es DECLARATIVO: bindea a una columna TEXT, igual que `modifiers`. Y viaja
     // la COMPOSICIÓN, nunca dinero: el precio cerrado y el reparto los decide el servidor al
     // cobrar, contra `combos.options.all`. El `combo_group_ref` no se manda — lo minta el SQL.
-    expect(add.params?.combo).toBe(JSON.stringify({
+    expect(add.payload?.combo).toBe(JSON.stringify({
       combo_id: 'c-menu-dia',
       combo_choices: [
         { option_id: 'o-sopa', product_name: 'Sopa', category_id: 'cat-cocina' },
         { option_id: 'o-merluza', product_name: 'Merluza', category_id: 'cat-plancha' },
       ],
     }));
-    expect(add.params?.combo_group_ref).toBeUndefined();
+    expect(add.payload?.combo_group_ref).toBeUndefined();
   });
 
   it('una línea normal manda el snapshot VACÍO, no null (el 100 % de las cuentas sin menús)', async () => {
     const { client, calls } = orderClient(['li-1']);
     await addOrderLine(client, 'ord-1', line({ qty: 1 }));
     const [add] = calls.filter((c) => c.name === 'sales.order.add_line');
-    expect(add.params?.combo).toBe('{}');
+    expect(add.payload?.combo).toBe('{}');
   });
 
   it('viaja también al ABRIR el pedido — es la puerta de la PRIMERA línea de toda cuenta', async () => {
     const { client, calls } = orderClient(['ord-1', 'li-1']);
     await openOrderWithLines(client, [menu()]);
     const [open] = calls.filter((c) => c.name === 'sales.order.open');
-    const [item] = open.params!.items as Record<string, unknown>[];
+    const [item] = open.payload.items as Record<string, unknown>[];
     // `order.open` SÍ tiene handler WASM: aquí el combo viaja como objeto, no serializado.
     expect(item.combo_id).toBe('c-menu-dia');
     expect((item.combo_choices as { option_id: string }[]).map((c) => c.option_id))
