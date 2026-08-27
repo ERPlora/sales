@@ -31,7 +31,7 @@ export type QueryAnswer =
   | ((params: Record<string, unknown> | undefined) => unknown[] | Promise<unknown[]>);
 
 /** The four read doors of the SDK. */
-export type ReadDoor = 'query' | 'queryAll' | 'queryOptional' | 'queryAllOptional';
+export type ReadDoor = 'query' | 'queryPage' | 'queryAll' | 'queryOptional' | 'queryAllOptional';
 
 /** Any part of the double a screen may find missing on an older hub image (sales#186). */
 export type OptionalDoor = ReadDoor | 'loadSlot' | 'hasPermission' | 'notify' | 'on';
@@ -227,11 +227,16 @@ export function installErploraDouble(spec: ErploraDoubleSpec = {}): ErploraDoubl
     if (whole) return rows;
     // The paged doors answer ONE page, capped exactly like the runtime caps it.
     const limit = Math.min(Number(params?.limit ?? pageSize), MAX_LIMIT);
-    return rows.slice(0, limit);
+    const offset = Number(params?.offset ?? 0);
+    const page = rows.slice(offset, offset + limit);
+    // `queryPage` hands the ENVELOPE over; `query`/`queryOptional` go through `unwrapPage` in the
+    // SDK and give the caller the rows straight.
+    return door === 'queryPage' ? { rows: page, total: rows.length, limit, offset } : page;
   }
 
   const sdk: Record<string, unknown> = {
     query: (name: string, params?: Record<string, unknown>) => read('query', false, false, name, params),
+    queryPage: (name: string, params?: Record<string, unknown>) => read('queryPage', false, false, name, params),
     queryAll: (name: string, params?: Record<string, unknown>) => read('queryAll', false, true, name, params),
     queryOptional: (name: string, params?: Record<string, unknown>) => read('queryOptional', true, false, name, params),
     queryAllOptional: (name: string, params?: Record<string, unknown>) => read('queryAllOptional', true, true, name, params),

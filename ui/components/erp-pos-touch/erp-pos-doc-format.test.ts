@@ -22,7 +22,8 @@ function installSdk() {
   // sales#203 — the till reads its policy through `sales.pos_settings.get`, the door a cashier
   // can open. The admin-only `sales.settings.get` is not asked for at all.
   installPosDouble({
-    settings,
+    // Leído en cada consulta: cada test reescribe `settings` DESPUÉS de montar el doble.
+    settings: () => settings,
     rules: RULES,
     taxCategories: TAX_CATS,
     command: async () => ({ rows: [{ id: 'row-1' }] }),

@@ -26,7 +26,7 @@ function installSdk(allowDiscounts: 0 | 1) {
   // to make this file green over a screen that, for a real cashier, showed the discount button
   // anyway: that query needs `sales.manage_settings`.
   installPosDouble({
-    settings: { allow_discounts: allowDiscounts },
+    settings: () => ({ allow_discounts: allowDiscounts }),
     orderLines: () => orderLines,
     products: PRODUCTS,
     rules: RULES,

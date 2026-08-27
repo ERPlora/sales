@@ -47,6 +47,8 @@ const READS: { name: string; module: string; field: keyof PosCatalogue }[] = [
   { name: 'verifactu.records.by_invoice', module: 'verifactu', field: 'verifactuRecord' },
 ];
 
+type PosSettingsRow = Record<string, unknown> | null;
+
 /** The apps whose ABSENCE is the normal case, so they are out of the hub until a test says otherwise. */
 const OPTIONAL_MODULES = new Set(['services', 'modifiers', 'combos', 'appointments', 'invoice', 'verifactu']);
 
@@ -85,8 +87,12 @@ interface PosCatalogue {
 }
 
 export interface PosDoubleSpec extends PosCatalogue, Omit<ErploraDoubleSpec, 'queries' | 'absent' | 'broken'> {
-  /** The settings row `sales.pos_settings.get` answers. `null`/absent = the hub never saved one. */
-  settings?: Record<string, unknown> | null;
+  /**
+   * The settings row `sales.pos_settings.get` answers. `null`/absent = the hub never saved one.
+   * Pass a THUNK when the test rewrites the row after installing the double — the till reads it on
+   * mount, and a value captured here would freeze the policy the screen was supposed to react to.
+   */
+  settings?: PosSettingsRow | (() => PosSettingsRow);
   /** Apps that are NOT in this hub: every read they own answers absence. */
   absentModules?: string[];
   /** Apps that ARE in this hub and whose reads fail: an incident, never an absence (ADR-0400). */
@@ -138,7 +144,10 @@ export function installPosDouble(spec: PosDoubleSpec = {}): ErploraDouble {
 
   // The settings row is the one read that is a ROW and not a list: `[]` means "no row saved", which
   // is a hub the till has to work on exactly as if it had saved the defaults (sales#223).
-  queries['sales.pos_settings.get'] = settings ? [settings] : [];
+  queries['sales.pos_settings.get'] = () => {
+    const row = typeof settings === 'function' ? settings() : settings;
+    return row ? [row] : [];
+  };
 
   return installErploraDouble({ ...rest, queries: { ...queries, ...extraQueries }, absent, broken, failing });
 }

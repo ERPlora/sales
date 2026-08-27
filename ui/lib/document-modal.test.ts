@@ -7,16 +7,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { render } from 'lit';
 import { renderDocumentModal } from './document-modal.js';
+import { installPosDouble } from '../test/pos-double';
 
 beforeEach(() => {
   document.body.innerHTML = '';
   // erp-sales-document (importado por el helper) llama al SDK al montarse.
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async () => [],
-    queryOptional: async () => undefined,
-    locale: 'es',
-    t: (_catalog: unknown, key: string) => key,
-  };
+  // The modal resolves sale → lines → the fiscal chain; `invoice`/`verifactu` are optional apps
+  // and this hub does not have them, which is the `undefined` the screen degrades on (ADR-0127).
+  installPosDouble({ locale: 'es' });
 });
 
 function montar(saleId?: string, onClose: () => void = () => {}) {

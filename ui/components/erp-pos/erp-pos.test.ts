@@ -10,20 +10,13 @@
 // con un `<erp-pos-touch>` sin un solo atributo dentro— mientras los tests de `erp-pos-touch`, que lo
 // montan suelto, salían verdes. Probar la pieza y no la composición es lo que dejó pasar el fallo.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { installPosDouble } from '../../test/pos-double';
 
 const REGLAS_IVA = [{ id: 'r-21', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, is_active: 1 }];
 
 beforeEach(() => {
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async () => [],
-    queryAll: async (name: string) => (name === 'taxes.rules.list' ? REGLAS_IVA : []),
-    command: async () => ({}),
-    currency: 'EUR',
-    formatMoney: (c: number) => `${((c || 0) / 100).toFixed(2)} €`,
-    formatAmount: (u: number) => `${(u || 0).toFixed(2)} €`,
-    t: (_c: unknown, key: string) => key,
-    loadSlot: async () => [],
-  };
+  // `erp-pos` mounts `erp-pos-touch`, so it needs the till's whole read surface (sales#233).
+  installPosDouble({ rules: REGLAS_IVA });
 });
 
 const asentar = async (el: Element) => {

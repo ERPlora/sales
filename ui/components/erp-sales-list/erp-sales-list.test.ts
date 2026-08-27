@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import esCatalog from '../../../locales/es.json';
+import { installErploraDouble } from '../../test/erplora-double';
 
 interface Column {
   key: string;
@@ -16,23 +17,27 @@ interface Column {
 }
 
 beforeEach(() => {
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async () => [],
-    queryAll: async () => [],
-    command: async () => ({}),
-    currency: 'EUR',
+  installErploraDouble({
+    queries: {
+      'sales.list': [],
+      'sales.stats': [],
+      'sales.payment_methods': [],
+      // The list opens the sale document, which resolves the sale, its lines and its policy.
+      'sales.get': [],
+      'sales.lines': [],
+      'sales.pos_settings.get': [],
+    },
+    // `invoice`/`verifactu` are optional apps (ADR-0127) and this hub does not have them.
+    absent: ['invoice.by_source', 'invoice.lines', 'verifactu.records.by_invoice'],
     // The shell always carries the active language; without it here the fake would resolve every
     // catalogue against the source language and the Spanish assertions would pass for the wrong
     // reason.
     locale: 'es',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
     // Devuelve la traducción REAL del catálogo español: lo que se mide es que la celda deje de
     // enseñar el valor crudo de la base de datos.
-    t: (_catalog: unknown, key: string) =>
-      key.split('.').reduce<unknown>((acc, part) => (acc as Record<string, unknown>)?.[part], esCatalog) ?? key,
-    on: () => () => {},
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-  };
+    t: (_catalog: Record<string, unknown>, key: string) =>
+      key.split('.').reduce<unknown>((acc, part) => (acc as Record<string, unknown>)?.[part], esCatalog) as string ?? key,
+  });
 });
 
 async function column(key: string): Promise<Column> {

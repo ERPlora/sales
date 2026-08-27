@@ -180,6 +180,23 @@ describe('5 · the paged door and the whole-set door differ, as they do in the S
   });
 });
 
+describe('5b · `queryPage` hands over the ENVELOPE the list engine answers with', () => {
+  const MANY = Array.from({ length: 7 }, (_, i) => ({ id: `n-${i}` }));
+
+  it('answers `{rows,total,limit,offset}` and honours the offset', async () => {
+    installErploraDouble({ queries: { 'sales.quick_notes.list': MANY }, pageSize: 3 });
+
+    expect(await sdk().queryPage('sales.quick_notes.list', { offset: 3 }))
+      .toEqual({ rows: [{ id: 'n-3' }, { id: 'n-4' }, { id: 'n-5' }], total: 7, limit: 3, offset: 3 });
+  });
+
+  it('it is a REQUIRED door: an absent app rejects instead of answering an empty page', async () => {
+    installErploraDouble({ absent: ['sales.quick_notes.list'] });
+
+    await expect(sdk().queryPage('sales.quick_notes.list')).rejects.toThrow();
+  });
+});
+
 describe('6 · `without` models an older shell that lacks a door', () => {
   it('the door is not on the object at all, so `typeof … === "function"` is false', async () => {
     installErploraDouble({ queries: { 'services.services.list': [] }, without: ['queryAllOptional'] });

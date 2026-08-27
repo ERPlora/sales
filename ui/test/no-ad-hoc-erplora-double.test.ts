@@ -25,7 +25,7 @@ const EXEMPT = new Set([
 /** Installing the double by hand: the assignment that starts every one of the old copies. */
 const HAND_INSTALL = /\(\s*globalThis[^)]*\)\s*(?:as[^=]*)?\.erplora\s*=|globalThis\.erplora\s*=/;
 /** Spelling out a read door as an object key: the copy that goes stale when the SDK grows one. */
-const HAND_DOOR = /^\s*(query|queryAll|queryOptional|queryAllOptional)\s*:/m;
+const HAND_DOOR = /^\s*(query|queryPage|queryAll|queryOptional|queryAllOptional)\s*:|\.(query|queryPage|queryAll|queryOptional|queryAllOptional)\s*=[^=]/m;
 /** The escape hatch of the helper's own suite. Nobody else provokes unanswered reads on purpose. */
 const ESCAPE_HATCH = /allowUnconfiguredReads/;
 
@@ -70,7 +70,7 @@ describe('the `erplora` double is built in ONE place (sales#233)', () => {
   it('the helper itself is where the doors are declared', () => {
     const helper = readFileSync(join(UI_DIR, HELPER), 'utf8');
 
-    for (const door of ['query', 'queryAll', 'queryOptional', 'queryAllOptional']) {
+    for (const door of ['query', 'queryPage', 'queryAll', 'queryOptional', 'queryAllOptional']) {
       expect(helper, `the helper answers \`${door}\``).toContain(`${door}:`);
     }
   });
