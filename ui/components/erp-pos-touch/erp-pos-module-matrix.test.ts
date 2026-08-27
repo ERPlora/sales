@@ -15,6 +15,7 @@
 // required one rejects with `module_not_installed` (hub#1074, ADR-0400) — so a combination cannot
 // come back green because the double was kinder than the hub.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { installPosDouble } from '../../test/pos-double';
 
 const PRODUCTS = [{ id: 'p-1', name: 'Café', price: 150, is_active: 1, tax_category_key: 'product.generic' }];
 const FOR_SALE = [{ id: 'p-1', price: 150, cost: 0, tax_category_key: 'product.generic', track_stock: 1 }];
@@ -26,58 +27,31 @@ const RULES = [
 ];
 const TAX_CATS = [{ key: 'product.generic', name: 'General', is_active: 1 }];
 
-function runtimeError(code: string): Error {
-  return Object.assign(new Error(code), { code });
-}
+/** Every app whose presence this matrix walks. `sales` and the core (`hub.`) are always there. */
+const MATRIX_APPS = ['inventory', 'taxes', 'services', 'modifiers', 'combos', 'appointments'];
 
+let pos: ReturnType<typeof installPosDouble>;
 /** Every query name the till asked for, in order — the till's real contract surface. */
-let asked: string[] = [];
+const asked = (): string[] => pos.reads.map((r) => r.name);
 
-/** A hub with exactly these apps installed. `sales` and the core (`hub.`) are always there. */
+/** A hub with exactly these apps installed. Absence is modelled the way the runtime models it:
+ *  `undefined` through the optional door, `module_not_installed` through the required one. */
 function installHub(...apps: string[]) {
   const installed = new Set(apps);
-  const answer = (name: string): unknown => {
-    switch (name) {
-      case 'inventory.products.list': return PRODUCTS;
-      case 'inventory.products.for_sale': return FOR_SALE;
-      case 'services.services.list': return SERVICES;
-      case 'services.categories.list': return SERVICE_CATS;
-      case 'taxes.rules.list': return RULES;
-      case 'taxes.categories.list': return TAX_CATS;
-      default: return [];
-    }
-  };
-  const serve = async (name: string): Promise<unknown> => {
-    asked.push(name);
-    const owner = name.split('.')[0];
-    if (owner !== 'sales' && owner !== 'hub' && !installed.has(owner)) throw runtimeError('module_not_installed');
-    return answer(name);
-  };
-  const serveOptional = async (name: string): Promise<unknown> => {
-    try {
-      return await serve(name);
-    } catch (e) {
-      if ((e as { code?: string }).code === 'module_not_installed') return undefined;
-      throw e;
-    }
-  };
-  (globalThis as Record<string, unknown>).erplora = {
-    query: serve,
-    queryAll: serve,
-    queryOptional: serveOptional,
-    queryAllOptional: serveOptional,
+  pos = installPosDouble({
+    products: PRODUCTS,
+    forSale: FOR_SALE,
+    services: SERVICES,
+    serviceCategories: SERVICE_CATS,
+    rules: RULES,
+    taxCategories: TAX_CATS,
+    absentModules: MATRIX_APPS.filter((app) => !installed.has(app)),
     command: async () => ({ ok: true, new_ids: ['ord-1', 'line-1'] }),
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-    t: (_catalog: unknown, key: string, params?: Record<string, unknown>) =>
+    t: (_catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>) =>
       (!params || !Object.keys(params).length
         ? key
         : `${key}(${Object.entries(params).map(([k, v]) => `${k}=${String(v)}`).join(',')})`),
-    loadSlot: async () => [],
-    notify: () => {},
-    hasPermission: () => true,
-  };
+  });
 }
 
 interface MountedPos {
@@ -103,7 +77,7 @@ const ids = (el: MountedPos) => el.products.map((p) => p.id);
 
 beforeEach(() => {
   document.body.innerHTML = '';
-  asked = [];
+  pos?.reads.splice(0);
   history.replaceState({}, '', '/m/sales/pos');
 });
 
@@ -140,7 +114,7 @@ describe('+ inventory — the products grid, priced by whoever owns the catalogu
     // would be a second authority over the same fact.
     installHub('taxes', 'inventory');
     await mount();
-    expect([...new Set(asked.filter((q) => q.startsWith('inventory.')))].sort()).toEqual([
+    expect([...new Set(asked().filter((q) => q.startsWith('inventory.')))].sort()).toEqual([
       'inventory.categories.list',
       'inventory.product_categories',
       'inventory.products.for_sale',
@@ -170,7 +144,7 @@ describe('+ customers — the fiscal identity rides a slot, never a hard read', 
   it('the till asks customers for NOTHING: the context arrives through the POS slot (ADR-0132)', async () => {
     installHub('taxes', 'inventory', 'customers');
     await mount();
-    expect(asked.filter((q) => q.startsWith('customers.')),
+    expect(asked().filter((q) => q.startsWith('customers.')),
       'a read here would be a dependency the salon never asked for').toEqual([]);
   });
 
@@ -196,7 +170,7 @@ describe('+ pricing — absent means the BASE price, and there is no silent path
     // silent path is not opened by accident before that contract exists.
     installHub('taxes', 'inventory', 'pricing');
     const el = await mount();
-    expect(asked.filter((q) => q.startsWith('pricing.'))).toEqual([]);
+    expect(asked().filter((q) => q.startsWith('pricing.'))).toEqual([]);
     expect(ids(el)).toEqual(['p-1']);
     expect(canCharge(el)).toBe(true);
   });
@@ -214,7 +188,7 @@ describe('taxes is the ONE absence that stops the till, and it says so before an
                          ['taxes', 'customers'], ['taxes', 'pricing'],
                          ['taxes', 'inventory', 'services', 'customers', 'pricing']]) {
       document.body.innerHTML = '';
-      asked = [];
+      pos?.reads.splice(0);
       installHub(...combo);
       const el = await mount();
       expect(canCharge(el), `[${combo.join(' + ')}] must be able to take money`).toBe(true);

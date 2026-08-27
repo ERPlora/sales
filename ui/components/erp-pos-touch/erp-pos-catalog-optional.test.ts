@@ -22,18 +22,13 @@
 //
 // Assertions are on FORM — the i18n key, the testid, which query was asked — never on prose.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { installPosDouble } from '../../test/pos-double';
 
 const PRODUCTS = [{ id: 'p-1', name: 'Café', price: 150, is_active: 1, tax_category_key: 'product.generic' }];
 const FOR_SALE = [{ id: 'p-1', price: 150, cost: 0, tax_category_key: 'product.generic', track_stock: 1 }];
 const SERVICES = [{ id: 's-1', name: 'Corte', price: 1500, tax_category_key: 'product.generic' }];
 const RULES = [{ id: 'r-21', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, is_active: 1 }];
 const TAX_CATS = [{ key: 'product.generic', name: 'General', is_active: 1 }];
-
-/** A rejection the way the SDK surfaces a runtime refusal: an Error carrying the stable code. */
-function runtimeError(code?: string): Error {
-  const e = new Error(code ?? 'boom');
-  return code ? Object.assign(e, { code }) : e;
-}
 
 const APP_NAMES: Record<string, string> = { 'ui.appInventory': 'Inventory', 'ui.appTaxes': 'Taxes' };
 
@@ -52,56 +47,26 @@ interface SdkOptions {
   posSettings?: Record<string, unknown> | null;
 }
 
+/** Every app whose presence this file plays with. */
+const APPS = ['inventory', 'taxes', 'services', 'modifiers', 'combos', 'appointments'];
+
+let pos: ReturnType<typeof installPosDouble>;
 /** Every query name the till asked for, in order. */
-let asked: string[] = [];
+const asked = (): string[] => pos.reads.map((r) => r.name);
 
 function installSdk(opts: SdkOptions = {}) {
   const installed = new Set(opts.installed ?? ['inventory', 'taxes', 'services']);
-  const failing = opts.failing ?? {};
-  const posSettings = opts.posSettings === undefined ? {} : opts.posSettings;
-
-  const answer = (name: string): unknown => {
-    if (name === 'inventory.products.list') return PRODUCTS;
-    if (name === 'inventory.products.for_sale') return FOR_SALE;
-    if (name === 'services.services.list') return SERVICES;
-    if (name === 'taxes.rules.list') return RULES;
-    if (name === 'taxes.categories.list') return TAX_CATS;
-    if (name === 'sales.pos_settings.get') return posSettings ? [posSettings] : [];
-    return [];
-  };
-  /** The REQUIRED door: absence rejects with the runtime's code. */
-  const serve = async (name: string): Promise<unknown> => {
-    asked.push(name);
-    if (name in failing) throw runtimeError(failing[name]);
-    const owner = name.split('.')[0];
-    if (owner !== 'sales' && owner !== 'hub' && !installed.has(owner)) throw runtimeError('module_not_installed');
-    return answer(name);
-  };
-  /** The OPTIONAL door: absence is `undefined`, everything else behaves like the required one. */
-  const serveOptional = async (name: string): Promise<unknown> => {
-    try {
-      return await serve(name);
-    } catch (e) {
-      const code = (e as { code?: string }).code;
-      if (code === 'module_not_installed' || code === 'module_inactive') return undefined;
-      throw e;
-    }
-  };
-
-  (globalThis as Record<string, unknown>).erplora = {
-    query: serve,
-    queryAll: serve,
-    queryOptional: serveOptional,
-    queryAllOptional: serveOptional,
-    command: async () => ({}),
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-    t: (_catalog: unknown, key: string, params?: Record<string, unknown>) => renderKey(key, params),
-    loadSlot: async () => [],
-    notify: () => {},
-    hasPermission: () => true,
-  };
+  pos = installPosDouble({
+    products: PRODUCTS,
+    forSale: FOR_SALE,
+    services: SERVICES,
+    rules: RULES,
+    taxCategories: TAX_CATS,
+    settings: opts.posSettings === undefined ? {} : opts.posSettings,
+    absentModules: APPS.filter((app) => !installed.has(app)),
+    failing: opts.failing,
+    t: (_catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>) => renderKey(key, params),
+  });
 }
 
 interface MountedPos {
@@ -128,7 +93,7 @@ const text = (el: MountedPos, testid: string) =>
 
 beforeEach(() => {
   document.body.innerHTML = '';
-  asked = [];
+  pos?.reads.splice(0);
   history.replaceState({}, '', '/m/sales/pos');
 });
 
@@ -174,14 +139,10 @@ describe('an ABSENT catalogue is written down, not shown as an empty screen', ()
   });
 
   it('with the catalogue installed and simply empty the message is the generic one', async () => {
+    // `inventory` IS in this hub and simply has nothing in it: `[]`, never `undefined`.
     installSdk({ installed: ['inventory', 'taxes'] });
-    (globalThis as Record<string, unknown>).erplora = {
-      ...((globalThis as Record<string, unknown>).erplora as Record<string, unknown>),
-      queryAllOptional: async (name: string) => {
-        asked.push(name);
-        return name.startsWith('taxes.') ? TAX_CATS : [];
-      },
-    };
+    pos.setQuery('inventory.products.list', []);
+    pos.setQuery('inventory.products.for_sale', []);
     const el = await mount();
     expect(text(el, 'catalog-app-absent'), 'installed and empty is a different fact from not installed').toBe('');
   });
@@ -201,13 +162,13 @@ describe('sales#111 / hub#960 — the till preflights the query the CHECKOUT pri
   it('the preflight actually runs when the product grid is on', async () => {
     installSdk();
     await mount();
-    expect(asked).toContain('inventory.products.for_sale');
+    expect(asked()).toContain('inventory.products.for_sale');
   });
 
   it('it is NOT paid when the shop turned the product grid off: there is no catalogue line to price', async () => {
     installSdk({ posSettings: { sync_products: 0 } });
     await mount();
-    expect(asked, 'reading a catalogue nobody can tap is work the till pays for').not.toContain('inventory.products.for_sale');
+    expect(asked(), 'reading a catalogue nobody can tap is work the till pays for').not.toContain('inventory.products.for_sale');
   });
 
   it('an absent inventory does not raise it as an incident: the preflight follows the same classification', async () => {

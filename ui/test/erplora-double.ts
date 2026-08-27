@@ -192,9 +192,11 @@ export function installErploraDouble(spec: ErploraDoubleSpec = {}): ErploraDoubl
   const queries = new Map<string, QueryAnswer>(Object.entries(spec.queries ?? {}));
   // One table for all three ways of saying "this read does not answer": what changes between them
   // is only the CODE, and the code is what the screen classifies on.
-  const failing = new Map<string, string | undefined>(Object.entries(spec.failing ?? {}));
+  const failing = new Map<string, string | undefined>();
   for (const name of spec.absent ?? []) failing.set(name, MODULE_NOT_INSTALLED);
   for (const name of spec.broken ?? []) failing.set(name, QUERY_FAILED);
+  // The most specific instruction wins: naming a code for one query beats a whole app's default.
+  for (const [name, code] of Object.entries(spec.failing ?? {})) failing.set(name, code);
   const pageSize = spec.pageSize ?? DEFAULT_PAGE_SIZE;
   const without = new Set<OptionalDoor>(spec.without ?? []);
   if (spec.allowUnconfiguredReads) netSuppressed = true;

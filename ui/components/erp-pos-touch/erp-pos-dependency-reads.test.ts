@@ -11,16 +11,11 @@
 // The runtime already distinguishes them (hub#1074, ADR-0400). This file pins that the SCREEN does
 // too. Assertions are on FORM — the i18n key and the app it names — never on prose.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { installPosDouble } from '../../test/pos-double';
 
 const PRODUCTS = [{ id: 'p-1', name: 'Café', price: 150, is_active: 1, tax_category_key: 'product.generic' }];
 const RULES = [{ id: 'r-21', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, is_active: 1 }];
 const TAX_CATS = [{ key: 'product.generic', name: 'General', is_active: 1 }];
-
-/** A rejection the way the SDK surfaces a runtime refusal: an Error carrying the stable code. */
-function runtimeError(code?: string): Error {
-  const e = new Error(code ?? 'boom');
-  return code ? Object.assign(e, { code }) : e;
-}
 
 /** App NAMES are answered like the real catalogue does, because the component falls back to the
  *  raw id when a key has no translation: echoing them would hide whether the notice goes through
@@ -39,35 +34,13 @@ interface SdkOptions {
 }
 
 function installSdk(opts: SdkOptions = {}) {
-  const failing = opts.failing ?? {};
-  const answer = (name: string): unknown => {
-    if (name === 'inventory.products.list') return PRODUCTS;
-    if (name === 'taxes.rules.list') return RULES;
-    if (name === 'taxes.categories.list') return TAX_CATS;
-    return [];
-  };
-  const serve = async (name: string): Promise<unknown> => {
-    if (name in failing) throw runtimeError(failing[name]);
-    return answer(name);
-  };
-  (globalThis as Record<string, unknown>).erplora = {
-    query: serve,
-    // sales#25 — the till reads `inventory` through the OPTIONAL door (ADR-0127). For an app that
-    // IS in this hub the optional door answers exactly like the required one, which is what this
-    // delegation models; absence and failure are still whatever `queryAll` does with them.
-    queryAllOptional: async (name: string, params?: Record<string, unknown>) =>
-      ((globalThis as Record<string, unknown>).erplora as { queryAll(n: string, p?: Record<string, unknown>): Promise<unknown> }).queryAll(name, params),
-    queryAll: serve,
-    queryOptional: async () => undefined,
-    command: async () => ({}),
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-    t: (_catalog: unknown, key: string, params?: Record<string, unknown>) => renderKey(key, params),
-    loadSlot: async () => [],
-    notify: () => {},
-    hasPermission: () => true,
-  };
+  installPosDouble({
+    products: PRODUCTS,
+    rules: RULES,
+    taxCategories: TAX_CATS,
+    failing: opts.failing,
+    t: (_catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>) => renderKey(key, params),
+  });
 }
 
 interface MountedPos {
@@ -131,13 +104,17 @@ describe('a hard dependency that BREAKS is said out loud', () => {
     // Saying `inventory` is ugly; inventing a name would not be true. Same rule as the
     // missing-app notice.
     installSdk({ failing: { 'inventory.products.list': undefined } });
-    (globalThis as Record<string, unknown>).erplora = {
-      ...((globalThis as Record<string, unknown>).erplora as Record<string, unknown>),
-      t: (_c: unknown, key: string, params?: Record<string, unknown>) =>
+    installPosDouble({
+      products: PRODUCTS,
+      rules: RULES,
+      taxCategories: TAX_CATS,
+      failing: { 'inventory.products.list': 'boom' },
+      // The raw app id, so the assertion sees whether the notice went through i18n at all.
+      t: (_c: Record<string, unknown>, key: string, params?: Record<string, unknown>) =>
         (!params || !Object.keys(params).length
           ? key
           : `${key}(${Object.entries(params).map(([k, v]) => `${k}=${String(v)}`).join(',')})`),
-    };
+    });
     const el = await mount();
     expect(noticeText(el)).toContain('ui.appCatalogUnavailable(app=inventory)');
   });
