@@ -17,6 +17,7 @@
 // decision here. A hub without `services` gets zero calls and zero gaps on screen, which is the
 // last test of this file and the reason the other seven are allowed to exist.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { installPosDouble } from '../../test/pos-double';
 
 const PRODUCTS = [
   { id: 'p-champu', name: 'Champú', price: 900, is_active: 1, tax_category_key: 'product.generic' },
@@ -57,34 +58,19 @@ function installSdk(servicesInstalled = true) {
   commands = [];
   const orderLines: Record<string, unknown>[] = [];
   let seq = 0;
-  const missing = () => { throw new Error('module_not_installed'); };
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async (name: string) => {
-      if (name === 'sales.payment_methods') return METHODS;
-      if (name === 'sales.order.lines') return orderLines;
-      if (name === 'sales.by_idempotency_key') return [{ id: 'sale-1' }];
-      return [];
-    },
-    queryAll: async (name: string) => {
-      if (name === 'inventory.products.list') return PRODUCTS;
-      if (name === 'taxes.rules.list') return RULES;
-      if (name === 'services.services.list') return servicesInstalled ? SERVICES : missing();
-      if (name === 'services.categories.list') return servicesInstalled ? SERVICE_CATS : missing();
-      return [];
-    },
-    queryOptional: async (name: string) => {
-      if (name === 'services.services.list') return servicesInstalled ? SERVICES : undefined;
-      if (name === 'services.categories.list') return servicesInstalled ? SERVICE_CATS : undefined;
-      return undefined;
-    },
-    // sales#186 — the catalogue comes in whole through `queryAllOptional`, not one page at a time.
-    queryAllOptional: async (name: string) => {
-      // sales#25 — `inventory` is an OPTIONAL capability now: same door, same answer for an app
-      // that IS in this hub.
-      if (name === 'inventory.products.list') return PRODUCTS;
-      if (name === 'services.services.list') return servicesInstalled ? SERVICES : undefined;
-      if (name === 'services.categories.list') return servicesInstalled ? SERVICE_CATS : undefined;
-      return undefined;
+  installPosDouble({
+    paymentMethods: METHODS,
+    orderLines: () => orderLines,
+    byIdempotencyKey: [{ id: 'sale-1' }],
+    products: PRODUCTS,
+    rules: RULES,
+    ...(servicesInstalled
+      ? { services: SERVICES, serviceCategories: SERVICE_CATS }
+      : { absentModules: ['services'] }),
+    loadSlot: (slot: string) => {
+      slotsAsked.push(slot);
+      if (!servicesInstalled) return [];
+      return slot === 'sales.pos.tender' ? [{ component: 'erp-fake-voucher' }] : [];
     },
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
@@ -105,18 +91,7 @@ function installSdk(servicesInstalled = true) {
       }
       return { ok: true, new_ids: [`x-${++seq}`] };
     },
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-    t: (_c: unknown, key: string) => key,
-    loadSlot: async (slot: string) => {
-      slotsAsked.push(slot);
-      if (!servicesInstalled) return [];
-      return slot === 'sales.pos.tender' ? [{ component: 'erp-fake-voucher' }] : [];
-    },
-    notify: () => {},
-    hasPermission: () => true,
-  };
+  });
 }
 
 interface Pos extends HTMLElement {

@@ -15,6 +15,7 @@
 //     listed price. The till has no open-price flow yet, so it says so on the tile instead of
 //     quietly charging the wrong amount.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { installPosDouble } from '../../test/pos-double';
 
 const PRODUCTS = [
   { id: 'p-champu', name: 'Champú', price: 900, is_active: 1, tax_category_key: 'product.generic' },
@@ -44,41 +45,17 @@ let commands: { name: string; params?: Record<string, unknown> }[] = [];
 /** `servicesInstalled: false` reproduces a hub that never installed the module. */
 function installSdk(servicesInstalled: boolean) {
   commands = [];
-  const missing = () => { throw new Error('module_not_installed'); };
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async () => [],
-    queryAll: async (name: string) => {
-      if (name === 'inventory.products.list') return PRODUCTS;
-      if (name === 'taxes.rules.list') return RULES;
-      if (name === 'services.services.list') return servicesInstalled ? SERVICES : missing();
-      if (name === 'services.categories.list') return servicesInstalled ? SERVICE_CATS : missing();
-      return [];
-    },
-    queryOptional: async (name: string) => {
-      if (name === 'services.services.list') return servicesInstalled ? SERVICES : undefined;
-      if (name === 'services.categories.list') return servicesInstalled ? SERVICE_CATS : undefined;
-      return undefined;
-    },
-    // sales#186 — the whole set, `undefined` when `services` is not installed. This is the door the
-    // till reads its catalogue through now; `queryOptional` stays for the point reads.
-    queryAllOptional: async (name: string) => {
-      // sales#25 — `inventory` is an OPTIONAL capability too: same door, and this hub HAS it.
-      if (name === 'inventory.products.list') return PRODUCTS;
-      if (name === 'services.services.list') return servicesInstalled ? SERVICES : undefined;
-      if (name === 'services.categories.list') return servicesInstalled ? SERVICE_CATS : undefined;
-      return undefined;
-    },
+  installPosDouble({
+    products: PRODUCTS,
+    rules: RULES,
+    ...(servicesInstalled
+      ? { services: SERVICES, serviceCategories: SERVICE_CATS }
+      : { absentModules: ['services'] }),
     command: async (name: string, params?: Record<string, unknown>) => {
       commands.push({ name, params });
       return { rows: [{ id: 'line-1' }] };
     },
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-    t: (_catalog: unknown, key: string) => key,
-    loadSlot: async () => [],
-    notify: () => {},
-  };
+  });
 }
 
 interface MountedPos {
@@ -242,39 +219,19 @@ const BIG_CATS = Array.from({ length: 63 }, (_, i) => ({ id: `sc-${i}`, name: `F
  * image does not, so that shell exists in the wild and the till has to keep selling on it.
  */
 function installPagingSdk({ withQueryAllOptional = true } = {}) {
-  const calls: { name: string; params?: Record<string, unknown> }[] = [];
-  const rowsOf = (name: string) =>
-    name === 'services.services.list' ? BIG_SERVICES
-      : name === 'services.categories.list' ? BIG_CATS
-        // sales#25 — the retail grid comes through the optional door as well, and this hub has it.
-        : name === 'inventory.products.list' ? PRODUCTS
-          : undefined;
-  const sdk: Record<string, unknown> = {
-    query: async () => [],
-    queryAll: async (name: string) => (name === 'inventory.products.list' ? PRODUCTS : name === 'taxes.rules.list' ? RULES : []),
-    queryOptional: async (name: string, params?: Record<string, unknown>) => {
-      calls.push({ name, params });
-      const all = rowsOf(name);
-      if (!all) return undefined;
-      const limit = Math.min(Number(params?.limit ?? PAGE_SIZE), MAX_LIMIT);
-      return { rows: all.slice(0, limit), total: all.length, limit, offset: 0 };
-    },
+  // The paged doors cap at `limit ?? pageSize` inside the double, exactly like the runtime, so the
+  // truncation this file is about is modelled once and not re-implemented here.
+  const pos = installPosDouble({
+    products: PRODUCTS,
+    rules: RULES,
+    services: BIG_SERVICES,
+    serviceCategories: BIG_CATS,
+    pageSize: PAGE_SIZE,
     command: async () => ({ rows: [{ id: 'line-1' }] }),
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-    t: (_catalog: unknown, key: string) => key,
-    loadSlot: async () => [],
-    notify: () => {},
-  };
-  if (withQueryAllOptional) {
-    sdk.queryAllOptional = async (name: string, params?: Record<string, unknown>) => {
-      calls.push({ name, params });
-      return rowsOf(name); // the whole set, `undefined` if the module is not installed
-    };
-  }
-  (globalThis as Record<string, unknown>).erplora = sdk;
-  return calls;
+    // A hub still running an older image: modules auto-update, the image does not.
+    ...(withQueryAllOptional ? {} : { without: ['queryAllOptional' as const] }),
+  });
+  return pos.reads;
 }
 
 describe('the whole service catalogue reaches the grid (sales#186)', () => {
