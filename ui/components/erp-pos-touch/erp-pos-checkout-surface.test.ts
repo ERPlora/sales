@@ -30,6 +30,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import enLocale from '../../../locales/en.json';
 import esLocale from '../../../locales/es.json';
+import { installPosDouble } from '../../test/pos-double';
 
 const PRODUCTS = [
   { id: 'p-cafe', name: 'Café', sku: 'CAF', price: 150, is_active: 1, tax_category_key: 'product.generic' },
@@ -56,28 +57,17 @@ function installSdk() {
   notices = [];
   refuseWith = '';
   taxesRefuseWith = '';
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async (name: string) => {
-      if (name === 'sales.payment_methods') return METHODS;
-      if (name === 'sales.by_idempotency_key') return [{ id: 'sale-1' }];
-      return [];
+  installPosDouble({
+    paymentMethods: METHODS,
+    byIdempotencyKey: [{ id: 'sale-1' }],
+    products: PRODUCTS,
+    // Read LAZILY: each test sets `taxesRefuseWith` after the double is installed. The sentence is
+    // deliberately USELESS to a text matcher — only the code identifies the refusal.
+    rules: () => {
+      if (taxesRefuseWith) throw new FakeErploraError(taxesRefuseWith, 'module `taxes` is not installed in this hub');
+      return RULES;
     },
-    // sales#25 — the till reads `inventory` through the OPTIONAL door (ADR-0127). For an app that
-    // IS in this hub the optional door answers exactly like the required one, which is what this
-    // delegation models; absence and failure are still whatever `queryAll` does with them.
-    queryAllOptional: async (name: string, params?: Record<string, unknown>) =>
-      ((globalThis as Record<string, unknown>).erplora as { queryAll(n: string, p?: Record<string, unknown>): Promise<unknown> }).queryAll(name, params),
-    queryAll: async (name: string) => {
-      if (name === 'inventory.products.list') return PRODUCTS;
-      if (name === 'taxes.rules.list') {
-        if (taxesRefuseWith) {
-          throw new FakeErploraError(taxesRefuseWith, 'module `taxes` is not installed in this hub');
-        }
-        return RULES;
-      }
-      return [];
-    },
-    queryOptional: async () => undefined,
+    notify: (n: { type: string; message: string }) => { notices.push(n); },
     command: async (name: string) => {
       if (name === 'sales.complete_sale' && refuseWith) {
         // The sentence is deliberately USELESS to a text matcher: only the code identifies it.
@@ -85,14 +75,7 @@ function installSdk() {
       }
       return { ok: true, new_ids: ['ord-1', 'line-1'] };
     },
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-    t: (_c: unknown, key: string) => key,
-    loadSlot: async () => [],
-    notify: (n: { type: string; message: string }) => { notices.push(n); },
-    hasPermission: () => true,
-  };
+  });
 }
 
 interface Pos extends HTMLElement {

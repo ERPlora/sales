@@ -17,6 +17,7 @@
 //   · The keyboard keeps working, before and after any chip.
 //   · Loading and failure are VISIBLE inside the sheet, and neither blocks writing by hand.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { installPosDouble } from '../../test/pos-double';
 
 const PRODUCTS = [
   { id: 'p-coffee', name: 'Coffee', price: 180, is_active: 1, tax_category_key: 'product.generic' },
@@ -41,28 +42,19 @@ function installSdk() {
   quickNotesPending = null;
   quickNotesCalls = [];
   const orderLines: Record<string, unknown>[] = [];
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async (name: string) => {
-      if (name === 'sales.settings.get') return [{ allow_discounts: 1 }];
-      if (name === 'sales.order.lines') return orderLines;
-      return [];
+  installPosDouble({
+    settings: { allow_discounts: 1 },
+    orderLines: () => orderLines,
+    products: PRODUCTS,
+    rules: RULES,
+    quickNotes: async (params) => {
+      quickNotesCalls.push({ name: 'sales.quick_notes.list', params });
+      if (quickNotesPending) await quickNotesPending;
+      if (quickNotesFails) throw new Error('boom');
+      return quickNotes;
     },
-    queryAll: async (name: string, params?: unknown) => {
-      if (name === 'inventory.products.list') return PRODUCTS;
-      if (name === 'taxes.rules.list') return RULES;
-      if (name === 'sales.quick_notes.list') {
-        quickNotesCalls.push({ name, params });
-        if (quickNotesPending) await quickNotesPending;
-        if (quickNotesFails) throw new Error('boom');
-        return quickNotes;
-      }
-      return [];
-    },
-    queryOptional: async () => undefined,
-    // sales#25 — `inventory` is an OPTIONAL capability now: the till reads its catalogue through
-    // this door, and for an app that IS in this hub it answers like the required one.
-    queryAllOptional: async (name: string) => (name === 'inventory.products.list' ? PRODUCTS : undefined),
-
+    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} EUR`,
+    formatAmount: (units: number) => `${(units || 0).toFixed(2)} EUR`,
     command: async (name: string, payload: Record<string, unknown>) => {
       if (name === 'sales.order.open') {
         const it = (payload.items as Record<string, unknown>[])[0];
@@ -73,14 +65,7 @@ function installSdk() {
       }
       return { ok: true, new_ids: ['line-2'] };
     },
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} EUR`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} EUR`,
-    t: (_c: unknown, key: string) => key,
-    loadSlot: async () => [],
-    notify: () => {},
-    hasPermission: () => true,
-  };
+  });
 }
 
 interface Pos {

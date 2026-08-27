@@ -19,6 +19,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { installPosDouble } from '../../test/pos-double';
 
 function moduleRoot(): string {
   let dir = dirname(fileURLToPath(import.meta.url));
@@ -89,54 +90,29 @@ const CONFIGURED = {
 
 type Role = 'admin' | 'cashier';
 
-let asked: string[] = [];
+let pos: ReturnType<typeof installPosDouble>;
+/** Every query name the till asked for, in order. */
+const asked = (): string[] => pos.reads.map((r) => r.name);
 let commands: { name: string; payload: Record<string, unknown> }[] = [];
 
 /** The SDK as each role sees it. For a `cashier`, `sales.settings.get` REJECTS the way the runtime
  *  refuses a missing permission — the whole point of the issue. For an `admin` it answers the same
  *  row, so any difference between the two runs is the defect and nothing else. */
 function installSdk(role: Role, policy: Record<string, unknown> | null = CONFIGURED) {
-  asked = [];
+  pos?.reads.splice(0);
   commands = [];
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async (name: string) => {
-      asked.push(name);
-      if (name === 'sales.settings.get') {
-        if (role === 'cashier') throw Object.assign(new Error('permission denied'), { code: 'permission_denied' });
-        return policy ? [policy] : [];
-      }
-      if (name === 'sales.pos_settings.get') return policy ? [asCounterRow(policy)] : [];
-      if (name === 'sales.payment_methods') return PAY_METHODS;
-      if (name === 'sales.business.get') return [{ name: 'Pepe Ltd' }];
-      return [];
-    },
-    queryAll: async (name: string) => {
-      asked.push(name);
-      if (name === 'taxes.rules.list') return RULES;
-      if (name === 'taxes.categories.list') return TAX_CATS;
-      return [];
-    },
-    queryAllOptional: async (name: string) => {
-      asked.push(name);
-      return [];
-    },
-    queryOptional: async (name: string) => {
-      asked.push(name);
-      return undefined;
-    },
+  pos = installPosDouble({
+    settings: policy ? asCounterRow(policy) : null,
+    paymentMethods: PAY_METHODS,
+    business: [{ name: 'Pepe Ltd' }],
+    rules: RULES,
+    taxCategories: TAX_CATS,
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
       if (name === 'sales.order.open') return { ok: true, new_ids: ['ord-1', 'line-1'] };
       return { rows: [{ id: 'sale-1' }] };
     },
-    currency: 'EUR',
-    formatMoney: (c: number) => `${((c || 0) / 100).toFixed(2)} €`,
-    formatAmount: (u: number) => `${(u || 0).toFixed(2)} €`,
-    t: (_c: unknown, k: string) => k,
-    loadSlot: async () => [],
-    notify: () => {},
-    hasPermission: () => true,
-  };
+  });
 }
 
 interface Pos {
@@ -204,8 +180,8 @@ describe('the counter honours the shop policy for a CASHIER, not only for an adm
   it('reads the policy through ONE door — never the admin-only query', async () => {
     installSdk('cashier');
     await mount();
-    expect(asked).toContain('sales.pos_settings.get');
-    expect(asked, 'one read for the whole policy: the admin door has no business here')
+    expect(asked()).toContain('sales.pos_settings.get');
+    expect(asked(), 'one read for the whole policy: the admin door has no business here')
       .not.toContain('sales.settings.get');
   });
 
