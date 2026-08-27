@@ -365,6 +365,83 @@ describe('los suplementos en el documento del térmico (sales#148)', () => {
   });
 });
 
+// ── sales#229 · the supplements ALSO travel as a LIST ────────────────────────────────────────
+//
+// `notes` chains them with « · » in ONE sub-line, which is all a deployed renderer can indent
+// today. With two or three the line runs past the 32 columns of the thermal paper and the printer
+// wraps it at the margin: the continuation loses the indent that is what ties a supplement to its
+// item. The fix belongs to the renderer (ERPlora/hub#1138, still open) — one row per supplement —
+// and it needs the supplements as a LIST to do it.
+//
+// So the item carries BOTH keys, exactly as the menu's `components` does since sales#154: the
+// renderer that does not know `modifiers` ignores it and prints `notes` as it does today, and the
+// one that learns it prints the rows and steps over `notes`. That is why this is safe to ship
+// before the renderer: nothing is removed.
+//
+// Shape: `string[]`, the label already composed — the SAME array `<ok-receipt>` paints, through
+// the same `modifierLabel`. Not objects: the only list the renderer reads today (`components`) is
+// a list of composed labels, and composing the text on this side is what keeps the four doors
+// (screen, HTML paper, thermal paper, jobId fingerprint) from drifting apart.
+describe('sales#229 — the supplements ALSO travel as a list, keeping `notes`', () => {
+  const MODS = [{ option_id: 'o1', name: 'Extra queso', price_delta: 100 }, { option_id: 'o2', name: 'Sin cebolla', price_delta: 0 }];
+  const withMods = [{ name: 'Hamburguesa', price: 900, qty: 1, modifiers: MODS }];
+
+  it('the bill hands the labels in the order they were chosen, and `notes` is byte-identical', () => {
+    const doc = prebillToPrintDocument(withMods, SETTINGS, {});
+    expect(doc.items[0].modifiers).toEqual(['Extra queso', 'Sin cebolla']);
+    expect(doc.items[0].notes, 'the old door is untouched, for a renderer that only knows it').toBe('Extra queso · Sin cebolla');
+  });
+
+  it('the reprinted ticket too, from the snapshot the checkout froze', () => {
+    const doc = saleToPrintDocument(
+      { id: 's1', sale_number: 'T-1', total: 1000 },
+      [{ product_name: 'Hamburguesa', quantity: 1_000_000, unit_price: 1000, line_total: 1000, modifiers: JSON.stringify(MODS) }],
+      SETTINGS,
+    );
+    expect(doc.items[0].modifiers).toEqual(['Extra queso', 'Sin cebolla']);
+    expect(doc.items[0].notes).toBe('Extra queso · Sin cebolla');
+  });
+
+  it('the list carries no amount either: the delta already travels inside the line total', () => {
+    const doc = prebillToPrintDocument([{ name: 'Hamburguesa', price: 1000, qty: 1, modifiers: MODS }], SETTINGS, {});
+    expect(doc.items[0].modifiers?.join('')).not.toMatch(/\d/);
+  });
+
+  it('a nameless supplement falls back to its id, like every other door', () => {
+    const doc = prebillToPrintDocument([{ name: 'Hamburguesa', price: 900, qty: 1, modifiers: [{ option_id: 'o-huerfano' }] }], SETTINGS, {});
+    expect(doc.items[0].modifiers).toEqual(['o-huerfano']);
+  });
+
+  it('a line without supplements does NOT grow the key', () => {
+    const doc = prebillToPrintDocument(CART, SETTINGS, {});
+    expect(Object.keys(doc.items[0]).includes('modifiers'), 'not even present as `undefined`').toBe(false);
+  });
+
+  it('an empty supplement list does not grow the key either', () => {
+    const doc = prebillToPrintDocument([{ name: 'Café solo', price: 120, qty: 2, modifiers: [] }], SETTINGS, {});
+    expect(Object.keys(doc.items[0]).includes('modifiers')).toBe(false);
+  });
+
+  it('the menu keeps its `components`, an axis of its own, alongside the supplements', () => {
+    const doc = prebillToPrintDocument(
+      [{ name: 'Menú del día', price: 1350, qty: 1, combo: { name: 'Menú del día', components: [{ name: 'Gazpacho' }] }, modifiers: [{ name: 'Sin sal' }] }],
+      SETTINGS,
+      {},
+    );
+    expect(doc.items[0].components).toEqual(['Gazpacho']);
+    expect(doc.items[0].modifiers).toEqual(['Sin sal']);
+    expect(doc.items[0].notes, 'and the single sub-line still says both, for today\'s renderer').toBe('Gazpacho · Sin sal');
+  });
+
+  it('the print fingerprint of a bill without supplements does not move: no reprint is swallowed', () => {
+    // The `jobId` is the queue's idempotency key. If this change moved it, every open bill would
+    // print again on the next round; if it stopped moving with the supplements, a corrected bill
+    // would be swallowed as a duplicate and NO paper would come out (sales#148).
+    expect(prebillJobId('order-1', CART)).toBe('prebill-order-1-11t19fg');
+    expect(prebillJobId('order-1', withMods)).not.toBe(prebillJobId('order-1', [{ name: 'Hamburguesa', price: 900, qty: 1 }]));
+  });
+});
+
 // sales#154 / ADR-0381 — the menu on the THERMAL paper. The renderer (`escpos::render_receipt` /
 // `render_prebill`) reads `name`, `quantity`, `total` and `notes` per item — nothing else, and a key
 // it does not know prints NOTHING, silently (the sales#78 lesson). So the menu goes through the keys

@@ -2402,7 +2402,12 @@ function printQuantity(qty, unitCode) {
 function printNotes(l3) {
   const notes = paperNote(l3.combo, l3.printed_modifiers, l3.line_note);
   const components = l3.combo?.components.map(componentLabel).filter(Boolean);
-  return { ...notes ? { notes } : {}, ...components?.length ? { components } : {} };
+  const modifiers = l3.printed_modifiers?.map(modifierLabel).filter(Boolean);
+  return {
+    ...notes ? { notes } : {},
+    ...components?.length ? { components } : {},
+    ...modifiers?.length ? { modifiers } : {}
+  };
 }
 function prebillToPrintDocument(lines, settings = {}, opts = {}, valuation) {
   const screen = orderToPrebill(lines, settings, opts, valuation);

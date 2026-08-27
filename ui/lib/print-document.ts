@@ -21,7 +21,7 @@
 // The field names are the wire contract of `escpos::render_receipt` / `render_prebill`. Changing
 // one here without changing it there prints a document with a missing field, silently.
 import { orderToPrebill, saleToReceipt, claimPrintFields, paperNote } from './document-mappers.js';
-import { modifierIdentity } from './paper-modifiers.js';
+import { modifierIdentity, modifierLabel } from './paper-modifiers.js';
 import { comboIdentity, componentLabel, type PrintedCombo } from './paper-combos.js';
 import type { PrebillLine, PrebillValuation, SaleRow, SaleLineRow, SaleSettings, FiscalData } from './document-mappers.js';
 import { quantityLabel, unitTag } from './price-label.js';
@@ -45,6 +45,15 @@ export interface PrintDocumentItem {
    *  line (ERPlora/hub). Today's `render_receipt`/`render_prebill` ignore unknown keys, so this is
    *  additive: the text they DO print is the `notes` sub-line. Absent on a plain line. */
   components?: string[];
+  /** sales#229 — the line's supplements as a LIST, on the SAME terms as `components`: labels
+   *  already composed, no amount (the delta is inside the line total), absent when there are none.
+   *
+   *  A different axis from `components`, and both print: the menu says WHAT the item is made of,
+   *  the supplement says what was CHANGED about it. `notes` keeps chaining the same texts with
+   *  « · » for the renderers that only know that one sub-line — which today is all of them
+   *  (ERPlora/hub#1138 is still open). Nothing is removed, so this ships before the renderer:
+   *  an image that ignores the key prints exactly what it prints now. */
+  modifiers?: string[];
 }
 
 /** Cantidad para la línea del papel térmico (sales#28).
@@ -57,30 +66,41 @@ function printQuantity(qty: number, unitCode?: string): number | string {
   return unitTag(unitCode) ? `${quantityLabel(qty, unitCode)} ` : qty;
 }
 
-/** Los suplementos de la línea en la clave que el renderizador ESC/POS **ya lee** (sales#148).
+/** The line's sub-line texts, in the keys the ESC/POS renderer reads (sales#148).
  *
- * `notes` es la sub-línea que `render_receipt` y `render_prebill` imprimen indentada bajo su
- * artículo (`  > {notes}`, crates/peripherals/src/escpos.rs). Se usa esa y no una clave `modifiers`
- * nueva a propósito: el renderizador lee POR CLAVE, así que una clave que no conoce no falla — no
- * imprime NADA, en silencio, que es el fallo contra el que avisa la cabecera de este fichero desde
- * sales#78. Por `notes` lo imprime hoy cualquier hub desplegado, sin esperar una imagen nueva.
+ * `notes` is the sub-line `render_receipt` and `render_prebill` print indented under their item
+ * (`  > {notes}`, crates/peripherals/src/escpos.rs). It carries EVERYTHING chained, because that is
+ * the one door any deployed hub already prints — the renderer reads BY KEY, so a key it does not
+ * know does not fail: it prints NOTHING, silently, the failure this file's header has been warning
+ * about since sales#78. So `notes` is never dropped, only complemented.
  *
- * Va todo en una sub-línea porque el renderizador imprime UNA por artículo; una lista estructurada
- * con su importe alineado a la derecha necesita que el renderizador aprenda a leerla (ERPlora/hub).
- *
- * Sin suplementos NO se emite la clave: el papel sale byte a byte como salía.
+ * With no supplements and no menu the keys are NOT emitted: the paper comes out byte for byte as
+ * it did.
  *
  * sales#154: the menu's components travel through the SAME sub-line, first, followed by the line's
  * supplements — one composer (`paperNote`) for the screen's `note` and this `notes`. And as a list
- * in `components`, for the renderer that will indent them (ignored by today's, by contract). */
+ * in `components`, for the renderer that will indent them (ignored by today's, by contract).
+ *
+ * sales#229: the supplements get the same treatment in `modifiers`. Chained in one sub-line they
+ * run past the paper's 32 columns and the printer wraps them at the margin, losing the indent that
+ * is what ties a supplement to its item; as a list the renderer can give each one its own row
+ * (ERPlora/hub#1138). `notes` stays, so a hub that has not learnt the key prints what it prints
+ * today. Both lists are built with the SAME composers the screen uses (`componentLabel`,
+ * `modifierLabel`), which is what keeps the four doors from saying different things. */
 function printNotes(
   l: { printed_modifiers?: Parameters<typeof paperNote>[1]; combo?: PrintedCombo; line_note?: string },
-): { notes?: string; components?: string[] } {
+): { notes?: string; components?: string[]; modifiers?: string[] } {
   // sales#156: the waiter's free note shares this sub-line, last. It is the same composer the
   // screen uses, so paper and screen cannot drift apart.
   const notes = paperNote(l.combo, l.printed_modifiers, l.line_note);
   const components = l.combo?.components.map(componentLabel).filter(Boolean);
-  return { ...(notes ? { notes } : {}), ...(components?.length ? { components } : {}) };
+  // In the order they were chosen: the paper is read against what was ordered, not sorted.
+  const modifiers = l.printed_modifiers?.map(modifierLabel).filter(Boolean);
+  return {
+    ...(notes ? { notes } : {}),
+    ...(components?.length ? { components } : {}),
+    ...(modifiers?.length ? { modifiers } : {}),
+  };
 }
 
 /**
