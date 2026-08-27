@@ -17,6 +17,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import enLocale from '../../../locales/en.json';
 import esLocale from '../../../locales/es.json';
+import { installPosDouble } from '../../test/pos-double';
 
 // ⚠️ Every product carries its `tax_category_key`: without it the tile is BLOCKED (sales#74/#58)
 // and the grid is dead by data, which looks exactly like "the POS does not respond".
@@ -41,21 +42,13 @@ function installSdk() {
   notices = [];
   refuseWith = '';
   const orderLines: Record<string, unknown>[] = [];
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async (name: string) => {
-      if (name === 'sales.payment_methods') return METHODS;
-      if (name === 'sales.order.lines') return orderLines;
-      if (name === 'sales.by_idempotency_key') return [{ id: 'sale-1' }];
-      return [];
-    },
-    // sales#25 — the till reads `inventory` through the OPTIONAL door (ADR-0127). For an app that
-    // IS in this hub the optional door answers exactly like the required one, which is what this
-    // delegation models; absence and failure are still whatever `queryAll` does with them.
-    queryAllOptional: async (name: string, params?: Record<string, unknown>) =>
-      ((globalThis as Record<string, unknown>).erplora as { queryAll(n: string, p?: Record<string, unknown>): Promise<unknown> }).queryAll(name, params),
-    queryAll: async (name: string) =>
-      (name === 'inventory.products.list' ? PRODUCTS : name === 'taxes.rules.list' ? RULES : []),
-    queryOptional: async () => undefined,
+  installPosDouble({
+    paymentMethods: METHODS,
+    orderLines: () => orderLines,
+    byIdempotencyKey: [{ id: 'sale-1' }],
+    products: PRODUCTS,
+    rules: RULES,
+    notify: (n: { type: string; message: string }) => { notices.push(n); },
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
       // sales#185 — the refusal travels TYPED (`code`), the way `ErploraError` delivers it: the
@@ -70,14 +63,7 @@ function installSdk() {
       }
       return { ok: true, new_ids: ['ord-1', 'line-1'] };
     },
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-    t: (_c: unknown, key: string) => key,
-    loadSlot: async () => [],
-    notify: (n: { type: string; message: string }) => { notices.push(n); },
-    hasPermission: () => true,
-  };
+  });
 }
 
 interface Pos extends HTMLElement {

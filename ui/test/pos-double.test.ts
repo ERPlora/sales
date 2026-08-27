@@ -43,9 +43,13 @@ describe('1b · the surface is read off the till itself, so it cannot fall behin
     join('components', 'erp-pos-touch', 'erp-pos-touch.ts'),
     join('lib', 'pos-cart.ts'),
     join('lib', 'pos-tax.ts'),
+    // The sale document the till mounts inside its own modal reads through the same double.
+    join('components', 'erp-sales-document', 'erp-sales-document.ts'),
   ];
-  /** `…query|queryAll|queryOptional|queryAllOptional<T>('some.query.name'` */
-  const SDK_READ = /\.(?:query|queryAll|queryOptional|queryAllOptional)(?:<[^>]*>)?\(\s*'([a-z][\w.]*\.[\w.]+)'/g;
+  /** `…query|queryAll|queryOptional|queryAllOptional<T>('some.query.name'`. The generic is matched
+   *  up to the opening paren and not with `<[^>]*>`, because a nested one (`<A<B> | C[]>`) closes
+   *  the class early and the read disappears from the scan — which is how `invoice.by_source` hid. */
+  const SDK_READ = /\.(?:query|queryAll|queryOptional|queryAllOptional)\s*(?:<[^(]*>)?\(\s*'([a-z][\w.]*\.[\w.]+)'/g;
 
   it('every query the till reads is in `POS_READS`', () => {
     const read = new Set<string>();

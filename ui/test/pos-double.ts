@@ -30,6 +30,9 @@ const READS: { name: string; module: string; field: keyof PosCatalogue }[] = [
   { name: 'sales.orders.list', module: 'sales', field: 'orders' },
   { name: 'sales.order.lines', module: 'sales', field: 'orderLines' },
   { name: 'sales.by_idempotency_key', module: 'sales', field: 'byIdempotencyKey' },
+  // Read by `erp-sales-document`, the sale document the till mounts inside its own modal.
+  { name: 'sales.get', module: 'sales', field: 'sale' },
+  { name: 'sales.lines', module: 'sales', field: 'saleLines' },
   { name: 'hub.users.list', module: 'hub', field: 'users' },
   { name: 'hub.fiscal.limits', module: 'hub', field: 'fiscalLimits' },
   { name: 'services.services.list', module: 'services', field: 'services' },
@@ -38,10 +41,14 @@ const READS: { name: string; module: string; field: keyof PosCatalogue }[] = [
   { name: 'modifiers.options.all', module: 'modifiers', field: 'modifierOptions' },
   { name: 'combos.options.all', module: 'combos', field: 'comboOptions' },
   { name: 'appointments.appointments.get', module: 'appointments', field: 'appointment' },
+  // The fiscal chain the sale document resolves: a hub can charge with no invoicing app at all.
+  { name: 'invoice.by_source', module: 'invoice', field: 'invoiceBySource' },
+  { name: 'invoice.lines', module: 'invoice', field: 'invoiceLines' },
+  { name: 'verifactu.records.by_invoice', module: 'verifactu', field: 'verifactuRecord' },
 ];
 
 /** The apps whose ABSENCE is the normal case, so they are out of the hub until a test says otherwise. */
-const OPTIONAL_MODULES = new Set(['services', 'modifiers', 'combos', 'appointments']);
+const OPTIONAL_MODULES = new Set(['services', 'modifiers', 'combos', 'appointments', 'invoice', 'verifactu']);
 
 /** Every query name the till reads. Exported so the suite can prove none of them explodes. */
 export const POS_READS: readonly string[] = READS.map((r) => r.name);
@@ -62,6 +69,8 @@ interface PosCatalogue {
   orders?: QueryAnswer;
   orderLines?: QueryAnswer;
   byIdempotencyKey?: QueryAnswer;
+  sale?: QueryAnswer;
+  saleLines?: QueryAnswer;
   users?: QueryAnswer;
   fiscalLimits?: QueryAnswer;
   services?: QueryAnswer;
@@ -70,6 +79,9 @@ interface PosCatalogue {
   modifierOptions?: QueryAnswer;
   comboOptions?: QueryAnswer;
   appointment?: QueryAnswer;
+  invoiceBySource?: QueryAnswer;
+  invoiceLines?: QueryAnswer;
+  verifactuRecord?: QueryAnswer;
 }
 
 export interface PosDoubleSpec extends PosCatalogue, Omit<ErploraDoubleSpec, 'queries' | 'absent' | 'broken'> {
@@ -94,14 +106,18 @@ export function installPosDouble(spec: PosDoubleSpec = {}): ErploraDouble {
   const {
     settings, absentModules = [], brokenModules = [], queries: extraQueries = {}, failing = {},
     products, forSale, categories, productCategories, units, rules, taxCategories,
-    paymentMethods, quickNotes, business, orders, orderLines, byIdempotencyKey, users, fiscalLimits,
+    paymentMethods, quickNotes, business, orders, orderLines, byIdempotencyKey, sale, saleLines,
+    users, fiscalLimits,
     services, serviceCategories, modifierGroups, modifierOptions, comboOptions, appointment,
+    invoiceBySource, invoiceLines, verifactuRecord,
     ...rest
   } = spec;
   const catalogue: PosCatalogue = {
     products, forSale, categories, productCategories, units, rules, taxCategories,
-    paymentMethods, quickNotes, business, orders, orderLines, byIdempotencyKey, users, fiscalLimits,
+    paymentMethods, quickNotes, business, orders, orderLines, byIdempotencyKey, sale, saleLines,
+    users, fiscalLimits,
     services, serviceCategories, modifierGroups, modifierOptions, comboOptions, appointment,
+    invoiceBySource, invoiceLines, verifactuRecord,
   };
 
   const absentSet = new Set(absentModules);
