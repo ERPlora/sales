@@ -21,6 +21,7 @@
 // with its date, and ADR-0386 is explicit: a return undoes a past act, so weighing validity
 // against today would lose the customer the session AND the money path with it.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { installErploraDouble } from '../../test/erplora-double';
 
 const SALE = [{ id: 'sale-1', sale_number: '20260825-0007', status: 'completed', total: 1800 }];
 const LEGS = [{
@@ -37,7 +38,9 @@ const LINES = [
 
 /** Every slot literal the screen asked the SDK for, in order. */
 let slotsAsked: string[] = [];
-let queriesAsked: string[] = [];
+let refundSdk: ReturnType<typeof installErploraDouble>;
+/** What the screen asked for, as the shared double records it. */
+const queriesAsked = (): string[] => refundSdk.reads.map((r) => r.name);
 let commands: { name: string; payload: Record<string, unknown> }[] = [];
 
 /** What each filler instance was handed, and what it was told when the document existed. */
@@ -87,7 +90,6 @@ interface Options { fillers?: boolean; lines?: unknown[]; linesFail?: boolean }
 function install(opts: Options = {}): void {
   const { fillers = true, lines = LINES, linesFail = false } = opts;
   slotsAsked = [];
-  queriesAsked = [];
   commands = [];
   commitBehaviour = 'silent';
   commitResolved = undefined;
@@ -95,29 +97,24 @@ function install(opts: Options = {}): void {
     'sales.get': SALE, 'sales.refund_options': LEGS, 'sales.payment_methods': METHODS,
     'sales.lines': lines,
   };
-  (globalThis as Record<string, unknown>).erplora = {
-    query: vi.fn(async (name: string) => {
-      queriesAsked.push(name);
+  refundSdk = installErploraDouble({
+    queries: Object.fromEntries(Object.entries(table).map(([name, rows]) => [name, () => {
       if (linesFail && name === 'sales.lines') throw new Error('boom');
-      return table[name] ?? [];
-    }),
-    command: vi.fn(async (name: string, payload: Record<string, unknown>) => {
+      return rows;
+    }])),
+    command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
       return { refund_id: 'ref-9', refund_ref: 'ref-9', total: 1800, fully_refunded: 1, already: 0 };
-    }),
-    loadSlot: vi.fn(async (slot: string) => {
+    },
+    loadSlot: (slot: string) => {
       slotsAsked.push(slot);
       if (!fillers) return [];
       return slot === 'sales.refund.tender' ? [{ component: 'erp-fake-tender-refund' }] : [];
-    }),
-    notify: vi.fn(),
-    currency: 'EUR',
+    },
     locale: 'es',
     formatMoney: (c: number) => `${((c || 0) / 100).toFixed(2).replace('.', ',')} €`,
-    hasPermission: () => true,
     // The catalogue answers with the KEY: what is asserted below is the contract, never the prose.
-    t: (_catalog: unknown, key: string) => key,
-  };
+  });
 }
 
 type Refund = HTMLElement & {
@@ -287,8 +284,7 @@ describe('the document: the reference goes down to the filler, and the screen wa
     await new Promise((r) => setTimeout(r, 0));
     commitResolved?.();
     await done;
-    const notify = (globalThis as { erplora?: { notify: ReturnType<typeof vi.fn> } }).erplora!.notify;
-    const said = notify.mock.calls.map((c) => (c[0] as { type: string; message: string }));
+    const said = refundSdk.notices;
     expect(said.some((n) => n.type === 'success' && n.message === 'ui.refundDone')).toBe(true);
     expect(said.some((n) => n.type === 'error' && n.message === 'ui.refundTenderPending')).toBe(true);
     expect(closed, 'the sale IS refunded: the screen cannot stay open pretending otherwise').toBe(true);
@@ -302,7 +298,7 @@ describe('a hub WITHOUT the owning module', () => {
     const el = await mount();
     expect(holes(el)).toHaveLength(0);
     expect(el.shadowRoot?.querySelector('.rt-list')).toBeNull();
-    expect(queriesAsked).not.toContain('sales.lines');
+    expect(queriesAsked()).not.toContain('sales.lines');
   });
 
   it('sends the refund EXACTLY as it did before the slot existed', async () => {

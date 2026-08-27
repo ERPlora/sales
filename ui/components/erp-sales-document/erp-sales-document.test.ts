@@ -9,15 +9,26 @@
 //    ion-footer del modal anfitrión (document-modal.ts); el visor pinta SOLO el documento.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ReceiptData } from '@erplora/outfitkit';
+import { installErploraDouble } from '../../test/erplora-double';
+
+/** El doble del visor: sus tres lecturas propias, y la cadena fiscal AUSENTE salvo que un test la
+ *  ponga en el hub — `invoice`/`verifactu` son apps opcionales (ADR-0127). */
+function installDocDouble(
+  queries: Record<string, unknown[] | ((params?: Record<string, unknown>) => unknown[] | Promise<unknown[]>)> = {},
+  over: Partial<Parameters<typeof installErploraDouble>[0]> = {},
+) {
+  const FISCAL = ['invoice.by_source', 'invoice.lines', 'verifactu.records.by_invoice'];
+  return installErploraDouble({
+    queries: { 'sales.get': [], 'sales.lines': [], 'sales.pos_settings.get': [], ...queries },
+    absent: FISCAL.filter((name) => !(name in queries)),
+    locale: 'es',
+    ...over,
+  });
+}
 
 beforeEach(() => {
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async () => [],
-    queryOptional: async () => undefined,
-    locale: 'es',
-    // t() doble: devuelve la clave — el test mira ESTRUCTURA, no idioma.
-    t: (_catalog: unknown, key: string) => key,
-  };
+  // t() del doble compartido: devuelve la CLAVE — el test mira ESTRUCTURA, no idioma.
+  installDocDouble();
 });
 
 async function montarVisor() {
@@ -90,14 +101,13 @@ describe('QR fiscal: reintento mientras el Outbox termina', () => {
   };
 
   async function montarPorSaleId(queryOptional: (name: string) => Promise<unknown>) {
-    (globalThis as Record<string, unknown>).erplora = {
-      query: async (name: string) => (name === 'sales.get' ? [SALE]
-        : name === 'sales.lines' ? [{ product_name: 'Cafe', quantity: 1, unit_price: 180, line_total: 180 }]
-        : []),
-      queryOptional: async (name: string) => queryOptional(name),
-      locale: 'es',
-      t: (_c: unknown, k: string) => k,
-    };
+    installDocDouble({
+      'sales.get': [SALE],
+      'sales.lines': [{ product_name: 'Cafe', quantity: 1, unit_price: 180, line_total: 180 }],
+      'invoice.by_source': async () => (await queryOptional('invoice.by_source')) as unknown[],
+      'invoice.lines': async () => (await queryOptional('invoice.lines')) as unknown[],
+      'verifactu.records.by_invoice': async () => (await queryOptional('verifactu.records.by_invoice')) as unknown[],
+    });
     await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document') as HTMLElement & {
       fiscalRetryDelays: number[]; updateComplete: Promise<unknown>;
@@ -280,19 +290,14 @@ describe('claim «pide tu factura» — acuñar al resolver la F2 e imprimir el 
       if (opts.fetchImpl) return (opts.fetchImpl as (u: string, i: RequestInit) => unknown)(url, init);
       return { ok: true, json: async () => ({ ok: true, locator: 'ABCD1234ABCD1234', url: '/p/ABCD1234ABCD1234' }) };
     };
-    (globalThis as Record<string, unknown>).erplora = {
-      query: async (name: string) => (name === 'sales.get' ? [SALE]
-        : name === 'sales.lines' ? [{ product_name: 'Cafe', quantity: 2, unit_price: 120, line_total: 240 }]
-        : []),
-      queryOptional: async (name: string) => {
-        if (name === 'invoice.by_source') return opts.invoice; // undefined = módulo ausente (ADR-0127)
-        if (name === 'invoice.lines') return F2_LINES;
-        if (name === 'verifactu.records.by_invoice') return [{ qr_url: 'https://aeat/qr', aeat_csv: '' }];
-        return undefined;
-      },
-      locale: 'es',
-      t: (_c: unknown, k: string) => k,
-    };
+    installDocDouble({
+      'sales.get': [SALE],
+      'sales.lines': [{ product_name: 'Cafe', quantity: 2, unit_price: 120, line_total: 240 }],
+      // `undefined` = módulo ausente (ADR-0127), que aquí se dice por su nombre.
+      ...(opts.invoice ? { 'invoice.by_source': [opts.invoice] } : {}),
+      'invoice.lines': F2_LINES,
+      'verifactu.records.by_invoice': [{ qr_url: 'https://aeat/qr', aeat_csv: '' }],
+    });
     await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document') as HTMLElement & {
       fiscalRetryDelays: number[]; updateComplete: Promise<unknown>;
@@ -453,14 +458,11 @@ describe('the paper translates the factory payment method (sales#181)', () => {
   const esCatalog = { ui: { cash: 'Efectivo', card: 'Tarjeta' } };
 
   async function mountWithMethod(name: string, format?: 'ticket' | 'invoice') {
-    (globalThis as Record<string, unknown>).erplora = {
-      query: async () => [],
-      queryOptional: async () => undefined,
-      locale: 'es',
+    installDocDouble({}, {
       // El catálogo REAL (no la clave): lo que se mide es el idioma que sale impreso.
-      t: (_catalog: unknown, key: string) =>
-        key.split('.').reduce<unknown>((acc, part) => (acc as Record<string, unknown>)?.[part], esCatalog) ?? key,
-    };
+      t: (_catalog: Record<string, unknown>, key: string) =>
+        key.split('.').reduce<unknown>((acc, part) => (acc as Record<string, unknown>)?.[part], esCatalog) as string ?? key,
+    });
     document.body.innerHTML = '';
     await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document') as HTMLElement & {

@@ -29,6 +29,22 @@ const HAND_DOOR = /^\s*(query|queryPage|queryAll|queryOptional|queryAllOptional)
 /** The escape hatch of the helper's own suite. Nobody else provokes unanswered reads on purpose. */
 const ESCAPE_HATCH = /allowUnconfiguredReads/;
 
+/**
+ * Suites that build a client passed AS AN ARGUMENT to a pure function of `ui/lib/` — never a shell
+ * double on `globalThis.erplora`. There the TYPE is the guard: the parameter is `ErploraClientLike`,
+ * so a door the function starts using is a compiler error, not a silent `[]`. They are listed one by
+ * one on purpose: a NEW file cannot appear here without editing this list, so the exemption cannot
+ * grow by accident. Migrating them onto the helper is ERPlora/sales#234.
+ */
+const CLIENT_STUBS = new Set([
+  join('lib', 'discounts.test.ts'),
+  join('lib', 'line-note.test.ts'),
+  join('lib', 'pos-cart.test.ts'),
+  join('lib', 'pos-cart-modifier-money.test.ts'),
+  join('lib', 'pos-cart-service-line.test.ts'),
+  join('lib', 'pos-tax.test.ts'),
+]);
+
 function testFiles(dir: string, prefix = ''): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir)) {
@@ -53,7 +69,10 @@ describe('the `erplora` double is built in ONE place (sales#233)', () => {
   });
 
   it('no test file spells out a read door of the SDK', () => {
-    const guilty = OFFENDERS.filter((f) => HAND_DOOR.test(f.source)).map((f) => f.file);
+    const guilty = OFFENDERS
+      .filter((f) => !CLIENT_STUBS.has(f.file))
+      .filter((f) => HAND_DOOR.test(f.source))
+      .map((f) => f.file);
 
     expect(guilty, '`query`/`queryAll`/`queryOptional`/`queryAllOptional` live in '
       + '`ui/test/erplora-double.ts` and nowhere else — that is what makes a new door ONE edit')
@@ -65,6 +84,15 @@ describe('the `erplora` double is built in ONE place (sales#233)', () => {
 
     expect(guilty, '`allowUnconfiguredReads` switches off the net that caught sales#231: it exists '
       + 'to test the net itself, never to quiet it in a suite that is short a read').toEqual([]);
+  });
+
+  it('the exempted client stubs really are client stubs: none of them touches the shell', () => {
+    const guilty = OFFENDERS
+      .filter((f) => CLIENT_STUBS.has(f.file) && /globalThis[\s\S]{0,60}\.erplora/.test(f.source))
+      .map((f) => f.file);
+
+    expect(guilty, 'the exemption is for a typed client argument, never for a shell double sneaked '
+      + 'onto `globalThis.erplora` under its name').toEqual([]);
   });
 
   it('the helper itself is where the doors are declared', () => {

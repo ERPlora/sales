@@ -10,6 +10,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
 
+
 // Registering the POS costs seconds (it is a big component and vitest transforms it on demand).
 // Doing it here instead of inside the first test keeps that cost out of the test's own budget.
 beforeAll(async () => {
@@ -30,6 +31,7 @@ interface Notice {
 
 let printed: PrintRequest[];
 let notices: Notice[];
+let pos: ReturnType<typeof installPosDouble>;
 /** What the shell's print gate answers. `bridge` = it came out of a printer. */
 let printResult: { via: string; error?: string };
 
@@ -38,7 +40,7 @@ beforeEach(() => {
   notices = [];
   printResult = { via: 'bridge', role: 'receipt' } as { via: string };
   document.body.innerHTML = '';
-  installPosDouble({
+  pos = installPosDouble({
     notify: (n: Notice) => notices.push(n),
     // The global print gate of the shell (`apps/web/src/lib/print.ts`).
     extra: {
@@ -177,8 +179,7 @@ describe('los suplementos en la cuenta previa (sales#148)', () => {
 
   /** El shell responde al catálogo de suplementos; a todo lo demás, nada. */
   function withCatalog(rows: unknown[] = CATALOG) {
-    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
-    sdk.queryOptional = async (name: string) => (name === 'modifiers.options.all' ? rows : undefined);
+    pos.setQuery('modifiers.options.all', rows);
   }
 
   const BURGER = [{
@@ -209,8 +210,7 @@ describe('los suplementos en la cuenta previa (sales#148)', () => {
   });
 
   it('sin el módulo `modifiers` instalado la cuenta sale igual, con el id por delante del silencio', async () => {
-    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
-    sdk.queryOptional = async () => undefined; // el módulo no está
+    pos.setAbsent('modifiers.options.all'); // el módulo no está
     await printBill(BURGER);
     const items = printed[0].data!.items as { name: string; notes?: string }[];
     expect(items[0].notes, 'un cobro invisible es peor que una línea fea').toBe('o-queso · o-sin-cebolla');
@@ -218,11 +218,10 @@ describe('los suplementos en la cuenta previa (sales#148)', () => {
   });
 
   it('una cuenta SIN suplementos no pide el catálogo ni cambia de papel', async () => {
-    const asked: string[] = [];
-    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
-    sdk.queryOptional = async (name: string) => { asked.push(name); return CATALOG; };
+    withCatalog();
     await printBill();
-    expect(asked, 'ni una lectura de más en el 99 % de las cuentas').not.toContain('modifiers.options.all');
+    expect(pos.reads.map((r) => r.name), 'ni una lectura de más en el 99 % de las cuentas')
+      .not.toContain('modifiers.options.all');
     const items = printed[0].data!.items as { notes?: string }[];
     expect(items[0].notes).toBeUndefined();
   });
