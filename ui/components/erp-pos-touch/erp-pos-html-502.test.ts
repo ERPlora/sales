@@ -14,6 +14,7 @@
 // (ERPlora/hub, SDK). Lo que este test fija es el LÍMITE DEL MÓDULO sales: aunque el transporte
 // siga tirando el mensaje crudo, el TPV lo traduce a algo útil para quien está cobrando.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { installPosDouble } from '../../test/pos-double';
 
 const notifyCalls: { type: string; message: string }[] = [];
 const CATEGORIA_IVA = 'product.generic';
@@ -26,19 +27,9 @@ const HTML_PARSE_ERROR = "Unexpected token '<', \"<!DOCTYPE \" is not valid JSON
 
 beforeEach(() => {
   notifyCalls.length = 0;
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async () => [],
-    queryAll: async (name: string) => (name === 'taxes.rules.list' ? REGLAS_IVA : []),
-    command: async () => ({}),
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-    // El catálogo i18n del módulo se traduce por CLAVE: así el test mide qué clave eligió la UI,
-    // no la frase localizada (que vive en locales/*.json y se comprueba aparte).
-    t: (_catalog: unknown, key: string) => key,
-    loadSlot: async () => [],
-    notify: (n: { type: string; message: string }) => notifyCalls.push(n),
-  };
+  // The i18n catalogue of the module is translated by KEY, so the test measures WHICH key the UI
+  // chose and not the localized sentence (that lives in locales/*.json and is checked apart).
+  installPosDouble({ rules: REGLAS_IVA, notify: (n) => notifyCalls.push(n) });
 });
 
 interface Montado {

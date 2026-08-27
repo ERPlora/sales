@@ -11,6 +11,7 @@
 // resumed check the one the SERVER froze on the row (sales#200). And it stays display money — the
 // payloads keep travelling with `option_id` alone (sales#68).
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { installPosDouble } from '../../test/pos-double';
 
 const BURGER = { id: 'p-burger', name: 'Hamburguesa', price: 900, tax_category_key: 'product.generic' };
 
@@ -29,22 +30,14 @@ beforeAll(async () => { await import('./erp-pos-touch'); }, 60_000);
 beforeEach(() => {
   document.body.innerHTML = '';
   commands = [];
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async () => [],
-    queryAll: async (name: string) => (name === 'inventory.products.for_sale' ? [BURGER] : []),
-    queryOptional: async (name: string) => (name === 'modifiers.for_target' ? GROUPS : undefined),
-    queryAllOptional: async () => undefined,
+  installPosDouble({
+    forSale: [BURGER],
+    modifierGroups: GROUPS,
     command: async (name: string, params: Record<string, unknown>) => {
       commands.push({ name, params });
       return { new_ids: [`row-${commands.length}`] };
     },
-    currency: 'EUR',
-    formatMoney: (c: number) => `${((c || 0) / 100).toFixed(2)} €`,
-    formatAmount: (u: number) => `${(u || 0).toFixed(2)} €`,
-    t: (_c: unknown, k: string) => k,
-    loadSlot: async () => [],
-    notify: () => {},
-  };
+  });
 });
 
 interface Pos extends HTMLElement {

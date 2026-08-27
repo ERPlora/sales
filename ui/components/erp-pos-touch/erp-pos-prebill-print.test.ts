@@ -8,6 +8,7 @@
 // So what is pinned here is the request itself, and that a failure reaches the person holding the
 // order pad.
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { installPosDouble } from '../../test/pos-double';
 
 // Registering the POS costs seconds (it is a big component and vitest transforms it on demand).
 // Doing it here instead of inside the first test keeps that cost out of the test's own budget.
@@ -37,22 +38,16 @@ beforeEach(() => {
   notices = [];
   printResult = { via: 'bridge', role: 'receipt' } as { via: string };
   document.body.innerHTML = '';
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async () => [],
-    queryAll: async () => [],
-    command: async () => ({}),
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-    t: (_catalog: unknown, key: string) => key,
-    loadSlot: async () => [],
+  installPosDouble({
     notify: (n: Notice) => notices.push(n),
     // The global print gate of the shell (`apps/web/src/lib/print.ts`).
-    print: async (req: PrintRequest) => {
-      printed.push(req);
-      return printResult;
+    extra: {
+      print: async (req: PrintRequest) => {
+        printed.push(req);
+        return printResult;
+      },
     },
-  };
+  });
 });
 
 const CART = [

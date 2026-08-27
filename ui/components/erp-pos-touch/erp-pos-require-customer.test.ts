@@ -23,6 +23,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import enLocale from '../../../locales/en.json';
 import esLocale from '../../../locales/es.json';
+import { installPosDouble } from '../../test/pos-double';
 
 const PRODUCTS = [
   { id: 'p-cafe', name: 'Café', sku: 'CAF', price: 150, is_active: 1, tax_category_key: 'product.generic' },
@@ -46,50 +47,28 @@ let notices: { type: string; message: string }[] = [];
 let commands: { name: string; payload: Record<string, unknown> }[] = [];
 
 /** @param policy the settings row `sales.pos_settings.get` hands back (null = no row saved).
- *  @param withPicker whether `customers` is installed and fills `sales.pos.assign`. */
+ *  @param withPicker whether `customers` is installed and fills `sales.pos.assign`.
+ *
+ *  sales#233 — the double is `installPosDouble`, shared by every till suite, and NOT a copy of the
+ *  SDK doors written here. It was such a copy that broke this file: it answered `[]` through the
+ *  door sales#25 had just moved the catalogue onto, so the grid painted no products, the cart never
+ *  filled, and the five cases below died there — green for a whole day while testing nothing
+ *  (sales#231). Answers are keyed by query NAME now, so a read that changes door lands anyway. */
 function installSdk(policy: Record<string, unknown> | null, withPicker = true) {
-  notices = [];
-  commands = [];
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async (name: string) => {
-      if (name === 'sales.pos_settings.get') return policy ? [policy] : [];
-      if (name === 'sales.payment_methods') return METHODS;
-      return [];
-    },
-    queryAll: async (name: string) => {
-      if (name === 'inventory.products.list') return PRODUCTS;
-      if (name === 'taxes.rules.list') return RULES;
-      return [];
-    },
-    // sales#25 — the till reads `inventory` through the OPTIONAL door (ADR-0127). For an app that
-    // IS in this hub the optional door answers exactly like the required one, which is what this
-    // delegation models; absence and failure are still whatever `queryAll` does with them.
-    //
-    // sales#231: this double answered `[]` to everything through that door. It was written before
-    // sales#25 moved the catalog reads onto it, so from that merge on the grid had NO products, the
-    // cart could not be filled, and the five cases of the `require_customer` guard below stopped
-    // testing the guard — they died on the empty grid. A green suite is not the point: these cases
-    // are the only thing standing between «Charge ASKS for the customer» and a sale that closes
-    // without one, so a double that starves them is worse than no double.
-    queryAllOptional: async (name: string, params?: Record<string, unknown>) =>
-      ((globalThis as Record<string, unknown>).erplora as { queryAll(n: string, p?: Record<string, unknown>): Promise<unknown> }).queryAll(name, params),
-    queryOptional: async (name: string, params?: Record<string, unknown>) =>
-      ((globalThis as Record<string, unknown>).erplora as { query(n: string, p?: Record<string, unknown>): Promise<unknown[]> }).query(name, params).then((r) => r[0]),
-    command: async (name: string, payload: Record<string, unknown>) => {
-      commands.push({ name, payload });
-      if (name === 'sales.order.open') return { ok: true, new_ids: ['ord-1', 'line-1'] };
-      return { ok: true, rows: [{ id: 'sale-1' }] };
-    },
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-    t: (_c: unknown, key: string) => key,
-    loadSlot: async (slot: string) => (
+  const double = installPosDouble({
+    settings: policy,
+    products: PRODUCTS,
+    rules: RULES,
+    paymentMethods: METHODS,
+    command: async (name: string) => (name === 'sales.order.open'
+      ? { ok: true, new_ids: ['ord-1', 'line-1'] }
+      : { ok: true, rows: [{ id: 'sale-1' }] }),
+    loadSlot: (slot: string) => (
       withPicker && slot === 'sales.pos.assign' ? [{ component: 'fake-customer-picker' }] : []
     ),
-    notify: (n: { type: string; message: string }) => { notices.push(n); },
-    hasPermission: () => true,
-  };
+  });
+  notices = double.notices;
+  commands = double.commands;
 }
 
 interface Pos extends HTMLElement {

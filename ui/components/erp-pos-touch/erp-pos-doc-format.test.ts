@@ -11,6 +11,7 @@
 // el formato a mano; (4) por encima del techo la elección NO es libre — ahí la ley decide, y el
 // control no puede devolver la venta a tique.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { installPosDouble } from '../../test/pos-double';
 
 const RULES = [{ id: 'r-21', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, is_active: 1 }];
 const TAX_CATS = [{ key: 'product.generic', name: 'General', is_active: 1 }];
@@ -18,24 +19,14 @@ const TAX_CATS = [{ key: 'product.generic', name: 'General', is_active: 1 }];
 let settings: Record<string, unknown> = {};
 
 function installSdk() {
-  (globalThis as Record<string, unknown>).erplora = {
-    // sales#203 — the till reads its policy through `sales.pos_settings.get`, the door a cashier
-    // can open. The admin-only `sales.settings.get` is not asked for at all.
-    query: async (name: string) => (name === 'sales.pos_settings.get' ? [settings] : []),
-    queryAll: async (name: string) => {
-      if (name === 'taxes.rules.list') return RULES;
-      if (name === 'taxes.categories.list') return TAX_CATS;
-      return [];
-    },
-    queryOptional: async () => undefined,
+  // sales#203 — the till reads its policy through `sales.pos_settings.get`, the door a cashier
+  // can open. The admin-only `sales.settings.get` is not asked for at all.
+  installPosDouble({
+    settings,
+    rules: RULES,
+    taxCategories: TAX_CATS,
     command: async () => ({ rows: [{ id: 'row-1' }] }),
-    currency: 'EUR',
-    formatMoney: (c: number) => `${((c || 0) / 100).toFixed(2)} €`,
-    formatAmount: (u: number) => `${(u || 0).toFixed(2)} €`,
-    t: (_c: unknown, k: string) => k,
-    loadSlot: async () => [],
-    notify: () => {},
-  };
+  });
 }
 
 interface Pos {

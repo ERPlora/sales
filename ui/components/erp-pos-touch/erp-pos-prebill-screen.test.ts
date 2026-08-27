@@ -17,6 +17,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { ReceiptData } from '@erplora/outfitkit';
 import esLocale from '../../../locales/es.json';
+import { installPosDouble } from '../../test/pos-double';
 
 // Registering the POS costs seconds (big component, transformed on demand). Out of the tests' budget.
 beforeAll(async () => {
@@ -36,17 +37,7 @@ function translate(_catalog: unknown, key: string): string {
 
 beforeEach(() => {
   document.body.innerHTML = '';
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async () => [],
-    queryAll: async () => [],
-    command: async () => ({}),
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-    t: translate,
-    loadSlot: async () => [],
-    notify: () => {},
-  };
+  installPosDouble({ t: translate });
 });
 
 /** The cart QA had open: 3 lines, 46,40 € (2×12,00 + 3×5,80 + 1×5,00). */

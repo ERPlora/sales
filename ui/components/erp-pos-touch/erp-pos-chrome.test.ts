@@ -19,21 +19,13 @@
 //
 // happy-dom NO hace layout: aquí se fija el CONTRATO (qué se pinta, qué se emite), no la posición.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { installPosDouble } from '../../test/pos-double';
 
 const CATEGORIA_IVA = 'product.generic';
 const REGLAS_IVA = [{ id: 'r-21', tax_category_key: CATEGORIA_IVA, rate_pct: 21, parent_id: null, is_active: 1 }];
 
 beforeEach(() => {
-  (globalThis as Record<string, unknown>).erplora = {
-    query: async () => [],
-    queryAll: async (name: string) => (name === 'taxes.rules.list' ? REGLAS_IVA : []),
-    command: async () => ({}),
-    currency: 'EUR',
-    formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
-    formatAmount: (units: number) => `${(units || 0).toFixed(2)} €`,
-    t: (_catalog: unknown, key: string) => key,
-    loadSlot: async () => [],
-  };
+  installPosDouble({ rules: REGLAS_IVA });
 });
 
 /** Monta el TPV con los controles de chrome que el shell dice honrar (`undefined` = shell viejo). */
