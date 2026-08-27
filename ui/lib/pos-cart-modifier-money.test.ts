@@ -26,6 +26,7 @@ import {
   addOrderLine, lineAmount, cartTotal, loadOrderLines, mergeCartLines, updateOrderLineQty,
   type CartLine, type ErploraClientLike,
 } from './pos-cart';
+import { makeErploraDouble } from '../test/erplora-double';
 
 const CHEESE = { option_id: 'o-cheese', price_delta: 300 };
 
@@ -33,16 +34,14 @@ const burger = (over: Partial<CartLine> = {}): CartLine => ({
   id: 'p-burger', name: 'Hamburguesa', price: 900, qty: 1, ...over,
 });
 
+/** The shared double as the client argument (sales#234): it records the commands itself, so `calls`
+ *  IS its list. */
 function recordingClient(orderRows: Record<string, unknown>[] = []) {
-  const calls: { name: string; params?: Record<string, unknown> }[] = [];
-  const client = {
-    query: async () => ({ rows: orderRows }),
-    command: async (name: string, params?: Record<string, unknown>) => {
-      calls.push({ name, params });
-      return { new_ids: ['line-1'] };
-    },
-  } as unknown as ErploraClientLike;
-  return { client, calls };
+  const double = makeErploraDouble({
+    queries: { 'sales.order.lines': orderRows },
+    command: () => ({ new_ids: ['line-1'] }),
+  });
+  return { client: double.sdk as unknown as ErploraClientLike, calls: double.commands };
 }
 
 describe('the amount PAINTED beside a line carries its supplements', () => {
@@ -76,7 +75,7 @@ describe('the row the till writes carries the same amount (the open check adds T
   it('`add_line` sends a `line_total` with the supplement in it', async () => {
     const { client, calls } = recordingClient();
     await addOrderLine(client, 'ord-1', burger({ modifiers: [CHEESE] }));
-    const params = calls.find((c) => c.name === 'sales.order.add_line')!.params!;
+    const params = calls.find((c) => c.name === 'sales.order.add_line')!.payload;
     expect(params.line_total, 'the provisional total of the row = 9,00 + 3,00').toBe(1200);
     expect(params.unit_price, 'the BASE price stays in its column: the checkout adds the delta on top').toBe(900);
   });
@@ -84,14 +83,14 @@ describe('the row the till writes carries the same amount (the open check adds T
   it('and still sends ONLY the id: a `price_delta` from the browser is a discount it gives itself', async () => {
     const { client, calls } = recordingClient();
     await addOrderLine(client, 'ord-1', burger({ modifiers: [CHEESE] }));
-    const params = calls.find((c) => c.name === 'sales.order.add_line')!.params!;
+    const params = calls.find((c) => c.name === 'sales.order.add_line')!.payload;
     expect(JSON.parse(String(params.modifiers))).toEqual([{ option_id: 'o-cheese' }]);
   });
 
   it('changing the QUANTITY keeps the supplement in the row (the stepper wrote the base before)', async () => {
     const { client, calls } = recordingClient();
     await updateOrderLineQty(client, 'ord-1', 'line-1', 2, 900, false, '', 0, [CHEESE]);
-    const params = calls.find((c) => c.name === 'sales.order.update_line')!.params!;
+    const params = calls.find((c) => c.name === 'sales.order.update_line')!.payload;
     expect(params.line_total).toBe(2400);
   });
 });

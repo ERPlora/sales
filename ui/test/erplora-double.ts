@@ -96,7 +96,8 @@ export interface ErploraDouble {
   setQuery(name: string, answer: QueryAnswer): void;
   /** Declare a read absent mid-test (the module was uninstalled under the screen's feet). */
   setAbsent(name: string): void;
-  /** The object installed on `globalThis.erplora`. */
+  /** The client itself: what `installErploraDouble` puts on `globalThis.erplora`, and what a lib
+   *  test passes as the `ErploraClientLike` argument of a pure function (sales#234). */
   sdk: Record<string, unknown>;
 }
 
@@ -183,12 +184,14 @@ async function rowsFor(answer: QueryAnswer, params?: Record<string, unknown>): P
 }
 
 /**
- * Builds the double and installs it on `globalThis.erplora`, the way the shell does.
+ * Builds the double and hands it back, WITHOUT touching `globalThis`.
  *
- * Every test that mounts a Web Component of this module goes through here. Adding a door to the SDK
- * is one edit in this file, and no suite is left behind.
+ * This is the door for the pure functions of `ui/lib/` (sales#234): they never read the shell —
+ * they take the client as a parameter — so their suites used to build one by hand, which is exactly
+ * the copy sales#233 exists to stop. Everything else is identical to `installErploraDouble`, the
+ * net over unconfigured reads included: pass `double.sdk` where the function expects its client.
  */
-export function installErploraDouble(spec: ErploraDoubleSpec = {}): ErploraDouble {
+export function makeErploraDouble(spec: ErploraDoubleSpec = {}): ErploraDouble {
   const queries = new Map<string, QueryAnswer>(Object.entries(spec.queries ?? {}));
   // One table for all three ways of saying "this read does not answer": what changes between them
   // is only the CODE, and the code is what the screen classifies on.
@@ -264,8 +267,6 @@ export function installErploraDouble(spec: ErploraDoubleSpec = {}): ErploraDoubl
   };
   for (const door of without) delete sdk[door];
 
-  (globalThis as Record<string, unknown>).erplora = sdk;
-
   return {
     reads,
     commands,
@@ -280,4 +281,16 @@ export function installErploraDouble(spec: ErploraDoubleSpec = {}): ErploraDoubl
     },
     sdk,
   };
+}
+
+/**
+ * Builds the double and installs it on `globalThis.erplora`, the way the shell does.
+ *
+ * Every test that mounts a Web Component of this module goes through here. Adding a door to the SDK
+ * is one edit in this file, and no suite is left behind.
+ */
+export function installErploraDouble(spec: ErploraDoubleSpec = {}): ErploraDouble {
+  const double = makeErploraDouble(spec);
+  (globalThis as Record<string, unknown>).erplora = double.sdk;
+  return double;
 }

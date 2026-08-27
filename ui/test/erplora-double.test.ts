@@ -10,7 +10,7 @@
 // naming the query. Absence and a broken contract stay sayable — but only ON PURPOSE, by name.
 import { describe, expect, it } from 'vitest';
 import { MODULE_ABSENT_CODES } from '../lib/dependency-read';
-import { drainUnconfiguredReads, installErploraDouble } from './erplora-double';
+import { drainUnconfiguredReads, installErploraDouble, makeErploraDouble } from './erplora-double';
 
 /** The four read doors of the SDK, and what each answers when the owner module is missing. */
 const READ_DOORS = ['query', 'queryAll', 'queryOptional', 'queryAllOptional'] as const;
@@ -274,5 +274,40 @@ describe('8 · the rest of the shell surface the till needs is there by default'
     double.setAbsent('services.services.list');
 
     expect(await sdk().queryAllOptional('services.services.list')).toBeUndefined();
+  });
+});
+
+// ── sales#234 · the same double, handed over as an ARGUMENT ──────────────────────────────────
+//
+// The pure functions of `ui/lib/` never read the shell: they take the client as a parameter
+// (`ErploraClientLike`). Their suites therefore built a client by hand — the exact fifteenth copy
+// sales#233 set out to stop, and the one the guard had to exempt file by file. What they were
+// missing was not a rule but a door: a way to get this double WITHOUT installing it on the shell.
+describe('9 · `makeErploraDouble` builds the double without touching the shell (sales#234)', () => {
+  it('answers through `sdk` and leaves `globalThis.erplora` alone', async () => {
+    (globalThis as { erplora?: unknown }).erplora = undefined;
+
+    const double = makeErploraDouble({ queries: { 'sales.order.lines': [{ id: 'l-1' }] } });
+
+    expect(await (double.sdk as SdkLike).query('sales.order.lines')).toEqual([{ id: 'l-1' }]);
+    expect((globalThis as { erplora?: unknown }).erplora, 'a lib test has no shell to install into')
+      .toBeUndefined();
+  });
+
+  it('keeps the net: an unconfigured read is recorded even when the caller swallows it', async () => {
+    const double = makeErploraDouble({ allowUnconfiguredReads: true });
+
+    // `loadTaxCatalog` and the till's `optionalRead` both end in a bare `catch`, so the throw alone
+    // proves nothing. What fails the test is the RECORD surviving that catch.
+    await (double.sdk as SdkLike).queryAll('taxes.rules.list').catch(() => undefined);
+
+    expect(drainUnconfiguredReads().map((r) => r.name)).toEqual(['taxes.rules.list']);
+  });
+
+  it('`installErploraDouble` is the same double, plus the shell assignment', () => {
+    const double = installErploraDouble({ queries: {} });
+
+    expect((globalThis as { erplora?: unknown }).erplora, 'the shell gets the very same object')
+      .toBe(double.sdk);
   });
 });

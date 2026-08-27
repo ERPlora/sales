@@ -6,7 +6,7 @@
 // comes BACK when the check is resumed, and two lines that differ only by their note are two
 // lines, not one with quantity two.
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   addOrderLine,
   loadOrderLines,
@@ -17,28 +17,21 @@ import {
   type ErploraClientLike,
 } from './pos-cart';
 import { buildFirePayload, kitchenNote } from './fire-order';
+import { makeErploraDouble } from '../test/erplora-double';
 
 const line = (over: Partial<CartLine> = {}): CartLine => ({
   id: 'p1', name: 'Burger', price: 900, qty: 1, ...over,
 });
 
-/** A client that records what was sent and answers the ids the runtime would coin. */
-function spyClient(rows: Record<string, unknown>[] = []) {
-  const commands: { name: string; payload: Record<string, unknown> }[] = [];
-  const client = {
-    query: vi.fn(async () => rows),
-    queryOptional: vi.fn(async () => undefined),
-    queryAll: vi.fn(async () => []),
-    queryAllOptional: vi.fn(async () => undefined),
-    command: vi.fn(async (name: string, payload: Record<string, unknown> = {}) => {
-      commands.push({ name, payload });
-      return { new_ids: ['id-1'] };
-    }),
-    currency: 'EUR',
-    formatMoney: (c: number) => String(c),
-    formatAmount: (u: number) => String(u),
-  } as unknown as ErploraClientLike;
-  return { client, commands };
+/** The shared double as the client argument (sales#234): it records what was sent and answers the
+ *  ids the runtime would coin. The order rows are the only read declared, so a read this file did
+ *  not foresee fails it instead of coming back empty. */
+function spyClient(orderLines: Record<string, unknown>[] = []) {
+  const double = makeErploraDouble({
+    queries: { 'sales.order.lines': orderLines },
+    command: () => ({ new_ids: ['id-1'] }),
+  });
+  return { client: double.sdk as unknown as ErploraClientLike, commands: double.commands };
 }
 
 describe('the note travels to the server with its line', () => {
