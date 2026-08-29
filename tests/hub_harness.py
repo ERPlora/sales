@@ -32,6 +32,7 @@ that proves nothing this whole toolkit exists to remove (module-toolkit#50).
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 import uuid
@@ -246,6 +247,38 @@ def cash_method_id(hub: Hub) -> str:
             f"the hub's catalogue must carry the `cash` method: {rows}"
         )
     return cash["id"]
+
+
+def card_method_id(hub: Hub) -> str:
+    """Id of the CARD method from the hub's seeded catalogue — the twin of [`cash_method_id`], and
+    the one a chain battery needs to tell «money in the drawer» from «money that never was»."""
+    rows = hub.query("sales.payment_methods")
+    card = next((r for r in rows if r.get("type") == "card"), None)
+    if card is None:
+        raise AssertionError(f"the hub's catalogue must carry the `card` method: {rows}")
+    return card["id"]
+
+
+def wait_until(read, ok, timeout: float = 10.0, interval: float = 0.1):
+    """Polls `read()` until `ok(value)` and returns the value — or, on timeout, the LAST value it
+    saw. It never raises, and that is a contract with its caller, not a shortcut: every call site
+    must feed what comes back straight into a `check`, so a listener that never ran is reported as
+    the value it left behind (`expected [10000000], got [8000000]`) and the battery carries on to
+    name the REST of its failures instead of dying on the first one.
+
+    It exists because anything a LISTENER does arrives through the outbox relay, which the server
+    ticks once a second, and HTTP has no on-demand drain (module-toolkit#135) — so a chain battery
+    cannot read the effect the instant the command returns.
+
+    ⚠️ It can only wait FOR something. A negative («the listener did NOT fire») never resolves by
+    waiting: give the relay its tick with an explicit sleep and then assert the value outright.
+    """
+    deadline = time.monotonic() + timeout
+    seen = read()
+    while not ok(seen) and time.monotonic() < deadline:
+        time.sleep(interval)
+        seen = read()
+    return seen
 
 
 def sale_by_key(hub: Hub, idempotency_key: str) -> list:
