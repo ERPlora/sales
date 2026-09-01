@@ -187,8 +187,14 @@ def lower_shims(sql: str) -> str:
 
 
 def _pad(args: str) -> str:
+    """`width` is a MINIMUM, never a ceiling (ERPlora/hub#1393). The bare `lpad` of Postgres
+    imposes an EXACT width and CUTS the overflow, so `lpad('10000', 4, '0')` came out `'1000'` and
+    the 10.000th sale of the day collided with the 1.000th on `uq_sale_number`: the till stopped
+    charging (sales#241). A miniature runtime that keeps the old rendering is a mirror that puts
+    the bug back where nobody would look — the tests. See `sale_number_width.postgres.test.py`."""
     value, width = _split_top_level(args)
-    return f"lpad(CAST({value} AS TEXT), {width}, '0')"
+    text = f"CAST({value} AS TEXT)"
+    return f"lpad({text}, greatest({width}, length({text})), '0')"
 
 
 def _split_top_level(args: str) -> tuple[str, str]:

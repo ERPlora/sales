@@ -68,7 +68,17 @@ failures: list[str] = []
 
 
 def psql(args: list[str], db: str | None = None, stdin: str | None = None) -> str:
-    cmd = ["docker", "exec", "-i", CONTAINER, "psql", "-v", "ON_ERROR_STOP=1", "-U", "postgres"]
+    cmd = [
+        "docker",
+        "exec",
+        "-i",
+        CONTAINER,
+        "psql",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "postgres",
+    ]
     if db:
         cmd += ["-d", db]
     cmd += args
@@ -100,14 +110,27 @@ def qi(sql: str) -> int:
 PARAM = re.compile(r":([a-z_][a-z0-9_]*)", re.IGNORECASE)
 # Portable type subset → native Postgres type (ADR-0007 §4b, `shim_ddl_types`). Without this the
 # money columns land as int4 instead of BIGINT and the harness would not run production's schema.
-DDL_TYPES = {"INTEGER": "BIGINT", "REAL": "DOUBLE PRECISION", "BLOB": "BYTEA", "TEXT": "TEXT"}
+DDL_TYPES = {
+    "INTEGER": "BIGINT",
+    "REAL": "DOUBLE PRECISION",
+    "BLOB": "BYTEA",
+    "TEXT": "TEXT",
+}
 DDL_TOKEN = re.compile(r"\b(INTEGER|REAL|BLOB)\b", re.IGNORECASE)
 
 # The runtime's bridge functions (ADR-0007 §4a): portable SQL names the translator rewrites per
 # dialect. `sales._insert_sale` pads the day's counter into the fiscal number with `erp_pad`.
+#
+# `width` is a MINIMUM, never a ceiling (ERPlora/hub#1393). The bare `lpad` of Postgres imposes an
+# EXACT width and CUTS the overflow, so `lpad('10000', 4, '0')` came out `'1000'` and the 10.000th
+# sale of the day collided with the 1.000th on `uq_sale_number`: the till stopped charging
+# (sales#241). A miniature runtime that keeps the old rendering is a mirror that puts the bug back
+# in the one place nobody would look — the tests. Proved in `sale_number_width.postgres.test.py`.
 BRIDGE_FUNCTIONS = """
 CREATE OR REPLACE FUNCTION erp_pad(value anyelement, width integer) RETURNS text
-    LANGUAGE sql IMMUTABLE AS $$ SELECT lpad($1::text, $2, '0') $$;
+    LANGUAGE sql IMMUTABLE AS $$
+        SELECT lpad($1::text, greatest($2, length($1::text)), '0')
+    $$;
 """
 
 
@@ -152,7 +175,9 @@ def bind(sql: str, params: dict) -> str:
         return any(a <= pos < b for a, b in spans)
 
     return PARAM.sub(
-        lambda m: (m.group(0) if in_comment(m.start()) else literal(params.get(m.group(1)))),
+        lambda m: (
+            m.group(0) if in_comment(m.start()) else literal(params.get(m.group(1)))
+        ),
         sql,
     )
 
@@ -165,7 +190,10 @@ def run_command(name: str, payload: dict, hub: str = HUB) -> tuple[bool, str]:
         return False, f"command `{name}` is not declared in module.json"
     files = cmd.get("sql")
     if not files:
-        return False, f"command `{name}` declares no sql[] (handler `{cmd.get('handler')}`)"
+        return (
+            False,
+            f"command `{name}` declares no sql[] (handler `{cmd.get('handler')}`)",
+        )
     params = dict(payload)
     params.setdefault("hub_id", hub)
     params.setdefault("current_user_id", USER)
@@ -293,81 +321,95 @@ def checkout(hub: str = HUB, sale_id: str = SALE) -> bool:
     """Play the whole checkout: counter, header, the two lines. One `_bump_counter` per sale, like
     the runtime does — the fiscal number comes out of it."""
     ok = command_ok(
-        f"counter of the day ({hub})", "sales._bump_counter", {"day": DAY, "new_id": f"cnt-{hub}"}, hub
+        f"counter of the day ({hub})",
+        "sales._bump_counter",
+        {"day": DAY, "new_id": f"cnt-{hub}"},
+        hub,
     )
-    ok = command_ok(
-        f"sale header ({hub})",
-        "sales._insert_sale",
-        {
-            "sale_id": sale_id,
-            "day": DAY,
-            "status": "completed",
-            "subtotal": 1074,
-            "tax_amount": 126,
-            "tax_breakdown": json.dumps(
-                {"10.00": {"base": 909, "tax": 91, "kind": "tax"},
-                 "21.00": {"base": 165, "tax": 35, "kind": "tax"}},
-                separators=(",", ":"),
+    ok = (
+        command_ok(
+            f"sale header ({hub})",
+            "sales._insert_sale",
+            {
+                "sale_id": sale_id,
+                "day": DAY,
+                "status": "completed",
+                "subtotal": 1074,
+                "tax_amount": 126,
+                "tax_breakdown": json.dumps(
+                    {
+                        "10.00": {"base": 909, "tax": 91, "kind": "tax"},
+                        "21.00": {"base": 165, "tax": 35, "kind": "tax"},
+                    },
+                    separators=(",", ":"),
+                ),
+                "discount_amount": 0,
+                "discount_percent": 0,
+                "total": 1200,
+                "gift_total": 0,
+                "payment_method_id": "pm-1",
+                "payment_method_name": "Efectivo",
+                "amount_tendered": 1200,
+                "change_due": 0,
+                "customer_id": None,
+                "customer_name": "",
+                "notes": "",
+                "source_module": "pos",
+                "channel": "dine_in",
+                "order_id": None,
+                "staff_id": USER,
+                "appointment_id": None,
+                "document_type": "ticket",
+                "idempotency_key": f"idem-{sale_id}-{hub}",
+            },
+            hub,
+        )
+        and ok
+    )
+    ok = (
+        command_ok(
+            f"parent line, 10,00 € at 10 % ({hub})",
+            "sales._insert_line",
+            line_params(
+                line_id=f"{PARENT}-{hub}" if hub != HUB else PARENT,
+                sale_id=sale_id,
+                product_id="p-menu",
+                product_name="Menú del día",
+                unit_price=1000,
+                tax_rate=10.0,
+                tax_category_key="restaurant.food",
+                tax_rule_id="r-es-10",
+                net_amount=909,
+                tax_amount=91,
+                line_total=1000,
             ),
-            "discount_amount": 0,
-            "discount_percent": 0,
-            "total": 1200,
-            "gift_total": 0,
-            "payment_method_id": "pm-1",
-            "payment_method_name": "Efectivo",
-            "amount_tendered": 1200,
-            "change_due": 0,
-            "customer_id": None,
-            "customer_name": "",
-            "notes": "",
-            "source_module": "pos",
-            "channel": "dine_in",
-            "order_id": None,
-            "staff_id": USER,
-            "appointment_id": None,
-            "document_type": "ticket",
-            "idempotency_key": f"idem-{sale_id}-{hub}",
-        },
-        hub,
-    ) and ok
-    ok = command_ok(
-        f"parent line, 10,00 € at 10 % ({hub})",
-        "sales._insert_line",
-        line_params(
-            line_id=f"{PARENT}-{hub}" if hub != HUB else PARENT,
-            sale_id=sale_id,
-            product_id="p-menu",
-            product_name="Menú del día",
-            unit_price=1000,
-            tax_rate=10.0,
-            tax_category_key="restaurant.food",
-            tax_rule_id="r-es-10",
-            net_amount=909,
-            tax_amount=91,
-            line_total=1000,
-        ),
-        hub,
-    ) and ok
-    ok = command_ok(
-        f"child line, 2,00 € at 21 % ({hub})",
-        "sales._insert_line",
-        line_params(
-            line_id=f"{CHILD}-{hub}" if hub != HUB else CHILD,
-            sale_id=sale_id,
-            product_name="Refresco",
-            unit_price=200,
-            tax_rate=21.0,
-            tax_category_key="product.generic",
-            tax_rule_id="r-es-21",
-            net_amount=165,
-            tax_amount=35,
-            line_total=200,
-            modifiers=json.dumps(DRINK_SNAPSHOT, separators=(",", ":")),
-            # 🔴 The link, minted by the SERVER from the batch of ids — never from the payload.
-            parent_line_ref=f"{PARENT}-{hub}" if hub != HUB else PARENT,
-        ),
-        hub,
-    ) and ok
+            hub,
+        )
+        and ok
+    )
+    ok = (
+        command_ok(
+            f"child line, 2,00 € at 21 % ({hub})",
+            "sales._insert_line",
+            line_params(
+                line_id=f"{CHILD}-{hub}" if hub != HUB else CHILD,
+                sale_id=sale_id,
+                product_name="Refresco",
+                unit_price=200,
+                tax_rate=21.0,
+                tax_category_key="product.generic",
+                tax_rule_id="r-es-21",
+                net_amount=165,
+                tax_amount=35,
+                line_total=200,
+                modifiers=json.dumps(DRINK_SNAPSHOT, separators=(",", ":")),
+                # 🔴 The link, minted by the SERVER from the batch of ids — never from the payload.
+                parent_line_ref=f"{PARENT}-{hub}" if hub != HUB else PARENT,
+            ),
+            hub,
+        )
+        and ok
+    )
     return ok
 
 
@@ -393,19 +435,39 @@ def test_the_schema_holds_the_child_line() -> None:
         1,
     )
     checkout()
-    check("the sale has TWO lines", qi(
-        f"SELECT count(*) FROM sales_sale_item WHERE sale_id = '{SALE}' AND hub_id = '{HUB}'"), 2)
-    check("the parent hangs from nobody", q(
-        f"SELECT COALESCE(parent_line_ref, '<null>') FROM sales_sale_item WHERE id = '{PARENT}'"),
-        "<null>")
-    check("the child names its parent", q(
-        f"SELECT parent_line_ref FROM sales_sale_item WHERE id = '{CHILD}'"), PARENT)
-    check("and it is NOT a set menu: that column groups siblings with no parent (ADR-0381)", q(
-        f"SELECT COALESCE(combo_group_ref, '<null>') FROM sales_sale_item WHERE id = '{CHILD}'"),
-        "<null>")
-    check("the child is not an article of the catalogue either", q(
-        f"SELECT COALESCE(product_id, '<null>') FROM sales_sale_item WHERE id = '{CHILD}'"),
-        "<null>")
+    check(
+        "the sale has TWO lines",
+        qi(
+            f"SELECT count(*) FROM sales_sale_item WHERE sale_id = '{SALE}' AND hub_id = '{HUB}'"
+        ),
+        2,
+    )
+    check(
+        "the parent hangs from nobody",
+        q(
+            f"SELECT COALESCE(parent_line_ref, '<null>') FROM sales_sale_item WHERE id = '{PARENT}'"
+        ),
+        "<null>",
+    )
+    check(
+        "the child names its parent",
+        q(f"SELECT parent_line_ref FROM sales_sale_item WHERE id = '{CHILD}'"),
+        PARENT,
+    )
+    check(
+        "and it is NOT a set menu: that column groups siblings with no parent (ADR-0381)",
+        q(
+            f"SELECT COALESCE(combo_group_ref, '<null>') FROM sales_sale_item WHERE id = '{CHILD}'"
+        ),
+        "<null>",
+    )
+    check(
+        "the child is not an article of the catalogue either",
+        q(
+            f"SELECT COALESCE(product_id, '<null>') FROM sales_sale_item WHERE id = '{CHILD}'"
+        ),
+        "<null>",
+    )
 
 
 # ── 2 · And the money squares, row by row ────────────────────────────────────────────────
@@ -433,13 +495,17 @@ def test_the_money_squares_on_both_rows() -> None:
     )
     check(
         "and the lines add up to what the customer paid",
-        qi(f"SELECT SUM(line_total) FROM sales_sale_item WHERE sale_id = '{SALE}' AND hub_id = '{HUB}'"),
+        qi(
+            f"SELECT SUM(line_total) FROM sales_sale_item WHERE sale_id = '{SALE}' AND hub_id = '{HUB}'"
+        ),
         qi(f"SELECT total FROM sales_sale WHERE id = '{SALE}' AND hub_id = '{HUB}'"),
     )
     # The declared quota: ONE entry per RATE over the AGGREGATED base (ADR-0123 §4). It is the only
     # thing VeriFactu's `DetalleDesglose` can represent, and the child line is what makes the second
     # entry exist at all.
-    breakdown = json.loads(q(f"SELECT tax_breakdown FROM sales_sale WHERE id = '{SALE}'"))
+    breakdown = json.loads(
+        q(f"SELECT tax_breakdown FROM sales_sale WHERE id = '{SALE}'")
+    )
     check("the breakdown declares TWO rates", sorted(breakdown), ["10.00", "21.00"])
     for rate, entry in breakdown.items():
         expected = round(entry["base"] * float(rate) / 100)
@@ -450,16 +516,30 @@ def test_the_money_squares_on_both_rows() -> None:
 
 
 def test_the_reprint_reads_the_link() -> None:
-    print("\n3. `sales.lines` — the door every ticket and reprint go through — gives the link back")
+    print(
+        "\n3. `sales.lines` — the door every ticket and reprint go through — gives the link back"
+    )
     rows = run_query("sales.lines", {"sale_id": SALE})
     check("both lines come back", len(rows), 2)
     by_id = {r["id"]: r for r in rows}
-    check("the child's link survives the round trip", by_id.get(CHILD, {}).get("parent_line_ref"), PARENT)
+    check(
+        "the child's link survives the round trip",
+        by_id.get(CHILD, {}).get("parent_line_ref"),
+        PARENT,
+    )
     check("the parent's is null", by_id.get(PARENT, {}).get("parent_line_ref"), None)
     # The child row says WHICH option it is: the audit lives on the row, not deduced from ordering.
     snapshot = json.loads(by_id.get(CHILD, {}).get("modifiers") or "[]")
-    check("and it says which option it came from", [o["option_id"] for o in snapshot], ["o-refresco"])
-    check("with the frozen delta that priced it", [o["price_delta"] for o in snapshot], [200])
+    check(
+        "and it says which option it came from",
+        [o["option_id"] for o in snapshot],
+        ["o-refresco"],
+    )
+    check(
+        "with the frozen delta that priced it",
+        [o["price_delta"] for o in snapshot],
+        [200],
+    )
     check("the parent folded nothing", by_id.get(PARENT, {}).get("modifiers"), "[]")
 
 
@@ -472,11 +552,13 @@ SPLIT_ORDER = "ord-2"
 
 def open_order(order_id: str, label: str, hub: str = HUB) -> None:
     psql(
-        ["-c",
-         "INSERT INTO sales_order (id, hub_id, status, provisional_total, notes, label, "
-         "source_module, is_deleted, created_by, updated_by, created_at, updated_at) VALUES "
-         f"('{order_id}', '{hub}', 'open', 0, '', '{label}', 'pos', 0, '{USER}', '{USER}', "
-         f"'{NOW}', '{NOW}')"],
+        [
+            "-c",
+            "INSERT INTO sales_order (id, hub_id, status, provisional_total, notes, label, "
+            "source_module, is_deleted, created_by, updated_by, created_at, updated_at) VALUES "
+            f"('{order_id}', '{hub}', 'open', 0, '', '{label}', 'pos', 0, '{USER}', '{USER}', "
+            f"'{NOW}', '{NOW}')",
+        ],
         db=DB,
     )
 
@@ -485,21 +567,25 @@ def add_order_line(line_id: str, order_id: str, hub: str = HUB) -> None:
     """The row the waiter's order writes: the menu, with the drink's picks FROZEN inside it
     (sales#200). There is no child row here on purpose — see the head of migration 031."""
     psql(
-        ["-c",
-         "INSERT INTO sales_order_item (id, hub_id, order_id, product_id, product_name, "
-         "product_sku, quantity, unit_price, is_gift, gift_reason, line_total, tax_category_key, "
-         "cost, sale_id, round_no, fired_at, modifiers, is_deleted, created_by, updated_by, "
-         "created_at, updated_at) VALUES "
-         f"('{line_id}', '{hub}', '{order_id}', 'p-menu', 'Menú del día', '', 1000000, 1000, 0, "
-         f"'', 1000, 'restaurant.food', 0, NULL, 0, NULL, "
-         f"{literal(json.dumps(DRINK_SNAPSHOT, separators=(',', ':')))}, 0, '{USER}', '{USER}', "
-         f"'{NOW}', '{NOW}')"],
+        [
+            "-c",
+            "INSERT INTO sales_order_item (id, hub_id, order_id, product_id, product_name, "
+            "product_sku, quantity, unit_price, is_gift, gift_reason, line_total, tax_category_key, "
+            "cost, sale_id, round_no, fired_at, modifiers, is_deleted, created_by, updated_by, "
+            "created_at, updated_at) VALUES "
+            f"('{line_id}', '{hub}', '{order_id}', 'p-menu', 'Menú del día', '', 1000000, 1000, 0, "
+            f"'', 1000, 'restaurant.food', 0, NULL, 0, NULL, "
+            f"{literal(json.dumps(DRINK_SNAPSHOT, separators=(',', ':')))}, 0, '{USER}', '{USER}', "
+            f"'{NOW}', '{NOW}')",
+        ],
         db=DB,
     )
 
 
 def picks_of(line_id: str, hub: str = HUB) -> list:
-    raw = q(f"SELECT modifiers FROM sales_order_item WHERE id = '{line_id}' AND hub_id = '{hub}'")
+    raw = q(
+        f"SELECT modifiers FROM sales_order_item WHERE id = '{line_id}' AND hub_id = '{hub}'"
+    )
     try:
         return json.loads(raw)
     except ValueError:
@@ -513,37 +599,83 @@ def test_the_check_splits_and_joins_with_its_supplements() -> None:
     # 🔴 The point of the design: `sales_order_item` has NO child row to leave behind. The child is
     # materialised when the money is decided, so every door that moves order lines moves the
     # supplement for free — nothing to keep in step, nothing to orphan.
-    check("the open check has ONE row, picks inside", qi(
-        f"SELECT count(*) FROM sales_order_item WHERE order_id = '{ORDER}' AND hub_id = '{HUB}' "
-        "AND is_deleted = 0"), 1)
-    check("and no row of it hangs from another", qi(
-        "SELECT count(*) FROM information_schema.columns WHERE table_name = 'sales_order_item' "
-        "AND column_name = 'parent_line_ref'"), 0)
+    check(
+        "the open check has ONE row, picks inside",
+        qi(
+            f"SELECT count(*) FROM sales_order_item WHERE order_id = '{ORDER}' AND hub_id = '{HUB}' "
+            "AND is_deleted = 0"
+        ),
+        1,
+    )
+    check(
+        "and no row of it hangs from another",
+        qi(
+            "SELECT count(*) FROM information_schema.columns WHERE table_name = 'sales_order_item' "
+            "AND column_name = 'parent_line_ref'"
+        ),
+        0,
+    )
 
-    command_ok("split the check", "sales.order.split", {
-        "order_id": ORDER, "new_id": SPLIT_ORDER, "label": "Mesa 4 (2)",
-        "line_ids": json.dumps([ORDER_LINE]),
-    })
-    check("the menu moved to the new check", q(
-        f"SELECT order_id FROM sales_order_item WHERE id = '{ORDER_LINE}' AND hub_id = '{HUB}'"),
-        SPLIT_ORDER)
-    check("and its supplement went with it, frozen delta included",
-          [(o["option_id"], o["price_delta"], o["tax_category_key"]) for o in picks_of(ORDER_LINE)],
-          [("o-refresco", 200, "product.generic")])
-    check("the new check is worth the menu", qi(
-        f"SELECT provisional_total FROM sales_order WHERE id = '{SPLIT_ORDER}' AND hub_id = '{HUB}'"),
-        1000)
+    command_ok(
+        "split the check",
+        "sales.order.split",
+        {
+            "order_id": ORDER,
+            "new_id": SPLIT_ORDER,
+            "label": "Mesa 4 (2)",
+            "line_ids": json.dumps([ORDER_LINE]),
+        },
+    )
+    check(
+        "the menu moved to the new check",
+        q(
+            f"SELECT order_id FROM sales_order_item WHERE id = '{ORDER_LINE}' AND hub_id = '{HUB}'"
+        ),
+        SPLIT_ORDER,
+    )
+    check(
+        "and its supplement went with it, frozen delta included",
+        [
+            (o["option_id"], o["price_delta"], o["tax_category_key"])
+            for o in picks_of(ORDER_LINE)
+        ],
+        [("o-refresco", 200, "product.generic")],
+    )
+    check(
+        "the new check is worth the menu",
+        qi(
+            f"SELECT provisional_total FROM sales_order WHERE id = '{SPLIT_ORDER}' AND hub_id = '{HUB}'"
+        ),
+        1000,
+    )
 
-    command_ok("join the two checks back", "sales.order.merge", {
-        "from_order_id": SPLIT_ORDER, "to_order_id": ORDER,
-    })
-    check("the menu came back", q(
-        f"SELECT order_id FROM sales_order_item WHERE id = '{ORDER_LINE}' AND hub_id = '{HUB}'"),
-        ORDER)
-    check("with its supplement still attached",
-          [o["option_id"] for o in picks_of(ORDER_LINE)], ["o-refresco"])
-    check("and the source check is voided, not left half alive", q(
-        f"SELECT status FROM sales_order WHERE id = '{SPLIT_ORDER}' AND hub_id = '{HUB}'"), "voided")
+    command_ok(
+        "join the two checks back",
+        "sales.order.merge",
+        {
+            "from_order_id": SPLIT_ORDER,
+            "to_order_id": ORDER,
+        },
+    )
+    check(
+        "the menu came back",
+        q(
+            f"SELECT order_id FROM sales_order_item WHERE id = '{ORDER_LINE}' AND hub_id = '{HUB}'"
+        ),
+        ORDER,
+    )
+    check(
+        "with its supplement still attached",
+        [o["option_id"] for o in picks_of(ORDER_LINE)],
+        ["o-refresco"],
+    )
+    check(
+        "and the source check is voided, not left half alive",
+        q(
+            f"SELECT status FROM sales_order WHERE id = '{SPLIT_ORDER}' AND hub_id = '{HUB}'"
+        ),
+        "voided",
+    )
 
 
 # ── 5 · Reopening changes nothing ────────────────────────────────────────────────────────
@@ -554,18 +686,38 @@ def test_reopening_keeps_the_supplement() -> None:
     # `order.split` refuses a line already tied to a sale (`sale_id IS NULL` in its WHERE), which is
     # what stops a paid line from travelling. Untie it — that is what reopening does — and the picks
     # are exactly the ones that were frozen when it was ordered.
-    psql(["-c", f"UPDATE sales_order_item SET sale_id = '{SALE}' WHERE id = '{ORDER_LINE}'"], db=DB)
-    check("a PAID line does not travel", (
-        run_command("sales.order.split", {
-            "order_id": ORDER, "new_id": "ord-3", "label": "Mesa 4 (3)",
-            "line_ids": json.dumps([ORDER_LINE]),
-        })[0],
-        q(f"SELECT order_id FROM sales_order_item WHERE id = '{ORDER_LINE}'"),
-    ), (True, ORDER))
-    psql(["-c", f"UPDATE sales_order_item SET sale_id = NULL WHERE id = '{ORDER_LINE}'"], db=DB)
-    check("reopened, its supplements are the ones it was ordered with",
-          [(o["option_id"], o["price_delta"]) for o in picks_of(ORDER_LINE)],
-          [("o-refresco", 200)])
+    psql(
+        [
+            "-c",
+            f"UPDATE sales_order_item SET sale_id = '{SALE}' WHERE id = '{ORDER_LINE}'",
+        ],
+        db=DB,
+    )
+    check(
+        "a PAID line does not travel",
+        (
+            run_command(
+                "sales.order.split",
+                {
+                    "order_id": ORDER,
+                    "new_id": "ord-3",
+                    "label": "Mesa 4 (3)",
+                    "line_ids": json.dumps([ORDER_LINE]),
+                },
+            )[0],
+            q(f"SELECT order_id FROM sales_order_item WHERE id = '{ORDER_LINE}'"),
+        ),
+        (True, ORDER),
+    )
+    psql(
+        ["-c", f"UPDATE sales_order_item SET sale_id = NULL WHERE id = '{ORDER_LINE}'"],
+        db=DB,
+    )
+    check(
+        "reopened, its supplements are the ones it was ordered with",
+        [(o["option_id"], o["price_delta"]) for o in picks_of(ORDER_LINE)],
+        [("o-refresco", 200)],
+    )
 
 
 # ── 6 · The FOLD still lands, untouched ──────────────────────────────────────────────────
@@ -575,40 +727,92 @@ FOLDED_LINE = "line-folded"
 
 
 def test_a_supplement_that_folds_still_lands_as_ONE_row() -> None:
-    print("\n6. The 99 % of supplements — no category of their own — still land as ONE row")
+    print(
+        "\n6. The 99 % of supplements — no category of their own — still land as ONE row"
+    )
     # The no-regression control, and it is the one that matters most: a «+cheese» has no tax
     # category, so its delta goes on folding into the parent's unit price. If this went red, the fix
     # would have broken every ticket with a supplement on it.
-    command_ok("counter of the day", "sales._bump_counter", {"day": DAY, "new_id": "cnt-folded"})
-    command_ok("sale header", "sales._insert_sale", {
-        "sale_id": FOLDED_SALE, "day": DAY, "status": "completed", "subtotal": 1091,
-        "tax_amount": 109,
-        "tax_breakdown": '{"10.00":{"base":1091,"tax":109,"kind":"tax"}}',
-        "discount_amount": 0, "discount_percent": 0, "total": 1200, "gift_total": 0,
-        "payment_method_id": "pm-1", "payment_method_name": "Efectivo", "amount_tendered": 1200,
-        "change_due": 0, "customer_id": None, "customer_name": "", "notes": "",
-        "source_module": "pos", "channel": "dine_in", "order_id": None, "staff_id": USER,
-        "appointment_id": None, "document_type": "ticket", "idempotency_key": "idem-folded",
-    })
-    command_ok("one line, 12,00 € at 10 %", "sales._insert_line", line_params(
-        line_id=FOLDED_LINE, sale_id=FOLDED_SALE, product_id="p-menu",
-        product_name="Menú del día", unit_price=1200, tax_rate=10.0,
-        tax_category_key="restaurant.food", tax_rule_id="r-es-10",
-        net_amount=1091, tax_amount=109, line_total=1200,
-        modifiers='[{"option_id":"o-queso","name":"Queso","price_delta":200}]',
-    ))
-    check("ONE row, not two", qi(
-        f"SELECT count(*) FROM sales_sale_item WHERE sale_id = '{FOLDED_SALE}' "
-        f"AND hub_id = '{HUB}'"), 1)
-    check("the delta is INSIDE the unit price", qi(
-        f"SELECT unit_price FROM sales_sale_item WHERE id = '{FOLDED_LINE}'"), 1200)
-    check("and nothing hangs from it", q(
-        f"SELECT COALESCE(parent_line_ref, '<null>') FROM sales_sale_item "
-        f"WHERE id = '{FOLDED_LINE}'"), "<null>")
+    command_ok(
+        "counter of the day",
+        "sales._bump_counter",
+        {"day": DAY, "new_id": "cnt-folded"},
+    )
+    command_ok(
+        "sale header",
+        "sales._insert_sale",
+        {
+            "sale_id": FOLDED_SALE,
+            "day": DAY,
+            "status": "completed",
+            "subtotal": 1091,
+            "tax_amount": 109,
+            "tax_breakdown": '{"10.00":{"base":1091,"tax":109,"kind":"tax"}}',
+            "discount_amount": 0,
+            "discount_percent": 0,
+            "total": 1200,
+            "gift_total": 0,
+            "payment_method_id": "pm-1",
+            "payment_method_name": "Efectivo",
+            "amount_tendered": 1200,
+            "change_due": 0,
+            "customer_id": None,
+            "customer_name": "",
+            "notes": "",
+            "source_module": "pos",
+            "channel": "dine_in",
+            "order_id": None,
+            "staff_id": USER,
+            "appointment_id": None,
+            "document_type": "ticket",
+            "idempotency_key": "idem-folded",
+        },
+    )
+    command_ok(
+        "one line, 12,00 € at 10 %",
+        "sales._insert_line",
+        line_params(
+            line_id=FOLDED_LINE,
+            sale_id=FOLDED_SALE,
+            product_id="p-menu",
+            product_name="Menú del día",
+            unit_price=1200,
+            tax_rate=10.0,
+            tax_category_key="restaurant.food",
+            tax_rule_id="r-es-10",
+            net_amount=1091,
+            tax_amount=109,
+            line_total=1200,
+            modifiers='[{"option_id":"o-queso","name":"Queso","price_delta":200}]',
+        ),
+    )
+    check(
+        "ONE row, not two",
+        qi(
+            f"SELECT count(*) FROM sales_sale_item WHERE sale_id = '{FOLDED_SALE}' "
+            f"AND hub_id = '{HUB}'"
+        ),
+        1,
+    )
+    check(
+        "the delta is INSIDE the unit price",
+        qi(f"SELECT unit_price FROM sales_sale_item WHERE id = '{FOLDED_LINE}'"),
+        1200,
+    )
+    check(
+        "and nothing hangs from it",
+        q(
+            f"SELECT COALESCE(parent_line_ref, '<null>') FROM sales_sale_item "
+            f"WHERE id = '{FOLDED_LINE}'"
+        ),
+        "<null>",
+    )
     rows = run_query("sales.lines", {"sale_id": FOLDED_SALE})
-    check("the ticket still names the supplement under its line",
-          [o["option_id"] for o in json.loads(rows[0]["modifiers"])] if rows else [],
-          ["o-queso"])
+    check(
+        "the ticket still names the supplement under its line",
+        [o["option_id"] for o in json.loads(rows[0]["modifiers"])] if rows else [],
+        ["o-queso"],
+    )
 
 
 # ── 7 · And none of it crosses hubs ──────────────────────────────────────────────────────
@@ -617,17 +821,34 @@ def test_a_supplement_that_folds_still_lands_as_ONE_row() -> None:
 def test_nothing_crosses_hubs() -> None:
     print("\n7. A neighbour hub sees no row, no link and no supplement")
     checkout(hub=OTHER_HUB, sale_id="sale-neighbour")
-    check("the neighbour's sale does not reach this hub through the ticket's door",
-          len(run_query("sales.lines", {"sale_id": "sale-neighbour"}, hub=HUB)), 0)
-    check("nor does its child line exist for us", qi(
-        f"SELECT count(*) FROM sales_sale_item WHERE hub_id = '{HUB}' "
-        f"AND parent_line_ref = '{PARENT}-{OTHER_HUB}'"), 0)
-    check("and the neighbour keeps its own pair", qi(
-        f"SELECT count(*) FROM sales_sale_item WHERE hub_id = '{OTHER_HUB}' "
-        "AND sale_id = 'sale-neighbour'"), 2)
-    check("with the link pointing at ITS parent", q(
-        f"SELECT parent_line_ref FROM sales_sale_item WHERE id = '{CHILD}-{OTHER_HUB}'"),
-        f"{PARENT}-{OTHER_HUB}")
+    check(
+        "the neighbour's sale does not reach this hub through the ticket's door",
+        len(run_query("sales.lines", {"sale_id": "sale-neighbour"}, hub=HUB)),
+        0,
+    )
+    check(
+        "nor does its child line exist for us",
+        qi(
+            f"SELECT count(*) FROM sales_sale_item WHERE hub_id = '{HUB}' "
+            f"AND parent_line_ref = '{PARENT}-{OTHER_HUB}'"
+        ),
+        0,
+    )
+    check(
+        "and the neighbour keeps its own pair",
+        qi(
+            f"SELECT count(*) FROM sales_sale_item WHERE hub_id = '{OTHER_HUB}' "
+            "AND sale_id = 'sale-neighbour'"
+        ),
+        2,
+    )
+    check(
+        "with the link pointing at ITS parent",
+        q(
+            f"SELECT parent_line_ref FROM sales_sale_item WHERE id = '{CHILD}-{OTHER_HUB}'"
+        ),
+        f"{PARENT}-{OTHER_HUB}",
+    )
 
 
 # ── Runner ───────────────────────────────────────────────────────────────────────────────
@@ -660,7 +881,9 @@ def main() -> int:
         for f in failures:
             print(f"  - {f}")
         return 1
-    print("✓ the child line lands, squares, reads back, and survives split · merge · reopen")
+    print(
+        "✓ the child line lands, squares, reads back, and survives split · merge · reopen"
+    )
     return 0
 
 
