@@ -71,4 +71,5 @@ these modules you must leave the screen and come back for it to appear.
 - **All quantities are fixed-point integers scaled by 1 000 000** (ADR-0147), so half a kilo is
   `500000`.
 - **Sale numbers are per-day counters**, `YYYYMMDD-NNNN`, produced atomically so two tills cannot
-  take the same number.
+  take the same number. The four digits are a **minimum width**: sale 10.000 of a day is
+  `YYYYMMDD-10000` and nothing already issued is rewritten (sales#241).

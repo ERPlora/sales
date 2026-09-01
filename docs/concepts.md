@@ -228,6 +228,11 @@ waiter, and no money disappears.
 Sale numbers look like `YYYYMMDD-NNNN` and come from an atomic per-day counter, so two tills
 charging at the same second cannot collide.
 
+The four digits are a **minimum width, not a ceiling**: the 10.000th sale of a day is
+`YYYYMMDD-10000`, five digits, and the numbers already issued are never rewritten. Reading that
+sequence as fixed-width is exactly how the till stopped charging past 9.999 (sales#241) — the
+padding is `erp_pad`, and `erp_pad` pads, it does not cut (ERPlora/hub#1393).
+
 ## Money and quantities
 
 All amounts are **integer cents**; `1250` is 12,50 €. All quantities are **integers scaled by
