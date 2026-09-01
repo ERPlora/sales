@@ -98,7 +98,7 @@
     }
   ],
   "settings": {
-    "title": "TPV",
+    "title": "Point of sale",
     "icon": "card-outline",
     "schema": "schemas/settings_update.json",
     "get": "sales.settings.get",

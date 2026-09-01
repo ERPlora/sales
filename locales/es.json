@@ -15,6 +15,64 @@
       "label": "Notas rápidas"
     }
   },
+  "settings": {
+    "title": "TPV",
+    "fields": {
+      "allow_cash": {
+        "label": "Permitir efectivo"
+      },
+      "allow_card": {
+        "label": "Permitir tarjeta"
+      },
+      "allow_transfer": {
+        "label": "Permitir transferencia"
+      },
+      "sync_products": {
+        "label": "Mostrar productos en el TPV",
+        "description": "Los productos se muestran cuando el módulo Inventory está instalado. Apágalo para vender solo servicios o líneas de precio libre."
+      },
+      "sync_services": {
+        "label": "Mostrar servicios en el TPV",
+        "description": "Los servicios se muestran cuando el módulo Services está instalado. Apágalo para vender solo productos."
+      },
+      "require_customer": {
+        "label": "Exigir cliente en cada venta"
+      },
+      "allow_discounts": {
+        "label": "Permitir descuentos"
+      },
+      "enable_parked_tickets": {
+        "label": "Permitir tiques aparcados"
+      },
+      "default_tax_included": {
+        "label": "Precios con IVA incluido por defecto"
+      },
+      "auto_invoice_with_tax_id": {
+        "label": "Emitir factura si el cliente tiene NIF"
+      },
+      "default_document_format": {
+        "label": "Documento por defecto"
+      },
+      "receipt_header": {
+        "label": "Cabecera del recibo",
+        "description": "Primera línea = nombre; resto = dirección."
+      },
+      "receipt_footer": {
+        "label": "Pie del recibo"
+      },
+      "receipt_footer_image": {
+        "label": "Imagen de pie (URL/base64)"
+      },
+      "receipt_marketing_url": {
+        "label": "URL del QR promocional",
+        "description": "Reseñas de Google, redes sociales, web… Vacío = sin QR promocional."
+      },
+      "receipt_marketing_text": {
+        "label": "Texto del QR promocional",
+        "description": "P.ej. «Escanea y déjanos una reseña»."
+      }
+    }
+  },
   "roles": {
     "cashier": {
       "label": "Cajero"

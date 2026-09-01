@@ -7,92 +7,92 @@
   "properties": {
     "allow_cash": {
       "type": "boolean",
-      "default": true,
-      "title": "Permitir efectivo"
+      "title": "Allow cash",
+      "default": true
     },
     "allow_card": {
       "type": "boolean",
-      "default": true,
-      "title": "Permitir tarjeta"
+      "title": "Allow card",
+      "default": true
     },
     "allow_transfer": {
       "type": "boolean",
-      "default": false,
-      "title": "Permitir transferencia"
+      "title": "Allow bank transfer",
+      "default": false
     },
     "sync_products": {
       "type": "boolean",
+      "title": "Show products in the till",
       "default": true,
-      "title": "Mostrar productos en el TPV",
-      "description": "Los productos se muestran cuando el módulo Inventory está instalado. Apágalo para vender solo servicios o líneas de precio libre."
+      "description": "Products show up when the Inventory module is installed. Turn it off to sell only services or free-price lines."
     },
     "sync_services": {
       "type": "boolean",
+      "title": "Show services in the till",
       "default": true,
-      "title": "Mostrar servicios en el TPV",
-      "description": "Los servicios se muestran cuando el módulo Services está instalado. Apágalo para vender solo productos."
+      "description": "Services show up when the Services module is installed. Turn it off to sell only products."
     },
     "require_customer": {
       "type": "boolean",
-      "default": false,
-      "title": "Exigir cliente en cada venta"
+      "title": "Require a customer on every sale",
+      "default": false
     },
     "allow_discounts": {
       "type": "boolean",
-      "default": true,
-      "title": "Permitir descuentos"
+      "title": "Allow discounts",
+      "default": true
     },
     "enable_parked_tickets": {
       "type": "boolean",
-      "default": true,
-      "title": "Permitir tiques aparcados"
+      "title": "Allow parked tickets",
+      "default": true
     },
     "default_tax_included": {
       "type": "boolean",
-      "default": true,
-      "title": "Precios con IVA incluido por defecto"
+      "title": "Prices include VAT by default",
+      "default": true
     },
     "auto_invoice_with_tax_id": {
       "type": "boolean",
-      "default": false,
-      "title": "Emitir factura si el cliente tiene NIF"
+      "title": "Issue an invoice when the customer has a tax ID",
+      "default": false
     },
     "default_document_format": {
       "type": "string",
+      "title": "Default document",
       "enum": [
         "ticket",
         "invoice"
       ],
-      "default": "ticket",
-      "title": "Documento por defecto"
+      "default": "ticket"
     },
     "receipt_header": {
       "type": "string",
+      "title": "Receipt header",
       "default": "",
-      "title": "Cabecera del recibo",
-      "description": "Primera línea = nombre; resto = dirección."
+      "description": "First line = name; the rest = address."
     },
     "receipt_footer": {
       "type": "string",
-      "default": "",
-      "title": "Pie del recibo"
+      "title": "Receipt footer",
+      "default": ""
     },
     "receipt_footer_image": {
       "type": "string",
-      "default": "",
-      "title": "Imagen de pie (URL/base64)"
+      "title": "Footer image (URL/base64)",
+      "default": ""
     },
     "receipt_marketing_url": {
       "type": "string",
+      "title": "Promotional QR URL",
       "default": "",
-      "title": "URL del QR promocional",
-      "description": "Reseñas de Google, redes sociales, web… Vacío = sin QR promocional."
+      "description": "Google reviews, social media, your website… Empty = no promotional QR."
     },
     "receipt_marketing_text": {
       "type": "string",
+      "title": "Promotional QR text",
       "default": "",
-      "title": "Texto del QR promocional",
-      "description": "P.ej. «Escanea y déjanos una reseña»."
+      "description": "For example «Scan and leave us a review»."
     }
   }
 }
