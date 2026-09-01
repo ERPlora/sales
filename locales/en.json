@@ -14,6 +14,64 @@
       "label": "Quick notes"
     }
   },
+  "settings": {
+    "title": "Point of sale",
+    "fields": {
+      "allow_cash": {
+        "label": "Allow cash"
+      },
+      "allow_card": {
+        "label": "Allow card"
+      },
+      "allow_transfer": {
+        "label": "Allow bank transfer"
+      },
+      "sync_products": {
+        "label": "Show products in the till",
+        "description": "Products show up when the Inventory module is installed. Turn it off to sell only services or free-price lines."
+      },
+      "sync_services": {
+        "label": "Show services in the till",
+        "description": "Services show up when the Services module is installed. Turn it off to sell only products."
+      },
+      "require_customer": {
+        "label": "Require a customer on every sale"
+      },
+      "allow_discounts": {
+        "label": "Allow discounts"
+      },
+      "enable_parked_tickets": {
+        "label": "Allow parked tickets"
+      },
+      "default_tax_included": {
+        "label": "Prices include VAT by default"
+      },
+      "auto_invoice_with_tax_id": {
+        "label": "Issue an invoice when the customer has a tax ID"
+      },
+      "default_document_format": {
+        "label": "Default document"
+      },
+      "receipt_header": {
+        "label": "Receipt header",
+        "description": "First line = name; the rest = address."
+      },
+      "receipt_footer": {
+        "label": "Receipt footer"
+      },
+      "receipt_footer_image": {
+        "label": "Footer image (URL/base64)"
+      },
+      "receipt_marketing_url": {
+        "label": "Promotional QR URL",
+        "description": "Google reviews, social media, your website… Empty = no promotional QR."
+      },
+      "receipt_marketing_text": {
+        "label": "Promotional QR text",
+        "description": "For example «Scan and leave us a review»."
+      }
+    }
+  },
   "roles": {
     "cashier": {
       "label": "Cashier"
