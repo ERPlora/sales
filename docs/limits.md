@@ -29,6 +29,7 @@ sentence each code shows the user lives in `locales/en.json` / `locales/es.json`
 | `sales.void_reason_required` | `sales.void` without a reason (sales#26) | Type why the sale is voided |
 | `sales.already_voided` | The sale is not `completed` (already voided/refunded): a void is one-shot and never emits twice | Nothing to do — it is already reversed |
 | `sales.void_requires_credit_note` | The sale carries a full invoice; voiding it would leave the invoice orphaned | Issue a credit note (rectificativa) from `invoice` instead |
+| `sales.sale_already_refunded` | `sales.void` on a sale that already has refunds (sales#247). Money has already moved, so an «annulment» is no longer one of the two doors — and a partial refund leaves the sale `completed`, which is why `already_voided` does not cover it | Refund what is left with `sales.refund` instead |
 | `sales.sale_not_found` | `sales.void` on a sale that is not in this hub | Check the sale id |
 | `sales.refund_reason_required` | `sales.refund` without a reason (sales#160) | Type why the money goes back |
 | `sales.refund_requires_completed` | The sale is not `completed` — already voided, or already refunded in full | Nothing to do: it has no money left behind it |

@@ -518,6 +518,13 @@
             "sale_id": "payload.sale_id"
           },
           "required": true
+        },
+        {
+          "query": "sales.refunds",
+          "params": {
+            "sale_id": "payload.sale_id"
+          },
+          "required": true
         }
       ],
       "handler": {
@@ -527,7 +534,7 @@
       },
       "schema": "schemas/void_sale.json",
       "ai": {
-        "description": "Voids a COMPLETED sale with a mandatory reason (sales#26): the original stays immutable, voided_at/voided_by/void_reason are recorded, and sale.voided is emitted exactly once (a second call is refused with sales.already_voided). A sale that carries a full invoice cannot be voided: issue a credit note instead (sales.void_requires_credit_note)."
+        "description": "Voids a COMPLETED sale with a mandatory reason (sales#26): the original stays immutable, voided_at/voided_by/void_reason are recorded, and sale.voided is emitted exactly once (a second call is refused with sales.already_voided). A sale that carries a full invoice cannot be voided: issue a credit note instead (sales.void_requires_credit_note). A sale that already has REFUNDS cannot be voided either (sales.sale_already_refunded, sales#247): money has already moved, so the operation that remains is refunding what is left with sales.refund."
       }
     },
     "sales.refund": {
@@ -913,6 +920,7 @@
     "sales.refund_tender_duplicated": {},
     "sales.refund_tender_not_eligible": {},
     "sales.refund_tender_unknown": {},
+    "sales.sale_already_refunded": {},
     "sales.sale_not_found": {},
     "sales.tax_catalog_unavailable": {},
     "sales.tax_rate_out_of_range": {},

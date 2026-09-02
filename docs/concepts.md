@@ -23,6 +23,16 @@ document that has already been reported. So:
   does not delete the row, and it does not delete the history. `sale.voided` is emitted so stock
   comes back and the till is corrected.
 - **To cancel a check before anyone paid**, void the *order* instead. Nothing fiscal ever existed.
+- **Once money has come back, you refund — you do not void** (sales#247). A sale with refunds is
+  refused with `sales.sale_already_refunded`; what is left goes back with `sales.refund`. Watch the
+  trap: a *partial* refund leaves the sale `completed` (the status only turns `refunded` with the
+  last cent), so «is it completed?» is not the same question as «has money moved?».
+
+Void and refund are not two roads to the same place: they are two doors separated by the STATE, and
+a refund document is the proof the charge was captured. That is the line the whole market draws —
+Lightspeed («you must refund the sale instead of voiding it»), Dynamics 365 BC blocks its Cancel
+button on a paid invoice, Square refuses to delete a completed transaction, and Shopify warns in
+writing that cancelling an already refunded order can trigger duplicate refund processing.
 
 Note that voiding a sale is not the same as rectifying an invoice. If the sale already became an
 invoice, the fiscal correction belongs to `invoice`.

@@ -159,6 +159,44 @@ describe('sales list — the void action (sales#26)', () => {
     const err = notes.find((n) => n.type === 'error');
     expect(err?.message).toBe('Esta venta lleva factura completa: emite una factura rectificativa en vez de anularla');
   });
+
+  // ── sales#247 · con dinero ya devuelto, la puerta de anular se cierra ────────────────────
+  //
+  // Una devolución PARCIAL deja la venta `completed`, así que hasta aquí la fila ofrecía «Anular»
+  // sobre un cobro del que ya ha salido dinero — una operación que no existe en el mercado
+  // (Lightspeed: «you must refund the sale instead of voiding it»; Dynamics 365 BC BLOQUEA su
+  // botón Cancel; Square: «you can't delete a completed transaction»). La puerta que queda es
+  // devolver el resto, que es la acción de al lado y sigue viva.
+  //
+  // El botón es la conveniencia, no la garantía: el handler rechaza igual (`sales.void` lee
+  // `sales.refunds`), que es lo que cubre al asistente, la API y una fila recargada tarde.
+  it('the void is closed on a sale that already has refunds, and open on a clean one', async () => {
+    const el = await mountList(['sales.void_sale']);
+    const act = el.documentActions.find((a) => a.id === 'void');
+    expect(act, 'the void action').toBeTruthy();
+    expect(act!.disabled!({ status: 'completed', refunded_total: 3000 }), 'partially refunded').toBe(true);
+    expect(act!.disabled!({ status: 'completed', refunded_total: 0 }), 'nothing returned yet').toBe(false);
+    // El control de que el cierre mira lo que dice mirar: sin la columna (una fila vieja en
+    // caché) se comporta como antes en vez de bloquear el TPV entero.
+    expect(act!.disabled!({ status: 'completed' }), 'no column at all').toBe(false);
+  });
+
+  it('refunding stays offered on a sale that has already been partly returned', async () => {
+    const el = await mountList(['sales.refund_sale']);
+    const act = el.documentActions.find((a) => a.id === 'refund');
+    expect(act, 'the refund action').toBeTruthy();
+    expect(act!.disabled!({ status: 'completed', refunded_total: 3000 }), 'the way out stays open').toBe(false);
+  });
+
+  it('a void refused because the sale was already refunded says what to do instead', async () => {
+    const el = await mountList(['sales.void_sale']);
+    sdk().command = async () => {
+      throw Object.assign(new Error('sale sale-1 already has 1 refund(s)'), { code: 'sales.sale_already_refunded' });
+    };
+    await el.voidSale('sale-1', 'x');
+    const err = notes.find((n) => n.type === 'error');
+    expect(err?.message).toBe('Esta venta ya tiene devoluciones: devuelve el importe que queda en vez de anularla');
+  });
 });
 
 // sales#27 — the sales history as an OPERATIONAL tool: what a manager opens at the end of the

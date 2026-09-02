@@ -36,6 +36,34 @@ describe('sales.order.fire pre-loads the order lines (sales#80)', () => {
   });
 });
 
+// sales#247 — a void must SEE the refunds of the sale before it decides.
+//
+// This one is load-bearing in a way the others are not, and the reason is worth writing down: the
+// handler reads the refunds with `read_rows(...).unwrap_or_default()`, so a read that is not
+// declared does not fail — it arrives as an EMPTY list, which the handler reads as «this sale was
+// never refunded» and lets the void through. Deleting this line from the manifest would therefore
+// reopen sales#247 in silence, with every Rust test still green, because the handler's tests hand
+// it the read directly. This is the only place that can catch it.
+//
+// `required` on purpose: it is the module's own query, so hub#701 aborts the command if it cannot
+// be resolved instead of letting the handler decide on a catalogue it never got.
+describe('sales.void pre-loads the refunds of the sale (sales#247)', () => {
+  it('reads sales.refunds, required, filtered by payload.sale_id', () => {
+    const reads = m.commands['sales.void'].reads ?? [];
+    const refunds = reads.find((r) => (typeof r === 'string' ? r : r.query) === 'sales.refunds');
+    expect(refunds, 'the void must see what already came back').toBeTruthy();
+    expect(typeof refunds, 'the string form can never be required').toBe('object');
+    const def = refunds as { params?: Record<string, string>; required?: boolean };
+    expect(def.required, 'an unresolved read must abort, never void blindly').toBe(true);
+    expect(def.params?.sale_id, 'filtered by the sale the payload names').toBe('payload.sale_id');
+  });
+
+  it('still pre-loads the sale itself — the refunds read ADDS a guard, it replaces none', () => {
+    const reads = (m.commands['sales.void'].reads ?? []).map((r) => (typeof r === 'string' ? r : r.query));
+    expect(reads).toContain('sales.get');
+  });
+});
+
 // sales#25 — `inventory` is an OPTIONAL capability (ADR-0127), not a hard dependency.
 //
 // It used to be `depends_on: [{ id: "inventory", min_version: "1.2.20" }]`, which is a HARD
