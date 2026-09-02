@@ -9,7 +9,7 @@ var __decorateClass = (decorators, target, key, kind) => {
   return result;
 };
 
-// ../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/element-internals.js
+// @lit-labs/ssr-dom-shim/lib/element-internals.js
 var ElementInternalsShim = class ElementInternals {
   get shadowRoot() {
     return this.__host.__shadowRoot;
@@ -88,7 +88,7 @@ var ElementInternalsShim = class ElementInternals {
   }
 };
 
-// ../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/events.js
+// @lit-labs/ssr-dom-shim/lib/events.js
 var __classPrivateFieldSet = function(receiver, state, value, kind, f3) {
   if (kind === "m") throw new TypeError("Private method is not writable");
   if (kind === "a" && !f3) throw new TypeError("Private accessor was defined without a setter");
@@ -246,7 +246,7 @@ Object.defineProperties(CustomEventShim.prototype, {
 var EventShimWithRealType = EventShim;
 var CustomEventShimWithRealType = CustomEventShim;
 
-// ../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/lib/css.js
+// @lit-labs/ssr-dom-shim/lib/css.js
 var _a2;
 var CSSRuleShim = (_a2 = class CSSRule {
   constructor() {
@@ -277,7 +277,7 @@ var CSSRuleShim = (_a2 = class CSSRule {
   }
 }, _a2.STYLE_RULE = 1, _a2.CHARSET_RULE = 2, _a2.IMPORT_RULE = 3, _a2.MEDIA_RULE = 4, _a2.FONT_FACE_RULE = 5, _a2.PAGE_RULE = 6, _a2.NAMESPACE_RULE = 10, _a2.KEYFRAMES_RULE = 7, _a2.KEYFRAME_RULE = 8, _a2.SUPPORTS_RULE = 12, _a2.COUNTER_STYLE_RULE = 11, _a2.FONT_FEATURE_VALUES_RULE = 14, _a2.MARGIN_RULE = 9, _a2);
 
-// ../../../module-toolkit/node_modules/@lit-labs/ssr-dom-shim/index.js
+// @lit-labs/ssr-dom-shim/index.js
 globalThis.Event ??= EventShimWithRealType;
 globalThis.CustomEvent ??= CustomEventShimWithRealType;
 var constructionToken = Symbol();
@@ -674,7 +674,7 @@ var CustomElementRegistryShimWithRealType = CustomElementRegistry;
 var customElements2 = new CustomElementRegistryShimWithRealType();
 var windowShim = new WindowShim(constructionToken);
 
-// ../../../module-toolkit/node_modules/@lit/reactive-element/node/css-tag.js
+// @lit/reactive-element/node/css-tag.js
 var t = globalThis;
 var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
 var s = Symbol();
@@ -719,7 +719,7 @@ var c = e || void 0 === t.CSSStyleSheet ? (t7) => t7 : (t7) => t7 instanceof CSS
   return r(e7);
 })(t7) : t7;
 
-// ../../../module-toolkit/node_modules/@lit/reactive-element/node/reactive-element.js
+// @lit/reactive-element/node/reactive-element.js
 var { is: h, defineProperty: r2, getOwnPropertyDescriptor: o2, getOwnPropertyNames: n2, getOwnPropertySymbols: a, getPrototypeOf: c2 } = Object;
 var l = globalThis;
 l.customElements ??= customElements2;
@@ -942,7 +942,7 @@ var g = class extends (globalThis.HTMLElement ?? HTMLElementShimWithRealType) {
 };
 g.elementStyles = [], g.shadowRootOptions = { mode: "open" }, g[f("elementProperties")] = /* @__PURE__ */ new Map(), g[f("finalized")] = /* @__PURE__ */ new Map(), u?.({ ReactiveElement: g }), (l.reactiveElementVersions ??= []).push("2.1.2");
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/lit-html.js
+// lit-html/lit-html.js
 var t2 = globalThis;
 var i2 = (t7) => t7;
 var s2 = t2.trustedTypes;
@@ -1197,7 +1197,7 @@ var D = (t7, i7, s5) => {
   return h4._$AI(t7), h4;
 };
 
-// ../../node_modules/.pnpm/lit-element@4.2.2/node_modules/lit-element/lit-element.js
+// lit-element/lit-element.js
 var s3 = globalThis;
 var i3 = class extends g {
   constructor() {
@@ -1226,7 +1226,7 @@ var o4 = s3.litElementPolyfillSupport;
 o4?.({ LitElement: i3 });
 (s3.litElementVersions ??= []).push("4.2.2");
 
-// ../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/property.js
+// @lit/reactive-element/node/decorators/property.js
 var o5 = { attribute: true, type: String, converter: b, reflect: false, hasChanged: m };
 var r4 = (t7 = o5, e7, r6) => {
   const { kind: n6, metadata: i7 } = r6;
@@ -1256,15 +1256,15 @@ function n4(t7) {
   })(t7, e7, o9);
 }
 
-// ../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/state.js
+// @lit/reactive-element/node/decorators/state.js
 function r5(r6) {
   return n4({ ...r6, state: true, attribute: false });
 }
 
-// ../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/base.js
+// @lit/reactive-element/node/decorators/base.js
 var e3 = (e7, t7, c5) => (c5.configurable = true, c5.enumerable = true, Reflect.decorate && "object" != typeof t7 && Object.defineProperty(e7, t7, c5), c5);
 
-// ../../../module-toolkit/node_modules/@lit/reactive-element/node/decorators/query.js
+// @lit/reactive-element/node/decorators/query.js
 function e4(e7, r6) {
   return (n6, s5, i7) => {
     const o9 = (t7) => t7.renderRoot?.querySelector(e7) ?? null;
@@ -1288,14 +1288,14 @@ function e4(e7, r6) {
   };
 }
 
-// ../../../outfitkit/dist/define.js
+// @erplora/outfitkit/dist/define.js
 function define(tag, ctor) {
   if (typeof customElements !== "undefined" && !customElements.get(tag)) {
     customElements.define(tag, ctor);
   }
 }
 
-// ../../../outfitkit/dist/tabbar.js
+// @erplora/outfitkit/dist/tabbar.js
 var EPSILON = 1;
 var HINT_PX = 28;
 var HINT_VUELTA_MS = 420;
@@ -1432,7 +1432,7 @@ function bindTabbar(segment, opts = {}) {
   };
 }
 
-// ../../../hub/packages/module-sdk/src/index.ts
+// @erplora/module-sdk/src/index.ts
 function isEmpty(v3) {
   return v3 === null || v3 === void 0 || v3 === "";
 }
@@ -1671,7 +1671,7 @@ function groupComboLines(lines) {
   return out;
 }
 
-// ../../../outfitkit/dist/ok-money.js
+// @erplora/outfitkit/dist/ok-money.js
 var __defProp2 = Object.defineProperty;
 var __decorateClass2 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2478,7 +2478,7 @@ function hash(s5) {
   return h4.toString(36);
 }
 
-// ../../../outfitkit/dist/shared/icons.js
+// @erplora/outfitkit/dist/shared/icons.js
 var rawAdd = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M256 112v288m144-144H112"/></svg>';
 var rawAlertCircle = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="currentColor" d="M256 48C141.31 48 48 141.31 48 256s93.31 208 208 208s208-93.31 208-208S370.69 48 256 48m0 319.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20m21.72-201.15l-5.74 122a16 16 0 0 1-32 0l-5.74-121.94v-.05a21.74 21.74 0 1 1 43.44 0Z"/></svg>';
 var rawAlertCircleOutline = '<svg viewBox="0 0 512 512" width="1.2em" height="1.2em" ><path fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" d="M448 256c0-106-86-192-192-192S64 150 64 256s86 192 192 192s192-86 192-192Z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="M250.26 166.05L256 288l5.73-121.95a5.74 5.74 0 0 0-5.79-6h0a5.74 5.74 0 0 0-5.68 6"/><path fill="currentColor" d="M256 367.91a20 20 0 1 1 20-20a20 20 0 0 1-20 20"/></svg>';
@@ -2626,7 +2626,7 @@ function okIcon(value) {
   return BY_NAME2[value] ?? value;
 }
 
-// ../../../outfitkit/dist/ok-inline-feedback.js
+// @erplora/outfitkit/dist/ok-inline-feedback.js
 var __defProp3 = Object.defineProperty;
 var __decorateClass3 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -2843,7 +2843,7 @@ __decorateClass3([
 ], OkInlineFeedback.prototype, "hasActions");
 define("ok-inline-feedback", OkInlineFeedback);
 
-// ../../../outfitkit/dist/ok-qr.js
+// @erplora/outfitkit/dist/ok-qr.js
 var __defProp4 = Object.defineProperty;
 var __decorateClass4 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -3491,7 +3491,7 @@ __decorateClass4([
 ], OkQr.prototype, "margin");
 define("ok-qr", OkQr);
 
-// ../../../outfitkit/dist/ok-receipt.js
+// @erplora/outfitkit/dist/ok-receipt.js
 var __defProp5 = Object.defineProperty;
 var __decorateClass5 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -3701,7 +3701,7 @@ __decorateClass5([
 ], OkReceipt.prototype, "labels");
 define("ok-receipt", OkReceipt);
 
-// ../../../outfitkit/dist/ok-invoice.js
+// @erplora/outfitkit/dist/ok-invoice.js
 var __defProp6 = Object.defineProperty;
 var __decorateClass6 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -4006,6 +4006,64 @@ var es_default = {
     },
     quick_notes: {
       label: "Notas r\xE1pidas"
+    }
+  },
+  settings: {
+    title: "TPV",
+    fields: {
+      allow_cash: {
+        label: "Permitir efectivo"
+      },
+      allow_card: {
+        label: "Permitir tarjeta"
+      },
+      allow_transfer: {
+        label: "Permitir transferencia"
+      },
+      sync_products: {
+        label: "Mostrar productos en el TPV",
+        description: "Los productos se muestran cuando el m\xF3dulo Inventory est\xE1 instalado. Ap\xE1galo para vender solo servicios o l\xEDneas de precio libre."
+      },
+      sync_services: {
+        label: "Mostrar servicios en el TPV",
+        description: "Los servicios se muestran cuando el m\xF3dulo Services est\xE1 instalado. Ap\xE1galo para vender solo productos."
+      },
+      require_customer: {
+        label: "Exigir cliente en cada venta"
+      },
+      allow_discounts: {
+        label: "Permitir descuentos"
+      },
+      enable_parked_tickets: {
+        label: "Permitir tiques aparcados"
+      },
+      default_tax_included: {
+        label: "Precios con IVA incluido por defecto"
+      },
+      auto_invoice_with_tax_id: {
+        label: "Emitir factura si el cliente tiene NIF"
+      },
+      default_document_format: {
+        label: "Documento por defecto"
+      },
+      receipt_header: {
+        label: "Cabecera del recibo",
+        description: "Primera l\xEDnea = nombre; resto = direcci\xF3n."
+      },
+      receipt_footer: {
+        label: "Pie del recibo"
+      },
+      receipt_footer_image: {
+        label: "Imagen de pie (URL/base64)"
+      },
+      receipt_marketing_url: {
+        label: "URL del QR promocional",
+        description: "Rese\xF1as de Google, redes sociales, web\u2026 Vac\xEDo = sin QR promocional."
+      },
+      receipt_marketing_text: {
+        label: "Texto del QR promocional",
+        description: "P.ej. \xABEscanea y d\xE9janos una rese\xF1a\xBB."
+      }
     }
   },
   roles: {
@@ -4462,6 +4520,64 @@ var en_default = {
     },
     quick_notes: {
       label: "Quick notes"
+    }
+  },
+  settings: {
+    title: "Point of sale",
+    fields: {
+      allow_cash: {
+        label: "Allow cash"
+      },
+      allow_card: {
+        label: "Allow card"
+      },
+      allow_transfer: {
+        label: "Allow bank transfer"
+      },
+      sync_products: {
+        label: "Show products in the till",
+        description: "Products show up when the Inventory module is installed. Turn it off to sell only services or free-price lines."
+      },
+      sync_services: {
+        label: "Show services in the till",
+        description: "Services show up when the Services module is installed. Turn it off to sell only products."
+      },
+      require_customer: {
+        label: "Require a customer on every sale"
+      },
+      allow_discounts: {
+        label: "Allow discounts"
+      },
+      enable_parked_tickets: {
+        label: "Allow parked tickets"
+      },
+      default_tax_included: {
+        label: "Prices include VAT by default"
+      },
+      auto_invoice_with_tax_id: {
+        label: "Issue an invoice when the customer has a tax ID"
+      },
+      default_document_format: {
+        label: "Default document"
+      },
+      receipt_header: {
+        label: "Receipt header",
+        description: "First line = name; the rest = address."
+      },
+      receipt_footer: {
+        label: "Receipt footer"
+      },
+      receipt_footer_image: {
+        label: "Footer image (URL/base64)"
+      },
+      receipt_marketing_url: {
+        label: "Promotional QR URL",
+        description: "Google reviews, social media, your website\u2026 Empty = no promotional QR."
+      },
+      receipt_marketing_text: {
+        label: "Promotional QR text",
+        description: "For example \xABScan and leave us a review\xBB."
+      }
     }
   },
   roles: {
@@ -5866,7 +5982,7 @@ function canConfirmCombo(combo, picks) {
   return comboBlockReason(combo, picks) === void 0;
 }
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive.js
+// lit-html/directive.js
 var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
 var e5 = (t7) => (...e7) => ({ _$litDirective$: t7, values: e7 });
 var i4 = class {
@@ -5886,7 +6002,7 @@ var i4 = class {
   }
 };
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-html.js
+// lit-html/directives/unsafe-html.js
 var e6 = class extends i4 {
   constructor(i7) {
     if (super(i7), this.it = A, i7.type !== t3.CHILD) throw Error(this.constructor.directiveName + "() can only be used in child bindings");
@@ -5904,7 +6020,7 @@ var e6 = class extends i4 {
 e6.directiveName = "unsafeHTML", e6.resultType = 1;
 var o6 = e5(e6);
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/unsafe-svg.js
+// lit-html/directives/unsafe-svg.js
 var t4 = class extends e6 {
 };
 t4.directiveName = "unsafeSVG", t4.resultType = 2;
@@ -5959,7 +6075,7 @@ function uncoveredLines(lines, covered) {
   return lines.filter((l3) => !l3.line_id || !covered.has(l3.line_id));
 }
 
-// ../../../outfitkit/dist/ok-qty-stepper.js
+// @erplora/outfitkit/dist/ok-qty-stepper.js
 var __defProp7 = Object.defineProperty;
 var __decorateClass7 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -6167,7 +6283,7 @@ __decorateClass7([
 ], OkQtyStepper.prototype, "labels");
 define("ok-qty-stepper", OkQtyStepper);
 
-// ../../../outfitkit/dist/ok-spotlight-search.js
+// @erplora/outfitkit/dist/ok-spotlight-search.js
 var __defProp8 = Object.defineProperty;
 var __decorateClass8 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -6375,7 +6491,7 @@ __decorateClass8([
 ], OkSpotlightSearch.prototype, "input");
 define("ok-spotlight-search", OkSpotlightSearch);
 
-// ../../../outfitkit/dist/ok-empty-state.js
+// @erplora/outfitkit/dist/ok-empty-state.js
 var __defProp9 = Object.defineProperty;
 var __decorateClass9 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -6475,7 +6591,7 @@ __decorateClass9([
 ], OkEmptyState.prototype, "message");
 define("ok-empty-state", OkEmptyState);
 
-// ../../../outfitkit/dist/ok-status-pill.js
+// @erplora/outfitkit/dist/ok-status-pill.js
 var __defProp10 = Object.defineProperty;
 var __decorateClass10 = (decorators, target, key, kind) => {
   var result = void 0;
@@ -11485,7 +11601,7 @@ __decorateClass([
 ], ErpPos.prototype, "fullscreen", 2);
 define("erp-pos", ErpPos);
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directive-helpers.js
+// lit-html/directive-helpers.js
 var { I: t6 } = j;
 var i5 = (o9) => o9;
 var s4 = () => document.createComment("");
@@ -11518,7 +11634,7 @@ var h3 = (o9) => {
   o9._$AR(), o9._$AA.remove();
 };
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/repeat.js
+// lit-html/directives/repeat.js
 var u4 = (e7, s5, t7) => {
   const r6 = /* @__PURE__ */ new Map();
   for (let l3 = s5; l3 <= t7; l3++) r6.set(e7[l3], l3);
@@ -11571,7 +11687,7 @@ var c4 = e5(class extends i4 {
   }
 });
 
-// ../../node_modules/.pnpm/lit-html@3.3.3/node_modules/lit-html/directives/style-map.js
+// lit-html/directives/style-map.js
 var n5 = "important";
 var i6 = " !" + n5;
 var o8 = e5(class extends i4 {
@@ -11600,7 +11716,7 @@ var o8 = e5(class extends i4 {
   }
 });
 
-// ../../../outfitkit/dist/ok-data-table.js
+// @erplora/outfitkit/dist/ok-data-table.js
 var CSV_BOM = "\uFEFF";
 var WINDOWS_1252_C1 = [
   8364,
@@ -14363,6 +14479,35 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
     const col = e7.detail.col === "created_at" ? "erp_date" : e7.detail.col;
     this.ctrl.setFilter(col, e7.detail.value);
   }
+  static {
+    /** sales#243 — la columna «Nº» PINTA `sale_number` y ORDENA por `sale_seq`.
+     *
+     *  Mismo desdoblamiento que la columna «Fecha» de aquí arriba, y por el mismo motivo: lo que la
+     *  celda enseña y lo que el servidor sabe ordenar son dos columnas distintas, y la traducción
+     *  vive en esta frontera, que es la única que conoce las dos.
+     *
+     *  `sale_number` es TEXTO `YYYYMMDD-<secuencia>` y el relleno es un MÍNIMO, no un techo
+     *  (hub#1393, tras la caída de sales#241): pasada la venta 9.999 del día la secuencia crece un
+     *  dígito y el orden de texto deja de ser el numérico — la 10.000 caía entre la 1.000 y la 2.000.
+     *  `sales.list` proyecta `sale_seq` justo para esto: una clave sintética que solo existe para
+     *  ordenar. El número fiscal no se reescribe en ninguna parte — ni en la celda, ni en la query,
+     *  ni en la fila.
+     *
+     *  El mapa es de UNA columna a propósito: reescribir a ciegas es como la columna de fecha
+     *  acabaría pidiendo en silencio una clave que no existe. */
+    this.SORT_KEYS = { sale_number: "sale_seq" };
+  }
+  onSortChange(e7) {
+    this.ctrl.setSort(_ErpSalesList.SORT_KEYS[e7.detail.sort] ?? e7.detail.sort, e7.detail.dir);
+  }
+  /** La columna que la tabla marca como activa: la que el usuario pulsó, no la clave con la que se
+   *  pregunta. Sin la vuelta atrás, `ok-data-table` recibiría `sale_seq` —una columna que no
+   *  tiene—, borraría la flecha de «Nº» y la pantalla parecería sin ordenar estándo ordenada. */
+  get paintedSort() {
+    const asked = this.ctrl?.state.sort;
+    if (asked === void 0) return void 0;
+    return Object.keys(_ErpSalesList.SORT_KEYS).find((k2) => _ErpSalesList.SORT_KEYS[k2] === asked) ?? asked;
+  }
   /** sales#27: cambia el rango de filas Y KPIs a la vez. */
   async setRange(range) {
     this.range = range;
@@ -14421,13 +14566,13 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
         ${this.ctrl?.error ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : A}
         <!-- The «document» button is not the only door: rowClickable makes the whole row open the
              same document (outfitkit#67 — the actions column can be off-screen at 1440 px). -->
-        <ok-data-table .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r6) => String(r6.sale_number ?? "\u2014")} .cardIcon=${() => "receipt-outline"} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.ctrl?.state.sort} .sortDir=${this.ctrl?.state.dir ?? "desc"} .searchable=${true} .searchPlaceholder=${t7("ui.searchSalePlaceholder")} .emptyMessage=${this.ctrl?.loading ? t7("ui.loading") : t7("ui.noSales")} .actions=${this.documentActions} .rowClickable=${true} @rowAction=${(e7) => {
+        <ok-data-table .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r6) => String(r6.sale_number ?? "\u2014")} .cardIcon=${() => "receipt-outline"} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.paintedSort} .sortDir=${this.ctrl?.state.dir ?? "desc"} .searchable=${true} .searchPlaceholder=${t7("ui.searchSalePlaceholder")} .emptyMessage=${this.ctrl?.loading ? t7("ui.loading") : t7("ui.noSales")} .actions=${this.documentActions} .rowClickable=${true} @rowAction=${(e7) => {
       if (e7.detail.actionId === "document") this.docSaleId = e7.detail.row.id;
       else if (e7.detail.actionId === "void") void this.confirmVoid(e7.detail.row);
       else if (e7.detail.actionId === "refund") this.refundSaleId = e7.detail.row.id;
     }} @rowClick=${(e7) => {
       this.docSaleId = e7.detail.row.id;
-    }} @pageChange=${(e7) => this.ctrl.setPage(e7.detail)} @sortChange=${(e7) => this.ctrl.setSort(e7.detail.sort, e7.detail.dir)} @searchChange=${(e7) => this.ctrl.setSearch(e7.detail)} @filterChange=${(e7) => this.onFilterChange(e7)}></ok-data-table>
+    }} @pageChange=${(e7) => this.ctrl.setPage(e7.detail)} @sortChange=${(e7) => this.onSortChange(e7)} @searchChange=${(e7) => this.ctrl.setSearch(e7.detail)} @filterChange=${(e7) => this.onFilterChange(e7)}></ok-data-table>
       </div>
       <!-- sales#126 — el modal FUERA del contenedor con scroll: Ionic lo reparenta al light-DOM
            igual, pero así la vista no arrastra overlays al scrollear. -->

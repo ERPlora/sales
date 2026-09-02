@@ -99,12 +99,11 @@ def bind(sql: str, params: dict) -> str:
     return PARAM.sub(lambda m: literal(params.get(m.group(1))), sql)
 
 
-def lower_erp_date(sql: str) -> str:
-    """Apply the ONE shim this query needs, the way the runtime's translator does
-    (`crates/db/src/lib.rs`: `erp_date(x)` → `((x)::date)`). Modules write the portable subset;
-    Postgres receives the native cast."""
+def _expand(sql: str, token: str, render) -> str:
+    """Textual substitution anchored on balanced parentheses, recursive on the argument — the same
+    scan the runtime's translator does (`crates/db/src/lib.rs`), and like it, blind to a token
+    inside a `--` comment."""
     out, i = [], 0
-    token = "erp_date("
     while True:
         j = sql.find(token, i)
         if j < 0:
@@ -123,11 +122,41 @@ def lower_erp_date(sql: str) -> str:
             elif sql[k] == ")":
                 depth -= 1
             k += 1
-        arg = sql[j + len(token) : k - 1]
         out.append(sql[i:j])
-        out.append(f"((({arg})::date))")
+        out.append(render(_expand(sql[j + len(token) : k - 1], token, render)))
         i = k
     return "".join(out)
+
+
+def _pad(args: str) -> str:
+    """`erp_pad(value, width)` the way the runtime emits it since hub#1393: the width is a FLOOR,
+    never a ceiling, so a value longer than the pad survives whole (that ceiling is what stopped
+    the till charging in sales#241)."""
+    depth = 0
+    for i, ch in enumerate(args):
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            value, width = args[:i].strip(), args[i + 1 :].strip()
+            return f"lpad(({value})::text, greatest({width}, length(({value})::text)), '0')"
+    raise AssertionError(f"erp_pad takes two arguments, got: {args}")
+
+
+def lower_erp_date(sql: str) -> str:
+    """Apply the shims this query needs, the way the runtime's translator does. Modules write the
+    portable subset; Postgres receives the native expressions.
+
+    Two of them, not one: `erp_date(x)` → `((x)::date)` for the day the range filter compares
+    against (sales#125), and `erp_pad` for the synthetic sort key of the «Nº» column (sales#243).
+    A shim this harness does not know about does not fail loudly — Postgres refuses the whole
+    query with «function erp_pad does not exist», which is how this one announced itself."""
+    return _expand(
+        _expand(sql, "erp_date(", lambda arg: f"((({arg})::date))"),
+        "erp_pad(",
+        _pad,
+    )
 
 
 # ── The list engine, in miniature (crates/runtime/src/queries.rs) ─────────────────────────
@@ -270,9 +299,7 @@ def main() -> int:
             )
 
             # «7 días» — both ends inclusive, days compared as days.
-            week_rows = run_list(
-                {"erp_date": {"from": "2026-08-16", "to": TODAY}}
-            )
+            week_rows = run_list({"erp_date": {"from": "2026-08-16", "to": TODAY}})
             check(
                 "«7 días» spans whole days, today included, the 14th excluded",
                 ["s-today-1300", "s-today-0007", "s-yesterday"],

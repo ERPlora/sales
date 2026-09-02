@@ -166,7 +166,8 @@
           "customer_name",
           "channel",
           "staff_id",
-          "created_at"
+          "created_at",
+          "sale_seq"
         ],
         "default_sort": "created_at",
         "default_dir": "desc",
