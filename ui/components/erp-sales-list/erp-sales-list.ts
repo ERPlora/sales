@@ -56,6 +56,9 @@ const VOID_MESSAGES: Record<string, string> = {
   'sales.already_voided': 'ui.voidAlreadyVoided',
   'sales.void_reason_required': 'ui.voidReasonRequired',
   'sales.sale_not_found': 'ui.voidSaleNotFound',
+  // sales#247 — la venta ya tiene devoluciones. La frase NO se queda en «no se pudo»: nombra la
+  // salida (devolver lo que queda), que es la acción de al lado y sigue estando ahí.
+  'sales.sale_already_refunded': 'ui.voidAlreadyRefunded',
 };
 /**
  * sales#201 — the key for a refused void, read from the CODE the envelope carries.
@@ -169,10 +172,19 @@ export class ErpSalesList extends LitElement {
     ];
     // sales#26: anular se ofrece SOLO a quien tiene el permiso (el runtime lo revalida igual), y
     // solo sobre una venta cerrada: una anulada o reembolsada no se anula dos veces.
+    //
+    // sales#247: y tampoco sobre una venta de la que YA ha salido dinero. Una devolución parcial
+    // deja la venta `completed` (`_mark_refunded` solo marca con el último céntimo), así que sin
+    // mirar `refunded_total` la fila seguía ofreciendo «Anular» sobre un cobro medio devuelto —
+    // que es lo que ningún TPV del mercado ofrece. Se BLOQUEA, como Dynamics 365 BC bloquea su
+    // Cancel; la puerta que queda es «Devolver», la acción de al lado, que no se toca.
+    //
+    // Sin la columna (una fila servida por un hub anterior a este cambio) se comporta como antes:
+    // el botón es la conveniencia y el handler es la garantía — `sales.void` rechaza igual.
     if (erplora().hasPermission?.('sales.void_sale')) {
       actions.push({
         id: 'void', label: t('ui.actionVoid'), icon: 'ban-outline', color: 'danger',
-        disabled: (r) => r.status !== 'completed',
+        disabled: (r) => r.status !== 'completed' || Number(r.refunded_total ?? 0) > 0,
       });
     }
     // sales#160 — devolver es permiso PROPIO (manager + admin, nunca cashier: saca dinero de la

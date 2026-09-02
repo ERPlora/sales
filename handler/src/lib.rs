@@ -3487,6 +3487,8 @@ fn fire_order_inner(input: Value) -> Result<Output, Refusal> {
 ///   * ya anulada / reembolsada / no cerrada → `sales.already_voided` (segunda llamada = rechazo,
 ///     sin evento: los consumidores no ven un segundo `sale.voided`)
 ///   * `document_type = invoice` → `sales.void_requires_credit_note`
+///   * con devoluciones ya emitidas → `sales.sale_already_refunded` (sales#247: se ha movido
+///     dinero, así que lo que queda es devolver el resto, no anular)
 ///   * motivo vacío → `sales.void_reason_required`
 /// Si aplica: `sales._void_sale` (status + `voided_at/voided_by/void_reason`, el resto de la
 /// fila intacto) y `sale.voided` con la identidad de la operación.
@@ -3523,6 +3525,25 @@ fn void_sale_inner(input: Value) -> Result<Output, Refusal> {
         return Err(reject(
             "sales.void_requires_credit_note",
             format!("sale {sale_id} carries a full invoice: issue a credit note (rectificativa) instead of voiding"),
+        ));
+    }
+    // sales#247 — the door closes the moment money MOVED. A PARTIAL refund leaves the sale
+    // `completed` (`_mark_refunded` only fires on the last cent), so without this the till offered
+    // an «annulment» of a charge that has already been partly given back — an operation no POS in
+    // the market has: Stripe cannot cancel a captured intent, Lightspeed answers «you must refund
+    // the sale instead of voiding it», Dynamics 365 BC blocks its Cancel button, and Shopify warns
+    // in writing that cancelling an already refunded order triggers duplicate refund processing.
+    //
+    // The refunds are a `required` read of this command, so an empty list is a resolved «none»
+    // and not a runtime that stayed quiet (hub#701 aborts a required read that FAILS).
+    let refunds = tax::read_rows(&context, "sales.refunds").unwrap_or_default();
+    if !refunds.is_empty() {
+        return Err(reject(
+            "sales.sale_already_refunded",
+            format!(
+                "sale {sale_id} already has {} refund(s): return what is left instead of voiding it",
+                refunds.len()
+            ),
         ));
     }
     let voided_by = as_str(context.get("current_user_id").unwrap_or(&Value::Null));
@@ -4137,6 +4158,67 @@ mod tests {
         let err = void_sale_pure(void_input("x", Value::Null)).refused("no read");
         assert_eq!(err.code, "sales.sale_not_found", "{err:?}");
     }
+
+    // ── sales#247 · once money has MOVED, the void door is closed ────────────────────────────
+    //
+    // A PARTIAL refund leaves the sale `completed` on purpose (`_mark_refunded` only fires on the
+    // last cent, `una_devolucion_PARCIAL_no_marca_la_venta_como_devuelta`), so every guard above
+    // let it through: status is `completed`, the document is a ticket and the reason is there.
+    // The result was an operation no POS in the market offers — an «annulment» of a payment that
+    // has already been partly given back (12 verified references in the issue: Stripe refuses to
+    // cancel a captured intent, Square «you can't delete a completed transaction», Lightspeed
+    // «you must refund the sale instead of voiding it», Dynamics 365 BC blocks the Cancel button).
+    //
+    // Void and refund are not two roads to the same place: they are two doors separated by the
+    // STATE, and a refund document is the proof that the charge was captured. So the refunds of
+    // the sale are now a `required` read of the command and the handler refuses on sight.
+    //
+    // 🔴 The check lives HERE, in the handler that applies with its `hub_id`, and not in the
+    // button: the till is not the only door (assistant, API, a stale row in the list).
+
+    /// `void_input`, plus the `sales.refunds` read the command now pre-loads.
+    fn void_input_with_refunds(reason: &str, sale: Value, refunds: Value) -> Value {
+        let mut input = void_input(reason, sale);
+        input["context"]["reads"]["sales.refunds"] = refunds;
+        input
+    }
+
+    #[test]
+    fn a_sale_with_a_partial_refund_can_no_longer_be_voided() {
+        let refunds = json!([
+            { "id": "ref-1", "sale_id": "sale-1", "total": 300, "reason": "one coffee came back" }
+        ]);
+        let err = void_sale_pure(void_input_with_refunds("mistake", completed_ticket(), refunds))
+            .refused("void over a partially refunded sale");
+        assert_eq!(err.code, "sales.sale_already_refunded", "{err:?}");
+    }
+
+    #[test]
+    fn several_refunds_close_the_door_just_the_same() {
+        let refunds = json!([
+            { "id": "ref-2", "sale_id": "sale-1", "total": 200 },
+            { "id": "ref-1", "sale_id": "sale-1", "total": 300 }
+        ]);
+        let err = void_sale_pure(void_input_with_refunds("mistake", completed_ticket(), refunds))
+            .refused("two refunds");
+        assert_eq!(err.code, "sales.sale_already_refunded", "{err:?}");
+    }
+
+    #[test]
+    fn an_empty_refunds_read_is_not_a_refund_and_the_sale_is_still_voided() {
+        // The control that proves the guard closes the RIGHT door: a sale nobody refunded reads
+        // back zero rows (the runtime resolves the query and inserts `[]`, hub#701 only aborts on
+        // a query that FAILS), and that must stay a perfectly ordinary void.
+        let out = void_sale_pure(void_input_with_refunds("customer changed their mind", completed_ticket(), json!([])))
+            .accepted("clean void");
+        assert!(out.operations.iter().any(|o| o.command == "sales._void_sale"), "the void still writes");
+        assert_eq!(out.events.len(), 1);
+        assert_eq!(out.events[0].name, "sale.voided");
+    }
+
+    // That the refusal reaches `_void_sale` with nothing and emits no `sale.voided` — the event
+    // cash_register and inventory key on to reverse the drawer and the stock — is asserted by
+    // `Answered::refused` itself, which is why it is not repeated here.
 
     // ── sales#80 · el doble toque en «Enviar a cocina» no puede crear dos comandas ────────────
     //

@@ -42,11 +42,30 @@
 -- que para longitudes de 0 a 99 devuelve exactamente dos caracteres. `substr`/`length` están en el
 -- subconjunto portable y significan lo mismo en SQLite y en Postgres. Un `sale_number` que no
 -- tuviera esta forma no rompe nada: da una clave estable igualmente, solo que sin significado.
-SELECT id, sale_number, status, total, tax_amount, payment_method_name,
-       customer_name, channel, staff_id, created_at,
-       CAST(erp_date(created_at) AS TEXT) AS erp_date,
-       substr(sale_number, 1, 9)
-         || erp_pad(length(substr(sale_number, 10)), 2)
-         || substr(sale_number, 10) AS sale_seq
-FROM sales_sale
-WHERE hub_id = :hub_id AND is_deleted = 0
+-- `refunded_total` (sales#247): lo que YA ha vuelto de esta venta, en céntimos. No se pinta como
+-- columna: es lo que la fila necesita para saber si la puerta de «Anular» sigue abierta. Una
+-- devolución PARCIAL deja la venta `completed` (`_mark_refunded` solo marca con el último
+-- céntimo), así que `status` por sí solo no distingue una venta intacta de una medio devuelta —
+-- y sobre la segunda no se anula: se devuelve el resto (Square, Lightspeed, Dynamics 365 BC).
+--
+-- Va como subconsulta agrupada y no como JOIN directo contra `sales_sale_refund` a propósito: una
+-- venta con dos devoluciones duplicaría su fila en el historial. `COALESCE` a 0 porque el LEFT
+-- JOIN no encuentra nada en el caso normal, que es el de casi todas las ventas. Las devoluciones
+-- ANULADAS (soft-delete) no cuentan, igual que en `sales.refund_options` y en el cinturón de
+-- `sales._void_sale`: las tres puertas tienen que estar de acuerdo o la fila diría una cosa y el
+-- servidor haría otra.
+SELECT s.id, s.sale_number, s.status, s.total, s.tax_amount, s.payment_method_name,
+       s.customer_name, s.channel, s.staff_id, s.created_at,
+       CAST(erp_date(s.created_at) AS TEXT) AS erp_date,
+       COALESCE(r.refunded_total, 0) AS refunded_total,
+       substr(s.sale_number, 1, 9)
+         || erp_pad(length(substr(s.sale_number, 10)), 2)
+         || substr(s.sale_number, 10) AS sale_seq
+FROM sales_sale s
+LEFT JOIN (
+        SELECT sale_id, SUM(total) AS refunded_total
+        FROM sales_sale_refund
+        WHERE hub_id = :hub_id AND is_deleted = 0
+        GROUP BY sale_id
+    ) r ON r.sale_id = s.id
+WHERE s.hub_id = :hub_id AND s.is_deleted = 0

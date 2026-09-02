@@ -4116,6 +4116,7 @@ var es_default = {
     "sales.refund_tender_duplicated": "El mismo medio de pago aparece dos veces en la devoluci\xF3n. Ponlo en una sola pata.",
     "sales.refund_tender_not_eligible": "Ese medio de pago no puede recuperar su propio dinero. Elige otro destino.",
     "sales.refund_tender_unknown": "Ese medio de pago no es una de las formas en que se cobr\xF3 esta venta.",
+    "sales.sale_already_refunded": "Esta venta ya tiene devoluciones, as\xED que ya no se puede anular. Devuelve lo que queda.",
     "sales.sale_not_found": "Esa venta no es de este negocio.",
     "sales.tax_catalog_unavailable": "No se han podido cargar las reglas de IVA, as\xED que no se ha cobrado nada. Vuelve a intentarlo y, si persiste, avisa al encargado.",
     "sales.tax_rate_out_of_range": "Un tipo de IVA del tique est\xE1 fuera de rango.",
@@ -4369,6 +4370,7 @@ var es_default = {
     voidFailed: "No se ha podido anular la venta",
     voidRequiresCreditNote: "Esta venta lleva factura completa: emite una factura rectificativa en vez de anularla",
     voidAlreadyVoided: "Esta venta ya est\xE1 anulada",
+    voidAlreadyRefunded: "Esta venta ya tiene devoluciones: devuelve el importe que queda en vez de anularla",
     voidReasonRequired: "Hace falta un motivo para anular una venta",
     voidSaleNotFound: "Esa venta no est\xE1 en este negocio",
     taxSurcharge: "RE",
@@ -4630,6 +4632,7 @@ var en_default = {
     "sales.refund_tender_duplicated": "The same tender appears twice in the refund. Put it on a single leg.",
     "sales.refund_tender_not_eligible": "That tender cannot take its own money back. Choose another destination.",
     "sales.refund_tender_unknown": "That tender is not one of the ways this sale was paid.",
+    "sales.sale_already_refunded": "This sale already has refunds, so it can no longer be voided. Refund what is left instead.",
     "sales.sale_not_found": "That sale is not in this business.",
     "sales.tax_catalog_unavailable": "The VAT rules could not be loaded, so nothing was charged. Try again; if it keeps happening, call the manager.",
     "sales.tax_rate_out_of_range": "A VAT rate on the ticket is out of range.",
@@ -4883,6 +4886,7 @@ var en_default = {
     voidFailed: "The sale could not be voided",
     voidRequiresCreditNote: "This sale carries a full invoice: issue a credit note instead of voiding it",
     voidAlreadyVoided: "This sale is already voided",
+    voidAlreadyRefunded: "This sale already has refunds: return what is left instead of voiding it",
     voidReasonRequired: "A reason is required to void a sale",
     voidSaleNotFound: "That sale is not in this business",
     taxSurcharge: "Surcharge",
@@ -14239,7 +14243,10 @@ var VOID_MESSAGES = {
   "sales.void_requires_credit_note": "ui.voidRequiresCreditNote",
   "sales.already_voided": "ui.voidAlreadyVoided",
   "sales.void_reason_required": "ui.voidReasonRequired",
-  "sales.sale_not_found": "ui.voidSaleNotFound"
+  "sales.sale_not_found": "ui.voidSaleNotFound",
+  // sales#247 — la venta ya tiene devoluciones. La frase NO se queda en «no se pudo»: nombra la
+  // salida (devolver lo que queda), que es la acción de al lado y sigue estando ahí.
+  "sales.sale_already_refunded": "ui.voidAlreadyRefunded"
 };
 function voidErrorKey(code) {
   return VOID_MESSAGES[code] ?? "ui.voidFailed";
@@ -14318,7 +14325,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
         label: t7("ui.actionVoid"),
         icon: "ban-outline",
         color: "danger",
-        disabled: (r6) => r6.status !== "completed"
+        disabled: (r6) => r6.status !== "completed" || Number(r6.refunded_total ?? 0) > 0
       });
     }
     if (erplora5().hasPermission?.("sales.refund_sale")) {
