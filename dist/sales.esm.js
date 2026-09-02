@@ -10208,7 +10208,7 @@ var ErpPosTouch = class extends i3 {
     return c5.hasPermission("inventory.change_product");
   }
   goToProductSetup() {
-    window.history.pushState({}, "", "/m/inventory/products");
+    window.history.pushState({}, "", "/m/inventory/products?status=unconfigured");
     window.dispatchEvent(new PopStateEvent("popstate"));
   }
   /** The AGGREGATE notice, once and before the shift (sales#149).

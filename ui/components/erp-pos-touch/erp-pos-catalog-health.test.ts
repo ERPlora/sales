@@ -132,6 +132,28 @@ describe('the sale view states, ONCE, how much of the catalogue cannot be charge
     expect(popped, 'the shell router listens to popstate; without it the screen never changes').toBe(true);
   });
 
+  it('lands on the articles that are MISSING their fiscal category, not on the whole catalogue', async () => {
+    // sales#248 / inventory#72 — the notice counts the articles that cannot be charged and this is
+    // the door it offers to fix them. Dropping the manager on `/m/inventory/products` bare left him
+    // in front of the entire catalogue having to remember to open the status dropdown himself, and
+    // the count he had just read was nowhere on the screen he landed on.
+    //
+    // `erp-inventory-products` reads `?status=` when it mounts and SEEDS the list controller with
+    // it, so the screen opens already narrowed (and says so, with its way out). An unknown value is
+    // ignored there and opens the normal list, so carrying the parameter cannot break the route.
+    installSdk({ can: () => true });
+    const el = await mount();
+
+    summaryOf(el)!.querySelector<HTMLElement>('[data-testid="catalog-blocked-fix"]')!.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(window.location.pathname).toBe('/m/inventory/products');
+    expect(
+      new URLSearchParams(window.location.search).get('status'),
+      'the fix button has to open the list already narrowed to what the count was about',
+    ).toBe('unconfigured');
+  });
+
   it('stays quiet for a session that cannot fix it (a cashier has no inventory.change_product)', async () => {
     installSdk({ can: (perm: string) => perm !== 'inventory.change_product' });
     const el = await mount();

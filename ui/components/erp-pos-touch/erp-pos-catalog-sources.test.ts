@@ -139,3 +139,103 @@ describe('the policy is read through a door the CASHIER can open', () => {
     expect(ids(el)).toEqual(['p-1', 's-1']);
   });
 });
+
+// sales#248 — TAPPING A CATEGORY IS A LOCAL OPERATION. It must never go to the server.
+//
+// `inventory.products.list` concedes a `category_id` filter since inventory#71, and the proposal
+// was that the grid ask for one category at a time instead of grouping the catalogue it already
+// holds. It was investigated as a market question (CLAUDE.md: business doubts are decided by the
+// market, 8+ references and forums) and the answer was unanimous against:
+//
+//   · 10 of 10 references filter in the client over a catalogue cached on the device — Odoo POS,
+//     Shopify POS, Lightspeed, Toast, Square, Clover, Loyverse, WooCommerce (WCPOS), Dynamics 365
+//     Commerce, TouchBistro. Not one issues a request per category.
+//   · The only published threshold in the sector is Odoo's `limited_product_count`, and it is
+//     20.000 articles — 71× the ~280 of a typical hub. Above it, what Odoo moves to the server is
+//     the SEARCH BOX, never the category tab.
+//   · Every one of them sells offline operation as a feature, and a grid that round-trips per tap
+//     cannot have it: on a bad connection each tap is a visible stall.
+//
+// And the code says the same thing on its own: the whole catalogue is what feeds the Spotlight
+// search over name and SKU, `blockedCount` (the aggregate notice of sales#149, deliberately over
+// the WHOLE catalogue and not over the open tab), the per-category counts painted on every tab,
+// and `primaryCategory()` — the category each cart line carries to the KDS. Filtering server-side
+// per category would either break those four or keep the full load anyway, in which case the round
+// trip is pure added latency.
+//
+// So this is the guard for the decision, not a description of it: a category tap makes NO read.
+describe('tapping a category is local: the grid never round-trips (sales#248)', () => {
+  const CATEGORIES = [
+    { id: 'c-drinks', name: 'Bebidas' },
+    { id: 'c-food', name: 'Comida' },
+  ];
+  const CATALOGUE = [
+    { id: 'p-1', name: 'Café', price: 150, is_active: 1, tax_category_key: 'product.generic' },
+    { id: 'p-2', name: 'Tostada', price: 220, is_active: 1, tax_category_key: 'product.generic' },
+  ];
+  const LINKS = [
+    { product_id: 'p-1', category_id: 'c-drinks' },
+    { product_id: 'p-2', category_id: 'c-food' },
+  ];
+
+  async function mountWithCategories(): Promise<MountedPos> {
+    pos = installPosDouble({
+      settings: { sync_products: 1, sync_services: 0 },
+      products: CATALOGUE,
+      categories: CATEGORIES,
+      productCategories: LINKS,
+      rules: RULES,
+    });
+    return mount();
+  }
+
+  /** The cashier's own door: the category segment of the grid header. */
+  function tapCategory(el: MountedPos, id: string): void {
+    const segment = el.shadowRoot.querySelector('ion-segment.category-segment')!;
+    segment.dispatchEvent(new CustomEvent('ionChange', { detail: { value: id } }));
+  }
+
+  it('makes no read at all when a category is chosen', async () => {
+    const el = await mountWithCategories();
+    expect(pos.reads.length, 'control: the recorder saw the reads of the load').toBeGreaterThan(0);
+    pos.reads.splice(0);
+
+    tapCategory(el, 'c-drinks');
+    await el.updateComplete;
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(
+      pos.reads.map((r) => r.name),
+      'a till that asks the server on every category tap stalls on a bad connection and stops working without one',
+    ).toEqual([]);
+
+    // And the recorder is STILL live after the tap — an empty list has to mean "nothing was read",
+    // never "nothing is being recorded any more".
+    await (pos.sdk as { query(name: string): Promise<unknown> }).query('inventory.products.list');
+    expect(pos.reads.map((r) => r.name)).toEqual(['inventory.products.list']);
+  });
+
+  it('and narrows the grid to that category from the catalogue it already holds', async () => {
+    const el = await mountWithCategories();
+
+    tapCategory(el, 'c-food');
+    await el.updateComplete;
+
+    // The catalogue tiles: not the menu tiles, not the free-price one the grid always carries.
+    const tiles = [...el.shadowRoot.querySelectorAll('ion-card.tile:not(.combo):not(.open-price)')];
+    expect(tiles.length, 'the grid still narrows — locally').toBe(1);
+    expect(tiles[0].textContent).toContain('Tostada');
+  });
+
+  it('keeps the WHOLE catalogue loaded, which is what the search and the aggregate notice read', async () => {
+    const el = await mountWithCategories();
+
+    tapCategory(el, 'c-drinks');
+    await el.updateComplete;
+
+    expect(
+      el.products.map((p) => p.id),
+      'narrowing the grid must not narrow the catalogue: Spotlight and blockedCount read all of it',
+    ).toEqual(['p-1', 'p-2']);
+  });
+});
