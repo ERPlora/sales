@@ -331,6 +331,36 @@ export class ErpSalesList extends LitElement {
     this.ctrl.setFilter(col, e.detail.value);
   }
 
+  /** sales#243 — la columna «Nº» PINTA `sale_number` y ORDENA por `sale_seq`.
+   *
+   *  Mismo desdoblamiento que la columna «Fecha» de aquí arriba, y por el mismo motivo: lo que la
+   *  celda enseña y lo que el servidor sabe ordenar son dos columnas distintas, y la traducción
+   *  vive en esta frontera, que es la única que conoce las dos.
+   *
+   *  `sale_number` es TEXTO `YYYYMMDD-<secuencia>` y el relleno es un MÍNIMO, no un techo
+   *  (hub#1393, tras la caída de sales#241): pasada la venta 9.999 del día la secuencia crece un
+   *  dígito y el orden de texto deja de ser el numérico — la 10.000 caía entre la 1.000 y la 2.000.
+   *  `sales.list` proyecta `sale_seq` justo para esto: una clave sintética que solo existe para
+   *  ordenar. El número fiscal no se reescribe en ninguna parte — ni en la celda, ni en la query,
+   *  ni en la fila.
+   *
+   *  El mapa es de UNA columna a propósito: reescribir a ciegas es como la columna de fecha
+   *  acabaría pidiendo en silencio una clave que no existe. */
+  private static readonly SORT_KEYS: Record<string, string> = { sale_number: 'sale_seq' };
+
+  private onSortChange(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>): void {
+    this.ctrl.setSort(ErpSalesList.SORT_KEYS[e.detail.sort] ?? e.detail.sort, e.detail.dir);
+  }
+
+  /** La columna que la tabla marca como activa: la que el usuario pulsó, no la clave con la que se
+   *  pregunta. Sin la vuelta atrás, `ok-data-table` recibiría `sale_seq` —una columna que no
+   *  tiene—, borraría la flecha de «Nº» y la pantalla parecería sin ordenar estándo ordenada. */
+  private get paintedSort(): string | undefined {
+    const asked = this.ctrl?.state.sort;
+    if (asked === undefined) return undefined;
+    return Object.keys(ErpSalesList.SORT_KEYS).find((k) => ErpSalesList.SORT_KEYS[k] === asked) ?? asked;
+  }
+
   /** sales#27: cambia el rango de filas Y KPIs a la vez. */
   async setRange(range: Range): Promise<void> {
     this.range = range;
@@ -396,7 +426,7 @@ export class ErpSalesList extends LitElement {
         ${this.ctrl?.error ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : nothing}
         <!-- The «document» button is not the only door: rowClickable makes the whole row open the
              same document (outfitkit#67 — the actions column can be off-screen at 1440 px). -->
-        <ok-data-table .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r: Record<string, unknown>) => String(r.sale_number ?? '—')} .cardIcon=${() => 'receipt-outline'} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.ctrl?.state.sort} .sortDir=${this.ctrl?.state.dir ?? 'desc'} .searchable=${true} .searchPlaceholder=${t('ui.searchSalePlaceholder')} .emptyMessage=${this.ctrl?.loading ? t('ui.loading') : t('ui.noSales')} .actions=${this.documentActions} .rowClickable=${true} @rowAction=${(e: CustomEvent<{ actionId: string; row: Sale }>) => { if (e.detail.actionId === 'document') this.docSaleId = e.detail.row.id; else if (e.detail.actionId === 'void') void this.confirmVoid(e.detail.row); else if (e.detail.actionId === 'refund') this.refundSaleId = e.detail.row.id; }} @rowClick=${(e: CustomEvent<{ row: Sale }>) => { this.docSaleId = e.detail.row.id; }} @pageChange=${(e: CustomEvent<number>) => this.ctrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.ctrl.setSort(e.detail.sort, e.detail.dir)} @searchChange=${(e: CustomEvent<string>) => this.ctrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.onFilterChange(e)}></ok-data-table>
+        <ok-data-table .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r: Record<string, unknown>) => String(r.sale_number ?? '—')} .cardIcon=${() => 'receipt-outline'} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.paintedSort} .sortDir=${this.ctrl?.state.dir ?? 'desc'} .searchable=${true} .searchPlaceholder=${t('ui.searchSalePlaceholder')} .emptyMessage=${this.ctrl?.loading ? t('ui.loading') : t('ui.noSales')} .actions=${this.documentActions} .rowClickable=${true} @rowAction=${(e: CustomEvent<{ actionId: string; row: Sale }>) => { if (e.detail.actionId === 'document') this.docSaleId = e.detail.row.id; else if (e.detail.actionId === 'void') void this.confirmVoid(e.detail.row); else if (e.detail.actionId === 'refund') this.refundSaleId = e.detail.row.id; }} @rowClick=${(e: CustomEvent<{ row: Sale }>) => { this.docSaleId = e.detail.row.id; }} @pageChange=${(e: CustomEvent<number>) => this.ctrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.onSortChange(e)} @searchChange=${(e: CustomEvent<string>) => this.ctrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.onFilterChange(e)}></ok-data-table>
       </div>
       <!-- sales#126 — el modal FUERA del contenedor con scroll: Ionic lo reparenta al light-DOM
            igual, pero así la vista no arrastra overlays al scrollear. -->

@@ -46,6 +46,10 @@ DB_PREFIX = f"sales_number_width_test_{os.getpid()}"
 HUB = "hub-test"
 OTHER_HUB = "hub-neighbour"
 DAY = "20260901"
+# The day before, for the ordering scenario: a length-prefixed key has to keep the DAY as the
+# leading term, or a 4-digit day would sort ahead of a 5-digit one and the history would reshuffle
+# by width instead of by date.
+PREV_DAY = "20260831"
 
 MANIFEST = json.loads((MODULE_DIR / "module.json").read_text())
 LIST = MANIFEST["queries"]["sales.list"]
@@ -203,14 +207,14 @@ def load_migrations(db: str) -> None:
         psql([], db=db, stdin=sql)
 
 
-def set_counter(db: str, value: int, hub: str = HUB) -> None:
+def set_counter(db: str, value: int, hub: str = HUB, day: str = DAY) -> None:
     """Put the day's counter one short of the sale under test — the whole point of the battery is
     to reach the 10.000th sale WITHOUT charging 9.999 of them first."""
     psql(
         [
             "-c",
             "INSERT INTO sales_sale_counter (id, hub_id, day, last_number) VALUES "
-            f"('ctr-{hub}-{DAY}', '{hub}', '{DAY}', {value}) "
+            f"('ctr-{hub}-{day}', '{hub}', '{day}', {value}) "
             "ON CONFLICT (hub_id, day) DO UPDATE SET last_number = EXCLUDED.last_number",
         ],
         db=db,
@@ -218,7 +222,12 @@ def set_counter(db: str, value: int, hub: str = HUB) -> None:
 
 
 def complete_sale(
-    db: str, sale_id: str, pad, hub: str = HUB, at: str | None = None
+    db: str,
+    sale_id: str,
+    pad,
+    hub: str = HUB,
+    at: str | None = None,
+    day: str = DAY,
 ) -> None:
     """The two operations `sales.complete_sale` runs, in the order and the transaction the handler
     runs them (`handler/src/lib.rs`): bump the day's counter, then read it back INSIDE the INSERT.
@@ -229,9 +238,9 @@ def complete_sale(
     params = dict(SALE_DEFAULTS)
     params.update(
         {
-            "new_id": f"ctr-{hub}-{DAY}",
+            "new_id": f"ctr-{hub}-{day}",
             "hub_id": hub,
-            "day": DAY,
+            "day": day,
             "sale_id": sale_id,
             "idempotency_key": f"key-{sale_id}",
         }
@@ -254,6 +263,25 @@ def number_of(db: str, sale_id: str) -> str:
     ).strip()
 
 
+def seq_key_of(db: str, sale_id: str) -> str:
+    """The synthetic sort key `sales.list` projects for a row (sales#243). It is read from the
+    QUERY, not from the table: `sale_seq` is a projection and no column stores it — which is the
+    point, since the number itself is a fiscal datum and is never rewritten."""
+    base = lower(
+        _expand(
+            (MODULE_DIR / LIST["sql"]).read_text().strip().rstrip(";"),
+            "erp_date(",
+            lambda arg: f"((({arg})::date))",
+        ),
+        pad_min_width,
+    )
+    sql = bind(
+        f"SELECT sub.sale_seq FROM ( {base} ) AS sub WHERE sub.id = :sale_id",
+        {"hub_id": HUB, "sale_id": sale_id},
+    )
+    return psql(["-tAc", sql], db=db).strip()
+
+
 # ── The list engine, in miniature (crates/runtime/src/queries.rs) ─────────────────────────
 
 
@@ -262,8 +290,18 @@ def run_list(
 ) -> list[str]:
     """`sales.list` the way the runtime runs it: the module's SQL wrapped as a derived table, plus
     the WHERE of every declared filter whose params came in. The projection is trimmed to
-    `sub.sale_number` — the number coming back WHOLE is what is under test."""
+    `sub.sale_number` — the number coming back WHOLE is what is under test.
+
+    The `sort` whitelist is enforced here the way `run_list` enforces it in
+    `crates/runtime/src/queries.rs`: a column the manifest does not concede is refused, never
+    interpolated. Without this the harness would happily ORDER BY a column no hub can ask for, and
+    the ordering scenario below would go green against a manifest that concedes nothing."""
     spec = LIST["list"]
+    if sort not in spec["sort"]:
+        raise RuntimeError(
+            f"sales.list does not concede `{sort}` as a sort column "
+            f"(module.json declares {spec['sort']})"
+        )
     params: dict[str, str] = {"hub_id": HUB, "limit": "50", "offset": "0"}
     conds: list[str] = []
     for col, f in spec["filters"].items():
@@ -288,6 +326,9 @@ def run_list(
         "erp_date(",
         lambda arg: f"((({arg})::date))",
     )
+    # The query projects its sort key with `erp_pad` too (sales#243), so the base has to go through
+    # the same lowering the runtime applies before Postgres ever sees it.
+    base = lower(base, pad_min_width)
     where = f" WHERE {' AND '.join(conds)}" if conds else ""
     sql = (
         f"SELECT sub.sale_number FROM ( {base} ) AS sub{where} "
@@ -408,18 +449,25 @@ def scenario_fixed(db: str) -> None:
 
 
 def scenario_ordering(db: str) -> None:
-    """The history still reads in issue order once the sequence outgrows the pad.
+    """The history reads in issue order — by the default view AND by the «Nº» column (sales#243).
 
     `sales.list` opens on `created_at desc` (`default_sort` in module.json), and that is the order
     the screen shows: the wide numbers sit exactly where they were charged, not wherever a string
     comparison would drop them. Below the border the numbers are all the same length, so sorting by
     the column itself is numeric too — that is the part the width guarantees.
 
-    ACROSS the border a plain `ORDER BY sale_number` is NOT numeric (`20260901-10000` lands between
-    `-1000` and `-2000`, because the sequence part is no longer fixed-width). That only shows if a
-    cashier sorts by the «Nº» column on a day with more than 9.999 sales, never on the default
-    view, and fixing it means a synthetic sort key across the query, the manifest and the table.
-    Deliberately NOT in this change: it is open as sales#243."""
+    ACROSS the border a plain `ORDER BY sale_number` is NOT numeric: `20260901-10000` lands between
+    `-1000` and `-2000`, because the sequence part is no longer fixed-width. That is sales#243, and
+    it is what the SYNTHETIC key `sale_seq` fixes — a column the query projects only to be ordered
+    by. The fiscal number is never rewritten: `sale_number` stays exactly what was minted, and it
+    stays what the column PAINTS.
+
+    The order the key has to produce is (day, sequence-as-a-number), and it produces it as a single
+    comparable string because the list engine sorts by ONE column (`crates/runtime/src/queries.rs`)
+    — the same constraint that made `services.package_redemption_history` mint `movement_seq`. The
+    day part is already fixed-width, so it compares as text; the sequence is length-prefixed, which
+    is what makes text comparison agree with numeric comparison at ANY width, without the module
+    having to guess a ceiling it would then have to raise again (hub#1393: the pad is a floor)."""
     issue_order = [
         f"{DAY}-0999",
         f"{DAY}-1000",
@@ -443,6 +491,73 @@ def scenario_ordering(db: str) -> None:
             expected,
             [seq for seq in by_number if len(seq) == width],
         )
+
+    # ── sales#243 ────────────────────────────────────────────────────────────────────────
+    # THE POSITIVE CONTROL, first. Ordering by the fiscal number itself is TEXT ordering, and the
+    # symptom the issue reports is that the 10.000th sale lands BEFORE the 2.000th. If this ever
+    # stops being true on its own, everything below goes green without proving anything.
+    check(
+        "control: ordering by the fiscal number puts the 10.000th BEFORE the 2.000th",
+        True,
+        by_number.index("10000") < by_number.index("2000"),
+    )
+
+    # A sale from an EARLIER day, with a short number. It is the trap of any length-prefixed key:
+    # get the pieces in the wrong order and every 4-digit day sorts ahead of every 5-digit one, so
+    # the whole history reshuffles by width instead of by date.
+    set_counter(db, 6, day=PREV_DAY)
+    complete_sale(
+        db, "sale-prev", pad_min_width, at="2026-08-31T18:00:00Z", day=PREV_DAY
+    )
+    check(
+        "the earlier day's sale is minted the way it always was",
+        f"{PREV_DAY}-0007",
+        number_of(db, "sale-prev"),
+    )
+
+    numeric_order = [f"{PREV_DAY}-0007", *issue_order]
+    check(
+        "ascending by the «Nº» column is NUMERIC across widths and across days",
+        numeric_order,
+        run_list(db, {}, sort="sale_seq", dir_="asc"),
+    )
+    check(
+        "and descending is the exact reverse",
+        list(reversed(numeric_order)),
+        run_list(db, {}, sort="sale_seq", dir_="desc"),
+    )
+
+    # What is PAINTED is the fiscal number, untouched: the key ORDERS, it never replaces. They are
+    # two different columns of the same row, and the one the reader sees is the minted one.
+    check(
+        "the sort key is a column of its own, not the number wearing a different shape",
+        [f"{DAY}-0510000", f"{DAY}-071000000"],
+        [seq_key_of(db, s) for s in ("sale-10000", "sale-1m")],
+    )
+    check(
+        "and the fiscal number the row carries is still exactly what was minted",
+        [f"{DAY}-10000", f"{DAY}-1000000"],
+        [number_of(db, s) for s in ("sale-10000", "sale-1m")],
+    )
+
+    # The key is an ORDER key and nothing else. Conceding it as a filter or a search column would
+    # hand the outside world a second, synthetic way of naming a fiscal document.
+    spec = LIST["list"]
+    check(
+        "`sale_seq` is conceded as a SORT column",
+        True,
+        "sale_seq" in spec["sort"],
+    )
+    check(
+        "and it is NOT a filter: the number a hub queries by is the fiscal one",
+        [],
+        [k for k in ("sale_seq",) if k in spec["filters"]],
+    )
+    check(
+        "nor is it searchable",
+        [],
+        [k for k in ("sale_seq",) if k in spec["search"]],
+    )
 
 
 def scenario_consumers(db: str) -> None:

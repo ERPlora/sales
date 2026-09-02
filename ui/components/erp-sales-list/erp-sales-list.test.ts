@@ -42,8 +42,11 @@ function installList(overrides: Record<string, unknown[] | (() => unknown[])> = 
   });
 }
 
+/** The double the current test is running against (see `installList`). */
+let double: ReturnType<typeof installList>;
+
 beforeEach(() => {
-  installList();
+  double = installList();
 });
 
 async function column(key: string): Promise<Column> {
@@ -592,5 +595,94 @@ describe('las métricas fallan con el CATÁLOGO, nunca con el mensaje del servid
   it('el servidor caído se cuenta como servidor caído (sales#81)', async () => {
     const shown = await mountFailing(new TypeError('Failed to fetch'));
     expect(shown).toBe(esCatalog.ui.serverUnavailable);
+  });
+});
+
+// sales#243 — the «Nº» header sorts by the NUMBER, not by the text of the number.
+//
+// `sale_number` is TEXT shaped `YYYYMMDD-<sequence>` and the pad is a MINIMUM, never a ceiling
+// (hub#1393, after the outage of sales#241): past the 9.999th sale of a day the sequence grows a
+// digit and text order stops agreeing with numeric order — `20260901-10000` lands between `-1000`
+// and `-2000`. `sales.list` now projects `sale_seq`, a synthetic key that exists only to be
+// ordered by, and this screen is what puts the header on it.
+//
+// It is the SAME shape as the date column, which has painted `created_at` and filtered `erp_date`
+// since sales#125: what the cell shows and what the server sorts by are two different columns, and
+// the mapping lives here, at the one boundary that knows both. The fiscal number is never
+// rewritten — not on screen, not in the query, not in the row.
+describe('sales list — sorting by «Nº» is numeric, not lexicographic (sales#243)', () => {
+  interface ListView {
+    updateComplete: Promise<unknown>;
+    shadowRoot: ShadowRoot;
+  }
+
+  async function mount(): Promise<ListView> {
+    document.body.innerHTML = '';
+    await import('./erp-sales-list');
+    const el = document.createElement('erp-sales-list');
+    document.body.appendChild(el);
+    const view = el as unknown as ListView;
+    await view.updateComplete;
+    await new Promise((r) => setTimeout(r, 0));
+    await view.updateComplete;
+    return view;
+  }
+
+  const table = (el: ListView): HTMLElement =>
+    el.shadowRoot.querySelector<HTMLElement>('ok-data-table')!;
+
+  /** Clicking a header is this event; the table emits the column's `key`, which is what it paints. */
+  async function sortBy(el: ListView, key: string, dir: 'asc' | 'desc' = 'asc'): Promise<void> {
+    table(el).dispatchEvent(new CustomEvent('sortChange', { detail: { sort: key, dir } }));
+    await new Promise((r) => setTimeout(r, 0));
+    await el.updateComplete;
+  }
+
+  /** The `sort` the LAST read of the history carried to the server. */
+  const sortAsked = (): unknown =>
+    double.reads.filter((r) => r.name === 'sales.list').at(-1)?.params?.sort;
+
+  it('asks the server for the synthetic order key, never for the fiscal number', async () => {
+    const el = await mount();
+    await sortBy(el, 'sale_number');
+
+    expect(
+      sortAsked(),
+      'ordering by the fiscal number is text ordering: the 10.000th sale would land before the 2.000th',
+    ).toBe('sale_seq');
+  });
+
+  it('keeps the header the cashier clicked marked as the active one', async () => {
+    // The table paints the sort arrow on the column whose `key` matches `.sort`. Handing it
+    // `sale_seq` — a column it does not have — would clear the arrow off «Nº» and the screen would
+    // look unsorted while the rows were, in fact, sorted.
+    const el = await mount();
+    await sortBy(el, 'sale_number', 'desc');
+
+    expect((table(el) as unknown as { sort?: string }).sort).toBe('sale_number');
+    expect((table(el) as unknown as { sortDir?: string }).sortDir).toBe('desc');
+  });
+
+  it('leaves every other column sorting by itself', async () => {
+    // The mapping is one column wide on purpose. A blanket rewrite here is how the date column
+    // would silently start asking for a key that does not exist.
+    const el = await mount();
+    await sortBy(el, 'total');
+    expect(sortAsked()).toBe('total');
+
+    await sortBy(el, 'created_at');
+    expect(sortAsked()).toBe('created_at');
+  });
+
+  it('still PAINTS the fiscal number, exactly as minted', async () => {
+    // The key orders; it never replaces. `sale_seq` is length-prefixed (`20260901-0510000`) and a
+    // cell showing that instead of `20260901-10000` would be a rewritten fiscal number on screen.
+    const el = await mount();
+    await sortBy(el, 'sale_number');
+
+    const columns = (el as unknown as { columns: Column[] }).columns;
+    const number = columns.find((c) => c.key === 'sale_number');
+    expect(number, 'the «Nº» column is the one that paints the fiscal number').toBeDefined();
+    expect(columns.some((c) => c.key === 'sale_seq'), 'the order key is not a column of the table').toBe(false);
   });
 });
