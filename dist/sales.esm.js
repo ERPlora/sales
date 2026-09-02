@@ -4090,6 +4090,7 @@ var es_default = {
     "sales.empty_sale": "A\xF1ade al menos una l\xEDnea antes de cobrar.",
     "sales.idempotency_key_required": "El cobro ha llegado sin clave de idempotencia, as\xED que se ha rechazado antes que arriesgarse a cobrar dos veces.",
     "sales.insufficient_tendered": "El importe entregado no cubre el total.",
+    "sales.line_not_splittable": "Esa l\xEDnea no se puede separar en unidades sueltas.",
     "sales.modifier_catalog_unavailable": "No se han podido cargar los suplementos, as\xED que no se ha podido valorar la l\xEDnea.",
     "sales.modifier_child_price_invalid": "Un suplemento se factura en l\xEDnea propia porque tributa a otro IVA, y esa l\xEDnea no puede valer cero o menos. Ponle precio en Suplementos, o qu\xEDtale la categor\xEDa fiscal.",
     "sales.modifier_not_available": "Uno de los suplementos de la l\xEDnea ya no est\xE1 en el cat\xE1logo. Vuelve a elegirlo.",
@@ -4313,7 +4314,11 @@ var es_default = {
     lineNotSaved: "No se pudo guardar ese art\xEDculo \u2014 vuelve a tocarlo",
     linePaidElsewhere: "Ya pagado",
     lineTenders: "L\xEDneas pagadas de otra forma",
-    tenderOneSessionPerLine: "Un canje cubre una l\xEDnea: separa la l\xEDnea para poder canjearla.",
+    tenderSplitLine: "Separar en {n} l\xEDneas",
+    tenderSplitReason: "Un bono cubre una l\xEDnea. Sep\xE1rala y canjea las que alcance.",
+    tenderSplitFailed: "No se ha podido separar la l\xEDnea. La cuenta no ha cambiado.",
+    tenderLineNotSplittable: "Esta l\xEDnea no se puede separar, as\xED que ning\xFAn bono puede cubrirla.",
+    tenderLinePart: "{i} de {n}",
     serverUnavailable: "El servidor no responde (puede estar reinici\xE1ndose). Int\xE9ntalo de nuevo en unos segundos y, si persiste, avisa al encargado.",
     checkoutUnknown: "No hemos podido confirmar si el cobro se complet\xF3. Compru\xE9balo en Ventas antes de volver a cobrar.",
     checkSales: "Comprobar en Ventas",
@@ -4606,6 +4611,7 @@ var en_default = {
     "sales.empty_sale": "Add at least one line before charging.",
     "sales.idempotency_key_required": "The checkout arrived with no idempotency key, so it was refused rather than risk charging twice.",
     "sales.insufficient_tendered": "The amount tendered does not cover the total.",
+    "sales.line_not_splittable": "That line cannot be split into single units.",
     "sales.modifier_catalog_unavailable": "The supplements could not be loaded, so the line could not be priced.",
     "sales.modifier_child_price_invalid": "A supplement bills on a line of its own because it taxes at a different VAT rate, and that line cannot be worth zero or less. Give it a price in Modifiers, or take its tax category off.",
     "sales.modifier_not_available": "One of the supplements on the line is no longer in the catalogue. Pick it again.",
@@ -4829,7 +4835,11 @@ var en_default = {
     lineNotSaved: "Couldn't save that item \u2014 tap again",
     linePaidElsewhere: "Prepaid",
     lineTenders: "Lines paid another way",
-    tenderOneSessionPerLine: "One redemption covers one line: split the line to redeem it.",
+    tenderSplitLine: "Split into {n} lines",
+    tenderSplitReason: "A voucher covers one line. Split it and redeem the ones it reaches.",
+    tenderSplitFailed: "That line could not be split. Nothing changed on the check.",
+    tenderLineNotSplittable: "This line cannot be split, so no voucher can cover it.",
+    tenderLinePart: "{i} of {n}",
     serverUnavailable: "The server isn't responding (it may be restarting). Try again in a few seconds and, if it keeps happening, call the manager.",
     checkoutUnknown: "We couldn't confirm whether this charge went through. Check it in Sales before charging again.",
     checkSales: "Check in Sales",
@@ -5762,6 +5772,15 @@ async function splitOrder(client, orderId, lineIds, label) {
   });
   return firstNewId(res);
 }
+async function splitOrderLine(client, orderId, lineId) {
+  if (!orderId || !lineId) return [];
+  const res = await client.command("sales.order.split_line", {
+    order_id: orderId,
+    line_id: lineId
+  });
+  const ids = res?.new_ids;
+  return Array.isArray(ids) ? ids.filter((v3) => typeof v3 === "string") : [];
+}
 
 // ui/lib/split-selection.ts
 function esParcial(cart, sel) {
@@ -6066,6 +6085,7 @@ function chargeBlock(payable, tenders) {
 }
 
 // ui/lib/line-tender.ts
+var MAX_LINE_SPLIT = 50;
 function tenderableLines(lines) {
   return lines.filter(
     (l3) => !!l3.is_service && !!l3.line_id && !l3.is_gift && Math.round(l3.price * l3.qty) > 0
@@ -6073,6 +6093,19 @@ function tenderableLines(lines) {
 }
 function coverableLine(l3) {
   return l3.qty === 1;
+}
+function splitCount(l3) {
+  if (l3.is_gift || l3.fired_at) return 0;
+  if (!Number.isInteger(l3.qty)) return 0;
+  if (l3.qty < 2 || l3.qty > MAX_LINE_SPLIT) return 0;
+  return l3.qty;
+}
+function linePart(lines, l3) {
+  const twins = lines.filter((o9) => o9.id === l3.id && o9.price === l3.price && !o9.is_gift === !l3.is_gift);
+  if (twins.length < 2) return void 0;
+  const part = twins.findIndex((o9) => o9.line_id === l3.line_id && o9 === l3);
+  if (part < 0) return void 0;
+  return { part: part + 1, of: twins.length };
 }
 function uncoveredLines(lines, covered) {
   if (!covered.size) return [...lines];
@@ -6924,6 +6957,19 @@ async function recoverCheckout(probe, idempotencyKey, options = {}) {
   return { outcome: "unknown" };
 }
 
+// ui/lib/domain-error-text.ts
+var SOURCE_LANG = "en";
+function textFor(catalog, lang, code) {
+  const dict = catalog[lang];
+  const text = dict?.errors?.[code];
+  return typeof text === "string" && text.trim() ? text : "";
+}
+function domainErrorText(catalog, locale, e7) {
+  const code = e7?.code;
+  if (typeof code !== "string" || !code) return "";
+  return textFor(catalog, locale, code) || textFor(catalog, SOURCE_LANG, code);
+}
+
 // ui/lib/media-photo-cache.ts
 var MediaPhotoCache = class {
   constructor(client, changed = () => void 0, createObjectUrl = (blob) => URL.createObjectURL(blob), revokeObjectUrl = (url) => URL.revokeObjectURL(url), concurrency = 8) {
@@ -7413,6 +7459,7 @@ var ErpPosTouch = class extends i3 {
     this.queue = createSerialQueue();
     this.padPrimed = false;
     this.tenderSeq = 0;
+    this.splittingLine = "";
   }
   static {
     this.styles = i`
@@ -7673,6 +7720,12 @@ var ErpPosTouch = class extends i3 {
     .tl-slot { margin-top:.45rem; }
     .tl-slot:empty { display:none; }
     .tl-note { margin-top:.35rem; font-size:.8rem; color:var(--mut); }
+    /* sales#242 — the label of the split. Two identical rows read as a double charge until
+       something numbers them (the Shopify lesson), so it rides next to the name, not below it. */
+    .tl-part { margin-left:.35rem; font-size:.78rem; font-weight:700; color:var(--mut); }
+    /* The action the till was missing: a 48 px target, because the cashier taps it with a thumb on
+       a counter tablet — the same floor every other control of this sheet keeps. */
+    .tl-split { margin-top:.45rem; --padding-top:0; --padding-bottom:0; min-height:48px; }
     /* Entrar a repartir es SECUNDARIO (la mayoría de los cobros son de un solo medio); tomar la
        pata, en cambio, es lo que se pulsa una vez por medio, así que lleva el acento. */
     .pay-split-btn, .pay-add { display:flex; align-items:center; justify-content:center; gap:.45rem;
@@ -10617,15 +10670,52 @@ var ErpPosTouch = class extends i3 {
       <ul class="tl-list">
         ${lines.map((l3) => {
       const isCovered2 = !!l3.line_id && this.covered.has(l3.line_id);
+      const part = linePart(lines, l3);
+      const parts = splitCount(l3);
       return b2`<li class="tender-line" data-line=${l3.line_id ?? ""}>
             <div class="tl-h">
-              <span class="tl-name">${l3.name}</span>
+              <span class="tl-name">${l3.name}${part ? b2`<span class="tl-part" data-part=${part.part} data-of=${part.of}
+                    >${t5("ui.tenderLinePart", { i: String(part.part), n: String(part.of) })}</span>` : A}</span>
               <span class="tl-amount" ?data-covered=${isCovered2}>${this.money(lineAmount(l3))}</span>
             </div>
-            ${coverableLine(l3) ? b2`<div class="tl-slot"></div>` : b2`<div class="tl-note">${t5("ui.tenderOneSessionPerLine")}</div>`}
+            ${coverableLine(l3) ? b2`<div class="tl-slot"></div>` : parts ? b2`
+                  <ion-button class="tl-split" expand="block" fill="outline" size="small"
+                      data-parts=${parts} ?disabled=${this.splittingLine === l3.line_id}
+                      @click=${() => void this.splitTenderLine(l3)}>
+                    ${t5("ui.tenderSplitLine", { n: String(parts) })}
+                  </ion-button>
+                  <div class="tl-note">${t5("ui.tenderSplitReason")}</div>` : b2`<div class="tl-note">${t5("ui.tenderLineNotSplittable")}</div>`}
           </li>`;
     })}
       </ul>`;
+  }
+  /**
+   * SPLITS a line of N services into N lines of one so each can be asked about a voucher
+   * (sales#242 / ADR-0422).
+   *
+   * The server does it in ONE transaction and the till re-reads the check from the rows it left:
+   * the source keeps its id (and with it its place in the list), the clones come back with theirs.
+   * Rebuilding the cart by hand from the ids would be a second version of the same arithmetic, and
+   * the amounts are the server's.
+   */
+  async splitTenderLine(l3) {
+    const orderId = this.orderId;
+    const lineId = l3.line_id;
+    if (!orderId || !lineId || !splitCount(l3) || this.splittingLine) return;
+    this.splittingLine = lineId;
+    try {
+      await this.queue(async () => {
+        const ids = await splitOrderLine(erplora2(), orderId, lineId);
+        this.cart = await loadOrderLines(erplora2(), orderId);
+        if (this.splitSel.has(lineId) && ids.length) {
+          this.splitSel = /* @__PURE__ */ new Set([...this.splitSel, ...ids]);
+        }
+      });
+    } catch (e7) {
+      this.error = domainErrorText(CATALOG2, erplora2().locale, e7) || t5("ui.tenderSplitFailed");
+    } finally {
+      this.splittingLine = "";
+    }
   }
   renderLine(l3) {
     const locked = isLineLocked(l3);
@@ -11578,6 +11668,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "padPrimed", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "splittingLine", 2);
 define("erp-pos-touch", ErpPosTouch);
 
 // ui/components/erp-pos/erp-pos.ts
@@ -11876,6 +11969,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     this.page = 0;
     this.searchable = false;
     this.sortDir = "asc";
+    this.filterValues = {};
     this.title = "";
     this.views = false;
     this.exportable = false;
@@ -11893,6 +11987,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
     this.clientSortDir = "asc";
     this.clientFilters = {};
     this.filterDraft = {};
+    this.serverFilters = {};
     this.panel = "none";
     this.viewMode = "table";
     this.viewChosenByUser = false;
@@ -12505,11 +12600,54 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   get hasFilterRow() {
     return this.filterColumns.length > 0;
   }
-  /** Nº de filtros activos (modo cliente) → badge del botón Filtros. */
+  /** Nº de filtros activos → badge del botón Filtros. En servidor cuenta `filterValues` (#106): sin
+   *  esto el embudo no daba NINGUNA señal de que la lista venía acotada. */
   get activeFilterCount() {
+    if (this.serverSide) {
+      return Object.keys(this.serverFilters).filter((k2) => this.serverFilterState(k2) !== void 0).length;
+    }
     return Object.values(this.clientFilters).filter(
       (f3) => f3.values && f3.values.size > 0 || f3.from || f3.to
     ).length;
+  }
+  // ── Estado de filtro VISIBLE (#106) ──────────────────────────────────────────────────────────
+  /** Traduce un valor de `filterValues` (la forma que emite `filterChange`) a la forma interna que
+   *  usan los `render*Filter`. `undefined` = ese filtro no está puesto. */
+  serverFilterState(key) {
+    const raw = this.serverFilters[key];
+    if (raw === void 0 || raw === null || raw === "") return void 0;
+    if (Array.isArray(raw)) {
+      const values = raw.filter((v3) => v3 !== null && v3 !== void 0 && v3 !== "").map((v3) => String(v3));
+      return values.length ? { values: new Set(values) } : void 0;
+    }
+    if (typeof raw === "object") {
+      const range = raw;
+      const from = range.from === null || range.from === void 0 || range.from === "" ? void 0 : String(range.from);
+      const to = range.to === null || range.to === void 0 || range.to === "" ? void 0 : String(range.to);
+      return from !== void 0 || to !== void 0 ? { from, to } : void 0;
+    }
+    return { values: /* @__PURE__ */ new Set([String(raw)]) };
+  }
+  /** Estado de filtro efectivo de una columna: servidor → `filterValues`/espejo; cliente → memoria. */
+  filterStateOf(key) {
+    return this.serverSide ? this.serverFilterState(key) : this.clientFilters[key];
+  }
+  /** Fija (o borra) el valor visible de un filtro en el espejo de servidor. */
+  setServerFilter(key, value) {
+    const next = { ...this.serverFilters };
+    const empty = value === void 0 || value === null || value === "" || Array.isArray(value) && value.length === 0;
+    if (empty) delete next[key];
+    else next[key] = value;
+    this.serverFilters = next;
+  }
+  /** Fija UN extremo de un rango en el espejo. Los dos extremos viajan en eventos SEPARADOS
+   *  (`{from}` y luego `{to}`), así que aquí se MEZCLA: reemplazar borraría el otro extremo. */
+  setServerRangeEdge(key, edge, value) {
+    const prev = this.serverFilters[key];
+    const base = prev && typeof prev === "object" && !Array.isArray(prev) ? { ...prev } : {};
+    base[edge] = value;
+    const alive = (v3) => v3 !== void 0 && v3 !== null && v3 !== "";
+    this.setServerFilter(key, alive(base.from) || alive(base.to) ? base : void 0);
   }
   /** Valor crudo de una columna para ordenar/filtrar (usa format si lo hay, si no row[key]). */
   rawValue(col, row) {
@@ -12599,15 +12737,18 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   }
   onFilterInput(col, ev) {
     const value = ev.target.value ?? "";
+    this.setServerFilter(col.key, value);
     this.emit("filterChange", { col: col.key, value });
   }
   onRangeInput(col, edge, ev) {
     const raw = ev.target.value ?? "";
     const v3 = raw === "" ? "" : Number(raw);
+    this.setServerRangeEdge(col.key, edge, v3);
     this.emit("filterChange", { col: col.key, value: { [edge]: v3 } });
   }
   onDateRangeInput(col, edge, ev) {
     const v3 = ev.target.value ?? "";
+    this.setServerRangeEdge(col.key, edge, v3);
     this.emit("filterChange", { col: col.key, value: { [edge]: v3 } });
   }
   // ── Filtros EN LÍNEA (toolbar) ────────────────────────────────────────────────────────────
@@ -12627,7 +12768,9 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   // `filterChange`; en cliente escribe `clientFilters` (multiselect ⇒ filtra por inclusión).
   onFilterSelect(col, value, multi) {
     if (this.serverSide) {
-      this.emit("filterChange", { col: col.key, value: value ?? (multi ? [] : "") });
+      const next = value ?? (multi ? [] : "");
+      this.setServerFilter(col.key, next);
+      this.emit("filterChange", { col: col.key, value: next });
       return;
     }
     if (multi) {
@@ -12641,6 +12784,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   onInlineRange(col, edge, ev) {
     const v3 = ev.target.value ?? "";
     if (this.serverSide) {
+      this.setServerRangeEdge(col.key, edge, v3);
       this.emit("filterChange", { col: col.key, value: { [edge]: v3 } });
       return;
     }
@@ -12671,6 +12815,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
    */
   willUpdate(changed) {
     this.applyInitialView();
+    if (changed.has("filterValues")) this.serverFilters = { ...this.filterValues ?? {} };
     if (!this.serverSide && changed.has("rows") && this.mobileShown !== 0) this.mobileShown = 0;
   }
   applyInitialView() {
@@ -12693,9 +12838,11 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   renderFilterControl(col) {
     if (!col.filterable) return A;
     const type = col.filterType ?? "text";
+    const f3 = this.filterStateOf(col.key);
     if (type === "select" || type === "multiselect") {
       const multi = type === "multiselect";
       const opts = col.options ?? this.distinctValues(col).map((v3) => ({ value: v3, label: v3 }));
+      const current = this.selectValue(f3, multi);
       return b2`
         <ion-select
           label=${col.header}
@@ -12705,6 +12852,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
           interface="modal"
           .interfaceOptions=${{ cssClass: "ok-overlay" }}
           placeholder=${this.t.select}
+          .value=${current}
           @ionChange=${(e7) => this.onFilterSelect(col, e7.detail.value, multi)}
         >
           ${multi ? A : b2`<ion-select-option value="">${this.t.select}</ion-select-option>`}
@@ -12720,8 +12868,10 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
           <span class="flabel">${col.header}</span>
           <div class="frange">
             <ion-input type=${t7} fill="outline" mode="md" placeholder=${type === "daterange" ? this.t.from : this.t.gte}
+              .value=${f3?.from ?? ""}
               @ionInput=${(e7) => onEdge(col, "from", e7)}></ion-input>
             <ion-input type=${t7} fill="outline" mode="md" placeholder=${type === "daterange" ? this.t.to : this.t.lte}
+              .value=${f3?.to ?? ""}
               @ionInput=${(e7) => onEdge(col, "to", e7)}></ion-input>
           </div>
         </div>
@@ -12735,9 +12885,17 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
         label=${col.header}
         label-placement="stacked"
         placeholder=${this.t.filterPlaceholder}
+        .value=${this.selectValue(f3, false)}
         @ionInput=${(e7) => this.onFilterInput(col, e7)}
       ></ion-input>
     `;
+  }
+  /** Valor para un control de un solo valor (`ion-select`/`ion-input`) o multi (`ion-select
+   *  multiple`) a partir del estado de filtro interno. '' / [] = sin filtro. */
+  selectValue(f3, multi) {
+    const values = [...f3?.values ?? /* @__PURE__ */ new Set()];
+    if (multi) return values;
+    return values.length ? values[0] : "";
   }
   // Controles de filtro COMPACTOS para la toolbar (modo `inlineFilters`). Solo select y rango de
   // fechas (los del screenshot); el resto de tipos siguen disponibles vía el drawer si no se activa
@@ -12752,11 +12910,11 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
   }
   renderInlineFilter(col) {
     const type = col.filterType ?? "text";
-    const f3 = this.clientFilters[col.key];
+    const f3 = this.filterStateOf(col.key);
     if (type === "select" || type === "multiselect") {
       const multi = type === "multiselect";
       const opts = col.options ?? this.distinctValues(col).map((v3) => ({ value: v3, label: v3 }));
-      const current = multi ? [...f3?.values ?? /* @__PURE__ */ new Set()] : f3?.values && f3.values.size ? [...f3.values][0] : "";
+      const current = this.selectValue(f3, multi);
       return b2`
         <ion-select
           class="tk-filter"
@@ -12954,7 +13112,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
                             ${this.toolButton("grid-outline", this.viewMode === "cards", () => this.setViewMode("cards"), this.t.viewCards)}
                           </span>
                         ` : A}
-                    ${this.hasFilterRow && !this.inlineFilters ? this.toolButton("funnel-outline", this.panel === "filters" || this.activeFilterCount > 0, () => this.toggle("filters"), this.t.filters, this.serverSide ? void 0 : this.activeFilterCount) : A}
+                    ${this.hasFilterRow && !this.inlineFilters ? this.toolButton("funnel-outline", this.panel === "filters" || this.activeFilterCount > 0, () => this.toggle("filters"), this.t.filters, this.activeFilterCount) : A}
                     ${this.effImport ? b2`
                           ${this.toolButton("cloud-upload-outline", false, () => this.renderRoot.querySelector(".tk-file")?.click(), this.t.importCsv)}
                           <input class="tk-file" type="file" accept=".csv,text/csv" hidden @change=${(e7) => this.onImportFile(e7)} />
@@ -13266,6 +13424,9 @@ __decorateClass11([
   n4({ attribute: "sort-dir" })
 ], _OkDataTable.prototype, "sortDir");
 __decorateClass11([
+  n4({ attribute: false })
+], _OkDataTable.prototype, "filterValues");
+__decorateClass11([
   n4()
 ], _OkDataTable.prototype, "title");
 __decorateClass11([
@@ -13339,6 +13500,9 @@ __decorateClass11([
 ], _OkDataTable.prototype, "filterDraft");
 __decorateClass11([
   r5()
+], _OkDataTable.prototype, "serverFilters");
+__decorateClass11([
+  r5()
 ], _OkDataTable.prototype, "panel");
 __decorateClass11([
   r5()
@@ -13360,19 +13524,6 @@ __decorateClass11([
 ], _OkDataTable.prototype, "menuOpen");
 var OkDataTable = _OkDataTable;
 define("ok-data-table", OkDataTable);
-
-// ui/lib/domain-error-text.ts
-var SOURCE_LANG = "en";
-function textFor(catalog, lang, code) {
-  const dict = catalog[lang];
-  const text = dict?.errors?.[code];
-  return typeof text === "string" && text.trim() ? text : "";
-}
-function domainErrorText(catalog, locale, e7) {
-  const code = e7?.code;
-  if (typeof code !== "string" || !code) return "";
-  return textFor(catalog, locale, code) || textFor(catalog, SOURCE_LANG, code);
-}
 
 // ui/components/erp-pos-quick-notes/erp-pos-quick-notes.ts
 var CATALOG3 = { es: es_default, en: en_default };

@@ -633,6 +633,12 @@
         "commands/order_recompute_total.sql"
       ]
     },
+    "sales._update_order_line": {
+      "permission": "sales.add_sale",
+      "sql": [
+        "commands/order_update_line.sql"
+      ]
+    },
     "sales._mark_lines_fired": {
       "permission": "sales.add_sale",
       "sql": [
@@ -718,6 +724,34 @@
       ],
       "ai": {
         "description": "Updates the quantity of a line in an open order and recomputes its provisional total (ADR-0141)."
+      }
+    },
+    "sales.order.split_line": {
+      "permission": "sales.add_sale",
+      "reads": [
+        {
+          "query": "sales.order.get",
+          "params": {
+            "order_id": "payload.order_id"
+          },
+          "required": true
+        },
+        {
+          "query": "sales.order.lines",
+          "params": {
+            "order_id": "payload.order_id"
+          },
+          "required": true
+        }
+      ],
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "split_order_line"
+      },
+      "schema": "schemas/split_order_line.json",
+      "ai": {
+        "description": "Splits a line of N services of an open order into N lines of ONE unit each, keeping the check worth the same and recomputing its provisional total in the same transaction (sales#242 / ADR-0422). The line the payload names keeps its id and drops to one unit; the new ids come back in new_ids. It exists because the unit a voucher session buys is the LINE: services enforces one redemption per (checkout_ref, line_ref), so a line of «haircut x 2» would hand out two haircuts for one session. Refused with sales.line_not_splittable on a line already fired to production, a comp, a set menu, a fractional quantity, a line of one, or beyond the ceiling of units one split may write."
       }
     },
     "sales.order.remove_line": {
@@ -894,6 +928,7 @@
     "sales.empty_sale": {},
     "sales.idempotency_key_required": {},
     "sales.insufficient_tendered": {},
+    "sales.line_not_splittable": {},
     "sales.modifier_catalog_unavailable": {},
     "sales.modifier_child_price_invalid": {},
     "sales.modifier_not_available": {},

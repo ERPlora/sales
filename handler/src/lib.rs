@@ -131,6 +131,17 @@ pub fn add_order_line(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Ou
     }
 }
 
+/// sales#242 / ADR-0422: splits a line of N services into N lines of one. See
+/// `split_order_line_pure`.
+#[cfg(feature = "guest")]
+#[plugin_fn]
+pub fn split_order_line(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
+    match split_order_line_pure(input.into_inner().into_value()) {
+        Ok(out) => Ok(Json(out)),
+        Err(e) => Err(Error::msg(e).into()),
+    }
+}
+
 /// Redondeo a la unidad mínima. **No decide el modo**: delega en `guest_sdk::money::round`, que es
 /// EL redondeo del hub (HALF_UP, ADR-0123 §4 — la única regla de redondeo monetario escrita en
 /// Derecho español: art. 11 de la Ley 46/1998 del euro).
@@ -2943,6 +2954,34 @@ fn kitchen_note(note: &str, is_gift: bool, gift_reason: &str) -> String {
         .join(" · ")
 }
 
+/// The PROVISIONAL amount of an order line, in minor units — the one arithmetic every door that
+/// materialises a row shares (ADR-0147 §2.3, sales#71).
+///
+/// It lives on its own because sales#242 gave it a third caller: splitting a line prices each of
+/// its N parts, and a second copy of this formula is exactly how the screen ends up drifting a cent
+/// from the receipt. Not fiscal: the HALF_UP quota and the per-rate breakdown are frozen at
+/// checkout (ADR-0123/0085).
+fn order_line_amount(
+    priced_unit: i64, qty: i64, price_qty: i64, is_gift: bool, line_disc: f64,
+) -> Result<i64, Refusal> {
+    if is_gift {
+        return Ok(0);
+    }
+    let pq_raw = if price_qty > 0 { price_qty } else { QUANTITY_SCALE };
+    if line_disc > 0.0 {
+        // With a discount: price × exact factor × quantity, a SINGLE HALF_UP — the same formula
+        // `calc_line_components` uses at checkout, so the preview does not drift from the receipt.
+        let pq = Decimal::from(pq_raw) / Decimal::from(QUANTITY_SCALE);
+        let factor = Decimal::ONE - Decimal::from_f64(line_disc).unwrap_or(Decimal::ZERO) / Decimal::from(100);
+        let exact = Decimal::from(priced_unit) * factor * (Decimal::from(qty) / Decimal::from(QUANTITY_SCALE)) / pq;
+        return Ok(money::round(exact));
+    }
+    // Provisional (display), but with the SDK's very arithmetic: integer money over the price
+    // quantity, a single HALF_UP (ADR-0147 §2.3).
+    calculate_line_amount(priced_unit, QuantityValue::from_raw(qty), QuantityValue::from_raw(pq_raw))
+        .map_err(|e| broken(format!("line_amount_overflow: {e:?}")))
+}
+
 fn order_line_row(
     item: &Value,
     line_id: &str,
@@ -2993,26 +3032,8 @@ fn order_line_row(
     // `unit_price`: that column is the frozen BASE the checkout starts from, and adding the delta
     // there would charge it twice.
     let priced_unit = unit_price + modifier_delta;
-    let line_total = if is_gift {
-        0
-    } else if line_disc > 0.0 {
-        // With a discount: price × exact factor × quantity, a SINGLE HALF_UP — the same formula
-        // `calc_line_components` uses at checkout, so the preview does not drift from the receipt.
-        let pq_raw = line_price_qty(item);
-        let pq = Decimal::from(if pq_raw > 0 { pq_raw } else { QUANTITY_SCALE }) / Decimal::from(QUANTITY_SCALE);
-        let factor = Decimal::ONE - Decimal::from_f64(line_disc).unwrap_or(Decimal::ZERO) / Decimal::from(100);
-        let exact = Decimal::from(priced_unit) * factor * (Decimal::from(qty) / Decimal::from(QUANTITY_SCALE)) / pq;
-        money::round(exact)
-    } else {
-        // Provisional (display), but with the SDK's very arithmetic: integer money over the price
-        // quantity, a single HALF_UP (ADR-0147 §2.3).
-        calculate_line_amount(
-            priced_unit,
-            QuantityValue::from_raw(qty),
-            QuantityValue::from_raw(line_price_qty(item)),
-        )
-        .map_err(|e| broken(format!("line_amount_overflow: {e:?}")))?
-    };
+    let line_total =
+        order_line_amount(priced_unit, qty, line_price_qty(item), is_gift, line_disc)?;
 
     let mut p = Map::new();
     p.insert("id".into(), json!(line_id));
@@ -3252,6 +3273,201 @@ fn add_order_line_inner(input: Value) -> Result<Output, Refusal> {
         ],
         ..Default::default()
     })
+}
+
+/// How many lines of ONE a single split may produce (sales#242 / ADR-0422).
+///
+/// The host mints a finite batch of ids per command (`NEW_IDS_BATCH`, ARQUITECTURA.md §5.3), so an
+/// unbounded split would run out of them and write a check missing rows. Fifty units of one service
+/// on one counter check is not a redemption case either — it is a typo on the quantity. The screen
+/// keeps the same ceiling (`MAX_LINE_SPLIT`, `ui/lib/line-tender.ts`).
+const MAX_LINE_SPLIT: i64 = 50;
+
+/// sales#242 / ADR-0422 — **the unit a session buys is the LINE**, so the line is what gets split.
+///
+/// A voucher redemption covers one line and spends one session: `services` enforces one per
+/// `(hub_id, checkout_ref, line_ref)` with a unique index and its hold takes no quantity. So «Corte
+/// × 2» — which is what the till builds when the cashier taps the same service twice, and what is
+/// right for everything else — could hand out two haircuts for one session. The market's answer,
+/// with 12 verified references, is not to teach the voucher about quantities (that is Square's
+/// longest complaint thread and it cannot express «one session for the mother, full price for the
+/// daughter»): it is to make each service its own line. Phorest adds the service again, Boulevard
+/// is one voucher per service, Zanda links one session to one invoice item.
+///
+/// This is a SERVER operation because half a split is money: the source row still at two with one
+/// clone already in would charge the check for three haircuts. Every operation below lands in the
+/// same transaction, so it is all of it or none of it.
+///
+/// 🔴 Nothing here is re-priced against the catalogue, and that is deliberate: the row froze its
+/// price when the line was added (sales#175). Re-reading the catalogue would reprice this morning's
+/// check with this afternoon's prices, which is what freezing it removed.
+pub fn split_order_line_pure(input: Value) -> Result<Output, String> {
+    finish(split_order_line_inner(input))
+}
+
+fn split_order_line_inner(input: Value) -> Result<Output, Refusal> {
+    let payload = input.get("payload").cloned().unwrap_or(Value::Null);
+    let context = input.get("context").cloned().unwrap_or(Value::Null);
+    let empty: Vec<Value> = Vec::new();
+    let new_ids = context.get("new_ids").and_then(|v| v.as_array()).unwrap_or(&empty);
+    let order_id = as_str(payload.get("order_id").unwrap_or(&Value::Null));
+    let line_id = as_str(payload.get("line_id").unwrap_or(&Value::Null));
+
+    // The order has to exist, belong to THIS hub and be open. The query filters by `hub_id` (the
+    // runtime injects it), so zero rows means exactly that.
+    if tax::read_rows(&context, "sales.order.get").unwrap_or_default().is_empty() {
+        return Err(reject(
+            "sales.order_unavailable",
+            format!("`{order_id}` is not an open order of this business"),
+        ));
+    }
+
+    // Fails CLOSED. `read_rows` answers `None` when the read did not resolve, and taking that for
+    // «this check has no lines» would refuse with the wrong reason — or clone a row nobody handed
+    // over. The read is declared `required` in the manifest for the same reason.
+    let lines = tax::read_rows(&context, "sales.order.lines").ok_or_else(|| {
+        reject("sales.order_lines_unavailable", format!("`{order_id}` did not hand over its lines"))
+    })?;
+    let row = *lines.iter().find(|r| field(r, "id") == line_id).ok_or_else(|| {
+        reject(
+            "sales.order_line_not_available",
+            format!("`{line_id}` is not a live unpaid line of `{order_id}`"),
+        )
+    })?;
+
+    let parts = splittable_parts(row)?;
+    // The guest takes ids from the host's batch and can mint none of its own (sandbox without
+    // randomness, §5.3). Running short is a broken contract, not a business refusal: the cap above
+    // is what keeps it from happening.
+    if new_ids.len() < (parts - 1) as usize {
+        return Err(broken(format!("split_order_line: {} ids for {parts} parts", new_ids.len())));
+    }
+
+    // sales#200/#208 — what the supplements are worth was FROZEN on the row; this reads that, which
+    // is why the command needs no catalogue. A row written before the snapshot existed carries no
+    // `price_delta` and is refused rather than valued from the browser (`catalog_modifier`).
+    let (modifier_delta, modifier_snapshot) = fold_modifiers(&resolve_modifiers(row, Some(row), None)?)?;
+    let unit_price = as_cents(row.get("unit_price").unwrap_or(&Value::Null), 0);
+    let line_disc = row.get("discount_percent").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
+    if !rate_in_range(line_disc) {
+        return Err(reject("sales.discount_out_of_range", format!("line discount {line_disc}")));
+    }
+    // 🔴 THE PART IS PRICED THE WAY THE CHECKOUT WILL PRICE IT, one unit at a time — not as a share
+    // of the line's old total. `complete_sale` values every item on its own, so N parts written as
+    // the largest-remainder shares of the old amount (ADR-0210) would leave `provisional_total` a
+    // cent away from what the drawer takes, which is the drift the guard of sales#246 exists to
+    // catch. ADR-0210 prorates a TICKET discount over lines; three discounted units priced one by
+    // one is a different sum, and one by one is what they now are.
+    let part_total = order_line_amount(
+        unit_price + modifier_delta, QUANTITY_SCALE, line_price_qty(row), false, line_disc,
+    )?;
+
+    let mut ops: Vec<Operation> = Vec::with_capacity(parts as usize + 1);
+    // The SOURCE row keeps its id — and with it its place in the check, its audit trail and
+    // anything already pointing at it — and drops to one unit.
+    let mut source = Map::new();
+    source.insert("order_id".into(), json!(order_id));
+    source.insert("line_id".into(), json!(line_id));
+    source.insert("quantity".into(), json!(QUANTITY_SCALE));
+    source.insert("line_total".into(), json!(part_total));
+    // Everything the statement COALESCEs is sent as NULL on purpose: the split changes the quantity
+    // and the amount, and nothing else about the line.
+    source.insert("is_gift".into(), Value::Null);
+    source.insert("gift_reason".into(), Value::Null);
+    source.insert("discount_percent".into(), Value::Null);
+    source.insert("notes".into(), Value::Null);
+    ops.push(Operation::sql("sales._update_order_line", source));
+
+    for i in 0..(parts - 1) {
+        let new_id = new_ids.get(i as usize).map(as_str).unwrap_or_default();
+        ops.push(Operation::sql(
+            "sales._insert_order_line",
+            split_clone_row(row, &new_id, &order_id, part_total, &modifier_snapshot),
+        ));
+    }
+
+    let mut recompute = Map::new();
+    recompute.insert("order_id".into(), json!(order_id));
+    ops.push(Operation::sql("sales._recompute_order_total", recompute));
+    Ok(Output { operations: ops, ..Default::default() })
+}
+
+/// How many lines of ONE this row becomes, or the reason it cannot become any.
+///
+/// One code for every «this row cannot be split», because they are one answer to the cashier and
+/// the screen never offers the action in any of these cases (`splitCount`, `ui/lib/line-tender.ts`).
+/// This is the second door and it does not trust the first.
+fn splittable_parts(row: &Value) -> Result<i64, Refusal> {
+    let line_id = field(row, "id");
+    let refuse = |why: &str| {
+        Err(reject("sales.line_not_splittable", format!("`{line_id}` {why}")))
+    };
+    // A line already in production is locked by `order_update_line.sql` (`fired_at IS NULL`): the
+    // source row would keep its quantity while the clones went in, and the check would silently
+    // grow by the whole line.
+    if !field(row, "fired_at").is_empty() {
+        return refuse("already went to production and its quantity can no longer be rewritten");
+    }
+    if row.get("is_gift").map(as_bool).unwrap_or(false) {
+        return refuse("is a comp: it costs nothing, so no session covers it");
+    }
+    // A set menu is a GROUP of sibling lines, not a quantity (ADR-0381): cloning one would mint a
+    // second menu out of a row that only holds part of the first.
+    let combo = field(row, "combo");
+    if (!combo.is_empty() && combo != "{}")
+        || row.get("combo_group_ref").map(|v| !v.is_null()).unwrap_or(false)
+    {
+        return refuse("belongs to a set menu, which is a group of lines and not a quantity");
+    }
+    let qty = item_i64(row, "quantity", QUANTITY_SCALE);
+    if qty <= 0 || qty % QUANTITY_SCALE != 0 {
+        return refuse("is not a whole number of units, so it has no lines of one to become");
+    }
+    let parts = qty / QUANTITY_SCALE;
+    if parts < 2 {
+        return refuse("is already a line of one");
+    }
+    if parts > MAX_LINE_SPLIT {
+        return refuse("is beyond the ceiling of units one split may write");
+    }
+    Ok(parts)
+}
+
+/// One of the N-1 rows a split writes: the SAME line, one unit of it.
+///
+/// Every frozen field travels verbatim — price (sales#175), tax category (ADR-0085), service flag
+/// (sales#89), category snapshot (sales#12), note (sales#156), supplements (sales#200) and unit
+/// context (ADR-0147 §2.4) — because they are what the check already agreed to charge. The two that
+/// do NOT travel are the ones a clone must not inherit: `fired_at` (the clone never went to the
+/// pass, and `splittable_parts` refuses a line that did) and the combo columns, refused upstream.
+fn split_clone_row(
+    row: &Value, new_id: &str, order_id: &str, part_total: i64, modifier_snapshot: &str,
+) -> Map<String, Value> {
+    let mut p = Map::new();
+    p.insert("id".into(), json!(new_id));
+    p.insert("order_id".into(), json!(order_id));
+    p.insert("product_id".into(), row.get("product_id").cloned().unwrap_or(Value::Null));
+    p.insert("product_name".into(), json!(field(row, "product_name")));
+    p.insert("product_sku".into(), json!(field(row, "product_sku")));
+    p.insert("quantity".into(), json!(QUANTITY_SCALE));
+    freeze_unit_context(row, &mut p);
+    p.insert("unit_price".into(), json!(as_cents(row.get("unit_price").unwrap_or(&Value::Null), 0)));
+    p.insert("is_gift".into(), json!(0));
+    p.insert("gift_reason".into(), json!(""));
+    p.insert("line_total".into(), json!(part_total));
+    p.insert("tax_category_key".into(), json!(field(row, "tax_category_key")));
+    p.insert("cost".into(), json!(as_cents(row.get("cost").unwrap_or(&Value::Null), 0)));
+    p.insert("is_service".into(), json!(row.get("is_service").map(as_bool).unwrap_or(false) as i64));
+    p.insert("category_id".into(), category_snapshot(row));
+    p.insert(
+        "discount_percent".into(),
+        json!(row.get("discount_percent").map(|v| as_f64(v, 0.0)).unwrap_or(0.0)),
+    );
+    p.insert("notes".into(), json!(field(row, "notes")));
+    p.insert("modifiers".into(), json!(modifier_snapshot));
+    p.insert("combo".into(), json!("{}"));
+    p.insert("combo_group_ref".into(), Value::Null);
+    p
 }
 
 /// ADR-0141 — **la comanda nace del pedido, no del cobro**.
@@ -8726,6 +8942,260 @@ mod tests {
         let err = add_order_line_pure(add_line_input(other, open_order_row()))
             .refused("nothing is added blind");
         assert_eq!(err.code, "sales.product_not_available", "unexpected code: {err:?}");
+    }
+
+    // ── sales#242 / ADR-0422 · «Corte × 2» becomes two lines of one ────────────────────────────
+    //
+    // A redemption covers ONE line and spends ONE session (`services` enforces one per
+    // `(checkout_ref, line_ref)` with a unique index, and its hold takes no quantity). The till used
+    // to dead-end there: it listed the line, wrote the reason on it and left the cashier to split it
+    // by hand, except there was no «split». This is that split, and it is a SERVER operation because
+    // half a split is money: the source row at two and one clone already in would charge the check
+    // for three haircuts.
+    //
+    // 🔴 The clones are NOT re-priced against the catalogue. The row already froze its price
+    // (sales#175) and re-reading the catalogue here would reprice this morning's check with this
+    // afternoon's prices — which is exactly what freezing it removed.
+
+    /// A live row of `sales.order.lines`: a haircut rung up twice, 18,00 € each.
+    fn split_line_row() -> Value {
+        json!({
+            "id": "line-1", "order_id": "ord-1", "product_id": "s-corte",
+            "product_name": "Corte de señora", "product_sku": "", "quantity": 2_000_000,
+            "unit_price": 1800, "is_gift": 0, "gift_reason": "", "line_total": 3600,
+            "tax_category_key": "service.generic", "cost": 0, "is_service": 1,
+            "unit_code": "ud", "unit_name": "", "factor_num": 1, "factor_den": 1,
+            "increment_value": 1_000_000, "price_quantity_value": 1_000_000,
+            "pricing_unit_code": "ud", "pricing_unit_name": "", "pricing_factor_num": 1,
+            "pricing_factor_den": 1, "round_no": 0, "fired_at": null,
+            "category_id": "sc-pelo", "discount_percent": 0, "modifiers": "[]", "notes": "",
+            "combo_group_ref": null, "combo": "{}"
+        })
+    }
+
+    fn split_input(row: Value, order: Value) -> Value {
+        let mut inp = input(json!([]), 60, 0);
+        inp["payload"] = json!({ "order_id": "ord-1", "line_id": "line-1" });
+        let mut reads = Map::new();
+        reads.insert("sales.order.get".into(), order);
+        reads.insert("sales.order.lines".into(), json!([row]));
+        inp["context"]["reads"] = Value::Object(reads);
+        inp
+    }
+
+    /// The source row as the split leaves it (quantity and amount), from the update operation.
+    fn split_source(out: &Output) -> Map<String, Value> {
+        out.operations.iter()
+            .find(|o| o.command == "sales._update_order_line")
+            .expect("the source row is rewritten to a line of one")
+            .params
+            .clone()
+    }
+
+    #[test]
+    fn splitting_a_line_of_two_leaves_two_lines_of_one() {
+        let out = split_order_line_pure(split_input(split_line_row(), open_order_row()))
+            .accepted("a haircut rung up twice can be split");
+        let source = split_source(&out);
+        assert_eq!(source["line_id"], json!("line-1"), "the source row keeps its id and its holds");
+        assert_eq!(source["quantity"], json!(1_000_000), "one unit, fixed point 10⁶");
+        let clones = order_lines(&out);
+        assert_eq!(clones.len(), 1, "two lines of one out of a line of two: one clone");
+        assert_eq!(clones[0]["quantity"], json!(1_000_000));
+        assert_ne!(clones[0]["id"], json!("line-1"), "the clone takes an id from the host's batch");
+        assert!(out.operations.iter().any(|o| o.command == "sales._recompute_order_total"),
+                "the order's provisional total is recomposed in the SAME transaction");
+    }
+
+    #[test]
+    fn splitting_does_not_move_the_money_of_the_check() {
+        let out = split_order_line_pure(split_input(split_line_row(), open_order_row()))
+            .accepted("a haircut rung up twice can be split");
+        let parts: i64 = as_cents(&split_source(&out)["line_total"], -1)
+            + order_lines(&out).iter().map(|l| as_cents(&l["line_total"], -1)).sum::<i64>();
+        assert_eq!(parts, 3600, "two haircuts before the split, two haircuts after it");
+    }
+
+    #[test]
+    fn every_part_is_priced_the_way_THE_CHECKOUT_will_price_it() {
+        // 🔴 This is the invariant that decides the arithmetic, and it is NOT «the total does not
+        // change»: it is `provisional_total` == what the drawer takes (the guard of sales#246).
+        //
+        // `complete_sale` prices each ITEM on its own — `round(price × qty × (1 − discount))` — so
+        // after the split it will charge 3 × round(333 × 0,9) = 900. Writing the largest-remainder
+        // shares instead (300 + 300 + 299 = 899, ADR-0210) would keep the screen still and hand the
+        // check a cent the checkout is never going to charge, which is the drift
+        // `sales.payments_do_not_match_total` exists to catch. ADR-0210 prorates a TICKET discount
+        // over lines; this is three discounted units priced one by one, and one by one they cost
+        // 9,00 €.
+        let mut row = split_line_row();
+        row["quantity"] = json!(3_000_000);
+        row["unit_price"] = json!(333);
+        row["discount_percent"] = json!(10.0);
+        row["line_total"] = json!(899); // round(333 × 3 × 0,9)
+        let out = split_order_line_pure(split_input(row, open_order_row()))
+            .accepted("a discounted line splits too");
+        assert_eq!(as_cents(&split_source(&out)["line_total"], -1), 300);
+        for clone in order_lines(&out) {
+            assert_eq!(as_cents(&clone["line_total"], -1), 300, "same price, one by one");
+            assert_eq!(clone["discount_percent"], json!(10.0), "the discount travels with the unit");
+        }
+    }
+
+    #[test]
+    fn the_clones_carry_the_frozen_snapshot_of_the_line() {
+        let mut row = split_line_row();
+        row["notes"] = json!("sin secador");
+        let out = split_order_line_pure(split_input(row, open_order_row()))
+            .accepted("a haircut rung up twice can be split");
+        let clone = &order_lines(&out)[0];
+        assert_eq!(clone["order_id"], json!("ord-1"));
+        assert_eq!(clone["product_id"], json!("s-corte"));
+        assert_eq!(clone["product_name"], json!("Corte de señora"));
+        assert_eq!(clone["unit_price"], json!(1800), "the price stays the FROZEN one (sales#175)");
+        assert_eq!(clone["tax_category_key"], json!("service.generic"), "the VAT authority (ADR-0085)");
+        assert_eq!(clone["is_service"], json!(1), "sales#89: still a service, still no stock");
+        assert_eq!(clone["category_id"], json!("sc-pelo"), "sales#12: kitchen routing survives");
+        assert_eq!(clone["notes"], json!("sin secador"), "sales#156: the note is on every unit");
+        assert_eq!(clone["price_quantity_value"], json!(1_000_000), "ADR-0147 §2.4: unit context");
+        assert_eq!(clone["combo"], json!("{}"));
+    }
+
+    #[test]
+    fn a_supplement_frozen_on_the_line_is_worth_the_same_on_every_part() {
+        // sales#200/#208: the row froze what the supplement is worth. The split re-reads THAT, not
+        // the catalogue — there is no catalogue in this command's reads on purpose.
+        let mut row = split_line_row();
+        row["modifiers"] = json!("[{\"option_id\":\"o-tratamiento\",\"group_id\":\"g\",\"name\":\"Tratamiento\",\"kitchen_name\":\"Tratamiento\",\"price_delta\":300,\"tax_category_key\":\"\"}]");
+        row["line_total"] = json!(4200);
+        let out = split_order_line_pure(split_input(row, open_order_row()))
+            .accepted("a line with a supplement splits too");
+        assert_eq!(as_cents(&split_source(&out)["line_total"], -1), 2100, "18,00 € + 3,00 €");
+        assert_eq!(as_cents(&order_lines(&out)[0]["line_total"], -1), 2100);
+        assert_eq!(order_lines(&out)[0]["unit_price"], json!(1800),
+                   "the delta rides on the AMOUNT, never on the frozen base — it would be charged twice");
+    }
+
+    #[test]
+    fn splitting_a_line_of_an_order_that_is_not_open_is_refused_with_its_code() {
+        let err = split_order_line_pure(split_input(split_line_row(), json!([])))
+            .refused("no check, no split");
+        assert_eq!(err.code, "sales.order_unavailable", "unexpected code: {err:?}");
+    }
+
+    #[test]
+    fn splitting_a_line_that_is_not_on_the_check_is_refused() {
+        let mut row = split_line_row();
+        row["id"] = json!("line-other");
+        let err = split_order_line_pure(split_input(row, open_order_row()))
+            .refused("that row is not a live line of this order");
+        assert_eq!(err.code, "sales.order_line_not_available", "unexpected code: {err:?}");
+    }
+
+    #[test]
+    fn the_cases_that_cannot_become_lines_of_one_are_refused_with_one_code() {
+        // Each of these would leave the check WRONG if it went through, and each of them is a case
+        // the screen never offers — this is the second door, and it does not trust the first.
+        let mut fired = split_line_row();
+        fired["fired_at"] = json!("2026-09-02T10:00:00+00:00");
+        let mut weighed = split_line_row();
+        weighed["quantity"] = json!(1_500_000);
+        let mut single = split_line_row();
+        single["quantity"] = json!(1_000_000);
+        let mut over_cap = split_line_row();
+        over_cap["quantity"] = json!(51_000_000);
+        let mut comp = split_line_row();
+        comp["is_gift"] = json!(1);
+        let mut menu = split_line_row();
+        menu["combo"] = json!("{\"combo_id\":\"c-1\",\"combo_choices\":[]}");
+        menu["combo_group_ref"] = json!("ord-1-0");
+        for (what, row) in [
+            ("a line already in production keeps its quantity: the SQL will not touch it", fired),
+            ("half a haircut is not a line of one", weighed),
+            ("a line of one has nothing to split", single),
+            ("beyond the cap the host runs out of ids mid-check", over_cap),
+            ("a comp costs nothing, so no session covers it", comp),
+            ("a set menu is a GROUP of lines, not a quantity (ADR-0381)", menu),
+        ] {
+            let err = split_order_line_pure(split_input(row, open_order_row())).refused(what);
+            assert_eq!(err.code, "sales.line_not_splittable", "{what}: unexpected code {err:?}");
+        }
+    }
+
+    /// Every `:name` a statement binds, comments stripped — the module's SQL is full of prose that
+    /// mentions parameters, and the runtime's translator ignores those too.
+    fn bound_params(sql: &str) -> Vec<String> {
+        let mut names: Vec<String> = Vec::new();
+        for line in sql.lines() {
+            let code = line.split("--").next().unwrap_or("");
+            let bytes: Vec<char> = code.chars().collect();
+            let mut i = 0;
+            while i < bytes.len() {
+                if bytes[i] == ':' {
+                    let start = i + 1;
+                    let mut end = start;
+                    while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == '_') {
+                        end += 1;
+                    }
+                    if end > start {
+                        let name: String = bytes[start..end].iter().collect();
+                        if !names.contains(&name) {
+                            names.push(name);
+                        }
+                    }
+                    i = end;
+                } else {
+                    i += 1;
+                }
+            }
+        }
+        names
+    }
+
+    #[test]
+    fn the_split_binds_every_parameter_its_two_doors_ask_for() {
+        // 🔴 The one thing the tests above CANNOT see. They check what the split decides; this
+        // checks that what it emits BINDS. A statement Postgres cannot prepare is a command that
+        // does not exist in any hub (ADR-0154), and half a split is money: the source row still at
+        // two with a clone already in charges the check for three haircuts. When either door grows
+        // a column, this fails here instead of in a salon.
+        //
+        // The system parameters (`hub_id`, `current_user_id`, `now`) are the runtime's and are
+        // never emitted by a guest, so they are the only ones excluded.
+        const SYSTEM: [&str; 3] = ["hub_id", "current_user_id", "now"];
+        let out = split_order_line_pure(split_input(split_line_row(), open_order_row()))
+            .accepted("a haircut rung up twice can be split");
+
+        for (command, sql) in [
+            ("sales._update_order_line", include_str!("../../commands/order_update_line.sql")),
+            ("sales._insert_order_line", include_str!("../../commands/_insert_order_line.sql")),
+        ] {
+            let params = out.operations.iter()
+                .find(|o| o.command == command)
+                .unwrap_or_else(|| panic!("the split emits no `{command}`"))
+                .params
+                .clone();
+            let wanted = bound_params(sql);
+            assert!(!wanted.is_empty(), "{command}: the statement binds nothing — this check is vacuous");
+            for name in wanted {
+                if SYSTEM.contains(&name.as_str()) {
+                    continue;
+                }
+                assert!(params.contains_key(&name),
+                        "{command} binds `:{name}` and the split does not send it");
+            }
+        }
+    }
+
+    #[test]
+    fn without_the_lines_of_the_order_nothing_is_split() {
+        // Fails CLOSED: `read_rows` hands back `None` when the read did not resolve, and reading
+        // that as «the check has no lines» would refuse with the wrong code — or, worse, invent a
+        // clone out of a row nobody delivered.
+        let mut inp = split_input(split_line_row(), open_order_row());
+        inp["context"]["reads"] = json!({ "sales.order.get": open_order_row() });
+        let err = split_order_line_pure(inp).refused("no lines, no split");
+        assert_eq!(err.code, "sales.order_lines_unavailable", "unexpected code: {err:?}");
     }
 
     // ── sales#164 / #172 · THE AUTHORITATIVE PREVIEW ─────────────────────────────────────────────

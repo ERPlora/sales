@@ -59,3 +59,45 @@ describe('plantillas Lit sin backticks en comentarios', () => {
     expect(backticksEnComentariosDePlantilla('const t = html`<div>/* limpio */</div>`;')).toHaveLength(0);
   });
 });
+
+// GUARD 2 (sales#242): dos campos reactivos con el MISMO nombre en un componente.
+//
+// `erp-pos-touch.ts` tiene 5.000 líneas y ya llevaba un `@state() splitting` (el reparto del cobro
+// entre medios, sales#159). Un segundo `@state() splitting` para la línea que se está separando
+// compiló, pasó sus tests y esbuild solo lo dejó en un WARNING — en JavaScript la segunda
+// declaración GANA y la primera desaparece, así que la pantalla del pago mixto se habría quedado
+// gobernada por una cadena y nadie lo habría visto hasta cobrar a medias en un mostrador.
+//
+// Un aviso de build que no rompe nada es un aviso que se aprende a no leer, y esto puede volver a
+// pasar en cualquier fichero nuevo: por eso el arreglo es esta regla y no solo el renombrado.
+function camposReactivosDuplicados(src: string): string[] {
+  const seen = new Map<string, number>();
+  // `@state() private x = …` / `@property({…}) y: T = …`, con o sin modificadores.
+  const re = /@(?:state|property)\s*\([^)]*\)\s*(?:(?:private|protected|public|readonly|accessor|declare)\s+)*([A-Za-z_$][\w$]*)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src))) seen.set(m[1], (seen.get(m[1]) ?? 0) + 1);
+  return [...seen].filter(([, n]) => n > 1).map(([name]) => name);
+}
+
+describe('un componente no declara dos veces el mismo campo reactivo', () => {
+  it('ningún `@state`/`@property` está duplicado dentro de un mismo fichero', () => {
+    const malos: string[] = [];
+    const salesRoot = raizDelModulo();
+    for (const f of tsFiles(join(salesRoot, 'ui'))) {
+      for (const name of camposReactivosDuplicados(readFileSync(f, 'utf8'))) {
+        malos.push(`${f.split('/ui/')[1]}: ${name}`);
+      }
+    }
+    expect(malos, 'la segunda declaración gana y la primera desaparece en silencio').toEqual([]);
+  });
+
+  it('el detector funciona (si no, este guard sería decorativo)', () => {
+    expect(camposReactivosDuplicados(
+      '@state() private splitting = false;\n@state() private splitting = \'\';',
+    )).toEqual(['splitting']);
+    expect(camposReactivosDuplicados(
+      '@state() private splitting = false;\n@state() private splittingLine = \'\';',
+    )).toEqual([]);
+    expect(camposReactivosDuplicados('@property({ type: String }) lineRef = \'\';')).toEqual([]);
+  });
+});

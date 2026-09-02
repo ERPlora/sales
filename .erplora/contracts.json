@@ -48,6 +48,7 @@
       "sales.order.set_discount",
       "sales.order.set_label",
       "sales.order.split",
+      "sales.order.split_line",
       "sales.order.update_line",
       "sales.order.void",
       "sales.quick_notes.create",

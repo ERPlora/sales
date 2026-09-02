@@ -1,5 +1,7 @@
 node_modules/
+node_modules
 target/
+__pycache__/
 .stencil-out/
 *.log
 .DS_Store

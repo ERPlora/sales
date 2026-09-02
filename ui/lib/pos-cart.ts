@@ -705,3 +705,27 @@ export async function splitOrder(
   });
   return firstNewId(res);
 }
+
+/**
+ * SEPARAR UNA LÍNEA (sales#242 / ADR-0422): «Corte × 2» pasa a ser dos líneas de una unidad en la
+ * MISMA cuenta. Devuelve los `line_id` de las líneas nuevas (la original conserva el suyo).
+ *
+ * No es dividir la cuenta: ahí nace un segundo pedido y aquí no nace ninguno. Lo que cambia es la
+ * unidad de cobro, porque es también la unidad que un bono canjea — `services` impone un canje por
+ * `(checkout_ref, line_ref)`, así que una línea de dos daría dos cortes por una sesión.
+ *
+ * Un solo comando, por el mismo motivo que fusionar: bajar la cantidad a 1 y añadir N−1 líneas desde
+ * el navegador no es atómico, y a medio camino la cuenta cobra de más o de menos. Cuántas líneas
+ * salen lo decide la CANTIDAD de la fila en el servidor; el navegador no manda un número.
+ */
+export async function splitOrderLine(
+  client: ErploraClientLike, orderId: string, lineId: string,
+): Promise<string[]> {
+  if (!orderId || !lineId) return [];
+  const res = await client.command('sales.order.split_line', {
+    order_id: orderId,
+    line_id: lineId,
+  });
+  const ids = (res as { new_ids?: unknown[] })?.new_ids;
+  return Array.isArray(ids) ? ids.filter((v): v is string => typeof v === 'string') : [];
+}
