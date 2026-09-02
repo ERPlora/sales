@@ -49,7 +49,7 @@ import { withPosSettingsDefaults, type PosSettings } from '../../lib/pos-setting
 import {
   buildPaymentsPayload, changeDue, chargeBlock, planTender, remainingCents, type Tender,
 } from '../../lib/split-tender.js';
-import { tenderableLines, coverableLine, uncoveredLines } from '../../lib/line-tender.js';
+import { tenderableLines, coverableLine, uncoveredLines, splitCount, linePart } from '../../lib/line-tender.js';
 // The bill is painted by ok-receipt HERE, so it is registered here. It used to arrive only
 // transitively (document-modal → erp-sales-document), i.e. by accident: dropping that unrelated
 // import would have left `<ok-receipt>` an unknown element and the bill blank again.
@@ -61,7 +61,7 @@ import '@erplora/outfitkit/ok-status-pill';
 import {
   mergeCartLines, listOpenChecks, type OpenCheck,
   // ADR-0141: el carrito lo respalda un PEDIDO real (filas), no un blob con debounce.
-  openOrderWithLines, addOrderLine, addOpenPriceLine, updateOrderLineQty, updateOrderLineDiscount, updateOrderLineNote, persistLineQty, removeOrderLine, loadOrderLines, mergeOrders, splitOrder,
+  openOrderWithLines, addOrderLine, addOpenPriceLine, updateOrderLineQty, updateOrderLineDiscount, updateOrderLineNote, persistLineQty, removeOrderLine, loadOrderLines, mergeOrders, splitOrder, splitOrderLine,
   unitContextPayload, lineAmount, cartTotal, unitPriceWithModifiers, type CartLine, type ErploraClientLike,
 } from '../../lib/pos-cart.js';
 import { loadTaxCatalog, productSellability, resolveLineTax, type TaxCatalog } from '../../lib/pos-tax.js';
@@ -80,6 +80,9 @@ import { checkoutErrorKey, errorCode, newIdempotencyKey } from '../../lib/checko
 // negocio para el cajero (la guarda `res.ok` del SDK se persigue aparte, en el hub).
 import { transportErrorKey, SERVER_UNAVAILABLE_KEY } from '../../lib/transport-error.js';
 import { recoverCheckout } from '../../lib/checkout-recovery.js';
+// ADR-0398: the sentence a DECLARED domain code carries, for the paths this screen has nothing
+// better to say about than the catalogue does.
+import { domainErrorText } from '../../lib/domain-error-text.js';
 import { MediaPhotoCache } from '../../lib/media-photo-cache.js';
 // Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC.
 import esLocale from '../../../locales/es.json';
@@ -610,6 +613,12 @@ export class ErpPosTouch extends LitElement {
     .tl-slot { margin-top:.45rem; }
     .tl-slot:empty { display:none; }
     .tl-note { margin-top:.35rem; font-size:.8rem; color:var(--mut); }
+    /* sales#242 — the label of the split. Two identical rows read as a double charge until
+       something numbers them (the Shopify lesson), so it rides next to the name, not below it. */
+    .tl-part { margin-left:.35rem; font-size:.78rem; font-weight:700; color:var(--mut); }
+    /* The action the till was missing: a 48 px target, because the cashier taps it with a thumb on
+       a counter tablet — the same floor every other control of this sheet keeps. */
+    .tl-split { margin-top:.45rem; --padding-top:0; --padding-bottom:0; min-height:48px; }
     /* Entrar a repartir es SECUNDARIO (la mayoría de los cobros son de un solo medio); tomar la
        pata, en cambio, es lo que se pulsa una vez por medio, así que lleva el acento. */
     .pay-split-btn, .pay-add { display:flex; align-items:center; justify-content:center; gap:.45rem;
@@ -4397,20 +4406,79 @@ export class ErpPosTouch extends LitElement {
       <ul class="tl-list">
         ${lines.map((l) => {
           const isCovered = !!l.line_id && this.covered.has(l.line_id);
+          const part = linePart(lines, l);
+          const parts = splitCount(l);
           return html`<li class="tender-line" data-line=${l.line_id ?? ''}>
             <div class="tl-h">
-              <span class="tl-name">${l.name}</span>
+              <span class="tl-name">${l.name}${part
+                ? html`<span class="tl-part" data-part=${part.part} data-of=${part.of}
+                    >${t('ui.tenderLinePart', { i: String(part.part), n: String(part.of) })}</span>`
+                : nothing}</span>
               <span class="tl-amount" ?data-covered=${isCovered}>${this.money(lineAmount(l))}</span>
             </div>
             ${coverableLine(l)
               ? html`<div class="tl-slot"></div>`
-              // Un canje gasta UNA sesión y cubre la línea ENTERA, así que «Corte × 3» saldría a
-              // tres cortes por una sesión. No se ofrece — y se DICE, que un hueco que desaparece
-              // sin explicación es el fallo mudo que se lee como «el TPV no responde».
-              : html`<div class="tl-note">${t('ui.tenderOneSessionPerLine')}</div>`}
+              : parts
+                // ADR-0422 — a redemption spends ONE session on ONE line, so «Corte × 2» is not
+                // offered the slot: it is offered the SPLIT. Two lines of one, each with its own
+                // gap, is the only shape that says «one session for the mother, full price for the
+                // daughter» — and it is what the trade does (Phorest, Boulevard, Zanda, Vagaro).
+                // What used to be here was a dead end: the reason written on the line and the
+                // cashier left to split it by hand, on a till that had no split.
+                ? html`
+                  <ion-button class="tl-split" expand="block" fill="outline" size="small"
+                      data-parts=${parts} ?disabled=${this.splittingLine === l.line_id}
+                      @click=${() => void this.splitTenderLine(l)}>
+                    ${t('ui.tenderSplitLine', { n: String(parts) })}
+                  </ion-button>
+                  <div class="tl-note">${t('ui.tenderSplitReason')}</div>`
+                // Weighed, already fired, beyond the ceiling: it cannot become lines of one, and a
+                // gap that vanishes with no explanation is the mute failure that reads as «the till
+                // is not responding».
+                : html`<div class="tl-note">${t('ui.tenderLineNotSplittable')}</div>`}
           </li>`;
         })}
       </ul>`;
+  }
+
+  /** The line being split right now, so a second tap cannot ask for the same split twice.
+   *  NOT `splitting`, which is the mixed-payment flag of sales#159 and lives on the same class. */
+  @state() private splittingLine = '';
+
+  /**
+   * SPLITS a line of N services into N lines of one so each can be asked about a voucher
+   * (sales#242 / ADR-0422).
+   *
+   * The server does it in ONE transaction and the till re-reads the check from the rows it left:
+   * the source keeps its id (and with it its place in the list), the clones come back with theirs.
+   * Rebuilding the cart by hand from the ids would be a second version of the same arithmetic, and
+   * the amounts are the server's.
+   */
+  private async splitTenderLine(l: CartLine): Promise<void> {
+    const orderId = this.orderId;
+    const lineId = l.line_id;
+    if (!orderId || !lineId || !splitCount(l) || this.splittingLine) return;
+    this.splittingLine = lineId;
+    try {
+      await this.queue(async () => {
+        const ids = await splitOrderLine(erplora(), orderId, lineId);
+        this.cart = await loadOrderLines(erplora(), orderId);
+        // A PARTIAL checkout only charges the lines the cashier marked. The clones were never
+        // marked — they did not exist — so without this the split would quietly drop N−1 haircuts
+        // out of the charge while leaving them on the check.
+        if (this.splitSel.has(lineId) && ids.length) {
+          this.splitSel = new Set([...this.splitSel, ...ids]);
+        }
+      });
+    } catch (e) {
+      // The transaction is all or nothing, so the check is exactly the one that was on screen. The
+      // cashier is told, because a button that does nothing in silence is worse than no button —
+      // with the declared sentence of the code when the hub sent one (ADR-0398), and with this
+      // screen's own when the failure was the browser's and carries no code.
+      this.error = domainErrorText(CATALOG, erplora().locale, e) || t('ui.tenderSplitFailed');
+    } finally {
+      this.splittingLine = '';
+    }
   }
 
   private renderLine(l: CartLine) {

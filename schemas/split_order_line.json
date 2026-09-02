@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sales.order.split_line",
+  "description": "Splits one line of N services of an open order into N lines of ONE unit each (sales#242 / ADR-0422). The named line keeps its id and drops to one unit; the ids of the new lines come back in new_ids. How many lines come out is decided by the row's own quantity, never by the payload: a count from the browser would be a quantity the check never agreed to.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["order_id", "line_id"],
+  "properties": {
+    "order_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The open order the line belongs to."
+    },
+    "line_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The line to split. It has to be a live unpaid line of that order, not yet fired to production, not a comp and not part of a set menu."
+    }
+  }
+}

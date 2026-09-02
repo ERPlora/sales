@@ -82,10 +82,39 @@ function installSdk(servicesInstalled = true) {
           const id = `line-${++seq}`;
           ids.push(id);
           orderLines.push({
+            // `order.open` sends items with `price`; `order.add_line` sends a FLAT payload with
+            // `unit_price`. Reading only the first left every added line worth 0 the moment the
+            // check was re-read from its rows, which is what a split does.
             id, product_id: it.product_id, product_name: it.product_name,
-            quantity: it.quantity, unit_price: it.price, line_total: it.price,
-            tax_category_key: it.tax_category_key, is_service: it.is_service ? 1 : 0,
+            quantity: it.quantity, unit_price: it.price ?? it.unit_price,
+            line_total: it.line_total ?? it.price, tax_category_key: it.tax_category_key,
+            is_service: it.is_service ? 1 : 0,
           });
+        }
+        return { ok: true, new_ids: ids };
+      }
+      // The till bumps a repeated tap through `update_line`, so the row really does hold «× 2».
+      if (name === 'sales.order.update_line') {
+        const row = orderLines.find((l) => l.id === payload.line_id);
+        if (row) {
+          row.quantity = payload.quantity;
+          row.line_total = payload.line_total;
+        }
+        return { ok: true, new_ids: [] };
+      }
+      // sales#242 / ADR-0422 — the server's split: the named row drops to ONE unit and N−1 clones
+      // of it go in, all in one transaction. The ids of the new rows come back in `new_ids`.
+      if (name === 'sales.order.split_line') {
+        const row = orderLines.find((l) => l.id === payload.line_id);
+        if (!row) return { ok: true, new_ids: [] };
+        const parts = Number(row.quantity) / 1_000_000;
+        row.quantity = 1_000_000;
+        row.line_total = row.unit_price;
+        const ids: string[] = [];
+        for (let i = 1; i < parts; i += 1) {
+          const id = `line-${++seq}`;
+          ids.push(id);
+          orderLines.push({ ...row, id });
         }
         return { ok: true, new_ids: ids };
       }
@@ -247,6 +276,97 @@ describe('sales#162 — the POS hosts `sales.pos.tender`', () => {
     release(el, 'line-1');
     await el.updateComplete;
     expect($(el, '.cart-foot ion-button.charge')!.textContent?.replace(/\s+/g, ' ')).toContain('27.00 €');
+  });
+
+  // ── sales#242 / ADR-0422 · the mother and the daughter ───────────────────────────────────────
+  //
+  // The cashier taps «Corte de señora» twice and the till merges into ONE line of two, which is
+  // what it does with any repeated article and what is right for everything else. A redemption
+  // covers one line and spends one session, so that line used to dead-end: it was listed with the
+  // reason written on it and the cashier was left to split it by hand, except the till had no
+  // «split». It has one now, and the two lines it produces are two haircuts the voucher can be
+  // asked about one at a time — one session for the mother, full price for the daughter.
+  describe('a line of more than one', () => {
+    /** Two haircuts (one line of two) plus a shampoo, a customer, the pay sheet open. */
+    async function twoHaircuts(): Promise<Pos> {
+      installSdk();
+      const el = await mount();
+      await addByName(el, 'Corte de señora');
+      await addByName(el, 'Corte de señora');
+      await addByName(el, 'Champú');
+      assignCustomer(el);
+      await el.updateComplete;
+      el.openPay();
+      await el.updateComplete;
+      await new Promise((r) => setTimeout(r, 0));
+      await el.updateComplete;
+      return el;
+    }
+
+    async function tapSplit(el: Pos) {
+      const button = $(el, '.tender-line[data-line="line-1"] .tl-split');
+      if (!button) throw new Error('no split action on the line of two');
+      button.click();
+      await el.queue(async () => undefined);
+      await el.updateComplete;
+      await new Promise((r) => setTimeout(r, 0));
+      await el.updateComplete;
+    }
+
+    it('is NOT offered the slot — one session would pay for two haircuts', async () => {
+      const el = await twoHaircuts();
+      expect(payable(el), 'two haircuts and a shampoo').toBe('45.00 €');
+      expect($$(el, '.tender-line'), 'the line is listed, not skipped in silence').toHaveLength(1);
+      expect(fillerOf(el, 'line-1'), 'no slot on a line of two').toBeNull();
+    });
+
+    it('is offered the SPLIT instead of a dead end', async () => {
+      const el = await twoHaircuts();
+      const button = $(el, '.tender-line[data-line="line-1"] .tl-split');
+      expect(button, 'the till now has a «split»').toBeTruthy();
+      // The COUNT, not the sentence (ADR-0055): the wording is the part that is meant to change.
+      expect(button!.dataset.parts, 'two haircuts, two lines').toBe('2');
+    });
+
+    it('splitting leaves two lines of one, each with its own slot, worth the same', async () => {
+      const el = await twoHaircuts();
+      await tapSplit(el);
+      const split = commands.filter((c) => c.name === 'sales.order.split_line');
+      expect(split, 'ONE server command: half a split is money').toHaveLength(1);
+      expect(split[0].payload).toEqual({ order_id: 'ord-1', line_id: 'line-1' });
+      expect($$(el, '.tender-line'), 'two haircuts, two lines').toHaveLength(2);
+      expect(fillerOf(el, 'line-1'), 'the source keeps its id').toBeTruthy();
+      expect($$(el, 'erp-fake-voucher'), 'one slot per haircut').toHaveLength(2);
+      expect(payable(el), 'splitting charges nothing and forgives nothing').toBe('45.00 €');
+    });
+
+    it('LABELS the two lines, or two identical rows read as a double charge', async () => {
+      // The Shopify lesson: splitting the cart line is right, and unmarked it reads as a bug —
+      // «this is a known behavior… it can definitely be confusing» (community.shopify.dev).
+      const el = await twoHaircuts();
+      await tapSplit(el);
+      const parts = $$(el, '.tender-line .tl-part').map((n) => `${n.dataset.part}/${n.dataset.of}`);
+      expect(parts).toEqual(['1/2', '2/2']);
+    });
+
+    it('covers the haircut the voucher reaches and CHARGES the other one', async () => {
+      // Partial coverage, unanimous in Vagaro, Zenoti, Boulevard, Lightspeed and WooCommerce. No
+      // blocking dialog: nobody in the trade uses one, and the cashier learns to accept it unread.
+      const el = await twoHaircuts();
+      await tapSplit(el);
+      const second = $$(el, '.tender-line').map((n) => n.dataset.line).find((id) => id !== 'line-1')!;
+      hold(el, second);
+      await el.updateComplete;
+      expect(payable(el), 'one haircut and the shampoo are still charged').toBe('27.00 €');
+      expect($(el, '.sheet .pay-total'), 'no dialog interrupted the charge').toBeTruthy();
+    });
+
+    it('a line of one is untouched: no split action where there is nothing to split', async () => {
+      const el = await salonTicket();
+      expect(fillerOf(el, 'line-1'), 'the single haircut carries its slot').toBeTruthy();
+      expect($(el, '.tender-line .tl-split'), 'nothing to split').toBeNull();
+      expect($(el, '.tender-line .tl-part'), 'nothing to number either').toBeNull();
+    });
   });
 
   it('without `services` installed the checkout does not change: no gaps, no fillers', async () => {

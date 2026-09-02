@@ -235,7 +235,7 @@ describe('cuentas abiertas: un aparcado es un pedido abierto (ADR-0146)', () => 
 // lines or the money, so the other half is here. And it cannot be a client-side loop: moving N
 // lines with N round-trips is not atomic (a dropped connection halfway duplicates or loses a
 // course) and it is not replayable (the same click landing twice doubles the check).
-import { splitOrder } from './pos-cart';
+import { splitOrder, splitOrderLine } from './pos-cart';
 
 describe('sales#61 — dividir y juntar cuentas', () => {
   // These cases assert on EVERYTHING the client was asked — reads and writes in one list, in
@@ -301,6 +301,40 @@ describe('sales#61 — dividir y juntar cuentas', () => {
   it('sin pedido de origen no hay nada que dividir', async () => {
     const { client, calls } = spyClient();
     expect(await splitOrder(client, '', ['l1'], '')).toBe('');
+    expect(calls).toHaveLength(0);
+  });
+
+  // sales#242 / ADR-0422 — SEPARAR UNA LÍNEA es otra cosa que dividir la cuenta: no nace un segundo
+  // pedido, la misma cuenta pasa a tener N líneas de una unidad. Y es UN comando por el mismo motivo
+  // que fusionar: bajar la cantidad a 1 y añadir N−1 líneas desde el navegador no es atómico, y a
+  // medio camino la cuenta cobra de más o de menos.
+  it('separar una línea es UN comando y devuelve los ids de las líneas nuevas', async () => {
+    const calls: { name: string; params?: Record<string, unknown> }[] = [];
+    const double = makeErploraDouble({
+      command: (name: string, params: Record<string, unknown>) => {
+        calls.push({ name, params });
+        return { ok: true, new_ids: ['line-2', 'line-3'] };
+      },
+    });
+    const client = double.sdk as unknown as ErploraClientLike;
+    const ids = await splitOrderLine(client, 'ord-1', 'line-1');
+
+    expect(calls.map((c) => c.name)).toEqual(['sales.order.split_line']);
+    expect(calls[0].params).toEqual({ order_id: 'ord-1', line_id: 'line-1' });
+    expect(ids, 'las líneas nuevas las minta el servidor, no el navegador').toEqual(['line-2', 'line-3']);
+    // Cuántas salen lo decide la CANTIDAD de la fila: mandarlo desde aquí sería una cantidad que la
+    // cuenta nunca aceptó.
+    expect(calls[0].params).not.toHaveProperty('parts');
+  });
+
+  it('sin pedido o sin línea no se separa nada', async () => {
+    const calls: string[] = [];
+    const double = makeErploraDouble({
+      command: (name: string) => { calls.push(name); return { ok: true, new_ids: [] }; },
+    });
+    const client = double.sdk as unknown as ErploraClientLike;
+    expect(await splitOrderLine(client, '', 'line-1')).toEqual([]);
+    expect(await splitOrderLine(client, 'ord-1', '')).toEqual([]);
     expect(calls).toHaveLength(0);
   });
 });
