@@ -259,6 +259,18 @@ came out when the voucher was sold, so redeeming it issues no second document.
 A line of more than one is **not** offered: one redemption covers one line and spends one session,
 so «Corte × 3» would hand out three sessions for one. The screen says that instead of hiding.
 
+**And when the line leaves, the till says so** (services#84). Take a covered line out of the cart —
+or cancel the whole ticket — and the till stops charging it, but whoever covered it is still holding
+something nobody told it to let go of: in `services` that was a voucher session left spent until a
+deadline swept it, up to a day later. So the two server-side gestures announce the fact:
+`sales.order.remove_line` raises **`sales.order.line_removed`** (`order_id` + `line_id`) and
+`sales.order.void` raises **`sales.order.voided`** (`order_id`). It is an announcement, never a
+call: `sales` still knows nothing about vouchers, and the filler cannot do it itself because it is
+mounted per line — it is torn down *with* the line and cannot tell that apart from the tear-down
+that happens when the sheet closes, where the hold must survive. Announcing it also covers what no
+screen could: a cart cleared from another device, a tablet that died, a ticket voided with the sheet
+closed.
+
 ### The note on a line (sales#156 / sales#206)
 
 The selected line carries a **Nota** button, next to the supplements and the comp. It opens a sheet
