@@ -719,8 +719,11 @@
         "commands/order_remove_line.sql",
         "commands/order_recompute_total.sql"
       ],
+      "emit": [
+        "sales.order.line_removed"
+      ],
       "ai": {
-        "description": "Removes (soft-deletes) a line from an open order and recomputes its provisional total (ADR-0141)."
+        "description": "Removes (soft-deletes) a line from an open order and recomputes its provisional total (ADR-0141). It announces the removal with sales.order.line_removed so a module that had covered that line with a tender of its own can let it go at once."
       }
     },
     "sales.order.split": {
@@ -755,8 +758,11 @@
       "sql": [
         "commands/order_void.sql"
       ],
+      "emit": [
+        "sales.order.voided"
+      ],
       "ai": {
-        "description": "Voids an OPEN order (cancels the ticket before checkout); status open -> voided (ADR-0141)."
+        "description": "Voids an OPEN order (cancels the ticket before checkout); status open -> voided (ADR-0141). It announces the cancellation with sales.order.voided so a module that had covered any of its lines with a tender of its own can let the whole ticket go at once."
       }
     },
     "sales.order.set_discount": {
@@ -922,7 +928,9 @@
       "sale.completed",
       "sale.refunded",
       "sale.voided",
+      "sales.order.line_removed",
       "sales.order.opened",
+      "sales.order.voided",
       "sales.sale.created_from_appointment"
     ]
   },
