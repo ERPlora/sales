@@ -3970,7 +3970,15 @@ export class ErpPosTouch extends LitElement {
   private goToProductSetup() {
     // `inventory` is a HARD `depends_on` of `sales`, so this route cannot point at a module that is
     // not installed. Same module→shell channel as `goToSales`.
-    window.history.pushState({}, '', '/m/inventory/products');
+    //
+    // sales#248 / inventory#72 — it carries `?status=unconfigured`, so the manager lands on THE
+    // ARTICLES THE COUNT WAS ABOUT and not on the whole catalogue with the status dropdown left for
+    // him to remember. `erp-inventory-products` reads the parameter when it mounts and SEEDS its
+    // list controller with it (`statusFilterFromSearch`), so the list arrives already narrowed
+    // instead of loading whole and shrinking; the screen also says it is filtered, with its way out.
+    // A value it does not know is ignored there and opens the normal list, so this cannot break the
+    // route on an older `inventory`.
+    window.history.pushState({}, '', '/m/inventory/products?status=unconfigured');
     window.dispatchEvent(new PopStateEvent('popstate'));
   }
 
