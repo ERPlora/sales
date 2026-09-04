@@ -159,3 +159,15 @@ describe('contrato declarativo de sales.order.fire (hub#1411)', () => {
     expect(schema.required, 'una comanda normal no manda prioridad').not.toContain('priority');
   });
 });
+
+// 🔴 THE FORWARDING IS VERBATIM, and `rush` alone cannot prove it. With only the urgent case
+// asserted, a `buildFirePayload` that rewrote ANY priority to `'rush'` passed all 16 tests
+// (measured while reviewing sales#258). That mutant is not academic: `vip` is a valid kitchen word
+// that this till forwards on purpose, and the shell prints `!! URGENTE !!` for `rush` and only for
+// `rush` (hub#1509). Squashing one into the other puts a red banner on a round nobody rushed.
+describe('the priority is forwarded, not interpreted (hub#1411)', () => {
+  it('forwards a word that is NOT `rush` unchanged — `sales` owns no vocabulary', () => {
+    const p = buildFirePayload('ord-1', 'Mesa 4', [line()], 1, undefined, 'vip')!;
+    expect(p.priority, 'the word travels as given').toBe('vip');
+  });
+});

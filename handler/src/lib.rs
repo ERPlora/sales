@@ -4335,6 +4335,27 @@ mod tests {
     }
 
     #[test]
+    fn a_priority_that_is_not_rush_travels_verbatim() {
+        // 🔴 THE FORWARDING IS VERBATIM, and the `rush` case alone cannot prove it: measured while
+        // reviewing sales#258, a `fire_order_inner` that wrote `json!("rush")` whenever a priority
+        // arrived passed all 295 tests. The mutant is not academic — `vip` is a valid `kitchen`
+        // word this module forwards on purpose (hub#1411 leaves it out of the paper banner ON
+        // PURPOSE: it is a FLOOR priority, not a kitchen one), and the shell prints `!! URGENTE !!`
+        // for `rush` and only for `rush` (hub#1509). Squashing one word into the other puts a red
+        // banner on a round nobody rushed, and `sales` owning no vocabulary is the whole contract.
+        let mut inp = fire_input_with_lines(1, json!([{ "id": "l1", "product_name": "Entrecot", "quantity": 1_000_000 }]));
+        inp["payload"]["priority"] = json!("vip");
+        let out = fire_order_pure(inp).accepted("disparar la ronda de un cliente VIP");
+
+        assert_eq!(
+            out.events[0].payload["priority"],
+            json!("vip"),
+            "la palabra viaja tal cual, `sales` no tiene vocabulario: {:?}",
+            out.events[0].payload
+        );
+    }
+
+    #[test]
     fn un_disparo_normal_no_ensucia_el_evento_con_una_clave_vacia() {
         // El 99 % de las comandas son normales: sin urgencia el campo NO viaja. `order.fired` lo
         // leen más módulos (kitchen, flujos, el asistente) y una clave vacía es ruido que hay que
