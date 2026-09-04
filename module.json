@@ -173,7 +173,7 @@
         "default_dir": "desc",
         "filters": {
           "sale_number": {
-            "op": "eq"
+            "op": "like"
           },
           "status": {
             "op": "eq"
