@@ -724,3 +724,122 @@ describe('sales list — sorting by «Nº» is numeric, not lexicographic (sales
     expect(columns.some((c) => c.key === 'sale_seq'), 'the order key is not a column of the table').toBe(false);
   });
 });
+
+// ── sales#255 · «Devolver el resto (X €)»: el importe, en el punto de elección ─────────────────
+//
+// El historial ya sabía, por fila, si la venta admite devolución (`disabled`), pero no CUÁNTO
+// queda: la acción decía «Devolver» a secas y el importe solo aparecía dentro del modal, un clic
+// más tarde. Quien atiende un mostrador decide ahí, en la lista, y hasta ahora tenía que abrir
+// para saber si esa era la venta.
+//
+// El mercado pone el número donde se elige: Square y Lightspeed etiquetan la acción con lo que
+// queda por devolver, y Business Central hace lo mismo con sus acciones por línea. `refunded_total`
+// ya viaja en `sales.list` desde sales#247, así que el dato está en la fila.
+//
+// Y esto es también ACCESIBILIDAD, que es la parte que más pesa: el guard cross-módulo (ADR-0133)
+// hace `icon` obligatorio en las acciones de fila, así que el botón NO tiene texto y `label` es su
+// único nombre accesible. Una etiqueta que no se resolviera ahí dejaría la tabla sin nombre por
+// fila — peor que el hueco que cierra.
+describe('sales list — the refund action carries what is left to refund (sales#255)', () => {
+  /** Dos filas A PROPÓSITO, con restos distintos: con una sola, una etiqueta fija pasaría igual. */
+  const ROWS = [
+    { id: 'sale-1', sale_number: 'V-1000', status: 'completed', total: 10000, refunded_total: 3000 },
+    { id: 'sale-2', sale_number: 'V-1001', status: 'completed', total: 5000, refunded_total: 0 },
+  ];
+
+  /** El catálogo español REAL, con los `{marcadores}` resueltos como los resuelve el shell. */
+  function translate(key: string, params?: Record<string, unknown>): string {
+    const raw = key.split('.').reduce<unknown>(
+      (acc, part) => (acc as Record<string, unknown>)?.[part], esCatalog,
+    ) as string ?? key;
+    return raw.replace(/\{(\w+)\}/g, (_m, name: string) => String(params?.[name] ?? `{${name}}`));
+  }
+
+  /** Formato con COMA decimal: si la etiqueta se formatease por su cuenta (`toFixed`, un `€`
+   *  concatenado) saldría con punto y estas aserciones caerían. Es el control de que el importe
+   *  pasa por `erplora().formatMoney`, que es la única puerta que sabe la moneda del hub. */
+  const formatMoney = (cents: number): string => `${((cents || 0) / 100).toFixed(2).replace('.', ',')} €`;
+
+  async function mountList() {
+    installErploraDouble({
+      queries: {
+        'sales.list': ROWS,
+        'sales.stats': [],
+        'sales.payment_methods': [],
+        'sales.get': [],
+        'sales.lines': [],
+        'sales.pos_settings.get': [],
+      },
+      absent: ['invoice.by_source', 'invoice.lines', 'verifactu.records.by_invoice'],
+      locale: 'es',
+      formatMoney,
+      t: (_catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>) =>
+        translate(key, params),
+      hasPermission: (p?: string) => p === 'sales.refund_sale',
+    });
+    document.body.innerHTML = '';
+    await import('./erp-sales-list');
+    const el = document.createElement('erp-sales-list') as HTMLElement & { shadowRoot: ShadowRoot };
+    document.body.appendChild(el);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    return el;
+  }
+
+  const refundAction = (el: HTMLElement) =>
+    (el as unknown as { documentActions: { id: string; label: unknown; icon?: string }[] })
+      .documentActions.find((a) => a.id === 'refund')!;
+
+  it('labels each row with ITS OWN remainder, not one text for the whole table', async () => {
+    const el = await mountList();
+    const action = refundAction(el);
+    expect(action, 'the refund action').toBeTruthy();
+    expect(
+      action.label,
+      'the label is still a fixed string: it cannot carry a value from the row',
+    ).toBeTypeOf('function');
+
+    const label = action.label as (row: Record<string, unknown>) => string;
+    expect(label(ROWS[0]), 'a partly refunded sale does not offer what is LEFT').toBe('Devolver el resto (70,00 €)');
+    expect(label(ROWS[1]), 'an untouched sale does not offer its amount').toBe('Devolver (50,00 €)');
+    expect(label(ROWS[0]), 'both rows say the same: the label is evaluated once for the whole table')
+      .not.toBe(label(ROWS[1]));
+  });
+
+  it('reads the remainder from the row, and survives a row served by an older hub', async () => {
+    const el = await mountList();
+    const label = refundAction(el).label as (row: Record<string, unknown>) => string;
+    // sales#247 added `refunded_total`; a row cached from a hub before it has no such column. It
+    // must fall back to the whole total, never to `NaN €` on the button.
+    expect(label({ status: 'completed', total: 5000 })).toBe('Devolver (50,00 €)');
+    // Fully returned down to the last cent: the sale is `refunded` and the button is off, but the
+    // text still has to be readable — a `-0,00 €` or a `NaN` here would be the visible bug.
+    expect(label({ status: 'refunded', total: 5000, refunded_total: 5000 })).toBe('Devolver el resto (0,00 €)');
+  });
+
+  it('is the ACCESSIBLE NAME of each row button, resolved per row by the table', async () => {
+    // The end of the chain, through the real `ok-data-table`: the action is icon-only (ADR-0133),
+    // so `label` is all the button is called. A function that the table did not resolve there
+    // would leave every row with the same name, or none.
+    const el = await mountList();
+    const table = el.shadowRoot.querySelector('ok-data-table') as (HTMLElement & { shadowRoot: ShadowRoot }) | null;
+    expect(table, 'the list paints an ok-data-table').toBeTruthy();
+
+    for (let tick = 0; tick < 20; tick += 1) {
+      if (table!.shadowRoot.querySelectorAll('.grow-data').length >= ROWS.length) break;
+      await new Promise((r) => setTimeout(r, 0));
+      await (table as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    }
+
+    // The buttons of a row follow the declared order of `documentActions`; asking the component
+    // for the index keeps this honest if another action is ever added before this one.
+    const order = (el as unknown as { documentActions: { id: string }[] }).documentActions;
+    const at = order.findIndex((a) => a.id === 'refund');
+    const names = [...table!.shadowRoot.querySelectorAll('.grow-data')].map(
+      (row) => row.querySelectorAll('.gcell.actions-col ion-button')[at]?.getAttribute('aria-label'),
+    );
+    expect(names, 'each row has to be named with its own remainder').toEqual([
+      'Devolver el resto (70,00 €)',
+      'Devolver (50,00 €)',
+    ]);
+  });
+});

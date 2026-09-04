@@ -405,6 +405,8 @@
     "errorPaymentsMismatch": "El total ha cambiado mientras se repartía el cobro. Revisa los importes y vuelve a cobrar.",
     "errorQuantityNotPositive": "Una línea no tiene cantidad: pon al menos una antes de cobrar",
     "actionRefund": "Devolver",
+    "actionRefundAmount": "Devolver ({amount})",
+    "actionRefundRemaining": "Devolver el resto ({amount})",
     "statusRefunded": "Devuelta",
     "refundTitle": "Devolver la venta {number}",
     "refundExplain": "Elige cuánto vuelve por cada forma en que se pagó. El reparto de abajo es una propuesta: cambia el importe que quieras.",
