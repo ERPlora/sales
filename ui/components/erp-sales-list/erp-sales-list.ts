@@ -166,7 +166,7 @@ export class ErpSalesList extends LitElement {
   // Getter (no campo): se re-evalúa en cada render, así los textos cambian con el idioma activo
   // (ADR-0055). El listener `erplora:locale-changed` re-renderiza.
   private get documentActions(): DataTableAction[] {
-    const t = (k: string): string => erplora().t(CATALOG, k);
+    const t = (k: string, p?: Record<string, unknown>): string => erplora().t(CATALOG, k, p);
     const actions: DataTableAction[] = [
       { id: 'document', label: t('ui.actionDocument'), icon: 'receipt-outline' },
     ];
@@ -190,9 +190,29 @@ export class ErpSalesList extends LitElement {
     // sales#160 — devolver es permiso PROPIO (manager + admin, nunca cashier: saca dinero de la
     // caja), y solo sobre una venta cerrada. A diferencia de anular, una venta CON FACTURA sí se
     // devuelve: la devolución es el hecho económico y la rectificativa su documento.
+    // sales#255 — y DICE cuánto queda, en el punto de elección. `refunded_total` viaja en
+    // `sales.list` desde sales#247, así que la fila ya trae el dato: hasta ahora el importe solo
+    // aparecía dentro del modal, un clic más tarde, que es donde ya no ayuda a elegir. El mercado
+    // lo pone aquí (Square y Lightspeed etiquetan la acción con lo que queda por devolver; Business
+    // Central hace lo propio en sus acciones por línea).
+    //
+    // Dos frases, no una: «el resto» solo es cierto cuando YA ha vuelto algo, y el caso corriente
+    // de una lista es la venta intacta. Decir «el resto» sobre ella sería mentirle al cajero en la
+    // fila que más se lee.
+    //
+    // Sin `refunded_total` (una fila servida por un hub anterior a sales#247) el resto ES el total:
+    // se degrada a la frase de siempre con su importe, nunca a un `NaN €` en el botón.
     if (erplora().hasPermission?.('sales.refund_sale')) {
       actions.push({
-        id: 'refund', label: t('ui.actionRefund'), icon: 'return-down-back-outline', color: 'warning',
+        id: 'refund',
+        // Función, no texto: la etiqueta lleva un dato de la FILA (outfitkit#110). La acción es
+        // icon-only por ADR-0133, así que esto es además su nombre accesible (`aria-label`).
+        label: (r) => {
+          const refunded = Number(r.refunded_total ?? 0);
+          const amount = erplora().formatMoney(Number(r.total ?? 0) - refunded);
+          return t(refunded > 0 ? 'ui.actionRefundRemaining' : 'ui.actionRefundAmount', { amount });
+        },
+        icon: 'return-down-back-outline', color: 'warning',
         disabled: (r) => r.status !== 'completed',
       });
     }
