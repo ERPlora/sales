@@ -4398,6 +4398,8 @@ var es_default = {
     errorPaymentsMismatch: "El total ha cambiado mientras se repart\xEDa el cobro. Revisa los importes y vuelve a cobrar.",
     errorQuantityNotPositive: "Una l\xEDnea no tiene cantidad: pon al menos una antes de cobrar",
     actionRefund: "Devolver",
+    actionRefundAmount: "Devolver ({amount})",
+    actionRefundRemaining: "Devolver el resto ({amount})",
     statusRefunded: "Devuelta",
     refundTitle: "Devolver la venta {number}",
     refundExplain: "Elige cu\xE1nto vuelve por cada forma en que se pag\xF3. El reparto de abajo es una propuesta: cambia el importe que quieras.",
@@ -4919,6 +4921,8 @@ var en_default = {
     errorPaymentsMismatch: "The total changed while the payment was being split. Check the amounts and charge again.",
     errorQuantityNotPositive: "A line has no quantity: set at least one before charging",
     actionRefund: "Refund",
+    actionRefundAmount: "Refund ({amount})",
+    actionRefundRemaining: "Refund remaining ({amount})",
     statusRefunded: "Refunded",
     refundTitle: "Refund sale {number}",
     refundExplain: "Choose how much goes back to each way it was paid. The split below is a proposal \u2014 change any amount.",
@@ -14473,7 +14477,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
   // Getter (no campo): se re-evalúa en cada render, así los textos cambian con el idioma activo
   // (ADR-0055). El listener `erplora:locale-changed` re-renderiza.
   get documentActions() {
-    const t7 = (k2) => erplora5().t(CATALOG5, k2);
+    const t7 = (k2, p4) => erplora5().t(CATALOG5, k2, p4);
     const actions = [
       { id: "document", label: t7("ui.actionDocument"), icon: "receipt-outline" }
     ];
@@ -14489,7 +14493,13 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
     if (erplora5().hasPermission?.("sales.refund_sale")) {
       actions.push({
         id: "refund",
-        label: t7("ui.actionRefund"),
+        // Función, no texto: la etiqueta lleva un dato de la FILA (outfitkit#110). La acción es
+        // icon-only por ADR-0133, así que esto es además su nombre accesible (`aria-label`).
+        label: (r6) => {
+          const refunded = Number(r6.refunded_total ?? 0);
+          const amount = erplora5().formatMoney(Number(r6.total ?? 0) - refunded);
+          return t7(refunded > 0 ? "ui.actionRefundRemaining" : "ui.actionRefundAmount", { amount });
+        },
         icon: "return-down-back-outline",
         color: "warning",
         disabled: (r6) => r6.status !== "completed"
