@@ -579,15 +579,50 @@ def scenario_consumers(db: str) -> None:
             {"hub_id": HUB, "idempotency_key": "key-sale-10000"},
         ),
     )
+    # «Nº» is a free-text box, so the manifest filters it with `op: "like"` (hub#1182): the
+    # cashier types the day, or the tail of the number on the receipt, and the history narrows.
+    # These two used to read `[wide]` and `[f"{DAY}-1000"]`, which is what `op: "eq"` answered —
+    # correct then, outdated now. What they were written to prove is not exactness, it is that the
+    # wide number survives the read path and does NOT collide with the one it used to truncate
+    # into, and that is asserted head-on below instead of riding on the old operator — the count
+    # is the anti-collision claim, stated rather than implied.
+    #
+    # What still turns them red, measured one mutation at a time: declaring `sale_number` with an
+    # `op` a text box cannot use (back to `eq` → both go red, one short of its superset, the other
+    # down to a single row). The truncating shim does NOT reach here — it dies minting, on the
+    # UNIQUE index, which is the control scenario's job; and a number mangled on the way out is
+    # caught upstream by the ordering scenario, before this one runs.
     check(
-        "sales.list filters by the exact wide number",
-        [wide],
+        "sales.list hands the wide number back whole, next to the numbers that contain it",
+        [f"{DAY}-1000000", wide],
         run_list(db, {"sale_number": wide}),
     )
+    narrowed = run_list(db, {"sale_number": f"{DAY}-1000"})
     check(
-        "the number it used to collide with still answers only for itself",
-        [f"{DAY}-1000"],
-        run_list(db, {"sale_number": f"{DAY}-1000"}),
+        "narrowing by the number it used to collide with reaches every number that contains it",
+        [f"{DAY}-1000000", f"{DAY}-10001", f"{DAY}-10000", f"{DAY}-1000"],
+        narrowed,
+    )
+    check(
+        "and the 1.000th is in that answer exactly once — the 10.000th is a row of its own",
+        1,
+        narrowed.count(f"{DAY}-1000"),
+    )
+    # THE SYMPTOM of hub#1182 for this screen, head-on: the cashier has no receipt in hand and
+    # types the DAY into «Nº». With `op: "eq"` nothing is exactly `20260901`, so the history went
+    # EMPTY without a word; with `like` it narrows to that day's sales — every one of this hub's,
+    # in the order the screen opens on, none of the day before, none of the neighbour's.
+    check(
+        "typing only the day into «Nº» narrows the history to that day instead of emptying it",
+        [
+            f"{DAY}-1000000",
+            f"{DAY}-10001",
+            f"{DAY}-10000",
+            f"{DAY}-2000",
+            f"{DAY}-1000",
+            f"{DAY}-0999",
+        ],
+        run_list(db, {"sale_number": DAY}),
     )
     # Both hubs hold a `20260901-10000` that day: the UNIQUE index is per hub, and so is the list.
     check(
