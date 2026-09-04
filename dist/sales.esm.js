@@ -5408,13 +5408,14 @@ function kitchenNote(note, isGift, giftReason) {
   const reason = isGift ? (giftReason ?? "").trim() : "";
   return [(note ?? "").trim(), reason].filter(Boolean).join(" \xB7 ");
 }
-function buildFirePayload(orderId, label, lines, roundNo, waiterId) {
+function buildFirePayload(orderId, label, lines, roundNo, waiterId, priority) {
   if (!orderId || lines.length === 0) return void 0;
   return {
     order_id: orderId,
     label,
     ...roundNo && roundNo >= 1 ? { round_no: roundNo } : {},
     ...waiterId ? { waiter_id: waiterId } : {},
+    ...priority ? { priority } : {},
     // Sin mesa no es servicio de sala: barra, mostrador o para llevar.
     channel: label ? "dine_in" : "takeaway",
     items: lines.map((l3) => ({
@@ -7409,8 +7410,12 @@ var ErpPosTouch = class extends i3 {
       this.customerAddress = d3.customer_address ?? "";
       this.notifyOrderLinked();
     };
-    this.onOrderFire = () => {
-      void this.fireToKitchen();
+    // hub#1411 — el detalle puede traer la PRIORIDAD que armó el filler de cocina («urgente»). El
+    // host la reenvía sin interpretarla, igual que la etiqueta de la mesa: `sales` no sabe qué es
+    // una cocina, y el vocabulario (`rush`) es de `kitchen`, que lo valida al crear la ronda.
+    this.onOrderFire = (e7) => {
+      const detail = e7.detail;
+      void this.fireToKitchen(detail?.priority);
     };
     /** Una línea la cubrió un tender externo: sale del importe a cobrar y el resto del ticket sigue
      *  cobrándose con su propio medio. El id del canje se guarda porque es lo que lo identifica. */
@@ -8819,16 +8824,16 @@ var ErpPosTouch = class extends i3 {
     }
     this.pendingSplitSession = void 0;
   }
-  async fireToKitchen() {
+  async fireToKitchen(priority) {
     if (!this.cart.length || this.firing) return;
     this.firing = true;
     try {
-      await this.fireToKitchenNow();
+      await this.fireToKitchenNow(priority);
     } finally {
       this.firing = false;
     }
   }
-  async fireToKitchenNow() {
+  async fireToKitchenNow(priority) {
     const orderId = await this.ensureOrder(this.cart[0]);
     const pendientes = pendingLines(this.cart);
     const payload = buildFirePayload(
@@ -8836,7 +8841,8 @@ var ErpPosTouch = class extends i3 {
       this.tableLabel,
       pendientes,
       nextRoundNo(this.cart),
-      this.staffId
+      this.staffId,
+      priority
     );
     if (!payload) return;
     try {
@@ -12980,6 +12986,7 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       (a3) => {
         const loading = a3.loading?.(row) === true;
         const disabled = loading || a3.disabled?.(row) === true;
+        const label = typeof a3.label === "function" ? a3.label(row) : a3.label;
         return b2`
             <ion-button
               size="small"
@@ -12987,11 +12994,11 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
               color=${a3.color ?? "medium"}
               ?disabled=${disabled}
               aria-disabled=${disabled ? "true" : A}
-              aria-label=${a3.label}
-              title=${a3.label}
+              aria-label=${label}
+              title=${label}
               @click=${() => this.emit("rowAction", { actionId: a3.id, row })}
             >
-              ${loading ? b2`<ion-spinner slot="icon-only" name="dots"></ion-spinner>` : a3.icon ? b2`<ion-icon slot="icon-only" .icon=${okIcon(a3.icon)}></ion-icon>` : a3.label}
+              ${loading ? b2`<ion-spinner slot="icon-only" name="dots"></ion-spinner>` : a3.icon ? b2`<ion-icon slot="icon-only" .icon=${okIcon(a3.icon)}></ion-icon>` : label}
             </ion-button>
           `;
       }

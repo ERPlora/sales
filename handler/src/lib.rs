@@ -3684,6 +3684,16 @@ fn fire_order_inner(input: Value) -> Result<Output, Refusal> {
     if round_no >= 1 {
         ev["round_no"] = json!(round_no); // informativo: kitchen numera lo suyo (ADR-0144)
     }
+    // hub#1411 — **la urgencia nace al disparar.** La comanda se imprime UNA sola vez, cuando
+    // `kitchen` crea la ronda, así que marcarla después no reimprime nada: si el camarero quiere
+    // que el pase la vea correr, tiene que decirlo aquí. `sales` no interpreta la palabra —no
+    // sabe qué es una cocina—, la reenvía OPACA igual que `label` y `waiter_id`; el vocabulario y
+    // su validación son de `kitchen`. Sin urgencia la clave NO viaja: `order.fired` lo leen más
+    // módulos y `kitchen` ya asume `normal` cuando falta.
+    let priority = str_or(&payload, "priority", "");
+    if !priority.is_empty() {
+        ev["priority"] = json!(priority);
+    }
     let event = Event::new("order.fired", ev);
     Ok(Output { operations: ops, events: vec![event], ..Default::default() })
 }
@@ -4299,6 +4309,44 @@ mod tests {
         // Y el evento sigue saliendo UNA vez, con la ronda informativa para kitchen.
         assert_eq!(out.events.len(), 1);
         assert_eq!(out.events[0].payload["round_no"], json!(2));
+    }
+
+    #[test]
+    fn una_ronda_disparada_como_urgente_lleva_su_prioridad_en_el_evento() {
+        // hub#1411 — **nadie podía decirle al pase que una ronda corre.** El renderizador del
+        // papel imprime «!! URGENTE !!» y `kitchen` guarda `priority` en su comanda desde la
+        // primera migración, pero `order.fired` no llevaba el campo: la urgencia no tenía por
+        // dónde viajar del TPV a cocina.
+        //
+        // `sales` NO interpreta la palabra —no sabe qué es una cocina—: la reenvía OPACA, igual
+        // que `label` y `waiter_id`. El vocabulario (`normal`/`rush`/`vip`) y su validación son
+        // de `kitchen`, que es quien la escribe en su fila.
+        let mut inp = fire_input_with_lines(1, json!([{ "id": "l1", "product_name": "Entrecot", "quantity": 1_000_000 }]));
+        inp["payload"]["priority"] = json!("rush");
+        let out = fire_order_pure(inp).accepted("disparar la ronda urgente");
+
+        assert_eq!(out.events.len(), 1);
+        assert_eq!(
+            out.events[0].payload["priority"],
+            json!("rush"),
+            "la urgencia tiene que llegar a cocina: {:?}",
+            out.events[0].payload
+        );
+    }
+
+    #[test]
+    fn un_disparo_normal_no_ensucia_el_evento_con_una_clave_vacia() {
+        // El 99 % de las comandas son normales: sin urgencia el campo NO viaja. `order.fired` lo
+        // leen más módulos (kitchen, flujos, el asistente) y una clave vacía es ruido que hay que
+        // interpretar; `kitchen` ya asume `normal` cuando no viene.
+        let out = fire_order_pure(fire_input_with_lines(1, json!([{ "id": "l1", "product_name": "Entrecot", "quantity": 1_000_000 }])))
+            .accepted("disparar la ronda normal");
+        assert_eq!(out.events.len(), 1);
+        assert!(
+            out.events[0].payload.get("priority").is_none(),
+            "sin urgencia no hay clave: {:?}",
+            out.events[0].payload
+        );
     }
 
     // ── sales#26 · anular es AUDITABLE, IDEMPOTENTE y respeta la factura ─────────────────────

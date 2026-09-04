@@ -728,6 +728,18 @@ describe('slot sales.pos.actions: cocina inyectada dentro de Comanda actual', ()
     return el;
   }
 
+  /** El stub del bloque solo apunta NOMBRES; para mirar el payload se envuelve aquí (hub#1411). */
+  function capturarPayloads() {
+    const vistos: { name: string; payload: Record<string, unknown> }[] = [];
+    const sdk = posSdk.sdk;
+    const previo = sdk.command;
+    sdk.command = async (name: string, payload?: Record<string, unknown>) => {
+      vistos.push({ name, payload: payload ?? {} });
+      return previo(name, payload);
+    };
+    return vistos;
+  }
+
   it('pide el slot y monta el filler en .draft-actions-slot; el footer queda solo para cobrar', async () => {
     const el = await montarCarrito();
     (el as unknown as { orderView: 'draft' }).orderView = 'draft';
@@ -862,6 +874,37 @@ describe('slot sales.pos.actions: cocina inyectada dentro de Comanda actual', ()
 
     expect(comandos, 'el host ejecuta SU comando al recibir el evento del filler')
       .toContain('sales.order.fire');
+  });
+
+  // hub#1411 — la URGENCIA la decide el filler de cocina (kitchen es dueño del concepto) y el
+  // host la reenvía sin interpretarla, como la etiqueta de la mesa. Sin este paso el interruptor
+  // del filler no llegaba a ninguna parte: el host componía el payload ignorando el detalle.
+  it('reenvía la prioridad que trae el detalle del filler', async () => {
+    const el = await conCafe();
+    const disparos = capturarPayloads();
+    const filler = el.shadowRoot!.querySelector('.draft-actions-slot erp-fake-fire')!;
+
+    filler.dispatchEvent(new CustomEvent('erp:order-fire', {
+      detail: { priority: 'rush' }, bubbles: true, composed: true,
+    }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const fuego = disparos.find((c) => c.name === 'sales.order.fire');
+    expect(fuego, 'el host dispara').toBeTruthy();
+    expect(fuego!.payload.priority, 'la urgencia llega a `order.fired`').toBe('rush');
+  });
+
+  it('un disparo normal del filler sigue sin prioridad', async () => {
+    const el = await conCafe();
+    const disparos = capturarPayloads();
+    const filler = el.shadowRoot!.querySelector('.draft-actions-slot erp-fake-fire')!;
+
+    filler.dispatchEvent(new CustomEvent('erp:order-fire', { detail: {}, bubbles: true, composed: true }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const fuego = disparos.find((c) => c.name === 'sales.order.fire');
+    expect(fuego, 'el host dispara').toBeTruthy();
+    expect('priority' in fuego!.payload, 'sin armar no viaja la clave').toBe(false);
   });
 });
 

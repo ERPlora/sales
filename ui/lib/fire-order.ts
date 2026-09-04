@@ -40,6 +40,11 @@ export interface FirePayload {
    *  **Absent when nobody was chosen**: the session user's id is put there by the SERVER, and a
    *  browser making it up would be attributing tickets to whoever it liked. */
   waiter_id?: string;
+  /** How urgent this round is (hub#1411), when the till armed it. OPAQUE, like `label`: `sales`
+   *  does not know what a kitchen is — it forwards the word in `order.fired` and `kitchen` owns
+   *  the vocabulary and validates it. **Absent on a normal round**, which is nearly all of them.
+   *  It can only be said at fire time: the comanda prints once, when the round is created. */
+  priority?: string;
 }
 
 /** sales#156 — the ONE sub-line the pass reads for an item: **what to cook, and why it is going
@@ -66,6 +71,7 @@ export function buildFirePayload(
   lines: CartLine[],
   roundNo?: number,
   waiterId?: string,
+  priority?: string,
 ): FirePayload | undefined {
   if (!orderId || lines.length === 0) return undefined;
   return {
@@ -73,6 +79,7 @@ export function buildFirePayload(
     label,
     ...(roundNo && roundNo >= 1 ? { round_no: roundNo } : {}),
     ...(waiterId ? { waiter_id: waiterId } : {}),
+    ...(priority ? { priority } : {}),
     // Sin mesa no es servicio de sala: barra, mostrador o para llevar.
     channel: label ? 'dine_in' : 'takeaway',
     items: lines.map((l) => ({
