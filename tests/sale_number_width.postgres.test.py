@@ -608,6 +608,22 @@ def scenario_consumers(db: str) -> None:
         1,
         narrowed.count(f"{DAY}-1000"),
     )
+    # THE SYMPTOM of hub#1182 for this screen, head-on: the cashier has no receipt in hand and
+    # types the DAY into «Nº». With `op: "eq"` nothing is exactly `20260901`, so the history went
+    # EMPTY without a word; with `like` it narrows to that day's sales — every one of this hub's,
+    # in the order the screen opens on, none of the day before, none of the neighbour's.
+    check(
+        "typing only the day into «Nº» narrows the history to that day instead of emptying it",
+        [
+            f"{DAY}-1000000",
+            f"{DAY}-10001",
+            f"{DAY}-10000",
+            f"{DAY}-2000",
+            f"{DAY}-1000",
+            f"{DAY}-0999",
+        ],
+        run_list(db, {"sale_number": DAY}),
+    )
     # Both hubs hold a `20260901-10000` that day: the UNIQUE index is per hub, and so is the list.
     check(
         "this hub sees its own 10.000th exactly once, and never the neighbour's",
