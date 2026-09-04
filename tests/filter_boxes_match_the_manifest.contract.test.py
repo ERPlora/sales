@@ -72,7 +72,7 @@ EXPECTED_OP = {
 
 #: Why each one, in the words the failure message uses.
 WHY = {
-    "text": "a free-text box invites a FRAGMENT; with `eq` anything short of the whole value empties the list",
+    "text": "a free-text box invites a FRAGMENT, and only `like` answers one; with anything else the list empties unless the value is typed whole",
     "select": "a closed domain is CHOSEN, so the match is exact; `like` would match the value inside another one",
     "range": "two bounds need the operator that takes two bounds",
     "daterange": "two bounds need the operator that takes two bounds",
@@ -284,7 +284,7 @@ def main() -> int:
     if len(seen) < TABLES_TODAY:
         print(
             f"FAIL: only {len(seen)} list table(s) discovered; this module paints at least "
-            f"{TABLES_TODAY} (price lists, discount rules). The discovery is broken, and a broken "
+            f"{TABLES_TODAY} (the sales history, the till's quick notes). The discovery is broken, and a broken "
             "sweep passes."
         )
         return 1
