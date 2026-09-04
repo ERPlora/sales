@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { buildFirePayload } from './fire-order';
 import type { CartLine } from './pos-cart';
+import fireSchema from '../../schemas/fire_order.json';
+
+const schema = fireSchema as unknown as {
+  additionalProperties?: boolean;
+  required?: string[];
+  properties: Record<string, { type?: string | string[] }>;
+};
 
 const line = (over: Partial<CartLine> = {}): CartLine => ({
   id: 'p1', name: 'Croquetas', price: 350, qty: 2, ...over,
@@ -122,5 +129,45 @@ describe('the waiter in the fire payload', () => {
   it('is not invented when nobody was chosen: the server puts it there', () => {
     const p = buildFirePayload('ord-1', 'Mesa 4', [line]);
     expect(p && 'waiter_id' in p).toBe(false);
+  });
+});
+
+// URGENTE (hub#1411) — la ronda puede salir marcada, y solo puede marcarse AL DISPARARLA: la
+// comanda se imprime una única vez, cuando `kitchen` crea la ronda. `sales` no interpreta la
+// palabra (no sabe qué es una cocina): la reenvía opaca, como `label` y `waiter_id`.
+describe('prioridad de la ronda (hub#1411)', () => {
+  it('reenvía la palabra que le dan, sin interpretarla', () => {
+    const p = buildFirePayload('ord-1', 'Mesa 4', [line()], 1, undefined, 'rush')!;
+    expect(p.priority).toBe('rush');
+  });
+
+  it('sin urgencia la clave NO viaja: el 99 % de las comandas son normales', () => {
+    const p = buildFirePayload('ord-1', 'Mesa 4', [line()], 1)!;
+    expect('priority' in p).toBe(false);
+  });
+});
+
+// La MITAD DECLARATIVA, la que un hub aplica antes de que corra una línea del handler: el runtime
+// valida el payload contra este JSON Schema, y `additionalProperties: false` significa que un
+// campo no declarado se rechaza con `InvalidPayload` — el handler ni se entera. Sin esta pieza el
+// arreglo entero es inerte.
+describe('contrato declarativo de sales.order.fire (hub#1411)', () => {
+  it('declara `priority` como cadena opcional — sin ella el runtime tumbaría el disparo urgente', () => {
+    expect(schema.additionalProperties, 'el payload sigue siendo un contrato cerrado').toBe(false);
+    expect(schema.properties.priority, 'campo declarado').toBeTruthy();
+    expect(schema.properties.priority.type).toBe('string');
+    expect(schema.required, 'una comanda normal no manda prioridad').not.toContain('priority');
+  });
+});
+
+// 🔴 THE FORWARDING IS VERBATIM, and `rush` alone cannot prove it. With only the urgent case
+// asserted, a `buildFirePayload` that rewrote ANY priority to `'rush'` passed all 16 tests
+// (measured while reviewing sales#258). That mutant is not academic: `vip` is a valid kitchen word
+// that this till forwards on purpose, and the shell prints `!! URGENTE !!` for `rush` and only for
+// `rush` (hub#1509). Squashing one into the other puts a red banner on a round nobody rushed.
+describe('the priority is forwarded, not interpreted (hub#1411)', () => {
+  it('forwards a word that is NOT `rush` unchanged — `sales` owns no vocabulary', () => {
+    const p = buildFirePayload('ord-1', 'Mesa 4', [line()], 1, undefined, 'vip')!;
+    expect(p.priority, 'the word travels as given').toBe('vip');
   });
 });

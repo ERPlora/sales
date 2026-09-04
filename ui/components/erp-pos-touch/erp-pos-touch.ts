@@ -1431,7 +1431,13 @@ export class ErpPosTouch extends LitElement {
     // (nombre/NIF/dirección), que es otra cosa: viaja congelado en la venta al cobrar (ADR-0132).
     this.notifyOrderLinked();
   };
-  private readonly onOrderFire = () => { void this.fireToKitchen(); };
+  // hub#1411 — el detalle puede traer la PRIORIDAD que armó el filler de cocina («urgente»). El
+  // host la reenvía sin interpretarla, igual que la etiqueta de la mesa: `sales` no sabe qué es
+  // una cocina, y el vocabulario (`rush`) es de `kitchen`, que lo valida al crear la ronda.
+  private readonly onOrderFire = (e: Event) => {
+    const detail = (e as CustomEvent<{ priority?: string } | undefined>).detail;
+    void this.fireToKitchen(detail?.priority);
+  };
 
   /** Una línea la cubrió un tender externo: sale del importe a cobrar y el resto del ticket sigue
    *  cobrándose con su propio medio. El id del canje se guarda porque es lo que lo identifica. */
@@ -2246,17 +2252,17 @@ export class ErpPosTouch extends LitElement {
    *  handler además rechaza `sales.nothing_to_fire` si el pedido ya no tiene nada pendiente. */
   private firing = false;
 
-  private async fireToKitchen(): Promise<void> {
+  private async fireToKitchen(priority?: string): Promise<void> {
     if (!this.cart.length || this.firing) return;
     this.firing = true;
     try {
-      await this.fireToKitchenNow();
+      await this.fireToKitchenNow(priority);
     } finally {
       this.firing = false;
     }
   }
 
-  private async fireToKitchenNow(): Promise<void> {
+  private async fireToKitchenNow(priority?: string): Promise<void> {
     const orderId = await this.ensureOrder(this.cart[0]);
     // TANDAS (decisión Ioan 2026-07-19): se dispara SOLO lo pendiente, con su ronda local, y el
     // handler lo marca (`fired_at`). Antes cada fire reenviaba el carrito ENTERO: dos disparos =
@@ -2264,7 +2270,7 @@ export class ErpPosTouch extends LitElement {
     // solo cambia lo que se VE (pestaña Tandas), no lo que se envía.
     const pendientes = pendingLines(this.cart);
     const payload = buildFirePayload(
-      orderId, this.tableLabel, pendientes, nextRoundNo(this.cart), this.staffId,
+      orderId, this.tableLabel, pendientes, nextRoundNo(this.cart), this.staffId, priority,
     );
     if (!payload) return;
     try {

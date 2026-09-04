@@ -68,6 +68,10 @@
       ],
       "description": "Who is serving this ticket (sales#179). OPAQUE: `sales` does not interpret it, it only forwards it in `order.fired` so `kitchen` can copy it onto its ticket. When absent, the server resolves it to the SESSION user — a ticket never leaves without a waiter. The caller sends it when the table has a waiter of its own (`tables` owns the session and its waiter)."
     },
+    "priority": {
+      "type": "string",
+      "description": "How urgent this round is (hub#1411). OPAQUE: `sales` does not interpret it, it only forwards it in `order.fired` so `kitchen` can write it on its ticket — the kitchen owns the vocabulary (`normal`/`rush`/`vip`) and validates it, exactly as with `label` and `waiter_id`. It can only be said HERE: the comanda is printed once, when the round is created, so marking it afterwards re-prints nothing. Absent = a normal round."
+    },
     "round_no": {
       "type": "integer",
       "minimum": 1,
