@@ -142,8 +142,10 @@ def tables(src: str) -> list[tuple[str, str]]:
 #: A format that TRANSLATES either calls it (`t(KEY)`, the `status` column) or hands it to a helper
 #: that will (`payMethodDisplayName({…}, t)`, the payment column) — so the token is what is looked
 #: for, not the call. Anchored on word boundaries that exclude `.` and `$` so that `format`,
-#: `.t(` on some other object, or a `t` inside an identifier are not mistaken for it.
-TRANSLATOR = re.compile(r"(?<![\w$.])t(?![\w$])")
+#: `.t(` on some other object, or a `t` inside an identifier are not mistaken for it. The one `.t(`
+#: that IS a translation is the SDK's own, called directly (`erplora().t(CATALOG, key)`): a cell
+#: may skip the local alias and reach the catalogue that way, so it is matched by name.
+TRANSLATOR = re.compile(r"(?<![\w$.])t(?![\w$])|erplora\(\)\s*\.t(?![\w$])")
 
 
 def painted_columns(body: str) -> dict[str, str]:
@@ -237,9 +239,11 @@ def gate_bites() -> list[str]:
         pathlib.Path("<self-test>"),
         "<self-test>",
         {
-            "shown": "{ key: 'shown', header: t('ui.x'), format: (r) => t(String(r.shown)) }"
+            "shown": "{ key: 'shown', header: t('ui.x'), format: (r) => t(String(r.shown)) }",
+            "direct": "{ key: 'direct', header: t('ui.y'), "
+            "format: (r) => erplora().t(CATALOG, String(r.direct)) }",
         },
-        spec={"list": {"search": ["ghost", "shown"]}},
+        spec={"list": {"search": ["ghost", "shown", "direct"]}},
         sink=sink,
     )
     return sink
@@ -258,6 +262,20 @@ def main() -> int:
                 f"FAIL: the rule «{rule}» did not fire on the self-test table, which breaks it on "
                 f"purpose. The rule is gone or unreachable, and a gate that cannot say no would "
                 f"pass every table below in silence."
+            )
+            return 1
+
+    # Half two: the translation rule has to see BOTH ways a cell reaches the catalogue — the local
+    # `t(...)` and the SDK's own `erplora().t(...)` called directly. Measured while reviewing
+    # sales#264: with only the first, a column painted through `erplora().t(CATALOG, …)` and
+    # searched passed this gate in silence.
+    for column in ("shown", "direct"):
+        if not any(TRANSLATED in b and f"`{column}`" in b for b in bites):
+            print(
+                f"FAIL: the rule «a searched column is translated» did not fire on `{column}` of the "
+                f"self-test table, which is painted through the catalogue on purpose. The detector "
+                f"no longer sees that way of translating a cell, so a real table using it would "
+                f"pass in silence."
             )
             return 1
 
