@@ -137,6 +137,8 @@ export class ErpSalesList extends LitElement {
   @state() range: Range = 'today';
 
   @state() statsError = '';
+  /** sales#260 — the read that feeds the payment filter failed: told on screen, never swallowed. */
+  @state() payMethodsError = '';
 
   @state() tick = 0;
 
@@ -352,13 +354,25 @@ export class ErpSalesList extends LitElement {
 
   /** sales#181 — the active payment methods, only to populate the column filter. If the query fails
    *  (no permission, a half-installed module) the list stays empty and the column simply offers no
-   *  filter (sales#260): the history still opens, which is what the cashier came here for. */
+   *  filter (sales#260): the history still opens, which is what the cashier came here for.
+   *
+   *  But a filter that goes missing has to SAY so (sales#260): an empty list also comes out of a
+   *  FAILED read, and a cashier who sees one filter fewer and no word cannot tell a hub without
+   *  methods from a broken one — a silent failure is a failure nobody fixes. Same door as the KPI
+   *  strip (sales#207, ADR-0398/0055): the declared sentence of the code, the screen's own line
+   *  otherwise, the server's message never. An EMPTY answer is not a failure and says nothing. */
   private async loadPayMethods(): Promise<void> {
     try {
       const rows = await erplora().query<PayMethodLike[]>('sales.payment_methods');
       this.payMethods = Array.isArray(rows) ? rows : [];
-    } catch {
+      this.payMethodsError = '';
+    } catch (e) {
       this.payMethods = [];
+      const t = (k: string): string => erplora().t(CATALOG, k);
+      const transport = transportErrorKey(e);
+      this.payMethodsError = transport
+        ? t(transport)
+        : domainErrorText(CATALOG, erplora().locale, e) || t('ui.errorPayMethods');
     }
   }
 
@@ -462,6 +476,7 @@ export class ErpSalesList extends LitElement {
           </div>
         </div>
         ${this.statsError ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.statsError}</ok-inline-feedback>` : nothing}
+        ${this.payMethodsError ? html`<ok-inline-feedback tone="warning" icon="alert-circle-outline">${this.payMethodsError}</ok-inline-feedback>` : nothing}
         ${this.ctrl?.error ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : nothing}
         <!-- The «document» button is not the only door: rowClickable makes the whole row open the
              same document (outfitkit#67 — the actions column can be off-screen at 1440 px). -->

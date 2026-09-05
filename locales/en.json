@@ -151,6 +151,7 @@
     "saleDocument": "Sale document",
     "close": "Close",
     "errorStats": "Error loading metrics",
+    "errorPayMethods": "The payment methods could not be loaded, so the payment filter is not available. Reload the page and, if it keeps happening, call the manager.",
     "errorLoadSale": "The sale could not be loaded, so there is nothing to refund yet. Try again.",
     "print": "Print",
     "printFailed": "Could not print",

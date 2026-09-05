@@ -621,6 +621,51 @@ describe('sales list — filtering by payment method (sales#181)', () => {
   });
 });
 
+// sales#260, the other half — a filter that goes missing has to SAY so.
+//
+// With no methods the column offers no box (above), which is right when the hub simply has none.
+// But the same empty list also came out of a FAILED read (`loadPayMethods` swallowed the rejection),
+// and then the cashier saw a history with one filter fewer and no idea why: a silent failure is a
+// failure nobody fixes (the KPI strip learnt this in sales#207). So a failed read is told on screen,
+// through the same door as the metrics — the declared sentence of the code, the screen's own line
+// otherwise, the server's message never — and an EMPTY answer is not a failure and shows nothing.
+describe('the payment filter goes missing with a WORD, never in silence (sales#260)', () => {
+  async function mountMethods(methods: unknown[] | (() => unknown[])): Promise<{ shown: string; painted: string[]; col: Column }> {
+    installList({ 'sales.payment_methods': methods });
+    document.body.innerHTML = '';
+    await import('./erp-sales-list');
+    const el = document.createElement('erp-sales-list');
+    document.body.appendChild(el);
+    const view = el as unknown as { updateComplete: Promise<unknown>; payMethodsError: string; columns: Column[]; shadowRoot: ShadowRoot };
+    await view.updateComplete;
+    await new Promise((r) => setTimeout(r, 0)); // the methods land after the first paint
+    await view.updateComplete;
+    const painted = Array.from(view.shadowRoot.querySelectorAll('ok-inline-feedback')).map((n) => (n.textContent ?? '').trim());
+    return { shown: view.payMethodsError, painted, col: view.columns.find((c) => c.key === 'payment_method_name')! };
+  }
+
+  it('tells the cashier the methods could not be loaded, on the screen and in her language', async () => {
+    const { shown, painted, col } = await mountMethods(() => { throw new Error('relation "sales_paymentmethod" does not exist'); });
+    expect(shown, 'the screen owns a sentence for this').toBe(esCatalog.ui.errorPayMethods);
+    expect(shown, 'an empty notice is silence with extra steps').toBeTruthy();
+    expect(shown, 'the raw message never reaches a pixel (ADR-0055)').not.toContain('relation');
+    expect(painted, 'a field nobody paints is still silence').toContain(shown);
+    expect(col.filterable, 'and the box that cannot hit is still not offered').toBeFalsy();
+  });
+
+  it('the server being down is told as the server being down (sales#81)', async () => {
+    const { shown, painted } = await mountMethods(() => { throw new TypeError('Failed to fetch'); });
+    expect(shown).toBe(esCatalog.ui.serverUnavailable);
+    expect(painted).toContain(shown);
+  });
+
+  it('a hub with no methods is not a failure: no notice', async () => {
+    const { shown, painted } = await mountMethods([]);
+    expect(shown).toBe('');
+    expect(painted.some((text) => text === esCatalog.ui.errorPayMethods)).toBe(false);
+  });
+});
+
 // sales#207 (ADR-0398) — the KPI strip failed with the server's own sentence.
 //
 // `loadStats` painted `e.message`, so a refusal reached the screen as whatever detail the handler
