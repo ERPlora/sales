@@ -4145,6 +4145,7 @@ var es_default = {
     saleDocument: "Documento de venta",
     close: "Cerrar",
     errorStats: "Error cargando m\xE9tricas",
+    errorPayMethods: "No se han podido cargar las formas de pago, as\xED que el filtro por pago no est\xE1 disponible. Recarga la p\xE1gina y, si persiste, avisa al encargado.",
     errorLoadSale: "No se ha podido cargar la venta, as\xED que todav\xEDa no hay nada que devolver. Vuelve a intentarlo.",
     print: "Imprimir",
     printFailed: "No se pudo imprimir",
@@ -4668,6 +4669,7 @@ var en_default = {
     saleDocument: "Sale document",
     close: "Close",
     errorStats: "Error loading metrics",
+    errorPayMethods: "The payment methods could not be loaded, so the payment filter is not available. Reload the page and, if it keeps happening, call the manager.",
     errorLoadSale: "The sale could not be loaded, so there is nothing to refund yet. Try again.",
     print: "Print",
     printFailed: "Could not print",
@@ -14436,6 +14438,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
     this.stats = { count: 0, total_revenue: 0, avg_ticket: 0 };
     this.range = "today";
     this.statsError = "";
+    this.payMethodsError = "";
     this.tick = 0;
     this.kpiRow = false;
     this.onKpiMqChange = (e7) => {
@@ -14566,15 +14569,23 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
       // canonical name, so filtering by the «Efectivo» you can read returned zero sales without a
       // word. Payment method is an enumerated dimension (Square, Toast, Odoo, Shopify all offer a
       // picker): the options carry the visible name and send the stored one. Same shape as `status`.
+      //
+      // sales#260: and when the methods cannot be loaded, NO box — the text-box fallback sales#181
+      // left behind was that same bug in miniature. `sales.list` filters this column with `op: "eq"`,
+      // which is what a picker needs and what free text cannot use, so the box compared the typed
+      // «Efectivo» whole against the stored `Cash` and emptied the table without a word. Switching to
+      // `like` is not a way out: the picker's «Card» would then also match «Card BBVA», a different
+      // method. So the column stays readable and sortable, and simply offers no filter it cannot
+      // serve — the same call Toast's payment terminal makes.
       {
         key: "payment_method_name",
         header: t7("ui.colPayment"),
         sortable: true,
-        filterable: true,
         ...this.payMethods.length ? {
+          filterable: true,
           filterType: "select",
           options: this.payMethods.map((m4) => ({ value: m4.name, label: payMethodDisplayName(m4, t7) }))
-        } : { filterType: "text" },
+        } : {},
         format: (r6) => r6.payment_method_name ? payMethodDisplayName({ id: "", name: r6.payment_method_name }, t7) : "\u2014"
       },
       {
@@ -14637,14 +14648,24 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
     this.unsub?.();
   }
   /** sales#181 — the active payment methods, only to populate the column filter. If the query fails
-   *  (no permission, a half-installed module) the list stays empty and the filter remains a text
-   *  box: the history still opens, which is what the cashier came here for. */
+   *  (no permission, a half-installed module) the list stays empty and the column simply offers no
+   *  filter (sales#260): the history still opens, which is what the cashier came here for.
+   *
+   *  But a filter that goes missing has to SAY so (sales#260): an empty list also comes out of a
+   *  FAILED read, and a cashier who sees one filter fewer and no word cannot tell a hub without
+   *  methods from a broken one — a silent failure is a failure nobody fixes. Same door as the KPI
+   *  strip (sales#207, ADR-0398/0055): the declared sentence of the code, the screen's own line
+   *  otherwise, the server's message never. An EMPTY answer is not a failure and says nothing. */
   async loadPayMethods() {
     try {
       const rows3 = await erplora5().query("sales.payment_methods");
       this.payMethods = Array.isArray(rows3) ? rows3 : [];
-    } catch {
+      this.payMethodsError = "";
+    } catch (e7) {
       this.payMethods = [];
+      const t7 = (k2) => erplora5().t(CATALOG5, k2);
+      const transport = transportErrorKey(e7);
+      this.payMethodsError = transport ? t7(transport) : domainErrorText(CATALOG5, erplora5().locale, e7) || t7("ui.errorPayMethods");
     }
   }
   /** El selector de fechas de la propia tabla (columna «Fecha») también filtra por DÍA: la
@@ -14738,6 +14759,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
           </div>
         </div>
         ${this.statsError ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.statsError}</ok-inline-feedback>` : A}
+        ${this.payMethodsError ? b2`<ok-inline-feedback tone="warning" icon="alert-circle-outline">${this.payMethodsError}</ok-inline-feedback>` : A}
         ${this.ctrl?.error ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : A}
         <!-- The «document» button is not the only door: rowClickable makes the whole row open the
              same document (outfitkit#67 — the actions column can be off-screen at 1440 px). -->
@@ -14779,6 +14801,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], _ErpSalesList.prototype, "statsError", 2);
+__decorateClass([
+  r5()
+], _ErpSalesList.prototype, "payMethodsError", 2);
 __decorateClass([
   r5()
 ], _ErpSalesList.prototype, "tick", 2);

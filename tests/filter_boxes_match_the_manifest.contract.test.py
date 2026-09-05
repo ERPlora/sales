@@ -20,18 +20,18 @@ missing is the thing that keeps it correct: nothing stood between the next edit 
 A remap is one line, and the day someone renames it or adds a filterable column, the funnel goes
 back to doing nothing and no test says a word.
 
-Reading every table under that rule found two boxes that DO lie today:
+Reading every table under that rule found two boxes that lied, and both are closed now:
 
-  * `sales.list` — `sale_number` is painted as free text and filtered with `op: "eq"`: typing
-    `20260904` on the day's sales emptied the table instead of narrowing it.
-  * `sales.list` — `payment_method_name` is a picker, except with no methods loaded, when it falls
-    back to a text box against `op: "eq"`. That fallback is a smaller copy of the very bug
-    sales#181 closed: free text compared verbatim against the STORED name, so on a fresh hub —
-    seeded `Cash`/`Card`, shown «Efectivo»/«Tarjeta» — typing what is on screen answers zero
-    without a word. It is NOT fixed here: sales#181 chose that fallback on purpose and pinned it
-    with a test, and one `op` cannot serve a picker and a text box at once (`like` would let the
-    picker's «Card» also match «Card BBVA»). So the branch is DECLARED below as unserved, with its
-    issue, instead of being silently blessed — see `UNSERVED_CONTROLS`.
+  * `sales.list` — `sale_number` was painted as free text and filtered with `op: "eq"`: typing
+    `20260904` on the day's sales emptied the table instead of narrowing it (sales#261).
+  * `sales.list` — `payment_method_name` is a picker, and with no methods loaded it USED TO fall
+    back to a text box against that picker's `op: "eq"`. That fallback was a smaller copy of the
+    very bug sales#181 closed: free text compared verbatim against the STORED name, so on a fresh
+    hub — seeded `Cash`/`Card`, shown «Efectivo»/«Tarjeta» — typing what is on screen answered
+    zero without a word. One `op` cannot serve a picker and a text box at once (`like` would let
+    the picker's «Card» also match «Card BBVA»), so sales#260 removed the branch instead of
+    blessing it: with no methods the column is simply not filterable. `UNSERVED_CONTROLS` stays
+    below, empty, because the rule it enforces is what makes the NEXT such fallback visible.
 
 ## The rules, and why each one
 
@@ -98,17 +98,11 @@ REMAPPED: dict[tuple[str, str], tuple[str, ...]] = {
 #: funnel survives a gate, so it is written down instead, with the issue that owns the decision.
 #: The entry is checked BOTH ways: if the branch stops existing, the exception is stale and this
 #: gate says so, so an allowance cannot outlive the code it was granted for.
-UNSERVED_CONTROLS: dict[tuple[str, str], dict[str, str]] = {
-    ("sales.list", "payment_method_name"): {
-        "text": (
-            "the picker's fallback for when no payment method loads: `op: \"eq\"` serves the "
-            "`select` branch, and `like` cannot replace it (the picker's «Card» would also match "
-            "«Card BBVA»). The fallback therefore compares free text against the STORED name and "
-            "answers zero on a seeded hub — sales#181 chose it knowingly and pinned it with a "
-            "test; sales#260 is where that choice gets revisited"
-        ),
-    },
-}
+#: EMPTY ON PURPOSE, and it is not dead code: with nothing excused, a column that renders two
+#: controls has to be honest as BOTH, so the `for kind in kinds` loop below fails on the branch the
+#: single `op` cannot serve. That is what closed sales#260 — the entry that used to sit here
+#: excused the payment-method text fallback, and the choice it named was made instead of excused.
+UNSERVED_CONTROLS: dict[tuple[str, str], dict[str, str]] = {}
 
 #: How many list tables this module paints today (the sales history, the till's quick notes). The
 #: floor is the check on the check: if the discovery stops finding them, a broken sweep would pass

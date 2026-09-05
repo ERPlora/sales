@@ -137,6 +137,8 @@ export class ErpSalesList extends LitElement {
   @state() range: Range = 'today';
 
   @state() statsError = '';
+  /** sales#260 — the read that feeds the payment filter failed: told on screen, never swallowed. */
+  @state() payMethodsError = '';
 
   @state() tick = 0;
 
@@ -277,15 +279,22 @@ export class ErpSalesList extends LitElement {
     // canonical name, so filtering by the «Efectivo» you can read returned zero sales without a
     // word. Payment method is an enumerated dimension (Square, Toast, Odoo, Shopify all offer a
     // picker): the options carry the visible name and send the stored one. Same shape as `status`.
-    { key: 'payment_method_name', header: t('ui.colPayment'), sortable: true, filterable: true,
+    //
+    // sales#260: and when the methods cannot be loaded, NO box — the text-box fallback sales#181
+    // left behind was that same bug in miniature. `sales.list` filters this column with `op: "eq"`,
+    // which is what a picker needs and what free text cannot use, so the box compared the typed
+    // «Efectivo» whole against the stored `Cash` and emptied the table without a word. Switching to
+    // `like` is not a way out: the picker's «Card» would then also match «Card BBVA», a different
+    // method. So the column stays readable and sortable, and simply offers no filter it cannot
+    // serve — the same call Toast's payment terminal makes.
+    { key: 'payment_method_name', header: t('ui.colPayment'), sortable: true,
       ...(this.payMethods.length
         ? {
+            filterable: true,
             filterType: 'select' as const,
             options: this.payMethods.map((m) => ({ value: m.name, label: payMethodDisplayName(m, t) })),
           }
-        // With no methods loaded an empty dropdown would be a DEAD filter: the text box is better,
-        // since it at least still matches against the stored name.
-        : { filterType: 'text' as const }),
+        : {}),
       format: (r) => (r.payment_method_name ? payMethodDisplayName({ id: '', name: r.payment_method_name as string }, t) : '—') },
     {
       key: 'status',
@@ -344,14 +353,26 @@ export class ErpSalesList extends LitElement {
     super.disconnectedCallback(); this.unsub?.(); }
 
   /** sales#181 — the active payment methods, only to populate the column filter. If the query fails
-   *  (no permission, a half-installed module) the list stays empty and the filter remains a text
-   *  box: the history still opens, which is what the cashier came here for. */
+   *  (no permission, a half-installed module) the list stays empty and the column simply offers no
+   *  filter (sales#260): the history still opens, which is what the cashier came here for.
+   *
+   *  But a filter that goes missing has to SAY so (sales#260): an empty list also comes out of a
+   *  FAILED read, and a cashier who sees one filter fewer and no word cannot tell a hub without
+   *  methods from a broken one — a silent failure is a failure nobody fixes. Same door as the KPI
+   *  strip (sales#207, ADR-0398/0055): the declared sentence of the code, the screen's own line
+   *  otherwise, the server's message never. An EMPTY answer is not a failure and says nothing. */
   private async loadPayMethods(): Promise<void> {
     try {
       const rows = await erplora().query<PayMethodLike[]>('sales.payment_methods');
       this.payMethods = Array.isArray(rows) ? rows : [];
-    } catch {
+      this.payMethodsError = '';
+    } catch (e) {
       this.payMethods = [];
+      const t = (k: string): string => erplora().t(CATALOG, k);
+      const transport = transportErrorKey(e);
+      this.payMethodsError = transport
+        ? t(transport)
+        : domainErrorText(CATALOG, erplora().locale, e) || t('ui.errorPayMethods');
     }
   }
 
@@ -455,6 +476,7 @@ export class ErpSalesList extends LitElement {
           </div>
         </div>
         ${this.statsError ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.statsError}</ok-inline-feedback>` : nothing}
+        ${this.payMethodsError ? html`<ok-inline-feedback tone="warning" icon="alert-circle-outline">${this.payMethodsError}</ok-inline-feedback>` : nothing}
         ${this.ctrl?.error ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : nothing}
         <!-- The «document» button is not the only door: rowClickable makes the whole row open the
              same document (outfitkit#67 — the actions column can be off-screen at 1440 px). -->

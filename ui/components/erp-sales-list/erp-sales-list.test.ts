@@ -12,6 +12,8 @@ import { installErploraDouble } from '../../test/erplora-double';
 interface Column {
   key: string;
   format?: (row: Record<string, unknown>) => unknown;
+  filterable?: boolean;
+  sortable?: boolean;
   filterType?: string;
   options?: { value: string; label: string }[];
 }
@@ -582,6 +584,7 @@ describe('sales list — filtering by payment method (sales#181)', () => {
 
   it('offers the methods as a picker, labelled the way the cell shows them', async () => {
     const col = await paymentColumn(SEEDED);
+    expect(col.filterable, 'the picker is the only control this column can be filtered by').toBe(true);
     expect(col.filterType, 'free text cannot match a name the user never sees').toBe('select');
     expect(col.options).toEqual([
       { value: 'Cash', label: 'Efectivo' },
@@ -590,11 +593,76 @@ describe('sales list — filtering by payment method (sales#181)', () => {
     ]);
   });
 
-  it('falls back to a text box when the methods cannot be loaded', async () => {
-    // An empty dropdown is a dead filter: with no methods the free-text box is still usable.
+  // sales#260 — the fallback sales#181 left behind was the very bug it closed, in miniature.
+  //
+  // `op: "eq"` serves the picker (a closed domain is chosen, so the match is exact), and the text
+  // box inherited it: free text compared WHOLE against the name the row stores. On a seeded hub the
+  // row stores `Cash` and the screen reads «Efectivo», so typing what is on the screen answered
+  // zero — and an empty table says nothing, so the day looks like a day without cash. One `op`
+  // cannot serve both branches either: `like` would let the picker's «Card» also match «Card BBVA».
+  //
+  // The market never offers this dimension as free text — Square, Lightspeed, Clover, Odoo,
+  // WooCommerce and Business Central all pick from the list of methods, and Toast's payment
+  // terminal simply does not offer the filter rather than offer one it cannot serve. So when the
+  // list cannot be built, neither is the box.
+  it('offers NO box at all when the methods cannot be loaded, never a text box that can never hit', async () => {
     const col = await paymentColumn([]);
-    expect(col.filterType).toBe('text');
+    expect(col.filterable, 'a filter that cannot hit is worse than none: the user trusts it').toBeFalsy();
+    expect(col.filterType, 'no control at all, not a text box against the stored name').toBeUndefined();
     expect(col.options).toBeUndefined();
+  });
+
+  it('keeps naming the method in every row when the picker cannot be built', async () => {
+    // Losing the filter must not lose the COLUMN: the history still reads «Efectivo», and the
+    // header still sorts. Only the box that could not answer is gone.
+    const col = await paymentColumn([]);
+    expect(col.sortable).toBe(true);
+    expect(col.format?.({ payment_method_name: 'Cash' })).toBe('Efectivo');
+  });
+});
+
+// sales#260, the other half — a filter that goes missing has to SAY so.
+//
+// With no methods the column offers no box (above), which is right when the hub simply has none.
+// But the same empty list also came out of a FAILED read (`loadPayMethods` swallowed the rejection),
+// and then the cashier saw a history with one filter fewer and no idea why: a silent failure is a
+// failure nobody fixes (the KPI strip learnt this in sales#207). So a failed read is told on screen,
+// through the same door as the metrics — the declared sentence of the code, the screen's own line
+// otherwise, the server's message never — and an EMPTY answer is not a failure and shows nothing.
+describe('the payment filter goes missing with a WORD, never in silence (sales#260)', () => {
+  async function mountMethods(methods: unknown[] | (() => unknown[])): Promise<{ shown: string; painted: string[]; col: Column }> {
+    installList({ 'sales.payment_methods': methods });
+    document.body.innerHTML = '';
+    await import('./erp-sales-list');
+    const el = document.createElement('erp-sales-list');
+    document.body.appendChild(el);
+    const view = el as unknown as { updateComplete: Promise<unknown>; payMethodsError: string; columns: Column[]; shadowRoot: ShadowRoot };
+    await view.updateComplete;
+    await new Promise((r) => setTimeout(r, 0)); // the methods land after the first paint
+    await view.updateComplete;
+    const painted = Array.from(view.shadowRoot.querySelectorAll('ok-inline-feedback')).map((n) => (n.textContent ?? '').trim());
+    return { shown: view.payMethodsError, painted, col: view.columns.find((c) => c.key === 'payment_method_name')! };
+  }
+
+  it('tells the cashier the methods could not be loaded, on the screen and in her language', async () => {
+    const { shown, painted, col } = await mountMethods(() => { throw new Error('relation "sales_paymentmethod" does not exist'); });
+    expect(shown, 'the screen owns a sentence for this').toBe(esCatalog.ui.errorPayMethods);
+    expect(shown, 'an empty notice is silence with extra steps').toBeTruthy();
+    expect(shown, 'the raw message never reaches a pixel (ADR-0055)').not.toContain('relation');
+    expect(painted, 'a field nobody paints is still silence').toContain(shown);
+    expect(col.filterable, 'and the box that cannot hit is still not offered').toBeFalsy();
+  });
+
+  it('the server being down is told as the server being down (sales#81)', async () => {
+    const { shown, painted } = await mountMethods(() => { throw new TypeError('Failed to fetch'); });
+    expect(shown).toBe(esCatalog.ui.serverUnavailable);
+    expect(painted).toContain(shown);
+  });
+
+  it('a hub with no methods is not a failure: no notice', async () => {
+    const { shown, painted } = await mountMethods([]);
+    expect(shown).toBe('');
+    expect(painted.some((text) => text === esCatalog.ui.errorPayMethods)).toBe(false);
   });
 });
 

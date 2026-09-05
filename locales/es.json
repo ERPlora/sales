@@ -152,6 +152,7 @@
     "saleDocument": "Documento de venta",
     "close": "Cerrar",
     "errorStats": "Error cargando métricas",
+    "errorPayMethods": "No se han podido cargar las formas de pago, así que el filtro por pago no está disponible. Recarga la página y, si persiste, avisa al encargado.",
     "errorLoadSale": "No se ha podido cargar la venta, así que todavía no hay nada que devolver. Vuelve a intentarlo.",
     "print": "Imprimir",
     "printFailed": "No se pudo imprimir",
