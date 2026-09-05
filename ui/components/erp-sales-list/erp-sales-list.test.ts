@@ -12,6 +12,8 @@ import { installErploraDouble } from '../../test/erplora-double';
 interface Column {
   key: string;
   format?: (row: Record<string, unknown>) => unknown;
+  filterable?: boolean;
+  sortable?: boolean;
   filterType?: string;
   options?: { value: string; label: string }[];
 }
@@ -582,6 +584,7 @@ describe('sales list — filtering by payment method (sales#181)', () => {
 
   it('offers the methods as a picker, labelled the way the cell shows them', async () => {
     const col = await paymentColumn(SEEDED);
+    expect(col.filterable, 'the picker is the only control this column can be filtered by').toBe(true);
     expect(col.filterType, 'free text cannot match a name the user never sees').toBe('select');
     expect(col.options).toEqual([
       { value: 'Cash', label: 'Efectivo' },
@@ -590,11 +593,31 @@ describe('sales list — filtering by payment method (sales#181)', () => {
     ]);
   });
 
-  it('falls back to a text box when the methods cannot be loaded', async () => {
-    // An empty dropdown is a dead filter: with no methods the free-text box is still usable.
+  // sales#260 — the fallback sales#181 left behind was the very bug it closed, in miniature.
+  //
+  // `op: "eq"` serves the picker (a closed domain is chosen, so the match is exact), and the text
+  // box inherited it: free text compared WHOLE against the name the row stores. On a seeded hub the
+  // row stores `Cash` and the screen reads «Efectivo», so typing what is on the screen answered
+  // zero — and an empty table says nothing, so the day looks like a day without cash. One `op`
+  // cannot serve both branches either: `like` would let the picker's «Card» also match «Card BBVA».
+  //
+  // The market never offers this dimension as free text — Square, Lightspeed, Clover, Odoo,
+  // WooCommerce and Business Central all pick from the list of methods, and Toast's payment
+  // terminal simply does not offer the filter rather than offer one it cannot serve. So when the
+  // list cannot be built, neither is the box.
+  it('offers NO box at all when the methods cannot be loaded, never a text box that can never hit', async () => {
     const col = await paymentColumn([]);
-    expect(col.filterType).toBe('text');
+    expect(col.filterable, 'a filter that cannot hit is worse than none: the user trusts it').toBeFalsy();
+    expect(col.filterType, 'no control at all, not a text box against the stored name').toBeUndefined();
     expect(col.options).toBeUndefined();
+  });
+
+  it('keeps naming the method in every row when the picker cannot be built', async () => {
+    // Losing the filter must not lose the COLUMN: the history still reads «Efectivo», and the
+    // header still sorts. Only the box that could not answer is gone.
+    const col = await paymentColumn([]);
+    expect(col.sortable).toBe(true);
+    expect(col.format?.({ payment_method_name: 'Cash' })).toBe('Efectivo');
   });
 });
 
