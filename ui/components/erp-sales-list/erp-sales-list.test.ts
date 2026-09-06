@@ -1233,6 +1233,36 @@ describe('sales list — la acción de devolver se anuncia con TEXTO, no con su 
     expect(asOldShellPaintsIt, 'ni el cuerpo de la función').not.toContain('refunded_total');
   });
 
+  // Un literal español clavado («Devolver» a pelo) pasaría las dos aserciones de arriba: montan en
+  // `es` y no distinguen una traducción de una cadena escrita a mano. Montando en inglés, sí.
+  it('el nombre sale del CATÁLOGO: en inglés el botón se llama «Refund» (ADR-0055)', async () => {
+    installErploraDouble({
+      queries: {
+        'sales.list': ROWS, 'sales.stats': [], 'sales.payment_methods': [],
+        'sales.get': [], 'sales.lines': [], 'sales.pos_settings.get': [],
+      },
+      absent: ['invoice.by_source', 'invoice.lines', 'verifactu.records.by_invoice'],
+      locale: 'en',
+      formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
+      t: (_catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>) => {
+        const raw = key.split('.').reduce<unknown>(
+          (acc, part) => (acc as Record<string, unknown>)?.[part], enCatalog,
+        ) as string ?? key;
+        return raw.replace(/\{(\w+)\}/g, (_m, name: string) => String(params?.[name] ?? `{${name}}`));
+      },
+      hasPermission: (perm?: string) => perm === 'sales.refund_sale',
+    });
+    document.body.innerHTML = '';
+    await import('./erp-sales-list');
+    const el = document.createElement('erp-sales-list') as HTMLElement & { shadowRoot: ShadowRoot };
+    document.body.appendChild(el);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    const refund = rowActions(el).find((a) => a.id === 'refund')!;
+    expect(String(refund.label), 'el hub en inglés no puede anunciar el botón en español').toBe('Refund');
+    expect(String(refund.label), 'ni rastro del literal español').not.toContain('Devolver');
+  });
+
   // La otra mitad: quitar el dato de la etiqueta NO puede dejar al cajero sin saber cuánto queda.
   // Lo sigue diciendo la fila (sales#256), y en el mismo montaje, para que borrar el `render`
   // rompa TAMBIÉN esta issue y no solo la suya.
