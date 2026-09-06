@@ -344,9 +344,15 @@ export class ErpSalesList extends LitElement {
         // Estilo EN LÍNEA, no clases: la celda se pinta dentro del shadow root de `ok-data-table`
         // y las clases del módulo no lo atraviesan; las custom properties sí (mismo motivo que
         // documenta `erp-inventory-products`). `--color-muted` es la del propio data-table.
-        return html`<span style="display:inline-flex;flex-direction:column;align-items:flex-start;line-height:1.25;">
+        // `flex` + `min-width:0` (no `inline-flex`): una caja que se dimensiona por su contenido se
+        // desborda en la celda estrecha de la tablet —~102 px con el data-table publicado— y la
+        // tabla la corta con puntos suspensivos justo por el importe («Por devolver 70,00 ·»), que
+        // es lo único que la issue pide ver. Así la celda la puede encoger y la frase hace dos
+        // líneas. Sin `align-items`: los hijos se estiran y HEREDAN el `text-align` de donde estén,
+        // que es izquierda en la celda de la lista y derecha en la línea de la tarjeta del móvil.
+        return html`<span style="display:flex;flex-direction:column;min-width:0;line-height:1.25;">
           <span>${status}</span>
-          <span style="font-size:0.78em;color:var(--color-muted, var(--ion-color-medium, #6b7280));"
+          <span style="font-size:0.78em;color:var(--color-muted, var(--ion-color-medium, #6b7280));white-space:normal;overflow-wrap:anywhere;"
             >${t('ui.statusLeftToRefund', { amount: erplora().formatMoney(remaining) })}</span
           >
         </span>`;

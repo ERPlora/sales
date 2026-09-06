@@ -1123,6 +1123,43 @@ describe('sales list — what is left to refund is READ on the row (sales#256)',
     expect(host.textContent!.replace(/\s+/g, ' ').trim()).toBe('Completada');
   });
 
+  // Medido con el `ok-data-table` publicado (0.1.65) en tablet vertical: con las seis columnas ya
+  // cabiendo, cada una mide ~102 px y «Por devolver 70,00 €» pide ~105. En una sola línea la celda
+  // la corta con puntos suspensivos y el importe —lo único que la issue pide ver— es justo lo que
+  // se pierde: se leía «Por devolver 70,00 ·». Así que la frase tiene que poder PARTIRSE, y su
+  // caja tiene que dejarse estrechar por la celda en vez de crecer hasta el ancho del texto.
+  it('la frase puede partirse en dos líneas: en la tablet la columna mide ~102 px', async () => {
+    const { el } = await mountList();
+    const col = (el as unknown as { columns: { key: string; render?: (r: Record<string, unknown>) => unknown }[] })
+      .columns.find((c) => c.key === 'status')!;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    litRender(col.render!({ id: 'x', status: 'completed', total: 10000, refunded_total: 3000 }), host);
+    const box = host.querySelector('span')!;
+    const phrase = [...host.querySelectorAll('span span')].pop()!;
+    expect(getComputedStyle(phrase).whiteSpace, 'la frase se parte, no se recorta').toBe('normal');
+    // `inline-flex` se dimensiona por su contenido: dentro de una celda estrecha se desborda en vez
+    // de dejar que el texto haga dos líneas. Tiene que ser una caja que la celda pueda encoger.
+    expect(getComputedStyle(box).display, 'la caja se deja estrechar por la celda').toBe('flex');
+    // happy-dom devuelve el valor tal cual se escribió («0»); un navegador lo normaliza a «0px».
+    expect(['0', '0px'], 'y puede encoger por debajo de su contenido').toContain(getComputedStyle(box).minWidth);
+  });
+
+  // Y al partirse no puede partir el DINERO: con un espacio normal el navegador rompe entre la
+  // cifra y el símbolo y en la tablet se leía «Por devolver 70,00» / «€», con el euro solo en la
+  // segunda línea. El importe va con espacio duro, que además es lo correcto en español.
+  it('al partirse no separa la cifra de su símbolo: el importe lleva espacio duro', async () => {
+    const { el } = await mountList();
+    const col = (el as unknown as { columns: { key: string; render?: (r: Record<string, unknown>) => unknown }[] })
+      .columns.find((c) => c.key === 'status')!;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    litRender(col.render!({ id: 'x', status: 'completed', total: 10000, refunded_total: 3000 }), host);
+    const raw = [...host.querySelectorAll('span span')].pop()!.textContent ?? '';
+    expect(raw, 'la cifra y el € viajan juntos').toContain('70,00\u00a0€');
+    expect(raw, 'y no queda ningún espacio normal donde romper el importe').not.toContain('70,00 €');
+  });
+
   it('un estado DESCONOCIDO sigue cayendo a su valor crudo, con marca o sin ella (hub#923)', async () => {
     // Un módulo más nuevo escribiendo un estado que este catálogo no conoce: peor que la palabra
     // cruda sería una celda vacía, que esconde el estado de la fila. La marca no puede comerse eso.
