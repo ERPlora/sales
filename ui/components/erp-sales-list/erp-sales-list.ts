@@ -350,10 +350,14 @@ export class ErpSalesList extends LitElement {
         // es lo único que la issue pide ver. Así la celda la puede encoger y la frase hace dos
         // líneas. Sin `align-items`: los hijos se estiran y HEREDAN el `text-align` de donde estén,
         // que es izquierda en la celda de la lista y derecha en la línea de la tarjeta del móvil.
+        // El importe lleva espacio DURO: con el normal, al partirse la frase se leía «Por devolver
+        // 70,00» y el «€» solo en la línea de abajo (y en español la cifra y su símbolo no se
+        // separan). `\s` cubre también los espacios finos que devuelve Intl según el ICU.
+        const amount = erplora().formatMoney(remaining).replace(/\s/g, '\u00a0');
         return html`<span style="display:flex;flex-direction:column;min-width:0;line-height:1.25;">
           <span>${status}</span>
           <span style="font-size:0.78em;color:var(--color-muted, var(--ion-color-medium, #6b7280));white-space:normal;overflow-wrap:anywhere;"
-            >${t('ui.statusLeftToRefund', { amount: erplora().formatMoney(remaining) })}</span
+            >${t('ui.statusLeftToRefund', { amount })}</span
           >
         </span>`;
       },
