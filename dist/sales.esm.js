@@ -4399,8 +4399,6 @@ var es_default = {
     errorPaymentsMismatch: "El total ha cambiado mientras se repart\xEDa el cobro. Revisa los importes y vuelve a cobrar.",
     errorQuantityNotPositive: "Una l\xEDnea no tiene cantidad: pon al menos una antes de cobrar",
     actionRefund: "Devolver",
-    actionRefundAmount: "Devolver ({amount})",
-    actionRefundRemaining: "Devolver el resto ({amount})",
     statusRefunded: "Devuelta",
     statusLeftToRefund: "Por devolver {amount}",
     refundTitle: "Devolver la venta {number}",
@@ -4924,8 +4922,6 @@ var en_default = {
     errorPaymentsMismatch: "The total changed while the payment was being split. Check the amounts and charge again.",
     errorQuantityNotPositive: "A line has no quantity: set at least one before charging",
     actionRefund: "Refund",
-    actionRefundAmount: "Refund ({amount})",
-    actionRefundRemaining: "Refund remaining ({amount})",
     statusRefunded: "Refunded",
     statusLeftToRefund: "{amount} left to refund",
     refundTitle: "Refund sale {number}",
@@ -14498,13 +14494,17 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
     if (erplora5().hasPermission?.("sales.refund_sale")) {
       actions.push({
         id: "refund",
-        // Función, no texto: la etiqueta lleva un dato de la FILA (outfitkit#110). La acción es
-        // icon-only por ADR-0133, así que esto es además su nombre accesible (`aria-label`).
-        label: (r6) => {
-          const refunded = Number(r6.refunded_total ?? 0);
-          const amount = erplora5().formatMoney(Number(r6.total ?? 0) - refunded);
-          return t7(refunded > 0 ? "ui.actionRefundRemaining" : "ui.actionRefundAmount", { amount });
-        },
+        // TEXTO, no función (sales#259). `DataTableAction.label` acepta `(row) => string` solo
+        // desde OutfitKit 0.1.59, y el `ok-data-table` que pinta es el del SHELL, no la copia
+        // horneada aquí (ADR-0133 §verificación 2). Un shell anterior hace `aria-label=${a.label}`
+        // a pelo: interpola la flecha y el nombre del botón —que por ser icon-only es TODO lo que
+        // tiene— pasa a ser su código fuente, leído en voz alta por el lector de pantalla. Y no es
+        // un hub hipotético: la flota desplegada va con 0.1.58.
+        // El dato de la fila que esta etiqueta cargaba desde sales#255 ya no hace falta aquí: se
+        // PINTA en la celda de estado (sales#256) con `column.render`, que existe desde el primer
+        // OutfitKit y se lee en los tres viewports. Rótulo fijo + dato en la fila es además lo que
+        // hacen Shopify, Square y Odoo con las acciones de fila.
+        label: t7("ui.actionRefund"),
         icon: "return-down-back-outline",
         color: "warning",
         disabled: (r6) => r6.status !== "completed"
