@@ -313,40 +313,46 @@ export class ErpSalesList extends LitElement {
       // desconocido (un módulo más nuevo escribiendo `refunded`) cae a su valor crudo: peor sería
       // una celda vacía, que esconde el estado de la fila.
       format: (r) => STATUS_KEYS[String(r.status ?? '')] ? t(STATUS_KEYS[String(r.status)]) : String(r.status ?? ''),
-    },
-    // sales#256 — lo que queda por devolver se LEE en la fila. La acción de fila es icon-only
-    // (ADR-0133), así que el importe que sales#255 puso en su etiqueta solo llegaba a `aria-label`
-    // y `title`: en el ordenador del despacho lo enseña el ratón, y en la tablet del mostrador —que
-    // es donde se atiende a quien viene a que le devuelvan— no aparece nunca. Va PEGADO al total
-    // que corrige y sin columna nueva: es lo que hace el mercado (Shopify marca la fila, Lightspeed
-    // mete el importe DENTRO de la insignia, Toast y WooCommerce lo ponen junto al dinero) y lo
-    // único que cabe en móvil, donde CADA columna es una línea más en CADA tarjeta (sales#126).
-    // Stripe lo deja detrás de un hover: ese es exactamente el defecto que se está cerrando.
-    //
-    // Solo cuando ya ha vuelto algo Y queda algo: en una venta intacta no hay nada que contar, y en
-    // una devuelta entera el resto es 0 y la columna de estado ya dice «Devuelta». Una fila servida
-    // por un hub anterior a sales#247 no trae `refunded_total` y se pinta como siempre.
-    //
-    // `format` se queda: es el valor PLANO con el que la tabla ordena y filtra (`rawValue`), y la
-    // frase ahí dentro rompería el filtro de rango de esta misma columna.
-    { key: 'total', header: t('ui.colTotal'), align: 'right', sortable: true, filterable: true, filterType: 'range',
-      format: (r) => erplora().formatMoney(Number(r.total || 0)),
+      // sales#256 — lo que queda por devolver se LEE en la fila. La acción de fila es icon-only
+      // (ADR-0133), así que el importe que sales#255 puso en su etiqueta solo llegaba a `aria-label`
+      // y `title`: en el ordenador del despacho lo enseña el ratón, y en la tablet del mostrador
+      // —que es donde se atiende a quien viene a que le devuelvan— no aparece nunca.
+      //
+      // Va en el ESTADO, que es donde el mercado marca el reembolso parcial: Shopify pinta
+      // «Partially refunded» en la fila y su propia guía de insignias pide ponerlas «in their own
+      // column» (la de estado, que ya tenemos); Lightspeed mete el IMPORTE dentro de la insignia;
+      // Odoo enseña «Return Status» y Square «Partially Refunded» en la misma columna de tipo.
+      // Square se queda en la marca SIN importe y en su foro los comerciantes cuentan que acaban
+      // abriendo transacción por transacción para cuadrarlo: por eso aquí va el número.
+      //
+      // Y no junto al total, aunque el dinero apetezca: medido sobre el `ok-data-table` del shell
+      // en tablet vertical (834 px), esta tabla no cabe, se desplaza en horizontal y ANCLA la
+      // columna de acciones a la derecha — el total cae DEBAJO de ese ancla. La celda de estado sí
+      // se lee. Ponerlo en el total lo dejaba invisible justo en la tablet de la que sale la issue.
+      //
+      // Solo cuando ya ha vuelto algo Y queda algo: en una venta intacta no hay nada que contar, y
+      // en una devuelta entera el resto es 0 y la propia palabra ya dice «Devuelta». Una fila
+      // servida por un hub anterior a sales#247 no trae `refunded_total` y se pinta como siempre.
+      //
+      // `format` se queda intacto: es el valor PLANO con el que la tabla ordena y con el que casa
+      // el filtro `select` de esta misma columna; la frase ahí dentro rompería elegir «Completada».
       render: (r) => {
-        const total = Number(r.total || 0);
+        const status = STATUS_KEYS[String(r.status ?? '')] ? t(STATUS_KEYS[String(r.status)]) : String(r.status ?? '');
         const refunded = Number(r.refunded_total ?? 0);
-        const remaining = total - refunded;
-        const amount = erplora().formatMoney(total);
-        if (!(refunded > 0 && remaining > 0)) return html`<span>${amount}</span>`;
+        const remaining = Number(r.total || 0) - refunded;
+        if (!(refunded > 0 && remaining > 0)) return html`<span>${status}</span>`;
         // Estilo EN LÍNEA, no clases: la celda se pinta dentro del shadow root de `ok-data-table`
         // y las clases del módulo no lo atraviesan; las custom properties sí (mismo motivo que
         // documenta `erp-inventory-products`). `--color-muted` es la del propio data-table.
-        return html`<span style="display:inline-flex;flex-direction:column;align-items:flex-end;line-height:1.25;">
-          <span>${amount}</span>
+        return html`<span style="display:inline-flex;flex-direction:column;align-items:flex-start;line-height:1.25;">
+          <span>${status}</span>
           <span style="font-size:0.78em;color:var(--color-muted, var(--ion-color-medium, #6b7280));"
-            >${t('ui.totalLeftToRefund', { amount: erplora().formatMoney(remaining) })}</span
+            >${t('ui.statusLeftToRefund', { amount: erplora().formatMoney(remaining) })}</span
           >
         </span>`;
-      } },
+      },
+    },
+    { key: 'total', header: t('ui.colTotal'), align: 'right', sortable: true, filterable: true, filterType: 'range', format: (r) => erplora().formatMoney(Number(r.total || 0)) },
     ];
   }
 

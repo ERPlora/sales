@@ -1002,10 +1002,11 @@ describe('sales list — what is left to refund is READ on the row (sales#256)',
     return { el, table };
   }
 
-  /** El texto que de verdad se PINTA en la celda del total de cada fila (vista lista). */
-  function totalCellTexts(el: HTMLElement, table: HTMLElement & { shadowRoot: ShadowRoot }): string[] {
+  /** El texto que de verdad se PINTA en la celda de esa columna, fila a fila (vista lista). */
+  function cellTexts(el: HTMLElement, table: HTMLElement & { shadowRoot: ShadowRoot }, key: string): string[] {
     const cols = (el as unknown as { columns: { key: string }[] }).columns;
-    const at = cols.findIndex((c) => c.key === 'total');
+    const at = cols.findIndex((c) => c.key === key);
+    expect(at, `la columna ${key} sigue existiendo`).toBeGreaterThanOrEqual(0);
     return [...table.shadowRoot.querySelectorAll('.grow-data')].map((row) =>
       (row.querySelectorAll('.gcell')[at]?.textContent ?? '').replace(/\s+/g, ' ').trim());
   }
@@ -1014,30 +1015,53 @@ describe('sales list — what is left to refund is READ on the row (sales#256)',
 
   it('la fila devuelta a medias enseña el resto EN PANTALLA, no solo en el aria-label', async () => {
     const { el, table } = await mountList();
-    const texts = totalCellTexts(el, table);
+    const texts = cellTexts(el, table, 'status');
     expect(texts.length, 'las tres filas se pintan').toBe(3);
-    // Lo cobrado sigue estando: la celda del total no se sustituye, se completa.
-    expect(texts[0]).toContain('100,00 €');
+    // El estado sigue estando: la celda no se sustituye, se completa.
+    expect(texts[0]).toContain('Completada');
     // Y el resto se LEE, sin ratón y sin abrir la venta.
     expect(texts[0], 'la venta devuelta a medias dice cuánto queda').toContain('Por devolver 70,00 €');
   });
 
-  it('la venta intacta y la devuelta ENTERA no ganan ruido', async () => {
+  // 🔴 La razón por la que la marca vive en ESTADO y no en TOTAL, medida sobre el `ok-data-table`
+  // del shell (0.1.61) en tablet vertical (834×1112, iPad Pro 11"): la tabla del historial tiene
+  // más columnas de las que caben, así que se desplaza en horizontal con la columna de ACCIONES
+  // ANCLADA a la derecha (x=678..834). El total cae DEBAJO de ese ancla (x=696..824,
+  // `elementFromPoint` devuelve las acciones, no el total) y en inglés se sale de la pantalla
+  // entera. La celda de estado (x=560..688) sí se lee. Poner el importe junto al total lo dejaba
+  // invisible EXACTAMENTE en la tablet del mostrador, que es el aparato del que sale esta issue.
+  it('la celda del TOTAL no hereda la frase: es la que la tablet esconde bajo las acciones', async () => {
     const { el, table } = await mountList();
-    const texts = totalCellTexts(el, table);
-    // Intacta: el total y nada más — no hay nada devuelto que contar.
-    expect(texts[1], 'una venta sin devoluciones').toBe('50,00 €');
-    // Devuelta entera: el resto es 0. Un «Por devolver 0,00 €» sería ruido en la fila, y la
-    // columna de estado ya dice «Devuelta».
-    expect(texts[2], 'una venta devuelta entera').toBe('80,00 €');
+    const totals = cellTexts(el, table, 'total');
+    expect(totals[0], 'el total sigue siendo el total y nada más').toBe('100,00 €');
+    expect(totals.join(' '), 'nada de la marca se cuela en la columna del dinero').not.toContain('Por devolver');
   });
 
-  it('en MÓVIL (tarjetas) el resto también se lee: es el viewport del que sale la issue', async () => {
+  it('la venta intacta y la devuelta ENTERA no ganan ruido', async () => {
+    const { el, table } = await mountList();
+    const texts = cellTexts(el, table, 'status');
+    // Intacta: el estado y nada más — no hay nada devuelto que contar.
+    expect(texts[1], 'una venta sin devoluciones').toBe('Completada');
+    // Devuelta entera: el resto es 0. Un «Por devolver 0,00 €» sería ruido en la fila, y la propia
+    // palabra del estado ya dice «Devuelta».
+    expect(texts[2], 'una venta devuelta entera').toBe('Devuelta');
+  });
+
+  it('en MÓVIL (tarjetas) el resto también se lee, y en la línea del ESTADO', async () => {
     const { table } = await mountList(true);
     const cards = [...table.shadowRoot.querySelectorAll('ion-card.rcard')];
     expect(cards.length, 'la tabla arranca en tarjetas por debajo de 640 px').toBe(3);
+    /** El valor pintado en la línea de la tarjeta que lleva esa etiqueta. */
+    const line = (card: Element, label: string): string => {
+      const row = [...card.querySelectorAll('.rrow')]
+        .find((r) => (r.querySelector('.rk')?.textContent ?? '').trim() === label);
+      return (row?.querySelector('.rv')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+    };
+    expect(line(cards[0], 'Estado'), 'la tarjeta de la venta devuelta a medias').toContain('Por devolver 70,00 €');
+    // Y la línea del dinero se queda limpia también aquí: una tarjeta es la misma columna en
+    // vertical, así que el sitio de la marca tiene que ser el mismo en las dos vistas.
+    expect(line(cards[0], 'Total'), 'la línea del total no la repite').toBe('100,00 €');
     const texts = cards.map((c) => (c.textContent ?? '').replace(/\s+/g, ' ').trim());
-    expect(texts[0], 'la tarjeta de la venta devuelta a medias').toContain('Por devolver 70,00 €');
     expect(texts[1], 'la tarjeta de la venta intacta no lo menciona').not.toContain('Por devolver');
     expect(texts[2], 'la tarjeta de la venta devuelta entera tampoco').not.toContain('Por devolver');
   });
@@ -1073,30 +1097,43 @@ describe('sales list — what is left to refund is READ on the row (sales#256)',
       await new Promise((r) => setTimeout(r, 0));
       await table.updateComplete;
     }
-    const texts = totalCellTexts(el, table);
+    const texts = cellTexts(el, table, 'status');
     expect(texts[0], 'the English catalogue speaks English').toContain('70.00 € left to refund');
     expect(texts[0], 'and nothing of the Spanish one leaks through').not.toContain('Por devolver');
   });
 
-  it('el valor CRUDO de la columna sigue siendo el importe: ordenar y filtrar no heredan la frase', async () => {
-    // `format` es lo que ok-data-table usa para ordenar/filtrar en cliente y para el valor plano
-    // (`rawValue`). Si la frase se colase ahí, un rango «hasta 100 €» dejaría de comparar números.
+  it('el valor CRUDO de la columna sigue siendo el estado: ordenar y FILTRAR no heredan la frase', async () => {
+    // `format` es lo que ok-data-table usa para ordenar/filtrar y para el valor plano (`rawValue`).
+    // El filtro de esta columna es un `select` con las tres palabras: si la frase se colase en
+    // `format`, elegir «Completada» dejaría de encontrar la venta devuelta a medias.
     const { el } = await mountList();
     const col = (el as unknown as { columns: { key: string; format?: (r: Record<string, unknown>) => string }[] })
-      .columns.find((c) => c.key === 'total')!;
-    expect(col.format!({ total: 10000, refunded_total: 3000 })).toBe('100,00 €');
-    // Una fila servida por un hub anterior a sales#247 no trae `refunded_total`: nada que añadir,
-    // nunca un `NaN €` en la celda.
-    expect(col.format!({ total: 5000 })).toBe('50,00 €');
+      .columns.find((c) => c.key === 'status')!;
+    expect(col.format!({ status: 'completed', total: 10000, refunded_total: 3000 })).toBe('Completada');
+    expect(col.format!({ status: 'refunded', total: 8000, refunded_total: 8000 })).toBe('Devuelta');
   });
 
   it('una fila sin `refunded_total` (hub viejo) se pinta como siempre', async () => {
     const { el } = await mountList();
     const col = (el as unknown as { columns: { key: string; render?: (r: Record<string, unknown>) => unknown }[] })
-      .columns.find((c) => c.key === 'total')!;
+      .columns.find((c) => c.key === 'status')!;
     const host = document.createElement('div');
     document.body.appendChild(host);
-    litRender(col.render!({ id: 'x', total: 5000 }), host);
-    expect(host.textContent!.replace(/\s+/g, ' ').trim()).toBe('50,00 €');
+    litRender(col.render!({ id: 'x', status: 'completed', total: 5000 }), host);
+    expect(host.textContent!.replace(/\s+/g, ' ').trim()).toBe('Completada');
+  });
+
+  it('un estado DESCONOCIDO sigue cayendo a su valor crudo, con marca o sin ella (hub#923)', async () => {
+    // Un módulo más nuevo escribiendo un estado que este catálogo no conoce: peor que la palabra
+    // cruda sería una celda vacía, que esconde el estado de la fila. La marca no puede comerse eso.
+    const { el } = await mountList();
+    const col = (el as unknown as { columns: { key: string; render?: (r: Record<string, unknown>) => unknown }[] })
+      .columns.find((c) => c.key === 'status')!;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    litRender(col.render!({ id: 'x', status: 'partially_settled', total: 10000, refunded_total: 3000 }), host);
+    const painted = host.textContent!.replace(/\s+/g, ' ').trim();
+    expect(painted).toContain('partially_settled');
+    expect(painted).toContain('Por devolver 70,00 €');
   });
 });

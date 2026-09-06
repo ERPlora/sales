@@ -4401,8 +4401,8 @@ var es_default = {
     actionRefund: "Devolver",
     actionRefundAmount: "Devolver ({amount})",
     actionRefundRemaining: "Devolver el resto ({amount})",
-    totalLeftToRefund: "Por devolver {amount}",
     statusRefunded: "Devuelta",
+    statusLeftToRefund: "Por devolver {amount}",
     refundTitle: "Devolver la venta {number}",
     refundExplain: "Elige cu\xE1nto vuelve por cada forma en que se pag\xF3. El reparto de abajo es una propuesta: cambia el importe que quieras.",
     refundLoading: "Cargando lo que se puede devolver\u2026",
@@ -4926,8 +4926,8 @@ var en_default = {
     actionRefund: "Refund",
     actionRefundAmount: "Refund ({amount})",
     actionRefundRemaining: "Refund remaining ({amount})",
-    totalLeftToRefund: "{amount} left to refund",
     statusRefunded: "Refunded",
+    statusLeftToRefund: "{amount} left to refund",
     refundTitle: "Refund sale {number}",
     refundExplain: "Choose how much goes back to each way it was paid. The split below is a proposal \u2014 change any amount.",
     refundLoading: "Loading what can be refunded\u2026",
@@ -14606,45 +14606,44 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
         // queda en duda, así que la palabra que dice «esto se cobró» no puede ser jerga. Un estado
         // desconocido (un módulo más nuevo escribiendo `refunded`) cae a su valor crudo: peor sería
         // una celda vacía, que esconde el estado de la fila.
-        format: (r6) => STATUS_KEYS[String(r6.status ?? "")] ? t7(STATUS_KEYS[String(r6.status)]) : String(r6.status ?? "")
-      },
-      // sales#256 — lo que queda por devolver se LEE en la fila. La acción de fila es icon-only
-      // (ADR-0133), así que el importe que sales#255 puso en su etiqueta solo llegaba a `aria-label`
-      // y `title`: en el ordenador del despacho lo enseña el ratón, y en la tablet del mostrador —que
-      // es donde se atiende a quien viene a que le devuelvan— no aparece nunca. Va PEGADO al total
-      // que corrige y sin columna nueva: es lo que hace el mercado (Shopify marca la fila, Lightspeed
-      // mete el importe DENTRO de la insignia, Toast y WooCommerce lo ponen junto al dinero) y lo
-      // único que cabe en móvil, donde CADA columna es una línea más en CADA tarjeta (sales#126).
-      // Stripe lo deja detrás de un hover: ese es exactamente el defecto que se está cerrando.
-      //
-      // Solo cuando ya ha vuelto algo Y queda algo: en una venta intacta no hay nada que contar, y en
-      // una devuelta entera el resto es 0 y la columna de estado ya dice «Devuelta». Una fila servida
-      // por un hub anterior a sales#247 no trae `refunded_total` y se pinta como siempre.
-      //
-      // `format` se queda: es el valor PLANO con el que la tabla ordena y filtra (`rawValue`), y la
-      // frase ahí dentro rompería el filtro de rango de esta misma columna.
-      {
-        key: "total",
-        header: t7("ui.colTotal"),
-        align: "right",
-        sortable: true,
-        filterable: true,
-        filterType: "range",
-        format: (r6) => erplora5().formatMoney(Number(r6.total || 0)),
+        format: (r6) => STATUS_KEYS[String(r6.status ?? "")] ? t7(STATUS_KEYS[String(r6.status)]) : String(r6.status ?? ""),
+        // sales#256 — lo que queda por devolver se LEE en la fila. La acción de fila es icon-only
+        // (ADR-0133), así que el importe que sales#255 puso en su etiqueta solo llegaba a `aria-label`
+        // y `title`: en el ordenador del despacho lo enseña el ratón, y en la tablet del mostrador
+        // —que es donde se atiende a quien viene a que le devuelvan— no aparece nunca.
+        //
+        // Va en el ESTADO, que es donde el mercado marca el reembolso parcial: Shopify pinta
+        // «Partially refunded» en la fila y su propia guía de insignias pide ponerlas «in their own
+        // column» (la de estado, que ya tenemos); Lightspeed mete el IMPORTE dentro de la insignia;
+        // Odoo enseña «Return Status» y Square «Partially Refunded» en la misma columna de tipo.
+        // Square se queda en la marca SIN importe y en su foro los comerciantes cuentan que acaban
+        // abriendo transacción por transacción para cuadrarlo: por eso aquí va el número.
+        //
+        // Y no junto al total, aunque el dinero apetezca: medido sobre el `ok-data-table` del shell
+        // en tablet vertical (834 px), esta tabla no cabe, se desplaza en horizontal y ANCLA la
+        // columna de acciones a la derecha — el total cae DEBAJO de ese ancla. La celda de estado sí
+        // se lee. Ponerlo en el total lo dejaba invisible justo en la tablet de la que sale la issue.
+        //
+        // Solo cuando ya ha vuelto algo Y queda algo: en una venta intacta no hay nada que contar, y
+        // en una devuelta entera el resto es 0 y la propia palabra ya dice «Devuelta». Una fila
+        // servida por un hub anterior a sales#247 no trae `refunded_total` y se pinta como siempre.
+        //
+        // `format` se queda intacto: es el valor PLANO con el que la tabla ordena y con el que casa
+        // el filtro `select` de esta misma columna; la frase ahí dentro rompería elegir «Completada».
         render: (r6) => {
-          const total = Number(r6.total || 0);
+          const status = STATUS_KEYS[String(r6.status ?? "")] ? t7(STATUS_KEYS[String(r6.status)]) : String(r6.status ?? "");
           const refunded = Number(r6.refunded_total ?? 0);
-          const remaining = total - refunded;
-          const amount = erplora5().formatMoney(total);
-          if (!(refunded > 0 && remaining > 0)) return b2`<span>${amount}</span>`;
-          return b2`<span style="display:inline-flex;flex-direction:column;align-items:flex-end;line-height:1.25;">
-          <span>${amount}</span>
+          const remaining = Number(r6.total || 0) - refunded;
+          if (!(refunded > 0 && remaining > 0)) return b2`<span>${status}</span>`;
+          return b2`<span style="display:inline-flex;flex-direction:column;align-items:flex-start;line-height:1.25;">
+          <span>${status}</span>
           <span style="font-size:0.78em;color:var(--color-muted, var(--ion-color-medium, #6b7280));"
-            >${t7("ui.totalLeftToRefund", { amount: erplora5().formatMoney(remaining) })}</span
+            >${t7("ui.statusLeftToRefund", { amount: erplora5().formatMoney(remaining) })}</span
           >
         </span>`;
         }
-      }
+      },
+      { key: "total", header: t7("ui.colTotal"), align: "right", sortable: true, filterable: true, filterType: "range", format: (r6) => erplora5().formatMoney(Number(r6.total || 0)) }
     ];
   }
   // TODO-LIT: componentWillLoad → connectedCallback. Recuerda: connectedCallback se dispara
