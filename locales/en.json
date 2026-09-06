@@ -405,8 +405,6 @@
     "errorPaymentsMismatch": "The total changed while the payment was being split. Check the amounts and charge again.",
     "errorQuantityNotPositive": "A line has no quantity: set at least one before charging",
     "actionRefund": "Refund",
-    "actionRefundAmount": "Refund ({amount})",
-    "actionRefundRemaining": "Refund remaining ({amount})",
     "statusRefunded": "Refunded",
     "statusLeftToRefund": "{amount} left to refund",
     "refundTitle": "Refund sale {number}",

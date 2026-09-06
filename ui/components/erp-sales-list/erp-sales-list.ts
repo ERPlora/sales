@@ -207,13 +207,17 @@ export class ErpSalesList extends LitElement {
     if (erplora().hasPermission?.('sales.refund_sale')) {
       actions.push({
         id: 'refund',
-        // Función, no texto: la etiqueta lleva un dato de la FILA (outfitkit#110). La acción es
-        // icon-only por ADR-0133, así que esto es además su nombre accesible (`aria-label`).
-        label: (r) => {
-          const refunded = Number(r.refunded_total ?? 0);
-          const amount = erplora().formatMoney(Number(r.total ?? 0) - refunded);
-          return t(refunded > 0 ? 'ui.actionRefundRemaining' : 'ui.actionRefundAmount', { amount });
-        },
+        // TEXTO, no función (sales#259). `DataTableAction.label` acepta `(row) => string` solo
+        // desde OutfitKit 0.1.59, y el `ok-data-table` que pinta es el del SHELL, no la copia
+        // horneada aquí (ADR-0133 §verificación 2). Un shell anterior hace `aria-label=${a.label}`
+        // a pelo: interpola la flecha y el nombre del botón —que por ser icon-only es TODO lo que
+        // tiene— pasa a ser su código fuente, leído en voz alta por el lector de pantalla. Y no es
+        // un hub hipotético: la flota desplegada va con 0.1.58.
+        // El dato de la fila que esta etiqueta cargaba desde sales#255 ya no hace falta aquí: se
+        // PINTA en la celda de estado (sales#256) con `column.render`, que existe desde el primer
+        // OutfitKit y se lee en los tres viewports. Rótulo fijo + dato en la fila es además lo que
+        // hacen Shopify, Square y Odoo con las acciones de fila.
+        label: t('ui.actionRefund'),
         icon: 'return-down-back-outline', color: 'warning',
         disabled: (r) => r.status !== 'completed',
       });
