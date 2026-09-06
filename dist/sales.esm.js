@@ -14635,10 +14635,11 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
           const refunded = Number(r6.refunded_total ?? 0);
           const remaining = Number(r6.total || 0) - refunded;
           if (!(refunded > 0 && remaining > 0)) return b2`<span>${status}</span>`;
+          const amount = erplora5().formatMoney(remaining).replace(/\s/g, "\xA0");
           return b2`<span style="display:flex;flex-direction:column;min-width:0;line-height:1.25;">
           <span>${status}</span>
           <span style="font-size:0.78em;color:var(--color-muted, var(--ion-color-medium, #6b7280));white-space:normal;overflow-wrap:anywhere;"
-            >${t7("ui.statusLeftToRefund", { amount: erplora5().formatMoney(remaining) })}</span
+            >${t7("ui.statusLeftToRefund", { amount })}</span
           >
         </span>`;
         }
