@@ -4399,9 +4399,8 @@ var es_default = {
     errorPaymentsMismatch: "El total ha cambiado mientras se repart\xEDa el cobro. Revisa los importes y vuelve a cobrar.",
     errorQuantityNotPositive: "Una l\xEDnea no tiene cantidad: pon al menos una antes de cobrar",
     actionRefund: "Devolver",
-    actionRefundAmount: "Devolver ({amount})",
-    actionRefundRemaining: "Devolver el resto ({amount})",
     statusRefunded: "Devuelta",
+    statusLeftToRefund: "Por devolver {amount}",
     refundTitle: "Devolver la venta {number}",
     refundExplain: "Elige cu\xE1nto vuelve por cada forma en que se pag\xF3. El reparto de abajo es una propuesta: cambia el importe que quieras.",
     refundLoading: "Cargando lo que se puede devolver\u2026",
@@ -4923,9 +4922,8 @@ var en_default = {
     errorPaymentsMismatch: "The total changed while the payment was being split. Check the amounts and charge again.",
     errorQuantityNotPositive: "A line has no quantity: set at least one before charging",
     actionRefund: "Refund",
-    actionRefundAmount: "Refund ({amount})",
-    actionRefundRemaining: "Refund remaining ({amount})",
     statusRefunded: "Refunded",
+    statusLeftToRefund: "{amount} left to refund",
     refundTitle: "Refund sale {number}",
     refundExplain: "Choose how much goes back to each way it was paid. The split below is a proposal \u2014 change any amount.",
     refundLoading: "Loading what can be refunded\u2026",
@@ -14496,13 +14494,17 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
     if (erplora5().hasPermission?.("sales.refund_sale")) {
       actions.push({
         id: "refund",
-        // Función, no texto: la etiqueta lleva un dato de la FILA (outfitkit#110). La acción es
-        // icon-only por ADR-0133, así que esto es además su nombre accesible (`aria-label`).
-        label: (r6) => {
-          const refunded = Number(r6.refunded_total ?? 0);
-          const amount = erplora5().formatMoney(Number(r6.total ?? 0) - refunded);
-          return t7(refunded > 0 ? "ui.actionRefundRemaining" : "ui.actionRefundAmount", { amount });
-        },
+        // TEXTO, no función (sales#259). `DataTableAction.label` acepta `(row) => string` solo
+        // desde OutfitKit 0.1.59, y el `ok-data-table` que pinta es el del SHELL, no la copia
+        // horneada aquí (ADR-0133 §verificación 2). Un shell anterior hace `aria-label=${a.label}`
+        // a pelo: interpola la flecha y el nombre del botón —que por ser icon-only es TODO lo que
+        // tiene— pasa a ser su código fuente, leído en voz alta por el lector de pantalla. Y no es
+        // un hub hipotético: la flota desplegada va con 0.1.58.
+        // El dato de la fila que esta etiqueta cargaba desde sales#255 ya no hace falta aquí: se
+        // PINTA en la celda de estado (sales#256) con `column.render`, que existe desde el primer
+        // OutfitKit y se lee en los tres viewports. Rótulo fijo + dato en la fila es además lo que
+        // hacen Shopify, Square y Odoo con las acciones de fila.
+        label: t7("ui.actionRefund"),
         icon: "return-down-back-outline",
         color: "warning",
         disabled: (r6) => r6.status !== "completed"
@@ -14551,7 +14553,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
     }
   }
   get columns() {
-    const t7 = (k2) => erplora5().t(CATALOG5, k2);
+    const t7 = (k2, p4) => erplora5().t(CATALOG5, k2, p4);
     return [
       // sales#27: la hora de cada venta a la vista (antes se ordenaba por ella y no se pintaba).
       {
@@ -14604,7 +14606,43 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
         // queda en duda, así que la palabra que dice «esto se cobró» no puede ser jerga. Un estado
         // desconocido (un módulo más nuevo escribiendo `refunded`) cae a su valor crudo: peor sería
         // una celda vacía, que esconde el estado de la fila.
-        format: (r6) => STATUS_KEYS[String(r6.status ?? "")] ? t7(STATUS_KEYS[String(r6.status)]) : String(r6.status ?? "")
+        format: (r6) => STATUS_KEYS[String(r6.status ?? "")] ? t7(STATUS_KEYS[String(r6.status)]) : String(r6.status ?? ""),
+        // sales#256 — lo que queda por devolver se LEE en la fila. La acción de fila es icon-only
+        // (ADR-0133), así que el importe que sales#255 puso en su etiqueta solo llegaba a `aria-label`
+        // y `title`: en el ordenador del despacho lo enseña el ratón, y en la tablet del mostrador
+        // —que es donde se atiende a quien viene a que le devuelvan— no aparece nunca.
+        //
+        // Va en el ESTADO, que es donde el mercado marca el reembolso parcial: Shopify pinta
+        // «Partially refunded» en la fila y su propia guía de insignias pide ponerlas «in their own
+        // column» (la de estado, que ya tenemos); Lightspeed mete el IMPORTE dentro de la insignia;
+        // Odoo enseña «Return Status» y Square «Partially Refunded» en la misma columna de tipo.
+        // Square se queda en la marca SIN importe y en su foro los comerciantes cuentan que acaban
+        // abriendo transacción por transacción para cuadrarlo: por eso aquí va el número.
+        //
+        // Y no junto al total, aunque el dinero apetezca: medido sobre el `ok-data-table` del shell
+        // en tablet vertical (834 px), esta tabla no cabe, se desplaza en horizontal y ANCLA la
+        // columna de acciones a la derecha — el total cae DEBAJO de ese ancla. La celda de estado sí
+        // se lee. Ponerlo en el total lo dejaba invisible justo en la tablet de la que sale la issue.
+        //
+        // Solo cuando ya ha vuelto algo Y queda algo: en una venta intacta no hay nada que contar, y
+        // en una devuelta entera el resto es 0 y la propia palabra ya dice «Devuelta». Una fila
+        // servida por un hub anterior a sales#247 no trae `refunded_total` y se pinta como siempre.
+        //
+        // `format` se queda intacto: es el valor PLANO con el que la tabla ordena y con el que casa
+        // el filtro `select` de esta misma columna; la frase ahí dentro rompería elegir «Completada».
+        render: (r6) => {
+          const status = STATUS_KEYS[String(r6.status ?? "")] ? t7(STATUS_KEYS[String(r6.status)]) : String(r6.status ?? "");
+          const refunded = Number(r6.refunded_total ?? 0);
+          const remaining = Number(r6.total || 0) - refunded;
+          if (!(refunded > 0 && remaining > 0)) return b2`<span>${status}</span>`;
+          const amount = erplora5().formatMoney(remaining).replace(/\s/g, "\xA0");
+          return b2`<span style="display:flex;flex-direction:column;min-width:0;line-height:1.25;">
+          <span>${status}</span>
+          <span style="font-size:0.78em;color:var(--color-muted, var(--ion-color-medium, #6b7280));white-space:normal;overflow-wrap:anywhere;"
+            >${t7("ui.statusLeftToRefund", { amount })}</span
+          >
+        </span>`;
+        }
       },
       { key: "total", header: t7("ui.colTotal"), align: "right", sortable: true, filterable: true, filterType: "range", format: (r6) => erplora5().formatMoney(Number(r6.total || 0)) }
     ];
