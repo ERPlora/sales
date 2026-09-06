@@ -407,6 +407,7 @@
     "actionRefund": "Refund",
     "actionRefundAmount": "Refund ({amount})",
     "actionRefundRemaining": "Refund remaining ({amount})",
+    "totalLeftToRefund": "{amount} left to refund",
     "statusRefunded": "Refunded",
     "refundTitle": "Refund sale {number}",
     "refundExplain": "Choose how much goes back to each way it was paid. The split below is a proposal — change any amount.",

@@ -408,6 +408,7 @@
     "actionRefund": "Devolver",
     "actionRefundAmount": "Devolver ({amount})",
     "actionRefundRemaining": "Devolver el resto ({amount})",
+    "totalLeftToRefund": "Por devolver {amount}",
     "statusRefunded": "Devuelta",
     "refundTitle": "Devolver la venta {number}",
     "refundExplain": "Elige cuánto vuelve por cada forma en que se pagó. El reparto de abajo es una propuesta: cambia el importe que quieras.",

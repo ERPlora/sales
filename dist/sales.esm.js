@@ -4401,6 +4401,7 @@ var es_default = {
     actionRefund: "Devolver",
     actionRefundAmount: "Devolver ({amount})",
     actionRefundRemaining: "Devolver el resto ({amount})",
+    totalLeftToRefund: "Por devolver {amount}",
     statusRefunded: "Devuelta",
     refundTitle: "Devolver la venta {number}",
     refundExplain: "Elige cu\xE1nto vuelve por cada forma en que se pag\xF3. El reparto de abajo es una propuesta: cambia el importe que quieras.",
@@ -4925,6 +4926,7 @@ var en_default = {
     actionRefund: "Refund",
     actionRefundAmount: "Refund ({amount})",
     actionRefundRemaining: "Refund remaining ({amount})",
+    totalLeftToRefund: "{amount} left to refund",
     statusRefunded: "Refunded",
     refundTitle: "Refund sale {number}",
     refundExplain: "Choose how much goes back to each way it was paid. The split below is a proposal \u2014 change any amount.",
@@ -14551,7 +14553,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
     }
   }
   get columns() {
-    const t7 = (k2) => erplora5().t(CATALOG5, k2);
+    const t7 = (k2, p4) => erplora5().t(CATALOG5, k2, p4);
     return [
       // sales#27: la hora de cada venta a la vista (antes se ordenaba por ella y no se pintaba).
       {
@@ -14606,7 +14608,43 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
         // una celda vacía, que esconde el estado de la fila.
         format: (r6) => STATUS_KEYS[String(r6.status ?? "")] ? t7(STATUS_KEYS[String(r6.status)]) : String(r6.status ?? "")
       },
-      { key: "total", header: t7("ui.colTotal"), align: "right", sortable: true, filterable: true, filterType: "range", format: (r6) => erplora5().formatMoney(Number(r6.total || 0)) }
+      // sales#256 — lo que queda por devolver se LEE en la fila. La acción de fila es icon-only
+      // (ADR-0133), así que el importe que sales#255 puso en su etiqueta solo llegaba a `aria-label`
+      // y `title`: en el ordenador del despacho lo enseña el ratón, y en la tablet del mostrador —que
+      // es donde se atiende a quien viene a que le devuelvan— no aparece nunca. Va PEGADO al total
+      // que corrige y sin columna nueva: es lo que hace el mercado (Shopify marca la fila, Lightspeed
+      // mete el importe DENTRO de la insignia, Toast y WooCommerce lo ponen junto al dinero) y lo
+      // único que cabe en móvil, donde CADA columna es una línea más en CADA tarjeta (sales#126).
+      // Stripe lo deja detrás de un hover: ese es exactamente el defecto que se está cerrando.
+      //
+      // Solo cuando ya ha vuelto algo Y queda algo: en una venta intacta no hay nada que contar, y en
+      // una devuelta entera el resto es 0 y la columna de estado ya dice «Devuelta». Una fila servida
+      // por un hub anterior a sales#247 no trae `refunded_total` y se pinta como siempre.
+      //
+      // `format` se queda: es el valor PLANO con el que la tabla ordena y filtra (`rawValue`), y la
+      // frase ahí dentro rompería el filtro de rango de esta misma columna.
+      {
+        key: "total",
+        header: t7("ui.colTotal"),
+        align: "right",
+        sortable: true,
+        filterable: true,
+        filterType: "range",
+        format: (r6) => erplora5().formatMoney(Number(r6.total || 0)),
+        render: (r6) => {
+          const total = Number(r6.total || 0);
+          const refunded = Number(r6.refunded_total ?? 0);
+          const remaining = total - refunded;
+          const amount = erplora5().formatMoney(total);
+          if (!(refunded > 0 && remaining > 0)) return b2`<span>${amount}</span>`;
+          return b2`<span style="display:inline-flex;flex-direction:column;align-items:flex-end;line-height:1.25;">
+          <span>${amount}</span>
+          <span style="font-size:0.78em;color:var(--color-muted, var(--ion-color-medium, #6b7280));"
+            >${t7("ui.totalLeftToRefund", { amount: erplora5().formatMoney(remaining) })}</span
+          >
+        </span>`;
+        }
+      }
     ];
   }
   // TODO-LIT: componentWillLoad → connectedCallback. Recuerda: connectedCallback se dispara

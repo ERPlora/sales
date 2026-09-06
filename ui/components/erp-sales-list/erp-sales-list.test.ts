@@ -5,8 +5,10 @@
 // UI. It is the same list the cashier is sent to when a charge is in doubt, so the one word that
 // tells her "this was charged" cannot be jargon.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { render as litRender } from 'lit';
 
 import esCatalog from '../../../locales/es.json';
+import enCatalog from '../../../locales/en.json';
 import { installErploraDouble } from '../../test/erplora-double';
 
 interface Column {
@@ -909,5 +911,192 @@ describe('sales list — the refund action carries what is left to refund (sales
       'Devolver el resto (70,00 €)',
       'Devolver (50,00 €)',
     ]);
+  });
+});
+
+// ── sales#256 · lo que queda por devolver se LEE en la fila, no se «hoverea» ────────────────────
+//
+// sales#255 puso el resto en la acción, pero la acción de fila es icon-only (ADR-0133): el importe
+// solo llegaba a `aria-label`/`title`. En el ordenador del despacho el ratón lo enseña; en la
+// tablet del mostrador —que es donde se atiende a quien viene a que le devuelvan— no hay ratón y
+// no aparece nunca, así que había que abrir la venta igual: justo el paso que sales#255 quitaba.
+//
+// Decisión de mercado (8 referencias + foros): la marca del reembolso parcial se lee EN LA FILA y
+// el importe va PEGADO al dinero que corrige, sin columna nueva.
+//   · Shopify marca la fila con «Partially refunded» y su guía pide insignias de 1-2 palabras
+//     (shopify.dev/docs/api/app-home/latest/web-components/feedback-and-status-indicators/badge):
+//     una columna nueva SOLO para un importe no es lo que hace nadie.
+//   · Lightspeed Retail (R-Series) usa insignias en el historial y la de descuento lleva DENTRO
+//     «the total amount that was discounted» — el importe viaja con la marca, no en otra columna.
+//   · Toast pone el importe en una columna «Refund»; WooCommerce pinta la línea devuelta en rojo
+//     dentro de los totales del pedido: en los dos, el número vive junto al dinero.
+//   · Odoo enseña «Return Status» (parcial/completa) en la lista de pedidos, sin importe.
+//   · Square lista el tipo «Partially Refunded» y solo el NÚMERO de reembolsos; en su foro los
+//     comerciantes cuentan que acaban abriendo transacción por transacción para cuadrarlo — el
+//     fallo que copiaríamos si nos quedásemos en la marca sin importe.
+//   · Stripe lo esconde detrás de un hover («Partial refund ⓘ», el importe al pasar el ratón):
+//     es LITERALMENTE este bug, en un producto grande.
+//   · Business Central sí tiene columna propia («Remaining Amount»), pero es un ERP de escritorio
+//     con esa columna poblada en cada fila; aquí estaría vacía en casi todas y en móvil añadiría
+//     una línea muerta a CADA tarjeta (sales#126 ya peleó ese espacio).
+describe('sales list — what is left to refund is READ on the row (sales#256)', () => {
+  /** Tres filas: una devuelta a medias (la que tiene que hablar), una intacta y una devuelta
+   *  ENTERA (donde el resto es 0 y una línea más sería ruido). */
+  const ROWS = [
+    { id: 'sale-1', sale_number: 'V-1000', status: 'completed', total: 10000, refunded_total: 3000 },
+    { id: 'sale-2', sale_number: 'V-1001', status: 'completed', total: 5000, refunded_total: 0 },
+    { id: 'sale-3', sale_number: 'V-1002', status: 'refunded', total: 8000, refunded_total: 8000 },
+  ];
+
+  /** El catálogo español REAL con sus `{marcadores}` resueltos, como los resuelve el shell. */
+  function translate(key: string, params?: Record<string, unknown>): string {
+    const raw = key.split('.').reduce<unknown>(
+      (acc, part) => (acc as Record<string, unknown>)?.[part], esCatalog,
+    ) as string ?? key;
+    return raw.replace(/\{(\w+)\}/g, (_m, name: string) => String(params?.[name] ?? `{${name}}`));
+  }
+
+  /** Coma decimal: si la celda formatease por su cuenta (`toFixed`, un `€` concatenado) saldría
+   *  con punto y estas aserciones caerían. Es el control de que pasa por `formatMoney`. */
+  const formatMoney = (cents: number): string => `${((cents || 0) / 100).toFixed(2).replace('.', ',')} €`;
+
+  /** matchMedia gobernado: `mobile` decide si la consulta de ok-data-table (max-width: 640px)
+   *  encaja, que es lo que arranca la tabla en TARJETAS (el viewport del móvil). */
+  function stubMatchMedia(mobile: boolean): void {
+    const real = window.matchMedia.bind(window);
+    vi.spyOn(window, 'matchMedia').mockImplementation((q: string) =>
+      /max-width:\s*640px/.test(q)
+        ? ({ matches: mobile, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, onchange: null, dispatchEvent: () => false } as unknown as MediaQueryList)
+        : real(q));
+  }
+
+  async function mountList(mobile = false) {
+    installErploraDouble({
+      queries: {
+        'sales.list': ROWS,
+        'sales.stats': [],
+        'sales.payment_methods': [],
+        'sales.get': [],
+        'sales.lines': [],
+        'sales.pos_settings.get': [],
+      },
+      absent: ['invoice.by_source', 'invoice.lines', 'verifactu.records.by_invoice'],
+      locale: 'es',
+      formatMoney,
+      t: (_catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>) =>
+        translate(key, params),
+      hasPermission: (p?: string) => p === 'sales.refund_sale',
+    });
+    stubMatchMedia(mobile);
+    document.body.innerHTML = '';
+    await import('./erp-sales-list');
+    const el = document.createElement('erp-sales-list') as HTMLElement & { shadowRoot: ShadowRoot };
+    document.body.appendChild(el);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    const table = el.shadowRoot.querySelector('ok-data-table') as HTMLElement & { shadowRoot: ShadowRoot; updateComplete: Promise<unknown> };
+    for (let tick = 0; tick < 30; tick += 1) {
+      if (table.shadowRoot.querySelectorAll(mobile ? 'ion-card.rcard' : '.grow-data').length >= ROWS.length) break;
+      await new Promise((r) => setTimeout(r, 0));
+      await table.updateComplete;
+    }
+    return { el, table };
+  }
+
+  /** El texto que de verdad se PINTA en la celda del total de cada fila (vista lista). */
+  function totalCellTexts(el: HTMLElement, table: HTMLElement & { shadowRoot: ShadowRoot }): string[] {
+    const cols = (el as unknown as { columns: { key: string }[] }).columns;
+    const at = cols.findIndex((c) => c.key === 'total');
+    return [...table.shadowRoot.querySelectorAll('.grow-data')].map((row) =>
+      (row.querySelectorAll('.gcell')[at]?.textContent ?? '').replace(/\s+/g, ' ').trim());
+  }
+
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('la fila devuelta a medias enseña el resto EN PANTALLA, no solo en el aria-label', async () => {
+    const { el, table } = await mountList();
+    const texts = totalCellTexts(el, table);
+    expect(texts.length, 'las tres filas se pintan').toBe(3);
+    // Lo cobrado sigue estando: la celda del total no se sustituye, se completa.
+    expect(texts[0]).toContain('100,00 €');
+    // Y el resto se LEE, sin ratón y sin abrir la venta.
+    expect(texts[0], 'la venta devuelta a medias dice cuánto queda').toContain('Por devolver 70,00 €');
+  });
+
+  it('la venta intacta y la devuelta ENTERA no ganan ruido', async () => {
+    const { el, table } = await mountList();
+    const texts = totalCellTexts(el, table);
+    // Intacta: el total y nada más — no hay nada devuelto que contar.
+    expect(texts[1], 'una venta sin devoluciones').toBe('50,00 €');
+    // Devuelta entera: el resto es 0. Un «Por devolver 0,00 €» sería ruido en la fila, y la
+    // columna de estado ya dice «Devuelta».
+    expect(texts[2], 'una venta devuelta entera').toBe('80,00 €');
+  });
+
+  it('en MÓVIL (tarjetas) el resto también se lee: es el viewport del que sale la issue', async () => {
+    const { table } = await mountList(true);
+    const cards = [...table.shadowRoot.querySelectorAll('ion-card.rcard')];
+    expect(cards.length, 'la tabla arranca en tarjetas por debajo de 640 px').toBe(3);
+    const texts = cards.map((c) => (c.textContent ?? '').replace(/\s+/g, ' ').trim());
+    expect(texts[0], 'la tarjeta de la venta devuelta a medias').toContain('Por devolver 70,00 €');
+    expect(texts[1], 'la tarjeta de la venta intacta no lo menciona').not.toContain('Por devolver');
+    expect(texts[2], 'la tarjeta de la venta devuelta entera tampoco').not.toContain('Por devolver');
+  });
+
+  it('la frase sale del CATÁLOGO: en inglés la fila la dice en inglés (ADR-0055)', async () => {
+    // Sin esto, un literal español clavado en el componente pasaría todo lo de arriba: el resto de
+    // las aserciones montan en `es` y no distinguen una traducción de una cadena escrita a mano.
+    installErploraDouble({
+      queries: {
+        'sales.list': ROWS, 'sales.stats': [], 'sales.payment_methods': [],
+        'sales.get': [], 'sales.lines': [], 'sales.pos_settings.get': [],
+      },
+      absent: ['invoice.by_source', 'invoice.lines', 'verifactu.records.by_invoice'],
+      locale: 'en',
+      formatMoney: (cents: number) => `${((cents || 0) / 100).toFixed(2)} €`,
+      t: (_catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>) => {
+        const raw = key.split('.').reduce<unknown>(
+          (acc, part) => (acc as Record<string, unknown>)?.[part], enCatalog,
+        ) as string ?? key;
+        return raw.replace(/\{(\w+)\}/g, (_m, name: string) => String(params?.[name] ?? `{${name}}`));
+      },
+      hasPermission: (p?: string) => p === 'sales.refund_sale',
+    });
+    stubMatchMedia(false);
+    document.body.innerHTML = '';
+    await import('./erp-sales-list');
+    const el = document.createElement('erp-sales-list') as HTMLElement & { shadowRoot: ShadowRoot };
+    document.body.appendChild(el);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    const table = el.shadowRoot.querySelector('ok-data-table') as HTMLElement & { shadowRoot: ShadowRoot; updateComplete: Promise<unknown> };
+    for (let tick = 0; tick < 30; tick += 1) {
+      if (table.shadowRoot.querySelectorAll('.grow-data').length >= ROWS.length) break;
+      await new Promise((r) => setTimeout(r, 0));
+      await table.updateComplete;
+    }
+    const texts = totalCellTexts(el, table);
+    expect(texts[0], 'the English catalogue speaks English').toContain('70.00 € left to refund');
+    expect(texts[0], 'and nothing of the Spanish one leaks through').not.toContain('Por devolver');
+  });
+
+  it('el valor CRUDO de la columna sigue siendo el importe: ordenar y filtrar no heredan la frase', async () => {
+    // `format` es lo que ok-data-table usa para ordenar/filtrar en cliente y para el valor plano
+    // (`rawValue`). Si la frase se colase ahí, un rango «hasta 100 €» dejaría de comparar números.
+    const { el } = await mountList();
+    const col = (el as unknown as { columns: { key: string; format?: (r: Record<string, unknown>) => string }[] })
+      .columns.find((c) => c.key === 'total')!;
+    expect(col.format!({ total: 10000, refunded_total: 3000 })).toBe('100,00 €');
+    // Una fila servida por un hub anterior a sales#247 no trae `refunded_total`: nada que añadir,
+    // nunca un `NaN €` en la celda.
+    expect(col.format!({ total: 5000 })).toBe('50,00 €');
+  });
+
+  it('una fila sin `refunded_total` (hub viejo) se pinta como siempre', async () => {
+    const { el } = await mountList();
+    const col = (el as unknown as { columns: { key: string; render?: (r: Record<string, unknown>) => unknown }[] })
+      .columns.find((c) => c.key === 'total')!;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    litRender(col.render!({ id: 'x', total: 5000 }), host);
+    expect(host.textContent!.replace(/\s+/g, ' ').trim()).toBe('50,00 €');
   });
 });
