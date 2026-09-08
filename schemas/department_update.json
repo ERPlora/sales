@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sales.departments.update",
+  "description": "Edits the name, the tax category or the position of a department.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["department_id", "name", "tax_category_key"],
+  "properties": {
+    "department_id": {
+      "type": "string",
+      "minLength": 1,
+      "title": "Department"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60,
+      "title": "Name"
+    },
+    "tax_category_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60,
+      "title": "Tax category"
+    },
+    "sort_order": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "title": "Position"
+    }
+  }
+}

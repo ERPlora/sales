@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sales.departments.delete",
+  "description": "Retires a department; the lines already sold keep their name and their VAT.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["department_id"],
+  "properties": {
+    "department_id": {
+      "type": "string",
+      "minLength": 1,
+      "title": "Department"
+    }
+  }
+}

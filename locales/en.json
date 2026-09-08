@@ -12,6 +12,9 @@
     },
     "quick_notes": {
       "label": "Quick notes"
+    },
+    "departments": {
+      "label": "Departments"
     }
   },
   "settings": {
@@ -113,6 +116,7 @@
     "sales.product_not_available": "A product on the ticket is no longer in the catalogue. Remove the line and add it again.",
     "sales.quantity_not_positive": "A line has no quantity: set at least one before charging.",
     "sales.quantity_off_grid": "The quantity does not fit the product's step.",
+    "sales.department_not_found": "That department is not in this business any more. Reload the list and try again.",
     "sales.quick_note_not_found": "That quick note is not in this business any more. Reload the list and try again.",
     "sales.refund_amount_invalid": "Every leg of a refund needs a positive amount.",
     "sales.refund_exceeds_tender": "One tender is being given back more than it was charged.",
@@ -475,6 +479,30 @@
     "lineNoteHint": "The kitchen reads this note on the ticket.",
     "lineNoteSave": "Save",
     "lineNoteRemove": "Remove",
+    "departmentsTitle": "Departments",
+    "departmentsIntro": "The families the till offers when you charge an amount that is not in the catalogue. Each one carries its own VAT. Leave the list empty and the till falls back to the plain tax categories.",
+    "departmentName": "Name",
+    "departmentNamePlaceholder": "e.g. Fruit and veg",
+    "departmentTaxCategory": "VAT charged",
+    "departmentOrder": "Position",
+    "departmentsEmpty": "No departments yet. Add the families you ring up by hand — “Fruit and veg”, “Butchery”, “Household”.",
+    "departmentsLoading": "Loading departments…",
+    "departmentsSearch": "Search a department…",
+    "departmentAdd": "Add",
+    "departmentSave": "Save",
+    "departmentSaving": "Saving…",
+    "departmentEdit": "Edit",
+    "departmentEditing": "Editing",
+    "departmentEditCancel": "Cancel edit",
+    "departmentDelete": "Delete",
+    "departmentDeleteTitle": "Delete department",
+    "departmentDeleteHint": "It stops being offered at the till. Everything already sold keeps the name and the VAT it was charged with.",
+    "departmentCancel": "Cancel",
+    "departmentSaveFailed": "The department could not be saved.",
+    "departmentDeleteFailed": "The department could not be deleted.",
+    "departmentsLoadFailed": "The departments could not be loaded.",
+    "departmentTaxCategoryMissing": "Choose the VAT this department charges.",
+    "departmentsNoTaxCategories": "There are no tax categories to choose from. Set up your VAT first, in Taxes.",
     "quickNotesTitle": "Quick notes",
     "quickNotesIntro": "The notes the till offers with one tap on the line-note sheet. The waiter can still type anything by hand.",
     "quickNoteText": "Note",

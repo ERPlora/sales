@@ -95,6 +95,13 @@
       "icon": "chatbubble-ellipses-outline",
       "component": "erp-pos-quick-notes",
       "permission": "sales.manage_settings"
+    },
+    {
+      "id": "departments",
+      "label": "Departments",
+      "icon": "grid-outline",
+      "component": "erp-pos-departments",
+      "permission": "sales.manage_settings"
     }
   ],
   "settings": {
@@ -137,7 +144,8 @@
       "migrations/postgres/029_pos_catalog_sources.sql",
       "migrations/postgres/030_order_line_note.sql",
       "migrations/postgres/031_line_parent_ref.sql",
-      "migrations/postgres/032_quick_notes.sql"
+      "migrations/postgres/032_quick_notes.sql",
+      "migrations/postgres/033_departments.sql"
     ]
   },
   "seed": {
@@ -278,6 +286,30 @@
     "sales.pos_settings.get": {
       "permission": "sales.view_sale",
       "sql": "queries/pos_settings_get.sql"
+    },
+    "sales.departments.list": {
+      "permission": "sales.view_sale",
+      "sql": "queries/departments_list.sql",
+      "list": {
+        "search": [
+          "name"
+        ],
+        "sort": [
+          "name",
+          "sort_order"
+        ],
+        "default_sort": "sort_order",
+        "default_dir": "asc",
+        "filters": {
+          "name": {
+            "op": "like"
+          }
+        },
+        "page_size": 50
+      },
+      "ai": {
+        "description": "Lists the departments the business offers on the till's open-price sheet, in the order they are shown, with the tax category each one charges at."
+      }
     },
     "sales.quick_notes.list": {
       "permission": "sales.view_sale",
@@ -843,6 +875,46 @@
         "description": "Updates the point-of-sale configuration settings of the sales module"
       }
     },
+    "sales.departments.create": {
+      "permission": "sales.manage_settings",
+      "schema": "schemas/department_create.json",
+      "sql": [
+        "commands/department_create.sql"
+      ],
+      "ai": {
+        "description": "Adds a department to the till's open-price sheet: the name the cashier reads and the tax category it charges at."
+      }
+    },
+    "sales.departments.update": {
+      "permission": "sales.manage_settings",
+      "schema": "schemas/department_update.json",
+      "sql": [
+        "commands/department_update.sql"
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "sales.department_not_found"
+      },
+      "ai": {
+        "description": "Edits the name, the tax category or the position of one of the till's departments. It does not reprice anything already sold."
+      }
+    },
+    "sales.departments.delete": {
+      "permission": "sales.manage_settings",
+      "schema": "schemas/department_delete.json",
+      "sql": [
+        "commands/department_delete.sql"
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "sales.department_not_found"
+      },
+      "ai": {
+        "description": "Retires one of the till's departments. The lines already sold keep the name and the VAT they were charged with."
+      }
+    },
     "sales.quick_notes.create": {
       "permission": "sales.manage_settings",
       "schema": "schemas/quick_note_create.json",
@@ -944,6 +1016,7 @@
     "sales.product_not_available": {},
     "sales.quantity_not_positive": {},
     "sales.quantity_off_grid": {},
+    "sales.department_not_found": {},
     "sales.quick_note_not_found": {},
     "sales.refund_amount_invalid": {},
     "sales.refund_exceeds_tender": {},

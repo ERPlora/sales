@@ -164,6 +164,35 @@ function deptDisplayName(c: TaxCategory): string {
   return c.display_name || c.name;
 }
 
+/** sales#267 — un departamento que el NEGOCIO definió (`sales.departments.list`). */
+interface DepartmentRow { id: string; name: string; tax_category_key: string; sort_order?: number; }
+
+/** Lo que la hoja de precio libre ofrece, venga de donde venga.
+ *
+ *  `key` es lo que identifica el botón y lo que guarda `openDept`; `taxCategoryKey` es lo que
+ *  COBRA. Son dos campos y no uno a propósito: dos departamentos del negocio pueden compartir
+ *  categoría fiscal —en España «Refrescos y alcohol» y «Droguería» son ambos 21 %— y con una sola
+ *  clave se fundirían en un botón y el tique congelaría el nombre de la familia equivocada.
+ *
+ *  En el camino de respaldo (sin departamentos propios) `key` ES la categoría fiscal, que es
+ *  exactamente lo que guardaba antes de sales#267: el flujo de venta de siempre queda intacto. */
+interface PosDepartment { key: string; name: string; taxCategoryKey: string; }
+
+/** Los departamentos del negocio, ordenados por lo que él decidió; a igualdad, por nombre.
+ *
+ *  Se ordena aquí ADEMÁS de pedirlo en la lectura, por el mismo motivo que las notas rápidas: el
+ *  orden es lo único que el negocio configura aparte del nombre, y no puede depender de que una
+ *  página de una lista llegue en el orden en que se pidió. */
+function toDepartments(own: DepartmentRow[], taxCats: TaxCategory[]): PosDepartment[] {
+  if (own.length) {
+    return own
+      .slice()
+      .sort((a, b) => (Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0)) || a.name.localeCompare(b.name))
+      .map((d) => ({ key: d.id, name: d.name, taxCategoryKey: d.tax_category_key }));
+  }
+  return taxCats.map((c) => ({ key: c.key, name: deptDisplayName(c), taxCategoryKey: c.key }));
+}
+
 /** Acumulador de dígitos del numpad (euros como texto): 'C' limpia, un solo separador decimal, tope
  *  9 chars. Puro para poder compartirlo entre el numpad de COBRO y el de PRECIO LIBRE sin duplicar. */
 function pushDigit(cur: string, k: string): string {
@@ -1029,6 +1058,9 @@ export class ErpPosTouch extends LitElement {
   @state() private products: Product[] = [];
   @state() private categories: Category[] = [];
   @state() private taxCategories: TaxCategory[] = [];
+  /** sales#267 — los departamentos que el negocio definió. Vacío = todavía no definió ninguno, y
+   *  entonces la hoja cae a `taxCategories`, que es como se comportaba el TPV antes. */
+  @state() private ownDepartments: DepartmentRow[] = [];
   @state() private activeCat = '';
   @state() private q = '';
   @state() private cart: CartLine[] = [];
@@ -1540,7 +1572,7 @@ export class ErpPosTouch extends LitElement {
       (catalogSourceOn((await policy)[flag]) ? read() : []);
     try {
       const [prods, methods, businessRows, savedCart, parked, cats, prodCats, taxCatalog, unitRows,
-             svcRows, svcCats, taxCats, fiscalLimits] = await Promise.all([
+             svcRows, svcCats, taxCats, ownDepartments, fiscalLimits] = await Promise.all([
         fromSource<Product>('sync_products', () => capabilityCatalogRead<Product>('inventory',
           (c) => c.queryAllOptional<Product>('inventory.products.list'),
           (c) => c.queryOptional<Product>('inventory.products.list', { limit: LEGACY_PAGE_LIMIT }))),
@@ -1572,6 +1604,15 @@ export class ErpPosTouch extends LitElement {
         // departments the sheet says so. But a `taxes` that IS installed and does not answer is an
         // incident, not the absence of departments, and sales#25 makes that difference visible.
         hardRead<TaxCategory>('taxes', () => erplora().queryAll<TaxCategory>('taxes.categories.list')),
+        // sales#267 — the departments the BUSINESS defined, which win over the tax catalogue above.
+        //
+        // Best-effort on purpose, the same way `hub.fiscal.limits` below is: an empty answer and a
+        // failed one land on the SAME behaviour — the sheet falls back to the active tax
+        // categories, which is exactly how the till worked before this table existed. So a `sales`
+        // mid-upgrade (image newer than its migrations, or the other way round) keeps selling by
+        // department instead of losing the open-price flow over one optional read.
+        erplora().queryAll<DepartmentRow>('sales.departments.list', { sort: 'sort_order', dir: 'asc' })
+          .catch(() => [] as DepartmentRow[]),
         // hub#297 — qué techo pone el régimen fiscal de ESTE hub. Es una query del CORE
         // (`hub.`), no de `verifactu`: así el TPV no gana una dependencia del módulo fiscal y la
         // respuesta no desaparece el día que alguien lo desinstale.
@@ -1646,8 +1687,10 @@ export class ErpPosTouch extends LitElement {
       this.payMethod = defaultPayMethod(this.payMethods);
       this.parked = parked;
       this.categories = [...cats.filter((c) => c.name), ...svcCats];
-      // Departamentos = categorías fiscales ACTIVAS (el inactivo no se ofrece para vender).
+      // Departamentos: los del NEGOCIO si los tiene (sales#267); si no, las categorías fiscales
+      // ACTIVAS, que es el camino de siempre (el inactivo no se ofrece para vender).
       this.taxCategories = taxCats.filter((c) => c.key && c.is_active !== 0);
+      this.ownDepartments = rows<DepartmentRow>(ownDepartments).filter((d) => d.id && d.name && d.tax_category_key);
       for (const pc of prodCats) {
         if (!this.prodCats.has(pc.product_id)) this.prodCats.set(pc.product_id, new Set());
         this.prodCats.get(pc.product_id)!.add(pc.category_id);
@@ -3662,11 +3705,18 @@ export class ErpPosTouch extends LitElement {
   private tapOpen(k: string) { this.openAmount = pushDigit(this.openAmount, k); }
   /** El numpad teclea EUROS; el contrato es CÉNTIMOS (ADR-0007), igual que en el cobro. */
   private get openAmountCents() { return eurosToCents(this.openAmount || '0'); }
-  /** El % del departamento para pintarlo junto a su nombre; vacío si taxes no dio reglas (preview). */
-  private deptRateLabel(key: string): string {
+  /** Lo que la hoja de precio libre ofrece: los departamentos del negocio, o las categorías
+   *  fiscales activas mientras no haya definido ninguno (sales#267). */
+  private get departments(): PosDepartment[] {
+    return toDepartments(this.ownDepartments, this.taxCategories);
+  }
+  /** El % del departamento para pintarlo junto a su nombre; vacío si taxes no dio reglas (preview).
+   *  Se pregunta por la CATEGORÍA FISCAL, no por la clave del botón: dos departamentos del negocio
+   *  pueden compartirla. */
+  private deptRateLabel(taxCategoryKey: string): string {
     // sales#74 cambió `ratesMap` suelto por el catálogo con su mapa dentro; el preview es el mismo.
     const rates = this.taxCatalog.rates;
-    return rates.has(key) ? `${rates.get(key)}%` : '';
+    return rates.has(taxCategoryKey) ? `${rates.get(taxCategoryKey)}%` : '';
   }
   /** Añade la venta libre: nombre = el del DEPARTAMENTO (estilo frutería, sin teclear), precio
    *  tecleado y su categoría fiscal. Nunca fusiona → siempre línea nueva (`pushNewLine`, serializada
@@ -3675,10 +3725,10 @@ export class ErpPosTouch extends LitElement {
    *  persiste como `product_name` y el que el cliente se lleva en el tique impreso; la IDENTIDAD
    *  fiscal sigue siendo `key`. */
   private async addOpenPrice(): Promise<void> {
-    const dept = this.taxCategories.find((c) => c.key === this.openDept);
+    const dept = this.departments.find((d) => d.key === this.openDept);
     if (!dept || this.openAmountCents <= 0) return;
-    const line = buildOpenPriceLine({ name: deptDisplayName(dept), priceCents: this.openAmountCents, taxCategoryKey: dept.key });
-    line.tax_rate = resolveLineTax(this.taxCatalog.rates, dept.key); // % SOLO para el preview del total
+    const line = buildOpenPriceLine({ name: dept.name, priceCents: this.openAmountCents, taxCategoryKey: dept.taxCategoryKey });
+    line.tax_rate = resolveLineTax(this.taxCatalog.rates, dept.taxCategoryKey); // % SOLO para el preview del total
     this.openPriceOpen = false;
     try {
       await this.queue(() => this.pushOpenPriceLine(line));
@@ -5008,13 +5058,13 @@ export class ErpPosTouch extends LitElement {
                 </div>
                 <div class="dept-label">${t('ui.department')}</div>
                 <div class="dept-grid" role="group" aria-label=${t('ui.department')}>
-                  ${this.taxCategories.map((c) => html`
-                    <button class="dept-btn" aria-pressed=${this.openDept === c.key ? 'true' : 'false'}
-                            @click=${() => { this.openDept = c.key; }}>
-                      <span class="dn">${deptDisplayName(c)}</span>
-                      <span class="dr">${this.deptRateLabel(c.key)}</span>
+                  ${this.departments.map((d) => html`
+                    <button class="dept-btn" aria-pressed=${this.openDept === d.key ? 'true' : 'false'}
+                            @click=${() => { this.openDept = d.key; }}>
+                      <span class="dn">${d.name}</span>
+                      <span class="dr">${this.deptRateLabel(d.taxCategoryKey)}</span>
                     </button>`)}
-                  ${!this.taxCategories.length ? html`<div class="dept-empty">${t('ui.noDepartments')}</div>` : nothing}
+                  ${!this.departments.length ? html`<div class="dept-empty">${t('ui.noDepartments')}</div>` : nothing}
                 </div>
               </div>
               <div class="sheet-foot">

@@ -4006,6 +4006,9 @@ var es_default = {
     },
     quick_notes: {
       label: "Notas r\xE1pidas"
+    },
+    departments: {
+      label: "Departamentos"
     }
   },
   settings: {
@@ -4107,6 +4110,7 @@ var es_default = {
     "sales.product_not_available": "Un producto del tique ya no est\xE1 en el cat\xE1logo. Quita la l\xEDnea y vuelve a a\xF1adirla.",
     "sales.quantity_not_positive": "Una l\xEDnea no tiene cantidad: pon al menos una antes de cobrar.",
     "sales.quantity_off_grid": "La cantidad no encaja con el escal\xF3n del producto.",
+    "sales.department_not_found": "Ese departamento ya no est\xE1 en este negocio. Recarga la lista y vuelve a intentarlo.",
     "sales.quick_note_not_found": "Esa nota r\xE1pida ya no est\xE1 en este negocio. Recarga la lista y vuelve a intentarlo.",
     "sales.refund_amount_invalid": "Cada pata de una devoluci\xF3n necesita un importe positivo.",
     "sales.refund_exceeds_tender": "A un medio de pago se le est\xE1 devolviendo m\xE1s de lo que cobr\xF3.",
@@ -4469,6 +4473,30 @@ var es_default = {
     lineNoteHint: "Cocina lee esta nota en la comanda.",
     lineNoteSave: "Guardar",
     lineNoteRemove: "Quitar",
+    departmentsTitle: "Departamentos",
+    departmentsIntro: "Las familias que el TPV ofrece al cobrar un importe que no est\xE1 en el cat\xE1logo. Cada una lleva su IVA. Si dejas la lista vac\xEDa, el TPV vuelve a ofrecer las categor\xEDas fiscales tal cual.",
+    departmentName: "Nombre",
+    departmentNamePlaceholder: "p. ej. Frutas y verduras",
+    departmentTaxCategory: "IVA que cobra",
+    departmentOrder: "Posici\xF3n",
+    departmentsEmpty: "Todav\xEDa no hay departamentos. A\xF1ade las familias que cobras a mano: \xABFrutas y verduras\xBB, \xABCarnicer\xEDa\xBB, \xABDroguer\xEDa\xBB.",
+    departmentsLoading: "Cargando departamentos\u2026",
+    departmentsSearch: "Buscar un departamento\u2026",
+    departmentAdd: "A\xF1adir",
+    departmentSave: "Guardar",
+    departmentSaving: "Guardando\u2026",
+    departmentEdit: "Editar",
+    departmentEditing: "Editando",
+    departmentEditCancel: "Cancelar edici\xF3n",
+    departmentDelete: "Eliminar",
+    departmentDeleteTitle: "Eliminar departamento",
+    departmentDeleteHint: "Deja de ofrecerse en el TPV. Lo ya vendido conserva el nombre y el IVA con los que se cobr\xF3.",
+    departmentCancel: "Cancelar",
+    departmentSaveFailed: "No se ha podido guardar el departamento.",
+    departmentDeleteFailed: "No se ha podido eliminar el departamento.",
+    departmentsLoadFailed: "No se han podido cargar los departamentos.",
+    departmentTaxCategoryMissing: "Elige el IVA que cobra este departamento.",
+    departmentsNoTaxCategories: "No hay categor\xEDas de IVA que elegir. Configura antes tus tipos de IVA, en Impuestos.",
     quickNotesTitle: "Notas r\xE1pidas",
     quickNotesIntro: "Las notas que el TPV ofrece de un toque en la hoja de nota de la l\xEDnea. Escribir a mano sigue funcionando.",
     quickNoteText: "Nota",
@@ -4529,6 +4557,9 @@ var en_default = {
     },
     quick_notes: {
       label: "Quick notes"
+    },
+    departments: {
+      label: "Departments"
     }
   },
   settings: {
@@ -4630,6 +4661,7 @@ var en_default = {
     "sales.product_not_available": "A product on the ticket is no longer in the catalogue. Remove the line and add it again.",
     "sales.quantity_not_positive": "A line has no quantity: set at least one before charging.",
     "sales.quantity_off_grid": "The quantity does not fit the product's step.",
+    "sales.department_not_found": "That department is not in this business any more. Reload the list and try again.",
     "sales.quick_note_not_found": "That quick note is not in this business any more. Reload the list and try again.",
     "sales.refund_amount_invalid": "Every leg of a refund needs a positive amount.",
     "sales.refund_exceeds_tender": "One tender is being given back more than it was charged.",
@@ -4992,6 +5024,30 @@ var en_default = {
     lineNoteHint: "The kitchen reads this note on the ticket.",
     lineNoteSave: "Save",
     lineNoteRemove: "Remove",
+    departmentsTitle: "Departments",
+    departmentsIntro: "The families the till offers when you charge an amount that is not in the catalogue. Each one carries its own VAT. Leave the list empty and the till falls back to the plain tax categories.",
+    departmentName: "Name",
+    departmentNamePlaceholder: "e.g. Fruit and veg",
+    departmentTaxCategory: "VAT charged",
+    departmentOrder: "Position",
+    departmentsEmpty: "No departments yet. Add the families you ring up by hand \u2014 \u201CFruit and veg\u201D, \u201CButchery\u201D, \u201CHousehold\u201D.",
+    departmentsLoading: "Loading departments\u2026",
+    departmentsSearch: "Search a department\u2026",
+    departmentAdd: "Add",
+    departmentSave: "Save",
+    departmentSaving: "Saving\u2026",
+    departmentEdit: "Edit",
+    departmentEditing: "Editing",
+    departmentEditCancel: "Cancel edit",
+    departmentDelete: "Delete",
+    departmentDeleteTitle: "Delete department",
+    departmentDeleteHint: "It stops being offered at the till. Everything already sold keeps the name and the VAT it was charged with.",
+    departmentCancel: "Cancel",
+    departmentSaveFailed: "The department could not be saved.",
+    departmentDeleteFailed: "The department could not be deleted.",
+    departmentsLoadFailed: "The departments could not be loaded.",
+    departmentTaxCategoryMissing: "Choose the VAT this department charges.",
+    departmentsNoTaxCategories: "There are no tax categories to choose from. Set up your VAT first, in Taxes.",
     quickNotesTitle: "Quick notes",
     quickNotesIntro: "The notes the till offers with one tap on the line-note sheet. The waiter can still type anything by hand.",
     quickNoteText: "Note",
@@ -5923,11 +5979,11 @@ var bool = (r6, k2) => {
   const v3 = r6[k2];
   return v3 === true || v3 === 1 || v3 === "1" || v3 === "t" || v3 === "true";
 };
-function groupComboRows(rows3) {
+function groupComboRows(rows4) {
   const out = [];
   const byCombo = /* @__PURE__ */ new Map();
   const byGroup = /* @__PURE__ */ new Map();
-  for (const raw of rows3) {
+  for (const raw of rows4) {
     if (!raw || typeof raw !== "object") continue;
     const r6 = raw;
     const comboId = str(r6, "combo_id");
@@ -6952,9 +7008,9 @@ async function recoverCheckout(probe, idempotencyKey, options = {}) {
   const delayMs = options.delayMs ?? 1500;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      const rows3 = await probe(idempotencyKey);
-      if (!rows3?.length) return { outcome: "not_charged" };
-      return { outcome: "charged", saleId: rows3[0]?.id ?? "" };
+      const rows4 = await probe(idempotencyKey);
+      if (!rows4?.length) return { outcome: "not_charged" };
+      return { outcome: "charged", saleId: rows4[0]?.id ?? "" };
     } catch {
       if (attempt < attempts) await sleep(delayMs);
     }
@@ -7065,6 +7121,12 @@ var CLOSED_PRICING = /* @__PURE__ */ new Set(["fixed", "free", ""]);
 function deptDisplayName(c5) {
   return c5.display_name || c5.name;
 }
+function toDepartments(own, taxCats) {
+  if (own.length) {
+    return own.slice().sort((a3, b3) => Number(a3.sort_order ?? 0) - Number(b3.sort_order ?? 0) || a3.name.localeCompare(b3.name)).map((d3) => ({ key: d3.id, name: d3.name, taxCategoryKey: d3.tax_category_key }));
+  }
+  return taxCats.map((c5) => ({ key: c5.key, name: deptDisplayName(c5), taxCategoryKey: c5.key }));
+}
 function pushDigit(cur, k2) {
   if (k2 === "C") return "";
   if (k2 === "." && cur.includes(".")) return cur;
@@ -7107,9 +7169,9 @@ async function optionalReadAll(whole, page) {
     return void 0;
   }
 }
-function groupModifierRows(rows3) {
+function groupModifierRows(rows4) {
   const out = [];
-  for (const raw of rows3) {
+  for (const raw of rows4) {
     const r6 = raw;
     const gid = String(r6.group_id ?? "");
     if (!gid) continue;
@@ -7166,6 +7228,7 @@ var ErpPosTouch = class extends i3 {
     this.products = [];
     this.categories = [];
     this.taxCategories = [];
+    this.ownDepartments = [];
     this.activeCat = "";
     this.q = "";
     this.cart = [];
@@ -8172,6 +8235,7 @@ var ErpPosTouch = class extends i3 {
         svcRows,
         svcCats,
         taxCats,
+        ownDepartments,
         fiscalLimits
       ] = await Promise.all([
         fromSource("sync_products", () => capabilityCatalogRead(
@@ -8213,6 +8277,14 @@ var ErpPosTouch = class extends i3 {
         // departments the sheet says so. But a `taxes` that IS installed and does not answer is an
         // incident, not the absence of departments, and sales#25 makes that difference visible.
         hardRead("taxes", () => erplora2().queryAll("taxes.categories.list")),
+        // sales#267 — the departments the BUSINESS defined, which win over the tax catalogue above.
+        //
+        // Best-effort on purpose, the same way `hub.fiscal.limits` below is: an empty answer and a
+        // failed one land on the SAME behaviour — the sheet falls back to the active tax
+        // categories, which is exactly how the till worked before this table existed. So a `sales`
+        // mid-upgrade (image newer than its migrations, or the other way round) keeps selling by
+        // department instead of losing the open-price flow over one optional read.
+        erplora2().queryAll("sales.departments.list", { sort: "sort_order", dir: "asc" }).catch(() => []),
         // hub#297 — qué techo pone el régimen fiscal de ESTE hub. Es una query del CORE
         // (`hub.`), no de `verifactu`: así el TPV no gana una dependencia del módulo fiscal y la
         // respuesta no desaparece el día que alguien lo desinstale.
@@ -8267,6 +8339,7 @@ var ErpPosTouch = class extends i3 {
       this.parked = parked;
       this.categories = [...cats.filter((c5) => c5.name), ...svcCats];
       this.taxCategories = taxCats.filter((c5) => c5.key && c5.is_active !== 0);
+      this.ownDepartments = rows2(ownDepartments).filter((d3) => d3.id && d3.name && d3.tax_category_key);
       for (const pc of prodCats) {
         if (!this.prodCats.has(pc.product_id)) this.prodCats.set(pc.product_id, /* @__PURE__ */ new Set());
         this.prodCats.get(pc.product_id).add(pc.category_id);
@@ -9106,14 +9179,14 @@ var ErpPosTouch = class extends i3 {
    *  TPV sigue cobrando sin enterarse. Ese es el 99 % de las pulsaciones de un TPV, y meterles un
    *  paso sería empeorar el producto para casi todo el mundo. */
   async addWithModifiers(p4) {
-    const rows3 = await optionalRead(
+    const rows4 = await optionalRead(
       (c5) => c5.queryOptional("modifiers.for_target", {
         target_kind: p4.is_service ? "service" : "product",
         target_ref: p4.id,
         category_ref: this.primaryCategory(p4.id) ?? null
       })
     );
-    const groups = groupModifierRows(Array.isArray(rows3) ? rows3 : []);
+    const groups = groupModifierRows(Array.isArray(rows4) ? rows4 : []);
     if (!groups.length) return this.addNow(p4);
     this.modifierPicks = [];
     this.modifierSheet = { product: p4, groups };
@@ -9454,10 +9527,10 @@ var ErpPosTouch = class extends i3 {
    *  que el cliente no puede leer, que es justo el fallo que esta issue arregla. */
   async loadModifierCatalog() {
     if (!this.cart.some((l3) => l3.modifiers?.length)) return;
-    const rows3 = await optionalRead((c5) => c5.queryOptional("modifiers.options.all", {}));
-    if (!Array.isArray(rows3)) return;
+    const rows4 = await optionalRead((c5) => c5.queryOptional("modifiers.options.all", {}));
+    if (!Array.isArray(rows4)) return;
     const map = /* @__PURE__ */ new Map();
-    for (const raw of rows3) {
+    for (const raw of rows4) {
       const r6 = raw;
       const option_id = String(r6.option_id ?? "");
       if (!option_id) continue;
@@ -10046,10 +10119,17 @@ var ErpPosTouch = class extends i3 {
   get openAmountCents() {
     return eurosToCents(this.openAmount || "0");
   }
-  /** El % del departamento para pintarlo junto a su nombre; vacío si taxes no dio reglas (preview). */
-  deptRateLabel(key) {
+  /** Lo que la hoja de precio libre ofrece: los departamentos del negocio, o las categorías
+   *  fiscales activas mientras no haya definido ninguno (sales#267). */
+  get departments() {
+    return toDepartments(this.ownDepartments, this.taxCategories);
+  }
+  /** El % del departamento para pintarlo junto a su nombre; vacío si taxes no dio reglas (preview).
+   *  Se pregunta por la CATEGORÍA FISCAL, no por la clave del botón: dos departamentos del negocio
+   *  pueden compartirla. */
+  deptRateLabel(taxCategoryKey) {
     const rates = this.taxCatalog.rates;
-    return rates.has(key) ? `${rates.get(key)}%` : "";
+    return rates.has(taxCategoryKey) ? `${rates.get(taxCategoryKey)}%` : "";
   }
   /** Añade la venta libre: nombre = el del DEPARTAMENTO (estilo frutería, sin teclear), precio
    *  tecleado y su categoría fiscal. Nunca fusiona → siempre línea nueva (`pushNewLine`, serializada
@@ -10058,10 +10138,10 @@ var ErpPosTouch = class extends i3 {
    *  persiste como `product_name` y el que el cliente se lleva en el tique impreso; la IDENTIDAD
    *  fiscal sigue siendo `key`. */
   async addOpenPrice() {
-    const dept = this.taxCategories.find((c5) => c5.key === this.openDept);
+    const dept = this.departments.find((d3) => d3.key === this.openDept);
     if (!dept || this.openAmountCents <= 0) return;
-    const line = buildOpenPriceLine({ name: deptDisplayName(dept), priceCents: this.openAmountCents, taxCategoryKey: dept.key });
-    line.tax_rate = resolveLineTax(this.taxCatalog.rates, dept.key);
+    const line = buildOpenPriceLine({ name: dept.name, priceCents: this.openAmountCents, taxCategoryKey: dept.taxCategoryKey });
+    line.tax_rate = resolveLineTax(this.taxCatalog.rates, dept.taxCategoryKey);
     this.openPriceOpen = false;
     try {
       await this.queue(() => this.pushOpenPriceLine(line));
@@ -11205,15 +11285,15 @@ var ErpPosTouch = class extends i3 {
                 </div>
                 <div class="dept-label">${t5("ui.department")}</div>
                 <div class="dept-grid" role="group" aria-label=${t5("ui.department")}>
-                  ${this.taxCategories.map((c5) => b2`
-                    <button class="dept-btn" aria-pressed=${this.openDept === c5.key ? "true" : "false"}
+                  ${this.departments.map((d3) => b2`
+                    <button class="dept-btn" aria-pressed=${this.openDept === d3.key ? "true" : "false"}
                             @click=${() => {
-      this.openDept = c5.key;
+      this.openDept = d3.key;
     }}>
-                      <span class="dn">${deptDisplayName(c5)}</span>
-                      <span class="dr">${this.deptRateLabel(c5.key)}</span>
+                      <span class="dn">${d3.name}</span>
+                      <span class="dr">${this.deptRateLabel(d3.taxCategoryKey)}</span>
                     </button>`)}
-                  ${!this.taxCategories.length ? b2`<div class="dept-empty">${t5("ui.noDepartments")}</div>` : A}
+                  ${!this.departments.length ? b2`<div class="dept-empty">${t5("ui.noDepartments")}</div>` : A}
                 </div>
               </div>
               <div class="sheet-foot">
@@ -11468,6 +11548,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "taxCategories", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "ownDepartments", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "activeCat", 2);
@@ -12526,17 +12609,17 @@ var _OkDataTable = class _OkDataTable2 extends i3 {
       out.push(row);
     }
     const headers = out.shift() ?? [];
-    const rows3 = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
-    return { headers, rows: rows3 };
+    const rows4 = out.map((r6) => Object.fromEntries(headers.map((h4, i7) => [h4, r6[i7] ?? ""])));
+    return { headers, rows: rows4 };
   }
   async onImportFile(ev) {
     const input = ev.target;
     const file = input.files?.[0];
     if (!file) return;
     const text = decodeCsvBuffer(await file.arrayBuffer());
-    const { headers, rows: rows3 } = this.parseCsv(text);
-    this.emit("csvImport", { headers, rows: rows3 });
-    this.emit("import", { headers, rows: rows3 });
+    const { headers, rows: rows4 } = this.parseCsv(text);
+    this.emit("csvImport", { headers, rows: rows4 });
+    this.emit("import", { headers, rows: rows4 });
     input.value = "";
   }
   toggle(p4) {
@@ -13536,8 +13619,13 @@ __decorateClass11([
 var OkDataTable = _OkDataTable;
 define("ok-data-table", OkDataTable);
 
-// ui/components/erp-pos-quick-notes/erp-pos-quick-notes.ts
+// ui/components/erp-pos-departments/erp-pos-departments.ts
 var CATALOG3 = { es: es_default, en: en_default };
+function rows3(r6) {
+  if (Array.isArray(r6)) return r6;
+  if (r6 && typeof r6 === "object" && Array.isArray(r6.rows)) return r6.rows;
+  return [];
+}
 function erplora3() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK not initialised by the shell");
@@ -13545,6 +13633,308 @@ function erplora3() {
 }
 function can(permission) {
   const client = erplora3();
+  return typeof client.hasPermission === "function" ? client.hasPermission(permission) : true;
+}
+function ratesByCategory(ruleRows) {
+  const isRoot2 = (r6) => r6.parent_id == null || String(r6.parent_id) === "";
+  const rootByCat = /* @__PURE__ */ new Map();
+  for (const r6 of ruleRows) {
+    if (!r6 || !r6.tax_category_key || !isRoot2(r6)) continue;
+    const cat = String(r6.tax_category_key);
+    const cur = rootByCat.get(cat);
+    if (!cur || String(r6.valid_from ?? "") > String(cur.valid_from ?? "")) rootByCat.set(cat, r6);
+  }
+  const out = /* @__PURE__ */ new Map();
+  for (const [cat, root] of rootByCat) {
+    let pct = Number(root.rate_pct) || 0;
+    for (const r6 of ruleRows) {
+      if (r6 && root.id != null && String(r6.parent_id ?? "") === String(root.id)) pct += Number(r6.rate_pct) || 0;
+    }
+    out.set(cat, pct);
+  }
+  return out;
+}
+function toTaxChoices(cats, rates) {
+  return cats.filter((c5) => c5.key && c5.is_active !== 0).map((c5) => {
+    const name = c5.display_name || c5.name || c5.key;
+    const pct = rates.get(c5.key);
+    return { key: c5.key, label: pct === void 0 ? name : `${name} \xB7 ${pct}%` };
+  });
+}
+var ErpPosDepartments = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.newName = "";
+    this.newTaxCategoryKey = "";
+    this.newSortOrder = "";
+    this.saving = false;
+    this.formError = "";
+    this.editingId = null;
+    this.deleteTarget = null;
+    this.taxChoices = [];
+    this.onLocaleChange = () => this.requestUpdate();
+  }
+  static {
+    this.styles = i`
+    :host { display:flex; flex-direction:column; height:100%; min-height:0;
+            font-family: system-ui, sans-serif; color: var(--ion-text-color, #1c1b18); }
+    .page { display:flex; flex-direction:column; min-height:0; flex:1 1 auto; }
+    .page > ok-data-table { flex:1 1 auto; min-height:0; }
+    .intro { margin:0 0 .6rem; font-size:.85rem; color: var(--ion-color-medium, #6b6b6b); }
+    .form { display:flex; flex-direction:column; gap:.7rem; }
+    .form ion-button[type='submit'] { align-self:flex-end; }
+  `;
+  }
+  get columns() {
+    const t7 = (k2) => erplora3().t(CATALOG3, k2);
+    const label = (key) => this.taxChoices.find((c5) => c5.key === key)?.label ?? key;
+    return [
+      { key: "name", header: t7("ui.departmentName"), sortable: true, filterable: true, filterType: "text" },
+      // The fiscal key is shown as the business reads it, never raw: `product.super_reduced` on a
+      // screen is a key somebody has to decode. It falls back to the key when the category is gone,
+      // which is exactly the case worth seeing.
+      { key: "tax_category_key", header: t7("ui.departmentTaxCategory"), format: (r6) => label(String(r6.tax_category_key ?? "")) },
+      // The position is the ONLY thing that decides the order of the buttons at the till, so it is
+      // a column and not a hidden field: the business has to see what it is changing.
+      { key: "sort_order", header: t7("ui.departmentOrder"), align: "right", sortable: true }
+    ];
+  }
+  get actions() {
+    const t7 = (k2) => erplora3().t(CATALOG3, k2);
+    return can("sales.manage_settings") ? [
+      { id: "edit", label: t7("ui.departmentEdit"), icon: "create-outline" },
+      { id: "delete", label: t7("ui.departmentDelete"), icon: "trash-outline", color: "danger" }
+    ] : [];
+  }
+  async connectedCallback() {
+    super.connectedCallback();
+    window.addEventListener("erplora:locale-changed", this.onLocaleChange);
+    this.ctrl = createListController(
+      erplora3(),
+      "sales.departments.list",
+      () => this.requestUpdate(),
+      { pageSize: 50, sort: "sort_order", dir: "asc" }
+    );
+    await Promise.all([this.ctrl.load(), this.loadTaxChoices()]);
+  }
+  disconnectedCallback() {
+    window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
+    super.disconnectedCallback();
+  }
+  /** Fills the VAT picker from the hub's own tax catalogue.
+   *
+   *  The rates are best-effort — without them the options keep their names and lose the «· 4%», so
+   *  the screen still works. The CATEGORIES are not: with none of them there is nothing to pick,
+   *  and the form says so instead of showing an empty picker that looks broken. */
+  async loadTaxChoices() {
+    const [cats, ruleRows] = await Promise.all([
+      erplora3().queryAll("taxes.categories.list").catch(() => []),
+      erplora3().queryAll("taxes.rules.list").catch(() => [])
+    ]);
+    this.taxChoices = toTaxChoices(rows3(cats), ratesByCategory(rows3(ruleRows)));
+  }
+  dataTable() {
+    return this.renderRoot.querySelector("ok-data-table");
+  }
+  async onRowAction(ev) {
+    if (!can("sales.manage_settings")) return;
+    const { actionId, row } = ev.detail;
+    const dept = row;
+    if (actionId === "edit") {
+      this.editingId = dept.id;
+      this.newName = dept.name ?? "";
+      this.newTaxCategoryKey = dept.tax_category_key ?? "";
+      this.newSortOrder = String(dept.sort_order ?? 0);
+      this.formError = "";
+      this.dataTable()?.open("create");
+    } else if (actionId === "delete") {
+      this.deleteTarget = dept;
+    }
+  }
+  /** Back to a clean CREATE form. */
+  cancelEdit() {
+    this.editingId = null;
+    this.newName = "";
+    this.newTaxCategoryKey = "";
+    this.newSortOrder = "";
+    this.formError = "";
+  }
+  /** Submit: create OR update by `editingId`. */
+  async save(ev) {
+    ev.preventDefault();
+    if (!can("sales.manage_settings")) return;
+    const name = this.newName.trim();
+    if (!name) return;
+    const taxCategoryKey = this.newTaxCategoryKey.trim();
+    if (!taxCategoryKey) {
+      this.formError = erplora3().t(CATALOG3, "ui.departmentTaxCategoryMissing");
+      return;
+    }
+    this.saving = true;
+    this.formError = "";
+    try {
+      const fields = { name, tax_category_key: taxCategoryKey, sort_order: Number(this.newSortOrder) || 0 };
+      if (this.editingId) {
+        await erplora3().command("sales.departments.update", { department_id: this.editingId, ...fields });
+      } else {
+        await erplora3().command("sales.departments.create", fields);
+      }
+      this.cancelEdit();
+      this.dataTable()?.close();
+      await this.ctrl.load();
+    } catch (e7) {
+      this.formError = domainErrorText(CATALOG3, erplora3().locale, e7) || erplora3().t(CATALOG3, "ui.departmentSaveFailed");
+    } finally {
+      this.saving = false;
+    }
+  }
+  async confirmDelete() {
+    const target = this.deleteTarget;
+    if (!target || !can("sales.manage_settings")) return;
+    this.saving = true;
+    try {
+      await erplora3().command("sales.departments.delete", { department_id: target.id });
+      this.deleteTarget = null;
+      await this.ctrl.load();
+    } catch (e7) {
+      this.formError = domainErrorText(CATALOG3, erplora3().locale, e7) || erplora3().t(CATALOG3, "ui.departmentDeleteFailed");
+      this.deleteTarget = null;
+    } finally {
+      this.saving = false;
+    }
+  }
+  renderDeleteConfirm() {
+    const t7 = (k2) => erplora3().t(CATALOG3, k2);
+    return b2`<ion-modal .isOpen=${!!this.deleteTarget}
+        @ionModalDidDismiss=${() => {
+      this.deleteTarget = null;
+    }}>
+      <ion-header class="ion-no-border">
+        <ion-toolbar><ion-title>${t7("ui.departmentDeleteTitle")}</ion-title></ion-toolbar>
+      </ion-header>
+      <!-- Self-styled: ion-modal is reparented to <body>, this component's CSS does not reach it. -->
+      <ion-content class="ion-padding">
+        <ion-list lines="none">
+          <ion-item>
+            <ion-label class="ion-text-wrap">
+              <b>${this.deleteTarget?.name ?? ""}</b> — ${t7("ui.departmentDeleteHint")}
+            </ion-label>
+          </ion-item>
+        </ion-list>
+        <ion-button class="ion-margin-top" expand="block" color="danger" ?disabled=${this.saving}
+          @click=${() => this.confirmDelete()}>${t7("ui.departmentDelete")}</ion-button>
+        <ion-button expand="block" fill="outline" ?disabled=${this.saving}
+          @click=${() => {
+      this.deleteTarget = null;
+    }}>${t7("ui.departmentCancel")}</ion-button>
+      </ion-content>
+    </ion-modal>`;
+  }
+  render() {
+    const t7 = (k2) => erplora3().t(CATALOG3, k2);
+    const editable = can("sales.manage_settings");
+    const noTaxCategories = this.taxChoices.length === 0;
+    return b2`<div class="page">
+      <p class="intro">${t7("ui.departmentsIntro")}</p>
+      ${this.formError ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>` : A}
+      ${this.ctrl?.error ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : A}
+      <ok-data-table
+        .serverSide=${true}
+        .fill=${true}
+        .views=${true}
+        .addable=${editable}
+        .cardTitle=${(row) => String(row.name ?? "")}
+        .columns=${this.columns}
+        .rows=${this.ctrl?.rows ?? []}
+        .total=${this.ctrl?.total ?? 0}
+        .page=${this.ctrl?.state.page ?? 0}
+        .pageSize=${this.ctrl?.state.pageSize ?? 50}
+        .sort=${this.ctrl?.state.sort}
+        .sortDir=${this.ctrl?.state.dir ?? "asc"}
+        .searchable=${true}
+        .searchPlaceholder=${t7("ui.departmentsSearch")}
+        .actions=${this.actions}
+        .rowClickable=${editable}
+        .emptyMessage=${this.ctrl?.loading ? t7("ui.departmentsLoading") : t7("ui.departmentsEmpty")}
+        @rowAction=${(e7) => this.onRowAction(e7)}
+        @rowClick=${(e7) => this.onRowAction({ detail: { actionId: "edit", row: e7.detail.row } })}
+        @pageChange=${(e7) => this.ctrl.setPage(e7.detail)}
+        @pageSizeChange=${(e7) => this.ctrl.setPageSize(e7.detail)}
+        @sortChange=${(e7) => this.ctrl.setSort(e7.detail.sort, e7.detail.dir)}
+        @searchChange=${(e7) => this.ctrl.setSearch(e7.detail)}
+        @filterChange=${(e7) => this.ctrl.setFilter(e7.detail.col, e7.detail.value)}>
+        <form slot="create" class="form" @submit=${(e7) => this.save(e7)}>
+          ${this.editingId ? b2`<ok-inline-feedback tone="info" icon="create-outline">
+                <b>${t7("ui.departmentEditing")}</b> — ${this.newName}
+                <ion-button size="small" fill="clear" @click=${() => this.cancelEdit()}>${t7("ui.departmentEditCancel")}</ion-button>
+              </ok-inline-feedback>` : A}
+          ${noTaxCategories ? b2`<ok-inline-feedback tone="warning" icon="alert-circle-outline">
+                ${t7("ui.departmentsNoTaxCategories")}
+              </ok-inline-feedback>` : A}
+          <!-- mode="md" is not decoration: the shell pins Ionic's ios mode (ADR-0143) and fill
+               paints in md only, so without it the box has no border and the person cannot see
+               where to type. -->
+          <ion-input mode="md" fill="outline" label-placement="floating" maxlength="60"
+            label=${t7("ui.departmentName")} placeholder=${t7("ui.departmentNamePlaceholder")} .value=${this.newName}
+            @ionInput=${(e7) => {
+      this.newName = e7.target.value;
+    }}></ion-input>
+          <ion-select mode="md" fill="outline" label-placement="floating"
+            label=${t7("ui.departmentTaxCategory")} .value=${this.newTaxCategoryKey || null}
+            @ionChange=${(e7) => {
+      this.newTaxCategoryKey = String(e7.target.value ?? "");
+    }}>
+            ${this.taxChoices.map((c5) => b2`<ion-select-option value=${c5.key}>${c5.label}</ion-select-option>`)}
+          </ion-select>
+          <ion-input mode="md" fill="outline" label-placement="floating" type="number" min="0" step="1"
+            label=${t7("ui.departmentOrder")} .value=${this.newSortOrder}
+            @ionInput=${(e7) => {
+      this.newSortOrder = e7.target.value;
+    }}></ion-input>
+          <ion-button type="submit" ?disabled=${this.saving || !this.newName.trim() || noTaxCategories}>
+            ${this.saving ? t7("ui.departmentSaving") : this.editingId ? t7("ui.departmentSave") : t7("ui.departmentAdd")}
+          </ion-button>
+        </form>
+      </ok-data-table>
+      ${this.renderDeleteConfirm()}
+    </div>`;
+  }
+};
+__decorateClass([
+  r5()
+], ErpPosDepartments.prototype, "newName", 2);
+__decorateClass([
+  r5()
+], ErpPosDepartments.prototype, "newTaxCategoryKey", 2);
+__decorateClass([
+  r5()
+], ErpPosDepartments.prototype, "newSortOrder", 2);
+__decorateClass([
+  r5()
+], ErpPosDepartments.prototype, "saving", 2);
+__decorateClass([
+  r5()
+], ErpPosDepartments.prototype, "formError", 2);
+__decorateClass([
+  r5()
+], ErpPosDepartments.prototype, "editingId", 2);
+__decorateClass([
+  r5()
+], ErpPosDepartments.prototype, "deleteTarget", 2);
+__decorateClass([
+  r5()
+], ErpPosDepartments.prototype, "taxChoices", 2);
+define("erp-pos-departments", ErpPosDepartments);
+
+// ui/components/erp-pos-quick-notes/erp-pos-quick-notes.ts
+var CATALOG4 = { es: es_default, en: en_default };
+function erplora4() {
+  const c5 = globalThis.erplora;
+  if (!c5) throw new Error("erplora SDK not initialised by the shell");
+  return c5;
+}
+function can2(permission) {
+  const client = erplora4();
   return typeof client.hasPermission === "function" ? client.hasPermission(permission) : true;
 }
 var ErpPosQuickNotes = class extends i3 {
@@ -13570,7 +13960,7 @@ var ErpPosQuickNotes = class extends i3 {
   `;
   }
   get columns() {
-    const t7 = (k2) => erplora3().t(CATALOG3, k2);
+    const t7 = (k2) => erplora4().t(CATALOG4, k2);
     return [
       { key: "text", header: t7("ui.quickNoteText"), sortable: true, filterable: true, filterType: "text" },
       // The position is the ONLY thing that decides the order of the chips at the till, so it is a
@@ -13579,8 +13969,8 @@ var ErpPosQuickNotes = class extends i3 {
     ];
   }
   get actions() {
-    const t7 = (k2) => erplora3().t(CATALOG3, k2);
-    return can("sales.manage_settings") ? [
+    const t7 = (k2) => erplora4().t(CATALOG4, k2);
+    return can2("sales.manage_settings") ? [
       { id: "edit", label: t7("ui.quickNoteEdit"), icon: "create-outline" },
       { id: "delete", label: t7("ui.quickNoteDelete"), icon: "trash-outline", color: "danger" }
     ] : [];
@@ -13589,7 +13979,7 @@ var ErpPosQuickNotes = class extends i3 {
     super.connectedCallback();
     window.addEventListener("erplora:locale-changed", this.onLocaleChange);
     this.ctrl = createListController(
-      erplora3(),
+      erplora4(),
       "sales.quick_notes.list",
       () => this.requestUpdate(),
       { pageSize: 50, sort: "sort_order", dir: "asc" }
@@ -13604,7 +13994,7 @@ var ErpPosQuickNotes = class extends i3 {
     return this.renderRoot.querySelector("ok-data-table");
   }
   async onRowAction(ev) {
-    if (!can("sales.manage_settings")) return;
+    if (!can2("sales.manage_settings")) return;
     const { actionId, row } = ev.detail;
     const note = row;
     if (actionId === "edit") {
@@ -13627,7 +14017,7 @@ var ErpPosQuickNotes = class extends i3 {
   /** Submit: create OR update by `editingId`. */
   async save(ev) {
     ev.preventDefault();
-    if (!can("sales.manage_settings")) return;
+    if (!can2("sales.manage_settings")) return;
     const text = this.newText.trim();
     if (!text) return;
     this.saving = true;
@@ -13635,36 +14025,36 @@ var ErpPosQuickNotes = class extends i3 {
     try {
       const fields = { text, sort_order: Number(this.newSortOrder) || 0 };
       if (this.editingId) {
-        await erplora3().command("sales.quick_notes.update", { quick_note_id: this.editingId, ...fields });
+        await erplora4().command("sales.quick_notes.update", { quick_note_id: this.editingId, ...fields });
       } else {
-        await erplora3().command("sales.quick_notes.create", fields);
+        await erplora4().command("sales.quick_notes.create", fields);
       }
       this.cancelEdit();
       this.dataTable()?.close();
       await this.ctrl.load();
     } catch (e7) {
-      this.formError = domainErrorText(CATALOG3, erplora3().locale, e7) || erplora3().t(CATALOG3, "ui.quickNoteSaveFailed");
+      this.formError = domainErrorText(CATALOG4, erplora4().locale, e7) || erplora4().t(CATALOG4, "ui.quickNoteSaveFailed");
     } finally {
       this.saving = false;
     }
   }
   async confirmDelete() {
     const target = this.deleteTarget;
-    if (!target || !can("sales.manage_settings")) return;
+    if (!target || !can2("sales.manage_settings")) return;
     this.saving = true;
     try {
-      await erplora3().command("sales.quick_notes.delete", { quick_note_id: target.id });
+      await erplora4().command("sales.quick_notes.delete", { quick_note_id: target.id });
       this.deleteTarget = null;
       await this.ctrl.load();
     } catch (e7) {
-      this.formError = domainErrorText(CATALOG3, erplora3().locale, e7) || erplora3().t(CATALOG3, "ui.quickNoteDeleteFailed");
+      this.formError = domainErrorText(CATALOG4, erplora4().locale, e7) || erplora4().t(CATALOG4, "ui.quickNoteDeleteFailed");
       this.deleteTarget = null;
     } finally {
       this.saving = false;
     }
   }
   renderDeleteConfirm() {
-    const t7 = (k2) => erplora3().t(CATALOG3, k2);
+    const t7 = (k2) => erplora4().t(CATALOG4, k2);
     return b2`<ion-modal .isOpen=${!!this.deleteTarget}
         @ionModalDidDismiss=${() => {
       this.deleteTarget = null;
@@ -13691,8 +14081,8 @@ var ErpPosQuickNotes = class extends i3 {
     </ion-modal>`;
   }
   render() {
-    const t7 = (k2) => erplora3().t(CATALOG3, k2);
-    const editable = can("sales.manage_settings");
+    const t7 = (k2) => erplora4().t(CATALOG4, k2);
+    const editable = can2("sales.manage_settings");
     return b2`<div class="page">
       <p class="intro">${t7("ui.quickNotesIntro")}</p>
       ${this.formError ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>` : A}
@@ -13881,7 +14271,7 @@ function serviceOrdinals(covered) {
 }
 
 // ui/components/erp-sale-refund/erp-sale-refund.ts
-var CATALOG4 = { es: es_default, en: en_default };
+var CATALOG5 = { es: es_default, en: en_default };
 var REFUND_MESSAGES = {
   "sales.refund_exceeds_tender": "ui.refundExceedsTender",
   "sales.refund_tender_not_eligible": "ui.refundNeedsDestinationShort",
@@ -13896,7 +14286,7 @@ function refundErrorKey(code) {
   if (!key) return "ui.refundFailed";
   return key === "ui.refundNeedsDestinationShort" ? "ui.refundReasonNotEligible" : key;
 }
-function erplora4() {
+function erplora5() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
   return c5;
@@ -14029,9 +14419,9 @@ var ErpSaleRefund = class extends i3 {
     this.error = "";
     try {
       const [sales, legs, methods] = await Promise.all([
-        erplora4().query("sales.get", { sale_id: saleId }),
-        erplora4().query("sales.refund_options", { sale_id: saleId }),
-        erplora4().query("sales.payment_methods")
+        erplora5().query("sales.get", { sale_id: saleId }),
+        erplora5().query("sales.refund_options", { sale_id: saleId }),
+        erplora5().query("sales.payment_methods")
       ]);
       this.sale = sales?.[0];
       this.legs = (legs ?? []).filter((l3) => Number(l3.remaining) > 0 || Number(l3.charged) > 0);
@@ -14041,9 +14431,9 @@ var ErpSaleRefund = class extends i3 {
       this.draft = Object.fromEntries(Object.entries(split).map(([id, amount]) => [id, { amount }]));
       await this.loadTenderLines(saleId);
     } catch (e7) {
-      const t7 = (k2) => erplora4().t(CATALOG4, k2);
+      const t7 = (k2) => erplora5().t(CATALOG5, k2);
       const transport = transportErrorKey(e7);
-      this.error = transport ? t7(transport) : domainErrorText(CATALOG4, erplora4().locale, e7) || t7("ui.errorLoadSale");
+      this.error = transport ? t7(transport) : domainErrorText(CATALOG5, erplora5().locale, e7) || t7("ui.errorLoadSale");
     } finally {
       this.loading = false;
     }
@@ -14062,14 +14452,14 @@ var ErpSaleRefund = class extends i3 {
   async loadTenderLines(saleId) {
     this.covered = [];
     this.tenderNotices = /* @__PURE__ */ new Map();
-    const sdk = erplora4();
+    const sdk = erplora5();
     if (typeof sdk.loadSlot !== "function") {
       this.tenderFillers = [];
       return;
     }
     try {
-      const rows3 = await sdk.loadSlot("sales.refund.tender") ?? [];
-      this.tenderFillers = rows3.map((f3) => String(f3.component));
+      const rows4 = await sdk.loadSlot("sales.refund.tender") ?? [];
+      this.tenderFillers = rows4.map((f3) => String(f3.component));
     } catch {
       this.tenderFillers = [];
     }
@@ -14134,14 +14524,14 @@ var ErpSaleRefund = class extends i3 {
   }
   /** Por qué no se puede confirmar, ya escrito. `undefined` = adelante. */
   get blockText() {
-    const t7 = (k2, p4) => erplora4().t(CATALOG4, k2, p4);
+    const t7 = (k2, p4) => erplora5().t(CATALOG5, k2, p4);
     const block = refundBlock(this.draft, this.legs);
     if (block?.reason === "nothing") return t7("ui.refundNothingToReturn");
     if (block?.reason === "over-cap") {
       return t7("ui.refundOverCap", {
         method: this.legName(block.leg),
-        amount: erplora4().formatMoney(block.amount),
-        remaining: erplora4().formatMoney(block.remaining)
+        amount: erplora5().formatMoney(block.amount),
+        remaining: erplora5().formatMoney(block.remaining)
       });
     }
     if (block?.reason === "needs-destination") {
@@ -14154,20 +14544,20 @@ var ErpSaleRefund = class extends i3 {
   legName(leg) {
     return payMethodDisplayName(
       { id: leg.payment_method_id ?? "", name: leg.payment_method_name },
-      (k2) => erplora4().t(CATALOG4, k2)
+      (k2) => erplora5().t(CATALOG5, k2)
     );
   }
   async confirm() {
-    const t7 = (k2, p4) => erplora4().t(CATALOG4, k2, p4);
+    const t7 = (k2, p4) => erplora5().t(CATALOG5, k2, p4);
     const why = this.blockText;
     if (why) {
-      erplora4().notify?.({ type: "error", message: why });
+      erplora5().notify?.({ type: "error", message: why });
       return;
     }
     if (this.busy) return;
     this.busy = true;
     try {
-      const out = await erplora4().command("sales.refund", {
+      const out = await erplora5().command("sales.refund", {
         sale_id: this.saleId,
         reason: this.reason.trim(),
         // La MISMA clave en cada intento: un reintento recupera el documento ya escrito en vez de
@@ -14176,11 +14566,11 @@ var ErpSaleRefund = class extends i3 {
         allocations: buildAllocations(this.draft, this.legs)
       });
       const committed = await this.commitTenderRefunds(out);
-      erplora4().notify?.({ type: "success", message: t7("ui.refundDone") });
-      if (!committed) erplora4().notify?.({ type: "error", message: t7("ui.refundTenderPending") });
+      erplora5().notify?.({ type: "success", message: t7("ui.refundDone") });
+      if (!committed) erplora5().notify?.({ type: "error", message: t7("ui.refundTenderPending") });
       this.dispatchEvent(new CustomEvent("refunded", { bubbles: true, composed: true, detail: { saleId: this.saleId } }));
     } catch (e7) {
-      erplora4().notify?.({ type: "error", message: t7(refundErrorKey(errorCode(e7))) });
+      erplora5().notify?.({ type: "error", message: t7(refundErrorKey(errorCode(e7))) });
     } finally {
       this.busy = false;
     }
@@ -14235,7 +14625,7 @@ var ErpSaleRefund = class extends i3 {
    * With no fillers NOTHING is painted: no header, no list, no empty hole.
    */
   renderTenderLines() {
-    const t7 = (k2, p4) => erplora4().t(CATALOG4, k2, p4);
+    const t7 = (k2, p4) => erplora5().t(CATALOG5, k2, p4);
     if (!this.tenderFillers.length || !this.covered.length) return A;
     return b2`
       <div class="rt-block">
@@ -14258,8 +14648,8 @@ var ErpSaleRefund = class extends i3 {
       <ok-inline-feedback class="rt-notice" tone="warning" icon="alert-circle-outline">${n6}</ok-inline-feedback>`);
   }
   renderLeg(leg) {
-    const t7 = (k2, p4) => erplora4().t(CATALOG4, k2, p4);
-    const money2 = (c5) => erplora4().formatMoney(c5);
+    const t7 = (k2, p4) => erplora5().t(CATALOG5, k2, p4);
+    const money2 = (c5) => erplora5().formatMoney(c5);
     const entry = this.draft[leg.payment_id];
     const eligible = Number(leg.refundable) === 1;
     return b2`<div class="leg" data-leg=${leg.payment_id}>
@@ -14271,7 +14661,7 @@ var ErpSaleRefund = class extends i3 {
           inputmode="decimal"
           label=${t7("ui.refundLegAmount")}
           label-placement="stacked"
-          .value=${formatAmountInput(entry?.amount ?? 0, erplora4().locale)}
+          .value=${formatAmountInput(entry?.amount ?? 0, erplora5().locale)}
           @ionInput=${(e7) => this.setAmount(leg.payment_id, e7.detail?.value ?? "")}
         ></ion-input>
       </div>
@@ -14288,12 +14678,12 @@ var ErpSaleRefund = class extends i3 {
                   .value=${entry?.to ?? ""}
                   @ionChange=${(e7) => this.setDestination(leg.payment_id, e7.detail?.value ?? "")}
                 >
-                  ${this.methods.map((m4) => b2`<ion-select-option value=${m4.id}>${payMethodDisplayName(m4, (k2) => erplora4().t(CATALOG4, k2))}</ion-select-option>`)}
+                  ${this.methods.map((m4) => b2`<ion-select-option value=${m4.id}>${payMethodDisplayName(m4, (k2) => erplora5().t(CATALOG5, k2))}</ion-select-option>`)}
                 </ion-select>` : A}`}
     </div>`;
   }
   render() {
-    const t7 = (k2, p4) => erplora4().t(CATALOG4, k2, p4);
+    const t7 = (k2, p4) => erplora5().t(CATALOG5, k2, p4);
     if (this.loading) {
       return b2`<div class="refund-loading">
         <ion-spinner name="crescent"></ion-spinner>
@@ -14329,7 +14719,7 @@ var ErpSaleRefund = class extends i3 {
       ></ion-textarea>
       <div class="totals">
         <span>${t7("ui.refundTotalLabel")}</span>
-        <span class="v">${erplora4().formatMoney(total)}</span>
+        <span class="v">${erplora5().formatMoney(total)}</span>
       </div>
       <!-- EL MOTIVO DEL BLOQUEO, ESCRITO EN LA PANTALLA: se lee sin tocar nada y sin un ratón. -->
       ${block ? b2`<p class="block">${block}</p>` : A}
@@ -14350,7 +14740,7 @@ var ErpSaleRefund = class extends i3 {
         @click=${() => {
       void this.confirm();
     }}
-      >${t7("ui.refundConfirm", { amount: erplora4().formatMoney(total) })}</ion-button>
+      >${t7("ui.refundConfirm", { amount: erplora5().formatMoney(total) })}</ion-button>
     </div>`;
   }
 };
@@ -14393,7 +14783,7 @@ __decorateClass([
 define("erp-sale-refund", ErpSaleRefund);
 
 // ui/components/erp-sales-list/erp-sales-list.ts
-var CATALOG5 = { es: es_default, en: en_default };
+var CATALOG6 = { es: es_default, en: en_default };
 var STATUS_KEYS = {
   completed: "ui.statusCompleted",
   voided: "ui.statusVoided",
@@ -14425,7 +14815,7 @@ function rangeBounds(range) {
   const days = range === "today" ? 0 : range === "7d" ? 6 : 29;
   return { from: isoDay(days), to: isoDay(0) };
 }
-function erplora5() {
+function erplora6() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
   return c5;
@@ -14478,11 +14868,11 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
   // Getter (no campo): se re-evalúa en cada render, así los textos cambian con el idioma activo
   // (ADR-0055). El listener `erplora:locale-changed` re-renderiza.
   get documentActions() {
-    const t7 = (k2, p4) => erplora5().t(CATALOG5, k2, p4);
+    const t7 = (k2, p4) => erplora6().t(CATALOG6, k2, p4);
     const actions = [
       { id: "document", label: t7("ui.actionDocument"), icon: "receipt-outline" }
     ];
-    if (erplora5().hasPermission?.("sales.void_sale")) {
+    if (erplora6().hasPermission?.("sales.void_sale")) {
       actions.push({
         id: "void",
         label: t7("ui.actionVoid"),
@@ -14491,7 +14881,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
         disabled: (r6) => r6.status !== "completed" || Number(r6.refunded_total ?? 0) > 0
       });
     }
-    if (erplora5().hasPermission?.("sales.refund_sale")) {
+    if (erplora6().hasPermission?.("sales.refund_sale")) {
       actions.push({
         id: "refund",
         // TEXTO, no función (sales#259). `DataTableAction.label` acepta `(row) => string` solo
@@ -14515,7 +14905,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
   /** sales#26 — pide el MOTIVO (obligatorio: Toast, Lightspeed y el software fiscal español lo
    *  exigen; es lo que luego se lee en el historial) y anula. Overlay global de Ionic, como el TPV. */
   async confirmVoid(sale) {
-    const t7 = (k2, p4) => erplora5().t(CATALOG5, k2, p4);
+    const t7 = (k2, p4) => erplora6().t(CATALOG6, k2, p4);
     const alert = document.createElement("ion-alert");
     alert.header = t7("ui.voidTitle", { number: sale.sale_number });
     alert.message = t7("ui.voidExplain");
@@ -14525,7 +14915,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
       { text: t7("ui.actionVoid"), role: "destructive", handler: (data) => {
         const reason = (data?.reason ?? "").trim();
         if (!reason) {
-          erplora5().notify?.({ type: "error", message: t7("ui.voidReasonRequired") });
+          erplora6().notify?.({ type: "error", message: t7("ui.voidReasonRequired") });
           return false;
         }
         void this.voidSale(sale.id, reason);
@@ -14543,17 +14933,17 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
   }
   /** Ejecuta `sales.void`; el servidor decide (motivo, estado, factura) y aquí solo se cuenta. */
   async voidSale(saleId, reason) {
-    const t7 = (k2) => erplora5().t(CATALOG5, k2);
+    const t7 = (k2) => erplora6().t(CATALOG6, k2);
     try {
-      await erplora5().command("sales.void", { sale_id: saleId, reason });
-      erplora5().notify?.({ type: "success", message: t7("ui.voidDone") });
+      await erplora6().command("sales.void", { sale_id: saleId, reason });
+      erplora6().notify?.({ type: "success", message: t7("ui.voidDone") });
       await Promise.all([this.ctrl.load(), this.loadStats()]);
     } catch (e7) {
-      erplora5().notify?.({ type: "error", message: t7(voidErrorKey(errorCode(e7))) });
+      erplora6().notify?.({ type: "error", message: t7(voidErrorKey(errorCode(e7))) });
     }
   }
   get columns() {
-    const t7 = (k2, p4) => erplora5().t(CATALOG5, k2, p4);
+    const t7 = (k2, p4) => erplora6().t(CATALOG6, k2, p4);
     return [
       // sales#27: la hora de cada venta a la vista (antes se ordenaba por ella y no se pintaba).
       {
@@ -14562,7 +14952,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
         sortable: true,
         filterable: true,
         filterType: "daterange",
-        format: (r6) => formatDateTime(String(r6.created_at ?? ""), erplora5().locale)
+        format: (r6) => formatDateTime(String(r6.created_at ?? ""), erplora6().locale)
       },
       { key: "sale_number", header: t7("ui.colNumber"), sortable: true, filterable: true, filterType: "text" },
       { key: "customer_name", header: t7("ui.colCustomer"), sortable: true, filterable: true, filterType: "text", format: (r6) => r6.customer_name || "\u2014" },
@@ -14635,7 +15025,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
           const refunded = Number(r6.refunded_total ?? 0);
           const remaining = Number(r6.total || 0) - refunded;
           if (!(refunded > 0 && remaining > 0)) return b2`<span>${status}</span>`;
-          const amount = erplora5().formatMoney(remaining).replace(/\s/g, "\xA0");
+          const amount = erplora6().formatMoney(remaining).replace(/\s/g, "\xA0");
           return b2`<span style="display:flex;flex-direction:column;min-width:0;line-height:1.25;">
           <span>${status}</span>
           <span style="font-size:0.78em;color:var(--color-muted, var(--ion-color-medium, #6b7280));white-space:normal;overflow-wrap:anywhere;"
@@ -14644,7 +15034,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
         </span>`;
         }
       },
-      { key: "total", header: t7("ui.colTotal"), align: "right", sortable: true, filterable: true, filterType: "range", format: (r6) => erplora5().formatMoney(Number(r6.total || 0)) }
+      { key: "total", header: t7("ui.colTotal"), align: "right", sortable: true, filterable: true, filterType: "range", format: (r6) => erplora6().formatMoney(Number(r6.total || 0)) }
     ];
   }
   // TODO-LIT: componentWillLoad → connectedCallback. Recuerda: connectedCallback se dispara
@@ -14659,7 +15049,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
       this.kpiMq.addEventListener("change", this.onKpiMqChange);
     }
     const b3 = rangeBounds(this.range);
-    this.ctrl = createListController(erplora5(), "sales.list", () => this.requestUpdate(), {
+    this.ctrl = createListController(erplora6(), "sales.list", () => this.requestUpdate(), {
       pageSize: 50,
       sort: "created_at",
       dir: "desc",
@@ -14672,7 +15062,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
     });
     await Promise.all([this.ctrl.load(), this.loadStats(), this.loadPayMethods()]);
     try {
-      this.unsub = erplora5().on("sale.completed", () => {
+      this.unsub = erplora6().on("sale.completed", () => {
         this.ctrl.load();
         this.loadStats();
       });
@@ -14696,14 +15086,14 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
    *  otherwise, the server's message never. An EMPTY answer is not a failure and says nothing. */
   async loadPayMethods() {
     try {
-      const rows3 = await erplora5().query("sales.payment_methods");
-      this.payMethods = Array.isArray(rows3) ? rows3 : [];
+      const rows4 = await erplora6().query("sales.payment_methods");
+      this.payMethods = Array.isArray(rows4) ? rows4 : [];
       this.payMethodsError = "";
     } catch (e7) {
       this.payMethods = [];
-      const t7 = (k2) => erplora5().t(CATALOG5, k2);
+      const t7 = (k2) => erplora6().t(CATALOG6, k2);
       const transport = transportErrorKey(e7);
-      this.payMethodsError = transport ? t7(transport) : domainErrorText(CATALOG5, erplora5().locale, e7) || t7("ui.errorPayMethods");
+      this.payMethodsError = transport ? t7(transport) : domainErrorText(CATALOG6, erplora6().locale, e7) || t7("ui.errorPayMethods");
     }
   }
   /** El selector de fechas de la propia tabla (columna «Fecha») también filtra por DÍA: la
@@ -14752,16 +15142,16 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
   async loadStats() {
     try {
       const b3 = rangeBounds(this.range);
-      const rows3 = await erplora5().query("sales.stats", { date_from: b3.from ?? null, date_to: b3.to ?? null });
-      this.stats = rows3 && rows3[0] || { count: 0, total_revenue: 0, avg_ticket: 0 };
+      const rows4 = await erplora6().query("sales.stats", { date_from: b3.from ?? null, date_to: b3.to ?? null });
+      this.stats = rows4 && rows4[0] || { count: 0, total_revenue: 0, avg_ticket: 0 };
     } catch (e7) {
-      const t7 = (k2) => erplora5().t(CATALOG5, k2);
+      const t7 = (k2) => erplora6().t(CATALOG6, k2);
       const transport = transportErrorKey(e7);
-      this.statsError = transport ? t7(transport) : domainErrorText(CATALOG5, erplora5().locale, e7) || t7("ui.errorStats");
+      this.statsError = transport ? t7(transport) : domainErrorText(CATALOG6, erplora6().locale, e7) || t7("ui.errorStats");
     }
   }
   render() {
-    const t7 = (k2) => erplora5().t(CATALOG5, k2);
+    const t7 = (k2) => erplora6().t(CATALOG6, k2);
     return b2`<div class="scroll">
         <h2>${t7("ui.sales")}</h2>
         <ion-segment class="range-segment" value=${this.range} aria-label=${t7("ui.rangeLabel")}
@@ -14777,19 +15167,19 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
           </div>
           <div class="card">
             <div class="k">${t7("ui.revenue")}</div>
-            <div class="v">${erplora5().formatMoney(Number(this.stats.total_revenue || 0))}</div>
+            <div class="v">${erplora6().formatMoney(Number(this.stats.total_revenue || 0))}</div>
           </div>
           <div class="card">
             <div class="k">${t7("ui.avgTicket")}</div>
-            <div class="v">${erplora5().formatMoney(Number(this.stats.avg_ticket || 0))}</div>
+            <div class="v">${erplora6().formatMoney(Number(this.stats.avg_ticket || 0))}</div>
           </div>
           <div class="card">
             <div class="k">${t7("ui.kpiTax")}</div>
-            <div class="v">${erplora5().formatMoney(Number(this.stats.tax_total || 0))}</div>
+            <div class="v">${erplora6().formatMoney(Number(this.stats.tax_total || 0))}</div>
           </div>
           <div class="card">
             <div class="k">${t7("ui.kpiDiscounts")}</div>
-            <div class="v">${erplora5().formatMoney(Number(this.stats.discount_total || 0))}</div>
+            <div class="v">${erplora6().formatMoney(Number(this.stats.discount_total || 0))}</div>
           </div>
           <div class="card">
             <div class="k">${t7("ui.kpiVoided")}</div>

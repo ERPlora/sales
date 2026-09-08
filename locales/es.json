@@ -13,6 +13,9 @@
     },
     "quick_notes": {
       "label": "Notas rápidas"
+    },
+    "departments": {
+      "label": "Departamentos"
     }
   },
   "settings": {
@@ -114,6 +117,7 @@
     "sales.product_not_available": "Un producto del tique ya no está en el catálogo. Quita la línea y vuelve a añadirla.",
     "sales.quantity_not_positive": "Una línea no tiene cantidad: pon al menos una antes de cobrar.",
     "sales.quantity_off_grid": "La cantidad no encaja con el escalón del producto.",
+    "sales.department_not_found": "Ese departamento ya no está en este negocio. Recarga la lista y vuelve a intentarlo.",
     "sales.quick_note_not_found": "Esa nota rápida ya no está en este negocio. Recarga la lista y vuelve a intentarlo.",
     "sales.refund_amount_invalid": "Cada pata de una devolución necesita un importe positivo.",
     "sales.refund_exceeds_tender": "A un medio de pago se le está devolviendo más de lo que cobró.",
@@ -476,6 +480,30 @@
     "lineNoteHint": "Cocina lee esta nota en la comanda.",
     "lineNoteSave": "Guardar",
     "lineNoteRemove": "Quitar",
+    "departmentsTitle": "Departamentos",
+    "departmentsIntro": "Las familias que el TPV ofrece al cobrar un importe que no está en el catálogo. Cada una lleva su IVA. Si dejas la lista vacía, el TPV vuelve a ofrecer las categorías fiscales tal cual.",
+    "departmentName": "Nombre",
+    "departmentNamePlaceholder": "p. ej. Frutas y verduras",
+    "departmentTaxCategory": "IVA que cobra",
+    "departmentOrder": "Posición",
+    "departmentsEmpty": "Todavía no hay departamentos. Añade las familias que cobras a mano: «Frutas y verduras», «Carnicería», «Droguería».",
+    "departmentsLoading": "Cargando departamentos…",
+    "departmentsSearch": "Buscar un departamento…",
+    "departmentAdd": "Añadir",
+    "departmentSave": "Guardar",
+    "departmentSaving": "Guardando…",
+    "departmentEdit": "Editar",
+    "departmentEditing": "Editando",
+    "departmentEditCancel": "Cancelar edición",
+    "departmentDelete": "Eliminar",
+    "departmentDeleteTitle": "Eliminar departamento",
+    "departmentDeleteHint": "Deja de ofrecerse en el TPV. Lo ya vendido conserva el nombre y el IVA con los que se cobró.",
+    "departmentCancel": "Cancelar",
+    "departmentSaveFailed": "No se ha podido guardar el departamento.",
+    "departmentDeleteFailed": "No se ha podido eliminar el departamento.",
+    "departmentsLoadFailed": "No se han podido cargar los departamentos.",
+    "departmentTaxCategoryMissing": "Elige el IVA que cobra este departamento.",
+    "departmentsNoTaxCategories": "No hay categorías de IVA que elegir. Configura antes tus tipos de IVA, en Impuestos.",
     "quickNotesTitle": "Notas rápidas",
     "quickNotesIntro": "Las notas que el TPV ofrece de un toque en la hoja de nota de la línea. Escribir a mano sigue funcionando.",
     "quickNoteText": "Nota",

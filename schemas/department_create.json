@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sales.departments.create",
+  "description": "A department the till offers on the open-price sheet, with the VAT it charges at.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "tax_category_key"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60,
+      "title": "Name"
+    },
+    "tax_category_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60,
+      "title": "Tax category"
+    },
+    "sort_order": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "title": "Position"
+    }
+  }
+}
