@@ -26,6 +26,7 @@ const READS: { name: string; module: string; field: keyof PosCatalogue }[] = [
   { name: 'taxes.categories.list', module: 'taxes', field: 'taxCategories' },
   { name: 'sales.payment_methods', module: 'sales', field: 'paymentMethods' },
   { name: 'sales.quick_notes.list', module: 'sales', field: 'quickNotes' },
+  { name: 'sales.departments.list', module: 'sales', field: 'departments' },
   { name: 'sales.business.get', module: 'sales', field: 'business' },
   { name: 'sales.orders.list', module: 'sales', field: 'orders' },
   { name: 'sales.order.lines', module: 'sales', field: 'orderLines' },
@@ -67,6 +68,8 @@ interface PosCatalogue {
   taxCategories?: QueryAnswer;
   paymentMethods?: QueryAnswer;
   quickNotes?: QueryAnswer;
+  /** `sales.departments.list` — the business's OWN open-price departments (sales#267). */
+  departments?: QueryAnswer;
   business?: QueryAnswer;
   orders?: QueryAnswer;
   orderLines?: QueryAnswer;
@@ -112,7 +115,7 @@ export function installPosDouble(spec: PosDoubleSpec = {}): ErploraDouble {
   const {
     settings, absentModules = [], brokenModules = [], queries: extraQueries = {}, failing = {},
     products, forSale, categories, productCategories, units, rules, taxCategories,
-    paymentMethods, quickNotes, business, orders, orderLines, byIdempotencyKey, sale, saleLines,
+    paymentMethods, quickNotes, departments, business, orders, orderLines, byIdempotencyKey, sale, saleLines,
     users, fiscalLimits,
     services, serviceCategories, modifierGroups, modifierOptions, comboOptions, appointment,
     invoiceBySource, invoiceLines, verifactuRecord,
@@ -120,7 +123,7 @@ export function installPosDouble(spec: PosDoubleSpec = {}): ErploraDouble {
   } = spec;
   const catalogue: PosCatalogue = {
     products, forSale, categories, productCategories, units, rules, taxCategories,
-    paymentMethods, quickNotes, business, orders, orderLines, byIdempotencyKey, sale, saleLines,
+    paymentMethods, quickNotes, departments, business, orders, orderLines, byIdempotencyKey, sale, saleLines,
     users, fiscalLimits,
     services, serviceCategories, modifierGroups, modifierOptions, comboOptions, appointment,
     invoiceBySource, invoiceLines, verifactuRecord,
