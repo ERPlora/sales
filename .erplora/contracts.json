@@ -7,6 +7,7 @@
       "hub.users.list",
       "sales.business.get",
       "sales.by_idempotency_key",
+      "sales.departments.list",
       "sales.get",
       "sales.lines",
       "sales.list",
@@ -39,6 +40,9 @@
     "commands": [
       "sales.checkout.preview",
       "sales.complete_sale",
+      "sales.departments.create",
+      "sales.departments.delete",
+      "sales.departments.update",
       "sales.order.add_line",
       "sales.order.add_open_line",
       "sales.order.fire",
