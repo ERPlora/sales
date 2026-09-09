@@ -5,12 +5,17 @@
 -- invitaciones).
 -- ADR-0147: `quantity` en punto fijo 10⁶ + contexto de unidades CONGELADO (§2.4).
 -- sales#12: `category_id` (opaco, NULL = sin clasificar) es el snapshot que enruta la comanda.
+-- sales#273: `staff_id` = QUIÉN hace ESTA línea. El TPV reconstruye el carrito desde esta tabla
+-- (ADR-0141), así que si el profesional no se escribe AQUÍ se pierde al recargar, al retomar la
+-- cuenta y tras cada disparo a cocina — y la venta cae entera sobre el de la cabecera. Opaco a
+-- `staff` (nunca se hace JOIN); NULL = nadie nombrado, que es lo que `sales.by_staff` hace caer a
+-- la cabecera. El handler es quien normaliza el vacío a NULL (`order_line_row`).
 -- sales#169: `combo`/`combo_group_ref` congelan la COMPOSICIÓN del menú (fila de trabajo, sin
 -- dinero): el precio cerrado y el reparto los decide el COBRO contra `combos.options.all`.
 INSERT INTO sales_order_item (
     id, hub_id, order_id, product_id, product_name, product_sku,
     quantity, unit_price, is_gift, gift_reason, line_total, tax_category_key, cost, is_service,
-    category_id, discount_percent, modifiers, notes, combo_group_ref, combo,
+    category_id, discount_percent, modifiers, notes, combo_group_ref, combo, staff_id,
     is_deleted, created_by, updated_by, created_at, updated_at,
     unit_code, unit_name, factor_num, factor_den, increment_value,
     price_quantity_value, pricing_unit_code, pricing_unit_name,
@@ -26,7 +31,7 @@ INSERT INTO sales_order_item (
     COALESCE(:notes, ''),
     -- sales#169: de qué MENÚ viene la línea y qué se eligió, en su orden. NULL/'{}' = no es un
     -- combo, que es lo que son casi todas las líneas. El grupo lo minta el handler, no el payload.
-    :combo_group_ref, COALESCE(:combo, '{}'),
+    :combo_group_ref, COALESCE(:combo, '{}'), :staff_id,
     0, :current_user_id, :current_user_id, :now, :now,
     :unit_code, :unit_name, :factor_num, :factor_den, :increment_value,
     :price_quantity_value, :pricing_unit_code, :pricing_unit_name,

@@ -245,7 +245,7 @@ async function optionalRead(read: (c: ErploraClientLike) => Promise<unknown>): P
   }
 }
 
-/** The runtime's per-request ceiling, and what sales#184 used to ask for: see `optionalReadAll`. */
+/** The runtime's per-request ceiling, and what sales#184 used to ask for: see `optionalCatalogRead`. */
 const LEGACY_PAGE_LIMIT = 500;
 
 /** Is a catalogue source switched ON? (sales#25)
@@ -270,16 +270,29 @@ function catalogSourceOn(v: unknown): boolean {
  *  spent wondering where the products went. */
 const HARD_DEPENDENCIES = ['inventory', 'taxes'] as const;
 
+/** Every app whose broken catalogue the till reports, in the fixed order the notices are painted.
+ *
+ *  sales#273 — `services` is here even though it is NOT a dependency at all. Being outside
+ *  `depends_on` makes its ABSENCE legitimate (ADR-0127) and that stays silent; it says nothing
+ *  about its SILENCE. A salon whose service catalogue read fails used to get exactly the till of a
+ *  hub that never installed `services`: 22 shelf products, «no products» when searching «Corte»,
+ *  the family tabs counting 0, and not one word about why — which is how a business concludes it
+ *  cannot charge a haircut. The two reads are independent, so the tabs can outlive the catalogue.
+ *
+ *  Order is fixed so the notices do not reshuffle between loads; `services` goes last because the
+ *  two above are what a till cannot sell WITHOUT. */
+const CATALOG_INCIDENT_APPS = [...HARD_DEPENDENCIES, 'services'] as const;
+
 /** OPTIONAL read (ADR-0127) of a WHOLE catalogue that keeps ABSENCE and INCIDENT apart (sales#25).
  *
- *  Same two doors as [`optionalReadAll`] — `queryAllOptional` when the shell has it, one capped
- *  page through `queryOptional` when it does not (sales#186) — and the same reason for taking two
- *  thunks instead of a name: the contract extractor does not follow variables, so the query name
- *  has to stay LITERAL inside each SDK call or the read disappears from `.erplora/contracts.json`.
+ *  Two doors — `queryAllOptional` when the shell has it, one capped page through `queryOptional`
+ *  when it does not (sales#186) — and two thunks instead of a name: the contract extractor does
+ *  not follow variables, so the query name has to stay LITERAL inside each SDK call or the read
+ *  disappears from `.erplora/contracts.json`.
  *
- *  What it does NOT do is swallow the difference: `optionalReadAll` answers `undefined` to both
- *  "the app is not here" and "the app broke", which is right for an accessory integration and
- *  wrong for the grid the cashier sells from. Here absence degrades and a failure is said out loud.
+ *  What it does NOT do is swallow the difference between "the app is not here" and "the app
+ *  broke". Answering `undefined` to both is right for an accessory integration and wrong for the
+ *  grid the cashier sells from. Here absence degrades and a failure is said out loud.
  *
  *  A shell so old that it has NEITHER door is read as absence: it cannot ask optionally at all, so
  *  there is no catalogue to be had and no incident to report — the till sells services and free
@@ -296,32 +309,26 @@ async function optionalCatalogRead<T>(
   });
 }
 
-/** OPTIONAL read that wants the WHOLE set, not a page (sales#186).
+/** Reads ONE app's catalogue and classifies the outcome, registering a failure as an incident.
  *
- *  `whole` is the good path (`queryAllOptional`). `page` is the fallback for a shell that does not
- *  have it yet: modules update themselves and the hub IMAGE does NOT, so this version lands on hubs
- *  whose SDK cannot bring the whole set. There it asks the way it did until now —one page with an
- *  explicit cap—, because a till with 500 services keeps selling and one with zero does not.
+ *  This is `capabilityCatalogRead` as seen from a `load...` method: the app id, the good door
+ *  (`queryAllOptional`) and the capped fallback (`queryOptional`) for a shell whose SDK does not
+ *  have the first one yet — modules update themselves and the hub IMAGE does not (sales#186).
  *
  *  Two thunks instead of a query name argument on purpose: the contract extractor (ADR-0127) does
- *  not follow variables, so the name has to stay LITERAL inside each SDK call — `queryAllOptional`
- *  for the good path and `queryOptional` for the fallback both register, and `.erplora/contracts.json`
- *  keeps listing the query as an optional consumption whichever door is taken.
+ *  not follow variables, so the name has to stay LITERAL inside each SDK call — both doors
+ *  register, and `.erplora/contracts.json` keeps listing the query as an optional consumption
+ *  whichever one is taken.
  *
- *  Absence and failure answer the same: `undefined`, and the till sells what it always sold. */
-async function optionalReadAll(
+ *  It replaces the `optionalReadAll` the service reads used until sales#273, which answered
+ *  `undefined` to BOTH «the app is not here» and «the app is here and its query broke». That is
+ *  precisely the `.catch(() => [])` `dependency-read.ts` exists to remove, and it is why a salon
+ *  with a broken service catalogue looked exactly like a shop that never sold services. */
+type CatalogReader = <T>(
+  app: string,
   whole: (c: ErploraClientLike) => Promise<unknown>,
   page: (c: ErploraClientLike) => Promise<unknown>,
-): Promise<unknown | undefined> {
-  try {
-    const c = erplora() as Partial<ErploraClientLike>;
-    if (typeof c.queryAllOptional === 'function') return await whole(c as ErploraClientLike);
-    if (typeof c.queryOptional === 'function') return await page(c as ErploraClientLike);
-    return undefined;
-  } catch {
-    return undefined;
-  }
-}
+) => Promise<T[]>;
 
 /** Un grupo de suplementos con sus opciones, tal como lo entrega `modifiers.for_target`. */
 interface ModifierGroup {
@@ -1598,8 +1605,8 @@ export class ErpPosTouch extends LitElement {
         // está en `depends_on` a propósito, porque `depends_on` es un contrato DURO que obligaría a
         // todo restaurante a instalar el módulo y ataría `sales` a su cascada de desactivación. Un
         // hub sin `services` recibe `undefined` y el TPV sigue siendo exactamente el de antes.
-        fromSource<Product>('sync_services', () => this.loadServices()),
-        fromSource<Category>('sync_services', () => this.loadServiceCategories()),
+        fromSource<Product>('sync_services', () => this.loadServices(capabilityCatalogRead)),
+        fromSource<Category>('sync_services', () => this.loadServiceCategories(capabilityCatalogRead)),
         // Departments for the free-price sale (ADR-0085). It never breaks the till: with no
         // departments the sheet says so. But a `taxes` that IS installed and does not answer is an
         // incident, not the absence of departments, and sales#25 makes that difference visible.
@@ -1646,7 +1653,7 @@ export class ErpPosTouch extends LitElement {
       if (connectionEpoch !== this.connectionEpoch || !this.isConnected) return;
       // sales#25 — one notice per broken app, in a fixed order so the screen does not reshuffle
       // between loads. Absence never reaches this list.
-      this.brokenCatalogApps = HARD_DEPENDENCIES.filter((app) => brokenApps.has(app));
+      this.brokenCatalogApps = CATALOG_INCIDENT_APPS.filter((app) => brokenApps.has(app));
       // sales#25 — DEGRADED MODE, said where the products would have been. `inventory` is an
       // optional capability now, so a hub without it is a legitimate hub that sells services and
       // free-price lines (ADR-0085) — but that is not the NORMAL mode, and an empty grid with no
@@ -2525,7 +2532,7 @@ export class ErpPosTouch extends LitElement {
    *  cobro— para que no pueda divergir del camino fiscal. Lo único que lo distingue es
    *  `is_service`, que hace que el handler no lo mida contra el catálogo de `inventory` ni le
    *  descuente stock. `services` es la autoridad del precio y de la categoría fiscal. */
-  private async loadServices(): Promise<Product[]> {
+  private async loadServices(read: CatalogReader): Promise<Product[]> {
     // sales#186: the WHOLE catalogue, no cap. Neither earlier shape brought it — `page_size` is not
     // a runtime parameter (the engine reads `limit`) and was dropped in silence; the `limit: 500`
     // that replaced it at least told the truth, but it was still an arbitrary ceiling: a business
@@ -2533,12 +2540,15 @@ export class ErpPosTouch extends LitElement {
     // `queryAllOptional` closes both halves: the whole set (two round trips at most) and `undefined`
     // when `services` is not installed, which is what ADR-0127 demands because `services` is NOT in
     // the `depends_on` of `sales`.
-    const rowsIn = await optionalReadAll(
+    //
+    // sales#273: read through the CLASSIFIER, not `optionalReadAll`. Absence still answers `[]` and
+    // says nothing — that is ADR-0127 and it is the common case. A FAILURE now raises the incident
+    // instead of impersonating absence, because a salon whose catalogue broke was getting the till
+    // of a shop that never sold services, with no way to tell them apart.
+    const svcRows = await read<ServiceRow>('services',
       (c) => c.queryAllOptional<unknown>('services.services.list'),
-      (c) => c.queryOptional<unknown>('services.services.list', { limit: LEGACY_PAGE_LIMIT }),
-    );
-    if (rowsIn === undefined) return []; // módulo no instalado: el TPV sigue siendo el de siempre
-    return rows<ServiceRow>(rowsIn).map((s) => ({
+      (c) => c.queryOptional<unknown>('services.services.list', { limit: LEGACY_PAGE_LIMIT }));
+    return svcRows.map((s) => ({
       id: s.id,
       name: s.name,
       price: Number(s.price) || 0,
@@ -2553,16 +2563,16 @@ export class ErpPosTouch extends LitElement {
 
   /** Las categorías de servicio salen como una pestaña más: 40 servicios en un muro plano no son
    *  usables en una peluquería con cliente delante. */
-  private async loadServiceCategories(): Promise<Category[]> {
+  private async loadServiceCategories(read: CatalogReader): Promise<Category[]> {
     // sales#186: the whole set, same as the catalogue. This read did not even carry a cap, so it
     // stopped at the first page —50— and a salon with more families lost the ones at the bottom
     // without a single warning.
-    const rowsIn = await optionalReadAll(
+    // sales#273 — classified like the catalogue above: this read failing on its own is exactly the
+    // shape the salon saw, family tabs standing at 0 over a grid with no service in it.
+    const catRows = await read<ServiceCat>('services',
       (c) => c.queryAllOptional<unknown>('services.categories.list', { sort: 'name', dir: 'asc' }),
-      (c) => c.queryOptional<unknown>('services.categories.list', { sort: 'name', dir: 'asc', limit: LEGACY_PAGE_LIMIT }),
-    );
-    if (rowsIn === undefined) return [];
-    return rows<ServiceCat>(rowsIn).filter((c) => c.name).map((c) => ({ id: c.id, name: c.name }));
+      (c) => c.queryOptional<unknown>('services.categories.list', { sort: 'name', dir: 'asc', limit: LEGACY_PAGE_LIMIT }));
+    return catRows.filter((c) => c.name).map((c) => ({ id: c.id, name: c.name }));
   }
 
   /** Motivo por el que este producto NO se puede cobrar, ya traducido; `undefined` si se puede
@@ -2851,7 +2861,13 @@ export class ErpPosTouch extends LitElement {
     // que `sameCartLine` aplica al fusionar mesas, y este camino tenía su propia búsqueda.
     const fingerprint = (m?: { option_id: string }[]) => (m ?? []).map((x) => x.option_id).join('\u0000');
     const want = fingerprint(picks);
-    const ex = this.cart.find((l) => l.id === p.id && !l.is_gift && fingerprint(l.modifiers) === want);
+    // sales#273: y mira el PROFESIONAL, por el mismo motivo. En una peluquería el corte de Ana y el
+    // de Marta son el mismo servicio, así que sin esto se fundirían en una línea de cantidad 2
+    // atribuida a Ana — el dinero de una se iría al cierre de la otra, y sin decirlo.
+    const ex = this.cart.find(
+      (l) => l.id === p.id && !l.is_gift && fingerprint(l.modifiers) === want
+        && (l.staff_id ?? undefined) === this.staffId,
+    );
     // tax_category_key = referencia fiscal del producto (autoridad del servidor, ADR-0085).
     // tax_rate = % resuelto en cliente SOLO para el preview del total. cost = para el arqueo de regalos.
     const tax_rate = resolveLineTax(this.taxCatalog.rates, p.tax_category_key);
@@ -2880,6 +2896,10 @@ export class ErpPosTouch extends LitElement {
         // sales#89: viaja hasta `complete_sale`, que por él no mide la línea contra el catálogo de
         // `inventory` ni le descuenta stock, y hasta `sale.completed`, donde `inventory` la salta.
         ...(p.is_service ? { is_service: true } : {}),
+        // sales#273: la línea se SELLA con quien esté en el chip al añadirla — el gesto de Square,
+        // Fresha, Vagaro, Booksy y Zenoti. Un tique a dos manos se marca moviendo el chip entre
+        // toques, sin un segundo selector por línea en la pantalla más ocupada del producto.
+        ...(this.staffId ? { staff_id: this.staffId } : {}),
         ...this.frozenUnitContext(p),
       };
       await this.pushNewLine(line);
@@ -2912,7 +2932,10 @@ export class ErpPosTouch extends LitElement {
     const want = choices.map((c) => c.option_id).join('\u0000');
     const ex = this.cart.find(
       (l) => l.combo_id === combo.combo_id && !l.is_gift
-        && (l.combo_choices ?? []).map((c) => c.option_id).join('\u0000') === want,
+        && (l.combo_choices ?? []).map((c) => c.option_id).join('\u0000') === want
+        // sales#273: y el profesional, igual que la fusión de `addNow`. Dos bonos idénticos
+        // vendidos por dos personas son dos líneas, o el cierre de una se come el de la otra.
+        && (l.staff_id ?? undefined) === this.staffId,
     );
     const tax_rate = resolveLineTax(this.taxCatalog.rates, combo.tax_category_key);
     try {
@@ -2934,6 +2957,8 @@ export class ErpPosTouch extends LitElement {
         cost: 0,
         combo_id: combo.combo_id,
         combo_choices: choices,
+        // sales#273: sellada con el chip, como toda línea que nace en esta pantalla.
+        ...(this.staffId ? { staff_id: this.staffId } : {}),
       });
     } catch (e) {
       const transportKey = transportErrorKey(e);
@@ -3752,6 +3777,10 @@ export class ErpPosTouch extends LitElement {
     if (!dept || this.openAmountCents <= 0) return;
     const line = buildOpenPriceLine({ name: dept.name, priceCents: this.openAmountCents, taxCategoryKey: dept.taxCategoryKey });
     line.tax_rate = resolveLineTax(this.taxCatalog.rates, dept.taxCategoryKey); // % SOLO para el preview del total
+    // sales#273: el importe lo teclea el cajero, pero el trabajo lo hizo alguien. Un color a medida
+    // es la mitad de la caja de una peluquería, así que si esta puerta no sella el profesional el
+    // cierre por profesional se queda sin justo lo que más vale.
+    if (this.staffId) line.staff_id = this.staffId;
     this.openPriceOpen = false;
     try {
       await this.queue(() => this.pushOpenPriceLine(line));

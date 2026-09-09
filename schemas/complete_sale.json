@@ -113,6 +113,12 @@
               "null"
             ]
           },
+          "staff_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "unit_code": {
             "type": "string"
           },

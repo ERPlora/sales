@@ -1499,6 +1499,20 @@ fn category_snapshot(item: &Value) -> Value {
     if cat.is_empty() { Value::Null } else { json!(cat) }
 }
 
+/// sales#273 — WHO did a line, as the row stores it. Opaque reference to `staff.*` /
+/// `hub.users.list`: `sales` never interprets it and never joins against it (ADR-0007).
+///
+/// NULL and not `""` when nobody was named. That is not cosmetic: `sales.by_staff` COALESCEs a NULL
+/// line to the ticket's own professional, so the close of a bar —which attributes nothing— keeps
+/// adding up exactly as it did before this column existed. An empty string would be a third state
+/// belonging to no one, and it would fall back to nobody.
+fn staff_ref(row: &Value) -> Value {
+    match row.get("staff_id").and_then(|v| v.as_str()) {
+        Some(id) if !id.trim().is_empty() => json!(id.trim()),
+        _ => Value::Null,
+    }
+}
+
 /// Lo que el SERVIDOR decidió sobre este cobro tras contrastar la oferta del cliente con las
 /// fuentes de confianza del hub (catálogo de métodos de pago y ajustes del TPV, pre-cargados por
 /// el runtime vía `reads`). Nada de aquí llega del navegador sin validar.
@@ -2421,6 +2435,20 @@ fn complete_sale_inner(input: Value) -> Result<Output, Refusal> {
                 .map(|v| json!(as_str(v)))
                 .unwrap_or(Value::Null),
         );
+        // sales#273 — QUIÉN hizo ESTA línea. En una peluquería Ana corta y Marta tiñe en el mismo
+        // ticket, así que la atribución de la CABECERA no alcanza: repartida solo por venta, el
+        // tique entero cae sobre una de las dos y el cierre por profesional no cuadra.
+        //
+        // Precedencia igual que en la cabecera (`attributed_person`): lo que nombra la línea gana,
+        // y si no nombra a nadie hereda la atribución ya resuelta de la venta —que a su vez cae al
+        // usuario con sesión (sales#179)—. Una cadena VACÍA no es una atribución: guardarla crearía
+        // en el cierre un profesional cuyo nombre es «». Así, quien no reparte por línea (todo bar)
+        // sigue viendo exactamente el informe de siempre.
+        let line_staff = as_str(l.item.get("staff_id").unwrap_or(&Value::Null));
+        p.insert(
+            "staff_id".into(),
+            if line_staff.is_empty() { staff_id.clone() } else { json!(line_staff) },
+        );
         p.insert("net_amount".into(), json!(t.net)); // céntimos
         p.insert("tax_amount".into(), json!(t.tax)); // céntimos
         p.insert("line_total".into(), json!(t.line)); // céntimos
@@ -3063,6 +3091,11 @@ fn order_line_row(
     // recategorising the product tomorrow. Same rule as `tax_category_key`.
     p.insert("category_id".into(), category_snapshot(item));
     p.insert("discount_percent".into(), json!(line_disc)); // sales#71
+    // sales#273: WHO did this line. Opaque reference to `staff.*` / `hub.users.list` — `sales`
+    // never interprets it and never joins against it (ADR-0007). NULL and not "" when the till
+    // named nobody: that is what makes `by_staff` fall back to the ticket's own professional, and
+    // it is what every line written before this column already looks like.
+    p.insert("staff_id".into(), staff_ref(item));
     // sales#156: and so does the waiter's free-text note («medium rare», «shellfish allergy»).
     p.insert("notes".into(), json!(line_note(item)));
     // pm#93: the supplements belong to the ROW too. `sales.order.add_line` stored them from day
@@ -3464,6 +3497,10 @@ fn split_clone_row(
         json!(row.get("discount_percent").map(|v| as_f64(v, 0.0)).unwrap_or(0.0)),
     );
     p.insert("notes".into(), json!(field(row, "notes")));
+    // sales#273: and WHO did it. Splitting «haircut x 2» into two haircuts of one does not change
+    // who cut the hair, so both parts stay hers — otherwise half the work of the day would fall to
+    // the ticket's professional and the close would be wrong by exactly that half, silently.
+    p.insert("staff_id".into(), staff_ref(row));
     p.insert("modifiers".into(), json!(modifier_snapshot));
     p.insert("combo".into(), json!("{}"));
     p.insert("combo_group_ref".into(), Value::Null);
@@ -5189,6 +5226,73 @@ mod tests {
         assert_eq!(out.events[0].payload["staff_id"], json!("staff-7"));
         // Sin appointment_id → un solo evento (no se emite created_from_appointment).
         assert_eq!(out.events.len(), 1);
+    }
+
+    #[test]
+    fn each_line_carries_its_own_professional() {
+        // sales#273 — Ana corta y Marta tiñe en el MISMO ticket. Hasta aquí la atribución vivía
+        // solo en la cabecera, así que el ticket entero caía sobre una de las dos y el cierre por
+        // profesional no podía cuadrar. Cada línea nombra a quien la hizo.
+        let new_ids: Vec<Value> = (0..6).map(|i| json!(format!("id-{i}"))).collect();
+        let inp = json!({
+            "payload": {
+                "idempotency_key": "idem-273-split",
+                "items": [
+                    { "product_name": "Corte", "price": 2000, "quantity": 1_000_000, "tax_rate": 21.0,
+                      "is_service": true, "staff_id": "staff-ana" },
+                    { "product_name": "Color", "price": 5000, "quantity": 1_000_000, "tax_rate": 21.0,
+                      "is_service": true, "staff_id": "staff-marta" }
+                ],
+                "tax_included": true, "amount_tendered": 0, "staff_id": "staff-ana"
+            },
+            "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-05-31T10:00:00+00:00", "new_ids": new_ids }
+        });
+        let out = sale(inp);
+        let lines: Vec<&Value> = out.operations.iter()
+            .filter(|o| o.command == "sales._insert_line")
+            .map(|o| &o.params["staff_id"])
+            .collect();
+        assert_eq!(lines, vec![&json!("staff-ana"), &json!("staff-marta")],
+            "cada línea se atribuye a quien la hizo, no la cabecera entera a una");
+    }
+
+    #[test]
+    fn a_line_that_names_nobody_falls_back_to_the_sale() {
+        // El caso de siempre y el mayoritario: un bar no atribuye por línea. La línea hereda la
+        // atribución de la venta, que a su vez cae al usuario con sesión (sales#179), así que
+        // `sales.by_staff` sigue contestando lo mismo para todo el que no reparte.
+        let new_ids: Vec<Value> = (0..4).map(|i| json!(format!("id-{i}"))).collect();
+        let inp = json!({
+            "payload": {
+                "idempotency_key": "idem-273-fallback",
+                "items": [{ "product_name": "Caña", "price": 250, "quantity": 1_000_000, "tax_rate": 21.0 }],
+                "tax_included": true, "amount_tendered": 0
+            },
+            "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-05-31T10:00:00+00:00", "new_ids": new_ids }
+        });
+        let out = sale(inp);
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("una línea");
+        assert_eq!(line.params["staff_id"], json!("u1"),
+            "sin nadie nombrado, la línea es del que la cobró");
+    }
+
+    #[test]
+    fn an_empty_line_staff_id_is_not_an_attribution() {
+        // Misma regla que en la cabecera: una integración que manda `""` no está atribuyendo.
+        // Guardarlo tal cual crearía en el cierre un profesional cuyo nombre es la cadena vacía.
+        let new_ids: Vec<Value> = (0..4).map(|i| json!(format!("id-{i}"))).collect();
+        let inp = json!({
+            "payload": {
+                "idempotency_key": "idem-273-empty",
+                "items": [{ "product_name": "Corte", "price": 2000, "quantity": 1_000_000,
+                            "tax_rate": 21.0, "staff_id": "" }],
+                "tax_included": true, "amount_tendered": 0, "staff_id": "staff-ana"
+            },
+            "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-05-31T10:00:00+00:00", "new_ids": new_ids }
+        });
+        let out = sale(inp);
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("una línea");
+        assert_eq!(line.params["staff_id"], json!("staff-ana"));
     }
 
     #[test]
@@ -8998,6 +9102,39 @@ mod tests {
                    "the row froze the till's category instead of the catalogue's");
     }
 
+    // sales#273 — the professional rides on the ORDER LINE, not only on the sale.
+    //
+    // ADR-0141 does not keep the cart in memory: the till writes this row on every tap and REBUILDS
+    // the cart from it (on reload, on resuming a parked check, and after every fire to the kitchen).
+    // So an attribution the browser holds and this row drops is an attribution that is gone by the
+    // time anyone pays — and `sales.by_staff` would quietly hand Marta's colour to Ana.
+    #[test]
+    fn adding_a_line_keeps_the_professional_who_did_it() {
+        let mut inp = add_line_input(burger_catalog(900), open_order_row());
+        inp["payload"]["staff_id"] = json!("u-ana");
+        let out = add_order_line_pure(inp).accepted("the line goes in");
+        assert_eq!(order_lines(&out)[0]["staff_id"], json!("u-ana"));
+    }
+
+    // NULL, never "". NULL means "this line is attributed by the ticket's own professional", which
+    // is what `by_staff` COALESCEs to; an empty string would be a third state belonging to nobody.
+    #[test]
+    fn a_line_with_no_professional_is_written_null_not_empty() {
+        let out = add_order_line_pure(add_line_input(burger_catalog(900), open_order_row()))
+            .accepted("the line goes in");
+        assert_eq!(order_lines(&out)[0]["staff_id"], Value::Null);
+    }
+
+    // The FIRST line of every check comes through the OTHER door. `is_service` (sales#89), the
+    // supplements (pm#93) and the set menu (sales#169) each had to be fixed here a second time.
+    #[test]
+    fn the_line_that_opens_the_order_keeps_the_professional_too() {
+        let mut inp = open_input(burger_catalog(900));
+        inp["payload"]["items"][0]["staff_id"] = json!("u-marta");
+        let out = open_order_pure(inp).accepted("the order opens");
+        assert_eq!(order_lines(&out)[0]["staff_id"], json!("u-marta"));
+    }
+
     #[test]
     fn adding_a_line_to_an_order_that_does_not_exist_is_refused_with_its_code() {
         let err = add_order_line_pure(add_line_input(burger_catalog(900), json!([])))
@@ -9219,6 +9356,39 @@ mod tests {
             }
         }
         names
+    }
+
+    #[test]
+    fn splitting_a_line_keeps_the_professional_on_every_part() {
+        // sales#273 — «Corte x 2» de Ana se parte en dos cortes de uno porque el bono de `services`
+        // se canjea por LÍNEA. Las dos partes las hizo Ana: si el clon nace sin profesional, la
+        // mitad del trabajo del día cae al de la cabecera y el cierre por profesional deja de
+        // cuadrar por la mitad exacta del corte que se partió — y nadie lo ve, porque el total del
+        // ticket sigue estando bien.
+        let mut row = split_line_row();
+        row["staff_id"] = json!("staff-ana");
+        let out = split_order_line_pure(split_input(row, open_order_row()))
+            .accepted("a haircut rung up twice can be split");
+
+        let clone = out.operations.iter()
+            .find(|o| o.command == "sales._insert_order_line")
+            .expect("the split writes the second line")
+            .params
+            .clone();
+        assert_eq!(clone.get("staff_id"), Some(&json!("staff-ana")),
+            "the part that is born keeps the professional who did the work");
+
+        // Y un negocio que NO atribuye sigue escribiendo NULL, no la cadena vacía: `by_staff` cae
+        // entonces al profesional de la cabecera, y el vacío sería un tercer estado sin dueño.
+        let out = split_order_line_pure(split_input(split_line_row(), open_order_row()))
+            .accepted("a bar splits the same way, naming nobody");
+        let clone = out.operations.iter()
+            .find(|o| o.command == "sales._insert_order_line")
+            .expect("the split writes the second line")
+            .params
+            .clone();
+        assert_eq!(clone.get("staff_id"), Some(&Value::Null),
+            "nobody named stays NULL, which falls back to the ticket's professional");
     }
 
     #[test]

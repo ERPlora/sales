@@ -26,7 +26,13 @@ SELECT id, order_id, product_id, product_name, product_sku, quantity, unit_price
        -- se puede ni cobrar (el cobro busca el id del combo en el catálogo de productos y rechaza
        -- la venta entera). Es el error que costó sales#148 con los suplementos: escritos, cobrados
        -- e ilegibles.
-       combo_group_ref, combo
+       combo_group_ref, combo,
+       -- sales#273: QUIÉN hace la línea vuelve con ella. Es el criterio de aceptación de la
+       -- atribución por línea: el TPV reconstruye el carrito desde aquí (ADR-0141) cada vez que
+       -- se recarga, se retoma una cuenta o se dispara a cocina, así que una columna escrita y no
+       -- proyectada es el fallo que sales#148 ya pagó con los suplementos — guardado, cobrado e
+       -- ilegible: el corte de Ana volvería sin dueño y el cierre lo cargaría a la cabecera.
+       staff_id
 FROM sales_order_item
 -- `sale_id IS NULL` = lo que queda POR PAGAR (ADR-0146): en un pedido cobrado a medias,
 -- las líneas ya pagadas no vuelven a la pantalla ni se cobran dos veces.
