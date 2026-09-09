@@ -2861,7 +2861,13 @@ export class ErpPosTouch extends LitElement {
     // que `sameCartLine` aplica al fusionar mesas, y este camino tenía su propia búsqueda.
     const fingerprint = (m?: { option_id: string }[]) => (m ?? []).map((x) => x.option_id).join('\u0000');
     const want = fingerprint(picks);
-    const ex = this.cart.find((l) => l.id === p.id && !l.is_gift && fingerprint(l.modifiers) === want);
+    // sales#273: y mira el PROFESIONAL, por el mismo motivo. En una peluquería el corte de Ana y el
+    // de Marta son el mismo servicio, así que sin esto se fundirían en una línea de cantidad 2
+    // atribuida a Ana — el dinero de una se iría al cierre de la otra, y sin decirlo.
+    const ex = this.cart.find(
+      (l) => l.id === p.id && !l.is_gift && fingerprint(l.modifiers) === want
+        && (l.staff_id ?? undefined) === this.staffId,
+    );
     // tax_category_key = referencia fiscal del producto (autoridad del servidor, ADR-0085).
     // tax_rate = % resuelto en cliente SOLO para el preview del total. cost = para el arqueo de regalos.
     const tax_rate = resolveLineTax(this.taxCatalog.rates, p.tax_category_key);
@@ -2890,6 +2896,10 @@ export class ErpPosTouch extends LitElement {
         // sales#89: viaja hasta `complete_sale`, que por él no mide la línea contra el catálogo de
         // `inventory` ni le descuenta stock, y hasta `sale.completed`, donde `inventory` la salta.
         ...(p.is_service ? { is_service: true } : {}),
+        // sales#273: la línea se SELLA con quien esté en el chip al añadirla — el gesto de Square,
+        // Fresha, Vagaro, Booksy y Zenoti. Un tique a dos manos se marca moviendo el chip entre
+        // toques, sin un segundo selector por línea en la pantalla más ocupada del producto.
+        ...(this.staffId ? { staff_id: this.staffId } : {}),
         ...this.frozenUnitContext(p),
       };
       await this.pushNewLine(line);
@@ -2922,7 +2932,10 @@ export class ErpPosTouch extends LitElement {
     const want = choices.map((c) => c.option_id).join('\u0000');
     const ex = this.cart.find(
       (l) => l.combo_id === combo.combo_id && !l.is_gift
-        && (l.combo_choices ?? []).map((c) => c.option_id).join('\u0000') === want,
+        && (l.combo_choices ?? []).map((c) => c.option_id).join('\u0000') === want
+        // sales#273: y el profesional, igual que la fusión de `addNow`. Dos bonos idénticos
+        // vendidos por dos personas son dos líneas, o el cierre de una se come el de la otra.
+        && (l.staff_id ?? undefined) === this.staffId,
     );
     const tax_rate = resolveLineTax(this.taxCatalog.rates, combo.tax_category_key);
     try {
@@ -2944,6 +2957,8 @@ export class ErpPosTouch extends LitElement {
         cost: 0,
         combo_id: combo.combo_id,
         combo_choices: choices,
+        // sales#273: sellada con el chip, como toda línea que nace en esta pantalla.
+        ...(this.staffId ? { staff_id: this.staffId } : {}),
       });
     } catch (e) {
       const transportKey = transportErrorKey(e);
@@ -3762,6 +3777,10 @@ export class ErpPosTouch extends LitElement {
     if (!dept || this.openAmountCents <= 0) return;
     const line = buildOpenPriceLine({ name: dept.name, priceCents: this.openAmountCents, taxCategoryKey: dept.taxCategoryKey });
     line.tax_rate = resolveLineTax(this.taxCatalog.rates, dept.taxCategoryKey); // % SOLO para el preview del total
+    // sales#273: el importe lo teclea el cajero, pero el trabajo lo hizo alguien. Un color a medida
+    // es la mitad de la caja de una peluquería, así que si esta puerta no sella el profesional el
+    // cierre por profesional se queda sin justo lo que más vale.
+    if (this.staffId) line.staff_id = this.staffId;
     this.openPriceOpen = false;
     try {
       await this.queue(() => this.pushOpenPriceLine(line));

@@ -41,6 +41,11 @@ export interface CartLine {
    *  componente a SU estación — el fallo de TouchBistro que ADR-0381 nombra. */
   combo_choices?: ComboChoice[];
   sku?: string;
+  /** sales#273 — WHO did this line, when it is not the whole ticket's professional. In a salon Ana
+   *  cuts and Marta colours on one ticket, so the per-professional cash-up can only add up if the
+   *  attribution rides on the LINE. Opaque id (`hub.users.list`), never interpreted here; absent =
+   *  no line-level attribution, and `sales.by_staff` falls back to the ticket's own `staff_id`. */
+  staff_id?: string;
   price: number;
   /** Cantidad LÓGICA (0,5 = medio kilo). El cable habla punto fijo 10⁶ (ADR-0147): la conversión
    *  vive SOLO en las funciones de este fichero (toMicro al enviar, fromMicro al cargar). */
@@ -434,6 +439,11 @@ function toItemPayload(l: CartLine): Record<string, unknown> {
     category_id: l.category_id ?? null,
     // sales#71: descuento manual de la línea, en %.
     discount: l.discount ?? 0,
+    // sales#273: el profesional de ESTA línea. Viaja también al ABRIR el pedido — es la puerta por
+    // la que entra la PRIMERA línea de toda cuenta, y perderlo aquí dejaría el corte de Ana sin
+    // atribuir en cuanto la pantalla releyera las filas. `null` = nadie elegido: lo resuelve el
+    // servidor con la cabecera, no el navegador.
+    staff_id: l.staff_id ?? null,
     // sales#156: the free-text note. Always present (empty string = no note) so the shape of the
     // payload does not depend on whether the waiter typed anything.
     notes: l.note ?? '',
@@ -480,6 +490,8 @@ function orderLinePayload(orderId: string, l: CartLine): Record<string, unknown>
     category_id: l.category_id ?? null,
     // sales#71: descuento manual de la línea (%), persistido con ella.
     discount_percent: l.discount ?? 0,
+    // sales#273: y el profesional que la hizo, con la misma regla que la puerta de arriba.
+    staff_id: l.staff_id ?? null,
     // sales#156: the line's free-text note, persisted with it.
     notes: l.note ?? '',
     // pm#93: `order.add_line` es DECLARATIVO — el payload bindea a una columna TEXT, así que viaja
@@ -620,6 +632,10 @@ export async function loadOrderLines(client: ErploraClientLike, orderId: string)
       is_service: x.is_service === 1 || x.is_service === true ? true : undefined,
       // sales#12: la categoría congelada vuelve con la línea (routing de cocina al retomar).
       category_id: x.category_id ? String(x.category_id) : undefined,
+      // sales#273: y el profesional de la línea, o el cierre por profesional se rompería en cuanto
+      // la cuenta se retomara. `undefined` —nunca ''— para una fila anterior a la columna: NULL
+      // significa «lo atribuye la cabecera», y '' sería un tercer estado que no es de nadie.
+      staff_id: x.staff_id ? String(x.staff_id) : undefined,
       // sales#71: el descuento de la línea vuelve al retomar la cuenta.
       discount: Number(x.discount_percent) > 0 ? Number(x.discount_percent) : undefined,
       // sales#156: the note comes back with the line. `undefined` and NOT '' when there is none:

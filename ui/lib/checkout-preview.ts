@@ -97,6 +97,10 @@ export function checkoutItems(
     cost: l.cost ?? 0,
     discount: l.discount ?? 0,
     ...(l.is_service ? { is_service: true } : {}),
+    // sales#273 — WHO did this line. Only when there is one: nobody chosen is not "nobody served
+    // it", it is the SERVER attributing the sale to the session user, and `sales.by_staff` falling
+    // back to the ticket's professional for a line with no id of its own.
+    ...(l.staff_id ? { staff_id: l.staff_id } : {}),
     ...(l.modifiers?.length ? { modifiers: l.modifiers.map((m) => ({ option_id: m.option_id })) } : {}),
     ...(l.combo_id
       ? {

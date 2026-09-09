@@ -3077,6 +3077,14 @@ fn order_line_row(
     // recategorising the product tomorrow. Same rule as `tax_category_key`.
     p.insert("category_id".into(), category_snapshot(item));
     p.insert("discount_percent".into(), json!(line_disc)); // sales#71
+    // sales#273: WHO did this line. Opaque reference to `staff.*` / `hub.users.list` — `sales`
+    // never interprets it and never joins against it (ADR-0007). NULL and not "" when the till
+    // named nobody: that is what makes `by_staff` fall back to the ticket's own professional, and
+    // it is what every line written before this column already looks like.
+    p.insert("staff_id".into(), match item.get("staff_id").and_then(|v| v.as_str()) {
+        Some(id) if !id.trim().is_empty() => json!(id.trim()),
+        _ => Value::Null,
+    });
     // sales#156: and so does the waiter's free-text note («medium rare», «shellfish allergy»).
     p.insert("notes".into(), json!(line_note(item)));
     // pm#93: the supplements belong to the ROW too. `sales.order.add_line` stored them from day
@@ -9077,6 +9085,39 @@ mod tests {
         let row = &order_lines(&out)[0];
         assert_eq!(row["tax_category_key"], json!("product.generic"),
                    "the row froze the till's category instead of the catalogue's");
+    }
+
+    // sales#273 — the professional rides on the ORDER LINE, not only on the sale.
+    //
+    // ADR-0141 does not keep the cart in memory: the till writes this row on every tap and REBUILDS
+    // the cart from it (on reload, on resuming a parked check, and after every fire to the kitchen).
+    // So an attribution the browser holds and this row drops is an attribution that is gone by the
+    // time anyone pays — and `sales.by_staff` would quietly hand Marta's colour to Ana.
+    #[test]
+    fn adding_a_line_keeps_the_professional_who_did_it() {
+        let mut inp = add_line_input(burger_catalog(900), open_order_row());
+        inp["payload"]["staff_id"] = json!("u-ana");
+        let out = add_order_line_pure(inp).accepted("the line goes in");
+        assert_eq!(order_lines(&out)[0]["staff_id"], json!("u-ana"));
+    }
+
+    // NULL, never "". NULL means "this line is attributed by the ticket's own professional", which
+    // is what `by_staff` COALESCEs to; an empty string would be a third state belonging to nobody.
+    #[test]
+    fn a_line_with_no_professional_is_written_null_not_empty() {
+        let out = add_order_line_pure(add_line_input(burger_catalog(900), open_order_row()))
+            .accepted("the line goes in");
+        assert_eq!(order_lines(&out)[0]["staff_id"], Value::Null);
+    }
+
+    // The FIRST line of every check comes through the OTHER door. `is_service` (sales#89), the
+    // supplements (pm#93) and the set menu (sales#169) each had to be fixed here a second time.
+    #[test]
+    fn the_line_that_opens_the_order_keeps_the_professional_too() {
+        let mut inp = open_input(burger_catalog(900));
+        inp["payload"]["items"][0]["staff_id"] = json!("u-marta");
+        let out = open_order_pure(inp).accepted("the order opens");
+        assert_eq!(order_lines(&out)[0]["staff_id"], json!("u-marta"));
     }
 
     #[test]
