@@ -1498,6 +1498,34 @@ export class ErpPosTouch extends LitElement {
   };
   private readonly onLocaleChange = (): void => this.requestUpdate();
 
+  /**
+   * appointments#154 — the agenda knocking with a booking to charge.
+   *
+   * The shell keeps the screen you walked away from MOUNTED and merely hidden (`ModuleView.vue`:
+   * «Ionic no desmonta la página que dejas atrás»), so from the second «Cobrar» of the shift on,
+   * `?appointment_id=` lands on a till that is already here and whose boot ran long ago. Reading
+   * the link only at boot meant that check opened blank — no customer, no service, no
+   * professional — and the salon typed it all in again.
+   *
+   * Same rule `flows#57` settled: a module deep link is served on EVERY navigation that names it,
+   * never «once». `pushState` + `PopStateEvent` is the only channel a Web Component has to the
+   * shell, and it is the one `appointments::goToTill()` uses.
+   */
+  private readonly onPopState = (): void => { void this.serveDeepLink(); };
+
+  /** Resolves when the boot settled. A booking that lands mid-boot waits for the services
+   *  catalogue instead of seeding a line whose VAT category nobody could resolve. */
+  private resolveBoot: () => void = () => {};
+  private readonly booted = new Promise<void>((resolve) => { this.resolveBoot = resolve; });
+
+  /** Serves `?appointment_id=` on a till that is already on screen. The services catalogue comes
+   *  from the grid the till already loaded — one source of fiscal truth for both doors. */
+  private async serveDeepLink(): Promise<void> {
+    await this.booted;
+    if (!this.isConnected) return;
+    await this.consumeAppointmentDeepLink(this.products.filter((p) => p.is_service));
+  }
+
   // ══ sales#28 · THE SCALE ═════════════════════════════════════════════════════════════════════
   //
   // Decided with the market (9 references + 2 forums; the table is in `lib/scale-entry.ts` and in
@@ -1542,6 +1570,7 @@ export class ErpPosTouch extends LitElement {
     super.connectedCallback();
     window.addEventListener('erplora:locale-changed', this.onLocaleChange);
     window.addEventListener(SCALE_WEIGHT_EVENT, this.onScaleWeight);
+    window.addEventListener('popstate', this.onPopState);
     // sales#25 — the reads against a HARD dependency (`inventory`, `taxes`). Every one of them used
     // to end in `.catch(() => [])`, which answers "the app is not in this hub" and "the app is here
     // and its query broke" with the SAME empty catalogue: the shift opens with an empty grid and
@@ -1727,6 +1756,8 @@ export class ErpPosTouch extends LitElement {
       this.error = e instanceof Error ? e.message : t('ui.errorLoadingPos');
     } finally {
       this.cartRestored = true;
+      // From here on a `popstate` may serve a booking on its own: the catalogue is in hand.
+      this.resolveBoot();
     }
   }
 
@@ -1736,6 +1767,7 @@ export class ErpPosTouch extends LitElement {
     this.photos.dispose();
     window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
     window.removeEventListener(SCALE_WEIGHT_EVENT, this.onScaleWeight);
+    window.removeEventListener('popstate', this.onPopState);
     this.removeEventListener('erp:order-context', this.onOrderContext);
     this.removeEventListener('erp:order-merge', this.onOrderMerge);
     this.removeEventListener('erp:order-split', this.onOrderSplit);
@@ -2427,6 +2459,10 @@ export class ErpPosTouch extends LitElement {
    *  Se resuelve contra el catálogo de servicios que el TPV ya carga para el walk-in: una sola
    *  fuente de verdad fiscal para las dos puertas. */
   private async seedFromAppointment(appointmentId: string, services: Product[]): Promise<void> {
+    // Served ONCE per open check. Now that the link is read on every navigation, tapping «Cobrar»
+    // twice on the same booking would otherwise put the haircut on the ticket twice. The id is
+    // cleared when the sale completes, so the next check starts fresh.
+    if (this.appointmentId && this.appointmentId === appointmentId) return;
     const rowsIn = await optionalRead((c) => c.queryOptional<unknown>('appointments.appointments.get', { id: appointmentId }));
     if (rowsIn === undefined) return; // módulo ausente: TPV vacío, sin ruido
     const ap = rows<AppointmentRow>(rowsIn)[0];
