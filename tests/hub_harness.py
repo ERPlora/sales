@@ -235,6 +235,32 @@ class Hub:
         return 0
 
 
+def ensure_business_identity(
+    hub: Hub, tax_id="B12345674", legal_name="Mi Empresa SL"
+) -> None:
+    """Sets the hub's business identity through the real admin door (`PUT /api/settings`).
+
+    It is the KERNEL's fiscal precondition (ADR-0203, hub#328), not this module's: without it
+    `invoice.create_from_sale` — the listener `sale.completed` wakes — fails with «configure
+    business_legal_name, business_tax_id before issuing fiscal documents» and the sale never
+    becomes an invoice. A chain assertion that skipped this would be measuring a chain that
+    cannot run, and would go green for the wrong reason.
+
+    Dev auth grants admin to any `X-User-Id` (`crates/server/src/auth.rs::require_admin_session`),
+    so this is exactly the write the fiscal setup wizard would make. Idempotent: a second run just
+    re-asserts the same identity."""
+    status, body = hub._request(
+        "PUT",
+        "/api/settings",
+        {"business_tax_id": tax_id, "business_legal_name": legal_name},
+    )
+    if status != 200:
+        print(
+            f"{hub.battery}: PUT /api/settings (business identity) answered {status}: {body}"
+        )
+        sys.exit(1)
+
+
 def cash_method_id(hub: Hub) -> str:
     """Id of the CASH method from the hub's seeded catalogue, through the public query — never
     composed by hand, so the battery is not tied to how `sales` builds its ids (sales#20: «the

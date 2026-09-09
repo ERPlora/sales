@@ -38,16 +38,47 @@ its own: without a runtime it fails, it does not skip.
 """
 
 import sys
+import time
 import uuid
 
 import hub_harness
-from hub_harness import ONE, Hub, cash_method_id, cents, key, sale_by_key
+from hub_harness import (
+    ONE,
+    Hub,
+    cash_method_id,
+    cents,
+    ensure_business_identity,
+    key,
+    sale_by_key,
+    wait_until,
+)
+
+#: One relay tick, plus slack. A listener arrives through the outbox, which the server ticks once a
+#: second; the only way to assert that a retry created NO second invoice is to give the relay time
+#: to have created one and then look (`hub_harness.wait_until` can only wait FOR something).
+RELAY_TICK = 2.5
 
 
 def sale_number_suffix(sale_number: str) -> int:
     """`S-20260829-0007` → 7: the atomic per-day counter is the last dash-separated group."""
     return int(sale_number.rsplit("-", 1)[1])
 
+
+def settled_invoice_total(hub: Hub) -> int:
+    """`invoice.list`'s total once it has stopped moving — the only honest baseline for a NEGATIVE.
+
+    Every completed sale becomes an invoice asynchronously, so at any instant this battery has a
+    tail of them still in flight. Reading the total mid-drain and then blaming the growth on the
+    retry is exactly the false red the runner warns about (`invoice/tests/from_sale.hub.test.py`
+    reading N+2 where it asserts N+1, `scripts/ci/run-module-hub-batteries.sh`)."""
+    seen = hub.page("invoice.list")["total"]
+    for _ in range(20):
+        time.sleep(RELAY_TICK)
+        again = hub.page("invoice.list")["total"]
+        if again == seen:
+            return seen
+        seen = again
+    return seen
 
 def test_a_charge_writes_header_lines_and_payment(hub: Hub, cash: str) -> str:
     print("\n1 · complete_sale writes the header, the lines and the payment leg")
@@ -187,6 +218,59 @@ def test_the_same_attempt_retried_charges_once(hub: Hub, cash: str) -> None:
     # through `sales.by_idempotency_key`, which is exactly what the row above proves.
     hub.check("the retry wrote nothing", second.get("operations"), 0)
     hub.check("…and minted no id", second.get("new_ids"), [])
+
+
+def test_a_retried_charge_leaves_one_invoice_too(hub: Hub, cash: str) -> None:
+    print("\n3b · …and ONE invoice: the retry does not reach the fiscal chain either")
+    # §3 proves the retry writes no second SALE. That was enough while the only caller was a
+    # cashier's tablet recovering from a tap. sales#272 opens `complete_sale` to the public API
+    # (`expose_api`), and over HTTP a retry is not a tap: it is a network client re-sending a
+    # request whose answer it never saw. What it would duplicate is not a row on a screen — it is
+    # an INVOICE, and behind it an entry in an immutable fiscal chain that has no undo (ADR-0189).
+    #
+    # `invoice` guards its own half with `uq_invoice_source` and proves it in
+    # `invoice/tests/from_sale.hub.test.py` §3. What is asserted here is the thing that is only
+    # true of the CHAIN: one retried charge leaves one of each, end to end. Both halves being
+    # green does not say the whole is — that is the same reason `void_chain.hub.test.py` exists.
+    attempt = {
+        "idempotency_key": key("retry-chain"),
+        "payment_method_id": cash,
+        "amount_tendered": 1000,
+        "tax_included": True,
+        "items": [
+            {"product_name": "X", "price": 1000, "quantity": ONE, "tax_rate": 21.0}
+        ],
+    }
+    first = hub.run("sales.complete_sale", attempt)
+    sale_id = first["new_ids"][0]
+
+    # Wait FOR the chain: a listener arrives through the outbox relay, which the server ticks once
+    # a second and no HTTP door drains on demand (module-toolkit#135).
+    invoice = wait_until(
+        lambda: hub.query("invoice.by_source", {"source_id": sale_id}),
+        lambda rows: len(rows) == 1,
+    )
+    hub.check("the sale became an invoice", len(invoice), 1)
+
+    # The baseline is taken once the relay has gone QUIET, not right after the call: every sale
+    # this battery made above is still turning into its own invoice in the background, so a total
+    # read mid-drain would move on its own and blame the retry for it.
+    invoices_before = settled_invoice_total(hub)
+
+    second = hub.run("sales.complete_sale", attempt)
+    hub.check("the retry still wrote nothing", second.get("operations"), 0)
+    # `wait_until` can only wait FOR something: «no second invoice» never resolves by polling, so
+    # the relay gets its tick outright and we look afterwards.
+    time.sleep(RELAY_TICK)
+
+    hub.check(
+        "the retry added no invoice", hub.page("invoice.list")["total"], invoices_before
+    )
+    hub.check(
+        "…and the sale still has exactly one",
+        len(hub.query("invoice.by_source", {"source_id": sale_id})),
+        1,
+    )
 
 
 def test_off_grid_quantity_is_refused_and_writes_nothing(hub: Hub, cash: str) -> None:
@@ -400,14 +484,21 @@ def test_a_sale_from_an_appointment_is_tagged_and_announced(
 
 
 def main() -> int:
-    hub = Hub("checkout.hub")
+    # `invoice` because §3b walks the chain past this module; a battery that quietly skipped it
+    # would report a fiscal promise it never checked.
+    hub = Hub("checkout.hub", needs=("taxes", "sales", "invoice"))
     print(
         f"Hub battery · checkout (hub#1264 ← sales_e2e.rs) · {hub_harness.BASE} · hub {hub.hub_id} · user {hub.user}"
     )
+    # The KERNEL's fiscal precondition, set BEFORE the first charge (ADR-0203, hub#328): without
+    # it `invoice.create_from_sale` refuses and every `sale.completed` piles up in the outbox,
+    # only to drain the moment something does set it — which would move §3b's totals under it.
+    ensure_business_identity(hub)
     cash = cash_method_id(hub)
     first_number = test_a_charge_writes_header_lines_and_payment(hub, cash)
     test_the_next_charge_gets_the_next_number(hub, cash, first_number)
     test_the_same_attempt_retried_charges_once(hub, cash)
+    test_a_retried_charge_leaves_one_invoice_too(hub, cash)
     test_off_grid_quantity_is_refused_and_writes_nothing(hub, cash)
     test_half_a_kilo_costs_half_and_freezes_the_unit(hub, cash)
     test_every_sale_says_who_attended(hub, cash)
