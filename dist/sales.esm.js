@@ -4455,6 +4455,7 @@ var es_default = {
     missingAppChargeShort: "Falta {app}",
     appTaxes: "Impuestos",
     appInventory: "Inventario",
+    appServices: "Servicios",
     appCatalogUnavailable: "{app} no ha respondido, as\xED que su cat\xE1logo puede estar incompleto. Revisa la aplicaci\xF3n y vuelve a cargar el TPV.",
     posSettingsUnavailable: "El TPV no ha podido leer sus propios ajustes, as\xED que muestra los valores por defecto. Vuelve a cargar para reintentarlo.",
     errorMissingApp: "La venta se ha rechazado porque falta una app que necesita. No se ha cobrado nada.",
@@ -5006,6 +5007,7 @@ var en_default = {
     missingAppChargeShort: "{app} is missing",
     appTaxes: "Taxes",
     appInventory: "Inventory",
+    appServices: "Services",
     appCatalogUnavailable: "{app} did not answer, so its catalogue may be incomplete. Check the app and reload the till.",
     posSettingsUnavailable: "The till could not read its own settings, so it is showing the defaults. Reload to try again.",
     errorMissingApp: "The sale was refused because an app it needs is not installed. Nothing was charged.",
@@ -5642,6 +5644,11 @@ function toItemPayload(l3) {
     category_id: l3.category_id ?? null,
     // sales#71: descuento manual de la línea, en %.
     discount: l3.discount ?? 0,
+    // sales#273: el profesional de ESTA línea. Viaja también al ABRIR el pedido — es la puerta por
+    // la que entra la PRIMERA línea de toda cuenta, y perderlo aquí dejaría el corte de Ana sin
+    // atribuir en cuanto la pantalla releyera las filas. `null` = nadie elegido: lo resuelve el
+    // servidor con la cabecera, no el navegador.
+    staff_id: l3.staff_id ?? null,
     // sales#156: the free-text note. Always present (empty string = no note) so the shape of the
     // payload does not depend on whether the waiter typed anything.
     notes: l3.note ?? "",
@@ -5681,6 +5688,8 @@ function orderLinePayload(orderId, l3) {
     category_id: l3.category_id ?? null,
     // sales#71: descuento manual de la línea (%), persistido con ella.
     discount_percent: l3.discount ?? 0,
+    // sales#273: y el profesional que la hizo, con la misma regla que la puerta de arriba.
+    staff_id: l3.staff_id ?? null,
     // sales#156: the line's free-text note, persisted with it.
     notes: l3.note ?? "",
     // pm#93: `order.add_line` es DECLARATIVO — el payload bindea a una columna TEXT, así que viaja
@@ -5786,6 +5795,10 @@ async function loadOrderLines(client, orderId) {
       is_service: x2.is_service === 1 || x2.is_service === true ? true : void 0,
       // sales#12: la categoría congelada vuelve con la línea (routing de cocina al retomar).
       category_id: x2.category_id ? String(x2.category_id) : void 0,
+      // sales#273: y el profesional de la línea, o el cierre por profesional se rompería en cuanto
+      // la cuenta se retomara. `undefined` —nunca ''— para una fila anterior a la columna: NULL
+      // significa «lo atribuye la cabecera», y '' sería un tercer estado que no es de nadie.
+      staff_id: x2.staff_id ? String(x2.staff_id) : void 0,
       // sales#71: el descuento de la línea vuelve al retomar la cuenta.
       discount: Number(x2.discount_percent) > 0 ? Number(x2.discount_percent) : void 0,
       // sales#156: the note comes back with the line. `undefined` and NOT '' when there is none:
@@ -6824,6 +6837,10 @@ function checkoutItems(lines, opts) {
     cost: l3.cost ?? 0,
     discount: l3.discount ?? 0,
     ...l3.is_service ? { is_service: true } : {},
+    // sales#273 — WHO did this line. Only when there is one: nobody chosen is not "nobody served
+    // it", it is the SERVER attributing the sale to the session user, and `sales.by_staff` falling
+    // back to the ticket's professional for a line with no id of its own.
+    ...l3.staff_id ? { staff_id: l3.staff_id } : {},
     ...l3.modifiers?.length ? { modifiers: l3.modifiers.map((m4) => ({ option_id: m4.option_id })) } : {},
     ...l3.combo_id ? {
       combo_id: l3.combo_id,
@@ -7151,6 +7168,7 @@ function catalogSourceOn(v3) {
   return v3 !== 0;
 }
 var HARD_DEPENDENCIES = ["inventory", "taxes"];
+var CATALOG_INCIDENT_APPS = [...HARD_DEPENDENCIES, "services"];
 async function optionalCatalogRead(whole, page) {
   return capabilityRead(async () => {
     const c5 = erplora2();
@@ -7158,16 +7176,6 @@ async function optionalCatalogRead(whole, page) {
     if (typeof c5.queryOptional === "function") return await page(c5);
     return void 0;
   });
-}
-async function optionalReadAll(whole, page) {
-  try {
-    const c5 = erplora2();
-    if (typeof c5.queryAllOptional === "function") return await whole(c5);
-    if (typeof c5.queryOptional === "function") return await page(c5);
-    return void 0;
-  } catch {
-    return void 0;
-  }
 }
 function groupModifierRows(rows4) {
   const out = [];
@@ -8271,8 +8279,8 @@ var ErpPosTouch = class extends i3 {
         // está en `depends_on` a propósito, porque `depends_on` es un contrato DURO que obligaría a
         // todo restaurante a instalar el módulo y ataría `sales` a su cascada de desactivación. Un
         // hub sin `services` recibe `undefined` y el TPV sigue siendo exactamente el de antes.
-        fromSource("sync_services", () => this.loadServices()),
-        fromSource("sync_services", () => this.loadServiceCategories()),
+        fromSource("sync_services", () => this.loadServices(capabilityCatalogRead)),
+        fromSource("sync_services", () => this.loadServiceCategories(capabilityCatalogRead)),
         // Departments for the free-price sale (ADR-0085). It never breaks the till: with no
         // departments the sheet says so. But a `taxes` that IS installed and does not answer is an
         // incident, not the absence of departments, and sales#25 makes that difference visible.
@@ -8318,7 +8326,7 @@ var ErpPosTouch = class extends i3 {
         ))
       ]);
       if (connectionEpoch !== this.connectionEpoch || !this.isConnected) return;
-      this.brokenCatalogApps = HARD_DEPENDENCIES.filter((app) => brokenApps.has(app));
+      this.brokenCatalogApps = CATALOG_INCIDENT_APPS.filter((app) => brokenApps.has(app));
       this.catalogAppAbsent = absentApps.has("inventory") && catalogSourceOn((await policy).sync_products);
       this.taxCatalog = taxCatalog;
       this.missingChargeApp = taxCatalog.installed ? "" : "taxes";
@@ -9098,13 +9106,13 @@ var ErpPosTouch = class extends i3 {
    *  cobro— para que no pueda divergir del camino fiscal. Lo único que lo distingue es
    *  `is_service`, que hace que el handler no lo mida contra el catálogo de `inventory` ni le
    *  descuente stock. `services` es la autoridad del precio y de la categoría fiscal. */
-  async loadServices() {
-    const rowsIn = await optionalReadAll(
+  async loadServices(read) {
+    const svcRows = await read(
+      "services",
       (c5) => c5.queryAllOptional("services.services.list"),
       (c5) => c5.queryOptional("services.services.list", { limit: LEGACY_PAGE_LIMIT })
     );
-    if (rowsIn === void 0) return [];
-    return rows2(rowsIn).map((s5) => ({
+    return svcRows.map((s5) => ({
       id: s5.id,
       name: s5.name,
       price: Number(s5.price) || 0,
@@ -9118,13 +9126,13 @@ var ErpPosTouch = class extends i3 {
   }
   /** Las categorías de servicio salen como una pestaña más: 40 servicios en un muro plano no son
    *  usables en una peluquería con cliente delante. */
-  async loadServiceCategories() {
-    const rowsIn = await optionalReadAll(
+  async loadServiceCategories(read) {
+    const catRows = await read(
+      "services",
       (c5) => c5.queryAllOptional("services.categories.list", { sort: "name", dir: "asc" }),
       (c5) => c5.queryOptional("services.categories.list", { sort: "name", dir: "asc", limit: LEGACY_PAGE_LIMIT })
     );
-    if (rowsIn === void 0) return [];
-    return rows2(rowsIn).filter((c5) => c5.name).map((c5) => ({ id: c5.id, name: c5.name }));
+    return catRows.filter((c5) => c5.name).map((c5) => ({ id: c5.id, name: c5.name }));
   }
   /** Motivo por el que este producto NO se puede cobrar, ya traducido; `undefined` si se puede
    *  (o si no hay catálogo fiscal con el que juzgarlo: eso es un incidente de `taxes`, no del
@@ -9376,7 +9384,9 @@ var ErpPosTouch = class extends i3 {
   async addNow(p4, picks = []) {
     const fingerprint = (m4) => (m4 ?? []).map((x2) => x2.option_id).join("\0");
     const want = fingerprint(picks);
-    const ex = this.cart.find((l3) => l3.id === p4.id && !l3.is_gift && fingerprint(l3.modifiers) === want);
+    const ex = this.cart.find(
+      (l3) => l3.id === p4.id && !l3.is_gift && fingerprint(l3.modifiers) === want && (l3.staff_id ?? void 0) === this.staffId
+    );
     const tax_rate = resolveLineTax(this.taxCatalog.rates, p4.tax_category_key);
     try {
       if (ex) {
@@ -9405,6 +9415,10 @@ var ErpPosTouch = class extends i3 {
         // sales#89: viaja hasta `complete_sale`, que por él no mide la línea contra el catálogo de
         // `inventory` ni le descuenta stock, y hasta `sale.completed`, donde `inventory` la salta.
         ...p4.is_service ? { is_service: true } : {},
+        // sales#273: la línea se SELLA con quien esté en el chip al añadirla — el gesto de Square,
+        // Fresha, Vagaro, Booksy y Zenoti. Un tique a dos manos se marca moviendo el chip entre
+        // toques, sin un segundo selector por línea en la pantalla más ocupada del producto.
+        ...this.staffId ? { staff_id: this.staffId } : {},
         ...this.frozenUnitContext(p4)
       };
       await this.pushNewLine(line);
@@ -9423,7 +9437,7 @@ var ErpPosTouch = class extends i3 {
   async addComboLine(combo, choices, previewCents) {
     const want = choices.map((c5) => c5.option_id).join("\0");
     const ex = this.cart.find(
-      (l3) => l3.combo_id === combo.combo_id && !l3.is_gift && (l3.combo_choices ?? []).map((c5) => c5.option_id).join("\0") === want
+      (l3) => l3.combo_id === combo.combo_id && !l3.is_gift && (l3.combo_choices ?? []).map((c5) => c5.option_id).join("\0") === want && (l3.staff_id ?? void 0) === this.staffId
     );
     const tax_rate = resolveLineTax(this.taxCatalog.rates, combo.tax_category_key);
     try {
@@ -9444,7 +9458,9 @@ var ErpPosTouch = class extends i3 {
         tax_rate,
         cost: 0,
         combo_id: combo.combo_id,
-        combo_choices: choices
+        combo_choices: choices,
+        // sales#273: sellada con el chip, como toda línea que nace en esta pantalla.
+        ...this.staffId ? { staff_id: this.staffId } : {}
       });
     } catch (e7) {
       const transportKey = transportErrorKey(e7);
@@ -10164,6 +10180,7 @@ var ErpPosTouch = class extends i3 {
     if (!dept || this.openAmountCents <= 0) return;
     const line = buildOpenPriceLine({ name: dept.name, priceCents: this.openAmountCents, taxCategoryKey: dept.taxCategoryKey });
     line.tax_rate = resolveLineTax(this.taxCatalog.rates, dept.taxCategoryKey);
+    if (this.staffId) line.staff_id = this.staffId;
     this.openPriceOpen = false;
     try {
       await this.queue(() => this.pushOpenPriceLine(line));
