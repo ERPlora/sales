@@ -409,6 +409,7 @@
   "commands": {
     "sales.complete_sale": {
       "permission": "sales.take_payment",
+      "expose_api": true,
       "reads": [
         {
           "query": "taxes.rules.list",
