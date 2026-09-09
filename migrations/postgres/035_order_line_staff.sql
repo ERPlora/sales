@@ -1,0 +1,20 @@
+-- Sales · el profesional viaja en la LÍNEA DEL PEDIDO, no solo en la de la venta (sales#273).
+--
+-- La 034 le dio su `staff_id` a `sales_sale_item`, que es la línea CONGELADA del cobro. Esta le da
+-- el suyo a la línea del PEDIDO, que es la que decide si el cobro llega a tener algo que congelar:
+-- ADR-0141 no guarda el carrito en memoria — cada toque escribe una fila real y el TPV RECONSTRUYE
+-- el carrito desde esta tabla (al recargar la tablet, al retomar una cuenta aparcada y después de
+-- cada disparo a cocina). Un profesional que solo viviera en la línea del navegador se perdía antes
+-- de cobrar, en silencio, y la venta entera caía sobre el de la cabecera: en un salón eso es el
+-- corte de Ana contado en el cierre de Marta, sin que nada lo diga. Es el mismo agujero que
+-- `is_service` tuvo en sales#89.
+--
+-- Columna ADITIVA y NULLable, igual que la 034: cada línea escrita antes de hoy se queda con NULL y
+-- la atribución cae a la cabecera (`COALESCE`), así que la cuenta abierta de ayer sigue cobrándose
+-- como se cobraba ayer. Referencia OPACA (TEXT, sin FK cross-módulo — ADR-0007): `sales` nunca hace
+-- JOIN contra `staff_member`, ni depende del módulo `staff` para escribirla.
+--
+-- Sin índice a propósito: a diferencia de `sales_sale_item` —que el cierre por profesional recorre
+-- por `(hub_id, staff_id)`— esta tabla NUNCA se consulta por profesional. Se lee por `order_id`
+-- (retomar la cuenta), que ya tiene su índice, y las filas vivas de un pedido abierto son decenas.
+ALTER TABLE sales_order_item ADD COLUMN staff_id TEXT;

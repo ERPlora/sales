@@ -177,13 +177,12 @@ def scenario(s: Session) -> None:
         "sales.order.split",
         {
             "order_id": ORDER,
-            "new_order_id": SPLIT_ORDER,
             "line_ids": ["l-colour"],
             "label": "Marta",
-            "status": "open",
-            "provisional_total": 0,
-            "notes": "",
-            "source_module": "pos",
+            # `:new_id` is the id the RUNTIME mints for the second check and gives back as
+            # `new_ids[0]` — the payload cannot name it (`additionalProperties: false`). The
+            # harness binds it the way the runtime does.
+            "new_id": SPLIT_ORDER,
         },
     )
     s.check(

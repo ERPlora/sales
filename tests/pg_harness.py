@@ -355,6 +355,9 @@ def order_line_params(**over) -> dict:
         "notes": "",
         "combo_group_ref": None,
         "combo": "{}",
+        # sales#273 — the professional who does THIS line, from the very first tap. NULL is the
+        # honest default: a bar does not attribute, and every line older than the 035 has none.
+        "staff_id": None,
         **UNITS,
     }
     params.update(over)
