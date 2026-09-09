@@ -1499,6 +1499,20 @@ fn category_snapshot(item: &Value) -> Value {
     if cat.is_empty() { Value::Null } else { json!(cat) }
 }
 
+/// sales#273 — WHO did a line, as the row stores it. Opaque reference to `staff.*` /
+/// `hub.users.list`: `sales` never interprets it and never joins against it (ADR-0007).
+///
+/// NULL and not `""` when nobody was named. That is not cosmetic: `sales.by_staff` COALESCEs a NULL
+/// line to the ticket's own professional, so the close of a bar —which attributes nothing— keeps
+/// adding up exactly as it did before this column existed. An empty string would be a third state
+/// belonging to no one, and it would fall back to nobody.
+fn staff_ref(row: &Value) -> Value {
+    match row.get("staff_id").and_then(|v| v.as_str()) {
+        Some(id) if !id.trim().is_empty() => json!(id.trim()),
+        _ => Value::Null,
+    }
+}
+
 /// Lo que el SERVIDOR decidió sobre este cobro tras contrastar la oferta del cliente con las
 /// fuentes de confianza del hub (catálogo de métodos de pago y ajustes del TPV, pre-cargados por
 /// el runtime vía `reads`). Nada de aquí llega del navegador sin validar.
@@ -3081,10 +3095,7 @@ fn order_line_row(
     // never interprets it and never joins against it (ADR-0007). NULL and not "" when the till
     // named nobody: that is what makes `by_staff` fall back to the ticket's own professional, and
     // it is what every line written before this column already looks like.
-    p.insert("staff_id".into(), match item.get("staff_id").and_then(|v| v.as_str()) {
-        Some(id) if !id.trim().is_empty() => json!(id.trim()),
-        _ => Value::Null,
-    });
+    p.insert("staff_id".into(), staff_ref(item));
     // sales#156: and so does the waiter's free-text note («medium rare», «shellfish allergy»).
     p.insert("notes".into(), json!(line_note(item)));
     // pm#93: the supplements belong to the ROW too. `sales.order.add_line` stored them from day
@@ -3486,6 +3497,10 @@ fn split_clone_row(
         json!(row.get("discount_percent").map(|v| as_f64(v, 0.0)).unwrap_or(0.0)),
     );
     p.insert("notes".into(), json!(field(row, "notes")));
+    // sales#273: and WHO did it. Splitting «haircut x 2» into two haircuts of one does not change
+    // who cut the hair, so both parts stay hers — otherwise half the work of the day would fall to
+    // the ticket's professional and the close would be wrong by exactly that half, silently.
+    p.insert("staff_id".into(), staff_ref(row));
     p.insert("modifiers".into(), json!(modifier_snapshot));
     p.insert("combo".into(), json!("{}"));
     p.insert("combo_group_ref".into(), Value::Null);
@@ -9341,6 +9356,39 @@ mod tests {
             }
         }
         names
+    }
+
+    #[test]
+    fn splitting_a_line_keeps_the_professional_on_every_part() {
+        // sales#273 — «Corte x 2» de Ana se parte en dos cortes de uno porque el bono de `services`
+        // se canjea por LÍNEA. Las dos partes las hizo Ana: si el clon nace sin profesional, la
+        // mitad del trabajo del día cae al de la cabecera y el cierre por profesional deja de
+        // cuadrar por la mitad exacta del corte que se partió — y nadie lo ve, porque el total del
+        // ticket sigue estando bien.
+        let mut row = split_line_row();
+        row["staff_id"] = json!("staff-ana");
+        let out = split_order_line_pure(split_input(row, open_order_row()))
+            .accepted("a haircut rung up twice can be split");
+
+        let clone = out.operations.iter()
+            .find(|o| o.command == "sales._insert_order_line")
+            .expect("the split writes the second line")
+            .params
+            .clone();
+        assert_eq!(clone.get("staff_id"), Some(&json!("staff-ana")),
+            "the part that is born keeps the professional who did the work");
+
+        // Y un negocio que NO atribuye sigue escribiendo NULL, no la cadena vacía: `by_staff` cae
+        // entonces al profesional de la cabecera, y el vacío sería un tercer estado sin dueño.
+        let out = split_order_line_pure(split_input(split_line_row(), open_order_row()))
+            .accepted("a bar splits the same way, naming nobody");
+        let clone = out.operations.iter()
+            .find(|o| o.command == "sales._insert_order_line")
+            .expect("the split writes the second line")
+            .params
+            .clone();
+        assert_eq!(clone.get("staff_id"), Some(&Value::Null),
+            "nobody named stays NULL, which falls back to the ticket's professional");
     }
 
     #[test]
