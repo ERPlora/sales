@@ -3699,8 +3699,25 @@ export class ErpPosTouch extends LitElement {
   private openOpenPrice(seed?: { amountCents?: number; deptKey?: string }) {
     const cents = seed?.amountCents ?? 0;
     this.openAmount = cents > 0 ? centsToEuros(cents) : '';
-    this.openDept = seed?.deptKey ?? '';
+    this.openDept = this.seededDeptKey(seed?.deptKey);
     this.openPriceOpen = true;
+  }
+
+  /** Traduce la CATEGORÍA FISCAL con la que llega un servicio (services#12) a la clave del botón.
+   *
+   *  Sin departamentos propios las dos son la misma cosa y esto no hace nada. Con ellos, `openDept`
+   *  guarda el **id del departamento**, así que sembrarlo con la categoría dejaba la hoja con un
+   *  valor que no casaba con ningún botón: el añadir salía habilitado y `addOpenPrice` se iba en
+   *  silencio, sin línea y sin error. Ni línea ni aviso es justo lo que `addProduct` evita tres
+   *  líneas más arriba de donde nace esta semilla.
+   *
+   *  Si NINGÚN departamento cobra esa categoría se devuelve vacío a propósito: preseleccionar «el
+   *  primero» cobraría un IVA que no eligió nadie, que es peor que pedirle al cajero que elija. */
+  private seededDeptKey(taxCategoryKey?: string): string {
+    if (!taxCategoryKey) return '';
+    const depts = this.departments;
+    const match = depts.find((d) => d.taxCategoryKey === taxCategoryKey);
+    return match ? match.key : '';
   }
   private tapOpen(k: string) { this.openAmount = pushDigit(this.openAmount, k); }
   /** El numpad teclea EUROS; el contrato es CÉNTIMOS (ADR-0007), igual que en el cobro. */
@@ -3709,6 +3726,12 @@ export class ErpPosTouch extends LitElement {
    *  fiscales activas mientras no haya definido ninguno (sales#267). */
   private get departments(): PosDepartment[] {
     return toDepartments(this.ownDepartments, this.taxCategories);
+  }
+  /** El departamento elegido, ya resuelto. `undefined` = lo que hay en `openDept` no existe, y
+   *  entonces no hay venta que añadir: lo miran la guarda del botón y `addOpenPrice`, para que la
+   *  respuesta sea la misma se llegue por el dedo o por un atajo. */
+  private get resolvedDept(): PosDepartment | undefined {
+    return this.departments.find((d) => d.key === this.openDept);
   }
   /** El % del departamento para pintarlo junto a su nombre; vacío si taxes no dio reglas (preview).
    *  Se pregunta por la CATEGORÍA FISCAL, no por la clave del botón: dos departamentos del negocio
@@ -3725,7 +3748,7 @@ export class ErpPosTouch extends LitElement {
    *  persiste como `product_name` y el que el cliente se lleva en el tique impreso; la IDENTIDAD
    *  fiscal sigue siendo `key`. */
   private async addOpenPrice(): Promise<void> {
-    const dept = this.departments.find((d) => d.key === this.openDept);
+    const dept = this.resolvedDept;
     if (!dept || this.openAmountCents <= 0) return;
     const line = buildOpenPriceLine({ name: dept.name, priceCents: this.openAmountCents, taxCategoryKey: dept.taxCategoryKey });
     line.tax_rate = resolveLineTax(this.taxCatalog.rates, dept.taxCategoryKey); // % SOLO para el preview del total
@@ -5068,8 +5091,12 @@ export class ErpPosTouch extends LitElement {
                 </div>
               </div>
               <div class="sheet-foot">
-                <ion-button class="charge" expand="block"
-                            ?disabled=${!(this.openAmountCents > 0 && this.openDept)}
+                <!-- La guarda pide que el departamento RESUELVA, no solo que openDept tenga algo
+                     dentro: con una clave que no casa, el botón salía habilitado y el toque no
+                     hacía nada ni decía nada. (Sin acentos graves aquí: dentro de un comentario de
+                     lit cierran el template — es una trampa conocida.) -->
+                <ion-button class="charge" expand="block" data-testid="open-price-add"
+                            ?disabled=${!(this.openAmountCents > 0 && this.resolvedDept)}
                             @click=${() => this.addOpenPrice()}>
                   ${t('ui.add')}${this.openAmountCents > 0 ? ` ${this.money(this.openAmountCents)}` : ''}
                 </ion-button>
