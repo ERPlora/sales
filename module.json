@@ -1,7 +1,7 @@
 {
   "id": "sales",
   "name": "Sales & POS",
-  "version": "2.16.54",
+  "version": "2.16.55",
   "description": "Point of sale: complete and void sales, and review sales history and metrics.",
   "agent": {
     "description": "Manages sales and point-of-sale operations: list and inspect sales, complete new sales transactions, void sales, configure payment methods, and retrieve sales statistics.",
@@ -146,8 +146,8 @@
       "migrations/postgres/031_line_parent_ref.sql",
       "migrations/postgres/032_quick_notes.sql",
       "migrations/postgres/033_departments.sql",
-    "migrations/postgres/034_line_staff.sql",
-    "migrations/postgres/035_order_line_staff.sql"
+      "migrations/postgres/034_line_staff.sql",
+      "migrations/postgres/035_order_line_staff.sql"
     ]
   },
   "seed": {
