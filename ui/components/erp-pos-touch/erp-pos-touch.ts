@@ -2125,6 +2125,11 @@ export class ErpPosTouch extends LitElement {
     this.tableId = undefined;
     this.tableLabel = '';
     this.parkedOpen = false;
+    // appointments#154 — the booking belongs to the CHECK, not to the screen. Releasing the
+    // check releases it too: otherwise the guard in `seedFromAppointment` would refuse to arm
+    // the till the next time that same booking is charged (the blank check all over again),
+    // and a leftover id would close somebody else's booking on the next ticket.
+    this.appointmentId = undefined;
     // Ya no hay cuenta delante: la recién aparcada SÍ debe salir en la lista.
     this.parked = await listOpenChecks(erplora());
   }
@@ -2156,6 +2161,7 @@ export class ErpPosTouch extends LitElement {
     this.tableId = undefined;
     this.tableLabel = '';
     this.parkedOpen = false;
+    this.appointmentId = undefined; // appointments#154 — see `park()`
     this.notifyOrderDetached();
     erplora().notify?.({ type: 'success', message: t('ui.leftAtTable', { label: donde }) });
     this.parked = await listOpenChecks(erplora());
@@ -2190,6 +2196,7 @@ export class ErpPosTouch extends LitElement {
     this.orderId = undefined;
     this.orderLabel = '';
     this.cart = [];
+    this.appointmentId = undefined; // appointments#154 — see `park()`
     this.resetSlotContexts();
   }
 

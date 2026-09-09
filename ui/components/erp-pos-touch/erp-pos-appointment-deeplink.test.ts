@@ -239,3 +239,51 @@ describe('control — the door that already worked', () => {
     expect(el.cart[0]).toMatchObject({ name: 'Corte de caballero', price: 1700 });
   });
 });
+
+// The reverse of the same bug. Reading the link on every navigation means the till has to say NO
+// to the booking it already put on the check — otherwise «Cobrar» twice writes the haircut twice.
+// But that «no» is only true WHILE that check is open: the moment the check is released —parked
+// because the client wants a shampoo too, or discarded because it was a mistake— the booking has
+// nowhere to be, and charging it again has to arm the till exactly like the first time. Keyed to
+// the component instead of to the check, the guard brought the blank till of appointments#154
+// straight back, on the busiest path a salon has.
+describe('a booking belongs to ITS check, not to the screen (appointments#154)', () => {
+  it('arms the till again for a booking whose check was parked', async () => {
+    const el = await mount();
+    await tapCharge(el, 'ap-ana');
+    expect(el.cart).toHaveLength(1);
+
+    await (el as unknown as { park(): Promise<void> }).park();
+    await settle(el);
+    expect(el.cart).toHaveLength(0);
+
+    await tapCharge(el, 'ap-ana');
+
+    expect(el.cart.map((l) => l.name)).toEqual(['Corte de caballero']);
+  });
+
+  it('arms the till again for a booking whose check was discarded', async () => {
+    const el = await mount();
+    await tapCharge(el, 'ap-ana');
+
+    await (el as unknown as { discardCurrent(): Promise<void> }).discardCurrent();
+    await settle(el);
+
+    await tapCharge(el, 'ap-ana');
+
+    expect(el.cart.map((l) => l.name)).toEqual(['Corte de caballero']);
+  });
+
+  it('does not carry the released booking into the NEXT check', async () => {
+    // `appointmentId` is what travels to `complete_sale` and marks the booking as charged. Left
+    // over from a check that never became a sale, the next customer's ticket would close Ana's
+    // booking for her — paid by somebody else.
+    const el = await mount();
+    await tapCharge(el, 'ap-ana');
+
+    await (el as unknown as { park(): Promise<void> }).park();
+    await settle(el);
+
+    expect((el as unknown as { appointmentId?: string }).appointmentId).toBeUndefined();
+  });
+});

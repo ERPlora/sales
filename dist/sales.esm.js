@@ -8758,6 +8758,7 @@ var ErpPosTouch = class extends i3 {
     this.tableId = void 0;
     this.tableLabel = "";
     this.parkedOpen = false;
+    this.appointmentId = void 0;
     this.parked = await listOpenChecks(erplora2());
   }
   /** Punto de entrada del botón del desplegable. Con mesa es «DEJAR EN LA MESA» (la cuenta vive
@@ -8789,6 +8790,7 @@ var ErpPosTouch = class extends i3 {
     this.tableId = void 0;
     this.tableLabel = "";
     this.parkedOpen = false;
+    this.appointmentId = void 0;
     this.notifyOrderDetached();
     erplora2().notify?.({ type: "success", message: t5("ui.leftAtTable", { label: donde }) });
     this.parked = await listOpenChecks(erplora2());
@@ -8820,6 +8822,7 @@ var ErpPosTouch = class extends i3 {
     this.orderId = void 0;
     this.orderLabel = "";
     this.cart = [];
+    this.appointmentId = void 0;
     this.resetSlotContexts();
   }
   /** Abre el diálogo «¿aparcar o eliminar?» y espera la decisión. `allowCancel` solo al recuperar
