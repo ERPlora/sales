@@ -182,7 +182,7 @@ describe('the till the cashier already had open (appointments#154)', () => {
     expect(el.cart[0].tax_category_key).toBe('service.generic');
   });
 
-  it('stops listening once the till leaves the DOM', async () => {
+  it('serves nothing once the till leaves the DOM', async () => {
     const el = await mount();
     el.remove();
     await settle(el);
@@ -194,6 +194,37 @@ describe('the till the cashier already had open (appointments#154)', () => {
 
     expect(double.reads.filter((r) => r.name === 'appointments.appointments.get'))
       .toHaveLength(before);
+  });
+
+  it('leaves no popstate listener behind on window', async () => {
+    // Not the same property as the one above, and the difference is what hub#1099 cost: a till
+    // that answers nothing because it is disconnected STILL keeps its listener on `window` if
+    // nobody unregisters it. Eight navigations, eight dead listeners, one `popstate` waking them
+    // all. The count has to come back to where it started.
+    const live = new Set<EventListenerOrEventListenerObject>();
+    const add = window.addEventListener.bind(window);
+    const remove = window.removeEventListener.bind(window);
+    window.addEventListener = ((type: string, fn: EventListenerOrEventListenerObject, o?: unknown) => {
+      if (type === 'popstate') live.add(fn);
+      return add(type as keyof WindowEventMap, fn as EventListener, o as AddEventListenerOptions);
+    }) as typeof window.addEventListener;
+    window.removeEventListener = ((type: string, fn: EventListenerOrEventListenerObject, o?: unknown) => {
+      if (type === 'popstate') live.delete(fn);
+      return remove(type as keyof WindowEventMap, fn as EventListener, o as EventListenerOptions);
+    }) as typeof window.removeEventListener;
+
+    try {
+      const el = await mount();
+      expect(live.size).toBe(1); // the till is listening while it is on screen
+
+      el.remove();
+      await settle(el);
+
+      expect(live.size).toBe(0);
+    } finally {
+      window.addEventListener = add as typeof window.addEventListener;
+      window.removeEventListener = remove as typeof window.removeEventListener;
+    }
   });
 });
 
