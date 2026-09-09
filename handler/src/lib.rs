@@ -2421,6 +2421,20 @@ fn complete_sale_inner(input: Value) -> Result<Output, Refusal> {
                 .map(|v| json!(as_str(v)))
                 .unwrap_or(Value::Null),
         );
+        // sales#273 — QUIÉN hizo ESTA línea. En una peluquería Ana corta y Marta tiñe en el mismo
+        // ticket, así que la atribución de la CABECERA no alcanza: repartida solo por venta, el
+        // tique entero cae sobre una de las dos y el cierre por profesional no cuadra.
+        //
+        // Precedencia igual que en la cabecera (`attributed_person`): lo que nombra la línea gana,
+        // y si no nombra a nadie hereda la atribución ya resuelta de la venta —que a su vez cae al
+        // usuario con sesión (sales#179)—. Una cadena VACÍA no es una atribución: guardarla crearía
+        // en el cierre un profesional cuyo nombre es «». Así, quien no reparte por línea (todo bar)
+        // sigue viendo exactamente el informe de siempre.
+        let line_staff = as_str(l.item.get("staff_id").unwrap_or(&Value::Null));
+        p.insert(
+            "staff_id".into(),
+            if line_staff.is_empty() { staff_id.clone() } else { json!(line_staff) },
+        );
         p.insert("net_amount".into(), json!(t.net)); // céntimos
         p.insert("tax_amount".into(), json!(t.tax)); // céntimos
         p.insert("line_total".into(), json!(t.line)); // céntimos
@@ -5189,6 +5203,73 @@ mod tests {
         assert_eq!(out.events[0].payload["staff_id"], json!("staff-7"));
         // Sin appointment_id → un solo evento (no se emite created_from_appointment).
         assert_eq!(out.events.len(), 1);
+    }
+
+    #[test]
+    fn each_line_carries_its_own_professional() {
+        // sales#273 — Ana corta y Marta tiñe en el MISMO ticket. Hasta aquí la atribución vivía
+        // solo en la cabecera, así que el ticket entero caía sobre una de las dos y el cierre por
+        // profesional no podía cuadrar. Cada línea nombra a quien la hizo.
+        let new_ids: Vec<Value> = (0..6).map(|i| json!(format!("id-{i}"))).collect();
+        let inp = json!({
+            "payload": {
+                "idempotency_key": "idem-273-split",
+                "items": [
+                    { "product_name": "Corte", "price": 2000, "quantity": 1_000_000, "tax_rate": 21.0,
+                      "is_service": true, "staff_id": "staff-ana" },
+                    { "product_name": "Color", "price": 5000, "quantity": 1_000_000, "tax_rate": 21.0,
+                      "is_service": true, "staff_id": "staff-marta" }
+                ],
+                "tax_included": true, "amount_tendered": 0, "staff_id": "staff-ana"
+            },
+            "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-05-31T10:00:00+00:00", "new_ids": new_ids }
+        });
+        let out = sale(inp);
+        let lines: Vec<&Value> = out.operations.iter()
+            .filter(|o| o.command == "sales._insert_line")
+            .map(|o| &o.params["staff_id"])
+            .collect();
+        assert_eq!(lines, vec![&json!("staff-ana"), &json!("staff-marta")],
+            "cada línea se atribuye a quien la hizo, no la cabecera entera a una");
+    }
+
+    #[test]
+    fn a_line_that_names_nobody_falls_back_to_the_sale() {
+        // El caso de siempre y el mayoritario: un bar no atribuye por línea. La línea hereda la
+        // atribución de la venta, que a su vez cae al usuario con sesión (sales#179), así que
+        // `sales.by_staff` sigue contestando lo mismo para todo el que no reparte.
+        let new_ids: Vec<Value> = (0..4).map(|i| json!(format!("id-{i}"))).collect();
+        let inp = json!({
+            "payload": {
+                "idempotency_key": "idem-273-fallback",
+                "items": [{ "product_name": "Caña", "price": 250, "quantity": 1_000_000, "tax_rate": 21.0 }],
+                "tax_included": true, "amount_tendered": 0
+            },
+            "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-05-31T10:00:00+00:00", "new_ids": new_ids }
+        });
+        let out = sale(inp);
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("una línea");
+        assert_eq!(line.params["staff_id"], json!("u1"),
+            "sin nadie nombrado, la línea es del que la cobró");
+    }
+
+    #[test]
+    fn an_empty_line_staff_id_is_not_an_attribution() {
+        // Misma regla que en la cabecera: una integración que manda `""` no está atribuyendo.
+        // Guardarlo tal cual crearía en el cierre un profesional cuyo nombre es la cadena vacía.
+        let new_ids: Vec<Value> = (0..4).map(|i| json!(format!("id-{i}"))).collect();
+        let inp = json!({
+            "payload": {
+                "idempotency_key": "idem-273-empty",
+                "items": [{ "product_name": "Corte", "price": 2000, "quantity": 1_000_000,
+                            "tax_rate": 21.0, "staff_id": "" }],
+                "tax_included": true, "amount_tendered": 0, "staff_id": "staff-ana"
+            },
+            "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-05-31T10:00:00+00:00", "new_ids": new_ids }
+        });
+        let out = sale(inp);
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("una línea");
+        assert_eq!(line.params["staff_id"], json!("staff-ana"));
     }
 
     #[test]

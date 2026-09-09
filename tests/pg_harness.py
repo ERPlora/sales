@@ -388,6 +388,9 @@ def sale_line_params(**over) -> dict:
         "combo_group_ref": None,
         "combo": "{}",
         "parent_line_ref": None,
+        # sales#273 — the professional who did THIS line. NULL is the honest default: a bar does
+        # not attribute, and every line older than the 034 has none.
+        "staff_id": None,
         "net_amount": 0,
         "tax_amount": 0,
         "line_total": 0,

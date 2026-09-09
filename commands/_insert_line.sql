@@ -19,6 +19,9 @@
 -- and nobody ever wrote it, so a REPRINT could not say what the kitchen had been told.
 -- sales#162: `is_covered` = la línea la pagó un TENDER EXTERNO por línea (el bono de `services`
 -- cubre líneas enteras). Vale net/tax/total 0 y la marca es lo que deja al papel explicar por que.
+-- sales#273: `staff_id` = QUIÉN hizo ESTA línea. Opaco a `staff` (nunca se hace JOIN). NULL en
+-- toda línea anterior a la 034 y en todo negocio que no atribuya: `sales.by_staff` cae entonces
+-- al de la cabecera, que es la atribución que había desde sales#179.
 -- ADR-0147: `quantity` en punto fijo 10⁶ + contexto de unidades CONGELADO (§2.4): el histórico
 -- no relee el maestro. El handler WASM aporta siempre los diez campos del contexto.
 INSERT INTO sales_sale_item (
@@ -26,7 +29,7 @@ INSERT INTO sales_sale_item (
     quantity, unit_price, discount_percent, tax_rate, tax_class_name,
     tax_category_key, tax_country_code, tax_region_code, tax_rule_id, is_gift, gift_reason,
     is_covered, category_id, modifiers, notes, combo_group_ref, combo, parent_line_ref,
-    net_amount, tax_amount, line_total, created_at,
+    staff_id, net_amount, tax_amount, line_total, created_at,
     unit_code, unit_name, factor_num, factor_den, increment_value,
     price_quantity_value, pricing_unit_code, pricing_unit_name,
     pricing_factor_num, pricing_factor_den
@@ -35,7 +38,7 @@ INSERT INTO sales_sale_item (
     :quantity, :unit_price, :discount_percent, :tax_rate, :tax_class_name,
     :tax_category_key, :tax_country_code, :tax_region_code, :tax_rule_id, :is_gift, :gift_reason,
     :is_covered, :category_id, :modifiers, COALESCE(:notes, ''), :combo_group_ref, :combo, :parent_line_ref,
-    :net_amount, :tax_amount, :line_total, :now,
+    :staff_id, :net_amount, :tax_amount, :line_total, :now,
     :unit_code, :unit_name, :factor_num, :factor_den, :increment_value,
     :price_quantity_value, :pricing_unit_code, :pricing_unit_name,
     :pricing_factor_num, :pricing_factor_den
