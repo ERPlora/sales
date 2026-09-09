@@ -7510,6 +7510,29 @@ var ErpPosTouch = class extends i3 {
       this.covered = next;
     };
     this.onLocaleChange = () => this.requestUpdate();
+    /**
+     * appointments#154 — the agenda knocking with a booking to charge.
+     *
+     * The shell keeps the screen you walked away from MOUNTED and merely hidden (`ModuleView.vue`:
+     * «Ionic no desmonta la página que dejas atrás»), so from the second «Cobrar» of the shift on,
+     * `?appointment_id=` lands on a till that is already here and whose boot ran long ago. Reading
+     * the link only at boot meant that check opened blank — no customer, no service, no
+     * professional — and the salon typed it all in again.
+     *
+     * Same rule `flows#57` settled: a module deep link is served on EVERY navigation that names it,
+     * never «once». `pushState` + `PopStateEvent` is the only channel a Web Component has to the
+     * shell, and it is the one `appointments::goToTill()` uses.
+     */
+    this.onPopState = () => {
+      void this.serveDeepLink();
+    };
+    /** Resolves when the boot settled. A booking that lands mid-boot waits for the services
+     *  catalogue instead of seeding a line whose VAT category nobody could resolve. */
+    this.resolveBoot = () => {
+    };
+    this.booted = new Promise((resolve) => {
+      this.resolveBoot = resolve;
+    });
     // ══ sales#28 · THE SCALE ═════════════════════════════════════════════════════════════════════
     //
     // Decided with the market (9 references + 2 forums; the table is in `lib/scale-entry.ts` and in
@@ -8183,6 +8206,13 @@ var ErpPosTouch = class extends i3 {
     }
   `;
   }
+  /** Serves `?appointment_id=` on a till that is already on screen. The services catalogue comes
+   *  from the grid the till already loaded — one source of fiscal truth for both doors. */
+  async serveDeepLink() {
+    await this.booted;
+    if (!this.isConnected) return;
+    await this.consumeAppointmentDeepLink(this.products.filter((p4) => p4.is_service));
+  }
   /**
    * Turns a measured weight into the quantity of the line it belongs to.
    *
@@ -8214,6 +8244,7 @@ var ErpPosTouch = class extends i3 {
     super.connectedCallback();
     window.addEventListener("erplora:locale-changed", this.onLocaleChange);
     window.addEventListener(SCALE_WEIGHT_EVENT, this.onScaleWeight);
+    window.addEventListener("popstate", this.onPopState);
     const brokenApps = /* @__PURE__ */ new Set();
     const absentApps = /* @__PURE__ */ new Set();
     const hardRead = async (app, read) => {
@@ -8369,6 +8400,7 @@ var ErpPosTouch = class extends i3 {
       this.error = e7 instanceof Error ? e7.message : t5("ui.errorLoadingPos");
     } finally {
       this.cartRestored = true;
+      this.resolveBoot();
     }
   }
   disconnectedCallback() {
@@ -8377,6 +8409,7 @@ var ErpPosTouch = class extends i3 {
     this.photos.dispose();
     window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
     window.removeEventListener(SCALE_WEIGHT_EVENT, this.onScaleWeight);
+    window.removeEventListener("popstate", this.onPopState);
     this.removeEventListener("erp:order-context", this.onOrderContext);
     this.removeEventListener("erp:order-merge", this.onOrderMerge);
     this.removeEventListener("erp:order-split", this.onOrderSplit);
@@ -9012,6 +9045,7 @@ var ErpPosTouch = class extends i3 {
    *  Se resuelve contra el catálogo de servicios que el TPV ya carga para el walk-in: una sola
    *  fuente de verdad fiscal para las dos puertas. */
   async seedFromAppointment(appointmentId, services) {
+    if (this.appointmentId && this.appointmentId === appointmentId) return;
     const rowsIn = await optionalRead((c5) => c5.queryOptional("appointments.appointments.get", { id: appointmentId }));
     if (rowsIn === void 0) return;
     const ap = rows2(rowsIn)[0];
