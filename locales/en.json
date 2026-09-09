@@ -461,6 +461,7 @@
     "missingAppChargeShort": "{app} is missing",
     "appTaxes": "Taxes",
     "appInventory": "Inventory",
+    "appServices": "Services",
     "appCatalogUnavailable": "{app} did not answer, so its catalogue may be incomplete. Check the app and reload the till.",
     "posSettingsUnavailable": "The till could not read its own settings, so it is showing the defaults. Reload to try again.",
     "errorMissingApp": "The sale was refused because an app it needs is not installed. Nothing was charged.",
