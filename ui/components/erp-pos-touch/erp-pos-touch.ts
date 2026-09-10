@@ -45,7 +45,7 @@ import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod, payM
 import { withPosSettingsDefaults, type PosSettings } from '../../lib/pos-settings.js';
 // sales#269 — the discount whoever is charging may give ALONE, and which checkout the till uses
 // above it. The arithmetic mirrors the server's `enforce_discount_cap`, which is the authority.
-import { checkoutCommand, discountCap } from '../../lib/discount-cap.js';
+import { CHECKOUT_OVER_LIMIT_COMMAND, checkoutCommand, discountCap } from '../../lib/discount-cap.js';
 // sales#159 (ADR-0386) — una venta, N cobros. La ARITMÉTICA del reparto vive en lib (probada sin
 // DOM): el restante, lo que cubre cada pata, el cambio —que sale SOLO del efectivo— y el
 // `payments[]` que se le entrega al servidor.
@@ -4030,7 +4030,7 @@ export class ErpPosTouch extends LitElement {
         grossCents: cartTotal(this.chargedLines, this.ticketDiscount),
         linePercents: cobradas.map((l) => l.discount ?? 0),
       });
-      await erplora().command(checkoutDoor, {
+      const checkoutPayload = {
         items,
         // sales#71: descuento de TICKET (%); el servidor lo prorratea por línea antes del IVA.
         discount_percent: this.ticketDiscount,
@@ -4086,7 +4086,16 @@ export class ErpPosTouch extends LitElement {
         // Tipo de documento fiscal (ADR-0140): viaja ATÓMICAMENTE con la venta; `invoice` lo lee del
         // evento para elegir F1 (completa) vs F2 (simplificada). Reemplaza al `set_document_type` retro.
         document_type: this.docFormat,
-      });
+      };
+      // 🔴 The two doors are named LITERALLY, and the same payload goes through either. Calling
+      // `command(checkoutDoor, …)` reads better and is wrong: `.erplora/contracts.json` is
+      // extracted STATICALLY, so a command reached through a variable vanishes from it — and with
+      // it the check that this module's screen still has a door to charge through.
+      if (checkoutDoor === CHECKOUT_OVER_LIMIT_COMMAND) {
+        await erplora().command('sales.complete_sale_over_limit', checkoutPayload);
+      } else {
+        await erplora().command('sales.complete_sale', checkoutPayload);
+      }
       // complete_sale (WASM) no devuelve el id de la venta creada, así que la re-consultamos POR SU
       // CLAVE de idempotencia (sales#20). Antes se pedía «la última venta» (`sales.list` limit 1),
       // que con dos cajas cobrando a la vez devolvía la del compañero — y en un reintento devolvía

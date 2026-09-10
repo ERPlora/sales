@@ -1870,6 +1870,7 @@ var POS_SETTINGS_DEFAULTS = Object.freeze({
   sync_services: 1,
   require_customer: 0,
   allow_discounts: 1,
+  max_discount_percent: 100,
   enable_parked_tickets: 1,
   default_tax_included: 1,
   auto_invoice_with_tax_id: 0,
@@ -1882,6 +1883,11 @@ var POS_SETTINGS_DEFAULTS = Object.freeze({
 });
 function saved(v3) {
   return v3 !== void 0 && v3 !== null;
+}
+var NUMERIC_SETTINGS = /* @__PURE__ */ new Set(["max_discount_percent"]);
+function asNumber(v3, fallback) {
+  const n6 = Number(v3);
+  return Number.isFinite(n6) ? n6 : fallback;
 }
 function asFlag(v3) {
   if (v3 === false || v3 === 0 || v3 === "0" || v3 === "") return 0;
@@ -1896,7 +1902,11 @@ function withPosSettingsDefaults(row) {
       out[key] = fallback;
       continue;
     }
-    out[key] = typeof fallback === "string" ? String(v3) : asFlag(v3);
+    if (typeof fallback === "string") {
+      out[key] = String(v3);
+      continue;
+    }
+    out[key] = NUMERIC_SETTINGS.has(key) ? asNumber(v3, fallback) : asFlag(v3);
   }
   return out;
 }
@@ -4037,6 +4047,10 @@ var es_default = {
       allow_discounts: {
         label: "Permitir descuentos"
       },
+      max_discount_percent: {
+        label: "Descuento que puede aplicar solo quien cobra (%)",
+        description: "Por encima de esto, el TPV pide el PIN del encargado y la venta guarda qui\xE9n lo autoriz\xF3. 100 = sin l\xEDmite."
+      },
       enable_parked_tickets: {
         label: "Permitir tiques aparcados"
       },
@@ -4089,6 +4103,7 @@ var es_default = {
     "sales.combo_tax_category_missing": "Ese men\xFA no tiene categor\xEDa fiscal, as\xED que no se puede cobrar. Config\xFArala en Combos.",
     "sales.customer_required": "Este negocio exige un cliente en cada venta.",
     "sales.discount_out_of_range": "El descuento debe estar entre 0 % y 100 %, y nunca por encima del importe bruto.",
+    "sales.discount_over_limit": "Ese descuento supera lo que este negocio permite sin que lo autorice el encargado.",
     "sales.discounts_not_allowed": "Este negocio no permite descuentos.",
     "sales.empty_sale": "A\xF1ade al menos una l\xEDnea antes de cobrar.",
     "sales.idempotency_key_required": "El cobro ha llegado sin clave de idempotencia, as\xED que se ha rechazado antes que arriesgarse a cobrar dos veces.",
@@ -4593,6 +4608,10 @@ var en_default = {
       allow_discounts: {
         label: "Allow discounts"
       },
+      max_discount_percent: {
+        label: "Discount a cashier may give alone (%)",
+        description: "Above this, the till asks for the manager's PIN and the sale records who authorised it. 100 = no limit."
+      },
       enable_parked_tickets: {
         label: "Allow parked tickets"
       },
@@ -4645,6 +4664,7 @@ var en_default = {
     "sales.combo_tax_category_missing": "That menu has no tax category, so it cannot be charged. Set it in Combos.",
     "sales.customer_required": "This business requires a customer on every sale.",
     "sales.discount_out_of_range": "The discount must be between 0 % and 100 %, and never more than the gross amount.",
+    "sales.discount_over_limit": "That discount is above what this business allows without the manager's approval.",
     "sales.discounts_not_allowed": "This business does not allow discounts.",
     "sales.empty_sale": "Add at least one line before charging.",
     "sales.idempotency_key_required": "The checkout arrived with no idempotency key, so it was refused rather than risk charging twice.",
@@ -6138,6 +6158,30 @@ var t4 = class extends e6 {
 };
 t4.directiveName = "unsafeSVG", t4.resultType = 2;
 var o7 = e5(t4);
+
+// ui/lib/discount-cap.ts
+var CHECKOUT_COMMAND = "sales.complete_sale";
+var CHECKOUT_OVER_LIMIT_COMMAND = "sales.complete_sale_over_limit";
+var NO_DISCOUNT_CAP = 100;
+function discountCap(settings) {
+  const raw = settings?.["max_discount_percent"];
+  if (raw === void 0 || raw === null) return NO_DISCOUNT_CAP;
+  const n6 = Number(raw);
+  if (!Number.isFinite(n6)) return NO_DISCOUNT_CAP;
+  return Math.min(NO_DISCOUNT_CAP, Math.max(0, n6));
+}
+function allowedAmountCents(cap, grossCents) {
+  return Math.floor(grossCents * Math.round(cap * 100) / 1e4);
+}
+function needsManagerApproval(cap, discounts) {
+  if (cap >= NO_DISCOUNT_CAP) return false;
+  if (discounts.ticketPercent > cap) return true;
+  if (discounts.linePercents.some((percent) => percent > cap)) return true;
+  return discounts.ticketAmountCents > 0 && discounts.ticketAmountCents > allowedAmountCents(cap, discounts.grossCents);
+}
+function checkoutCommand(cap, discounts) {
+  return needsManagerApproval(cap, discounts) ? CHECKOUT_OVER_LIMIT_COMMAND : CHECKOUT_COMMAND;
+}
 
 // ui/lib/split-tender.ts
 function tendersTotal(tenders) {
@@ -10341,7 +10385,13 @@ var ErpPosTouch = class extends i3 {
         covered: new Set(this.covered.keys()),
         primaryCategory: (id) => this.primaryCategory(id)
       });
-      await erplora2().command("sales.complete_sale", {
+      const checkoutDoor = checkoutCommand(discountCap(this.settings), {
+        ticketPercent: this.ticketDiscount,
+        ticketAmountCents: this.ticketDiscountAmount > 0 && !split.line_ids ? this.ticketDiscountAmount : 0,
+        grossCents: cartTotal(this.chargedLines, this.ticketDiscount),
+        linePercents: cobradas.map((l3) => l3.discount ?? 0)
+      });
+      const checkoutPayload = {
         items,
         // sales#71: descuento de TICKET (%); el servidor lo prorratea por línea antes del IVA.
         discount_percent: this.ticketDiscount,
@@ -10397,7 +10447,12 @@ var ErpPosTouch = class extends i3 {
         // Tipo de documento fiscal (ADR-0140): viaja ATÓMICAMENTE con la venta; `invoice` lo lee del
         // evento para elegir F1 (completa) vs F2 (simplificada). Reemplaza al `set_document_type` retro.
         document_type: this.docFormat
-      });
+      };
+      if (checkoutDoor === CHECKOUT_OVER_LIMIT_COMMAND) {
+        await erplora2().command("sales.complete_sale_over_limit", checkoutPayload);
+      } else {
+        await erplora2().command("sales.complete_sale", checkoutPayload);
+      }
       const recorded = rows2(await erplora2().query("sales.by_idempotency_key", { idempotency_key: checkoutKey }));
       const saleId = recorded[0]?.id;
       await this.finishSale(saleId, split);

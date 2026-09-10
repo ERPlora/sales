@@ -149,7 +149,8 @@
       "migrations/postgres/032_quick_notes.sql",
       "migrations/postgres/033_departments.sql",
       "migrations/postgres/034_line_staff.sql",
-      "migrations/postgres/035_order_line_staff.sql"
+      "migrations/postgres/035_order_line_staff.sql",
+      "migrations/postgres/036_discount_cap.sql"
     ]
   },
   "seed": {
