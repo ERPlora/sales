@@ -61,7 +61,7 @@ import '@erplora/outfitkit/ok-status-pill';
 import {
   mergeCartLines, listOpenChecks, type OpenCheck,
   // ADR-0141: el carrito lo respalda un PEDIDO real (filas), no un blob con debounce.
-  openOrderWithLines, addOrderLine, addOpenPriceLine, updateOrderLineQty, updateOrderLineDiscount, updateOrderLineNote, persistLineQty, removeOrderLine, loadOrderLines, mergeOrders, splitOrder, splitOrderLine,
+  openOrderWithLines, addOrderLine, addOpenPriceLine, updateOrderLineQty, updateOrderLineDiscount, updateOrderLineNote, updateOrderLineStaff, persistLineQty, removeOrderLine, loadOrderLines, mergeOrders, splitOrder, splitOrderLine,
   unitContextPayload, lineAmount, cartTotal, unitPriceWithModifiers, type CartLine, type ErploraClientLike,
 } from '../../lib/pos-cart.js';
 import { loadTaxCatalog, productSellability, resolveLineTax, type TaxCatalog } from '../../lib/pos-tax.js';
@@ -961,6 +961,14 @@ export class ErpPosTouch extends LitElement {
     .line-note-text { display:flex; align-items:flex-start; gap:.3rem; margin:.15rem 0 0;
       font-size:.8rem; color:var(--ion-color-medium); overflow-wrap:anywhere; }
     .line-note-text ion-icon { flex:none; font-size:.9rem; margin-top:.1rem; }
+    /* sales#277 — reads as the note's sub-line, not as a fifth control on the row: no border, no
+       background, the row's own muted colour. It only looks tappable when it IS. */
+    .line-staff { display:flex; align-items:center; gap:.3rem; margin:.15rem 0 0; padding:0;
+      border:0; background:none; font:inherit; color:var(--mut); font-size:.85rem;
+      cursor:pointer; text-align:left; }
+    .line-staff ion-icon { flex:none; font-size:.95rem; }
+    .line-staff:disabled { cursor:default; }
+    .line-staff:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
     /* The note sheet: the textarea takes the full width and is tall enough to read what was
        written without scrolling inside a field, which on touch is where text gets lost. */
     .note-sheet .note-input { width:100%; box-sizing:border-box; resize:none; font:inherit;
@@ -1222,7 +1230,20 @@ export class ErpPosTouch extends LitElement {
    *  Blank does not mean "nobody" — it means the server resolves it. */
   @state() private staffName = '';
   @state() private staffPickerOpen = false;
+  /** sales#277 — the picker is serving ONE LINE, not the whole check: the id of that order row.
+   *  Undefined = the chip, which is the gesture sales#179 shipped and the one that seals new
+   *  lines. The same dialog does both because a salon with two controls that look alike and mean
+   *  different things is the screen this product exists not to be. */
+  @state() private staffPickerLine?: string;
   @state() private hubUsers: HubUser[] = [];
+  /** id → name for whoever a LINE can be attributed to (sales#277).
+   *
+   *  It is not the same set as `hubUsers`, and the difference is load-bearing twice over. The
+   *  picker only OFFERS active people — a leaver cannot take today's work — but a line rung last
+   *  month still points at them, and a row that goes nameless is the bug this fixes. And a check
+   *  born from an appointment carries a `staff_member` id that is not a person of the hub at all
+   *  (ADR-0077), whose name only the appointment knows. */
+  @state() private staffNames: ReadonlyMap<string, string> = new Map();
   /** State of the list of people: without it the picker would be a blank sheet (and a permission
    *  failure would be mute). It loads when the picker OPENS, not when the till boots. */
   @state() private staffPickerState: 'idle' | 'loading' | 'ready' | 'error' = 'idle';
@@ -2483,6 +2504,9 @@ export class ErpPosTouch extends LitElement {
 
     this.appointmentId = ap.id || appointmentId;
     this.staffId = ap.staff_id || undefined;
+    // sales#277: an appointment's professional is a `staff_member`, not a person of the hub, so
+    // `hub.users.list` will never name them. The appointment did, and the cart line will need it.
+    this.rememberStaffName(ap.staff_id, ap.staff_name);
     // sales#179: the appointment DOES carry the professional's name
     // (`appointments.appointment_get`); without it the chip could only say "the assigned
     // professional" about a check that knows perfectly well who it is.
@@ -2510,15 +2534,26 @@ export class ErpPosTouch extends LitElement {
    *  belongs to the hub, not to the `staff` module. It is asked for when the picker OPENS, not at
    *  boot: the till already makes plenty of calls there, and this one is only needed if somebody is
    *  about to change the waiter. */
-  private async openStaffPicker(): Promise<void> {
+  private async openStaffPicker(lineId?: string): Promise<void> {
+    this.staffPickerLine = lineId;
     this.staffPickerOpen = true;
+    await this.ensureHubUsers();
+  }
+
+  /** The hub's people, asked for ONCE. Idempotent on purpose: it is now called from two places —
+   *  the picker opening and a cart that needs to NAME the professional of a line (sales#277) — and
+   *  a till that re-asked on every render would hammer the core all day. */
+  private async ensureHubUsers(): Promise<void> {
     if (this.staffPickerState === 'ready' || this.staffPickerState === 'loading') return;
     this.staffPickerState = 'loading';
     try {
       const rowsIn = await erplora().query<unknown>('hub.users.list');
+      const all = rows<HubUser>(rowsIn).filter((u) => !!u.id);
       // A deactivated person cannot serve: they still exist (the audit trail points at their id)
-      // but they are not an option to offer today.
-      this.hubUsers = rows<HubUser>(rowsIn).filter((u) => u.is_active !== false && !!u.id);
+      // but they are not an option to offer today. Their NAME is kept all the same — sales#277:
+      // yesterday's line still points at them, and painting an opaque id is the bug, not the fix.
+      all.forEach((u) => this.rememberStaffName(u.id, u.name));
+      this.hubUsers = all.filter((u) => u.is_active !== false);
       this.staffPickerState = 'ready';
     } catch {
       // A failure here must NOT take the checkout down: it is said out loud and charging carries
@@ -2528,12 +2563,64 @@ export class ErpPosTouch extends LitElement {
     }
   }
 
+  /** Learns a name for an opaque id, wherever it came from (the team, the picker, the originating
+   *  appointment). A new Map because Lit compares by reference: mutating it would paint nothing. */
+  private rememberStaffName(id?: string, name?: string): void {
+    if (!id || !name || this.staffNames.get(id) === name) return;
+    this.staffNames = new Map(this.staffNames).set(id, name);
+  }
+
   /** Choose who is serving. With no argument = **the session user**: the explicit attribution is
-   *  cleared and the server decides again. */
+   *  cleared and the server decides again.
+   *
+   *  With a LINE open (sales#277) the very same choice moves that one row instead, and the chip is
+   *  left alone: correcting the line the receptionist is looking at must not silently re-aim the
+   *  next tap at somebody else. */
   private pickStaff(person?: HubUser): void {
+    this.rememberStaffName(person?.id, person?.name);
+    const lineId = this.staffPickerLine;
+    this.staffPickerOpen = false;
+    this.staffPickerLine = undefined;
+    if (lineId) { void this.moveLineStaff(lineId, person?.id); return; }
     this.staffId = person?.id;
     this.staffName = person?.name ?? '';
-    this.staffPickerOpen = false;
+  }
+
+  /** Charges an EXISTING line to somebody else, keeping the line (sales#277).
+   *
+   *  Optimistic like the note (`applyLineNote`): the row on screen answers the tap at once and the
+   *  order row is written behind it. A failure is not swallowed — with it the screen and the
+   *  server would disagree about who earned the money, and the close would be wrong with nothing
+   *  said — so the line is put BACK and the reason is painted. */
+  private async moveLineStaff(lineId: string, staffId?: string): Promise<void> {
+    const line = this.cart.find((l) => l.line_id === lineId);
+    if (!line || (line.staff_id ?? undefined) === staffId) return;
+    const before = line.staff_id;
+    const aim = (l: CartLine, to?: string) => (l.line_id === lineId ? { ...l, staff_id: to } : l);
+    this.cart = this.cart.map((l) => aim(l, staffId));
+    if (!this.orderId) return;
+    try {
+      await updateOrderLineStaff(erplora(), this.orderId, line, staffId ?? null);
+    } catch (e) {
+      this.cart = this.cart.map((l) => aim(l, before));
+      this.error = domainErrorText(CATALOG, erplora().locale, e) || t('ui.lineStaffFailed');
+    }
+  }
+
+  /** Who the line under the picker is charged to right now — so the dialog ticks the option that
+   *  is already true instead of the check's. */
+  private get pickerLineStaffId(): string | undefined {
+    return this.cart.find((l) => l.line_id === this.staffPickerLine)?.staff_id;
+  }
+
+  /** What a cart row says about its professional, or '' when it says nothing.
+   *
+   *  An id with no name resolves to the same wording the chip uses when it only knows the id: it
+   *  is honest about naming nobody, and it still tells two otherwise identical rows apart, because
+   *  the row with no attribution at all paints no sub-line. */
+  private lineStaffLabel(l: CartLine): string {
+    if (!l.staff_id) return '';
+    return this.staffNames.get(l.staff_id) || t('ui.staffAssigned');
   }
 
   /** What the chip reads. With an originating appointment the id is known but the name may not be
@@ -3398,6 +3485,14 @@ export class ErpPosTouch extends LitElement {
     // sales#71: el descuento de ticket pertenece a la CUENTA. Al soltarla (cobrada, aparcada,
     // eliminada, mesa cambiada) no puede arrastrarse a la siguiente.
     if (changed.has('orderId') && !this.orderId) { this.ticketDiscount = 0; this.ticketDiscountAmount = 0; }
+    // sales#277 — a cart with an attributed line needs NAMES, and the till may never have opened
+    // the picker: the check resumed this morning comes back from `sales_order_item` with opaque
+    // ids and nothing else. Asked for HERE and not at boot for the reason `openStaffPicker`
+    // already gave — the till makes plenty of calls to the core — and guarded by
+    // `ensureHubUsers`, which answers a second caller without a second read.
+    if (changed.has('cart') && this.cart.some((l) => l.staff_id && !this.staffNames.has(l.staff_id))) {
+      void this.ensureHubUsers();
+    }
   }
   /** El teclado. Tras traer una pata a editar el importe queda CEBADO: la siguiente tecla lo
    *  sustituye en vez de encadenarse a él (50,00 + «6» daría 50,006, que no es un importe). Es como
@@ -4659,6 +4754,23 @@ export class ErpPosTouch extends LitElement {
              so it gets typed twice or taken for granted. It goes on a sub-line of its own, the way
              the supplements do on paper. -->
         ${l.note ? html`<p class="line-note-text"><ion-icon name="chatbox-ellipses-outline"></ion-icon> ${l.note}</p>` : nothing}
+        <!-- sales#277: WHOSE line this is. In a salon Ana cuts and Marta colours on the same
+             ticket, so without this the cart paints two «Corte» that cannot be told apart and the
+             commission of the day rides on a check nobody can make. Sub-line of its own, the same
+             shape as the note, and only when there IS one: a line the ticket attributes says
+             nothing extra, exactly as before.
+             TAPPING it corrects the row (Fresha, Square Appointments, Vagaro, Booksy all let the
+             line be re-assigned from the line): the professional is still SEALED by the chip when
+             the line is added — sales#273 decided that and this does not reopen it — but a chip
+             moved one tap late no longer costs deleting the line and its note with it. Not offered
+             on a line already fired to production, which is not editable at the till at all. -->
+        ${this.lineStaffLabel(l) ? html`<button class="line-staff" type="button"
+              data-testid="line-staff"
+              ?disabled=${locked || !l.line_id}
+              title=${t('ui.lineStaffPickerTitle')}
+              aria-label=${t('ui.lineStaffPickerTitle')}
+              @click=${(e: Event) => { e.stopPropagation(); void this.openStaffPicker(l.line_id); }}>
+            <ion-icon name="person-circle-outline"></ion-icon>${this.lineStaffLabel(l)}</button>` : nothing}
       </ion-label>
       <div slot="end" class="lineend">
         <span class="lt ${l.is_gift ? 'is-gift' : ''}">${this.money(lineAmount(l))}</span>
@@ -5290,12 +5402,15 @@ export class ErpPosTouch extends LitElement {
            get re-parented to the body, ADR-0028), so on mobile it rises as a sheet. -->
       ${this.staffPickerOpen ? html`
         <dialog class="staff-dialog" open>
-          <h3>${t('ui.staffPickerTitle')}</h3>
-          <p>${t('ui.staffPickerHint')}</p>
+          <!-- sales#277: the same dialog serves the CHECK and one LINE. It says which, because
+               «who is serving» and «whose is this line» decide different money in a salon. -->
+          <h3>${t(this.staffPickerLine ? 'ui.lineStaffPickerTitle' : 'ui.staffPickerTitle')}</h3>
+          <p>${t(this.staffPickerLine ? 'ui.lineStaffPickerHint' : 'ui.staffPickerHint')}</p>
           <div class="staff-list">
             <button class="staff-opt" type="button" data-testid="staff-option-me"
-                    ?data-current=${!this.staffId} @click=${() => this.pickStaff()}>
-              ${t('ui.staffMeOption')}
+                    ?data-current=${this.staffPickerLine ? !this.pickerLineStaffId : !this.staffId}
+                    @click=${() => this.pickStaff()}>
+              ${t(this.staffPickerLine ? 'ui.lineStaffTicketOption' : 'ui.staffMeOption')}
             </button>
             ${this.staffPickerState === 'loading'
               ? html`<p class="staff-note" data-testid="staff-loading">${t('ui.staffLoading')}</p>`
@@ -5308,12 +5423,13 @@ export class ErpPosTouch extends LitElement {
               : nothing}
             ${this.hubUsers.map((u) => html`
               <button class="staff-opt" type="button" data-testid="staff-option"
-                      ?data-current=${this.staffId === u.id} @click=${() => this.pickStaff(u)}>
+                      ?data-current=${(this.staffPickerLine ? this.pickerLineStaffId : this.staffId) === u.id}
+                      @click=${() => this.pickStaff(u)}>
                 ${u.name}
               </button>`)}
           </div>
           <div class="dlg-actions">
-            <ion-button fill="clear" @click=${() => { this.staffPickerOpen = false; }}>${t('ui.cancel')}</ion-button>
+            <ion-button fill="clear" @click=${() => { this.staffPickerOpen = false; this.staffPickerLine = undefined; }}>${t('ui.cancel')}</ion-button>
           </div>
         </dialog>` : nothing}
 

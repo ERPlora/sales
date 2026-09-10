@@ -51,6 +51,7 @@
       "sales.order.remove_line",
       "sales.order.set_discount",
       "sales.order.set_label",
+      "sales.order.set_line_staff",
       "sales.order.split",
       "sales.order.split_line",
       "sales.order.update_line",

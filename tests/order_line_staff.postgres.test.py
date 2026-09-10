@@ -35,7 +35,14 @@ Contract under test:
      professional on the other side. Paying half a salon ticket separately is the normal gesture,
      not the exotic one.
 
-  5. TENANCY. The neighbour hub's line is not reachable through the resume query.
+  5. CORRECTING IT (sales#277). `sales.order.set_line_staff` moves the line to another
+     professional and keeps the ROW — its note, its discount, its id — because «just delete it and
+     ring it again» took the note and the discount with it. NULL is a VALUE on that door and not
+     «leave it alone», which is why it is a door of its own and not a bind on `order_update_line`:
+     through COALESCE there would be no way back to the ticket's own professional.
+
+  6. TENANCY. The neighbour hub's line is not reachable through the resume query, and naming it by
+     its id on the correction door moves nothing.
 
 Usage: tests/order_line_staff.postgres.test.py
   Uses the `erplora-test-pg-5433` container by default (override: SALES_TEST_PG_CONTAINER).
@@ -48,7 +55,13 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-from pg_harness import Session, order_line_params
+from pg_harness import MANIFEST, Session, order_line_params
+
+
+def MANIFEST_CMD(name: str) -> dict:
+    """A command's declaration, or an empty one — a missing command has to READ as a failure of the
+    check that needs it, not as a traceback that hides the rest of the run."""
+    return MANIFEST["commands"].get(name, {})
 
 HUB = "hub-test"
 OTHER_HUB = "hub-neighbour"
@@ -205,7 +218,85 @@ def scenario(s: Session) -> None:
         {"l-cut": ANA, "l-colour": MARTA, "l-shampoo": None},
     )
 
-    print("\n5 · TENANCY — the neighbour's line is not ours")
+    print("\n5 · CORRECTING IT — the professional moves, the LINE stays (sales#277)")
+    # The chip was moved one tap late: the colour went in as Ana's. Until sales#277 the only way
+    # out was deleting the line and ringing it again — and the note and the discount already on it
+    # went with it, which is why «just delete it» was never the harmless answer it sounds like.
+    s.command_ok(
+        "«Mechas» goes on the check for Ana, with a note and a discount already on it",
+        "sales._insert_order_line",
+        order_line_params(
+            id="l-fix",
+            order_id=ORDER,
+            product_id="s-mechas",
+            product_name="Mechas",
+            quantity=ONE,
+            unit_price=COLOUR,
+            line_total=COLOUR,
+            tax_category_key="service.generic",
+            is_service=1,
+            staff_id=ANA,
+            notes="sin amoniaco",
+            discount_percent=10.0,
+        ),
+    )
+    s.command_ok(
+        "it was Marta's, and the receptionist says so on the line itself",
+        "sales.order.set_line_staff",
+        {"order_id": ORDER, "line_id": "l-fix", "staff_id": MARTA},
+    )
+    s.check(
+        "the resumed cart charges it to Marta",
+        resumed(s).get("l-fix"),
+        MARTA,
+    )
+    kept = s.rows(
+        "SELECT id, notes, discount_percent, is_deleted FROM sales_order_item "
+        f"WHERE hub_id = '{HUB}' AND order_id = '{ORDER}' AND product_id = 's-mechas'"
+    )
+    s.check(
+        "and it is the SAME row: nothing was deleted, nothing was born, the note and the "
+        "discount are still on it",
+        [(r["id"], r["notes"], float(r["discount_percent"]), r["is_deleted"]) for r in kept],
+        [("l-fix", "sin amoniaco", 10.0, 0)],
+    )
+
+    # NULL is a VALUE here, not «leave it alone». `order_update_line` binds its columns through
+    # COALESCE — which is right there, where a quantity change must not erase a note — and that is
+    # exactly why this correction could not ride on that door: through it, «charge it to whoever
+    # the check says» would be indistinguishable from «do not touch it», and the receptionist
+    # would have no way back to the ticket's own professional.
+    s.command_ok(
+        "on second thoughts it goes to whoever the CHECK is attributed to",
+        "sales.order.set_line_staff",
+        {"order_id": ORDER, "line_id": "l-fix", "staff_id": None},
+    )
+    s.check(
+        "the line falls back to the header, which is what `by_staff` COALESCEs",
+        resumed(s).get("l-fix", "<gone>"),
+        None,
+    )
+
+    # A line already sent to production is not editable at the till (`order_update_line` says the
+    # same). A salon fires nothing, so it costs the salon nothing; a bar cannot re-write what is
+    # already on the pass.
+    s.command_ok(
+        "the check is fired to the kitchen",
+        "sales._mark_lines_fired",
+        {"order_id": ORDER, "round_no": 1},
+    )
+    s.command_ok(
+        "and somebody tries to move the fired line to Ana",
+        "sales.order.set_line_staff",
+        {"order_id": ORDER, "line_id": "l-fix", "staff_id": ANA},
+    )
+    s.check(
+        "the fired line did NOT move",
+        resumed(s).get("l-fix", "<gone>"),
+        None,
+    )
+
+    print("\n6 · TENANCY — the neighbour's line is not ours")
     open_order(s, "ord-next-door", hub=OTHER_HUB)
     add_line(
         s,
@@ -225,6 +316,28 @@ def scenario(s: Session) -> None:
         "and the neighbour sees his own, seeded through the same door",
         resumed(s, "ord-next-door", hub=OTHER_HUB),
         {"l-next-door": NEIGHBOUR},
+    )
+    # The correction door is a WRITE, so tenancy on it is not the same statement the resume query
+    # already proved: naming somebody else's line by its id must move nothing.
+    s.command_ok(
+        "we name the neighbour's line by its id and try to charge it to Ana",
+        "sales.order.set_line_staff",
+        {"order_id": "ord-next-door", "line_id": "l-next-door", "staff_id": ANA},
+    )
+    s.check(
+        "his line is untouched — `hub_id` is injected by the runtime, not bound by the caller",
+        resumed(s, "ord-next-door", hub=OTHER_HUB),
+        {"l-next-door": NEIGHBOUR},
+    )
+    # And the reverse direction: a write that matched no row is NOT allowed to pass for done.
+    # The harness plays the sql[], not the runtime's `expect_rows`, so the manifest is what is
+    # pinned here — without it the correction above would answer «ok» to the receptionist and the
+    # close would keep the wrong name with nothing said.
+    spec = MANIFEST_CMD("sales.order.set_line_staff").get("expect_rows", {})
+    s.check(
+        "a correction that touched no row is an ERROR, not a silent success",
+        (spec.get("op"), spec.get("n"), spec.get("error")),
+        ("min", 1, "sales.order_line_not_available"),
     )
 
 
