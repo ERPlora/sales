@@ -60,6 +60,9 @@ const OPERATIONAL_COLUMNS = [
   'default_document_format',
   'default_tax_included',
   'enable_parked_tickets',
+  // sales#269 — the cap is policy the TILL decides with: it routes the charge through the
+  // manager's door with it. Admin-only, it would route for a manager and never for a cashier.
+  'max_discount_percent',
   'receipt_footer',
   'receipt_footer_image',
   'receipt_header',

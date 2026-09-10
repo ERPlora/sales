@@ -71,6 +71,19 @@ pub fn complete_sale(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Out
     }
 }
 
+/// sales#269 — the same checkout, entered through the door that already required the manager.
+/// Bound to `sales.complete_sale_over_limit`, whose permission (`sales.discount.over_limit`) a
+/// `cashier` does not have: the runtime answers them `requires_elevation` and the till asks for
+/// the PIN. See [`complete_sale_over_limit_pure`] for why it is a second function and not a flag.
+#[cfg(feature = "guest")]
+#[plugin_fn]
+pub fn complete_sale_over_limit(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
+    match complete_sale_over_limit_pure(input.into_inner().into_value()) {
+        Ok(out) => Ok(Json(out)),
+        Err(e) => Err(Error::msg(e).into()),
+    }
+}
+
 /// ADR-0141: dispara a cocina lo pedido hasta ahora. Ver `fire_order_pure`.
 #[cfg(feature = "guest")]
 #[plugin_fn]
@@ -1656,6 +1669,78 @@ fn enforce_discount_policy(context: &Value, discounted: bool) -> Result<(), Refu
     Ok(())
 }
 
+/// Which door the checkout came through (sales#269) — and therefore whether the shop's discount
+/// cap applies. `Approved` is not a favour the payload can ask for: it is reached only from the
+/// exported function the runtime binds to `sales.complete_sale_over_limit`, whose permission a
+/// cashier does not have.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CapRule {
+    /// The everyday door: the cap in the settings is enforced.
+    Enforced,
+    /// The manager's door: the cap was already cleared by the permission (or by their PIN).
+    Approved,
+}
+
+impl CapRule {
+    /// The cap to apply, given what the shop configured. `100` is «no cap» either way.
+    fn cap(self, context: &Value) -> f64 {
+        match self {
+            CapRule::Enforced => discount_cap(context),
+            CapRule::Approved => 100.0,
+        }
+    }
+}
+
+/// The business cap on a manual discount, as a percentage (sales#269).
+///
+/// `100` = no cap, and that is deliberately what absence means: a hub with no settings row, and
+/// every hub updating from a version that had no column, must keep behaving exactly as it did.
+/// The shop opts IN to the control; it is never switched on underneath anybody.
+fn discount_cap(context: &Value) -> f64 {
+    tax::read_rows(context, "sales.settings.get")
+        .unwrap_or_default()
+        .first()
+        .and_then(|row| row.get("max_discount_percent"))
+        .filter(|v| !v.is_null())
+        .map(|v| as_f64(v, 100.0))
+        .unwrap_or(100.0)
+        .clamp(0.0, 100.0)
+}
+
+/// Refuses a manual discount bigger than the one the shop lets whoever is charging give alone.
+///
+/// 🔴 This is the SERVER's copy of the rule, and the one that counts. The till knows the cap too
+/// (it reads it to route the charge through the manager's door instead), but a payload that never
+/// went through a screen — the API, the assistant, a tampered request — arrives here all the same.
+/// A cap that only lived in the button would be a suggestion.
+///
+/// The ticket percentage and each line's are checked with the same number: capping only the
+/// ticket would leave «un 90 % en cada línea» as the way around it. The FIXED amount (sales#113)
+/// cannot be judged here — it is cents, and what share of the ticket they are is not known until
+/// the lines are valued — so it is checked in `value_checkout`, where the gross exists.
+fn enforce_discount_cap(cap: f64, payload: &Value, items: &[Value]) -> Result<(), Refusal> {
+    if cap >= 100.0 {
+        return Ok(());
+    }
+    let sale_disc = payload.get("discount_percent").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
+    if sale_disc > cap {
+        return Err(reject(
+            "sales.discount_over_limit",
+            format!("ticket discount {sale_disc} above the {cap} this business allows"),
+        ));
+    }
+    for item in items {
+        let line_disc = item.get("discount").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
+        if line_disc > cap {
+            return Err(reject(
+                "sales.discount_over_limit",
+                format!("line discount {line_disc} above the {cap} this business allows"),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Valida el cobro propuesto y devuelve lo que el servidor decide.
 ///
 /// # Por qué existe
@@ -1678,9 +1763,10 @@ fn enforce_discount_policy(context: &Value, discounted: bool) -> Result<(), Refu
 ///    vacío, manda: un id que no esté ahí (inactivo, borrado, de otro hub, inventado) se rechaza y
 ///    el NOMBRE del recibo sale de la fila, no del payload. Si no lo entrega —runtime sin `reads` o
 ///    hub sin métodos sembrados— se degrada al payload: cobrar es lo último que puede romperse.
-fn decide_checkout(payload: &Value, context: &Value, items: &[Value]) -> Result<ServerDecision, Refusal> {
+fn decide_checkout(payload: &Value, context: &Value, items: &[Value], cap: f64) -> Result<ServerDecision, Refusal> {
     let discounted = validate_checkout_shape(payload, items)?;
     enforce_discount_policy(context, discounted)?;
+    enforce_discount_cap(cap, payload, items)?;
     if hub_setting(context, "require_customer", false) && field(payload, "customer_id").is_empty() {
         return Err(reject("sales.customer_required", "this hub requires a customer on every sale"));
     }
@@ -1919,6 +2005,7 @@ fn value_checkout(
     sale_id: &str,
     tax_incl: bool,
     id_budget: Option<usize>,
+    cap: f64,
 ) -> Result<Valuation, Refusal> {
     let empty: Vec<Value> = Vec::new();
     let items = payload.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
@@ -2115,6 +2202,20 @@ fn value_checkout(
         if sale_disc_amount > payable {
             return Err(reject("sales.discount_out_of_range", format!("discount_amount {sale_disc_amount} above the gross {payable}")));
         }
+        // sales#269: the business cap, applied to the only lever that is not a percentage. 3,00 €
+        // of gross with the cap at 10 % buys 30 cents — without this, «2,00 € de descuento» walks
+        // straight past a percentage cap and the control means nothing. Basis points so a cap with
+        // decimals stays exact integer arithmetic; the floor rounds AGAINST the discount, which is
+        // the safe direction for a control.
+        if cap < 100.0 {
+            let allowed = ((payable as i128 * (cap * 100.0).round() as i128) / 10_000) as i64;
+            if sale_disc_amount > allowed {
+                return Err(reject(
+                    "sales.discount_over_limit",
+                    format!("discount_amount {sale_disc_amount} is more than the {cap} of the {payable} gross this business allows"),
+                ));
+            }
+        }
         let shares = allocate_amount(sale_disc_amount, &weights);
         for (l, share) in pending_lines.iter_mut().zip(shares) {
             let comps = l.resolved.components.clone();
@@ -2241,7 +2342,11 @@ fn preview_checkout_inner(input: Value) -> Result<Output, Refusal> {
     // Synthetic `sale_id`: a preview consumes no host ids (`id_budget = None`), but a split goods
     // set menu still needs a `combo_group_ref` the screen can group its siblings by. `preview`
     // makes it plain in the value itself that no such sale exists.
-    let valuation = value_checkout(&payload, &context, "preview", tax_incl, None)?;
+    // sales#269: the preview PRICES, it does not authorise. The cap is not applied here on
+    // purpose — refusing to show a total is how the cashier would find out they need the manager
+    // *without ever seeing what the ticket comes to*. The approval is asked for at the charge,
+    // which is the moment the money moves and the only one that has to be gated.
+    let valuation = value_checkout(&payload, &context, "preview", tax_incl, None, 100.0)?;
 
     let lines: Vec<Value> = valuation
         .lines
@@ -2284,13 +2389,28 @@ fn preview_checkout_inner(input: Value) -> Result<Output, Refusal> {
 }
 
 pub fn complete_sale_pure(input: Value) -> Result<Output, String> {
-    finish(complete_sale_inner(input))
+    finish(complete_sale_inner(input, CapRule::Enforced))
+}
+
+/// The MANAGER's door to the very same checkout (sales#269).
+///
+/// Identical logic; the only difference is that the business discount cap is not applied, because
+/// getting HERE already required `sales.discount.over_limit` — a permission a `cashier` does not
+/// have, so the runtime answers them `requires_elevation` and the till asks for the manager's PIN
+/// (ADR-0238/0246). The sale is then attributed to both: who charged and who authorised.
+///
+/// 🔴 It is a SEPARATE exported function, not a flag in the payload, because that is the only way
+/// the handler can tell the two doors apart: the guest gets `{payload, context}` and the context
+/// carries no command name. A flag in the payload would be the client granting itself the
+/// permission, which is exactly the hole this closes.
+pub fn complete_sale_over_limit_pure(input: Value) -> Result<Output, String> {
+    finish(complete_sale_inner(input, CapRule::Approved))
 }
 
 /// The decision itself (sales#201). A business rejection comes back as `Refusal::Domain`
 /// and [`finish`] hands it to the caller inside `Output.error`, which is the only channel
 /// that reaches the browser as a translatable `code`.
-fn complete_sale_inner(input: Value) -> Result<Output, Refusal> {
+fn complete_sale_inner(input: Value, rule: CapRule) -> Result<Output, Refusal> {
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
     let context = input.get("context").cloned().unwrap_or(Value::Null);
     let empty: Vec<Value> = Vec::new();
@@ -2334,7 +2454,8 @@ fn complete_sale_inner(input: Value) -> Result<Output, Refusal> {
     }
 
     // El servidor valida la oferta del cliente y decide lo que no le corresponde decidir a él.
-    let decision = decide_checkout(&payload, &context, items)?;
+    let cap = rule.cap(&context);
+    let decision = decide_checkout(&payload, &context, items, cap)?;
     let tax_incl = decision
         .tax_included
         .unwrap_or_else(|| payload.get("tax_included").map(as_bool).unwrap_or(true));
@@ -2342,7 +2463,7 @@ fn complete_sale_inner(input: Value) -> Result<Output, Refusal> {
     // 🔴 THE VERY SAME VALUATION THE PREVIEW ANSWERS WITH (sales#164/#172). One function: if the
     // preview and the checkout did not share code, "adds up to the cent" would last until the
     // first change to either of them.
-    let valuation = value_checkout(&payload, &context, &sale_id, tax_incl, Some(new_ids.len()))?;
+    let valuation = value_checkout(&payload, &context, &sale_id, tax_incl, Some(new_ids.len()), cap)?;
     let cc = valuation.country_code.as_str();
     let rc = valuation.region_code.as_str();
     let subtotal = valuation.subtotal;
@@ -6201,6 +6322,57 @@ mod tests {
         inp["payload"]["discount_amount"] = json!(10);
         let err = complete_sale_pure(inp).refused("descuentos apagados");
         assert_eq!(err.code, "sales.discounts_not_allowed", "{err:?}");
+    }
+
+    #[test]
+    fn a_discount_above_the_shops_cap_needs_the_managers_door() {
+        // sales#269 — a 100 % discount used to be one tap away for anybody who could charge: the
+        // only lever was `allow_discounts`, all-or-nothing. The shop now says «up to 10 % is the
+        // cashier's; above that, the manager authorises it». The cap is enforced HERE because the
+        // till is not the authority — a payload that never went through the screen must hit the
+        // same wall. Toast, Square and Lightspeed all gate the discount the same way.
+        let capped = json!([{ "max_discount_percent": 10 }]);
+
+        // The TICKET percentage.
+        let mut inp = input_with_catalogs(three_equal_lines(), 5, Value::Null, capped.clone(), Value::Null);
+        inp["payload"]["discount_percent"] = json!(90);
+        let err = complete_sale_pure(inp.clone()).refused("90 % con el tope en 10");
+        assert_eq!(err.code, "sales.discount_over_limit", "{err:?}");
+
+        // The very SAME sale through the manager's door goes through: that is what the PIN buys.
+        complete_sale_over_limit_pure(inp).accepted("el encargado lo autorizó");
+
+        // A LINE percentage is the same lever with another name: capping only the ticket would
+        // leave «90 % en cada línea» as the way around it.
+        let mut inp = input_with_catalogs(three_equal_lines(), 5, Value::Null, capped.clone(), Value::Null);
+        inp["payload"]["items"][0]["discount"] = json!(90);
+        let err = complete_sale_pure(inp).refused("90 % en una línea");
+        assert_eq!(err.code, "sales.discount_over_limit", "{err:?}");
+
+        // And so is a FIXED amount (sales#113): 3,00 € of gross with the cap at 10 % buys 30
+        // cents. Without this, «2,00 € de descuento» would walk straight past a percentage cap.
+        let mut inp = input_with_catalogs(three_equal_lines(), 5, Value::Null, capped.clone(), Value::Null);
+        inp["payload"]["discount_amount"] = json!(200);
+        let err = complete_sale_pure(inp).refused("2,00 € de 3,00 € con el tope en 10 %");
+        assert_eq!(err.code, "sales.discount_over_limit", "{err:?}");
+
+        let mut inp = input_with_catalogs(three_equal_lines(), 5, Value::Null, capped, Value::Null);
+        inp["payload"]["discount_amount"] = json!(30);
+        complete_sale_pure(inp).accepted("30 céntimos de 3,00 € son el 10 % justo: es del cajero");
+    }
+
+    #[test]
+    fn a_shop_that_never_set_a_cap_sees_no_change_when_it_updates() {
+        // The column ships `DEFAULT 100` and the schema's default is 100 on purpose: updating the
+        // module cannot start asking for a PIN in a salon that never configured anything.
+        let mut inp = input_with_catalogs(three_equal_lines(), 5, Value::Null, Value::Null, Value::Null);
+        inp["payload"]["discount_percent"] = json!(100);
+        complete_sale_pure(inp).accepted("sin fila de ajustes, el 100 % sigue pasando");
+
+        let settings = json!([{ "max_discount_percent": 100 }]);
+        let mut inp = input_with_catalogs(three_equal_lines(), 5, Value::Null, settings, Value::Null);
+        inp["payload"]["discount_percent"] = json!(100);
+        complete_sale_pure(inp).accepted("tope al 100 % = exactamente como hoy");
     }
 
     #[test]

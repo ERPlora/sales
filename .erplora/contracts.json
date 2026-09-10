@@ -40,6 +40,7 @@
     "commands": [
       "sales.checkout.preview",
       "sales.complete_sale",
+      "sales.complete_sale_over_limit",
       "sales.departments.create",
       "sales.departments.delete",
       "sales.departments.update",

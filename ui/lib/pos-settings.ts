@@ -38,6 +38,12 @@ export interface PosSettings {
   allow_cash?: number; allow_card?: number; allow_transfer?: number;
   /** sales#71: manual discounts allowed (Ajustes). 0 = no button; the server revalidates it. */
   allow_discounts?: number;
+  /** sales#269 — the biggest discount whoever is charging may give ALONE, as a percentage.
+   *  100 = no cap. Above it the till charges through `sales.complete_sale_over_limit`, which the
+   *  cashier cannot open without the manager's PIN. The RULE is the server's (the handler
+   *  re-checks it from its own `reads`); the till carries it so screen and server agree on when
+   *  the PIN is coming, instead of the cashier finding out with the card already in hand. */
+  max_discount_percent?: number;
   /** sales#25 — which catalogue providers feed the grid. 0 = that provider is not read at all. */
   sync_products?: number; sync_services?: number;
   /** hub#962: a customer who identified themselves with a tax id wants an invoice. */
@@ -63,6 +69,7 @@ export const POS_SETTINGS_DEFAULTS: Readonly<Required<Omit<PosSettings, 'currenc
   sync_services: 1,
   require_customer: 0,
   allow_discounts: 1,
+  max_discount_percent: 100,
   enable_parked_tickets: 1,
   default_tax_included: 1,
   auto_invoice_with_tax_id: 0,
@@ -79,6 +86,19 @@ export const POS_SETTINGS_DEFAULTS: Readonly<Required<Omit<PosSettings, 'currenc
  *  is a choice the shop made. */
 function saved(v: unknown): boolean {
   return v !== undefined && v !== null;
+}
+
+/** The settings whose value is a QUANTITY and not a switch. Everything else in the row is the 0/1
+ *  INTEGER of the portable SQL subset (ADR-0007), and `asFlag` collapses it — which would turn a
+ *  10 % cap into a 1 % one (sales#269). They resolve through `asNumber` instead. */
+const NUMERIC_SETTINGS: ReadonlySet<string> = new Set(['max_discount_percent']);
+
+/** A quantity as the screen reads it: the number the shop saved, whatever form the driver hands
+ *  back ('25' and 25 are the same row). A value the column could not hold is not a choice — it
+ *  falls back to the default rather than locking the till out of a number it cannot read. */
+function asNumber(v: unknown, fallback: number): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
 }
 
 /** A flag as the screen reads it: the 0/1 INTEGER of the portable SQL subset (ADR-0007), whatever
@@ -104,7 +124,8 @@ export function withPosSettingsDefaults(row: Record<string, unknown> | PosSettin
   for (const [key, fallback] of Object.entries(POS_SETTINGS_DEFAULTS)) {
     const v = raw[key];
     if (!saved(v)) { out[key] = fallback; continue; }
-    out[key] = typeof fallback === 'string' ? String(v) : asFlag(v);
+    if (typeof fallback === 'string') { out[key] = String(v); continue; }
+    out[key] = NUMERIC_SETTINGS.has(key) ? asNumber(v, fallback as number) : asFlag(v);
   }
   return out as PosSettings;
 }

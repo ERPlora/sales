@@ -60,6 +60,19 @@ describe('the till resolves its policy through one set of defaults (sales#223)',
     expect(on.enable_parked_tickets).toBe(1);
   });
 
+  it('a setting that is a NUMBER, not a switch, keeps the number the shop saved (sales#269)', () => {
+    // `max_discount_percent` is the first setting whose value is a quantity. Reading it as a flag
+    // turns a 10 % cap into a 1 % one: the till would ask for the manager's PIN on almost every
+    // ticket, and the shop that typed 10 would never learn why.
+    expect(withPosSettingsDefaults({ max_discount_percent: 10 }).max_discount_percent).toBe(10);
+    expect(withPosSettingsDefaults({ max_discount_percent: '25' }).max_discount_percent).toBe(25);
+    expect(withPosSettingsDefaults({ max_discount_percent: 0 }, ).max_discount_percent,
+      'zero is a shop that allows NO discount without the manager, not absence').toBe(0);
+    expect(withPosSettingsDefaults({ max_discount_percent: null }).max_discount_percent).toBe(100);
+    expect(withPosSettingsDefaults({ max_discount_percent: 'not a number' }).max_discount_percent,
+      'a value the column cannot hold falls back to the default instead of locking the till').toBe(100);
+  });
+
   it('a string setting keeps the text the shop typed', () => {
     const resolved = withPosSettingsDefaults({ receipt_header: 'Pepe Bar\n1 Main Street', receipt_footer: '' });
     expect(resolved.receipt_header).toBe('Pepe Bar\n1 Main Street');
