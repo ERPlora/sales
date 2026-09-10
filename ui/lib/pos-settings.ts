@@ -38,6 +38,12 @@ export interface PosSettings {
   allow_cash?: number; allow_card?: number; allow_transfer?: number;
   /** sales#71: manual discounts allowed (Ajustes). 0 = no button; the server revalidates it. */
   allow_discounts?: number;
+  /** sales#269 — the biggest discount whoever is charging may give ALONE, as a percentage.
+   *  100 = no cap. Above it the till charges through `sales.complete_sale_over_limit`, which the
+   *  cashier cannot open without the manager's PIN. The RULE is the server's (the handler
+   *  re-checks it from its own `reads`); the till carries it so screen and server agree on when
+   *  the PIN is coming, instead of the cashier finding out with the card already in hand. */
+  max_discount_percent?: number;
   /** sales#25 — which catalogue providers feed the grid. 0 = that provider is not read at all. */
   sync_products?: number; sync_services?: number;
   /** hub#962: a customer who identified themselves with a tax id wants an invoice. */
@@ -63,6 +69,7 @@ export const POS_SETTINGS_DEFAULTS: Readonly<Required<Omit<PosSettings, 'currenc
   sync_services: 1,
   require_customer: 0,
   allow_discounts: 1,
+  max_discount_percent: 100,
   enable_parked_tickets: 1,
   default_tax_included: 1,
   auto_invoice_with_tax_id: 0,

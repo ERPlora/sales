@@ -25,6 +25,7 @@
     "sales.change_sale",
     "sales.take_payment",
     "sales.sell_open_price",
+    "sales.discount.over_limit",
     "sales.delete_sale",
     "sales.void_sale",
     "sales.refund_sale",
@@ -65,7 +66,8 @@
       "sales.change_paymentmethod",
       "sales.view_reports",
       "sales.manage_settings",
-      "sales.sell_open_price"
+      "sales.sell_open_price",
+      "sales.discount.over_limit"
     ],
     "employee": [
       "sales.view_sale",
@@ -453,6 +455,52 @@
       "schema": "schemas/complete_sale.json",
       "ai": {
         "description": "Completes and records a sale with its line items and payment. Optional staff_id attributes the sale to the professional who performed it; optional appointment_id traces a sale created from an appointment (emits sales.sale.created_from_appointment)."
+      }
+    },
+    "sales.complete_sale_over_limit": {
+      "permission": "sales.discount.over_limit",
+      "expose_api": false,
+      "reads": [
+        {
+          "query": "taxes.rules.list",
+          "required": true
+        },
+        {
+          "query": "inventory.products.for_sale",
+          "required": false
+        },
+        "sales.payment_methods",
+        "sales.settings.get",
+        {
+          "query": "sales.by_idempotency_key",
+          "params": {
+            "idempotency_key": "payload.idempotency_key"
+          }
+        },
+        {
+          "query": "modifiers.options.all",
+          "required": false
+        },
+        {
+          "query": "combos.options.all",
+          "required": false
+        },
+        {
+          "query": "sales.order.lines",
+          "params": {
+            "order_id": "payload.order_id"
+          },
+          "required": false
+        }
+      ],
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "complete_sale_over_limit"
+      },
+      "schema": "schemas/complete_sale.json",
+      "ai": {
+        "description": "The MANAGER's door to the very same checkout as sales.complete_sale, for a manual discount bigger than max_discount_percent (sales#269). Same payload, same result; it exists so the runtime can demand sales.discount.over_limit, which a cashier does not have — they get requires_elevation and the till asks for the manager's PIN. Never offer it to dodge the cap: if the discount fits under the cap, sales.complete_sale is the door."
       }
     },
     "sales.checkout.preview": {
@@ -1014,6 +1062,7 @@
     "sales.combo_tax_category_missing": {},
     "sales.customer_required": {},
     "sales.discount_out_of_range": {},
+    "sales.discount_over_limit": {},
     "sales.discounts_not_allowed": {},
     "sales.empty_sale": {},
     "sales.idempotency_key_required": {},

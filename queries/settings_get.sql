@@ -3,7 +3,7 @@
 SELECT id,
        allow_cash, allow_card, allow_transfer,
        sync_products, sync_services,
-       require_customer, allow_discounts,
+       require_customer, allow_discounts, max_discount_percent,
        enable_parked_tickets, default_tax_included,
        receipt_header, receipt_footer, receipt_footer_image,
        receipt_marketing_url, receipt_marketing_text,

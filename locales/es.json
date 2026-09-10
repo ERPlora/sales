@@ -44,6 +44,10 @@
       "allow_discounts": {
         "label": "Permitir descuentos"
       },
+      "max_discount_percent": {
+        "label": "Descuento que puede aplicar solo quien cobra (%)",
+        "description": "Por encima de esto, el TPV pide el PIN del encargado y la venta guarda quién lo autorizó. 100 = sin límite."
+      },
       "enable_parked_tickets": {
         "label": "Permitir tiques aparcados"
       },
@@ -96,6 +100,7 @@
     "sales.combo_tax_category_missing": "Ese menú no tiene categoría fiscal, así que no se puede cobrar. Configúrala en Combos.",
     "sales.customer_required": "Este negocio exige un cliente en cada venta.",
     "sales.discount_out_of_range": "El descuento debe estar entre 0 % y 100 %, y nunca por encima del importe bruto.",
+    "sales.discount_over_limit": "Ese descuento supera lo que este negocio permite sin que lo autorice el encargado.",
     "sales.discounts_not_allowed": "Este negocio no permite descuentos.",
     "sales.empty_sale": "Añade al menos una línea antes de cobrar.",
     "sales.idempotency_key_required": "El cobro ha llegado sin clave de idempotencia, así que se ha rechazado antes que arriesgarse a cobrar dos veces.",
