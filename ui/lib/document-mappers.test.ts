@@ -229,6 +229,54 @@ describe('business header from the business profile (#32)', () => {
   });
 });
 
+// sales#274 — the two things the customer reads over the counter, the instant the sale is charged:
+// whose ticket it is, and which document it is. Both used to be wrong for the second or so the
+// Outbox takes to write the invoice, and both used to be right when the same ticket was reopened.
+//
+// The header had a live source all along (`sales.business.get`, sales#180) and nobody passed it;
+// the number had NO source yet, which is a different problem with a different answer — a blank the
+// real one drops into, never the sale's internal number dressed up as the document's.
+describe('la identidad y el número mientras la factura se escribe (sales#274)', () => {
+  it('receipt: sin factura todavía, el NIF sale de la identidad viva del negocio', () => {
+    const r = saleToReceipt(SALE, LINES, { issuer_name: 'Salon Aurora SL', issuer_tax_id: '12345678Z' }, {});
+    expect(r.business.name).toBe('Salon Aurora SL');
+    expect(r.business.tax_id).toBe('12345678Z');
+  });
+
+  it('receipt: el NIF de la FACTURA manda sobre el vivo (es el que quedó sellado)', () => {
+    const r = saleToReceipt(
+      SALE, LINES,
+      { issuer_name: 'Salon Aurora SL', issuer_tax_id: '12345678Z' },
+      { issuer_name: 'Salon Aurora SL', issuer_nif: 'B99999999' },
+    );
+    expect(r.business.tax_id).toBe('B99999999');
+  });
+
+  it('receipt: un `receipt_header` de branding no borra el NIF', () => {
+    const r = saleToReceipt(SALE, LINES, { receipt_header: 'AURORA', issuer_tax_id: '12345678Z' }, {});
+    expect(r.business.name).toBe('AURORA');
+    expect(r.business.tax_id, 'el NIF no es branding').toBe('12345678Z');
+  });
+
+  it('receipt: con la factura EN CAMINO no se pinta número ninguno', () => {
+    expect(saleToReceipt(SALE, LINES, {}, { pending: true }).number).toBeUndefined();
+  });
+
+  it('receipt: sin factura en camino, el número de la venta ES el del tique', () => {
+    // Un hub sin app de facturación (ADR-0127) no espera a nada: ese es su número.
+    expect(saleToReceipt(SALE, LINES, {}, {}).number).toBe('TICKET-2026-000004');
+  });
+
+  it('receipt: en cuanto hay número de factura, gana él aunque siga marcado pendiente', () => {
+    expect(saleToReceipt(SALE, LINES, {}, { pending: true, number: 'F2-1' }).number).toBe('F2-1');
+  });
+
+  it('invoice: la A4 se comporta igual — ni número provisional ni emisor sin NIF', () => {
+    expect(saleToInvoice(SALE, LINES, {}, { pending: true }).number, 'ok-invoice exige la clave: vacía, nunca el número interno').toBe('');
+    expect(saleToInvoice(SALE, LINES, { issuer_tax_id: '12345678Z' }, {}).issuer.tax_id).toBe('12345678Z');
+  });
+});
+
 describe('labels i18n para ok-receipt / ok-invoice (ADR-0055)', () => {
   // t() doble: devuelve la clave — el test fija QUÉ claves del catálogo alimentan cada label.
   const t = (key: string): string => key;

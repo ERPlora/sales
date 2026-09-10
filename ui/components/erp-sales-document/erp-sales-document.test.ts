@@ -19,7 +19,7 @@ function installDocDouble(
 ) {
   const FISCAL = ['invoice.by_source', 'invoice.lines', 'verifactu.records.by_invoice'];
   return installErploraDouble({
-    queries: { 'sales.get': [], 'sales.lines': [], 'sales.pos_settings.get': [], ...queries },
+    queries: { 'sales.get': [], 'sales.lines': [], 'sales.pos_settings.get': [], 'sales.business.get': [], ...queries },
     absent: FISCAL.filter((name) => !(name in queries)),
     locale: 'es',
     ...over,
@@ -500,5 +500,159 @@ describe('the paper translates the factory payment method (sales#181)', () => {
     const el = await mountWithMethod('BBVA TPV');
     const receipt = el.shadowRoot!.querySelector('ok-receipt') as HTMLElement & { receipt: ReceiptData };
     expect(receipt.receipt.payment?.method).toBe('BBVA TPV');
+  });
+});
+
+// sales#274 — the ticket the cashier turns towards the customer, the instant it is charged.
+//
+// `complete_sale` answers, the till opens this viewer, and the invoice its number comes from is
+// still being written by the Outbox a few milliseconds later. Until it landed, the paper on screen
+// headed itself with the GENERIC default name and stamped the sale's own internal number; seconds
+// later the same ticket, reopened, said the shop's legal name and the real document number. The
+// customer reading over the counter saw a business that does not exist and a number that is not
+// theirs.
+//
+// The datum was never missing: the hub holds it in `hub_settings` (ADR-0061) and `sales.business.get`
+// hands it to any cashier (sales#180) — the viewer just never asked. And the number nobody knows
+// yet is not painted at all: an empty line the real number drops into beats a wrong one.
+describe('la cabecera del tique NO espera a la factura (sales#274)', () => {
+  const SALE = {
+    id: 's1', sale_number: '20260909-0001', subtotal: 2471, tax_amount: 519, total: 2990,
+    payment_method_name: 'Efectivo', created_at: '2026-09-09T18:00:00Z',
+  };
+  const BUSINESS = [{ name: 'Salon Aurora SL', tax_id: '12345678Z' }];
+
+  /** Monta el visor por `sale-id` con la cadena fiscal bajo control del test. */
+  async function montar(opts: {
+    invoiceBySource: (call: number) => unknown[] | undefined;
+    business?: unknown[];
+  }) {
+    let calls = 0;
+    installDocDouble({
+      'sales.get': [SALE],
+      'sales.lines': [{ product_name: 'Corte', quantity: 1, unit_price: 2990, line_total: 2990 }],
+      'sales.business.get': opts.business ?? BUSINESS,
+      'invoice.by_source': () => {
+        calls += 1;
+        return (opts.invoiceBySource(calls) ?? []) as unknown[];
+      },
+      'invoice.lines': [],
+      'verifactu.records.by_invoice': [],
+    });
+    await import('./erp-sales-document');
+    const el = document.createElement('erp-sales-document') as HTMLElement & {
+      fiscalRetryDelays: number[]; updateComplete: Promise<unknown>;
+    };
+    el.fiscalRetryDelays = [10, 10];
+    el.setAttribute('sale-id', 's1');
+    document.body.appendChild(el);
+    await el.updateComplete;
+    return el;
+  }
+
+  /** Deja terminar la carga (`sales.get` + `sales.lines` + ajustes + identidad) SIN dar tiempo a
+   *  los reintentos del Outbox: exactamente el primer pintado que ve la clienta. */
+  async function primerPintado(el: HTMLElement & { updateComplete: Promise<unknown> }) {
+    for (let i = 0; i < 4; i += 1) {
+      await new Promise((r) => setTimeout(r, 0));
+      await el.updateComplete;
+    }
+  }
+
+  const paper = (el: HTMLElement) =>
+    (el.shadowRoot!.querySelector('ok-receipt') as HTMLElement & { receipt: ReceiptData }).receipt;
+
+  it('el PRIMER pintado ya lleva la razón social y el NIF del negocio', async () => {
+    // La factura no ha llegado (Outbox en curso): es exactamente el instante que ve la clienta.
+    const el = await montar({ invoiceBySource: () => [] });
+    await primerPintado(el);
+    expect(paper(el).business.name, 'nunca el nombre de relleno').toBe('Salon Aurora SL');
+    expect(paper(el).business.tax_id).toBe('12345678Z');
+  });
+
+  it('mientras la factura no llega, NO enseña un número provisional', async () => {
+    const el = await montar({ invoiceBySource: () => [] });
+    await primerPintado(el);
+    expect(paper(el).number, 'el número de la venta es interno: no se enseña como el del documento')
+      .toBeUndefined();
+  });
+
+  it('en cuanto la factura llega, el número que sale es el SUYO', async () => {
+    const el = await montar({
+      invoiceBySource: (call) => (call < 2 ? [] : [{ id: 'inv1', number: 'TICKET-2026-000001', issuer_name: 'Salon Aurora SL', issuer_nif: '12345678Z' }]),
+    });
+    await new Promise((r) => setTimeout(r, 80));
+    await el.updateComplete;
+    expect(paper(el).number).toBe('TICKET-2026-000001');
+  });
+
+  it('si la factura NO llega nunca, el tique cae al número de la venta antes que quedarse mudo', async () => {
+    const el = await montar({ invoiceBySource: () => [] });
+    await new Promise((r) => setTimeout(r, 120)); // agota los reintentos
+    await el.updateComplete;
+    expect(paper(el).number, 'agotado el Outbox, el identificador honesto es el de la venta')
+      .toBe('20260909-0001');
+  });
+
+  it('sin módulo invoice el número es el de la venta DESDE EL PRIMER PINTADO', async () => {
+    // ADR-0127: un hub puede cobrar sin facturación. Ahí `sale_number` ES el número del tique y no
+    // hay nada que esperar — no se le puede quitar la línea al que no tiene otra.
+    installDocDouble({
+      'sales.get': [SALE],
+      'sales.lines': [{ product_name: 'Corte', quantity: 1, unit_price: 2990, line_total: 2990 }],
+      'sales.business.get': BUSINESS,
+    });
+    await import('./erp-sales-document');
+    const el = document.createElement('erp-sales-document') as HTMLElement & { updateComplete: Promise<unknown> };
+    el.setAttribute('sale-id', 's1');
+    document.body.appendChild(el);
+    await primerPintado(el);
+    expect(paper(el).number).toBe('20260909-0001');
+  });
+
+  it('un `receipt_header` deliberado sigue mandando sobre la razón social', async () => {
+    installDocDouble({
+      'sales.get': [SALE],
+      'sales.lines': [{ product_name: 'Corte', quantity: 1, unit_price: 2990, line_total: 2990 }],
+      'sales.pos_settings.get': [{ receipt_header: 'AURORA\nCalle Mayor 1' }],
+      'sales.business.get': BUSINESS,
+    });
+    await import('./erp-sales-document');
+    const el = document.createElement('erp-sales-document') as HTMLElement & { updateComplete: Promise<unknown> };
+    el.setAttribute('sale-id', 's1');
+    document.body.appendChild(el);
+    await primerPintado(el);
+    expect(paper(el).business.name).toBe('AURORA');
+    expect(paper(el).business.tax_id, 'el NIF no es branding: sale igual').toBe('12345678Z');
+  });
+
+  it('el PAPEL, en cambio, sí se imprime con el número de la venta mientras se espera', async () => {
+    // La copia impresa no se actualiza sola: entre un identificador y ninguno, el suyo.
+    const el = await montar({ invoiceBySource: () => [] }) as HTMLElement & {
+      updateComplete: Promise<unknown>; printableDocument(): { receipt_id?: string; business_name?: string; vat_number?: string } | undefined;
+    };
+    await primerPintado(el);
+    expect(paper(el).number, 'la pantalla sigue esperando').toBeUndefined();
+    const doc = el.printableDocument()!;
+    expect(doc.receipt_id).toBe('20260909-0001');
+    expect(doc.business_name).toBe('Salon Aurora SL');
+    expect(doc.vat_number).toBe('12345678Z');
+  });
+
+  it('si `sales.business.get` no contesta, el visor sigue pintando el tique', async () => {
+    // Un hub sin identidad guardada todavía: el documento no puede depender de ella para existir.
+    const el = await montar({ invoiceBySource: () => [], business: [] });
+    await primerPintado(el);
+    expect(paper(el).business.name).toBe('ui.docDefaultBusiness');
+  });
+
+  it('the printable HTML (browser / PDF) does not inherit the blank of the screen either', async () => {
+    // `printableHtml()` is the OTHER paper (iframe print, PDF from Rust): same rule as ESC/POS.
+    const el = await montar({ invoiceBySource: () => [] }) as HTMLElement & {
+      updateComplete: Promise<unknown>; printableHtml(): string;
+    };
+    await primerPintado(el);
+    expect(paper(el).number, 'the screen is still waiting').toBeUndefined();
+    expect(el.printableHtml()).toContain('20260909-0001');
   });
 });

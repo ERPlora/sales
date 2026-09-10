@@ -197,7 +197,11 @@ export function saleToPrintDocument(
   fallbackName?: string,
   t?: (key: string) => string,
 ): PrintDocument {
-  const screen = saleToReceipt(sale, lines, settings, fiscal, locale, fallbackName, t);
+  // sales#274 — paper never inherits the screen's `pending`: a printed copy cannot update itself
+  // when the invoice number lands, so it goes out with the best identifier it has (the sale's).
+  // Stripped HERE and not only in the viewer, so no caller can compose an ESC/POS document with
+  // no `receipt_id`.
+  const screen = saleToReceipt(sale, lines, settings, { ...fiscal, pending: false }, locale, fallbackName, t);
   return {
     business_name: screen.business.name,
     business_address: screen.business.address,

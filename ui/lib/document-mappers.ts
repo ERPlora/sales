@@ -293,6 +293,11 @@ export interface SaleSettings {
    *  ADR-0061), read live through `sales.business.get`. It is the same datum the ticket gets
    *  already frozen on its invoice (`FiscalData.issuer_name`); a bill has no invoice yet. */
   issuer_name?: string;
+  /** sales#274 — the business's TAX ID (`hub_settings.business_tax_id`, same single source
+   *  ADR-0061, same live read `sales.business.get`). The ticket gets it frozen on its invoice as
+   *  `FiscalData.issuer_nif`; until that invoice exists there is no other place to read it from,
+   *  and a ticket headed by a shop with no NIF is a ticket headed by nobody. */
+  issuer_tax_id?: string;
   /** Do catalogue prices carry VAT inside? (`sales_settings.default_tax_included`, 1 by default.)
    *  It decides how the bill's PROVISIONAL breakdown is worked out. */
   default_tax_included?: number;
@@ -321,6 +326,12 @@ export interface FiscalData {
    *  del `qr` fiscal: aquel apunta a la AEAT y NO vale como localizador (numserie correlativo y
    *  público) — son DOS códigos con destinos distintos. */
   claim_qr?: string;
+  /** sales#274 — the fiscal chain is still resolving: the app that numbers this sale IS installed
+   *  and its invoice has not been written yet (the Outbox runs a few ms behind the charge). It is
+   *  NOT the same as "there is no invoicing app" (ADR-0127), and the difference is what the
+   *  customer reads: with an invoice coming, the sale's own internal number is not this document's
+   *  number and must not be shown as if it were. Only the SCREEN honours it — see `saleToReceipt`. */
+  pending?: boolean;
 }
 
 /** sales#103 — la leyenda del segundo QR. Cadena visible → catálogo `en` Y `es` (ADR-0055/0199);
@@ -539,8 +550,13 @@ export function saleToReceipt(
   return {
     // sales#180 — the same priority as the bill: deliberate branding, then the legal name (the one
     // frozen on the invoice, else the one the hub holds today), then the translated fallback.
-    business: { name: header.name || fiscal.issuer_name || settings.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || undefined },
-    number: fiscal.number || sale.sale_number,
+    business: { name: header.name || fiscal.issuer_name || settings.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || settings.issuer_tax_id || undefined },
+    // sales#274 — the number, and ONLY the one this document really carries. While the invoice is
+    // still being written (`pending`), the sale's internal number is not it: showing it painted a
+    // number over the counter that the ticket replaced seconds later. Blank now, real in a moment.
+    // The PAPER never gets `pending` (see `fiscalForPaper`): a printed copy is not going to update
+    // itself, so it takes the best identifier it has.
+    number: fiscal.number || (fiscal.pending ? undefined : sale.sale_number),
     datetime: formatDateTime(sale.created_at, locale),
     customer: fiscal.customer_name || sale.customer_name || undefined,
     // sales#154: the sibling rows of a menu collapse into ONE header line; a plain row is itself.
@@ -601,9 +617,13 @@ export function saleToInvoice(
   }));
   const taxes = parseTaxes(sale.tax_breakdown, t);
   return {
-    issuer: { name: fiscal.issuer_name || header.name || settings.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || undefined },
+    issuer: { name: fiscal.issuer_name || header.name || settings.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || settings.issuer_tax_id || undefined },
     customer: { name: fiscal.customer_name || sale.customer_name || 'Cliente', tax_id: fiscal.customer_tax_id || undefined },
-    number: fiscal.number || sale.sale_number,
+    // sales#274 — igual que el tiquet, y aquí pesa más: en un documento titulado «Factura» el
+    // número ES el documento, así que enseñar el interno de la venta mientras el de verdad se
+    // escribe es peor que dejarlo en blanco un instante. `<ok-invoice>` exige la clave (a
+    // diferencia de `<ok-receipt>`, que se la salta), de ahí la cadena vacía en vez de `undefined`.
+    number: fiscal.number || (fiscal.pending ? '' : sale.sale_number),
     issue_date: formatDateTime(sale.created_at, locale) || '',
     lines: invLines,
     subtotal: minor(sale.subtotal),
