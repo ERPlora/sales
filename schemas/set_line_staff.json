@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "sales.order.set_line_staff",
+  "description": "Corrige a qué PROFESIONAL se le apunta una línea de un pedido abierto, sin borrar la línea (sales#277). La línea se sella al añadirla con quien esté en el chip del TPV (sales#273); esto la mueve después, conservando su nota, su descuento y sus suplementos. `staff_id` es una referencia OPACA (`hub.users.list`): `sales` no la interpreta ni hace JOIN contra `staff_member`. `null` NO es «no lo toques» sino «que lo atribuya la cabecera del ticket», que es a lo que cae el cierre por profesional (`COALESCE` en `sales.by_staff`) — por eso el payload está CERRADO y el campo es obligatorio: omitirlo sería un tercer estado sin significado.",
+  "type": "object",
+  "required": [
+    "order_id",
+    "line_id",
+    "staff_id"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "order_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "line_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "staff_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

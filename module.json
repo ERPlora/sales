@@ -760,6 +760,22 @@
         "description": "Updates the quantity of a line in an open order and recomputes its provisional total (ADR-0141)."
       }
     },
+    "sales.order.set_line_staff": {
+      "permission": "sales.add_sale",
+      "sql": [
+        "commands/order_set_line_staff.sql"
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "sales.order_line_not_available",
+        "message": "That line is not open in this business."
+      },
+      "schema": "schemas/set_line_staff.json",
+      "ai": {
+        "description": "Corrects WHICH professional a line of an open order is charged to, without deleting the line (sales#277). The line is sealed at the moment it is added with whoever is on the till's chip (sales#273); this moves it afterwards. `staff_id` null means the line is attributed by the ticket's own professional, which is what the per-professional close falls back to. Money is untouched: who did the work does not change what it costs."
+      }
+    },
     "sales.order.split_line": {
       "permission": "sales.add_sale",
       "reads": [

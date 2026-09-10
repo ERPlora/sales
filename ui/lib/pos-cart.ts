@@ -603,6 +603,23 @@ export async function updateOrderLineNote(
   });
 }
 
+/** Mueve la línea a OTRO profesional sin rehacerla (sales#277).
+ *
+ *  Puerta propia y no `sales.order.update_line`: ahí `staff_id` iría por `COALESCE`, que no sabe
+ *  distinguir «no lo toques» —lo que manda el stepper de cantidad— de «devuélvelo a la cabecera».
+ *  `null` es un VALOR aquí: la línea vuelve a atribuirse por el profesional del ticket.
+ *
+ *  Sin `line_id` no hay fila que corregir (carrito no respaldado por un pedido): no se inventa una
+ *  mutación local que el próximo `loadOrderLines` borraría en silencio. */
+export async function updateOrderLineStaff(
+  client: ErploraClientLike, orderId: string, line: CartLine, staffId: string | null,
+): Promise<void> {
+  if (!line.line_id) return;
+  await client.command('sales.order.set_line_staff', {
+    order_id: orderId, line_id: line.line_id, staff_id: staffId,
+  });
+}
+
 /** Quita una línea del pedido (soft-delete); el servidor recompone el total. */
 export async function removeOrderLine(client: ErploraClientLike, orderId: string, lineId: string): Promise<void> {
   await client.command('sales.order.remove_line', { order_id: orderId, line_id: lineId });
