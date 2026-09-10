@@ -24,6 +24,12 @@ const HUB_USERS = [
 const SERVICES = [
   { id: 's-corte', name: 'Corte', price: 1800, pricing_type: 'fixed', duration_minutes: 30,
     category_id: 'sc-pelo', tax_category_key: 'service.generic', status: 'active' },
+  // A SECOND service, and not decoration: `addNow` folds a repeated tap into the line already in
+  // the cart when the product AND the professional match (sales#273). Ringing «Corte» again to
+  // prove where the chip points would merge instead of adding, and the assertion below would be
+  // reading the previous line's payload — green with the chip moved under it.
+  { id: 's-color', name: 'Color', price: 4500, pricing_type: 'fixed', duration_minutes: 90,
+    category_id: 'sc-pelo', tax_category_key: 'service.generic', status: 'active' },
 ];
 const SERVICE_CATS = [{ id: 'sc-pelo', name: 'Cabello' }];
 const TAX_CATS = [{ key: 'service.generic', name: 'Servicios', is_active: 1 }];
@@ -258,9 +264,10 @@ describe('and it can be corrected without rebuilding the line (sales#277)', () =
     expect(el.cart.map((l) => l.staff_id), 'only the row that was tapped moved')
       .toEqual(['u-ana', 'u-ana']);
 
-    await tap(el, 'Corte');
+    await tap(el, 'Color');
     await settle(el);
     const added = commands.filter((c) => c.name === 'sales.order.add_line');
+    expect(added.at(-1)!.payload.product_id, 'a line of its own, not a merge').toBe('s-color');
     expect(added.at(-1)!.payload.staff_id, 'the chip still seals the next line for Marta')
       .toBe('u-marta');
   });
