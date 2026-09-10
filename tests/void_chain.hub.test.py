@@ -92,7 +92,7 @@ def create_product(hub: Hub, name: str, price: int, stock: int) -> str:
             "price": price,
             "cost": price // 2,
             "stock": stock,
-            "low_stock_threshold": 5,
+            "low_stock_threshold": 5 * ONE,
             "product_type": "physical",
             "ean13": None,
             "description": "",
