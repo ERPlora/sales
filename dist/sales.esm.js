@@ -4468,6 +4468,10 @@ var es_default = {
     staffPickerEmpty: "Este hub no tiene a nadie m\xE1s para atender. Da de alta personal en Ajustes.",
     staffLoading: "Cargando el equipo\u2026",
     staffLoadFailed: "No se ha podido cargar el equipo. La venta se sigue atribuyendo a quien tenga la sesi\xF3n.",
+    lineStaffPickerTitle: "De qui\xE9n es esta l\xEDnea",
+    lineStaffPickerHint: "Solo se mueve esta l\xEDnea. El cierre del d\xEDa y la comisi\xF3n salen de aqu\xED, as\xED que es la que tiene que estar bien. El chip de arriba sigue decidiendo a qui\xE9n va la SIGUIENTE l\xEDnea.",
+    lineStaffTicketOption: "El profesional de la cuenta",
+    lineStaffFailed: "No se ha podido mover la l\xEDnea a otro profesional. Se queda con el que ten\xEDa.",
     lineNote: "Nota",
     lineNoteOf: "Nota en {name}",
     lineNotePlaceholder: "p. ej. poco hecho, alergia al marisco, sin hielo",
@@ -5020,6 +5024,10 @@ var en_default = {
     staffPickerEmpty: "This hub has nobody else to serve. Add staff from Settings.",
     staffLoading: "Loading the team\u2026",
     staffLoadFailed: "The team could not be loaded. The sale is still attributed to whoever is signed in.",
+    lineStaffPickerTitle: "Whose line is this",
+    lineStaffPickerHint: "Only this line moves. The day's close and the commission are worked out from it, so it is the one that has to be right. The chip at the top keeps deciding who the NEXT line goes to.",
+    lineStaffTicketOption: "The check's professional",
+    lineStaffFailed: "The line could not be moved to another professional. It stays with the one it had.",
     lineNote: "Note",
     lineNoteOf: "Note on {name}",
     lineNotePlaceholder: "e.g. medium rare, shellfish allergy, no ice",
@@ -5767,6 +5775,14 @@ async function updateOrderLineNote(client, orderId, line, note) {
     notes: note,
     is_gift: null,
     gift_reason: null
+  });
+}
+async function updateOrderLineStaff(client, orderId, line, staffId) {
+  if (!line.line_id) return;
+  await client.command("sales.order.set_line_staff", {
+    order_id: orderId,
+    line_id: line.line_id,
+    staff_id: staffId
   });
 }
 async function removeOrderLine(client, orderId, lineId) {
@@ -7296,6 +7312,7 @@ var ErpPosTouch = class extends i3 {
     this.staffName = "";
     this.staffPickerOpen = false;
     this.hubUsers = [];
+    this.staffNames = /* @__PURE__ */ new Map();
     this.staffPickerState = "idle";
     this.prodCats = /* @__PURE__ */ new Map();
     /** Registro de unidades (ADR-0147): code → fila, para congelar el contexto al añadir línea. */
@@ -8135,6 +8152,14 @@ var ErpPosTouch = class extends i3 {
     .line-note-text { display:flex; align-items:flex-start; gap:.3rem; margin:.15rem 0 0;
       font-size:.8rem; color:var(--ion-color-medium); overflow-wrap:anywhere; }
     .line-note-text ion-icon { flex:none; font-size:.9rem; margin-top:.1rem; }
+    /* sales#277 — reads as the note's sub-line, not as a fifth control on the row: no border, no
+       background, the row's own muted colour. It only looks tappable when it IS. */
+    .line-staff { display:flex; align-items:center; gap:.3rem; margin:.15rem 0 0; padding:0;
+      border:0; background:none; font:inherit; color:var(--mut); font-size:.85rem;
+      cursor:pointer; text-align:left; }
+    .line-staff ion-icon { flex:none; font-size:.95rem; }
+    .line-staff:disabled { cursor:default; }
+    .line-staff:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
     /* The note sheet: the textarea takes the full width and is tall enough to read what was
        written without scrolling inside a field, which on touch is where text gets lost. */
     .note-sheet .note-input { width:100%; box-sizing:border-box; resize:none; font:inherit;
@@ -9059,6 +9084,7 @@ var ErpPosTouch = class extends i3 {
     if (!name) return;
     this.appointmentId = ap.id || appointmentId;
     this.staffId = ap.staff_id || void 0;
+    this.rememberStaffName(ap.staff_id, ap.staff_name);
     this.staffName = ap.staff_name || "";
     if (ap.customer_id) this.customerId = ap.customer_id;
     if (ap.customer_name) this.customerName = ap.customer_name;
@@ -9086,25 +9112,85 @@ var ErpPosTouch = class extends i3 {
    *  belongs to the hub, not to the `staff` module. It is asked for when the picker OPENS, not at
    *  boot: the till already makes plenty of calls there, and this one is only needed if somebody is
    *  about to change the waiter. */
-  async openStaffPicker() {
+  async openStaffPicker(lineId) {
+    this.staffPickerLine = lineId;
     this.staffPickerOpen = true;
+    await this.ensureHubUsers();
+  }
+  /** The hub's people, asked for ONCE. Idempotent on purpose: it is now called from two places —
+   *  the picker opening and a cart that needs to NAME the professional of a line (sales#277) — and
+   *  a till that re-asked on every render would hammer the core all day. */
+  async ensureHubUsers() {
     if (this.staffPickerState === "ready" || this.staffPickerState === "loading") return;
     this.staffPickerState = "loading";
     try {
       const rowsIn = await erplora2().query("hub.users.list");
-      this.hubUsers = rows2(rowsIn).filter((u5) => u5.is_active !== false && !!u5.id);
+      const all = rows2(rowsIn).filter((u5) => !!u5.id);
+      all.forEach((u5) => this.rememberStaffName(u5.id, u5.name));
+      this.hubUsers = all.filter((u5) => u5.is_active !== false);
       this.staffPickerState = "ready";
     } catch {
       this.hubUsers = [];
       this.staffPickerState = "error";
     }
   }
+  /** Learns a name for an opaque id, wherever it came from (the team, the picker, the originating
+   *  appointment). A new Map because Lit compares by reference: mutating it would paint nothing. */
+  rememberStaffName(id, name) {
+    if (!id || !name || this.staffNames.get(id) === name) return;
+    this.staffNames = new Map(this.staffNames).set(id, name);
+  }
   /** Choose who is serving. With no argument = **the session user**: the explicit attribution is
-   *  cleared and the server decides again. */
+   *  cleared and the server decides again.
+   *
+   *  With a LINE open (sales#277) the very same choice moves that one row instead, and the chip is
+   *  left alone: correcting the line the receptionist is looking at must not silently re-aim the
+   *  next tap at somebody else. */
   pickStaff(person) {
+    this.rememberStaffName(person?.id, person?.name);
+    const lineId = this.staffPickerLine;
+    this.staffPickerOpen = false;
+    this.staffPickerLine = void 0;
+    if (lineId) {
+      void this.moveLineStaff(lineId, person?.id);
+      return;
+    }
     this.staffId = person?.id;
     this.staffName = person?.name ?? "";
-    this.staffPickerOpen = false;
+  }
+  /** Charges an EXISTING line to somebody else, keeping the line (sales#277).
+   *
+   *  Optimistic like the note (`applyLineNote`): the row on screen answers the tap at once and the
+   *  order row is written behind it. A failure is not swallowed — with it the screen and the
+   *  server would disagree about who earned the money, and the close would be wrong with nothing
+   *  said — so the line is put BACK and the reason is painted. */
+  async moveLineStaff(lineId, staffId) {
+    const line = this.cart.find((l3) => l3.line_id === lineId);
+    if (!line || (line.staff_id ?? void 0) === staffId) return;
+    const before = line.staff_id;
+    const aim = (l3, to) => l3.line_id === lineId ? { ...l3, staff_id: to } : l3;
+    this.cart = this.cart.map((l3) => aim(l3, staffId));
+    if (!this.orderId) return;
+    try {
+      await updateOrderLineStaff(erplora2(), this.orderId, line, staffId ?? null);
+    } catch (e7) {
+      this.cart = this.cart.map((l3) => aim(l3, before));
+      this.error = domainErrorText(CATALOG2, erplora2().locale, e7) || t5("ui.lineStaffFailed");
+    }
+  }
+  /** Who the line under the picker is charged to right now — so the dialog ticks the option that
+   *  is already true instead of the check's. */
+  get pickerLineStaffId() {
+    return this.cart.find((l3) => l3.line_id === this.staffPickerLine)?.staff_id;
+  }
+  /** What a cart row says about its professional, or '' when it says nothing.
+   *
+   *  An id with no name resolves to the same wording the chip uses when it only knows the id: it
+   *  is honest about naming nobody, and it still tells two otherwise identical rows apart, because
+   *  the row with no attribution at all paints no sub-line. */
+  lineStaffLabel(l3) {
+    if (!l3.staff_id) return "";
+    return this.staffNames.get(l3.staff_id) || t5("ui.staffAssigned");
   }
   /** What the chip reads. With an originating appointment the id is known but the name may not be
    *  (it is a `staff_member`, not a person of the hub): it says "the assigned professional" instead
@@ -9830,6 +9916,9 @@ var ErpPosTouch = class extends i3 {
     if (changed.has("orderId") && !this.orderId) {
       this.ticketDiscount = 0;
       this.ticketDiscountAmount = 0;
+    }
+    if (changed.has("cart") && this.cart.some((l3) => l3.staff_id && !this.staffNames.has(l3.staff_id))) {
+      void this.ensureHubUsers();
     }
   }
   /** El teclado. Tras traer una pata a editar el importe queda CEBADO: la siguiente tecla lo
@@ -10902,6 +10991,26 @@ var ErpPosTouch = class extends i3 {
              so it gets typed twice or taken for granted. It goes on a sub-line of its own, the way
              the supplements do on paper. -->
         ${l3.note ? b2`<p class="line-note-text"><ion-icon name="chatbox-ellipses-outline"></ion-icon> ${l3.note}</p>` : A}
+        <!-- sales#277: WHOSE line this is. In a salon Ana cuts and Marta colours on the same
+             ticket, so without this the cart paints two «Corte» that cannot be told apart and the
+             commission of the day rides on a check nobody can make. Sub-line of its own, the same
+             shape as the note, and only when there IS one: a line the ticket attributes says
+             nothing extra, exactly as before.
+             TAPPING it corrects the row (Fresha, Square Appointments, Vagaro, Booksy all let the
+             line be re-assigned from the line): the professional is still SEALED by the chip when
+             the line is added — sales#273 decided that and this does not reopen it — but a chip
+             moved one tap late no longer costs deleting the line and its note with it. Not offered
+             on a line already fired to production, which is not editable at the till at all. -->
+        ${this.lineStaffLabel(l3) ? b2`<button class="line-staff" type="button"
+              data-testid="line-staff"
+              ?disabled=${locked || !l3.line_id}
+              title=${t5("ui.lineStaffPickerTitle")}
+              aria-label=${t5("ui.lineStaffPickerTitle")}
+              @click=${(e7) => {
+      e7.stopPropagation();
+      void this.openStaffPicker(l3.line_id);
+    }}>
+            <ion-icon name="person-circle-outline"></ion-icon>${this.lineStaffLabel(l3)}</button>` : A}
       </ion-label>
       <div slot="end" class="lineend">
         <span class="lt ${l3.is_gift ? "is-gift" : ""}">${this.money(lineAmount(l3))}</span>
@@ -11507,25 +11616,30 @@ var ErpPosTouch = class extends i3 {
            get re-parented to the body, ADR-0028), so on mobile it rises as a sheet. -->
       ${this.staffPickerOpen ? b2`
         <dialog class="staff-dialog" open>
-          <h3>${t5("ui.staffPickerTitle")}</h3>
-          <p>${t5("ui.staffPickerHint")}</p>
+          <!-- sales#277: the same dialog serves the CHECK and one LINE. It says which, because
+               «who is serving» and «whose is this line» decide different money in a salon. -->
+          <h3>${t5(this.staffPickerLine ? "ui.lineStaffPickerTitle" : "ui.staffPickerTitle")}</h3>
+          <p>${t5(this.staffPickerLine ? "ui.lineStaffPickerHint" : "ui.staffPickerHint")}</p>
           <div class="staff-list">
             <button class="staff-opt" type="button" data-testid="staff-option-me"
-                    ?data-current=${!this.staffId} @click=${() => this.pickStaff()}>
-              ${t5("ui.staffMeOption")}
+                    ?data-current=${this.staffPickerLine ? !this.pickerLineStaffId : !this.staffId}
+                    @click=${() => this.pickStaff()}>
+              ${t5(this.staffPickerLine ? "ui.lineStaffTicketOption" : "ui.staffMeOption")}
             </button>
             ${this.staffPickerState === "loading" ? b2`<p class="staff-note" data-testid="staff-loading">${t5("ui.staffLoading")}</p>` : A}
             ${this.staffPickerState === "error" ? b2`<p class="staff-note" data-testid="staff-error">${t5("ui.staffLoadFailed")}</p>` : A}
             ${this.staffPickerState === "ready" && !this.hubUsers.length ? b2`<p class="staff-note" data-testid="staff-empty">${t5("ui.staffPickerEmpty")}</p>` : A}
             ${this.hubUsers.map((u5) => b2`
               <button class="staff-opt" type="button" data-testid="staff-option"
-                      ?data-current=${this.staffId === u5.id} @click=${() => this.pickStaff(u5)}>
+                      ?data-current=${(this.staffPickerLine ? this.pickerLineStaffId : this.staffId) === u5.id}
+                      @click=${() => this.pickStaff(u5)}>
                 ${u5.name}
               </button>`)}
           </div>
           <div class="dlg-actions">
             <ion-button fill="clear" @click=${() => {
       this.staffPickerOpen = false;
+      this.staffPickerLine = void 0;
     }}>${t5("ui.cancel")}</ion-button>
           </div>
         </dialog>` : A}
@@ -11828,7 +11942,13 @@ __decorateClass([
 ], ErpPosTouch.prototype, "staffPickerOpen", 2);
 __decorateClass([
   r5()
+], ErpPosTouch.prototype, "staffPickerLine", 2);
+__decorateClass([
+  r5()
 ], ErpPosTouch.prototype, "hubUsers", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "staffNames", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "staffPickerState", 2);
