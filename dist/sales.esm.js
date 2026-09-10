@@ -2450,7 +2450,7 @@ function prebillToPrintDocument(lines, settings = {}, opts = {}, valuation) {
   };
 }
 function saleToPrintDocument(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName, t7) {
-  const screen = saleToReceipt(sale, lines, settings, fiscal, locale, fallbackName, t7);
+  const screen = saleToReceipt(sale, lines, settings, { ...fiscal, pending: false }, locale, fallbackName, t7);
   return {
     business_name: screen.business.name,
     business_address: screen.business.address,

@@ -645,4 +645,14 @@ describe('la cabecera del tique NO espera a la factura (sales#274)', () => {
     await primerPintado(el);
     expect(paper(el).business.name).toBe('ui.docDefaultBusiness');
   });
+
+  it('the printable HTML (browser / PDF) does not inherit the blank of the screen either', async () => {
+    // `printableHtml()` is the OTHER paper (iframe print, PDF from Rust): same rule as ESC/POS.
+    const el = await montar({ invoiceBySource: () => [] }) as HTMLElement & {
+      updateComplete: Promise<unknown>; printableHtml(): string;
+    };
+    await primerPintado(el);
+    expect(paper(el).number, 'the screen is still waiting').toBeUndefined();
+    expect(el.printableHtml()).toContain('20260909-0001');
+  });
 });

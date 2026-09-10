@@ -586,4 +586,12 @@ describe('el papel nunca sale sin identificador (sales#274)', () => {
     expect(doc.business_name).toBe('Salon Aurora SL');
     expect(doc.vat_number).toBe('12345678Z');
   });
+
+  it('with the invoice still being written (`pending`) the paper keeps the sale number', () => {
+    // The screen leaves the number blank while the Outbox writes the invoice; the ESC/POS document
+    // is paper and never inherits that blank — whoever composes it. A printed ticket with no
+    // identifier is a ticket that does not exist.
+    const doc = saleToPrintDocument(SALE, LINES, {}, { pending: true });
+    expect(doc.receipt_id).toBe(SALE.sale_number);
+  });
 });
