@@ -30,7 +30,7 @@ function installList(overrides: Record<string, unknown[] | (() => unknown[])> = 
       // The list opens the sale document, which resolves the sale, its lines and its policy.
       'sales.get': [],
       'sales.lines': [],
-      'sales.pos_settings.get': [],
+      'sales.pos_settings.get': [], 'sales.business.get': [],
       ...overrides,
     },
     // `invoice`/`verifactu` are optional apps (ADR-0127) and this hub does not have them.
@@ -839,7 +839,7 @@ describe('sales list — el resto llega a la fila y el botón conserva su nombre
         'sales.payment_methods': [],
         'sales.get': [],
         'sales.lines': [],
-        'sales.pos_settings.get': [],
+        'sales.pos_settings.get': [], 'sales.business.get': [],
       },
       absent: ['invoice.by_source', 'invoice.lines', 'verifactu.records.by_invoice'],
       locale: 'es',
@@ -950,7 +950,7 @@ describe('sales list — what is left to refund is READ on the row (sales#256)',
         'sales.payment_methods': [],
         'sales.get': [],
         'sales.lines': [],
-        'sales.pos_settings.get': [],
+        'sales.pos_settings.get': [], 'sales.business.get': [],
       },
       absent: ['invoice.by_source', 'invoice.lines', 'verifactu.records.by_invoice'],
       locale: 'es',
@@ -1044,7 +1044,7 @@ describe('sales list — what is left to refund is READ on the row (sales#256)',
     installErploraDouble({
       queries: {
         'sales.list': ROWS, 'sales.stats': [], 'sales.payment_methods': [],
-        'sales.get': [], 'sales.lines': [], 'sales.pos_settings.get': [],
+        'sales.get': [], 'sales.lines': [], 'sales.pos_settings.get': [], 'sales.business.get': [],
       },
       absent: ['invoice.by_source', 'invoice.lines', 'verifactu.records.by_invoice'],
       locale: 'en',
@@ -1186,7 +1186,7 @@ describe('sales list — la acción de devolver se anuncia con TEXTO, no con su 
         'sales.payment_methods': [],
         'sales.get': [],
         'sales.lines': [],
-        'sales.pos_settings.get': [],
+        'sales.pos_settings.get': [], 'sales.business.get': [],
       },
       absent: ['invoice.by_source', 'invoice.lines', 'verifactu.records.by_invoice'],
       locale: 'es',
@@ -1239,7 +1239,7 @@ describe('sales list — la acción de devolver se anuncia con TEXTO, no con su 
     installErploraDouble({
       queries: {
         'sales.list': ROWS, 'sales.stats': [], 'sales.payment_methods': [],
-        'sales.get': [], 'sales.lines': [], 'sales.pos_settings.get': [],
+        'sales.get': [], 'sales.lines': [], 'sales.pos_settings.get': [], 'sales.business.get': [],
       },
       absent: ['invoice.by_source', 'invoice.lines', 'verifactu.records.by_invoice'],
       locale: 'en',

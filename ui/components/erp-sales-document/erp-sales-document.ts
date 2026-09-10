@@ -125,7 +125,7 @@ export class ErpSalesDocument extends LitElement {
     this.loadedFor = this.saleId;
     this.loading = true; this.error = '';
     try {
-      const [sale, lines, settingsRows] = await Promise.all([
+      const [sale, lines, settingsRows, businessRows] = await Promise.all([
         erplora().query<SaleRow>('sales.get', { sale_id: this.saleId }),
         erplora().query<SaleLineRow[]>('sales.lines', { sale_id: this.saleId }),
         // sales#203 — the RECEIPT's own settings (header, footer, promotional QR, whether prices
@@ -134,15 +134,31 @@ export class ErpSalesDocument extends LitElement {
         // `sales.manage_settings`: through it the paper came out blank of everything the shop had
         // configured for exactly the person who hands it over.
         erplora().query<SaleSettings[]>('sales.pos_settings.get').catch(() => []),
+        // sales#274 — WHOSE ticket this is, live from `hub_settings` (single source ADR-0061)
+        // through the cashier-sized door sales#180 opened for the bill. The invoice carries the
+        // same datum frozen, but it is written by the Outbox a few ms AFTER the charge — and the
+        // instant in between is precisely when this viewer opens and the cashier turns the screen
+        // towards the customer. Without asking, that first paint headed the ticket with the
+        // generic default name and no NIF: a business that does not exist, read by the customer.
+        // Best-effort: a hub with no identity saved yet still gets its ticket.
+        erplora().query<{ name?: string; tax_id?: string }[]>('sales.business.get').catch(() => []),
       ]);
       this.sale = Array.isArray(sale) ? (sale as SaleRow[])[0] : sale;
       this.lines = lines || [];
       // sales#223 — resolved through the ONE set of UI defaults. A hub where nobody ever saved
       // the settings answers no row at all, and every reader below used to decide on its own
       // what that absence meant.
-      this.settings = withPosSettingsDefaults(
-        (Array.isArray(settingsRows) ? settingsRows[0] : settingsRows) as Record<string, unknown>,
-      ) as SaleSettings;
+      const business = (Array.isArray(businessRows) ? businessRows[0] : businessRows) || {};
+      this.settings = {
+        ...(withPosSettingsDefaults(
+          (Array.isArray(settingsRows) ? settingsRows[0] : settingsRows) as Record<string, unknown>,
+        ) as SaleSettings),
+        // sales#274 — the LAST-RESORT identity, exactly as the bill composes it (sales#180): a
+        // deliberate `receipt_header` still wins the name, and the invoice's own snapshot wins
+        // over both the moment it lands.
+        ...(business.name ? { issuer_name: business.name } : {}),
+        ...(business.tax_id ? { issuer_tax_id: business.tax_id } : {}),
+      };
       // Datos fiscales (QR VeriFactu) — best-effort y SIN bloquear el primer pintado: el Outbox es
       // asíncrono (la factura/registro se crean unos ms después de cobrar), así que se observa con
       // reintentos y el QR aparece solo cuando llega.
@@ -171,6 +187,10 @@ export class ErpSalesDocument extends LitElement {
       }
       if (fiscal.qr || !retry) return;
     }
+    // sales#274 — se acabaron los reintentos y la factura no ha llegado (Outbox atascado). El
+    // hueco era una espera, no un estado permanente: el tique cae a su propio número antes que
+    // quedarse sin identificador ninguno.
+    if (this.saleId === saleId && this.fiscal.pending) this.fiscal = { ...this.fiscal, pending: false };
   }
 
   /** Resuelve venta → factura (`invoice.by_source`) → registro VeriFactu (`verifactu.records.by_invoice`)
@@ -186,7 +206,9 @@ export class ErpSalesDocument extends LitElement {
         'invoice.by_source', { source_id: saleId });
       if (invRows === undefined) return { fiscal: {}, retry: false }; // módulo invoice ausente
       const invoice = (Array.isArray(invRows) ? invRows[0] : invRows) as Record<string, unknown> | undefined;
-      if (!invoice?.id) return { fiscal: {}, retry: true }; // factura aún no creada (Outbox)
+      // sales#274 — la app de facturación ESTÁ y su factura todavía no: eso no es «sin número», es
+      // «el número aún no se sabe». La pantalla deja el hueco en vez de enseñar el de la venta.
+      if (!invoice?.id) return { fiscal: { pending: true }, retry: true };
       // sales#103: SOLO una F2 (simplificada) tiene algo que canjear — una F1 nació completa (con
       // NIF) y una F3 ya ES el canje (y `by_source` devuelve la más reciente, así que la F3 la
       // descarta sola). Cero acuñamientos en ambos casos.
@@ -251,11 +273,16 @@ export class ErpSalesDocument extends LitElement {
     await flight;
   }
 
-  /** El fiscal del papel MÁS el claim acuñado (si lo hay): viajan juntos en `FiscalData`. */
+  /** El fiscal del papel MÁS el claim acuñado (si lo hay): viajan juntos en `FiscalData`.
+   *
+   *  sales#274 — y SIN `pending`: la espera es de la pantalla, que se actualiza sola cuando el
+   *  número llega. Una copia impresa no se actualiza nunca, así que sale con el mejor
+   *  identificador que haya (el de la venta) antes que sin ninguno. */
   private fiscalForPaper(): FiscalData {
-    if (!this.claim) return this.fiscal;
+    if (!this.claim) return { ...this.fiscal, pending: false };
     return {
       ...this.fiscal,
+      pending: false,
       claim_locator: this.claim.locator,
       // La puerta devuelve `/p/<locator>` relativo; el QR impreso necesita la URL ABSOLUTA del
       // hub (el origen de esta app ES el origen del hub).
@@ -287,7 +314,8 @@ export class ErpSalesDocument extends LitElement {
     // la puerta es idempotente; esta copia saldrá sin él, la siguiente lo lleva.
     if (this.claimInvoiceId && !this.claim && !this.claimFlight) void this.ensureClaim(this.claimInvoiceId);
     const doc = saleToReceipt(
-      this.sale, this.lines || [], this.settings || {}, this.fiscal, erplora().locale,
+      // sales#274: el papel, con su `pending` ya resuelto (ver `fiscalForPaper`) — nunca sin número.
+      this.sale, this.lines || [], this.settings || {}, this.fiscalForPaper(), erplora().locale,
       t('ui.docDefaultBusiness'), t,
     );
     // sales#120: el papel habla el idioma del hub — las palabras son labels del catálogo, no

@@ -559,3 +559,31 @@ describe('sales#147 — the supplement billed apart, on the thermal paper', () =
     expect(doc.items.map((i) => i.name)).toEqual(['Menú del día', '+ Refresco']);
   });
 });
+
+// sales#274 — the PAPER is not the screen. The screen leaves the number blank while the invoice is
+// being written because it will fill itself in a moment; a printed copy never updates, so it goes
+// out with the best identifier it has. The viewer strips `pending` before composing paper
+// (`fiscalForPaper`), and this is the guard that says what happens if it ever reaches here.
+describe('el papel nunca sale sin identificador (sales#274)', () => {
+  const SALE = {
+    id: 's1', sale_number: '20260909-0001', subtotal: 2471, tax_amount: 519, total: 2990,
+    payment_method_name: 'Efectivo', created_at: '2026-09-09T18:00:00Z',
+  };
+  const LINES = [{ product_name: 'Corte', quantity: 1_000_000, unit_price: 2990, line_total: 2990 }];
+
+  it('con la cadena fiscal resuelta imprime el número de la factura', () => {
+    const doc = saleToPrintDocument(SALE, LINES, {}, { number: 'TICKET-2026-000001' });
+    expect(doc.receipt_id).toBe('TICKET-2026-000001');
+  });
+
+  it('sin número de factura imprime el de la venta, no un hueco', () => {
+    const doc = saleToPrintDocument(SALE, LINES, {}, {});
+    expect(doc.receipt_id).toBe(SALE.sale_number);
+  });
+
+  it('el NIF vivo del negocio llega al papel cuando la factura aún no lo ha sellado', () => {
+    const doc = saleToPrintDocument(SALE, LINES, { issuer_tax_id: '12345678Z', issuer_name: 'Salon Aurora SL' }, {});
+    expect(doc.business_name).toBe('Salon Aurora SL');
+    expect(doc.vat_number).toBe('12345678Z');
+  });
+});
