@@ -2278,6 +2278,7 @@ export class ErpPosTouch extends LitElement {
       this.orderLabel = c.label ?? '';
       this.ticketDiscount = c.discount ?? 0; // sales#71
       this.ticketDiscountAmount = c.discount_amount ?? 0; // sales#113
+      await this.adoptCheckAppointment(c.appointmentId); // sales#280
       rememberCurrentCheck(localStorage, c.id);
       this.cart = await loadOrderLines(erplora(), c.id);
       this.notifyOrderRestored();
@@ -2318,6 +2319,9 @@ export class ErpPosTouch extends LitElement {
       this.orderLabel = cuentas.find((c) => c.id === id)?.label ?? '';
       this.ticketDiscount = cuentas.find((c) => c.id === id)?.discount ?? 0; // sales#71
       this.ticketDiscountAmount = cuentas.find((c) => c.id === id)?.discount_amount ?? 0; // sales#113
+      // sales#280: y la cita con la que se armó, si vino de la agenda. Va antes del deep link del
+      // arranque a propósito — si la navegación trae una cita nueva, esa es la que manda.
+      await this.adoptCheckAppointment(cuentas.find((c) => c.id === id)?.appointmentId);
       // El pedido vuelve, pero su MESA y su CLIENTE los saben sus dueños, no `sales`. Se les avisa
       // para que restauren lo suyo (y el de mesas nos devuelva el contexto por `erp:order-context`).
       // Sin esto, al recargar el TPV la comanda aparecía "sin mesa" aunque la mesa siguiera ocupada.
@@ -2522,6 +2526,53 @@ export class ErpPosTouch extends LitElement {
       id: svc?.id ?? '', name, price, tax_category_key,
       is_service: true, pricing_type: 'fixed', is_active: 1,
     }));
+    // sales#280 — y el enlace se queda en la CUENTA. `addNow` acaba de abrir el pedido (o de
+    // añadir la línea al que ya había), así que aquí ya hay `orderId` al que atarlo.
+    await this.linkCheckToAppointment();
+  }
+
+  /** sales#280 — escribe en la cuenta ABIERTA la cita que la armó.
+   *
+   *  Sin esto el enlace vivía SOLO en memoria de la pantalla, y el shell del hub reconstruye esa
+   *  pantalla en cuanto la ruta cambia (`ModuleView.vue`: `outlet.replaceChildren()` + un
+   *  `createElement` nuevo) — que es justo lo que hace «Cobrar» al añadir `?appointment_id=`. La
+   *  copia nueva recuperaba la cuenta del servidor pero no la cita, cobraba sin ella, y sin
+   *  `appointment_id` no se emite `sales.sale.created_from_appointment`: la agenda se quedaba con
+   *  el corte cobrado y la cita en pendiente. */
+  private async linkCheckToAppointment(): Promise<void> {
+    if (!this.orderId || !this.appointmentId) return;
+    try {
+      await erplora().command('sales.order.set_appointment', {
+        order_id: this.orderId, appointment_id: this.appointmentId,
+      });
+    } catch {
+      // La venta NO se rompe por esto: el id sigue en memoria y este mismo cobro cerrará la cita.
+      // Lo que se pierde es que sobreviva a un remontaje o a un F5, y eso sí se dice — callarlo es
+      // cómo se cobra una cita que la agenda seguirá enseñando como pendiente.
+      this.notifyShell(t('ui.appointmentLinkFailed'));
+    }
+  }
+
+  /** sales#280 — la cita de una cuenta RECUPERADA, de vuelta en la pantalla.
+   *
+   *  Persistido está solo el id (opaco, ADR-0077); quién es la clienta y quién la atiende se
+   *  releen de la propia cita, por la misma query pública que armó la cuenta. El carrito NO se
+   *  toca: el servicio ya es una línea de este pedido, y volver a sembrarlo lo cobraría dos veces.
+   *
+   *  La cuenta MANDA: sin cita, la pantalla se queda sin cita — así cambiar de cuenta no arrastra
+   *  la cita de la anterior al ticket de otra clienta. */
+  private async adoptCheckAppointment(appointmentId?: string): Promise<void> {
+    this.appointmentId = appointmentId;
+    if (!appointmentId) return;
+    const rowsIn = await optionalRead((c) => c.queryOptional<unknown>('appointments.appointments.get', { id: appointmentId }));
+    if (rowsIn === undefined) return; // sin el módulo: el id viaja igual y no hay nada que repintar
+    const ap = rows<AppointmentRow>(rowsIn)[0];
+    if (!ap) return;
+    if (ap.staff_id) this.staffId = ap.staff_id;
+    this.rememberStaffName(ap.staff_id, ap.staff_name);
+    if (ap.staff_name) this.staffName = ap.staff_name;
+    if (ap.customer_id) this.customerId = ap.customer_id;
+    if (ap.customer_name) this.customerName = ap.customer_name;
   }
 
   /** sales#179 — **who is serving this check**, and how it is transferred.

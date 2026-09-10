@@ -272,6 +272,7 @@
     "noParkedTickets": "No hay cuentas abiertas",
     "errorPark": "No se pudo aparcar el ticket",
     "errorRetrieve": "No se pudo recuperar el ticket",
+    "appointmentLinkFailed": "No se pudo enlazar la cita con esta cuenta. Cóbrala sin salir de esta pantalla o la agenda podría seguir enseñándola como pendiente.",
     "tendered": "Entregado",
     "change": "Cambio",
     "confirmCharge": "Confirmar cobro",
