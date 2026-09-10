@@ -87,14 +87,16 @@ function installSdk(): void {
       commands.push({ name, params });
       if (name === 'sales.order.open') {
         const id = `ord-${++seq}`;
+        // The row `queries/orders_list.sql` really gives back. `schemas/open_order.json` accepts
+        // NEITHER `appointment_id` NOR `staff_id` NOR `customer_name`, and the list query returns
+        // none of them either: opening a check cannot carry the booking, which is the very reason
+        // the link needs its own write. A double that accepted them here would go green on a till
+        // that persisted nothing.
         orders.push({
           id, status: 'open', provisional_total: 1700,
           created_at: '2026-09-10T10:00:00Z',
           label: params?.label ?? '',
-          appointment_id: params?.appointment_id ?? null,
-          customer_id: params?.customer_id ?? null,
-          customer_name: params?.customer_name ?? '',
-          staff_id: params?.staff_id ?? null,
+          appointment_id: null,
         });
         const born: string[] = [];
         for (const it of (params?.items as Record<string, unknown>[] | undefined) ?? []) {
@@ -110,14 +112,13 @@ function installSdk(): void {
         lines.push(row);
         return { ok: true, new_ids: [String(row.id)] };
       }
-      if (name === 'sales.order.link_appointment') {
-        const order = orders.find((o) => o.id === params?.order_id);
-        if (order) {
-          order.appointment_id = params?.appointment_id ?? null;
-          order.customer_id = params?.customer_id ?? null;
-          order.customer_name = params?.customer_name ?? '';
-          order.staff_id = params?.staff_id ?? null;
-        }
+      if (name === 'sales.order.set_appointment') {
+        // `commands/order_set_appointment.sql` writes ONE column, and only on an open check.
+        // Who the customer is and who served her are NOT persisted here (ADR-0077: the id is
+        // opaque and the booking is the authority), so these tests only go green if the till
+        // really re-reads the booking when it adopts the check back.
+        const order = orders.find((o) => o.id === params?.order_id && o.status === 'open');
+        if (order) order.appointment_id = params?.appointment_id ?? null;
         return { ok: true, new_ids: [] };
       }
       return { ok: true, new_ids: [`line-${++seq}`] };
@@ -274,6 +275,58 @@ describe('a released check does not carry its booking anywhere (appointments#154
     // A walk-in on the same screen: nothing to do with Ana's booking.
     first.cart = [{ id: 'p-x', name: 'Champú', price: 900 }] as MountedPos['cart'];
     await first.confirm();
+
+    expect(sentSale()?.appointment_id).toBeNull();
+  });
+});
+
+// The other door into the same check: the PARKED LIST. The shell rebuilding the screen is not the
+// only way the copy that armed the check stops being the copy that charges it — the cashier parks
+// Ana's check to ring up somebody at the counter and pulls it back two minutes later, which is the
+// everyday shape of this in a salon. It is the same rule, so it gets the same guarantee.
+describe('recovering the check from the parked list (sales#280)', () => {
+  it('brings its booking back, so charging it still closes the agenda', async () => {
+    const el = await mount();
+    await tapCharge(el, 'ap-ana');
+    await (el as unknown as { park(): Promise<void> }).park();
+    await settle(el);
+
+    const parked = (el as unknown as { parked: { id: string; appointmentId?: string }[] }).parked;
+    const ana = parked.find((c) => c.appointmentId === 'ap-ana');
+    expect(ana, 'the parked check kept its booking on the server').toBeDefined();
+
+    await (el as unknown as { retrieve(c: unknown): Promise<void> }).retrieve(ana);
+    await settle(el);
+    await el.confirm();
+
+    expect(sentSale()?.appointment_id).toBe('ap-ana');
+    expect(sentSale()?.customer_id).toBe('c-ana');
+    expect(sentSale()?.staff_id).toBe('st-lucia');
+  });
+
+  it('drops the booking of the check it LEFT when the next one has none', async () => {
+    // The reverse, and the expensive one: the counter check must not close Ana's booking. The
+    // check MANDA — no booking on it means no booking on the screen.
+    // A check somebody else left open at the counter, with no booking behind it. It is there
+    // BEFORE the till boots, which is how the screen gets to see it on its parked list.
+    orders.push({
+      id: 'ord-counter', status: 'open', provisional_total: 900,
+      created_at: '2026-09-10T09:00:00Z', label: '', appointment_id: null,
+    });
+    lines.push(lineRow('ord-counter', { product_id: 'p-x', product_name: 'Champú', unit_price: 900 }));
+
+    const el = await mount();
+    await tapCharge(el, 'ap-ana'); // Ana's check, linked, on screen
+    // The client dropped the haircut and only wants to pay the shampoo, so the line goes: the
+    // screen is empty but the check is still the one the booking armed.
+    el.cart = [];
+    await settle(el);
+
+    const counter = (el as unknown as { parked: { id: string }[] }).parked.find((c) => c.id === 'ord-counter');
+    expect(counter, 'the counter check is on the list').toBeDefined();
+    await (el as unknown as { retrieve(c: unknown): Promise<void> }).retrieve(counter);
+    await settle(el);
+    await el.confirm();
 
     expect(sentSale()?.appointment_id).toBeNull();
   });
