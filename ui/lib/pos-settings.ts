@@ -88,6 +88,19 @@ function saved(v: unknown): boolean {
   return v !== undefined && v !== null;
 }
 
+/** The settings whose value is a QUANTITY and not a switch. Everything else in the row is the 0/1
+ *  INTEGER of the portable SQL subset (ADR-0007), and `asFlag` collapses it — which would turn a
+ *  10 % cap into a 1 % one (sales#269). They resolve through `asNumber` instead. */
+const NUMERIC_SETTINGS: ReadonlySet<string> = new Set(['max_discount_percent']);
+
+/** A quantity as the screen reads it: the number the shop saved, whatever form the driver hands
+ *  back ('25' and 25 are the same row). A value the column could not hold is not a choice — it
+ *  falls back to the default rather than locking the till out of a number it cannot read. */
+function asNumber(v: unknown, fallback: number): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 /** A flag as the screen reads it: the 0/1 INTEGER of the portable SQL subset (ADR-0007), whatever
  *  form the driver hands back. `'0'` is OFF — `'0' !== 0` was true, which is the same class of
  *  defect as `undefined !== 0`. */
@@ -111,7 +124,8 @@ export function withPosSettingsDefaults(row: Record<string, unknown> | PosSettin
   for (const [key, fallback] of Object.entries(POS_SETTINGS_DEFAULTS)) {
     const v = raw[key];
     if (!saved(v)) { out[key] = fallback; continue; }
-    out[key] = typeof fallback === 'string' ? String(v) : asFlag(v);
+    if (typeof fallback === 'string') { out[key] = String(v); continue; }
+    out[key] = NUMERIC_SETTINGS.has(key) ? asNumber(v, fallback as number) : asFlag(v);
   }
   return out as PosSettings;
 }

@@ -55,6 +55,9 @@ CONFIGURED = {
     "sync_services": 0,
     "require_customer": 1,
     "allow_discounts": 0,
+    # sales#269 — the cap is policy too: the till ROUTES the charge with it, so a counter read that
+    # stopped projecting it would leave every ticket going through the cashier's door.
+    "max_discount_percent": 10,
     "enable_parked_tickets": 0,
     "default_tax_included": 0,
     "receipt_header": "Pepe Bar\n1 Main Street",

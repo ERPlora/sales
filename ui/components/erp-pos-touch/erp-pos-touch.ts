@@ -43,6 +43,9 @@ import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod, payM
 // sales#223 — the policy is resolved at the door: ONE set of defaults for the whole screen, so a
 // hub with no settings row is the same till as one that saved the defaults.
 import { withPosSettingsDefaults, type PosSettings } from '../../lib/pos-settings.js';
+// sales#269 — the discount whoever is charging may give ALONE, and which checkout the till uses
+// above it. The arithmetic mirrors the server's `enforce_discount_cap`, which is the authority.
+import { checkoutCommand, discountCap } from '../../lib/discount-cap.js';
 // sales#159 (ADR-0386) — una venta, N cobros. La ARITMÉTICA del reparto vive en lib (probada sin
 // DOM): el restante, lo que cubre cada pata, el cambio —que sale SOLO del efectivo— y el
 // `payments[]` que se le entrega al servidor.
@@ -4007,7 +4010,27 @@ export class ErpPosTouch extends LitElement {
         covered: new Set(this.covered.keys()),
         primaryCategory: (id) => this.primaryCategory(id),
       });
-      await erplora().command('sales.complete_sale', {
+      // 🔴 sales#269 — WHICH DOOR the charge goes through. Above the discount the shop lets whoever
+      // is charging give alone (`max_discount_percent`, 100 = no cap), the checkout is
+      // `sales.complete_sale_over_limit`: the same operation behind `sales.discount.over_limit`, a
+      // permission only a `manager` holds. A cashier reaching it is refused as `requires_elevation`
+      // and the SHELL paints the PIN dialog on top (hub#363) — this module paints nothing, and on
+      // approval the very same payload goes through.
+      //
+      // Routing here rather than letting the server refuse is the point: the cashier learns the
+      // manager is needed while the customer is still deciding, not after pressing Charge. The
+      // AUTHORITY is still the server's — `enforce_discount_cap` re-checks the cap from its own
+      // `reads`, so a payload that never went through this screen is capped all the same.
+      //
+      // The gross is `chargedLines` (billed, minus what an external tender already covered, minus
+      // gifts): the same set the server's fixed-amount cap weighs, so both round the same 30 cents.
+      const checkoutDoor = checkoutCommand(discountCap(this.settings), {
+        ticketPercent: this.ticketDiscount,
+        ticketAmountCents: this.ticketDiscountAmount > 0 && !split.line_ids ? this.ticketDiscountAmount : 0,
+        grossCents: cartTotal(this.chargedLines, this.ticketDiscount),
+        linePercents: cobradas.map((l) => l.discount ?? 0),
+      });
+      await erplora().command(checkoutDoor, {
         items,
         // sales#71: descuento de TICKET (%); el servidor lo prorratea por línea antes del IVA.
         discount_percent: this.ticketDiscount,
