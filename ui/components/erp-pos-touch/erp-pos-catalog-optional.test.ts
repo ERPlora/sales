@@ -116,26 +116,26 @@ describe('an ABSENT catalogue is written down, not shown as an empty screen', ()
   it('the grid says WHY it has no products, naming the app', async () => {
     installSdk({ installed: ['taxes'] });
     const el = await mount();
-    expect(text(el, 'catalog-app-absent')).toContain('ui.catalogAppAbsent(app=Inventory)');
+    expect(text(el, 'pos-catalog-app-absent')).toContain('ui.catalogAppAbsent(app=Inventory)');
   });
 
   it('it is a STATUS, not an alert: nothing broke, this hub simply has no catalogue app', async () => {
     installSdk({ installed: ['taxes'] });
     const el = await mount();
-    expect(el.shadowRoot.querySelector('[data-testid="catalog-app-absent"]')?.getAttribute('role')).toBe('status');
+    expect(el.shadowRoot.querySelector('[data-testid="pos-catalog-app-absent"]')?.getAttribute('role')).toBe('status');
   });
 
   it('no incident is raised: absence is legitimate and an alarm nobody can act on is trained away', async () => {
     installSdk({ installed: ['taxes'] });
     const el = await mount();
-    expect(text(el, 'dependency-read-failed')).toBe('');
+    expect(text(el, 'pos-dependency-read-failed')).toBe('');
   });
 
   it('with services installed the grid is NOT empty, so the degraded notice stays out of the way', async () => {
     installSdk({ installed: ['taxes', 'services'] });
     const el = await mount();
     expect(el.products.map((p) => p.id)).toEqual(['s-1']);
-    expect(text(el, 'catalog-app-absent'), 'a salon selling haircuts is not degraded, it is just a salon').toBe('');
+    expect(text(el, 'pos-catalog-app-absent'), 'a salon selling haircuts is not degraded, it is just a salon').toBe('');
   });
 
   it('with the catalogue installed and simply empty the message is the generic one', async () => {
@@ -144,7 +144,7 @@ describe('an ABSENT catalogue is written down, not shown as an empty screen', ()
     pos.setQuery('inventory.products.list', []);
     pos.setQuery('inventory.products.for_sale', []);
     const el = await mount();
-    expect(text(el, 'catalog-app-absent'), 'installed and empty is a different fact from not installed').toBe('');
+    expect(text(el, 'pos-catalog-app-absent'), 'installed and empty is a different fact from not installed').toBe('');
   });
 });
 
@@ -156,7 +156,7 @@ describe('sales#111 / hub#960 — the till preflights the query the CHECKOUT pri
     // BROKEN also lands here.
     installSdk({ failing: { 'inventory.products.for_sale': 'query_not_found' } });
     const el = await mount();
-    expect(text(el, 'dependency-read-failed')).toContain('ui.appCatalogUnavailable(app=Inventory)');
+    expect(text(el, 'pos-dependency-read-failed')).toContain('ui.appCatalogUnavailable(app=Inventory)');
   });
 
   it('the preflight actually runs when the product grid is on', async () => {
@@ -174,6 +174,6 @@ describe('sales#111 / hub#960 — the till preflights the query the CHECKOUT pri
   it('an absent inventory does not raise it as an incident: the preflight follows the same classification', async () => {
     installSdk({ installed: ['taxes'] });
     const el = await mount();
-    expect(text(el, 'dependency-read-failed')).toBe('');
+    expect(text(el, 'pos-dependency-read-failed')).toBe('');
   });
 });

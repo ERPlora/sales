@@ -4268,7 +4268,7 @@ export class ErpPosTouch extends LitElement {
    *  al mandar una cita al TPV). */
   private renderCheckSalesLink() {
     if (!this.checkoutUnknown) return nothing;
-    return html`<ion-button size="small" fill="outline" class="check-sales" data-testid="checkout-check-sales"
+    return html`<ion-button size="small" fill="outline" class="check-sales" data-testid="pos-check-sales"
       @click=${() => this.goToSales()}>
       <ion-icon slot="start" name="cart-outline"></ion-icon>${t('ui.checkSales')}
     </ion-button>`;
@@ -4334,10 +4334,10 @@ export class ErpPosTouch extends LitElement {
   private renderCatalogHealth() {
     const n = this.blockedCount;
     if (!n || !this.canFixCatalog()) return nothing;
-    return html`<div class="catalog-health" role="status" data-testid="catalog-blocked-summary">
+    return html`<div class="catalog-health" role="status" data-testid="pos-catalog-blocked-summary">
       <ion-icon name="alert-circle" aria-hidden="true"></ion-icon>
       <span class="ch-text">${n === 1 ? t('ui.catalogBlockedOne') : t('ui.catalogBlocked', { count: n })}</span>
-      <ion-button size="small" fill="clear" class="ch-fix" data-testid="catalog-blocked-fix"
+      <ion-button size="small" fill="clear" class="ch-fix" data-testid="pos-catalog-blocked-fix"
         @click=${() => this.goToProductSetup()}>${t('ui.catalogBlockedFix')}</ion-button>
     </div>`;
   }
@@ -4356,7 +4356,7 @@ export class ErpPosTouch extends LitElement {
    *  the two is how an alert stops meaning anything. */
   private renderEmptyGrid() {
     if (!this.catalogAppAbsent) return html`<div class="empty">${t('ui.noProducts')}</div>`;
-    return html`<div class="empty catalog-absent" role="status" data-testid="catalog-app-absent">
+    return html`<div class="empty catalog-absent" role="status" data-testid="pos-catalog-app-absent">
       ${t('ui.catalogAppAbsent', { app: this.appName('inventory') })}
     </div>`;
   }
@@ -4373,7 +4373,7 @@ export class ErpPosTouch extends LitElement {
   private renderSimplifiedLimitCapture() {
     const done = recipientIsComplete(this.limitState);
     return html`
-      <div class="limit-capture" data-testid="simplified-limit-capture" ?data-done=${done}>
+      <div class="limit-capture" data-testid="pos-simplified-limit-capture" ?data-done=${done}>
         <div class="limit-head">
           <ion-icon name=${done ? 'document-text-outline' : 'alert-circle-outline'}></ion-icon>
           <div>
@@ -4384,13 +4384,13 @@ export class ErpPosTouch extends LitElement {
           </div>
         </div>
         <ion-input label=${t('ui.limitFieldName')} label-placement="stacked" .value=${this.customerName}
-                   data-testid="limit-name" autocomplete="off"
+                   data-testid="pos-limit-name" autocomplete="off"
                    @ionInput=${(e: CustomEvent) => { this.customerName = String((e.target as HTMLInputElement).value ?? ''); }}></ion-input>
         <ion-input label=${t('ui.limitFieldTaxId')} label-placement="stacked" .value=${this.customerTaxId}
-                   data-testid="limit-tax-id" autocomplete="off"
+                   data-testid="pos-limit-tax-id" autocomplete="off"
                    @ionInput=${(e: CustomEvent) => { this.customerTaxId = String((e.target as HTMLInputElement).value ?? ''); }}></ion-input>
         <ion-input label=${t('ui.limitFieldAddress')} label-placement="stacked" .value=${this.customerAddress}
-                   data-testid="limit-address" autocomplete="off"
+                   data-testid="pos-limit-address" autocomplete="off"
                    @ionInput=${(e: CustomEvent) => { this.customerAddress = String((e.target as HTMLInputElement).value ?? ''); }}></ion-input>
       </div>`;
   }
@@ -4549,7 +4549,7 @@ export class ErpPosTouch extends LitElement {
             <!-- sales#179 — WHO IS SERVING. Always there, even with nobody chosen: if it is not
                  visible, nobody knows the sale is attributed at all, and the waiter cannot be
                  transferred. -->
-            <button class="ctx-chip" type="button" data-testid="staff-chip"
+            <button class="ctx-chip" type="button" data-testid="pos-staff-chip"
                     aria-label=${t('ui.staffPickerTitle')} title=${t('ui.staffPickerTitle')}
                     @click=${() => void this.openStaffPicker()}>
               <ion-icon name="person-circle-outline"></ion-icon>
@@ -4559,7 +4559,7 @@ export class ErpPosTouch extends LitElement {
                  slot the customer occupies, and the chip is the shortcut to fill it. A block whose
                  only sign is a toast is a block nobody can act on once the toast is gone. -->
             ${this.missingRequiredCustomer
-              ? html`<button class="ctx-chip needs-customer" type="button" data-testid="needs-customer"
+              ? html`<button class="ctx-chip needs-customer" type="button" data-testid="pos-needs-customer"
                              title=${t('ui.customerRequiredCharge')} aria-label=${t('ui.customerRequiredCharge')}
                              @click=${() => this.askForCustomer()}>
                        <ion-icon name="person-add-outline"></ion-icon>
@@ -4848,7 +4848,7 @@ export class ErpPosTouch extends LitElement {
              moved one tap late no longer costs deleting the line and its note with it. Not offered
              on a line already fired to production, which is not editable at the till at all. -->
         ${this.lineStaffLabel(l) ? html`<button class="line-staff" type="button"
-              data-testid="line-staff"
+              data-testid="pos-line-staff"
               ?disabled=${locked || !l.line_id}
               title=${t('ui.lineStaffPickerTitle')}
               aria-label=${t('ui.lineStaffPickerTitle')}
@@ -4952,7 +4952,7 @@ export class ErpPosTouch extends LitElement {
                NOTE: no backticks in this comment. Inside an html tagged template a backtick ends
                the template literal and the whole file stops parsing. -->
           ${this.brokenCatalogApps.map((app) => html`
-            <div class="blocked-notice catalog-unavailable" role="alert" data-testid="dependency-read-failed">
+            <div class="blocked-notice catalog-unavailable" role="alert" data-testid="pos-dependency-read-failed">
               <ion-icon name="alert-circle" aria-hidden="true"></ion-icon>
               <span>${t('ui.appCatalogUnavailable', { app: this.appName(app) })}</span>
             </div>`)}
@@ -5362,7 +5362,7 @@ export class ErpPosTouch extends LitElement {
                      dentro: con una clave que no casa, el botón salía habilitado y el toque no
                      hacía nada ni decía nada. (Sin acentos graves aquí: dentro de un comentario de
                      lit cierran el template — es una trampa conocida.) -->
-                <ion-button class="charge" expand="block" data-testid="open-price-add"
+                <ion-button class="charge" expand="block" data-testid="pos-open-price-add"
                             ?disabled=${!(this.openAmountCents > 0 && this.resolvedDept)}
                             @click=${() => this.addOpenPrice()}>
                   ${t('ui.add')}${this.openAmountCents > 0 ? ` ${this.money(this.openAmountCents)}` : ''}
@@ -5490,22 +5490,22 @@ export class ErpPosTouch extends LitElement {
           <h3>${t(this.staffPickerLine ? 'ui.lineStaffPickerTitle' : 'ui.staffPickerTitle')}</h3>
           <p>${t(this.staffPickerLine ? 'ui.lineStaffPickerHint' : 'ui.staffPickerHint')}</p>
           <div class="staff-list">
-            <button class="staff-opt" type="button" data-testid="staff-option-me"
+            <button class="staff-opt" type="button" data-testid="pos-staff-option-me"
                     ?data-current=${this.staffPickerLine ? !this.pickerLineStaffId : !this.staffId}
                     @click=${() => this.pickStaff()}>
               ${t(this.staffPickerLine ? 'ui.lineStaffTicketOption' : 'ui.staffMeOption')}
             </button>
             ${this.staffPickerState === 'loading'
-              ? html`<p class="staff-note" data-testid="staff-loading">${t('ui.staffLoading')}</p>`
+              ? html`<p class="staff-note" data-testid="pos-staff-loading">${t('ui.staffLoading')}</p>`
               : nothing}
             ${this.staffPickerState === 'error'
-              ? html`<p class="staff-note" data-testid="staff-error">${t('ui.staffLoadFailed')}</p>`
+              ? html`<p class="staff-note" data-testid="pos-staff-error">${t('ui.staffLoadFailed')}</p>`
               : nothing}
             ${this.staffPickerState === 'ready' && !this.hubUsers.length
-              ? html`<p class="staff-note" data-testid="staff-empty">${t('ui.staffPickerEmpty')}</p>`
+              ? html`<p class="staff-note" data-testid="pos-staff-empty">${t('ui.staffPickerEmpty')}</p>`
               : nothing}
             ${this.hubUsers.map((u) => html`
-              <button class="staff-opt" type="button" data-testid="staff-option"
+              <button class="staff-opt" type="button" data-testid="pos-staff-option"
                       ?data-current=${(this.staffPickerLine ? this.pickerLineStaffId : this.staffId) === u.id}
                       @click=${() => this.pickStaff(u)}>
                 ${u.name}

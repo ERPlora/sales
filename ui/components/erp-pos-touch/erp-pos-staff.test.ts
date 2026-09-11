@@ -93,11 +93,11 @@ async function settle(el: MountedPos): Promise<void> {
 }
 
 function chip(el: MountedPos): HTMLElement | null {
-  return el.shadowRoot.querySelector<HTMLElement>('[data-testid="staff-chip"]');
+  return el.shadowRoot.querySelector<HTMLElement>('[data-testid="pos-staff-chip"]');
 }
 
 function options(el: MountedPos): HTMLElement[] {
-  return [...el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid="staff-option"]')];
+  return [...el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid="pos-staff-option"]')];
 }
 
 // The till module pulls in lit + OutfitKit: importing it the first time costs seconds and, if that
@@ -163,7 +163,7 @@ describe('who is serving this check', () => {
 
     chip(el)?.click();
     await settle(el);
-    el.shadowRoot.querySelector<HTMLElement>('[data-testid="staff-option-me"]')?.click();
+    el.shadowRoot.querySelector<HTMLElement>('[data-testid="pos-staff-option-me"]')?.click();
     await settle(el);
 
     el.cart = [{ id: 'p-x', name: 'Champú', price: 900 }] as MountedPos['cart'];
@@ -182,7 +182,7 @@ describe('who is serving this check', () => {
     const el = await mount();
     chip(el)?.click();
     await settle(el);
-    expect(el.shadowRoot.querySelector('[data-testid="staff-empty"]')).not.toBeNull();
+    expect(el.shadowRoot.querySelector('[data-testid="pos-staff-empty"]')).not.toBeNull();
   });
 
   it('says so instead of failing silently when the list cannot be read', async () => {
@@ -190,7 +190,7 @@ describe('who is serving this check', () => {
     const el = await mount();
     chip(el)?.click();
     await settle(el);
-    expect(el.shadowRoot.querySelector('[data-testid="staff-error"]')).not.toBeNull();
+    expect(el.shadowRoot.querySelector('[data-testid="pos-staff-error"]')).not.toBeNull();
   });
 });
 

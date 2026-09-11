@@ -75,7 +75,7 @@ async function mount(): Promise<MountedPos> {
 }
 
 const summaryOf = (el: MountedPos) =>
-  el.shadowRoot.querySelector<HTMLElement>('[data-testid="catalog-blocked-summary"]');
+  el.shadowRoot.querySelector<HTMLElement>('[data-testid="pos-catalog-blocked-summary"]');
 
 beforeEach(() => {
   document.body.innerHTML = '';
@@ -117,7 +117,7 @@ describe('the sale view states, ONCE, how much of the catalogue cannot be charge
     installSdk({ can: () => true });
     const el = await mount();
 
-    const fix = summaryOf(el)!.querySelector<HTMLElement>('[data-testid="catalog-blocked-fix"]');
+    const fix = summaryOf(el)!.querySelector<HTMLElement>('[data-testid="pos-catalog-blocked-fix"]');
     expect(fix, 'a count with no way to act on it is a complaint, not a warning').not.toBeNull();
 
     let popped = false;
@@ -144,7 +144,7 @@ describe('the sale view states, ONCE, how much of the catalogue cannot be charge
     installSdk({ can: () => true });
     const el = await mount();
 
-    summaryOf(el)!.querySelector<HTMLElement>('[data-testid="catalog-blocked-fix"]')!.click();
+    summaryOf(el)!.querySelector<HTMLElement>('[data-testid="pos-catalog-blocked-fix"]')!.click();
     await new Promise((r) => setTimeout(r, 0));
 
     expect(window.location.pathname).toBe('/m/inventory/products');

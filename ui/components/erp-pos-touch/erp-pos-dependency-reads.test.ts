@@ -59,7 +59,7 @@ async function mount(): Promise<MountedPos> {
 }
 
 const noticeText = (el: MountedPos) =>
-  [...el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid="dependency-read-failed"]')]
+  [...el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid="pos-dependency-read-failed"]')]
     .map((n) => n.textContent ?? '')
     .join(' | ');
 
@@ -96,7 +96,7 @@ describe('a hard dependency that BREAKS is said out loud', () => {
       },
     });
     const el = await mount();
-    const notices = el.shadowRoot.querySelectorAll('[data-testid="dependency-read-failed"]');
+    const notices = el.shadowRoot.querySelectorAll('[data-testid="pos-dependency-read-failed"]');
     expect(notices.length, 'three warnings for one broken app is noise, not information').toBe(1);
   });
 
@@ -122,7 +122,7 @@ describe('a hard dependency that BREAKS is said out loud', () => {
   it('the notice is an ALERT: it is not ambient information, the catalogue is incomplete', async () => {
     installSdk({ failing: { 'inventory.products.list': undefined } });
     const el = await mount();
-    const notice = el.shadowRoot.querySelector('[data-testid="dependency-read-failed"]');
+    const notice = el.shadowRoot.querySelector('[data-testid="pos-dependency-read-failed"]');
     expect(notice?.getAttribute('role')).toBe('alert');
   });
 });

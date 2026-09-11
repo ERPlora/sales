@@ -123,9 +123,9 @@ async function tap(el: Pos, name: string) {
 
 /** Moves the TICKET chip, which is what seals the next line (sales#273). */
 async function serve(el: Pos, name: string) {
-  el.shadowRoot.querySelector<HTMLElement>('[data-testid="staff-chip"]')?.click();
+  el.shadowRoot.querySelector<HTMLElement>('[data-testid="pos-staff-chip"]')?.click();
   await settle(el);
-  const opt = [...el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid="staff-option"]')]
+  const opt = [...el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid="pos-staff-option"]')]
     .find((o) => o.textContent?.trim() === name);
   if (!opt) throw new Error(`no staff option for "${name}"`);
   opt.click();
@@ -133,7 +133,7 @@ async function serve(el: Pos, name: string) {
 }
 
 /** What each cart row says about its professional, top to bottom. */
-const painted = (el: Pos) => [...el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid="line-staff"]')]
+const painted = (el: Pos) => [...el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid="pos-line-staff"]')]
   .map((n) => n.textContent?.trim() ?? '');
 
 beforeAll(async () => { await import('./erp-pos-touch'); }, 60_000);
@@ -177,9 +177,9 @@ describe('every cart line says whose it is (sales#277)', () => {
       await settle(el);
       expect(painted(el)).toEqual(['Lucía']);
 
-      el.shadowRoot.querySelector<HTMLElement>('[data-testid="staff-chip"]')?.click();
+      el.shadowRoot.querySelector<HTMLElement>('[data-testid="pos-staff-chip"]')?.click();
       await settle(el);
-      const offered = [...el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid="staff-option"]')]
+      const offered = [...el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid="pos-staff-option"]')]
         .map((o) => o.textContent?.trim());
       expect(offered, 'and she is still not offered to serve today').toEqual(['Ana', 'Marta']);
     } finally {
@@ -207,11 +207,11 @@ describe('every cart line says whose it is (sales#277)', () => {
 describe('and it can be corrected without rebuilding the line (sales#277)', () => {
   /** Taps the professional printed on row `n` and picks somebody else. */
   async function reassign(el: Pos, n: number, to: string) {
-    const rows = el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid="line-staff"]');
+    const rows = el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid="pos-line-staff"]');
     if (!rows[n]) throw new Error(`row ${n} paints no professional`);
     rows[n].click();
     await settle(el);
-    const opt = [...el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid="staff-option"]')]
+    const opt = [...el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid="pos-staff-option"]')]
       .find((o) => o.textContent?.trim() === to);
     if (!opt) throw new Error(`no staff option for "${to}"`);
     opt.click();

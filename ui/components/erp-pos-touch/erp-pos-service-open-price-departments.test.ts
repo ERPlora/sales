@@ -139,7 +139,7 @@ describe('un servicio de precio abierto, con departamentos definidos', () => {
     el.openAmount = '30';
     await el.updateComplete;
 
-    const add = el.shadowRoot.querySelector<HTMLButtonElement>('[data-testid="open-price-add"]');
+    const add = el.shadowRoot.querySelector<HTMLButtonElement>('[data-testid="pos-open-price-add"]');
     expect(add, 'el botón existe').toBeTruthy();
     expect(add!.hasAttribute('disabled'), 'y está deshabilitado, no mudo').toBe(true);
   });
