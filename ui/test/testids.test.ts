@@ -173,14 +173,31 @@ const ACTION_TAGS = ['ion-button', 'button', 'ion-fab-button', 'ion-segment-butt
 
 const ANY_TAG = /<([a-z][a-z0-9-]*)(?=[\s/>])/g;
 
-/** The `>` that closes the opening tag, skipping the `>` that live inside quotes. */
+/**
+ * The `>` that closes the opening tag, skipping the ones that are not markup: those inside quotes
+ * and those inside an interpolation.
+ *
+ * In a Lit template `${...}` is JavaScript, and this component's JavaScript is full of `>`: every
+ * arrow of a handler (`@click=${() => this.add(p)}`) and every generic (`CustomEvent<{ value?:
+ * string }>`). Stopping at the first one reads a quarter of the tag and drops the rest of the
+ * attributes — including, silently, an `@click` that happens to be written after another handler.
+ */
 function openTag(source: string, start: number): string {
   let quote: string | null = null;
   for (let i = start; i < source.length; i++) {
     const c = source[i];
     if (quote) {
       if (c === quote) quote = null;
-    } else if (c === '"' || c === "'") quote = c;
+      continue;
+    }
+    if (c === '$' && source[i + 1] === '{') {
+      const body = braced(source, i);
+      if (body !== undefined) {
+        i += body.length + 2; // `${` + body + the `}` the loop's own step walks past
+        continue;
+      }
+    }
+    if (c === '"' || c === "'") quote = c;
     else if (c === '>') return source.slice(start, i + 1);
   }
   return source.slice(start);
@@ -434,5 +451,53 @@ describe('data-testid — the module UI convention (sales#291)', () => {
       .filter(([, issue]) => !/^[a-z][a-z0-9_-]*#\d+$/.test(issue))
       .map(([name, issue]) => `${name}: "${issue}"`);
     expect(placeholders, 'open the issue and put its number: the board does not pick up a hole').toEqual([]);
+  });
+});
+
+describe('the guard reads a Lit open tag, not a JavaScript one (sales#291)', () => {
+  // The rules above are only worth what the reader underneath them sees. In a Lit template an
+  // attribute value is JavaScript — `@click=${() => this.add(p)}`, `@ionChange=${(e:
+  // CustomEvent<{ value?: string }>) => …}` — and that JavaScript is FULL of `>`: every arrow, every
+  // generic. A reader that closes the tag at the first `>` stops inside the first handler and
+  // never sees the rest of the attributes.
+  //
+  // That cuts both ways, and one of the two is silent: an element whose `@click` comes after
+  // another interpolated attribute is not recognised as an action at all, so the coverage rule
+  // never demands a hook for it — a button nobody has to name, reported by nobody. These sources
+  // are synthetic on purpose: today's components happen not to be written that way, and a guard
+  // that only works on the shapes that exist today is a guard that breaks on the next component.
+
+  it('sees an @click that comes after another interpolated handler', () => {
+    const source = `html\`<div class="pdrop-back" @wheel=\${(e: WheelEvent) => this.spin(e)} @click=\${() => { this.parkedOpen = false; }}></div>\``;
+    expect(
+      addressable(source).map((el) => el.tag),
+      'the arrow of the first handler is not the end of the tag: that div is a tap',
+    ).toEqual(['div']);
+  });
+
+  it('sees an @click that comes after an attribute holding a generic', () => {
+    // A `div` on purpose: an `ion-segment` is a control and would be demanded a hook anyway, so it
+    // would prove nothing about the reader.
+    const source = `html\`<div @ionChange=\${(e: CustomEvent<{ value?: string }>) => this.pick(e)} @click=\${() => this.focus()}></div>\``;
+    expect(
+      addressable(source).map((el) => el.tag),
+      'the `>` closing a generic is not the `>` closing the tag',
+    ).toEqual(['div']);
+  });
+
+  it('sees a data-testid that comes after the handler', () => {
+    const source = `html\`<ion-button @click=\${() => this.confirm()} data-testid="pos-charge"></ion-button>\``;
+    expect(
+      unhooked(source),
+      'the hook is there: reporting it as missing sends the author to add a second one',
+    ).toEqual([]);
+  });
+
+  it('still closes the tag at its own `>`, not at a later one', () => {
+    const source = `html\`<ion-input data-testid="pos-park-name"></ion-input><ion-button @click=\${() => this.go()}></ion-button>\``;
+    expect(
+      unhooked(source),
+      'the input is hooked and the button is not: bleeding past the tag would hide one of the two',
+    ).toEqual(['<ion-button> line 1']);
   });
 });
