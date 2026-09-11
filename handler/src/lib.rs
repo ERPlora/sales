@@ -205,17 +205,41 @@ fn item_i64(item: &Value, key: &str, d: i64) -> i64 {
 /// valida si la línea declara su incremento (contexto congelado); sin contexto no se bloquea la
 /// venta (mismo criterio graceful que `inventory::increment_for_product`).
 fn line_qty(item: &Value) -> Result<i64, Refusal> {
+    line_qty_on(item, item_i64(item, "increment_value", 0))
+}
+
+/// sales#288 — the quantity of a line that MATERIALISES a row, measured against the grid that very
+/// row is about to freeze ([`frozen_increment`]).
+///
+/// `line_qty` only validates a grid the payload DECLARES, and that is right at the checkout: a
+/// counter sale materialises no order row, so there is no frozen fact to contradict, and refusing
+/// at the drawer is the worst place to bite. The two doors of an open check are the other case —
+/// they WRITE `increment_value`, defaulting it to one whole unit — so validating with a different
+/// default than the one being written is how a row ends up holding 0,001 while declaring it is sold
+/// by the unit. That row is what reaches the pass: the kitchen display read «0,001» off it and was
+/// right to.
+fn order_line_qty(item: &Value) -> Result<i64, Refusal> {
+    line_qty_on(item, frozen_increment(item))
+}
+
+fn line_qty_on(item: &Value, inc: i64) -> Result<i64, Refusal> {
     let qty = item.get("quantity").map(|v| as_qty(v, QUANTITY_SCALE)).unwrap_or(QUANTITY_SCALE);
     if qty <= 0 {
         return Err(reject("sales.quantity_not_positive", format!("quantity {qty}")));
     }
-    let inc = item_i64(item, "increment_value", 0);
     if inc > 0 && qty % inc != 0 {
         // El error nombra ambos valores para que la UI pueda decir «0,0005 kg no vale en una
         // unidad configurada en incrementos de 0,001 kg».
         return Err(reject("sales.quantity_off_grid", format!("{qty} % {inc} != 0")));
     }
     Ok(qty)
+}
+
+/// El INCREMENTO que la fila congela (ADR-0147 §2.4): el de la línea, o la unidad suelta cuando no
+/// declara ninguno — misma forma que [`line_price_qty`], y un cero no es una rejilla.
+fn frozen_increment(item: &Value) -> i64 {
+    let inc = item_i64(item, "increment_value", QUANTITY_SCALE);
+    if inc > 0 { inc } else { QUANTITY_SCALE }
 }
 
 /// La cantidad de precio de la línea (KPEIN, ADR-0147 §2.3): «X céntimos por ESTA cantidad».
@@ -234,7 +258,7 @@ fn freeze_unit_context(item: &Value, p: &mut Map<String, Value>) {
     p.insert("unit_name".into(), json!(str_or(item, "unit_name", "")));
     p.insert("factor_num".into(), json!(item_i64(item, "factor_num", 1)));
     p.insert("factor_den".into(), json!(item_i64(item, "factor_den", 1)));
-    p.insert("increment_value".into(), json!(item_i64(item, "increment_value", QUANTITY_SCALE)));
+    p.insert("increment_value".into(), json!(frozen_increment(item)));
     p.insert("price_quantity_value".into(), json!(line_price_qty(item)));
     // Sin unidad de precio explícita, el precio es «por 1 de la unidad de la línea» — no `ud` a
     // secas: congelar `ud` en una línea de kg sería congelar una mentira.
@@ -632,9 +656,16 @@ fn is_catalog_line(item: &Value) -> bool {
     !field(item, "product_id").is_empty() && !item.get("is_service").map(as_bool).unwrap_or(false)
 }
 
-/// Precio y coste AUTORITATIVOS de una línea de catálogo. `Err` con código de dominio si la línea
-/// dice ser de catálogo y no se puede sostener.
-fn authoritative_price(item: &Value, catalog: Option<&Vec<&Value>>) -> Result<Option<(i64, i64, String)>, Refusal> {
+/// La FILA de catálogo de una línea que dice venir del catálogo. `Err` con código de dominio si lo
+/// dice y no se puede sostener; `Ok(None)` si no lo dice (precio libre o servicio).
+///
+/// sales#288 — existe aparte de [`authoritative_price`] porque del catálogo sale algo más que el
+/// dinero: el NOMBRE que la fila congela y que el cocinero lee en el pase sale de la misma fila, y
+/// resolverlo con una segunda búsqueda sería dos verdades donde hay una.
+fn catalog_row<'a>(
+    item: &Value,
+    catalog: Option<&'a Vec<&'a Value>>,
+) -> Result<Option<&'a Value>, Refusal> {
     if !is_catalog_line(item) {
         return Ok(None);
     }
@@ -642,15 +673,25 @@ fn authoritative_price(item: &Value, catalog: Option<&Vec<&Value>>) -> Result<Op
         reject("sales.catalog_unavailable", "the product catalogue was not available to price this sale")
     })?;
     let id = field(item, "product_id");
-    let row = rows
-        .iter()
+    rows.iter()
+        .copied()
         .find(|r| field(r, "id") == id)
-        .ok_or_else(|| reject("sales.product_not_available", &id))?;
-    Ok(Some((
+        .map(Some)
+        .ok_or_else(|| reject("sales.product_not_available", &id))
+}
+
+/// Precio, coste y categoría fiscal AUTORITATIVOS de una línea de catálogo.
+fn authoritative_price(item: &Value, catalog: Option<&Vec<&Value>>) -> Result<Option<(i64, i64, String)>, Refusal> {
+    Ok(catalog_row(item, catalog)?.map(catalog_money))
+}
+
+/// Lo que de una fila de catálogo decide DINERO: precio, coste y con qué regla tributa.
+fn catalog_money(row: &Value) -> (i64, i64, String) {
+    (
         as_cents(row.get("price").unwrap_or(&Value::Null), 0),
         as_cents(row.get("cost").unwrap_or(&Value::Null), 0),
         field(row, "tax_category_key"),
-    )))
+    )
 }
 
 /// The ROW of the open check this line came from (sales#175), if it names one.
@@ -3281,6 +3322,14 @@ fn order_line_row(
 ) -> Result<(Map<String, Value>, i64), Refusal> {
     // A set menu is NOT measured against the product catalogue: its id is not there (it belongs to
     // `combos`), and its price is the pack's closed one. It goes first for exactly that reason.
+    // sales#288: the catalogue row is kept, not just the money read off it — the name the cook
+    // reads is frozen from this very row, below.
+    let catalog = if field(item, "combo_id").is_empty() {
+        catalog_row(item, product_catalog)?
+    } else {
+        // A set menu is NOT in the product catalogue: its id belongs to `combos`.
+        None
+    };
     let (unit_price, unit_cost, unit_cat) = if !field(item, "combo_id").is_empty() {
         (
             combo_closed_price(item, combo_catalog)?,
@@ -3290,7 +3339,7 @@ fn order_line_row(
             str_or(item, "tax_category_key", ""),
         )
     } else {
-        match authoritative_price(item, product_catalog)? {
+        match catalog.map(catalog_money) {
             Some((price, cost, cat)) => (price, cost, cat),
             // Open price or service: there is no catalogue `sales` can check it against. It is the
             // same deliberately open door `is_catalog_line` documents, with its own permission.
@@ -3303,7 +3352,8 @@ fn order_line_row(
     };
     // Fixed point 10⁶ + refusal off the grid (ADR-0147): the order speaks the same language as the
     // sale — opening at 0.0005 kg and charging later would just move the error somewhere else.
-    let qty = line_qty(item)?;
+    // sales#288: the grid is the one THIS row freezes, never a laxer one.
+    let qty = order_line_qty(item)?;
     let is_gift = item.get("is_gift").map(as_bool).unwrap_or(false);
     // sales#71: manual line discount (%), same range and same refusal as the checkout.
     let line_disc = item.get("discount").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
@@ -3327,8 +3377,25 @@ fn order_line_row(
     p.insert("id".into(), json!(line_id));
     p.insert("order_id".into(), json!(order_id)); // FK to the order (early materialisation)
     p.insert("product_id".into(), item.get("product_id").cloned().unwrap_or(Value::Null));
-    p.insert("product_name".into(), json!(as_str(item.get("product_name").unwrap_or(&Value::Null))));
-    p.insert("product_sku".into(), json!(str_or(item, "product_sku", "")));
+    // sales#288 — WHO NAMES THE LINE. The same rule as the price (sales#175): if the line claims to
+    // come from the catalogue, the catalogue decides. A caller that sends only a `product_id` —
+    // which the API door makes easy and the till never does — used to write a row with no name at
+    // all, and the kitchen display then printed the raw UUID (`kitchen::cooking_name` falls back to
+    // the id on purpose: a cook who sees a code asks, one who sees nothing plates it wrong).
+    //
+    // It DEGRADES instead of refusing: a hub whose `inventory` still serves the narrow catalogue
+    // hands over no `name`, and a name decides no money — so the caller's own text stands, exactly
+    // as it did before. The refusal for an unknown id is upstairs, where the money is.
+    let payload_name = as_str(item.get("product_name").unwrap_or(&Value::Null));
+    let payload_sku = str_or(item, "product_sku", "");
+    p.insert(
+        "product_name".into(),
+        json!(catalog.map_or_else(|| payload_name.clone(), |row| str_or(row, "name", &payload_name))),
+    );
+    p.insert(
+        "product_sku".into(),
+        json!(catalog.map_or_else(|| payload_sku.clone(), |row| str_or(row, "sku", &payload_sku))),
+    );
     p.insert("quantity".into(), json!(qty)); // fixed point, scale 10⁶ (INTEGER, ADR-0147)
     // Unit context FROZEN (ADR-0147 §2.4): closing and reopening the order cannot change what the
     // quantity means.
@@ -9864,6 +9931,128 @@ mod tests {
         let err = add_order_line_pure(add_line_input(other, open_order_row()))
             .refused("nothing is added blind");
         assert_eq!(err.code, "sales.product_not_available", "unexpected code: {err:?}");
+    }
+
+    // ── sales#288 · what the COOK reads is written by the server, like the price ────────────────
+    //
+    // The kitchen display was showing the raw product UUID and «0,001» on every line a caller added
+    // through the API with nothing but a `product_id`. Neither is the kitchen's fault: `kitchen`
+    // falls back to the id on purpose (a cook who sees a code ASKS; one who sees nothing plates it
+    // wrong) and its screen does rescale the fixed point. Both facts were already wrong one floor
+    // up, on the `sales_order_item` row this door writes:
+    //
+    //   * `product_name`/`product_sku` were copied STRAIGHT FROM THE PAYLOAD while the price, the
+    //     cost and the tax category were resolved against `inventory.products.for_sale`. A line
+    //     that names a catalogue id carries the catalogue's name for the same reason it carries its
+    //     price: the caller is not the authority on either.
+    //   * the quantity was validated against `increment_value` defaulting to NO grid, and then
+    //     FROZEN on the row with a default of one whole unit. Two defaults for one fact: the row
+    //     came out holding 0,001 while declaring it is sold by the unit.
+
+    /// The catalogue with the DISPLAY columns `inventory.products.for_sale` projects since sales#288.
+    fn named_burger_catalog() -> Value {
+        json!([{ "id": "p-burger", "name": "Hamburguesa doble", "sku": "BUR-2",
+                 "price": 900, "cost": 400, "tax_category_key": "product.generic" }])
+    }
+
+    #[test]
+    fn a_line_added_by_id_alone_is_named_by_the_catalogue() {
+        let mut inp = add_line_input(named_burger_catalog(), open_order_row());
+        inp["payload"]["product_name"] = json!("");
+        inp["payload"]["product_sku"] = json!("");
+        let row = &order_lines(&add_order_line_pure(inp).accepted("the line goes in"))[0];
+        assert_eq!(row["product_name"], json!("Hamburguesa doble"),
+                   "the row went in with no name, so the pass prints the raw id");
+        assert_eq!(row["product_sku"], json!("BUR-2"));
+    }
+
+    #[test]
+    fn the_catalogue_name_wins_over_the_one_the_caller_proposed() {
+        // Same rule as the price (sales#175): if the line claims to come from the catalogue, the
+        // catalogue decides. A caller renaming someone else's dish on the pass is the display
+        // version of selling a 50 € item for a cent.
+        let mut inp = add_line_input(named_burger_catalog(), open_order_row());
+        inp["payload"]["product_name"] = json!("Ensalada");
+        let row = &order_lines(&add_order_line_pure(inp).accepted("the line goes in"))[0];
+        assert_eq!(row["product_name"], json!("Hamburguesa doble"));
+    }
+
+    #[test]
+    fn the_line_that_opens_the_check_is_named_by_the_catalogue_too() {
+        // The FIRST line of every check comes through the OTHER door, and every fix on this row has
+        // had to be made twice (`is_service`, the supplements, the set menu, the professional).
+        let mut inp = open_input(named_burger_catalog());
+        inp["payload"]["items"][0]["product_name"] = json!("");
+        let row = &order_lines(&open_order_pure(inp).accepted("the order opens"))[0];
+        assert_eq!(row["product_name"], json!("Hamburguesa doble"));
+        assert_eq!(row["product_sku"], json!("BUR-2"));
+    }
+
+    #[test]
+    fn a_catalogue_with_no_display_columns_leaves_the_line_as_the_caller_named_it() {
+        // Degrades, never refuses: a hub still serving the narrow catalogue (`inventory` older than
+        // this change) keeps writing exactly the row it wrote yesterday. A name is DISPLAY — it
+        // decides no money — so an absent column is not a reason to stop a waiter taking an order.
+        let row = &order_lines(
+            &add_order_line_pure(add_line_input(burger_catalog(900), open_order_row()))
+                .accepted("the line goes in"),
+        )[0];
+        assert_eq!(row["product_name"], json!("Hamburguesa"));
+    }
+
+    #[test]
+    fn an_open_price_line_keeps_the_name_the_till_typed() {
+        // No `product_id` = no catalogue to check it against (department sale, ADR-0085). Its name
+        // is the cashier's own words, exactly like the note.
+        let mut inp = add_line_input(named_burger_catalog(), open_order_row());
+        inp["payload"]["product_id"] = Value::Null;
+        inp["payload"]["product_name"] = json!("Varios");
+        let row = &order_lines(&add_order_line_pure(inp).accepted("the line goes in"))[0];
+        assert_eq!(row["product_name"], json!("Varios"));
+    }
+
+    #[test]
+    fn a_quantity_off_the_grid_the_row_itself_will_freeze_is_refused() {
+        // 1 000 µ = 0,001 ud. With no unit context the row freezes `increment_value` at one whole
+        // unit (ADR-0147 §2.4), so this quantity is off ITS OWN grid. Refusing is the same answer
+        // the grid already gives when the context IS declared — rounding it to 1 would silently
+        // change what was ordered, what is cooked and what is charged.
+        let mut inp = add_line_input(named_burger_catalog(), open_order_row());
+        inp["payload"]["quantity"] = json!(1_000);
+        let err = add_order_line_pure(inp).refused("0,001 burgers is not an order");
+        assert_eq!(err.code, "sales.quantity_off_grid", "unexpected code: {err:?}");
+    }
+
+    #[test]
+    fn half_a_kilo_still_goes_in_when_the_line_declares_its_grid() {
+        // The guard above must not reach the scale. A line that carries its unit context is
+        // measured against ITS increment (0,001 kg), which is what the till freezes from the unit
+        // registry — and 0,5 kg is on that grid.
+        let mut inp = add_line_input(named_burger_catalog(), open_order_row());
+        inp["payload"]["quantity"] = json!(500_000);
+        inp["payload"]["unit_code"] = json!("kg");
+        inp["payload"]["increment_value"] = json!(1_000);
+        let row = &order_lines(&add_order_line_pure(inp).accepted("half a kilo goes in"))[0];
+        assert_eq!(row["quantity"], json!(500_000));
+        assert_eq!(row["increment_value"], json!(1_000));
+    }
+
+    #[test]
+    fn a_zero_increment_is_not_a_grid_and_the_row_says_so() {
+        // A caller can send `increment_value: 0`, and a zero cannot be a step: every quantity is a
+        // multiple of it. It used to be written onto the row AS a zero — a grid nothing is off —
+        // while a line that simply omitted the field froze one whole unit. One fact, one answer:
+        // no usable increment means the unit is sold whole, at both ends.
+        let mut inp = add_line_input(named_burger_catalog(), open_order_row());
+        inp["payload"]["quantity"] = json!(1_000);
+        inp["payload"]["increment_value"] = json!(0);
+        let err = add_order_line_pure(inp).refused("a zero is not a grid to hide behind");
+        assert_eq!(err.code, "sales.quantity_off_grid", "unexpected code: {err:?}");
+
+        let mut ok = add_line_input(named_burger_catalog(), open_order_row());
+        ok["payload"]["increment_value"] = json!(0);
+        let row = &order_lines(&add_order_line_pure(ok).accepted("one whole burger goes in"))[0];
+        assert_eq!(row["increment_value"], json!(1_000_000), "the row froze a grid nothing is off");
     }
 
     // ── sales#242 / ADR-0422 · «Corte × 2» becomes two lines of one ────────────────────────────
