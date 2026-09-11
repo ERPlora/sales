@@ -11,7 +11,7 @@
 //!
 //! UNIDADES (ADR-0007, migración a céntimos):
 //! * **Dinero = céntimos `i64`** en TODO el flujo: el payload entra en céntimos
-//!   (`price`/`amount_tendered`), la aritmética es entera con redondeo half-even,
+//!   (`price`/`amount_tendered`), la aritmética es entera con redondeo HALF_UP,
 //!   los binds van a columnas `INTEGER` (céntimos) y el evento `sale.completed`
 //!   viaja en **céntimos** (contrato inter-módulo). El formateo a decimales vive
 //!   SOLO en la capa UI.
@@ -271,7 +271,7 @@ struct LineTotals { net: i64, tax: i64, line: i64 }
 
 /// Calcula los totales de una línea en céntimos para **una sola tasa**. `unit_price_cents`
 /// en céntimos; `qty`, `disc_pct`, `tax_rate` son `f64` (cantidad / porcentajes). El redondeo
-/// half-even se aplica al pasar a céntimos enteros, igual que el Decimal original. El flujo de
+/// HALF_UP (`money::round`, art. 11 de la Ley 46/1998) se aplica al pasar a céntimos enteros. El flujo de
 /// producción usa `calc_line_components` (que generaliza esto a N componentes para grupos,
 /// ADR-0069); `calc_line` se conserva como referencia aritmética de tasa simple para los tests.
 #[cfg(test)]
@@ -510,7 +510,7 @@ fn same_profile(a: &[TaxComponent], b: &[TaxComponent]) -> bool {
 /// Totales de una línea aplicando **N componentes** de impuesto sobre la misma base
 /// (ADR-0069, grupos). Devuelve `(LineTotals agregado, desglose por componente)`. La tasa
 /// combinada (suma de componentes) desglosa la base cuando `tax_included`; cada componente
-/// calcula su cuota sobre esa base (half-even, paridad con `calc_line`). Para un solo
+/// calcula su cuota sobre esa base (HALF_UP, paridad con `calc_line`). Para un solo
 /// componente el resultado es idéntico a `calc_line`.
 fn calc_line_components(
     unit_price_cents: i64,
