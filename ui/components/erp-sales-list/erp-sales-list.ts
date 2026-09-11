@@ -497,42 +497,42 @@ export class ErpSalesList extends LitElement {
     // la propia vista (antes desbordaba en `overflow: visible` y el body `hidden` lo recortaba).
     return html`<div class="scroll">
         <h2>${t('ui.sales')}</h2>
-        <ion-segment class="range-segment" value=${this.range} aria-label=${t('ui.rangeLabel')}
+        <ion-segment class="range-segment" data-testid="sales-range" value=${this.range} aria-label=${t('ui.rangeLabel')}
           @ionChange=${(e: CustomEvent<{ value?: string }>) => { void this.setRange((e.detail.value as Range) || 'today'); }}>
-          ${(Object.keys(RANGE_KEYS) as Range[]).map((r) => html`<ion-segment-button value=${r}><ion-label>${t(RANGE_KEYS[r])}</ion-label></ion-segment-button>`)}
+          ${(Object.keys(RANGE_KEYS) as Range[]).map((r) => html`<ion-segment-button data-testid=${`sales-range-${r}`} value=${r}><ion-label>${t(RANGE_KEYS[r])}</ion-label></ion-segment-button>`)}
         </ion-segment>
         <div class=${this.kpiRow ? 'cards kpi-row' : 'cards'}>
           <div class="card">
             <div class="k">${t('ui.tickets')}</div>
-            <div class="v">${this.stats.count}</div>
+            <div class="v" data-testid="sales-kpi-tickets">${this.stats.count}</div>
           </div>
           <div class="card">
             <div class="k">${t('ui.revenue')}</div>
-            <div class="v">${erplora().formatMoney(Number(this.stats.total_revenue || 0))}</div>
+            <div class="v" data-testid="sales-kpi-revenue">${erplora().formatMoney(Number(this.stats.total_revenue || 0))}</div>
           </div>
           <div class="card">
             <div class="k">${t('ui.avgTicket')}</div>
-            <div class="v">${erplora().formatMoney(Number(this.stats.avg_ticket || 0))}</div>
+            <div class="v" data-testid="sales-kpi-avg-ticket">${erplora().formatMoney(Number(this.stats.avg_ticket || 0))}</div>
           </div>
           <div class="card">
             <div class="k">${t('ui.kpiTax')}</div>
-            <div class="v">${erplora().formatMoney(Number(this.stats.tax_total || 0))}</div>
+            <div class="v" data-testid="sales-kpi-tax">${erplora().formatMoney(Number(this.stats.tax_total || 0))}</div>
           </div>
           <div class="card">
             <div class="k">${t('ui.kpiDiscounts')}</div>
-            <div class="v">${erplora().formatMoney(Number(this.stats.discount_total || 0))}</div>
+            <div class="v" data-testid="sales-kpi-discounts">${erplora().formatMoney(Number(this.stats.discount_total || 0))}</div>
           </div>
           <div class="card">
             <div class="k">${t('ui.kpiVoided')}</div>
-            <div class="v">${Number(this.stats.voided_count || 0)}</div>
+            <div class="v" data-testid="sales-kpi-voided">${Number(this.stats.voided_count || 0)}</div>
           </div>
         </div>
-        ${this.statsError ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.statsError}</ok-inline-feedback>` : nothing}
-        ${this.payMethodsError ? html`<ok-inline-feedback tone="warning" icon="alert-circle-outline">${this.payMethodsError}</ok-inline-feedback>` : nothing}
-        ${this.ctrl?.error ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : nothing}
+        ${this.statsError ? html`<ok-inline-feedback data-testid="sales-stats-error" tone="danger" icon="alert-circle-outline">${this.statsError}</ok-inline-feedback>` : nothing}
+        ${this.payMethodsError ? html`<ok-inline-feedback data-testid="sales-pay-methods-error" tone="warning" icon="alert-circle-outline">${this.payMethodsError}</ok-inline-feedback>` : nothing}
+        ${this.ctrl?.error ? html`<ok-inline-feedback data-testid="sales-list-error" tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : nothing}
         <!-- The «document» button is not the only door: rowClickable makes the whole row open the
              same document (outfitkit#67 — the actions column can be off-screen at 1440 px). -->
-        <ok-data-table .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r: Record<string, unknown>) => String(r.sale_number ?? '—')} .cardIcon=${() => 'receipt-outline'} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.paintedSort} .sortDir=${this.ctrl?.state.dir ?? 'desc'} .searchable=${true} .searchPlaceholder=${t('ui.searchSalePlaceholder')} .emptyMessage=${this.ctrl?.loading ? t('ui.loading') : t('ui.noSales')} .actions=${this.documentActions} .rowClickable=${true} @rowAction=${(e: CustomEvent<{ actionId: string; row: Sale }>) => { if (e.detail.actionId === 'document') this.docSaleId = e.detail.row.id; else if (e.detail.actionId === 'void') void this.confirmVoid(e.detail.row); else if (e.detail.actionId === 'refund') this.refundSaleId = e.detail.row.id; }} @rowClick=${(e: CustomEvent<{ row: Sale }>) => { this.docSaleId = e.detail.row.id; }} @pageChange=${(e: CustomEvent<number>) => this.ctrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.onSortChange(e)} @searchChange=${(e: CustomEvent<string>) => this.ctrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.onFilterChange(e)}></ok-data-table>
+        <ok-data-table data-testid="sales-table" .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r: Record<string, unknown>) => String(r.sale_number ?? '—')} .cardIcon=${() => 'receipt-outline'} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.paintedSort} .sortDir=${this.ctrl?.state.dir ?? 'desc'} .searchable=${true} .searchPlaceholder=${t('ui.searchSalePlaceholder')} .emptyMessage=${this.ctrl?.loading ? t('ui.loading') : t('ui.noSales')} .actions=${this.documentActions} .rowClickable=${true} @rowAction=${(e: CustomEvent<{ actionId: string; row: Sale }>) => { if (e.detail.actionId === 'document') this.docSaleId = e.detail.row.id; else if (e.detail.actionId === 'void') void this.confirmVoid(e.detail.row); else if (e.detail.actionId === 'refund') this.refundSaleId = e.detail.row.id; }} @rowClick=${(e: CustomEvent<{ row: Sale }>) => { this.docSaleId = e.detail.row.id; }} @pageChange=${(e: CustomEvent<number>) => this.ctrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.onSortChange(e)} @searchChange=${(e: CustomEvent<string>) => this.ctrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.onFilterChange(e)}></ok-data-table>
       </div>
       <!-- sales#126 — el modal FUERA del contenedor con scroll: Ionic lo reparenta al light-DOM
            igual, pero así la vista no arrastra overlays al scrollear. -->
@@ -543,7 +543,7 @@ export class ErpSalesList extends LitElement {
         @ionModalDidDismiss=${() => { this.refundSaleId = undefined; }}>
         <ion-content>
           ${this.refundSaleId
-            ? html`<erp-sale-refund .saleId=${this.refundSaleId} @refunded=${() => {
+            ? html`<erp-sale-refund data-testid="sales-refund-modal" .saleId=${this.refundSaleId} @refunded=${() => {
                 this.refundSaleId = undefined;
                 void this.ctrl.load();
                 void this.loadStats();

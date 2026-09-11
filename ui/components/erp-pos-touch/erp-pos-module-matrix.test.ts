@@ -87,7 +87,7 @@ describe('sales + taxes only — the smallest hub that can charge', () => {
     const el = await mount();
     expect(ids(el), 'nothing to paint: no catalogue app and no services app').toEqual([]);
     expect(has(el, '.tile.open-price'), 'ADR-0085 is the whole offer here').toBe(true);
-    expect(el.shadowRoot.querySelector('[data-testid="catalog-app-absent"]')?.textContent ?? '')
+    expect(el.shadowRoot.querySelector('[data-testid="pos-catalog-app-absent"]')?.textContent ?? '')
       .toContain('ui.catalogAppAbsent');
     expect(canCharge(el), 'taxes is here, so money can be taken').toBe(true);
   });
@@ -95,7 +95,7 @@ describe('sales + taxes only — the smallest hub that can charge', () => {
   it('raises no incident: an app that was never installed did not break', async () => {
     installHub('taxes');
     const el = await mount();
-    expect(has(el, '[data-testid="dependency-read-failed"]')).toBe(false);
+    expect(has(el, '[data-testid="pos-dependency-read-failed"]')).toBe(false);
   });
 });
 
@@ -104,7 +104,7 @@ describe('+ inventory — the products grid, priced by whoever owns the catalogu
     installHub('taxes', 'inventory');
     const el = await mount();
     expect(ids(el)).toEqual(['p-1']);
-    expect(has(el, '[data-testid="catalog-app-absent"]')).toBe(false);
+    expect(has(el, '[data-testid="pos-catalog-app-absent"]')).toBe(false);
     expect(canCharge(el)).toBe(true);
   });
 
@@ -130,7 +130,7 @@ describe('+ services — the salon, with no stock app anywhere', () => {
     const el = await mount();
     expect(ids(el)).toEqual(['s-1']);
     expect(canCharge(el)).toBe(true);
-    expect(has(el, '[data-testid="catalog-app-absent"]'), 'a salon with its services is not degraded').toBe(false);
+    expect(has(el, '[data-testid="pos-catalog-app-absent"]'), 'a salon with its services is not degraded').toBe(false);
   });
 
   it('products and services share ONE grid when both apps are there, products first', async () => {
@@ -152,7 +152,7 @@ describe('+ customers — the fiscal identity rides a slot, never a hard read', 
     installHub('taxes', 'inventory');
     const el = await mount();
     expect(ids(el)).toEqual(['p-1']);
-    expect(has(el, '[data-testid="dependency-read-failed"]')).toBe(false);
+    expect(has(el, '[data-testid="pos-dependency-read-failed"]')).toBe(false);
     expect(canCharge(el)).toBe(true);
   });
 });

@@ -144,9 +144,9 @@ async function tap(el: Pos, name: string) {
 
 /** Moves the chip to a professional by the name printed on the option. */
 async function serve(el: Pos, name: string) {
-  el.shadowRoot.querySelector<HTMLElement>('[data-testid="staff-chip"]')?.click();
+  el.shadowRoot.querySelector<HTMLElement>('[data-testid="pos-staff-chip"]')?.click();
   await settle(el);
-  const opt = [...el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid="staff-option"]')]
+  const opt = [...el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid="pos-staff-option"]')]
     .find((o) => o.textContent?.trim() === name);
   if (!opt) throw new Error(`no staff option for "${name}"`);
   opt.click();

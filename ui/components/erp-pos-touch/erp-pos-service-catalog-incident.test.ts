@@ -84,7 +84,7 @@ async function mount(): Promise<MountedPos> {
 }
 
 const notices = (el: MountedPos) =>
-  [...el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid="dependency-read-failed"]')];
+  [...el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid="pos-dependency-read-failed"]')];
 const noticeText = (el: MountedPos) => notices(el).map((n) => n.textContent ?? '').join(' | ');
 
 beforeEach(() => {

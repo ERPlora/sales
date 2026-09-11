@@ -7235,6 +7235,7 @@ var MediaPhotoCache = class {
 // ui/components/erp-pos-touch/erp-pos-touch.ts
 var CATALOG2 = { es: es_default, en: en_default };
 var CLOSED_PRICING = /* @__PURE__ */ new Set(["fixed", "free", ""]);
+var keypadId = (key) => key === "." ? "dot" : key === "C" ? "clear" : key;
 function deptDisplayName(c5) {
   return c5.display_name || c5.name;
 }
@@ -10624,7 +10625,7 @@ var ErpPosTouch = class extends i3 {
    *  al mandar una cita al TPV). */
   renderCheckSalesLink() {
     if (!this.checkoutUnknown) return A;
-    return b2`<ion-button size="small" fill="outline" class="check-sales" data-testid="checkout-check-sales"
+    return b2`<ion-button size="small" fill="outline" class="check-sales" data-testid="pos-check-sales"
       @click=${() => this.goToSales()}>
       <ion-icon slot="start" name="cart-outline"></ion-icon>${t5("ui.checkSales")}
     </ion-button>`;
@@ -10675,10 +10676,10 @@ var ErpPosTouch = class extends i3 {
   renderCatalogHealth() {
     const n6 = this.blockedCount;
     if (!n6 || !this.canFixCatalog()) return A;
-    return b2`<div class="catalog-health" role="status" data-testid="catalog-blocked-summary">
+    return b2`<div class="catalog-health" role="status" data-testid="pos-catalog-blocked-summary">
       <ion-icon name="alert-circle" aria-hidden="true"></ion-icon>
       <span class="ch-text">${n6 === 1 ? t5("ui.catalogBlockedOne") : t5("ui.catalogBlocked", { count: n6 })}</span>
-      <ion-button size="small" fill="clear" class="ch-fix" data-testid="catalog-blocked-fix"
+      <ion-button size="small" fill="clear" class="ch-fix" data-testid="pos-catalog-blocked-fix"
         @click=${() => this.goToProductSetup()}>${t5("ui.catalogBlockedFix")}</ion-button>
     </div>`;
   }
@@ -10696,7 +10697,7 @@ var ErpPosTouch = class extends i3 {
    *  the two is how an alert stops meaning anything. */
   renderEmptyGrid() {
     if (!this.catalogAppAbsent) return b2`<div class="empty">${t5("ui.noProducts")}</div>`;
-    return b2`<div class="empty catalog-absent" role="status" data-testid="catalog-app-absent">
+    return b2`<div class="empty catalog-absent" role="status" data-testid="pos-catalog-app-absent">
       ${t5("ui.catalogAppAbsent", { app: this.appName("inventory") })}
     </div>`;
   }
@@ -10712,7 +10713,7 @@ var ErpPosTouch = class extends i3 {
   renderSimplifiedLimitCapture() {
     const done = recipientIsComplete(this.limitState);
     return b2`
-      <div class="limit-capture" data-testid="simplified-limit-capture" ?data-done=${done}>
+      <div class="limit-capture" data-testid="pos-simplified-limit-capture" ?data-done=${done}>
         <div class="limit-head">
           <ion-icon name=${done ? "document-text-outline" : "alert-circle-outline"}></ion-icon>
           <div>
@@ -10721,17 +10722,17 @@ var ErpPosTouch = class extends i3 {
           </div>
         </div>
         <ion-input label=${t5("ui.limitFieldName")} label-placement="stacked" .value=${this.customerName}
-                   data-testid="limit-name" autocomplete="off"
+                   data-testid="pos-limit-name" autocomplete="off"
                    @ionInput=${(e7) => {
       this.customerName = String(e7.target.value ?? "");
     }}></ion-input>
         <ion-input label=${t5("ui.limitFieldTaxId")} label-placement="stacked" .value=${this.customerTaxId}
-                   data-testid="limit-tax-id" autocomplete="off"
+                   data-testid="pos-limit-tax-id" autocomplete="off"
                    @ionInput=${(e7) => {
       this.customerTaxId = String(e7.target.value ?? "");
     }}></ion-input>
         <ion-input label=${t5("ui.limitFieldAddress")} label-placement="stacked" .value=${this.customerAddress}
-                   data-testid="limit-address" autocomplete="off"
+                   data-testid="pos-limit-address" autocomplete="off"
                    @ionInput=${(e7) => {
       this.customerAddress = String(e7.target.value ?? "");
     }}></ion-input>
@@ -10753,14 +10754,14 @@ var ErpPosTouch = class extends i3 {
   }
   renderCatBar() {
     const cell = (id, name, count) => b2`
-      <ion-segment-button class="cat-segment-button" value=${id}>
+      <ion-segment-button data-testid=${`pos-category-${id || "all"}`} class="cat-segment-button" value=${id}>
         <ion-label class="cat-segment-label">
           <span class="cc-n">${name}</span><span class="cc-c">${count} ${t5("ui.items")}</span>
         </ion-label>
       </ion-segment-button>`;
     return b2`
       <div class="catbar">
-        <ion-segment class="category-segment" scrollable value=${this.activeCat}
+        <ion-segment data-testid="pos-category-filter" class="category-segment" scrollable value=${this.activeCat}
           aria-label=${t5("ui.categoryFilter")} @wheel=${this.onCategoryWheel}
           @ionChange=${(e7) => {
       this.activeCat = e7.detail.value ?? "";
@@ -10770,7 +10771,7 @@ var ErpPosTouch = class extends i3 {
         </ion-segment>
         <!-- Lupa: despliega el buscador (gana alto para la rejilla). Hueco natural para el micro
              de búsqueda por voz cuando llegue. -->
-        <button class="arrow search-trigger" title=${t5("ui.searchAction")} aria-pressed=${this.searchOpen}
+        <button data-testid="pos-search" class="arrow search-trigger" title=${t5("ui.searchAction")} aria-pressed=${this.searchOpen}
           @click=${() => this.renderRoot.querySelector("ok-spotlight-search")?.openSearch?.()}>
           <ion-icon name="search-outline"></ion-icon>
         </button>
@@ -10794,7 +10795,7 @@ var ErpPosTouch = class extends i3 {
   renderMoreMenu() {
     if (!this.chromeControls.length) return A;
     return b2`
-      <button class="arrow more-trigger" title=${t5("ui.screenMenu")} aria-label=${t5("ui.screenMenu")}
+      <button data-testid="pos-more-menu" class="arrow more-trigger" title=${t5("ui.screenMenu")} aria-label=${t5("ui.screenMenu")}
         aria-haspopup="menu" aria-expanded=${this.moreOpen}
         @click=${() => {
       this.moreOpen = !this.moreOpen;
@@ -10805,7 +10806,7 @@ var ErpPosTouch = class extends i3 {
           <!-- Capa de cierre: un menú que solo se cierra por su propio botón se queda abierto en
                cuanto el cajero toca cualquier otra cosa. Transparente y sin scrim visible: es un
                menú, no un diálogo que exija atención. -->
-          <div class="more-scrim" @click=${() => {
+          <div data-testid="pos-more-scrim" class="more-scrim" @click=${() => {
       this.moreOpen = false;
     }}></div>
           <!-- <dialog> nativo como el resto de overlays del TPV: los de Ionic dentro de un shadow
@@ -10816,7 +10817,7 @@ var ErpPosTouch = class extends i3 {
       if (e7.key === "Escape") this.moreOpen = false;
     }}>
             ${this.chromeControls.includes("fullscreen") ? b2`
-                <button type="button" role="menuitem" data-action="fullscreen"
+                <button data-testid="pos-more-fullscreen" type="button" role="menuitem" data-action="fullscreen"
                   @click=${() => this.requestChrome("fullscreen")}>
                   <ion-icon name=${this.fullscreen ? "contract-outline" : "expand-outline"}></ion-icon>
                   <span>${this.fullscreen ? t5("ui.exitFullscreen") : t5("ui.fullscreen")}</span>
@@ -10842,7 +10843,7 @@ var ErpPosTouch = class extends i3 {
       <ion-header class="ion-no-border">
         <ion-toolbar>
           <div class="order-toolbar">
-            ${this.parkingEnabled ? b2`<ion-button class="header-action icon-action park-action" fill="clear" ?disabled=${!this.cart.length}
+            ${this.parkingEnabled ? b2`<ion-button data-testid="pos-park" class="header-action icon-action park-action" fill="clear" ?disabled=${!this.cart.length}
                     title=${t5("ui.parkCurrentSale")} aria-label=${t5("ui.parkCurrentSale")}
                     @click=${() => void this.requestPark()}>
                   <ion-icon slot="icon-only" name="pause-circle-outline"></ion-icon>
@@ -10850,7 +10851,7 @@ var ErpPosTouch = class extends i3 {
             <!-- Cada módulo sigue siendo dueño de su botón y modal. Sales solo ofrece el hueco. -->
             <span class="cart-actions-slot"></span>
             <span class="actions-spacer"></span>
-            <ion-button class="header-action icon-action open-checks-action" fill="clear"
+            <ion-button data-testid="pos-parked-toggle" class="header-action icon-action open-checks-action" fill="clear"
                         title=${t5("ui.parkedTickets")} aria-label=${t5("ui.parkedTickets")}
                         @click=${() => {
       this.parkedOpen = !this.parkedOpen;
@@ -10858,7 +10859,7 @@ var ErpPosTouch = class extends i3 {
               <ion-icon slot="icon-only" name="receipt-outline"></ion-icon>
               ${this.parked.length ? b2`<span class="badge-num">${this.parked.length}</span>` : A}
             </ion-button>
-            <ion-button class="header-action cart-close" fill="clear" title=${t5("ui.closeAction")}
+            <ion-button data-testid="pos-cart-close" class="header-action cart-close" fill="clear" title=${t5("ui.closeAction")}
                         aria-label=${t5("ui.closeAction")} @click=${() => {
       this.cartOpen = false;
     }}>
@@ -10869,13 +10870,13 @@ var ErpPosTouch = class extends i3 {
 
         <div class="order-heading">
           <div class="order-title-row">
-            <input class="order-title" .value=${this.visibleOrderLabel}
+            <input data-testid="pos-order-title" class="order-title" .value=${this.visibleOrderLabel}
                    placeholder=${t5("ui.newCheckTitle")} aria-label=${t5("ui.checkTitleLabel")}
                    @input=${(e7) => {
       this.orderLabel = e7.target.value;
     }}
                    @change=${(e7) => void this.saveOrderLabel(e7.target.value)} />
-            <button class="title-edit" type="button" title=${t5("ui.editCheckTitle")}
+            <button data-testid="pos-order-title-edit" class="title-edit" type="button" title=${t5("ui.editCheckTitle")}
                     aria-label=${t5("ui.editCheckTitle")} @click=${() => this.focusOrderTitle()}>
               <ion-icon name="create-outline"></ion-icon>
             </button>
@@ -10889,7 +10890,7 @@ var ErpPosTouch = class extends i3 {
             <!-- sales#179 — WHO IS SERVING. Always there, even with nobody chosen: if it is not
                  visible, nobody knows the sale is attributed at all, and the waiter cannot be
                  transferred. -->
-            <button class="ctx-chip" type="button" data-testid="staff-chip"
+            <button class="ctx-chip" type="button" data-testid="pos-staff-chip"
                     aria-label=${t5("ui.staffPickerTitle")} title=${t5("ui.staffPickerTitle")}
                     @click=${() => void this.openStaffPicker()}>
               <ion-icon name="person-circle-outline"></ion-icon>
@@ -10898,7 +10899,7 @@ var ErpPosTouch = class extends i3 {
             <!-- sales#222 — the shop demands a customer and there is none: it is said HERE, in the
                  slot the customer occupies, and the chip is the shortcut to fill it. A block whose
                  only sign is a toast is a block nobody can act on once the toast is gone. -->
-            ${this.missingRequiredCustomer ? b2`<button class="ctx-chip needs-customer" type="button" data-testid="needs-customer"
+            ${this.missingRequiredCustomer ? b2`<button class="ctx-chip needs-customer" type="button" data-testid="pos-needs-customer"
                              title=${t5("ui.customerRequiredCharge")} aria-label=${t5("ui.customerRequiredCharge")}
                              @click=${() => this.askForCustomer()}>
                        <ion-icon name="person-add-outline"></ion-icon>
@@ -10909,12 +10910,12 @@ var ErpPosTouch = class extends i3 {
         </div>
 
         ${this.hasKitchen ? b2`
-          <ion-segment class="view-tabs" .value=${this.orderView}
+          <ion-segment data-testid="pos-view-tabs" class="view-tabs" .value=${this.orderView}
             @ionChange=${(e7) => {
       this.orderView = e7.detail.value;
     }}>
-            <ion-segment-button value="account"><ion-label>${t5("ui.accountTab")}</ion-label></ion-segment-button>
-            <ion-segment-button value="draft"><ion-label><span class="view-tab-label">
+            <ion-segment-button data-testid="pos-view-tab-account" value="account"><ion-label>${t5("ui.accountTab")}</ion-label></ion-segment-button>
+            <ion-segment-button data-testid="pos-view-tab-draft" value="draft"><ion-label><span class="view-tab-label">
               ${t5("ui.currentCommandTab")}
               ${this.pendingCount ? b2`<span class="pending-dot">${this.pendingCount}</span>` : A}
             </span></ion-label></ion-segment-button>
@@ -10922,22 +10923,22 @@ var ErpPosTouch = class extends i3 {
       </ion-header>
 
       ${this.parkedOpen ? b2`
-          <div class="pdrop-back" @click=${() => {
+          <div data-testid="pos-parked-backdrop" class="pdrop-back" @click=${() => {
       this.parkedOpen = false;
     }}></div>
           <div class="pdrop">
-            <ion-button size="small" expand="block" fill="outline" ?disabled=${!this.cart.length} @click=${() => void this.requestPark()}>${this.tableLabel.trim() ? t5("ui.leaveAtTable") : t5("ui.parkCurrentSale")}</ion-button>
+            <ion-button data-testid="pos-park-current" size="small" expand="block" fill="outline" ?disabled=${!this.cart.length} @click=${() => void this.requestPark()}>${this.tableLabel.trim() ? t5("ui.leaveAtTable") : t5("ui.parkCurrentSale")}</ion-button>
             <p class="hint">${this.tableLabel.trim() ? t5("ui.leaveAtTableHint", { label: this.tableLabel }) : t5("ui.parkForLaterHint")}</p>
             <p class="hint"><strong>${t5("ui.parkedTickets")}</strong><br>${t5("ui.openChecksHint")}</p>
             ${this.parked.map((oc) => b2`<div class="pitem">
               <!-- La FILA entera recupera (objetivo táctil grande); eliminar es el icono aparte,
                    armado en dos toques para no borrar cuentas de un roce. Ya NO se bloquea con
                    algo marcado: lo de delante se aparca o se queda en su mesa (ADR-0146). -->
-              <button class="prow" @click=${() => this.retrieve(oc)}>
+              <button data-testid=${`pos-parked-${oc.id}`} class="prow" @click=${() => this.retrieve(oc)}>
                 <span class="pn">${oc.label || this.money(oc.total)}</span>
                 <span class="pm">${(oc.created_at || "").replace("T", " ").slice(11, 16)}${oc.label ? " \xB7 " + this.money(oc.total) : ""}</span>
               </button>
-              <ion-button size="small" fill="clear" color="danger" class="pdel"
+              <ion-button data-testid=${`pos-parked-${oc.id}-delete`} size="small" fill="clear" color="danger" class="pdel"
                           title=${this.armedDelete === oc.id ? t5("ui.deleteCheckConfirm") : t5("ui.deleteCheck")}
                           aria-label=${this.armedDelete === oc.id ? t5("ui.deleteCheckConfirm") : t5("ui.deleteCheck")}
                           @click=${() => void this.deleteCheck(oc)}>
@@ -10993,13 +10994,13 @@ var ErpPosTouch = class extends i3 {
                aporta kitchen si está instalado/activo) y se monta dentro de Comanda actual. -->
           <div class="foot-actions">
             ${this.discountsAllowed ? b2`
-            <ion-button class="ticket-discount" fill="outline" ?disabled=${!this.cart.length}
+            <ion-button data-testid="pos-ticket-discount" class="ticket-discount" fill="outline" ?disabled=${!this.cart.length}
                         color=${this.ticketDiscount > 0 || this.ticketDiscountAmount > 0 ? "warning" : void 0}
                         title=${t5("ui.discountTicket")} aria-label=${t5("ui.discountTicket")}
                         @click=${() => this.openDiscount("ticket")}>
               <ion-icon slot="icon-only" name=${this.ticketDiscount > 0 || this.ticketDiscountAmount > 0 ? "pricetag" : "pricetag-outline"}></ion-icon>
             </ion-button>` : A}
-            <ion-button class="prebill" fill="outline" ?disabled=${!this.cart.length}
+            <ion-button data-testid="pos-prebill" class="prebill" fill="outline" ?disabled=${!this.cart.length}
                         title=${t5("ui.printPrebill")} aria-label=${t5("ui.printPrebill")}
                         @click=${() => {
       this.prebillOpen = true;
@@ -11013,7 +11014,7 @@ var ErpPosTouch = class extends i3 {
                  shows (sales#58). openPay() takes the tap and answers with the shell's toast.
                  The blocked state itself is written by syncChargeState(), not here: Ionic steals
                  whatever the template puts on this host. -->
-            <ion-button class="charge" ?disabled=${!this.cart.length}
+            <ion-button data-testid="pos-charge" class="charge" ?disabled=${!this.cart.length}
                         title=${this.missingChargeApp ? t5("ui.missingAppCharge", { app: this.chargeAppName }) : this.missingRequiredCustomer ? t5("ui.customerRequiredCharge") : t5("ui.charge")}
                         aria-label=${t5("ui.charge")}
                         @click=${() => this.openPay()}>
@@ -11072,7 +11073,7 @@ var ErpPosTouch = class extends i3 {
               <span class="tl-amount" ?data-covered=${isCovered2}>${this.money(lineAmount(l3))}</span>
             </div>
             ${coverableLine(l3) ? b2`<div class="tl-slot"></div>` : parts ? b2`
-                  <ion-button class="tl-split" expand="block" fill="outline" size="small"
+                  <ion-button data-testid=${`pos-tender-line-${l3.id}-split`} class="tl-split" expand="block" fill="outline" size="small"
                       data-parts=${parts} ?disabled=${this.splittingLine === l3.line_id}
                       @click=${() => void this.splitTenderLine(l3)}>
                     ${t5("ui.tenderSplitLine", { n: String(parts) })}
@@ -11112,7 +11113,7 @@ var ErpPosTouch = class extends i3 {
   }
   renderLine(l3) {
     const locked = isLineLocked(l3);
-    return b2`<ion-item class=${l3.line_id && this.splitSel.has(l3.line_id) ? "sel" : ""}
+    return b2`<ion-item data-testid=${`pos-line-${l3.id}`} class=${l3.line_id && this.splitSel.has(l3.line_id) ? "sel" : ""}
         button ?detail=${false} @click=${() => this.toggleSplit(l3)}>
       ${this.cart.length > 1 && l3.line_id ? b2`<ion-icon slot="start" class="selmark"
                   name=${this.splitSel.has(l3.line_id) ? "checkmark-circle" : "ellipse-outline"}
@@ -11140,7 +11141,7 @@ var ErpPosTouch = class extends i3 {
              moved one tap late no longer costs deleting the line and its note with it. Not offered
              on a line already fired to production, which is not editable at the till at all. -->
         ${this.lineStaffLabel(l3) ? b2`<button class="line-staff" type="button"
-              data-testid="line-staff"
+              data-testid="pos-line-staff"
               ?disabled=${locked || !l3.line_id}
               title=${t5("ui.lineStaffPickerTitle")}
               aria-label=${t5("ui.lineStaffPickerTitle")}
@@ -11154,16 +11155,16 @@ var ErpPosTouch = class extends i3 {
         <span class="lt ${l3.is_gift ? "is-gift" : ""}">${this.money(lineAmount(l3))}</span>
         ${locked ? b2`<span class="lqty">×${formatQuantity2(toMicro2(l3.qty))}</span>` : b2`
             ${this.discountsAllowed ? b2`
-            <ion-button class="line-discount" fill="clear" size="small" title=${t5("ui.discountLine")} aria-label=${t5("ui.discountLine")}
+            <ion-button data-testid=${`pos-line-${l3.id}-discount`} class="line-discount" fill="clear" size="small" title=${t5("ui.discountLine")} aria-label=${t5("ui.discountLine")}
                         @click=${() => this.openDiscount("line", l3.line_id)}>
               <ion-icon name=${l3.discount ? "pricetag" : "pricetag-outline"} slot="icon-only" color=${l3.discount ? "warning" : "medium"}></ion-icon>
             </ion-button>` : A}
-            <ion-button class="line-note" fill="clear" size="small" title=${t5("ui.lineNote")} aria-label=${t5("ui.lineNote")}
+            <ion-button data-testid=${`pos-line-${l3.id}-note`} class="line-note" fill="clear" size="small" title=${t5("ui.lineNote")} aria-label=${t5("ui.lineNote")}
                         @click=${() => this.openLineNote(l3.line_id)}>
               <ion-icon name=${l3.note ? "chatbox-ellipses" : "chatbox-ellipses-outline"} slot="icon-only"
                         color=${l3.note ? "primary" : "medium"}></ion-icon>
             </ion-button>
-            <ion-button fill="clear" size="small" title=${t5("ui.giftAction")} @click=${() => this.toggleGift(l3.id)}>
+            <ion-button data-testid=${`pos-line-${l3.id}-gift`} fill="clear" size="small" title=${t5("ui.giftAction")} @click=${() => this.toggleGift(l3.id)}>
               <ion-icon name=${l3.is_gift ? "gift" : "gift-outline"} slot="icon-only" color=${l3.is_gift ? "success" : "medium"}></ion-icon>
             </ion-button>
             <ok-qty-stepper .value=${l3.qty} .min=${0} .step=${this.stepOf(l3)}
@@ -11238,7 +11239,7 @@ var ErpPosTouch = class extends i3 {
                NOTE: no backticks in this comment. Inside an html tagged template a backtick ends
                the template literal and the whole file stops parsing. -->
           ${this.brokenCatalogApps.map((app) => b2`
-            <div class="blocked-notice catalog-unavailable" role="alert" data-testid="dependency-read-failed">
+            <div class="blocked-notice catalog-unavailable" role="alert" data-testid="pos-dependency-read-failed">
               <ion-icon name="alert-circle" aria-hidden="true"></ion-icon>
               <span>${t5("ui.appCatalogUnavailable", { app: this.appName(app) })}</span>
             </div>`)}
@@ -11251,7 +11252,7 @@ var ErpPosTouch = class extends i3 {
                  hora punta. Solo en la pestaña «todo»: un combo no pertenece a ninguna categoría
                  de producto, así que pintarlo dentro de «Bebidas» sería mentir. -->
             ${!this.activeCat ? this.comboCatalog.map((c5) => b2`
-              <ion-card button class="tile combo" data-combo-id=${c5.combo_id}
+              <ion-card data-testid=${`pos-combo-${c5.combo_id}`} button class="tile combo" data-combo-id=${c5.combo_id}
                         aria-label=${`${c5.name} \xB7 ${this.money(c5.price)}`}
                         @click=${() => this.openCombo(c5)}>
                 <div class="thumb" style=${`background:${gradient(c5.name)}`}>
@@ -11266,7 +11267,7 @@ var ErpPosTouch = class extends i3 {
             ${this.filtered.map((p4) => {
       const blocked = this.blockedReason(p4);
       const photo = this.photos.get(p4.image);
-      return b2`<ion-card button class="tile" aria-disabled=${blocked ? "true" : A}
+      return b2`<ion-card data-testid=${`pos-product-${p4.id}`} button class="tile" aria-disabled=${blocked ? "true" : A}
                 title=${blocked ?? A} aria-label=${blocked ? `${p4.name} \xB7 ${blocked}` : A}
                 @click=${() => this.add(p4)}>
               <div class="thumb" style=${`background:${gradient(p4.name)}`}>
@@ -11285,7 +11286,7 @@ var ErpPosTouch = class extends i3 {
             <!-- PRECIO LIBRE: vender género suelto que no está fichado (fruta a ojo). Va al FINAL de la
                  rejilla para no interceptar el "primer producto" (que es lo que tocan los tests y el
                  flujo normal); es una acción aparte, no un producto de catálogo. -->
-            <ion-card button class="tile open-price" @click=${() => this.openOpenPrice()}>
+            <ion-card data-testid="pos-open-price-tile" button class="tile open-price" @click=${() => this.openOpenPrice()}>
               <div class="thumb op-thumb"><ion-icon name="pricetag-outline"></ion-icon></div>
               <div class="tinfo"><div class="n">${t5("ui.openPrice")}</div><div class="sku"></div><div class="p">+ €</div></div>
             </ion-card>
@@ -11293,14 +11294,14 @@ var ErpPosTouch = class extends i3 {
           </div>
         </div>
 
-        <div class="cart-backdrop" ?data-open=${this.cartOpen} @click=${() => {
+        <div data-testid="pos-cart-backdrop" class="cart-backdrop" ?data-open=${this.cartOpen} @click=${() => {
       this.cartOpen = false;
     }}></div>
         <aside class="cart" id="pos-cart-drawer" ?data-open=${this.cartOpen}>${this.renderCart()}</aside>
 
         <!-- Botón flotante de carrito (solo móvil). sales#84: nombre accesible con la cantidad (el
              badge visual no lo lee nadie), y estado abierto/cerrado del cajón que controla. -->
-        <button class="fab"
+        <button data-testid="pos-cart-fab" class="fab"
                 aria-label=${this.itemCount ? t5("ui.openCartWithItems", { count: this.itemCount }) : t5("ui.openCart")}
                 aria-expanded=${this.cartOpen ? "true" : "false"} aria-controls="pos-cart-drawer"
                 @click=${() => {
@@ -11311,13 +11312,13 @@ var ErpPosTouch = class extends i3 {
         </button>
       </div>
 
-      ${this.paying ? b2`<div class="scrim" @click=${(e7) => {
+      ${this.paying ? b2`<div data-testid="pos-pay-scrim" class="scrim" @click=${(e7) => {
       if (e7.target.classList.contains("scrim")) this.paying = false;
     }}>
             <div class="sheet">
               <div class="sheet-h">
                 <span class="t">${t5("ui.charge")}</span>
-                <button class="x" @click=${() => {
+                <button data-testid="pos-pay-close" class="x" @click=${() => {
       this.paying = false;
     }}>✕</button>
               </div>
@@ -11348,7 +11349,7 @@ var ErpPosTouch = class extends i3 {
                 ${this.canChooseDocFormat ? b2`
                   <div class="pay-docformat" role="group" aria-label=${t5("ui.documentFormat")}>
                     ${["ticket", "invoice"].map((f3) => b2`
-                      <button
+                      <button data-testid=${`pos-doc-format-${f3}`}
                         class="pm-btn"
                         aria-pressed=${this.docFormat === f3 ? "true" : "false"}
                         @click=${() => this.chooseDocFormat(f3)}
@@ -11366,14 +11367,14 @@ var ErpPosTouch = class extends i3 {
       const amount = this.money(leg.amount);
       const back = leg.tendered - leg.amount;
       return b2`<li class="tender-row">
-                        <button class="tender-edit" aria-label=${t5("ui.editTender", { name, amount })}
+                        <button data-testid=${`pos-tender-${leg.id}-edit`} class="tender-edit" aria-label=${t5("ui.editTender", { name, amount })}
                                 @click=${() => this.editTender(leg.id)}>
                           <ion-icon name=${payMethodIcon(leg.method.type, leg.method.name)} aria-hidden="true"></ion-icon>
                           <span class="tender-name">${name}</span>
                           <span class="tender-amount">${amount}</span>
                           ${back > 0 ? b2`<span class="tender-change">${t5("ui.change")} ${this.money(back)}</span>` : A}
                         </button>
-                        <button class="tender-remove" aria-label=${t5("ui.removeTender", { name, amount })}
+                        <button data-testid=${`pos-tender-${leg.id}-remove`} class="tender-remove" aria-label=${t5("ui.removeTender", { name, amount })}
                                 @click=${() => this.removeTender(leg.id)}>
                           <ion-icon name="close-outline" aria-hidden="true"></ion-icon>
                         </button>
@@ -11390,7 +11391,7 @@ var ErpPosTouch = class extends i3 {
       const marca = brandSvgFor(m4.type, m4.name);
       const nombre = payMethodDisplayName(m4, t5);
       return b2`
-                      <button class="pm-btn" aria-pressed=${this.payMethod?.id === m4.id ? "true" : "false"}
+                      <button data-testid=${`pos-pay-method-${m4.id}`} class="pm-btn" aria-pressed=${this.payMethod?.id === m4.id ? "true" : "false"}
                               title=${nombre}
                               @click=${() => {
         this.payMethod = m4;
@@ -11418,7 +11419,7 @@ var ErpPosTouch = class extends i3 {
                     <!-- SIN atajos de importe (73/75/80…): Ioan los eliminó el 2026-07-19 y pidió
                          NO volver a añadirlos. El entregado se teclea en el numpad, punto. -->
                     <div class="numpad">
-                      ${["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "C"].map((k2) => b2`<button @click=${() => this.tap(k2)}>${k2}</button>`)}
+                      ${["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "C"].map((k2) => b2`<button data-testid=${`pos-keypad-${keypadId(k2)}`} @click=${() => this.tap(k2)}>${k2}</button>`)}
                     </div>` : b2`
                     <div class="amt pay-exact"><span>${t5("ui.payExact")}</span><span class="v">${this.money(this.payable)}</span></div>
                     <p class="pay-hint">${t5("ui.payCardHint", { amount: this.money(this.payable) })}</p>`}
@@ -11429,10 +11430,10 @@ var ErpPosTouch = class extends i3 {
                      es un solo toque. Es justo lo que le falta a Shopify, donde con 3+ medios hay
                      que teclear cada importe a mano y el flujo se atasca («I could not exit the
                      screen other than to mark the order as part paid») — inviable en hora punta. -->
-                ${this.payable > 0 && !this.splitting ? b2`<button class="pay-split-btn" @click=${() => this.startSplit()}>
+                ${this.payable > 0 && !this.splitting ? b2`<button data-testid="pos-pay-split" class="pay-split-btn" @click=${() => this.startSplit()}>
                       <ion-icon name="swap-horizontal-outline" aria-hidden="true"></ion-icon>${t5("ui.splitPayment")}
                     </button>` : A}
-                ${this.splitting && this.remaining > 0 ? b2`<button class="pay-add" @click=${() => this.addTender()}>
+                ${this.splitting && this.remaining > 0 ? b2`<button data-testid="pos-pay-add-tender" class="pay-add" @click=${() => this.addTender()}>
                       <ion-icon name="add-outline" aria-hidden="true"></ion-icon>${t5("ui.addTender")}
                     </button>` : A}
 
@@ -11441,7 +11442,7 @@ var ErpPosTouch = class extends i3 {
                 <ion-item lines="none" class="print-row">
                   <ion-icon slot="start" name="print-outline"></ion-icon>
                   <ion-label>${t5("ui.printReceipt")}</ion-label>
-                  <ion-toggle slot="end" .checked=${this.printOnCharge}
+                  <ion-toggle data-testid="pos-print-on-charge" slot="end" .checked=${this.printOnCharge}
                               @ionChange=${(e7) => {
       this.printOnCharge = !!e7.detail.checked;
     }}></ion-toggle>
@@ -11462,7 +11463,7 @@ var ErpPosTouch = class extends i3 {
                      toque llega, confirm() lo para y CONTESTA con lo que falta. busy sí es
                      disabled de verdad: ahí no hay nada que contestar y un segundo toque cobraría
                      dos veces. -->
-                <ion-button class="charge" expand="block" ?disabled=${this.busy}
+                <ion-button data-testid="pos-pay-confirm" class="charge" expand="block" ?disabled=${this.busy}
                             aria-disabled=${blockedWhy ? "true" : A}
                             @click=${() => this.confirm(this.printOnCharge)}>
                   ${this.busy ? t5("ui.charging") : blockedWhy ? blockedWhy.short : this.tenders.length ? `${t5("ui.charge")} ${this.money(this.payable)}` : needsTendered(this.payMethod) ? `${t5("ui.charge")} ${this.money(this.payable)}` : t5("ui.chargeWithCard", { amount: this.money(this.payable) })}
@@ -11474,7 +11475,7 @@ var ErpPosTouch = class extends i3 {
       <!-- PRECIO LIBRE: reutiliza el sheet del cobro (.scrim/.sheet/.numpad). Tecleas el importe y
            eliges el DEPARTAMENTO (categoría fiscal, que lleva su IVA); "Añadir" queda deshabilitado
            hasta tener importe > 0 y departamento (nunca una línea desnuda). -->
-      ${this.modifierSheet ? b2`<div class="scrim" @click=${(e7) => {
+      ${this.modifierSheet ? b2`<div data-testid="pos-modifier-scrim" class="scrim" @click=${(e7) => {
       if (e7.target.classList.contains("scrim")) {
         this.modifierSheet = void 0;
       }
@@ -11482,7 +11483,7 @@ var ErpPosTouch = class extends i3 {
             <div class="sheet">
               <div class="sheet-h">
                 <span class="t">${this.modifierSheet.product.name}</span>
-                <button class="x" @click=${() => {
+                <button data-testid="pos-modifier-close" class="x" @click=${() => {
       this.modifierSheet = void 0;
     }}>✕</button>
               </div>
@@ -11496,7 +11497,7 @@ var ErpPosTouch = class extends i3 {
                   </div>
                   <div class="dept-grid" role="group" aria-label=${g3.name}>
                     ${g3.options.map((o9) => b2`
-                      <button class="dept-btn" aria-pressed=${this.modifierPicks.includes(o9.id) ? "true" : "false"}
+                      <button data-testid=${`pos-modifier-option-${o9.id}`} class="dept-btn" aria-pressed=${this.modifierPicks.includes(o9.id) ? "true" : "false"}
                               @click=${() => this.toggleModifier(o9.id)}>
                         <span class="dn">${o9.name}</span>
                         <span class="dr">${o9.price_delta ? this.money(o9.price_delta) : ""}</span>
@@ -11504,7 +11505,7 @@ var ErpPosTouch = class extends i3 {
                   </div>`)}
               </div>
               <div class="sheet-foot">
-                <ion-button class="charge" expand="block" ?disabled=${!this.canConfirmModifiers()}
+                <ion-button data-testid="pos-modifier-confirm" class="charge" expand="block" ?disabled=${!this.canConfirmModifiers()}
                             @click=${() => this.confirmModifiers()}>
                   ${this.canConfirmModifiers() ? t5("ui.add") : t5("ui.modifierPickOne")}
                 </ion-button>
@@ -11514,7 +11515,7 @@ var ErpPosTouch = class extends i3 {
       <!-- sales#153 · EL PICKER DEL MENÚ. HOJA ÚNICA con los grupos apilados y scroll, no wizard:
            es a lo que ha convergido el mercado táctil (Odoo 18 y 19; Toast construyó «Open View»
            para salir del wizard, «rather than in a sequential way»). -->
-      ${this.comboSheet ? b2`<div class="scrim" @click=${(e7) => {
+      ${this.comboSheet ? b2`<div data-testid="pos-combo-scrim" class="scrim" @click=${(e7) => {
       if (e7.target.classList.contains("scrim")) {
         this.comboSheet = void 0;
       }
@@ -11522,7 +11523,7 @@ var ErpPosTouch = class extends i3 {
             <div class="sheet" data-combo-sheet>
               <div class="sheet-h">
                 <span class="t">${this.comboSheet.combo.name}</span>
-                <button class="x" @click=${() => {
+                <button data-testid="pos-combo-close" class="x" @click=${() => {
       this.comboSheet = void 0;
     }}>✕</button>
               </div>
@@ -11552,7 +11553,7 @@ var ErpPosTouch = class extends i3 {
         const delta = this.comboDelta(o9);
         const barred = full && n6 === 0 && g3.max !== 1;
         return b2`
-                        <button class="dept-btn combo-opt" data-option-id=${o9.option_id}
+                        <button data-testid=${`pos-combo-option-${o9.option_id}`} class="dept-btn combo-opt" data-option-id=${o9.option_id}
                                 aria-pressed=${n6 > 0 ? "true" : "false"}
                                 aria-disabled=${barred ? "true" : "false"}
                                 data-barred=${barred ? "true" : "false"}
@@ -11560,7 +11561,7 @@ var ErpPosTouch = class extends i3 {
                           <span class="dn">${this.comboOptionName(o9)}${n6 > 1 ? b2` <b>×${n6}</b>` : A}</span>
                           ${delta ? b2`<span class="dr" data-delta>${delta}</span>` : A}
                         </button>
-                        ${g3.allow_repeat && n6 > 0 ? b2`<button class="combo-less" data-drop-option=${o9.option_id}
+                        ${g3.allow_repeat && n6 > 0 ? b2`<button data-testid=${`pos-combo-option-${o9.option_id}-less`} class="combo-less" data-drop-option=${o9.option_id}
                                          aria-label=${t5("ui.comboRemoveOne", { name: this.comboOptionName(o9) })}
                                          @click=${() => this.dropComboOption(o9.option_id)}>−</button>` : A}`;
       })}
@@ -11581,7 +11582,7 @@ var ErpPosTouch = class extends i3 {
                      aria-disabled y el gancho data-blocked viven en el elemento que controlo. -->
                 ${(() => {
       const blocked = this.comboBlocked();
-      return b2`<button class="combo-confirm" data-combo-confirm
+      return b2`<button data-testid="pos-combo-confirm" class="combo-confirm" data-combo-confirm
                           aria-disabled=${blocked ? "true" : "false"}
                           data-blocked=${blocked ? "true" : "false"}
                           @click=${() => this.confirmCombo()}>
@@ -11591,25 +11592,25 @@ var ErpPosTouch = class extends i3 {
               </div>
             </div>
           </div>` : A}
-      ${this.openPriceOpen ? b2`<div class="scrim" @click=${(e7) => {
+      ${this.openPriceOpen ? b2`<div data-testid="pos-open-price-scrim" class="scrim" @click=${(e7) => {
       if (e7.target.classList.contains("scrim")) this.openPriceOpen = false;
     }}>
             <div class="sheet">
               <div class="sheet-h">
                 <span class="t">${t5("ui.openPrice")}</span>
-                <button class="x" @click=${() => {
+                <button data-testid="pos-open-price-close" class="x" @click=${() => {
       this.openPriceOpen = false;
     }}>✕</button>
               </div>
               <div class="sheet-top"><div class="pay-total">${this.money(this.openAmountCents)}</div></div>
               <div class="pay">
                 <div class="numpad">
-                  ${["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "C"].map((k2) => b2`<button @click=${() => this.tapOpen(k2)}>${k2}</button>`)}
+                  ${["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "C"].map((k2) => b2`<button data-testid=${`pos-open-price-key-${keypadId(k2)}`} @click=${() => this.tapOpen(k2)}>${k2}</button>`)}
                 </div>
                 <div class="dept-label">${t5("ui.department")}</div>
                 <div class="dept-grid" role="group" aria-label=${t5("ui.department")}>
                   ${this.departments.map((d3) => b2`
-                    <button class="dept-btn" aria-pressed=${this.openDept === d3.key ? "true" : "false"}
+                    <button data-testid=${`pos-open-price-dept-${d3.key}`} class="dept-btn" aria-pressed=${this.openDept === d3.key ? "true" : "false"}
                             @click=${() => {
       this.openDept = d3.key;
     }}>
@@ -11624,7 +11625,7 @@ var ErpPosTouch = class extends i3 {
                      dentro: con una clave que no casa, el botón salía habilitado y el toque no
                      hacía nada ni decía nada. (Sin acentos graves aquí: dentro de un comentario de
                      lit cierran el template — es una trampa conocida.) -->
-                <ion-button class="charge" expand="block" data-testid="open-price-add"
+                <ion-button class="charge" expand="block" data-testid="pos-open-price-add"
                             ?disabled=${!(this.openAmountCents > 0 && this.resolvedDept)}
                             @click=${() => this.addOpenPrice()}>
                   ${t5("ui.add")}${this.openAmountCents > 0 ? ` ${this.money(this.openAmountCents)}` : ""}
@@ -11638,13 +11639,13 @@ var ErpPosTouch = class extends i3 {
            its handle — because ion-action-sheet does not host rich content and Ionic overlays
            inside a shadow root get re-parented to the body (ADR-0028). Focus lands on the
            textarea: writing is what one comes here to do. -->
-      ${this.noteSheet ? b2`<div class="scrim" @click=${(e7) => {
+      ${this.noteSheet ? b2`<div data-testid="pos-note-scrim" class="scrim" @click=${(e7) => {
       if (e7.target.classList.contains("scrim")) this.noteSheet = void 0;
     }}>
             <div class="sheet note-sheet">
               <div class="sheet-h">
                 <span class="t">${t5("ui.lineNoteOf", { name: this.cart.find((l3) => l3.line_id === this.noteSheet?.lineId)?.name ?? "" })}</span>
-                <button class="x" aria-label=${t5("ui.closeAction")} @click=${() => {
+                <button data-testid="pos-note-close" class="x" aria-label=${t5("ui.closeAction")} @click=${() => {
       this.noteSheet = void 0;
     }}>✕</button>
               </div>
@@ -11657,11 +11658,11 @@ var ErpPosTouch = class extends i3 {
                     </p>` : A}
                 ${this.quickNotes.length ? b2`<div class="note-chips">
                       ${this.quickNotes.map((n6) => b2`
-                        <button type="button" class="note-chip"
+                        <button data-testid=${`pos-note-chip-${n6.id}`} type="button" class="note-chip"
                                 aria-pressed=${hasQuickNote(this.noteInput, n6.text) ? "true" : "false"}
                                 @click=${() => this.toggleQuickNoteChip(n6.text)}>${n6.text}</button>`)}
                     </div>` : A}
-                <textarea class="note-input" rows="3" maxlength="255" autofocus
+                <textarea data-testid="pos-note-input" class="note-input" rows="3" maxlength="255" autofocus
                           aria-label=${t5("ui.lineNote")} placeholder=${t5("ui.lineNotePlaceholder")}
                           .value=${this.noteInput}
                           @input=${(e7) => {
@@ -11670,9 +11671,9 @@ var ErpPosTouch = class extends i3 {
                 <p class="note-hint">${t5("ui.lineNoteHint")}</p>
               </div>
               <div class="sheet-foot discount-foot">
-                <ion-button fill="clear" color="medium"
+                <ion-button data-testid="pos-note-remove" fill="clear" color="medium"
                   @click=${() => this.applyLineNote("")}>${t5("ui.lineNoteRemove")}</ion-button>
-                <ion-button class="charge note-save" expand="block"
+                <ion-button data-testid="pos-note-save" class="charge note-save" expand="block"
                   @click=${() => this.applyLineNote(this.noteInput)}>${t5("ui.lineNoteSave")}</ion-button>
               </div>
             </div>
@@ -11681,36 +11682,36 @@ var ErpPosTouch = class extends i3 {
       <!-- DESCUENTO (sales#71): mismo sheet/numpad del cobro. Se teclea el %, y Aplicar; 0 = quitar.
            Sobre la LÍNEA elegida o sobre el TICKET entero. El servidor prorratea y revalida
            allow_discounts; aquí solo se recoge la cifra. -->
-      ${this.discountSheet ? b2`<div class="scrim" @click=${(e7) => {
+      ${this.discountSheet ? b2`<div data-testid="pos-discount-scrim" class="scrim" @click=${(e7) => {
       if (e7.target.classList.contains("scrim")) this.discountSheet = void 0;
     }}>
             <div class="sheet discount-sheet">
               <div class="sheet-h">
                 <span class="t">${this.discountSheet.target === "ticket" ? t5("ui.discountTicket") : t5("ui.discountLineOf", { name: this.cart.find((l3) => l3.line_id === this.discountSheet?.lineId)?.name ?? "" })}</span>
-                <button class="x" aria-label=${t5("ui.closeAction")} @click=${() => {
+                <button data-testid="pos-discount-close" class="x" aria-label=${t5("ui.closeAction")} @click=${() => {
       this.discountSheet = void 0;
     }}>✕</button>
               </div>
               ${this.discountSheet.target === "ticket" ? b2`
               <!-- sales#113: % o € (importe fijo, «5 € menos»); ambos estándar en el mercado. -->
-              <ion-segment class="discount-mode" value=${this.discountMode}
+              <ion-segment data-testid="pos-discount-mode" class="discount-mode" value=${this.discountMode}
                 @ionChange=${(e7) => this.setDiscountMode(e7.detail.value === "amount" ? "amount" : "percent")}>
-                <ion-segment-button value="percent"><ion-label>%</ion-label></ion-segment-button>
-                <ion-segment-button value="amount"><ion-label>€</ion-label></ion-segment-button>
+                <ion-segment-button data-testid="pos-discount-mode-percent" value="percent"><ion-label>%</ion-label></ion-segment-button>
+                <ion-segment-button data-testid="pos-discount-mode-amount" value="amount"><ion-label>€</ion-label></ion-segment-button>
               </ion-segment>` : A}
               <div class="sheet-top"><div class="pay-total">${this.discountMode === "amount" ? this.money(this.discountInputCents) : `${this.discountInput || "0"} %`}</div></div>
               <div class="pay">
                 <div class="numpad">
-                  ${["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "C"].map((k2) => b2`<button @click=${() => this.tapDiscount(k2)}>${k2}</button>`)}
+                  ${["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "C"].map((k2) => b2`<button data-testid=${`pos-discount-key-${keypadId(k2)}`} @click=${() => this.tapDiscount(k2)}>${k2}</button>`)}
                 </div>
               </div>
               <div class="sheet-foot discount-foot">
-                <ion-button fill="outline" color="medium"
+                <ion-button data-testid="pos-discount-remove" fill="outline" color="medium"
                   @click=${() => this.discountMode === "amount" ? this.applyDiscountAmount(0) : this.applyDiscount(0)}>${t5("ui.discountRemove")}</ion-button>
-                ${this.discountMode === "amount" ? b2`<ion-button class="charge" expand="block" ?disabled=${this.discountInputCents > cartTotal(this.cart, this.ticketDiscount)}
+                ${this.discountMode === "amount" ? b2`<ion-button data-testid="pos-discount-apply-amount" class="charge" expand="block" ?disabled=${this.discountInputCents > cartTotal(this.cart, this.ticketDiscount)}
                       @click=${() => this.applyDiscountAmount(this.discountInputCents)}>
                       ${t5("ui.discountApply")}${this.discountInputCents > 0 ? ` \u2212${this.money(this.discountInputCents)}` : ""}
-                    </ion-button>` : b2`<ion-button class="charge" expand="block" @click=${() => this.applyDiscount(this.discountInputPct)}>
+                    </ion-button>` : b2`<ion-button data-testid="pos-discount-apply" class="charge" expand="block" @click=${() => this.applyDiscount(this.discountInputPct)}>
                       ${t5("ui.discountApply")}${this.discountInputPct > 0 ? ` \u2212${this.discountInputPct}%` : ""}
                     </ion-button>`}
               </div>
@@ -11724,7 +11725,7 @@ var ErpPosTouch = class extends i3 {
         <dialog class="park-dialog" open>
           <h3>${t5("ui.parkTitle")}</h3>
           <p>${t5("ui.parkNameHint")}</p>
-          <input type="text" .value=${this.parkName} placeholder=${t5("ui.parkNamePlaceholder")}
+          <input data-testid="pos-park-name" type="text" .value=${this.parkName} placeholder=${t5("ui.parkNamePlaceholder")}
                  aria-label=${t5("ui.parkNameLabel")}
                  @input=${(e7) => {
       this.parkName = e7.target.value;
@@ -11736,10 +11737,10 @@ var ErpPosTouch = class extends i3 {
       }
     }} />
           <div class="dlg-actions">
-            <ion-button fill="clear" @click=${() => {
+            <ion-button data-testid="pos-park-cancel" fill="clear" @click=${() => {
       this.parkPromptOpen = false;
     }}>${t5("ui.cancel")}</ion-button>
-            <ion-button class="park-confirm"
+            <ion-button data-testid="pos-park-confirm" class="park-confirm"
                         @click=${() => {
       this.parkPromptOpen = false;
       void this.parkWith(this.parkName);
@@ -11759,23 +11760,23 @@ var ErpPosTouch = class extends i3 {
           <h3>${t5(this.staffPickerLine ? "ui.lineStaffPickerTitle" : "ui.staffPickerTitle")}</h3>
           <p>${t5(this.staffPickerLine ? "ui.lineStaffPickerHint" : "ui.staffPickerHint")}</p>
           <div class="staff-list">
-            <button class="staff-opt" type="button" data-testid="staff-option-me"
+            <button class="staff-opt" type="button" data-testid="pos-staff-option-me"
                     ?data-current=${this.staffPickerLine ? !this.pickerLineStaffId : !this.staffId}
                     @click=${() => this.pickStaff()}>
               ${t5(this.staffPickerLine ? "ui.lineStaffTicketOption" : "ui.staffMeOption")}
             </button>
-            ${this.staffPickerState === "loading" ? b2`<p class="staff-note" data-testid="staff-loading">${t5("ui.staffLoading")}</p>` : A}
-            ${this.staffPickerState === "error" ? b2`<p class="staff-note" data-testid="staff-error">${t5("ui.staffLoadFailed")}</p>` : A}
-            ${this.staffPickerState === "ready" && !this.hubUsers.length ? b2`<p class="staff-note" data-testid="staff-empty">${t5("ui.staffPickerEmpty")}</p>` : A}
+            ${this.staffPickerState === "loading" ? b2`<p class="staff-note" data-testid="pos-staff-loading">${t5("ui.staffLoading")}</p>` : A}
+            ${this.staffPickerState === "error" ? b2`<p class="staff-note" data-testid="pos-staff-error">${t5("ui.staffLoadFailed")}</p>` : A}
+            ${this.staffPickerState === "ready" && !this.hubUsers.length ? b2`<p class="staff-note" data-testid="pos-staff-empty">${t5("ui.staffPickerEmpty")}</p>` : A}
             ${this.hubUsers.map((u5) => b2`
-              <button class="staff-opt" type="button" data-testid="staff-option"
+              <button class="staff-opt" type="button" data-testid="pos-staff-option"
                       ?data-current=${(this.staffPickerLine ? this.pickerLineStaffId : this.staffId) === u5.id}
                       @click=${() => this.pickStaff(u5)}>
                 ${u5.name}
               </button>`)}
           </div>
           <div class="dlg-actions">
-            <ion-button fill="clear" @click=${() => {
+            <ion-button data-testid="pos-staff-cancel" fill="clear" @click=${() => {
       this.staffPickerOpen = false;
       this.staffPickerLine = void 0;
     }}>${t5("ui.cancel")}</ion-button>
@@ -11790,10 +11791,10 @@ var ErpPosTouch = class extends i3 {
           <h3>${t5("ui.dirtyCartTitle")}</h3>
           <p>${t5("ui.dirtyCartBody")}</p>
           <div class="dlg-actions">
-            ${this.dirtyAllowCancel ? b2`<ion-button fill="clear" @click=${() => this.answerDirty("cancel")}>${t5("ui.cancel")}</ion-button>` : A}
-            <ion-button class="discard-opt" color="danger" fill="outline"
+            ${this.dirtyAllowCancel ? b2`<ion-button data-testid="pos-dirty-cancel" fill="clear" @click=${() => this.answerDirty("cancel")}>${t5("ui.cancel")}</ion-button>` : A}
+            <ion-button data-testid="pos-dirty-discard" class="discard-opt" color="danger" fill="outline"
                         @click=${() => this.answerDirty("discard")}>${t5("ui.discardAndOpen")}</ion-button>
-            <ion-button class="park-opt" @click=${() => this.answerDirty("park")}>${t5("ui.parkAndOpen")}</ion-button>
+            <ion-button data-testid="pos-dirty-park" class="park-opt" @click=${() => this.answerDirty("park")}>${t5("ui.parkAndOpen")}</ion-button>
           </div>
         </dialog>` : A}
 
@@ -11812,7 +11813,7 @@ var ErpPosTouch = class extends i3 {
           ${this.searchResults.map((p4) => {
       const blocked = this.blockedReason(p4);
       return b2`
-            <ion-item button detail="false" aria-disabled=${blocked ? "true" : A} title=${blocked ?? A}
+            <ion-item data-testid=${`pos-search-result-${p4.id}`} button detail="false" aria-disabled=${blocked ? "true" : A} title=${blocked ?? A}
               @click=${() => {
         this.add(p4);
         this.q = "";
@@ -11838,10 +11839,10 @@ var ErpPosTouch = class extends i3 {
         <ion-header><ion-toolbar>
           <ion-title>${t5("ui.prebillTitle")}</ion-title>
           <ion-buttons slot="end">
-            <ion-button title=${t5("ui.print")} aria-label=${t5("ui.print")} @click=${() => void this.printPrebill()}>
+            <ion-button data-testid="pos-prebill-print" title=${t5("ui.print")} aria-label=${t5("ui.print")} @click=${() => void this.printPrebill()}>
               <ion-icon slot="icon-only" name="print-outline"></ion-icon>
             </ion-button>
-            <ion-button title=${t5("ui.close")} aria-label=${t5("ui.close")}
+            <ion-button data-testid="pos-prebill-close" title=${t5("ui.close")} aria-label=${t5("ui.close")}
                         @click=${() => {
       this.prebillOpen = false;
     }}>
@@ -14328,7 +14329,7 @@ var ErpPosDepartments = class extends i3 {
   }
   renderDeleteConfirm() {
     const t7 = (k2) => erplora3().t(CATALOG3, k2);
-    return b2`<ion-modal .isOpen=${!!this.deleteTarget}
+    return b2`<ion-modal data-testid="pos-departments-delete-modal" .isOpen=${!!this.deleteTarget}
         @ionModalDidDismiss=${() => {
       this.deleteTarget = null;
     }}>
@@ -14344,9 +14345,9 @@ var ErpPosDepartments = class extends i3 {
             </ion-label>
           </ion-item>
         </ion-list>
-        <ion-button class="ion-margin-top" expand="block" color="danger" ?disabled=${this.saving}
+        <ion-button class="ion-margin-top" data-testid="pos-departments-delete-confirm" expand="block" color="danger" ?disabled=${this.saving}
           @click=${() => this.confirmDelete()}>${t7("ui.departmentDelete")}</ion-button>
-        <ion-button expand="block" fill="outline" ?disabled=${this.saving}
+        <ion-button data-testid="pos-departments-delete-cancel" expand="block" fill="outline" ?disabled=${this.saving}
           @click=${() => {
       this.deleteTarget = null;
     }}>${t7("ui.departmentCancel")}</ion-button>
@@ -14359,9 +14360,10 @@ var ErpPosDepartments = class extends i3 {
     const noTaxCategories = this.taxChoices.length === 0;
     return b2`<div class="page">
       <p class="intro">${t7("ui.departmentsIntro")}</p>
-      ${this.formError ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>` : A}
-      ${this.ctrl?.error ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : A}
+      ${this.formError ? b2`<ok-inline-feedback data-testid="pos-departments-form-error" tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>` : A}
+      ${this.ctrl?.error ? b2`<ok-inline-feedback data-testid="pos-departments-load-error" tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : A}
       <ok-data-table
+        data-testid="pos-departments-table"
         .serverSide=${true}
         .fill=${true}
         .views=${true}
@@ -14386,23 +14388,25 @@ var ErpPosDepartments = class extends i3 {
         @sortChange=${(e7) => this.ctrl.setSort(e7.detail.sort, e7.detail.dir)}
         @searchChange=${(e7) => this.ctrl.setSearch(e7.detail)}
         @filterChange=${(e7) => this.ctrl.setFilter(e7.detail.col, e7.detail.value)}>
-        <form slot="create" class="form" @submit=${(e7) => this.save(e7)}>
+        <form slot="create" class="form" data-testid="pos-departments-form" @submit=${(e7) => this.save(e7)}>
           ${this.editingId ? b2`<ok-inline-feedback tone="info" icon="create-outline">
                 <b>${t7("ui.departmentEditing")}</b> — ${this.newName}
-                <ion-button size="small" fill="clear" @click=${() => this.cancelEdit()}>${t7("ui.departmentEditCancel")}</ion-button>
+                <ion-button data-testid="pos-departments-edit-cancel" size="small" fill="clear" @click=${() => this.cancelEdit()}>${t7("ui.departmentEditCancel")}</ion-button>
               </ok-inline-feedback>` : A}
-          ${noTaxCategories ? b2`<ok-inline-feedback tone="warning" icon="alert-circle-outline">
+          ${noTaxCategories ? b2`<ok-inline-feedback data-testid="pos-departments-no-tax-categories" tone="warning" icon="alert-circle-outline">
                 ${t7("ui.departmentsNoTaxCategories")}
               </ok-inline-feedback>` : A}
           <!-- mode="md" is not decoration: the shell pins Ionic's ios mode (ADR-0143) and fill
                paints in md only, so without it the box has no border and the person cannot see
                where to type. -->
           <ion-input mode="md" fill="outline" label-placement="floating" maxlength="60"
+            data-testid="pos-departments-name"
             label=${t7("ui.departmentName")} placeholder=${t7("ui.departmentNamePlaceholder")} .value=${this.newName}
             @ionInput=${(e7) => {
       this.newName = e7.target.value;
     }}></ion-input>
           <ion-select mode="md" fill="outline" label-placement="floating"
+            data-testid="pos-departments-tax-category"
             label=${t7("ui.departmentTaxCategory")} .value=${this.newTaxCategoryKey || null}
             @ionChange=${(e7) => {
       this.newTaxCategoryKey = String(e7.target.value ?? "");
@@ -14410,11 +14414,12 @@ var ErpPosDepartments = class extends i3 {
             ${this.taxChoices.map((c5) => b2`<ion-select-option value=${c5.key}>${c5.label}</ion-select-option>`)}
           </ion-select>
           <ion-input mode="md" fill="outline" label-placement="floating" type="number" min="0" step="1"
+            data-testid="pos-departments-order"
             label=${t7("ui.departmentOrder")} .value=${this.newSortOrder}
             @ionInput=${(e7) => {
       this.newSortOrder = e7.target.value;
     }}></ion-input>
-          <ion-button type="submit" ?disabled=${this.saving || !this.newName.trim() || noTaxCategories}>
+          <ion-button type="submit" data-testid="pos-departments-submit" ?disabled=${this.saving || !this.newName.trim() || noTaxCategories}>
             ${this.saving ? t7("ui.departmentSaving") : this.editingId ? t7("ui.departmentSave") : t7("ui.departmentAdd")}
           </ion-button>
         </form>
@@ -14578,7 +14583,7 @@ var ErpPosQuickNotes = class extends i3 {
   }
   renderDeleteConfirm() {
     const t7 = (k2) => erplora4().t(CATALOG4, k2);
-    return b2`<ion-modal .isOpen=${!!this.deleteTarget}
+    return b2`<ion-modal data-testid="pos-quick-notes-delete-modal" .isOpen=${!!this.deleteTarget}
         @ionModalDidDismiss=${() => {
       this.deleteTarget = null;
     }}>
@@ -14594,9 +14599,9 @@ var ErpPosQuickNotes = class extends i3 {
             </ion-label>
           </ion-item>
         </ion-list>
-        <ion-button class="ion-margin-top" expand="block" color="danger" ?disabled=${this.saving}
+        <ion-button class="ion-margin-top" data-testid="pos-quick-notes-delete-confirm" expand="block" color="danger" ?disabled=${this.saving}
           @click=${() => this.confirmDelete()}>${t7("ui.quickNoteDelete")}</ion-button>
-        <ion-button expand="block" fill="outline" ?disabled=${this.saving}
+        <ion-button data-testid="pos-quick-notes-delete-cancel" expand="block" fill="outline" ?disabled=${this.saving}
           @click=${() => {
       this.deleteTarget = null;
     }}>${t7("ui.quickNoteCancel")}</ion-button>
@@ -14608,9 +14613,10 @@ var ErpPosQuickNotes = class extends i3 {
     const editable = can2("sales.manage_settings");
     return b2`<div class="page">
       <p class="intro">${t7("ui.quickNotesIntro")}</p>
-      ${this.formError ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>` : A}
-      ${this.ctrl?.error ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : A}
+      ${this.formError ? b2`<ok-inline-feedback data-testid="pos-quick-notes-form-error" tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>` : A}
+      ${this.ctrl?.error ? b2`<ok-inline-feedback data-testid="pos-quick-notes-load-error" tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : A}
       <ok-data-table
+        data-testid="pos-quick-notes-table"
         .serverSide=${true}
         .fill=${true}
         .views=${true}
@@ -14635,25 +14641,27 @@ var ErpPosQuickNotes = class extends i3 {
         @sortChange=${(e7) => this.ctrl.setSort(e7.detail.sort, e7.detail.dir)}
         @searchChange=${(e7) => this.ctrl.setSearch(e7.detail)}
         @filterChange=${(e7) => this.ctrl.setFilter(e7.detail.col, e7.detail.value)}>
-        <form slot="create" class="form" @submit=${(e7) => this.save(e7)}>
+        <form slot="create" class="form" data-testid="pos-quick-notes-form" @submit=${(e7) => this.save(e7)}>
           ${this.editingId ? b2`<ok-inline-feedback tone="info" icon="create-outline">
                 <b>${t7("ui.quickNoteEditing")}</b> — ${this.newText}
-                <ion-button size="small" fill="clear" @click=${() => this.cancelEdit()}>${t7("ui.quickNoteEditCancel")}</ion-button>
+                <ion-button data-testid="pos-quick-notes-edit-cancel" size="small" fill="clear" @click=${() => this.cancelEdit()}>${t7("ui.quickNoteEditCancel")}</ion-button>
               </ok-inline-feedback>` : A}
           <!-- mode="md" is not decoration: the shell pins Ionic's ios mode (ADR-0143) and fill
                paints in md only, so without it the box has no border and the person cannot see
                where to type. -->
           <ion-input mode="md" fill="outline" label-placement="floating" maxlength="80"
+            data-testid="pos-quick-notes-text"
             label=${t7("ui.quickNoteText")} .value=${this.newText}
             @ionInput=${(e7) => {
       this.newText = e7.target.value;
     }}></ion-input>
           <ion-input mode="md" fill="outline" label-placement="floating" type="number" min="0" step="1"
+            data-testid="pos-quick-notes-order"
             label=${t7("ui.quickNoteOrder")} .value=${this.newSortOrder}
             @ionInput=${(e7) => {
       this.newSortOrder = e7.target.value;
     }}></ion-input>
-          <ion-button type="submit" ?disabled=${this.saving || !this.newText.trim()}>
+          <ion-button type="submit" data-testid="pos-quick-notes-submit" ?disabled=${this.saving || !this.newText.trim()}>
             ${this.saving ? t7("ui.quickNoteSaving") : this.editingId ? t7("ui.quickNoteSave") : t7("ui.quickNoteAdd")}
           </ion-button>
         </form>
@@ -15156,7 +15164,7 @@ var ErpSaleRefund = class extends i3 {
         <p class="hint">${t7("ui.refundLineTendersHint")}</p>
         <ul class="rt-list">
           ${this.covered.map((l3) => b2`
-            <li class="refund-tender-line" data-line=${l3.id}>
+            <li class="refund-tender-line" data-testid=${`refund-tender-line-${l3.id}`} data-line=${l3.id}>
               <div class="rt-name">${l3.product_name ?? ""}</div>
               <div class="rt-slot"></div>
             </li>`)}
@@ -15165,21 +15173,22 @@ var ErpSaleRefund = class extends i3 {
   }
   /** The warnings the fillers want read BEFORE confirming. They warn; they never block. */
   renderTenderNotices() {
-    const notices = [...this.tenderNotices.values()].filter((n6) => !!n6);
+    const notices = [...this.tenderNotices.entries()].filter(([, n6]) => !!n6);
     if (!notices.length) return A;
-    return notices.map((n6) => b2`
-      <ok-inline-feedback class="rt-notice" tone="warning" icon="alert-circle-outline">${n6}</ok-inline-feedback>`);
+    return notices.map(([ref2, n6]) => b2`
+      <ok-inline-feedback class="rt-notice" data-testid=${`refund-tender-notice-${ref2}`} tone="warning" icon="alert-circle-outline">${n6}</ok-inline-feedback>`);
   }
   renderLeg(leg) {
     const t7 = (k2, p4) => erplora5().t(CATALOG5, k2, p4);
     const money2 = (c5) => erplora5().formatMoney(c5);
     const entry = this.draft[leg.payment_id];
     const eligible = Number(leg.refundable) === 1;
-    return b2`<div class="leg" data-leg=${leg.payment_id}>
+    return b2`<div class="leg" data-testid=${`refund-leg-${leg.payment_id}`} data-leg=${leg.payment_id}>
       <div class="leg-head">
         <span class="leg-name">${this.legName(leg)}</span>
         <ion-input
           class="refund-amount"
+          data-testid=${`refund-amount-${leg.payment_id}`}
           type="text"
           inputmode="decimal"
           label=${t7("ui.refundLegAmount")}
@@ -15196,6 +15205,7 @@ var ErpSaleRefund = class extends i3 {
       ${eligible ? A : b2`<p class="leg-reason">${t7(reasonKey(leg.reason))}</p>
             ${leg.remaining > 0 ? b2`<ion-select
                   class="refund-destination"
+                  data-testid=${`refund-destination-${leg.payment_id}`}
                   label=${t7("ui.refundDestination")}
                   label-placement="stacked"
                   .value=${entry?.to ?? ""}
@@ -15208,29 +15218,30 @@ var ErpSaleRefund = class extends i3 {
   render() {
     const t7 = (k2, p4) => erplora5().t(CATALOG5, k2, p4);
     if (this.loading) {
-      return b2`<div class="refund-loading">
+      return b2`<div class="refund-loading" data-testid="refund-loading">
         <ion-spinner name="crescent"></ion-spinner>
         <span>${t7("ui.refundLoading")}</span>
       </div>`;
     }
     if (this.error) {
-      return b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>`;
+      return b2`<ok-inline-feedback data-testid="refund-error" tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>`;
     }
     if (!this.legs.length) {
-      return b2`<ok-inline-feedback tone="warning" icon="information-circle-outline">${t7("ui.refundNothing")}</ok-inline-feedback>`;
+      return b2`<ok-inline-feedback data-testid="refund-nothing" tone="warning" icon="information-circle-outline">${t7("ui.refundNothing")}</ok-inline-feedback>`;
     }
     const total = draftTotal(this.draft);
     const block = this.blockText;
-    return b2`<div class="refund-body">
+    return b2`<div class="refund-body" data-testid="refund-form">
       <h3>${t7("ui.refundTitle", { number: this.sale?.sale_number ?? "" })}</h3>
       <p class="hint">${t7("ui.refundExplain")}</p>
       <div class="legs">${this.legs.map((l3) => this.renderLeg(l3))}</div>
       ${this.renderTenderLines()}
-      <ion-button class="refund-propose" size="small" fill="clear" @click=${() => this.proposeAll()}>
+      <ion-button class="refund-propose" data-testid="refund-propose-all" size="small" fill="clear" @click=${() => this.proposeAll()}>
         ${t7("ui.refundProposeAll")}
       </ion-button>
       <ion-textarea
         class="refund-reason"
+        data-testid="refund-reason"
         label=${t7("ui.refundReasonLabel")}
         label-placement="stacked"
         maxlength="500"
@@ -15242,10 +15253,10 @@ var ErpSaleRefund = class extends i3 {
       ></ion-textarea>
       <div class="totals">
         <span>${t7("ui.refundTotalLabel")}</span>
-        <span class="v">${erplora5().formatMoney(total)}</span>
+        <span class="v" data-testid="refund-total">${erplora5().formatMoney(total)}</span>
       </div>
       <!-- EL MOTIVO DEL BLOQUEO, ESCRITO EN LA PANTALLA: se lee sin tocar nada y sin un ratón. -->
-      ${block ? b2`<p class="block">${block}</p>` : A}
+      ${block ? b2`<p class="block" data-testid="refund-blocked">${block}</p>` : A}
       <!-- And the external tenders' warnings, next to the button: the line's hole can be
            off-screen when the thumb is already on the refund button (sales#166). -->
       ${this.renderTenderNotices()}
@@ -15256,6 +15267,7 @@ var ErpSaleRefund = class extends i3 {
            el literal.) -->
       <ion-button
         class="refund-confirm"
+        data-testid="refund-confirm"
         expand="block"
         ?disabled=${this.busy}
         aria-disabled=${block ? "true" : A}
@@ -15677,44 +15689,44 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
     const t7 = (k2) => erplora6().t(CATALOG6, k2);
     return b2`<div class="scroll">
         <h2>${t7("ui.sales")}</h2>
-        <ion-segment class="range-segment" value=${this.range} aria-label=${t7("ui.rangeLabel")}
+        <ion-segment class="range-segment" data-testid="sales-range" value=${this.range} aria-label=${t7("ui.rangeLabel")}
           @ionChange=${(e7) => {
       void this.setRange(e7.detail.value || "today");
     }}>
-          ${Object.keys(RANGE_KEYS).map((r6) => b2`<ion-segment-button value=${r6}><ion-label>${t7(RANGE_KEYS[r6])}</ion-label></ion-segment-button>`)}
+          ${Object.keys(RANGE_KEYS).map((r6) => b2`<ion-segment-button data-testid=${`sales-range-${r6}`} value=${r6}><ion-label>${t7(RANGE_KEYS[r6])}</ion-label></ion-segment-button>`)}
         </ion-segment>
         <div class=${this.kpiRow ? "cards kpi-row" : "cards"}>
           <div class="card">
             <div class="k">${t7("ui.tickets")}</div>
-            <div class="v">${this.stats.count}</div>
+            <div class="v" data-testid="sales-kpi-tickets">${this.stats.count}</div>
           </div>
           <div class="card">
             <div class="k">${t7("ui.revenue")}</div>
-            <div class="v">${erplora6().formatMoney(Number(this.stats.total_revenue || 0))}</div>
+            <div class="v" data-testid="sales-kpi-revenue">${erplora6().formatMoney(Number(this.stats.total_revenue || 0))}</div>
           </div>
           <div class="card">
             <div class="k">${t7("ui.avgTicket")}</div>
-            <div class="v">${erplora6().formatMoney(Number(this.stats.avg_ticket || 0))}</div>
+            <div class="v" data-testid="sales-kpi-avg-ticket">${erplora6().formatMoney(Number(this.stats.avg_ticket || 0))}</div>
           </div>
           <div class="card">
             <div class="k">${t7("ui.kpiTax")}</div>
-            <div class="v">${erplora6().formatMoney(Number(this.stats.tax_total || 0))}</div>
+            <div class="v" data-testid="sales-kpi-tax">${erplora6().formatMoney(Number(this.stats.tax_total || 0))}</div>
           </div>
           <div class="card">
             <div class="k">${t7("ui.kpiDiscounts")}</div>
-            <div class="v">${erplora6().formatMoney(Number(this.stats.discount_total || 0))}</div>
+            <div class="v" data-testid="sales-kpi-discounts">${erplora6().formatMoney(Number(this.stats.discount_total || 0))}</div>
           </div>
           <div class="card">
             <div class="k">${t7("ui.kpiVoided")}</div>
-            <div class="v">${Number(this.stats.voided_count || 0)}</div>
+            <div class="v" data-testid="sales-kpi-voided">${Number(this.stats.voided_count || 0)}</div>
           </div>
         </div>
-        ${this.statsError ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.statsError}</ok-inline-feedback>` : A}
-        ${this.payMethodsError ? b2`<ok-inline-feedback tone="warning" icon="alert-circle-outline">${this.payMethodsError}</ok-inline-feedback>` : A}
-        ${this.ctrl?.error ? b2`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : A}
+        ${this.statsError ? b2`<ok-inline-feedback data-testid="sales-stats-error" tone="danger" icon="alert-circle-outline">${this.statsError}</ok-inline-feedback>` : A}
+        ${this.payMethodsError ? b2`<ok-inline-feedback data-testid="sales-pay-methods-error" tone="warning" icon="alert-circle-outline">${this.payMethodsError}</ok-inline-feedback>` : A}
+        ${this.ctrl?.error ? b2`<ok-inline-feedback data-testid="sales-list-error" tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : A}
         <!-- The «document» button is not the only door: rowClickable makes the whole row open the
              same document (outfitkit#67 — the actions column can be off-screen at 1440 px). -->
-        <ok-data-table .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r6) => String(r6.sale_number ?? "\u2014")} .cardIcon=${() => "receipt-outline"} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.paintedSort} .sortDir=${this.ctrl?.state.dir ?? "desc"} .searchable=${true} .searchPlaceholder=${t7("ui.searchSalePlaceholder")} .emptyMessage=${this.ctrl?.loading ? t7("ui.loading") : t7("ui.noSales")} .actions=${this.documentActions} .rowClickable=${true} @rowAction=${(e7) => {
+        <ok-data-table data-testid="sales-table" .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r6) => String(r6.sale_number ?? "\u2014")} .cardIcon=${() => "receipt-outline"} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.paintedSort} .sortDir=${this.ctrl?.state.dir ?? "desc"} .searchable=${true} .searchPlaceholder=${t7("ui.searchSalePlaceholder")} .emptyMessage=${this.ctrl?.loading ? t7("ui.loading") : t7("ui.noSales")} .actions=${this.documentActions} .rowClickable=${true} @rowAction=${(e7) => {
       if (e7.detail.actionId === "document") this.docSaleId = e7.detail.row.id;
       else if (e7.detail.actionId === "void") void this.confirmVoid(e7.detail.row);
       else if (e7.detail.actionId === "refund") this.refundSaleId = e7.detail.row.id;
@@ -15734,7 +15746,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
       this.refundSaleId = void 0;
     }}>
         <ion-content>
-          ${this.refundSaleId ? b2`<erp-sale-refund .saleId=${this.refundSaleId} @refunded=${() => {
+          ${this.refundSaleId ? b2`<erp-sale-refund data-testid="sales-refund-modal" .saleId=${this.refundSaleId} @refunded=${() => {
       this.refundSaleId = void 0;
       void this.ctrl.load();
       void this.loadStats();

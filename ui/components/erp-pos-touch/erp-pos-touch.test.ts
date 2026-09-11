@@ -1720,7 +1720,7 @@ describe('el cobro pierde la respuesta: la caja nunca deja al cajero sin saber (
     expect(pos.error, 'nunca la cadena cruda de WebKit').not.toContain('did not match');
     expect(pos.checkoutKey, 'la clave se conserva: si reintenta, no se duplica').not.toBe('');
 
-    const enlace = el.shadowRoot!.querySelector<HTMLElement>('[data-testid="checkout-check-sales"]');
+    const enlace = el.shadowRoot!.querySelector<HTMLElement>('[data-testid="pos-check-sales"]');
     expect(enlace, 'se ofrece ir a Ventas a comprobarlo').toBeTruthy();
   });
 
@@ -1733,7 +1733,7 @@ describe('el cobro pierde la respuesta: la caja nunca deja al cajero sin saber (
     montarConCobroRoto(typed, async () => { throw Object.assign(new Error('request to /api/query failed'), { code: 'server_unavailable' }); });
     const { el, pos } = await cobrar();
     expect(pos.error).toBe('ui.checkoutUnknown');
-    expect(el.shadowRoot!.querySelector('[data-testid="checkout-check-sales"]'), 'se ofrece ir a Ventas').toBeTruthy();
+    expect(el.shadowRoot!.querySelector('[data-testid="pos-check-sales"]'), 'se ofrece ir a Ventas').toBeTruthy();
   });
 
   it('el catálogo español traduce los mensajes nuevos (ADR-0055)', () => {
