@@ -4287,6 +4287,7 @@ var es_default = {
     noParkedTickets: "No hay cuentas abiertas",
     errorPark: "No se pudo aparcar el ticket",
     errorRetrieve: "No se pudo recuperar el ticket",
+    appointmentLinkFailed: "No se pudo enlazar la cita con esta cuenta. C\xF3brala sin salir de esta pantalla o la agenda podr\xEDa seguir ense\xF1\xE1ndola como pendiente.",
     tendered: "Entregado",
     change: "Cambio",
     confirmCharge: "Confirmar cobro",
@@ -4848,6 +4849,7 @@ var en_default = {
     noParkedTickets: "No open checks",
     errorPark: "Could not park the ticket",
     errorRetrieve: "Could not retrieve the ticket",
+    appointmentLinkFailed: "The booking could not be attached to this check. Charge it without leaving this screen, or the agenda may keep showing it as pending.",
     tendered: "Tendered",
     change: "Change",
     confirmCharge: "Confirm charge",
@@ -5644,7 +5646,10 @@ async function listOpenChecks(client, excluir) {
       created_at: String(o9.created_at ?? ""),
       label: o9.label ? String(o9.label) : void 0,
       discount: Number(o9.discount_percent) > 0 ? Number(o9.discount_percent) : void 0,
-      discount_amount: Number(o9.discount_amount) > 0 ? Number(o9.discount_amount) : void 0
+      discount_amount: Number(o9.discount_amount) > 0 ? Number(o9.discount_amount) : void 0,
+      // `undefined` y no '' cuando la cuenta no vino de ninguna cita: es lo que distingue «no
+      // tiene» de «tiene una vacía», y lo que viaja como `null` en el cobro.
+      appointmentId: o9.appointment_id ? String(o9.appointment_id) : void 0
     })).sort((a3, b3) => b3.created_at.localeCompare(a3.created_at));
   } catch {
     return [];
@@ -8986,6 +8991,7 @@ var ErpPosTouch = class extends i3 {
       this.orderLabel = c5.label ?? "";
       this.ticketDiscount = c5.discount ?? 0;
       this.ticketDiscountAmount = c5.discount_amount ?? 0;
+      await this.adoptCheckAppointment(c5.appointmentId);
       rememberCurrentCheck(localStorage, c5.id);
       this.cart = await loadOrderLines(erplora2(), c5.id);
       this.notifyOrderRestored();
@@ -9023,6 +9029,7 @@ var ErpPosTouch = class extends i3 {
       this.orderLabel = cuentas.find((c5) => c5.id === id)?.label ?? "";
       this.ticketDiscount = cuentas.find((c5) => c5.id === id)?.discount ?? 0;
       this.ticketDiscountAmount = cuentas.find((c5) => c5.id === id)?.discount_amount ?? 0;
+      await this.adoptCheckAppointment(cuentas.find((c5) => c5.id === id)?.appointmentId);
       for (const f3 of this.assignFillers) {
         f3.el.dispatchEvent(new CustomEvent("erp:order-restored", { detail: { order_id: id }, bubbles: false }));
       }
@@ -9177,6 +9184,47 @@ var ErpPosTouch = class extends i3 {
       pricing_type: "fixed",
       is_active: 1
     }));
+    await this.linkCheckToAppointment();
+  }
+  /** sales#280 — escribe en la cuenta ABIERTA la cita que la armó.
+   *
+   *  Sin esto el enlace vivía SOLO en memoria de la pantalla, y el shell del hub reconstruye esa
+   *  pantalla en cuanto la ruta cambia (`ModuleView.vue`: `outlet.replaceChildren()` + un
+   *  `createElement` nuevo) — que es justo lo que hace «Cobrar» al añadir `?appointment_id=`. La
+   *  copia nueva recuperaba la cuenta del servidor pero no la cita, cobraba sin ella, y sin
+   *  `appointment_id` no se emite `sales.sale.created_from_appointment`: la agenda se quedaba con
+   *  el corte cobrado y la cita en pendiente. */
+  async linkCheckToAppointment() {
+    if (!this.orderId || !this.appointmentId) return;
+    try {
+      await erplora2().command("sales.order.set_appointment", {
+        order_id: this.orderId,
+        appointment_id: this.appointmentId
+      });
+    } catch {
+      this.notifyShell(t5("ui.appointmentLinkFailed"));
+    }
+  }
+  /** sales#280 — la cita de una cuenta RECUPERADA, de vuelta en la pantalla.
+   *
+   *  Persistido está solo el id (opaco, ADR-0077); quién es la clienta y quién la atiende se
+   *  releen de la propia cita, por la misma query pública que armó la cuenta. El carrito NO se
+   *  toca: el servicio ya es una línea de este pedido, y volver a sembrarlo lo cobraría dos veces.
+   *
+   *  La cuenta MANDA: sin cita, la pantalla se queda sin cita — así cambiar de cuenta no arrastra
+   *  la cita de la anterior al ticket de otra clienta. */
+  async adoptCheckAppointment(appointmentId) {
+    this.appointmentId = appointmentId;
+    if (!appointmentId) return;
+    const rowsIn = await optionalRead((c5) => c5.queryOptional("appointments.appointments.get", { id: appointmentId }));
+    if (rowsIn === void 0) return;
+    const ap = rows2(rowsIn)[0];
+    if (!ap) return;
+    if (ap.staff_id) this.staffId = ap.staff_id;
+    this.rememberStaffName(ap.staff_id, ap.staff_name);
+    if (ap.staff_name) this.staffName = ap.staff_name;
+    if (ap.customer_id) this.customerId = ap.customer_id;
+    if (ap.customer_name) this.customerName = ap.customer_name;
   }
   /** sales#179 — **who is serving this check**, and how it is transferred.
    *

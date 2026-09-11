@@ -307,6 +307,9 @@ export interface OpenCheck {
   discount?: number;
   /** sales#113: importe FIJO (céntimos) de descuento del ticket; vuelve al retomarla. */
   discount_amount?: number;
+  /** sales#280: la CITA de la que nació la cuenta (id opaco, ADR-0077). Vuelve con ella, así que
+   *  cobrarla cierra la cita aunque la pantalla se haya reconstruido por el camino. */
+  appointmentId?: string;
 }
 
 /**
@@ -331,6 +334,9 @@ export async function listOpenChecks(client: ErploraClientLike, excluir?: string
         label: o.label ? String(o.label) : undefined,
         discount: Number(o.discount_percent) > 0 ? Number(o.discount_percent) : undefined,
         discount_amount: Number(o.discount_amount) > 0 ? Number(o.discount_amount) : undefined,
+        // `undefined` y no '' cuando la cuenta no vino de ninguna cita: es lo que distingue «no
+        // tiene» de «tiene una vacía», y lo que viaja como `null` en el cobro.
+        appointmentId: o.appointment_id ? String(o.appointment_id) : undefined,
       }))
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
   } catch {

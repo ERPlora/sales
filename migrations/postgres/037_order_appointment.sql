@@ -1,0 +1,11 @@
+-- sales#280 · La CITA de la que nació la cuenta vive en la CUENTA, no en la pantalla.
+--
+-- El id llegaba por `?appointment_id=` y se quedaba en memoria del Web Component. El shell del hub
+-- reconstruye esa pantalla en cuanto la ruta cambia (`ModuleView.vue`), así que el enlace se perdía
+-- entre el «Cobrar» de la agenda y el cobro: la venta salía sin `appointment_id`, no se emitía
+-- `sales.sale.created_from_appointment` y la cita seguía figurando como no cobrada.
+--
+-- Referencia OPACA a `appointments.*` (TEXT, sin FK cross-módulo, ADR-0007), igual que la columna
+-- gemela de `sales_sale` (005_staff_attribution.sql). `sales` no la interpreta: la guarda con la
+-- cuenta y la reenvía al cobrar.
+ALTER TABLE sales_order ADD COLUMN appointment_id TEXT;

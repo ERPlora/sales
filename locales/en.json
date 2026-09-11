@@ -271,6 +271,7 @@
     "noParkedTickets": "No open checks",
     "errorPark": "Could not park the ticket",
     "errorRetrieve": "Could not retrieve the ticket",
+    "appointmentLinkFailed": "The booking could not be attached to this check. Charge it without leaving this screen, or the agenda may keep showing it as pending.",
     "tendered": "Tendered",
     "change": "Change",
     "confirmCharge": "Confirm charge",

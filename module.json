@@ -150,7 +150,8 @@
       "migrations/postgres/033_departments.sql",
       "migrations/postgres/034_line_staff.sql",
       "migrations/postgres/035_order_line_staff.sql",
-      "migrations/postgres/036_discount_cap.sql"
+      "migrations/postgres/036_discount_cap.sql",
+      "migrations/postgres/037_order_appointment.sql"
     ]
   },
   "seed": {
@@ -930,6 +931,16 @@
       ],
       "ai": {
         "description": "Sets the opaque display label of an OPEN order (\"Mesa 4\", a customer name, a time). The label makes an open check recognizable in the open-checks list; sales does not interpret it (ADR-0144)."
+      }
+    },
+    "sales.order.set_appointment": {
+      "permission": "sales.add_sale",
+      "transaction": true,
+      "sql": [
+        "commands/order_set_appointment.sql"
+      ],
+      "ai": {
+        "description": "Links an OPEN order to the appointment it was opened from (opaque id, ADR-0077). The link travels with the check, so charging it emits sales.sale.created_from_appointment and the agenda can mark the booking as converted."
       }
     },
     "sales.settings.update": {
