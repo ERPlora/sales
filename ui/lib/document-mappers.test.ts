@@ -275,6 +275,23 @@ describe('la identidad y el número mientras la factura se escribe (sales#274)',
     expect(saleToInvoice(SALE, LINES, {}, { pending: true }).number, 'ok-invoice exige la clave: vacía, nunca el número interno').toBe('');
     expect(saleToInvoice(SALE, LINES, { issuer_tax_id: '12345678Z' }, {}).issuer.tax_id).toBe('12345678Z');
   });
+
+  // sales#303 — the OTHER half of the wait, the one nobody was watching. The blank above is a
+  // DELIBERATE instant, not a resting state: once the Outbox has been given up on (no number and
+  // no `pending`), the A4 takes the sale's own number rather than going out with none. A document
+  // headed «Factura» with no number cannot be claimed, searched or matched to a payment, and the
+  // customer would be holding the only copy of it. Measured on `origin/main@f7c976f`: deleting
+  // this fall left all 116 suites of the module green.
+  it('invoice: with the wait given up on, the A4 takes the sale number rather than none', () => {
+    expect(saleToInvoice(SALE, LINES, {}, {}).number, 'a formal invoice with no number at all is worse than an internal one')
+      .toBe('TICKET-2026-000004');
+  });
+
+  // The receipt's third sibling (`pending: true, number: 'F2-1'`) had no A4 counterpart either:
+  // the real number, once it lands, wins over the wait it was still flagged as.
+  it('invoice: the invoice number wins the moment it lands, still flagged pending', () => {
+    expect(saleToInvoice(SALE, LINES, {}, { pending: true, number: 'F2-1' }).number).toBe('F2-1');
+  });
 });
 
 describe('labels i18n para ok-receipt / ok-invoice (ADR-0055)', () => {
