@@ -2275,8 +2275,13 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", f
   return {
     // sales#180 — the same priority as the bill: deliberate branding, then the legal name (the one
     // frozen on the invoice, else the one the hub holds today), then the translated fallback.
-    business: { name: header.name || fiscal.issuer_name || settings.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || void 0 },
-    number: fiscal.number || sale.sale_number,
+    business: { name: header.name || fiscal.issuer_name || settings.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || settings.issuer_tax_id || void 0 },
+    // sales#274 — the number, and ONLY the one this document really carries. While the invoice is
+    // still being written (`pending`), the sale's internal number is not it: showing it painted a
+    // number over the counter that the ticket replaced seconds later. Blank now, real in a moment.
+    // The PAPER never gets `pending` (see `fiscalForPaper`): a printed copy is not going to update
+    // itself, so it takes the best identifier it has.
+    number: fiscal.number || (fiscal.pending ? void 0 : sale.sale_number),
     datetime: formatDateTime(sale.created_at, locale),
     customer: fiscal.customer_name || sale.customer_name || void 0,
     // sales#154: the sibling rows of a menu collapse into ONE header line; a plain row is itself.
@@ -2326,9 +2331,13 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", f
   }));
   const taxes = parseTaxes(sale.tax_breakdown, t7);
   return {
-    issuer: { name: fiscal.issuer_name || header.name || settings.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || void 0 },
+    issuer: { name: fiscal.issuer_name || header.name || settings.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || settings.issuer_tax_id || void 0 },
     customer: { name: fiscal.customer_name || sale.customer_name || "Cliente", tax_id: fiscal.customer_tax_id || void 0 },
-    number: fiscal.number || sale.sale_number,
+    // sales#274 — igual que el tiquet, y aquí pesa más: en un documento titulado «Factura» el
+    // número ES el documento, así que enseñar el interno de la venta mientras el de verdad se
+    // escribe es peor que dejarlo en blanco un instante. `<ok-invoice>` exige la clave (a
+    // diferencia de `<ok-receipt>`, que se la salta), de ahí la cadena vacía en vez de `undefined`.
+    number: fiscal.number || (fiscal.pending ? "" : sale.sale_number),
     issue_date: formatDateTime(sale.created_at, locale) || "",
     lines: invLines,
     subtotal: minor(sale.subtotal),
@@ -2441,7 +2450,7 @@ function prebillToPrintDocument(lines, settings = {}, opts = {}, valuation) {
   };
 }
 function saleToPrintDocument(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName, t7) {
-  const screen = saleToReceipt(sale, lines, settings, fiscal, locale, fallbackName, t7);
+  const screen = saleToReceipt(sale, lines, settings, { ...fiscal, pending: false }, locale, fallbackName, t7);
   return {
     business_name: screen.business.name,
     business_address: screen.business.address,
@@ -5165,7 +5174,7 @@ var ErpSalesDocument = class extends i3 {
     this.loading = true;
     this.error = "";
     try {
-      const [sale, lines, settingsRows] = await Promise.all([
+      const [sale, lines, settingsRows, businessRows] = await Promise.all([
         erplora().query("sales.get", { sale_id: this.saleId }),
         erplora().query("sales.lines", { sale_id: this.saleId }),
         // sales#203 — the RECEIPT's own settings (header, footer, promotional QR, whether prices
@@ -5173,13 +5182,29 @@ var ErpSalesDocument = class extends i3 {
         // `sales.settings.get`. Whoever prints a ticket is the cashier, and that query needs
         // `sales.manage_settings`: through it the paper came out blank of everything the shop had
         // configured for exactly the person who hands it over.
-        erplora().query("sales.pos_settings.get").catch(() => [])
+        erplora().query("sales.pos_settings.get").catch(() => []),
+        // sales#274 — WHOSE ticket this is, live from `hub_settings` (single source ADR-0061)
+        // through the cashier-sized door sales#180 opened for the bill. The invoice carries the
+        // same datum frozen, but it is written by the Outbox a few ms AFTER the charge — and the
+        // instant in between is precisely when this viewer opens and the cashier turns the screen
+        // towards the customer. Without asking, that first paint headed the ticket with the
+        // generic default name and no NIF: a business that does not exist, read by the customer.
+        // Best-effort: a hub with no identity saved yet still gets its ticket.
+        erplora().query("sales.business.get").catch(() => [])
       ]);
       this.sale = Array.isArray(sale) ? sale[0] : sale;
       this.lines = lines || [];
-      this.settings = withPosSettingsDefaults(
-        Array.isArray(settingsRows) ? settingsRows[0] : settingsRows
-      );
+      const business = (Array.isArray(businessRows) ? businessRows[0] : businessRows) || {};
+      this.settings = {
+        ...withPosSettingsDefaults(
+          Array.isArray(settingsRows) ? settingsRows[0] : settingsRows
+        ),
+        // sales#274 — the LAST-RESORT identity, exactly as the bill composes it (sales#180): a
+        // deliberate `receipt_header` still wins the name, and the invoice's own snapshot wins
+        // over both the moment it lands.
+        ...business.name ? { issuer_name: business.name } : {},
+        ...business.tax_id ? { issuer_tax_id: business.tax_id } : {}
+      };
       void this.watchFiscal(this.saleId);
     } catch (e7) {
       this.error = e7 instanceof Error ? e7.message : erplora().t(CATALOG, "ui.errorDocument");
@@ -5202,6 +5227,7 @@ var ErpSalesDocument = class extends i3 {
       }
       if (fiscal.qr || !retry) return;
     }
+    if (this.saleId === saleId && this.fiscal.pending) this.fiscal = { ...this.fiscal, pending: false };
   }
   /** Resuelve venta → factura (`invoice.by_source`) → registro VeriFactu (`verifactu.records.by_invoice`)
    *  para obtener el QR de validación AEAT + nº fiscal oficial + CSV. Tolerante a fallos.
@@ -5215,7 +5241,7 @@ var ErpSalesDocument = class extends i3 {
       );
       if (invRows === void 0) return { fiscal: {}, retry: false };
       const invoice = Array.isArray(invRows) ? invRows[0] : invRows;
-      if (!invoice?.id) return { fiscal: {}, retry: true };
+      if (!invoice?.id) return { fiscal: { pending: true }, retry: true };
       const claimInvoiceId = invoice.invoice_type === "F2" ? String(invoice.id) : void 0;
       const base = {
         number: invoice.number || void 0,
@@ -5280,11 +5306,16 @@ var ErpSalesDocument = class extends i3 {
     this.claimFlight = flight;
     await flight;
   }
-  /** El fiscal del papel MÁS el claim acuñado (si lo hay): viajan juntos en `FiscalData`. */
+  /** El fiscal del papel MÁS el claim acuñado (si lo hay): viajan juntos en `FiscalData`.
+   *
+   *  sales#274 — y SIN `pending`: la espera es de la pantalla, que se actualiza sola cuando el
+   *  número llega. Una copia impresa no se actualiza nunca, así que sale con el mejor
+   *  identificador que haya (el de la venta) antes que sin ninguno. */
   fiscalForPaper() {
-    if (!this.claim) return this.fiscal;
+    if (!this.claim) return { ...this.fiscal, pending: false };
     return {
       ...this.fiscal,
+      pending: false,
       claim_locator: this.claim.locator,
       // La puerta devuelve `/p/<locator>` relativo; el QR impreso necesita la URL ABSOLUTA del
       // hub (el origen de esta app ES el origen del hub).
@@ -5312,10 +5343,11 @@ var ErpSalesDocument = class extends i3 {
     const t7 = (k2) => erplora().t(CATALOG, k2);
     if (this.claimInvoiceId && !this.claim && !this.claimFlight) void this.ensureClaim(this.claimInvoiceId);
     const doc = saleToReceipt(
+      // sales#274: el papel, con su `pending` ya resuelto (ver `fiscalForPaper`) — nunca sin número.
       this.sale,
       this.lines || [],
       this.settings || {},
-      this.fiscal,
+      this.fiscalForPaper(),
       erplora().locale,
       t7("ui.docDefaultBusiness"),
       t7
