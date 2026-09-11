@@ -551,6 +551,8 @@ describe('la cabecera del tique NO espera a la factura (sales#274)', () => {
   async function montar(opts: {
     invoiceBySource: (call: number) => unknown[] | undefined;
     business?: unknown[];
+    /** sales#303 — the A4 half of this same wait: `format="invoice"` paints `<ok-invoice>`. */
+    format?: 'ticket' | 'invoice';
   }) {
     let calls = 0;
     sdkDouble = installDocDouble({
@@ -566,9 +568,10 @@ describe('la cabecera del tique NO espera a la factura (sales#274)', () => {
     });
     await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document') as HTMLElement & {
-      fiscalRetryDelays: number[]; updateComplete: Promise<unknown>;
+      fiscalRetryDelays: number[]; format?: 'ticket' | 'invoice'; updateComplete: Promise<unknown>;
     };
     el.fiscalRetryDelays = [10, 10];
+    if (opts.format) el.format = opts.format;
     el.setAttribute('sale-id', 's1');
     document.body.appendChild(el);
     await el.updateComplete;
@@ -695,5 +698,46 @@ describe('la cabecera del tique NO espera a la factura (sales#274)', () => {
     await firstPaint(el);
     expect(paper(el).number, 'the screen is still waiting').toBeUndefined();
     expect(el.printableHtml()).toContain('20260909-0001');
+  });
+
+  // sales#303 — THE SAME WAIT, SEEN ON THE A4, which is where it was left unwatched.
+  //
+  // Everything above watches the ticket. The formal invoice comes out of this very viewer — the
+  // till hands it `format="invoice"` and `render()` paints `<ok-invoice>` off `saleToInvoice`
+  // instead of `<ok-receipt>` — and its far end had no guard at all: the fall could be deleted from
+  // the mapper and the module's 116 suites stayed green. The ticket can afford a blank line while
+  // it waits; an invoice that ends the wait with NO number is a document nobody can claim, search
+  // or match to a payment, and the customer is holding the only copy.
+  describe('and the A4 invoice walks that same wait (sales#303)', () => {
+    const a4 = (el: HTMLElement) =>
+      (el.shadowRoot!.querySelector('ok-invoice') as HTMLElement & { invoice: { number?: string } }).invoice;
+
+    it('while the invoice is still being written, the A4 shows no provisional number either', async () => {
+      const el = await montar({ invoiceBySource: () => [], format: 'invoice' });
+      await firstPaint(el);
+      expect(a4(el).number, 'ok-invoice demands the key: blank while waiting, never the internal number')
+        .toBe('');
+    });
+
+    it('if the invoice never lands, the A4 falls back to the sale number rather than none', async () => {
+      const el = await montar({ invoiceBySource: () => [], format: 'invoice' });
+      await vi.advanceTimersByTimeAsync(120); // burns the retries through: 0 + 10 + 10
+      await el.updateComplete;
+      expect(invoiceLookups(), 'the whole budget: the opening lookup and the two retries').toBe(3);
+      expect(a4(el).number, 'the Outbox gave up: the honest identifier is the sale\u2019s own')
+        .toBe('20260909-0001');
+    });
+
+    it('the moment the invoice lands, the number the A4 carries is its OWN', async () => {
+      const el = await montar({
+        invoiceBySource: (call) => (call < 2 ? [] : [{ id: 'inv1', number: 'F1-2026-7', issuer_name: 'Salon Aurora SL', issuer_nif: '12345678Z' }]),
+        format: 'invoice',
+      });
+      // The test winds the backoff forward: the invoice lands on the first retry (10 ms).
+      await vi.advanceTimersByTimeAsync(80);
+      await el.updateComplete;
+      expect(invoiceLookups(), 'the second lookup is the one that brings the invoice').toBeGreaterThan(1);
+      expect(a4(el).number).toBe('F1-2026-7');
+    });
   });
 });
