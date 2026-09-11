@@ -7,7 +7,7 @@
 //    desde el catálogo del módulo (ADR-0055) vía receiptLabels()/invoiceLabels().
 // 2. BOTÓN IMPRIMIR FLOTANDO — vivía arriba-derecha, suelto sobre el documento. Se mueve al
 //    ion-footer del modal anfitrión (document-modal.ts); el visor pinta SOLO el documento.
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReceiptData } from '@erplora/outfitkit';
 import { installErploraDouble } from '../../test/erplora-double';
 
@@ -522,13 +522,38 @@ describe('la cabecera del tique NO espera a la factura (sales#274)', () => {
   };
   const BUSINESS = [{ name: 'Salon Aurora SL', tax_id: '12345678Z' }];
 
+  // sales#302 — THE TEST HOLDS THE CLOCK, not the machine.
+  //
+  // What this block watches is a WAIT: the screen leaves the number blank while the Outbox writes
+  // the invoice, and falls back to the sale's own number only once the backoff runs out. Measuring
+  // that wait against the machine's clock — four `setTimeout(0)` turns racing a 10 ms backoff —
+  // made the result depend on how busy the server was: the SAME commit came out `failure` on run
+  // 34627541079 and `success` when that very run was re-launched untouched. With the clock faked,
+  // the backoff only runs when the test runs it, and a slow runner is exactly as green as a fast
+  // one.
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** The double this test installed: its `reads` are the STATE the waits below wait for. */
+  let sdkDouble: ReturnType<typeof installDocDouble>;
+
+  /** How many times the viewer has asked the invoicing module about this sale. It is the observable
+   *  state everything in this block depends on: 1 = the opening question (the instant the customer
+   *  sees); more than 1 = the backoff has already run. */
+  const invoiceLookups = () => sdkDouble.reads.filter((r) => r.name === 'invoice.by_source').length;
+
   /** Monta el visor por `sale-id` con la cadena fiscal bajo control del test. */
   async function montar(opts: {
     invoiceBySource: (call: number) => unknown[] | undefined;
     business?: unknown[];
   }) {
     let calls = 0;
-    installDocDouble({
+    sdkDouble = installDocDouble({
       'sales.get': [SALE],
       'sales.lines': [{ product_name: 'Corte', quantity: 1, unit_price: 2990, line_total: 2990 }],
       'sales.business.get': opts.business ?? BUSINESS,
@@ -550,13 +575,25 @@ describe('la cabecera del tique NO espera a la factura (sales#274)', () => {
     return el;
   }
 
-  /** Deja terminar la carga (`sales.get` + `sales.lines` + ajustes + identidad) SIN dar tiempo a
-   *  los reintentos del Outbox: exactamente el primer pintado que ve la clienta. */
-  async function primerPintado(el: HTMLElement & { updateComplete: Promise<unknown> }) {
-    for (let i = 0; i < 4; i += 1) {
-      await new Promise((r) => setTimeout(r, 0));
-      await el.updateComplete;
+  /**
+   * Lets the load finish (`sales.get` + `sales.lines` + settings + identity) WITHOUT giving the
+   * Outbox retries any room: exactly the first paint the customer sees.
+   *
+   * sales#302 — it waits for a STATE, not for a number of paints. The state is «the invoicing
+   * module has been asked, and has not been asked again yet»: everything that does NOT depend on
+   * the clock is let through (`advanceTimersByTimeAsync(0)` drains the viewer's promise chain
+   * without moving the backoff a single millisecond) and then the state is asserted. This used to
+   * be four `setTimeout(0)` turns, which DO hand the turn over to the timer queue: on a busy runner
+   * those four turns outlasted the 10 ms backoff, the retries ran out INSIDE the wait and the
+   * viewer fell back to its own number — the test went red with nobody having touched the viewer.
+   */
+  async function firstPaint(el: HTMLElement & { updateComplete: Promise<unknown> }) {
+    for (let turn = 0; turn < 50 && invoiceLookups() < 1; turn += 1) {
+      await vi.advanceTimersByTimeAsync(0);
     }
+    await el.updateComplete;
+    expect(invoiceLookups(), 'the first paint asks about the invoice ONCE: any more and the backoff '
+      + 'has already run, so this is not the instant the test claims to be looking at').toBe(1);
   }
 
   const paper = (el: HTMLElement) =>
@@ -565,14 +602,14 @@ describe('la cabecera del tique NO espera a la factura (sales#274)', () => {
   it('el PRIMER pintado ya lleva la razón social y el NIF del negocio', async () => {
     // La factura no ha llegado (Outbox en curso): es exactamente el instante que ve la clienta.
     const el = await montar({ invoiceBySource: () => [] });
-    await primerPintado(el);
+    await firstPaint(el);
     expect(paper(el).business.name, 'nunca el nombre de relleno').toBe('Salon Aurora SL');
     expect(paper(el).business.tax_id).toBe('12345678Z');
   });
 
   it('mientras la factura no llega, NO enseña un número provisional', async () => {
     const el = await montar({ invoiceBySource: () => [] });
-    await primerPintado(el);
+    await firstPaint(el);
     expect(paper(el).number, 'el número de la venta es interno: no se enseña como el del documento')
       .toBeUndefined();
   });
@@ -581,15 +618,19 @@ describe('la cabecera del tique NO espera a la factura (sales#274)', () => {
     const el = await montar({
       invoiceBySource: (call) => (call < 2 ? [] : [{ id: 'inv1', number: 'TICKET-2026-000001', issuer_name: 'Salon Aurora SL', issuer_nif: '12345678Z' }]),
     });
-    await new Promise((r) => setTimeout(r, 80));
+    // The test winds the backoff forward: the invoice lands on the first retry (10 ms), and no
+    // slow machine can either bring that forward or swallow it.
+    await vi.advanceTimersByTimeAsync(80);
     await el.updateComplete;
+    expect(invoiceLookups(), 'the second lookup is the one that brings the invoice').toBeGreaterThan(1);
     expect(paper(el).number).toBe('TICKET-2026-000001');
   });
 
   it('si la factura NO llega nunca, el tique cae al número de la venta antes que quedarse mudo', async () => {
     const el = await montar({ invoiceBySource: () => [] });
-    await new Promise((r) => setTimeout(r, 120)); // agota los reintentos
+    await vi.advanceTimersByTimeAsync(120); // burns the retries through: 0 + 10 + 10
     await el.updateComplete;
+    expect(invoiceLookups(), 'the whole budget: the opening lookup and the two retries').toBe(3);
     expect(paper(el).number, 'agotado el Outbox, el identificador honesto es el de la venta')
       .toBe('20260909-0001');
   });
@@ -597,7 +638,7 @@ describe('la cabecera del tique NO espera a la factura (sales#274)', () => {
   it('sin módulo invoice el número es el de la venta DESDE EL PRIMER PINTADO', async () => {
     // ADR-0127: un hub puede cobrar sin facturación. Ahí `sale_number` ES el número del tique y no
     // hay nada que esperar — no se le puede quitar la línea al que no tiene otra.
-    installDocDouble({
+    sdkDouble = installDocDouble({
       'sales.get': [SALE],
       'sales.lines': [{ product_name: 'Corte', quantity: 1, unit_price: 2990, line_total: 2990 }],
       'sales.business.get': BUSINESS,
@@ -606,12 +647,12 @@ describe('la cabecera del tique NO espera a la factura (sales#274)', () => {
     const el = document.createElement('erp-sales-document') as HTMLElement & { updateComplete: Promise<unknown> };
     el.setAttribute('sale-id', 's1');
     document.body.appendChild(el);
-    await primerPintado(el);
+    await firstPaint(el);
     expect(paper(el).number).toBe('20260909-0001');
   });
 
   it('un `receipt_header` deliberado sigue mandando sobre la razón social', async () => {
-    installDocDouble({
+    sdkDouble = installDocDouble({
       'sales.get': [SALE],
       'sales.lines': [{ product_name: 'Corte', quantity: 1, unit_price: 2990, line_total: 2990 }],
       'sales.pos_settings.get': [{ receipt_header: 'AURORA\nCalle Mayor 1' }],
@@ -621,7 +662,7 @@ describe('la cabecera del tique NO espera a la factura (sales#274)', () => {
     const el = document.createElement('erp-sales-document') as HTMLElement & { updateComplete: Promise<unknown> };
     el.setAttribute('sale-id', 's1');
     document.body.appendChild(el);
-    await primerPintado(el);
+    await firstPaint(el);
     expect(paper(el).business.name).toBe('AURORA');
     expect(paper(el).business.tax_id, 'el NIF no es branding: sale igual').toBe('12345678Z');
   });
@@ -631,7 +672,7 @@ describe('la cabecera del tique NO espera a la factura (sales#274)', () => {
     const el = await montar({ invoiceBySource: () => [] }) as HTMLElement & {
       updateComplete: Promise<unknown>; printableDocument(): { receipt_id?: string; business_name?: string; vat_number?: string } | undefined;
     };
-    await primerPintado(el);
+    await firstPaint(el);
     expect(paper(el).number, 'la pantalla sigue esperando').toBeUndefined();
     const doc = el.printableDocument()!;
     expect(doc.receipt_id).toBe('20260909-0001');
@@ -642,7 +683,7 @@ describe('la cabecera del tique NO espera a la factura (sales#274)', () => {
   it('si `sales.business.get` no contesta, el visor sigue pintando el tique', async () => {
     // Un hub sin identidad guardada todavía: el documento no puede depender de ella para existir.
     const el = await montar({ invoiceBySource: () => [], business: [] });
-    await primerPintado(el);
+    await firstPaint(el);
     expect(paper(el).business.name).toBe('ui.docDefaultBusiness');
   });
 
@@ -651,7 +692,7 @@ describe('la cabecera del tique NO espera a la factura (sales#274)', () => {
     const el = await montar({ invoiceBySource: () => [] }) as HTMLElement & {
       updateComplete: Promise<unknown>; printableHtml(): string;
     };
-    await primerPintado(el);
+    await firstPaint(el);
     expect(paper(el).number, 'the screen is still waiting').toBeUndefined();
     expect(el.printableHtml()).toContain('20260909-0001');
   });
