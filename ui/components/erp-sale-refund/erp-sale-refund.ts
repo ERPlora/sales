@@ -481,7 +481,7 @@ export class ErpSaleRefund extends LitElement {
         <p class="hint">${t('ui.refundLineTendersHint')}</p>
         <ul class="rt-list">
           ${this.covered.map((l) => html`
-            <li class="refund-tender-line" data-line=${l.id}>
+            <li class="refund-tender-line" data-testid=${`refund-tender-line-${l.id}`} data-line=${l.id}>
               <div class="rt-name">${l.product_name ?? ''}</div>
               <div class="rt-slot"></div>
             </li>`)}
@@ -491,10 +491,12 @@ export class ErpSaleRefund extends LitElement {
 
   /** The warnings the fillers want read BEFORE confirming. They warn; they never block. */
   private renderTenderNotices(): unknown {
-    const notices = [...this.tenderNotices.values()].filter((n) => !!n);
+    // Keyed by the line the filler armed, not by position: two fillers warning at once would
+    // otherwise share one name and getByTestId would pick whichever came first.
+    const notices = [...this.tenderNotices.entries()].filter(([, n]) => !!n);
     if (!notices.length) return nothing;
-    return notices.map((n) => html`
-      <ok-inline-feedback class="rt-notice" tone="warning" icon="alert-circle-outline">${n}</ok-inline-feedback>`);
+    return notices.map(([ref, n]) => html`
+      <ok-inline-feedback class="rt-notice" data-testid=${`refund-tender-notice-${ref}`} tone="warning" icon="alert-circle-outline">${n}</ok-inline-feedback>`);
   }
 
   private renderLeg(leg: RefundLeg): unknown {
@@ -502,11 +504,12 @@ export class ErpSaleRefund extends LitElement {
     const money = (c: number): string => erplora().formatMoney(c);
     const entry = this.draft[leg.payment_id];
     const eligible = Number(leg.refundable) === 1;
-    return html`<div class="leg" data-leg=${leg.payment_id}>
+    return html`<div class="leg" data-testid=${`refund-leg-${leg.payment_id}`} data-leg=${leg.payment_id}>
       <div class="leg-head">
         <span class="leg-name">${this.legName(leg)}</span>
         <ion-input
           class="refund-amount"
+          data-testid=${`refund-amount-${leg.payment_id}`}
           type="text"
           inputmode="decimal"
           label=${t('ui.refundLegAmount')}
@@ -526,6 +529,7 @@ export class ErpSaleRefund extends LitElement {
             ${leg.remaining > 0
               ? html`<ion-select
                   class="refund-destination"
+                  data-testid=${`refund-destination-${leg.payment_id}`}
                   label=${t('ui.refundDestination')}
                   label-placement="stacked"
                   .value=${entry?.to ?? ''}
@@ -540,30 +544,31 @@ export class ErpSaleRefund extends LitElement {
   render(): unknown {
     const t = (k: string, p?: Record<string, unknown>): string => erplora().t(CATALOG, k, p);
     if (this.loading) {
-      return html`<div class="refund-loading">
+      return html`<div class="refund-loading" data-testid="refund-loading">
         <ion-spinner name="crescent"></ion-spinner>
         <span>${t('ui.refundLoading')}</span>
       </div>`;
     }
     if (this.error) {
-      return html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>`;
+      return html`<ok-inline-feedback data-testid="refund-error" tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>`;
     }
     if (!this.legs.length) {
-      return html`<ok-inline-feedback tone="warning" icon="information-circle-outline">${t('ui.refundNothing')}</ok-inline-feedback>`;
+      return html`<ok-inline-feedback data-testid="refund-nothing" tone="warning" icon="information-circle-outline">${t('ui.refundNothing')}</ok-inline-feedback>`;
     }
 
     const total = draftTotal(this.draft);
     const block = this.blockText;
-    return html`<div class="refund-body">
+    return html`<div class="refund-body" data-testid="refund-form">
       <h3>${t('ui.refundTitle', { number: this.sale?.sale_number ?? '' })}</h3>
       <p class="hint">${t('ui.refundExplain')}</p>
       <div class="legs">${this.legs.map((l) => this.renderLeg(l))}</div>
       ${this.renderTenderLines()}
-      <ion-button class="refund-propose" size="small" fill="clear" @click=${() => this.proposeAll()}>
+      <ion-button class="refund-propose" data-testid="refund-propose-all" size="small" fill="clear" @click=${() => this.proposeAll()}>
         ${t('ui.refundProposeAll')}
       </ion-button>
       <ion-textarea
         class="refund-reason"
+        data-testid="refund-reason"
         label=${t('ui.refundReasonLabel')}
         label-placement="stacked"
         maxlength="500"
@@ -573,10 +578,10 @@ export class ErpSaleRefund extends LitElement {
       ></ion-textarea>
       <div class="totals">
         <span>${t('ui.refundTotalLabel')}</span>
-        <span class="v">${erplora().formatMoney(total)}</span>
+        <span class="v" data-testid="refund-total">${erplora().formatMoney(total)}</span>
       </div>
       <!-- EL MOTIVO DEL BLOQUEO, ESCRITO EN LA PANTALLA: se lee sin tocar nada y sin un ratón. -->
-      ${block ? html`<p class="block">${block}</p>` : nothing}
+      ${block ? html`<p class="block" data-testid="refund-blocked">${block}</p>` : nothing}
       <!-- And the external tenders' warnings, next to the button: the line's hole can be
            off-screen when the thumb is already on the refund button (sales#166). -->
       ${this.renderTenderNotices()}
@@ -587,6 +592,7 @@ export class ErpSaleRefund extends LitElement {
            el literal.) -->
       <ion-button
         class="refund-confirm"
+        data-testid="refund-confirm"
         expand="block"
         ?disabled=${this.busy}
         aria-disabled=${block ? 'true' : nothing}

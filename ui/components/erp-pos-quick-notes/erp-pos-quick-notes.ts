@@ -194,7 +194,7 @@ export class ErpPosQuickNotes extends LitElement {
 
   private renderDeleteConfirm() {
     const t = (k: string): string => erplora().t(CATALOG, k);
-    return html`<ion-modal .isOpen=${!!this.deleteTarget}
+    return html`<ion-modal data-testid="pos-quick-notes-delete-modal" .isOpen=${!!this.deleteTarget}
         @ionModalDidDismiss=${() => { this.deleteTarget = null; }}>
       <ion-header class="ion-no-border">
         <ion-toolbar><ion-title>${t('ui.quickNoteDeleteTitle')}</ion-title></ion-toolbar>
@@ -208,9 +208,9 @@ export class ErpPosQuickNotes extends LitElement {
             </ion-label>
           </ion-item>
         </ion-list>
-        <ion-button class="ion-margin-top" expand="block" color="danger" ?disabled=${this.saving}
+        <ion-button class="ion-margin-top" data-testid="pos-quick-notes-delete-confirm" expand="block" color="danger" ?disabled=${this.saving}
           @click=${() => this.confirmDelete()}>${t('ui.quickNoteDelete')}</ion-button>
-        <ion-button expand="block" fill="outline" ?disabled=${this.saving}
+        <ion-button data-testid="pos-quick-notes-delete-cancel" expand="block" fill="outline" ?disabled=${this.saving}
           @click=${() => { this.deleteTarget = null; }}>${t('ui.quickNoteCancel')}</ion-button>
       </ion-content>
     </ion-modal>`;
@@ -222,12 +222,13 @@ export class ErpPosQuickNotes extends LitElement {
     return html`<div class="page">
       <p class="intro">${t('ui.quickNotesIntro')}</p>
       ${this.formError
-        ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>`
+        ? html`<ok-inline-feedback data-testid="pos-quick-notes-form-error" tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>`
         : nothing}
       ${this.ctrl?.error
-        ? html`<ok-inline-feedback tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>`
+        ? html`<ok-inline-feedback data-testid="pos-quick-notes-load-error" tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>`
         : nothing}
       <ok-data-table
+        data-testid="pos-quick-notes-table"
         .serverSide=${true}
         .fill=${true}
         .views=${true}
@@ -253,23 +254,25 @@ export class ErpPosQuickNotes extends LitElement {
         @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.ctrl.setSort(e.detail.sort, e.detail.dir)}
         @searchChange=${(e: CustomEvent<string>) => this.ctrl.setSearch(e.detail)}
         @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.ctrl.setFilter(e.detail.col, e.detail.value)}>
-        <form slot="create" class="form" @submit=${(e: Event) => this.save(e)}>
+        <form slot="create" class="form" data-testid="pos-quick-notes-form" @submit=${(e: Event) => this.save(e)}>
           ${this.editingId
             ? html`<ok-inline-feedback tone="info" icon="create-outline">
                 <b>${t('ui.quickNoteEditing')}</b> — ${this.newText}
-                <ion-button size="small" fill="clear" @click=${() => this.cancelEdit()}>${t('ui.quickNoteEditCancel')}</ion-button>
+                <ion-button data-testid="pos-quick-notes-edit-cancel" size="small" fill="clear" @click=${() => this.cancelEdit()}>${t('ui.quickNoteEditCancel')}</ion-button>
               </ok-inline-feedback>`
             : nothing}
           <!-- mode="md" is not decoration: the shell pins Ionic's ios mode (ADR-0143) and fill
                paints in md only, so without it the box has no border and the person cannot see
                where to type. -->
           <ion-input mode="md" fill="outline" label-placement="floating" maxlength="80"
+            data-testid="pos-quick-notes-text"
             label=${t('ui.quickNoteText')} .value=${this.newText}
             @ionInput=${(e: Event) => { this.newText = (e.target as HTMLInputElement).value; }}></ion-input>
           <ion-input mode="md" fill="outline" label-placement="floating" type="number" min="0" step="1"
+            data-testid="pos-quick-notes-order"
             label=${t('ui.quickNoteOrder')} .value=${this.newSortOrder}
             @ionInput=${(e: Event) => { this.newSortOrder = (e.target as HTMLInputElement).value; }}></ion-input>
-          <ion-button type="submit" ?disabled=${this.saving || !this.newText.trim()}>
+          <ion-button type="submit" data-testid="pos-quick-notes-submit" ?disabled=${this.saving || !this.newText.trim()}>
             ${this.saving ? t('ui.quickNoteSaving') : this.editingId ? t('ui.quickNoteSave') : t('ui.quickNoteAdd')}
           </ion-button>
         </form>
