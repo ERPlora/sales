@@ -104,6 +104,51 @@ const COVERED: Record<string, { prefix: string; contract: string[] }> = {
       'refund-total',
     ],
   },
+  // The till itself (`/m/sales/pos`): the screen a cashier spends the day on, and the one the QA
+  // journey of a restaurant and of a salon walks end to end — pick a product, park the check, take
+  // it back, discount a line, split the payment, charge. Everything it can be asked to do is a tap,
+  // so what is named here is mostly actions, not fields.
+  //
+  // The rows carry identity, never position: `pos-product-${p.id}`, `pos-line-${l.id}`,
+  // `pos-parked-${oc.id}`, `pos-tender-${leg.id}-edit`. A spec that pressed «the second parked
+  // check» would be retrieving somebody else's the next morning, and the grid reorders itself
+  // every time the catalogue changes.
+  //
+  // The three numpads answer to `pos-keypad-`, `pos-open-price-key-` and `pos-discount-key-`: the
+  // same twelve keys live in three different sheets at once, and one shared name would have
+  // `getByTestId` pick at random between the one that types the amount tendered and the one that
+  // types the discount.
+  'erp-pos-touch/erp-pos-touch.ts': {
+    prefix: 'pos-',
+    contract: [
+      'pos-cart-backdrop', 'pos-cart-close', 'pos-cart-fab',
+      'pos-catalog-app-absent', 'pos-catalog-blocked-fix', 'pos-catalog-blocked-summary',
+      'pos-category-filter', 'pos-charge', 'pos-check-sales',
+      'pos-combo-close', 'pos-combo-confirm', 'pos-combo-scrim',
+      'pos-dependency-read-failed',
+      'pos-dirty-cancel', 'pos-dirty-discard', 'pos-dirty-park',
+      'pos-discount-apply', 'pos-discount-apply-amount', 'pos-discount-close',
+      'pos-discount-mode', 'pos-discount-mode-amount', 'pos-discount-mode-percent',
+      'pos-discount-remove', 'pos-discount-scrim',
+      'pos-limit-address', 'pos-limit-name', 'pos-limit-tax-id',
+      'pos-line-staff',
+      'pos-modifier-close', 'pos-modifier-confirm', 'pos-modifier-scrim',
+      'pos-more-fullscreen', 'pos-more-menu', 'pos-more-scrim',
+      'pos-needs-customer',
+      'pos-note-close', 'pos-note-input', 'pos-note-remove', 'pos-note-save', 'pos-note-scrim',
+      'pos-open-price-add', 'pos-open-price-close', 'pos-open-price-scrim', 'pos-open-price-tile',
+      'pos-order-title', 'pos-order-title-edit',
+      'pos-park', 'pos-park-cancel', 'pos-park-confirm', 'pos-park-current', 'pos-park-name',
+      'pos-parked-backdrop', 'pos-parked-toggle',
+      'pos-pay-add-tender', 'pos-pay-close', 'pos-pay-confirm', 'pos-pay-scrim', 'pos-pay-split',
+      'pos-prebill', 'pos-prebill-close', 'pos-prebill-print', 'pos-print-on-charge',
+      'pos-search', 'pos-simplified-limit-capture',
+      'pos-staff-cancel', 'pos-staff-chip', 'pos-staff-empty', 'pos-staff-error',
+      'pos-staff-loading', 'pos-staff-option', 'pos-staff-option-me',
+      'pos-ticket-discount',
+      'pos-view-tab-account', 'pos-view-tab-draft', 'pos-view-tabs',
+    ],
+  },
   // The sales list (`/m/sales`): the date range, the six KPIs of the day and the table of tickets.
   // It is the screen a QA journey checks the till against after charging, so the KPI values carry
   // a hook too — reading them by position broke the moment the sixth card was added.
@@ -131,9 +176,7 @@ const COVERED: Record<string, { prefix: string; contract: string[] }> = {
  * them. The list can only SHRINK: when one is completed it leaves here and goes up (the stale-entry
  * test fails if it stays). A new component is not born in this list — it is born covered.
  */
-const NOT_YET_COVERED: Record<string, string> = {
-  'erp-pos-touch/erp-pos-touch.ts': 'sales#291',
-};
+const NOT_YET_COVERED: Record<string, string> = {};
 
 /**
  * How many surfaces are pending TODAY. This number ONLY GOES DOWN. Without it the pending list is
@@ -141,7 +184,7 @@ const NOT_YET_COVERED: Record<string, string> = {
  * green. With the count nailed down, adding one forces raising it by hand, on a line whose comment
  * says it is not raised.
  */
-const PENDING_TODAY = 1;
+const PENDING_TODAY = 0;
 
 /** What a person fills in. Buttons are not here: actions have their own rule below. */
 const CONTROL_TAGS = [
