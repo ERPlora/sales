@@ -490,12 +490,20 @@ fn iso_date(now: &str) -> String {
 /// para el descuento de ADR-0210, donde no se puede repartir más que la línea).
 fn split_quota(quota: i64, components: &[TaxComponent]) -> Vec<i64> {
     let weights: Vec<i64> = components.iter().map(|c| (c.rate_pct * 100.0).round() as i64).collect();
+    share_by_weight(quota, &weights)
+}
+
+/// sales#293 — reparte una cuota YA FIJADA entre pesos cualesquiera por RESTO MAYOR. Escalar todos
+/// los pesos por igual conserva la proporción y esquiva el techo de [`allocate_amount`] (Σpesos),
+/// que es una salvaguarda del descuento de ADR-0210 —no se puede descontar más que la línea— y no
+/// tiene sentido cuando lo que se reparte es un impuesto.
+fn share_by_weight(quota: i64, weights: &[i64]) -> Vec<i64> {
     let w_total: i64 = weights.iter().map(|w| (*w).max(0)).sum();
     if w_total <= 0 || quota <= 0 {
-        return vec![0; components.len()];
+        return vec![0; weights.len()];
     }
     let scale = ((quota + w_total - 1) / w_total).max(1);
-    let scaled: Vec<i64> = weights.iter().map(|w| w * scale).collect();
+    let scaled: Vec<i64> = weights.iter().map(|w| (*w).max(0) * scale).collect();
     allocate_amount(quota, &scaled)
 }
 
@@ -2044,6 +2052,11 @@ fn value_checkout(
     let mut gross_pre_disc: i64 = 0; // céntimos (sin descuento global → discount_amount)
     let mut gift_total: i64 = 0; // céntimos: coste de las invitaciones (para el arqueo, ADR-comp)
     let mut breakdown: Vec<(String, i64, i64)> = Vec::new();
+    // sales#293 — el mismo cierre, sobre las líneas SIN el descuento global: `discount_amount` es
+    // la diferencia entre los dos totales, y si uno se cierra por tipo y el otro se compone
+    // sumando líneas, el tique enseña un descuento que nadie hizo.
+    let mut pre_subtotal: i64 = 0;
+    let mut pre_breakdown: Vec<(String, i64)> = Vec::new();
     // sales#54: qué es cada clave del desglose (`kind`, `label`) — la primera línea que la aporta manda.
     let mut breakdown_meta: std::collections::HashMap<String, (String, String)> = std::collections::HashMap::new();
     // sales#113: las líneas se calculan primero y se emiten después (el importe fijo se reparte
@@ -2193,11 +2206,21 @@ fn value_checkout(
         };
         // Bruto SIN descuento global (mismo cálculo con solo el descuento de línea): la resta de
         // ambos brutos es el `discount_amount` que ve el cliente en el ticket.
-        gross_pre_disc += if is_gift || covered || sale_disc <= 0.0 {
-            t.line
+        let pre = if is_gift || covered || sale_disc <= 0.0 {
+            (t, parts.clone())
         } else {
-            calc_line_components(unit_price, qty, price_qty, line_disc, tax_incl, components).0.line
+            calc_line_components(unit_price, qty, price_qty, line_disc, tax_incl, components)
         };
+        gross_pre_disc += pre.0.line;
+        if !tax_incl {
+            pre_subtotal += pre.0.net;
+            for (k, base, _) in pre.1.iter() {
+                match pre_breakdown.iter_mut().find(|(bk, _)| bk == k) {
+                    Some(e) => e.1 += *base,
+                    None => pre_breakdown.push((k.clone(), *base)),
+                }
+            }
+        }
         // sales#113: la línea se guarda calculada; el importe fijo se reparte cuando se conocen
         // TODAS (fase 2, más abajo) y solo entonces se agrega y se emite.
         pending_lines.push(ValuedLine { t, parts, is_gift, covered, resolved, combined_pct, unit_price, qty, line_disc, item: item.clone(), modifiers: modifier_snapshot, note, combo: combo.clone(), parent: expanded.parent });
@@ -2249,8 +2272,12 @@ fn value_checkout(
     //     line bases declared 4,55 + 0,46 = 5,01 on a 5,00 € loaf at 10 %: the same sale carried
     //     two different VAT figures, the declared one did not add up to the till, and it travelled
     //     to the row, to the receipt and to the invoice.
-    //   * **VAT ON TOP** (B2B): the total is DERIVED from the declaration (`line = net + tax`), so
-    //     the anchor is the base — `quota = round(base × rate)` — and it adds up by construction.
+    //   * **VAT ON TOP** (B2B): the anchor is the base, so the rate closes over the AGGREGATE
+    //     base — `quota = round(base × rate)` — and the total is DERIVED from it, `total =
+    //     Σ (base + quota)`. sales#293: that derivation has to actually happen. Composing the
+    //     total out of each line's `net + round(net × rate)` instead left the declaration a cent
+    //     BELOW the charge (two 0,03 € articles at 21 %: 0,07 € booked, 0,08 € taken). The close
+    //     for this mode is further down, after the profiles.
     //
     // With the tax inside, the gross is grouped by TAX PROFILE (the components that tax the line:
     // a plain rate, or 21 % + 5,2 % of equivalence surcharge) because that is the unit that shares
@@ -2318,19 +2345,58 @@ fn value_checkout(
         }
     }
 
+    // ── sales#293 · VAT ON TOP: the total is DERIVED from the declaration ────────────────────
+    //
+    // ADR-0123 §4 closes the chain for this mode: `base_rate = Σ lines of the rate` (an exact sum)
+    // → `quota_rate = round(base_rate × rate)` ← the only rounding → **`total = Σ (base_rate +
+    // quota_rate)`**, which «adds up by construction». The close did the first two steps and then
+    // let the total be composed by summing `net + round(net × rate)` of EACH line — the
+    // product-by-product rounding the TEAC censures (RG 2233/2022) — so the two counts had no
+    // reason to agree: two 0,03 € articles at 21 % took 0,08 € from the customer and booked 0,07 €.
+    //
+    // The declared figure wins, and what is charged follows it. So that the receipt still adds up,
+    // each line gets its share of the quota ALREADY DECLARED, by largest remainder over the bases
+    // that produced it (ADR-0210, the same split the fixed-amount discount uses): nobody has to
+    // choose between adding up for the AEAT and adding up for the till drawer.
+    if !tax_incl {
+        for (k, base, tax) in breakdown.iter_mut() {
+            let rate = Decimal::from_str(k).unwrap_or(Decimal::ZERO);
+            let quota = money::percent_of(*base, rate);
+            tax_total += quota;
+            *tax = quota; // the declared quota, not the sum of the per-line ones
+            let weights: Vec<i64> = pending_lines
+                .iter()
+                .map(|l| l.parts.iter().find(|(pk, _, _)| pk == k).map(|(_, b, _)| *b).unwrap_or(0))
+                .collect();
+            for (l, share) in pending_lines.iter_mut().zip(share_by_weight(quota, &weights)) {
+                if let Some(part) = l.parts.iter_mut().find(|(pk, _, _)| pk == k) {
+                    part.2 = share;
+                }
+            }
+        }
+        for l in pending_lines.iter_mut() {
+            if l.parts.is_empty() {
+                continue; // comped or covered by another tender: it charges nothing and declares nothing
+            }
+            l.t.tax = l.parts.iter().map(|(_, _, tax)| *tax).sum();
+            l.t.line = l.t.net + l.t.tax;
+        }
+        gross = pending_lines.iter().map(|l| l.t.line).sum();
+        // The same close over the ticket WITHOUT the global discount, so `discount_amount` stays
+        // the difference between two totals measured the same way (0 when there is no discount).
+        gross_pre_disc = pre_subtotal
+            + pre_breakdown
+                .iter()
+                .map(|(k, base)| money::percent_of(*base, Decimal::from_str(k).unwrap_or(Decimal::ZERO)))
+                .sum::<i64>();
+    }
+
     let mut tb = Map::new();
     for (k, base, tax) in &breakdown {
-        // With the tax inside, `tax` IS the quota closed above (by difference). With the tax on
-        // top it is the sum of the per-line quotas — informative — and the declared one is the
-        // single rounding over the aggregate base.
-        let cuota = if tax_incl {
-            *tax
-        } else {
-            let rate = Decimal::from_str(k).unwrap_or(Decimal::ZERO);
-            let closed = money::percent_of(*base, rate);
-            tax_total += closed;
-            closed
-        };
+        // `tax` is the DECLARED quota in both modes: closed by difference over the gross of the
+        // profile when the tax rides inside the price, and the single rounding over the aggregate
+        // base when it rides on top. Either way it is what the header and the AEAT receive.
+        let cuota = *tax;
         let (kind, label) = breakdown_meta.get(k).cloned().unwrap_or_else(|| ("tax".to_string(), String::new()));
         let mut entry = Map::new();
         entry.insert("base".into(), json!(*base));
@@ -5213,16 +5279,64 @@ mod tests {
     fn sin_iva_incluido_la_base_declarada_es_la_SUMA_de_las_de_linea_nadie_vuelve_a_dividir() {
         // The guard above cannot tell the two closes apart: 6,05 € / 1,21 is exactly 5,00 €, so
         // dividing the gross and summing the line bases agree to the cent. This one CAN, and it is
-        // the one that pins the B2B branch: two articles of 0,03 € at 21 % are charged
-        // 2 × (3 + round(0,63)) = 0,08 €, and with the tax ON TOP the declared base is the SUM OF
-        // THE LINE BASES (0,06 €) with ONE rounding over it — round(6 × 21 %) = 0,01 € — because
-        // there the total is derived from the declaration and there is no gross to divide.
+        // the one that pins the B2B branch: with the tax ON TOP the declared base is the SUM OF
+        // THE LINE BASES, and nobody divides the gross again to get it back.
         //
-        // 🔴 Routing this mode through the tax-inclusive close (round(8 / 1,21) = 7) would move the
-        // declared base to 0,07 € and NOTHING in the suite noticed: that is what this test exists
-        // for. The cent that 0,06 + 0,01 leaves against the 0,08 € charged is **ERPlora/sales#293**,
-        // open and deliberately out of the scope of sales#292 — whoever closes it changes these
-        // numbers ON PURPOSE, which is the point of writing them down.
+        // 🔴 The amount is chosen so that the two formulas DIVERGE, which is the only thing that
+        // makes a guard a guard: 0,50 € of base taxed at 21 % + 5,2 % of equivalence surcharge is
+        // charged 0,50 + 0,11 + 0,03 = 0,64 €, and round(64 / 1,262) = 0,51 € — routing this mode
+        // through the tax-inclusive close moves the declared base by a cent. (An amount that
+        // divides exactly, like the 5,00 € above, would keep this test green through that mutant.)
+        let items = json!([
+            { "product_name": "Café", "price": 50, "quantity": 1_000_000, "tax_category_key": "product.generic" }
+        ]);
+        let rules = json!([
+            { "id": "r-iva", "country_code": "ES", "region_code": null, "tax_category_key": "product.generic", "rate_pct": 21.0, "tax_type": "vat", "parent_id": null, "is_active": 1 },
+            { "id": "c-re",  "country_code": "ES", "region_code": null, "tax_category_key": "product.generic", "rate_pct": 5.2, "tax_type": "surcharge", "parent_id": "r-iva", "is_active": 1 }
+        ]);
+        let out = sale(input_with_rules(items, 5, rules, "array", "ES", ""));
+        let (subtotal, tax_total, total, bd) = declared(&out);
+        let line_bases: i64 = sale_lines(&out).iter().map(|l| l["net_amount"].as_i64().unwrap_or(0)).sum();
+        assert_eq!(line_bases, 50, "las bases de línea");
+        assert_eq!(subtotal, line_bases, "con el IVA por encima la base declarada es la SUMA de las de línea, no round(bruto / 1,262)");
+        assert_eq!((bd["21.00"]["base"].as_i64(), bd["21.00"]["tax"].as_i64()), (Some(50), Some(11)), "round(0,50 € × 21 %) = 0,11 €");
+        assert_eq!((bd["5.20"]["base"].as_i64(), bd["5.20"]["tax"].as_i64()), (Some(50), Some(3)), "round(0,50 € × 5,2 %) = 0,03 €");
+        assert_eq!((subtotal, tax_total, total), (50, 14, 64), "el total se compone de lo declarado");
+    }
+
+    // ── sales#293 · CON EL IVA POR ENCIMA, EL TOTAL SE DERIVA DE LO DECLARADO ─────────────────
+    //
+    // ADR-0123 §4 escribe la cadena entera de este modo y no deja hueco: `importe_línea = round(…)`
+    // → `base_tipo = Σ líneas del tipo` (suma EXACTA) → `cuota_tipo = round(base_tipo × tipo)`
+    // ← único redondeo → **`total = Σ (base_tipo + cuota_tipo)`**, que «cuadra por construcción».
+    //
+    // El cierre hacía los tres primeros pasos y luego componía el total sumando `net + round(net ×
+    // tipo)` de CADA línea — el redondeo producto a producto que el TEAC censura (RG 2233/2022) —,
+    // así que las dos cuentas no tenían por qué coincidir: dos artículos de 0,03 € al 21 % se
+    // cobraban 0,08 € y en el libro quedaba una venta de 0,07 €.
+    //
+    // Manda lo declarado, como dice la ADR, y el cobro se deriva de ello. Para que el tique siga
+    // sumando su total, la cuota de cada línea sale de REPARTIR la cuota ya declarada por resto
+    // mayor (ADR-0210, el mismo reparto del descuento de importe fijo): así nadie tiene que elegir
+    // entre cuadrar con la AEAT y cuadrar con el cajón.
+
+    /// HALF_UP `round(base × tipo %)` en enteros — una SEGUNDA implementación, a propósito: una
+    /// guarda del redondeo que llama a `money::round` no prueba el redondeo, lo repite.
+    fn cuota_esperada(base: i64, rate_pct: f64) -> i64 {
+        let milli = (rate_pct * 1_000.0).round() as i64; // 21,0 % → 21000
+        (base * milli + 50_000) / 100_000
+    }
+
+    /// La cabecera + lo que se persiste de cada línea, que es donde el descuadre se veía.
+    fn header_of(out: &Output) -> Map<String, Value> {
+        out.operations.iter().find(|o| o.command == "sales._insert_sale").expect("la cabecera").params.clone()
+    }
+
+    #[test]
+    fn sin_iva_incluido_lo_declarado_es_exactamente_lo_que_se_cobra() {
+        // El caso de sales#293, con sus números: dos artículos de 0,03 € al 21 %. La base declarada
+        // sigue siendo la SUMA de las de línea (0,06 €) con UN redondeo encima —round(6 × 21 %) =
+        // 0,01 €— y ahora el total es 0,07 €, que es lo que se cobra. Antes se cobraban 0,08 €.
         let items = json!([
             { "product_name": "A", "price": 3, "quantity": 1_000_000, "tax_rate": 21.0 },
             { "product_name": "B", "price": 3, "quantity": 1_000_000, "tax_rate": 21.0 }
@@ -5231,13 +5345,150 @@ mod tests {
         inp["payload"]["tax_included"] = json!(false);
         let out = sale(inp);
         let (subtotal, tax_total, total, bd) = declared(&out);
-        let line_bases: i64 = sale_lines(&out).iter().map(|l| l["net_amount"].as_i64().unwrap_or(0)).sum();
-        assert_eq!(total, 8, "2 × (0,03 € + 0,01 € de cuota de línea)");
-        assert_eq!(line_bases, 6, "las bases de línea");
-        assert_eq!(subtotal, line_bases, "con el IVA por encima la base declarada es la SUMA de las de línea, no round(bruto / 1,21)");
         assert_eq!((bd["21.00"]["base"].as_i64(), bd["21.00"]["tax"].as_i64()), (Some(6), Some(1)), "un solo redondeo sobre la base agregada: round(6 × 21 %) = 1");
-        assert_eq!(tax_total, 1);
-        assert_eq!(subtotal + tax_total, 7, "sales#293: en modo B2B lo declarado aún queda un céntimo por debajo de los 8 cobrados");
+        assert_eq!((subtotal, tax_total), (6, 1), "la cabecera declara el desglose");
+        assert_eq!(subtotal + tax_total, total, "lo declarado {subtotal}+{tax_total} contra lo cobrado {total}");
+        assert_eq!(total, 7, "el total se DERIVA de la declaración (ADR-0123 §4), no de sumar las cuotas de línea");
+
+        // …y el tique sigue cuadrando: las líneas suman el total y sus bases suman la base.
+        let lines = sale_lines(&out);
+        let (bases, taxes, totales) = (
+            lines.iter().map(|l| l["net_amount"].as_i64().unwrap_or(0)).sum::<i64>(),
+            lines.iter().map(|l| l["tax_amount"].as_i64().unwrap_or(0)).sum::<i64>(),
+            lines.iter().map(|l| l["line_total"].as_i64().unwrap_or(0)).sum::<i64>(),
+        );
+        assert_eq!((bases, taxes, totales), (6, 1, 7), "el tique suma lo mismo que la cabecera");
+        for l in lines.iter() {
+            assert_eq!(
+                l["line_total"].as_i64(), Some(l["net_amount"].as_i64().unwrap_or(0) + l["tax_amount"].as_i64().unwrap_or(0)),
+                "con el IVA por encima la línea SE COMPONE de base + cuota",
+            );
+        }
+
+        // El descuento informativo no se inventa un céntimo por el camino: aquí no hay descuento.
+        assert_eq!(header_of(&out)["discount_amount"].as_i64(), Some(0), "sin descuento, discount_amount es 0");
+
+        // Y el evento que consumen `invoice`/`verifactu`/`cash_register` lleva lo mismo.
+        let ev = &out.events[0].payload;
+        assert_eq!(
+            (ev["subtotal"].as_i64(), ev["tax_amount"].as_i64(), ev["total"].as_i64()), (Some(6), Some(1), Some(7)),
+            "sale.completed declara lo mismo que la fila",
+        );
+    }
+
+    #[test]
+    fn sin_iva_incluido_con_descuento_de_importe_fijo_lo_declarado_sigue_cuadrando() {
+        // El descuento de importe fijo se prorratea por resto mayor (ADR-0210) ANTES de cerrar los
+        // tipos, así que el cierre nuevo tiene que sostenerse también aquí: cuatro artículos de
+        // 0,55 € al 21 % con 0,13 € de descuento.
+        let items: Vec<Value> = (0..4)
+            .map(|i| json!({ "product_name": format!("P{i}"), "price": 55, "quantity": 1_000_000, "tax_rate": 21.0 }))
+            .collect();
+        let mut inp = input(json!(items), 9, 100_000);
+        inp["payload"]["tax_included"] = json!(false);
+        inp["payload"]["discount_amount"] = json!(13);
+        let out = sale(inp);
+        let (subtotal, tax_total, total, bd) = declared(&out);
+        assert_eq!((bd["21.00"]["base"].as_i64(), bd["21.00"]["tax"].as_i64()), (Some(211), Some(44)), "round(2,11 € × 21 %) = 0,44 €");
+        assert_eq!((subtotal, tax_total, total), (211, 44, 255), "lo declarado cuadra con lo cobrado también con descuento");
+        assert_eq!(line_totals(&out).iter().sum::<i64>(), 255, "el tique suma lo que se cobra");
+
+        // ⚠️ Y el número que este cierre MUEVE, escrito a propósito para que se vea: se pidieron
+        // 0,13 € de descuento y el total baja 0,11 €. El importe se resta del BRUTO de cada línea
+        // (ADR-0210) y luego el tipo se cierra sobre la base agregada, así que el viaje
+        // bruto → base → bruto deja hasta un par de céntimos por el camino. Qué significa «0,13 €
+        // de descuento» cuando el precio es NETO —¿se descuenta de la base o del total?— es una
+        // decisión de producto que no toca a esta capa: **ERPlora/sales#295**.
+        assert_eq!(header_of(&out)["discount_amount"].as_i64(), Some(11), "sales#295: se pidieron 13");
+    }
+
+    #[test]
+    fn sin_iva_incluido_ningun_importe_declara_de_mas_ni_de_menos() {
+        // El barrido que impide que vuelva: para cada importe, tipo y número de líneas, lo
+        // declarado cuadra al céntimo con lo cobrado, el tique suma el total, y la cuota de cada
+        // tipo es EXACTAMENTE el único redondeo sobre su base agregada (ADR-0123 §4), calculado
+        // aquí con una aritmética distinta de la del handler.
+        for n in [1_usize, 2, 3, 7] {
+            for price in [1_i64, 3, 5, 7, 33, 50, 99, 100, 333, 500, 1234, 9999] {
+                for rate in [0.0_f64, 4.0, 5.0, 10.0, 21.0] {
+                    let items: Vec<Value> = (0..n)
+                        .map(|i| json!({ "product_name": format!("P{i}"), "price": price, "quantity": 1_000_000, "tax_rate": rate }))
+                        .collect();
+                    let mut inp = input(json!(items), n + 4, 100_000_000);
+                    inp["payload"]["tax_included"] = json!(false);
+                    let out = sale(inp);
+                    let (subtotal, tax_total, total, bd) = declared(&out);
+                    let ctx = format!("{n} × {price} @ {rate}");
+
+                    let base = n as i64 * price;
+                    let quota = cuota_esperada(base, rate);
+                    let entry = &bd[rate_key(rate).as_str()];
+                    assert_eq!(entry["base"].as_i64(), Some(base), "{ctx}: la base declarada es la suma EXACTA de las de línea");
+                    assert_eq!(entry["tax"].as_i64(), Some(quota), "{ctx}: un único redondeo sobre la base agregada");
+                    assert_eq!((subtotal, tax_total), (base, quota), "{ctx}: la cabecera declara el desglose");
+                    assert_eq!(subtotal + tax_total, total, "{ctx}: declarado {subtotal}+{tax_total} contra cobrado {total}");
+
+                    let lines = sale_lines(&out);
+                    assert_eq!(lines.len(), n, "{ctx}: una fila por línea");
+                    assert_eq!(
+                        lines.iter().map(|l| l["net_amount"].as_i64().unwrap_or(0)).sum::<i64>(), subtotal,
+                        "{ctx}: las bases de línea suman la base declarada",
+                    );
+                    assert_eq!(
+                        lines.iter().map(|l| l["tax_amount"].as_i64().unwrap_or(0)).sum::<i64>(), tax_total,
+                        "{ctx}: las cuotas de línea suman la cuota declarada",
+                    );
+                    assert_eq!(
+                        lines.iter().map(|l| l["line_total"].as_i64().unwrap_or(0)).sum::<i64>(), total,
+                        "{ctx}: el tique suma el total que se cobra",
+                    );
+                    // El reparto es por resto mayor: ninguna línea se lleva más de un céntimo de
+                    // más que la parte que le tocaría.
+                    for l in lines.iter() {
+                        let (b, t) = (l["net_amount"].as_i64().unwrap_or(0), l["tax_amount"].as_i64().unwrap_or(0));
+                        let exacta = cuota_esperada(b, rate);
+                        assert!((t - exacta).abs() <= 1, "{ctx}: la línea declara {t} donde le tocaba ~{exacta}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn sin_iva_incluido_el_ejemplo_de_la_adr_declara_la_base_agregada_y_el_total_sale_de_ella() {
+        // El gemelo B2B del ejemplo de la ADR: 7 artículos de 0,03 € al 21 % se declaran con base
+        // 0,21 € y cuota round(0,21 × 21 %) = round(4,41) = 0,04 €, así que el ticket son 0,25 €.
+        // Sumar las cuotas de línea —7 × round(0,63) = 0,07 €— daría 0,28 €: tres céntimos de más
+        // cobrados sobre una venta de 0,25 € declarada, que es el redondeo producto a producto.
+        let items: Vec<Value> = (0..7)
+            .map(|i| json!({ "product_name": format!("Chicle {i}"), "price": 3, "quantity": 1_000_000, "tax_rate": 21.0 }))
+            .collect();
+        let mut inp = input(json!(items), 12, 100);
+        inp["payload"]["tax_included"] = json!(false);
+        let out = sale(inp);
+        let (subtotal, tax_total, total, bd) = declared(&out);
+        assert_eq!((bd["21.00"]["base"].as_i64(), bd["21.00"]["tax"].as_i64()), (Some(21), Some(4)));
+        assert_eq!((subtotal, tax_total, total), (21, 4, 25), "el total sale de la declaración, no de las 7 cuotas de línea");
+        assert_eq!(line_totals(&out).iter().sum::<i64>(), 25, "el tique suma lo que se cobra");
+    }
+
+    #[test]
+    fn sin_iva_incluido_cada_tipo_cierra_sobre_su_propia_base_y_el_total_los_suma() {
+        // Dos tipos en el mismo tique, cada uno con resto: 3 × 0,03 € al 21 % (base 0,09 €, cuota
+        // round(1,89) = 0,02 €) y 3 × 0,07 € al 10 % (base 0,21 €, cuota round(2,10) = 0,02 €).
+        // El total es la suma de los dos pares, 0,34 €; sumando cuotas de línea saldrían 0,36 €.
+        let mut items: Vec<Value> = (0..3)
+            .map(|i| json!({ "product_name": format!("A{i}"), "price": 3, "quantity": 1_000_000, "tax_rate": 21.0 }))
+            .collect();
+        items.extend((0..3).map(|i| json!({ "product_name": format!("B{i}"), "price": 7, "quantity": 1_000_000, "tax_rate": 10.0 })));
+        let mut inp = input(json!(items), 12, 1_000);
+        inp["payload"]["tax_included"] = json!(false);
+        let out = sale(inp);
+        let (subtotal, tax_total, total, bd) = declared(&out);
+        assert_eq!((bd["21.00"]["base"].as_i64(), bd["21.00"]["tax"].as_i64()), (Some(9), Some(2)));
+        assert_eq!((bd["10.00"]["base"].as_i64(), bd["10.00"]["tax"].as_i64()), (Some(21), Some(2)));
+        assert_eq!((subtotal, tax_total, total), (30, 4, 34), "cada tipo cierra sobre lo suyo y el total los suma");
+        assert_eq!(line_totals(&out).iter().sum::<i64>(), 34, "el tique suma lo que se cobra");
     }
 
     #[test]
