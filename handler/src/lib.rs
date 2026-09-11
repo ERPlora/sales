@@ -5210,6 +5210,37 @@ mod tests {
     }
 
     #[test]
+    fn sin_iva_incluido_la_base_declarada_es_la_SUMA_de_las_de_linea_nadie_vuelve_a_dividir() {
+        // The guard above cannot tell the two closes apart: 6,05 € / 1,21 is exactly 5,00 €, so
+        // dividing the gross and summing the line bases agree to the cent. This one CAN, and it is
+        // the one that pins the B2B branch: two articles of 0,03 € at 21 % are charged
+        // 2 × (3 + round(0,63)) = 0,08 €, and with the tax ON TOP the declared base is the SUM OF
+        // THE LINE BASES (0,06 €) with ONE rounding over it — round(6 × 21 %) = 0,01 € — because
+        // there the total is derived from the declaration and there is no gross to divide.
+        //
+        // 🔴 Routing this mode through the tax-inclusive close (round(8 / 1,21) = 7) would move the
+        // declared base to 0,07 € and NOTHING in the suite noticed: that is what this test exists
+        // for. The cent that 0,06 + 0,01 leaves against the 0,08 € charged is **ERPlora/sales#293**,
+        // open and deliberately out of the scope of sales#292 — whoever closes it changes these
+        // numbers ON PURPOSE, which is the point of writing them down.
+        let items = json!([
+            { "product_name": "A", "price": 3, "quantity": 1_000_000, "tax_rate": 21.0 },
+            { "product_name": "B", "price": 3, "quantity": 1_000_000, "tax_rate": 21.0 }
+        ]);
+        let mut inp = input(items, 5, 100);
+        inp["payload"]["tax_included"] = json!(false);
+        let out = sale(inp);
+        let (subtotal, tax_total, total, bd) = declared(&out);
+        let line_bases: i64 = sale_lines(&out).iter().map(|l| l["net_amount"].as_i64().unwrap_or(0)).sum();
+        assert_eq!(total, 8, "2 × (0,03 € + 0,01 € de cuota de línea)");
+        assert_eq!(line_bases, 6, "las bases de línea");
+        assert_eq!(subtotal, line_bases, "con el IVA por encima la base declarada es la SUMA de las de línea, no round(bruto / 1,21)");
+        assert_eq!((bd["21.00"]["base"].as_i64(), bd["21.00"]["tax"].as_i64()), (Some(6), Some(1)), "un solo redondeo sobre la base agregada: round(6 × 21 %) = 1");
+        assert_eq!(tax_total, 1);
+        assert_eq!(subtotal + tax_total, 7, "sales#293: en modo B2B lo declarado aún queda un céntimo por debajo de los 8 cobrados");
+    }
+
+    #[test]
     fn el_preview_declara_lo_mismo_que_la_venta_con_iva_incluido() {
         // sales#292 was measured on `sales.checkout.preview` first: both doors share
         // `value_checkout`, so the preview has to answer the same 4,55 + 0,45.
