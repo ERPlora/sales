@@ -15,6 +15,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
 
+import { tenderExactCash } from '../../test/cash-tender';
 const RULES = [{ id: 'r-21', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, is_active: 1 }];
 const METHODS = [
   { id: 'pm-cash', name: 'Efectivo', type: 'cash', requires_change: 1, sort_order: 10 },
@@ -153,6 +154,7 @@ describe('sales#164 — the authoritative total', () => {
   it('the charge sends the SAME items the preview valued', async () => {
     previewAnswer = TAX_EXCLUDED_PREVIEW;
     const el = await tillCharging();
+    await tenderExactCash(el); // sales#309: cash is typed before charging
     await el.confirm();
     const previewed = commands.find((c) => c.name === 'sales.checkout.preview')!.payload.items;
     const charged = commands.find((c) => c.name === 'sales.complete_sale')!.payload.items;

@@ -4411,6 +4411,7 @@ var es_default = {
     limitFieldTaxId: "NIF",
     limitFieldAddress: "Domicilio",
     limitChargeBlocked: "Faltan los datos del cliente",
+    tenderedMissing: "Teclea el importe entregado",
     tenderedShort: "Lo entregado no cubre el total",
     colDate: "Fecha",
     rangeLabel: "Periodo",
@@ -4975,6 +4976,7 @@ var en_default = {
     limitFieldTaxId: "Tax ID",
     limitFieldAddress: "Address",
     limitChargeBlocked: "Enter the customer's details",
+    tenderedMissing: "Type the amount tendered",
     tenderedShort: "The amount tendered does not cover the total",
     colDate: "Date",
     rangeLabel: "Period",
@@ -10260,11 +10262,19 @@ var ErpPosTouch = class extends i3 {
   get change() {
     return Math.max(0, this.tenderedNum - this.payable);
   }
-  /** sales#24 — cash typed in but SHORT of the payable. 0 (nothing typed) means «exact amount»;
-   *  the server refuses the same case (`sales.insufficient_tendered`), this just spares the trip. */
+  /** sales#24 — cash typed in but SHORT of the payable. The server refuses the same case
+   *  (`sales.insufficient_tendered`), this just spares the trip. Nothing typed is `tenderedMissing`. */
   get tenderedShort() {
     if (this.splitting) return false;
     return needsTendered(this.payMethod) && this.tenderedNum > 0 && this.tenderedNum < this.payable;
+  }
+  /** sales#309 — CASH selected and nothing typed. It used to mean «exact amount» (sales#24) and the
+   *  ticket printed the change of cash nobody had counted; Ioan (2026-09-13): the charge does not go
+   *  on until the tendered amount is typed. Only a real cash method (a method that gives change) with
+   *  something to pay and no split under way: card, Bizum and legs already taken are untouched. */
+  get tenderedMissing() {
+    if (this.splitting || this.tenders.length > 0) return false;
+    return !!this.payMethod && needsTendered(this.payMethod) && this.payable > 0 && this.tenderedNum === 0;
   }
   // ── sales#159 · pagar UNA venta de N formas (ADR-0386) ─────────────────────────────────────
   /** Lo que queda por cubrir, en céntimos. Sin patas es la cuenta entera. */
@@ -10355,6 +10365,7 @@ var ErpPosTouch = class extends i3 {
       const amount = this.money(split.remaining);
       return { short: t5("ui.tenderRemainingShort", { amount }), reason: t5("ui.tenderRemainingBlock", { amount }) };
     }
+    if (this.tenderedMissing) return { short: "", reason: t5("ui.tenderedMissing") };
     if (this.tenderedShort) return { short: t5("ui.tenderedShort"), reason: t5("ui.tenderedShort") };
     return void 0;
   }
@@ -11532,7 +11543,7 @@ var ErpPosTouch = class extends i3 {
                 <ion-button data-testid="pos-pay-confirm" class="charge" expand="block" ?disabled=${this.busy}
                             aria-disabled=${blockedWhy ? "true" : A}
                             @click=${() => this.confirm(this.printOnCharge)}>
-                  ${this.busy ? t5("ui.charging") : blockedWhy ? blockedWhy.short : this.tenders.length ? `${t5("ui.charge")} ${this.money(this.payable)}` : needsTendered(this.payMethod) ? `${t5("ui.charge")} ${this.money(this.payable)}` : t5("ui.chargeWithCard", { amount: this.money(this.payable) })}
+                  ${this.busy ? t5("ui.charging") : blockedWhy?.short ? blockedWhy.short : this.tenders.length ? `${t5("ui.charge")} ${this.money(this.payable)}` : needsTendered(this.payMethod) ? `${t5("ui.charge")} ${this.money(this.payable)}` : t5("ui.chargeWithCard", { amount: this.money(this.payable) })}
                 </ion-button>
               </div>
             </div>

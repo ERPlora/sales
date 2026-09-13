@@ -18,6 +18,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import enLocale from '../../../locales/en.json';
 import { installPosDouble } from '../../test/pos-double';
 
+import { tenderExactCash } from '../../test/cash-tender';
 const SOUP = { id: 'p-soup', name: 'Sopa', price: 450, tax_category_key: 'food' };
 const SALAD = { id: 'p-salad', name: 'Ensalada', price: 500, tax_category_key: 'food' };
 const CHICKEN = { id: 'p-chicken', name: 'Pollo', price: 800, tax_category_key: 'food' };
@@ -380,6 +381,7 @@ describe('la composición LLEGA a sales.complete_sale', () => {
     await tap(pos, q(pos, '[data-option-id="o-soup"]'));
     await tap(pos, q(pos, '[data-option-id="o-sirloin"]'));
     await tap(pos, q(pos, '[data-combo-confirm]'));
+    await tenderExactCash(pos); // sales#309: cash is typed before charging
     await pos.confirm();
 
     const sale = checkout();
@@ -406,6 +408,7 @@ describe('la composición LLEGA a sales.complete_sale', () => {
     installSdk(MENU);
     const pos = await mount();
     await tap(pos, qa<HTMLElement>(pos, 'ion-card.tile:not(.combo):not(.open-price)')[0]);
+    await tenderExactCash(pos); // sales#309: cash is typed before charging
     await pos.confirm();
     const items = checkout()!.params.items as Record<string, unknown>[];
     expect(items[0]).not.toHaveProperty('combo_id');

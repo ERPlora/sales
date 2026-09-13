@@ -19,6 +19,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
 
+import { tenderExactCash } from '../../test/cash-tender';
 const PRODUCTS = [
   { id: 'p-champu', name: 'Champú', price: 900, is_active: 1, tax_category_key: 'product.generic' },
 ];
@@ -250,6 +251,7 @@ describe('sales#162 — the POS hosts `sales.pos.tender`', () => {
     const el = await salonTicket();
     hold(el, 'line-1');
     await el.updateComplete;
+    await tenderExactCash(el); // sales#309: cash is typed before charging
     await el.confirm(false);
     const sale = commands.find((c) => c.name === 'sales.complete_sale')!;
     const items = sale.payload.items as Record<string, unknown>[];

@@ -3702,13 +3702,22 @@ export class ErpPosTouch extends LitElement {
   // como `total`. Sin esta conversión: «Efectivo 0.20 €» y cambio 0 en el tiquet (QA 2026-07-17).
   private get tenderedNum() { return eurosToCents(this.tendered || '0'); }
   private get change() { return Math.max(0, this.tenderedNum - this.payable); }
-  /** sales#24 — cash typed in but SHORT of the payable. 0 (nothing typed) means «exact amount»;
-   *  the server refuses the same case (`sales.insufficient_tendered`), this just spares the trip. */
+  /** sales#24 — cash typed in but SHORT of the payable. The server refuses the same case
+   *  (`sales.insufficient_tendered`), this just spares the trip. Nothing typed is `tenderedMissing`. */
   private get tenderedShort(): boolean {
     // Repartiendo, «lo tecleado» es el importe de UNA pata, no el de la cuenta: quedarse corto es
     // lo normal (para eso hay más patas) y lo que bloquea es el RESTANTE, no esto.
     if (this.splitting) return false;
     return needsTendered(this.payMethod) && this.tenderedNum > 0 && this.tenderedNum < this.payable;
+  }
+
+  /** sales#309 — CASH selected and nothing typed. It used to mean «exact amount» (sales#24) and the
+   *  ticket printed the change of cash nobody had counted; Ioan (2026-09-13): the charge does not go
+   *  on until the tendered amount is typed. Only a real cash method (a method that gives change) with
+   *  something to pay and no split under way: card, Bizum and legs already taken are untouched. */
+  private get tenderedMissing(): boolean {
+    if (this.splitting || this.tenders.length > 0) return false;
+    return !!this.payMethod && needsTendered(this.payMethod) && this.payable > 0 && this.tenderedNum === 0;
   }
 
   // ── sales#159 · pagar UNA venta de N formas (ADR-0386) ─────────────────────────────────────
@@ -3817,6 +3826,9 @@ export class ErpPosTouch extends LitElement {
       const amount = this.money(split.remaining);
       return { short: t('ui.tenderRemainingShort', { amount }), reason: t('ui.tenderRemainingBlock', { amount }) };
     }
+    // sales#309 — no `short`: the button keeps saying «Charge 121,00 €» (sales#164, the cashier always
+    // sees what will be charged) and the missing step is written right above it and said on tap.
+    if (this.tenderedMissing) return { short: '', reason: t('ui.tenderedMissing') };
     if (this.tenderedShort) return { short: t('ui.tenderedShort'), reason: t('ui.tenderedShort') };
     return undefined;
   }
@@ -5204,7 +5216,7 @@ export class ErpPosTouch extends LitElement {
                             @click=${() => this.confirm(this.printOnCharge)}>
                   ${this.busy
                     ? t('ui.charging')
-                    : blockedWhy
+                    : blockedWhy?.short
                       // Dice lo que FALTA, no «no puedes».
                       ? blockedWhy.short
                       : this.tenders.length

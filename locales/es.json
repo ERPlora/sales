@@ -372,6 +372,7 @@
     "limitFieldTaxId": "NIF",
     "limitFieldAddress": "Domicilio",
     "limitChargeBlocked": "Faltan los datos del cliente",
+    "tenderedMissing": "Teclea el importe entregado",
     "tenderedShort": "Lo entregado no cubre el total",
     "colDate": "Fecha",
     "rangeLabel": "Periodo",
