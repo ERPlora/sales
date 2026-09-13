@@ -371,6 +371,7 @@
     "limitFieldTaxId": "Tax ID",
     "limitFieldAddress": "Address",
     "limitChargeBlocked": "Enter the customer's details",
+    "tenderedMissing": "Type the amount tendered",
     "tenderedShort": "The amount tendered does not cover the total",
     "colDate": "Date",
     "rangeLabel": "Period",

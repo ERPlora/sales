@@ -25,6 +25,7 @@ import enLocale from '../../../locales/en.json';
 import esLocale from '../../../locales/es.json';
 import { installPosDouble } from '../../test/pos-double';
 
+import { tenderExactCash } from '../../test/cash-tender';
 const PRODUCTS = [
   { id: 'p-cafe', name: 'Café', sku: 'CAF', price: 150, is_active: 1, tax_category_key: 'product.generic' },
 ];
@@ -202,6 +203,7 @@ describe('2 · with the customer chosen, the till charges exactly as before', ()
     await el.updateComplete;
     expect($(el, '.sheet'), 'the charge screen opens once the sale can be closed').toBeTruthy();
 
+    await tenderExactCash(el); // sales#309: cash is typed before charging
     await el.confirm();
     const sale = commands.find((c) => c.name === 'sales.complete_sale');
     expect(sale, 'the sale is sent').toBeTruthy();

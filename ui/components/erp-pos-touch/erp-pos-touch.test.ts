@@ -1192,7 +1192,8 @@ describe('sheet de cobro (tender): método dentro, tarjeta sin numpad, atajos de
   it('sales#24 — efectivo por debajo del total: el botón no cobra y dice que falta importe', async () => {
     // El servidor rechaza (`sales.insufficient_tendered`), pero la cajera no debería tener que
     // llegar al rechazo: con 1,00 € tecleado sobre 1,80 € el CTA se apaga y avisa. Al completar
-    // (2,00 €) vuelve a cobrar. Y 0 (nada tecleado) sigue siendo «importe exacto».
+    // (2,00 €) vuelve a cobrar. (sales#309: 0 —nada tecleado— ya NO es «importe exacto»: ver el
+    // caso de abajo.)
     //
     // 🔴 sales#159 — ESTE TEST EXIGÍA EL `disabled` NATIVO, Y ESO ERA EL BUG DE sales#58 EN EL
     // BOTÓN MÁS IMPORTANTE DE LA PANTALLA. En Ionic `disabled` es `pointer-events:none`: en una
@@ -1204,8 +1205,6 @@ describe('sheet de cobro (tender): método dentro, tarjeta sin numpad, atajos de
     const el = await conCobroAbierto();
     const tap = el as unknown as { tap(k: string): void; updateComplete: Promise<unknown>; error: string };
     const cta = () => el.shadowRoot!.querySelector<HTMLElement>('.sheet-foot ion-button.charge')!;
-
-    expect(cta().getAttribute('aria-disabled'), 'sin teclear = exacto → se puede cobrar').not.toBe('true');
 
     tap.tap('1');
     await tap.updateComplete;
@@ -1228,19 +1227,31 @@ describe('sheet de cobro (tender): método dentro, tarjeta sin numpad, atajos de
     expect(cta().getAttribute('aria-disabled'), '12,00 € sí cubre').not.toBe('true');
   });
 
-  it('sales#24: en efectivo sin teclear nada NO viaja amount_tendered (exacto lo decide el servidor); tecleado, sí', async () => {
+  // sales#309 — Ioan, 2026-09-13: «se puede cobrar con importe 0: si el usuario no mete el importe
+  // que ha recibido no debería dejarlo seguir». Until then nothing typed meant «exact amount» (sales#24)
+  // and the ticket printed «Efectivo 1,50 € · Cambio 0,00 €» for cash nobody had counted. In CASH the
+  // charge now waits for the tendered amount, with the same answering block as sales#159. Card, Bizum
+  // and a split already covered by its legs are untouched. No quick-amount buttons come back.
+  it('sales#309 — en efectivo sin teclear lo entregado, el botón no cobra y pide el importe', async () => {
     const el = await conCobroAbierto();
     const pos = el as unknown as { tap(k: string): void; confirm(): Promise<void>; updateComplete: Promise<unknown> };
-    await pos.confirm();
-    let venta = comandos.filter((c) => c.name === 'sales.complete_sale').pop()!;
-    expect(venta.payload.amount_tendered).toBeUndefined();
+    const cta = () => el.shadowRoot!.querySelector<HTMLElement>('.sheet-foot ion-button.charge')!;
 
-    const el2 = await conCobroAbierto();
-    const pos2 = el2 as unknown as { tap(k: string): void; confirm(): Promise<void>; updateComplete: Promise<unknown> };
-    pos2.tap('5'); await pos2.updateComplete;
-    await pos2.confirm();
-    venta = comandos.filter((c) => c.name === 'sales.complete_sale').pop()!;
-    expect(venta.payload.amount_tendered, 'lo tecleado viaja en céntimos').toBe(500);
+    expect(cta().getAttribute('aria-disabled'), 'nothing typed in cash: it does not charge').toBe('true');
+    expect(cta().hasAttribute('disabled'), 'never a native disabled: the tap must answer (sales#159)').toBe(false);
+    expect(cta().textContent, 'the button still says what will be charged (sales#164)').toContain('ui.charge');
+    expect(el.shadowRoot!.querySelector('.sheet .pay-block-reason')?.textContent,
+      'and the reason is written on the screen').toContain('ui.tenderedMissing');
+
+    await pos.confirm();
+    expect(comandos.some((c) => c.name === 'sales.complete_sale'), 'no sale for cash nobody counted').toBe(false);
+    expect(avisosCobro.map((a) => a.message), 'the tap answers out loud').toContain('ui.tenderedMissing');
+
+    pos.tap('5'); await pos.updateComplete;
+    expect(cta().getAttribute('aria-disabled'), '5,00 € covers 1,80 €').not.toBe('true');
+    await pos.confirm();
+    const venta = comandos.filter((c) => c.name === 'sales.complete_sale').pop()!;
+    expect(venta.payload.amount_tendered, 'what was typed travels in cents').toBe(500);
   });
 
   it('tarjeta: sin numpad ni entregado — importe exacto, pista del datáfono y CTA propio', async () => {
@@ -1278,6 +1289,9 @@ describe('sheet de cobro (tender): método dentro, tarjeta sin numpad, atajos de
       { id: 'p2', name: 'Tostada', price: 180, qty: 1, line_id: 'l2' },
     ];
     (el as unknown as { splitSel: Set<string> }).splitSel = new Set(['l1']);
+    // sales#309 — in cash the CTA only offers to charge once the tendered amount is typed (nothing
+    // typed reads «type the amount tendered»); what this case pins is WHICH amount it charges.
+    (el as unknown as { tap(k: string): void }).tap('5');
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
 
     const cta = el.shadowRoot!.querySelector('.sheet-foot ion-button.charge')?.textContent ?? '';

@@ -20,6 +20,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import schema from '../../../schemas/complete_sale.json';
 import { installPosDouble } from '../../test/pos-double';
 
+import { tenderExactCash } from '../../test/cash-tender';
 // ⚠️ Every sellable carries its `tax_category_key`: without it the tile is BLOCKED (sales#74/#58)
 // and the grid is dead by data, which looks exactly like "the POS does not respond".
 const PRODUCTS = [
@@ -141,6 +142,7 @@ describe('charging a SERVICE from the till (sales#146)', () => {
     await tap(el, 'Corte y barba');
     await tap(el, 'Champú');
     await pay(el, 'Efectivo');
+    await tenderExactCash(el); // sales#309: cash is typed before charging
     await el.confirm();
 
     const items = itemsOf(checkout()!);
@@ -157,6 +159,7 @@ describe('charging a SERVICE from the till (sales#146)', () => {
     const el = await mount();
     await tap(el, 'Champú');
     await pay(el, 'Efectivo');
+    await tenderExactCash(el); // sales#309: cash is typed before charging
     await el.confirm();
 
     const [line] = itemsOf(checkout()!);
@@ -189,6 +192,7 @@ describe('every field the till really sends is declared by the schema', () => {
     await tap(el, 'Corte y barba');
     await tap(el, 'Champú');
     await pay(el, 'Efectivo');
+    await tenderExactCash(el); // sales#309: cash is typed before charging
     await el.confirm();
 
     const sale = checkout()!;

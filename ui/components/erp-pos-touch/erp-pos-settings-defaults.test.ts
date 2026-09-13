@@ -22,6 +22,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { installPosDouble } from '../../test/pos-double';
 
+import { tenderExactCash } from '../../test/cash-tender';
 function moduleRoot(): string {
   let dir = dirname(fileURLToPath(import.meta.url));
   while (!existsSync(join(dir, 'module.json'))) {
@@ -192,6 +193,7 @@ describe('a hub with no settings row is the same till as one that saved the defa
     await forBothHubs(async (pos, hub) => {
       await pos.openPay();
       await pos.updateComplete;
+      await tenderExactCash(pos); // sales#309: cash is typed before charging
       await pos.confirm();
       const sale = commands.find((c) => c.name === 'sales.complete_sale');
       expect(sale, `the sale must be sent for the hub with ${hub}`).toBeTruthy();

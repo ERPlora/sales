@@ -32,6 +32,7 @@ import enLocale from '../../../locales/en.json';
 import esLocale from '../../../locales/es.json';
 import { installPosDouble } from '../../test/pos-double';
 
+import { tenderExactCash } from '../../test/cash-tender';
 const PRODUCTS = [
   { id: 'p-cafe', name: 'Café', sku: 'CAF', price: 150, is_active: 1, tax_category_key: 'product.generic' },
 ];
@@ -122,6 +123,7 @@ describe('1 · with the pay sheet open the checkout error lives ONLY in the shee
     await el.updateComplete;
     refuseWith = 'sales.no_tax_rule';
 
+    await tenderExactCash(el); // sales#309: cash is typed before charging
     await el.confirm();
     await el.updateComplete;
 
@@ -138,6 +140,7 @@ describe('1 · with the pay sheet open the checkout error lives ONLY in the shee
     el.openPay();
     await el.updateComplete;
     refuseWith = 'sales.no_tax_rule';
+    await tenderExactCash(el); // sales#309: cash is typed before charging
     await el.confirm();
     await el.updateComplete;
 
@@ -272,6 +275,7 @@ describe('3 · the checkout branches on the CODE, never on the sentence', () => 
     // generic "could not charge" and, worse, print the server's sentence verbatim.
     refuseWith = 'sales.payments_do_not_match_total';
 
+    await tenderExactCash(el); // sales#309: cash is typed before charging
     await el.confirm();
     await el.updateComplete;
 
@@ -286,6 +290,7 @@ describe('3 · the checkout branches on the CODE, never on the sentence', () => 
     await el.updateComplete;
     refuseWith = 'module_not_installed';
 
+    await tenderExactCash(el); // sales#309: cash is typed before charging
     await el.confirm();
     await el.updateComplete;
 
@@ -327,6 +332,7 @@ describe('4 · sales#201 — the domain code reaches the cashier as its own sent
     // payment do not add up to the total the SERVER priced (sales#159, ADR-0386).
     refuseWith = 'sales.payments_do_not_match_total';
 
+    await tenderExactCash(el); // sales#309: cash is typed before charging
     await el.confirm();
     await el.updateComplete;
 
@@ -353,6 +359,7 @@ describe('4 · sales#201 — the domain code reaches the cashier as its own sent
       await el.updateComplete;
       refuseWith = code;
 
+      await tenderExactCash(el); // sales#309: cash is typed before charging
       await el.confirm();
       await el.updateComplete;
 
@@ -369,6 +376,7 @@ describe('4 · sales#201 — the domain code reaches the cashier as its own sent
     await el.updateComplete;
     refuseWith = 'error';
 
+    await tenderExactCash(el); // sales#309: cash is typed before charging
     await el.confirm();
     await el.updateComplete;
 

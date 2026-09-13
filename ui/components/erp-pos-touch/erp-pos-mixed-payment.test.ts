@@ -19,6 +19,7 @@ import enLocale from '../../../locales/en.json';
 import esLocale from '../../../locales/es.json';
 import { installPosDouble } from '../../test/pos-double';
 
+import { tenderExactCash } from '../../test/cash-tender';
 // ⚠️ Every product carries its `tax_category_key`: without it the tile is BLOCKED (sales#74/#58)
 // and the grid is dead by data, which looks exactly like "the POS does not respond".
 const PRODUCTS = [
@@ -277,6 +278,7 @@ describe('the charge is blocked while something is owed — and it SAYS SO', () 
 describe('what the single-tender flow keeps doing', () => {
   it('a sale with no legs added travels exactly as before: no payments[]', async () => {
     const el = await withPaySheet();
+    await tenderExactCash(el); // sales#309: cash is typed before charging
     await el.confirm();
     const sale = commands.find((c) => c.name === 'sales.complete_sale')!;
     expect(sale.payload.payments, 'one way of paying is still the scalar path').toBeUndefined();
