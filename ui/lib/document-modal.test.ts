@@ -25,6 +25,22 @@ function montar(saleId?: string, onClose: () => void = () => {}) {
 }
 
 describe('renderDocumentModal', () => {
+  // sales#308 — only the till knows the document was JUST charged: it hands that to the viewer, which
+  // waits behind a loader until the ticket is complete. A reprint from the sales list must not wait.
+  it('recién cobrado, le dice al visor que el documento se está emitiendo (issuing)', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    render(renderDocumentModal({ saleId: 'venta-1', issuing: true, onClose: () => {}, t: (k) => k }), host);
+    const doc = host.querySelector('erp-sales-document') as HTMLElement & { issuing?: boolean };
+    expect(doc.issuing, 'the viewer knows it was just charged').toBe(true);
+  });
+
+  it('sin issuing (reimpresión desde la lista) el visor no espera', () => {
+    const modal = montar('venta-1');
+    const doc = modal.querySelector('erp-sales-document') as HTMLElement & { issuing?: boolean };
+    expect(doc.issuing, 'a reprint is never issuing').toBeFalsy();
+  });
+
   it('sin título: solo la X de cerrar, que dispara onClose', () => {
     let cerrado = false;
     const modal = montar('venta-1', () => { cerrado = true; });

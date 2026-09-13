@@ -55,6 +55,9 @@ export class ErpSalesDocument extends LitElement {
     :host { display:block; }
     .err { color:#d9480f; }
     .muted { color:#8b897f; }
+    /* sales#308 — the ticket being issued: centred where the paper will appear. */
+    .issuing { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.75rem; min-height:240px; text-align:center; }
+    .issuing p { margin:0; }
     /* Presencia de PAPEL: sombra sutil sobre el fondo gris del modal (tiquet térmico / folio A4). */
     ok-receipt::part(paper),
     ok-invoice::part(sheet) {
@@ -97,8 +100,30 @@ export class ErpSalesDocument extends LitElement {
 
   private claimFlight?: Promise<void>;
 
-  /** Backoff del reintento fiscal (ms). Override en tests. */
-  @property({ attribute: false }) fiscalRetryDelays: number[] = [400, 900, 1800];
+  /**
+   * sales#308 — the document was JUST charged (the till says so). The viewer then waits behind a
+   * loader until the ticket is complete —number AND VeriFactu QR— instead of painting it half-built.
+   * A reprint from the sales list never sets it: an old ticket must never wait for a record that
+   * may not exist.
+   */
+  @property({ attribute: false }) issuing = false;
+
+  /**
+   * Backoff del reintento fiscal (ms). Override en tests.
+   *
+   * sales#308 — it used to end at ~3 s, and the VeriFactu record becomes readable only once the
+   * command that writes it has filed it with the AEAT: ~5 s on banco-pre with an own certificate.
+   * The viewer gave up first and the QR never reached the ticket. The tail keeps watching for about
+   * a minute, so a slow AEAT still completes the ticket on its own.
+   */
+  @property({ attribute: false }) fiscalRetryDelays: number[] = [400, 900, 1800, 3000, 5000, 10000, 20000];
+
+  /** sales#308 — how long a just-charged document waits behind the loader before painting what
+   *  there is. The watch goes on after it; the till is never left staring at a spinner. */
+  @property({ attribute: false }) fiscalWaitMs = 10000;
+
+  /** sales#308 — the just-charged document is still being issued: the loader is on screen. */
+  @state() private awaitingFiscal = false;
 
   /** Venta ya cargada/en curso — evita el doble load (connectedCallback + updated disparan ambos). */
   private loadedFor?: string;
@@ -159,9 +184,11 @@ export class ErpSalesDocument extends LitElement {
         ...(business.name ? { issuer_name: business.name } : {}),
         ...(business.tax_id ? { issuer_tax_id: business.tax_id } : {}),
       };
-      // Datos fiscales (QR VeriFactu) — best-effort y SIN bloquear el primer pintado: el Outbox es
-      // asíncrono (la factura/registro se crean unos ms después de cobrar), así que se observa con
-      // reintentos y el QR aparece solo cuando llega.
+      // Datos fiscales (QR VeriFactu) — el Outbox es asíncrono (la factura/registro se crean unos
+      // segundos después de cobrar), así que se observa con reintentos y el QR aparece cuando llega.
+      // sales#308: recién cobrado, la pantalla espera tras un indicador de carga en vez de pintar
+      // un tique a medias; una reimpresión se pinta al momento, como siempre.
+      this.awaitingFiscal = this.issuing;
       void this.watchFiscal(this.saleId);
     } catch (e) {
       this.error = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errorDocument');
@@ -174,23 +201,48 @@ export class ErpSalesDocument extends LitElement {
    *  aún no existe (el race del Outbox). Módulo ausente (`queryOptional` → undefined) = una consulta
    *  y en paz. Si el usuario cambió de venta, aborta. */
   private async watchFiscal(saleId: string): Promise<void> {
-    for (const delay of [0, ...this.fiscalRetryDelays]) {
-      if (delay) await new Promise((r) => setTimeout(r, delay));
-      if (this.saleId !== saleId || !this.isConnected) return;
-      const { fiscal, retry, claimInvoiceId } = await this.resolveFiscal(saleId);
-      this.fiscal = fiscal;
-      // sales#103: en cuanto la F2 existe, se acuña el claim (best-effort, single-flight). La
-      // ventana del Outbox que retrasa el QR fiscal retrasa igual el acuñado — mismo race.
-      if (claimInvoiceId) {
-        this.claimInvoiceId = claimInvoiceId;
-        void this.ensureClaim(claimInvoiceId);
+    // sales#308 — the loader has a ceiling. Past it the screen paints what there is and the watch
+    // below goes on, so a slow AEAT completes the ticket on its own instead of freezing the till.
+    // `fellBack` = the screen already painted the sale's own number because the wait ended. Only then
+    // may a later lookup not blank it again; a reprint keeps the sales#274 blank until retries end.
+    let fellBack = false;
+    const endWait = () => {
+      if (this.saleId !== saleId) return;
+      fellBack = true;
+      this.awaitingFiscal = false;
+      // sales#274 — the wait is over and the invoice has not landed: the ticket falls back to its
+      // own number rather than being painted with no identifier at all.
+      if (this.fiscal.pending) this.fiscal = { ...this.fiscal, pending: false };
+    };
+    const ceiling = this.awaitingFiscal ? setTimeout(endWait, this.fiscalWaitMs) : undefined;
+    try {
+      for (const delay of [0, ...this.fiscalRetryDelays]) {
+        if (delay) await new Promise((r) => setTimeout(r, delay));
+        if (this.saleId !== saleId || !this.isConnected) return;
+        const { fiscal, retry, claimInvoiceId } = await this.resolveFiscal(saleId);
+        if (this.saleId !== saleId) return;
+        // Once the wait ended the screen already painted the sale's own number: a later lookup that
+        // still finds no invoice must not blank it again.
+        this.fiscal = fellBack && fiscal.pending ? { ...fiscal, pending: false } : fiscal;
+        // sales#103: en cuanto la F2 existe, se acuña el claim (best-effort, single-flight). La
+        // ventana del Outbox que retrasa el QR fiscal retrasa igual el acuñado — mismo race.
+        if (claimInvoiceId) {
+          this.claimInvoiceId = claimInvoiceId;
+          void this.ensureClaim(claimInvoiceId);
+        }
+        if (fiscal.qr || !retry) {
+          // Complete (or nothing more will come): the final document, in one go.
+          this.awaitingFiscal = false;
+          return;
+        }
       }
-      if (fiscal.qr || !retry) return;
+      // sales#274 — se acabaron los reintentos y la factura no ha llegado (Outbox atascado). El
+      // hueco era una espera, no un estado permanente: el tique cae a su propio número antes que
+      // quedarse sin identificador ninguno.
+      if (this.saleId === saleId) endWait();
+    } finally {
+      if (ceiling !== undefined) clearTimeout(ceiling);
     }
-    // sales#274 — se acabaron los reintentos y la factura no ha llegado (Outbox atascado). El
-    // hueco era una espera, no un estado permanente: el tique cae a su propio número antes que
-    // quedarse sin identificador ninguno.
-    if (this.saleId === saleId && this.fiscal.pending) this.fiscal = { ...this.fiscal, pending: false };
   }
 
   /** Resuelve venta → factura (`invoice.by_source`) → registro VeriFactu (`verifactu.records.by_invoice`)
@@ -358,6 +410,14 @@ export class ErpSalesDocument extends LitElement {
     const settings = this.settings || {};
     const lines = this.lines || [];
     const fmt = this.format || resolveFormat(this.sale, settings);
+
+    // sales#308 — just charged and still being issued: a loader, never a half-built document.
+    if (this.awaitingFiscal) {
+      return html`<div class="issuing" data-testid="doc-issuing" role="status" aria-live="polite">
+        <ion-spinner name="crescent"></ion-spinner>
+        <p class="muted">${t(fmt === 'invoice' ? 'ui.issuingInvoice' : 'ui.issuingReceipt')}</p>
+      </div>`;
+    }
 
     const locale = erplora().locale;
     // Translated last-resort business name (ADR-0055): the mapper's bare fallback is English

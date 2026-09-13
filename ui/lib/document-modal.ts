@@ -20,6 +20,9 @@ import '../components/erp-sales-document/erp-sales-document.js';
 export interface DocumentModalOpts {
   /** Venta a mostrar; el modal está abierto mientras haya id. */
   saleId?: string;
+  /** sales#308 — la venta se acaba de cobrar: el visor espera tras la carga hasta tener el tique
+   *  completo (número y QR VeriFactu). Solo el TPV lo pone; una reimpresión nunca espera. */
+  issuing?: boolean;
   /** Cierra el modal (limpia el id en el componente anfitrión). */
   onClose: () => void;
   /** Traductor del catálogo del módulo (`ui.print`, `ui.close`, `ui.printFailed`). */
@@ -33,7 +36,7 @@ interface PrintCapableSdk {
   notify?: (n: { type: string; message: string }) => void;
 }
 
-export function renderDocumentModal({ saleId, onClose, t }: DocumentModalOpts): TemplateResult {
+export function renderDocumentModal({ saleId, issuing = false, onClose, t }: DocumentModalOpts): TemplateResult {
   return html`<ion-modal class="doc-modal" .isOpen=${!!saleId} @ionModalDidDismiss=${onClose}>
     <style>
       ion-modal.doc-modal {
@@ -72,7 +75,7 @@ export function renderDocumentModal({ saleId, onClose, t }: DocumentModalOpts): 
         <ion-icon name="close" slot="icon-only"></ion-icon>
       </ion-button>
       <div class="doc-wrap ion-padding" style="padding-top:44px">
-        ${saleId ? html`<erp-sales-document .saleId=${saleId}></erp-sales-document>` : nothing}
+        ${saleId ? html`<erp-sales-document .issuing=${issuing} .saleId=${saleId}></erp-sales-document>` : nothing}
       </div>
     </ion-content>
     <ion-footer class="ion-no-border">
