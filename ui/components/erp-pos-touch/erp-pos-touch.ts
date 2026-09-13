@@ -5563,7 +5563,7 @@ export class ErpPosTouch extends LitElement {
         </ion-list>
       </ok-spotlight-search>
 
-      ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => { this.docSaleId = undefined; }, t })}
+      ${renderDocumentModal({ saleId: this.docSaleId, issuing: true, onClose: () => { this.docSaleId = undefined; }, t })}
       <!-- CUENTA previa (ADR-0141): lo que se lleva a la mesa antes de cobrar. NO es fiscal — sin
            número de serie ni QR VeriFactu; el tiquet fiscal lo emite el cobro. -->
       <ion-modal class="doc-modal" .isOpen=${this.prebillOpen}

@@ -741,3 +741,134 @@ describe('la cabecera del tique NO espera a la factura (sales#274)', () => {
     });
   });
 });
+
+// sales#308 — RIGHT AFTER A CHARGE, THE TICKET WAITS UNTIL IT IS COMPLETE.
+//
+// Measured on banco-pre (PRE, 2026-09-13) with a real own certificate: the ticket popped up at once
+// with no number, the number arrived ~3 s later, and the VeriFactu QR never did — although the AEAT
+// had accepted the record two seconds after the charge. The record is written by the same command
+// that files it with the AEAT, so it becomes visible ~5 s after the charge, and the viewer had given
+// up at ~3 s. Ioan's call: while the document is being issued, a LOADER; then the FINAL ticket, with
+// its number and its QR, in one go.
+//
+// Only right after a charge (`issuing`): the same viewer opens old tickets from the sales list, and a
+// reprint must never sit behind a loader waiting for a record that may never exist.
+describe('recién cobrado, el tique espera a estar completo (sales#308)', () => {
+  const SALE = {
+    id: 's1', sale_number: '20260913-0001', subtotal: 124, tax_amount: 26, total: 150,
+    payment_method_name: 'Efectivo', created_at: '2026-09-13T08:21:18Z',
+  };
+  const INVOICE = { id: 'inv1', number: 'TICKET-2026-000011', invoice_type: 'F2', issuer_name: 'ERPlora Demo SL', issuer_nif: 'B27593136' };
+  const RECORD = { qr_url: 'https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR?nif=B27593136&numserie=TICKET-2026-000011', aeat_csv: 'A-TK2BTBN826CP83' };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-13T08:21:18Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    document.body.innerHTML = '';
+  });
+
+  let sdkDouble: ReturnType<typeof installDocDouble>;
+  const lookups = (name: string) => sdkDouble.reads.filter((r) => r.name === name).length;
+
+  /** Mounts the viewer the way the till does right after charging. `invoiceAt`/`recordAt` are the ms
+   *  after the charge at which each one becomes readable (`Infinity` = never). */
+  async function montar(opts: { invoiceAt: number; recordAt: number; issuing?: boolean; format?: 'ticket' | 'invoice'; keepDefaults?: boolean }) {
+    const start = Date.now();
+    sdkDouble = installDocDouble({
+      'sales.get': [SALE],
+      'sales.lines': [{ product_name: 'Agua mineral 50cl', quantity: 1, unit_price: 150, line_total: 150 }],
+      'sales.business.get': [{ name: 'ERPlora Demo SL', tax_id: 'B27593136' }],
+      'invoice.by_source': () => (Date.now() - start >= opts.invoiceAt ? [INVOICE] : []),
+      'invoice.lines': [],
+      'verifactu.records.by_invoice': () => (Date.now() - start >= opts.recordAt ? [RECORD] : []),
+    });
+    await import('./erp-sales-document');
+    const el = document.createElement('erp-sales-document') as HTMLElement & {
+      issuing: boolean; fiscalRetryDelays: number[]; format?: 'ticket' | 'invoice'; updateComplete: Promise<unknown>;
+    };
+    el.issuing = opts.issuing ?? true;
+    if (opts.format) el.format = opts.format;
+    el.setAttribute('sale-id', 's1');
+    document.body.appendChild(el);
+    await el.updateComplete;
+    return el;
+  }
+
+  /** Lets every read that does NOT depend on the clock settle, without moving the clock. */
+  async function settle(el: HTMLElement & { updateComplete: Promise<unknown> }) {
+    for (let turn = 0; turn < 50 && lookups('invoice.by_source') < 1; turn += 1) {
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    for (let turn = 0; turn < 10; turn += 1) await vi.advanceTimersByTimeAsync(0);
+    await el.updateComplete;
+  }
+
+  const receipt = (el: HTMLElement) =>
+    (el.shadowRoot!.querySelector('ok-receipt') as (HTMLElement & { receipt: ReceiptData }) | null)?.receipt;
+  const issuingNotice = (el: HTMLElement) => el.shadowRoot!.querySelector('[data-testid="doc-issuing"]');
+
+  it('mientras la factura o su registro fiscal no han llegado, se ve la carga y NO un tique a medias', async () => {
+    const el = await montar({ invoiceAt: 1500, recordAt: 5000 });
+    await settle(el);
+    expect(issuingNotice(el), 'a loader says the ticket is being issued').toBeTruthy();
+    expect(issuingNotice(el)!.textContent, 'in the hub language, through the catalogue').toContain('ui.issuingReceipt');
+    expect(receipt(el), 'no half-built ticket on screen').toBeUndefined();
+
+    await vi.advanceTimersByTimeAsync(2500); // the invoice is there, the record is not yet
+    await el.updateComplete;
+    expect(receipt(el), 'the number alone is still a half-built ticket').toBeUndefined();
+  });
+
+  it('el caso de banco-pre: el registro llega a los ~5 s y el tique FINAL sale de una vez, con número y QR', async () => {
+    // Default backoff on purpose: the bug lived in the default (~3 s of retries).
+    const el = await montar({ invoiceAt: 2800, recordAt: 5200 });
+    await settle(el);
+    await vi.advanceTimersByTimeAsync(9000);
+    await el.updateComplete;
+    expect(issuingNotice(el), 'the loader is gone once the document is complete').toBeNull();
+    expect(receipt(el)?.number).toBe('TICKET-2026-000011');
+    expect(receipt(el)?.qr, 'the VeriFactu QR is on the ticket').toBe(RECORD.qr_url);
+  });
+
+  it('si Hacienda tarda más que la espera, el tique sale con su número y el QR se completa solo al llegar', async () => {
+    const el = await montar({ invoiceAt: 1000, recordAt: 18000 });
+    await settle(el);
+    await vi.advanceTimersByTimeAsync(11000); // past the wait
+    await el.updateComplete;
+    expect(issuingNotice(el), 'a till is never left behind a loader').toBeNull();
+    expect(receipt(el)?.number).toBe('TICKET-2026-000011');
+    expect(receipt(el)?.qr, 'no QR yet: the AEAT has not answered').toBeUndefined();
+
+    await vi.advanceTimersByTimeAsync(20000); // the record lands, the viewer is still watching
+    await el.updateComplete;
+    expect(receipt(el)?.qr, 'the QR completes the ticket on its own').toBe(RECORD.qr_url);
+  });
+
+  it('si la factura no llega en toda la espera, el tique sale con el número de la venta (sales#274) y la identidad del negocio', async () => {
+    const el = await montar({ invoiceAt: Infinity, recordAt: Infinity });
+    await settle(el);
+    await vi.advanceTimersByTimeAsync(11000);
+    await el.updateComplete;
+    expect(issuingNotice(el)).toBeNull();
+    expect(receipt(el)?.number, 'the honest identifier once the wait is over').toBe('20260913-0001');
+    expect(receipt(el)?.business.name, 'never the filler name').toBe('ERPlora Demo SL');
+  });
+
+  it('abierto desde la lista de ventas (no recién cobrado) NO hay carga: el tique se pinta como siempre', async () => {
+    const el = await montar({ invoiceAt: Infinity, recordAt: Infinity, issuing: false });
+    await settle(el);
+    expect(issuingNotice(el), 'a reprint never waits behind a loader').toBeNull();
+    expect(receipt(el), 'the ticket is painted at once').toBeTruthy();
+  });
+
+  it('la factura A4 recién emitida dice que se está emitiendo la FACTURA', async () => {
+    const el = await montar({ invoiceAt: 1500, recordAt: 5000, format: 'invoice' });
+    await settle(el);
+    expect(issuingNotice(el)!.textContent).toContain('ui.issuingInvoice');
+    expect(el.shadowRoot!.querySelector('ok-invoice'), 'no half-built invoice either').toBeNull();
+  });
+});

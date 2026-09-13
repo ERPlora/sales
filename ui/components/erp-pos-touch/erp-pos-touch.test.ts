@@ -328,6 +328,10 @@ describe('modal del documento de venta', () => {
 
     // La X de cerrar sigue existiendo (accesible), aunque ya no haya toolbar con título.
     expect(modal.querySelector('ion-button.doc-close'), 'la X de cerrar sigue presente').toBeTruthy();
+    // sales#308 — the till only opens this document right after a charge, so it tells the viewer:
+    // loader first, then the final ticket with its number and VeriFactu QR.
+    const doc = modal.querySelector('erp-sales-document') as HTMLElement & { issuing?: boolean };
+    expect(doc.issuing, 'the till opens the document of the sale it just charged').toBe(true);
   });
 });
 

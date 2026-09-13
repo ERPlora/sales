@@ -195,6 +195,8 @@
     "docDiscountTotal": "Descuento",
     "docPaymentMethod": "Forma de pago",
     "loadingDocument": "Cargando documento…",
+    "issuingReceipt": "Emitiendo el tique…",
+    "issuingInvoice": "Emitiendo la factura…",
     "noSale": "Sin venta.",
     "errorDocument": "Error cargando el documento",
     "document": "Documento",
