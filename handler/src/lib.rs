@@ -265,7 +265,9 @@ fn line_price_qty(item: &Value) -> i64 {
 /// Congela el contexto de unidades de la línea (ADR-0147 §2.4, opción A): el cálculo histórico
 /// NUNCA consulta el maestro. El factor va como fracción EXACTA num/den, nunca decimal. Sin
 /// contexto en el payload se congela la unidad suelta (`ud`, factor 1/1, precio por 1 unidad) —
-/// el caso mayoritario no configura nada.
+/// el caso mayoritario no configura nada. La ÚNICA excepción es la rejilla: esa no se inventa, sale
+/// de la cantidad que la fila guarda (ver [`frozen_increment`]), porque una fila no puede declarar
+/// un escalón del que su propia cantidad se sale.
 fn freeze_unit_context(item: &Value, qty: i64, p: &mut Map<String, Value>) {
     let unit_code = str_or(item, "unit_code", "ud");
     p.insert("unit_name".into(), json!(str_or(item, "unit_name", "")));
