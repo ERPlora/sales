@@ -198,35 +198,30 @@ fn item_i64(item: &Value, key: &str, d: i64) -> i64 {
     item.get(key).map(|v| as_qty(v, d)).unwrap_or(d)
 }
 
+/// La rejilla que la línea DECLARA (ADR-0147 §2): el incremento mínimo es una de las tres cosas que
+/// define una UNIDAD DE MEDIDA —«pieza 1 · kg 0,001 · hora 0,25»—, o sea una propiedad de la unidad,
+/// no del documento. Una línea sin contexto de unidades no declara rejilla, y `0` es «ninguna»: un
+/// cero no valida nada porque no hay escalón del que salirse.
+///
+/// Es la misma regla que aplica el TPV al otro lado del cable (`onGrid(qtyMicro, increment ?? 0)`).
+fn declared_increment(item: &Value) -> i64 {
+    let inc = item_i64(item, "increment_value", 0);
+    if inc > 0 { inc } else { 0 }
+}
+
 /// La cantidad de la línea (escala 10⁶) y su validación de rejilla (ADR-0147 §2.2).
 ///
 /// El incremento es VALIDACIÓN, no instrucción de redondeo: fuera de rejilla el comando se
 /// RECHAZA — redondear aquí modificaría calladamente lo vendido, el stock y el importe. Solo se
-/// valida si la línea declara su incremento (contexto congelado); sin contexto no se bloquea la
-/// venta (mismo criterio graceful que `inventory::increment_for_product`).
+/// valida contra la rejilla que la línea DECLARA (contexto congelado); sin contexto no hay rejilla
+/// de la que salirse, así que media ración entra (mismo criterio graceful que
+/// `inventory::increment_for_product`).
 fn line_qty(item: &Value) -> Result<i64, Refusal> {
-    line_qty_on(item, item_i64(item, "increment_value", 0))
-}
-
-/// sales#288 — the quantity of a line that MATERIALISES a row, measured against the grid that very
-/// row is about to freeze ([`frozen_increment`]).
-///
-/// `line_qty` only validates a grid the payload DECLARES, and that is right at the checkout: a
-/// counter sale materialises no order row, so there is no frozen fact to contradict, and refusing
-/// at the drawer is the worst place to bite. The two doors of an open check are the other case —
-/// they WRITE `increment_value`, defaulting it to one whole unit — so validating with a different
-/// default than the one being written is how a row ends up holding 0,001 while declaring it is sold
-/// by the unit. That row is what reaches the pass: the kitchen display read «0,001» off it and was
-/// right to.
-fn order_line_qty(item: &Value) -> Result<i64, Refusal> {
-    line_qty_on(item, frozen_increment(item))
-}
-
-fn line_qty_on(item: &Value, inc: i64) -> Result<i64, Refusal> {
     let qty = item.get("quantity").map(|v| as_qty(v, QUANTITY_SCALE)).unwrap_or(QUANTITY_SCALE);
     if qty <= 0 {
         return Err(reject("sales.quantity_not_positive", format!("quantity {qty}")));
     }
+    let inc = declared_increment(item);
     if inc > 0 && qty % inc != 0 {
         // El error nombra ambos valores para que la UI pueda decir «0,0005 kg no vale en una
         // unidad configurada en incrementos de 0,001 kg».
@@ -235,11 +230,29 @@ fn line_qty_on(item: &Value, inc: i64) -> Result<i64, Refusal> {
     Ok(qty)
 }
 
-/// El INCREMENTO que la fila congela (ADR-0147 §2.4): el de la línea, o la unidad suelta cuando no
-/// declara ninguno — misma forma que [`line_price_qty`], y un cero no es una rejilla.
-fn frozen_increment(item: &Value) -> i64 {
-    let inc = item_i64(item, "increment_value", QUANTITY_SCALE);
-    if inc > 0 { inc } else { QUANTITY_SCALE }
+/// El INCREMENTO que la fila congela (ADR-0147 §2.4), con UNA invariante que la fila no puede
+/// romper nunca:
+///
+/// ```text
+/// increment_value == 0  ||  quantity % increment_value == 0
+/// ```
+///
+/// El de la línea cuando lo declara. Cuando no declara ninguno, la unidad suelta —el caso
+/// mayoritario, que no configura nada, se vende entero— **salvo que la cantidad diga lo contrario**:
+/// ahí se congela «ninguna rejilla», porque inventar una es exactamente cómo una fila acababa
+/// diciendo «se vende entera» mientras guardaba 0,001 (sales#288) o 0,5 (sales#300).
+///
+/// 🔴 Inventarla además al VALIDAR es lo que rechazaba media ración de gambas en una línea de precio
+/// libre —la cantidad que ADR-0147 existe para representar— y lo que cazó
+/// `kitchen/tests/tickets.hub.test.py` contra el kernel real: `sales.order.open` contestando 409
+/// `sales.quantity_off_grid` con «500000 % 1000000 != 0». La rejilla sale de la unidad; si no hay
+/// unidad, no hay rejilla.
+fn frozen_increment(item: &Value, qty: i64) -> i64 {
+    let inc = declared_increment(item);
+    if inc > 0 {
+        return inc;
+    }
+    if qty % QUANTITY_SCALE == 0 { QUANTITY_SCALE } else { 0 }
 }
 
 /// La cantidad de precio de la línea (KPEIN, ADR-0147 §2.3): «X céntimos por ESTA cantidad».
@@ -252,13 +265,15 @@ fn line_price_qty(item: &Value) -> i64 {
 /// Congela el contexto de unidades de la línea (ADR-0147 §2.4, opción A): el cálculo histórico
 /// NUNCA consulta el maestro. El factor va como fracción EXACTA num/den, nunca decimal. Sin
 /// contexto en el payload se congela la unidad suelta (`ud`, factor 1/1, precio por 1 unidad) —
-/// el caso mayoritario no configura nada.
-fn freeze_unit_context(item: &Value, p: &mut Map<String, Value>) {
+/// el caso mayoritario no configura nada. La ÚNICA excepción es la rejilla: esa no se inventa, sale
+/// de la cantidad que la fila guarda (ver [`frozen_increment`]), porque una fila no puede declarar
+/// un escalón del que su propia cantidad se sale.
+fn freeze_unit_context(item: &Value, qty: i64, p: &mut Map<String, Value>) {
     let unit_code = str_or(item, "unit_code", "ud");
     p.insert("unit_name".into(), json!(str_or(item, "unit_name", "")));
     p.insert("factor_num".into(), json!(item_i64(item, "factor_num", 1)));
     p.insert("factor_den".into(), json!(item_i64(item, "factor_den", 1)));
-    p.insert("increment_value".into(), json!(frozen_increment(item)));
+    p.insert("increment_value".into(), json!(frozen_increment(item, qty)));
     p.insert("price_quantity_value".into(), json!(line_price_qty(item)));
     // Sin unidad de precio explícita, el precio es «por 1 de la unidad de la línea» — no `ud` a
     // secas: congelar `ud` en una línea de kg sería congelar una mentira.
@@ -2679,7 +2694,7 @@ fn complete_sale_inner(input: Value, rule: CapRule) -> Result<Output, Refusal> {
         p.insert("is_service".into(), json!(item.get("is_service").map(as_bool).unwrap_or(false) as i64));
         p.insert("quantity".into(), json!(qty)); // punto fijo, escala 10⁶ (INTEGER, ADR-0147)
         // Contexto de unidades CONGELADO en la línea (ADR-0147 §2.4): el histórico no relee el maestro.
-        freeze_unit_context(item, &mut p);
+        freeze_unit_context(item, qty, &mut p);
         p.insert("unit_price".into(), json!(unit_price)); // céntimos (INTEGER)
         p.insert("discount_percent".into(), json!(line_disc)); // tasa % (REAL)
         p.insert("tax_rate".into(), json!(combined_pct)); // tasa % combinada (REAL) == tax_rate_pct
@@ -3352,8 +3367,9 @@ fn order_line_row(
     };
     // Fixed point 10⁶ + refusal off the grid (ADR-0147): the order speaks the same language as the
     // sale — opening at 0.0005 kg and charging later would just move the error somewhere else.
-    // sales#288: the grid is the one THIS row freezes, never a laxer one.
-    let qty = order_line_qty(item)?;
+    // sales#300: the grid is the one the LINE DECLARES, and the row freezes that same fact (see
+    // `frozen_increment`) — never one the quantity contradicts, and never one invented here.
+    let qty = line_qty(item)?;
     let is_gift = item.get("is_gift").map(as_bool).unwrap_or(false);
     // sales#71: manual line discount (%), same range and same refusal as the checkout.
     let line_disc = item.get("discount").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
@@ -3399,7 +3415,7 @@ fn order_line_row(
     p.insert("quantity".into(), json!(qty)); // fixed point, scale 10⁶ (INTEGER, ADR-0147)
     // Unit context FROZEN (ADR-0147 §2.4): closing and reopening the order cannot change what the
     // quantity means.
-    freeze_unit_context(item, &mut p);
+    freeze_unit_context(item, qty, &mut p);
     p.insert("unit_price".into(), json!(unit_price)); // minor units (INTEGER), from the CATALOGUE
     p.insert("is_gift".into(), json!(is_gift as i64));
     p.insert("gift_reason".into(), json!(if is_gift { str_or(item, "gift_reason", "") } else { String::new() }));
@@ -3810,7 +3826,7 @@ fn split_clone_row(
     p.insert("product_name".into(), json!(field(row, "product_name")));
     p.insert("product_sku".into(), json!(field(row, "product_sku")));
     p.insert("quantity".into(), json!(QUANTITY_SCALE));
-    freeze_unit_context(row, &mut p);
+    freeze_unit_context(row, QUANTITY_SCALE, &mut p);
     p.insert("unit_price".into(), json!(as_cents(row.get("unit_price").unwrap_or(&Value::Null), 0)));
     p.insert("is_gift".into(), json!(0));
     p.insert("gift_reason".into(), json!(""));
@@ -10012,15 +10028,24 @@ mod tests {
     }
 
     #[test]
-    fn a_quantity_off_the_grid_the_row_itself_will_freeze_is_refused() {
-        // 1 000 µ = 0,001 ud. With no unit context the row freezes `increment_value` at one whole
-        // unit (ADR-0147 §2.4), so this quantity is off ITS OWN grid. Refusing is the same answer
-        // the grid already gives when the context IS declared — rounding it to 1 would silently
-        // change what was ordered, what is cooked and what is charged.
+    fn a_quantity_the_row_cannot_call_whole_freezes_no_grid_instead_of_being_refused() {
+        // ⚠️ This was `a_quantity_off_the_grid_the_row_itself_will_freeze_is_refused` (sales#288),
+        // and its assertion was objectively wrong, not merely inconvenient: it made the server
+        // INVENT a one-whole-unit grid for a line that declares no unit of measure, and ADR-0147 §2
+        // puts the minimum increment inside the UNIT («pieza 1 · kg 0,001 · hora 0,25»). No unit,
+        // no grid, nothing to be off — which is also the rule the till applies on its side
+        // (`onGrid(qtyMicro, increment ?? 0)`). The invented grid refused half a portion as well,
+        // and that is what went red against the real kernel (sales#300,
+        // `kitchen/tests/tickets.hub.test.py`).
+        //
+        // The half of sales#288 that was right is kept, and is what this pins now: the row must
+        // never declare a grid its own quantity is off.
         let mut inp = add_line_input(named_burger_catalog(), open_order_row());
         inp["payload"]["quantity"] = json!(1_000);
-        let err = add_order_line_pure(inp).refused("0,001 burgers is not an order");
-        assert_eq!(err.code, "sales.quantity_off_grid", "unexpected code: {err:?}");
+        let row = &order_lines(&add_order_line_pure(inp).accepted("the line goes in"))[0];
+        assert_eq!(row["quantity"], json!(1_000));
+        assert_eq!(row["increment_value"], json!(0),
+                   "the row declared «sold by the unit» while holding 0,001 of one");
     }
 
     #[test]
@@ -10040,19 +10065,110 @@ mod tests {
     #[test]
     fn a_zero_increment_is_not_a_grid_and_the_row_says_so() {
         // A caller can send `increment_value: 0`, and a zero cannot be a step: every quantity is a
-        // multiple of it. It used to be written onto the row AS a zero — a grid nothing is off —
-        // while a line that simply omitted the field froze one whole unit. One fact, one answer:
-        // no usable increment means the unit is sold whole, at both ends.
+        // multiple of it. It is read as «declares no grid», exactly like omitting the field — one
+        // fact, one answer at both ends. It refuses nothing, and the row freezes the whole unit
+        // only when the quantity is actually on it.
         let mut inp = add_line_input(named_burger_catalog(), open_order_row());
         inp["payload"]["quantity"] = json!(1_000);
         inp["payload"]["increment_value"] = json!(0);
-        let err = add_order_line_pure(inp).refused("a zero is not a grid to hide behind");
-        assert_eq!(err.code, "sales.quantity_off_grid", "unexpected code: {err:?}");
+        let row = &order_lines(&add_order_line_pure(inp).accepted("a zero refuses nothing"))[0];
+        assert_eq!(row["increment_value"], json!(0), "the row froze a grid 0,001 is off");
 
         let mut ok = add_line_input(named_burger_catalog(), open_order_row());
         ok["payload"]["increment_value"] = json!(0);
         let row = &order_lines(&add_order_line_pure(ok).accepted("one whole burger goes in"))[0];
-        assert_eq!(row["increment_value"], json!(1_000_000), "the row froze a grid nothing is off");
+        assert_eq!(row["increment_value"], json!(1_000_000),
+                   "a whole unit is sold whole, and that is the frozen fact every row carries");
+    }
+
+    // ── sales#300 · THE GRID BELONGS TO THE UNIT, and a row never contradicts itself ───────────
+    //
+    // ADR-0147 §2 puts the minimum increment where it belongs: it is one of the three things a UNIT
+    // OF MEASURE defines («pieza 1 · kg 0,001 · hora 0,25»), a business rule of the unit — not of
+    // the document, and not a default the server may invent. A line that declares no unit therefore
+    // declares NO grid, and nothing can be off a grid that does not exist. That is also what the
+    // till itself enforces on the other side of the wire: `onGrid(qtyMicro, ex.increment_value ?? 0)`
+    // in `ui/lib` — no context, no grid.
+    //
+    // sales#288 read it the other way round for the two doors that materialise an order row: they
+    // measured the quantity against `frozen_increment`, which invented ONE WHOLE UNIT when the line
+    // declared nothing. That refuses half a portion on any line with no unit behind it — «media
+    // ración de gambas», the very quantity ADR-0147 exists to represent — and it is what
+    // `kitchen/tests/tickets.hub.test.py` caught against the real kernel: `sales.order.open`
+    // answering 409 `sales.quantity_off_grid` with «500000 % 1000000 != 0».
+    //
+    // What sales#288 was right about is the OTHER half: a row must never declare a grid its own
+    // quantity is off (`quantity = 1 000` while freezing `increment_value = 1 000 000`). That is
+    // fixed where the contradiction is — in what the row FREEZES — instead of by refusing the
+    // quantity. The invariant these tests pin, at every door:
+    //
+    //     increment_value == 0  ||  quantity % increment_value == 0
+
+    /// Opening a check with ONE free-price line: no catalogue article, no unit context — exactly
+    /// what `kitchen`'s battery fires at the kernel, and what the till sends for a department sale.
+    fn open_free_line(quantity: i64) -> Value {
+        input(json!([{ "product_name": "Gambas", "price": 2400, "quantity": quantity }]), 3, 0)
+    }
+
+    #[test]
+    fn half_a_portion_opens_a_check_on_a_line_that_declares_no_unit() {
+        let out = open_order_pure(open_free_line(500_000)).accepted("half a portion goes in");
+        assert_eq!(order_lines(&out)[0]["quantity"], json!(500_000),
+                   "half a kilo of shrimp is a real quantity in a bar (kitchen#5)");
+    }
+
+    #[test]
+    fn half_a_portion_goes_into_an_open_check_too() {
+        // The other door of the same check: every fix on this row has had to be made twice.
+        let mut inp = add_line_input(named_burger_catalog(), open_order_row());
+        inp["payload"]["product_id"] = Value::Null;
+        inp["payload"]["product_name"] = json!("Gambas");
+        inp["payload"]["quantity"] = json!(500_000);
+        let out = add_order_line_pure(inp).accepted("half a portion goes in");
+        assert_eq!(order_lines(&out)[0]["quantity"], json!(500_000));
+    }
+
+    #[test]
+    fn a_row_never_freezes_a_grid_its_own_quantity_is_off() {
+        // The half portion freezes NO grid — inventing the whole unit here is what made the row
+        // say «sold whole» while holding 0,5, and what then refuses the waiter editing it.
+        let half = open_order_pure(open_free_line(500_000)).accepted("half a portion goes in");
+        assert_eq!(order_lines(&half)[0]["increment_value"], json!(0),
+                   "a line that declares no unit declares no grid");
+
+        // And the ordinary line is untouched: two whole portions still freeze the whole unit, which
+        // is the frozen fact every row written before this change already carries.
+        let whole = open_order_pure(open_free_line(2_000_000)).accepted("two portions go in");
+        assert_eq!(order_lines(&whole)[0]["increment_value"], json!(1_000_000));
+    }
+
+    #[test]
+    fn a_quantity_off_the_grid_the_line_declares_is_still_refused() {
+        // The grid still bites where ADR-0147 §2.2 says it must: the line CARRIES its unit context
+        // (0,001 kg, frozen from the unit registry) and 0,0005 kg is off it. Rounding would quietly
+        // change what is sold, cooked, charged and stocked.
+        let mut inp = add_line_input(named_burger_catalog(), open_order_row());
+        inp["payload"]["quantity"] = json!(500);
+        inp["payload"]["unit_code"] = json!("kg");
+        inp["payload"]["increment_value"] = json!(1_000);
+        let err = add_order_line_pure(inp).refused("0,0005 kg is off a 0,001 kg grid");
+        assert_eq!(err.code, "sales.quantity_off_grid", "unexpected code: {err:?}");
+    }
+
+    #[test]
+    fn the_counter_sale_freezes_a_grid_its_own_quantity_is_on() {
+        // sales#300: the checkout was left out of sales#288 on purpose, so its row kept the
+        // contradiction — 0,5 frozen as «sold whole». It is closed from the freezing side, which is
+        // the one that was lying; nothing new bites at the drawer with the card already in hand.
+        let items = json!([{ "product_name": "Gambas", "price": 2400, "quantity": 500_000,
+                             "tax_category_key": "product.generic" }]);
+        let out = complete_sale_pure(input_fiscal(items, json!([]), tax_catalog()))
+            .accepted("the counter sale goes through");
+        let line = &out.operations.iter()
+            .find(|o| o.command == "sales._insert_line").expect("the sale line").params;
+        assert_eq!(line["quantity"], json!(500_000));
+        assert_eq!(line["increment_value"], json!(0),
+                   "the row declared «sold by the unit» while holding half of one");
     }
 
     // ── sales#242 / ADR-0422 · «Corte × 2» becomes two lines of one ────────────────────────────
