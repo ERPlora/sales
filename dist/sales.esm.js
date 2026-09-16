@@ -7751,7 +7751,11 @@ var ErpPosTouch = class extends i3 {
     }
     *, *::before, *::after { box-sizing:border-box; }
 
-    .card { height:100%; display:flex; flex-direction:column; overflow:hidden; background:var(--bg);
+    /* position:relative is load-bearing (sales#314): .card is the box the SHELL laid this module
+       out in -- everything between its topbar and its module tab bar -- and it is what every sheet
+       is anchored to. Without it the position:absolute of .scrim walks out of the module and lands
+       on the viewport again, which is the defect itself. */
+    .card { position:relative; height:100%; display:flex; flex-direction:column; overflow:hidden; background:var(--bg);
       border:1px solid var(--ion-border-color); border-radius:16px; }
     /* sales#178 - grid-template-rows is the load-bearing half of the fix. .body holds ONE row and
        an implicit auto row is sized by its CONTENT: its base size is .catalog's min-content, which
@@ -8164,12 +8168,20 @@ var ErpPosTouch = class extends i3 {
     .dept-btn .dn { font-size:1rem; }
     .dept-btn .dr { font-size:.8rem; opacity:.7; }
     .dept-empty { grid-column:1/-1; opacity:.6; font-size:.85rem; padding:.5rem; }
-    .scrim { position:fixed; inset:0; background:var(--ok-scrim, rgba(0,0,0,.6)); display:flex; align-items:center; justify-content:center; z-index:70; }
+    /* sales#314 - ABSOLUTE, not fixed. A module does not own the viewport: the shell mounts it
+       inside an ion-content (AppPage, fullscreen=false), so its box ends where the module tab bar
+       begins. While the scrim was fixed, the sheet was centred over the WHOLE screen and its foot
+       -- the CHARGE button -- was laid on top of that tab bar, which ate the tap and switched tab:
+       the cashier could not charge. No z-index could win it, because the tab bar is not in this
+       shadow tree. Anchored to .card the sheet cannot reach the tab bar on any device, whatever the
+       safe-area inset is -- and a px number here would only ever be right on one of them.
+       The padding is the breathing room the old 88vh cap used to leave. */
+    .scrim { position:absolute; inset:0; padding:1rem; background:var(--ok-scrim, rgba(0,0,0,.6)); display:flex; align-items:center; justify-content:center; z-index:70; }
     /* Columna flex: el importe y el botón de cobrar NO se mueven; solo scrollea el centro. Antes
        el sheet entero scrolleaba y el botón principal quedaba fuera de pantalla — la acción más
        importante del TPV no puede exigir scroll. */
     .sheet { background:var(--panel); color:var(--tx); border:1px solid var(--ion-border-color);
-      border-radius:var(--ok-radius-lg,16px); width:min(92vw,24rem); max-height:88vh; display:flex; flex-direction:column;
+      border-radius:var(--ok-radius-lg,16px); width:min(92vw,24rem); max-height:100%; display:flex; flex-direction:column;
       overflow:hidden; box-shadow:var(--ok-shadow-modal, 0 12px 48px rgba(0,0,0,.6)); }
     .sheet-h, .sheet-top, .sheet-foot { flex:none; padding:0 1rem; }
     .sheet-h { padding-top:1rem; }
