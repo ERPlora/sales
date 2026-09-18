@@ -9258,7 +9258,7 @@ var ErpPosTouch = class extends i3 {
    *  fuente de verdad fiscal para las dos puertas. */
   async seedFromAppointment(appointmentId, services) {
     if (this.appointmentId && this.appointmentId === appointmentId) return;
-    const rowsIn = await optionalRead((c5) => c5.queryOptional("appointments.appointments.get", { id: appointmentId }));
+    const rowsIn = await optionalRead((c5) => c5.queryOptional("appointments.appointments.get", { appointment_id: appointmentId }));
     if (rowsIn === void 0) return;
     const ap = rows2(rowsIn)[0];
     if (!ap) return;
@@ -9314,7 +9314,7 @@ var ErpPosTouch = class extends i3 {
   async adoptCheckAppointment(appointmentId) {
     this.appointmentId = appointmentId;
     if (!appointmentId) return;
-    const rowsIn = await optionalRead((c5) => c5.queryOptional("appointments.appointments.get", { id: appointmentId }));
+    const rowsIn = await optionalRead((c5) => c5.queryOptional("appointments.appointments.get", { appointment_id: appointmentId }));
     if (rowsIn === void 0) return;
     const ap = rows2(rowsIn)[0];
     if (!ap) return;
