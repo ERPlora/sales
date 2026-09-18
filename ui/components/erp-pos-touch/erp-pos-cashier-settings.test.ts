@@ -154,9 +154,9 @@ async function mount(): Promise<Pos> {
 /** Picks the customer the way the counter really does: the `sales.pos.assign` filler emits its
  *  context (ADR-0043). `CONFIGURED` requires one, and since sales#222 the charge does not even
  *  open without it — so every scenario that reaches the pay sheet has to choose one. */
-async function chooseCustomer(pos: Pos) {
+async function chooseCustomer(pos: Pos, fiscal = { customer_tax_id: '', customer_address: '' }) {
   pos.dispatchEvent(new CustomEvent('erp:customer-context', {
-    detail: { customer_id: 'cus-1', customer_name: 'Ana', customer_tax_id: '', customer_address: '' },
+    detail: { customer_id: 'cus-1', customer_name: 'Ana', ...fiscal },
     bubbles: false,
   }));
   await pos.updateComplete;
@@ -214,7 +214,9 @@ describe('the counter honours the shop policy for a CASHIER, not only for an adm
 
   it('default_tax_included = 0 travels to the server on the checkout', async () => {
     await forBothRoles(async (pos, role) => {
-      await chooseCustomer(pos);
+      // The policy opens the charge on an INVOICE, and an invoice needs its recipient (sales#317):
+      // the customer carries a complete fiscal file, as a shop that invoices by default has.
+      await chooseCustomer(pos, { customer_tax_id: '12345678Z', customer_address: 'C/ Mayor 1' });
       await pos.openPay();
       await pos.updateComplete;
       await pos.confirm();
