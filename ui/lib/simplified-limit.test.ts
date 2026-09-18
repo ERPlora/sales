@@ -122,3 +122,47 @@ describe('el techo de la simplificada en el mostrador (hub#297)', () => {
     });
   });
 });
+
+// sales#317 — «Factura» is a promise about the paper, and it has to be kept BELOW the ceiling too.
+// Before: the cashier picked «Factura» on a 51,90 € sale with no customer, the till charged without
+// asking anything, the screen handed over a «FACTURA» made out to «Cliente» — and VeriFactu filed it
+// as an F2, because `resolve_invoice_type` downgrades an F1 with no recipient. Paper and record
+// disagreed. The market (Holded, Odoo POS, Square ES) asks for the customer the moment an invoice
+// is requested; without the data the only valid document is the ticket.
+describe('«Factura» por debajo del techo también pide destinatario (sales#317)', () => {
+  it('🔴 elegir «factura» sin cliente bloquea el cobro aunque el importe sea pequeño', () => {
+    expect(ticketIsBlocked(state({ payableCents: 5_190, documentFormat: 'invoice' }))).toBe(true);
+  });
+
+  it('con NIF pero sin domicilio sigue bloqueado: es el mismo destinatario que pide el techo', () => {
+    expect(
+      ticketIsBlocked(
+        state({ payableCents: 5_190, documentFormat: 'invoice', customerName: 'Ana', customerTaxId: '12345678Z' }),
+      ),
+    ).toBe(true);
+  });
+
+  it('con el destinatario completo se cobra como factura', () => {
+    expect(
+      ticketIsBlocked(
+        state({
+          payableCents: 5_190,
+          documentFormat: 'invoice',
+          customerName: 'Ana López',
+          customerTaxId: '12345678Z',
+          customerAddress: 'C/ Mayor 1, Madrid',
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it('en un país sin techo, una factura sigue necesitando a quién se hace', () => {
+    // The ceiling is Spanish; the recipient of a complete invoice is not (Directive 2006/112/EC
+    // art. 226). A country with no ceiling row still cannot issue an invoice to nobody.
+    expect(ticketIsBlocked(state({ payableCents: 5_190, maxCents: null, documentFormat: 'invoice' }))).toBe(true);
+  });
+
+  it('el tique normal, sin cliente, se cobra como siempre', () => {
+    expect(ticketIsBlocked(state({ payableCents: 5_190, documentFormat: 'ticket' }))).toBe(false);
+  });
+});
