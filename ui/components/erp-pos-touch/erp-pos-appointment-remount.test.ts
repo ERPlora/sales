@@ -80,7 +80,7 @@ function installSdk(): void {
     rules: RULES,
     services: SERVICES,
     serviceCategories: [],
-    appointment: (params) => (params?.id === BOOKING.id ? [BOOKING] : []),
+    appointment: [BOOKING],
     orders: () => orders,
     orderLines: (params) => lines.filter((l) => l.order_id === params?.order_id),
     command: async (name: string, params?: Record<string, unknown>) => {

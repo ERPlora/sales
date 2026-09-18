@@ -106,6 +106,45 @@ describe('2 · what an app that IS installed answers, and what a missing one ans
   });
 });
 
+describe('2b · another app\'s POINT read answers through the bind ITS query declares (sales#316)', () => {
+  // `appointments/queries/appointment_get.sql` ends in `AND a.id = :appointment_id`. The runtime
+  // binds by NAME and a param the SQL never mentions is dropped without a word, so asking with
+  // `{ id }` leaves `:appointment_id` NULL and the read answers `[]` — a 200 that looks like «no such
+  // booking». A double that handed the rows over whatever it was asked is how the till shipped
+  // exactly that twice (appointments#154, sales#316).
+  const BOOKING = { id: 'ap-1', service_name: 'Corte de señora' };
+
+  it('hands the booking back when asked by `appointment_id`', async () => {
+    installPosDouble({ appointment: [BOOKING] });
+
+    expect(await sdk().queryOptional('appointments.appointments.get', { appointment_id: 'ap-1' }))
+      .toEqual([BOOKING]);
+  });
+
+  it('answers NO row when asked by a name the agenda\'s query does not bind', async () => {
+    installPosDouble({ appointment: [BOOKING] });
+
+    expect(await sdk().queryOptional('appointments.appointments.get', { id: 'ap-1' })).toEqual([]);
+  });
+
+  it('answers no row for another booking\'s id', async () => {
+    installPosDouble({ appointment: [BOOKING] });
+
+    expect(await sdk().queryOptional('appointments.appointments.get', { appointment_id: 'ap-2' }))
+      .toEqual([]);
+  });
+
+  it('every call the till makes to it passes `appointment_id` and nothing else', () => {
+    const text = readFileSync(join(import.meta.dirname, '..', 'components', 'erp-pos-touch', 'erp-pos-touch.ts'), 'utf8');
+    const calls = [...text.matchAll(/'appointments\.appointments\.get'\s*,\s*\{([^}]*)\}/g)]
+      .map((m) => m[1].split(',').map((p) => p.split(':')[0].trim()).filter(Boolean));
+
+    expect(calls.length, 'the till reads the booking when it opens from «Cobrar» and when it '
+      + 'recovers a check that carries one').toBeGreaterThanOrEqual(2);
+    for (const keys of calls) expect(keys).toEqual(['appointment_id']);
+  });
+});
+
 describe('3 · the settings row, which is a row and not a list', () => {
   it('hands back the row the test wrote, wrapped the way `sales.pos_settings.get` answers', async () => {
     installPosDouble({ settings: { require_customer: 1 } });

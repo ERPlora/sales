@@ -2563,7 +2563,9 @@ export class ErpPosTouch extends LitElement {
     // twice on the same booking would otherwise put the haircut on the ticket twice. The id is
     // cleared when the sale completes, so the next check starts fresh.
     if (this.appointmentId && this.appointmentId === appointmentId) return;
-    const rowsIn = await optionalRead((c) => c.queryOptional<unknown>('appointments.appointments.get', { id: appointmentId }));
+    // sales#316 — the agenda's SQL binds `:appointment_id`. The runtime drops a param the query does
+    // not name, so `{ id }` answered `[]` without an error and «Cobrar» opened an empty ticket.
+    const rowsIn = await optionalRead((c) => c.queryOptional<unknown>('appointments.appointments.get', { appointment_id: appointmentId }));
     if (rowsIn === undefined) return; // módulo ausente: TPV vacío, sin ruido
     const ap = rows<AppointmentRow>(rowsIn)[0];
     if (!ap) return;
@@ -2629,7 +2631,7 @@ export class ErpPosTouch extends LitElement {
   private async adoptCheckAppointment(appointmentId?: string): Promise<void> {
     this.appointmentId = appointmentId;
     if (!appointmentId) return;
-    const rowsIn = await optionalRead((c) => c.queryOptional<unknown>('appointments.appointments.get', { id: appointmentId }));
+    const rowsIn = await optionalRead((c) => c.queryOptional<unknown>('appointments.appointments.get', { appointment_id: appointmentId }));
     if (rowsIn === undefined) return; // sin el módulo: el id viaja igual y no hay nada que repintar
     const ap = rows<AppointmentRow>(rowsIn)[0];
     if (!ap) return;
