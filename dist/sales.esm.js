@@ -4526,6 +4526,7 @@ var es_default = {
     staffPickerEmpty: "Este hub no tiene a nadie m\xE1s para atender. Da de alta personal en Ajustes.",
     staffLoading: "Cargando el equipo\u2026",
     staffLoadFailed: "No se ha podido cargar el equipo. La venta se sigue atribuyendo a quien tenga la sesi\xF3n.",
+    staffTeamLoadFailed: "No se ha podido cargar el equipo de la app Personal: solo aparecen las personas que entran en la app.",
     lineStaffPickerTitle: "De qui\xE9n es esta l\xEDnea",
     lineStaffPickerHint: "Solo se mueve esta l\xEDnea. El cierre del d\xEDa y la comisi\xF3n salen de aqu\xED, as\xED que es la que tiene que estar bien. El chip de arriba sigue decidiendo a qui\xE9n va la SIGUIENTE l\xEDnea.",
     lineStaffTicketOption: "El profesional de la cuenta",
@@ -5094,6 +5095,7 @@ var en_default = {
     staffPickerEmpty: "This hub has nobody else to serve. Add staff from Settings.",
     staffLoading: "Loading the team\u2026",
     staffLoadFailed: "The team could not be loaded. The sale is still attributed to whoever is signed in.",
+    staffTeamLoadFailed: "The Staff app's team could not be loaded, so only the people who sign in are listed.",
     lineStaffPickerTitle: "Whose line is this",
     lineStaffPickerHint: "Only this line moves. The day's close and the commission are worked out from it, so it is the one that has to be right. The chip at the top keeps deciding who the NEXT line goes to.",
     lineStaffTicketOption: "The check's professional",
@@ -7308,6 +7310,20 @@ var MediaPhotoCache = class {
 
 // ui/components/erp-pos-touch/erp-pos-touch.ts
 var CATALOG2 = { es: es_default, en: en_default };
+var TEAM_NOT_SERVING = /* @__PURE__ */ new Set(["terminated", "inactive"]);
+function teamMemberName(m4) {
+  return (m4.full_name || `${m4.first_name ?? ""} ${m4.last_name ?? ""}`).trim();
+}
+function composeStaffOptions(people, team) {
+  const serving = team.filter((m4) => !!m4.id && !TEAM_NOT_SERVING.has(m4.status ?? "") && !!teamMemberName(m4)).sort((a3, b3) => (Number(a3.order) || 0) - (Number(b3.order) || 0) || teamMemberName(a3).localeCompare(teamMemberName(b3)));
+  const members = serving.map((m4) => ({
+    id: m4.id,
+    name: teamMemberName(m4),
+    ...m4.user_id ? { userId: m4.user_id } : {}
+  }));
+  const folded = new Set(members.map((o9) => o9.userId).filter((id) => !!id));
+  return [...members, ...people.filter((u5) => !folded.has(u5.id)).map((u5) => ({ id: u5.id, name: u5.name }))];
+}
 var CLOSED_PRICING = /* @__PURE__ */ new Set(["fixed", "free", ""]);
 var keypadId = (key) => key === "." ? "dot" : key === "C" ? "clear" : key;
 function deptDisplayName(c5) {
@@ -7470,7 +7486,8 @@ var ErpPosTouch = class extends i3 {
     this.simplifiedMaxCents = null;
     this.staffName = "";
     this.staffPickerOpen = false;
-    this.hubUsers = [];
+    this.staffOptions = [];
+    this.teamFailed = false;
     this.staffNames = /* @__PURE__ */ new Map();
     this.staffPickerState = "idle";
     this.prodCats = /* @__PURE__ */ new Map();
@@ -9160,7 +9177,7 @@ var ErpPosTouch = class extends i3 {
       this.tableLabel,
       pendientes,
       nextRoundNo(this.cart),
-      this.staffId,
+      this.waiterId,
       priority
     );
     if (!payload) return;
@@ -9322,31 +9339,37 @@ var ErpPosTouch = class extends i3 {
    *  Toast, Square for Restaurants and Lightspeed do: the waiter is pinned to the check and can be
    *  TRANSFERRED — whoever takes the table is not always the one at the terminal.
    *
-   *  The list comes from `hub.users.list`, the core's RESERVED namespace (ADR-0192): personnel
-   *  belongs to the hub, not to the `staff` module. It is asked for when the picker OPENS, not at
-   *  boot: the till already makes plenty of calls there, and this one is only needed if somebody is
-   *  about to change the waiter. */
+   *  Two lists feed it (sales#318). `hub.users.list`, the core's RESERVED namespace (ADR-0192):
+   *  the people who SIGN IN. And the `staff` app's team, read as an OPTIONAL capability (ADR-0127):
+   *  the professionals the agenda books, most of whom never sign in — without them a salon could
+   *  only ever charge a walk-in to the owner. A bar with no `staff` app keeps the till it had.
+   *  Both are asked for when the picker OPENS, not at boot: the till already makes plenty of calls
+   *  there, and these are only needed if somebody is about to change who serves. */
   async openStaffPicker(lineId) {
     this.staffPickerLine = lineId;
     this.staffPickerOpen = true;
-    await this.ensureHubUsers();
+    await this.ensureStaffOptions();
   }
-  /** The hub's people, asked for ONCE. Idempotent on purpose: it is now called from two places —
+  /** The people and the team, asked for ONCE. Idempotent on purpose: it is called from two places —
    *  the picker opening and a cart that needs to NAME the professional of a line (sales#277) — and
-   *  a till that re-asked on every render would hammer the core all day. */
-  async ensureHubUsers() {
-    if (this.staffPickerState === "ready" || this.staffPickerState === "loading") return;
+   *  a till that re-asked on every render would hammer the core all day. A read that FAILED is
+   *  asked again next time; the one that answered is not re-read on its own. */
+  async ensureStaffOptions() {
+    if (this.staffPickerState === "loading") return;
+    if (this.staffPickerState === "ready" && !this.teamFailed) return;
     this.staffPickerState = "loading";
-    try {
-      const rowsIn = await erplora2().query("hub.users.list");
-      const all = rows2(rowsIn).filter((u5) => !!u5.id);
-      all.forEach((u5) => this.rememberStaffName(u5.id, u5.name));
-      this.hubUsers = all.filter((u5) => u5.is_active !== false);
-      this.staffPickerState = "ready";
-    } catch {
-      this.hubUsers = [];
-      this.staffPickerState = "error";
-    }
+    const [people, team] = await Promise.all([
+      erplora2().query("hub.users.list").then((r6) => rows2(r6).filter((u5) => !!u5.id)).catch(() => void 0),
+      optionalCatalogRead(
+        (c5) => c5.queryAllOptional("staff.members.list"),
+        (c5) => c5.queryOptional("staff.members.list", { limit: LEGACY_PAGE_LIMIT })
+      )
+    ]);
+    (people ?? []).forEach((u5) => this.rememberStaffName(u5.id, u5.name));
+    team.rows.forEach((m4) => this.rememberStaffName(m4.id, teamMemberName(m4)));
+    this.staffOptions = composeStaffOptions((people ?? []).filter((u5) => u5.is_active !== false), team.rows);
+    this.teamFailed = team.broken;
+    this.staffPickerState = people ? "ready" : "error";
   }
   /** Learns a name for an opaque id, wherever it came from (the team, the picker, the originating
    *  appointment). A new Map because Lit compares by reference: mutating it would paint nothing. */
@@ -9396,6 +9419,20 @@ var ErpPosTouch = class extends i3 {
    *  is already true instead of the check's. */
   get pickerLineStaffId() {
     return this.cart.find((l3) => l3.line_id === this.staffPickerLine)?.staff_id;
+  }
+  /** Is `id` — what a check or a line is charged to — this row of the picker? Either of the
+   *  person's two ids ticks it (sales#318): a line rung under her hub user and one booked to her
+   *  record are the same professional. */
+  servesAs(option, id) {
+    return !!id && (id === option.id || id === option.userId);
+  }
+  /** Who the KITCHEN is told is serving the check (sales#318). The sale and its lines go to the
+   *  professional's team record; the ticket goes to the hub user behind it whenever there is one,
+   *  because the pass names `waiter_id` through `hub.users.list` (kitchen#63) and a team record is
+   *  not in it — her name would go blank on every ticket. A record nobody signs in with has no
+   *  other id to send. */
+  get waiterId() {
+    return this.staffOptions.find((o9) => o9.id === this.staffId)?.userId ?? this.staffId;
   }
   /** What a cart row says about its professional, or '' when it says nothing.
    *
@@ -10132,7 +10169,7 @@ var ErpPosTouch = class extends i3 {
       this.ticketDiscountAmount = 0;
     }
     if (changed.has("cart") && this.cart.some((l3) => l3.staff_id && !this.staffNames.has(l3.staff_id))) {
-      void this.ensureHubUsers();
+      void this.ensureStaffOptions();
     }
   }
   /** El teclado. Tras traer una pata a editar el importe queda CEBADO: la siguiente tecla lo
@@ -11871,10 +11908,11 @@ var ErpPosTouch = class extends i3 {
             </button>
             ${this.staffPickerState === "loading" ? b2`<p class="staff-note" data-testid="pos-staff-loading">${t5("ui.staffLoading")}</p>` : A}
             ${this.staffPickerState === "error" ? b2`<p class="staff-note" data-testid="pos-staff-error">${t5("ui.staffLoadFailed")}</p>` : A}
-            ${this.staffPickerState === "ready" && !this.hubUsers.length ? b2`<p class="staff-note" data-testid="pos-staff-empty">${t5("ui.staffPickerEmpty")}</p>` : A}
-            ${this.hubUsers.map((u5) => b2`
+            ${this.teamFailed ? b2`<p class="staff-note" data-testid="pos-staff-team-error">${t5("ui.staffTeamLoadFailed")}</p>` : A}
+            ${this.staffPickerState === "ready" && !this.teamFailed && !this.staffOptions.length ? b2`<p class="staff-note" data-testid="pos-staff-empty">${t5("ui.staffPickerEmpty")}</p>` : A}
+            ${this.staffOptions.map((u5) => b2`
               <button class="staff-opt" type="button" data-testid="pos-staff-option"
-                      ?data-current=${(this.staffPickerLine ? this.pickerLineStaffId : this.staffId) === u5.id}
+                      ?data-current=${this.servesAs(u5, this.staffPickerLine ? this.pickerLineStaffId : this.staffId)}
                       @click=${() => this.pickStaff(u5)}>
                 ${u5.name}
               </button>`)}
@@ -12188,7 +12226,10 @@ __decorateClass([
 ], ErpPosTouch.prototype, "staffPickerLine", 2);
 __decorateClass([
   r5()
-], ErpPosTouch.prototype, "hubUsers", 2);
+], ErpPosTouch.prototype, "staffOptions", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "teamFailed", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "staffNames", 2);
