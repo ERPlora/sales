@@ -96,17 +96,20 @@ export function recipientIsComplete(recipient: Recipient): boolean {
 /**
  * May this sale NOT be closed as it stands?
  *
- * Above the ceiling the only acceptable outcome is a real F1, and that takes **both** halves:
+ * Two rules, and the second one does not depend on the amount:
  *
- * 1. `documentFormat === 'invoice'`, because `resolve_invoice_type` in the hub only ever
- *    **downgrades** — it turns an F1 with no recipient into an F2, and never the other way round.
- *    A sale marked `ticket` is an F2 no matter how complete the customer's file is.
- * 2. A complete recipient, because an `invoice` with no NIF is downgraded straight back to F2 by
- *    that same function (error 1189), with the chain number already spent.
+ * 1. **Above the ceiling** a ticket is not an option — the only acceptable outcome is a real F1,
+ *    and `resolve_invoice_type` in the hub only ever **downgrades**: a sale marked `ticket` is an F2
+ *    no matter how complete the customer's file is.
+ * 2. **An invoice needs a recipient, at any amount** (sales#317). An `invoice` with no NIF is
+ *    downgraded straight back to F2 by that same function, with the chain number already spent —
+ *    while the screen hands over a «FACTURA» made out to nobody. Paper and tax record disagree.
+ *    Holded, Odoo POS and Square ES all ask for the customer as soon as an invoice is requested.
  *
- * Either half alone looks like it should work and does not, which is why both are tested.
+ * So: an `invoice` is blocked until the recipient is complete, and a `ticket` only above the
+ * ceiling. Either half alone looks like it should work and does not, which is why both are tested.
  */
 export function ticketIsBlocked(state: SimplifiedLimitState): boolean {
-  if (!isOverSimplifiedLimit(state.payableCents, state.maxCents)) return false;
-  return !(state.documentFormat === 'invoice' && recipientIsComplete(state));
+  if (state.documentFormat === 'invoice') return !recipientIsComplete(state);
+  return isOverSimplifiedLimit(state.payableCents, state.maxCents);
 }

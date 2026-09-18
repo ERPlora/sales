@@ -4087,14 +4087,15 @@ export class ErpPosTouch extends LitElement {
    *  recibir `sale.completed` (ajuste `auto_print_on_sale`). El toggle de la pantalla de cobro
    *  refleja esa preferencia; el diálogo del navegador solo aparece como respaldo manual. */
   private async confirm(_print = false) {
-    // hub#297 — la ÚLTIMA puerta antes de gastar un número de la cadena. El sheet ya deshabilita el
-    // botón, pero esto no es una duplicación decorativa: a `confirm` se llega también por atajo, sin
-    // pasar por `openPay`, y una guarda que solo vive en el `?disabled` de un botón es una guarda
-    // que se salta el primer camino que no pinte ese botón.
+    // hub#297 + sales#317 — the LAST door before a number of the chain is spent: above the ceiling
+    // a ticket is not allowed, and an invoice needs its recipient at any amount. The sheet already
+    // blocks the button, but this is no decorative duplicate: `confirm` is also reached by
+    // shortcut, without `openPay`, and a guard that only lives in a button is skipped by the first
+    // path that does not paint that button.
     //
-    // Se para ANTES de `busy = true`: no hay nada en vuelo que cancelar, solo una pregunta que
-    // hacer. Y NO es un error — el cobro no ha fallado, le falta un dato —, así que no se escribe
-    // en `this.error`: el sheet ya explica arriba por qué esto no puede salir como tique.
+    // It stops BEFORE `busy = true`: nothing is in flight, there is only a question to ask. And it
+    // is NOT an error — the charge did not fail, it is missing data —, so nothing goes into
+    // `this.error`: the recipient capture in the sheet already says what is missing and why.
     if (this.chargeBlocked) {
       this.docFormat = 'invoice';
       this.paying = true;
@@ -4463,26 +4464,31 @@ export class ErpPosTouch extends LitElement {
     </div>`;
   }
 
-  /** hub#297 — la captura de NIF + domicilio cuando la venta pasa del techo de la simplificada.
+  /** The recipient capture: name, tax ID and address of whoever the invoice is made out to.
    *
-   *  **En la MISMA pantalla del cobro**, no en un modal encima: quien la tiene que rellenar está
-   *  con el cliente delante y con el importe a la vista, y mandarlo a otra pantalla es donde estos
-   *  flujos se abandonan. Los tres campos se pintan siempre (no escondidos tras un botón) porque no
-   *  son opcionales: sin ellos esta venta no tiene documento válido que emitir.
+   *  Two reasons bring it up, and each one says its own: `limit` — the sale reaches the simplified
+   *  invoice ceiling, so it cannot be a ticket (hub#297); `invoice` — the cashier picked «Factura»,
+   *  and an invoice made out to nobody is a «FACTURA · Cliente» on paper and an F2 at the AEAT
+   *  (sales#317). Telling an 11,90 € sale «over 3.000 € the law requires…» would be a lie.
    *
-   *  Los campos vienen RELLENOS si hay cliente asignado (`sales.pos.assign` → ADR-0132), así que el
-   *  caso normal del cliente de empresa que ya está en la ficha es leer y cobrar. */
-  private renderSimplifiedLimitCapture() {
+   *  **In the SAME charge sheet**, not a modal on top: whoever fills it is facing the customer with
+   *  the amount in view, and sending them to another screen is where these flows get abandoned. The
+   *  three fields are always painted (never behind a button) because none is optional: without them
+   *  there is no valid document to issue.
+   *
+   *  They come FILLED IN when a customer is assigned (`sales.pos.assign` → ADR-0132), so the usual
+   *  case — a business customer already on file — is read and charge. */
+  private renderRecipientCapture(reason: 'limit' | 'invoice') {
     const done = recipientIsComplete(this.limitState);
-    return html`
-      <div class="limit-capture" data-testid="pos-simplified-limit-capture" ?data-done=${done}>
+    const pending = reason === 'limit'
+      ? { title: t('ui.limitBlockedTitle'), body: t('ui.limitBlockedBody', { max: this.money(this.simplifiedMaxCents ?? 0) }) }
+      : { title: t('ui.invoiceRecipientTitle'), body: t('ui.invoiceRecipientBody') };
+    const content = html`
         <div class="limit-head">
           <ion-icon name=${done ? 'document-text-outline' : 'alert-circle-outline'}></ion-icon>
           <div>
-            <strong>${done ? t('ui.limitReadyTitle') : t('ui.limitBlockedTitle')}</strong>
-            <p>${done
-              ? t('ui.limitReadyBody')
-              : t('ui.limitBlockedBody', { max: this.money(this.simplifiedMaxCents ?? 0) })}</p>
+            <strong>${done ? t('ui.limitReadyTitle') : pending.title}</strong>
+            <p>${done ? t('ui.limitReadyBody') : pending.body}</p>
           </div>
         </div>
         <ion-input label=${t('ui.limitFieldName')} label-placement="stacked" .value=${this.customerName}
@@ -4493,8 +4499,12 @@ export class ErpPosTouch extends LitElement {
                    @ionInput=${(e: CustomEvent) => { this.customerTaxId = String((e.target as HTMLInputElement).value ?? ''); }}></ion-input>
         <ion-input label=${t('ui.limitFieldAddress')} label-placement="stacked" .value=${this.customerAddress}
                    data-testid="pos-limit-address" autocomplete="off"
-                   @ionInput=${(e: CustomEvent) => { this.customerAddress = String((e.target as HTMLInputElement).value ?? ''); }}></ion-input>
-      </div>`;
+                   @ionInput=${(e: CustomEvent) => { this.customerAddress = String((e.target as HTMLInputElement).value ?? ''); }}></ion-input>`;
+    // Two literal hooks, one per reason: the QA addresses each case by name, and the testid guard
+    // (`ui/test/testids.test.ts`) only reads literal ones.
+    return reason === 'limit'
+      ? html`<div class="limit-capture" data-testid="pos-simplified-limit-capture" ?data-done=${done}>${content}</div>`
+      : html`<div class="limit-capture" data-testid="pos-invoice-recipient-capture" ?data-done=${done}>${content}</div>`;
   }
 
   /** La REJILLA del catálogo: filtra por la categoría activa (la búsqueda por texto vive en el
@@ -5159,7 +5169,7 @@ export class ErpPosTouch extends LitElement {
               </div>
               <div class="pay">
 
-                ${this.overSimplifiedLimit ? this.renderSimplifiedLimitCapture() : nothing}
+                ${this.overSimplifiedLimit ? this.renderRecipientCapture('limit') : nothing}
 
                 ${this.renderLineTenders()}
 
@@ -5178,6 +5188,10 @@ export class ErpPosTouch extends LitElement {
                         @click=${() => this.chooseDocFormat(f)}
                       >${f === 'ticket' ? t('ui.docTicket') : t('ui.docInvoice')}</button>`)}
                   </div>` : nothing}
+
+                <!-- sales#317 — «Factura» asks who it is for, right under the button that asked for
+                     it. Above the ceiling the capture is already painted at the top (hub#297). -->
+                ${!this.overSimplifiedLimit && this.docFormat === 'invoice' ? this.renderRecipientCapture('invoice') : nothing}
 
                 <!-- sales#159 — LAS PATAS YA TOMADAS. Cada una se puede editar (vuelve al teclado
                      con su importe) y quitar (su importe vuelve al restante). Sin esto, corregir un
