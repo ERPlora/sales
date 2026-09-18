@@ -120,6 +120,46 @@ interface AppointmentRow {
  *  dependency a till that has to work in a hub where that module is not installed. */
 interface HubUser { id: string; name: string; role?: string; is_active?: boolean; }
 
+/** A professional of the business's TEAM as `staff.members.list` answers it (sales#318): the
+ *  records the agenda books, whether or not the person ever signs in. `user_id` is the ADR-0192
+ *  link to a hub user — optional both ways. */
+interface TeamMember {
+  id: string; full_name?: string; first_name?: string; last_name?: string;
+  user_id?: string | null; status?: string; order?: number | string | null;
+}
+
+/** One row of the «who is serving» picker. `userId` = the hub user this row ALSO stands for, so a
+ *  check or a line that carries either of the person's two ids ticks the same row. */
+interface StaffOption { id: string; name: string; userId?: string; }
+
+/** Team records that are not an option to serve today — the same two `staff.commissions.summary`
+ *  leaves out of the day's close. `on_leave` stays: she is still on the team. */
+const TEAM_NOT_SERVING = new Set(['terminated', 'inactive']);
+
+function teamMemberName(m: TeamMember): string {
+  return (m.full_name || `${m.first_name ?? ''} ${m.last_name ?? ''}`).trim();
+}
+
+/** Who the till offers to serve (sales#318): the TEAM first, in the agenda's order, then every
+ *  person who signs in and is not already one of them.
+ *
+ *  A record linked to a hub user is ONE row, under the record's id — the id an appointment already
+ *  sends (ADR-0077), so a walk-in and a booked cut by the same professional add up as one. Listing
+ *  «Ana» beside «Ana García» would make the receptionist guess which one earns the commission. The
+ *  link only folds while the record is offered: a person whose record is no longer active is still
+ *  somebody who signs in, and stays offered as herself. */
+function composeStaffOptions(people: HubUser[], team: TeamMember[]): StaffOption[] {
+  const serving = team
+    .filter((m) => !!m.id && !TEAM_NOT_SERVING.has(m.status ?? '') && !!teamMemberName(m))
+    .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0)
+      || teamMemberName(a).localeCompare(teamMemberName(b)));
+  const members: StaffOption[] = serving.map((m) => ({
+    id: m.id, name: teamMemberName(m), ...(m.user_id ? { userId: m.user_id } : {}),
+  }));
+  const folded = new Set(members.map((o) => o.userId).filter((id): id is string => !!id));
+  return [...members, ...people.filter((u) => !folded.has(u.id)).map((u) => ({ id: u.id, name: u.name }))];
+}
+
 /** Formas de precio que el TPV sabe cobrar HOY. `from`/`hourly`/`variable` son un precio de
  *  PARTIDA, no el precio: cobrarlos tal cual sería equivocarse en silencio, y aún no hay flujo de
  *  precio abierto. Se pintan bloqueados con su motivo (misma puerta que sales#74). */
@@ -1258,17 +1298,22 @@ export class ErpPosTouch extends LitElement {
    *  lines. The same dialog does both because a salon with two controls that look alike and mean
    *  different things is the screen this product exists not to be. */
   @state() private staffPickerLine?: string;
-  @state() private hubUsers: HubUser[] = [];
+  /** Who the picker offers: the team and the people who sign in, folded (sales#318). */
+  @state() private staffOptions: StaffOption[] = [];
+  /** sales#318 — the `staff` app IS in this hub and its team could not be read. Said in the picker:
+   *  a broken team is not a business with no team. Its absence says nothing (ADR-0127). */
+  @state() private teamFailed = false;
   /** id → name for whoever a LINE can be attributed to (sales#277).
    *
-   *  It is not the same set as `hubUsers`, and the difference is load-bearing twice over. The
+   *  It is not the same set as `staffOptions`, and the difference is load-bearing twice over. The
    *  picker only OFFERS active people — a leaver cannot take today's work — but a line rung last
    *  month still points at them, and a row that goes nameless is the bug this fixes. And a check
    *  born from an appointment carries a `staff_member` id that is not a person of the hub at all
-   *  (ADR-0077), whose name only the appointment knows. */
+   *  (ADR-0077), whose name the appointment knows — and so does the team read (sales#318). */
   @state() private staffNames: ReadonlyMap<string, string> = new Map();
   /** State of the list of people: without it the picker would be a blank sheet (and a permission
-   *  failure would be mute). It loads when the picker OPENS, not when the till boots. */
+   *  failure would be mute). It loads when the picker OPENS, not when the till boots. `error` =
+   *  the people who sign in could not be read; the team is `teamFailed`. */
   @state() private staffPickerState: 'idle' | 'loading' | 'ready' | 'error' = 'idle';
 
   private prodCats = new Map<string, Set<string>>();
@@ -2407,7 +2452,7 @@ export class ErpPosTouch extends LitElement {
     // solo cambia lo que se VE (pestaña Tandas), no lo que se envía.
     const pendientes = pendingLines(this.cart);
     const payload = buildFirePayload(
-      orderId, this.tableLabel, pendientes, nextRoundNo(this.cart), this.staffId, priority,
+      orderId, this.tableLabel, pendientes, nextRoundNo(this.cart), this.waiterId, priority,
     );
     if (!payload) return;
     try {
@@ -2604,37 +2649,44 @@ export class ErpPosTouch extends LitElement {
    *  Toast, Square for Restaurants and Lightspeed do: the waiter is pinned to the check and can be
    *  TRANSFERRED — whoever takes the table is not always the one at the terminal.
    *
-   *  The list comes from `hub.users.list`, the core's RESERVED namespace (ADR-0192): personnel
-   *  belongs to the hub, not to the `staff` module. It is asked for when the picker OPENS, not at
-   *  boot: the till already makes plenty of calls there, and this one is only needed if somebody is
-   *  about to change the waiter. */
+   *  Two lists feed it (sales#318). `hub.users.list`, the core's RESERVED namespace (ADR-0192):
+   *  the people who SIGN IN. And the `staff` app's team, read as an OPTIONAL capability (ADR-0127):
+   *  the professionals the agenda books, most of whom never sign in — without them a salon could
+   *  only ever charge a walk-in to the owner. A bar with no `staff` app keeps the till it had.
+   *  Both are asked for when the picker OPENS, not at boot: the till already makes plenty of calls
+   *  there, and these are only needed if somebody is about to change who serves. */
   private async openStaffPicker(lineId?: string): Promise<void> {
     this.staffPickerLine = lineId;
     this.staffPickerOpen = true;
-    await this.ensureHubUsers();
+    await this.ensureStaffOptions();
   }
 
-  /** The hub's people, asked for ONCE. Idempotent on purpose: it is now called from two places —
+  /** The people and the team, asked for ONCE. Idempotent on purpose: it is called from two places —
    *  the picker opening and a cart that needs to NAME the professional of a line (sales#277) — and
-   *  a till that re-asked on every render would hammer the core all day. */
-  private async ensureHubUsers(): Promise<void> {
-    if (this.staffPickerState === 'ready' || this.staffPickerState === 'loading') return;
+   *  a till that re-asked on every render would hammer the core all day. A read that FAILED is
+   *  asked again next time; the one that answered is not re-read on its own. */
+  private async ensureStaffOptions(): Promise<void> {
+    if (this.staffPickerState === 'loading') return;
+    if (this.staffPickerState === 'ready' && !this.teamFailed) return;
     this.staffPickerState = 'loading';
-    try {
-      const rowsIn = await erplora().query<unknown>('hub.users.list');
-      const all = rows<HubUser>(rowsIn).filter((u) => !!u.id);
-      // A deactivated person cannot serve: they still exist (the audit trail points at their id)
-      // but they are not an option to offer today. Their NAME is kept all the same — sales#277:
-      // yesterday's line still points at them, and painting an opaque id is the bug, not the fix.
-      all.forEach((u) => this.rememberStaffName(u.id, u.name));
-      this.hubUsers = all.filter((u) => u.is_active !== false);
-      this.staffPickerState = 'ready';
-    } catch {
-      // A failure here must NOT take the checkout down: it is said out loud and charging carries
-      // on with the server's default, which is exactly what there was before anyone could choose.
-      this.hubUsers = [];
-      this.staffPickerState = 'error';
-    }
+    const [people, team] = await Promise.all([
+      erplora().query<unknown>('hub.users.list')
+        .then((r) => rows<HubUser>(r).filter((u) => !!u.id))
+        // A failure here must NOT take the checkout down: it is said out loud and charging carries
+        // on with the server's default, which is exactly what there was before anyone could choose.
+        .catch(() => undefined),
+      optionalCatalogRead<TeamMember>(
+        (c) => c.queryAllOptional<unknown>('staff.members.list'),
+        (c) => c.queryOptional<unknown>('staff.members.list', { limit: LEGACY_PAGE_LIMIT })),
+    ]);
+    // Somebody who left cannot serve: they still exist (the audit trail points at their id) but
+    // they are not an option to offer today. Their NAME is kept all the same — sales#277:
+    // yesterday's line still points at them, and painting an opaque id is the bug, not the fix.
+    (people ?? []).forEach((u) => this.rememberStaffName(u.id, u.name));
+    team.rows.forEach((m) => this.rememberStaffName(m.id, teamMemberName(m)));
+    this.staffOptions = composeStaffOptions((people ?? []).filter((u) => u.is_active !== false), team.rows);
+    this.teamFailed = team.broken;
+    this.staffPickerState = people ? 'ready' : 'error';
   }
 
   /** Learns a name for an opaque id, wherever it came from (the team, the picker, the originating
@@ -2650,7 +2702,7 @@ export class ErpPosTouch extends LitElement {
    *  With a LINE open (sales#277) the very same choice moves that one row instead, and the chip is
    *  left alone: correcting the line the receptionist is looking at must not silently re-aim the
    *  next tap at somebody else. */
-  private pickStaff(person?: HubUser): void {
+  private pickStaff(person?: StaffOption): void {
     this.rememberStaffName(person?.id, person?.name);
     const lineId = this.staffPickerLine;
     this.staffPickerOpen = false;
@@ -2685,6 +2737,22 @@ export class ErpPosTouch extends LitElement {
    *  is already true instead of the check's. */
   private get pickerLineStaffId(): string | undefined {
     return this.cart.find((l) => l.line_id === this.staffPickerLine)?.staff_id;
+  }
+
+  /** Is `id` — what a check or a line is charged to — this row of the picker? Either of the
+   *  person's two ids ticks it (sales#318): a line rung under her hub user and one booked to her
+   *  record are the same professional. */
+  private servesAs(option: StaffOption, id?: string): boolean {
+    return !!id && (id === option.id || id === option.userId);
+  }
+
+  /** Who the KITCHEN is told is serving the check (sales#318). The sale and its lines go to the
+   *  professional's team record; the ticket goes to the hub user behind it whenever there is one,
+   *  because the pass names `waiter_id` through `hub.users.list` (kitchen#63) and a team record is
+   *  not in it — her name would go blank on every ticket. A record nobody signs in with has no
+   *  other id to send. */
+  private get waiterId(): string | undefined {
+    return this.staffOptions.find((o) => o.id === this.staffId)?.userId ?? this.staffId;
   }
 
   /** What a cart row says about its professional, or '' when it says nothing.
@@ -3563,9 +3631,9 @@ export class ErpPosTouch extends LitElement {
     // the picker: the check resumed this morning comes back from `sales_order_item` with opaque
     // ids and nothing else. Asked for HERE and not at boot for the reason `openStaffPicker`
     // already gave — the till makes plenty of calls to the core — and guarded by
-    // `ensureHubUsers`, which answers a second caller without a second read.
+    // `ensureStaffOptions`, which answers a second caller without a second read.
     if (changed.has('cart') && this.cart.some((l) => l.staff_id && !this.staffNames.has(l.staff_id))) {
-      void this.ensureHubUsers();
+      void this.ensureStaffOptions();
     }
   }
   /** El teclado. Tras traer una pata a editar el importe queda CEBADO: la siguiente tecla lo
@@ -5533,12 +5601,15 @@ export class ErpPosTouch extends LitElement {
             ${this.staffPickerState === 'error'
               ? html`<p class="staff-note" data-testid="pos-staff-error">${t('ui.staffLoadFailed')}</p>`
               : nothing}
-            ${this.staffPickerState === 'ready' && !this.hubUsers.length
+            ${this.teamFailed
+              ? html`<p class="staff-note" data-testid="pos-staff-team-error">${t('ui.staffTeamLoadFailed')}</p>`
+              : nothing}
+            ${this.staffPickerState === 'ready' && !this.teamFailed && !this.staffOptions.length
               ? html`<p class="staff-note" data-testid="pos-staff-empty">${t('ui.staffPickerEmpty')}</p>`
               : nothing}
-            ${this.hubUsers.map((u) => html`
+            ${this.staffOptions.map((u) => html`
               <button class="staff-opt" type="button" data-testid="pos-staff-option"
-                      ?data-current=${(this.staffPickerLine ? this.pickerLineStaffId : this.staffId) === u.id}
+                      ?data-current=${this.servesAs(u, this.staffPickerLine ? this.pickerLineStaffId : this.staffId)}
                       @click=${() => this.pickStaff(u)}>
                 ${u.name}
               </button>`)}
