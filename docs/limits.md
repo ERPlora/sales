@@ -19,6 +19,7 @@ sentence each code shows the user lives in `locales/en.json` / `locales/es.json`
 | `sales.payment_method_required` | No payment method was given | Pick one |
 | `sales.payment_method_not_available` | The payment method is not in this hub's catalogue, is inactive or was deleted | Pick an active one, or re-enable it in settings |
 | `sales.customer_required` | The hub is configured to demand a customer and none was assigned | Assign a customer, or turn off **Exigir cliente en cada venta** |
+| `sales.invoice_recipient_incomplete` | The sale is an `invoice` but the customer's name, tax id or address is missing (sales#317). An invoice made out to nobody would print as a full invoice while the tax record files it as a simplified one | Fill in the three fields, or charge it as a `ticket` |
 | `sales.discounts_not_allowed` | A discount was applied but discounts are disabled | Turn on **Permitir descuentos**, or drop the discount |
 | `sales.discount_out_of_range` | The discount percentage is outside the accepted range, or the fixed `discount_amount` exceeds the gross (sales#113) | Use a percentage between 0 and 100 / an amount up to the total |
 | `sales.amount_negative` | A computed amount came out negative | Check quantities, prices and the discount |
