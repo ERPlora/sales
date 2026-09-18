@@ -484,6 +484,7 @@
     "staffPickerEmpty": "Este hub no tiene a nadie más para atender. Da de alta personal en Ajustes.",
     "staffLoading": "Cargando el equipo…",
     "staffLoadFailed": "No se ha podido cargar el equipo. La venta se sigue atribuyendo a quien tenga la sesión.",
+    "staffTeamLoadFailed": "No se ha podido cargar el equipo de la app Personal: solo aparecen las personas que entran en la app.",
     "lineStaffPickerTitle": "De quién es esta línea",
     "lineStaffPickerHint": "Solo se mueve esta línea. El cierre del día y la comisión salen de aquí, así que es la que tiene que estar bien. El chip de arriba sigue decidiendo a quién va la SIGUIENTE línea.",
     "lineStaffTicketOption": "El profesional de la cuenta",

@@ -7,7 +7,7 @@
 //
 // The default of each read is the answer that is TRUE of a hub that has the app but nothing in it:
 //   · apps the till depends on (`inventory`, `taxes`, `sales`, the core) → `[]`
-//   · OPTIONAL apps (ADR-0127: `services`, `modifiers`, `combos`, `appointments`) → ABSENT, which
+//   · OPTIONAL apps (ADR-0127: `services`, `modifiers`, `combos`, `appointments`, `staff`) → ABSENT, which
 //     is `undefined` through the optional doors, because most hubs do not have them and `[]` would
 //     claim the opposite
 // Naming rows for a read puts that app in the hub; `absentModules` takes one out; `brokenModules`
@@ -36,6 +36,8 @@ const READS: { name: string; module: string; field: keyof PosCatalogue }[] = [
   { name: 'sales.lines', module: 'sales', field: 'saleLines' },
   { name: 'hub.users.list', module: 'hub', field: 'users' },
   { name: 'hub.fiscal.limits', module: 'hub', field: 'fiscalLimits' },
+  // sales#318 — the salon's TEAM (the professionals the agenda books), beside the hub's people.
+  { name: 'staff.members.list', module: 'staff', field: 'team' },
   { name: 'services.services.list', module: 'services', field: 'services' },
   { name: 'services.categories.list', module: 'services', field: 'serviceCategories' },
   { name: 'modifiers.for_target', module: 'modifiers', field: 'modifierGroups' },
@@ -51,7 +53,7 @@ const READS: { name: string; module: string; field: keyof PosCatalogue }[] = [
 type PosSettingsRow = Record<string, unknown> | null;
 
 /** The apps whose ABSENCE is the normal case, so they are out of the hub until a test says otherwise. */
-const OPTIONAL_MODULES = new Set(['services', 'modifiers', 'combos', 'appointments', 'invoice', 'verifactu']);
+const OPTIONAL_MODULES = new Set(['services', 'modifiers', 'combos', 'appointments', 'staff', 'invoice', 'verifactu']);
 
 /** Every query name the till reads. Exported so the suite can prove none of them explodes. */
 export const POS_READS: readonly string[] = READS.map((r) => r.name);
@@ -77,6 +79,8 @@ interface PosCatalogue {
   sale?: QueryAnswer;
   saleLines?: QueryAnswer;
   users?: QueryAnswer;
+  /** `staff.members.list` — the salon's professionals, whether or not they sign in (sales#318). */
+  team?: QueryAnswer;
   fiscalLimits?: QueryAnswer;
   services?: QueryAnswer;
   serviceCategories?: QueryAnswer;
@@ -116,7 +120,7 @@ export function installPosDouble(spec: PosDoubleSpec = {}): ErploraDouble {
     settings, absentModules = [], brokenModules = [], queries: extraQueries = {}, failing = {},
     products, forSale, categories, productCategories, units, rules, taxCategories,
     paymentMethods, quickNotes, departments, business, orders, orderLines, byIdempotencyKey, sale, saleLines,
-    users, fiscalLimits,
+    users, team, fiscalLimits,
     services, serviceCategories, modifierGroups, modifierOptions, comboOptions, appointment,
     invoiceBySource, invoiceLines, verifactuRecord,
     ...rest
@@ -124,7 +128,7 @@ export function installPosDouble(spec: PosDoubleSpec = {}): ErploraDouble {
   const catalogue: PosCatalogue = {
     products, forSale, categories, productCategories, units, rules, taxCategories,
     paymentMethods, quickNotes, departments, business, orders, orderLines, byIdempotencyKey, sale, saleLines,
-    users, fiscalLimits,
+    users, team, fiscalLimits,
     services, serviceCategories, modifierGroups, modifierOptions, comboOptions, appointment,
     invoiceBySource, invoiceLines, verifactuRecord,
   };

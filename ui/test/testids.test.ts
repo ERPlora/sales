@@ -144,7 +144,7 @@ const COVERED: Record<string, { prefix: string; contract: string[] }> = {
       'pos-prebill', 'pos-prebill-close', 'pos-prebill-print', 'pos-print-on-charge',
       'pos-search', 'pos-simplified-limit-capture',
       'pos-staff-cancel', 'pos-staff-chip', 'pos-staff-empty', 'pos-staff-error',
-      'pos-staff-loading', 'pos-staff-option', 'pos-staff-option-me',
+      'pos-staff-loading', 'pos-staff-option', 'pos-staff-option-me', 'pos-staff-team-error',
       'pos-ticket-discount',
       'pos-view-tab-account', 'pos-view-tab-draft', 'pos-view-tabs',
     ],

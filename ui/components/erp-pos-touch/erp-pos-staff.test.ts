@@ -9,8 +9,9 @@
 // Two things are load-bearing here:
 //
 //  * The person list comes from `hub.users.list`, the CORE namespace (ADR-0192). Personnel is core,
-//    not the `staff` module: asking `staff` would make a hard dependency out of a till that has to
-//    work in a hub with no staff module at all.
+//    not the `staff` module: depending on `staff` would make a hard dependency out of a till that
+//    has to work in a hub with no staff module at all. Its team joins the list only as an OPTIONAL
+//    read (ADR-0127) — sales#318, in `erp-pos-staff-team.test.ts`.
 //  * Choosing nobody sends `staff_id: null` — on purpose. The till must not guess the session user
 //    and send an id it invented; the server resolves it, and it is the only one that can.
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
