@@ -56,6 +56,8 @@ interface Spec {
   usersFail?: string;
   /** Rows of a check that was ALREADY open when the till mounted. */
   resuming?: Record<string, unknown>[];
+  /** The bookings of the agenda (`appointments.appointments.get`); `undefined` = no agenda app. */
+  bookings?: Record<string, unknown>[];
 }
 
 function installSdk(spec: Spec = {}): void {
@@ -82,6 +84,7 @@ function installSdk(spec: Spec = {}): void {
     taxCategories: TAX_CATS,
     users: spec.users ?? [OWNER],
     ...(spec.team !== undefined ? { team: spec.team } : {}),
+    ...(spec.bookings ? { appointment: spec.bookings } : {}),
     ...(spec.teamBroken ? { brokenModules: ['staff'] } : {}),
     ...(spec.usersFail ? { failing: { 'hub.users.list': spec.usersFail } } : {}),
     command: async (name: string, payload: Record<string, unknown>) => {
@@ -195,6 +198,39 @@ describe('the till offers the salon team, not only who signs in (sales#318)', ()
     await el.confirm();
     const sale = commands.find((c) => c.name === 'sales.complete_sale');
     expect(sale?.payload.staff_id, 'the sale is hers, not the owner\'s').toBe('st-ana');
+  });
+
+  // sales#316 — «Cobrar» on a booking. The agenda books a team RECORD, which is the id the picker
+  // offers since sales#318: the till opened from the booking has to agree with it, or the
+  // receptionist sees one professional on the line and another ticked in «Atiende».
+  it('opened from a booking, the line, «Atiende» and the sale are the booked professional', async () => {
+    installSdk({
+      team: [ANA, LAURA, LUCIA],
+      bookings: [{
+        id: 'ap-1', customer_id: 'c-carmen', customer_name: 'Carmen Ortega',
+        staff_id: 'st-lucia', staff_name: 'Lucía Pérez',
+        service_id: 's-corte', service_name: 'Corte de señora', service_price: 1800,
+      }],
+    });
+    window.history.replaceState({}, '', '/m/sales/pos?appointment_id=ap-1');
+    const el = await mount();
+    await settle(el);
+
+    expect(painted(el), 'the cut is Lucía\'s on the ticket').toEqual(['Lucía Pérez']);
+    await openChip(el);
+    const current = [...el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid="pos-staff-option"][data-current]')]
+      .map((o) => o.textContent?.trim());
+    expect(current, '«Atiende» ticks her team record').toEqual(['Lucía Pérez']);
+    // Closed WITHOUT choosing: what the sale carries has to come from the booking, not from a tap.
+    el.shadowRoot.querySelector<HTMLElement>('[data-testid="pos-staff-cancel"]')?.click();
+    await settle(el);
+
+    await el.confirm();
+    const sale = commands.find((c) => c.name === 'sales.complete_sale');
+    expect(sale?.payload.appointment_id, 'the agenda can mark the booking charged').toBe('ap-1');
+    expect(sale?.payload.staff_id).toBe('st-lucia');
+    expect(sale?.payload.customer_id).toBe('c-carmen');
+    expect((sale?.payload.items as { staff_id?: string }[]).map((i) => i.staff_id)).toEqual(['st-lucia']);
   });
 
   it('moves a line already on the check to a professional of the team', async () => {

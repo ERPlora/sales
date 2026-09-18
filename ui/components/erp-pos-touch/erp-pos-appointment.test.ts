@@ -115,6 +115,10 @@ describe('the till opened from an appointment (ADR-0077)', () => {
     const el = await mount('?appointment_id=ap-1');
 
     expect(el.cart[0].staff_id).toBe('st-lucia');
+    // No `staff` app in this hub, so the booking is the only one that can NAME her on the ticket.
+    const painted = [...el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid="pos-line-staff"]')]
+      .map((n) => n.textContent?.trim());
+    expect(painted).toEqual(['Lucía']);
 
     await el.confirm();
     const items = commands.find((c) => c.name === 'sales.complete_sale')?.params?.items as
