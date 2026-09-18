@@ -35,6 +35,7 @@
       "modifiers.options.all",
       "services.categories.list",
       "services.services.list",
+      "staff.members.list",
       "verifactu.records.by_invoice"
     ],
     "commands": [

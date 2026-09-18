@@ -145,6 +145,14 @@ transferred.
   (`hub.users.list`, the core namespace — personnel belongs to the hub, not to the `staff` module,
   so this works in a hub without it). Choosing **«Yo (quien tenga la sesión)»** hands it back to the
   default.
+- With the **Staff** app installed, the list also offers the **team** (sales#318): the professionals
+  the agenda books, first and in the agenda's order, whether or not they ever sign in. Choosing one
+  attributes the check and every new line to her **team record** — the same id an appointment
+  carries — so walk-ins and booked services add up as one person in the per-professional close. A
+  professional whose record is linked to a hub user appears **once**; a record that is terminated or
+  inactive is not offered (her past lines keep her name). If the team cannot be read, the picker
+  says so and still offers the people who sign in. The same list serves the professional of a
+  single **line** (tap the name under it).
 - A till opened from an **appointment** shows the booked professional, and that is who the sale is
   attributed to.
 - The chosen person travels to the **kitchen ticket** too (`order.fired` carries `waiter_id`), and
