@@ -52,6 +52,16 @@ const READS: { name: string; module: string; field: keyof PosCatalogue }[] = [
 
 type PosSettingsRow = Record<string, unknown> | null;
 
+/**
+ * `appointments.appointments.get` as the agenda's own SQL answers it: `appointments/queries/
+ * appointment_get.sql` filters `AND a.id = :appointment_id`. The runtime binds by NAME and drops a
+ * param the SQL does not mention, so any other key leaves the bind NULL and the answer is `[]`,
+ * without an error (sales#316 — the till asked with `{ id }` and «Cobrar» opened an empty ticket).
+ */
+function bindAppointmentGet(bookings: Record<string, unknown>[]): QueryAnswer {
+  return (params) => bookings.filter((b) => params?.appointment_id !== undefined && b.id === params.appointment_id);
+}
+
 /** The apps whose ABSENCE is the normal case, so they are out of the hub until a test says otherwise. */
 const OPTIONAL_MODULES = new Set(['services', 'modifiers', 'combos', 'appointments', 'staff', 'invoice', 'verifactu']);
 
@@ -87,7 +97,10 @@ interface PosCatalogue {
   modifierGroups?: QueryAnswer;
   modifierOptions?: QueryAnswer;
   comboOptions?: QueryAnswer;
-  appointment?: QueryAnswer;
+  /** `appointments.appointments.get` — the BOOKINGS in the agenda. Rows only, never a function: the
+   *  double answers the point read the way the agenda's SQL does (`bindAppointmentGet`), so no suite
+   *  can make up the param name again (sales#316). */
+  appointment?: Record<string, unknown>[];
   invoiceBySource?: QueryAnswer;
   invoiceLines?: QueryAnswer;
   verifactuRecord?: QueryAnswer;
@@ -125,11 +138,12 @@ export function installPosDouble(spec: PosDoubleSpec = {}): ErploraDouble {
     invoiceBySource, invoiceLines, verifactuRecord,
     ...rest
   } = spec;
-  const catalogue: PosCatalogue = {
+  const catalogue: Record<keyof PosCatalogue, QueryAnswer | undefined> = {
     products, forSale, categories, productCategories, units, rules, taxCategories,
     paymentMethods, quickNotes, departments, business, orders, orderLines, byIdempotencyKey, sale, saleLines,
     users, team, fiscalLimits,
-    services, serviceCategories, modifierGroups, modifierOptions, comboOptions, appointment,
+    services, serviceCategories, modifierGroups, modifierOptions, comboOptions,
+    appointment: appointment && bindAppointmentGet(appointment),
     invoiceBySource, invoiceLines, verifactuRecord,
   };
 

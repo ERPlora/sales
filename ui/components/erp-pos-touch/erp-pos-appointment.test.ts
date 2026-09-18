@@ -57,7 +57,7 @@ function installSdk(opts: { appointmentsInstalled?: boolean } = {}) {
 interface MountedPos {
   shadowRoot: ShadowRoot;
   cart: { id: string; name: string; price: number; is_service?: boolean;
-    tax_category_key?: string }[];
+    tax_category_key?: string; staff_id?: string }[];
   updateComplete: Promise<unknown>;
   confirm(print?: boolean): Promise<void>;
 }
@@ -98,6 +98,32 @@ describe('the till opened from an appointment (ADR-0077)', () => {
     const sale = commands.find((c) => c.name === 'sales.complete_sale');
     expect(sale?.params?.appointment_id).toBe('ap-1');
     expect(sale?.params?.staff_id).toBe('st-lucia');
+  });
+
+  // sales#316 — the three things «Cobrar» promises, measured against the agenda's real bind: the
+  // service is above; the client and the professional are these two.
+  it('puts the booked client on the sale', async () => {
+    const el = await mount('?appointment_id=ap-1');
+    await el.confirm();
+
+    const sale = commands.find((c) => c.name === 'sales.complete_sale');
+    expect(sale?.params?.customer_id).toBe('c-ana');
+    expect(sale?.params?.customer_name).toBe('Ana Ruiz');
+  });
+
+  it('charges the service LINE to the booked professional, which is what the close by professional reads', async () => {
+    const el = await mount('?appointment_id=ap-1');
+
+    expect(el.cart[0].staff_id).toBe('st-lucia');
+    // No `staff` app in this hub, so the booking is the only one that can NAME her on the ticket.
+    const painted = [...el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid="pos-line-staff"]')]
+      .map((n) => n.textContent?.trim());
+    expect(painted).toEqual(['Lucía']);
+
+    await el.confirm();
+    const items = commands.find((c) => c.name === 'sales.complete_sale')?.params?.items as
+      { staff_id?: string }[] | undefined;
+    expect(items?.map((i) => i.staff_id)).toEqual(['st-lucia']);
   });
 
   it('clears the id from the URL, so a reload does not re-seed the same booking', async () => {

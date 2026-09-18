@@ -54,8 +54,8 @@ function installSdk(): void {
     rules: RULES,
     services: SERVICES,
     serviceCategories: [],
-    // A POINT read: the double answers the booking the params ask for, the way the runtime does.
-    appointment: (params) => BOOKINGS.filter((b) => b.id === params?.id),
+    // A POINT read: the double answers it through the agenda's own bind, `:appointment_id` (sales#316).
+    appointment: BOOKINGS,
     command: async () => ({ rows: [{ id: 'line-1' }] }),
   });
 }
