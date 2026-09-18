@@ -156,7 +156,9 @@ transferred.
 - A till opened from an **appointment** shows the booked professional, and that is who the sale is
   attributed to.
 - The chosen person travels to the **kitchen ticket** too (`order.fired` carries `waiter_id`), and
-  is what makes the per-person report (`sales.by_staff`) come back with data.
+  is what makes the per-person report (`sales.by_staff`) come back with data. A professional who is
+  on the team **and** signs in goes to the kitchen as her **hub user** — the id the pass can name —
+  while the sale keeps her team record.
 
 Closing the sale returns the chip to the default: the next check does not inherit the previous
 waiter.

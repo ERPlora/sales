@@ -9171,7 +9171,7 @@ var ErpPosTouch = class extends i3 {
       this.tableLabel,
       pendientes,
       nextRoundNo(this.cart),
-      this.staffId,
+      this.waiterId,
       priority
     );
     if (!payload) return;
@@ -9419,6 +9419,14 @@ var ErpPosTouch = class extends i3 {
    *  record are the same professional. */
   servesAs(option, id) {
     return !!id && (id === option.id || id === option.userId);
+  }
+  /** Who the KITCHEN is told is serving the check (sales#318). The sale and its lines go to the
+   *  professional's team record; the ticket goes to the hub user behind it whenever there is one,
+   *  because the pass names `waiter_id` through `hub.users.list` (kitchen#63) and a team record is
+   *  not in it — her name would go blank on every ticket. A record nobody signs in with has no
+   *  other id to send. */
+  get waiterId() {
+    return this.staffOptions.find((o9) => o9.id === this.staffId)?.userId ?? this.staffId;
   }
   /** What a cart row says about its professional, or '' when it says nothing.
    *

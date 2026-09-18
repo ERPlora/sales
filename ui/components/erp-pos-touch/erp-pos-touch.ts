@@ -2452,7 +2452,7 @@ export class ErpPosTouch extends LitElement {
     // solo cambia lo que se VE (pestaña Tandas), no lo que se envía.
     const pendientes = pendingLines(this.cart);
     const payload = buildFirePayload(
-      orderId, this.tableLabel, pendientes, nextRoundNo(this.cart), this.staffId, priority,
+      orderId, this.tableLabel, pendientes, nextRoundNo(this.cart), this.waiterId, priority,
     );
     if (!payload) return;
     try {
@@ -2744,6 +2744,15 @@ export class ErpPosTouch extends LitElement {
    *  record are the same professional. */
   private servesAs(option: StaffOption, id?: string): boolean {
     return !!id && (id === option.id || id === option.userId);
+  }
+
+  /** Who the KITCHEN is told is serving the check (sales#318). The sale and its lines go to the
+   *  professional's team record; the ticket goes to the hub user behind it whenever there is one,
+   *  because the pass names `waiter_id` through `hub.users.list` (kitchen#63) and a team record is
+   *  not in it — her name would go blank on every ticket. A record nobody signs in with has no
+   *  other id to send. */
+  private get waiterId(): string | undefined {
+    return this.staffOptions.find((o) => o.id === this.staffId)?.userId ?? this.staffId;
   }
 
   /** What a cart row says about its professional, or '' when it says nothing.

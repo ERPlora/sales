@@ -43,10 +43,12 @@ let pos: ReturnType<typeof installPosDouble>;
 /** Every query name the till asked for, in order. */
 const queried = (): string[] => pos.reads.map((r) => r.name);
 
-function installSdk(opts: { users?: unknown[]; usersFail?: boolean } = {}) {
+function installSdk(opts: { users?: unknown[]; usersFail?: boolean; team?: unknown[] } = {}) {
   commands = [];
   pos = installPosDouble({
     users: opts.users ?? HUB_USERS,
+    // `undefined` = a hub with no `staff` app, which is the bar this file is about.
+    ...(opts.team ? { team: opts.team } : {}),
     ...(opts.usersFail ? { failing: { 'hub.users.list': 'permission_denied' } } : {}),
     // When the order opens, the till RE-READS its lines from the server (the row is the authority),
     // so without this the ticket would come out empty and nothing would be fired.
@@ -209,5 +211,32 @@ describe('the kitchen ticket', () => {
 
     const fired = commands.find((c) => c.name === 'sales.order.fire');
     expect(fired?.params?.waiter_id).toBe('u-luis');
+  });
+
+  // sales#318 — with the `staff` app, a waiter who signs in AND has a team record is one row of the
+  // picker, and the SALE goes to his record. The ticket is another matter: the pass names
+  // `waiter_id` through `hub.users.list` (kitchen#63), which has never heard of a team record — so
+  // sending the record there would blank the name on every ticket of a restaurant that keeps its
+  // team in `staff`. The kitchen keeps getting the id it can name.
+  it('still carries the HUB USER of a waiter who is also on the team, the id the pass can name', async () => {
+    installSdk({
+      team: [{ id: 'st-luis', first_name: 'Luis', last_name: 'Gómez', full_name: 'Luis Gómez', user_id: 'u-luis', status: 'active', order: 1 }],
+    });
+    const el = await mount();
+    chip(el)?.click();
+    await settle(el);
+    await settle(el);
+    options(el).find((o) => o.textContent?.trim() === 'Luis Gómez')?.click();
+    await settle(el);
+
+    el.cart = [{ id: 'p-x', name: 'Croquetas', price: 900, qty: 1 }] as MountedPos['cart'];
+    el.shadowRoot.dispatchEvent(new CustomEvent('erp:order-fire', { bubbles: true, composed: true }));
+    for (let i = 0; i < 6; i += 1) await settle(el);
+
+    const fired = commands.find((c) => c.name === 'sales.order.fire');
+    expect(fired?.params?.waiter_id, 'the kitchen gets the person it can name').toBe('u-luis');
+    await el.confirm();
+    const sale = commands.find((c) => c.name === 'sales.complete_sale');
+    expect(sale?.params?.staff_id, 'and the sale is still his team record, the id the close adds up').toBe('st-luis');
   });
 });
