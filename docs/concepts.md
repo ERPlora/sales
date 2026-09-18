@@ -220,6 +220,13 @@ A sale is either a `ticket` (a simplified invoice) or an `invoice` (a full one).
 **atomically when the sale is completed** — there is no command to change it afterwards, on purpose.
 The hub can be configured to pick `invoice` automatically when the customer has a tax id.
 
+**An invoice is always made out to somebody.** Choosing «Factura» in the charge sheet shows the
+customer's name, tax id and address right under the choice — filled in from the assigned customer,
+if there is one — and the sale cannot be charged as an invoice until all three are there. This holds
+at any amount, not only above the simplified-invoice ceiling. If the customer does not need an
+invoice, «Tique» is one tap away. The server enforces the same rule for every other door (API,
+assistant): `sales.invoice_recipient_incomplete`.
+
 ## Splitting and merging move rows; nothing is prorated
 
 When a check is split, whole lines travel with their amount, their frozen tax category and their

@@ -456,7 +456,7 @@
       },
       "schema": "schemas/complete_sale.json",
       "ai": {
-        "description": "Completes and records a sale with its line items and payment. Optional staff_id attributes the sale to the professional who performed it; optional appointment_id traces a sale created from an appointment (emits sales.sale.created_from_appointment)."
+        "description": "Completes and records a sale with its line items and payment. Optional staff_id attributes the sale to the professional who performed it; optional appointment_id traces a sale created from an appointment (emits sales.sale.created_from_appointment). document_type 'invoice' (a complete invoice) needs customer_name, customer_tax_id and customer_address; ask the user for them, or charge it as 'ticket'."
       }
     },
     "sales.complete_sale_over_limit": {
@@ -1079,6 +1079,7 @@
     "sales.empty_sale": {},
     "sales.idempotency_key_required": {},
     "sales.insufficient_tendered": {},
+    "sales.invoice_recipient_incomplete": {},
     "sales.line_not_splittable": {},
     "sales.modifier_catalog_unavailable": {},
     "sales.modifier_child_price_invalid": {},

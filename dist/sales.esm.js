@@ -4144,6 +4144,7 @@ var es_default = {
     "sales.empty_sale": "A\xF1ade al menos una l\xEDnea antes de cobrar.",
     "sales.idempotency_key_required": "El cobro ha llegado sin clave de idempotencia, as\xED que se ha rechazado antes que arriesgarse a cobrar dos veces.",
     "sales.insufficient_tendered": "El importe entregado no cubre el total.",
+    "sales.invoice_recipient_incomplete": "Una factura necesita el nombre, el NIF y la direcci\xF3n del cliente. Rell\xE9nalos o c\xF3brala como tique.",
     "sales.line_not_splittable": "Esa l\xEDnea no se puede separar en unidades sueltas.",
     "sales.modifier_catalog_unavailable": "No se han podido cargar los suplementos, as\xED que no se ha podido valorar la l\xEDnea.",
     "sales.modifier_child_price_invalid": "Un suplemento se factura en l\xEDnea propia porque tributa a otro IVA, y esa l\xEDnea no puede valer cero o menos. Ponle precio en Suplementos, o qu\xEDtale la categor\xEDa fiscal.",
@@ -4411,6 +4412,8 @@ var es_default = {
     limitFieldTaxId: "NIF",
     limitFieldAddress: "Domicilio",
     limitChargeBlocked: "Faltan los datos del cliente",
+    invoiceRecipientTitle: "Una factura necesita los datos del cliente",
+    invoiceRecipientBody: "Rellena el nombre, el NIF y la direcci\xF3n. Si el cliente no necesita factura, elige Tique.",
     tenderedMissing: "Teclea el importe entregado",
     tenderedShort: "Lo entregado no cubre el total",
     colDate: "Fecha",
@@ -4710,6 +4713,7 @@ var en_default = {
     "sales.empty_sale": "Add at least one line before charging.",
     "sales.idempotency_key_required": "The checkout arrived with no idempotency key, so it was refused rather than risk charging twice.",
     "sales.insufficient_tendered": "The amount tendered does not cover the total.",
+    "sales.invoice_recipient_incomplete": "An invoice needs the customer's name, tax ID and address. Fill them in, or charge it as a receipt.",
     "sales.line_not_splittable": "That line cannot be split into single units.",
     "sales.modifier_catalog_unavailable": "The supplements could not be loaded, so the line could not be priced.",
     "sales.modifier_child_price_invalid": "A supplement bills on a line of its own because it taxes at a different VAT rate, and that line cannot be worth zero or less. Give it a price in Modifiers, or take its tax category off.",
@@ -4977,6 +4981,8 @@ var en_default = {
     limitFieldTaxId: "Tax ID",
     limitFieldAddress: "Address",
     limitChargeBlocked: "Enter the customer's details",
+    invoiceRecipientTitle: "An invoice needs the customer's details",
+    invoiceRecipientBody: "Fill in the name, tax ID and address. If the customer does not need an invoice, choose Receipt.",
     tenderedMissing: "Type the amount tendered",
     tenderedShort: "The amount tendered does not cover the total",
     colDate: "Date",
@@ -6036,8 +6042,8 @@ function recipientIsComplete(recipient) {
   return recipient.customerName.trim() !== "" && recipient.customerTaxId.trim() !== "" && recipient.customerAddress.trim() !== "";
 }
 function ticketIsBlocked(state) {
-  if (!isOverSimplifiedLimit(state.payableCents, state.maxCents)) return false;
-  return !(state.documentFormat === "invoice" && recipientIsComplete(state));
+  if (state.documentFormat === "invoice") return !recipientIsComplete(state);
+  return isOverSimplifiedLimit(state.payableCents, state.maxCents);
 }
 
 // ui/lib/current-check.ts
@@ -10827,24 +10833,29 @@ var ErpPosTouch = class extends i3 {
       ${t5("ui.catalogAppAbsent", { app: this.appName("inventory") })}
     </div>`;
   }
-  /** hub#297 — la captura de NIF + domicilio cuando la venta pasa del techo de la simplificada.
+  /** The recipient capture: name, tax ID and address of whoever the invoice is made out to.
    *
-   *  **En la MISMA pantalla del cobro**, no en un modal encima: quien la tiene que rellenar está
-   *  con el cliente delante y con el importe a la vista, y mandarlo a otra pantalla es donde estos
-   *  flujos se abandonan. Los tres campos se pintan siempre (no escondidos tras un botón) porque no
-   *  son opcionales: sin ellos esta venta no tiene documento válido que emitir.
+   *  Two reasons bring it up, and each one says its own: `limit` — the sale reaches the simplified
+   *  invoice ceiling, so it cannot be a ticket (hub#297); `invoice` — the cashier picked «Factura»,
+   *  and an invoice made out to nobody is a «FACTURA · Cliente» on paper and an F2 at the AEAT
+   *  (sales#317). Telling an 11,90 € sale «over 3.000 € the law requires…» would be a lie.
    *
-   *  Los campos vienen RELLENOS si hay cliente asignado (`sales.pos.assign` → ADR-0132), así que el
-   *  caso normal del cliente de empresa que ya está en la ficha es leer y cobrar. */
-  renderSimplifiedLimitCapture() {
+   *  **In the SAME charge sheet**, not a modal on top: whoever fills it is facing the customer with
+   *  the amount in view, and sending them to another screen is where these flows get abandoned. The
+   *  three fields are always painted (never behind a button) because none is optional: without them
+   *  there is no valid document to issue.
+   *
+   *  They come FILLED IN when a customer is assigned (`sales.pos.assign` → ADR-0132), so the usual
+   *  case — a business customer already on file — is read and charge. */
+  renderRecipientCapture(reason) {
     const done = recipientIsComplete(this.limitState);
-    return b2`
-      <div class="limit-capture" data-testid="pos-simplified-limit-capture" ?data-done=${done}>
+    const pending = reason === "limit" ? { title: t5("ui.limitBlockedTitle"), body: t5("ui.limitBlockedBody", { max: this.money(this.simplifiedMaxCents ?? 0) }) } : { title: t5("ui.invoiceRecipientTitle"), body: t5("ui.invoiceRecipientBody") };
+    const content = b2`
         <div class="limit-head">
           <ion-icon name=${done ? "document-text-outline" : "alert-circle-outline"}></ion-icon>
           <div>
-            <strong>${done ? t5("ui.limitReadyTitle") : t5("ui.limitBlockedTitle")}</strong>
-            <p>${done ? t5("ui.limitReadyBody") : t5("ui.limitBlockedBody", { max: this.money(this.simplifiedMaxCents ?? 0) })}</p>
+            <strong>${done ? t5("ui.limitReadyTitle") : pending.title}</strong>
+            <p>${done ? t5("ui.limitReadyBody") : pending.body}</p>
           </div>
         </div>
         <ion-input label=${t5("ui.limitFieldName")} label-placement="stacked" .value=${this.customerName}
@@ -10861,8 +10872,8 @@ var ErpPosTouch = class extends i3 {
                    data-testid="pos-limit-address" autocomplete="off"
                    @ionInput=${(e7) => {
       this.customerAddress = String(e7.target.value ?? "");
-    }}></ion-input>
-      </div>`;
+    }}></ion-input>`;
+    return reason === "limit" ? b2`<div class="limit-capture" data-testid="pos-simplified-limit-capture" ?data-done=${done}>${content}</div>` : b2`<div class="limit-capture" data-testid="pos-invoice-recipient-capture" ?data-done=${done}>${content}</div>`;
   }
   /** La REJILLA del catálogo: filtra por la categoría activa (la búsqueda por texto vive en el
    *  Spotlight, no empuja la rejilla). */
@@ -11462,7 +11473,7 @@ var ErpPosTouch = class extends i3 {
               </div>
               <div class="pay">
 
-                ${this.overSimplifiedLimit ? this.renderSimplifiedLimitCapture() : A}
+                ${this.overSimplifiedLimit ? this.renderRecipientCapture("limit") : A}
 
                 ${this.renderLineTenders()}
 
@@ -11481,6 +11492,10 @@ var ErpPosTouch = class extends i3 {
                         @click=${() => this.chooseDocFormat(f3)}
                       >${f3 === "ticket" ? t5("ui.docTicket") : t5("ui.docInvoice")}</button>`)}
                   </div>` : A}
+
+                <!-- sales#317 — «Factura» asks who it is for, right under the button that asked for
+                     it. Above the ceiling the capture is already painted at the top (hub#297). -->
+                ${!this.overSimplifiedLimit && this.docFormat === "invoice" ? this.renderRecipientCapture("invoice") : A}
 
                 <!-- sales#159 — LAS PATAS YA TOMADAS. Cada una se puede editar (vuelve al teclado
                      con su importe) y quitar (su importe vuelve al restante). Sin esto, corregir un

@@ -1699,6 +1699,18 @@ fn validate_checkout_shape(payload: &Value, items: &[Value]) -> Result<bool, Ref
     Ok(discounted)
 }
 
+/// sales#317 — **a complete invoice is made out to somebody.** The till charged «Factura» with no
+/// customer: the screen handed over a «FACTURA» to «Cliente» while VeriFactu filed an F2, because
+/// the hub's `resolve_invoice_type` downgrades an F1 without a recipient — with the chain number
+/// already spent. The till now asks before charging; this is the same rule for every other door
+/// (the API, the assistant). Name, tax ID and address (art. 6 RD 1619/2012): the same three the
+/// simplified-invoice ceiling asks for (`ui/lib/simplified-limit.ts`), so both layers agree.
+fn invoice_recipient_is_complete(payload: &Value) -> bool {
+    ["customer_name", "customer_tax_id", "customer_address"]
+        .iter()
+        .all(|key| !field(payload, key).trim().is_empty())
+}
+
 /// ── POS settings: the rule lives on the server, not in the button ──
 ///
 /// With no settings row the schema defaults apply (`allow_discounts` yes, `require_customer` no),
@@ -1843,6 +1855,12 @@ fn decide_checkout(payload: &Value, context: &Value, items: &[Value], cap: f64) 
     enforce_discount_cap(cap, payload, items)?;
     if hub_setting(context, "require_customer", false) && field(payload, "customer_id").is_empty() {
         return Err(reject("sales.customer_required", "this hub requires a customer on every sale"));
+    }
+    if field(payload, "document_type") == "invoice" && !invoice_recipient_is_complete(payload) {
+        return Err(reject(
+            "sales.invoice_recipient_incomplete",
+            "a complete invoice needs the customer's name, tax id and address",
+        ));
     }
     let tax_included = hub_tax_included(context);
 
@@ -5595,6 +5613,11 @@ mod tests {
         let items = json!([{ "product_name": "Menú", "price": 500, "quantity": 1_000_000, "tax_rate": 21.0 }]);
         let mut inp = input(items, 3, 500);
         inp["payload"]["document_type"] = json!("invoice");
+        // sales#317: an invoice travels with its recipient — without one it is refused
+        // (`sales.invoice_recipient_incomplete`), which is not what this test is about.
+        inp["payload"]["customer_name"] = json!("ACME SL");
+        inp["payload"]["customer_tax_id"] = json!("B12345678");
+        inp["payload"]["customer_address"] = json!("C/ Mayor 1");
         let out = sale(inp);
 
         // 1) la cabecera de la venta persiste el tipo en la MISMA inserción (atómico).
@@ -7157,6 +7180,51 @@ mod tests {
         let inp = input_with_catalogs(one_line(), 3, cash_catalog(), settings, Value::Null);
         let err = complete_sale_pure(inp).refused("customer required");
         assert_eq!(err.code, "sales.customer_required", "{err:?}");
+    }
+
+    /// A payload asking for a complete invoice, with the recipient the till snapshots (ADR-0132).
+    fn invoice_input(name: &str, tax_id: &str, address: &str) -> Value {
+        let mut inp = input(one_line(), 3, 500);
+        inp["payload"]["document_type"] = json!("invoice");
+        inp["payload"]["customer_name"] = json!(name);
+        inp["payload"]["customer_tax_id"] = json!(tax_id);
+        inp["payload"]["customer_address"] = json!(address);
+        inp
+    }
+
+    #[test]
+    fn an_invoice_made_out_to_nobody_is_refused_before_the_number_is_spent() {
+        // sales#317 — the till charged «Factura» with no customer: the screen handed over a
+        // «FACTURA» to «Cliente» and VeriFactu filed an F2 (`resolve_invoice_type` downgrades an F1
+        // without a recipient). The till now asks; this is the lock for every other door (the API,
+        // the assistant): a complete invoice needs name, tax ID and address (art. 6 RD 1619/2012),
+        // the same three the simplified-invoice ceiling asks for.
+        for (missing, inp) in [
+            ("all", invoice_input("", "", "")),
+            ("name", invoice_input("", "12345678Z", "C/ Mayor 1")),
+            ("tax id", invoice_input("Ana López", "", "C/ Mayor 1")),
+            ("address", invoice_input("Ana López", "12345678Z", "")),
+            ("blank tax id", invoice_input("Ana López", "   ", "C/ Mayor 1")),
+        ] {
+            let err = complete_sale_pure(inp.clone()).refused(missing);
+            assert_eq!(err.code, "sales.invoice_recipient_incomplete", "missing {missing}: {err:?}");
+            // The manager's door charges the SAME sale: it lifts the discount cap, not the law.
+            let err = complete_sale_over_limit_pure(inp).refused(missing);
+            assert_eq!(err.code, "sales.invoice_recipient_incomplete", "over-limit door, missing {missing}: {err:?}");
+        }
+    }
+
+    #[test]
+    fn an_invoice_with_its_recipient_and_a_plain_ticket_go_through() {
+        let out = complete_sale_pure(invoice_input("Ana López", "12345678Z", "C/ Mayor 1, Madrid"))
+            .accepted("complete invoice");
+        assert_eq!(out.events[0].payload["document_type"], json!("invoice"));
+        assert_eq!(out.events[0].payload["customer_tax_id"], json!("12345678Z"));
+
+        // A ticket needs no recipient at all: the counter's everyday sale must not notice this.
+        let mut inp = invoice_input("", "", "");
+        inp["payload"]["document_type"] = json!("ticket");
+        complete_sale_pure(inp).accepted("anonymous ticket");
     }
 
     #[test]
