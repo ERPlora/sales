@@ -98,6 +98,11 @@ const MESSAGES: Record<string, string> = {
   // hub#701: the required read exists but did not resolve. The only `required` read of
   // `complete_sale` is the tax catalogue, so this is exactly what sales#21 already says.
   read_unavailable: 'ui.errorTaxCatalogUnavailable',
+  // hub#1935 — the hub files with the tax authority for real and has no way to get this ticket
+  // there, so the dispatcher refused the sale before writing anything. Same sentences as the notice
+  // the till shows at mount (`lib/fiscal-road.ts`).
+  'fiscal.no_representation_grant': 'ui.fiscalRoadNoGrant',
+  'fiscal.gateway_not_enrolled': 'ui.fiscalRoadNoConnection',
 };
 
 /**
