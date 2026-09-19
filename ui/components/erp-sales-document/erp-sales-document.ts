@@ -28,6 +28,9 @@ import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
+/** hub#1867 — how long the last fiscal lookup at the wait's ceiling may take before the wait ends. */
+const FISCAL_LAST_LOOK_MS = 1500;
+
 // erp-sales-document — visor del documento de una venta (tiquet u factura) en el formato adecuado.
 // Carga `sales.get` + `sales.lines` + `sales.pos_settings.get` por `sale-id`, mapea (document-mappers,
 // con el locale del hub y las labels del catálogo ADR-0055) y renderiza <ok-receipt> o <ok-invoice>.
@@ -125,6 +128,12 @@ export class ErpSalesDocument extends LitElement {
   /** sales#308 — the just-charged document is still being issued: the loader is on screen. */
   @state() private awaitingFiscal = false;
 
+  /** hub#1867 — how the just-charged wait ended (`issued()`), once it has. */
+  private issuedResult?: boolean;
+
+  /** hub#1867 — whoever asked `issued()` before the wait ended. */
+  private issuedWaiters: Array<(complete: boolean) => void> = [];
+
   /** Venta ya cargada/en curso — evita el doble load (connectedCallback + updated disparan ambos). */
   private loadedFor?: string;
 
@@ -138,7 +147,39 @@ export class ErpSalesDocument extends LitElement {
 
   disconnectedCallback() {
     window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
+    // hub#1867 — a viewer taken out of the document stops watching (`watchFiscal`), so nobody may be
+    // left waiting on a wait that will never end.
+    this.settleIssued(false);
     super.disconnectedCallback();
+  }
+
+  /**
+   * hub#1867 — resolves when the document is ready to be PRINTED: the paper the hub shell prints on
+   * its own at checkout mounts this viewer hidden, with `issuing`, and has no screen to watch.
+   *
+   * `true` = the document is final: the VeriFactu QR arrived, or nothing more will come (no invoicing
+   * or VeriFactu app, or a reprint, which never waits). `false` = it was not: the `fiscalWaitMs`
+   * ceiling ran out with the invoice or its record still missing (a slow AEAT), the sale failed to
+   * load, or the viewer was removed. Either way `printableDocument()` then answers the best paper
+   * there is; `false` tells the caller that paper lacks something a reprint will carry.
+   *
+   * A viewer taken out of the document stops watching, so from then on it answers `false`, even if it
+   * is put back (Ionic reparents overlays): ask a viewer that stays mounted, as the hub's hidden host
+   * does.
+   */
+  issued(): Promise<boolean> {
+    if (this.issuedResult !== undefined) return Promise.resolve(this.issuedResult);
+    // A sale injected directly (preview/test) is never loaded nor watched: nothing to wait for.
+    if (this.sale && this.loadedFor === undefined) return Promise.resolve(true);
+    return new Promise((resolve) => this.issuedWaiters.push(resolve));
+  }
+
+  private settleIssued(complete: boolean): void {
+    if (this.issuedResult !== undefined) return;
+    this.issuedResult = complete;
+    const waiters = this.issuedWaiters;
+    this.issuedWaiters = [];
+    for (const resolve of waiters) resolve(complete);
   }
 
   updated(changed: Map<string, unknown>) {
@@ -147,6 +188,8 @@ export class ErpSalesDocument extends LitElement {
 
   private async load() {
     if (!this.saleId || this.loadedFor === this.saleId) return;
+    // hub#1867 — a new sale is a new wait; whoever is already waiting gets THIS sale's answer.
+    if (this.loadedFor !== undefined) this.issuedResult = undefined;
     this.loadedFor = this.saleId;
     this.loading = true; this.error = '';
     try {
@@ -189,9 +232,12 @@ export class ErpSalesDocument extends LitElement {
       // sales#308: recién cobrado, la pantalla espera tras un indicador de carga en vez de pintar
       // un tique a medias; una reimpresión se pinta al momento, como siempre.
       this.awaitingFiscal = this.issuing;
+      // hub#1867 — a reprint has no wait: its document is as final as it gets right now.
+      if (!this.issuing) this.settleIssued(true);
       void this.watchFiscal(this.saleId);
     } catch (e) {
       this.error = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errorDocument');
+      this.settleIssued(false);
     } finally {
       this.loading = false;
     }
@@ -210,11 +256,38 @@ export class ErpSalesDocument extends LitElement {
       if (this.saleId !== saleId) return;
       fellBack = true;
       this.awaitingFiscal = false;
+      // hub#1867 — the ceiling ran out (or the retries did) with the fiscal data still missing.
+      this.settleIssued(false);
       // sales#274 — the wait is over and the invoice has not landed: the ticket falls back to its
       // own number rather than being painted with no identifier at all.
       if (this.fiscal.pending) this.fiscal = { ...this.fiscal, pending: false };
     };
-    const ceiling = this.awaitingFiscal ? setTimeout(endWait, this.fiscalWaitMs) : undefined;
+    // hub#1867 — one last look AT the ceiling before giving up. The retry cadence looks at 6.1 s and
+    // then 11.1 s, so a record readable at 7 s missed the whole wait and the paper printed at checkout
+    // went out without the QR that was already there. The look is bounded: a lookup that hangs must
+    // not keep the till behind the loader.
+    const lastLook = async () => {
+      if (this.saleId !== saleId || !this.awaitingFiscal) return;
+      let grace: ReturnType<typeof setTimeout> | undefined;
+      const last = await Promise.race([
+        this.resolveFiscal(saleId),
+        new Promise<undefined>((resolve) => { grace = setTimeout(() => resolve(undefined), FISCAL_LAST_LOOK_MS); }),
+      ]);
+      clearTimeout(grace);
+      if (this.saleId !== saleId || !this.awaitingFiscal) return;
+      if (last?.fiscal.qr) {
+        this.fiscal = last.fiscal;
+        if (last.claimInvoiceId) {
+          this.claimInvoiceId = last.claimInvoiceId;
+          void this.ensureClaim(last.claimInvoiceId);
+        }
+        this.awaitingFiscal = false;
+        this.settleIssued(true);
+        return;
+      }
+      endWait();
+    };
+    const ceiling = this.awaitingFiscal ? setTimeout(() => void lastLook(), this.fiscalWaitMs) : undefined;
     try {
       for (const delay of [0, ...this.fiscalRetryDelays]) {
         if (delay) await new Promise((r) => setTimeout(r, delay));
@@ -233,6 +306,7 @@ export class ErpSalesDocument extends LitElement {
         if (fiscal.qr || !retry) {
           // Complete (or nothing more will come): the final document, in one go.
           this.awaitingFiscal = false;
+          this.settleIssued(true);
           return;
         }
       }

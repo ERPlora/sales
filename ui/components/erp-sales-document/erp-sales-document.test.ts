@@ -871,4 +871,149 @@ describe('recién cobrado, el tique espera a estar completo (sales#308)', () => 
     expect(issuingNotice(el)!.textContent).toContain('ui.issuingInvoice');
     expect(el.shadowRoot!.querySelector('ok-invoice'), 'no half-built invoice either').toBeNull();
   });
+
+  // hub#1867 — the paper printed on its own at checkout is composed by this viewer, mounted hidden by
+  // the hub shell. It has no screen to watch, so it needs to be TOLD when the just-charged wait is
+  // over: before, it took the first document the viewer answered — the sale's own number and no QR —
+  // while the screen was still showing «Issuing the ticket…».
+  describe('issued(): when the paper printed at checkout can ask for its document (hub#1867)', () => {
+    type Viewer = HTMLElement & {
+      updateComplete: Promise<unknown>;
+      issued(): Promise<boolean>;
+      printableDocument(): Record<string, unknown> | undefined;
+    };
+
+    /** Whether `p` has settled, read without moving the clock. */
+    async function settledValue<T>(p: Promise<T>): Promise<{ done: boolean; value?: T }> {
+      let out: { done: boolean; value?: T } = { done: false };
+      void p.then((value) => { out = { done: true, value }; });
+      await vi.advanceTimersByTimeAsync(0);
+      return out;
+    }
+
+    it('banco-pre timing: it waits for the VeriFactu record and the document then carries the invoice number and the QR', async () => {
+      const el = (await montar({ invoiceAt: 2800, recordAt: 5200 })) as Viewer;
+      const issued = el.issued();
+      await settle(el);
+      await vi.advanceTimersByTimeAsync(4000); // the invoice is there, its record is not
+      expect((await settledValue(issued)).done, 'no paper while the record is still being filed').toBe(false);
+
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(await settledValue(issued), 'complete: the QR arrived').toEqual({ done: true, value: true });
+      const paper = el.printableDocument()!;
+      expect(paper.receipt_id, 'the simplified invoice number, not the sale number').toBe('TICKET-2026-000011');
+      expect(paper.qr_data, 'the AEAT QR').toBe(RECORD.qr_url);
+    });
+
+    it('a slow AEAT: at the 10 s ceiling it answers false, and the document carries the invoice number without a QR', async () => {
+      const el = (await montar({ invoiceAt: 1000, recordAt: 18000 })) as Viewer;
+      const issued = el.issued();
+      await settle(el);
+      await vi.advanceTimersByTimeAsync(9000);
+      expect((await settledValue(issued)).done, 'still inside the wait').toBe(false);
+
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(await settledValue(issued), 'the ceiling ends the wait, incomplete').toEqual({ done: true, value: false });
+      const paper = el.printableDocument()!;
+      expect(paper.receipt_id).toBe('TICKET-2026-000011');
+      expect(paper.qr_data, 'no QR yet').toBeUndefined();
+    });
+
+    it('a record that lands late in the wait (7 s) still reaches the paper: one last look at the ceiling', async () => {
+      // The retry cadence looks at 0 / 0.4 / 1.3 / 3.1 / 6.1 / 11.1 s and the ceiling is 10 s: a record
+      // readable at 7 s used to be missed for the whole 6.1–10 s stretch and the paper went out without
+      // its QR, with the QR sitting there for three seconds (review of hub#1867).
+      const el = (await montar({ invoiceAt: 1000, recordAt: 7000 })) as Viewer;
+      const issued = el.issued();
+      await settle(el);
+      await vi.advanceTimersByTimeAsync(10500);
+      expect(await settledValue(issued), 'complete, inside the wait').toEqual({ done: true, value: true });
+      expect(el.printableDocument()!.qr_data).toBe(RECORD.qr_url);
+      await el.updateComplete;
+      expect(receipt(el)?.qr, 'and the screen shows the same QR').toBe(RECORD.qr_url);
+    });
+
+    it('a last look that hangs at the ceiling does not keep the till waiting', async () => {
+      const start = Date.now();
+      sdkDouble = installDocDouble({
+        'sales.get': [SALE],
+        'sales.lines': [{ product_name: 'Agua mineral 50cl', quantity: 1, unit_price: 150, line_total: 150 }],
+        'sales.business.get': [{ name: 'ERPlora Demo SL', tax_id: 'B27593136' }],
+        'invoice.by_source': [INVOICE],
+        'invoice.lines': [],
+        // Nothing before the ceiling; from then on the lookup never answers.
+        'verifactu.records.by_invoice': () => (Date.now() - start >= 9000 ? new Promise<unknown[]>(() => {}) : []),
+      });
+      await import('./erp-sales-document');
+      const el = document.createElement('erp-sales-document') as Viewer & { issuing: boolean };
+      el.issuing = true;
+      el.setAttribute('sale-id', 's1');
+      document.body.appendChild(el);
+      const issued = el.issued();
+      await settle(el);
+      await vi.advanceTimersByTimeAsync(10000);
+      expect((await settledValue(issued)).done, 'the last look is still out').toBe(false);
+      await vi.advanceTimersByTimeAsync(1600);
+      expect(await settledValue(issued), 'bounded: the wait ends incomplete').toEqual({ done: true, value: false });
+      expect(el.printableDocument()!.receipt_id).toBe('TICKET-2026-000011');
+    });
+
+    it('with no invoicing app there is nothing to wait for: it answers true at once with the sale number', async () => {
+      sdkDouble = installDocDouble({
+        'sales.get': [SALE],
+        'sales.lines': [{ product_name: 'Agua mineral 50cl', quantity: 1, unit_price: 150, line_total: 150 }],
+      });
+      await import('./erp-sales-document');
+      const el = document.createElement('erp-sales-document') as Viewer & { issuing: boolean };
+      el.issuing = true;
+      el.setAttribute('sale-id', 's1');
+      document.body.appendChild(el);
+      const issued = el.issued();
+      for (let turn = 0; turn < 20; turn += 1) await vi.advanceTimersByTimeAsync(0);
+      expect(await settledValue(issued), 'no wait at all').toEqual({ done: true, value: true });
+      expect(el.printableDocument()!.receipt_id).toBe('20260913-0001');
+    });
+
+    it('asked before the viewer is even in the document, it still answers once the wait is over', async () => {
+      await montar({ invoiceAt: 0, recordAt: 0 }); // warms the element definition and the double
+      document.body.innerHTML = '';
+      const el = document.createElement('erp-sales-document') as Viewer & { issuing: boolean };
+      el.issuing = true;
+      const issued = el.issued(); // what the hub does: it may ask before connecting the viewer
+      el.setAttribute('sale-id', 's1');
+      document.body.appendChild(el);
+      for (let turn = 0; turn < 30; turn += 1) await vi.advanceTimersByTimeAsync(0);
+      expect(await settledValue(issued)).toEqual({ done: true, value: true });
+      expect(el.printableDocument()!.qr_data).toBe(RECORD.qr_url);
+    });
+
+    it('a reprint (not just charged) never waits: it answers as soon as the sale is loaded', async () => {
+      const el = (await montar({ invoiceAt: Infinity, recordAt: Infinity, issuing: false })) as Viewer;
+      const issued = el.issued();
+      await settle(el);
+      expect(await settledValue(issued)).toEqual({ done: true, value: true });
+    });
+
+    it('a sale that fails to load answers false instead of leaving the caller waiting', async () => {
+      sdkDouble = installDocDouble({}, { failing: { 'sales.get': 'internal_error' } });
+      await import('./erp-sales-document');
+      const el = document.createElement('erp-sales-document') as Viewer & { issuing: boolean };
+      el.issuing = true;
+      el.setAttribute('sale-id', 's1');
+      document.body.appendChild(el);
+      const issued = el.issued();
+      for (let turn = 0; turn < 20; turn += 1) await vi.advanceTimersByTimeAsync(0);
+      expect(await settledValue(issued)).toEqual({ done: true, value: false });
+      expect(el.printableDocument(), 'nothing to print').toBeUndefined();
+    });
+
+    it('a viewer removed before the wait is over answers false instead of hanging', async () => {
+      const el = (await montar({ invoiceAt: Infinity, recordAt: Infinity })) as Viewer;
+      const issued = el.issued();
+      await settle(el);
+      el.remove();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(await settledValue(issued)).toEqual({ done: true, value: false });
+    });
+  });
 });
