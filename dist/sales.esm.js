@@ -5176,6 +5176,8 @@ var ErpSalesDocument = class extends i3 {
     this.fiscalRetryDelays = [400, 900, 1800, 3e3, 5e3, 1e4, 2e4];
     this.fiscalWaitMs = 1e4;
     this.awaitingFiscal = false;
+    /** hub#1867 — whoever asked `issued()` before the wait ended. */
+    this.issuedWaiters = [];
     this.onLocaleChange = () => this.requestUpdate();
   }
   static {
@@ -5207,13 +5209,37 @@ var ErpSalesDocument = class extends i3 {
   }
   disconnectedCallback() {
     window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
+    this.settleIssued(false);
     super.disconnectedCallback();
+  }
+  /**
+   * hub#1867 — resolves when the document is ready to be PRINTED: the paper the hub shell prints on
+   * its own at checkout mounts this viewer hidden, with `issuing`, and has no screen to watch.
+   *
+   * `true` = the document is final: the VeriFactu QR arrived, or nothing more will come (no invoicing
+   * or VeriFactu app, or a reprint, which never waits). `false` = it was not: the `fiscalWaitMs`
+   * ceiling ran out with the invoice or its record still missing (a slow AEAT), the sale failed to
+   * load, or the viewer was removed. Either way `printableDocument()` then answers the best paper
+   * there is; `false` tells the caller that paper lacks something a reprint will carry.
+   */
+  issued() {
+    if (this.issuedResult !== void 0) return Promise.resolve(this.issuedResult);
+    if (this.sale && this.loadedFor === void 0) return Promise.resolve(true);
+    return new Promise((resolve) => this.issuedWaiters.push(resolve));
+  }
+  settleIssued(complete) {
+    if (this.issuedResult !== void 0) return;
+    this.issuedResult = complete;
+    const waiters = this.issuedWaiters;
+    this.issuedWaiters = [];
+    for (const resolve of waiters) resolve(complete);
   }
   updated(changed) {
     if (changed.has("saleId") && this.saleId && !this.sale) this.load();
   }
   async load() {
     if (!this.saleId || this.loadedFor === this.saleId) return;
+    if (this.loadedFor !== void 0) this.issuedResult = void 0;
     this.loadedFor = this.saleId;
     this.loading = true;
     this.error = "";
@@ -5250,9 +5276,11 @@ var ErpSalesDocument = class extends i3 {
         ...business.tax_id ? { issuer_tax_id: business.tax_id } : {}
       };
       this.awaitingFiscal = this.issuing;
+      if (!this.issuing) this.settleIssued(true);
       void this.watchFiscal(this.saleId);
     } catch (e7) {
       this.error = e7 instanceof Error ? e7.message : erplora().t(CATALOG, "ui.errorDocument");
+      this.settleIssued(false);
     } finally {
       this.loading = false;
     }
@@ -5266,6 +5294,7 @@ var ErpSalesDocument = class extends i3 {
       if (this.saleId !== saleId) return;
       fellBack = true;
       this.awaitingFiscal = false;
+      this.settleIssued(false);
       if (this.fiscal.pending) this.fiscal = { ...this.fiscal, pending: false };
     };
     const ceiling = this.awaitingFiscal ? setTimeout(endWait, this.fiscalWaitMs) : void 0;
@@ -5282,6 +5311,7 @@ var ErpSalesDocument = class extends i3 {
         }
         if (fiscal.qr || !retry) {
           this.awaitingFiscal = false;
+          this.settleIssued(true);
           return;
         }
       }

@@ -125,6 +125,12 @@ export class ErpSalesDocument extends LitElement {
   /** sales#308 — the just-charged document is still being issued: the loader is on screen. */
   @state() private awaitingFiscal = false;
 
+  /** hub#1867 — how the just-charged wait ended (`issued()`), once it has. */
+  private issuedResult?: boolean;
+
+  /** hub#1867 — whoever asked `issued()` before the wait ended. */
+  private issuedWaiters: Array<(complete: boolean) => void> = [];
+
   /** Venta ya cargada/en curso — evita el doble load (connectedCallback + updated disparan ambos). */
   private loadedFor?: string;
 
@@ -138,7 +144,35 @@ export class ErpSalesDocument extends LitElement {
 
   disconnectedCallback() {
     window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
+    // hub#1867 — a viewer taken out of the document stops watching (`watchFiscal`), so nobody may be
+    // left waiting on a wait that will never end.
+    this.settleIssued(false);
     super.disconnectedCallback();
+  }
+
+  /**
+   * hub#1867 — resolves when the document is ready to be PRINTED: the paper the hub shell prints on
+   * its own at checkout mounts this viewer hidden, with `issuing`, and has no screen to watch.
+   *
+   * `true` = the document is final: the VeriFactu QR arrived, or nothing more will come (no invoicing
+   * or VeriFactu app, or a reprint, which never waits). `false` = it was not: the `fiscalWaitMs`
+   * ceiling ran out with the invoice or its record still missing (a slow AEAT), the sale failed to
+   * load, or the viewer was removed. Either way `printableDocument()` then answers the best paper
+   * there is; `false` tells the caller that paper lacks something a reprint will carry.
+   */
+  issued(): Promise<boolean> {
+    if (this.issuedResult !== undefined) return Promise.resolve(this.issuedResult);
+    // A sale injected directly (preview/test) is never loaded nor watched: nothing to wait for.
+    if (this.sale && this.loadedFor === undefined) return Promise.resolve(true);
+    return new Promise((resolve) => this.issuedWaiters.push(resolve));
+  }
+
+  private settleIssued(complete: boolean): void {
+    if (this.issuedResult !== undefined) return;
+    this.issuedResult = complete;
+    const waiters = this.issuedWaiters;
+    this.issuedWaiters = [];
+    for (const resolve of waiters) resolve(complete);
   }
 
   updated(changed: Map<string, unknown>) {
@@ -147,6 +181,8 @@ export class ErpSalesDocument extends LitElement {
 
   private async load() {
     if (!this.saleId || this.loadedFor === this.saleId) return;
+    // hub#1867 — a new sale is a new wait; whoever is already waiting gets THIS sale's answer.
+    if (this.loadedFor !== undefined) this.issuedResult = undefined;
     this.loadedFor = this.saleId;
     this.loading = true; this.error = '';
     try {
@@ -189,9 +225,12 @@ export class ErpSalesDocument extends LitElement {
       // sales#308: recién cobrado, la pantalla espera tras un indicador de carga en vez de pintar
       // un tique a medias; una reimpresión se pinta al momento, como siempre.
       this.awaitingFiscal = this.issuing;
+      // hub#1867 — a reprint has no wait: its document is as final as it gets right now.
+      if (!this.issuing) this.settleIssued(true);
       void this.watchFiscal(this.saleId);
     } catch (e) {
       this.error = e instanceof Error ? e.message : erplora().t(CATALOG, 'ui.errorDocument');
+      this.settleIssued(false);
     } finally {
       this.loading = false;
     }
@@ -210,6 +249,8 @@ export class ErpSalesDocument extends LitElement {
       if (this.saleId !== saleId) return;
       fellBack = true;
       this.awaitingFiscal = false;
+      // hub#1867 — the ceiling ran out (or the retries did) with the fiscal data still missing.
+      this.settleIssued(false);
       // sales#274 — the wait is over and the invoice has not landed: the ticket falls back to its
       // own number rather than being painted with no identifier at all.
       if (this.fiscal.pending) this.fiscal = { ...this.fiscal, pending: false };
@@ -233,6 +274,7 @@ export class ErpSalesDocument extends LitElement {
         if (fiscal.qr || !retry) {
           // Complete (or nothing more will come): the final document, in one go.
           this.awaitingFiscal = false;
+          this.settleIssued(true);
           return;
         }
       }
