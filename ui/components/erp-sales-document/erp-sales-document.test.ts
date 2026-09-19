@@ -919,6 +919,45 @@ describe('recién cobrado, el tique espera a estar completo (sales#308)', () => 
       expect(paper.qr_data, 'no QR yet').toBeUndefined();
     });
 
+    it('a record that lands late in the wait (7 s) still reaches the paper: one last look at the ceiling', async () => {
+      // The retry cadence looks at 0 / 0.4 / 1.3 / 3.1 / 6.1 / 11.1 s and the ceiling is 10 s: a record
+      // readable at 7 s used to be missed for the whole 6.1–10 s stretch and the paper went out without
+      // its QR, with the QR sitting there for three seconds (review of hub#1867).
+      const el = (await montar({ invoiceAt: 1000, recordAt: 7000 })) as Viewer;
+      const issued = el.issued();
+      await settle(el);
+      await vi.advanceTimersByTimeAsync(10500);
+      expect(await settledValue(issued), 'complete, inside the wait').toEqual({ done: true, value: true });
+      expect(el.printableDocument()!.qr_data).toBe(RECORD.qr_url);
+      await el.updateComplete;
+      expect(receipt(el)?.qr, 'and the screen shows the same QR').toBe(RECORD.qr_url);
+    });
+
+    it('a last look that hangs at the ceiling does not keep the till waiting', async () => {
+      const start = Date.now();
+      sdkDouble = installDocDouble({
+        'sales.get': [SALE],
+        'sales.lines': [{ product_name: 'Agua mineral 50cl', quantity: 1, unit_price: 150, line_total: 150 }],
+        'sales.business.get': [{ name: 'ERPlora Demo SL', tax_id: 'B27593136' }],
+        'invoice.by_source': [INVOICE],
+        'invoice.lines': [],
+        // Nothing before the ceiling; from then on the lookup never answers.
+        'verifactu.records.by_invoice': () => (Date.now() - start >= 9000 ? new Promise<unknown[]>(() => {}) : []),
+      });
+      await import('./erp-sales-document');
+      const el = document.createElement('erp-sales-document') as Viewer & { issuing: boolean };
+      el.issuing = true;
+      el.setAttribute('sale-id', 's1');
+      document.body.appendChild(el);
+      const issued = el.issued();
+      await settle(el);
+      await vi.advanceTimersByTimeAsync(10000);
+      expect((await settledValue(issued)).done, 'the last look is still out').toBe(false);
+      await vi.advanceTimersByTimeAsync(1600);
+      expect(await settledValue(issued), 'bounded: the wait ends incomplete').toEqual({ done: true, value: false });
+      expect(el.printableDocument()!.receipt_id).toBe('TICKET-2026-000011');
+    });
+
     it('with no invoicing app there is nothing to wait for: it answers true at once with the sale number', async () => {
       sdkDouble = installDocDouble({
         'sales.get': [SALE],

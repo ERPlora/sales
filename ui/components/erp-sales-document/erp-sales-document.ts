@@ -28,6 +28,9 @@ import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
+/** hub#1867 — how long the last fiscal lookup at the wait's ceiling may take before the wait ends. */
+const FISCAL_LAST_LOOK_MS = 1500;
+
 // erp-sales-document — visor del documento de una venta (tiquet u factura) en el formato adecuado.
 // Carga `sales.get` + `sales.lines` + `sales.pos_settings.get` por `sale-id`, mapea (document-mappers,
 // con el locale del hub y las labels del catálogo ADR-0055) y renderiza <ok-receipt> o <ok-invoice>.
@@ -159,6 +162,10 @@ export class ErpSalesDocument extends LitElement {
    * ceiling ran out with the invoice or its record still missing (a slow AEAT), the sale failed to
    * load, or the viewer was removed. Either way `printableDocument()` then answers the best paper
    * there is; `false` tells the caller that paper lacks something a reprint will carry.
+   *
+   * A viewer taken out of the document stops watching, so from then on it answers `false`, even if it
+   * is put back (Ionic reparents overlays): ask a viewer that stays mounted, as the hub's hidden host
+   * does.
    */
   issued(): Promise<boolean> {
     if (this.issuedResult !== undefined) return Promise.resolve(this.issuedResult);
@@ -255,7 +262,32 @@ export class ErpSalesDocument extends LitElement {
       // own number rather than being painted with no identifier at all.
       if (this.fiscal.pending) this.fiscal = { ...this.fiscal, pending: false };
     };
-    const ceiling = this.awaitingFiscal ? setTimeout(endWait, this.fiscalWaitMs) : undefined;
+    // hub#1867 — one last look AT the ceiling before giving up. The retry cadence looks at 6.1 s and
+    // then 11.1 s, so a record readable at 7 s missed the whole wait and the paper printed at checkout
+    // went out without the QR that was already there. The look is bounded: a lookup that hangs must
+    // not keep the till behind the loader.
+    const lastLook = async () => {
+      if (this.saleId !== saleId || !this.awaitingFiscal) return;
+      let grace: ReturnType<typeof setTimeout> | undefined;
+      const last = await Promise.race([
+        this.resolveFiscal(saleId),
+        new Promise<undefined>((resolve) => { grace = setTimeout(() => resolve(undefined), FISCAL_LAST_LOOK_MS); }),
+      ]);
+      clearTimeout(grace);
+      if (this.saleId !== saleId || !this.awaitingFiscal) return;
+      if (last?.fiscal.qr) {
+        this.fiscal = last.fiscal;
+        if (last.claimInvoiceId) {
+          this.claimInvoiceId = last.claimInvoiceId;
+          void this.ensureClaim(last.claimInvoiceId);
+        }
+        this.awaitingFiscal = false;
+        this.settleIssued(true);
+        return;
+      }
+      endWait();
+    };
+    const ceiling = this.awaitingFiscal ? setTimeout(() => void lastLook(), this.fiscalWaitMs) : undefined;
     try {
       for (const delay of [0, ...this.fiscalRetryDelays]) {
         if (delay) await new Promise((r) => setTimeout(r, delay));

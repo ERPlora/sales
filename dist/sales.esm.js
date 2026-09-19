@@ -5161,6 +5161,7 @@ var en_default = {
 
 // ui/components/erp-sales-document/erp-sales-document.ts
 var CATALOG = { es: es_default, en: en_default };
+var FISCAL_LAST_LOOK_MS = 1500;
 function erplora() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -5221,6 +5222,10 @@ var ErpSalesDocument = class extends i3 {
    * ceiling ran out with the invoice or its record still missing (a slow AEAT), the sale failed to
    * load, or the viewer was removed. Either way `printableDocument()` then answers the best paper
    * there is; `false` tells the caller that paper lacks something a reprint will carry.
+   *
+   * A viewer taken out of the document stops watching, so from then on it answers `false`, even if it
+   * is put back (Ionic reparents overlays): ask a viewer that stays mounted, as the hub's hidden host
+   * does.
    */
   issued() {
     if (this.issuedResult !== void 0) return Promise.resolve(this.issuedResult);
@@ -5297,7 +5302,30 @@ var ErpSalesDocument = class extends i3 {
       this.settleIssued(false);
       if (this.fiscal.pending) this.fiscal = { ...this.fiscal, pending: false };
     };
-    const ceiling = this.awaitingFiscal ? setTimeout(endWait, this.fiscalWaitMs) : void 0;
+    const lastLook = async () => {
+      if (this.saleId !== saleId || !this.awaitingFiscal) return;
+      let grace;
+      const last = await Promise.race([
+        this.resolveFiscal(saleId),
+        new Promise((resolve) => {
+          grace = setTimeout(() => resolve(void 0), FISCAL_LAST_LOOK_MS);
+        })
+      ]);
+      clearTimeout(grace);
+      if (this.saleId !== saleId || !this.awaitingFiscal) return;
+      if (last?.fiscal.qr) {
+        this.fiscal = last.fiscal;
+        if (last.claimInvoiceId) {
+          this.claimInvoiceId = last.claimInvoiceId;
+          void this.ensureClaim(last.claimInvoiceId);
+        }
+        this.awaitingFiscal = false;
+        this.settleIssued(true);
+        return;
+      }
+      endWait();
+    };
+    const ceiling = this.awaitingFiscal ? setTimeout(() => void lastLook(), this.fiscalWaitMs) : void 0;
     try {
       for (const delay of [0, ...this.fiscalRetryDelays]) {
         if (delay) await new Promise((r6) => setTimeout(r6, delay));
