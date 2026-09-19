@@ -4511,6 +4511,11 @@ var es_default = {
     comboRemoveOne: "Quitar un {name}",
     missingAppCharge: "{app} no est\xE1 instalada, as\xED que no se puede cobrar. Inst\xE1lala desde el marketplace.",
     missingAppChargeShort: "Falta {app}",
+    fiscalRoadNoGrant: "Este negocio ya factura de verdad y ERPlora todav\xEDa no puede enviar sus tiques a Hacienda: falta firmar el otorgamiento de representaci\xF3n y que lo aprobemos. Hasta entonces no se puede cobrar.",
+    fiscalRoadNoConnection: "Este negocio ya factura de verdad y su conexi\xF3n segura con ERPlora no est\xE1 lista: sus tiques no llegar\xEDan nunca a Hacienda. No se puede cobrar hasta conectarla.",
+    fiscalRoadBlocked: "Este negocio no tiene ahora forma de enviar sus tiques a Hacienda. No se puede cobrar hasta arreglarlo.",
+    fiscalRoadShort: "Sin env\xEDo a Hacienda",
+    fiscalRoadFix: "Ir a la configuraci\xF3n fiscal",
     appTaxes: "Impuestos",
     appInventory: "Inventario",
     appServices: "Servicios",
@@ -5080,6 +5085,11 @@ var en_default = {
     comboRemoveOne: "Remove one {name}",
     missingAppCharge: "{app} is not installed, so nothing can be charged. Install it from the marketplace.",
     missingAppChargeShort: "{app} is missing",
+    fiscalRoadNoGrant: "This business files with the tax agency for real and ERPlora cannot send its tickets there yet: the representation grant still has to be signed and approved. Nothing can be charged until then.",
+    fiscalRoadNoConnection: "This business files with the tax agency for real and its secure connection to ERPlora is not set up: its tickets would never reach the tax agency. Nothing can be charged until it is connected.",
+    fiscalRoadBlocked: "This business has no way to send its tickets to the tax agency right now. Nothing can be charged until it is fixed.",
+    fiscalRoadShort: "No way to send to the tax agency",
+    fiscalRoadFix: "Go to fiscal settings",
     appTaxes: "Taxes",
     appInventory: "Inventory",
     appServices: "Services",
@@ -7224,7 +7234,12 @@ var MESSAGES = {
   module_inactive: "ui.errorMissingApp",
   // hub#701: the required read exists but did not resolve. The only `required` read of
   // `complete_sale` is the tax catalogue, so this is exactly what sales#21 already says.
-  read_unavailable: "ui.errorTaxCatalogUnavailable"
+  read_unavailable: "ui.errorTaxCatalogUnavailable",
+  // hub#1935 — the hub files with the tax authority for real and has no way to get this ticket
+  // there, so the dispatcher refused the sale before writing anything. Same sentences as the notice
+  // the till shows at mount (`lib/fiscal-road.ts`).
+  "fiscal.no_representation_grant": "ui.fiscalRoadNoGrant",
+  "fiscal.gateway_not_enrolled": "ui.fiscalRoadNoConnection"
 };
 function checkoutErrorKey(code) {
   return MESSAGES[code] ?? "ui.errorCharge";
@@ -7232,6 +7247,23 @@ function checkoutErrorKey(code) {
 function errorCode(e7) {
   const code = e7?.code;
   return typeof code === "string" ? code : "";
+}
+
+// ui/lib/fiscal-road.ts
+var CAUSES = {
+  "fiscal.no_representation_grant": "ui.fiscalRoadNoGrant",
+  "fiscal.gateway_not_enrolled": "ui.fiscalRoadNoConnection"
+};
+function fiscalRoadKey(code) {
+  return CAUSES[code] ?? "ui.fiscalRoadBlocked";
+}
+function isFiscalRoadRefusal(code) {
+  return Object.prototype.hasOwnProperty.call(CAUSES, code);
+}
+function readFiscalRoad(answer) {
+  const row = Array.isArray(answer) ? answer[0] : void 0;
+  const text = (v3) => typeof v3 === "string" ? v3.trim() : "";
+  return { blocked: text(row?.filing_blocked), fixRoute: text(row?.filing_fix_route) };
 }
 
 // ui/lib/transport-error.ts
@@ -7555,6 +7587,7 @@ var ErpPosTouch = class extends i3 {
      *  Vacío y `available:false` mientras carga o si `taxes` no responde. ADR-0064/0066/0085. */
     this.taxCatalog = { rates: /* @__PURE__ */ new Map(), available: false, installed: true };
     this.missingChargeApp = "";
+    this.fiscalRoad = { blocked: "", fixRoute: "" };
     /** Signature of the ticket already priced, so we do not re-ask on every repaint. */
     this.valuedSignature = "";
     /** Request counter: an older answer must never overwrite a newer one. */
@@ -8546,7 +8579,8 @@ var ErpPosTouch = class extends i3 {
         svcCats,
         taxCats,
         ownDepartments,
-        fiscalLimits
+        fiscalLimits,
+        fiscalRoadRows
       ] = await Promise.all([
         fromSource("sync_products", () => capabilityCatalogRead(
           "inventory",
@@ -8604,6 +8638,11 @@ var ErpPosTouch = class extends i3 {
         // que NO queda desprotegido es el cable — §15.8 en el validador para el registro igual, y
         // esa es la mitad que impide que el número se gaste en una factura que la AEAT rechaza.
         erplora2().query("hub.fiscal.limits").catch(() => []),
+        // hub#1935 — can this business get its tickets to the tax authority at all? Also a CORE
+        // query, for the same reason. Best-effort like the limits: a read that fails does not stop
+        // the till, because the dispatcher refuses the sale on its own. What this buys is saying it
+        // BEFORE the cashier charges — a card can go through a separate terminal first.
+        erplora2().query("hub.fiscal.transmission").catch(() => []),
         // sales#153 — los MENÚS que este hub vende. Una sola lectura (`combos.options.all`) da a la
         // vez las baldosas y sus grupos, así que es imposible ofrecer un menú cuyos cursos no se
         // hayan cargado: eso sería justo «ofrecer lo que el servidor va a rechazar».
@@ -8632,6 +8671,7 @@ var ErpPosTouch = class extends i3 {
       this.catalogAppAbsent = absentApps.has("inventory") && catalogSourceOn((await policy).sync_products);
       this.taxCatalog = taxCatalog;
       this.missingChargeApp = taxCatalog.installed ? "" : "taxes";
+      this.fiscalRoad = readFiscalRoad(fiscalRoadRows);
       this.simplifiedMaxCents = rows2(fiscalLimits)[0]?.simplified_invoice_max_cents ?? null;
       for (const u5 of unitRows) if (u5.code) this.units.set(u5.code, u5);
       this.products = [...prods.filter((p4) => p4.is_active !== 0), ...svcRows];
@@ -10127,6 +10167,10 @@ var ErpPosTouch = class extends i3 {
       this.notifyShell(t5("ui.missingAppCharge", { app: this.chargeAppName }));
       return;
     }
+    if (this.fiscalRoad.blocked) {
+      this.notifyShell(t5(fiscalRoadKey(this.fiscalRoad.blocked)));
+      return;
+    }
     if (this.missingRequiredCustomer) {
       this.askForCustomer();
       return;
@@ -10210,7 +10254,7 @@ var ErpPosTouch = class extends i3 {
    *  sheet's button too (sales#159), which carried the same defect. */
   syncChargeState() {
     const blocked = [
-      [".foot-actions ion-button.charge", !!this.missingChargeApp || this.missingRequiredCustomer],
+      [".foot-actions ion-button.charge", !!this.missingChargeApp || !!this.fiscalRoad.blocked || this.missingRequiredCustomer],
       [".sheet-foot ion-button.charge", this.paying && !!this.chargeBlock]
     ];
     for (const [selector, isBlocked] of blocked) {
@@ -10466,6 +10510,9 @@ var ErpPosTouch = class extends i3 {
         short: t5("ui.missingAppChargeShort", { app: this.chargeAppName }),
         reason: t5("ui.missingAppCharge", { app: this.chargeAppName })
       };
+    }
+    if (this.fiscalRoad.blocked) {
+      return { short: t5("ui.fiscalRoadShort"), reason: t5(fiscalRoadKey(this.fiscalRoad.blocked)) };
     }
     if (this.missingRequiredCustomer) {
       return { short: t5("ui.customerRequiredShort"), reason: t5("ui.customerRequiredCharge") };
@@ -10792,6 +10839,7 @@ var ErpPosTouch = class extends i3 {
       const key = checkoutErrorKey(code);
       const raw = e7 instanceof Error ? e7.message : String(e7 ?? "");
       this.error = key === "ui.errorCharge" && !code && raw ? raw : t5(key);
+      if (isFiscalRoadRefusal(code)) this.fiscalRoad = { ...this.fiscalRoad, blocked: code };
       return;
     }
     const recovery = await recoverCheckout(
@@ -10821,7 +10869,12 @@ var ErpPosTouch = class extends i3 {
     </ion-button>`;
   }
   goToSales() {
-    window.history.pushState({}, "", "/m/sales/sales");
+    this.navigateTo("/m/sales/sales");
+  }
+  /** Module → shell navigation: push the URL and tell the router with `popstate` (a Web Component
+   *  does not get the router — same pattern as `appointments` sending a booking to the till). */
+  navigateTo(path) {
+    window.history.pushState({}, "", path);
     window.dispatchEvent(new PopStateEvent("popstate"));
   }
   /** sales#149 — how many catalogue lines CANNOT be charged, over the WHOLE catalogue.
@@ -11210,7 +11263,7 @@ var ErpPosTouch = class extends i3 {
                  The blocked state itself is written by syncChargeState(), not here: Ionic steals
                  whatever the template puts on this host. -->
             <ion-button data-testid="pos-charge" class="charge" ?disabled=${!this.cart.length}
-                        title=${this.missingChargeApp ? t5("ui.missingAppCharge", { app: this.chargeAppName }) : this.missingRequiredCustomer ? t5("ui.customerRequiredCharge") : t5("ui.charge")}
+                        title=${this.missingChargeApp ? t5("ui.missingAppCharge", { app: this.chargeAppName }) : this.fiscalRoad.blocked ? t5(fiscalRoadKey(this.fiscalRoad.blocked)) : this.missingRequiredCustomer ? t5("ui.customerRequiredCharge") : t5("ui.charge")}
                         aria-label=${t5("ui.charge")}
                         @click=${() => this.openPay()}>
               <ion-icon slot="start" name="card-outline"></ion-icon>
@@ -11416,6 +11469,15 @@ var ErpPosTouch = class extends i3 {
           ${this.missingChargeApp ? b2`<div class="blocked-notice missing-app-notice" role="alert">
                 <ion-icon name="alert-circle" aria-hidden="true"></ion-icon>
                 <span>${t5("ui.missingAppCharge", { app: this.chargeAppName })}</span>
+              </div>` : A}
+          <!-- hub#1935 — this business files with the tax authority for real and its tickets have no
+               way to get there. An alert, like the missing app: this till cannot charge today. The
+               link is the fix route the CORE answered, so this module never names the fiscal one. -->
+          ${this.fiscalRoad.blocked ? b2`<div class="blocked-notice fiscal-road-notice" role="alert" data-testid="pos-fiscal-road">
+                <ion-icon name="alert-circle" aria-hidden="true"></ion-icon>
+                <span>${t5(fiscalRoadKey(this.fiscalRoad.blocked))}</span>
+                ${this.fiscalRoad.fixRoute ? b2`<ion-button size="small" fill="outline" class="fiscal-road-fix" data-testid="pos-fiscal-road-fix"
+                      @click=${() => this.navigateTo(this.fiscalRoad.fixRoute)}>${t5("ui.fiscalRoadFix")}</ion-button>` : A}
               </div>` : A}
           ${this.blockedNotice ? b2`<div class="blocked-notice" role="status">
                 <ion-icon name="alert-circle" aria-hidden="true"></ion-icon><span>${this.blockedNotice}</span>
@@ -12297,6 +12359,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "missingChargeApp", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "fiscalRoad", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "authoritative", 2);

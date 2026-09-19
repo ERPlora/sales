@@ -1,7 +1,7 @@
 {
   "file": "dist/sales.esm.js",
-  "sources_sha256": "bb841418d9d258f82ac15a22acdd40c12b262377d402512e5188f9a5e2ac0f2d",
-  "locales_sha256": "0015b035d6f05b60aceab71ac7f5c30408542d981af51712862ad31ed0cb5720",
-  "bundle_sha256": "c24bed96fd0f832c71e0ab1a07cca116462851952ff23f1074e6deb86a55d965",
-  "built_at": "2026-09-19T15:00:55.968Z"
+  "sources_sha256": "03ad7a218619f7ced4df832ec8e955800cbd9bd2854da30d18ab15b7d339e101",
+  "locales_sha256": "d7705ee88004be9286f86540451ae8fa0fff554c611ca519b6136d2282136df7",
+  "bundle_sha256": "ff6698bf54453ee8eecc0b8ca74238602d4a45abb3f8199abdf6d0fb28cce8d1",
+  "built_at": "2026-09-19T18:13:07.430Z"
 }

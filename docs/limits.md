@@ -80,6 +80,23 @@ gets exactly the screen the owner configured (sales#203).
 
 Note that charging is its own permission, separate from building the check.
 
+### When the hub refuses the sale: no way to reach the tax agency (hub#1935)
+
+A business that files with the tax agency **for real** (its fiscal profile went live) does not
+charge a ticket that would never get there. These two codes come from the hub itself, not from this
+module, and nothing is recorded when they fire:
+
+| Error | What happened | What to do |
+|---|---|---|
+| `fiscal.no_representation_grant` | ERPlora sends this business's tickets on its behalf, and the signed representation grant is not approved (missing, pending review, rejected or revoked) | Sign and upload the grant in the fiscal settings; the till sells again once it is approved |
+| `fiscal.gateway_not_enrolled` | The grant is approved, but this hub's secure connection to ERPlora's fiscal service is not set up | Set up the connection in the fiscal settings |
+
+The till says it **when it opens**, before any payment is taken: «Cobrar» stays pressable but does
+not open the payment sheet, and a notice names the cause with a button to the fiscal settings. A
+business that files with **its own certificate** is never blocked by either. In test mode nothing is
+ever blocked. When the tax agency is simply **down**, the till keeps charging: the tickets queue and
+are sent when it comes back.
+
 ## Dependencies — what breaks if something is missing
 
 **`inventory` and `taxes` are required** and are installed automatically with Sales. You **cannot

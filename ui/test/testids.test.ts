@@ -127,6 +127,7 @@ const COVERED: Record<string, { prefix: string; contract: string[] }> = {
       'pos-combo-close', 'pos-combo-confirm', 'pos-combo-scrim',
       'pos-dependency-read-failed',
       'pos-dirty-cancel', 'pos-dirty-discard', 'pos-dirty-park',
+      'pos-fiscal-road', 'pos-fiscal-road-fix',
       'pos-discount-apply', 'pos-discount-apply-amount', 'pos-discount-close',
       'pos-discount-mode', 'pos-discount-mode-amount', 'pos-discount-mode-percent',
       'pos-discount-remove', 'pos-discount-scrim',

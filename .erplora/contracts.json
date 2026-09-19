@@ -4,6 +4,7 @@
   "consumes": {
     "queries": [
       "hub.fiscal.limits",
+      "hub.fiscal.transmission",
       "hub.users.list",
       "sales.business.get",
       "sales.by_idempotency_key",

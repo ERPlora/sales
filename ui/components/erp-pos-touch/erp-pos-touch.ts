@@ -78,6 +78,7 @@ import { buildOpenPriceLine } from '../../lib/pos-open-price.js';
 // La frontera de la ESCALA de cantidades (ADR-0147): la UI trabaja en lógico (0,5), el cable en 10⁶.
 import { toMicro, fromMicro, onGrid, formatQuantity } from '../../lib/quantity.js';
 import { checkoutErrorKey, errorCode, newIdempotencyKey } from '../../lib/checkout-key.js';
+import { fiscalRoadKey, isFiscalRoadRefusal, readFiscalRoad, type FiscalRoad } from '../../lib/fiscal-road.js';
 // sales#81: el transporte del SDK filtra el HTML del 502 del proxy como un SyntaxError crudo
 // («<!DOCTYPE … is not valid JSON»). Esta es la frontera del módulo: traducirlo a un mensaje de
 // negocio para el cajero (la guarda `res.ok` del SDK se persigue aparte, en el hub).
@@ -1326,6 +1327,11 @@ export class ErpPosTouch extends LitElement {
    *  of `sales.complete_sale`). Resolved at mount from the stable code the runtime answers, and it
    *  is what turns "it fails on confirm" into "it is said on entry". */
   @state() private missingChargeApp = '';
+  /** hub#1935 — this business files with the tax authority for real and has no way to get its
+   *  tickets there: `blocked` is the hub's stable code of what is missing (`''` = the road exists).
+   *  Read at mount from the CORE query `hub.fiscal.transmission`, the same rule the dispatcher
+   *  refuses the sale with, and updated when the checkout is refused for it. */
+  @state() private fiscalRoad: FiscalRoad = { blocked: '', fixRoute: '' };
   /** sales#164 — the AUTHORITATIVE valuation of the ticket being charged. `undefined` = it has not
    *  arrived yet, the hub does not have the command, or the network went down: then the screen's
    *  own preview rules, which is what there was before. Never a 0 — a free ticket is not a
@@ -1697,7 +1703,7 @@ export class ErpPosTouch extends LitElement {
       (catalogSourceOn((await policy)[flag]) ? read() : []);
     try {
       const [prods, methods, businessRows, savedCart, parked, cats, prodCats, taxCatalog, unitRows,
-             svcRows, svcCats, taxCats, ownDepartments, fiscalLimits] = await Promise.all([
+             svcRows, svcCats, taxCats, ownDepartments, fiscalLimits, fiscalRoadRows] = await Promise.all([
         fromSource<Product>('sync_products', () => capabilityCatalogRead<Product>('inventory',
           (c) => c.queryAllOptional<Product>('inventory.products.list'),
           (c) => c.queryOptional<Product>('inventory.products.list', { limit: LEGACY_PAGE_LIMIT }))),
@@ -1747,6 +1753,11 @@ export class ErpPosTouch extends LitElement {
         // que NO queda desprotegido es el cable — §15.8 en el validador para el registro igual, y
         // esa es la mitad que impide que el número se gaste en una factura que la AEAT rechaza.
         erplora().query('hub.fiscal.limits').catch(() => []),
+        // hub#1935 — can this business get its tickets to the tax authority at all? Also a CORE
+        // query, for the same reason. Best-effort like the limits: a read that fails does not stop
+        // the till, because the dispatcher refuses the sale on its own. What this buys is saying it
+        // BEFORE the cashier charges — a card can go through a separate terminal first.
+        erplora().query('hub.fiscal.transmission').catch(() => []),
         // sales#153 — los MENÚS que este hub vende. Una sola lectura (`combos.options.all`) da a la
         // vez las baldosas y sus grupos, así que es imposible ofrecer un menú cuyos cursos no se
         // hayan cargado: eso sería justo «ofrecer lo que el servidor va a rechazar».
@@ -1784,6 +1795,7 @@ export class ErpPosTouch extends LitElement {
       // healthy until the cashier had already typed the amount, picked a payment method and
       // confirmed. It is known HERE, from the runtime's stable code, so it is said HERE.
       this.missingChargeApp = taxCatalog.installed ? '' : 'taxes';
+      this.fiscalRoad = readFiscalRoad(fiscalRoadRows);
       // `?? null` y no `?? 0`: el core ya devuelve `null` cuando el país no pone techo, y un 0 que
       // se colara aquí como importe pararía TODAS las ventas del local.
       this.simplifiedMaxCents =
@@ -3505,6 +3517,12 @@ export class ErpPosTouch extends LitElement {
       this.notifyShell(t('ui.missingAppCharge', { app: this.chargeAppName }));
       return;
     }
+    // hub#1935 — the same door for a business that cannot file: nothing on this screen fixes it,
+    // so no payment is started.
+    if (this.fiscalRoad.blocked) {
+      this.notifyShell(t(fiscalRoadKey(this.fiscalRoad.blocked)));
+      return;
+    }
     // sales#222 — with the customer mandatory the charge step STARTS by asking for it. Until
     // now the till let the cashier type the amount, pick a method and confirm, and only the
     // server's `sales.customer_required` said no — with the customer standing there and the
@@ -3613,7 +3631,7 @@ export class ErpPosTouch extends LitElement {
    *  sheet's button too (sales#159), which carried the same defect. */
   private syncChargeState(): void {
     const blocked: Array<[string, boolean]> = [
-      ['.foot-actions ion-button.charge', !!this.missingChargeApp || this.missingRequiredCustomer],
+      ['.foot-actions ion-button.charge', !!this.missingChargeApp || !!this.fiscalRoad.blocked || this.missingRequiredCustomer],
       ['.sheet-foot ion-button.charge', this.paying && !!this.chargeBlock],
     ];
     for (const [selector, isBlocked] of blocked) {
@@ -3892,6 +3910,11 @@ export class ErpPosTouch extends LitElement {
         short: t('ui.missingAppChargeShort', { app: this.chargeAppName }),
         reason: t('ui.missingAppCharge', { app: this.chargeAppName }),
       };
+    }
+    // hub#1935 — no fix on this screen either: the road to the tax authority is set up in the
+    // fiscal settings, and the notice above sends the owner there.
+    if (this.fiscalRoad.blocked) {
+      return { short: t('ui.fiscalRoadShort'), reason: t(fiscalRoadKey(this.fiscalRoad.blocked)) };
     }
     // sales#222 — the customer can also go away WITH the sheet open (the picker clears it), and
     // `confirm` is reachable by shortcut without ever crossing `openPay`. A guard that only lives
@@ -4342,6 +4365,9 @@ export class ErpPosTouch extends LitElement {
       const key = checkoutErrorKey(code);
       const raw = e instanceof Error ? e.message : String(e ?? '');
       this.error = key === 'ui.errorCharge' && !code && raw ? raw : t(key);
+      // hub#1935 — the road broke after the till opened. The refusal is the hub's authority, so the
+      // block is taken from it and the next sale is not tried blind.
+      if (isFiscalRoadRefusal(code)) this.fiscalRoad = { ...this.fiscalRoad, blocked: code };
       return;
     }
 
@@ -4378,7 +4404,13 @@ export class ErpPosTouch extends LitElement {
   }
 
   private goToSales() {
-    window.history.pushState({}, '', '/m/sales/sales');
+    this.navigateTo('/m/sales/sales');
+  }
+
+  /** Module → shell navigation: push the URL and tell the router with `popstate` (a Web Component
+   *  does not get the router — same pattern as `appointments` sending a booking to the till). */
+  private navigateTo(path: string) {
+    window.history.pushState({}, '', path);
     window.dispatchEvent(new PopStateEvent('popstate'));
   }
 
@@ -4790,6 +4822,7 @@ export class ErpPosTouch extends LitElement {
             <ion-button data-testid="pos-charge" class="charge" ?disabled=${!this.cart.length}
                         title=${this.missingChargeApp
                           ? t('ui.missingAppCharge', { app: this.chargeAppName })
+                          : this.fiscalRoad.blocked ? t(fiscalRoadKey(this.fiscalRoad.blocked))
                           : this.missingRequiredCustomer ? t('ui.customerRequiredCharge') : t('ui.charge')}
                         aria-label=${t('ui.charge')}
                         @click=${() => this.openPay()}>
@@ -5041,6 +5074,19 @@ export class ErpPosTouch extends LitElement {
             ? html`<div class="blocked-notice missing-app-notice" role="alert">
                 <ion-icon name="alert-circle" aria-hidden="true"></ion-icon>
                 <span>${t('ui.missingAppCharge', { app: this.chargeAppName })}</span>
+              </div>`
+            : nothing}
+          <!-- hub#1935 — this business files with the tax authority for real and its tickets have no
+               way to get there. An alert, like the missing app: this till cannot charge today. The
+               link is the fix route the CORE answered, so this module never names the fiscal one. -->
+          ${this.fiscalRoad.blocked
+            ? html`<div class="blocked-notice fiscal-road-notice" role="alert" data-testid="pos-fiscal-road">
+                <ion-icon name="alert-circle" aria-hidden="true"></ion-icon>
+                <span>${t(fiscalRoadKey(this.fiscalRoad.blocked))}</span>
+                ${this.fiscalRoad.fixRoute
+                  ? html`<ion-button size="small" fill="outline" class="fiscal-road-fix" data-testid="pos-fiscal-road-fix"
+                      @click=${() => this.navigateTo(this.fiscalRoad.fixRoute)}>${t('ui.fiscalRoadFix')}</ion-button>`
+                  : nothing}
               </div>`
             : nothing}
           ${this.blockedNotice

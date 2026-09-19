@@ -36,6 +36,8 @@ const READS: { name: string; module: string; field: keyof PosCatalogue }[] = [
   { name: 'sales.lines', module: 'sales', field: 'saleLines' },
   { name: 'hub.users.list', module: 'hub', field: 'users' },
   { name: 'hub.fiscal.limits', module: 'hub', field: 'fiscalLimits' },
+  // hub#1935 — whether this hub can get its tickets to the tax authority at all (core query).
+  { name: 'hub.fiscal.transmission', module: 'hub', field: 'fiscalRoad' },
   // sales#318 — the salon's TEAM (the professionals the agenda books), beside the hub's people.
   { name: 'staff.members.list', module: 'staff', field: 'team' },
   { name: 'services.services.list', module: 'services', field: 'services' },
@@ -92,6 +94,8 @@ interface PosCatalogue {
   /** `staff.members.list` — the salon's professionals, whether or not they sign in (sales#318). */
   team?: QueryAnswer;
   fiscalLimits?: QueryAnswer;
+  /** `hub.fiscal.transmission` — the road to the tax authority and what blocks it (hub#1935). */
+  fiscalRoad?: QueryAnswer;
   services?: QueryAnswer;
   serviceCategories?: QueryAnswer;
   modifierGroups?: QueryAnswer;
@@ -133,7 +137,7 @@ export function installPosDouble(spec: PosDoubleSpec = {}): ErploraDouble {
     settings, absentModules = [], brokenModules = [], queries: extraQueries = {}, failing = {},
     products, forSale, categories, productCategories, units, rules, taxCategories,
     paymentMethods, quickNotes, departments, business, orders, orderLines, byIdempotencyKey, sale, saleLines,
-    users, team, fiscalLimits,
+    users, team, fiscalLimits, fiscalRoad,
     services, serviceCategories, modifierGroups, modifierOptions, comboOptions, appointment,
     invoiceBySource, invoiceLines, verifactuRecord,
     ...rest
@@ -141,7 +145,7 @@ export function installPosDouble(spec: PosDoubleSpec = {}): ErploraDouble {
   const catalogue: Record<keyof PosCatalogue, QueryAnswer | undefined> = {
     products, forSale, categories, productCategories, units, rules, taxCategories,
     paymentMethods, quickNotes, departments, business, orders, orderLines, byIdempotencyKey, sale, saleLines,
-    users, team, fiscalLimits,
+    users, team, fiscalLimits, fiscalRoad,
     services, serviceCategories, modifierGroups, modifierOptions, comboOptions,
     appointment: appointment && bindAppointmentGet(appointment),
     invoiceBySource, invoiceLines, verifactuRecord,
