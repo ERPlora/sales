@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "sales.settings.adopt_receipt_text",
-  "description": "El encabezado y el pie del tique que el negocio escribió en Impresión antes de hub#1921. Solo rellenan lo que aquí esté vacío (printing#44).",
+  "description": "The receipt header and footer the shop typed in Printing before hub#1921. They only fill what is still empty here (printing#44).",
   "type": "object",
   "additionalProperties": false,
   "properties": {

@@ -172,6 +172,16 @@ def scenario(s: Session) -> None:
         receipt_through_counter(s),
         ("Peluquería Aurora", FOOTER),
     )
+    # The mirror image, because "per field" is two guards and each one needs its own witness: a
+    # battery that only ever protects the header lets the footer's guard be deleted unnoticed.
+    s.psql(["-c", f"DELETE FROM sales_settings WHERE hub_id = '{HUB}'"])
+    save_settings(s, "set-3c", receipt_footer="Hasta pronto")
+    adopt(s, "set-3d", HEADER, FOOTER)
+    s.check(
+        "the footer it typed here is kept verbatim and the header it never wrote is adopted",
+        receipt_through_counter(s),
+        (HEADER, "Hasta pronto"),
+    )
 
     print("\n4 · BLANKS ARE NOT TEXT — on both sides of the move")
     s.psql(["-c", f"DELETE FROM sales_settings WHERE hub_id = '{HUB}'"])
@@ -230,9 +240,20 @@ def scenario(s: Session) -> None:
         s.qi(f"SELECT count(*) FROM sales_settings WHERE hub_id = '{HUB}'"),
         1,
     )
+    s.check(
+        "and it is alive in full: no deletion date left behind on a live row",
+        s.rows(f"SELECT is_deleted, deleted_at FROM sales_settings WHERE hub_id = '{HUB}'"),
+        [{"is_deleted": 0, "deleted_at": None}],
+    )
 
     print("\n7 · NOTHING TO ADOPT, NOTHING TOUCHED — not even the row's own state")
     s.psql(["-c", "DELETE FROM sales_settings"])
+    adopt(s, "set-11", "   ", "  \n ")
+    s.check(
+        "a blank call on a hub that never saved its settings does not give birth to a row",
+        s.qi("SELECT count(*) FROM sales_settings"),
+        0,
+    )
     save_settings(s, "set-12")
     s.psql(
         [
@@ -280,11 +301,18 @@ def scenario(s: Session) -> None:
     print("\n8 · IDEMPOTENT — pressing the button twice does not re-migrate")
     s.psql(["-c", "DELETE FROM sales_settings"])
     adopt(s, "set-14", HEADER, FOOTER)
-    adopt(s, "set-15", "Something else entirely", "And another footer")
+    adopt(
+        s, "set-15", "Something else entirely", "And another footer", now="2026-09-21T09:00:00+00:00"
+    )
     s.check(
         "the second run keeps what the first one moved",
         receipt_through_counter(s),
         (HEADER, FOOTER),
+    )
+    s.check(
+        "and leaves no trace of having run: one row, the first run's id and the first run's clock",
+        s.rows(f"SELECT id, updated_at FROM sales_settings WHERE hub_id = '{HUB}'"),
+        [{"id": "set-14", "updated_at": NOW}],
     )
 
 
