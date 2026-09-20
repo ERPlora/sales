@@ -954,6 +954,17 @@
         "description": "Updates the point-of-sale configuration settings of the sales module"
       }
     },
+    "sales.settings.adopt_receipt_text": {
+      "permission": "sales.manage_settings",
+      "transaction": true,
+      "schema": "schemas/settings_adopt_receipt_text.json",
+      "sql": [
+        "commands/settings_adopt_receipt_text.sql"
+      ],
+      "ai": {
+        "description": "Moves the receipt header/footer a shop typed in the Printing app into the till settings, filling only what is still empty here"
+      }
+    },
     "sales.departments.create": {
       "permission": "sales.manage_settings",
       "schema": "schemas/department_create.json",
