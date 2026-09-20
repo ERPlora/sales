@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sales.settings.adopt_receipt_text",
+  "description": "El encabezado y el pie del tique que el negocio escribió en Impresión antes de hub#1921. Solo rellenan lo que aquí esté vacío (printing#44).",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "receipt_header": {
+      "type": "string",
+      "title": "Receipt header",
+      "default": "",
+      "description": "First line = name; the rest = address. Ignored when this hub already has one."
+    },
+    "receipt_footer": {
+      "type": "string",
+      "title": "Receipt footer",
+      "default": "",
+      "description": "Ignored when this hub already has one."
+    }
+  }
+}
