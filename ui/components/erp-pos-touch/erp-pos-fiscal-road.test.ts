@@ -36,7 +36,7 @@ class FakeErploraError extends Error {
 }
 
 /** What `hub.fiscal.transmission` answers: `blocked` is the code, `''` = the road exists. */
-function installSdk(road: { blocked?: string; fix?: string } | 'fails' | 'absent' = {}) {
+function installSdk(road: { blocked?: string; fix?: string; expiresAt?: string } | 'fails' | 'absent' = {}) {
   notices = [];
   refuseWith = '';
   installPosDouble({
@@ -54,6 +54,7 @@ function installSdk(road: { blocked?: string; fix?: string } | 'fails' | 'absent
           representation_at: '',
           filing_blocked: road.blocked ?? '',
           filing_fix_route: road.fix ?? FIX_ROUTE,
+          own_certificate_expires_at: road.expiresAt ?? '',
         }];
       },
     notify: (n: { type: string; message: string }) => { notices.push(n); },
@@ -216,10 +217,72 @@ describe('5 · every sentence exists in the source language and in Spanish', () 
     const es = (esLocale as { ui: Record<string, string> }).ui;
     for (const key of [
       'fiscalRoadNoGrant', 'fiscalRoadNoConnection', 'fiscalRoadBlocked', 'fiscalRoadShort', 'fiscalRoadFix',
+      'fiscalRoadOwnCertificateExpired', 'fiscalCertificateExpiring', 'fiscalCertificateExpiringOneDay',
+      'fiscalCertificateExpiringWithinADay', 'fiscalCertificateRenew',
     ]) {
       expect(en[key], `en.${key}`).toBeTruthy();
       expect(es[key], `es.${key}`).toBeTruthy();
       expect(es[key], `es.${key} is translated, not copied`).not.toBe(en[key]);
     }
+  });
+});
+
+// hub#1940 — the business's own certificate expires. The hub refuses the sale once it has
+// (`fiscal.own_certificate_expired`); the till says it with its own sentence, and warns BEFORE.
+describe('6 · the own certificate: blocked once expired, warned before', () => {
+  const inDays = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+
+  it('expired → the alert names the certificate, and Charge is blocked', async () => {
+    installSdk({ blocked: 'fiscal.own_certificate_expired' });
+    const el = await withLine();
+
+    expect($(el, '.fiscal-road-notice')!.textContent).toContain('ui.fiscalRoadOwnCertificateExpired');
+    expect($(el, '.foot-actions ion-button.charge')!.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('the refused checkout names it too, and blocks the next sale', async () => {
+    const el = await withLine();
+    el.openPay();
+    await el.updateComplete;
+    refuseWith = 'fiscal.own_certificate_expired';
+
+    await tenderExactCash(el);
+    await el.confirm();
+    await el.updateComplete;
+
+    expect($(el, '.sheet .pay-err')?.textContent).toContain('ui.fiscalRoadOwnCertificateExpired');
+    expect($(el, '.sheet-foot ion-button.charge')?.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('about to expire → a warning with the days left, and the till still charges', async () => {
+    installSdk({ expiresAt: inDays(5) });
+    const el = await withLine();
+
+    const warning = $(el, '[data-testid="pos-fiscal-certificate-expiring"]');
+    expect(warning, 'the owner learns before the morning it stops charging').toBeTruthy();
+    expect(warning!.getAttribute('role'), 'a warning, not an alert: nothing is blocked yet').toBe('status');
+    expect(warning!.textContent).toContain('ui.fiscalCertificateExpiring');
+    expect($(el, '[data-testid="pos-fiscal-certificate-renew"]'), 'it links to where it is renewed').toBeTruthy();
+    expect($(el, '.foot-actions ion-button.charge')!.getAttribute('aria-disabled')).toBeNull();
+  });
+
+  it('one day left, or less, says so without a broken plural', async () => {
+    installSdk({ expiresAt: inDays(1.5) });
+    const one = await mount();
+    expect($(one, '[data-testid="pos-fiscal-certificate-expiring"]')!.textContent).toContain('ui.fiscalCertificateExpiringOneDay');
+
+    installSdk({ expiresAt: inDays(0.5) });
+    const hours = await mount();
+    expect($(hours, '[data-testid="pos-fiscal-certificate-expiring"]')!.textContent).toContain('ui.fiscalCertificateExpiringWithinADay');
+  });
+
+  it('far from expiring, or on ERPlora\'s road (no date) → nothing is said', async () => {
+    installSdk({ expiresAt: inDays(90) });
+    const far = await mount();
+    expect($(far, '[data-testid="pos-fiscal-certificate-expiring"]')).toBeFalsy();
+
+    installSdk({ expiresAt: '' });
+    const none = await mount();
+    expect($(none, '[data-testid="pos-fiscal-certificate-expiring"]')).toBeFalsy();
   });
 });

@@ -4519,6 +4519,11 @@ var es_default = {
     fiscalRoadBlocked: "Este negocio no tiene ahora forma de enviar sus tiques a Hacienda. No se puede cobrar hasta arreglarlo.",
     fiscalRoadShort: "Sin env\xEDo a Hacienda",
     fiscalRoadFix: "Ir a la configuraci\xF3n fiscal",
+    fiscalRoadOwnCertificateExpired: "El certificado propio de este negocio ha caducado y Hacienda ya no acepta lo que firma. No se puede cobrar hasta subir un certificado renovado o dejar que ERPlora env\xEDe por ti.",
+    fiscalCertificateExpiring: "El certificado propio del negocio caduca en {days} d\xEDas. Renu\xE9valo antes: cuando caduque no se podr\xE1 cobrar.",
+    fiscalCertificateExpiringOneDay: "El certificado propio del negocio caduca en 1 d\xEDa. Renu\xE9valo antes: cuando caduque no se podr\xE1 cobrar.",
+    fiscalCertificateExpiringWithinADay: "El certificado propio del negocio caduca en menos de un d\xEDa. Renu\xE9valo ya: cuando caduque no se podr\xE1 cobrar.",
+    fiscalCertificateRenew: "Renovar certificado",
     appTaxes: "Impuestos",
     appInventory: "Inventario",
     appServices: "Servicios",
@@ -5094,6 +5099,11 @@ var en_default = {
     fiscalRoadBlocked: "This business has no way to send its tickets to the tax agency right now. Nothing can be charged until it is fixed.",
     fiscalRoadShort: "No way to send to the tax agency",
     fiscalRoadFix: "Go to fiscal settings",
+    fiscalRoadOwnCertificateExpired: "This business's own certificate has expired and the tax agency no longer accepts what it signs. Nothing can be charged until you upload a renewed certificate or let ERPlora file for you.",
+    fiscalCertificateExpiring: "The business's own certificate expires in {days} days. Renew it before then: once it expires, nothing can be charged.",
+    fiscalCertificateExpiringOneDay: "The business's own certificate expires in 1 day. Renew it before then: once it expires, nothing can be charged.",
+    fiscalCertificateExpiringWithinADay: "The business's own certificate expires in less than a day. Renew it now: once it expires, nothing can be charged.",
+    fiscalCertificateRenew: "Renew certificate",
     appTaxes: "Taxes",
     appInventory: "Inventory",
     appServices: "Services",
@@ -7251,7 +7261,8 @@ var MESSAGES = {
   // there, so the dispatcher refused the sale before writing anything. Same sentences as the notice
   // the till shows at mount (`lib/fiscal-road.ts`).
   "fiscal.no_representation_grant": "ui.fiscalRoadNoGrant",
-  "fiscal.gateway_not_enrolled": "ui.fiscalRoadNoConnection"
+  "fiscal.gateway_not_enrolled": "ui.fiscalRoadNoConnection",
+  "fiscal.own_certificate_expired": "ui.fiscalRoadOwnCertificateExpired"
 };
 function checkoutErrorKey(code) {
   return MESSAGES[code] ?? "ui.errorCharge";
@@ -7264,8 +7275,12 @@ function errorCode(e7) {
 // ui/lib/fiscal-road.ts
 var CAUSES = {
   "fiscal.no_representation_grant": "ui.fiscalRoadNoGrant",
-  "fiscal.gateway_not_enrolled": "ui.fiscalRoadNoConnection"
+  "fiscal.gateway_not_enrolled": "ui.fiscalRoadNoConnection",
+  // hub#1940 — the business files with its own certificate and it expired: the AEAT refuses it.
+  "fiscal.own_certificate_expired": "ui.fiscalRoadOwnCertificateExpired"
 };
+var CERTIFICATE_WARNING_DAYS = 30;
+var DAY_MS = 864e5;
 function fiscalRoadKey(code) {
   return CAUSES[code] ?? "ui.fiscalRoadBlocked";
 }
@@ -7275,7 +7290,19 @@ function isFiscalRoadRefusal(code) {
 function readFiscalRoad(answer) {
   const row = Array.isArray(answer) ? answer[0] : void 0;
   const text = (v3) => typeof v3 === "string" ? v3.trim() : "";
-  return { blocked: text(row?.filing_blocked), fixRoute: text(row?.filing_fix_route) };
+  return {
+    blocked: text(row?.filing_blocked),
+    fixRoute: text(row?.filing_fix_route),
+    expiresAt: text(row?.own_certificate_expires_at)
+  };
+}
+function certificateExpiryDays(road, now = /* @__PURE__ */ new Date()) {
+  if (road.blocked || !road.expiresAt) return null;
+  const expires = Date.parse(road.expiresAt);
+  if (Number.isNaN(expires)) return null;
+  const left = expires - now.getTime();
+  if (left < 0) return null;
+  return left <= CERTIFICATE_WARNING_DAYS * DAY_MS ? Math.floor(left / DAY_MS) : null;
 }
 
 // ui/lib/transport-error.ts
@@ -7599,7 +7626,7 @@ var ErpPosTouch = class extends i3 {
      *  Vacío y `available:false` mientras carga o si `taxes` no responde. ADR-0064/0066/0085. */
     this.taxCatalog = { rates: /* @__PURE__ */ new Map(), available: false, installed: true };
     this.missingChargeApp = "";
-    this.fiscalRoad = { blocked: "", fixRoute: "" };
+    this.fiscalRoad = { blocked: "", fixRoute: "", expiresAt: "" };
     /** Signature of the ticket already priced, so we do not re-ask on every repaint. */
     this.valuedSignature = "";
     /** Request counter: an older answer must never overwrite a newer one. */
@@ -11464,6 +11491,19 @@ var ErpPosTouch = class extends i3 {
       </div>` : A}
     </div>`;
   }
+  /** hub#1940 — the own certificate that signs runs out soon. A status, not an alert: the till
+   *  still charges today; the owner learns while there is time to renew, not the morning the hub
+   *  starts refusing sales with `fiscal.own_certificate_expired`. */
+  renderCertificateExpiring() {
+    const days = certificateExpiryDays(this.fiscalRoad);
+    if (days === null) return A;
+    return b2`<div class="blocked-notice fiscal-certificate-notice" role="status" data-testid="pos-fiscal-certificate-expiring">
+      <ion-icon name="time-outline" aria-hidden="true"></ion-icon>
+      <span>${days === 0 ? t5("ui.fiscalCertificateExpiringWithinADay") : days === 1 ? t5("ui.fiscalCertificateExpiringOneDay") : t5("ui.fiscalCertificateExpiring", { days })}</span>
+      ${this.fiscalRoad.fixRoute ? b2`<ion-button size="small" fill="outline" class="fiscal-road-fix" data-testid="pos-fiscal-certificate-renew"
+            @click=${() => this.navigateTo(this.fiscalRoad.fixRoute)}>${t5("ui.fiscalCertificateRenew")}</ion-button>` : A}
+    </div>`;
+  }
   render() {
     const blockedWhy = this.paying ? this.chargeBlock : void 0;
     return b2`<div class="card">
@@ -11491,6 +11531,7 @@ var ErpPosTouch = class extends i3 {
                 ${this.fiscalRoad.fixRoute ? b2`<ion-button size="small" fill="outline" class="fiscal-road-fix" data-testid="pos-fiscal-road-fix"
                       @click=${() => this.navigateTo(this.fiscalRoad.fixRoute)}>${t5("ui.fiscalRoadFix")}</ion-button>` : A}
               </div>` : A}
+          ${this.renderCertificateExpiring()}
           ${this.blockedNotice ? b2`<div class="blocked-notice" role="status">
                 <ion-icon name="alert-circle" aria-hidden="true"></ion-icon><span>${this.blockedNotice}</span>
               </div>` : A}

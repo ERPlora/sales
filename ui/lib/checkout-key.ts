@@ -103,6 +103,7 @@ const MESSAGES: Record<string, string> = {
   // the till shows at mount (`lib/fiscal-road.ts`).
   'fiscal.no_representation_grant': 'ui.fiscalRoadNoGrant',
   'fiscal.gateway_not_enrolled': 'ui.fiscalRoadNoConnection',
+  'fiscal.own_certificate_expired': 'ui.fiscalRoadOwnCertificateExpired',
 };
 
 /**
