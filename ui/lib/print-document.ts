@@ -111,6 +111,9 @@ function printNotes(
  */
 export interface PrintDocument extends Record<string, unknown> {
   business_name: string;
+  /** hub#1931 — `true` on a REPRINT: the renderer prints «DUPLICADO» on it (RD 1619/2012 art. 14).
+   *  Never set on the first print — there is only one original. */
+  duplicate?: boolean;
   business_address?: string;
   vat_number?: string;
   /** Ticket number. **Never** set on a bill: the fiscal series is consumed when charging. */

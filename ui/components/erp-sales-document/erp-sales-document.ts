@@ -432,8 +432,11 @@ export class ErpSalesDocument extends LitElement {
    * generar el PDF desde Rust. No se imprime el DOM de este componente: vive dentro de un
    * `ion-modal` reparentado y con shadow DOM, y el navegador acababa sacando la app entera.
    * Devuelve '' si aún no hay venta cargada.
+   *
+   * `duplicate` (hub#1931): the paper is a reprint and says «duplicado» — only one original of an
+   * invoice may exist (RD 1619/2012 art. 14). The caller knows which one it is printing.
    */
-  printableHtml(): string {
+  printableHtml({ duplicate = false }: { duplicate?: boolean } = {}): string {
     if (!this.sale) return '';
     const t = (k: string): string => erplora().t(CATALOG, k);
     // sales#103: si aún no hay claim (Outbox lento, primera carga), se reintenta best-effort —
@@ -452,6 +455,7 @@ export class ErpSalesDocument extends LitElement {
       // la única fuente, para que HTML y ESC/POS no puedan discrepar).
       ...claimPrintFields(this.fiscalForPaper(), t),
       labels: { subtotal: t('ui.docSubtotal'), total: t('ui.docTotal'), change: t('ui.docChange'), document: t('ui.document') },
+      ...(duplicate ? { duplicate_label: t('ui.docDuplicate') } : {}),
     });
   }
 
@@ -463,16 +467,19 @@ export class ErpSalesDocument extends LitElement {
    * y el papel salía con todos los valores por defecto —«ERPlora», sin líneas, TOTAL 0,00— sin dar
    * ningún error (sales#79). `undefined` si aún no hay venta: nada que imprimir es mejor que un
    * tique en blanco.
+   *
+   * `duplicate` (hub#1931): same as in `printableHtml` — the renderer prints «DUPLICADO».
    */
-  printableDocument(): PrintDocument | undefined {
+  printableDocument({ duplicate = false }: { duplicate?: boolean } = {}): PrintDocument | undefined {
     if (!this.sale) return undefined;
     const t = (k: string): string => erplora().t(CATALOG, k);
     // sales#103: reintento best-effort del acuñado si aún no llegó (idempotente en el hub).
     if (this.claimInvoiceId && !this.claim && !this.claimFlight) void this.ensureClaim(this.claimInvoiceId);
-    return saleToPrintDocument(
+    const doc = saleToPrintDocument(
       this.sale, this.lines || [], this.settings || {}, this.fiscalForPaper(), erplora().locale,
       t('ui.docDefaultBusiness'), t,
     );
+    return duplicate ? { ...doc, duplicate: true } : doc;
   }
 
   render() {

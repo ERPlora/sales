@@ -333,3 +333,18 @@ describe('the bill labels the table as a table (sales#180)', () => {
     expect(receiptToPrintableHtml({ ...bill, customer: 'Ana Pérez' })).toContain('>Ana Pérez<');
   });
 });
+
+// hub#1931 — a reprint is a duplicate (RD 1619/2012 art. 14.4) and the paper says it, at the top,
+// before anything else. Without the label the paper is the original and carries nothing.
+describe('the duplicate mark (hub#1931)', () => {
+  it('a duplicate says so above the business name', () => {
+    const html = receiptToPrintableHtml({ ...doc, duplicate_label: 'DUPLICADO' });
+    const mark = html.indexOf('<div class="dup">DUPLICADO</div>');
+    expect(mark, 'the mark is on the paper').toBeGreaterThan(-1);
+    expect(mark, 'above the business name').toBeLessThan(html.indexOf('<h1>Bar Manolo</h1>'));
+  });
+
+  it('the original carries no mark', () => {
+    expect(receiptToPrintableHtml(doc)).not.toContain('class="dup"');
+  });
+});
