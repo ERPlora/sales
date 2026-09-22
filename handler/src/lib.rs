@@ -3091,6 +3091,11 @@ fn complete_sale_inner(input: Value, rule: CapRule) -> Result<Output, Refusal> {
         // que una venta de TPV con cliente salga CON NIF y dirección. Vacío = venta anónima.
         "customer_tax_id": str_or(&payload, "customer_tax_id", ""),
         "customer_address": str_or(&payload, "customer_address", ""),
+        // sales#332: a customer from abroad is declared by country (ISO alpha-2) and document kind
+        // (AEAT IDType), which `invoice` copies to the invoice (hub#1967). '' = the VAT prefix of
+        // the tax id decides, which is what every sale did before.
+        "customer_country": str_or(&payload, "customer_country", "").trim().to_ascii_uppercase(),
+        "customer_id_type": str_or(&payload, "customer_id_type", "").trim(),
         // staff_id travels in the event so consumers (cash_register, reporting) can attribute the
         // sale to whoever attended. Already RESOLVED (sales#179): the professional the payload
         // named or, failing that, the session user. It is only NULL when the runtime gave no user
@@ -6089,12 +6094,38 @@ mod tests {
     }
 
     #[test]
+    fn event_carries_a_foreign_customers_country_and_document_kind() {
+        // sales#332: a customer from abroad is declared to the AEAT by their country and the kind
+        // of document their number is (IDOtro), not as a Spanish NIF. `invoice.create_from_sale`
+        // copies both from sale.completed (hub#1967); the country travels as ISO upper case.
+        let new_ids: Vec<Value> = (0..4).map(|i| json!(format!("id-{i}"))).collect();
+        let inp = json!({
+            "payload": {
+                "idempotency_key": "idem-test-332",
+                "items": [{ "product_name": "Corte", "price": 2000, "quantity": 1_000_000, "tax_rate": 21.0 }],
+                "tax_included": true, "amount_tendered": 0, "document_type": "invoice",
+                "customer_name": "ACME Inc", "customer_tax_id": "12-3456789",
+                "customer_address": "1 Main St, Springfield",
+                "customer_country": " us ", "customer_id_type": "04"
+            },
+            "context": { "hub_id": "h1", "current_user_id": "u1", "now": "2026-09-23T10:00:00+00:00", "new_ids": new_ids }
+        });
+        let out = sale(inp);
+        let ev = &out.events[0].payload;
+        assert_eq!(ev["customer_country"], json!("US"));
+        assert_eq!(ev["customer_id_type"], json!("04"));
+    }
+
+    #[test]
     fn anonymous_sale_carries_no_fiscal_snapshot() {
         // Venta de barra sin cliente: los campos fiscales van vacíos, no heredados.
         let items = json!([{ "product_name": "Café", "price": 121, "quantity": 1_000_000, "tax_rate": 21.0 }]);
         let out = sale(input(items, 4, 200));
         assert_eq!(out.events[0].payload["customer_tax_id"], json!(""));
         assert_eq!(out.events[0].payload["customer_address"], json!(""));
+        // '' = the tax id's VAT prefix decides downstream, exactly as before sales#332.
+        assert_eq!(out.events[0].payload["customer_country"], json!(""));
+        assert_eq!(out.events[0].payload["customer_id_type"], json!(""));
     }
 
     #[test]

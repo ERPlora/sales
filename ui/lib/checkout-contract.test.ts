@@ -75,8 +75,8 @@ describe('complete_sale payload contract (sales#20)', () => {
       'items', 'line_ids', 'keep_order_open', 'tax_included', 'discount_percent',
       'payment_method_id', 'payment_method_name', 'amount_tendered', 'channel', 'source_module',
       'order_id', 'order_number', 'customer_id', 'customer_name', 'customer_tax_id',
-      'customer_address', 'staff_id', 'staff_name', 'appointment_id', 'notes', 'document_type',
-      'idempotency_key',
+      'customer_address', 'customer_country', 'customer_id_type', 'staff_id', 'staff_name',
+      'appointment_id', 'notes', 'document_type', 'idempotency_key',
     ]) {
       expect(s.properties[key], `missing property ${key}`).toBeDefined();
     }
@@ -89,6 +89,20 @@ describe('complete_sale payload contract (sales#20)', () => {
     ]) {
       expect(item.properties[key], `missing item property ${key}`).toBeDefined();
     }
+  });
+});
+
+describe('a customer from abroad (sales#332)', () => {
+  // The same contract `invoice.create_invoice` declares (hub#1967): ISO alpha-2 country, AEAT
+  // IDType of the number. '' in both = the tax id's VAT prefix decides, as every sale did before.
+  it('accepts an ISO country code or nothing, and nothing else', () => {
+    const re = new RegExp(s.properties.customer_country.pattern);
+    for (const ok of ['', 'US', 'fr']) expect(re.test(ok), ok).toBe(true);
+    for (const bad of ['USA', 'Spain', 'E']) expect(re.test(bad), bad).toBe(false);
+  });
+
+  it('accepts only the AEAT document kinds', () => {
+    expect(s.properties.customer_id_type.enum).toEqual(['', '02', '03', '04', '05', '06', '07']);
   });
 });
 
