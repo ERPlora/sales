@@ -78,7 +78,7 @@ import { buildOpenPriceLine } from '../../lib/pos-open-price.js';
 // La frontera de la ESCALA de cantidades (ADR-0147): la UI trabaja en lógico (0,5), el cable en 10⁶.
 import { toMicro, fromMicro, onGrid, formatQuantity } from '../../lib/quantity.js';
 import { checkoutErrorKey, errorCode, newIdempotencyKey } from '../../lib/checkout-key.js';
-import { fiscalRoadKey, isFiscalRoadRefusal, readFiscalRoad, type FiscalRoad } from '../../lib/fiscal-road.js';
+import { certificateExpiryDays, fiscalRoadKey, isFiscalRoadRefusal, readFiscalRoad, type FiscalRoad } from '../../lib/fiscal-road.js';
 // sales#81: el transporte del SDK filtra el HTML del 502 del proxy como un SyntaxError crudo
 // («<!DOCTYPE … is not valid JSON»). Esta es la frontera del módulo: traducirlo a un mensaje de
 // negocio para el cajero (la guarda `res.ok` del SDK se persigue aparte, en el hub).
@@ -1331,7 +1331,7 @@ export class ErpPosTouch extends LitElement {
    *  tickets there: `blocked` is the hub's stable code of what is missing (`''` = the road exists).
    *  Read at mount from the CORE query `hub.fiscal.transmission`, the same rule the dispatcher
    *  refuses the sale with, and updated when the checkout is refused for it. */
-  @state() private fiscalRoad: FiscalRoad = { blocked: '', fixRoute: '' };
+  @state() private fiscalRoad: FiscalRoad = { blocked: '', fixRoute: '', expiresAt: '' };
   /** sales#164 — the AUTHORITATIVE valuation of the ticket being charged. `undefined` = it has not
    *  arrived yet, the hub does not have the command, or the network went down: then the screen's
    *  own preview rules, which is what there was before. Never a 0 — a free ticket is not a
@@ -5054,6 +5054,24 @@ export class ErpPosTouch extends LitElement {
     </div>`;
   }
 
+
+  /** hub#1940 — the own certificate that signs runs out soon. A status, not an alert: the till
+   *  still charges today; the owner learns while there is time to renew, not the morning the hub
+   *  starts refusing sales with `fiscal.own_certificate_expired`. */
+  private renderCertificateExpiring() {
+    const days = certificateExpiryDays(this.fiscalRoad);
+    if (days === null) return nothing;
+    return html`<div class="blocked-notice fiscal-certificate-notice" role="status" data-testid="pos-fiscal-certificate-expiring">
+      <ion-icon name="time-outline" aria-hidden="true"></ion-icon>
+      <span>${days === 0 ? t('ui.fiscalCertificateExpiringWithinADay')
+        : days === 1 ? t('ui.fiscalCertificateExpiringOneDay')
+        : t('ui.fiscalCertificateExpiring', { days })}</span>
+      ${this.fiscalRoad.fixRoute
+        ? html`<ion-button size="small" fill="outline" class="fiscal-road-fix" data-testid="pos-fiscal-certificate-renew"
+            @click=${() => this.navigateTo(this.fiscalRoad.fixRoute)}>${t('ui.fiscalCertificateRenew')}</ion-button>`
+        : nothing}
+    </div>`;
+  }
   render() {
     // sales#159 — por qué el cobro no puede salir todavía (o `undefined`). Se resuelve UNA vez por
     // pintada: lo lee el motivo escrito y lo lee el botón, y tienen que decir lo mismo.
@@ -5089,6 +5107,7 @@ export class ErpPosTouch extends LitElement {
                   : nothing}
               </div>`
             : nothing}
+          ${this.renderCertificateExpiring()}
           ${this.blockedNotice
             ? html`<div class="blocked-notice" role="status">
                 <ion-icon name="alert-circle" aria-hidden="true"></ion-icon><span>${this.blockedNotice}</span>
