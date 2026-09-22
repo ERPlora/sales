@@ -91,9 +91,16 @@ export function renderDocumentModal({ saleId, issuing = false, onClose, t }: Doc
           // busca POR CLAVE. Sin `data` la impresora no fallaba: pintaba todos sus valores por
           // defecto y sacaba «ERPlora», sin líneas y TOTAL 0,00 (sales#79).
           const el = document.querySelector('ion-modal.doc-modal')?.querySelector('erp-sales-document') as
-            (HTMLElement & { printableHtml?: () => string; printableDocument?: () => Record<string, unknown> | undefined }) | null;
-          const html = el?.printableHtml?.();
-          const data = el?.printableDocument?.();
+            (HTMLElement & {
+              printableHtml?: (o: { duplicate: boolean }) => string;
+              printableDocument?: (o: { duplicate: boolean }) => Record<string, unknown> | undefined;
+            }) | null;
+          // hub#1931 — only one original of an invoice may exist (RD 1619/2012 art. 14). The till
+          // right after charging prints the original; any other print of this viewer (the sales
+          // list, the history) is a copy and both papers say «duplicado».
+          const duplicate = !issuing;
+          const html = el?.printableHtml?.({ duplicate });
+          const data = el?.printableDocument?.({ duplicate });
           const sdk = (globalThis as { erplora?: PrintCapableSdk }).erplora;
           if (!sdk?.print) {
             if (html) printHtmlInIframe(html); else window.print();
