@@ -49,6 +49,9 @@ export interface PrintableReceipt {
   /** Document title, first line of the paper (pre-bill: «Cuenta»). Same job as the hardcoded
    *  «CUENTA» of the ESC/POS renderer: telling this paper from a fiscal ticket at a glance. */
   title?: string;
+  /** hub#1931 — set on a REPRINT: only one original of an invoice may exist (RD 1619/2012 art. 14)
+   *  and every copy says «duplicado», in the paper's language. Absent on the original. */
+  duplicate_label?: string;
   business?: { name?: string; address?: string; tax_id?: string };
   number?: string;
   datetime?: string;
@@ -173,6 +176,7 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
   body { margin: 0; padding: 4mm; width: 80mm; background: #fff; color: #000;
          font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; }
   h1 { font-size: 14px; text-align: center; margin: 0 0 2mm; text-transform: uppercase; }
+  .dup { font-size: 15px; font-weight: 700; text-align: center; letter-spacing: .08em; margin: 0 0 1mm; }
   .doc-title { font-size: 15px; font-weight: 700; text-align: center; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 1mm; }
   .meta { text-align: center; font-size: 11px; margin-bottom: 2mm; }
   hr { border: 0; border-top: 1px dashed #000; margin: 2mm 0; }
@@ -197,6 +201,7 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
   .claim-url { font-size: 9px; color: #333; margin-top: 1mm; word-break: break-all; }
 </style></head>
 <body>
+  ${doc.duplicate_label ? `<div class="dup">${esc(doc.duplicate_label)}</div>` : ''}
   ${doc.title ? `<div class="doc-title">${esc(doc.title)}</div>` : ''}
   <h1>${esc(doc.business?.name || '')}</h1>
   ${doc.business?.address ? `<div class="meta">${esc(doc.business.address)}</div>` : ''}

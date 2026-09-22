@@ -181,6 +181,7 @@
     "docSubtotal": "Subtotal",
     "docTotal": "TOTAL",
     "docChange": "Change",
+    "docDuplicate": "DUPLICATE",
     "docInvoice": "Invoice",
     "docNumber": "No.",
     "docDate": "Date",

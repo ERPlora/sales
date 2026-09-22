@@ -182,6 +182,7 @@
     "docSubtotal": "Subtotal",
     "docTotal": "TOTAL",
     "docChange": "Cambio",
+    "docDuplicate": "DUPLICADO",
     "docInvoice": "Factura",
     "docNumber": "Nº",
     "docDate": "Fecha",

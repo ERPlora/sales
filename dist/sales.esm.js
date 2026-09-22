@@ -1815,6 +1815,7 @@ function receiptToPrintableHtml(doc) {
   body { margin: 0; padding: 4mm; width: 80mm; background: #fff; color: #000;
          font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; }
   h1 { font-size: 14px; text-align: center; margin: 0 0 2mm; text-transform: uppercase; }
+  .dup { font-size: 15px; font-weight: 700; text-align: center; letter-spacing: .08em; margin: 0 0 1mm; }
   .doc-title { font-size: 15px; font-weight: 700; text-align: center; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 1mm; }
   .meta { text-align: center; font-size: 11px; margin-bottom: 2mm; }
   hr { border: 0; border-top: 1px dashed #000; margin: 2mm 0; }
@@ -1839,6 +1840,7 @@ function receiptToPrintableHtml(doc) {
   .claim-url { font-size: 9px; color: #333; margin-top: 1mm; word-break: break-all; }
 </style></head>
 <body>
+  ${doc.duplicate_label ? `<div class="dup">${esc(doc.duplicate_label)}</div>` : ""}
   ${doc.title ? `<div class="doc-title">${esc(doc.title)}</div>` : ""}
   <h1>${esc(doc.business?.name || "")}</h1>
   ${doc.business?.address ? `<div class="meta">${esc(doc.business.address)}</div>` : ""}
@@ -4221,6 +4223,7 @@ var es_default = {
     docSubtotal: "Subtotal",
     docTotal: "TOTAL",
     docChange: "Cambio",
+    docDuplicate: "DUPLICADO",
     docInvoice: "Factura",
     docNumber: "N\xBA",
     docDate: "Fecha",
@@ -4795,6 +4798,7 @@ var en_default = {
     docSubtotal: "Subtotal",
     docTotal: "TOTAL",
     docChange: "Change",
+    docDuplicate: "DUPLICATE",
     docInvoice: "Invoice",
     docNumber: "No.",
     docDate: "Date",
@@ -5466,8 +5470,11 @@ var ErpSalesDocument = class extends i3 {
    * generar el PDF desde Rust. No se imprime el DOM de este componente: vive dentro de un
    * `ion-modal` reparentado y con shadow DOM, y el navegador acababa sacando la app entera.
    * Devuelve '' si aún no hay venta cargada.
+   *
+   * `duplicate` (hub#1931): the paper is a reprint and says «duplicado» — only one original of an
+   * invoice may exist (RD 1619/2012 art. 14). The caller knows which one it is printing.
    */
-  printableHtml() {
+  printableHtml({ duplicate = false } = {}) {
     if (!this.sale) return "";
     const t7 = (k2) => erplora().t(CATALOG, k2);
     if (this.claimInvoiceId && !this.claim && !this.claimFlight) void this.ensureClaim(this.claimInvoiceId);
@@ -5486,7 +5493,8 @@ var ErpSalesDocument = class extends i3 {
       // sales#103: el mismo bloque «pide tu factura» que el papel térmico (claimPrintFields es
       // la única fuente, para que HTML y ESC/POS no puedan discrepar).
       ...claimPrintFields(this.fiscalForPaper(), t7),
-      labels: { subtotal: t7("ui.docSubtotal"), total: t7("ui.docTotal"), change: t7("ui.docChange"), document: t7("ui.document") }
+      labels: { subtotal: t7("ui.docSubtotal"), total: t7("ui.docTotal"), change: t7("ui.docChange"), document: t7("ui.document") },
+      ...duplicate ? { duplicate_label: t7("ui.docDuplicate") } : {}
     });
   }
   /**
@@ -5497,12 +5505,14 @@ var ErpSalesDocument = class extends i3 {
    * y el papel salía con todos los valores por defecto —«ERPlora», sin líneas, TOTAL 0,00— sin dar
    * ningún error (sales#79). `undefined` si aún no hay venta: nada que imprimir es mejor que un
    * tique en blanco.
+   *
+   * `duplicate` (hub#1931): same as in `printableHtml` — the renderer prints «DUPLICADO».
    */
-  printableDocument() {
+  printableDocument({ duplicate = false } = {}) {
     if (!this.sale) return void 0;
     const t7 = (k2) => erplora().t(CATALOG, k2);
     if (this.claimInvoiceId && !this.claim && !this.claimFlight) void this.ensureClaim(this.claimInvoiceId);
-    return saleToPrintDocument(
+    const doc = saleToPrintDocument(
       this.sale,
       this.lines || [],
       this.settings || {},
@@ -5511,6 +5521,7 @@ var ErpSalesDocument = class extends i3 {
       t7("ui.docDefaultBusiness"),
       t7
     );
+    return duplicate ? { ...doc, duplicate: true } : doc;
   }
   render() {
     const t7 = (k2) => erplora().t(CATALOG, k2);
@@ -5625,8 +5636,9 @@ function renderDocumentModal({ saleId, issuing = false, onClose, t: t7 }) {
              completo igualmente: en el TPV táctil el objetivo grande manda. -->
         <ion-button class="print" expand="block" aria-label=${t7("ui.print")} @click=${() => {
     const el = document.querySelector("ion-modal.doc-modal")?.querySelector("erp-sales-document");
-    const html = el?.printableHtml?.();
-    const data = el?.printableDocument?.();
+    const duplicate = !issuing;
+    const html = el?.printableHtml?.({ duplicate });
+    const data = el?.printableDocument?.({ duplicate });
     const sdk = globalThis.erplora;
     if (!sdk?.print) {
       if (html) printHtmlInIframe(html);

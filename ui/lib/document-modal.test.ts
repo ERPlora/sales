@@ -203,3 +203,50 @@ describe('reimprimir: cada intento es un trabajo nuevo (sales#92)', () => {
     expect(jobId.startsWith('sale-venta-1'), 'pero se correlaciona con la venta').toBe(true);
   });
 });
+
+// hub#1931 — only one original of an invoice may exist (RD 1619/2012 art. 14): a ticket reprinted
+// from the sales list is a DUPLICATE and both papers say so — the structured one the thermal
+// printer reads (`duplicate: true`) and the HTML of the browser fallback. The ticket screen right
+// after charging (`issuing`) prints the original and carries no mark.
+describe('reimprimir: la copia dice «duplicado» (hub#1931)', () => {
+  interface PrintReq { data?: Record<string, unknown>; html?: string }
+  let enviados: PrintReq[];
+
+  function montarConVenta(issuing: boolean) {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    render(renderDocumentModal({ saleId: 'venta-1', issuing, onClose: () => {}, t: (k) => k }), host);
+    const modal = host.querySelector('ion-modal.doc-modal')!;
+    const visor = modal.querySelector('erp-sales-document') as unknown as Record<string, unknown>;
+    visor.sale = { id: 'venta-1', sale_number: 'T-42', subtotal: 327, tax_amount: 33, total: 360, payment_method_name: 'Efectivo' };
+    visor.lines = [{ product_name: 'Cafe solo', quantity: 2, unit_price: 180, line_total: 360 }];
+    visor.settings = {};
+    return modal;
+  }
+
+  async function imprimir(modal: Element) {
+    modal.querySelector<HTMLElement>('ion-footer ion-button.print')!.click();
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  beforeEach(() => {
+    enviados = [];
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.print = async (req: PrintReq) => { enviados.push(req); return { via: 'queue' }; };
+    sdk.notify = () => {};
+  });
+
+  it('una reimpresión desde la lista va marcada como duplicado en los dos papeles', async () => {
+    await imprimir(montarConVenta(false));
+    expect(enviados).toHaveLength(1);
+    expect(enviados[0].data!.duplicate, 'the thermal paper says duplicado').toBe(true);
+    expect(enviados[0].html, 'and so does the browser fallback').toContain('ui.docDuplicate');
+  });
+
+  it('el tique recién cobrado es el original: ninguna marca', async () => {
+    await imprimir(montarConVenta(true));
+    expect(enviados).toHaveLength(1);
+    expect(enviados[0].data!.duplicate, 'the original carries no mark').toBeUndefined();
+    expect(enviados[0].html).not.toContain('ui.docDuplicate');
+  });
+});

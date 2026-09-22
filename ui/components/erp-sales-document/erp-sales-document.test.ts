@@ -192,6 +192,20 @@ describe('printableDocument — what the thermal printer reads', () => {
 
     expect((el as unknown as { printableDocument(): unknown }).printableDocument()).toBeUndefined();
   });
+
+  // hub#1931 — the shell's automatic print at checkout calls `printableDocument()` with no
+  // argument (hub `apps/web/src/lib/sale-document.ts`): that is the ORIGINAL and carries no mark.
+  // Only a caller that says it is printing a copy gets «duplicado», on both papers.
+  it('is the original by default and a duplicate only when asked (hub#1931)', async () => {
+    const el = (await montarVisor()) as unknown as {
+      printableDocument(o?: { duplicate?: boolean }): Record<string, unknown>;
+      printableHtml(o?: { duplicate?: boolean }): string;
+    };
+    expect(el.printableDocument().duplicate, 'the automatic print is the original').toBeUndefined();
+    expect(el.printableHtml()).not.toContain('ui.docDuplicate');
+    expect(el.printableDocument({ duplicate: true }).duplicate).toBe(true);
+    expect(el.printableHtml({ duplicate: true })).toContain('ui.docDuplicate');
+  });
 });
 
 // sales#120 — el papel del tique impreso sale en el idioma del hub. `printableHtml()` armaba el
