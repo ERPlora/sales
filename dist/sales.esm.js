@@ -1494,7 +1494,7 @@ var ListController = class {
     this.error = "";
     this.onChange();
     try {
-      const page = await this.client.queryPage(this.queryName, {
+      const page2 = await this.client.queryPage(this.queryName, {
         limit: s5.pageSize,
         offset: s5.page * s5.pageSize,
         search: s5.search,
@@ -1504,8 +1504,8 @@ var ListController = class {
         params: s5.context
       });
       if (mySeq !== this.seq) return;
-      this.rows = page.rows ?? [];
-      this.total = page.total ?? this.rows.length;
+      this.rows = page2.rows ?? [];
+      this.total = page2.total ?? this.rows.length;
     } catch (e7) {
       if (mySeq !== this.seq) return;
       this.rows = [];
@@ -1518,8 +1518,8 @@ var ListController = class {
       }
     }
   }
-  setPage(page) {
-    this.state.page = Math.max(0, page);
+  setPage(page2) {
+    this.state.page = Math.max(0, page2);
     void this.load();
   }
   setSort(sort, dir) {
@@ -2521,6 +2521,20 @@ function hash(s5) {
     h4 = Math.imul(h4, 16777619) >>> 0;
   }
   return h4.toString(36);
+}
+
+// ui/lib/original-ticket.ts
+var MAX_REMEMBERED = 2e3;
+var REGISTRY = Symbol.for("erplora.sales.originalTicketPrints");
+var page = globalThis;
+var printed = page[REGISTRY] ??= /* @__PURE__ */ new Set();
+function originalPrinted(saleId) {
+  return printed.has(saleId);
+}
+function markOriginalPrinted(saleId) {
+  printed.delete(saleId);
+  printed.add(saleId);
+  while (printed.size > MAX_REMEMBERED) printed.delete(printed.values().next().value);
 }
 
 // @erplora/outfitkit/dist/shared/icons.js
@@ -5517,10 +5531,15 @@ var ErpSalesDocument = class extends i3 {
    * tique en blanco.
    *
    * `duplicate` (hub#1931): same as in `printableHtml` — the renderer prints «DUPLICADO».
+   * Left out (the hub shell's automatic print at checkout), it is the original only if no original
+   * of this sale came out on this device yet (sales#330). Every original handed out is recorded, so
+   * the ticket screen's print button and the automatic print never make two, whichever comes first.
    */
-  printableDocument({ duplicate = false } = {}) {
+  printableDocument({ duplicate } = {}) {
     if (!this.sale) return void 0;
     const t7 = (k2) => erplora().t(CATALOG, k2);
+    const saleKey = this.saleId || (this.sale.id != null ? String(this.sale.id) : "");
+    const copy = duplicate ?? (saleKey !== "" && originalPrinted(saleKey));
     if (this.claimInvoiceId && !this.claim && !this.claimFlight) void this.ensureClaim(this.claimInvoiceId);
     const doc = saleToPrintDocument(
       this.sale,
@@ -5531,7 +5550,9 @@ var ErpSalesDocument = class extends i3 {
       t7("ui.docDefaultBusiness"),
       t7
     );
-    return duplicate ? { ...doc, duplicate: true } : doc;
+    if (copy) return { ...doc, duplicate: true };
+    if (saleKey !== "") markOriginalPrinted(saleKey);
+    return doc;
   }
   render() {
     const t7 = (k2) => erplora().t(CATALOG, k2);
@@ -5646,7 +5667,7 @@ function renderDocumentModal({ saleId, issuing = false, onClose, t: t7 }) {
              completo igualmente: en el TPV táctil el objetivo grande manda. -->
         <ion-button class="print" expand="block" aria-label=${t7("ui.print")} @click=${() => {
     const el = document.querySelector("ion-modal.doc-modal")?.querySelector("erp-sales-document");
-    const duplicate = !issuing;
+    const duplicate = !issuing || !!saleId && originalPrinted(saleId);
     const html = el?.printableHtml?.({ duplicate });
     const data = el?.printableDocument?.({ duplicate });
     const sdk = globalThis.erplora;
@@ -7489,11 +7510,11 @@ function catalogSourceOn(v3) {
 }
 var HARD_DEPENDENCIES = ["inventory", "taxes"];
 var CATALOG_INCIDENT_APPS = [...HARD_DEPENDENCIES, "services"];
-async function optionalCatalogRead(whole, page) {
+async function optionalCatalogRead(whole, page2) {
   return capabilityRead(async () => {
     const c5 = erplora2();
     if (typeof c5.queryAllOptional === "function") return await whole(c5);
-    if (typeof c5.queryOptional === "function") return await page(c5);
+    if (typeof c5.queryOptional === "function") return await page2(c5);
     return void 0;
   });
 }
@@ -8595,8 +8616,8 @@ var ErpPosTouch = class extends i3 {
       if (out.broken) brokenApps.add(app);
       return out.rows;
     };
-    const capabilityCatalogRead = async (app, whole, page) => {
-      const out = await optionalCatalogRead(whole, page);
+    const capabilityCatalogRead = async (app, whole, page2) => {
+      const out = await optionalCatalogRead(whole, page2);
       if (out.broken) brokenApps.add(app);
       if (out.absent) absentApps.add(app);
       return out.rows;

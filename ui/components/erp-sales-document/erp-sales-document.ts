@@ -6,6 +6,7 @@ import '@erplora/outfitkit/ok-receipt';
 import { receiptToPrintableHtml } from '../../lib/receipt-html.js';
 // El mismo tiquet, en la forma que lee la impresora térmica (sales#79).
 import { saleToPrintDocument, type PrintDocument } from '../../lib/print-document.js';
+import { markOriginalPrinted, originalPrinted } from '../../lib/original-ticket.js';
 import '@erplora/outfitkit/ok-invoice';
 import {
   saleToReceipt,
@@ -469,17 +470,24 @@ export class ErpSalesDocument extends LitElement {
    * tique en blanco.
    *
    * `duplicate` (hub#1931): same as in `printableHtml` — the renderer prints «DUPLICADO».
+   * Left out (the hub shell's automatic print at checkout), it is the original only if no original
+   * of this sale came out on this device yet (sales#330). Every original handed out is recorded, so
+   * the ticket screen's print button and the automatic print never make two, whichever comes first.
    */
-  printableDocument({ duplicate = false }: { duplicate?: boolean } = {}): PrintDocument | undefined {
+  printableDocument({ duplicate }: { duplicate?: boolean } = {}): PrintDocument | undefined {
     if (!this.sale) return undefined;
     const t = (k: string): string => erplora().t(CATALOG, k);
+    const saleKey = this.saleId || (this.sale.id != null ? String(this.sale.id) : '');
+    const copy = duplicate ?? (saleKey !== '' && originalPrinted(saleKey));
     // sales#103: reintento best-effort del acuñado si aún no llegó (idempotente en el hub).
     if (this.claimInvoiceId && !this.claim && !this.claimFlight) void this.ensureClaim(this.claimInvoiceId);
     const doc = saleToPrintDocument(
       this.sale, this.lines || [], this.settings || {}, this.fiscalForPaper(), erplora().locale,
       t('ui.docDefaultBusiness'), t,
     );
-    return duplicate ? { ...doc, duplicate: true } : doc;
+    if (copy) return { ...doc, duplicate: true };
+    if (saleKey !== '') markOriginalPrinted(saleKey);
+    return doc;
   }
 
   render() {

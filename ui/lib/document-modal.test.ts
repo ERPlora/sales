@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { render } from 'lit';
 import { renderDocumentModal } from './document-modal.js';
 import { installPosDouble } from '../test/pos-double';
+import { forgetOriginalPrints } from './original-ticket.js';
 
 beforeEach(() => {
   document.body.innerHTML = '';
@@ -15,6 +16,7 @@ beforeEach(() => {
   // The modal resolves sale → lines → the fiscal chain; `invoice`/`verifactu` are optional apps
   // and this hub does not have them, which is the `undefined` the screen degrades on (ADR-0127).
   installPosDouble({ locale: 'es' });
+  forgetOriginalPrints();
 });
 
 function montar(saleId?: string, onClose: () => void = () => {}) {
@@ -248,5 +250,71 @@ describe('reimprimir: la copia dice «duplicado» (hub#1931)', () => {
     expect(enviados).toHaveLength(1);
     expect(enviados[0].data!.duplicate, 'the original carries no mark').toBeUndefined();
     expect(enviados[0].html).not.toContain('ui.docDuplicate');
+  });
+});
+
+// sales#330 — the ticket screen right after charging printed an original EVERY time its button was
+// pressed, even when the automatic print at checkout had already put the original in the customer's
+// hand. Only the first paper of a sale is the original; any later one says «duplicado».
+describe('recién cobrado: solo el primer papel es el original (sales#330)', () => {
+  interface PrintReq { data?: Record<string, unknown>; html?: string }
+  let enviados: PrintReq[];
+  const VENTA = { id: 'venta-9', sale_number: 'T-43', subtotal: 327, tax_amount: 33, total: 360, payment_method_name: 'Efectivo' };
+  const LINEAS = [{ product_name: 'Cafe solo', quantity: 2, unit_price: 180, line_total: 360 }];
+
+  async function montarRecienCobrado() {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    render(renderDocumentModal({ saleId: 'venta-9', issuing: true, onClose: () => {}, t: (k) => k }), host);
+    const modal = host.querySelector('ion-modal.doc-modal')!;
+    const visor = modal.querySelector('erp-sales-document') as unknown as Record<string, unknown>;
+    // The viewer loads `venta-9` from the double (which has no such sale): the sale goes in once
+    // that load is over, so a second press still finds it.
+    await new Promise((r) => setTimeout(r, 20));
+    Object.assign(visor, { sale: VENTA, lines: LINEAS, settings: {} });
+    return modal;
+  }
+
+  /** The shell's automatic print: its own hidden viewer of the sale, asked with no argument. */
+  function impresionAutomatica(): Record<string, unknown> {
+    const visor = document.createElement('erp-sales-document') as unknown as Record<string, unknown>;
+    Object.assign(visor, { issuing: true, saleId: 'venta-9', sale: VENTA, lines: LINEAS, settings: {} });
+    return (visor as unknown as { printableDocument(): Record<string, unknown> }).printableDocument();
+  }
+
+  async function imprimir(modal: Element) {
+    modal.querySelector<HTMLElement>('ion-footer ion-button.print')!.click();
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  beforeEach(() => {
+    enviados = [];
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.print = async (req: PrintReq) => { enviados.push(req); return { via: 'queue' }; };
+    sdk.notify = () => {};
+  });
+
+  it('con la impresión automática ya hecha, el botón imprime un duplicado', async () => {
+    expect(impresionAutomatica().duplicate, 'the automatic paper is the original').toBeUndefined();
+    await imprimir(await montarRecienCobrado());
+    expect(enviados[0].data!.duplicate, 'the thermal paper says duplicado').toBe(true);
+    expect(enviados[0].html, 'and so does the browser fallback').toContain('ui.docDuplicate');
+  });
+
+  it('sin impresión automática, la primera pulsación es el original y la segunda un duplicado', async () => {
+    const modal = await montarRecienCobrado();
+    await imprimir(modal);
+    await imprimir(modal);
+    expect(enviados).toHaveLength(2);
+    expect(enviados[0].data!.duplicate, 'the first paper is the original').toBeUndefined();
+    expect(enviados[0].html).not.toContain('ui.docDuplicate');
+    expect(enviados[1].data!.duplicate, 'the second one is a copy').toBe(true);
+    expect(enviados[1].html).toContain('ui.docDuplicate');
+  });
+
+  it('si la caja imprime antes de que llegue la automática, la automática sale como duplicado', async () => {
+    await imprimir(await montarRecienCobrado());
+    expect(enviados[0].data!.duplicate, 'the till printed the original').toBeUndefined();
+    expect(impresionAutomatica().duplicate, 'the late automatic paper is a copy').toBe(true);
   });
 });

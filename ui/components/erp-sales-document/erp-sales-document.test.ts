@@ -10,6 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReceiptData } from '@erplora/outfitkit';
 import { installErploraDouble } from '../../test/erplora-double';
+import { forgetOriginalPrints } from '../../lib/original-ticket.js';
 
 /** El doble del visor: sus tres lecturas propias, y la cadena fiscal AUSENTE salvo que un test la
  *  ponga en el hub — `invoice`/`verifactu` son apps opcionales (ADR-0127). */
@@ -29,6 +30,8 @@ function installDocDouble(
 beforeEach(() => {
   // t() del doble compartido: devuelve la CLAVE — el test mira ESTRUCTURA, no idioma.
   installDocDouble();
+  // sales#330 — every test's viewer is sale `s1`: start each one with its original not printed yet.
+  forgetOriginalPrints();
 });
 
 async function montarVisor() {
@@ -205,6 +208,33 @@ describe('printableDocument — what the thermal printer reads', () => {
     expect(el.printableHtml()).not.toContain('ui.docDuplicate');
     expect(el.printableDocument({ duplicate: true }).duplicate).toBe(true);
     expect(el.printableHtml({ duplicate: true })).toContain('ui.docDuplicate');
+  });
+
+  // sales#330 — the automatic print asks with no argument, and it may land AFTER the till already
+  // printed this sale's original (the cashier pressed print while the shell waited for the QR), or
+  // be asked a second time. Only the first paper of a sale is the original, whoever asks for it.
+  it('with no argument, is the original only if no original of that sale came out yet (sales#330)', async () => {
+    const el = (await montarVisor()) as unknown as {
+      printableDocument(o?: { duplicate?: boolean }): Record<string, unknown>;
+    };
+    expect(el.printableDocument().duplicate, 'the first paper is the original').toBeUndefined();
+    expect(el.printableDocument().duplicate, 'the next one is a copy').toBe(true);
+  });
+
+  it('an explicit copy does not use up the original (sales#330)', async () => {
+    const el = (await montarVisor()) as unknown as {
+      printableDocument(o?: { duplicate?: boolean }): Record<string, unknown>;
+    };
+    el.printableDocument({ duplicate: true });
+    expect(el.printableDocument().duplicate, 'the original is still to come').toBeUndefined();
+  });
+
+  it('an original printed by ANOTHER viewer of the same sale counts (sales#330)', async () => {
+    // The shell composes the automatic paper in its own hidden viewer, not in the till's modal.
+    const tpv = (await montarVisor()) as unknown as { printableDocument(o?: { duplicate?: boolean }): Record<string, unknown> };
+    const shell = (await montarVisor()) as unknown as { printableDocument(o?: { duplicate?: boolean }): Record<string, unknown> };
+    tpv.printableDocument({ duplicate: false });
+    expect(shell.printableDocument().duplicate, 'the till already printed the original').toBe(true);
   });
 });
 
