@@ -1,6 +1,6 @@
 // sales#330 — only one ORIGINAL of each sale's ticket may come out (RD 1619/2012 art. 14). This
 // device remembers which sales already had theirs, so every paper after it says «duplicado».
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { forgetOriginalPrints, markOriginalPrinted, originalPrinted } from './original-ticket.js';
 
 beforeEach(() => forgetOriginalPrints());
@@ -24,5 +24,15 @@ describe('original ticket registry (sales#330)', () => {
     for (let i = 0; i < 5000; i++) markOriginalPrinted(`sale-${i}`);
     expect(originalPrinted('sale-0'), 'the oldest one fell out').toBe(false);
     expect(originalPrinted('sale-4999'), 'the one just charged is remembered').toBe(true);
+  });
+
+  // The till's modal and the shell's viewer can come from two evaluations of this bundle — a module
+  // updated while the page stays open loads a new versioned url, and the viewer class stays the old
+  // one (a custom element is defined once). Both must still see the same record.
+  it('is one record per page, even across two copies of the bundle', async () => {
+    markOriginalPrinted('sale-7');
+    vi.resetModules();
+    const otraCopia = await import('./original-ticket.js');
+    expect(otraCopia.originalPrinted('sale-7')).toBe(true);
   });
 });
