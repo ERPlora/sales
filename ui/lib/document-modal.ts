@@ -15,6 +15,7 @@
 import { html, nothing, type TemplateResult } from 'lit';
 import { printHtmlInIframe } from './receipt-html.js';
 import { reprintJobId } from './print-document.js';
+import { originalPrinted } from './original-ticket.js';
 import '../components/erp-sales-document/erp-sales-document.js';
 
 export interface DocumentModalOpts {
@@ -95,10 +96,11 @@ export function renderDocumentModal({ saleId, issuing = false, onClose, t }: Doc
               printableHtml?: (o: { duplicate: boolean }) => string;
               printableDocument?: (o: { duplicate: boolean }) => Record<string, unknown> | undefined;
             }) | null;
-          // hub#1931 — only one original of an invoice may exist (RD 1619/2012 art. 14). The till
-          // right after charging prints the original; any other print of this viewer (the sales
-          // list, the history) is a copy and both papers say «duplicado».
-          const duplicate = !issuing;
+          // hub#1931 — only one original of an invoice may exist (RD 1619/2012 art. 14). Any print
+          // of this viewer outside the till (the sales list, the history) is a copy and both papers
+          // say «duplicado». Right after charging, the original goes out only if none of this sale
+          // did yet — the automatic print at checkout or an earlier press of this button (sales#330).
+          const duplicate = !issuing || (!!saleId && originalPrinted(saleId));
           const html = el?.printableHtml?.({ duplicate });
           const data = el?.printableDocument?.({ duplicate });
           const sdk = (globalThis as { erplora?: PrintCapableSdk }).erplora;
