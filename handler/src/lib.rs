@@ -3065,7 +3065,7 @@ fn complete_sale_inner(input: Value, rule: CapRule) -> Result<Output, Refusal> {
     // proviene de un pedido (el listener de orders es no-op en ese caso).
     // total/subtotal/tax_amount viajan en **céntimos** (contrato inter-módulo):
     // customers.record_purchase acumula total_spent (céntimos), etc.
-    let event = Event::new("sale.completed", json!({
+    let mut event = Event::new("sale.completed", json!({
         "sender": "sales",
         "sale_id": sale_id,
         "order_id": payload.get("order_id").cloned().unwrap_or(Value::Null),
@@ -3122,6 +3122,12 @@ fn complete_sale_inner(input: Value, rule: CapRule) -> Result<Output, Refusal> {
         // however many ways it was paid.
         "payments": event_payments,
     }));
+    // sales#283 — the «Print receipt» switch as the cashier left it: the shell prints on this event
+    // and obeys it over its auto-print setting. Only a real boolean travels; absent (API, assistant,
+    // any other producer) the key is not there and the setting keeps deciding.
+    if let (Some(choice), Some(body)) = (payload.get("print_receipt").and_then(Value::as_bool), event.payload.as_object_mut()) {
+        body.insert("print_receipt".into(), Value::Bool(choice));
+    }
 
     let mut events = vec![event];
 
@@ -5631,6 +5637,35 @@ mod tests {
         // 2) el evento lo lleva → invoice deja de hardcodear F2.
         assert_eq!(out.events[0].payload["document_type"], json!("invoice"),
                    "sale.completed lleva el tipo de documento");
+    }
+
+    #[test]
+    fn the_receipt_choice_travels_in_the_event() {
+        // sales#283 — the «Print receipt» switch of the charge sheet. The shell prints on
+        // `sale.completed`, so the cashier's choice only means something if it travels there.
+        let items = json!([{ "product_name": "Café", "price": 121, "quantity": 1_000_000, "tax_rate": 21.0 }]);
+        for choice in [true, false] {
+            let mut inp = input(items.clone(), 3, 121);
+            inp["payload"]["print_receipt"] = json!(choice);
+            let out = sale(inp);
+            assert_eq!(out.events[0].payload["print_receipt"], json!(choice),
+                       "sale.completed carries print_receipt={choice}");
+        }
+    }
+
+    #[test]
+    fn without_a_receipt_choice_the_event_says_nothing() {
+        // sales#283 — any other producer of sales (API, assistant, cart_checkout) sends no choice:
+        // the event must not invent one, or it would override the shop's auto-print setting.
+        let items = json!([{ "product_name": "Café", "price": 121, "quantity": 1_000_000, "tax_rate": 21.0 }]);
+        let out = sale(input(items.clone(), 3, 121));
+        assert_eq!(out.events[0].payload.get("print_receipt"), None,
+                   "no choice → no key: {}", out.events[0].payload);
+        let mut inp = input(items, 3, 121);
+        inp["payload"]["print_receipt"] = json!("yes");
+        let out = sale(inp);
+        assert_eq!(out.events[0].payload.get("print_receipt"), None,
+                   "a non-boolean is no choice: {}", out.events[0].payload);
     }
 
     #[test]

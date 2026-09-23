@@ -2211,8 +2211,9 @@ function ref(l3) {
   return !!(l3.parent_line_ref || "").trim();
 }
 var VERIFACTU_LEGEND = "VERI*FACTU";
-function qrLegend(fiscal) {
-  return fiscal.qr ? { qr_legend: VERIFACTU_LEGEND } : {};
+var QR_TRIBUTARIO_HEADING = "QR tributario:";
+function qrLegalTexts(fiscal) {
+  return fiscal.qr ? { qr_heading: QR_TRIBUTARIO_HEADING, qr_legend: VERIFACTU_LEGEND } : {};
 }
 var CLAIM_NOTE_FALLBACK = "Get your invoice";
 function claimPrintFields(fiscal, t7) {
@@ -2342,7 +2343,7 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", f
     decimals: hubDecimals(),
     footer: settings.receipt_footer || void 0,
     qr: fiscal.qr || void 0,
-    ...qrLegend(fiscal),
+    ...qrLegalTexts(fiscal),
     qr_note: fiscal.qr_note || void 0,
     // QR promocional (solo tiquet; la factura A4 es formal). Sin URL no hay rastro.
     promo_qr: settings.receipt_marketing_url || void 0,
@@ -2384,7 +2385,7 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", f
     payment_method: payLabel(sale.payment_method_name, t7),
     footer: settings.receipt_footer || void 0,
     qr: fiscal.qr || void 0,
-    ...qrLegend(fiscal),
+    ...qrLegalTexts(fiscal),
     qr_note: fiscal.qr_note || void 0
   };
 }
@@ -2504,6 +2505,7 @@ function saleToPrintDocument(sale, lines, settings = {}, fiscal = {}, locale = "
     change: euros(screen.payment?.change, screen.decimals),
     qr_data: screen.qr,
     qr_legend: screen.qr_legend,
+    qr_heading: screen.qr_heading,
     // sales#103: el bloque «pide tu factura», VACÍO sin locator acuñado — el renderer imprime
     // solo los campos presentes, así que un tique sin claim sale byte a byte como hoy.
     ...claimPrintFields(fiscal, t7),
@@ -4454,7 +4456,7 @@ var en_default = {
     limitChargeBlocked: "Enter the customer's details",
     invoiceRecipientTitle: "An invoice needs the customer's details",
     invoiceRecipientBody: "Fill in the name, tax ID and address. If the customer does not need an invoice, choose Receipt.",
-    tenderedMissing: "Type the amount tendered",
+    tenderedMissing: "Enter the amount tendered on the keypad",
     tenderedShort: "The amount tendered does not cover the total",
     colDate: "Date",
     rangeLabel: "Period",
@@ -5028,7 +5030,7 @@ var es_default = {
     limitChargeBlocked: "Faltan los datos del cliente",
     invoiceRecipientTitle: "Una factura necesita los datos del cliente",
     invoiceRecipientBody: "Rellena el nombre, el NIF y la direcci\xF3n. Si el cliente no necesita factura, elige Tique.",
-    tenderedMissing: "Teclea el importe entregado",
+    tenderedMissing: "Marca en el teclado el importe entregado",
     tenderedShort: "Lo entregado no cubre el total",
     colDate: "Fecha",
     rangeLabel: "Periodo",
@@ -7428,6 +7430,19 @@ function certificateExpiryDays(road, now = /* @__PURE__ */ new Date()) {
   return left <= CERTIFICATE_WARNING_DAYS * DAY_MS ? Math.floor(left / DAY_MS) : null;
 }
 
+// ui/lib/print-intent.ts
+function readAutoPrint(answer) {
+  const row = Array.isArray(answer) ? answer[0] : void 0;
+  const v3 = row?.auto_print_on_sale;
+  if (typeof v3 === "boolean") return v3;
+  if (typeof v3 === "number") return v3 !== 0;
+  if (v3 === "1" || v3 === "0") return v3 === "1";
+  return void 0;
+}
+function printReceiptIntent(choice, setting) {
+  return choice ?? setting;
+}
+
 // ui/lib/transport-error.ts
 var SERVER_UNAVAILABLE_KEY = "ui.serverUnavailable";
 function transportErrorKey(e7) {
@@ -7730,7 +7745,6 @@ var ErpPosTouch = class extends i3 {
     this.parkName = "";
     this.dirtyOpen = false;
     this.dirtyAllowCancel = false;
-    this.printOnCharge = true;
     this.tableLabel = "";
     this.customerName = "";
     this.customerTaxId = "";
@@ -8222,6 +8236,8 @@ var ErpPosTouch = class extends i3 {
     /* Selector de MÉTODO dentro del sheet (tender): botones grandes con icono + nombre, objetivo
        táctil ≥56px. El elegido se marca por borde/acento Y por aria-pressed (no solo color). */
     .pay-methods { display:grid; grid-template-columns:repeat(2,1fr); gap:.5rem; margin:.1rem 0 .55rem; }
+    /* Ticket or invoice: the same two-up buttons as the method (sales#324), not two stacked. */
+    .pay-docformat { display:grid; grid-template-columns:repeat(2,1fr); gap:.5rem; }
     .pm-btn { display:flex; align-items:center; justify-content:center; gap:.5rem; min-height:56px;
       border-radius:12px; border:1px solid var(--ion-border-color); background:var(--tile);
       color:var(--tx); font-weight:700; font-size:.95rem; cursor:pointer; }
@@ -8469,6 +8485,29 @@ var ErpPosTouch = class extends i3 {
     .sheet-h { display:flex; justify-content:space-between; align-items:center; margin-bottom:.8rem; }
     .sheet-h .t { font-size:1.2rem; font-weight:700; }
     .x { background:none; border:none; font-size:1.3rem; cursor:pointer; color:var(--mut); }
+    .pay-side, .pay-tender { display:flex; flex-direction:column; gap:.8rem; }
+    /* sales#324 — from 821 px (where the cart stops being a drawer) the tender screen is TWO
+       columns, as on Square or Shopify POS: the total, the voucher per line and ticket/invoice on
+       the left; the method, the tendered amount and the keypad on the right, from the total down to
+       the footer. Each column scrolls on its own, so a long voucher row can only push the left one.
+       In one 24rem column a salon check left the keypad below the fold of a 1280×800 tablet while
+       the footer already said «type the amount tendered». .pay steps aside (display:contents)
+       so its two groups are the grid items.
+       Scoped to .pay-sheet: .sheet and .pay are shared by the discount, open-price, line-note,
+       modifier and combo sheets, which stay one 24rem column. */
+    @media (min-width: 821px) {
+      .pay-sheet { width:min(100%, 46rem); display:grid;
+        grid-template-columns:minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-rows:auto auto minmax(0, 1fr) auto;
+        grid-template-areas:"head head" "top tender" "side tender" "foot foot"; }
+      .pay-sheet .sheet-h { grid-area:head; }
+      .pay-sheet .sheet-top { grid-area:top; }
+      .pay-sheet .sheet-foot { grid-area:foot; }
+      .pay-sheet .pay { display:contents; }
+      .pay-sheet .pay-side { grid-area:side; min-height:0; overflow:auto; padding:0 1rem .75rem; }
+      .pay-sheet .pay-tender { grid-area:tender; min-height:0; overflow:auto; padding:0 1rem .75rem;
+        border-left:1px solid var(--ion-border-color); }
+    }
 
     @media (max-width: 820px) {
       .body { grid-template-columns: 1fr; }
@@ -8745,7 +8784,8 @@ var ErpPosTouch = class extends i3 {
         taxCats,
         ownDepartments,
         fiscalLimits,
-        fiscalRoadRows
+        fiscalRoadRows,
+        printingRows
       ] = await Promise.all([
         fromSource("sync_products", () => capabilityCatalogRead(
           "inventory",
@@ -8808,6 +8848,10 @@ var ErpPosTouch = class extends i3 {
         // the till, because the dispatcher refuses the sale on its own. What this buys is saying it
         // BEFORE the cashier charges — a card can go through a separate terminal first.
         erplora2().query("hub.fiscal.transmission").catch(() => []),
+        // sales#283 — the auto-print setting the «Print receipt» switch starts from. Optional app,
+        // best-effort read: without it the switch sends nothing unless touched and the shell keeps
+        // deciding exactly as before.
+        optionalRead((c5) => c5.queryOptional("printing.settings.get")),
         // sales#153 — los MENÚS que este hub vende. Una sola lectura (`combos.options.all`) da a la
         // vez las baldosas y sus grupos, así que es imposible ofrecer un menú cuyos cursos no se
         // hayan cargado: eso sería justo «ofrecer lo que el servidor va a rechazar».
@@ -8837,6 +8881,7 @@ var ErpPosTouch = class extends i3 {
       this.taxCatalog = taxCatalog;
       this.missingChargeApp = taxCatalog.installed ? "" : "taxes";
       this.fiscalRoad = readFiscalRoad(fiscalRoadRows);
+      this.autoPrintDefault = readAutoPrint(printingRows);
       this.simplifiedMaxCents = rows2(fiscalLimits)[0]?.simplified_invoice_max_cents ?? null;
       for (const u5 of unitRows) if (u5.code) this.units.set(u5.code, u5);
       this.products = [...prods.filter((p4) => p4.is_active !== 0), ...svcRows];
@@ -10345,6 +10390,7 @@ var ErpPosTouch = class extends i3 {
     this.padPrimed = false;
     this.splitting = false;
     this.tenders = [];
+    this.printOnCharge = void 0;
     this.payMethod = defaultPayMethod(this.payMethods);
     this.docFormat = this.defaultDocFormat;
     if (this.overSimplifiedLimit) this.docFormat = "invoice";
@@ -10399,6 +10445,10 @@ var ErpPosTouch = class extends i3 {
     };
   }
   /** ¿Se puede cerrar este cobro tal y como está? Ver `lib/simplified-limit.ts`. */
+  /** sales#283 — this charge's receipt: the switch as the cashier left it, else the setting. */
+  get printReceipt() {
+    return printReceiptIntent(this.printOnCharge, this.autoPrintDefault);
+  }
   get chargeBlocked() {
     return ticketIsBlocked(this.limitState);
   }
@@ -10844,10 +10894,10 @@ var ErpPosTouch = class extends i3 {
       this.error = e7 instanceof Error ? e7.message : String(e7);
     }
   }
-  /** Cierra la venta. La IMPRESIÓN no se dispara desde aquí: la hace el shell por el Bridge al
-   *  recibir `sale.completed` (ajuste `auto_print_on_sale`). El toggle de la pantalla de cobro
-   *  refleja esa preferencia; el diálogo del navegador solo aparece como respaldo manual. */
-  async confirm(_print = false) {
+  /** Closes the sale. PRINTING is not fired from here: the shell prints on `sale.completed`.
+   *  What this sends is the INTENT (`print_receipt`, sales#283): the «Print receipt» switch as the
+   *  cashier left it, which the shell obeys over its `auto_print_on_sale` setting. */
+  async confirm() {
     if (this.chargeBlocked) {
       this.docFormat = "invoice";
       this.paying = true;
@@ -10934,7 +10984,10 @@ var ErpPosTouch = class extends i3 {
         ...recipientCountryPayload(this.customerCountry, this.customerIdType),
         // Tipo de documento fiscal (ADR-0140): viaja ATÓMICAMENTE con la venta; `invoice` lo lee del
         // evento para elegir F1 (completa) vs F2 (simplificada). Reemplaza al `set_document_type` retro.
-        document_type: this.docFormat
+        document_type: this.docFormat,
+        // sales#283 — print THIS sale's receipt or not. Omitted when nobody decided (switch
+        // untouched and no `printing` setting read): the shell then decides as it always did.
+        ...this.printReceipt === void 0 ? {} : { print_receipt: this.printReceipt }
       };
       if (checkoutDoor === CHECKOUT_OVER_LIMIT_COMMAND) {
         await erplora2().command("sales.complete_sale_over_limit", checkoutPayload);
@@ -11778,7 +11831,7 @@ var ErpPosTouch = class extends i3 {
       ${this.paying ? b2`<div data-testid="pos-pay-scrim" class="scrim" @click=${(e7) => {
       if (e7.target.classList.contains("scrim")) this.paying = false;
     }}>
-            <div class="sheet">
+            <div class="sheet pay-sheet">
               <div class="sheet-h">
                 <span class="t">${t5("ui.charge")}</span>
                 <button data-testid="pos-pay-close" class="x" @click=${() => {
@@ -11798,6 +11851,11 @@ var ErpPosTouch = class extends i3 {
                     </div>` : A}
               </div>
               <div class="pay">
+                <!-- sales#324 — TWO groups: what the sale is (voucher per line, ticket or invoice)
+                     and how it is paid (method, tendered, keypad). On a phone they stack in this
+                     order; from 821 px they become two columns, so what grows on the side can never
+                     push the keypad out of sight again. -->
+                <div class="pay-side">
 
                 ${this.overSimplifiedLimit ? this.renderRecipientCapture("limit") : A}
 
@@ -11822,6 +11880,9 @@ var ErpPosTouch = class extends i3 {
                 <!-- sales#317 — «Factura» asks who it is for, right under the button that asked for
                      it. Above the ceiling the capture is already painted at the top (hub#297). -->
                 ${!this.overSimplifiedLimit && this.docFormat === "invoice" ? this.renderRecipientCapture("invoice") : A}
+                </div>
+
+                <div class="pay-tender">
 
                 <!-- sales#159 — LAS PATAS YA TOMADAS. Cada una se puede editar (vuelve al teclado
                      con su importe) y quitar (su importe vuelve al restante). Sin esto, corregir un
@@ -11909,11 +11970,12 @@ var ErpPosTouch = class extends i3 {
                 <ion-item lines="none" class="print-row">
                   <ion-icon slot="start" name="print-outline"></ion-icon>
                   <ion-label>${t5("ui.printReceipt")}</ion-label>
-                  <ion-toggle data-testid="pos-print-on-charge" slot="end" .checked=${this.printOnCharge}
+                  <ion-toggle data-testid="pos-print-on-charge" slot="end" .checked=${this.printReceipt ?? true}
                               @ionChange=${(e7) => {
       this.printOnCharge = !!e7.detail.checked;
     }}></ion-toggle>
                 </ion-item>
+                </div>
 
               </div>
               <div class="sheet-foot">
@@ -11932,7 +11994,7 @@ var ErpPosTouch = class extends i3 {
                      dos veces. -->
                 <ion-button data-testid="pos-pay-confirm" class="charge" expand="block" ?disabled=${this.busy}
                             aria-disabled=${blockedWhy ? "true" : A}
-                            @click=${() => this.confirm(this.printOnCharge)}>
+                            @click=${() => this.confirm()}>
                   ${this.busy ? t5("ui.charging") : blockedWhy?.short ? blockedWhy.short : this.tenders.length ? `${t5("ui.charge")} ${this.money(this.payable)}` : needsTendered(this.payMethod) ? `${t5("ui.charge")} ${this.money(this.payable)}` : t5("ui.chargeWithCard", { amount: this.money(this.payable) })}
                 </ion-button>
               </div>

@@ -381,7 +381,7 @@
     "limitChargeBlocked": "Enter the customer's details",
     "invoiceRecipientTitle": "An invoice needs the customer's details",
     "invoiceRecipientBody": "Fill in the name, tax ID and address. If the customer does not need an invoice, choose Receipt.",
-    "tenderedMissing": "Type the amount tendered",
+    "tenderedMissing": "Enter the amount tendered on the keypad",
     "tenderedShort": "The amount tendered does not cover the total",
     "colDate": "Date",
     "rangeLabel": "Period",

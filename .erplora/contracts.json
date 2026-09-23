@@ -34,6 +34,7 @@
       "invoice.lines",
       "modifiers.for_target",
       "modifiers.options.all",
+      "printing.settings.get",
       "services.categories.list",
       "services.services.list",
       "staff.members.list",

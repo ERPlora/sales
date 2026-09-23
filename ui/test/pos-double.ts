@@ -50,6 +50,8 @@ const READS: { name: string; module: string; field: keyof PosCatalogue }[] = [
   { name: 'invoice.by_source', module: 'invoice', field: 'invoiceBySource' },
   { name: 'invoice.lines', module: 'invoice', field: 'invoiceLines' },
   { name: 'verifactu.records.by_invoice', module: 'verifactu', field: 'verifactuRecord' },
+  // sales#283 — the shop's auto-print setting is what the «Print receipt» switch starts from.
+  { name: 'printing.settings.get', module: 'printing', field: 'printingSettings' },
 ];
 
 type PosSettingsRow = Record<string, unknown> | null;
@@ -65,7 +67,7 @@ function bindAppointmentGet(bookings: Record<string, unknown>[]): QueryAnswer {
 }
 
 /** The apps whose ABSENCE is the normal case, so they are out of the hub until a test says otherwise. */
-const OPTIONAL_MODULES = new Set(['services', 'modifiers', 'combos', 'appointments', 'staff', 'invoice', 'verifactu']);
+const OPTIONAL_MODULES = new Set(['services', 'modifiers', 'combos', 'appointments', 'staff', 'invoice', 'verifactu', 'printing']);
 
 /** Every query name the till reads. Exported so the suite can prove none of them explodes. */
 export const POS_READS: readonly string[] = READS.map((r) => r.name);
@@ -108,6 +110,7 @@ interface PosCatalogue {
   invoiceBySource?: QueryAnswer;
   invoiceLines?: QueryAnswer;
   verifactuRecord?: QueryAnswer;
+  printingSettings?: QueryAnswer;
 }
 
 export interface PosDoubleSpec extends PosCatalogue, Omit<ErploraDoubleSpec, 'queries' | 'absent' | 'broken'> {
@@ -139,7 +142,7 @@ export function installPosDouble(spec: PosDoubleSpec = {}): ErploraDouble {
     paymentMethods, quickNotes, departments, business, orders, orderLines, byIdempotencyKey, sale, saleLines,
     users, team, fiscalLimits, fiscalRoad,
     services, serviceCategories, modifierGroups, modifierOptions, comboOptions, appointment,
-    invoiceBySource, invoiceLines, verifactuRecord,
+    invoiceBySource, invoiceLines, verifactuRecord, printingSettings,
     ...rest
   } = spec;
   const catalogue: Record<keyof PosCatalogue, QueryAnswer | undefined> = {
@@ -148,7 +151,7 @@ export function installPosDouble(spec: PosDoubleSpec = {}): ErploraDouble {
     users, team, fiscalLimits, fiscalRoad,
     services, serviceCategories, modifierGroups, modifierOptions, comboOptions,
     appointment: appointment && bindAppointmentGet(appointment),
-    invoiceBySource, invoiceLines, verifactuRecord,
+    invoiceBySource, invoiceLines, verifactuRecord, printingSettings,
   };
 
   const absentSet = new Set(absentModules);
