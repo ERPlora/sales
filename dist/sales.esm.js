@@ -1833,6 +1833,8 @@ function receiptToPrintableHtml(doc) {
   .comp { font-size: 11px; padding-left: 4mm; }
   .tot td { font-size: 15px; font-weight: 700; padding-top: 1mm; }
   .foot { text-align: center; font-size: 10px; margin-top: 3mm; }
+  /* sales#327 \u2014 the legal legend: body size and bold (Orden HAC/1177/2024 art. 20.1.b). */
+  .legend { text-align: center; font-size: 12px; font-weight: 700; letter-spacing: .04em; margin-top: 3mm; }
   /* El bloque del claim (sales#103): al pie y separado del QR fiscal, como en el papel t\xE9rmico. */
   .claim { text-align: center; margin-top: 3mm; }
   .claim-note { font-size: 11px; font-weight: 700; }
@@ -1857,6 +1859,7 @@ function receiptToPrintableHtml(doc) {
     ${pago}
   </table>
   ${doc.footer ? `<div class="foot">${esc(doc.footer)}</div>` : ""}
+  ${doc.qr_legend ? `<div class="legend">${esc(doc.qr_legend)}</div>` : ""}
   ${doc.qr_note ? `<div class="foot">${esc(doc.qr_note)}</div>` : ""}
   ${claim}
 </body></html>`;
@@ -2207,6 +2210,10 @@ function lineName(l3, t7) {
 function ref(l3) {
   return !!(l3.parent_line_ref || "").trim();
 }
+var VERIFACTU_LEGEND = "VERI*FACTU";
+function qrLegend(fiscal) {
+  return fiscal.qr ? { qr_legend: VERIFACTU_LEGEND } : {};
+}
 var CLAIM_NOTE_FALLBACK = "Get your invoice";
 function claimPrintFields(fiscal, t7) {
   if (!fiscal.claim_locator) return {};
@@ -2335,6 +2342,7 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", f
     decimals: hubDecimals(),
     footer: settings.receipt_footer || void 0,
     qr: fiscal.qr || void 0,
+    ...qrLegend(fiscal),
     qr_note: fiscal.qr_note || void 0,
     // QR promocional (solo tiquet; la factura A4 es formal). Sin URL no hay rastro.
     promo_qr: settings.receipt_marketing_url || void 0,
@@ -2376,6 +2384,7 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", f
     payment_method: payLabel(sale.payment_method_name, t7),
     footer: settings.receipt_footer || void 0,
     qr: fiscal.qr || void 0,
+    ...qrLegend(fiscal),
     qr_note: fiscal.qr_note || void 0
   };
 }
@@ -2494,6 +2503,7 @@ function saleToPrintDocument(sale, lines, settings = {}, fiscal = {}, locale = "
     paid: euros(screen.payment?.paid, screen.decimals),
     change: euros(screen.payment?.change, screen.decimals),
     qr_data: screen.qr,
+    qr_legend: screen.qr_legend,
     // sales#103: el bloque «pide tu factura», VACÍO sin locator acuñado — el renderer imprime
     // solo los campos presentes, así que un tique sin claim sale byte a byte como hoy.
     ...claimPrintFields(fiscal, t7),
@@ -8428,18 +8438,20 @@ var ErpPosTouch = class extends i3 {
        the footer. Each column scrolls on its own, so a long voucher row can only push the left one.
        In one 24rem column a salon check left the keypad below the fold of a 1280×800 tablet while
        the footer already said «type the amount tendered». .pay steps aside (display:contents)
-       so its two groups are the grid items. */
+       so its two groups are the grid items.
+       Scoped to .pay-sheet: .sheet and .pay are shared by the discount, open-price, line-note,
+       modifier and combo sheets, which stay one 24rem column. */
     @media (min-width: 821px) {
-      .sheet { width:min(100%, 46rem); display:grid;
+      .pay-sheet { width:min(100%, 46rem); display:grid;
         grid-template-columns:minmax(0, 1fr) minmax(0, 1fr);
         grid-template-rows:auto auto minmax(0, 1fr) auto;
         grid-template-areas:"head head" "top tender" "side tender" "foot foot"; }
-      .sheet-h { grid-area:head; }
-      .sheet-top { grid-area:top; }
-      .sheet-foot { grid-area:foot; }
-      .pay { display:contents; }
-      .pay-side { grid-area:side; min-height:0; overflow:auto; padding:0 1rem .75rem; }
-      .pay-tender { grid-area:tender; min-height:0; overflow:auto; padding:0 1rem .75rem;
+      .pay-sheet .sheet-h { grid-area:head; }
+      .pay-sheet .sheet-top { grid-area:top; }
+      .pay-sheet .sheet-foot { grid-area:foot; }
+      .pay-sheet .pay { display:contents; }
+      .pay-sheet .pay-side { grid-area:side; min-height:0; overflow:auto; padding:0 1rem .75rem; }
+      .pay-sheet .pay-tender { grid-area:tender; min-height:0; overflow:auto; padding:0 1rem .75rem;
         border-left:1px solid var(--ion-border-color); }
     }
 
@@ -11751,7 +11763,7 @@ var ErpPosTouch = class extends i3 {
       ${this.paying ? b2`<div data-testid="pos-pay-scrim" class="scrim" @click=${(e7) => {
       if (e7.target.classList.contains("scrim")) this.paying = false;
     }}>
-            <div class="sheet">
+            <div class="sheet pay-sheet">
               <div class="sheet-h">
                 <span class="t">${t5("ui.charge")}</span>
                 <button data-testid="pos-pay-close" class="x" @click=${() => {

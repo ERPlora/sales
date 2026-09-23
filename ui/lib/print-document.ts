@@ -132,6 +132,9 @@ export interface PrintDocument extends Record<string, unknown> {
   change?: number;
   /** VeriFactu (or any) QR, as the renderer names it. */
   qr_data?: string;
+  /** sales#327 — the legal legend printed right under `qr_data` («VERI*FACTU», RD 1619/2012
+   *  art. 6.5.b). Present exactly when the fiscal QR is. */
+  qr_legend?: string;
   /** sales#103 (ADR-0363) — the SECOND QR: `https://<hub>/p/<locator>`, the self-service door to
    *  ask for the full invoice. Deliberately SEPARATE from `qr_data`: that one points at the AEAT
    *  and its numserie is sequential and public, so it cannot serve as a locator — two codes, two
@@ -222,6 +225,7 @@ export function saleToPrintDocument(
     paid: euros(screen.payment?.paid, screen.decimals),
     change: euros(screen.payment?.change, screen.decimals),
     qr_data: screen.qr,
+    qr_legend: screen.qr_legend,
     // sales#103: el bloque «pide tu factura», VACÍO sin locator acuñado — el renderer imprime
     // solo los campos presentes, así que un tique sin claim sale byte a byte como hoy.
     ...claimPrintFields(fiscal, t),
