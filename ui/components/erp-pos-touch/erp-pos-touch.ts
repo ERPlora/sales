@@ -655,6 +655,8 @@ export class ErpPosTouch extends LitElement {
     /* Selector de MÉTODO dentro del sheet (tender): botones grandes con icono + nombre, objetivo
        táctil ≥56px. El elegido se marca por borde/acento Y por aria-pressed (no solo color). */
     .pay-methods { display:grid; grid-template-columns:repeat(2,1fr); gap:.5rem; margin:.1rem 0 .55rem; }
+    /* Ticket or invoice: the same two-up buttons as the method (sales#324), not two stacked. */
+    .pay-docformat { display:grid; grid-template-columns:repeat(2,1fr); gap:.5rem; }
     .pm-btn { display:flex; align-items:center; justify-content:center; gap:.5rem; min-height:56px;
       border-radius:12px; border:1px solid var(--ion-border-color); background:var(--tile);
       color:var(--tx); font-weight:700; font-size:.95rem; cursor:pointer; }
@@ -902,6 +904,29 @@ export class ErpPosTouch extends LitElement {
     .sheet-h { display:flex; justify-content:space-between; align-items:center; margin-bottom:.8rem; }
     .sheet-h .t { font-size:1.2rem; font-weight:700; }
     .x { background:none; border:none; font-size:1.3rem; cursor:pointer; color:var(--mut); }
+    .pay-side, .pay-tender { display:flex; flex-direction:column; gap:.8rem; }
+    /* sales#324 — from 821 px (where the cart stops being a drawer) the tender screen is TWO
+       columns, as on Square or Shopify POS: the total, the voucher per line and ticket/invoice on
+       the left; the method, the tendered amount and the keypad on the right, from the total down to
+       the footer. Each column scrolls on its own, so a long voucher row can only push the left one.
+       In one 24rem column a salon check left the keypad below the fold of a 1280×800 tablet while
+       the footer already said «type the amount tendered». .pay steps aside (display:contents)
+       so its two groups are the grid items.
+       Scoped to .pay-sheet: .sheet and .pay are shared by the discount, open-price, line-note,
+       modifier and combo sheets, which stay one 24rem column. */
+    @media (min-width: 821px) {
+      .pay-sheet { width:min(100%, 46rem); display:grid;
+        grid-template-columns:minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-rows:auto auto minmax(0, 1fr) auto;
+        grid-template-areas:"head head" "top tender" "side tender" "foot foot"; }
+      .pay-sheet .sheet-h { grid-area:head; }
+      .pay-sheet .sheet-top { grid-area:top; }
+      .pay-sheet .sheet-foot { grid-area:foot; }
+      .pay-sheet .pay { display:contents; }
+      .pay-sheet .pay-side { grid-area:side; min-height:0; overflow:auto; padding:0 1rem .75rem; }
+      .pay-sheet .pay-tender { grid-area:tender; min-height:0; overflow:auto; padding:0 1rem .75rem;
+        border-left:1px solid var(--ion-border-color); }
+    }
 
     @media (max-width: 820px) {
       .body { grid-template-columns: 1fr; }
@@ -5270,7 +5295,7 @@ export class ErpPosTouch extends LitElement {
 
       ${this.paying
         ? html`<div data-testid="pos-pay-scrim" class="scrim" @click=${(e: Event) => { if ((e.target as HTMLElement).classList.contains('scrim')) this.paying = false; }}>
-            <div class="sheet">
+            <div class="sheet pay-sheet">
               <div class="sheet-h">
                 <span class="t">${t('ui.charge')}</span>
                 <button data-testid="pos-pay-close" class="x" @click=${() => { this.paying = false; }}>✕</button>
@@ -5292,6 +5317,11 @@ export class ErpPosTouch extends LitElement {
                   : nothing}
               </div>
               <div class="pay">
+                <!-- sales#324 — TWO groups: what the sale is (voucher per line, ticket or invoice)
+                     and how it is paid (method, tendered, keypad). On a phone they stack in this
+                     order; from 821 px they become two columns, so what grows on the side can never
+                     push the keypad out of sight again. -->
+                <div class="pay-side">
 
                 ${this.overSimplifiedLimit ? this.renderRecipientCapture('limit') : nothing}
 
@@ -5316,6 +5346,9 @@ export class ErpPosTouch extends LitElement {
                 <!-- sales#317 — «Factura» asks who it is for, right under the button that asked for
                      it. Above the ceiling the capture is already painted at the top (hub#297). -->
                 ${!this.overSimplifiedLimit && this.docFormat === 'invoice' ? this.renderRecipientCapture('invoice') : nothing}
+                </div>
+
+                <div class="pay-tender">
 
                 <!-- sales#159 — LAS PATAS YA TOMADAS. Cada una se puede editar (vuelve al teclado
                      con su importe) y quitar (su importe vuelve al restante). Sin esto, corregir un
@@ -5415,6 +5448,7 @@ export class ErpPosTouch extends LitElement {
                   <ion-toggle data-testid="pos-print-on-charge" slot="end" .checked=${this.printReceipt ?? true}
                               @ionChange=${(e: CustomEvent) => { this.printOnCharge = !!(e.detail as { checked: boolean }).checked; }}></ion-toggle>
                 </ion-item>
+                </div>
 
               </div>
               <div class="sheet-foot">
