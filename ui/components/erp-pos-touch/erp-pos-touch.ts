@@ -905,6 +905,8 @@ export class ErpPosTouch extends LitElement {
     .sheet-h .t { font-size:1.2rem; font-weight:700; }
     .x { background:none; border:none; font-size:1.3rem; cursor:pointer; color:var(--mut); }
     .pay-side, .pay-tender { display:flex; flex-direction:column; gap:.8rem; }
+    /* sales#341 — the summary of the folded side group exists on a narrow screen only (below). */
+    .pay-side-summary { display:none; }
     /* sales#324 — from 821 px (where the cart stops being a drawer) the tender screen is TWO
        columns, as on Square or Shopify POS: the total, the voucher per line and ticket/invoice on
        the left; the method, the tendered amount and the keypad on the right, from the total down to
@@ -926,6 +928,25 @@ export class ErpPosTouch extends LitElement {
       .pay-sheet .pay-side { grid-area:side; min-height:0; overflow:auto; padding:0 1rem .75rem; }
       .pay-sheet .pay-tender { grid-area:tender; min-height:0; overflow:auto; padding:0 1rem .75rem;
         border-left:1px solid var(--ion-border-color); }
+    }
+    /* sales#341 — below 821 px two columns do not fit, so the sheet opens on the TENDER: what the
+       sale is (voucher per line, ticket or invoice, its recipient) folds into ONE summary line that
+       opens with a tap, as on Square or Shopify POS. Folding is CSS only: the voucher filler stays
+       mounted, so a redemption already held keeps its «undo». */
+    @media (max-width: 820px) {
+      .pay-sheet .pay-side-summary { display:flex; align-items:center; gap:.5rem; width:100%; min-height:2.75rem;
+        padding:.5rem .75rem; border:1px solid var(--ion-border-color); border-radius:var(--ok-radius-sm,10px);
+        background:var(--tile); color:var(--tx); font:inherit; text-align:left; cursor:pointer; }
+      .pay-sheet .pay-side-summary .pss-text { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .pay-sheet .pay-side-summary .pss-text > span + span::before { content:' · '; color:var(--mut); }
+      .pay-sheet .pay-side-summary [data-state='applied'] { color:var(--ion-color-success,#2dd36f); }
+      .pay-sheet .pay-side[data-folded] > :not(.pay-side-summary) { display:none; }
+      .pay-sheet .pay-tender { margin-top:.8rem; }
+      /* Folded, the tender still overran a 390×844 phone by 24 px: the scrim's 1rem around a 24rem
+         card was what was missing. So the pay sheet is a full-width bottom sheet here, like the
+         park/staff dialogs above. */
+      .scrim.pay-scrim { padding:0; align-items:flex-end; }
+      .pay-sheet { width:100%; border-bottom:0; border-radius:var(--ok-radius-lg,16px) var(--ok-radius-lg,16px) 0 0; }
     }
 
     @media (max-width: 820px) {
@@ -1239,6 +1260,9 @@ export class ErpPosTouch extends LitElement {
   /** Las patas del cobro ya tomadas, EN ORDEN. Vacío = venta de un solo medio (camino escalar). */
   @state() tenders: Tender[] = [];
   @state() private docFormat: 'ticket' | 'invoice' = 'ticket';
+  /** sales#341 — the cashier opened the folded «what the sale is» group of the pay sheet. Only a
+   *  narrow screen folds it (CSS); each charge starts folded unless something there must be answered. */
+  @state() private paySideOpen = false;
   @state() private busy = false;
   @state() private error = '';
   /** sales#58 - why the LAST tapped tile did not reach the check. It lives apart from `error`
@@ -3595,6 +3619,9 @@ export class ErpPosTouch extends LitElement {
     // El cambio de formato es LA conversión: `resolve_invoice_type` solo degrada, nunca asciende,
     // así que sin este `invoice` la venta saldría como F2 por muy completo que esté el cliente.
     if (this.overSimplifiedLimit) this.docFormat = 'invoice';
+    // sales#341 — on a phone the sheet opens on the tender; the side opens only when it asks for
+    // something (a default invoice with no recipient yet).
+    this.paySideOpen = this.chargeBlocked;
     this.paying = true;
     // sales#164 — this charge's ticket is priced on the server. `updated()` asks for it anyway;
     // starting it here saves the most important number on the screen one repaint of delay.
@@ -3638,6 +3665,43 @@ export class ErpPosTouch extends LitElement {
   private chooseDocFormat(next: 'ticket' | 'invoice') {
     if (next === 'ticket' && this.overSimplifiedLimit) return;
     this.docFormat = next;
+    // sales#341 — «Invoice» asks who it is for right below: folding that away would hide the question.
+    if (next === 'invoice') this.paySideOpen = true;
+  }
+
+  /** sales#341 — is there anything in the side group worth folding on a phone? The voucher per line
+   *  is what grows; an invoice adds its recipient. Two ticket/invoice buttons alone are not folded:
+   *  a summary line would take the same room and cost a tap. */
+  private get paySideFoldable(): boolean {
+    return this.tenderLines.length > 0 || this.docFormat === 'invoice';
+  }
+
+  /** Folded unless the cashier opened it. What must be answered opens it: a charge blocked for the
+   *  recipient (at `openPay` and at `confirm`) and choosing «Invoice». */
+  private get paySideFolded(): boolean {
+    return this.paySideFoldable && !this.paySideOpen;
+  }
+
+  /** The one line that stands for the folded group: the document, who it is for, the voucher. */
+  private renderPaySideSummary() {
+    if (!this.paySideFoldable) return nothing;
+    const lines = this.tenderLines;
+    const held = lines.filter((l) => !!l.line_id && this.covered.has(l.line_id)).length;
+    const folded = this.paySideFolded;
+    return html`<button data-testid="pos-pay-side-summary" class="pay-side-summary"
+        aria-expanded=${folded ? 'false' : 'true'}
+        @click=${() => { this.paySideOpen = folded; }}>
+      <span class="pss-text">
+        <span data-part="doc">${this.docFormat === 'invoice' ? t('ui.docInvoice') : t('ui.docTicket')}</span>
+        ${this.docFormat === 'invoice' && this.customerName
+          ? html`<span data-part="recipient">${this.customerName}</span>` : nothing}
+        ${lines.length
+          ? html`<span data-part="voucher" data-state=${held ? 'applied' : 'none'}
+              >${held ? t('ui.paySummaryVoucherApplied') : t('ui.paySummaryNoVoucher')}</span>`
+          : nothing}
+      </span>
+      <ion-icon name=${folded ? 'chevron-down-outline' : 'chevron-up-outline'} aria-hidden="true"></ion-icon>
+    </button>`;
   }
 
   /** ¿Este cobro pasa del techo de la simplificada? (independiente de quién sea el cliente). */
@@ -4173,6 +4237,7 @@ export class ErpPosTouch extends LitElement {
     // `this.error`: the recipient capture in the sheet already says what is missing and why.
     if (this.chargeBlocked) {
       this.docFormat = 'invoice';
+      this.paySideOpen = true;
       this.paying = true;
       return;
     }
@@ -5294,7 +5359,7 @@ export class ErpPosTouch extends LitElement {
       </div>
 
       ${this.paying
-        ? html`<div data-testid="pos-pay-scrim" class="scrim" @click=${(e: Event) => { if ((e.target as HTMLElement).classList.contains('scrim')) this.paying = false; }}>
+        ? html`<div data-testid="pos-pay-scrim" class="scrim pay-scrim" @click=${(e: Event) => { if ((e.target as HTMLElement).classList.contains('scrim')) this.paying = false; }}>
             <div class="sheet pay-sheet">
               <div class="sheet-h">
                 <span class="t">${t('ui.charge')}</span>
@@ -5321,7 +5386,9 @@ export class ErpPosTouch extends LitElement {
                      and how it is paid (method, tendered, keypad). On a phone they stack in this
                      order; from 821 px they become two columns, so what grows on the side can never
                      push the keypad out of sight again. -->
-                <div class="pay-side">
+                <div class="pay-side" ?data-folded=${this.paySideFolded}>
+
+                ${this.renderPaySideSummary()}
 
                 ${this.overSimplifiedLimit ? this.renderRecipientCapture('limit') : nothing}
 

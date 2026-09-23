@@ -4554,6 +4554,8 @@ var en_default = {
     paymentMethod: "Payment method",
     documentFormat: "Document",
     docTicket: "Receipt",
+    paySummaryVoucherApplied: "Voucher applied",
+    paySummaryNoVoucher: "No voucher",
     printReceipt: "Print receipt",
     parkedAs: "Parked as {number}",
     fireToKitchen: "Send to kitchen",
@@ -5129,6 +5131,8 @@ var es_default = {
     paymentMethod: "Forma de pago",
     documentFormat: "Documento",
     docTicket: "Tique",
+    paySummaryVoucherApplied: "Bono aplicado",
+    paySummaryNoVoucher: "Sin bono",
     printReceipt: "Imprimir tiquet",
     parkedAs: "Aparcado como {number}",
     fireToKitchen: "Enviar a cocina",
@@ -7956,6 +7960,7 @@ var ErpPosTouch = class extends i3 {
     this.splitting = false;
     this.tenders = [];
     this.docFormat = "ticket";
+    this.paySideOpen = false;
     this.busy = false;
     this.error = "";
     this.blockedNotice = "";
@@ -8719,6 +8724,8 @@ var ErpPosTouch = class extends i3 {
     .sheet-h .t { font-size:1.2rem; font-weight:700; }
     .x { background:none; border:none; font-size:1.3rem; cursor:pointer; color:var(--mut); }
     .pay-side, .pay-tender { display:flex; flex-direction:column; gap:.8rem; }
+    /* sales#341 — the summary of the folded side group exists on a narrow screen only (below). */
+    .pay-side-summary { display:none; }
     /* sales#324 — from 821 px (where the cart stops being a drawer) the tender screen is TWO
        columns, as on Square or Shopify POS: the total, the voucher per line and ticket/invoice on
        the left; the method, the tendered amount and the keypad on the right, from the total down to
@@ -8740,6 +8747,25 @@ var ErpPosTouch = class extends i3 {
       .pay-sheet .pay-side { grid-area:side; min-height:0; overflow:auto; padding:0 1rem .75rem; }
       .pay-sheet .pay-tender { grid-area:tender; min-height:0; overflow:auto; padding:0 1rem .75rem;
         border-left:1px solid var(--ion-border-color); }
+    }
+    /* sales#341 — below 821 px two columns do not fit, so the sheet opens on the TENDER: what the
+       sale is (voucher per line, ticket or invoice, its recipient) folds into ONE summary line that
+       opens with a tap, as on Square or Shopify POS. Folding is CSS only: the voucher filler stays
+       mounted, so a redemption already held keeps its «undo». */
+    @media (max-width: 820px) {
+      .pay-sheet .pay-side-summary { display:flex; align-items:center; gap:.5rem; width:100%; min-height:2.75rem;
+        padding:.5rem .75rem; border:1px solid var(--ion-border-color); border-radius:var(--ok-radius-sm,10px);
+        background:var(--tile); color:var(--tx); font:inherit; text-align:left; cursor:pointer; }
+      .pay-sheet .pay-side-summary .pss-text { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .pay-sheet .pay-side-summary .pss-text > span + span::before { content:' · '; color:var(--mut); }
+      .pay-sheet .pay-side-summary [data-state='applied'] { color:var(--ion-color-success,#2dd36f); }
+      .pay-sheet .pay-side[data-folded] > :not(.pay-side-summary) { display:none; }
+      .pay-sheet .pay-tender { margin-top:.8rem; }
+      /* Folded, the tender still overran a 390×844 phone by 24 px: the scrim's 1rem around a 24rem
+         card was what was missing. So the pay sheet is a full-width bottom sheet here, like the
+         park/staff dialogs above. */
+      .scrim.pay-scrim { padding:0; align-items:flex-end; }
+      .pay-sheet { width:100%; border-bottom:0; border-radius:var(--ok-radius-lg,16px) var(--ok-radius-lg,16px) 0 0; }
     }
 
     @media (max-width: 820px) {
@@ -10627,6 +10653,7 @@ var ErpPosTouch = class extends i3 {
     this.payMethod = defaultPayMethod(this.payMethods);
     this.docFormat = this.defaultDocFormat;
     if (this.overSimplifiedLimit) this.docFormat = "invoice";
+    this.paySideOpen = this.chargeBlocked;
     this.paying = true;
     this.dropValuation();
     void this.refreshValuation();
@@ -10661,6 +10688,38 @@ var ErpPosTouch = class extends i3 {
   chooseDocFormat(next) {
     if (next === "ticket" && this.overSimplifiedLimit) return;
     this.docFormat = next;
+    if (next === "invoice") this.paySideOpen = true;
+  }
+  /** sales#341 — is there anything in the side group worth folding on a phone? The voucher per line
+   *  is what grows; an invoice adds its recipient. Two ticket/invoice buttons alone are not folded:
+   *  a summary line would take the same room and cost a tap. */
+  get paySideFoldable() {
+    return this.tenderLines.length > 0 || this.docFormat === "invoice";
+  }
+  /** Folded unless the cashier opened it. What must be answered opens it: a charge blocked for the
+   *  recipient (at `openPay` and at `confirm`) and choosing «Invoice». */
+  get paySideFolded() {
+    return this.paySideFoldable && !this.paySideOpen;
+  }
+  /** The one line that stands for the folded group: the document, who it is for, the voucher. */
+  renderPaySideSummary() {
+    if (!this.paySideFoldable) return A;
+    const lines = this.tenderLines;
+    const held = lines.filter((l3) => !!l3.line_id && this.covered.has(l3.line_id)).length;
+    const folded = this.paySideFolded;
+    return b2`<button data-testid="pos-pay-side-summary" class="pay-side-summary"
+        aria-expanded=${folded ? "false" : "true"}
+        @click=${() => {
+      this.paySideOpen = folded;
+    }}>
+      <span class="pss-text">
+        <span data-part="doc">${this.docFormat === "invoice" ? t5("ui.docInvoice") : t5("ui.docTicket")}</span>
+        ${this.docFormat === "invoice" && this.customerName ? b2`<span data-part="recipient">${this.customerName}</span>` : A}
+        ${lines.length ? b2`<span data-part="voucher" data-state=${held ? "applied" : "none"}
+              >${held ? t5("ui.paySummaryVoucherApplied") : t5("ui.paySummaryNoVoucher")}</span>` : A}
+      </span>
+      <ion-icon name=${folded ? "chevron-down-outline" : "chevron-up-outline"} aria-hidden="true"></ion-icon>
+    </button>`;
   }
   /** ¿Este cobro pasa del techo de la simplificada? (independiente de quién sea el cliente). */
   get overSimplifiedLimit() {
@@ -11133,6 +11192,7 @@ var ErpPosTouch = class extends i3 {
   async confirm() {
     if (this.chargeBlocked) {
       this.docFormat = "invoice";
+      this.paySideOpen = true;
       this.paying = true;
       return;
     }
@@ -12061,7 +12121,7 @@ var ErpPosTouch = class extends i3 {
         </button>
       </div>
 
-      ${this.paying ? b2`<div data-testid="pos-pay-scrim" class="scrim" @click=${(e7) => {
+      ${this.paying ? b2`<div data-testid="pos-pay-scrim" class="scrim pay-scrim" @click=${(e7) => {
       if (e7.target.classList.contains("scrim")) this.paying = false;
     }}>
             <div class="sheet pay-sheet">
@@ -12088,7 +12148,9 @@ var ErpPosTouch = class extends i3 {
                      and how it is paid (method, tendered, keypad). On a phone they stack in this
                      order; from 821 px they become two columns, so what grows on the side can never
                      push the keypad out of sight again. -->
-                <div class="pay-side">
+                <div class="pay-side" ?data-folded=${this.paySideFolded}>
+
+                ${this.renderPaySideSummary()}
 
                 ${this.overSimplifiedLimit ? this.renderRecipientCapture("limit") : A}
 
@@ -12746,6 +12808,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "docFormat", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "paySideOpen", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "busy", 2);

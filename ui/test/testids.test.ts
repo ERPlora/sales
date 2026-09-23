@@ -143,7 +143,7 @@ const COVERED: Record<string, { prefix: string; contract: string[] }> = {
       'pos-order-title', 'pos-order-title-edit',
       'pos-park', 'pos-park-cancel', 'pos-park-confirm', 'pos-park-current', 'pos-park-name',
       'pos-parked-backdrop', 'pos-parked-toggle',
-      'pos-pay-add-tender', 'pos-pay-close', 'pos-pay-confirm', 'pos-pay-scrim', 'pos-pay-split',
+      'pos-pay-add-tender', 'pos-pay-close', 'pos-pay-confirm', 'pos-pay-scrim', 'pos-pay-side-summary', 'pos-pay-split',
       'pos-prebill', 'pos-prebill-close', 'pos-prebill-print', 'pos-print-on-charge',
       'pos-search', 'pos-simplified-limit-capture',
       'pos-staff-cancel', 'pos-staff-chip', 'pos-staff-empty', 'pos-staff-error',

@@ -327,6 +327,8 @@
     "paymentMethod": "Payment method",
     "documentFormat": "Document",
     "docTicket": "Receipt",
+    "paySummaryVoucherApplied": "Voucher applied",
+    "paySummaryNoVoucher": "No voucher",
     "printReceipt": "Print receipt",
     "parkedAs": "Parked as {number}",
     "fireToKitchen": "Send to kitchen",
