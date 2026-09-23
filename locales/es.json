@@ -564,7 +564,10 @@
     "customerRequiredCharge": "Este negocio exige un cliente en cada venta. Elige uno para seguir con el cobro.",
     "customerRequiredShort": "Falta el cliente",
     "customerRequiredNoApp": "Este negocio exige un cliente en cada venta y la aplicación {app} no está instalada: esta venta no se puede cerrar desde aquí.",
-    "appCustomers": "Clientes"
+    "appCustomers": "Clientes",
+    "claimCountry": "País",
+    "claimIdType": "Tu número es",
+    "claimIdTypeTax": "Un NIF o número de IVA"
   },
   "widgets": {
     "sales.today": {

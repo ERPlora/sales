@@ -18,14 +18,71 @@
 //    de `sealed_payload`, y `public_fields` es la lista blanca de lo ÚNICO que el visitante puede
 //    rellenar — todo lo demás que mande el navegador del cliente se tira en la puerta.
 
+import { COUNTRY_CODES, HOME_COUNTRY } from './foreign-recipient.js';
+import enLocale from '../../locales/en.json';
+import esLocale from '../../locales/es.json';
+
 /** El `kind` del claim de autoservicio de facturas. No es el único posible (ADR-0363), sí el primero. */
 export const CLAIM_KIND = 'invoice_request';
 
 /** El command que la puerta ejecutará al canjear: la F3 completa que sustituye a la F2 (ADR-0140). */
 export const CLAIM_COMMAND = 'invoice.substitute';
 
-/** Lo que el cliente PUEDE rellenar en la página pública: su identificación fiscal, nada más. */
-export const CLAIM_PUBLIC_FIELDS: string[] = ['customer_tax_id', 'customer_name', 'customer_address'];
+/** What the customer MAY fill on the public page: who they are for tax purposes, nothing else.
+ *  Country and document kind (sales#335) are how a customer from abroad avoids being declared
+ *  with a Spanish NIF; the hub's page shows those pickers only when the claim lists them. */
+export const CLAIM_PUBLIC_FIELDS: string[] = [
+  'customer_tax_id',
+  'customer_name',
+  'customer_address',
+  'customer_country',
+  'customer_id_type',
+];
+
+type Localized = { en: string; es: string };
+type ChoiceOption = string | { value: string; label: Localized };
+
+/** A `ui.<key>` string in both languages the hub's public page speaks. */
+function bothLanguages(key: string): Localized {
+  const pick = (locale: unknown) =>
+    String(((locale as { ui?: Record<string, unknown> }).ui ?? {})[key] ?? '');
+  return { en: pick(enLocale), es: pick(esLocale) };
+}
+
+/** The home country's name in both languages, from the runtime rather than written here. */
+function homeCountryName(): Localized {
+  const name = (lang: string) =>
+    new Intl.DisplayNames([lang], { type: 'region' }).of(HOME_COUNTRY) ?? HOME_COUNTRY;
+  return { en: name('en'), es: name('es') };
+}
+
+/** sales#335 — the answers the public page offers for the two foreign-customer fields. The hub
+ *  only renders them: which countries the AEAT accepts is this module's knowledge (hub#1407), the
+ *  same list the till's charge sheet uses (sales#332). Spain goes first as `''`, exactly what the
+ *  till sends for Spain; the rest are codes the customer's browser names (`names: 'region'`). The
+ *  document kind defaults to `''` — a tax or VAT number, which `invoice` turns into 02 in the EU
+ *  and 04 elsewhere — with a passport or another document as the exceptions. */
+export const CLAIM_FIELD_CHOICES: {
+  customer_country: { label: Localized; names: 'region'; options: ChoiceOption[] };
+  customer_id_type: { label: Localized; options: ChoiceOption[] };
+} = {
+  customer_country: {
+    label: bothLanguages('claimCountry'),
+    names: 'region',
+    options: [
+      { value: '', label: homeCountryName() },
+      ...COUNTRY_CODES.filter((code) => code !== HOME_COUNTRY),
+    ],
+  },
+  customer_id_type: {
+    label: bothLanguages('claimIdType'),
+    options: [
+      { value: '', label: bothLanguages('claimIdTypeTax') },
+      { value: '03', label: bothLanguages('idType03') },
+      { value: '06', label: bothLanguages('idType06') },
+    ],
+  },
+};
 
 /** Un claim acuñado, tal como lo devuelve la puerta: el localizador y su URL (relativa al hub). */
 export interface MintedClaim {
@@ -70,6 +127,8 @@ export async function mintInvoiceRequestClaim(
         command: CLAIM_COMMAND,
         sealed_payload: { original_invoice_id: invoiceId, items },
         public_fields: [...CLAIM_PUBLIC_FIELDS],
+        // A separate key: a hub that predates it ignores it and still mints (the QR never goes).
+        public_field_choices: CLAIM_FIELD_CHOICES,
       }),
     });
     if (!res.ok) return undefined;

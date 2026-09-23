@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReceiptData } from '@erplora/outfitkit';
 import { installErploraDouble } from '../../test/erplora-double';
 import { forgetOriginalPrints } from '../../lib/original-ticket.js';
+import { CLAIM_FIELD_CHOICES } from '../../lib/public-claim.js';
 
 /** El doble del visor: sus tres lecturas propias, y la cadena fiscal AUSENTE salvo que un test la
  *  ponga en el hub — `invoice`/`verifactu` son apps opcionales (ADR-0127). */
@@ -369,7 +370,9 @@ describe('claim «pide tu factura» — acuñar al resolver la F2 e imprimir el 
         original_invoice_id: 'inv-42',
         items: F2_LINES, // las líneas de invoice.lines TAL CUAL, ya en céntimos
       },
-      public_fields: ['customer_tax_id', 'customer_name', 'customer_address'],
+      // sales#335: country and document kind, so a customer from abroad is not a Spanish NIF.
+      public_fields: ['customer_tax_id', 'customer_name', 'customer_address', 'customer_country', 'customer_id_type'],
+      public_field_choices: CLAIM_FIELD_CHOICES,
     });
   });
 

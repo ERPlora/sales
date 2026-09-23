@@ -7,7 +7,11 @@
 // en el mostrador) y la TOLERANCIA: acuñar es best-effort, cualquier fallo deja el tique
 // exactamente como hoy (sin claim, sin segundo QR, sin error al cajero).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mintInvoiceRequestClaim, CLAIM_KIND, CLAIM_COMMAND, CLAIM_PUBLIC_FIELDS } from './public-claim.js';
+import {
+  mintInvoiceRequestClaim, CLAIM_KIND, CLAIM_COMMAND, CLAIM_PUBLIC_FIELDS, CLAIM_FIELD_CHOICES,
+} from './public-claim.js';
+import en from '../../locales/en.json' with { type: 'json' };
+import es from '../../locales/es.json' with { type: 'json' };
 
 /** Una F2 real: dos cafés, céntimos, tal cual `invoice.lines` los devuelve. */
 const F2_LINES = [
@@ -52,8 +56,60 @@ describe('mintInvoiceRequestClaim — el cuerpo que la puerta espera', () => {
         items: F2_LINES,                      // las líneas TAL CUAL, ya en céntimos (no se derivan)
       },
       public_fields: CLAIM_PUBLIC_FIELDS,     // lo único que el cliente puede rellenar
+      public_field_choices: CLAIM_FIELD_CHOICES, // sales#335: the answers those fields accept
     });
     expect(claim).toEqual({ locator: 'ABCD1234ABCD1234', url: '/p/ABCD1234ABCD1234' });
+  });
+
+  // sales#335 — a customer from abroad says where they are from and what their number is, the
+  // same two fields the till's charge sheet sends (sales#332); `invoice.substitute` takes both
+  // (invoice#82) and the hub's page only shows the pickers when the claim lists them.
+  it('lets the customer fill their country and document kind, and nothing sealed', () => {
+    expect(CLAIM_PUBLIC_FIELDS).toEqual([
+      'customer_tax_id',
+      'customer_name',
+      'customer_address',
+      'customer_country',
+      'customer_id_type',
+    ]);
+    expect(CLAIM_PUBLIC_FIELDS).not.toContain('items');
+    expect(CLAIM_PUBLIC_FIELDS).not.toContain('original_invoice_id');
+  });
+
+  // sales#335 — the hub's page shows a picker only for choices the MODULE sends: which
+  // countries the AEAT accepts is this module's knowledge (foreign-recipient.ts), not the core's.
+  it('offers the countries the till offers, Spain first as the default', () => {
+    const country = CLAIM_FIELD_CHOICES.customer_country;
+    expect(country.names).toBe('region');
+    expect(country.label).toEqual({ en: en.ui.claimCountry, es: es.ui.claimCountry });
+    const [home, ...rest] = country.options;
+    expect(home).toEqual({
+      value: '',
+      label: {
+        en: new Intl.DisplayNames(['en'], { type: 'region' }).of('ES'),
+        es: new Intl.DisplayNames(['es'], { type: 'region' }).of('ES'),
+      },
+    });
+    expect(rest).toContain('US');
+    expect(rest).toContain('DE');
+    // Spain travels as '' only; its regions and the codes the AEAT rejects are not offered.
+    for (const code of ['ES', 'IC', 'EA', 'EU', 'XK']) expect(rest).not.toContain(code);
+    expect(country.options.length).toBeLessThanOrEqual(400); // the hub's cap per field
+  });
+
+  it('asks what the number is: tax or VAT number by default, passport or another document', () => {
+    const idType = CLAIM_FIELD_CHOICES.customer_id_type;
+    expect(idType.label).toEqual({ en: en.ui.claimIdType, es: es.ui.claimIdType });
+    expect(idType.options).toEqual([
+      { value: '', label: { en: en.ui.claimIdTypeTax, es: es.ui.claimIdTypeTax } },
+      { value: '03', label: { en: en.ui.idType03, es: es.ui.idType03 } },
+      { value: '06', label: { en: en.ui.idType06, es: es.ui.idType06 } },
+    ]);
+    for (const text of [en.ui.claimCountry, es.ui.claimCountry, en.ui.claimIdType, es.ui.claimIdType,
+      en.ui.claimIdTypeTax, es.ui.claimIdTypeTax]) {
+      expect(text, 'translated in both locales').toBeTruthy();
+    }
+    expect(es.ui.claimIdTypeTax).not.toBe(en.ui.claimIdTypeTax);
   });
 
   it('sin líneas no hay acuñamiento: el esquema de invoice.substitute las exige (minItems 1)', async () => {
