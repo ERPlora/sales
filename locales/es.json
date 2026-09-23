@@ -328,6 +328,8 @@
     "paymentMethod": "Forma de pago",
     "documentFormat": "Documento",
     "docTicket": "Tique",
+    "paySummaryVoucherApplied": "Bono aplicado",
+    "paySummaryNoVoucher": "Sin bono",
     "printReceipt": "Imprimir tiquet",
     "parkedAs": "Aparcado como {number}",
     "fireToKitchen": "Enviar a cocina",
