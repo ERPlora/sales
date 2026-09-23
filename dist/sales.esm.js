@@ -2441,6 +2441,7 @@ define("ok-qr", OkQr);
 // ui/lib/receipt-html.ts
 var FISCAL_QR_PX = 132;
 var CLAIM_QR_PX = 90;
+var PROMO_QR_PX = Math.round(FISCAL_QR_PX * 0.7);
 function esc(v3) {
   return String(v3 ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
@@ -2475,6 +2476,8 @@ function receiptToPrintableHtml(doc) {
   const fiscalQr = qrSvgMarkup(doc.qr ?? "", { size: FISCAL_QR_PX });
   const fiscal = fiscalQr ? `<div class="fiscal-qr">` + (doc.qr_heading ? `<div class="qr-heading">${esc(doc.qr_heading)}</div>` : "") + fiscalQr + (doc.qr_legend ? `<div class="legend">${esc(doc.qr_legend)}</div>` : "") + (doc.qr_note ? `<div class="qr-note">${esc(doc.qr_note)}</div>` : "") + `</div>` : "";
   const claim = doc.claim_note || doc.claim_locator ? `<div class="claim">` + (doc.claim_note ? `<div class="claim-note">${esc(doc.claim_note)}</div>` : "") + qrSvgMarkup(doc.claim_qr_data ?? "", { size: CLAIM_QR_PX }) + (doc.claim_locator ? `<div class="claim-loc">${esc(doc.claim_locator)}</div>` : "") + (doc.claim_qr_data ? `<div class="claim-url">${esc(doc.claim_qr_data)}</div>` : "") + `</div>` : "";
+  const promoQr = qrSvgMarkup(doc.promo_qr ?? "", { size: PROMO_QR_PX });
+  const promo = promoQr ? `<div class="promo">` + (doc.promo_note ? `<div class="promo-note">${esc(doc.promo_note)}</div>` : "") + promoQr + `</div>` : "";
   return `<!doctype html>
 <html><head><meta charset="utf-8"><title>${esc(doc.number || doc.business?.name || lbl.document)}</title>
 <style>
@@ -2505,7 +2508,7 @@ function receiptToPrintableHtml(doc) {
   /* sales#340 \u2014 the fiscal block opens the paper; heading and legend at body size and bold (Orden
      HAC/1177/2024 art. 20.1.b, AEAT QR spec v0.5.0 \xA73). */
   .fiscal-qr { text-align: center; margin: 0 0 3mm; }
-  .fiscal-qr svg, .claim svg { display: block; margin: 1mm auto; }
+  .fiscal-qr svg, .claim svg, .promo svg { display: block; margin: 1mm auto; }
   .qr-heading { font-size: 12px; font-weight: 700; }
   .legend { text-align: center; font-size: 12px; font-weight: 700; letter-spacing: .04em; }
   .qr-note { font-size: 10px; word-break: break-word; }
@@ -2514,6 +2517,8 @@ function receiptToPrintableHtml(doc) {
   .claim-note { font-size: 11px; font-weight: 700; }
   .claim-loc { font-size: 13px; letter-spacing: .08em; margin-top: 1mm; }
   .claim-url { font-size: 9px; color: #333; margin-top: 1mm; word-break: break-all; }
+  .promo { text-align: center; margin-top: 3mm; }
+  .promo-note { font-size: 11px; }
 </style></head>
 <body>
   ${fiscal}
@@ -2536,6 +2541,7 @@ function receiptToPrintableHtml(doc) {
   ${doc.footer ? `<div class="foot">${esc(doc.footer)}</div>` : ""}
   ${!fiscal && doc.qr_note ? `<div class="foot">${esc(doc.qr_note)}</div>` : ""}
   ${claim}
+  ${promo}
 </body></html>`;
 }
 function printHtmlInIframe(html, doc = document, format = "receipt") {
