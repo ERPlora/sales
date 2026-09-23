@@ -7390,6 +7390,19 @@ function certificateExpiryDays(road, now = /* @__PURE__ */ new Date()) {
   return left <= CERTIFICATE_WARNING_DAYS * DAY_MS ? Math.floor(left / DAY_MS) : null;
 }
 
+// ui/lib/print-intent.ts
+function readAutoPrint(answer) {
+  const row = Array.isArray(answer) ? answer[0] : void 0;
+  const v3 = row?.auto_print_on_sale;
+  if (typeof v3 === "boolean") return v3;
+  if (typeof v3 === "number") return v3 !== 0;
+  if (v3 === "1" || v3 === "0") return v3 === "1";
+  return void 0;
+}
+function printReceiptIntent(choice, setting) {
+  return choice ?? setting;
+}
+
 // ui/lib/transport-error.ts
 var SERVER_UNAVAILABLE_KEY = "ui.serverUnavailable";
 function transportErrorKey(e7) {
@@ -7692,7 +7705,6 @@ var ErpPosTouch = class extends i3 {
     this.parkName = "";
     this.dirtyOpen = false;
     this.dirtyAllowCancel = false;
-    this.printOnCharge = true;
     this.tableLabel = "";
     this.customerName = "";
     this.customerTaxId = "";
@@ -8732,7 +8744,8 @@ var ErpPosTouch = class extends i3 {
         taxCats,
         ownDepartments,
         fiscalLimits,
-        fiscalRoadRows
+        fiscalRoadRows,
+        printingRows
       ] = await Promise.all([
         fromSource("sync_products", () => capabilityCatalogRead(
           "inventory",
@@ -8795,6 +8808,10 @@ var ErpPosTouch = class extends i3 {
         // the till, because the dispatcher refuses the sale on its own. What this buys is saying it
         // BEFORE the cashier charges — a card can go through a separate terminal first.
         erplora2().query("hub.fiscal.transmission").catch(() => []),
+        // sales#283 — the auto-print setting the «Print receipt» switch starts from. Optional app,
+        // best-effort read: without it the switch sends nothing unless touched and the shell keeps
+        // deciding exactly as before.
+        optionalRead((c5) => c5.queryOptional("printing.settings.get")),
         // sales#153 — los MENÚS que este hub vende. Una sola lectura (`combos.options.all`) da a la
         // vez las baldosas y sus grupos, así que es imposible ofrecer un menú cuyos cursos no se
         // hayan cargado: eso sería justo «ofrecer lo que el servidor va a rechazar».
@@ -8824,6 +8841,7 @@ var ErpPosTouch = class extends i3 {
       this.taxCatalog = taxCatalog;
       this.missingChargeApp = taxCatalog.installed ? "" : "taxes";
       this.fiscalRoad = readFiscalRoad(fiscalRoadRows);
+      this.autoPrintDefault = readAutoPrint(printingRows);
       this.simplifiedMaxCents = rows2(fiscalLimits)[0]?.simplified_invoice_max_cents ?? null;
       for (const u5 of unitRows) if (u5.code) this.units.set(u5.code, u5);
       this.products = [...prods.filter((p4) => p4.is_active !== 0), ...svcRows];
@@ -10332,6 +10350,7 @@ var ErpPosTouch = class extends i3 {
     this.padPrimed = false;
     this.splitting = false;
     this.tenders = [];
+    this.printOnCharge = void 0;
     this.payMethod = defaultPayMethod(this.payMethods);
     this.docFormat = this.defaultDocFormat;
     if (this.overSimplifiedLimit) this.docFormat = "invoice";
@@ -10386,6 +10405,10 @@ var ErpPosTouch = class extends i3 {
     };
   }
   /** ¿Se puede cerrar este cobro tal y como está? Ver `lib/simplified-limit.ts`. */
+  /** sales#283 — this charge's receipt: the switch as the cashier left it, else the setting. */
+  get printReceipt() {
+    return printReceiptIntent(this.printOnCharge, this.autoPrintDefault);
+  }
   get chargeBlocked() {
     return ticketIsBlocked(this.limitState);
   }
@@ -10831,10 +10854,10 @@ var ErpPosTouch = class extends i3 {
       this.error = e7 instanceof Error ? e7.message : String(e7);
     }
   }
-  /** Cierra la venta. La IMPRESIÓN no se dispara desde aquí: la hace el shell por el Bridge al
-   *  recibir `sale.completed` (ajuste `auto_print_on_sale`). El toggle de la pantalla de cobro
-   *  refleja esa preferencia; el diálogo del navegador solo aparece como respaldo manual. */
-  async confirm(_print = false) {
+  /** Closes the sale. PRINTING is not fired from here: the shell prints on `sale.completed`.
+   *  What this sends is the INTENT (`print_receipt`, sales#283): the «Print receipt» switch as the
+   *  cashier left it, which the shell obeys over its `auto_print_on_sale` setting. */
+  async confirm() {
     if (this.chargeBlocked) {
       this.docFormat = "invoice";
       this.paying = true;
@@ -10921,7 +10944,10 @@ var ErpPosTouch = class extends i3 {
         ...recipientCountryPayload(this.customerCountry, this.customerIdType),
         // Tipo de documento fiscal (ADR-0140): viaja ATÓMICAMENTE con la venta; `invoice` lo lee del
         // evento para elegir F1 (completa) vs F2 (simplificada). Reemplaza al `set_document_type` retro.
-        document_type: this.docFormat
+        document_type: this.docFormat,
+        // sales#283 — print THIS sale's receipt or not. Omitted when nobody decided (switch
+        // untouched and no `printing` setting read): the shell then decides as it always did.
+        ...this.printReceipt === void 0 ? {} : { print_receipt: this.printReceipt }
       };
       if (checkoutDoor === CHECKOUT_OVER_LIMIT_COMMAND) {
         await erplora2().command("sales.complete_sale_over_limit", checkoutPayload);
@@ -11904,7 +11930,7 @@ var ErpPosTouch = class extends i3 {
                 <ion-item lines="none" class="print-row">
                   <ion-icon slot="start" name="print-outline"></ion-icon>
                   <ion-label>${t5("ui.printReceipt")}</ion-label>
-                  <ion-toggle data-testid="pos-print-on-charge" slot="end" .checked=${this.printOnCharge}
+                  <ion-toggle data-testid="pos-print-on-charge" slot="end" .checked=${this.printReceipt ?? true}
                               @ionChange=${(e7) => {
       this.printOnCharge = !!e7.detail.checked;
     }}></ion-toggle>
@@ -11928,7 +11954,7 @@ var ErpPosTouch = class extends i3 {
                      dos veces. -->
                 <ion-button data-testid="pos-pay-confirm" class="charge" expand="block" ?disabled=${this.busy}
                             aria-disabled=${blockedWhy ? "true" : A}
-                            @click=${() => this.confirm(this.printOnCharge)}>
+                            @click=${() => this.confirm()}>
                   ${this.busy ? t5("ui.charging") : blockedWhy?.short ? blockedWhy.short : this.tenders.length ? `${t5("ui.charge")} ${this.money(this.payable)}` : needsTendered(this.payMethod) ? `${t5("ui.charge")} ${this.money(this.payable)}` : t5("ui.chargeWithCard", { amount: this.money(this.payable) })}
                 </ion-button>
               </div>
