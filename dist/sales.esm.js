@@ -4268,6 +4268,7 @@ var en_default = {
     statusCompleted: "Completed",
     statusVoided: "Voided",
     actionDocument: "Document",
+    actionReprint: "Reprint",
     searchSalePlaceholder: "Search number or customer\u2026",
     loading: "Loading\u2026",
     noSales: "No sales yet.",
@@ -4842,6 +4843,7 @@ var es_default = {
     statusCompleted: "Completada",
     statusVoided: "Anulada",
     actionDocument: "Documento",
+    actionReprint: "Reimprimir",
     searchSalePlaceholder: "Buscar n\xFAmero o cliente\u2026",
     loading: "Cargando\u2026",
     noSales: "A\xFAn no hay ventas.",
@@ -5761,6 +5763,51 @@ __decorateClass([
 define("erp-sales-document", ErpSalesDocument);
 
 // ui/lib/document-modal.ts
+async function sendReceipt({ html, data, saleId, t: t7 }) {
+  const sdk = globalThis.erplora;
+  if (!sdk?.print) {
+    if (html) printHtmlInIframe(html);
+    else window.print();
+    return;
+  }
+  let res;
+  try {
+    res = await sdk.print({ role: "receipt", documentType: "receipt", html, data, jobId: reprintJobId(saleId) });
+  } catch (e7) {
+    res = { error: e7 instanceof Error ? e7.message : String(e7) };
+  }
+  if (res?.via === "bridge" || res?.via === "queue") return;
+  sdk.notify?.({ type: "error", message: res?.error ? `${t7("ui.printFailed")}: ${res.error}` : t7("ui.printFailed") });
+}
+async function reprintSale(saleId, t7, timeoutMs = 15e3) {
+  const viewer = document.createElement("erp-sales-document");
+  const host = document.createElement("div");
+  host.hidden = true;
+  host.setAttribute("aria-hidden", "true");
+  viewer.issuing = true;
+  viewer.saleId = saleId;
+  host.appendChild(viewer);
+  document.body.appendChild(host);
+  let html;
+  let data;
+  let timer;
+  try {
+    const ceiling = new Promise((resolve) => {
+      timer = setTimeout(resolve, timeoutMs);
+    });
+    await Promise.race([viewer.issued?.().catch(() => false), ceiling]);
+    data = viewer.printableDocument?.({ duplicate: true });
+    html = data ? viewer.printableHtml?.({ duplicate: true }) : void 0;
+  } finally {
+    clearTimeout(timer);
+    host.remove();
+  }
+  if (!data) {
+    globalThis.erplora?.notify?.({ type: "error", message: t7("ui.printFailed") });
+    return;
+  }
+  await sendReceipt({ html, data, saleId, t: t7 });
+}
 function renderDocumentModal({ saleId, issuing = false, onClose, t: t7 }) {
   return b2`<ion-modal class="doc-modal" .isOpen=${!!saleId} @ionModalDidDismiss=${onClose}>
     <style>
@@ -5810,17 +5857,11 @@ function renderDocumentModal({ saleId, issuing = false, onClose, t: t7 }) {
         <ion-button class="print" expand="block" aria-label=${t7("ui.print")} @click=${() => {
     const el = document.querySelector("ion-modal.doc-modal")?.querySelector("erp-sales-document");
     const duplicate = !issuing || !!saleId && originalPrinted(saleId);
-    const html = el?.printableHtml?.({ duplicate });
-    const data = el?.printableDocument?.({ duplicate });
-    const sdk = globalThis.erplora;
-    if (!sdk?.print) {
-      if (html) printHtmlInIframe(html);
-      else window.print();
-      return;
-    }
-    void sdk.print({ role: "receipt", documentType: "receipt", html, data, jobId: reprintJobId(saleId) }).then((res) => {
-      if (res?.via === "bridge" || res?.via === "queue") return;
-      sdk.notify?.({ type: "error", message: res?.error ? `${t7("ui.printFailed")}: ${res.error}` : t7("ui.printFailed") });
+    void sendReceipt({
+      html: el?.printableHtml?.({ duplicate }),
+      data: el?.printableDocument?.({ duplicate }),
+      saleId,
+      t: t7
     });
   }}>
           <ion-icon slot="icon-only" name="print-outline"></ion-icon>
@@ -15998,6 +16039,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
       if (this.kpiRow !== e7.matches) this.kpiRow = e7.matches;
     };
     this.payMethods = [];
+    this.reprinting = /* @__PURE__ */ new Set();
     this.onLocaleChange = () => this.requestUpdate();
   }
   static {
@@ -16035,7 +16077,15 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
   get documentActions() {
     const t7 = (k2, p4) => erplora6().t(CATALOG6, k2, p4);
     const actions = [
-      { id: "document", label: t7("ui.actionDocument"), icon: "receipt-outline" }
+      { id: "document", label: t7("ui.actionDocument"), icon: "receipt-outline" },
+      // sales#347 — one tap reprints the ticket without opening it, like the sales history of
+      // Square, Toast or Shopify POS. Anyone who sees the list may: it is a copy («duplicado»).
+      {
+        id: "reprint",
+        label: t7("ui.actionReprint"),
+        icon: "print-outline",
+        disabled: (r6) => this.reprinting.has(String(r6.id))
+      }
     ];
     if (erplora6().hasPermission?.("sales.void_sale")) {
       actions.push({
@@ -16066,6 +16116,20 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
       });
     }
     return actions;
+  }
+  /** sales#347 — reprints the row's sale; errors are told by `reprintSale` (the same notice as the
+   *  document's Print button). */
+  async reprint(sale) {
+    const id = String(sale.id);
+    if (this.reprinting.has(id)) return;
+    this.reprinting = /* @__PURE__ */ new Set([...this.reprinting, id]);
+    try {
+      await reprintSale(id, (k2) => erplora6().t(CATALOG6, k2));
+    } finally {
+      const rest = new Set(this.reprinting);
+      rest.delete(id);
+      this.reprinting = rest;
+    }
   }
   /** sales#26 — pide el MOTIVO (obligatorio: Toast, Lightspeed y el software fiscal español lo
    *  exigen; es lo que luego se lee en el historial) y anula. Overlay global de Ionic, como el TPV. */
@@ -16358,6 +16422,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
              same document (outfitkit#67 — the actions column can be off-screen at 1440 px). -->
         <ok-data-table data-testid="sales-table" .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r6) => String(r6.sale_number ?? "\u2014")} .cardIcon=${() => "receipt-outline"} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.paintedSort} .sortDir=${this.ctrl?.state.dir ?? "desc"} .searchable=${true} .searchPlaceholder=${t7("ui.searchSalePlaceholder")} .emptyMessage=${this.ctrl?.loading ? t7("ui.loading") : t7("ui.noSales")} .actions=${this.documentActions} .rowClickable=${true} @rowAction=${(e7) => {
       if (e7.detail.actionId === "document") this.docSaleId = e7.detail.row.id;
+      else if (e7.detail.actionId === "reprint") void this.reprint(e7.detail.row);
       else if (e7.detail.actionId === "void") void this.confirmVoid(e7.detail.row);
       else if (e7.detail.actionId === "refund") this.refundSaleId = e7.detail.row.id;
     }} @rowClick=${(e7) => {
@@ -16412,5 +16477,8 @@ __decorateClass([
 __decorateClass([
   r5()
 ], _ErpSalesList.prototype, "refundSaleId", 2);
+__decorateClass([
+  r5()
+], _ErpSalesList.prototype, "reprinting", 2);
 var ErpSalesList = _ErpSalesList;
 define("erp-sales-list", ErpSalesList);
