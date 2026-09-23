@@ -6104,7 +6104,7 @@ mod tests {
                 "idempotency_key": "idem-test-332",
                 "items": [{ "product_name": "Corte", "price": 2000, "quantity": 1_000_000, "tax_rate": 21.0 }],
                 "tax_included": true, "amount_tendered": 0, "document_type": "invoice",
-                "customer_name": "ACME Inc", "customer_tax_id": "12-3456789",
+                "customer_name": "ACME Inc", "customer_tax_id": "TEST-TAXID-1",
                 "customer_address": "1 Main St, Springfield",
                 "customer_country": " us ", "customer_id_type": "04"
             },

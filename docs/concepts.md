@@ -227,6 +227,14 @@ at any amount, not only above the simplified-invoice ceiling. If the customer do
 invoice, «Tique» is one tap away. The server enforces the same rule for every other door (API,
 assistant): `sales.invoice_recipient_incomplete`.
 
+**A customer from abroad says where they are from.** The same block asks the customer's
+**country** (Spain by default, or the country on the customer's file). Outside Spain it also asks
+the **kind of document** their number is — EU VAT number, tax id of their country, passport or
+other — pre-set to the usual one (EU VAT number inside the EU, tax id elsewhere). The sale carries
+both in `sale.completed` (`customer_country`, ISO alpha-2, and `customer_id_type`, the AEAT IDType),
+and the invoice declares the customer to the AEAT by country instead of as a Spanish NIF. For a
+Spanish customer both travel empty, and the tax id's VAT prefix decides, as before.
+
 ## Splitting and merging move rows; nothing is prorated
 
 When a check is split, whole lines travel with their amount, their frozen tax category and their
