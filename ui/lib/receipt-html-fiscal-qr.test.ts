@@ -76,6 +76,15 @@ describe('the fiscal QR on the browser paper (sales#340)', () => {
     expect(doc.body.textContent).not.toContain('QR tributario:');
   });
 
+  it('with a fiscal QR the note travels inside the block, once: never again at the foot', () => {
+    // Reviewer's regression guard (sales#346): a paper that printed the note under the QR AND at
+    // the foot survived every other test here.
+    const doc = parse(receiptToPrintableHtml(fiscal));
+    const notes = Array.from(doc.body.querySelectorAll('*')).filter((el) => el.textContent?.trim() === 'CSV: ABC123' && el.children.length === 0);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].closest('.fiscal-qr')).toBeTruthy();
+  });
+
   it('a CSV note with no QR still prints, at the foot, as before', () => {
     const doc = parse(receiptToPrintableHtml({ ...base, qr_note: 'CSV: ABC123' }));
     expect(doc.querySelector('.foot:last-of-type')?.textContent).toBe('CSV: ABC123');
