@@ -37,6 +37,83 @@ interface PrintCapableSdk {
   notify?: (n: { type: string; message: string }) => void;
 }
 
+/** What the list reprint reads of the viewer: its public printing surface (as the hub shell does). */
+interface SalesDocumentViewer extends HTMLElement {
+  saleId?: string;
+  issuing?: boolean;
+  issued?: () => Promise<boolean>;
+  printableHtml?: (o: { duplicate: boolean }) => string;
+  printableDocument?: (o: { duplicate: boolean }) => Record<string, unknown> | undefined;
+}
+
+/**
+ * Sends one sale's receipt through the shell's print door — the ONE send the document's Print
+ * button and the sales list's reprint share, so both succeed and fail the same way.
+ *
+ * html is what a browser prints; data is what the ESC/POS renderer reads BY KEY. Without data
+ * the printer did not fail: it printed every default and came out «ERPlora», no lines, TOTAL 0,00
+ * (sales#79). A printer or the queue took it → silence (the paper is the answer); anything else is
+ * said: in the installed app the browser fallback prints nothing and the customer is left waiting.
+ */
+export async function sendReceipt(
+  { html, data, saleId, t }: { html?: string; data?: Record<string, unknown>; saleId?: string; t: (key: string) => string },
+): Promise<void> {
+  const sdk = (globalThis as { erplora?: PrintCapableSdk }).erplora;
+  if (!sdk?.print) {
+    if (html) printHtmlInIframe(html); else window.print();
+    return;
+  }
+  let res: { via?: string; error?: string } | undefined;
+  try {
+    // sales#92: el jobId es ÚNICO POR INTENTO (reprintJobId) — la cola deduplica por
+    // (hub_id, job_id) y la clave del cobro (sale-<id>) ya la gastó el auto-print del
+    // checkout: reutilizarla tragaba la reimpresión sin error ni papel.
+    res = await sdk.print({ role: 'receipt', documentType: 'receipt', html, data, jobId: reprintJobId(saleId) });
+  } catch (e) {
+    res = { error: e instanceof Error ? e.message : String(e) };
+  }
+  if (res?.via === 'bridge' || res?.via === 'queue') return;
+  sdk.notify?.({ type: 'error', message: res?.error ? `${t('ui.printFailed')}: ${res.error}` : t('ui.printFailed') });
+}
+
+/**
+ * sales#347 — reprints a sale from outside its document (the sales list's row action).
+ *
+ * The paper is the viewer's own: a hidden <erp-sales-document> loads the sale, told it is issuing
+ * so that it waits for the invoice number and the VeriFactu QR (issued(), hub#1867 — the same way
+ * the hub shell composes the automatic print). It is always a copy («duplicado», hub#1931). The
+ * viewer is removed afterwards, which also ends its fiscal watch. A sale that does not load prints
+ * nothing and says so.
+ */
+export async function reprintSale(saleId: string, t: (key: string) => string, timeoutMs = 15000): Promise<void> {
+  const viewer = document.createElement('erp-sales-document') as SalesDocumentViewer;
+  const host = document.createElement('div');
+  host.hidden = true;
+  host.setAttribute('aria-hidden', 'true');
+  // Before it is connected: the viewer decides whether to wait when it loads its sale.
+  viewer.issuing = true;
+  viewer.saleId = saleId;
+  host.appendChild(viewer);
+  document.body.appendChild(host);
+  let html: string | undefined;
+  let data: Record<string, unknown> | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const ceiling = new Promise<void>((resolve) => { timer = setTimeout(resolve, timeoutMs); });
+    await Promise.race([viewer.issued?.().catch(() => false), ceiling]);
+    data = viewer.printableDocument?.({ duplicate: true });
+    html = data ? viewer.printableHtml?.({ duplicate: true }) : undefined;
+  } finally {
+    clearTimeout(timer);
+    host.remove();
+  }
+  if (!data) {
+    (globalThis as { erplora?: PrintCapableSdk }).erplora?.notify?.({ type: 'error', message: t('ui.printFailed') });
+    return;
+  }
+  await sendReceipt({ html, data, saleId, t });
+}
+
 export function renderDocumentModal({ saleId, issuing = false, onClose, t }: DocumentModalOpts): TemplateResult {
   return html`<ion-modal class="doc-modal" .isOpen=${!!saleId} @ionModalDidDismiss=${onClose}>
     <style>
@@ -92,34 +169,18 @@ export function renderDocumentModal({ saleId, issuing = false, onClose, t }: Doc
           // busca POR CLAVE. Sin `data` la impresora no fallaba: pintaba todos sus valores por
           // defecto y sacaba «ERPlora», sin líneas y TOTAL 0,00 (sales#79).
           const el = document.querySelector('ion-modal.doc-modal')?.querySelector('erp-sales-document') as
-            (HTMLElement & {
-              printableHtml?: (o: { duplicate: boolean }) => string;
-              printableDocument?: (o: { duplicate: boolean }) => Record<string, unknown> | undefined;
-            }) | null;
+            SalesDocumentViewer | null;
           // hub#1931 — only one original of an invoice may exist (RD 1619/2012 art. 14). Any print
           // of this viewer outside the till (the sales list, the history) is a copy and both papers
           // say «duplicado». Right after charging, the original goes out only if none of this sale
           // did yet — the automatic print at checkout or an earlier press of this button (sales#330).
           const duplicate = !issuing || (!!saleId && originalPrinted(saleId));
-          const html = el?.printableHtml?.({ duplicate });
-          const data = el?.printableDocument?.({ duplicate });
-          const sdk = (globalThis as { erplora?: PrintCapableSdk }).erplora;
-          if (!sdk?.print) {
-            if (html) printHtmlInIframe(html); else window.print();
-            return;
-          }
-          void sdk
-            // sales#92: el jobId es ÚNICO POR INTENTO (reprintJobId) — la cola deduplica por
-            // (hub_id, job_id) y la clave del cobro (`sale-<id>`) ya la gastó el auto-print del
-            // checkout: reutilizarla tragaba la reimpresión sin error ni papel.
-            .print({ role: 'receipt', documentType: 'receipt', html, data, jobId: reprintJobId(saleId) })
-            .then((res) => {
-              // Salió por impresora o quedó en la cola: éxito. Lo demás hay que decirlo — en la app
-              // instalada el respaldo del navegador no imprime nada y el cliente se queda esperando
-              // su copia.
-              if (res?.via === 'bridge' || res?.via === 'queue') return;
-              sdk.notify?.({ type: 'error', message: res?.error ? `${t('ui.printFailed')}: ${res.error}` : t('ui.printFailed') });
-            });
+          void sendReceipt({
+            html: el?.printableHtml?.({ duplicate }),
+            data: el?.printableDocument?.({ duplicate }),
+            saleId,
+            t,
+          });
         }}>
           <ion-icon slot="icon-only" name="print-outline"></ion-icon>
         </ion-button>

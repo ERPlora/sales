@@ -156,6 +156,7 @@
     "statusCompleted": "Completada",
     "statusVoided": "Anulada",
     "actionDocument": "Documento",
+    "actionReprint": "Reimprimir",
     "searchSalePlaceholder": "Buscar número o cliente…",
     "loading": "Cargando…",
     "noSales": "Aún no hay ventas.",
