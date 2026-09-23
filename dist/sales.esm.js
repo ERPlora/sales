@@ -2211,8 +2211,9 @@ function ref(l3) {
   return !!(l3.parent_line_ref || "").trim();
 }
 var VERIFACTU_LEGEND = "VERI*FACTU";
-function qrLegend(fiscal) {
-  return fiscal.qr ? { qr_legend: VERIFACTU_LEGEND } : {};
+var QR_TRIBUTARIO_HEADING = "QR tributario:";
+function qrLegalTexts(fiscal) {
+  return fiscal.qr ? { qr_heading: QR_TRIBUTARIO_HEADING, qr_legend: VERIFACTU_LEGEND } : {};
 }
 var CLAIM_NOTE_FALLBACK = "Get your invoice";
 function claimPrintFields(fiscal, t7) {
@@ -2342,7 +2343,7 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", f
     decimals: hubDecimals(),
     footer: settings.receipt_footer || void 0,
     qr: fiscal.qr || void 0,
-    ...qrLegend(fiscal),
+    ...qrLegalTexts(fiscal),
     qr_note: fiscal.qr_note || void 0,
     // QR promocional (solo tiquet; la factura A4 es formal). Sin URL no hay rastro.
     promo_qr: settings.receipt_marketing_url || void 0,
@@ -2384,7 +2385,7 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", f
     payment_method: payLabel(sale.payment_method_name, t7),
     footer: settings.receipt_footer || void 0,
     qr: fiscal.qr || void 0,
-    ...qrLegend(fiscal),
+    ...qrLegalTexts(fiscal),
     qr_note: fiscal.qr_note || void 0
   };
 }
@@ -2504,6 +2505,7 @@ function saleToPrintDocument(sale, lines, settings = {}, fiscal = {}, locale = "
     change: euros(screen.payment?.change, screen.decimals),
     qr_data: screen.qr,
     qr_legend: screen.qr_legend,
+    qr_heading: screen.qr_heading,
     // sales#103: el bloque «pide tu factura», VACÍO sin locator acuñado — el renderer imprime
     // solo los campos presentes, así que un tique sin claim sale byte a byte como hoy.
     ...claimPrintFields(fiscal, t7),
