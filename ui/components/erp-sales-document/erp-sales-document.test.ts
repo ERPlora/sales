@@ -369,7 +369,8 @@ describe('claim «pide tu factura» — acuñar al resolver la F2 e imprimir el 
         original_invoice_id: 'inv-42',
         items: F2_LINES, // las líneas de invoice.lines TAL CUAL, ya en céntimos
       },
-      public_fields: ['customer_tax_id', 'customer_name', 'customer_address'],
+      // sales#335: country and document kind, so a customer from abroad is not a Spanish NIF.
+      public_fields: ['customer_tax_id', 'customer_name', 'customer_address', 'customer_country', 'customer_id_type'],
     });
   });
 

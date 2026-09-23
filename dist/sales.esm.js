@@ -4023,7 +4023,13 @@ define("ok-invoice", OkInvoice);
 // ui/lib/public-claim.ts
 var CLAIM_KIND = "invoice_request";
 var CLAIM_COMMAND = "invoice.substitute";
-var CLAIM_PUBLIC_FIELDS = ["customer_tax_id", "customer_name", "customer_address"];
+var CLAIM_PUBLIC_FIELDS = [
+  "customer_tax_id",
+  "customer_name",
+  "customer_address",
+  "customer_country",
+  "customer_id_type"
+];
 async function mintInvoiceRequestClaim(invoiceId, items, opts = {}) {
   if (!invoiceId || !Array.isArray(items) || items.length === 0) return void 0;
   const doFetch = opts.fetchImpl ?? globalThis.fetch?.bind(globalThis);

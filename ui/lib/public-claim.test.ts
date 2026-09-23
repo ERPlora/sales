@@ -56,6 +56,21 @@ describe('mintInvoiceRequestClaim — el cuerpo que la puerta espera', () => {
     expect(claim).toEqual({ locator: 'ABCD1234ABCD1234', url: '/p/ABCD1234ABCD1234' });
   });
 
+  // sales#335 — a customer from abroad says where they are from and what their number is, the
+  // same two fields the till's charge sheet sends (sales#332); `invoice.substitute` takes both
+  // (invoice#82) and the hub's page only shows the pickers when the claim lists them.
+  it('lets the customer fill their country and document kind, and nothing sealed', () => {
+    expect(CLAIM_PUBLIC_FIELDS).toEqual([
+      'customer_tax_id',
+      'customer_name',
+      'customer_address',
+      'customer_country',
+      'customer_id_type',
+    ]);
+    expect(CLAIM_PUBLIC_FIELDS).not.toContain('items');
+    expect(CLAIM_PUBLIC_FIELDS).not.toContain('original_invoice_id');
+  });
+
   it('sin líneas no hay acuñamiento: el esquema de invoice.substitute las exige (minItems 1)', async () => {
     const fetchMock = hubFetch();
     expect(await mintInvoiceRequestClaim('inv-42', [], { fetchImpl: fetchMock as unknown as typeof fetch })).toBeUndefined();

@@ -24,8 +24,16 @@ export const CLAIM_KIND = 'invoice_request';
 /** El command que la puerta ejecutará al canjear: la F3 completa que sustituye a la F2 (ADR-0140). */
 export const CLAIM_COMMAND = 'invoice.substitute';
 
-/** Lo que el cliente PUEDE rellenar en la página pública: su identificación fiscal, nada más. */
-export const CLAIM_PUBLIC_FIELDS: string[] = ['customer_tax_id', 'customer_name', 'customer_address'];
+/** What the customer MAY fill on the public page: who they are for tax purposes, nothing else.
+ *  Country and document kind (sales#335) are how a customer from abroad avoids being declared
+ *  with a Spanish NIF; the hub's page shows those pickers only when the claim lists them. */
+export const CLAIM_PUBLIC_FIELDS: string[] = [
+  'customer_tax_id',
+  'customer_name',
+  'customer_address',
+  'customer_country',
+  'customer_id_type',
+];
 
 /** Un claim acuñado, tal como lo devuelve la puerta: el localizador y su URL (relativa al hub). */
 export interface MintedClaim {
