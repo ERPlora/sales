@@ -1773,7 +1773,672 @@ __decorateClass2([
 ], OkMoney.prototype, "locale");
 define("ok-money", OkMoney);
 
+// @erplora/outfitkit/dist/ok-qr.js
+var __defProp3 = Object.defineProperty;
+var __decorateClass3 = (decorators, target, key, kind) => {
+  var result = void 0;
+  for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
+    if (decorator = decorators[i7])
+      result = decorator(target, key, result) || result;
+  if (result) __defProp3(target, key, result);
+  return result;
+};
+var GF_EXP = new Uint8Array(512);
+var GF_LOG = new Uint8Array(256);
+(() => {
+  let x2 = 1;
+  for (let i7 = 0; i7 < 255; i7++) {
+    GF_EXP[i7] = x2;
+    GF_LOG[x2] = i7;
+    x2 <<= 1;
+    if (x2 & 256) x2 ^= 285;
+  }
+  for (let i7 = 255; i7 < 512; i7++) GF_EXP[i7] = GF_EXP[i7 - 255];
+})();
+function gfMul(a3, b3) {
+  if (a3 === 0 || b3 === 0) return 0;
+  return GF_EXP[GF_LOG[a3] + GF_LOG[b3]];
+}
+function rsGeneratorPoly(degree) {
+  let poly = new Uint8Array([1]);
+  for (let i7 = 0; i7 < degree; i7++) {
+    const next = new Uint8Array(poly.length + 1);
+    for (let j2 = 0; j2 < poly.length; j2++) {
+      next[j2] ^= poly[j2];
+      next[j2 + 1] ^= gfMul(poly[j2], GF_EXP[i7]);
+    }
+    poly = next;
+  }
+  return poly;
+}
+function rsEncode(data, degree) {
+  const gen = rsGeneratorPoly(degree);
+  const res = new Uint8Array(data.length + degree);
+  res.set(data);
+  for (let i7 = 0; i7 < data.length; i7++) {
+    const coef = res[i7];
+    if (coef !== 0) {
+      for (let j2 = 0; j2 < gen.length; j2++) {
+        res[i7 + j2] ^= gfMul(gen[j2], coef);
+      }
+    }
+  }
+  return res.slice(data.length);
+}
+var EC_ORDER = ["L", "M", "Q", "H"];
+var TOTAL_CODEWORDS = [
+  26,
+  44,
+  70,
+  100,
+  134,
+  172,
+  196,
+  242,
+  292,
+  346,
+  404,
+  466,
+  532,
+  581,
+  655,
+  733,
+  815,
+  901,
+  991,
+  1085,
+  1156,
+  1258,
+  1364,
+  1474,
+  1588,
+  1706,
+  1828,
+  1921,
+  2051,
+  2185,
+  2323,
+  2465,
+  2611,
+  2761,
+  2876,
+  3034,
+  3196,
+  3362,
+  3532,
+  3706
+];
+var EC_BLOCKS = [
+  /* v1 */
+  [[7, 1, 19, 0, 0], [10, 1, 16, 0, 0], [13, 1, 13, 0, 0], [17, 1, 9, 0, 0]],
+  /* v2 */
+  [[10, 1, 34, 0, 0], [16, 1, 28, 0, 0], [22, 1, 22, 0, 0], [28, 1, 16, 0, 0]],
+  /* v3 */
+  [[15, 1, 55, 0, 0], [26, 1, 44, 0, 0], [18, 2, 17, 0, 0], [22, 2, 13, 0, 0]],
+  /* v4 */
+  [[20, 1, 80, 0, 0], [18, 2, 32, 0, 0], [26, 2, 24, 0, 0], [16, 4, 9, 0, 0]],
+  /* v5 */
+  [[26, 1, 108, 0, 0], [24, 2, 43, 0, 0], [18, 2, 15, 2, 16], [22, 2, 11, 2, 12]],
+  /* v6 */
+  [[18, 2, 68, 0, 0], [16, 4, 27, 0, 0], [24, 4, 19, 0, 0], [28, 4, 15, 0, 0]],
+  /* v7 */
+  [[20, 2, 78, 0, 0], [18, 4, 31, 0, 0], [18, 2, 14, 4, 15], [26, 4, 13, 1, 14]],
+  /* v8 */
+  [[24, 2, 97, 0, 0], [22, 2, 38, 2, 39], [22, 4, 18, 2, 19], [26, 4, 14, 2, 15]],
+  /* v9 */
+  [[30, 2, 116, 0, 0], [22, 3, 36, 2, 37], [20, 4, 16, 4, 17], [24, 4, 12, 4, 13]],
+  /* v10 */
+  [[18, 2, 68, 2, 69], [26, 4, 43, 1, 44], [24, 6, 19, 2, 20], [28, 6, 15, 2, 16]],
+  /* v11 */
+  [[20, 4, 81, 0, 0], [30, 1, 50, 4, 51], [28, 4, 22, 4, 23], [24, 3, 12, 8, 13]],
+  /* v12 */
+  [[24, 2, 92, 2, 93], [22, 6, 36, 2, 37], [26, 4, 20, 6, 21], [28, 7, 14, 4, 15]],
+  /* v13 */
+  [[26, 4, 107, 0, 0], [22, 8, 37, 1, 38], [24, 8, 20, 4, 21], [22, 12, 11, 4, 12]],
+  /* v14 */
+  [[30, 3, 115, 1, 116], [24, 4, 40, 5, 41], [20, 11, 16, 5, 17], [24, 11, 12, 5, 13]],
+  /* v15 */
+  [[22, 5, 87, 1, 88], [24, 5, 41, 5, 42], [30, 5, 24, 7, 25], [24, 11, 12, 7, 13]],
+  /* v16 */
+  [[24, 5, 98, 1, 99], [28, 7, 45, 3, 46], [24, 15, 19, 2, 20], [30, 3, 15, 13, 16]],
+  /* v17 */
+  [[28, 1, 107, 5, 108], [28, 10, 46, 1, 47], [28, 1, 22, 15, 23], [28, 2, 14, 17, 15]],
+  /* v18 */
+  [[30, 5, 120, 1, 121], [26, 9, 43, 4, 44], [28, 17, 22, 1, 23], [28, 2, 14, 19, 15]],
+  /* v19 */
+  [[28, 3, 113, 4, 114], [26, 3, 44, 11, 45], [26, 17, 21, 4, 22], [26, 9, 13, 16, 14]],
+  /* v20 */
+  [[28, 3, 107, 5, 108], [26, 3, 41, 13, 42], [30, 15, 24, 5, 25], [28, 15, 15, 10, 16]],
+  /* v21 */
+  [[28, 4, 116, 4, 117], [26, 17, 42, 0, 0], [28, 17, 22, 6, 23], [30, 19, 16, 6, 17]],
+  /* v22 */
+  [[28, 2, 111, 7, 112], [28, 17, 46, 0, 0], [30, 7, 24, 16, 25], [24, 34, 13, 0, 0]],
+  /* v23 */
+  [[30, 4, 121, 5, 122], [28, 4, 47, 14, 48], [30, 11, 24, 14, 25], [30, 16, 15, 14, 16]],
+  /* v24 */
+  [[30, 6, 117, 4, 118], [28, 6, 45, 14, 46], [30, 11, 24, 16, 25], [30, 30, 16, 2, 17]],
+  /* v25 */
+  [[26, 8, 106, 4, 107], [28, 8, 47, 13, 48], [30, 7, 24, 22, 25], [30, 22, 15, 13, 16]],
+  /* v26 */
+  [[28, 10, 114, 2, 115], [28, 19, 46, 4, 47], [28, 28, 22, 6, 23], [30, 33, 16, 4, 17]],
+  /* v27 */
+  [[30, 8, 122, 4, 123], [28, 22, 45, 3, 46], [30, 8, 23, 26, 24], [30, 12, 15, 28, 16]],
+  /* v28 */
+  [[30, 3, 117, 10, 118], [28, 3, 45, 23, 46], [30, 4, 24, 31, 25], [30, 11, 15, 31, 16]],
+  /* v29 */
+  [[30, 7, 116, 7, 117], [28, 21, 45, 7, 46], [30, 1, 23, 37, 24], [30, 19, 15, 26, 16]],
+  /* v30 */
+  [[30, 5, 115, 10, 116], [28, 19, 47, 10, 48], [30, 15, 24, 25, 25], [30, 23, 15, 25, 16]],
+  /* v31 */
+  [[30, 13, 115, 3, 116], [28, 2, 46, 29, 47], [30, 42, 24, 1, 25], [30, 23, 15, 28, 16]],
+  /* v32 */
+  [[30, 17, 115, 0, 0], [28, 10, 46, 23, 47], [30, 10, 24, 35, 25], [30, 19, 15, 35, 16]],
+  /* v33 */
+  [[30, 17, 115, 1, 116], [28, 14, 46, 21, 47], [30, 29, 24, 19, 25], [30, 11, 15, 46, 16]],
+  /* v34 */
+  [[30, 13, 115, 6, 116], [28, 14, 46, 23, 47], [30, 44, 24, 7, 25], [30, 59, 16, 1, 17]],
+  /* v35 */
+  [[30, 12, 121, 7, 122], [28, 12, 47, 26, 48], [30, 39, 24, 14, 25], [30, 22, 15, 41, 16]],
+  /* v36 */
+  [[30, 6, 121, 14, 122], [28, 6, 47, 34, 48], [30, 46, 24, 10, 25], [30, 2, 15, 64, 16]],
+  /* v37 */
+  [[30, 17, 122, 4, 123], [28, 29, 46, 14, 47], [30, 49, 24, 10, 25], [30, 24, 15, 46, 16]],
+  /* v38 */
+  [[30, 4, 122, 18, 123], [28, 13, 46, 32, 47], [30, 48, 24, 14, 25], [30, 42, 15, 32, 16]],
+  /* v39 */
+  [[30, 20, 117, 4, 118], [28, 40, 47, 7, 48], [30, 43, 24, 22, 25], [30, 10, 15, 67, 16]],
+  /* v40 */
+  [[30, 19, 118, 6, 119], [28, 18, 47, 31, 48], [30, 34, 24, 34, 25], [30, 20, 15, 61, 16]]
+];
+var ALIGN_POS = [
+  [],
+  [6, 18],
+  [6, 22],
+  [6, 26],
+  [6, 30],
+  [6, 34],
+  [6, 22, 38],
+  [6, 24, 42],
+  [6, 26, 46],
+  [6, 28, 50],
+  [6, 30, 54],
+  [6, 32, 58],
+  [6, 34, 62],
+  [6, 26, 46, 66],
+  [6, 26, 48, 70],
+  [6, 26, 50, 74],
+  [6, 30, 54, 78],
+  [6, 30, 56, 82],
+  [6, 30, 58, 86],
+  [6, 34, 62, 90],
+  [6, 28, 50, 72, 94],
+  [6, 26, 50, 74, 98],
+  [6, 30, 54, 78, 102],
+  [6, 28, 54, 80, 106],
+  [6, 32, 58, 84, 110],
+  [6, 30, 58, 86, 114],
+  [6, 34, 62, 90, 118],
+  [6, 26, 50, 74, 98, 122],
+  [6, 30, 54, 78, 102, 126],
+  [6, 26, 52, 78, 104, 130],
+  [6, 30, 56, 82, 108, 134],
+  [6, 34, 60, 86, 112, 138],
+  [6, 30, 58, 86, 114, 142],
+  [6, 34, 62, 90, 118, 146],
+  [6, 30, 54, 78, 102, 126, 150],
+  [6, 24, 50, 76, 102, 128, 154],
+  [6, 28, 54, 80, 106, 132, 158],
+  [6, 32, 58, 84, 110, 136, 162],
+  [6, 26, 54, 82, 110, 138, 166],
+  [6, 30, 58, 86, 114, 142, 170]
+];
+var VERSION_INFO = [
+  31892,
+  34236,
+  39577,
+  42195,
+  48118,
+  51042,
+  55367,
+  58893,
+  63784,
+  68472,
+  70749,
+  76311,
+  79154,
+  84390,
+  87683,
+  92361,
+  96236,
+  102084,
+  102881,
+  110507,
+  110734,
+  117786,
+  119615,
+  126325,
+  127568,
+  133589,
+  136944,
+  141498,
+  145311,
+  150283,
+  152622,
+  158308,
+  161089,
+  167017
+];
+var FORMAT_INFO = [
+  21522,
+  20773,
+  24188,
+  23371,
+  17913,
+  16590,
+  20375,
+  19104,
+  30660,
+  29427,
+  32170,
+  30877,
+  26159,
+  25368,
+  27713,
+  26998,
+  5769,
+  5054,
+  7399,
+  6608,
+  1890,
+  597,
+  3340,
+  2107,
+  13663,
+  12392,
+  16177,
+  14854,
+  9396,
+  8579,
+  11994,
+  11245
+];
+var EC_FORMAT_BITS = { L: 1, M: 0, Q: 3, H: 2 };
+var BitBuffer = class {
+  constructor() {
+    this.bits = [];
+  }
+  put(value, length) {
+    for (let i7 = length - 1; i7 >= 0; i7--) {
+      this.bits.push(value >>> i7 & 1);
+    }
+  }
+  get length() {
+    return this.bits.length;
+  }
+};
+function charCountBits(version) {
+  return version <= 9 ? 8 : 16;
+}
+function encodeData(bytes, version, ec) {
+  const totalCw = TOTAL_CODEWORDS[version - 1];
+  const blocks = EC_BLOCKS[version - 1][EC_ORDER.indexOf(ec)];
+  const ecPerBlock = blocks[0];
+  const numBlocks = blocks[1] + blocks[3];
+  const totalEcCw = ecPerBlock * numBlocks;
+  const dataCwCapacity = totalCw - totalEcCw;
+  const dataBitCapacity = dataCwCapacity * 8;
+  const ccBits = charCountBits(version);
+  const buf = new BitBuffer();
+  buf.put(4, 4);
+  buf.put(bytes.length, ccBits);
+  for (const b3 of bytes) buf.put(b3, 8);
+  if (buf.length > dataBitCapacity) return null;
+  const remaining = dataBitCapacity - buf.length;
+  buf.put(0, Math.min(4, remaining));
+  while (buf.length % 8 !== 0) buf.bits.push(0);
+  const padBytes = [236, 17];
+  let pi = 0;
+  while (buf.length < dataBitCapacity) {
+    buf.put(padBytes[pi], 8);
+    pi ^= 1;
+  }
+  const dataCw = new Uint8Array(dataCwCapacity);
+  for (let i7 = 0; i7 < dataCwCapacity; i7++) {
+    let byte = 0;
+    for (let j2 = 0; j2 < 8; j2++) byte = byte << 1 | buf.bits[i7 * 8 + j2];
+    dataCw[i7] = byte;
+  }
+  const dataBlocks = [];
+  const ecBlocks = [];
+  let offset = 0;
+  const layout = [];
+  for (let g3 = 0; g3 < blocks[1]; g3++) layout.push([blocks[2]]);
+  for (let g3 = 0; g3 < blocks[3]; g3++) layout.push([blocks[4]]);
+  for (const [dlen] of layout) {
+    const dblk = dataCw.slice(offset, offset + dlen);
+    offset += dlen;
+    dataBlocks.push(dblk);
+    ecBlocks.push(rsEncode(dblk, ecPerBlock));
+  }
+  const result = new Uint8Array(totalCw);
+  let ri = 0;
+  const maxData = Math.max(...dataBlocks.map((b3) => b3.length));
+  for (let i7 = 0; i7 < maxData; i7++) {
+    for (const blk of dataBlocks) if (i7 < blk.length) result[ri++] = blk[i7];
+  }
+  for (let i7 = 0; i7 < ecPerBlock; i7++) {
+    for (const blk of ecBlocks) result[ri++] = blk[i7];
+  }
+  return result;
+}
+function buildMatrix(codewords, version, ec) {
+  const size = version * 4 + 17;
+  const m4 = Array.from({ length: size }, () => new Array(size).fill(null));
+  const reserved = Array.from({ length: size }, () => new Array(size).fill(false));
+  const set = (r6, c5, v3, isReserved = true) => {
+    m4[r6][c5] = v3;
+    if (isReserved) reserved[r6][c5] = true;
+  };
+  const placeFinder = (r6, c5) => {
+    for (let dr = -1; dr <= 7; dr++) {
+      for (let dc = -1; dc <= 7; dc++) {
+        const rr = r6 + dr;
+        const cc = c5 + dc;
+        if (rr < 0 || rr >= size || cc < 0 || cc >= size) continue;
+        const inRing = dr >= 0 && dr <= 6 && (dc === 0 || dc === 6) || dc >= 0 && dc <= 6 && (dr === 0 || dr === 6);
+        const inCore = dr >= 2 && dr <= 4 && dc >= 2 && dc <= 4;
+        set(rr, cc, inRing || inCore ? 1 : 0);
+      }
+    }
+  };
+  placeFinder(0, 0);
+  placeFinder(0, size - 7);
+  placeFinder(size - 7, 0);
+  for (let i7 = 8; i7 < size - 8; i7++) {
+    const v3 = i7 % 2 === 0 ? 1 : 0;
+    set(6, i7, v3);
+    set(i7, 6, v3);
+  }
+  const aps = ALIGN_POS[version - 1];
+  for (const r6 of aps) {
+    for (const c5 of aps) {
+      if (reserved[r6][c5]) continue;
+      for (let dr = -2; dr <= 2; dr++) {
+        for (let dc = -2; dc <= 2; dc++) {
+          const ring = Math.max(Math.abs(dr), Math.abs(dc));
+          set(r6 + dr, c5 + dc, ring === 1 ? 0 : 1);
+        }
+      }
+    }
+  }
+  set(size - 8, 8, 1);
+  for (let i7 = 0; i7 < 9; i7++) {
+    if (!reserved[8][i7]) reserved[8][i7] = true;
+    if (!reserved[i7][8]) reserved[i7][8] = true;
+  }
+  for (let i7 = 0; i7 < 8; i7++) {
+    reserved[8][size - 1 - i7] = true;
+    reserved[size - 1 - i7][8] = true;
+  }
+  reserved[8][8] = true;
+  reserved[8][7] = true;
+  reserved[7][8] = true;
+  if (version >= 7) {
+    for (let i7 = 0; i7 < 6; i7++) {
+      for (let j2 = 0; j2 < 3; j2++) {
+        reserved[i7][size - 11 + j2] = true;
+        reserved[size - 11 + j2][i7] = true;
+      }
+    }
+  }
+  let bitIdx = 0;
+  const totalBits = codewords.length * 8;
+  const getBit = (idx) => idx < totalBits ? codewords[idx >> 3] >> 7 - (idx & 7) & 1 : 0;
+  let upward = true;
+  for (let col = size - 1; col > 0; col -= 2) {
+    if (col === 6) col--;
+    for (let i7 = 0; i7 < size; i7++) {
+      const row = upward ? size - 1 - i7 : i7;
+      for (let k2 = 0; k2 < 2; k2++) {
+        const c5 = col - k2;
+        if (reserved[row][c5] || m4[row][c5] !== null) continue;
+        m4[row][c5] = getBit(bitIdx);
+        bitIdx++;
+      }
+    }
+    upward = !upward;
+  }
+  const maskFns = [
+    (r6, c5) => (r6 + c5) % 2 === 0,
+    (r6) => r6 % 2 === 0,
+    (_r, c5) => c5 % 3 === 0,
+    (r6, c5) => (r6 + c5) % 3 === 0,
+    (r6, c5) => (Math.floor(r6 / 2) + Math.floor(c5 / 3)) % 2 === 0,
+    (r6, c5) => r6 * c5 % 2 + r6 * c5 % 3 === 0,
+    (r6, c5) => (r6 * c5 % 2 + r6 * c5 % 3) % 2 === 0,
+    (r6, c5) => ((r6 + c5) % 2 + r6 * c5 % 3) % 2 === 0
+  ];
+  let bestPenalty = Infinity;
+  let bestMatrix = [];
+  for (let mask = 0; mask < 8; mask++) {
+    const grid = Array.from({ length: size }, () => new Array(size).fill(false));
+    for (let r6 = 0; r6 < size; r6++) {
+      for (let c5 = 0; c5 < size; c5++) {
+        let v3 = m4[r6][c5] === 1;
+        if (!reserved[r6][c5] && maskFns[mask](r6, c5)) v3 = !v3;
+        grid[r6][c5] = v3;
+      }
+    }
+    applyFormatAndVersion(grid, reserved, version, ec, mask);
+    const penalty = scorePenalty(grid);
+    if (penalty < bestPenalty) {
+      bestPenalty = penalty;
+      bestMatrix = grid;
+    }
+  }
+  return bestMatrix;
+}
+function applyFormatAndVersion(grid, _reserved, version, ec, mask) {
+  const size = grid.length;
+  const fmt = FORMAT_INFO[EC_FORMAT_BITS[ec] << 3 | mask];
+  for (let i7 = 0; i7 < 15; i7++) {
+    const bit = (fmt >> i7 & 1) === 1;
+    if (i7 < 6) grid[i7][8] = bit;
+    else if (i7 === 6) grid[7][8] = bit;
+    else if (i7 === 7) grid[8][8] = bit;
+    else if (i7 === 8) grid[8][7] = bit;
+    else grid[8][14 - i7] = bit;
+    if (i7 < 8) grid[8][size - 1 - i7] = bit;
+    else grid[size - 15 + i7][8] = bit;
+  }
+  grid[size - 8][8] = true;
+  if (version >= 7) {
+    const vinfo = VERSION_INFO[version - 7];
+    for (let i7 = 0; i7 < 18; i7++) {
+      const bit = (vinfo >> i7 & 1) === 1;
+      const r6 = Math.floor(i7 / 3);
+      const c5 = i7 % 3;
+      grid[r6][size - 11 + c5] = bit;
+      grid[size - 11 + c5][r6] = bit;
+    }
+  }
+}
+function scorePenalty(grid) {
+  const n6 = grid.length;
+  let penalty = 0;
+  const lineRun = (get) => {
+    let p4 = 0;
+    let runColor = get(0);
+    let runLen = 1;
+    for (let i7 = 1; i7 < n6; i7++) {
+      const v3 = get(i7);
+      if (v3 === runColor) {
+        runLen++;
+      } else {
+        if (runLen >= 5) p4 += 3 + (runLen - 5);
+        runColor = v3;
+        runLen = 1;
+      }
+    }
+    if (runLen >= 5) p4 += 3 + (runLen - 5);
+    return p4;
+  };
+  for (let r6 = 0; r6 < n6; r6++) penalty += lineRun((c5) => grid[r6][c5]);
+  for (let c5 = 0; c5 < n6; c5++) penalty += lineRun((r6) => grid[r6][c5]);
+  for (let r6 = 0; r6 < n6 - 1; r6++) {
+    for (let c5 = 0; c5 < n6 - 1; c5++) {
+      const v3 = grid[r6][c5];
+      if (v3 === grid[r6][c5 + 1] && v3 === grid[r6 + 1][c5] && v3 === grid[r6 + 1][c5 + 1]) penalty += 3;
+    }
+  }
+  const pat1 = [true, false, true, true, true, false, true, false, false, false, false];
+  const pat2 = [false, false, false, false, true, false, true, true, true, false, true];
+  const matchAt = (get, start) => {
+    let a3 = true;
+    let b3 = true;
+    for (let k22 = 0; k22 < 11; k22++) {
+      const v3 = get(start + k22);
+      if (v3 !== pat1[k22]) a3 = false;
+      if (v3 !== pat2[k22]) b3 = false;
+    }
+    return a3 || b3;
+  };
+  for (let r6 = 0; r6 < n6; r6++) {
+    for (let c5 = 0; c5 <= n6 - 11; c5++) {
+      if (matchAt((i7) => grid[r6][i7], c5)) penalty += 40;
+    }
+  }
+  for (let c5 = 0; c5 < n6; c5++) {
+    for (let r6 = 0; r6 <= n6 - 11; r6++) {
+      if (matchAt((i7) => grid[i7][c5], r6)) penalty += 40;
+    }
+  }
+  let dark = 0;
+  for (let r6 = 0; r6 < n6; r6++) for (let c5 = 0; c5 < n6; c5++) if (grid[r6][c5]) dark++;
+  const ratio = dark * 100 / (n6 * n6);
+  const k2 = Math.floor(Math.abs(ratio - 50) / 5);
+  penalty += k2 * 10;
+  return penalty;
+}
+function generateQr(value, ec) {
+  const bytes = new TextEncoder().encode(value);
+  for (let version = 1; version <= 40; version++) {
+    const codewords = encodeData(bytes, version, ec);
+    if (codewords) return buildMatrix(codewords, version, ec);
+  }
+  return null;
+}
+function modulesPath(matrix, quiet) {
+  let d3 = "";
+  for (let r6 = 0; r6 < matrix.length; r6++) {
+    for (let c5 = 0; c5 < matrix.length; c5++) {
+      if (matrix[r6][c5]) d3 += `M${c5 + quiet} ${r6 + quiet}h1v1h-1z`;
+    }
+  }
+  return d3;
+}
+function escapeMarkup(v3) {
+  return v3.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function qrSvgMarkup(value, opts = {}) {
+  if (!value) return "";
+  const level = opts.ec && EC_ORDER.includes(opts.ec) ? opts.ec : "M";
+  const matrix = generateQr(value, level);
+  if (!matrix) return "";
+  const quiet = Math.max(0, Math.floor(opts.margin ?? 4));
+  const dim = matrix.length + quiet * 2;
+  const size = Math.max(1, Math.round(opts.size ?? 160));
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${dim} ${dim}" shape-rendering="crispEdges" role="img" aria-label="${escapeMarkup(`C\xF3digo QR: ${value}`)}"><rect x="0" y="0" width="${dim}" height="${dim}" fill="#fff"/><path d="${modulesPath(matrix, quiet)}" fill="#000"/></svg>`;
+}
+var OkQr = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.value = "";
+    this.ec = "M";
+    this.size = 160;
+    this.color = "";
+    this.background = "";
+    this.margin = 4;
+  }
+  static {
+    this.styles = i`
+    :host {
+      /* Tokens overridables (cadena --ok-* → --ion-* → hex). */
+      --module-color: var(--ok-text, var(--ion-text-color, #000000));
+      --bg-color: var(--ok-surface, transparent);
+
+      /* Inline: ocupa solo lo que necesita su tamaño. */
+      display: inline-block;
+      line-height: 0;
+    }
+    svg {
+      display: block;
+      width: var(--ok-qr-size, 160px);
+      height: var(--ok-qr-size, 160px);
+    }
+    rect.qr-bg {
+      fill: var(--bg-color);
+    }
+    path.qr-fg {
+      fill: var(--module-color);
+      shape-rendering: crispEdges;
+    }
+  `;
+  }
+  render() {
+    if (!this.value) return b2``;
+    const level = EC_ORDER.includes(this.ec) ? this.ec : "M";
+    const matrix = generateQr(this.value, level);
+    if (!matrix) return b2``;
+    const count = matrix.length;
+    const quiet = Math.max(0, Math.floor(this.margin));
+    const dim = count + quiet * 2;
+    const d3 = modulesPath(matrix, quiet);
+    const fg = this.color || void 0;
+    const bg = this.background || void 0;
+    const fgStyle = fg ? `fill:${fg}` : void 0;
+    const bgStyle = bg ? `fill:${bg}` : void 0;
+    const body = w`
+      <rect class="qr-bg" x="0" y="0" width="${dim}" height="${dim}" style="${bgStyle ?? ""}"></rect>
+      <path class="qr-fg" d="${d3}" style="${fgStyle ?? ""}"></path>
+    `;
+    return b2`
+      <svg
+        style="width:${this.size}px;height:${this.size}px"
+        viewBox="0 0 ${dim} ${dim}"
+        xmlns="http://www.w3.org/2000/svg"
+        role="img"
+        aria-label=${`C\xF3digo QR: ${this.value}`}
+        shape-rendering="crispEdges"
+      >
+        ${body}
+      </svg>
+    `;
+  }
+};
+__decorateClass3([
+  n4({ type: String })
+], OkQr.prototype, "value");
+__decorateClass3([
+  n4({ type: String })
+], OkQr.prototype, "ec");
+__decorateClass3([
+  n4({ type: Number })
+], OkQr.prototype, "size");
+__decorateClass3([
+  n4({ type: String })
+], OkQr.prototype, "color");
+__decorateClass3([
+  n4({ type: String })
+], OkQr.prototype, "background");
+__decorateClass3([
+  n4({ type: Number })
+], OkQr.prototype, "margin");
+define("ok-qr", OkQr);
+
 // ui/lib/receipt-html.ts
+var FISCAL_QR_PX = 114;
+var CLAIM_QR_PX = 90;
 function esc(v3) {
   return String(v3 ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
@@ -1805,7 +2470,9 @@ function receiptToPrintableHtml(doc) {
   const impuestos = (doc.taxes ?? []).map((t7) => `
       <tr><td>${esc(t7.label)}</td><td class="a">${money(t7.amount, cur, dec)}</td></tr>`).join("");
   const pago = doc.payment ? `<tr><td>${esc(doc.payment.method)}</td><td class="a">${money(doc.payment.paid ?? doc.total, cur, dec)}</td></tr>` + (doc.payment.change != null ? `<tr><td>${esc(lbl.change)}</td><td class="a">${money(doc.payment.change, cur, dec)}</td></tr>` : "") : "";
-  const claim = doc.claim_note || doc.claim_locator ? `<div class="claim">` + (doc.claim_note ? `<div class="claim-note">${esc(doc.claim_note)}</div>` : "") + (doc.claim_locator ? `<div class="claim-loc">${esc(doc.claim_locator)}</div>` : "") + (doc.claim_qr_data ? `<div class="claim-url">${esc(doc.claim_qr_data)}</div>` : "") + `</div>` : "";
+  const fiscalQr = qrSvgMarkup(doc.qr ?? "", { size: FISCAL_QR_PX });
+  const fiscal = fiscalQr ? `<div class="fiscal-qr">` + (doc.qr_heading ? `<div class="qr-heading">${esc(doc.qr_heading)}</div>` : "") + fiscalQr + (doc.qr_legend ? `<div class="legend">${esc(doc.qr_legend)}</div>` : "") + (doc.qr_note ? `<div class="qr-note">${esc(doc.qr_note)}</div>` : "") + `</div>` : "";
+  const claim = doc.claim_note || doc.claim_locator ? `<div class="claim">` + (doc.claim_note ? `<div class="claim-note">${esc(doc.claim_note)}</div>` : "") + qrSvgMarkup(doc.claim_qr_data ?? "", { size: CLAIM_QR_PX }) + (doc.claim_locator ? `<div class="claim-loc">${esc(doc.claim_locator)}</div>` : "") + (doc.claim_qr_data ? `<div class="claim-url">${esc(doc.claim_qr_data)}</div>` : "") + `</div>` : "";
   return `<!doctype html>
 <html><head><meta charset="utf-8"><title>${esc(doc.number || doc.business?.name || lbl.document)}</title>
 <style>
@@ -1833,8 +2500,13 @@ function receiptToPrintableHtml(doc) {
   .comp { font-size: 11px; padding-left: 4mm; }
   .tot td { font-size: 15px; font-weight: 700; padding-top: 1mm; }
   .foot { text-align: center; font-size: 10px; margin-top: 3mm; }
-  /* sales#327 \u2014 the legal legend: body size and bold (Orden HAC/1177/2024 art. 20.1.b). */
-  .legend { text-align: center; font-size: 12px; font-weight: 700; letter-spacing: .04em; margin-top: 3mm; }
+  /* sales#340 \u2014 the fiscal block opens the paper; heading and legend at body size and bold (Orden
+     HAC/1177/2024 art. 20.1.b, AEAT QR spec v0.5.0 \xA73). */
+  .fiscal-qr { text-align: center; margin: 0 0 3mm; }
+  .fiscal-qr svg, .claim svg { display: block; margin: 1mm auto; }
+  .qr-heading { font-size: 12px; font-weight: 700; }
+  .legend { text-align: center; font-size: 12px; font-weight: 700; letter-spacing: .04em; }
+  .qr-note { font-size: 10px; word-break: break-word; }
   /* El bloque del claim (sales#103): al pie y separado del QR fiscal, como en el papel t\xE9rmico. */
   .claim { text-align: center; margin-top: 3mm; }
   .claim-note { font-size: 11px; font-weight: 700; }
@@ -1842,6 +2514,7 @@ function receiptToPrintableHtml(doc) {
   .claim-url { font-size: 9px; color: #333; margin-top: 1mm; word-break: break-all; }
 </style></head>
 <body>
+  ${fiscal}
   ${doc.duplicate_label ? `<div class="dup">${esc(doc.duplicate_label)}</div>` : ""}
   ${doc.title ? `<div class="doc-title">${esc(doc.title)}</div>` : ""}
   <h1>${esc(doc.business?.name || "")}</h1>
@@ -1859,8 +2532,7 @@ function receiptToPrintableHtml(doc) {
     ${pago}
   </table>
   ${doc.footer ? `<div class="foot">${esc(doc.footer)}</div>` : ""}
-  ${doc.qr_legend ? `<div class="legend">${esc(doc.qr_legend)}</div>` : ""}
-  ${doc.qr_note ? `<div class="foot">${esc(doc.qr_note)}</div>` : ""}
+  ${!fiscal && doc.qr_note ? `<div class="foot">${esc(doc.qr_note)}</div>` : ""}
   ${claim}
 </body></html>`;
 }
@@ -2701,13 +3373,13 @@ function okIcon(value) {
 }
 
 // @erplora/outfitkit/dist/ok-inline-feedback.js
-var __defProp3 = Object.defineProperty;
-var __decorateClass3 = (decorators, target, key, kind) => {
+var __defProp4 = Object.defineProperty;
+var __decorateClass4 = (decorators, target, key, kind) => {
   var result = void 0;
   for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
     if (decorator = decorators[i7])
       result = decorator(target, key, result) || result;
-  if (result) __defProp3(target, key, result);
+  if (result) __defProp4(target, key, result);
   return result;
 };
 var DEFAULT_LABELS = {
@@ -2894,676 +3566,28 @@ var OkInlineFeedback = class extends i3 {
     `;
   }
 };
-__decorateClass3([
+__decorateClass4([
   n4({ type: String, reflect: true })
 ], OkInlineFeedback.prototype, "tone");
-__decorateClass3([
+__decorateClass4([
   n4({ type: String })
 ], OkInlineFeedback.prototype, "heading");
-__decorateClass3([
+__decorateClass4([
   n4({ type: String })
 ], OkInlineFeedback.prototype, "icon");
-__decorateClass3([
+__decorateClass4([
   n4({ type: Boolean, reflect: true })
 ], OkInlineFeedback.prototype, "dismissible");
-__decorateClass3([
+__decorateClass4([
   n4({ type: Boolean, reflect: true })
 ], OkInlineFeedback.prototype, "hidden");
-__decorateClass3([
+__decorateClass4([
   n4({ attribute: false })
 ], OkInlineFeedback.prototype, "labels");
-__decorateClass3([
+__decorateClass4([
   r5()
 ], OkInlineFeedback.prototype, "hasActions");
 define("ok-inline-feedback", OkInlineFeedback);
-
-// @erplora/outfitkit/dist/ok-qr.js
-var __defProp4 = Object.defineProperty;
-var __decorateClass4 = (decorators, target, key, kind) => {
-  var result = void 0;
-  for (var i7 = decorators.length - 1, decorator; i7 >= 0; i7--)
-    if (decorator = decorators[i7])
-      result = decorator(target, key, result) || result;
-  if (result) __defProp4(target, key, result);
-  return result;
-};
-var GF_EXP = new Uint8Array(512);
-var GF_LOG = new Uint8Array(256);
-(() => {
-  let x2 = 1;
-  for (let i7 = 0; i7 < 255; i7++) {
-    GF_EXP[i7] = x2;
-    GF_LOG[x2] = i7;
-    x2 <<= 1;
-    if (x2 & 256) x2 ^= 285;
-  }
-  for (let i7 = 255; i7 < 512; i7++) GF_EXP[i7] = GF_EXP[i7 - 255];
-})();
-function gfMul(a3, b3) {
-  if (a3 === 0 || b3 === 0) return 0;
-  return GF_EXP[GF_LOG[a3] + GF_LOG[b3]];
-}
-function rsGeneratorPoly(degree) {
-  let poly = new Uint8Array([1]);
-  for (let i7 = 0; i7 < degree; i7++) {
-    const next = new Uint8Array(poly.length + 1);
-    for (let j2 = 0; j2 < poly.length; j2++) {
-      next[j2] ^= poly[j2];
-      next[j2 + 1] ^= gfMul(poly[j2], GF_EXP[i7]);
-    }
-    poly = next;
-  }
-  return poly;
-}
-function rsEncode(data, degree) {
-  const gen = rsGeneratorPoly(degree);
-  const res = new Uint8Array(data.length + degree);
-  res.set(data);
-  for (let i7 = 0; i7 < data.length; i7++) {
-    const coef = res[i7];
-    if (coef !== 0) {
-      for (let j2 = 0; j2 < gen.length; j2++) {
-        res[i7 + j2] ^= gfMul(gen[j2], coef);
-      }
-    }
-  }
-  return res.slice(data.length);
-}
-var EC_ORDER = ["L", "M", "Q", "H"];
-var TOTAL_CODEWORDS = [
-  26,
-  44,
-  70,
-  100,
-  134,
-  172,
-  196,
-  242,
-  292,
-  346,
-  404,
-  466,
-  532,
-  581,
-  655,
-  733,
-  815,
-  901,
-  991,
-  1085,
-  1156,
-  1258,
-  1364,
-  1474,
-  1588,
-  1706,
-  1828,
-  1921,
-  2051,
-  2185,
-  2323,
-  2465,
-  2611,
-  2761,
-  2876,
-  3034,
-  3196,
-  3362,
-  3532,
-  3706
-];
-var EC_BLOCKS = [
-  /* v1 */
-  [[7, 1, 19, 0, 0], [10, 1, 16, 0, 0], [13, 1, 13, 0, 0], [17, 1, 9, 0, 0]],
-  /* v2 */
-  [[10, 1, 34, 0, 0], [16, 1, 28, 0, 0], [22, 1, 22, 0, 0], [28, 1, 16, 0, 0]],
-  /* v3 */
-  [[15, 1, 55, 0, 0], [26, 1, 44, 0, 0], [18, 2, 17, 0, 0], [22, 2, 13, 0, 0]],
-  /* v4 */
-  [[20, 1, 80, 0, 0], [18, 2, 32, 0, 0], [26, 2, 24, 0, 0], [16, 4, 9, 0, 0]],
-  /* v5 */
-  [[26, 1, 108, 0, 0], [24, 2, 43, 0, 0], [18, 2, 15, 2, 16], [22, 2, 11, 2, 12]],
-  /* v6 */
-  [[18, 2, 68, 0, 0], [16, 4, 27, 0, 0], [24, 4, 19, 0, 0], [28, 4, 15, 0, 0]],
-  /* v7 */
-  [[20, 2, 78, 0, 0], [18, 4, 31, 0, 0], [18, 2, 14, 4, 15], [26, 4, 13, 1, 14]],
-  /* v8 */
-  [[24, 2, 97, 0, 0], [22, 2, 38, 2, 39], [22, 4, 18, 2, 19], [26, 4, 14, 2, 15]],
-  /* v9 */
-  [[30, 2, 116, 0, 0], [22, 3, 36, 2, 37], [20, 4, 16, 4, 17], [24, 4, 12, 4, 13]],
-  /* v10 */
-  [[18, 2, 68, 2, 69], [26, 4, 43, 1, 44], [24, 6, 19, 2, 20], [28, 6, 15, 2, 16]],
-  /* v11 */
-  [[20, 4, 81, 0, 0], [30, 1, 50, 4, 51], [28, 4, 22, 4, 23], [24, 3, 12, 8, 13]],
-  /* v12 */
-  [[24, 2, 92, 2, 93], [22, 6, 36, 2, 37], [26, 4, 20, 6, 21], [28, 7, 14, 4, 15]],
-  /* v13 */
-  [[26, 4, 107, 0, 0], [22, 8, 37, 1, 38], [24, 8, 20, 4, 21], [22, 12, 11, 4, 12]],
-  /* v14 */
-  [[30, 3, 115, 1, 116], [24, 4, 40, 5, 41], [20, 11, 16, 5, 17], [24, 11, 12, 5, 13]],
-  /* v15 */
-  [[22, 5, 87, 1, 88], [24, 5, 41, 5, 42], [30, 5, 24, 7, 25], [24, 11, 12, 7, 13]],
-  /* v16 */
-  [[24, 5, 98, 1, 99], [28, 7, 45, 3, 46], [24, 15, 19, 2, 20], [30, 3, 15, 13, 16]],
-  /* v17 */
-  [[28, 1, 107, 5, 108], [28, 10, 46, 1, 47], [28, 1, 22, 15, 23], [28, 2, 14, 17, 15]],
-  /* v18 */
-  [[30, 5, 120, 1, 121], [26, 9, 43, 4, 44], [28, 17, 22, 1, 23], [28, 2, 14, 19, 15]],
-  /* v19 */
-  [[28, 3, 113, 4, 114], [26, 3, 44, 11, 45], [26, 17, 21, 4, 22], [26, 9, 13, 16, 14]],
-  /* v20 */
-  [[28, 3, 107, 5, 108], [26, 3, 41, 13, 42], [30, 15, 24, 5, 25], [28, 15, 15, 10, 16]],
-  /* v21 */
-  [[28, 4, 116, 4, 117], [26, 17, 42, 0, 0], [28, 17, 22, 6, 23], [30, 19, 16, 6, 17]],
-  /* v22 */
-  [[28, 2, 111, 7, 112], [28, 17, 46, 0, 0], [30, 7, 24, 16, 25], [24, 34, 13, 0, 0]],
-  /* v23 */
-  [[30, 4, 121, 5, 122], [28, 4, 47, 14, 48], [30, 11, 24, 14, 25], [30, 16, 15, 14, 16]],
-  /* v24 */
-  [[30, 6, 117, 4, 118], [28, 6, 45, 14, 46], [30, 11, 24, 16, 25], [30, 30, 16, 2, 17]],
-  /* v25 */
-  [[26, 8, 106, 4, 107], [28, 8, 47, 13, 48], [30, 7, 24, 22, 25], [30, 22, 15, 13, 16]],
-  /* v26 */
-  [[28, 10, 114, 2, 115], [28, 19, 46, 4, 47], [28, 28, 22, 6, 23], [30, 33, 16, 4, 17]],
-  /* v27 */
-  [[30, 8, 122, 4, 123], [28, 22, 45, 3, 46], [30, 8, 23, 26, 24], [30, 12, 15, 28, 16]],
-  /* v28 */
-  [[30, 3, 117, 10, 118], [28, 3, 45, 23, 46], [30, 4, 24, 31, 25], [30, 11, 15, 31, 16]],
-  /* v29 */
-  [[30, 7, 116, 7, 117], [28, 21, 45, 7, 46], [30, 1, 23, 37, 24], [30, 19, 15, 26, 16]],
-  /* v30 */
-  [[30, 5, 115, 10, 116], [28, 19, 47, 10, 48], [30, 15, 24, 25, 25], [30, 23, 15, 25, 16]],
-  /* v31 */
-  [[30, 13, 115, 3, 116], [28, 2, 46, 29, 47], [30, 42, 24, 1, 25], [30, 23, 15, 28, 16]],
-  /* v32 */
-  [[30, 17, 115, 0, 0], [28, 10, 46, 23, 47], [30, 10, 24, 35, 25], [30, 19, 15, 35, 16]],
-  /* v33 */
-  [[30, 17, 115, 1, 116], [28, 14, 46, 21, 47], [30, 29, 24, 19, 25], [30, 11, 15, 46, 16]],
-  /* v34 */
-  [[30, 13, 115, 6, 116], [28, 14, 46, 23, 47], [30, 44, 24, 7, 25], [30, 59, 16, 1, 17]],
-  /* v35 */
-  [[30, 12, 121, 7, 122], [28, 12, 47, 26, 48], [30, 39, 24, 14, 25], [30, 22, 15, 41, 16]],
-  /* v36 */
-  [[30, 6, 121, 14, 122], [28, 6, 47, 34, 48], [30, 46, 24, 10, 25], [30, 2, 15, 64, 16]],
-  /* v37 */
-  [[30, 17, 122, 4, 123], [28, 29, 46, 14, 47], [30, 49, 24, 10, 25], [30, 24, 15, 46, 16]],
-  /* v38 */
-  [[30, 4, 122, 18, 123], [28, 13, 46, 32, 47], [30, 48, 24, 14, 25], [30, 42, 15, 32, 16]],
-  /* v39 */
-  [[30, 20, 117, 4, 118], [28, 40, 47, 7, 48], [30, 43, 24, 22, 25], [30, 10, 15, 67, 16]],
-  /* v40 */
-  [[30, 19, 118, 6, 119], [28, 18, 47, 31, 48], [30, 34, 24, 34, 25], [30, 20, 15, 61, 16]]
-];
-var ALIGN_POS = [
-  [],
-  [6, 18],
-  [6, 22],
-  [6, 26],
-  [6, 30],
-  [6, 34],
-  [6, 22, 38],
-  [6, 24, 42],
-  [6, 26, 46],
-  [6, 28, 50],
-  [6, 30, 54],
-  [6, 32, 58],
-  [6, 34, 62],
-  [6, 26, 46, 66],
-  [6, 26, 48, 70],
-  [6, 26, 50, 74],
-  [6, 30, 54, 78],
-  [6, 30, 56, 82],
-  [6, 30, 58, 86],
-  [6, 34, 62, 90],
-  [6, 28, 50, 72, 94],
-  [6, 26, 50, 74, 98],
-  [6, 30, 54, 78, 102],
-  [6, 28, 54, 80, 106],
-  [6, 32, 58, 84, 110],
-  [6, 30, 58, 86, 114],
-  [6, 34, 62, 90, 118],
-  [6, 26, 50, 74, 98, 122],
-  [6, 30, 54, 78, 102, 126],
-  [6, 26, 52, 78, 104, 130],
-  [6, 30, 56, 82, 108, 134],
-  [6, 34, 60, 86, 112, 138],
-  [6, 30, 58, 86, 114, 142],
-  [6, 34, 62, 90, 118, 146],
-  [6, 30, 54, 78, 102, 126, 150],
-  [6, 24, 50, 76, 102, 128, 154],
-  [6, 28, 54, 80, 106, 132, 158],
-  [6, 32, 58, 84, 110, 136, 162],
-  [6, 26, 54, 82, 110, 138, 166],
-  [6, 30, 58, 86, 114, 142, 170]
-];
-var VERSION_INFO = [
-  31892,
-  34236,
-  39577,
-  42195,
-  48118,
-  51042,
-  55367,
-  58893,
-  63784,
-  68472,
-  70749,
-  76311,
-  79154,
-  84390,
-  87683,
-  92361,
-  96236,
-  102084,
-  102881,
-  110507,
-  110734,
-  117786,
-  119615,
-  126325,
-  127568,
-  133589,
-  136944,
-  141498,
-  145311,
-  150283,
-  152622,
-  158308,
-  161089,
-  167017
-];
-var FORMAT_INFO = [
-  21522,
-  20773,
-  24188,
-  23371,
-  17913,
-  16590,
-  20375,
-  19104,
-  30660,
-  29427,
-  32170,
-  30877,
-  26159,
-  25368,
-  27713,
-  26998,
-  5769,
-  5054,
-  7399,
-  6608,
-  1890,
-  597,
-  3340,
-  2107,
-  13663,
-  12392,
-  16177,
-  14854,
-  9396,
-  8579,
-  11994,
-  11245
-];
-var EC_FORMAT_BITS = { L: 1, M: 0, Q: 3, H: 2 };
-var BitBuffer = class {
-  constructor() {
-    this.bits = [];
-  }
-  put(value, length) {
-    for (let i7 = length - 1; i7 >= 0; i7--) {
-      this.bits.push(value >>> i7 & 1);
-    }
-  }
-  get length() {
-    return this.bits.length;
-  }
-};
-function charCountBits(version) {
-  return version <= 9 ? 8 : 16;
-}
-function encodeData(bytes, version, ec) {
-  const totalCw = TOTAL_CODEWORDS[version - 1];
-  const blocks = EC_BLOCKS[version - 1][EC_ORDER.indexOf(ec)];
-  const ecPerBlock = blocks[0];
-  const numBlocks = blocks[1] + blocks[3];
-  const totalEcCw = ecPerBlock * numBlocks;
-  const dataCwCapacity = totalCw - totalEcCw;
-  const dataBitCapacity = dataCwCapacity * 8;
-  const ccBits = charCountBits(version);
-  const buf = new BitBuffer();
-  buf.put(4, 4);
-  buf.put(bytes.length, ccBits);
-  for (const b3 of bytes) buf.put(b3, 8);
-  if (buf.length > dataBitCapacity) return null;
-  const remaining = dataBitCapacity - buf.length;
-  buf.put(0, Math.min(4, remaining));
-  while (buf.length % 8 !== 0) buf.bits.push(0);
-  const padBytes = [236, 17];
-  let pi = 0;
-  while (buf.length < dataBitCapacity) {
-    buf.put(padBytes[pi], 8);
-    pi ^= 1;
-  }
-  const dataCw = new Uint8Array(dataCwCapacity);
-  for (let i7 = 0; i7 < dataCwCapacity; i7++) {
-    let byte = 0;
-    for (let j2 = 0; j2 < 8; j2++) byte = byte << 1 | buf.bits[i7 * 8 + j2];
-    dataCw[i7] = byte;
-  }
-  const dataBlocks = [];
-  const ecBlocks = [];
-  let offset = 0;
-  const layout = [];
-  for (let g3 = 0; g3 < blocks[1]; g3++) layout.push([blocks[2]]);
-  for (let g3 = 0; g3 < blocks[3]; g3++) layout.push([blocks[4]]);
-  for (const [dlen] of layout) {
-    const dblk = dataCw.slice(offset, offset + dlen);
-    offset += dlen;
-    dataBlocks.push(dblk);
-    ecBlocks.push(rsEncode(dblk, ecPerBlock));
-  }
-  const result = new Uint8Array(totalCw);
-  let ri = 0;
-  const maxData = Math.max(...dataBlocks.map((b3) => b3.length));
-  for (let i7 = 0; i7 < maxData; i7++) {
-    for (const blk of dataBlocks) if (i7 < blk.length) result[ri++] = blk[i7];
-  }
-  for (let i7 = 0; i7 < ecPerBlock; i7++) {
-    for (const blk of ecBlocks) result[ri++] = blk[i7];
-  }
-  return result;
-}
-function buildMatrix(codewords, version, ec) {
-  const size = version * 4 + 17;
-  const m4 = Array.from({ length: size }, () => new Array(size).fill(null));
-  const reserved = Array.from({ length: size }, () => new Array(size).fill(false));
-  const set = (r6, c5, v3, isReserved = true) => {
-    m4[r6][c5] = v3;
-    if (isReserved) reserved[r6][c5] = true;
-  };
-  const placeFinder = (r6, c5) => {
-    for (let dr = -1; dr <= 7; dr++) {
-      for (let dc = -1; dc <= 7; dc++) {
-        const rr = r6 + dr;
-        const cc = c5 + dc;
-        if (rr < 0 || rr >= size || cc < 0 || cc >= size) continue;
-        const inRing = dr >= 0 && dr <= 6 && (dc === 0 || dc === 6) || dc >= 0 && dc <= 6 && (dr === 0 || dr === 6);
-        const inCore = dr >= 2 && dr <= 4 && dc >= 2 && dc <= 4;
-        set(rr, cc, inRing || inCore ? 1 : 0);
-      }
-    }
-  };
-  placeFinder(0, 0);
-  placeFinder(0, size - 7);
-  placeFinder(size - 7, 0);
-  for (let i7 = 8; i7 < size - 8; i7++) {
-    const v3 = i7 % 2 === 0 ? 1 : 0;
-    set(6, i7, v3);
-    set(i7, 6, v3);
-  }
-  const aps = ALIGN_POS[version - 1];
-  for (const r6 of aps) {
-    for (const c5 of aps) {
-      if (reserved[r6][c5]) continue;
-      for (let dr = -2; dr <= 2; dr++) {
-        for (let dc = -2; dc <= 2; dc++) {
-          const ring = Math.max(Math.abs(dr), Math.abs(dc));
-          set(r6 + dr, c5 + dc, ring === 1 ? 0 : 1);
-        }
-      }
-    }
-  }
-  set(size - 8, 8, 1);
-  for (let i7 = 0; i7 < 9; i7++) {
-    if (!reserved[8][i7]) reserved[8][i7] = true;
-    if (!reserved[i7][8]) reserved[i7][8] = true;
-  }
-  for (let i7 = 0; i7 < 8; i7++) {
-    reserved[8][size - 1 - i7] = true;
-    reserved[size - 1 - i7][8] = true;
-  }
-  reserved[8][8] = true;
-  reserved[8][7] = true;
-  reserved[7][8] = true;
-  if (version >= 7) {
-    for (let i7 = 0; i7 < 6; i7++) {
-      for (let j2 = 0; j2 < 3; j2++) {
-        reserved[i7][size - 11 + j2] = true;
-        reserved[size - 11 + j2][i7] = true;
-      }
-    }
-  }
-  let bitIdx = 0;
-  const totalBits = codewords.length * 8;
-  const getBit = (idx) => idx < totalBits ? codewords[idx >> 3] >> 7 - (idx & 7) & 1 : 0;
-  let upward = true;
-  for (let col = size - 1; col > 0; col -= 2) {
-    if (col === 6) col--;
-    for (let i7 = 0; i7 < size; i7++) {
-      const row = upward ? size - 1 - i7 : i7;
-      for (let k2 = 0; k2 < 2; k2++) {
-        const c5 = col - k2;
-        if (reserved[row][c5] || m4[row][c5] !== null) continue;
-        m4[row][c5] = getBit(bitIdx);
-        bitIdx++;
-      }
-    }
-    upward = !upward;
-  }
-  const maskFns = [
-    (r6, c5) => (r6 + c5) % 2 === 0,
-    (r6) => r6 % 2 === 0,
-    (_r, c5) => c5 % 3 === 0,
-    (r6, c5) => (r6 + c5) % 3 === 0,
-    (r6, c5) => (Math.floor(r6 / 2) + Math.floor(c5 / 3)) % 2 === 0,
-    (r6, c5) => r6 * c5 % 2 + r6 * c5 % 3 === 0,
-    (r6, c5) => (r6 * c5 % 2 + r6 * c5 % 3) % 2 === 0,
-    (r6, c5) => ((r6 + c5) % 2 + r6 * c5 % 3) % 2 === 0
-  ];
-  let bestPenalty = Infinity;
-  let bestMatrix = [];
-  for (let mask = 0; mask < 8; mask++) {
-    const grid = Array.from({ length: size }, () => new Array(size).fill(false));
-    for (let r6 = 0; r6 < size; r6++) {
-      for (let c5 = 0; c5 < size; c5++) {
-        let v3 = m4[r6][c5] === 1;
-        if (!reserved[r6][c5] && maskFns[mask](r6, c5)) v3 = !v3;
-        grid[r6][c5] = v3;
-      }
-    }
-    applyFormatAndVersion(grid, reserved, version, ec, mask);
-    const penalty = scorePenalty(grid);
-    if (penalty < bestPenalty) {
-      bestPenalty = penalty;
-      bestMatrix = grid;
-    }
-  }
-  return bestMatrix;
-}
-function applyFormatAndVersion(grid, _reserved, version, ec, mask) {
-  const size = grid.length;
-  const fmt = FORMAT_INFO[EC_FORMAT_BITS[ec] << 3 | mask];
-  for (let i7 = 0; i7 < 15; i7++) {
-    const bit = (fmt >> i7 & 1) === 1;
-    if (i7 < 6) grid[i7][8] = bit;
-    else if (i7 === 6) grid[7][8] = bit;
-    else if (i7 === 7) grid[8][8] = bit;
-    else if (i7 === 8) grid[8][7] = bit;
-    else grid[8][14 - i7] = bit;
-    if (i7 < 8) grid[8][size - 1 - i7] = bit;
-    else grid[size - 15 + i7][8] = bit;
-  }
-  grid[size - 8][8] = true;
-  if (version >= 7) {
-    const vinfo = VERSION_INFO[version - 7];
-    for (let i7 = 0; i7 < 18; i7++) {
-      const bit = (vinfo >> i7 & 1) === 1;
-      const r6 = Math.floor(i7 / 3);
-      const c5 = i7 % 3;
-      grid[r6][size - 11 + c5] = bit;
-      grid[size - 11 + c5][r6] = bit;
-    }
-  }
-}
-function scorePenalty(grid) {
-  const n6 = grid.length;
-  let penalty = 0;
-  const lineRun = (get) => {
-    let p4 = 0;
-    let runColor = get(0);
-    let runLen = 1;
-    for (let i7 = 1; i7 < n6; i7++) {
-      const v3 = get(i7);
-      if (v3 === runColor) {
-        runLen++;
-      } else {
-        if (runLen >= 5) p4 += 3 + (runLen - 5);
-        runColor = v3;
-        runLen = 1;
-      }
-    }
-    if (runLen >= 5) p4 += 3 + (runLen - 5);
-    return p4;
-  };
-  for (let r6 = 0; r6 < n6; r6++) penalty += lineRun((c5) => grid[r6][c5]);
-  for (let c5 = 0; c5 < n6; c5++) penalty += lineRun((r6) => grid[r6][c5]);
-  for (let r6 = 0; r6 < n6 - 1; r6++) {
-    for (let c5 = 0; c5 < n6 - 1; c5++) {
-      const v3 = grid[r6][c5];
-      if (v3 === grid[r6][c5 + 1] && v3 === grid[r6 + 1][c5] && v3 === grid[r6 + 1][c5 + 1]) penalty += 3;
-    }
-  }
-  const pat1 = [true, false, true, true, true, false, true, false, false, false, false];
-  const pat2 = [false, false, false, false, true, false, true, true, true, false, true];
-  const matchAt = (get, start) => {
-    let a3 = true;
-    let b3 = true;
-    for (let k22 = 0; k22 < 11; k22++) {
-      const v3 = get(start + k22);
-      if (v3 !== pat1[k22]) a3 = false;
-      if (v3 !== pat2[k22]) b3 = false;
-    }
-    return a3 || b3;
-  };
-  for (let r6 = 0; r6 < n6; r6++) {
-    for (let c5 = 0; c5 <= n6 - 11; c5++) {
-      if (matchAt((i7) => grid[r6][i7], c5)) penalty += 40;
-    }
-  }
-  for (let c5 = 0; c5 < n6; c5++) {
-    for (let r6 = 0; r6 <= n6 - 11; r6++) {
-      if (matchAt((i7) => grid[i7][c5], r6)) penalty += 40;
-    }
-  }
-  let dark = 0;
-  for (let r6 = 0; r6 < n6; r6++) for (let c5 = 0; c5 < n6; c5++) if (grid[r6][c5]) dark++;
-  const ratio = dark * 100 / (n6 * n6);
-  const k2 = Math.floor(Math.abs(ratio - 50) / 5);
-  penalty += k2 * 10;
-  return penalty;
-}
-function generateQr(value, ec) {
-  const bytes = new TextEncoder().encode(value);
-  for (let version = 1; version <= 40; version++) {
-    const codewords = encodeData(bytes, version, ec);
-    if (codewords) return buildMatrix(codewords, version, ec);
-  }
-  return null;
-}
-var OkQr = class extends i3 {
-  constructor() {
-    super(...arguments);
-    this.value = "";
-    this.ec = "M";
-    this.size = 160;
-    this.color = "";
-    this.background = "";
-    this.margin = 4;
-  }
-  static {
-    this.styles = i`
-    :host {
-      /* Tokens overridables (cadena --ok-* → --ion-* → hex). */
-      --module-color: var(--ok-text, var(--ion-text-color, #000000));
-      --bg-color: var(--ok-surface, transparent);
-
-      /* Inline: ocupa solo lo que necesita su tamaño. */
-      display: inline-block;
-      line-height: 0;
-    }
-    svg {
-      display: block;
-      width: var(--ok-qr-size, 160px);
-      height: var(--ok-qr-size, 160px);
-    }
-    rect.qr-bg {
-      fill: var(--bg-color);
-    }
-    path.qr-fg {
-      fill: var(--module-color);
-      shape-rendering: crispEdges;
-    }
-  `;
-  }
-  render() {
-    if (!this.value) return b2``;
-    const level = EC_ORDER.includes(this.ec) ? this.ec : "M";
-    const matrix = generateQr(this.value, level);
-    if (!matrix) return b2``;
-    const count = matrix.length;
-    const quiet = Math.max(0, Math.floor(this.margin));
-    const dim = count + quiet * 2;
-    let d3 = "";
-    for (let r6 = 0; r6 < count; r6++) {
-      for (let c5 = 0; c5 < count; c5++) {
-        if (matrix[r6][c5]) {
-          d3 += `M${c5 + quiet} ${r6 + quiet}h1v1h-1z`;
-        }
-      }
-    }
-    const fg = this.color || void 0;
-    const bg = this.background || void 0;
-    const fgStyle = fg ? `fill:${fg}` : void 0;
-    const bgStyle = bg ? `fill:${bg}` : void 0;
-    const body = w`
-      <rect class="qr-bg" x="0" y="0" width="${dim}" height="${dim}" style="${bgStyle ?? ""}"></rect>
-      <path class="qr-fg" d="${d3}" style="${fgStyle ?? ""}"></path>
-    `;
-    return b2`
-      <svg
-        style="width:${this.size}px;height:${this.size}px"
-        viewBox="0 0 ${dim} ${dim}"
-        xmlns="http://www.w3.org/2000/svg"
-        role="img"
-        aria-label=${`C\xF3digo QR: ${this.value}`}
-        shape-rendering="crispEdges"
-      >
-        ${body}
-      </svg>
-    `;
-  }
-};
-__decorateClass4([
-  n4({ type: String })
-], OkQr.prototype, "value");
-__decorateClass4([
-  n4({ type: String })
-], OkQr.prototype, "ec");
-__decorateClass4([
-  n4({ type: Number })
-], OkQr.prototype, "size");
-__decorateClass4([
-  n4({ type: String })
-], OkQr.prototype, "color");
-__decorateClass4([
-  n4({ type: String })
-], OkQr.prototype, "background");
-__decorateClass4([
-  n4({ type: Number })
-], OkQr.prototype, "margin");
-define("ok-qr", OkQr);
 
 // @erplora/outfitkit/dist/ok-receipt.js
 var __defProp5 = Object.defineProperty;
@@ -3650,7 +3674,9 @@ var OkReceipt = class extends i3 {
     .grand td { font-size: 14px; font-weight: 700; padding-top: 1mm; }
     .pay td { font-size: 10px; }
     .footer { font-size: 10px; white-space: pre-line; }
-    .qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 1mm; margin-top: 2mm; }
+    .qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 1mm; margin-bottom: 2mm; }
+    .qr-heading { font-size: 11px; font-weight: 700; text-align: center; }
+    .qr-legend { font-size: 11px; font-weight: 700; text-align: center; letter-spacing: .04em; }
     .qr-note { font-size: 8px; text-align: center; word-break: break-word; }
     .promo-wrap { display: flex; flex-direction: column; align-items: center; gap: 1mm; margin-top: 2mm; }
     .promo-note { font-size: 9px; text-align: center; word-break: break-word; }
@@ -3672,6 +3698,7 @@ var OkReceipt = class extends i3 {
     const r6 = this.receipt;
     if (!r6) return b2`<div class="paper empty">${this.t.empty}</div>`;
     return b2`<div class="paper" part="paper">
+      ${this.renderQr(r6)}
       ${r6.title ? b2`<div class="doc-title">${r6.title}</div>` : A}
       ${this.renderHeader(r6)}
       <hr class="sep" />
@@ -3681,7 +3708,6 @@ var OkReceipt = class extends i3 {
       <hr class="sep" />
       ${this.renderTotals(r6)}
       ${r6.footer ? b2`<hr class="sep" /><div class="center footer">${r6.footer}</div>` : A}
-      ${this.renderQr(r6)}
       ${this.renderPromo(r6)}
     </div>`;
   }
@@ -3751,7 +3777,9 @@ var OkReceipt = class extends i3 {
   renderQr(r6) {
     if (!r6.qr) return A;
     return b2`<div class="qr-wrap">
+      ${r6.qr_heading ? b2`<div class="qr-heading">${r6.qr_heading}</div>` : A}
       <ok-qr .value=${r6.qr} .size=${this.qrSize} ec="M" color="#000" background="#fff"></ok-qr>
+      ${r6.qr_legend ? b2`<div class="qr-legend">${r6.qr_legend}</div>` : A}
       ${r6.qr_note ? b2`<div class="qr-note">${r6.qr_note}</div>` : A}
     </div>`;
   }
@@ -3866,11 +3894,13 @@ var OkInvoice = class extends i3 {
     .summary .grand td { font-size: 15px; font-weight: 800; border-top: 1.5px solid var(--ink); padding-top: 2mm; }
     .summary .grand td.num { color: var(--accent); }
     .muted { color: var(--muted); }
-    /* Pie: pago, notas, QR. */
+    /* Foot: payment and notes (the fiscal QR opens the sheet, sales#339). */
     .foot { margin-top: 8mm; display: flex; justify-content: space-between; gap: 2rem; align-items: flex-start; }
     .pay-box { font-size: 11px; }
     .pay-box .h { font-size: 9px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
-    .qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 1mm; }
+    .qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 1mm; margin-bottom: 6mm; }
+    .qr-heading { font-size: 12px; font-weight: 700; text-align: center; }
+    .qr-legend { font-size: 12px; font-weight: 700; text-align: center; letter-spacing: .04em; }
     .qr-note { font-size: 8px; max-width: 36mm; text-align: center; color: var(--muted); word-break: break-word; }
     .legal { margin-top: 8mm; padding-top: 3mm; border-top: 1px solid var(--rule); font-size: 9px; color: var(--muted); white-space: pre-line; text-align: center; }
     .empty { padding: 12mm; text-align: center; color: #999; font-style: italic; }
@@ -3922,6 +3952,7 @@ var OkInvoice = class extends i3 {
     const inv = this.invoice;
     if (!inv) return b2`<div class="sheet empty">${this.t.empty}</div>`;
     return b2`<div class="sheet" part="sheet">
+      ${this.renderQr(inv)}
       ${this.renderTop(inv)}
       ${this.renderBillTo(inv)}
       ${this.renderLines(inv)}
@@ -4007,17 +4038,22 @@ var OkInvoice = class extends i3 {
   }
   renderFoot(inv) {
     const hasPay = inv.payment_method || inv.payment_terms || inv.notes;
-    if (!hasPay && !inv.qr) return A;
+    if (!hasPay) return A;
     return b2`<div class="foot">
       <div class="pay-box">
         ${inv.payment_method ? b2`<div class="h">${this.t.paymentMethod}</div><div>${inv.payment_method}</div>` : A}
         ${inv.payment_terms ? b2`<div style="margin-top:2mm" class="muted">${inv.payment_terms}</div>` : A}
         ${inv.notes ? b2`<div style="margin-top:3mm">${inv.notes}</div>` : A}
       </div>
-      ${inv.qr ? b2`<div class="qr-wrap">
-            <ok-qr .value=${inv.qr} .size=${this.qrSize} ec="M"></ok-qr>
-            ${inv.qr_note ? b2`<div class="qr-note">${inv.qr_note}</div>` : A}
-          </div>` : A}
+    </div>`;
+  }
+  renderQr(inv) {
+    if (!inv.qr) return A;
+    return b2`<div class="qr-wrap">
+      ${inv.qr_heading ? b2`<div class="qr-heading">${inv.qr_heading}</div>` : A}
+      <ok-qr .value=${inv.qr} .size=${this.qrSize} ec="M"></ok-qr>
+      ${inv.qr_legend ? b2`<div class="qr-legend">${inv.qr_legend}</div>` : A}
+      ${inv.qr_note ? b2`<div class="qr-note">${inv.qr_note}</div>` : A}
     </div>`;
   }
 };
