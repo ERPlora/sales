@@ -6204,7 +6204,9 @@ function brandSvgFor(type, name) {
 
 // ui/lib/foreign-recipient.ts
 var HOME_COUNTRY = "ES";
-var NOT_A_COUNTRY = new Set("EU EZ QO UN XA XB ZZ".split(" "));
+var NOT_A_COUNTRY = new Set(
+  "EU EZ QO UN XA XB ZZ IC EA AN BU CS DD DY FX HV NH RH SU TP UK VD YD YU ZR AC AX BL CP CQ DG EH GF GP MF MQ SJ TA XK".split(" ")
+);
 var COUNTRY_CODES = (() => {
   const names = new Intl.DisplayNames(["en"], { type: "region", fallback: "none" });
   const out = [];

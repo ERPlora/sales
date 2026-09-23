@@ -8,9 +8,17 @@
 /** The till's own country: the default, and the one that needs no document kind. */
 export const HOME_COUNTRY = 'ES';
 
-/** Region codes CLDR names that are not a country a customer can be from (groupings, the unknown
- *  region, pseudo-locales). */
-const NOT_A_COUNTRY = new Set('EU EZ QO UN XA XB ZZ'.split(' '));
+/** Region codes CLDR names that are not a `CodigoPais` the AEAT accepts (`CountryType2` in
+ *  SuministroInformacion.xsd, vendored in the hub's verifactu crate): groupings and pseudo-locales
+ *  (EU, EZ, QO, UN, XA, XB, ZZ); Spanish regions, which are Spain (IC Canarias, EA Ceuta y
+ *  Melilla); dead aliases that would list a country twice (AN, BU, CS, DD, DY, FX, HV, NH, RH, SU,
+ *  TP, UK, VD, YD, YU, ZR); and territories the AEAT declares under their parent country (AC, AX,
+ *  BL, CP, CQ, DG, EH, GF, GP, MF, MQ, SJ, TA) or does not list at all (XK). Offering one spends a
+ *  chain number and comes back as a 4102. */
+const NOT_A_COUNTRY = new Set(
+  'EU EZ QO UN XA XB ZZ IC EA AN BU CS DD DY FX HV NH RH SU TP UK VD YD YU ZR AC AX BL CP CQ DG EH GF GP MF MQ SJ TA XK'
+    .split(' '),
+);
 
 /** Every ISO 3166 alpha-2 code the runtime can name, generated rather than listed by hand. */
 export const COUNTRY_CODES: readonly string[] = (() => {

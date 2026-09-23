@@ -59,3 +59,24 @@ describe('the lists the cashier picks from', () => {
     expect(countryOptions('en').find((o) => o.code === 'DE')?.name).toBe('Germany');
   });
 });
+
+describe('only countries the AEAT accepts as CodigoPais are offered (CountryType2)', () => {
+  // CLDR names 27 regions the AEAT enumeration (SuministroInformacion.xsd, vendored in the hub)
+  // does not accept. Picking one spends a chain number and comes back as a 4102.
+  it('Canarias and Ceuta y Melilla are Spain, not a foreign country', () => {
+    for (const c of ['IC', 'EA']) expect(COUNTRY_CODES, c).not.toContain(c);
+  });
+  it('territories declared under their parent country and dead aliases are not offered', () => {
+    const notAccepted = 'AC AN AX BL BU CP CQ CS DD DG DY EH FX GF GP HV MF MQ NH RH SJ SU TA TP UK VD XK YD YU ZR'.split(' ');
+    for (const c of notAccepted) expect(COUNTRY_CODES, c).not.toContain(c);
+    // Sanity: the filter must not eat real, accepted countries.
+    for (const c of ['FR', 'GB', 'US', 'CW', 'RS', 'RU', 'CD', 'TL', 'MM']) expect(COUNTRY_CODES, c).toContain(c);
+  });
+  it('no two offered countries share a name, in es or en', () => {
+    for (const lang of ['es', 'en']) {
+      const names = countryOptions(lang).map((o) => o.name);
+      const dupes = names.filter((n, i) => names.indexOf(n) !== i);
+      expect(dupes, lang).toEqual([]);
+    }
+  });
+});
