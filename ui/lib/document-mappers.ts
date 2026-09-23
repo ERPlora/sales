@@ -317,6 +317,9 @@ export interface FiscalData {
   issuer_name?: string;
   customer_name?: string;
   customer_tax_id?: string;
+  /** sales#350 — the customer's address as the invoice row stores it: the A4 and the thermal full
+   *  invoice identify the customer with it. Absent (no address, no invoice app) → not printed. */
+  customer_address?: string;
   /** sales#103 (hub#963 / ADR-0363) — autoservicio «pide tu factura»: el localizador acuñado en
    *  el mostrador contra `POST /api/hub/public-claims`. Solo sobre F2: una F1 nació completa y
    *  una F3 ya ES el canje. Ausente (sin módulo invoice, sin permiso, fallo) → el papel sale como
@@ -649,7 +652,11 @@ export function saleToInvoice(
   const taxes = parseTaxes(sale.tax_breakdown, t);
   return {
     issuer: { name: fiscal.issuer_name || header.name || settings.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || settings.issuer_tax_id || undefined },
-    customer: { name: fiscal.customer_name || sale.customer_name || 'Cliente', tax_id: fiscal.customer_tax_id || undefined },
+    customer: {
+      name: fiscal.customer_name || sale.customer_name || 'Cliente',
+      tax_id: fiscal.customer_tax_id || undefined,
+      ...(fiscal.customer_address ? { address: fiscal.customer_address } : {}),
+    },
     // sales#274 — igual que el tiquet, y aquí pesa más: en un documento titulado «Factura» el
     // número ES el documento, así que enseñar el interno de la venta mientras el de verdad se
     // escribe es peor que dejarlo en blanco un instante. `<ok-invoice>` exige la clave (a

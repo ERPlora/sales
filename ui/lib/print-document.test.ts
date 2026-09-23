@@ -12,8 +12,8 @@
 // A blank ticket that looks printed is worse than one that never prints, so the shape is pinned
 // here, key by key, against the renderer's field names.
 import { describe, expect, it } from 'vitest';
-import { orderToPrebill } from './document-mappers.js';
-import { prebillToPrintDocument, saleToPrintDocument, prebillJobId } from './print-document.js';
+import { orderToPrebill, saleToInvoice } from './document-mappers.js';
+import { prebillToPrintDocument, saleToPrintDocument, saleToInvoicePrintDocument, prebillJobId } from './print-document.js';
 import { quantityLabel } from './price-label.js';
 
 const SETTINGS = { receipt_header: 'Bar Manolo\nCalle Mayor 3, Madrid', receipt_footer: 'Gracias' };
@@ -593,5 +593,94 @@ describe('el papel nunca sale sin identificador (sales#274)', () => {
     // identifier is a ticket that does not exist.
     const doc = saleToPrintDocument(SALE, LINES, {}, { pending: true });
     expect(doc.receipt_id).toBe(SALE.sale_number);
+  });
+});
+
+// sales#350 — the thermal renderer learnt to print a FULL invoice on the 80 mm roll (ERPlora/hub#2005,
+// `escpos::check_full_invoice`) and refuses an `invoice` that lacks what makes it one: the customer's
+// tax id and the VAT broken down per rate. The ticket's document carried neither, so every invoice
+// through the thermal printer of the installed app would fail instead of coming out.
+describe('saleToInvoicePrintDocument — the full invoice, for the thermal printer (sales#350)', () => {
+  const SALE = {
+    id: 'sale-9',
+    sale_number: 'T-000900',
+    document_type: 'invoice',
+    subtotal: 1000,
+    tax_amount: 147,
+    total: 1147,
+    payment_method_name: 'Efectivo',
+    customer_name: 'Ana',
+    // Cents per rate, as `complete_sale` writes it: a 21 % line and a 5.2 % equivalence surcharge.
+    tax_breakdown: JSON.stringify({
+      '21.00': { base: 600, tax: 126 },
+      '5.20': { base: 400, tax: 21, kind: 'surcharge' },
+    }),
+  };
+  const LINES = [{ product_name: 'Menú', quantity: 1, unit_price: 1147, line_total: 1147 }];
+  const FISCAL = {
+    number: 'F2026-000012',
+    issuer_nif: 'B12345678',
+    customer_name: 'Talleres Gómez SA',
+    customer_tax_id: 'A87654321',
+    customer_address: 'Calle Mayor 3, Madrid',
+  };
+
+  it('carries every field the renderer demands of an invoice (escpos `check_full_invoice`)', () => {
+    const doc = saleToInvoicePrintDocument(SALE, LINES, SETTINGS, FISCAL);
+
+    expect(doc.vat_number, "the issuer's tax id").toBe('B12345678');
+    expect(doc.receipt_id, 'the invoice number').toBe('F2026-000012');
+    expect(doc.customer_name, 'the customer OF THE INVOICE, not the name typed on the ticket').toBe('Talleres Gómez SA');
+    expect(doc.customer_tax_id).toBe('A87654321');
+    expect(doc.customer_address).toBe('Calle Mayor 3, Madrid');
+  });
+
+  it('breaks the VAT down per rate as `{ rate, base, tax, label }`, in euros like `total`', () => {
+    const doc = saleToInvoicePrintDocument(SALE, LINES, SETTINGS, FISCAL);
+
+    expect(doc.tax_breakdown).toEqual([
+      { rate: 21, base: 6, tax: 1.26, label: 'IVA 21%' },
+      { rate: 5.2, base: 4, tax: 0.21, label: 'RE 5.2%' },
+    ]);
+  });
+
+  it('names each rate as the A4 on screen names it: paper and screen say the same thing', () => {
+    const doc = saleToInvoicePrintDocument(SALE, LINES, SETTINGS, FISCAL);
+    const a4 = saleToInvoice(SALE, LINES, SETTINGS, FISCAL);
+
+    expect(doc.tax_breakdown!.map((r) => r.label)).toEqual(a4.taxes!.map((r) => r.label));
+  });
+
+  it('is the ticket PLUS the invoice: lines, totals, payment and QR still travel', () => {
+    const doc = saleToInvoicePrintDocument(SALE, LINES, SETTINGS, { ...FISCAL, qr: 'https://prewww2.aeat.es/x' });
+    const ticket = saleToPrintDocument(SALE, LINES, SETTINGS, { ...FISCAL, qr: 'https://prewww2.aeat.es/x' });
+
+    expect(doc).toMatchObject({ ...ticket, customer_name: 'Talleres Gómez SA' });
+  });
+
+  it('no address on the invoice → no `customer_address` key (it is optional, never an empty line)', () => {
+    const doc = saleToInvoicePrintDocument(SALE, LINES, SETTINGS, { ...FISCAL, customer_address: undefined });
+
+    expect('customer_address' in doc).toBe(false);
+  });
+
+  it('no customer tax id → no `customer_tax_id` key: the hub refuses it naming the field, never a mute paper', () => {
+    const doc = saleToInvoicePrintDocument(SALE, LINES, SETTINGS, { ...FISCAL, customer_tax_id: undefined });
+
+    expect('customer_tax_id' in doc).toBe(false);
+  });
+
+  it('no customer name anywhere → no `customer_name`: never the A4 placeholder «Cliente» posing as one', () => {
+    const doc = saleToInvoicePrintDocument({ ...SALE, customer_name: undefined }, LINES, SETTINGS, { ...FISCAL, customer_name: undefined });
+
+    expect(doc.customer_name).toBeUndefined();
+  });
+
+  it('a ticket carries NONE of the invoice fields: its paper does not change a byte', () => {
+    const doc = saleToPrintDocument(SALE, LINES, SETTINGS, FISCAL) as Record<string, unknown>;
+
+    expect(doc.customer_tax_id).toBeUndefined();
+    expect(doc.customer_address).toBeUndefined();
+    expect(doc.tax_breakdown).toBeUndefined();
   });
 });

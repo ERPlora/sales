@@ -199,6 +199,7 @@
     "loadingDocument": "Loading document…",
     "issuingReceipt": "Issuing the receipt…",
     "issuingInvoice": "Issuing the invoice…",
+    "invoiceMissingCustomerTaxId": "This invoice has no customer tax ID: the thermal printer cannot print it as a full invoice.",
     "noSale": "No sale.",
     "errorDocument": "Error loading the document",
     "document": "Document",

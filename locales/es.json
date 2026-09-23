@@ -200,6 +200,7 @@
     "loadingDocument": "Cargando documento…",
     "issuingReceipt": "Emitiendo el tique…",
     "issuingInvoice": "Emitiendo la factura…",
+    "invoiceMissingCustomerTaxId": "Esta factura no tiene el NIF del cliente: la impresora de tiques no puede sacarla como factura completa.",
     "noSale": "Sin venta.",
     "errorDocument": "Error cargando el documento",
     "document": "Documento",

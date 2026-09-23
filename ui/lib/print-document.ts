@@ -20,7 +20,7 @@
 //
 // The field names are the wire contract of `escpos::render_receipt` / `render_prebill`. Changing
 // one here without changing it there prints a document with a missing field, silently.
-import { orderToPrebill, saleToReceipt, claimPrintFields, paperNote } from './document-mappers.js';
+import { orderToPrebill, saleToReceipt, saleToInvoice, claimPrintFields, paperNote } from './document-mappers.js';
 import { modifierIdentity, modifierLabel } from './paper-modifiers.js';
 import { comboIdentity, componentLabel, type PrintedCombo } from './paper-combos.js';
 import type { PrebillLine, PrebillValuation, SaleRow, SaleLineRow, SaleSettings, FiscalData } from './document-mappers.js';
@@ -151,6 +151,22 @@ export interface PrintDocument extends Record<string, unknown> {
   receipt_footer?: string;
   /** Printed at the foot of a bill: «this is not an invoice» (ADR-0141). */
   notice?: string;
+  /** sales#350 — only on a full invoice (`documentType: 'invoice'`): the customer's tax id, printed
+   *  under their name. Required by the renderer for an invoice (ERPlora/hub#2005). */
+  customer_tax_id?: string;
+  /** sales#350 — optional, printed under the customer's tax id. */
+  customer_address?: string;
+  /** sales#350 — the VAT broken down per rate, required by the renderer for an invoice: one row per
+   *  rate, `rate` in percent, `base`/`tax` in the unit of `total`, `label` naming the row. */
+  tax_breakdown?: PrintTaxRow[];
+}
+
+/** One row of a full invoice's VAT breakdown, as `escpos::render_tax_breakdown` reads it. */
+export interface PrintTaxRow {
+  rate: number;
+  base: number;
+  tax: number;
+  label?: string;
 }
 
 /**
@@ -234,6 +250,46 @@ export function saleToPrintDocument(
     // solo los campos presentes, así que un tique sin claim sale byte a byte como hoy.
     ...claimPrintFields(fiscal, t),
     receipt_footer: screen.footer,
+  };
+}
+
+/**
+ * Sale in invoice format → **the full invoice**, for the thermal printer (sales#350).
+ *
+ * The renderer prints a `documentType: 'invoice'` as a full invoice on the 80 mm roll and REFUSES
+ * one without the customer's tax id or the VAT broken down per rate (ERPlora/hub#2005,
+ * `escpos::check_full_invoice`): paper that is not an invoice is not cut as if it were. So this is
+ * the ticket's document plus what makes it an invoice, taken from `saleToInvoice` — the A4 the
+ * screen paints — so the roll and the sheet name the same customer and the same rates.
+ *
+ * A missing tax id is left missing, never filled with a blank: the hub then fails the job naming
+ * the field, and the viewer warns before printing. A hub that predates hub#2005 ignores the extra
+ * keys and prints the ticket it prints today.
+ */
+export function saleToInvoicePrintDocument(
+  sale: SaleRow,
+  lines: SaleLineRow[],
+  settings: SaleSettings = {},
+  fiscal: FiscalData = {},
+  locale = 'es',
+  fallbackName?: string,
+  t?: (key: string) => string,
+): PrintDocument {
+  const ticket = saleToPrintDocument(sale, lines, settings, fiscal, locale, fallbackName, t);
+  const invoice = saleToInvoice(sale, lines, settings, { ...fiscal, pending: false }, locale, fallbackName, t);
+  const decimals = invoice.decimals;
+  return {
+    ...ticket,
+    ...(invoice.customer.tax_id ? { customer_tax_id: invoice.customer.tax_id } : {}),
+    ...(invoice.customer.address ? { customer_address: invoice.customer.address } : {}),
+    tax_breakdown: (invoice.taxes || []).map((row) => ({
+      // A rate key that is not a number keeps its row: `label` carries it, and the renderer prints
+      // the label instead of the rate.
+      rate: row.rate ?? 0,
+      base: euros(row.base, decimals)!,
+      tax: euros(row.amount, decimals)!,
+      ...(row.label ? { label: row.label } : {}),
+    })),
   };
 }
 

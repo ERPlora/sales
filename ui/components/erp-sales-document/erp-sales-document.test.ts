@@ -1131,3 +1131,99 @@ describe('the paper follows the screen: an invoice prints the A4 invoice (sales#
     expect(el.printableHtml()).not.toContain('size: A4');
   });
 });
+
+// sales#350 — the thermal printer of the installed app prints a full invoice now (ERPlora/hub#2005)
+// and refuses an `invoice` without the customer's tax id and the breakdown per rate. The viewer's
+// structured document is what reaches it, through the Print button and the list's reprint alike.
+describe('an invoice reaches the thermal printer as a full invoice (sales#350)', () => {
+  type Viewer = HTMLElement & Record<string, unknown> & {
+    format?: 'ticket' | 'invoice';
+    printableDocument(o?: { duplicate?: boolean }): Record<string, unknown>;
+    updateComplete: Promise<unknown>;
+  };
+
+  async function mountInvoice(fiscal: Record<string, unknown>, sale: Record<string, unknown> = { document_type: 'invoice' }) {
+    const el = (await montarVisor()) as unknown as Viewer;
+    el.sale = {
+      ...(el.sale as Record<string, unknown>),
+      tax_breakdown: JSON.stringify({ '10.00': { base: 327, tax: 33 } }),
+      ...sale,
+    };
+    el.fiscal = fiscal;
+    await el.updateComplete;
+    return el;
+  }
+
+  const FULL = {
+    number: 'F2026-000012', issuer_nif: 'B12345678', customer_name: 'Talleres Gómez SA',
+    customer_tax_id: 'A87654321', customer_address: 'Calle Mayor 3, Madrid',
+  };
+
+  it('the structured document of an invoice carries the customer tax id, address and breakdown', async () => {
+    const el = await mountInvoice(FULL);
+    const doc = el.printableDocument();
+
+    expect(doc.customer_name).toBe('Talleres Gómez SA');
+    expect(doc.customer_tax_id).toBe('A87654321');
+    expect(doc.customer_address).toBe('Calle Mayor 3, Madrid');
+    expect(doc.tax_breakdown).toEqual([{ rate: 10, base: 3.27, tax: 0.33, label: 'IVA 10%' }]);
+  });
+
+  it('a reprinted invoice is still a full invoice, marked duplicate (hub#1931)', async () => {
+    const el = await mountInvoice(FULL);
+    const doc = el.printableDocument({ duplicate: true });
+
+    expect(doc.duplicate).toBe(true);
+    expect(doc.customer_tax_id).toBe('A87654321');
+  });
+
+  it('a ticket sends none of it: the receipt paper does not change', async () => {
+    const el = await mountInvoice(FULL, { document_type: 'ticket' });
+    const doc = el.printableDocument();
+
+    expect(doc.customer_tax_id).toBeUndefined();
+    expect(doc.tax_breakdown).toBeUndefined();
+  });
+
+  it('the invoice has no customer tax id → the screen warns before printing', async () => {
+    const el = await mountInvoice({ number: 'F2026-000012', customer_name: 'Talleres Gómez SA' });
+    const warning = el.shadowRoot!.querySelector('[data-testid="invoice-missing-tax-id"]');
+
+    expect(warning, 'said on screen, not only when the printer refuses it').not.toBeNull();
+    expect(warning!.textContent).toContain('ui.invoiceMissingCustomerTaxId');
+  });
+
+  it('an invoice WITH the customer tax id shows no warning', async () => {
+    const el = await mountInvoice(FULL);
+    expect(el.shadowRoot!.querySelector('[data-testid="invoice-missing-tax-id"]')).toBeNull();
+  });
+
+  it('a ticket never warns about a customer tax id', async () => {
+    const el = await mountInvoice({}, { document_type: 'ticket' });
+    expect(el.shadowRoot!.querySelector('[data-testid="invoice-missing-tax-id"]')).toBeNull();
+  });
+
+  it('while the invoice is still being written, no warning: the tax id is on its way (sales#274)', async () => {
+    const el = await mountInvoice({ pending: true });
+    expect(el.shadowRoot!.querySelector('[data-testid="invoice-missing-tax-id"]')).toBeNull();
+  });
+
+  it('reads the customer address from the invoice row (`invoice.by_source`)', async () => {
+    installDocDouble({
+      'sales.get': [{ id: 's1', sale_number: 'T-1', subtotal: 327, tax_amount: 33, total: 360, document_type: 'invoice',
+        tax_breakdown: JSON.stringify({ '10.00': { base: 327, tax: 33 } }), created_at: '2026-07-16T19:00:30Z' }],
+      'sales.lines': [{ product_name: 'Cafe', quantity: 1, unit_price: 360, line_total: 360 }],
+      'invoice.by_source': [{ id: 'inv1', invoice_type: 'F1', number: 'F1-1', customer_name: 'Talleres Gómez SA',
+        customer_tax_id: 'A87654321', customer_address: 'Calle Mayor 3, Madrid' }],
+      'verifactu.records.by_invoice': [{ qr_url: 'https://aeat/qr', aeat_csv: '' }],
+    });
+    await import('./erp-sales-document');
+    const el = document.createElement('erp-sales-document') as unknown as Viewer;
+    el.setAttribute('sale-id', 's1');
+    document.body.appendChild(el);
+    await new Promise((r) => setTimeout(r, 50));
+    await el.updateComplete;
+
+    expect(el.printableDocument().customer_address).toBe('Calle Mayor 3, Madrid');
+  });
+});
