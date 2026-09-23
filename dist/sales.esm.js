@@ -2437,7 +2437,7 @@ __decorateClass3([
 define("ok-qr", OkQr);
 
 // ui/lib/receipt-html.ts
-var FISCAL_QR_PX = 114;
+var FISCAL_QR_PX = 132;
 var CLAIM_QR_PX = 90;
 function esc(v3) {
   return String(v3 ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
