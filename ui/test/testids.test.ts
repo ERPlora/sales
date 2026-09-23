@@ -133,7 +133,7 @@ const COVERED: Record<string, { prefix: string; contract: string[] }> = {
       'pos-discount-mode', 'pos-discount-mode-amount', 'pos-discount-mode-percent',
       'pos-discount-remove', 'pos-discount-scrim',
       'pos-invoice-recipient-capture',
-      'pos-limit-address', 'pos-limit-name', 'pos-limit-tax-id',
+      'pos-limit-address', 'pos-limit-country', 'pos-limit-id-type', 'pos-limit-name', 'pos-limit-tax-id',
       'pos-line-staff',
       'pos-modifier-close', 'pos-modifier-confirm', 'pos-modifier-scrim',
       'pos-more-fullscreen', 'pos-more-menu', 'pos-more-scrim',
