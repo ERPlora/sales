@@ -382,7 +382,7 @@
     "limitChargeBlocked": "Faltan los datos del cliente",
     "invoiceRecipientTitle": "Una factura necesita los datos del cliente",
     "invoiceRecipientBody": "Rellena el nombre, el NIF y la dirección. Si el cliente no necesita factura, elige Tique.",
-    "tenderedMissing": "Teclea el importe entregado",
+    "tenderedMissing": "Marca en el teclado el importe entregado",
     "tenderedShort": "Lo entregado no cubre el total",
     "colDate": "Fecha",
     "rangeLabel": "Periodo",
