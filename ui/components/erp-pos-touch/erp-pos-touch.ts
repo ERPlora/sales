@@ -23,6 +23,9 @@ import { splitPayload } from '../../lib/split-selection.js';
 import { isOverSimplifiedLimit, ticketIsBlocked, recipientIsComplete } from '../../lib/simplified-limit.js';
 import { forgetCurrentCheck, rememberCurrentCheck, resolveCurrentCheck } from '../../lib/current-check.js';
 import { brandSvgFor } from '../../lib/brand-icons.js';
+import {
+  HOME_COUNTRY, ID_TYPE_OPTIONS, countryFromDetail, countryOptions, defaultIdType, recipientCountryPayload,
+} from '../../lib/foreign-recipient.js';
 import { priceLabel } from '../../lib/price-label.js';
 // sales#28 — the OPTIONAL scale contract. `sales` never talks to hardware: whoever CAN weigh
 // (`erplora-app` → `crates/peripherals`, ADR-0196/0204) dispatches one `window` event and this
@@ -1277,6 +1280,10 @@ export class ErpPosTouch extends LitElement {
    *  techo de la simplificada, y el botón de cobrar se enciende con ellos. */
   @state() private customerTaxId = '';
   @state() private customerAddress = '';
+  /** sales#332: where the recipient is from (ISO alpha-2) and the kind of document their tax id
+   *  is (AEAT IDType). Spain needs no kind; abroad it is pre-set by `defaultIdType`. */
+  @state() private customerCountry = HOME_COUNTRY;
+  @state() private customerIdType = '';
   /** Techo de la factura simplificada EN CÉNTIMOS, tal y como lo responde el core
    *  (`hub.fiscal.limits`, hub#297). `null` = este país no pone techo, y entonces aquí no pasa
    *  nada nunca. El número NO se escribe en este módulo: un TPV no sabe de derecho fiscal español,
@@ -1553,12 +1560,13 @@ export class ErpPosTouch extends LitElement {
   private readonly onCustomerContext = (e: Event) => {
     const d = (e as CustomEvent<{
       customer_id: string | null; customer_name?: string;
-      customer_tax_id?: string; customer_address?: string;
+      customer_tax_id?: string; customer_address?: string; customer_country?: string;
     }>).detail ?? { customer_id: null };
     this.customerId = d.customer_id ?? undefined;
     this.customerName = d.customer_name ?? '';
     this.customerTaxId = d.customer_tax_id ?? '';
     this.customerAddress = d.customer_address ?? '';
+    this.setCustomerCountry(countryFromDetail(d.customer_country));
     // ADR-0141: el pedido NO guarda el cliente y `sales` NO llama a `customers` (sería depender de
     // él, y una tienda de alimentación vende sin clientes). La junction la escribe SU dueño al
     // recibir `erp:order-linked`, igual que hace `tables`. Aquí solo se guarda el SNAPSHOT FISCAL
@@ -4260,6 +4268,8 @@ export class ErpPosTouch extends LitElement {
         // NIF ni dirección aunque el cliente los tenga en su ficha.
         customer_tax_id: this.customerTaxId,
         customer_address: this.customerAddress,
+        // sales#332: a customer from abroad is declared by country + kind of document (IDOtro).
+        ...recipientCountryPayload(this.customerCountry, this.customerIdType),
         // Tipo de documento fiscal (ADR-0140): viaja ATÓMICAMENTE con la venta; `invoice` lo lee del
         // evento para elegir F1 (completa) vs F2 (simplificada). Reemplaza al `set_document_type` retro.
         document_type: this.docFormat,
@@ -4326,6 +4336,7 @@ export class ErpPosTouch extends LitElement {
       this.tableId = undefined; this.tableLabel = '';
       this.customerId = undefined; this.customerName = '';
       this.customerTaxId = ''; this.customerAddress = '';
+      this.setCustomerCountry(HOME_COUNTRY);
       // sales#179: the next check does not inherit the previous waiter — it goes back to the
       // default (whoever holds the session), which is what a till does when a check closes.
       this.staffId = undefined; this.staffName = '';
@@ -4510,6 +4521,31 @@ export class ErpPosTouch extends LitElement {
    *
    *  They come FILLED IN when a customer is assigned (`sales.pos.assign` → ADR-0132), so the usual
    *  case — a business customer already on file — is read and charge. */
+  /** sales#332 — a new country resets the kind of document to the usual one there (none in Spain). */
+  private setCustomerCountry(country: string) {
+    this.customerCountry = country;
+    this.customerIdType = defaultIdType(country);
+  }
+
+  /** sales#332 — the recipient's country and, only abroad, what their number is. The country
+   *  decides (Odoo `l10n_es_edi_verifactu`): a Spanish customer is never asked a document kind. */
+  private renderRecipientCountry() {
+    const lang = (erplora() as unknown as I18nClient).locale || 'en';
+    return html`
+        <ion-select label=${t('ui.limitFieldCountry')} label-placement="stacked" interface="popover"
+                    data-testid="pos-limit-country" .value=${this.customerCountry}
+                    @ionChange=${(e: CustomEvent<{ value?: string }>) => this.setCustomerCountry(String(e.detail?.value ?? HOME_COUNTRY))}>
+          ${countryOptions(lang).map((o) => html`<ion-select-option value=${o.code}>${o.name}</ion-select-option>`)}
+        </ion-select>
+        ${this.customerCountry === HOME_COUNTRY
+          ? nothing
+          : html`<ion-select label=${t('ui.limitFieldIdType')} label-placement="stacked" interface="popover"
+                    data-testid="pos-limit-id-type" .value=${this.customerIdType}
+                    @ionChange=${(e: CustomEvent<{ value?: string }>) => { this.customerIdType = String(e.detail?.value ?? ''); }}>
+              ${ID_TYPE_OPTIONS.map((c) => html`<ion-select-option value=${c}>${t(`ui.idType${c}`)}</ion-select-option>`)}
+            </ion-select>`}`;
+  }
+
   private renderRecipientCapture(reason: 'limit' | 'invoice') {
     const done = recipientIsComplete(this.limitState);
     const pending = reason === 'limit'
@@ -4526,6 +4562,7 @@ export class ErpPosTouch extends LitElement {
         <ion-input label=${t('ui.limitFieldName')} label-placement="stacked" .value=${this.customerName}
                    data-testid="pos-limit-name" autocomplete="off"
                    @ionInput=${(e: CustomEvent) => { this.customerName = String((e.target as HTMLInputElement).value ?? ''); }}></ion-input>
+        ${this.renderRecipientCountry()}
         <ion-input label=${t('ui.limitFieldTaxId')} label-placement="stacked" .value=${this.customerTaxId}
                    data-testid="pos-limit-tax-id" autocomplete="off"
                    @ionInput=${(e: CustomEvent) => { this.customerTaxId = String((e.target as HTMLInputElement).value ?? ''); }}></ion-input>
