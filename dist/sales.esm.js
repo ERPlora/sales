@@ -5400,7 +5400,7 @@ var ErpSalesDocument = class extends i3 {
    * its own at checkout mounts this viewer hidden, with `issuing`, and has no screen to watch.
    *
    * `true` = the document is final: the VeriFactu QR arrived, or nothing more will come (no invoicing
-   * or VeriFactu app, or a reprint, which never waits). `false` = it was not: the `fiscalWaitMs`
+   * or VeriFactu app, or a viewer opened without `issuing`, which never waits). `false` = it was not: the `fiscalWaitMs`
    * ceiling ran out with the invoice or its record still missing (a slow AEAT), the sale failed to
    * load, or the viewer was removed. Either way `printableDocument()` then answers the best paper
    * there is; `false` tells the caller that paper lacks something a reprint will carry.
