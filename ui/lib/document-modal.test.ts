@@ -162,6 +162,69 @@ describe('imprimir el documento', () => {
 // venta es INMUTABLE — su huella sería constante y el dedup se tragaría todas las copias. La
 // clave de una reimpresión es única por INTENTO: cada pulsación de IMPRIMIR es una petición
 // explícita de otra copia.
+// sales#306 — the screen showed the A4 invoice and the Print button sent a thermal ticket. An
+// invoice goes out as what it is: an A4 `invoice` (the hub door sends A4 to the print dialog / PDF),
+// and there that dialog opening IS the paper coming out — it is not a failure to warn about.
+describe('imprimir una factura: sale la A4 (sales#306)', () => {
+  interface PrintReq { documentType?: string; format?: string; data?: Record<string, unknown>; html?: string }
+  let enviados: PrintReq[];
+  let avisos: unknown[];
+  let resultado: { via: string; error?: string };
+
+  function montarFactura() {
+    const modal = montar('venta-1');
+    const visor = modal.querySelector('erp-sales-document') as unknown as Record<string, unknown>;
+    visor.sale = { id: 'venta-1', sale_number: 'T-42', subtotal: 327, tax_amount: 33, total: 360, payment_method_name: 'Efectivo', document_type: 'invoice' };
+    visor.lines = [{ product_name: 'Cafe solo', quantity: 2, unit_price: 180, line_total: 360 }];
+    visor.settings = {};
+    return modal;
+  }
+
+  async function imprimir(modal: Element) {
+    modal.querySelector<HTMLElement>('ion-footer ion-button.print')!.click();
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  beforeEach(() => {
+    enviados = [];
+    avisos = [];
+    resultado = { via: 'browser' };
+    const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
+    sdk.print = async (req: PrintReq) => { enviados.push(req); return resultado; };
+    sdk.notify = (n: unknown) => avisos.push(n);
+  });
+
+  it('manda la factura A4: documentType invoice, formato a4 y el HTML de la A4', async () => {
+    await imprimir(montarFactura());
+    expect(enviados).toHaveLength(1);
+    expect(enviados[0].documentType).toBe('invoice');
+    expect(enviados[0].format).toBe('a4');
+    expect(enviados[0].html).toContain('size: A4');
+    expect(enviados[0].data, 'a thermal printer still gets a structured document, never a blank one').toBeTruthy();
+  });
+
+  it('la A4 por el diálogo del navegador ES el papel: no avisa de fallo', async () => {
+    await imprimir(montarFactura());
+    expect(avisos).toEqual([]);
+  });
+
+  it('la A4 que no sale por ningún sitio (app instalada) sí avisa', async () => {
+    resultado = { via: 'none', error: 'la app instalada no imprime por el navegador' };
+    await imprimir(montarFactura());
+    expect(avisos).toHaveLength(1);
+  });
+
+  it('un tique sigue yendo como tique térmico', async () => {
+    const modal = montarFactura();
+    const visor = modal.querySelector('erp-sales-document') as unknown as Record<string, unknown>;
+    visor.sale = { ...(visor.sale as Record<string, unknown>), document_type: 'ticket' };
+    await imprimir(modal);
+    expect(enviados[0].documentType).toBe('receipt');
+    expect(enviados[0].format).toBe('receipt');
+    expect(avisos, 'a ticket that only reached the browser did not reach a printer').toHaveLength(1);
+  });
+});
+
 describe('reimprimir: cada intento es un trabajo nuevo (sales#92)', () => {
   interface PrintReq { jobId?: string }
   let enviados: PrintReq[];

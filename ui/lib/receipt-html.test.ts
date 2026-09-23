@@ -348,3 +348,16 @@ describe('the duplicate mark (hub#1931)', () => {
     expect(receiptToPrintableHtml(doc)).not.toContain('class="dup"');
   });
 });
+
+// sales#306 — the module's own fallback (no hub print door): the frame is as wide as the paper.
+describe('printHtmlInIframe — the frame takes the paper width', () => {
+  it('80 mm for a ticket, 210 mm for an A4 invoice', async () => {
+    const { printHtmlInIframe } = await import('./receipt-html');
+    document.body.innerHTML = '';
+    printHtmlInIframe('<p>t</p>');
+    expect(document.querySelector('iframe')!.style.width).toBe('80mm');
+    document.body.innerHTML = '';
+    printHtmlInIframe('<p>f</p>', document, 'a4');
+    expect(document.querySelector('iframe')!.style.width).toBe('210mm');
+  });
+});

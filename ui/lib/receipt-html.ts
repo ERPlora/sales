@@ -266,10 +266,12 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
  * `erplora.print` se usa ESA puerta —que además intenta el Bridge primero—; esto es el último
  * recurso cuando el módulo corre sin shell (preview del toolkit, tests).
  */
-export function printHtmlInIframe(html: string, doc: Document = document): void {
+export function printHtmlInIframe(html: string, doc: Document = document, format: 'receipt' | 'a4' = 'receipt'): void {
   const frame = doc.createElement('iframe');
   frame.setAttribute('aria-hidden', 'true');
-  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:80mm;height:1px;border:0;visibility:hidden;';
+  // sales#306 — the frame is as wide as the paper: an A4 invoice in an 80 mm frame comes out narrow.
+  const width = format === 'a4' ? '210mm' : '80mm';
+  frame.style.cssText = `position:fixed;right:0;bottom:0;width:${width};height:1px;border:0;visibility:hidden;`;
   doc.body.appendChild(frame);
   const w = frame.contentWindow; const d = frame.contentDocument;
   if (!w || !d) { frame.remove(); return; }

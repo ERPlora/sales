@@ -4,6 +4,7 @@ import { define } from '@erplora/outfitkit/define';
 import '@erplora/outfitkit/ok-inline-feedback';
 import '@erplora/outfitkit/ok-receipt';
 import { receiptToPrintableHtml } from '../../lib/receipt-html.js';
+import { invoiceToPrintableHtml } from '../../lib/invoice-html.js';
 // El mismo tiquet, en la forma que lee la impresora térmica (sales#79).
 import { saleToPrintDocument, type PrintDocument } from '../../lib/print-document.js';
 import { markOriginalPrinted, originalPrinted } from '../../lib/original-ticket.js';
@@ -441,6 +442,18 @@ export class ErpSalesDocument extends LitElement {
   printableHtml({ duplicate = false }: { duplicate?: boolean } = {}): string {
     if (!this.sale) return '';
     const t = (k: string): string => erplora().t(CATALOG, k);
+    // sales#306 — the paper is the document the screen shows: an invoice prints the A4 invoice
+    // (customer tax id, breakdown per rate), never the ticket a full invoice is not.
+    if (this.printKind().documentType === 'invoice') {
+      return invoiceToPrintableHtml({
+        ...saleToInvoice(
+          this.sale, this.lines || [], this.settings || {}, this.fiscalForPaper(), erplora().locale,
+          t('ui.docDefaultBusiness'), t,
+        ),
+        labels: invoiceLabels(t),
+        ...(duplicate ? { duplicate_label: t('ui.docDuplicate') } : {}),
+      });
+    }
     // sales#103: si aún no hay claim (Outbox lento, primera carga), se reintenta best-effort —
     // la puerta es idempotente; esta copia saldrá sin él, la siguiente lo lleva.
     if (this.claimInvoiceId && !this.claim && !this.claimFlight) void this.ensureClaim(this.claimInvoiceId);
@@ -459,6 +472,23 @@ export class ErpSalesDocument extends LitElement {
       labels: { subtotal: t('ui.docSubtotal'), total: t('ui.docTotal'), change: t('ui.docChange'), document: t('ui.document') },
       ...(duplicate ? { duplicate_label: t('ui.docDuplicate') } : {}),
     });
+  }
+
+  /**
+   * sales#306 — how this document goes through the hub's print door: the format the SCREEN
+   * resolves (`render()`), so the paper can never be another document than the one on screen. An
+   * invoice is an A4 `invoice` (the door sends it to the print dialog / PDF); a ticket, a thermal
+   * `receipt`.
+   */
+  /** The document this viewer shows: forced by `format`, else the sale's, else the settings'. */
+  private resolvedFormat(): 'ticket' | 'invoice' {
+    return this.format || (this.sale ? resolveFormat(this.sale, this.settings || {}) : 'ticket');
+  }
+
+  printKind(): { documentType: 'receipt' | 'invoice'; format: 'receipt' | 'a4' } {
+    return this.resolvedFormat() === 'invoice'
+      ? { documentType: 'invoice', format: 'a4' }
+      : { documentType: 'receipt', format: 'receipt' };
   }
 
   /**
@@ -499,7 +529,7 @@ export class ErpSalesDocument extends LitElement {
 
     const settings = this.settings || {};
     const lines = this.lines || [];
-    const fmt = this.format || resolveFormat(this.sale, settings);
+    const fmt = this.resolvedFormat();
 
     // sales#308 — just charged and still being issued: a loader, never a half-built document.
     if (this.awaitingFiscal) {
