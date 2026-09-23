@@ -70,6 +70,9 @@ export interface PrintableReceipt {
   currency?: string;
   footer?: string;
   qr_note?: string;
+  /** sales#327 — «VERI*FACTU», the legal legend of the fiscal QR. This paper draws no QR (see
+   *  `claim_qr_data`), but the legend still has to be on it, at the size of the rest of the data. */
+  qr_legend?: string;
   /** sales#103 (ADR-0363) — «pide tu factura»: the second QR's absolute URL. The thermal
    *  renderer prints it as a QR; THIS paper has no QR library (same as the fiscal QR, which here
    *  only prints its note), so the block is legend + locator in text + the URL to type. */
@@ -194,6 +197,8 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
   .comp { font-size: 11px; padding-left: 4mm; }
   .tot td { font-size: 15px; font-weight: 700; padding-top: 1mm; }
   .foot { text-align: center; font-size: 10px; margin-top: 3mm; }
+  /* sales#327 — the legal legend: body size and bold (Orden HAC/1177/2024 art. 20.1.b). */
+  .legend { text-align: center; font-size: 12px; font-weight: 700; letter-spacing: .04em; margin-top: 3mm; }
   /* El bloque del claim (sales#103): al pie y separado del QR fiscal, como en el papel térmico. */
   .claim { text-align: center; margin-top: 3mm; }
   .claim-note { font-size: 11px; font-weight: 700; }
@@ -218,6 +223,7 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
     ${pago}
   </table>
   ${doc.footer ? `<div class="foot">${esc(doc.footer)}</div>` : ''}
+  ${doc.qr_legend ? `<div class="legend">${esc(doc.qr_legend)}</div>` : ''}
   ${doc.qr_note ? `<div class="foot">${esc(doc.qr_note)}</div>` : ''}
   ${claim}
 </body></html>`;

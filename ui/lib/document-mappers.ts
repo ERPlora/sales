@@ -334,6 +334,18 @@ export interface FiscalData {
   pending?: boolean;
 }
 
+/** sales#327 — the legal legend beside the fiscal QR (RD 1619/2012 art. 6.5.b; 7.5 for the
+ *  simplified invoice a ticket is). ERPlora remits every record to the AEAT — there is no
+ *  NO-VERI*FACTU mode, a record that cannot leave now leaves later — so it goes with EVERY fiscal
+ *  QR. It is the short form the law admits and is the same in every language: not a catalog key. */
+export const VERIFACTU_LEGEND = 'VERI*FACTU';
+
+/** The legend travels with the fiscal QR and only with it: no QR (a bill, a sale whose record is
+ *  not written yet) → no legend. Never folded into `qr_note`, which changes when the CSV lands. */
+function qrLegend(fiscal: FiscalData): { qr_legend?: string } {
+  return fiscal.qr ? { qr_legend: VERIFACTU_LEGEND } : {};
+}
+
 /** sales#103 — la leyenda del segundo QR. Cadena visible → catálogo `en` Y `es` (ADR-0055/0199);
  *  este inglés canónico es solo el respaldo de las llamadas sin traductor (tests, integraciones). */
 const CLAIM_NOTE_FALLBACK = 'Get your invoice';
@@ -453,7 +465,13 @@ export type PaperReceiptData = ReceiptData & {
    *  with `labels.customer`, so whoever paints it has to ask for the right label
    *  (`receiptLabels(t, doc)`); the HTML paper does the same through `customer_label`. */
   customer_is_table?: boolean;
+  /** sales#327 — «VERI*FACTU» under the fiscal QR (`<ok-receipt>` `qr_legend`, outfitkit ≥ the
+   *  release that adds it; an older one simply does not paint it). */
+  qr_legend?: string;
 };
+
+/** `InvoiceData` plus the legal legend of its QR (sales#327), same contract as the ticket. */
+export type PaperInvoiceData = InvoiceData & { qr_legend?: string };
 
 /** El contexto de unidades de la línea, en la forma del papel: sin unidad → sin campos (una
  *  línea antigua no fabrica unidades que nadie congeló). */
@@ -584,6 +602,7 @@ export function saleToReceipt(
     decimals: hubDecimals(),
     footer: settings.receipt_footer || undefined,
     qr: fiscal.qr || undefined,
+    ...qrLegend(fiscal),
     qr_note: fiscal.qr_note || undefined,
     // QR promocional (solo tiquet; la factura A4 es formal). Sin URL no hay rastro.
     promo_qr: settings.receipt_marketing_url || undefined,
@@ -602,7 +621,7 @@ export function saleToInvoice(
   locale = 'es',
   fallbackName = DEFAULT_BUSINESS_NAME,
   t?: Translate,
-): InvoiceData {
+): PaperInvoiceData {
   const header = splitHeader(settings.receipt_header);
   const invLines: InvoiceLine[] = orderChildLines(lines).map((l) => ({
     // sales#28: `InvoiceLine` (outfitkit) no tiene campo de unidad, y la factura A4 debe decir
@@ -636,6 +655,7 @@ export function saleToInvoice(
     payment_method: payLabel(sale.payment_method_name, t),
     footer: settings.receipt_footer || undefined,
     qr: fiscal.qr || undefined,
+    ...qrLegend(fiscal),
     qr_note: fiscal.qr_note || undefined,
   };
 }
