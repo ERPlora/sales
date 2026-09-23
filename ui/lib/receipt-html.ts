@@ -14,6 +14,15 @@ import { modifierLabel, type PrintedModifier } from './paper-modifiers';
 import { componentLabel, type PrintedCombo } from './paper-combos';
 // The same string formatter <ok-receipt> uses (ADR-0400): integers in, text out, no arithmetic.
 import { documentLocale, formatMinor } from '@erplora/outfitkit/ok-money';
+// sales#340: the QR codes of this paper come from the encoder <ok-qr> uses, as inline SVG markup —
+// no custom element exists and no script runs in the print iframe.
+import { qrSvgMarkup } from '@erplora/outfitkit/ok-qr';
+
+/** Side of the fiscal QR on the 80 mm paper, in CSS px: 132 px = 35 mm, the middle of the 30-40 mm
+ *  the AEAT QR spec asks for, so a browser's rounding never takes it out (the SaaS PDF: saas#2185). */
+const FISCAL_QR_PX = 132;
+/** The claim QR is secondary: smaller than the fiscal one, like `<ok-receipt>`'s promo QR. */
+const CLAIM_QR_PX = 90;
 
 /** Línea del papel (misma forma que `ReceiptData.lines`). */
 export interface PrintableLine {
@@ -69,13 +78,16 @@ export interface PrintableReceipt {
   payment?: { method?: string; paid?: number; change?: number };
   currency?: string;
   footer?: string;
+  /** sales#340 — the fiscal QR's URL (AEAT validation). Drawn at the top of the paper, and the
+   *  heading, the legend and the note ride with it: no QR → none of them but a bare note. */
+  qr?: string;
   qr_note?: string;
-  /** sales#327 — «VERI*FACTU», the legal legend of the fiscal QR. This paper draws no QR (see
-   *  `claim_qr_data`), but the legend still has to be on it, at the size of the rest of the data. */
+  /** sales#339 — «QR tributario:», right above the fiscal QR. */
+  qr_heading?: string;
+  /** sales#327 — «VERI*FACTU», right under the fiscal QR, at the size of the rest of the data. */
   qr_legend?: string;
-  /** sales#103 (ADR-0363) — «pide tu factura»: the second QR's absolute URL. The thermal
-   *  renderer prints it as a QR; THIS paper has no QR library (same as the fiscal QR, which here
-   *  only prints its note), so the block is legend + locator in text + the URL to type. */
+  /** sales#103 (ADR-0363) — «pide tu factura»: the second QR's absolute URL, drawn as a QR at the
+   *  foot (sales#340) with the URL in text under it, to type when the camera will not focus. */
   claim_qr_data?: string;
   /** The legend («Pide tu factura»), translated by the caller from the module catalog. */
   claim_note?: string;
@@ -160,11 +172,25 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
       (doc.payment.change != null ? `<tr><td>${esc(lbl.change)}</td><td class="a">${money(doc.payment.change, cur, dec)}</td></tr>` : '')
     : '';
 
-  // sales#103 — «pide tu factura»: legend + locator EN TEXT + la URL (aquí no hay QR pintable
-  // sin librería; el térmico sí lo imprime). Sin locator el bloque no existe: el papel de hoy.
+  // sales#340 — the fiscal block opens the paper (AEAT QR spec v0.5.0 §3, sales#339): «QR
+  // tributario:», the QR, «VERI*FACTU» and the note. No QR → no block: a legend with nothing to
+  // scan would claim a check the paper does not offer.
+  const fiscalQr = qrSvgMarkup(doc.qr ?? '', { size: FISCAL_QR_PX });
+  const fiscal = fiscalQr
+    ? `<div class="fiscal-qr">` +
+      (doc.qr_heading ? `<div class="qr-heading">${esc(doc.qr_heading)}</div>` : '') +
+      fiscalQr +
+      (doc.qr_legend ? `<div class="legend">${esc(doc.qr_legend)}</div>` : '') +
+      (doc.qr_note ? `<div class="qr-note">${esc(doc.qr_note)}</div>` : '') +
+      `</div>`
+    : '';
+
+  // sales#103 — «pide tu factura»: legend + its QR (sales#340) + locator IN TEXT + the URL. Without
+  // a locator the block does not exist: today's paper.
   const claim = doc.claim_note || doc.claim_locator
     ? `<div class="claim">` +
       (doc.claim_note ? `<div class="claim-note">${esc(doc.claim_note)}</div>` : '') +
+      qrSvgMarkup(doc.claim_qr_data ?? '', { size: CLAIM_QR_PX }) +
       (doc.claim_locator ? `<div class="claim-loc">${esc(doc.claim_locator)}</div>` : '') +
       (doc.claim_qr_data ? `<div class="claim-url">${esc(doc.claim_qr_data)}</div>` : '') +
       `</div>`
@@ -197,8 +223,13 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
   .comp { font-size: 11px; padding-left: 4mm; }
   .tot td { font-size: 15px; font-weight: 700; padding-top: 1mm; }
   .foot { text-align: center; font-size: 10px; margin-top: 3mm; }
-  /* sales#327 — the legal legend: body size and bold (Orden HAC/1177/2024 art. 20.1.b). */
-  .legend { text-align: center; font-size: 12px; font-weight: 700; letter-spacing: .04em; margin-top: 3mm; }
+  /* sales#340 — the fiscal block opens the paper; heading and legend at body size and bold (Orden
+     HAC/1177/2024 art. 20.1.b, AEAT QR spec v0.5.0 §3). */
+  .fiscal-qr { text-align: center; margin: 0 0 3mm; }
+  .fiscal-qr svg, .claim svg { display: block; margin: 1mm auto; }
+  .qr-heading { font-size: 12px; font-weight: 700; }
+  .legend { text-align: center; font-size: 12px; font-weight: 700; letter-spacing: .04em; }
+  .qr-note { font-size: 10px; word-break: break-word; }
   /* El bloque del claim (sales#103): al pie y separado del QR fiscal, como en el papel térmico. */
   .claim { text-align: center; margin-top: 3mm; }
   .claim-note { font-size: 11px; font-weight: 700; }
@@ -206,6 +237,7 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
   .claim-url { font-size: 9px; color: #333; margin-top: 1mm; word-break: break-all; }
 </style></head>
 <body>
+  ${fiscal}
   ${doc.duplicate_label ? `<div class="dup">${esc(doc.duplicate_label)}</div>` : ''}
   ${doc.title ? `<div class="doc-title">${esc(doc.title)}</div>` : ''}
   <h1>${esc(doc.business?.name || '')}</h1>
@@ -223,8 +255,7 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
     ${pago}
   </table>
   ${doc.footer ? `<div class="foot">${esc(doc.footer)}</div>` : ''}
-  ${doc.qr_legend ? `<div class="legend">${esc(doc.qr_legend)}</div>` : ''}
-  ${doc.qr_note ? `<div class="foot">${esc(doc.qr_note)}</div>` : ''}
+  ${!fiscal && doc.qr_note ? `<div class="foot">${esc(doc.qr_note)}</div>` : ''}
   ${claim}
 </body></html>`;
 }
