@@ -90,7 +90,9 @@ and a fixed footer with the running total and the **Cobrar** (charge) button.
 4. Optionally assign a customer or a table — those controls appear only if `customers` / `tables` are
    installed.
 5. Press **Cobrar**. Choose the payment method, and for cash enter the amount tendered; the change is
-   computed for you.
+   computed for you. The **Print receipt** switch decides whether this sale's receipt is printed:
+   it starts from the printing app's «print on sale» setting, and what you leave on it applies to
+   this sale only — on prints even with the setting off, off prints nothing.
 6. Confirm. The sale is recorded, the receipt is available, and the check closes.
 
 Requires `sales.add_sale` to build the check and `sales.take_payment` to charge it.
