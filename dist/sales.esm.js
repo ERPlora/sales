@@ -1606,9 +1606,9 @@ var UNIT_EACH = "ud";
 function unitTag(unitCode) {
   return unitCode && unitCode !== UNIT_EACH ? unitCode : "";
 }
-function priceLabel(money2, unitCode) {
+function priceLabel(money3, unitCode) {
   const tag = unitTag(unitCode);
-  return tag ? `${money2} / ${tag}` : money2;
+  return tag ? `${money3} / ${tag}` : money3;
 }
 function quantityLabel(qty, unitCode) {
   const n6 = formatQuantity2(toMicro2(qty)).replace(".", ",");
@@ -2538,10 +2538,11 @@ function receiptToPrintableHtml(doc) {
   ${claim}
 </body></html>`;
 }
-function printHtmlInIframe(html, doc = document) {
+function printHtmlInIframe(html, doc = document, format = "receipt") {
   const frame = doc.createElement("iframe");
   frame.setAttribute("aria-hidden", "true");
-  frame.style.cssText = "position:fixed;right:0;bottom:0;width:80mm;height:1px;border:0;visibility:hidden;";
+  const width = format === "a4" ? "210mm" : "80mm";
+  frame.style.cssText = `position:fixed;right:0;bottom:0;width:${width};height:1px;border:0;visibility:hidden;`;
   doc.body.appendChild(frame);
   const w2 = frame.contentWindow;
   const d3 = frame.contentDocument;
@@ -3804,6 +3805,119 @@ __decorateClass5([
   n4({ attribute: false })
 ], OkReceipt.prototype, "labels");
 define("ok-receipt", OkReceipt);
+
+// ui/lib/invoice-html.ts
+var FISCAL_QR_PX2 = 132;
+function esc2(v3) {
+  return String(v3 ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function money2(v3, currency, decimals) {
+  return formatMinor(v3, { decimals, locale: documentLocale(), currency });
+}
+function percent(v3) {
+  if (v3 == null || !Number.isFinite(v3)) return "";
+  return `${new Intl.NumberFormat(documentLocale(), { maximumFractionDigits: 2 }).format(v3)} %`;
+}
+function quantity(v3) {
+  return new Intl.NumberFormat(documentLocale(), { maximumFractionDigits: 3 }).format(v3);
+}
+function party(p4) {
+  if (!p4) return "";
+  return [p4.name, p4.address, p4.tax_id].filter((v3) => v3 != null && String(v3).trim() !== "").map((v3, i7) => `<div${i7 === 0 ? ' class="party-name"' : ""}>${esc2(v3)}</div>`).join("");
+}
+function invoiceToPrintableHtml(doc) {
+  const cur = doc.currency || "\u20AC";
+  const dec = doc.decimals ?? 2;
+  const lbl = {
+    empty: "",
+    invoice: "Invoice",
+    number: "No.",
+    date: "Date",
+    dueDate: "Due date",
+    billTo: "Bill to",
+    description: "Description",
+    qty: "Qty",
+    price: "Price",
+    discount: "Disc.",
+    tax: "Tax",
+    amount: "Amount",
+    noLines: "\u2014",
+    taxBase: "Tax base",
+    discountTotal: "Discount",
+    total: "TOTAL",
+    paymentMethod: "Payment method",
+    ...doc.labels
+  };
+  const lines = (doc.lines ?? []).map((l3) => `
+      <tr>
+        <td>${esc2(l3.description)}</td>
+        <td class="a">${esc2(quantity(l3.qty))}</td>
+        <td class="a">${money2(l3.unit_price, cur, dec)}</td>
+        <td class="a">${esc2(percent(l3.discount_percent || void 0))}</td>
+        <td class="a">${esc2(percent(l3.tax_rate))}</td>
+        <td class="a">${money2(l3.total, cur, dec)}</td>
+      </tr>`).join("");
+  const taxes = (doc.taxes ?? []).map((t7) => `
+      <tr><td>${esc2(t7.label)}</td><td class="a">${money2(t7.base, cur, dec)}</td><td class="a">${money2(t7.amount, cur, dec)}</td></tr>`).join("");
+  const fiscalQr = qrSvgMarkup(doc.qr ?? "", { size: FISCAL_QR_PX2 });
+  const fiscal = fiscalQr ? `<div class="fiscal-qr">` + (doc.qr_heading ? `<div class="qr-heading">${esc2(doc.qr_heading)}</div>` : "") + fiscalQr + (doc.qr_legend ? `<div class="legend">${esc2(doc.qr_legend)}</div>` : "") + (doc.qr_note ? `<div class="qr-note">${esc2(doc.qr_note)}</div>` : "") + `</div>` : "";
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><title>${esc2(doc.number || lbl.invoice)}</title>
+<style>
+  @page { size: A4; margin: 15mm; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fff; color: #000; font: 11pt/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+  .fiscal-qr { margin: 0 0 6mm; }
+  .fiscal-qr svg { display: block; margin: 1mm 0; }
+  .qr-heading, .legend { font-weight: 700; }
+  .qr-note { font-size: 9pt; word-break: break-word; }
+  .dup { font-size: 14pt; font-weight: 700; letter-spacing: .08em; margin: 0 0 3mm; }
+  .head { display: flex; justify-content: space-between; gap: 10mm; margin-bottom: 8mm; }
+  .party-name { font-weight: 700; }
+  h1 { font-size: 20pt; margin: 0 0 2mm; text-align: right; }
+  .doc-meta { text-align: right; }
+  .bill-to { margin-bottom: 8mm; }
+  .bill-to h2 { font-size: 9pt; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 1mm; color: #444; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 9pt; border-bottom: 1px solid #000; padding: 1.5mm 1mm; }
+  td { vertical-align: top; padding: 1.5mm 1mm; border-bottom: 1px solid #ddd; }
+  th.a, td.a { text-align: right; white-space: nowrap; }
+  .summary { display: flex; justify-content: flex-end; margin-top: 6mm; }
+  .summary table { width: auto; min-width: 90mm; }
+  .tot td { font-size: 13pt; font-weight: 700; border-bottom: 0; }
+  .pay { margin-top: 6mm; }
+  .foot { margin-top: 10mm; font-size: 9pt; color: #333; }
+</style></head>
+<body>
+  ${fiscal}
+  ${doc.duplicate_label ? `<div class="dup">${esc2(doc.duplicate_label)}</div>` : ""}
+  <div class="head">
+    <div class="issuer">${party(doc.issuer)}</div>
+    <div>
+      <h1>${esc2(lbl.invoice)}</h1>
+      <div class="doc-meta">${esc2(lbl.number)} ${esc2(doc.number)}</div>
+      <div class="doc-meta">${esc2(lbl.date)} ${esc2(doc.issue_date)}</div>
+    </div>
+  </div>
+  <div class="bill-to"><h2>${esc2(lbl.billTo)}</h2>${party(doc.customer)}</div>
+  <table>
+    <thead><tr>
+      <th>${esc2(lbl.description)}</th><th class="a">${esc2(lbl.qty)}</th><th class="a">${esc2(lbl.price)}</th>
+      <th class="a">${esc2(lbl.discount)}</th><th class="a">${esc2(lbl.tax)}</th><th class="a">${esc2(lbl.amount)}</th>
+    </tr></thead>
+    <tbody>${lines || `<tr><td colspan="6">${esc2(lbl.noLines)}</td></tr>`}</tbody>
+  </table>
+  <div class="summary"><table>
+    ${doc.discount_total ? `<tr><td>${esc2(lbl.discountTotal)}</td><td></td><td class="a">${money2(doc.discount_total, cur, dec)}</td></tr>` : ""}
+    ${taxes ? `<tr><th>${esc2(lbl.tax)}</th><th class="a">${esc2(lbl.taxBase)}</th><th class="a">${esc2(lbl.amount)}</th></tr>${taxes}` : ""}
+    <tr class="tot"><td>${esc2(lbl.total)}</td><td></td><td class="a">${money2(doc.total, cur, dec)}</td></tr>
+  </table></div>
+  ${doc.payment_method ? `<div class="pay">${esc2(lbl.paymentMethod)}: ${esc2(doc.payment_method)}</div>` : ""}
+  ${doc.notes ? `<div class="foot">${esc2(doc.notes)}</div>` : ""}
+  ${doc.footer ? `<div class="foot">${esc2(doc.footer)}</div>` : ""}
+  ${!fiscal && doc.qr_note ? `<div class="foot">${esc2(doc.qr_note)}</div>` : ""}
+</body></html>`;
+}
 
 // @erplora/outfitkit/dist/ok-invoice.js
 var __defProp6 = Object.defineProperty;
@@ -5645,6 +5759,21 @@ var ErpSalesDocument = class extends i3 {
   printableHtml({ duplicate = false } = {}) {
     if (!this.sale) return "";
     const t7 = (k2) => erplora().t(CATALOG, k2);
+    if (this.printKind().documentType === "invoice") {
+      return invoiceToPrintableHtml({
+        ...saleToInvoice(
+          this.sale,
+          this.lines || [],
+          this.settings || {},
+          this.fiscalForPaper(),
+          erplora().locale,
+          t7("ui.docDefaultBusiness"),
+          t7
+        ),
+        labels: invoiceLabels(t7),
+        ...duplicate ? { duplicate_label: t7("ui.docDuplicate") } : {}
+      });
+    }
     if (this.claimInvoiceId && !this.claim && !this.claimFlight) void this.ensureClaim(this.claimInvoiceId);
     const doc = saleToReceipt(
       // sales#274: el papel, con su `pending` ya resuelto (ver `fiscalForPaper`) — nunca sin número.
@@ -5664,6 +5793,19 @@ var ErpSalesDocument = class extends i3 {
       labels: { subtotal: t7("ui.docSubtotal"), total: t7("ui.docTotal"), change: t7("ui.docChange"), document: t7("ui.document") },
       ...duplicate ? { duplicate_label: t7("ui.docDuplicate") } : {}
     });
+  }
+  /**
+   * sales#306 — how this document goes through the hub's print door: the format the SCREEN
+   * resolves (`render()`), so the paper can never be another document than the one on screen. An
+   * invoice is an A4 `invoice` (the door sends it to the print dialog / PDF); a ticket, a thermal
+   * `receipt`.
+   */
+  /** The document this viewer shows: forced by `format`, else the sale's, else the settings'. */
+  resolvedFormat() {
+    return this.format || (this.sale ? resolveFormat(this.sale, this.settings || {}) : "ticket");
+  }
+  printKind() {
+    return this.resolvedFormat() === "invoice" ? { documentType: "invoice", format: "a4" } : { documentType: "receipt", format: "receipt" };
   }
   /**
    * El documento **estructurado** que lee el renderizador ESC/POS (`escpos::render_receipt`).
@@ -5705,7 +5847,7 @@ var ErpSalesDocument = class extends i3 {
     if (!this.sale) return b2`<p class="muted">${t7("ui.noSale")}</p>`;
     const settings = this.settings || {};
     const lines = this.lines || [];
-    const fmt = this.format || resolveFormat(this.sale, settings);
+    const fmt = this.resolvedFormat();
     if (this.awaitingFiscal) {
       return b2`<div class="issuing" data-testid="doc-issuing" role="status" aria-live="polite">
         <ion-spinner name="crescent"></ion-spinner>
@@ -5763,20 +5905,29 @@ __decorateClass([
 define("erp-sales-document", ErpSalesDocument);
 
 // ui/lib/document-modal.ts
-async function sendReceipt({ html, data, saleId, t: t7 }) {
+var RECEIPT = { documentType: "receipt", format: "receipt" };
+async function sendReceipt({ html, data, saleId, t: t7, kind = RECEIPT }) {
   const sdk = globalThis.erplora;
   if (!sdk?.print) {
-    if (html) printHtmlInIframe(html);
+    if (html) printHtmlInIframe(html, document, kind.format);
     else window.print();
     return;
   }
   let res;
   try {
-    res = await sdk.print({ role: "receipt", documentType: "receipt", html, data, jobId: reprintJobId(saleId) });
+    res = await sdk.print({
+      role: "receipt",
+      documentType: kind.documentType,
+      format: kind.format,
+      html,
+      data,
+      jobId: reprintJobId(saleId)
+    });
   } catch (e7) {
     res = { error: e7 instanceof Error ? e7.message : String(e7) };
   }
   if (res?.via === "bridge" || res?.via === "queue") return;
+  if (res?.via === "browser" && kind.format === "a4") return;
   sdk.notify?.({ type: "error", message: res?.error ? `${t7("ui.printFailed")}: ${res.error}` : t7("ui.printFailed") });
 }
 async function reprintSale(saleId, t7, timeoutMs = 15e3) {
@@ -5790,6 +5941,7 @@ async function reprintSale(saleId, t7, timeoutMs = 15e3) {
   document.body.appendChild(host);
   let html;
   let data;
+  let kind;
   let timer;
   try {
     const ceiling = new Promise((resolve) => {
@@ -5798,6 +5950,7 @@ async function reprintSale(saleId, t7, timeoutMs = 15e3) {
     await Promise.race([viewer.issued?.().catch(() => false), ceiling]);
     data = viewer.printableDocument?.({ duplicate: true });
     html = data ? viewer.printableHtml?.({ duplicate: true }) : void 0;
+    kind = viewer.printKind?.();
   } finally {
     clearTimeout(timer);
     host.remove();
@@ -5806,7 +5959,7 @@ async function reprintSale(saleId, t7, timeoutMs = 15e3) {
     globalThis.erplora?.notify?.({ type: "error", message: t7("ui.printFailed") });
     return;
   }
-  await sendReceipt({ html, data, saleId, t: t7 });
+  await sendReceipt({ html, data, saleId, t: t7, kind });
 }
 function renderDocumentModal({ saleId, issuing = false, onClose, t: t7 }) {
   return b2`<ion-modal class="doc-modal" .isOpen=${!!saleId} @ionModalDidDismiss=${onClose}>
@@ -5861,7 +6014,8 @@ function renderDocumentModal({ saleId, issuing = false, onClose, t: t7 }) {
       html: el?.printableHtml?.({ duplicate }),
       data: el?.printableDocument?.({ duplicate }),
       saleId,
-      t: t7
+      t: t7,
+      kind: el?.printKind?.()
     });
   }}>
           <ion-icon slot="icon-only" name="print-outline"></ion-icon>
@@ -6586,7 +6740,7 @@ function allowedAmountCents(cap, grossCents) {
 function needsManagerApproval(cap, discounts) {
   if (cap >= NO_DISCOUNT_CAP) return false;
   if (discounts.ticketPercent > cap) return true;
-  if (discounts.linePercents.some((percent) => percent > cap)) return true;
+  if (discounts.linePercents.some((percent2) => percent2 > cap)) return true;
   return discounts.ticketAmountCents > 0 && discounts.ticketAmountCents > allowedAmountCents(cap, discounts.grossCents);
 }
 function checkoutCommand(cap, discounts) {
@@ -15851,7 +16005,7 @@ var ErpSaleRefund = class extends i3 {
   }
   renderLeg(leg) {
     const t7 = (k2, p4) => erplora5().t(CATALOG5, k2, p4);
-    const money2 = (c5) => erplora5().formatMoney(c5);
+    const money3 = (c5) => erplora5().formatMoney(c5);
     const entry = this.draft[leg.payment_id];
     const eligible = Number(leg.refundable) === 1;
     return b2`<div class="leg" data-testid=${`refund-leg-${leg.payment_id}`} data-leg=${leg.payment_id}>
@@ -15869,9 +16023,9 @@ var ErpSaleRefund = class extends i3 {
         ></ion-input>
       </div>
       <div class="leg-figures">
-        <span>${t7("ui.refundLegCharged")}: ${money2(leg.charged)}</span>
-        ${leg.refunded > 0 ? b2`<span>${t7("ui.refundLegRefunded")}: ${money2(leg.refunded)}</span>` : A}
-        <span>${t7("ui.refundLegRemaining")}: ${money2(leg.remaining)}</span>
+        <span>${t7("ui.refundLegCharged")}: ${money3(leg.charged)}</span>
+        ${leg.refunded > 0 ? b2`<span>${t7("ui.refundLegRefunded")}: ${money3(leg.refunded)}</span>` : A}
+        <span>${t7("ui.refundLegRemaining")}: ${money3(leg.remaining)}</span>
       </div>
       ${eligible ? A : b2`<p class="leg-reason">${t7(reasonKey(leg.reason))}</p>
             ${leg.remaining > 0 ? b2`<ion-select

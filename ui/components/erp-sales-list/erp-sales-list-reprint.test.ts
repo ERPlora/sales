@@ -170,3 +170,27 @@ describe('sales list — reprint from the row (sales#347)', () => {
     await vi.waitFor(() => expect(reprint().loading?.(ROW) ?? false).toBe(false));
   });
 });
+
+// sales#306 — reprinting an INVOICE from the list prints the invoice: the A4, with the customer's
+// tax id, never the ticket a full invoice is not.
+describe('sales list — reprinting an invoice sale prints its A4 invoice (sales#306)', () => {
+  beforeEach(() => {
+    install('es', {
+      'sales.get': [{ id: 'venta-1', sale_number: 'T-42', subtotal: 327, tax_amount: 33, total: 360, payment_method_name: 'Efectivo', document_type: 'invoice' }],
+      'invoice.by_source': [{ id: 'inv-1', number: 'F2026-000042', invoice_type: 'F1', customer_name: 'Talleres Gómez SA', customer_tax_id: 'A87654321' }],
+    });
+  });
+
+  it('sends an A4 invoice with the customer\'s tax id, still marked as a copy', async () => {
+    const el = await mountList();
+    tapReprint(el);
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    const req = sent[0] as PrintReq & { format?: string };
+    expect(req.documentType).toBe('invoice');
+    expect(req.format).toBe('a4');
+    expect(req.html).toContain('size: A4');
+    expect(req.html).toContain('A87654321');
+    expect(req.html).toContain(esCatalog.ui.docDuplicate);
+    expect(req.data?.duplicate).toBe(true);
+  });
+});

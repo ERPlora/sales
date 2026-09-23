@@ -1064,3 +1064,70 @@ describe('recién cobrado, el tique espera a estar completo (sales#308)', () => 
     });
   });
 });
+
+// sales#306 — a business that issues full invoices saw the A4 on screen and its paper was built
+// from the TICKET: no customer tax id, no VAT breakdown per rate. The print surface follows the
+// same format the screen resolves (`this.format`, else the sale, else the settings).
+describe('the paper follows the screen: an invoice prints the A4 invoice (sales#306)', () => {
+  type Viewer = HTMLElement & {
+    format?: 'ticket' | 'invoice';
+    printableHtml(o?: { duplicate?: boolean }): string;
+    printKind(): { documentType: string; format: string };
+    updateComplete: Promise<unknown>;
+  };
+
+  async function mountInvoice(sale: Record<string, unknown> = { document_type: 'invoice' }, settings: Record<string, unknown> = {}) {
+    const el = (await montarVisor()) as unknown as Viewer & Record<string, unknown>;
+    el.sale = {
+      ...(el.sale as Record<string, unknown>),
+      tax_breakdown: JSON.stringify({ '10.00': { base: 327, tax: 33 } }),
+      ...sale,
+    };
+    el.settings = settings;
+    el.fiscal = { number: 'F2026-000012', customer_name: 'Talleres Gómez SA', customer_tax_id: 'A87654321' };
+    await el.updateComplete;
+    return el;
+  }
+
+  it('an invoice sale: the screen paints ok-invoice and the browser paper is the A4 invoice', async () => {
+    const el = await mountInvoice();
+    expect(el.shadowRoot!.querySelector('ok-invoice'), 'the screen').not.toBeNull();
+    const html = el.printableHtml();
+    expect(html, 'an A4 sheet').toContain('size: A4');
+    expect(html, 'not the 80 mm ticket').not.toContain('80mm');
+    expect(html, 'the customer tax id travels').toContain('A87654321');
+    expect(html, 'the official number').toContain('F2026-000012');
+    expect(html, 'the breakdown per rate carries its base').toContain('ui.docTaxBase');
+  });
+
+  it('an invoice sale is sent as an A4 invoice, not as a thermal receipt', async () => {
+    const el = await mountInvoice();
+    expect(el.printKind()).toEqual({ documentType: 'invoice', format: 'a4' });
+  });
+
+  it('a business set to invoices by default prints its A4 invoice too', async () => {
+    const el = await mountInvoice({ document_type: undefined }, { default_document_format: 'invoice' });
+    expect(el.printKind()).toEqual({ documentType: 'invoice', format: 'a4' });
+    expect(el.printableHtml()).toContain('size: A4');
+  });
+
+  it('a reprinted invoice says «duplicado» (hub#1931)', async () => {
+    const el = await mountInvoice();
+    expect(el.printableHtml()).not.toContain('ui.docDuplicate');
+    expect(el.printableHtml({ duplicate: true })).toContain('ui.docDuplicate');
+  });
+
+  it('a ticket stays a ticket: 80 mm receipt, sent as a receipt', async () => {
+    const el = (await montarVisor()) as unknown as Viewer;
+    expect(el.printKind()).toEqual({ documentType: 'receipt', format: 'receipt' });
+    expect(el.printableHtml()).toContain('80mm');
+  });
+
+  it('the viewer forced to ticket prints the ticket even on an invoice sale', async () => {
+    const el = await mountInvoice();
+    el.format = 'ticket';
+    await el.updateComplete;
+    expect(el.printKind()).toEqual({ documentType: 'receipt', format: 'receipt' });
+    expect(el.printableHtml()).not.toContain('size: A4');
+  });
+});

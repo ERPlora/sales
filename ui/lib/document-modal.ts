@@ -44,23 +44,37 @@ interface SalesDocumentViewer extends HTMLElement {
   issued?: () => Promise<boolean>;
   printableHtml?: (o: { duplicate: boolean }) => string;
   printableDocument?: (o: { duplicate: boolean }) => Record<string, unknown> | undefined;
+  printKind?: () => PrintKind;
 }
 
+/** sales#306 — which document goes through the door: a thermal `receipt` or an A4 `invoice`. */
+export interface PrintKind {
+  documentType: 'receipt' | 'invoice';
+  format: 'receipt' | 'a4';
+}
+
+const RECEIPT: PrintKind = { documentType: 'receipt', format: 'receipt' };
+
 /**
- * Sends one sale's receipt through the shell's print door — the ONE send the document's Print
+ * Sends one sale's document through the shell's print door — the ONE send the document's Print
  * button and the sales list's reprint share, so both succeed and fail the same way.
  *
  * html is what a browser prints; data is what the ESC/POS renderer reads BY KEY. Without data
  * the printer did not fail: it printed every default and came out «ERPlora», no lines, TOTAL 0,00
  * (sales#79). A printer or the queue took it → silence (the paper is the answer); anything else is
  * said: in the installed app the browser fallback prints nothing and the customer is left waiting.
+ *
+ * sales#306 — `kind` says which document it is. An invoice goes as an A4 `invoice`: the hub door
+ * sends A4 to the print dialog (the laser printer, or «Save as PDF»), which is how Odoo, Lightspeed
+ * or Square hand over a full invoice — so there the dialog opening IS the paper coming out.
  */
 export async function sendReceipt(
-  { html, data, saleId, t }: { html?: string; data?: Record<string, unknown>; saleId?: string; t: (key: string) => string },
+  { html, data, saleId, t, kind = RECEIPT }:
+  { html?: string; data?: Record<string, unknown>; saleId?: string; t: (key: string) => string; kind?: PrintKind },
 ): Promise<void> {
   const sdk = (globalThis as { erplora?: PrintCapableSdk }).erplora;
   if (!sdk?.print) {
-    if (html) printHtmlInIframe(html); else window.print();
+    if (html) printHtmlInIframe(html, document, kind.format); else window.print();
     return;
   }
   let res: { via?: string; error?: string } | undefined;
@@ -68,11 +82,14 @@ export async function sendReceipt(
     // sales#92: el jobId es ÚNICO POR INTENTO (reprintJobId) — la cola deduplica por
     // (hub_id, job_id) y la clave del cobro (sale-<id>) ya la gastó el auto-print del
     // checkout: reutilizarla tragaba la reimpresión sin error ni papel.
-    res = await sdk.print({ role: 'receipt', documentType: 'receipt', html, data, jobId: reprintJobId(saleId) });
+    res = await sdk.print({
+      role: 'receipt', documentType: kind.documentType, format: kind.format, html, data, jobId: reprintJobId(saleId),
+    });
   } catch (e) {
     res = { error: e instanceof Error ? e.message : String(e) };
   }
   if (res?.via === 'bridge' || res?.via === 'queue') return;
+  if (res?.via === 'browser' && kind.format === 'a4') return;
   sdk.notify?.({ type: 'error', message: res?.error ? `${t('ui.printFailed')}: ${res.error}` : t('ui.printFailed') });
 }
 
@@ -97,12 +114,14 @@ export async function reprintSale(saleId: string, t: (key: string) => string, ti
   document.body.appendChild(host);
   let html: string | undefined;
   let data: Record<string, unknown> | undefined;
+  let kind: PrintKind | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const ceiling = new Promise<void>((resolve) => { timer = setTimeout(resolve, timeoutMs); });
     await Promise.race([viewer.issued?.().catch(() => false), ceiling]);
     data = viewer.printableDocument?.({ duplicate: true });
     html = data ? viewer.printableHtml?.({ duplicate: true }) : undefined;
+    kind = viewer.printKind?.();
   } finally {
     clearTimeout(timer);
     host.remove();
@@ -111,7 +130,7 @@ export async function reprintSale(saleId: string, t: (key: string) => string, ti
     (globalThis as { erplora?: PrintCapableSdk }).erplora?.notify?.({ type: 'error', message: t('ui.printFailed') });
     return;
   }
-  await sendReceipt({ html, data, saleId, t });
+  await sendReceipt({ html, data, saleId, t, kind });
 }
 
 export function renderDocumentModal({ saleId, issuing = false, onClose, t }: DocumentModalOpts): TemplateResult {
@@ -180,6 +199,7 @@ export function renderDocumentModal({ saleId, issuing = false, onClose, t }: Doc
             data: el?.printableDocument?.({ duplicate }),
             saleId,
             t,
+            kind: el?.printKind?.(),
           });
         }}>
           <ion-icon slot="icon-only" name="print-outline"></ion-icon>
