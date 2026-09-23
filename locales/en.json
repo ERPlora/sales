@@ -563,6 +563,9 @@
     "customerRequiredCharge": "This business requires a customer on every sale. Choose one to carry on with the charge.",
     "customerRequiredShort": "Customer required",
     "customerRequiredNoApp": "This business requires a customer on every sale, and the {app} app is not installed: this sale cannot be closed from here.",
-    "appCustomers": "Customers"
+    "appCustomers": "Customers",
+    "claimCountry": "Country",
+    "claimIdType": "Your number is",
+    "claimIdTypeTax": "A tax or VAT number"
   }
 }
