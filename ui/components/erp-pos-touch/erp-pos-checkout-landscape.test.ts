@@ -108,7 +108,7 @@ describe('the pay sheet keeps the tender apart from what grows (sales#324)', () 
 describe('from 821 px the pay sheet is two columns (sales#324)', () => {
   it('turns the sheet into a two-column grid wider than the old single column', async () => {
     const wide = wideBlock(await posCss());
-    const sheet = rules(wide, '.sheet');
+    const sheet = rules(wide, '.pay-sheet');
     expect(sheet).toMatch(/display:\s*grid/);
     expect(sheet).toMatch(/grid-template-columns:\s*minmax\(0(px)?,\s*1fr\)\s+minmax\(0(px)?,\s*1fr\)/);
     expect(sheet, 'wider than the 24rem of the phone sheet').toMatch(/width:\s*min\(100%,\s*46rem\)/);
@@ -116,9 +116,9 @@ describe('from 821 px the pay sheet is two columns (sales#324)', () => {
 
   it('lets the two groups be the grid items, each scrolling on its own', async () => {
     const wide = wideBlock(await posCss());
-    expect(rules(wide, '.pay')).toMatch(/display:\s*contents/);
+    expect(rules(wide, '.pay-sheet .pay')).toMatch(/display:\s*contents/);
     for (const group of ['.pay-side', '.pay-tender']) {
-      const r = rules(wide, group);
+      const r = rules(wide, `.pay-sheet ${group}`);
       expect(r, `${group} has an area`).toMatch(/grid-area:/);
       expect(r, `${group} scrolls by itself`).toMatch(/overflow:\s*auto/);
       expect(r, `${group} can shrink into its row`).toMatch(/min-height:\s*0/);
@@ -126,7 +126,7 @@ describe('from 821 px the pay sheet is two columns (sales#324)', () => {
   });
 
   it('gives the tender column the full height between header and footer', async () => {
-    const sheet = rules(wideBlock(await posCss()), '.sheet');
+    const sheet = rules(wideBlock(await posCss()), '.pay-sheet');
     // head spans both; the total sits over the side; the tender runs from the total to the footer.
     expect(sheet).toMatch(/grid-template-areas:\s*"head head"\s*"top tender"\s*"side tender"\s*"foot foot"/);
   });
@@ -137,5 +137,32 @@ describe('ticket or invoice is laid out like the method buttons (sales#324)', ()
     const r = rules(await posCss(), '.pay-docformat');
     expect(r).toMatch(/display:\s*grid/);
     expect(r).toMatch(/grid-template-columns:\s*repeat\(2,\s*1fr\)/);
+  });
+});
+
+// rv-342 — the two-column grid is for the PAY sheet only. `.sheet` and `.pay` are shared by the
+// discount, open-price, line-note, modifier and combo sheets: a bare `.sheet { display:grid }` in
+// the wide block turned the open-price keypad into a right-hand column beside the amount and
+// stretched the discount sheet to 46rem with its keypad in half of it (measured in Chromium at
+// 1280×776 and 1440×900 on the branch; on main both were one 24rem column).
+describe('the two-column grid touches the pay sheet only (sales#324, review)', () => {
+  it('scopes every rule of the wide block to the pay sheet', async () => {
+    const wide = wideBlock(await posCss());
+    const selectors = [...wide.matchAll(/(?:^|[}\s])([^{}]+?)\s*\{/g)].map((m) => m[1].trim()).filter(Boolean);
+    expect(selectors.length).toBeGreaterThan(0);
+    for (const sel of selectors) {
+      expect(sel, `«${sel}» must be scoped to the pay sheet`).toMatch(/^\.pay-sheet(\s|$|\.)/);
+    }
+  });
+
+  it('marks the pay sheet, and only it, with the pay-sheet class', async () => {
+    const el = await openSheetOnCash();
+    const paySheet = el.shadowRoot.querySelector('[data-testid="pos-pay-scrim"] .sheet');
+    expect(paySheet?.classList.contains('pay-sheet'), 'the pay sheet carries .pay-sheet').toBe(true);
+    (el as unknown as { discountSheet?: { target: 'ticket' } }).discountSheet = { target: 'ticket' };
+    await el.updateComplete;
+    const discount = el.shadowRoot.querySelector('[data-testid="pos-discount-scrim"] .sheet');
+    expect(discount, 'the discount sheet is open').not.toBeNull();
+    expect(discount!.classList.contains('pay-sheet'), 'the discount sheet is NOT a pay sheet').toBe(false);
   });
 });

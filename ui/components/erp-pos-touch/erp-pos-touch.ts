@@ -910,18 +910,20 @@ export class ErpPosTouch extends LitElement {
        the footer. Each column scrolls on its own, so a long voucher row can only push the left one.
        In one 24rem column a salon check left the keypad below the fold of a 1280×800 tablet while
        the footer already said «type the amount tendered». .pay steps aside (display:contents)
-       so its two groups are the grid items. */
+       so its two groups are the grid items.
+       Scoped to .pay-sheet: .sheet and .pay are shared by the discount, open-price, line-note,
+       modifier and combo sheets, which stay one 24rem column. */
     @media (min-width: 821px) {
-      .sheet { width:min(100%, 46rem); display:grid;
+      .pay-sheet { width:min(100%, 46rem); display:grid;
         grid-template-columns:minmax(0, 1fr) minmax(0, 1fr);
         grid-template-rows:auto auto minmax(0, 1fr) auto;
         grid-template-areas:"head head" "top tender" "side tender" "foot foot"; }
-      .sheet-h { grid-area:head; }
-      .sheet-top { grid-area:top; }
-      .sheet-foot { grid-area:foot; }
-      .pay { display:contents; }
-      .pay-side { grid-area:side; min-height:0; overflow:auto; padding:0 1rem .75rem; }
-      .pay-tender { grid-area:tender; min-height:0; overflow:auto; padding:0 1rem .75rem;
+      .pay-sheet .sheet-h { grid-area:head; }
+      .pay-sheet .sheet-top { grid-area:top; }
+      .pay-sheet .sheet-foot { grid-area:foot; }
+      .pay-sheet .pay { display:contents; }
+      .pay-sheet .pay-side { grid-area:side; min-height:0; overflow:auto; padding:0 1rem .75rem; }
+      .pay-sheet .pay-tender { grid-area:tender; min-height:0; overflow:auto; padding:0 1rem .75rem;
         border-left:1px solid var(--ion-border-color); }
     }
 
@@ -5271,7 +5273,7 @@ export class ErpPosTouch extends LitElement {
 
       ${this.paying
         ? html`<div data-testid="pos-pay-scrim" class="scrim" @click=${(e: Event) => { if ((e.target as HTMLElement).classList.contains('scrim')) this.paying = false; }}>
-            <div class="sheet">
+            <div class="sheet pay-sheet">
               <div class="sheet-h">
                 <span class="t">${t('ui.charge')}</span>
                 <button data-testid="pos-pay-close" class="x" @click=${() => { this.paying = false; }}>✕</button>
