@@ -155,6 +155,7 @@
     "statusCompleted": "Completed",
     "statusVoided": "Voided",
     "actionDocument": "Document",
+    "actionReprint": "Reprint",
     "searchSalePlaceholder": "Search number or customer…",
     "loading": "Loading…",
     "noSales": "No sales yet.",

@@ -107,8 +107,9 @@ export class ErpSalesDocument extends LitElement {
   /**
    * sales#308 — the document was JUST charged (the till says so). The viewer then waits behind a
    * loader until the ticket is complete —number AND VeriFactu QR— instead of painting it half-built.
-   * A reprint from the sales list never sets it: an old ticket must never wait for a record that
-   * may not exist.
+   * The sales list's row reprint sets it too (sales#347): its hidden viewer waits for the record so
+   * the copy carries the QR; a sale whose record never comes waits the `fiscalWaitMs` ceiling at most.
+   * The document opened from the list does not set it: it paints at once and the QR lands on screen.
    */
   @property({ attribute: false }) issuing = false;
 
@@ -159,7 +160,7 @@ export class ErpSalesDocument extends LitElement {
    * its own at checkout mounts this viewer hidden, with `issuing`, and has no screen to watch.
    *
    * `true` = the document is final: the VeriFactu QR arrived, or nothing more will come (no invoicing
-   * or VeriFactu app, or a reprint, which never waits). `false` = it was not: the `fiscalWaitMs`
+   * or VeriFactu app, or a viewer opened without `issuing`, which never waits). `false` = it was not: the `fiscalWaitMs`
    * ceiling ran out with the invoice or its record still missing (a slow AEAT), the sale failed to
    * load, or the viewer was removed. Either way `printableDocument()` then answers the best paper
    * there is; `false` tells the caller that paper lacks something a reprint will carry.

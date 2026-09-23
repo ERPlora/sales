@@ -4,7 +4,7 @@ import { define } from '@erplora/outfitkit/define';
 import '@erplora/outfitkit/ok-inline-feedback';
 import '@erplora/outfitkit/ok-data-table';
 import type { DataTableColumn, DataTableAction } from '@erplora/outfitkit';
-import { renderDocumentModal } from '../../lib/document-modal.js';
+import { renderDocumentModal, reprintSale } from '../../lib/document-modal.js';
 import '../erp-sale-refund/erp-sale-refund.js';
 import { payMethodDisplayName } from '../../lib/pay-icons.js';
 import type { PayMethodLike } from '../../lib/pay-icons.js';
@@ -165,12 +165,23 @@ export class ErpSalesList extends LitElement {
   /** sales#160 — venta que se está devolviendo. El modal está abierto mientras haya id. */
   @state() refundSaleId?: string;
 
+  /** sales#347 — sales whose reprint is on its way: their row action waits, so two taps never make
+   *  two copies. A new Set on every change, so Lit sees it. */
+  @state() private reprinting: ReadonlySet<string> = new Set();
+
   // Getter (no campo): se re-evalúa en cada render, así los textos cambian con el idioma activo
   // (ADR-0055). El listener `erplora:locale-changed` re-renderiza.
   private get documentActions(): DataTableAction[] {
     const t = (k: string, p?: Record<string, unknown>): string => erplora().t(CATALOG, k, p);
     const actions: DataTableAction[] = [
       { id: 'document', label: t('ui.actionDocument'), icon: 'receipt-outline' },
+      // sales#347 — one tap reprints the ticket without opening it, like the sales history of
+      // Square, Toast or Shopify POS. Anyone who sees the list may: it is a copy («duplicado»).
+      {
+        id: 'reprint', label: t('ui.actionReprint'), icon: 'print-outline',
+        // The table's own busy state (spinner, inert button) while that sale's paper is on its way.
+        loading: (r) => this.reprinting.has(String(r.id)),
+      },
     ];
     // sales#26: anular se ofrece SOLO a quien tiene el permiso (el runtime lo revalida igual), y
     // solo sobre una venta cerrada: una anulada o reembolsada no se anula dos veces.
@@ -223,6 +234,21 @@ export class ErpSalesList extends LitElement {
       });
     }
     return actions;
+  }
+
+  /** sales#347 — reprints the row's sale; errors are told by `reprintSale` (the same notice as the
+   *  document's Print button). */
+  private async reprint(sale: Sale): Promise<void> {
+    const id = String(sale.id);
+    if (this.reprinting.has(id)) return;
+    this.reprinting = new Set([...this.reprinting, id]);
+    try {
+      await reprintSale(id, (k) => erplora().t(CATALOG, k));
+    } finally {
+      const rest = new Set(this.reprinting);
+      rest.delete(id);
+      this.reprinting = rest;
+    }
   }
 
   /** sales#26 — pide el MOTIVO (obligatorio: Toast, Lightspeed y el software fiscal español lo
@@ -532,7 +558,7 @@ export class ErpSalesList extends LitElement {
         ${this.ctrl?.error ? html`<ok-inline-feedback data-testid="sales-list-error" tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : nothing}
         <!-- The «document» button is not the only door: rowClickable makes the whole row open the
              same document (outfitkit#67 — the actions column can be off-screen at 1440 px). -->
-        <ok-data-table data-testid="sales-table" .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r: Record<string, unknown>) => String(r.sale_number ?? '—')} .cardIcon=${() => 'receipt-outline'} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.paintedSort} .sortDir=${this.ctrl?.state.dir ?? 'desc'} .searchable=${true} .searchPlaceholder=${t('ui.searchSalePlaceholder')} .emptyMessage=${this.ctrl?.loading ? t('ui.loading') : t('ui.noSales')} .actions=${this.documentActions} .rowClickable=${true} @rowAction=${(e: CustomEvent<{ actionId: string; row: Sale }>) => { if (e.detail.actionId === 'document') this.docSaleId = e.detail.row.id; else if (e.detail.actionId === 'void') void this.confirmVoid(e.detail.row); else if (e.detail.actionId === 'refund') this.refundSaleId = e.detail.row.id; }} @rowClick=${(e: CustomEvent<{ row: Sale }>) => { this.docSaleId = e.detail.row.id; }} @pageChange=${(e: CustomEvent<number>) => this.ctrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.onSortChange(e)} @searchChange=${(e: CustomEvent<string>) => this.ctrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.onFilterChange(e)}></ok-data-table>
+        <ok-data-table data-testid="sales-table" .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r: Record<string, unknown>) => String(r.sale_number ?? '—')} .cardIcon=${() => 'receipt-outline'} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.paintedSort} .sortDir=${this.ctrl?.state.dir ?? 'desc'} .searchable=${true} .searchPlaceholder=${t('ui.searchSalePlaceholder')} .emptyMessage=${this.ctrl?.loading ? t('ui.loading') : t('ui.noSales')} .actions=${this.documentActions} .rowClickable=${true} @rowAction=${(e: CustomEvent<{ actionId: string; row: Sale }>) => { if (e.detail.actionId === 'document') this.docSaleId = e.detail.row.id; else if (e.detail.actionId === 'reprint') void this.reprint(e.detail.row); else if (e.detail.actionId === 'void') void this.confirmVoid(e.detail.row); else if (e.detail.actionId === 'refund') this.refundSaleId = e.detail.row.id; }} @rowClick=${(e: CustomEvent<{ row: Sale }>) => { this.docSaleId = e.detail.row.id; }} @pageChange=${(e: CustomEvent<number>) => this.ctrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.onSortChange(e)} @searchChange=${(e: CustomEvent<string>) => this.ctrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.onFilterChange(e)}></ok-data-table>
       </div>
       <!-- sales#126 — el modal FUERA del contenedor con scroll: Ionic lo reparenta al light-DOM
            igual, pero así la vista no arrastra overlays al scrollear. -->

@@ -328,6 +328,12 @@ Open a sale to see its full detail and its lines. From here you can **void** a s
 [concepts.md](concepts.md) for what that means and why you cannot simply edit it. Voiding requires
 `sales.void_sale`.
 
+**Reprint** (the printer icon on each row, also on the cards on a phone) sends that sale's receipt
+to the receipt printer without opening it (sales#347). It is a copy: the paper says «duplicado»,
+and it carries the invoice number and the VeriFactu QR, waiting a few seconds for them if the sale
+was just charged. If no printer takes it, a notice says so — the same as the Print button of the
+document. While it is on its way the icon of that row turns into a spinner, so two taps never make two copies.
+
 ## Reports the module publishes
 
 Backed by real queries, all needing `sales.view_reports`:
