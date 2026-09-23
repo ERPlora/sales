@@ -179,7 +179,8 @@ export class ErpSalesList extends LitElement {
       // Square, Toast or Shopify POS. Anyone who sees the list may: it is a copy («duplicado»).
       {
         id: 'reprint', label: t('ui.actionReprint'), icon: 'print-outline',
-        disabled: (r) => this.reprinting.has(String(r.id)),
+        // The table's own busy state (spinner, inert button) while that sale's paper is on its way.
+        loading: (r) => this.reprinting.has(String(r.id)),
       },
     ];
     // sales#26: anular se ofrece SOLO a quien tiene el permiso (el runtime lo revalida igual), y

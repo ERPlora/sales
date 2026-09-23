@@ -12,7 +12,7 @@ import enCatalog from '../../../locales/en.json';
 import { installErploraDouble, type ErploraDouble } from '../../test/erplora-double';
 
 interface PrintReq { role?: string; documentType?: string; jobId?: string; data?: Record<string, unknown>; html?: string }
-interface Action { id: string; label: unknown; icon?: string; disabled?: (r: Record<string, unknown>) => boolean }
+interface Action { id: string; label: unknown; icon?: string; disabled?: (r: Record<string, unknown>) => boolean; loading?: (r: Record<string, unknown>) => boolean }
 type ListEl = HTMLElement & { documentActions: Action[]; docSaleId?: string; updateComplete: Promise<unknown> };
 
 const QR = 'https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR?nif=B12345678&numserie=T-42&fecha=23-09-2026&importe=3.60';
@@ -154,18 +154,19 @@ describe('sales list — reprint from the row (sales#347)', () => {
     expect(sent).toHaveLength(0);
   });
 
-  it('while it prints, that row\'s action is disabled: two taps never make two copies', async () => {
+  // ok-data-table's own busy state (spinner, inert button) — the loading state of the row action.
+  it('while it prints, that row\'s action shows it is busy: two taps never make two copies', async () => {
     holdPrints = true;
     const el = await mountList();
     tapReprint(el);
     await vi.waitFor(() => expect(sent).toHaveLength(1));
     const reprint = () => el.documentActions.find((a) => a.id === 'reprint')!;
-    expect(reprint().disabled?.(ROW), 'busy row').toBe(true);
-    expect(reprint().disabled?.({ ...ROW, id: 'venta-2' }) ?? false, 'the other rows stay free').toBe(false);
+    expect(reprint().loading?.(ROW), 'busy row: spinner and inert').toBe(true);
+    expect(reprint().loading?.({ ...ROW, id: 'venta-2' }) ?? false, 'the other rows stay free').toBe(false);
     tapReprint(el);
     await new Promise((r) => setTimeout(r, 20));
     expect(sent, 'a second tap while busy does nothing').toHaveLength(1);
     pending.forEach((r) => r());
-    await vi.waitFor(() => expect(reprint().disabled?.(ROW) ?? false).toBe(false));
+    await vi.waitFor(() => expect(reprint().loading?.(ROW) ?? false).toBe(false));
   });
 });

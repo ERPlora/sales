@@ -16084,7 +16084,8 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
         id: "reprint",
         label: t7("ui.actionReprint"),
         icon: "print-outline",
-        disabled: (r6) => this.reprinting.has(String(r6.id))
+        // The table's own busy state (spinner, inert button) while that sale's paper is on its way.
+        loading: (r6) => this.reprinting.has(String(r6.id))
       }
     ];
     if (erplora6().hasPermission?.("sales.void_sale")) {

@@ -332,7 +332,7 @@ Open a sale to see its full detail and its lines. From here you can **void** a s
 to the receipt printer without opening it (sales#347). It is a copy: the paper says «duplicado»,
 and it carries the invoice number and the VeriFactu QR, waiting a few seconds for them if the sale
 was just charged. If no printer takes it, a notice says so — the same as the Print button of the
-document. While it is on its way the icon of that row is disabled, so two taps never make two copies.
+document. While it is on its way the icon of that row turns into a spinner, so two taps never make two copies.
 
 ## Reports the module publishes
 
