@@ -82,6 +82,7 @@ import { buildOpenPriceLine } from '../../lib/pos-open-price.js';
 import { toMicro, fromMicro, onGrid, formatQuantity } from '../../lib/quantity.js';
 import { checkoutErrorKey, errorCode, newIdempotencyKey } from '../../lib/checkout-key.js';
 import { certificateExpiryDays, fiscalRoadKey, isFiscalRoadRefusal, readFiscalRoad, type FiscalRoad } from '../../lib/fiscal-road.js';
+import { printReceiptIntent, readAutoPrint } from '../../lib/print-intent.js';
 // sales#81: el transporte del SDK filtra el HTML del 502 del proxy como un SyntaxError crudo
 // («<!DOCTYPE … is not valid JSON»). Esta es la frontera del módulo: traducirlo a un mensaje de
 // negocio para el cajero (la guarda `res.ok` del SDK se persigue aparte, en el hub).
@@ -1270,8 +1271,14 @@ export class ErpPosTouch extends LitElement {
   /** Borrado en DOS toques de una cuenta de la lista: el primero arma, el segundo anula. */
   @state() private armedDelete?: string;
   private armedTimer?: ReturnType<typeof setTimeout>;
-  /** Preferencia del cobro: imprimir el tiquet al confirmar. Sustituye al 2º botón azul gemelo. */
-  @state() private printOnCharge = true;
+  /** sales#283 — the shop's auto-print setting (`printing.settings.get`), which the «Print
+   *  receipt» switch starts from on every charge. `undefined` = no `printing` app, or it did not
+   *  answer: there is no setting to start from. */
+  private autoPrintDefault?: boolean;
+  /** sales#283 — what the cashier left on the «Print receipt» switch for THIS charge. `undefined`
+   *  = untouched, so the shop's setting applies. It travels with the sale as `print_receipt`
+   *  and the shell obeys it over the setting, in both directions (Square/Toast). */
+  @state() private printOnCharge?: boolean;
   @state() private tableLabel = '';
   @state() private customerId?: string;
   @state() private customerName = '';
@@ -1711,7 +1718,7 @@ export class ErpPosTouch extends LitElement {
       (catalogSourceOn((await policy)[flag]) ? read() : []);
     try {
       const [prods, methods, businessRows, savedCart, parked, cats, prodCats, taxCatalog, unitRows,
-             svcRows, svcCats, taxCats, ownDepartments, fiscalLimits, fiscalRoadRows] = await Promise.all([
+             svcRows, svcCats, taxCats, ownDepartments, fiscalLimits, fiscalRoadRows, printingRows] = await Promise.all([
         fromSource<Product>('sync_products', () => capabilityCatalogRead<Product>('inventory',
           (c) => c.queryAllOptional<Product>('inventory.products.list'),
           (c) => c.queryOptional<Product>('inventory.products.list', { limit: LEGACY_PAGE_LIMIT }))),
@@ -1766,6 +1773,10 @@ export class ErpPosTouch extends LitElement {
         // the till, because the dispatcher refuses the sale on its own. What this buys is saying it
         // BEFORE the cashier charges — a card can go through a separate terminal first.
         erplora().query('hub.fiscal.transmission').catch(() => []),
+        // sales#283 — the auto-print setting the «Print receipt» switch starts from. Optional app,
+        // best-effort read: without it the switch sends nothing unless touched and the shell keeps
+        // deciding exactly as before.
+        optionalRead((c) => c.queryOptional('printing.settings.get')),
         // sales#153 — los MENÚS que este hub vende. Una sola lectura (`combos.options.all`) da a la
         // vez las baldosas y sus grupos, así que es imposible ofrecer un menú cuyos cursos no se
         // hayan cargado: eso sería justo «ofrecer lo que el servidor va a rechazar».
@@ -1804,6 +1815,7 @@ export class ErpPosTouch extends LitElement {
       // confirmed. It is known HERE, from the runtime's stable code, so it is said HERE.
       this.missingChargeApp = taxCatalog.installed ? '' : 'taxes';
       this.fiscalRoad = readFiscalRoad(fiscalRoadRows);
+      this.autoPrintDefault = readAutoPrint(printingRows);
       // `?? null` y no `?? 0`: el core ya devuelve `null` cuando el país no pone techo, y un 0 que
       // se colara aquí como importe pararía TODAS las ventas del local.
       this.simplifiedMaxCents =
@@ -3548,6 +3560,8 @@ export class ErpPosTouch extends LitElement {
     // esta venta con el dinero de la otra.
     this.splitting = false;
     this.tenders = [];
+    // sales#283 — the receipt choice is for ONE sale: each charge starts from the shop's setting.
+    this.printOnCharge = undefined;
     this.payMethod = defaultPayMethod(this.payMethods);
     this.docFormat = this.defaultDocFormat;
     // hub#297 — por encima del techo el tique NO es una opción, así que el formato se cambia solo
@@ -3619,6 +3633,11 @@ export class ErpPosTouch extends LitElement {
   }
 
   /** ¿Se puede cerrar este cobro tal y como está? Ver `lib/simplified-limit.ts`. */
+  /** sales#283 — this charge's receipt: the switch as the cashier left it, else the setting. */
+  private get printReceipt(): boolean | undefined {
+    return printReceiptIntent(this.printOnCharge, this.autoPrintDefault);
+  }
+
   private get chargeBlocked(): boolean {
     return ticketIsBlocked(this.limitState);
   }
@@ -4114,10 +4133,10 @@ export class ErpPosTouch extends LitElement {
     }
   }
 
-  /** Cierra la venta. La IMPRESIÓN no se dispara desde aquí: la hace el shell por el Bridge al
-   *  recibir `sale.completed` (ajuste `auto_print_on_sale`). El toggle de la pantalla de cobro
-   *  refleja esa preferencia; el diálogo del navegador solo aparece como respaldo manual. */
-  private async confirm(_print = false) {
+  /** Closes the sale. PRINTING is not fired from here: the shell prints on `sale.completed`.
+   *  What this sends is the INTENT (`print_receipt`, sales#283): the «Print receipt» switch as the
+   *  cashier left it, which the shell obeys over its `auto_print_on_sale` setting. */
+  private async confirm() {
     // hub#297 + sales#317 — the LAST door before a number of the chain is spent: above the ceiling
     // a ticket is not allowed, and an invoice needs its recipient at any amount. The sheet already
     // blocks the button, but this is no decorative duplicate: `confirm` is also reached by
@@ -4273,6 +4292,9 @@ export class ErpPosTouch extends LitElement {
         // Tipo de documento fiscal (ADR-0140): viaja ATÓMICAMENTE con la venta; `invoice` lo lee del
         // evento para elegir F1 (completa) vs F2 (simplificada). Reemplaza al `set_document_type` retro.
         document_type: this.docFormat,
+        // sales#283 — print THIS sale's receipt or not. Omitted when nobody decided (switch
+        // untouched and no `printing` setting read): the shell then decides as it always did.
+        ...(this.printReceipt === undefined ? {} : { print_receipt: this.printReceipt }),
       };
       // 🔴 The two doors are named LITERALLY, and the same payload goes through either. Calling
       // `command(checkoutDoor, …)` reads better and is wrong: `.erplora/contracts.json` is
@@ -5390,7 +5412,7 @@ export class ErpPosTouch extends LitElement {
                 <ion-item lines="none" class="print-row">
                   <ion-icon slot="start" name="print-outline"></ion-icon>
                   <ion-label>${t('ui.printReceipt')}</ion-label>
-                  <ion-toggle data-testid="pos-print-on-charge" slot="end" .checked=${this.printOnCharge}
+                  <ion-toggle data-testid="pos-print-on-charge" slot="end" .checked=${this.printReceipt ?? true}
                               @ionChange=${(e: CustomEvent) => { this.printOnCharge = !!(e.detail as { checked: boolean }).checked; }}></ion-toggle>
                 </ion-item>
 
@@ -5411,7 +5433,7 @@ export class ErpPosTouch extends LitElement {
                      dos veces. -->
                 <ion-button data-testid="pos-pay-confirm" class="charge" expand="block" ?disabled=${this.busy}
                             aria-disabled=${blockedWhy ? 'true' : nothing}
-                            @click=${() => this.confirm(this.printOnCharge)}>
+                            @click=${() => this.confirm()}>
                   ${this.busy
                     ? t('ui.charging')
                     : blockedWhy?.short
