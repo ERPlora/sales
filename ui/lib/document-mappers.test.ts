@@ -164,6 +164,18 @@ describe('saleToInvoice — mismos contratos', () => {
     expect(inv.issue_date).not.toContain('T');
     expect(inv.issue_date).toMatch(/\d{2}\/\d{2}\/\d{4}/);
   });
+
+  // sales#350 — the invoice row carries the customer's address; the A4 and the thermal full
+  // invoice both identify the customer with it.
+  it('identifies the customer with the address of the invoice when there is one', () => {
+    const inv = saleToInvoice(SALE, LINES, {}, { customer_name: 'Talleres Gómez SA', customer_tax_id: 'A87654321', customer_address: 'Calle Mayor 3, Madrid' });
+    expect(inv.customer).toEqual({ name: 'Talleres Gómez SA', tax_id: 'A87654321', address: 'Calle Mayor 3, Madrid' });
+  });
+
+  it('no address on the invoice → no `address` key on the customer', () => {
+    const inv = saleToInvoice(SALE, LINES, {}, { customer_name: 'Talleres Gómez SA', customer_tax_id: 'A87654321' });
+    expect('address' in inv.customer).toBe(false);
+  });
 });
 
 // QR promocional del tiquet (reseñas Google, redes…): el negocio configura URL + texto en los

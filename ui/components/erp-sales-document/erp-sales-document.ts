@@ -6,7 +6,7 @@ import '@erplora/outfitkit/ok-receipt';
 import { receiptToPrintableHtml } from '../../lib/receipt-html.js';
 import { invoiceToPrintableHtml } from '../../lib/invoice-html.js';
 // El mismo tiquet, en la forma que lee la impresora térmica (sales#79).
-import { saleToPrintDocument, type PrintDocument } from '../../lib/print-document.js';
+import { saleToPrintDocument, saleToInvoicePrintDocument, type PrintDocument } from '../../lib/print-document.js';
 import { markOriginalPrinted, originalPrinted } from '../../lib/original-ticket.js';
 import '@erplora/outfitkit/ok-invoice';
 import {
@@ -350,6 +350,7 @@ export class ErpSalesDocument extends LitElement {
         issuer_name: (invoice.issuer_name as string) || undefined,
         customer_name: (invoice.customer_name as string) || undefined,
         customer_tax_id: (invoice.customer_tax_id as string) || undefined,
+        customer_address: (invoice.customer_address as string) || undefined,
       };
       const recRows = await erplora().queryOptional<Record<string, unknown> | Record<string, unknown>[]>(
         'verifactu.records.by_invoice', { invoice_id: invoice.id });
@@ -485,6 +486,13 @@ export class ErpSalesDocument extends LitElement {
     return this.format || (this.sale ? resolveFormat(this.sale, this.settings || {}) : 'ticket');
   }
 
+  /** sales#350 — an invoice whose customer has no tax id is not a full invoice: the thermal printer
+   *  refuses it (ERPlora/hub#2005), so the screen says so before anyone presses Print. Not while the
+   *  invoice is still being written (sales#274): its tax id is on its way. */
+  private missingCustomerTaxId(): boolean {
+    return !this.fiscal?.pending && !this.fiscal?.customer_tax_id?.trim();
+  }
+
   printKind(): { documentType: 'receipt' | 'invoice'; format: 'receipt' | 'a4' } {
     return this.resolvedFormat() === 'invoice'
       ? { documentType: 'invoice', format: 'a4' }
@@ -512,7 +520,10 @@ export class ErpSalesDocument extends LitElement {
     const copy = duplicate ?? (saleKey !== '' && originalPrinted(saleKey));
     // sales#103: reintento best-effort del acuñado si aún no llegó (idempotente en el hub).
     if (this.claimInvoiceId && !this.claim && !this.claimFlight) void this.ensureClaim(this.claimInvoiceId);
-    const doc = saleToPrintDocument(
+    // sales#350 — an invoice goes as a full invoice: the thermal renderer refuses one without the
+    // customer's tax id and the breakdown per rate (ERPlora/hub#2005).
+    const toDocument = this.printKind().documentType === 'invoice' ? saleToInvoicePrintDocument : saleToPrintDocument;
+    const doc = toDocument(
       this.sale, this.lines || [], this.settings || {}, this.fiscalForPaper(), erplora().locale,
       t('ui.docDefaultBusiness'), t,
     );
@@ -544,7 +555,9 @@ export class ErpSalesDocument extends LitElement {
     // canonical; the UI always hands over the hub-language default (#32).
     const fallbackName = t('ui.docDefaultBusiness');
     return fmt === 'invoice'
-      ? html`<ok-invoice
+      ? html`${this.missingCustomerTaxId()
+          ? html`<ok-inline-feedback tone="warning" icon="alert-circle-outline" data-testid="invoice-missing-tax-id">${t('ui.invoiceMissingCustomerTaxId')}</ok-inline-feedback>`
+          : nothing}<ok-invoice
           .invoice=${saleToInvoice(this.sale, lines, settings, this.fiscal, locale, fallbackName, t)}
           .labels=${invoiceLabels(t)}></ok-invoice>`
       : html`<ok-receipt

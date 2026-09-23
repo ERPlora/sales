@@ -3042,7 +3042,11 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", f
   const taxes = parseTaxes(sale.tax_breakdown, t7);
   return {
     issuer: { name: fiscal.issuer_name || header.name || settings.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || settings.issuer_tax_id || void 0 },
-    customer: { name: fiscal.customer_name || sale.customer_name || "Cliente", tax_id: fiscal.customer_tax_id || void 0 },
+    customer: {
+      name: fiscal.customer_name || sale.customer_name || "Cliente",
+      tax_id: fiscal.customer_tax_id || void 0,
+      ...fiscal.customer_address ? { address: fiscal.customer_address } : {}
+    },
     // sales#274 — igual que el tiquet, y aquí pesa más: en un documento titulado «Factura» el
     // número ES el documento, así que enseñar el interno de la venta mientras el de verdad se
     // escribe es peor que dejarlo en blanco un instante. `<ok-invoice>` exige la clave (a
@@ -3185,6 +3189,24 @@ function saleToPrintDocument(sale, lines, settings = {}, fiscal = {}, locale = "
     // solo los campos presentes, así que un tique sin claim sale byte a byte como hoy.
     ...claimPrintFields(fiscal, t7),
     receipt_footer: screen.footer
+  };
+}
+function saleToInvoicePrintDocument(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName, t7) {
+  const ticket = saleToPrintDocument(sale, lines, settings, fiscal, locale, fallbackName, t7);
+  const invoice = saleToInvoice(sale, lines, settings, { ...fiscal, pending: false }, locale, fallbackName, t7);
+  const decimals = invoice.decimals;
+  return {
+    ...ticket,
+    ...invoice.customer.tax_id ? { customer_tax_id: invoice.customer.tax_id } : {},
+    ...invoice.customer.address ? { customer_address: invoice.customer.address } : {},
+    tax_breakdown: (invoice.taxes || []).map((row) => ({
+      // A rate key that is not a number keeps its row: `label` carries it, and the renderer prints
+      // the label instead of the rate.
+      rate: row.rate ?? 0,
+      base: euros(row.base, decimals),
+      tax: euros(row.amount, decimals),
+      ...row.label ? { label: row.label } : {}
+    }))
   };
 }
 function prebillJobId(orderId, lines) {
@@ -4426,6 +4448,7 @@ var en_default = {
     loadingDocument: "Loading document\u2026",
     issuingReceipt: "Issuing the receipt\u2026",
     issuingInvoice: "Issuing the invoice\u2026",
+    invoiceMissingCustomerTaxId: "This invoice has no customer tax ID: the thermal printer cannot print it as a full invoice.",
     noSale: "No sale.",
     errorDocument: "Error loading the document",
     document: "Document",
@@ -5003,6 +5026,7 @@ var es_default = {
     loadingDocument: "Cargando documento\u2026",
     issuingReceipt: "Emitiendo el tique\u2026",
     issuingInvoice: "Emitiendo la factura\u2026",
+    invoiceMissingCustomerTaxId: "Esta factura no tiene el NIF del cliente: la impresora de tiques no puede sacarla como factura completa.",
     noSale: "Sin venta.",
     errorDocument: "Error cargando el documento",
     document: "Documento",
@@ -5669,7 +5693,8 @@ var ErpSalesDocument = class extends i3 {
         // (ADR-0061) — the document header must honor the business profile (#32).
         issuer_name: invoice.issuer_name || void 0,
         customer_name: invoice.customer_name || void 0,
-        customer_tax_id: invoice.customer_tax_id || void 0
+        customer_tax_id: invoice.customer_tax_id || void 0,
+        customer_address: invoice.customer_address || void 0
       };
       const recRows = await erplora().queryOptional(
         "verifactu.records.by_invoice",
@@ -5808,6 +5833,12 @@ var ErpSalesDocument = class extends i3 {
   resolvedFormat() {
     return this.format || (this.sale ? resolveFormat(this.sale, this.settings || {}) : "ticket");
   }
+  /** sales#350 — an invoice whose customer has no tax id is not a full invoice: the thermal printer
+   *  refuses it (ERPlora/hub#2005), so the screen says so before anyone presses Print. Not while the
+   *  invoice is still being written (sales#274): its tax id is on its way. */
+  missingCustomerTaxId() {
+    return !this.fiscal?.pending && !this.fiscal?.customer_tax_id?.trim();
+  }
   printKind() {
     return this.resolvedFormat() === "invoice" ? { documentType: "invoice", format: "a4" } : { documentType: "receipt", format: "receipt" };
   }
@@ -5831,7 +5862,8 @@ var ErpSalesDocument = class extends i3 {
     const saleKey = this.saleId || (this.sale.id != null ? String(this.sale.id) : "");
     const copy = duplicate ?? (saleKey !== "" && originalPrinted(saleKey));
     if (this.claimInvoiceId && !this.claim && !this.claimFlight) void this.ensureClaim(this.claimInvoiceId);
-    const doc = saleToPrintDocument(
+    const toDocument = this.printKind().documentType === "invoice" ? saleToInvoicePrintDocument : saleToPrintDocument;
+    const doc = toDocument(
       this.sale,
       this.lines || [],
       this.settings || {},
@@ -5860,7 +5892,7 @@ var ErpSalesDocument = class extends i3 {
     }
     const locale = erplora().locale;
     const fallbackName = t7("ui.docDefaultBusiness");
-    return fmt === "invoice" ? b2`<ok-invoice
+    return fmt === "invoice" ? b2`${this.missingCustomerTaxId() ? b2`<ok-inline-feedback tone="warning" icon="alert-circle-outline" data-testid="invoice-missing-tax-id">${t7("ui.invoiceMissingCustomerTaxId")}</ok-inline-feedback>` : A}<ok-invoice
           .invoice=${saleToInvoice(this.sale, lines, settings, this.fiscal, locale, fallbackName, t7)}
           .labels=${invoiceLabels(t7)}></ok-invoice>` : b2`<ok-receipt
           .receipt=${saleToReceipt(this.sale, lines, settings, this.fiscal, locale, fallbackName, t7)}
