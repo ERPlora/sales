@@ -256,6 +256,29 @@ describe('printableHtml — el papel lleva las labels traducidas (sales#120)', (
   });
 });
 
+// sales#345 — the promotional QR set in the POS settings reaches the paper the browser prints: the
+// viewer's `printableHtml()` is what goes to the iframe when there is no thermal printer.
+describe('printableHtml — the promotional QR reaches the browser paper (sales#345)', () => {
+  it('draws the QR and its note from receipt_marketing_url / receipt_marketing_text', async () => {
+    const el = await montarVisor();
+    (el as unknown as Record<string, unknown>).settings = {
+      receipt_marketing_url: 'https://g.page/r/bar-manolo/review',
+      receipt_marketing_text: 'Leave us a review',
+    };
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    const html = (el as unknown as { printableHtml(): string }).printableHtml();
+    const promo = new DOMParser().parseFromString(html, 'text/html').querySelector('.promo');
+    expect(promo?.querySelector('svg')).toBeTruthy();
+    expect(promo?.querySelector('.promo-note')?.textContent).toBe('Leave us a review');
+  });
+
+  it('prints nothing promotional when the business set no URL', async () => {
+    const el = await montarVisor();
+    const html = (el as unknown as { printableHtml(): string }).printableHtml();
+    expect(new DOMParser().parseFromString(html, 'text/html').querySelector('.promo')).toBeNull();
+  });
+});
+
 // sales#28 — la unidad congelada de la línea (sales.lines la devuelve desde ADR-0147 §2.4) tiene
 // que llegar HASTA el papel: el visor arma ambos documentos (HTML y térmico) desde el mismo mapper,
 // así que aquí se fija el cableado entero — fila con `unit_code` → «1,5 kg» en los dos soportes.

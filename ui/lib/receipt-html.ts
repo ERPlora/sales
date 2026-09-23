@@ -23,6 +23,8 @@ import { qrSvgMarkup } from '@erplora/outfitkit/ok-qr';
 const FISCAL_QR_PX = 132;
 /** The claim QR is secondary: smaller than the fiscal one, like `<ok-receipt>`'s promo QR. */
 const CLAIM_QR_PX = 90;
+/** sales#345 — the promotional QR at the size `<ok-receipt>` draws it: 70 % of the fiscal one. */
+const PROMO_QR_PX = Math.round(FISCAL_QR_PX * 0.7);
 
 /** Línea del papel (misma forma que `ReceiptData.lines`). */
 export interface PrintableLine {
@@ -93,6 +95,11 @@ export interface PrintableReceipt {
   claim_note?: string;
   /** The locator IN TEXT: the only way in when the camera won't focus or the ticket is a copy. */
   claim_locator?: string;
+  /** sales#345 — the business's promotional link (reviews, social, web: `receipt_marketing_url`),
+   *  drawn as a QR that closes the paper, as `<ok-receipt>`'s `renderPromo` does on screen. */
+  promo_qr?: string;
+  /** Its legend («Scan and leave us a review»), above the QR. Nothing is printed without a URL. */
+  promo_note?: string;
   /** Words of the paper (sales#120): the printed ticket speaks the HUB's language, and these
    *  are labels, not data — «Cambio» next to English lines was the mixed-language ticket. The
    *  caller translates them from the module catalog; the Spanish defaults keep every existing
@@ -196,6 +203,15 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
       `</div>`
     : '';
 
+  // sales#345 — the promotional QR closes the paper, after everything fiscal: the screen's order.
+  const promoQr = qrSvgMarkup(doc.promo_qr ?? '', { size: PROMO_QR_PX });
+  const promo = promoQr
+    ? `<div class="promo">` +
+      (doc.promo_note ? `<div class="promo-note">${esc(doc.promo_note)}</div>` : '') +
+      promoQr +
+      `</div>`
+    : '';
+
   return `<!doctype html>
 <html><head><meta charset="utf-8"><title>${esc(doc.number || doc.business?.name || lbl.document)}</title>
 <style>
@@ -226,7 +242,7 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
   /* sales#340 — the fiscal block opens the paper; heading and legend at body size and bold (Orden
      HAC/1177/2024 art. 20.1.b, AEAT QR spec v0.5.0 §3). */
   .fiscal-qr { text-align: center; margin: 0 0 3mm; }
-  .fiscal-qr svg, .claim svg { display: block; margin: 1mm auto; }
+  .fiscal-qr svg, .claim svg, .promo svg { display: block; margin: 1mm auto; }
   .qr-heading { font-size: 12px; font-weight: 700; }
   .legend { text-align: center; font-size: 12px; font-weight: 700; letter-spacing: .04em; }
   .qr-note { font-size: 10px; word-break: break-word; }
@@ -235,6 +251,8 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
   .claim-note { font-size: 11px; font-weight: 700; }
   .claim-loc { font-size: 13px; letter-spacing: .08em; margin-top: 1mm; }
   .claim-url { font-size: 9px; color: #333; margin-top: 1mm; word-break: break-all; }
+  .promo { text-align: center; margin-top: 3mm; }
+  .promo-note { font-size: 11px; }
 </style></head>
 <body>
   ${fiscal}
@@ -257,6 +275,7 @@ export function receiptToPrintableHtml(doc: PrintableReceipt): string {
   ${doc.footer ? `<div class="foot">${esc(doc.footer)}</div>` : ''}
   ${!fiscal && doc.qr_note ? `<div class="foot">${esc(doc.qr_note)}</div>` : ''}
   ${claim}
+  ${promo}
 </body></html>`;
 }
 
