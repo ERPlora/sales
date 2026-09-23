@@ -4428,6 +4428,12 @@ var es_default = {
     limitFieldName: "Nombre o raz\xF3n social",
     limitFieldTaxId: "NIF",
     limitFieldAddress: "Domicilio",
+    limitFieldCountry: "Pa\xEDs",
+    limitFieldIdType: "Tipo de documento",
+    idType02: "NIF-IVA de la UE",
+    idType04: "Identificaci\xF3n fiscal de su pa\xEDs",
+    idType03: "Pasaporte",
+    idType06: "Otro documento",
     limitChargeBlocked: "Faltan los datos del cliente",
     invoiceRecipientTitle: "Una factura necesita los datos del cliente",
     invoiceRecipientBody: "Rellena el nombre, el NIF y la direcci\xF3n. Si el cliente no necesita factura, elige Tique.",
@@ -5008,6 +5014,12 @@ var en_default = {
     limitFieldName: "Name or company name",
     limitFieldTaxId: "Tax ID",
     limitFieldAddress: "Address",
+    limitFieldCountry: "Country",
+    limitFieldIdType: "Kind of document",
+    idType02: "EU VAT number",
+    idType04: "Tax ID of their country",
+    idType03: "Passport",
+    idType06: "Other document",
     limitChargeBlocked: "Enter the customer's details",
     invoiceRecipientTitle: "An invoice needs the customer's details",
     invoiceRecipientBody: "Fill in the name, tax ID and address. If the customer does not need an invoice, choose Receipt.",
@@ -6188,6 +6200,46 @@ function brandSvgFor(type, name) {
   const n6 = (name || "").trim().toLowerCase();
   if (t7 === "bizum" || n6 === "bizum") return BIZUM_SVG;
   return void 0;
+}
+
+// ui/lib/foreign-recipient.ts
+var HOME_COUNTRY = "ES";
+var NOT_A_COUNTRY = new Set(
+  "EU EZ QO UN XA XB ZZ IC EA AN BU CS DD DY FX HV NH RH SU TP UK VD YD YU ZR AC AX BL CP CQ DG EH GF GP MF MQ SJ TA XK".split(" ")
+);
+var COUNTRY_CODES = (() => {
+  const names = new Intl.DisplayNames(["en"], { type: "region", fallback: "none" });
+  const out = [];
+  for (let a3 = 65; a3 <= 90; a3++) {
+    for (let b3 = 65; b3 <= 90; b3++) {
+      const code = String.fromCharCode(a3, b3);
+      const name = names.of(code);
+      if (name && name !== code && !NOT_A_COUNTRY.has(code)) out.push(code);
+    }
+  }
+  return out;
+})();
+var EU_MEMBERS = new Set(
+  "AT BE BG CY CZ DE DK EE ES FI FR GR HR HU IE IT LT LU LV MT NL PL PT RO SE SI SK".split(" ")
+);
+var ID_TYPE_OPTIONS = ["02", "04", "03", "06"];
+function defaultIdType(country) {
+  if (country === HOME_COUNTRY) return "";
+  return EU_MEMBERS.has(country) ? "02" : "04";
+}
+function countryFromDetail(raw) {
+  const code = typeof raw === "string" ? raw.trim().toUpperCase() : "";
+  return COUNTRY_CODES.includes(code) ? code : HOME_COUNTRY;
+}
+function recipientCountryPayload(country, idType) {
+  return country === HOME_COUNTRY ? { customer_country: "", customer_id_type: "" } : { customer_country: country, customer_id_type: idType };
+}
+function countryOptions(lang) {
+  const names = new Intl.DisplayNames([lang], { type: "region" });
+  const named = (code) => ({ code, name: names.of(code) ?? code });
+  const rest = COUNTRY_CODES.filter((c5) => c5 !== HOME_COUNTRY).map(named);
+  rest.sort((a3, b3) => a3.name.localeCompare(b3.name, lang));
+  return [named(HOME_COUNTRY), ...rest];
 }
 
 // ui/lib/scale-entry.ts
@@ -7633,6 +7685,8 @@ var ErpPosTouch = class extends i3 {
     this.customerName = "";
     this.customerTaxId = "";
     this.customerAddress = "";
+    this.customerCountry = HOME_COUNTRY;
+    this.customerIdType = "";
     this.simplifiedMaxCents = null;
     this.staffName = "";
     this.staffPickerOpen = false;
@@ -7827,6 +7881,7 @@ var ErpPosTouch = class extends i3 {
       this.customerName = d3.customer_name ?? "";
       this.customerTaxId = d3.customer_tax_id ?? "";
       this.customerAddress = d3.customer_address ?? "";
+      this.setCustomerCountry(countryFromDetail(d3.customer_country));
       this.notifyOrderLinked();
     };
     // hub#1411 — el detalle puede traer la PRIORIDAD que armó el filler de cocina («urgente»). El
@@ -10825,6 +10880,8 @@ var ErpPosTouch = class extends i3 {
         // NIF ni dirección aunque el cliente los tenga en su ficha.
         customer_tax_id: this.customerTaxId,
         customer_address: this.customerAddress,
+        // sales#332: a customer from abroad is declared by country + kind of document (IDOtro).
+        ...recipientCountryPayload(this.customerCountry, this.customerIdType),
         // Tipo de documento fiscal (ADR-0140): viaja ATÓMICAMENTE con la venta; `invoice` lo lee del
         // evento para elegir F1 (completa) vs F2 (simplificada). Reemplaza al `set_document_type` retro.
         document_type: this.docFormat
@@ -10874,6 +10931,7 @@ var ErpPosTouch = class extends i3 {
     this.customerName = "";
     this.customerTaxId = "";
     this.customerAddress = "";
+    this.setCustomerCountry(HOME_COUNTRY);
     this.staffId = void 0;
     this.staffName = "";
     this.appointmentId = void 0;
@@ -11018,6 +11076,29 @@ var ErpPosTouch = class extends i3 {
    *
    *  They come FILLED IN when a customer is assigned (`sales.pos.assign` → ADR-0132), so the usual
    *  case — a business customer already on file — is read and charge. */
+  /** sales#332 — a new country resets the kind of document to the usual one there (none in Spain). */
+  setCustomerCountry(country) {
+    this.customerCountry = country;
+    this.customerIdType = defaultIdType(country);
+  }
+  /** sales#332 — the recipient's country and, only abroad, what their number is. The country
+   *  decides (Odoo `l10n_es_edi_verifactu`): a Spanish customer is never asked a document kind. */
+  renderRecipientCountry() {
+    const lang = erplora2().locale || "en";
+    return b2`
+        <ion-select label=${t5("ui.limitFieldCountry")} label-placement="stacked" interface="popover"
+                    data-testid="pos-limit-country" .value=${this.customerCountry}
+                    @ionChange=${(e7) => this.setCustomerCountry(String(e7.detail?.value ?? HOME_COUNTRY))}>
+          ${countryOptions(lang).map((o9) => b2`<ion-select-option value=${o9.code}>${o9.name}</ion-select-option>`)}
+        </ion-select>
+        ${this.customerCountry === HOME_COUNTRY ? A : b2`<ion-select label=${t5("ui.limitFieldIdType")} label-placement="stacked" interface="popover"
+                    data-testid="pos-limit-id-type" .value=${this.customerIdType}
+                    @ionChange=${(e7) => {
+      this.customerIdType = String(e7.detail?.value ?? "");
+    }}>
+              ${ID_TYPE_OPTIONS.map((c5) => b2`<ion-select-option value=${c5}>${t5(`ui.idType${c5}`)}</ion-select-option>`)}
+            </ion-select>`}`;
+  }
   renderRecipientCapture(reason) {
     const done = recipientIsComplete(this.limitState);
     const pending = reason === "limit" ? { title: t5("ui.limitBlockedTitle"), body: t5("ui.limitBlockedBody", { max: this.money(this.simplifiedMaxCents ?? 0) }) } : { title: t5("ui.invoiceRecipientTitle"), body: t5("ui.invoiceRecipientBody") };
@@ -11034,6 +11115,7 @@ var ErpPosTouch = class extends i3 {
                    @ionInput=${(e7) => {
       this.customerName = String(e7.target.value ?? "");
     }}></ion-input>
+        ${this.renderRecipientCountry()}
         <ion-input label=${t5("ui.limitFieldTaxId")} label-placement="stacked" .value=${this.customerTaxId}
                    data-testid="pos-limit-tax-id" autocomplete="off"
                    @ionInput=${(e7) => {
@@ -12403,6 +12485,12 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "customerAddress", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "customerCountry", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "customerIdType", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "simplifiedMaxCents", 2);
