@@ -18,8 +18,9 @@ import { documentLocale, formatMinor } from '@erplora/outfitkit/ok-money';
 // no custom element exists and no script runs in the print iframe.
 import { qrSvgMarkup } from '@erplora/outfitkit/ok-qr';
 
-/** Side of the fiscal QR on the 80 mm paper, in CSS px (~30 mm: the AEAT asks for 30-40 mm). */
-const FISCAL_QR_PX = 114;
+/** Side of the fiscal QR on the 80 mm paper, in CSS px: 132 px = 35 mm, the middle of the 30-40 mm
+ *  the AEAT QR spec asks for, so a browser's rounding never takes it out (the SaaS PDF: saas#2185). */
+const FISCAL_QR_PX = 132;
 /** The claim QR is secondary: smaller than the fiscal one, like `<ok-receipt>`'s promo QR. */
 const CLAIM_QR_PX = 90;
 

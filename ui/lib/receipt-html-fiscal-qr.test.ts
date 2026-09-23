@@ -53,6 +53,14 @@ describe('the fiscal QR on the browser paper (sales#340)', () => {
     expect(first?.querySelector('.legend')?.textContent).toBe('VERI*FACTU');
   });
 
+  it('prints the fiscal QR at about 35 mm, well inside the 30-40 mm the AEAT QR spec asks for (like the SaaS PDF, saas#2185)', () => {
+    const svg = parse(receiptToPrintableHtml(fiscal)).querySelector('.fiscal-qr svg');
+    // CSS px are 1/96 in: that is what the print engine turns into millimetres on the 80 mm paper.
+    const mm = (Number(svg?.getAttribute('width')) * 25.4) / 96;
+    expect(mm).toBeGreaterThanOrEqual(33);
+    expect(mm).toBeLessThanOrEqual(37);
+  });
+
   it('the duplicate mark and the title come after the fiscal block, like on the screen', () => {
     const body = parse(receiptToPrintableHtml({ ...fiscal, duplicate_label: 'DUPLICADO', title: 'Factura simplificada' })).body;
     const order = Array.from(body.children).map((el) => el.className || el.tagName.toLowerCase());
