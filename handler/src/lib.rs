@@ -1830,7 +1830,12 @@ fn discount_cap(context: &Value) -> f64 {
 /// A cap that only lived in the button would be a suggestion.
 ///
 /// The ticket percentage and each line's are checked with the same number: capping only the
-/// ticket would leave «un 90 % en cada línea» as the way around it. The FIXED amount (sales#113)
+/// ticket would leave «un 90 % en cada línea» as the way around it.
+///
+/// sales#287 — the cap is PER DISCOUNT, not on the ticket's cumulative saving: that is how the
+/// trade reads a cashier limit (Dynamics 365 Commerce, Square, Toast, Lightspeed, Loyverse check
+/// each discount on its own; none adds them up). The setting's label says so, so the owner does
+/// not believe a 10 % cap also stops 10 % per line + 10 % on the ticket + a fixed amount. The FIXED amount (sales#113)
 /// cannot be judged here — it is cents, and what share of the ticket they are is not known until
 /// the lines are valued — so it is checked in `value_checkout`, where the gross exists.
 fn enforce_discount_cap(cap: f64, payload: &Value, items: &[Value]) -> Result<(), Refusal> {
@@ -5581,6 +5586,25 @@ mod tests {
             assert_eq!(header_of(&out)["discount_amount"].as_i64(), Some(disc), "{case}: the receipt shows the discount asked for");
             assert_eq!(line_totals(&out).iter().sum::<i64>(), total, "{case}: the lines add up to the total");
         }
+    }
+
+    #[test]
+    fn el_tope_de_descuento_se_mide_por_descuento_y_no_sobre_el_ahorro_acumulado() {
+        // sales#287 — the market decision (Dynamics 365 Commerce, Square, Toast, Lightspeed,
+        // Loyverse): a cashier limit judges EACH discount on its own. 10 % on every line, 10 % on
+        // the ticket and 0,24 € fixed (10 % of the 2,43 € left) each fit under a 10 % cap, so the
+        // everyday door lets them through even though together they save ~27 %. Moving to a cap
+        // on the cumulative saving is a product decision, not a bug fix: change this test on purpose.
+        let capped = json!([{ "max_discount_percent": 10 }]);
+        let mut inp = input_with_catalogs(three_equal_lines(), 5, Value::Null, capped, Value::Null);
+        for i in 0..3 {
+            inp["payload"]["items"][i]["discount"] = json!(10);
+        }
+        inp["payload"]["discount_percent"] = json!(10);
+        inp["payload"]["discount_amount"] = json!(24);
+        inp["payload"]["amount_tendered"] = json!(100_000);
+        let out = complete_sale_pure(inp).accepted("three discounts, each within the 10 % cap");
+        assert_eq!(header_of(&out)["total"].as_i64(), Some(219), "3 × 81 − 24: the stacked discounts all applied");
     }
 
     #[test]

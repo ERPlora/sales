@@ -44,8 +44,8 @@
         "label": "Allow discounts"
       },
       "max_discount_percent": {
-        "label": "Discount a cashier may give alone (%)",
-        "description": "Above this, the till asks for the manager's PIN and the sale records who authorised it. 100 = no limit."
+        "label": "Largest discount a cashier may give alone, per discount (%)",
+        "description": "Each discount is checked on its own: a line's, the ticket's or a fixed amount. Above this, the till asks for the manager's PIN and the sale records who authorised it. Discounts can be combined, so the customer's total saving can be higher. 100 = no limit."
       },
       "enable_parked_tickets": {
         "label": "Allow parked tickets"
