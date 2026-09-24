@@ -5584,6 +5584,24 @@ mod tests {
     }
 
     #[test]
+    fn sin_iva_incluido_el_tope_de_descuento_se_mide_sobre_la_base() {
+        // sales#295 — the fixed amount is a BASE figure with net prices, so the business cap is a
+        // percentage of the base: 3,00 € of base at 10 % buys 0,30 €, not 10 % of the 3,63 € gross.
+        let capped = json!([{ "max_discount_percent": 10 }]);
+        let mut inp = input_with_catalogs(three_equal_lines(), 5, Value::Null, capped.clone(), Value::Null);
+        inp["payload"]["tax_included"] = json!(false);
+        inp["payload"]["discount_amount"] = json!(33);
+        let err = complete_sale_pure(inp).refused("0,33 € off a 3,00 € base with the cap at 10 %");
+        assert_eq!(err.code, "sales.discount_over_limit", "{err:?}");
+
+        let mut inp = input_with_catalogs(three_equal_lines(), 5, Value::Null, capped, Value::Null);
+        inp["payload"]["tax_included"] = json!(false);
+        inp["payload"]["discount_amount"] = json!(30);
+        inp["payload"]["amount_tendered"] = json!(100_000);
+        complete_sale_pure(inp).accepted("0,30 € is exactly 10 % of the base");
+    }
+
+    #[test]
     fn sin_iva_incluido_un_importe_fijo_mayor_que_la_base_se_rechaza() {
         // sales#295 — the amount comes off the base, so the base is its ceiling: 2,30 € off a
         // 2,20 € base fits under the 2,66 € gross but would leave a negative base.
