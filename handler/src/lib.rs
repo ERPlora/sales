@@ -539,6 +539,19 @@ fn apply_amount_discount(t: &mut LineTotals, parts: &mut [(String, i64, i64)], a
     }
 }
 
+/// sales#295 — with net prices a fixed amount comes off the BASE, as in every B2B price list: the
+/// line's base drops exactly `amount` and every component keeps its base in step. The quotas are
+/// not recomputed here: phase 3 closes them once per rate over the aggregate base (ADR-0123 §4)
+/// and hands each line its share, so a per-line rounding here would only be overwritten.
+fn apply_amount_discount_to_base(t: &mut LineTotals, parts: &mut [(String, i64, i64)], amount: i64) {
+    if amount <= 0 { return; }
+    let net = (t.net - amount).max(0);
+    t.net = net;
+    for part in parts.iter_mut() {
+        part.1 = net;
+    }
+}
+
 /// sales#124 / sales#292 — reparte una cuota YA FIJADA (`bruto − base`) entre los componentes que
 /// la produjeron, por RESTO MAYOR sobre sus tasas. Escalar todos los pesos por igual conserva la
 /// proporción y esquiva el techo de [`allocate_amount`], que acota el reparto a Σpesos (pensado
@@ -2321,10 +2334,16 @@ fn value_checkout(
     if sale_disc_amount > 0 {
         // Una línea que no se cobra (invitación o cubierta por otro tender) pesa 0: darle un trozo
         // del importe fijo lo aplicaría sobre un 0 y el descuento se evaporaría, cobrando de más.
-        let weights: Vec<i64> = pending_lines.iter().map(|l| if l.is_gift || l.covered { 0 } else { l.t.line }).collect();
+        // sales#295 — the amount comes off the figure the prices are written in: the GROSS when the
+        // VAT rides inside the price (what the customer pays), the BASE when it rides on top (net
+        // prices, the B2B price list). That figure is both the weight and the ceiling.
+        let weights: Vec<i64> = pending_lines
+            .iter()
+            .map(|l| if l.is_gift || l.covered { 0 } else if tax_incl { l.t.line } else { l.t.net })
+            .collect();
         let payable: i64 = weights.iter().sum();
         if sale_disc_amount > payable {
-            return Err(reject("sales.discount_out_of_range", format!("discount_amount {sale_disc_amount} above the gross {payable}")));
+            return Err(reject("sales.discount_out_of_range", format!("discount_amount {sale_disc_amount} above the payable {payable}")));
         }
         // sales#269: the business cap, applied to the only lever that is not a percentage. 3,00 €
         // of gross with the cap at 10 % buys 30 cents — without this, «2,00 € de descuento» walks
@@ -2343,7 +2362,11 @@ fn value_checkout(
         let shares = allocate_amount(sale_disc_amount, &weights);
         for (l, share) in pending_lines.iter_mut().zip(shares) {
             let comps = l.resolved.components.clone();
-            apply_amount_discount(&mut l.t, &mut l.parts, share, &comps);
+            if tax_incl {
+                apply_amount_discount(&mut l.t, &mut l.parts, share, &comps);
+            } else {
+                apply_amount_discount_to_base(&mut l.t, &mut l.parts, share);
+            }
         }
     }
 
@@ -2506,7 +2529,9 @@ fn value_checkout(
         // The ticket-wide discount is ALREADY prorated across the lines: `gross` is what gets
         // charged, and `discount_amount` (informative, for the receipt) is the difference against
         // the gross before it.
-        discount_amount: gross_pre_disc - gross,
+        // sales#295 — with net prices the discount is a BASE figure (what was asked for), so it is
+        // measured on the base; with the VAT inside, on what the customer pays.
+        discount_amount: if tax_incl { gross_pre_disc - gross } else { pre_subtotal - subtotal },
         gift_total,
         tax_total,
         tax_breakdown: Value::Object(tb),
@@ -5507,9 +5532,8 @@ mod tests {
 
     #[test]
     fn sin_iva_incluido_con_descuento_de_importe_fijo_lo_declarado_sigue_cuadrando() {
-        // El descuento de importe fijo se prorratea por resto mayor (ADR-0210) ANTES de cerrar los
-        // tipos, así que el cierre nuevo tiene que sostenerse también aquí: cuatro artículos de
-        // 0,55 € al 21 % con 0,13 € de descuento.
+        // The fixed amount is prorated by largest remainder (ADR-0210) BEFORE the rates are closed,
+        // so the close has to hold here too: four 0,55 € articles at 21 % with 0,13 € off.
         let items: Vec<Value> = (0..4)
             .map(|i| json!({ "product_name": format!("P{i}"), "price": 55, "quantity": 1_000_000, "tax_rate": 21.0 }))
             .collect();
@@ -5518,17 +5542,59 @@ mod tests {
         inp["payload"]["discount_amount"] = json!(13);
         let out = sale(inp);
         let (subtotal, tax_total, total, bd) = declared(&out);
-        assert_eq!((bd["21.00"]["base"].as_i64(), bd["21.00"]["tax"].as_i64()), (Some(211), Some(44)), "round(2,11 € × 21 %) = 0,44 €");
-        assert_eq!((subtotal, tax_total, total), (211, 44, 255), "lo declarado cuadra con lo cobrado también con descuento");
-        assert_eq!(line_totals(&out).iter().sum::<i64>(), 255, "el tique suma lo que se cobra");
+        // sales#295 — with net prices the amount comes off the BASE, like every B2B price list:
+        // 2,20 € − 0,13 € = 2,07 €, and the VAT rides on top of what is left.
+        assert_eq!((bd["21.00"]["base"].as_i64(), bd["21.00"]["tax"].as_i64()), (Some(207), Some(43)), "round(2,07 € × 21 %) = 0,43 €");
+        assert_eq!((subtotal, tax_total, total), (207, 43, 250), "what is declared adds up to what is charged, discount included");
+        assert_eq!(line_totals(&out).iter().sum::<i64>(), 250, "the receipt adds up to what is charged");
+        assert_eq!(header_of(&out)["discount_amount"].as_i64(), Some(13), "sales#295: the discount shown is the one asked for");
+    }
 
-        // ⚠️ Y el número que este cierre MUEVE, escrito a propósito para que se vea: se pidieron
-        // 0,13 € de descuento y el total baja 0,11 €. El importe se resta del BRUTO de cada línea
-        // (ADR-0210) y luego el tipo se cierra sobre la base agregada, así que el viaje
-        // bruto → base → bruto deja hasta un par de céntimos por el camino. Qué significa «0,13 €
-        // de descuento» cuando el precio es NETO —¿se descuenta de la base o del total?— es una
-        // decisión de producto que no toca a esta capa: **ERPlora/sales#295**.
-        assert_eq!(header_of(&out)["discount_amount"].as_i64(), Some(11), "sales#295: se pidieron 13");
+    #[test]
+    fn sin_iva_incluido_el_importe_fijo_baja_la_base_exactamente_lo_pedido() {
+        // sales#295 — the cases of the issue, where the gross → base → gross round trip lost or
+        // added up to two cents. With net prices «X € off» means X € off the base: the base drops
+        // EXACTLY X, the quota is the single rounding over what is left (ADR-0123 §4) and the
+        // header reports X. Expected figures with integer arithmetic, not the handler's.
+        for (n, price, rate_bp, disc) in [
+            (4_usize, 55_i64, 2100_i64, 13_i64),
+            (5, 123, 400, 7),
+            (2, 300, 2100, 50),
+            (3, 300, 2100, 77),
+            (2, 1000, 1000, 33),
+            (7, 199, 1000, 1),
+        ] {
+            let rate = rate_bp as f64 / 100.0;
+            let items: Vec<Value> = (0..n)
+                .map(|i| json!({ "product_name": format!("P{i}"), "price": price, "quantity": 1_000_000, "tax_rate": rate }))
+                .collect();
+            let mut inp = input(json!(items), n + 5, 10_000_000);
+            inp["payload"]["tax_included"] = json!(false);
+            inp["payload"]["discount_amount"] = json!(disc);
+            let out = sale(inp);
+            let (subtotal, tax_total, total, _) = declared(&out);
+            let base = n as i64 * price - disc;
+            let quota = (base * rate_bp + 5_000) / 10_000;
+            let case = format!("{n} × {price} at {rate} % with {disc} off");
+            assert_eq!(subtotal, base, "{case}: the base drops exactly what was asked");
+            assert_eq!((tax_total, total), (quota, base + quota), "{case}: the VAT rides on the discounted base");
+            assert_eq!(header_of(&out)["discount_amount"].as_i64(), Some(disc), "{case}: the receipt shows the discount asked for");
+            assert_eq!(line_totals(&out).iter().sum::<i64>(), total, "{case}: the lines add up to the total");
+        }
+    }
+
+    #[test]
+    fn sin_iva_incluido_un_importe_fijo_mayor_que_la_base_se_rechaza() {
+        // sales#295 — the amount comes off the base, so the base is its ceiling: 2,30 € off a
+        // 2,20 € base fits under the 2,66 € gross but would leave a negative base.
+        let items: Vec<Value> = (0..4)
+            .map(|i| json!({ "product_name": format!("P{i}"), "price": 55, "quantity": 1_000_000, "tax_rate": 21.0 }))
+            .collect();
+        let mut inp = input(json!(items), 9, 100_000);
+        inp["payload"]["tax_included"] = json!(false);
+        inp["payload"]["discount_amount"] = json!(230);
+        let err = complete_sale_pure(inp).refused("a discount above the base");
+        assert_eq!(err.code, "sales.discount_out_of_range", "{err:?}");
     }
 
     #[test]
