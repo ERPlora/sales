@@ -1,5 +1,6 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { property, state } from 'lit/decorators.js';
+import { classMap } from 'lit/directives/class-map.js';
 import { define } from '@erplora/outfitkit/define';
 import { bindTabbar } from '@erplora/outfitkit/tabbar';
 // La frontera EUROS ↔ CÉNTIMOS vive en el SDK (ADR-0123), no copiada en cada WC (como el desktop).
@@ -758,6 +759,24 @@ export class ErpPosTouch extends LitElement {
     .discount-foot { display:flex; gap:.5rem; align-items:center; }
     .discount-foot .charge { flex:1; }
     .line-discount-badge { vertical-align:middle; }
+    /* pm#392 — the tones, from the theme token. color= is resolved by a global .ion-color-* rule
+       that never reaches this shadow root: solid badges came out with no background, the line and
+       course icons never changed colour and the outline/clear buttons fell back to primary blue. */
+    ion-badge.tone-success {
+      --background: var(--ion-color-success, #2dd55b);
+      --color: var(--ion-color-success-contrast, #000);
+    }
+    ion-badge.tone-warning {
+      --background: var(--ion-color-warning, #ffc409);
+      --color: var(--ion-color-warning-contrast, #000);
+    }
+    ion-icon.tone-primary { color: var(--ion-color-primary, #0054e9); }
+    ion-icon.tone-medium { color: var(--ion-color-medium, #636469); }
+    ion-icon.tone-warning { color: var(--ion-color-warning, #ffc409); }
+    ion-icon.tone-success { color: var(--ion-color-success, #2dd55b); }
+    ion-button.tone-danger[fill] { --color: var(--ion-color-danger, #c5000f); --border-color: var(--ion-color-danger, #c5000f); }
+    ion-button.tone-medium[fill] { --color: var(--ion-color-medium, #636469); --border-color: var(--ion-color-medium, #636469); }
+    ion-button.tone-warning[fill] { --color: var(--ion-color-warning, #ffc409); --border-color: var(--ion-color-warning, #ffc409); }
     .foot-actions .prebill { flex:none; width:56px; }
     .foot-actions .charge { flex:1; }
 
@@ -4892,7 +4911,7 @@ export class ErpPosTouch extends LitElement {
                 <span class="pn">${oc.label || this.money(oc.total)}</span>
                 <span class="pm">${(oc.created_at || '').replace('T', ' ').slice(11, 16)}${oc.label ? ' · ' + this.money(oc.total) : ''}</span>
               </button>
-              <ion-button data-testid=${`pos-parked-${oc.id}-delete`} size="small" fill="clear" color="danger" class="pdel"
+              <ion-button data-testid=${`pos-parked-${oc.id}-delete`} size="small" fill="clear" class="pdel tone-danger"
                           title=${this.armedDelete === oc.id ? t('ui.deleteCheckConfirm') : t('ui.deleteCheck')}
                           aria-label=${this.armedDelete === oc.id ? t('ui.deleteCheckConfirm') : t('ui.deleteCheck')}
                           @click=${() => void this.deleteCheck(oc)}>
@@ -4951,8 +4970,8 @@ export class ErpPosTouch extends LitElement {
                aporta kitchen si está instalado/activo) y se monta dentro de Comanda actual. -->
           <div class="foot-actions">
             ${this.discountsAllowed ? html`
-            <ion-button data-testid="pos-ticket-discount" class="ticket-discount" fill="outline" ?disabled=${!this.cart.length}
-                        color=${this.ticketDiscount > 0 || this.ticketDiscountAmount > 0 ? 'warning' : undefined}
+            <ion-button data-testid="pos-ticket-discount" fill="outline" ?disabled=${!this.cart.length}
+                        class="ticket-discount ${classMap({ 'tone-warning': this.ticketDiscount > 0 || this.ticketDiscountAmount > 0 })}"
                         title=${t('ui.discountTicket')} aria-label=${t('ui.discountTicket')}
                         @click=${() => this.openDiscount('ticket')}>
               <ion-icon slot="icon-only" name=${this.ticketDiscount > 0 || this.ticketDiscountAmount > 0 ? 'pricetag' : 'pricetag-outline'}></ion-icon>
@@ -5104,14 +5123,21 @@ export class ErpPosTouch extends LitElement {
     }
   }
 
+  /** pm#392 — an icon's state tone (`on` → `tone`, off → medium) as a classMap: it toggles the two
+   *  classes and leaves the ones Ionic stamps on the host alone (`hydrated`; without it Ionic's
+   *  global CSS hides the element). A `class=${…}` binding would rewrite the whole attribute. */
+  private toneOf(on: boolean, tone: 'primary' | 'warning' | 'success') {
+    return classMap({ [`tone-${tone}`]: on, 'tone-medium': !on });
+  }
+
   private renderLine(l: CartLine) {
     const locked = isLineLocked(l);
     return html`<ion-item data-testid=${`pos-line-${l.id}`} class=${l.line_id && this.splitSel.has(l.line_id) ? 'sel' : ''}
         button ?detail=${false} @click=${() => this.toggleSplit(l)}>
       ${this.cart.length > 1 && l.line_id
-        ? html`<ion-icon slot="start" class="selmark"
+        ? html`<ion-icon slot="start"
                   name=${this.splitSel.has(l.line_id) ? 'checkmark-circle' : 'ellipse-outline'}
-                  color=${this.splitSel.has(l.line_id) ? 'primary' : 'medium'}></ion-icon>`
+                  class="selmark ${this.toneOf(this.splitSel.has(l.line_id), 'primary')}"></ion-icon>`
         : nothing}
       <ion-label>
         <h3>
@@ -5121,12 +5147,12 @@ export class ErpPosTouch extends LitElement {
               : html`<ok-status-pill tone="warning" size="sm" dot>${t('ui.pendingStatus')}</ok-status-pill>`
             : nothing}
           <span>${l.name}</span>${l.is_gift
-            ? html` <ion-badge color="success">${t('ui.giftBadge')}</ion-badge>` : nothing}</h3>
+            ? html` <ion-badge class="tone-success">${t('ui.giftBadge')}</ion-badge>` : nothing}</h3>
         <!-- sales#208: el precio unitario que se enseña YA lleva los suplementos, que es el que
              va a salir impreso (el cobro mete el delta por el precio unitario de la línea). Con la
              base a secas, «9,00 €» debajo de un importe de «12,00 €» se lee como un fallo. -->
         <p>${priceLabel(this.money(unitPriceWithModifiers(l)), l.unit_code)}${l.is_gift && l.gift_reason ? html` · ${l.gift_reason}` : nothing}${l.discount
-          ? html` <ion-badge class="line-discount-badge" color="warning">−${l.discount}%</ion-badge>` : nothing}</p>
+          ? html` <ion-badge class="line-discount-badge tone-warning">−${l.discount}%</ion-badge>` : nothing}</p>
         <!-- sales#156: if the note is not visible the waiter does not know whether it was typed,
              so it gets typed twice or taken for granted. It goes on a sub-line of its own, the way
              the supplements do on paper. -->
@@ -5157,15 +5183,15 @@ export class ErpPosTouch extends LitElement {
             ${this.discountsAllowed ? html`
             <ion-button data-testid=${`pos-line-${l.id}-discount`} class="line-discount" fill="clear" size="small" title=${t('ui.discountLine')} aria-label=${t('ui.discountLine')}
                         @click=${() => this.openDiscount('line', l.line_id)}>
-              <ion-icon name=${l.discount ? 'pricetag' : 'pricetag-outline'} slot="icon-only" color=${l.discount ? 'warning' : 'medium'}></ion-icon>
+              <ion-icon name=${l.discount ? 'pricetag' : 'pricetag-outline'} slot="icon-only" class=${this.toneOf(!!l.discount, 'warning')}></ion-icon>
             </ion-button>` : nothing}
             <ion-button data-testid=${`pos-line-${l.id}-note`} class="line-note" fill="clear" size="small" title=${t('ui.lineNote')} aria-label=${t('ui.lineNote')}
                         @click=${() => this.openLineNote(l.line_id)}>
               <ion-icon name=${l.note ? 'chatbox-ellipses' : 'chatbox-ellipses-outline'} slot="icon-only"
-                        color=${l.note ? 'primary' : 'medium'}></ion-icon>
+                        class=${this.toneOf(!!l.note, 'primary')}></ion-icon>
             </ion-button>
             <ion-button data-testid=${`pos-line-${l.id}-gift`} fill="clear" size="small" title=${t('ui.giftAction')} @click=${() => this.toggleGift(l.id)}>
-              <ion-icon name=${l.is_gift ? 'gift' : 'gift-outline'} slot="icon-only" color=${l.is_gift ? 'success' : 'medium'}></ion-icon>
+              <ion-icon name=${l.is_gift ? 'gift' : 'gift-outline'} slot="icon-only" class=${this.toneOf(!!l.is_gift, 'success')}></ion-icon>
             </ion-button>
             <ok-qty-stepper .value=${l.qty} .min=${0} .step=${this.stepOf(l)}
               @ok-change=${(e: CustomEvent) => this.setQtyAbs(l.id, (e.detail as { value: number }).value,
@@ -5185,7 +5211,7 @@ export class ErpPosTouch extends LitElement {
     return html`<div class="secs">
       ${pendientes.length ? html`<div class="sec sec-pending">
         <div class="sec-h">
-          <ion-icon name="create-outline" color="primary"></ion-icon>
+          <ion-icon name="create-outline" class="tone-primary"></ion-icon>
           <span>${t('ui.courseInProgress')}</span>
           <span class="ccount">· ${pendientes.length}</span>
         </div>
@@ -5193,7 +5219,7 @@ export class ErpPosTouch extends LitElement {
       </div>` : nothing}
       ${enviadas.length ? html`<div class="sec sec-sent">
         <div class="sec-h">
-          <ion-icon name="flame" color="warning"></ion-icon>
+          <ion-icon name="flame" class="tone-warning"></ion-icon>
           <span>${t('ui.sentHeader')}</span>
           <span class="ccount">· ${enviadas.length}</span>
           <span class="sec-slot"></span>
@@ -5749,7 +5775,7 @@ export class ErpPosTouch extends LitElement {
                 <p class="note-hint">${t('ui.lineNoteHint')}</p>
               </div>
               <div class="sheet-foot discount-foot">
-                <ion-button data-testid="pos-note-remove" fill="clear" color="medium"
+                <ion-button data-testid="pos-note-remove" class="tone-medium" fill="clear"
                   @click=${() => this.applyLineNote('')}>${t('ui.lineNoteRemove')}</ion-button>
                 <ion-button data-testid="pos-note-save" class="charge note-save" expand="block"
                   @click=${() => this.applyLineNote(this.noteInput)}>${t('ui.lineNoteSave')}</ion-button>
@@ -5786,7 +5812,7 @@ export class ErpPosTouch extends LitElement {
                 </div>
               </div>
               <div class="sheet-foot discount-foot">
-                <ion-button data-testid="pos-discount-remove" fill="outline" color="medium"
+                <ion-button data-testid="pos-discount-remove" class="tone-medium" fill="outline"
                   @click=${() => (this.discountMode === 'amount' ? this.applyDiscountAmount(0) : this.applyDiscount(0))}>${t('ui.discountRemove')}</ion-button>
                 ${this.discountMode === 'amount'
                   ? html`<ion-button data-testid="pos-discount-apply-amount" class="charge" expand="block" ?disabled=${this.discountInputCents > cartTotal(this.cart, this.ticketDiscount)}
@@ -5871,7 +5897,7 @@ export class ErpPosTouch extends LitElement {
             ${this.dirtyAllowCancel
               ? html`<ion-button data-testid="pos-dirty-cancel" fill="clear" @click=${() => this.answerDirty('cancel')}>${t('ui.cancel')}</ion-button>`
               : nothing}
-            <ion-button data-testid="pos-dirty-discard" class="discard-opt" color="danger" fill="outline"
+            <ion-button data-testid="pos-dirty-discard" class="discard-opt tone-danger" fill="outline"
                         @click=${() => this.answerDirty('discard')}>${t('ui.discardAndOpen')}</ion-button>
             <ion-button data-testid="pos-dirty-park" class="park-opt" @click=${() => this.answerDirty('park')}>${t('ui.parkAndOpen')}</ion-button>
           </div>

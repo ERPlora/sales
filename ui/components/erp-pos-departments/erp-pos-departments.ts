@@ -11,6 +11,7 @@ import type { ListController, ListClient, ListParams, ListPage } from '@erplora/
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
 import { domainErrorText } from '../../lib/domain-error-text';
+import { ionTone } from '../../lib/ion-tone';
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
 // «Departments» screen of the till (sales#267): the CRUD behind the buttons the cashier picks from
@@ -312,7 +313,7 @@ export class ErpPosDepartments extends LitElement {
             </ion-label>
           </ion-item>
         </ion-list>
-        <ion-button class="ion-margin-top" data-testid="pos-departments-delete-confirm" expand="block" color="danger" ?disabled=${this.saving}
+        <ion-button class="ion-margin-top" data-testid="pos-departments-delete-confirm" expand="block" style=${ionTone('solid', 'danger')} ?disabled=${this.saving}
           @click=${() => this.confirmDelete()}>${t('ui.departmentDelete')}</ion-button>
         <ion-button data-testid="pos-departments-delete-cancel" expand="block" fill="outline" ?disabled=${this.saving}
           @click=${() => { this.deleteTarget = null; }}>${t('ui.departmentCancel')}</ion-button>
