@@ -6,9 +6,12 @@
 // block, not the number; the kind of document is only asked outside Spain, with a sensible default.
 import { describe, expect, it } from 'vitest';
 import {
-  COUNTRY_CODES, ID_TYPE_OPTIONS, countryFromDetail, countryOptions, defaultIdType, recipientCountryPayload,
-  recipientFromDetail,
+  COUNTRY_CODES, ID_TYPE_OPTIONS, UNLISTED_COUNTRY, countryFromDetail, countryOptions, defaultIdType,
+  recipientCountryPayload, recipientFromDetail,
 } from './foreign-recipient';
+
+/** The picker's label for the AEAT's «Otros países o territorios no relacionados» (from the locales). */
+const UNLISTED = { en: 'Other countries or territories not listed', es: 'Otros países o territorios no relacionados' };
 
 describe('defaultIdType — do not ask more than needed', () => {
   it('Spain has no document kind: the number is a NIF', () => {
@@ -57,8 +60,33 @@ describe('recipientFromDetail — a territory in the customer file travels as it
     expect(recipientFromDetail('US')).toEqual({ country: 'US', idType: '04' });
     expect(recipientFromDetail('ES')).toEqual({ country: 'ES', idType: '' });
   });
-  it('Canarias and Ceuta y Melilla are Spain; Kosovo and Western Sahara have no parent and stay manual', () => {
-    for (const code of ['IC', 'EA', 'XK', 'EH']) expect(recipientFromDetail(code), code).toEqual({ country: 'ES', idType: '' });
+  it('Canarias and Ceuta y Melilla are Spain', () => {
+    for (const code of ['IC', 'EA']) expect(recipientFromDetail(code), code).toEqual({ country: 'ES', idType: '' });
+  });
+});
+
+describe('Kosovo and Western Sahara travel as the AEAT’s «not listed» country (sales#360)', () => {
+  // Neither is in CountryType2 nor in the note of any listed country. The AEAT list has a code for
+  // exactly this: QU «Otros países o territorios no relacionados». Before, they fell back to Spain
+  // and the customer's number travelled as a Spanish NIF, which the AEAT rejects.
+  it('🔴 a customer from Kosovo or Western Sahara is not invoiced as Spain', () => {
+    for (const code of ['XK', ' xk ', 'EH', 'eh']) {
+      expect(recipientFromDetail(code), code).toEqual({ country: 'QU', idType: '04' });
+    }
+    expect(UNLISTED_COUNTRY).toBe('QU');
+  });
+  it('the cashier can pick it by hand too, and it travels as a foreign country with its tax id', () => {
+    expect(COUNTRY_CODES).toContain('QU');
+    expect(recipientFromDetail('QU')).toEqual({ country: 'QU', idType: '04' });
+    expect(defaultIdType('QU')).toBe('04');
+    expect(recipientCountryPayload('QU', '04')).toEqual({ customer_country: 'QU', customer_id_type: '04' });
+  });
+  it('the picker names it with the translated label, after every named country', () => {
+    for (const lang of ['es', 'en'] as const) {
+      const opts = countryOptions(lang, UNLISTED[lang]);
+      expect(opts.at(-1), lang).toEqual({ code: 'QU', name: UNLISTED[lang] });
+      expect(opts.filter((o) => o.code === 'QU'), lang).toHaveLength(1);
+    }
   });
 });
 
@@ -82,12 +110,12 @@ describe('the lists the cashier picks from', () => {
     expect(ID_TYPE_OPTIONS).toEqual(['02', '04', '03', '06']);
   });
   it('country names come in the user’s language, sorted by that name, Spain first', () => {
-    const es = countryOptions('es');
+    const es = countryOptions('es', UNLISTED.es);
     expect(es[0]).toEqual({ code: 'ES', name: 'España' });
     expect(es.find((o) => o.code === 'DE')?.name).toBe('Alemania');
-    const rest = es.slice(1).map((o) => o.name);
+    const rest = es.slice(1, -1).map((o) => o.name);
     expect(rest).toEqual([...rest].sort((a, b) => a.localeCompare(b, 'es')));
-    expect(countryOptions('en').find((o) => o.code === 'DE')?.name).toBe('Germany');
+    expect(countryOptions('en', UNLISTED.en).find((o) => o.code === 'DE')?.name).toBe('Germany');
   });
 });
 
@@ -97,15 +125,15 @@ describe('only countries the AEAT accepts as CodigoPais are offered (CountryType
   it('Canarias and Ceuta y Melilla are Spain, not a foreign country', () => {
     for (const c of ['IC', 'EA']) expect(COUNTRY_CODES, c).not.toContain(c);
   });
-  it('territories declared under their parent country and dead aliases are not offered', () => {
+  it('territories declared under their parent country or as «not listed», and dead aliases, are not offered', () => {
     const notAccepted = 'AC AN AX BL BU CP CQ CS DD DG DY EH FX GF GP HV MF MQ NH RH SJ SU TA TP UK VD XK YD YU ZR'.split(' ');
     for (const c of notAccepted) expect(COUNTRY_CODES, c).not.toContain(c);
     // Sanity: the filter must not eat real, accepted countries.
     for (const c of ['FR', 'GB', 'US', 'CW', 'RS', 'RU', 'CD', 'TL', 'MM']) expect(COUNTRY_CODES, c).toContain(c);
   });
   it('no two offered countries share a name, in es or en', () => {
-    for (const lang of ['es', 'en']) {
-      const names = countryOptions(lang).map((o) => o.name);
+    for (const lang of ['es', 'en'] as const) {
+      const names = countryOptions(lang, UNLISTED[lang]).map((o) => o.name);
       const dupes = names.filter((n, i) => names.indexOf(n) !== i);
       expect(dupes, lang).toEqual([]);
     }

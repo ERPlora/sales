@@ -378,6 +378,7 @@
     "limitFieldTaxId": "Tax ID",
     "limitFieldAddress": "Address",
     "limitFieldCountry": "Country",
+    "countryUnlisted": "Other countries or territories not listed",
     "limitFieldIdType": "Kind of document",
     "idType02": "EU VAT number",
     "idType04": "Tax ID of their country",

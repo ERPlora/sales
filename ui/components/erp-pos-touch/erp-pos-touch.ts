@@ -1644,7 +1644,8 @@ export class ErpPosTouch extends LitElement {
     this.customerName = d.customer_name ?? '';
     this.customerTaxId = d.customer_tax_id ?? '';
     this.customerAddress = d.customer_address ?? '';
-    // sales#336: a territory (GF, GP…) comes in as its parent country with the territory's tax id.
+    // sales#336: a territory (GF, GP…) comes in as its parent country with the territory's tax id;
+    // sales#360: Kosovo and Western Sahara as the AEAT's «not listed» country (QU).
     const recipient = recipientFromDetail(d.customer_country);
     this.setCustomerCountry(recipient.country, recipient.idType);
     // ADR-0141: el pedido NO guarda el cliente y `sales` NO llama a `customers` (sería depender de
@@ -4674,7 +4675,7 @@ export class ErpPosTouch extends LitElement {
         <ion-select label=${t('ui.limitFieldCountry')} label-placement="stacked" interface="popover"
                     data-testid="pos-limit-country" .value=${this.customerCountry}
                     @ionChange=${(e: CustomEvent<{ value?: string }>) => this.setCustomerCountry(String(e.detail?.value ?? HOME_COUNTRY))}>
-          ${countryOptions(lang).map((o) => html`<ion-select-option value=${o.code}>${o.name}</ion-select-option>`)}
+          ${countryOptions(lang, t('ui.countryUnlisted')).map((o) => html`<ion-select-option value=${o.code}>${o.name}</ion-select-option>`)}
         </ion-select>
         ${this.customerCountry === HOME_COUNTRY
           ? nothing

@@ -233,7 +233,10 @@ the **kind of document** their number is — EU VAT number, tax id of their coun
 other — pre-set to the usual one (EU VAT number inside the EU, tax id elsewhere). The sale carries
 both in `sale.completed` (`customer_country`, ISO alpha-2, and `customer_id_type`, the AEAT IDType),
 and the invoice declares the customer to the AEAT by country instead of as a Spanish NIF. For a
-Spanish customer both travel empty, and the tax id's VAT prefix decides, as before.
+Spanish customer both travel empty, and the tax id's VAT prefix decides, as before. A territory
+the AEAT declares under another country (French Guiana, Åland…) travels as that country; Kosovo and
+Western Sahara, which the AEAT lists nowhere, travel as its own code for **other countries or
+territories not listed** (`QU`), which the cashier can also pick by hand (sales#360).
 
 ## Splitting and merging move rows; nothing is prorated
 
