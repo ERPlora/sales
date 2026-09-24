@@ -12,15 +12,22 @@ export const HOME_COUNTRY = 'ES';
  *  SuministroInformacion.xsd, vendored in the hub's verifactu crate): groupings and pseudo-locales
  *  (EU, EZ, QO, UN, XA, XB, ZZ); Spanish regions, which are Spain (IC Canarias, EA Ceuta y
  *  Melilla); dead aliases that would list a country twice (AN, BU, CS, DD, DY, FX, HV, NH, RH, SU,
- *  TP, UK, VD, YD, YU, ZR); and territories the AEAT declares under their parent country (AC, AX,
- *  BL, CP, CQ, DG, EH, GF, GP, MF, MQ, SJ, TA) or does not list at all (XK). Offering one spends a
- *  chain number and comes back as a 4102. */
+ *  TP, UK, VD, YD, YU, ZR); territories the AEAT declares under their parent country (AC, AX,
+ *  BL, CP, CQ, DG, GF, GP, MF, MQ, SJ, TA); and the two it lists nowhere (XK Kosovo, EH Western
+ *  Sahara), which go as [`UNLISTED_COUNTRY`]. Offering one spends a chain number and comes back as
+ *  a 4102. */
 const NOT_A_COUNTRY = new Set(
   'EU EZ QO UN XA XB ZZ IC EA AN BU CS DD DY FX HV NH RH SU TP UK VD YD YU ZR AC AX BL CP CQ DG EH GF GP MF MQ SJ TA XK'
     .split(' '),
 );
 
-/** Every ISO 3166 alpha-2 code the runtime can name, generated rather than listed by hand. */
+/** sales#360 — the AEAT's own code for «Otros países o territorios no relacionados» (`CountryType2`
+ *  and the AEAT's list of country codes): what a country or territory it does not list travels as.
+ *  CLDR has no name for it, so the picker's label comes from the locales. */
+export const UNLISTED_COUNTRY = 'QU';
+
+/** Every ISO 3166 alpha-2 code the runtime can name, generated rather than listed by hand, plus
+ *  [`UNLISTED_COUNTRY`]. */
 export const COUNTRY_CODES: readonly string[] = (() => {
   const names = new Intl.DisplayNames(['en'], { type: 'region', fallback: 'none' });
   const out: string[] = [];
@@ -31,6 +38,7 @@ export const COUNTRY_CODES: readonly string[] = (() => {
       if (name && name !== code && !NOT_A_COUNTRY.has(code)) out.push(code);
     }
   }
+  out.push(UNLISTED_COUNTRY);
   return out;
 })();
 
@@ -52,10 +60,12 @@ export function defaultIdType(country: string): string {
 /** sales#336 — territories the AEAT declares under their parent country (not in `CountryType2`),
  *  and that parent. All of them sit outside the EU VAT territory (Directive 2006/112/EC art. 6)
  *  or outside the EU, so their usual number is the territory's tax id, never an EU VAT number.
- *  Kosovo (XK) and Western Sahara (EH) have no parent the AEAT lists: the cashier picks by hand. */
+ *  sales#360 — Kosovo (XK) and Western Sahara (EH) have no parent the AEAT lists: they go as
+ *  [`UNLISTED_COUNTRY`], also with their tax id. */
 const TERRITORY_PARENT: Readonly<Record<string, string>> = {
   GF: 'FR', GP: 'FR', MQ: 'FR', BL: 'FR', MF: 'FR', CP: 'FR',
   AX: 'FI', SJ: 'NO', AC: 'SH', TA: 'SH', DG: 'IO', CQ: 'GG',
+  XK: UNLISTED_COUNTRY, EH: UNLISTED_COUNTRY,
 };
 
 /** Who the customer file (`customers_customer.country`, an ISO code) says the recipient is: the
@@ -83,11 +93,12 @@ export function recipientCountryPayload(country: string, idType: string) {
     : { customer_country: country, customer_id_type: idType };
 }
 
-/** The country picker's options in the user's language: Spain first, the rest by name. */
-export function countryOptions(lang: string): { code: string; name: string }[] {
+/** The country picker's options in the user's language: Spain first, the rest by name, and
+ *  [`UNLISTED_COUNTRY`] last with `unlistedName` (the translated label CLDR does not have). */
+export function countryOptions(lang: string, unlistedName: string): { code: string; name: string }[] {
   const names = new Intl.DisplayNames([lang], { type: 'region' });
   const named = (code: string) => ({ code, name: names.of(code) ?? code });
-  const rest = COUNTRY_CODES.filter((c) => c !== HOME_COUNTRY).map(named);
+  const rest = COUNTRY_CODES.filter((c) => c !== HOME_COUNTRY && c !== UNLISTED_COUNTRY).map(named);
   rest.sort((a, b) => a.name.localeCompare(b.name, lang));
-  return [named(HOME_COUNTRY), ...rest];
+  return [named(HOME_COUNTRY), ...rest, { code: UNLISTED_COUNTRY, name: unlistedName }];
 }

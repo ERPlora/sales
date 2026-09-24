@@ -379,6 +379,7 @@
     "limitFieldTaxId": "NIF",
     "limitFieldAddress": "Domicilio",
     "limitFieldCountry": "País",
+    "countryUnlisted": "Otros países o territorios no relacionados",
     "limitFieldIdType": "Tipo de documento",
     "idType02": "NIF-IVA de la UE",
     "idType04": "Identificación fiscal de su país",
