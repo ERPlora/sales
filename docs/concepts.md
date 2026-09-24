@@ -253,6 +253,11 @@ waiter, and no money disappears.
 Sale numbers look like `YYYYMMDD-NNNN` and come from an atomic per-day counter, so two tills
 charging at the same second cannot collide.
 
+The day is the **business day**, read in the hub's time zone — not the UTC one. A sale charged at
+01:57 in Madrid on the 19th is `20260919-…`, and «Today» (the KPIs, the history's «Today» range,
+the dashboard widgets, the 7-day chart and the per-professional close) counts from local midnight
+(sales#323).
+
 The four digits are a **minimum width, not a ceiling**: the 10.000th sale of a day is
 `YYYYMMDD-10000`, five digits, and the numbers already issued are never rewritten. Reading that
 sequence as fixed-width is exactly how the till stopped charging past 9.999 (sales#241) — the

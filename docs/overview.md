@@ -72,4 +72,5 @@ these modules you must leave the screen and come back for it to appear.
   `500000`.
 - **Sale numbers are per-day counters**, `YYYYMMDD-NNNN`, produced atomically so two tills cannot
   take the same number. The four digits are a **minimum width**: sale 10.000 of a day is
-  `YYYYMMDD-10000` and nothing already issued is rewritten (sales#241).
+  `YYYYMMDD-10000` and nothing already issued is rewritten (sales#241). The day is the
+  **business day** in the hub's time zone, and so is every «today» (sales#323).

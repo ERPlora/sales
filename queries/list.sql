@@ -54,9 +54,16 @@
 -- ANULADAS (soft-delete) no cuentan, igual que en `sales.refund_options` y en el cinturón de
 -- `sales._void_sale`: las tres puertas tienen que estar de acuerdo o la fila diría una cosa y el
 -- servidor haría otra.
+--
+-- THE BUSINESS DAY (sales#323). `created_at` is a UTC instant; its day is read on the business
+-- clock — `:timezone`, the IANA zone the runtime binds in every declarative SQL (hub#1022,
+-- `settings::timezone_of`) — never as its UTC date part, which filed everything charged between
+-- local midnight and 02:00 (summer in Spain) under the previous day. Same idiom as invoice#78 and
+-- `appointments`; the COALESCE degrades to UTC like the runtime does (`timezone_name()`), because
+-- `AT TIME ZONE NULL` would silently drop every row.
 SELECT s.id, s.sale_number, s.status, s.total, s.tax_amount, s.payment_method_name,
        s.customer_name, s.channel, s.staff_id, s.created_at,
-       CAST(erp_date(s.created_at) AS TEXT) AS erp_date,
+       CAST(CAST(CAST(CAST(s.created_at AS TEXT) AS timestamptz) AT TIME ZONE COALESCE(NULLIF(TRIM(CAST(:timezone AS TEXT)), ''), 'UTC') AS date) AS TEXT) AS erp_date,
        COALESCE(r.refunded_total, 0) AS refunded_total,
        substr(s.sale_number, 1, 9)
          || erp_pad(length(substr(s.sale_number, 10)), 2)
