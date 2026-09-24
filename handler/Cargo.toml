@@ -17,6 +17,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Aritmética decimal EXACTA — la comparte el guest-sdk (ADR-0123). Fuera el f64 del cálculo del IVA.
 rust_decimal = { version = "1", default-features = false }
+# THE BUSINESS CLOCK (sales#323). The runtime hands over the instant in UTC (`context.now`) and the
+# business zone as an IANA NAME (`context.timezone`, hub#1022) — not its rules, so the table travels
+# with the guest. Same crates and features as `invoice` (invoice#78) and the runtime itself.
+# `chrono` without `clock`: the guest has no clock.
+chrono = { version = "0.4", default-features = false, features = ["alloc"] }
+chrono-tz = { version = "0.10", default-features = false, features = ["std"] }
 
 [profile.release]
 opt-level = "s"
