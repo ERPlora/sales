@@ -45,8 +45,8 @@
         "label": "Permitir descuentos"
       },
       "max_discount_percent": {
-        "label": "Descuento que puede aplicar solo quien cobra (%)",
-        "description": "Por encima de esto, el TPV pide el PIN del encargado y la venta guarda quién lo autorizó. 100 = sin límite."
+        "label": "Descuento máximo que puede aplicar solo quien cobra, por descuento (%)",
+        "description": "Se mira cada descuento por separado: el de una línea, el del tique o un importe fijo. Por encima, el TPV pide el PIN del encargado y la venta guarda quién lo autorizó. Los descuentos se pueden sumar, así que el ahorro total del cliente puede ser mayor. 100 = sin límite."
       },
       "enable_parked_tickets": {
         "label": "Permitir tiques aparcados"

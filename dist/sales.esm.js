@@ -4363,8 +4363,8 @@ var en_default = {
         label: "Allow discounts"
       },
       max_discount_percent: {
-        label: "Discount a cashier may give alone (%)",
-        description: "Above this, the till asks for the manager's PIN and the sale records who authorised it. 100 = no limit."
+        label: "Largest discount a cashier may give alone, per discount (%)",
+        description: "Each discount is checked on its own: a line's, the ticket's or a fixed amount. Above this, the till asks for the manager's PIN and the sale records who authorised it. Discounts can be combined, so the customer's total saving can be higher. 100 = no limit."
       },
       enable_parked_tickets: {
         label: "Allow parked tickets"
@@ -4942,8 +4942,8 @@ var es_default = {
         label: "Permitir descuentos"
       },
       max_discount_percent: {
-        label: "Descuento que puede aplicar solo quien cobra (%)",
-        description: "Por encima de esto, el TPV pide el PIN del encargado y la venta guarda qui\xE9n lo autoriz\xF3. 100 = sin l\xEDmite."
+        label: "Descuento m\xE1ximo que puede aplicar solo quien cobra, por descuento (%)",
+        description: "Se mira cada descuento por separado: el de una l\xEDnea, el del tique o un importe fijo. Por encima, el TPV pide el PIN del encargado y la venta guarda qui\xE9n lo autoriz\xF3. Los descuentos se pueden sumar, as\xED que el ahorro total del cliente puede ser mayor. 100 = sin l\xEDmite."
       },
       enable_parked_tickets: {
         label: "Permitir tiques aparcados"
