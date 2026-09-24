@@ -174,6 +174,22 @@ describe('3 · the customer file pre-fills the country', () => {
     expect(idType(el)?.value).toBe('04');
   });
 
+  it('🔴 sales#336 — a customer from French Guiana comes in as France / 04 and the sale says so', async () => {
+    const el = await atInvoice();
+    el.dispatchEvent(new CustomEvent('erp:customer-context', {
+      detail: {
+        customer_id: 'cus-2', customer_name: 'Test SARL', customer_tax_id: 'TEST-TAXID-3',
+        customer_address: '3 Test Avenue', customer_country: 'GF',
+      },
+    }));
+    await el.updateComplete;
+    expect(country(el)?.value).toBe('FR');
+    expect(idType(el)?.value).toBe('04');
+    await tenderExactCash(el);
+    await el.confirm();
+    expect(sale()!.payload).toMatchObject({ customer_country: 'FR', customer_id_type: '04' });
+  });
+
   it('after charging, the next check starts again from Spain', async () => {
     const el = await atInvoice();
     await pick(el, country(el), 'US');

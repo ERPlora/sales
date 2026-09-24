@@ -4284,9 +4284,26 @@ function defaultIdType(country) {
   if (country === HOME_COUNTRY) return "";
   return EU_MEMBERS.has(country) ? "02" : "04";
 }
-function countryFromDetail(raw) {
+var TERRITORY_PARENT = {
+  GF: "FR",
+  GP: "FR",
+  MQ: "FR",
+  BL: "FR",
+  MF: "FR",
+  CP: "FR",
+  AX: "FI",
+  SJ: "NO",
+  AC: "SH",
+  TA: "SH",
+  DG: "IO",
+  CQ: "GG"
+};
+function recipientFromDetail(raw) {
   const code = typeof raw === "string" ? raw.trim().toUpperCase() : "";
-  return COUNTRY_CODES.includes(code) ? code : HOME_COUNTRY;
+  const parent = TERRITORY_PARENT[code];
+  if (parent) return { country: parent, idType: "04" };
+  const country = COUNTRY_CODES.includes(code) ? code : HOME_COUNTRY;
+  return { country, idType: defaultIdType(country) };
 }
 function recipientCountryPayload(country, idType) {
   return country === HOME_COUNTRY ? { customer_country: "", customer_id_type: "" } : { customer_country: country, customer_id_type: idType };
@@ -8251,7 +8268,8 @@ var ErpPosTouch = class extends i3 {
       this.customerName = d3.customer_name ?? "";
       this.customerTaxId = d3.customer_tax_id ?? "";
       this.customerAddress = d3.customer_address ?? "";
-      this.setCustomerCountry(countryFromDetail(d3.customer_country));
+      const recipient = recipientFromDetail(d3.customer_country);
+      this.setCustomerCountry(recipient.country, recipient.idType);
       this.notifyOrderLinked();
     };
     // hub#1411 — el detalle puede traer la PRIORIDAD que armó el filler de cocina («urgente»). El
@@ -11558,10 +11576,11 @@ var ErpPosTouch = class extends i3 {
    *
    *  They come FILLED IN when a customer is assigned (`sales.pos.assign` → ADR-0132), so the usual
    *  case — a business customer already on file — is read and charge. */
-  /** sales#332 — a new country resets the kind of document to the usual one there (none in Spain). */
-  setCustomerCountry(country) {
+  /** sales#332 — a new country resets the kind of document to the usual one there (none in Spain),
+   *  unless the customer file already says which one (sales#336). */
+  setCustomerCountry(country, idType = defaultIdType(country)) {
     this.customerCountry = country;
-    this.customerIdType = defaultIdType(country);
+    this.customerIdType = idType;
   }
   /** sales#332 — the recipient's country and, only abroad, what their number is. The country
    *  decides (Odoo `l10n_es_edi_verifactu`): a Spanish customer is never asked a document kind. */

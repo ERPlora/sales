@@ -25,7 +25,7 @@ import { isOverSimplifiedLimit, ticketIsBlocked, recipientIsComplete } from '../
 import { forgetCurrentCheck, rememberCurrentCheck, resolveCurrentCheck } from '../../lib/current-check.js';
 import { brandSvgFor } from '../../lib/brand-icons.js';
 import {
-  HOME_COUNTRY, ID_TYPE_OPTIONS, countryFromDetail, countryOptions, defaultIdType, recipientCountryPayload,
+  HOME_COUNTRY, ID_TYPE_OPTIONS, countryOptions, defaultIdType, recipientCountryPayload, recipientFromDetail,
 } from '../../lib/foreign-recipient.js';
 import { priceLabel } from '../../lib/price-label.js';
 // sales#28 — the OPTIONAL scale contract. `sales` never talks to hardware: whoever CAN weigh
@@ -1641,7 +1641,9 @@ export class ErpPosTouch extends LitElement {
     this.customerName = d.customer_name ?? '';
     this.customerTaxId = d.customer_tax_id ?? '';
     this.customerAddress = d.customer_address ?? '';
-    this.setCustomerCountry(countryFromDetail(d.customer_country));
+    // sales#336: a territory (GF, GP…) comes in as its parent country with the territory's tax id.
+    const recipient = recipientFromDetail(d.customer_country);
+    this.setCustomerCountry(recipient.country, recipient.idType);
     // ADR-0141: el pedido NO guarda el cliente y `sales` NO llama a `customers` (sería depender de
     // él, y una tienda de alimentación vende sin clientes). La junction la escribe SU dueño al
     // recibir `erp:order-linked`, igual que hace `tables`. Aquí solo se guarda el SNAPSHOT FISCAL
@@ -4652,10 +4654,11 @@ export class ErpPosTouch extends LitElement {
    *
    *  They come FILLED IN when a customer is assigned (`sales.pos.assign` → ADR-0132), so the usual
    *  case — a business customer already on file — is read and charge. */
-  /** sales#332 — a new country resets the kind of document to the usual one there (none in Spain). */
-  private setCustomerCountry(country: string) {
+  /** sales#332 — a new country resets the kind of document to the usual one there (none in Spain),
+   *  unless the customer file already says which one (sales#336). */
+  private setCustomerCountry(country: string, idType = defaultIdType(country)) {
     this.customerCountry = country;
-    this.customerIdType = defaultIdType(country);
+    this.customerIdType = idType;
   }
 
   /** sales#332 — the recipient's country and, only abroad, what their number is. The country
