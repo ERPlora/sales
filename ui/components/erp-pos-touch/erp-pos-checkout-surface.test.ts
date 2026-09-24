@@ -27,12 +27,13 @@
 // 🔴 The block on Charge is `aria-disabled`, NEVER the native `disabled`: on Ionic that is
 // `pointer-events: none`, so on a counter tablet the tap dies with the reason stranded in `title`
 // (sales#58). The tap has to arrive and ANSWER.
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import enLocale from '../../../locales/en.json';
 import esLocale from '../../../locales/es.json';
 import { installPosDouble } from '../../test/pos-double';
 
 import { tenderExactCash } from '../../test/cash-tender';
+import './erp-pos-touch';
 const PRODUCTS = [
   { id: 'p-cafe', name: 'Café', sku: 'CAF', price: 150, is_active: 1, tax_category_key: 'product.generic' },
 ];
@@ -90,7 +91,6 @@ interface Pos extends HTMLElement {
 
 async function mount(): Promise<Pos> {
   document.body.innerHTML = '';
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch') as unknown as Pos;
   document.body.appendChild(el);
   await el.updateComplete;
@@ -109,10 +109,6 @@ async function withLine(): Promise<Pos> {
   await el.updateComplete;
   return el;
 }
-
-// The first dynamic import of the component transpiles ~4k lines; warming it up here keeps
-// the first `it` from spending its budget on the compiler instead of on the assertion.
-beforeAll(async () => { await import('./erp-pos-touch'); }, 30_000);
 
 beforeEach(() => { installSdk(); });
 

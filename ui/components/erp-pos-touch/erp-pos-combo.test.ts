@@ -19,6 +19,7 @@ import enLocale from '../../../locales/en.json';
 import { installPosDouble } from '../../test/pos-double';
 
 import { tenderExactCash } from '../../test/cash-tender';
+import './erp-pos-touch';
 const SOUP = { id: 'p-soup', name: 'Sopa', price: 450, tax_category_key: 'food' };
 const SALAD = { id: 'p-salad', name: 'Ensalada', price: 500, tax_category_key: 'food' };
 const CHICKEN = { id: 'p-chicken', name: 'Pollo', price: 800, tax_category_key: 'food' };
@@ -85,7 +86,6 @@ interface Pos {
 }
 
 async function mount(): Promise<Pos> {
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch');
   document.body.appendChild(el);
   await (el as unknown as Pos).updateComplete;

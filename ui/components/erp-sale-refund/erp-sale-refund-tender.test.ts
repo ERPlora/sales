@@ -20,8 +20,9 @@
 // 🔴 AND EXPIRY WARNS, IT NEVER BLOCKS. `services.packages.refund_check` answers `voucher_expired`
 // with its date, and ADR-0386 is explicit: a return undoes a past act, so weighing validity
 // against today would lose the customer the session AND the money path with it.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { installErploraDouble } from '../../test/erplora-double';
+import './erp-sale-refund';
 
 const SALE = [{ id: 'sale-1', sale_number: '20260825-0007', status: 'completed', total: 1800 }];
 const LEGS = [{
@@ -125,7 +126,6 @@ type Refund = HTMLElement & {
 };
 
 async function mount(): Promise<Refund> {
-  await import('./erp-sale-refund');
   const el = document.createElement('erp-sale-refund') as Refund;
   el.saleId = 'sale-1';
   document.body.appendChild(el);
@@ -155,7 +155,7 @@ function ready(el: Refund): void {
 }
 
 beforeEach(() => install());
-afterEach(() => { document.body.innerHTML = ''; vi.resetModules(); });
+afterEach(() => { document.body.innerHTML = ''; });
 
 describe('the hole: one COVERED line, one slot', () => {
   it('asks for the slot by its literal, the way the till asks for its own', async () => {

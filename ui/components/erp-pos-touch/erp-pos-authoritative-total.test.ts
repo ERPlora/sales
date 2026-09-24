@@ -16,6 +16,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
 
 import { tenderExactCash } from '../../test/cash-tender';
+import './erp-pos-touch';
 const RULES = [{ id: 'r-21', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, is_active: 1 }];
 const METHODS = [
   { id: 'pm-cash', name: 'Efectivo', type: 'cash', requires_change: 1, sort_order: 10 },
@@ -55,7 +56,6 @@ interface Pos extends HTMLElement {
 
 /** Mounts the till with one 100,00 € line already in the cart and the charge sheet open. */
 async function tillCharging(): Promise<Pos> {
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch') as Pos;
   document.body.appendChild(el);
   await el.updateComplete;

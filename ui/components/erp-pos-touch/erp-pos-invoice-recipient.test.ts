@@ -10,11 +10,12 @@
 // moment an invoice is requested at the till, and without the data the valid document is the ticket.
 // So: the SAME three fields the ceiling asks for, in the SAME sheet, pre-filled from the assigned
 // customer; the charge is blocked until they are there, and «Tique» is always one tap away.
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import enLocale from '../../../locales/en.json';
 import esLocale from '../../../locales/es.json';
 import { installPosDouble } from '../../test/pos-double';
 import { tenderExactCash } from '../../test/cash-tender';
+import './erp-pos-touch';
 
 const PRODUCTS = [
   { id: 'p-acond', name: 'Acondicionador 300 ml', sku: 'ACO', price: 1190, is_active: 1, tax_category_key: 'product.generic' },
@@ -101,7 +102,6 @@ async function pickInvoice(el: Pos) {
   await el.updateComplete;
 }
 
-beforeAll(async () => { await import('./erp-pos-touch'); }, 30_000);
 beforeEach(() => { installSdk(); });
 
 describe('1 · «Factura» without a customer, well below the ceiling, asks for the recipient', () => {

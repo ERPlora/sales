@@ -23,6 +23,7 @@
 // erp-pos-scroll.test.ts does. That it really fits is measured in a browser (see the PR).
 import { describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 const PRODUCTS = [{ id: 'p-champu', name: 'Champú', price: 890, is_active: 1, tax_category_key: 'product.generic' }];
 const RULES = [{ id: 'r-21', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, is_active: 1 }];
@@ -40,7 +41,6 @@ interface Pos extends HTMLElement {
 async function openSheetOnCash(): Promise<Pos> {
   installPosDouble({ paymentMethods: METHODS, products: PRODUCTS, rules: RULES, byIdempotencyKey: [{ id: 'sale-1' }] });
   document.body.innerHTML = '';
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch') as unknown as Pos;
   document.body.appendChild(el);
   await el.updateComplete;
@@ -59,7 +59,6 @@ async function openSheetOnCash(): Promise<Pos> {
 
 /** The CSS the component declares (Lit's `static styles`). */
 async function posCss(): Promise<string> {
-  await import('./erp-pos-touch');
   const ctor = customElements.get('erp-pos-touch') as unknown as {
     styles: { cssText: string } | Array<{ cssText: string }>;
   };

@@ -20,6 +20,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
 import type { ErploraDouble } from '../../test/erplora-double';
+import './erp-pos-touch';
 
 const BOOKINGS = [
   {
@@ -82,7 +83,6 @@ async function settle(el: MountedPos): Promise<void> {
 /** Mounts the till the way the shell does, on whatever URL the cashier is standing on. */
 async function mount(search = ''): Promise<MountedPos> {
   window.history.replaceState({}, '', `/m/sales/pos${search}`);
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch') as MountedPos;
   document.body.appendChild(el);
   await settle(el);
@@ -170,7 +170,6 @@ describe('the till the cashier already had open (appointments#154)', () => {
     // services catalogue. Serving the link before the boot brought that catalogue in would put a
     // line on the ticket with no fiscal category at all — priced, but unpriceable.
     window.history.replaceState({}, '', '/m/sales/pos');
-    await import('./erp-pos-touch');
     const el = document.createElement('erp-pos-touch') as MountedPos;
     document.body.appendChild(el); // boot starts here and is still in flight
 

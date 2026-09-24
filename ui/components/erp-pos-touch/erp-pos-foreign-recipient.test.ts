@@ -9,11 +9,12 @@
 // Market shape (Odoo `l10n_es_edi_verifactu`): the COUNTRY decides, the kind of document is only
 // asked outside Spain, pre-set to the usual one (EU VAT number inside the EU, tax id elsewhere).
 // All document numbers below are synthetic.
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import enLocale from '../../../locales/en.json';
 import esLocale from '../../../locales/es.json';
 import { installPosDouble } from '../../test/pos-double';
 import { tenderExactCash } from '../../test/cash-tender';
+import './erp-pos-touch';
 
 const PRODUCTS = [
   { id: 'p-1', name: 'Corte', sku: 'CUT', price: 1190, is_active: 1, tax_category_key: 'product.generic' },
@@ -97,7 +98,6 @@ async function fillAndCharge(el: Pos) {
   await el.confirm();
 }
 
-beforeAll(async () => { await import('./erp-pos-touch'); }, 30_000);
 
 describe('1 · the country is asked, Spain by default, and the document kind only abroad', () => {
   it('a Spanish customer sees the country (Spain) and no document kind', async () => {

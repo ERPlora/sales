@@ -12,6 +12,7 @@ import type { ReceiptData } from '@erplora/outfitkit';
 import { installErploraDouble } from '../../test/erplora-double';
 import { forgetOriginalPrints } from '../../lib/original-ticket.js';
 import { CLAIM_FIELD_CHOICES } from '../../lib/public-claim.js';
+import './erp-sales-document';
 
 /** El doble del visor: sus tres lecturas propias, y la cadena fiscal AUSENTE salvo que un test la
  *  ponga en el hub — `invoice`/`verifactu` son apps opcionales (ADR-0127). */
@@ -36,7 +37,6 @@ beforeEach(() => {
 });
 
 async function montarVisor() {
-  await import('./erp-sales-document');
   const el = document.createElement('erp-sales-document');
   // Inyección directa (la vía de test que el componente ya expone): sin SDK ni saleId.
   (el as unknown as Record<string, unknown>).sale = {
@@ -99,20 +99,52 @@ describe('visor del documento de venta', () => {
 // Contrato: si el módulo está instalado pero el registro aún no existe, se REINTENTA con backoff y
 // el QR aparece solo; si el módulo NO está instalado (queryOptional → undefined), no se insiste.
 describe('QR fiscal: reintento mientras el Outbox termina', () => {
+  // sales#305 — the recipe sales#302 gave the block below: THE TEST HOLDS THE CLOCK. These cases
+  // used to wait 80 ms of the machine's clock for a 10 ms backoff, so on a loaded runner the retry
+  // had not happened yet («expected 1 to be greater than 1»). And the viewer each case mounted
+  // stayed in the page, still retrying against `globalThis.erplora` — which by then was the NEXT
+  // case's double, so its lookups were counted there («expected 2 to be 1»). The viewer stops
+  // retrying once it leaves the page, so every case unmounts it.
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.useRealTimers();
+  });
+
+  /** Runs the whole backoff (`fiscalRetryDelays = [10, 10]`) on the test's clock, then lets the
+   *  viewer paint what it got. */
+  async function agotarReintentos(el: { updateComplete: Promise<unknown> }) {
+    await vi.advanceTimersByTimeAsync(50);
+    await el.updateComplete;
+  }
+
   const SALE = {
     id: 's1', sale_number: 'T-1', subtotal: 327, total: 360,
     payment_method_name: 'Efectivo', created_at: '2026-07-16T19:00:30Z',
   };
 
-  async function montarPorSaleId(queryOptional: (name: string) => Promise<unknown>) {
-    installDocDouble({
+  /** The double of the case being run: its `reads` say how many times the viewer really asked. */
+  let docDouble: ReturnType<typeof installDocDouble>;
+
+  /** `sinFacturacion`: the hub has no `invoice` app, declared the way the SDK says it (the optional
+   *  door answers `undefined`), not as a query that answers `undefined` rows — the double rejects
+   *  that shape, and the viewer's tolerant catch then stops for a reason that is not the absence. */
+  async function montarPorSaleId(
+    answer: (name: string) => Promise<unknown>,
+    { sinFacturacion = false }: { sinFacturacion?: boolean } = {},
+  ) {
+    docDouble = installDocDouble({
       'sales.get': [SALE],
       'sales.lines': [{ product_name: 'Cafe', quantity: 1, unit_price: 180, line_total: 180 }],
-      'invoice.by_source': async () => (await queryOptional('invoice.by_source')) as unknown[],
-      'invoice.lines': async () => (await queryOptional('invoice.lines')) as unknown[],
-      'verifactu.records.by_invoice': async () => (await queryOptional('verifactu.records.by_invoice')) as unknown[],
+      ...(sinFacturacion ? {} : {
+        'invoice.by_source': async () => (await answer('invoice.by_source')) as unknown[],
+        'invoice.lines': async () => (await answer('invoice.lines')) as unknown[],
+        'verifactu.records.by_invoice': async () => (await answer('verifactu.records.by_invoice')) as unknown[],
+      }),
     });
-    await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document') as HTMLElement & {
       fiscalRetryDelays: number[]; updateComplete: Promise<unknown>;
     };
@@ -134,22 +166,17 @@ describe('QR fiscal: reintento mientras el Outbox termina', () => {
       return undefined;
     });
 
-    await new Promise((r) => setTimeout(r, 80)); // deja correr los reintentos
-    await el.updateComplete;
+    await agotarReintentos(el);
     const receipt = el.shadowRoot!.querySelector('ok-receipt') as HTMLElement & { receipt: ReceiptData };
     expect(llamadas, 'debe reintentar (no rendirse a la primera)').toBeGreaterThan(1);
     expect(receipt.receipt.qr, 'el QR aparece al llegar el registro').toBe('https://aeat/qr');
   });
 
   it('sin módulo invoice instalado NO insiste (queryOptional → undefined)', async () => {
-    let llamadas = 0;
-    const el = await montarPorSaleId(async (name) => {
-      if (name === 'invoice.by_source') llamadas += 1;
-      return undefined; // módulo ausente (ADR-0127)
-    });
+    const el = await montarPorSaleId(async () => undefined, { sinFacturacion: true }); // ADR-0127
 
-    await new Promise((r) => setTimeout(r, 80));
-    await el.updateComplete;
+    await agotarReintentos(el);
+    const llamadas = docDouble.reads.filter((r) => r.name === 'invoice.by_source').length;
     expect(llamadas, 'módulo ausente = una sola consulta, sin reintentos').toBe(1);
   });
 
@@ -165,8 +192,7 @@ describe('QR fiscal: reintento mientras el Outbox termina', () => {
       return undefined;
     });
 
-    await new Promise((r) => setTimeout(r, 80));
-    await el.updateComplete;
+    await agotarReintentos(el);
     const receipt = el.shadowRoot!.querySelector('ok-receipt') as HTMLElement & { receipt: ReceiptData };
     expect(receipt.receipt.business.name).toBe('Manolo García SL');
     expect(receipt.receipt.business.tax_id).toBe('B12345678');
@@ -189,7 +215,6 @@ describe('printableDocument — what the thermal printer reads', () => {
   });
 
   it('is empty-safe: no sale loaded yet means nothing to print, not a blank ticket', async () => {
-    await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document');
     document.body.appendChild(el);
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
@@ -301,7 +326,6 @@ describe('printableDocument — the promotional QR reaches the thermal paper (hu
 // así que aquí se fija el cableado entero — fila con `unit_code` → «1,5 kg» en los dos soportes.
 describe('la unidad de la línea llega al papel (sales#28)', () => {
   async function montarVentaConKilo() {
-    await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document');
     (el as unknown as Record<string, unknown>).sale = {
       id: 's-kg', sale_number: 'T-000125', total: 1800, created_at: '2026-08-20T10:00:00Z',
@@ -383,7 +407,6 @@ describe('claim «pide tu factura» — acuñar al resolver la F2 e imprimir el 
       'invoice.lines': F2_LINES,
       'verifactu.records.by_invoice': [{ qr_url: 'https://aeat/qr', aeat_csv: '' }],
     });
-    await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document') as HTMLElement & {
       fiscalRetryDelays: number[]; updateComplete: Promise<unknown>;
     };
@@ -494,7 +517,6 @@ describe('claim «pide tu factura» — acuñar al resolver la F2 e imprimir el 
 // uno de los cuatro casos que la issue exige (dividir, transferir, reabrir, REIMPRIMIR).
 describe('los suplementos sobreviven a la REIMPRESIÓN del tique (sales#148)', () => {
   async function montarVentaConSuplementos() {
-    await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document');
     (el as unknown as Record<string, unknown>).sale = {
       id: 's-mod', sale_number: 'T-000126', total: 1000, created_at: '2026-08-20T10:00:00Z',
@@ -551,7 +573,6 @@ describe('the paper translates the factory payment method (sales#181)', () => {
         key.split('.').reduce<unknown>((acc, part) => (acc as Record<string, unknown>)?.[part], esCatalog) as string ?? key,
     });
     document.body.innerHTML = '';
-    await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document') as HTMLElement & {
       sale: unknown; lines: unknown; settings: unknown; format?: 'ticket' | 'invoice';
       updateComplete: Promise<unknown>;
@@ -653,7 +674,6 @@ describe('la cabecera del tique NO espera a la factura (sales#274)', () => {
       'invoice.lines': [],
       'verifactu.records.by_invoice': [],
     });
-    await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document') as HTMLElement & {
       fiscalRetryDelays: number[]; format?: 'ticket' | 'invoice'; updateComplete: Promise<unknown>;
     };
@@ -733,7 +753,6 @@ describe('la cabecera del tique NO espera a la factura (sales#274)', () => {
       'sales.lines': [{ product_name: 'Corte', quantity: 1, unit_price: 2990, line_total: 2990 }],
       'sales.business.get': BUSINESS,
     });
-    await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document') as HTMLElement & { updateComplete: Promise<unknown> };
     el.setAttribute('sale-id', 's1');
     document.body.appendChild(el);
@@ -748,7 +767,6 @@ describe('la cabecera del tique NO espera a la factura (sales#274)', () => {
       'sales.pos_settings.get': [{ receipt_header: 'AURORA\nCalle Mayor 1' }],
       'sales.business.get': BUSINESS,
     });
-    await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document') as HTMLElement & { updateComplete: Promise<unknown> };
     el.setAttribute('sale-id', 's1');
     document.body.appendChild(el);
@@ -873,7 +891,6 @@ describe('recién cobrado, el tique espera a estar completo (sales#308)', () => 
       'invoice.lines': [],
       'verifactu.records.by_invoice': () => (Date.now() - start >= opts.recordAt ? [RECORD] : []),
     });
-    await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document') as HTMLElement & {
       issuing: boolean; fiscalRetryDelays: number[]; format?: 'ticket' | 'invoice'; updateComplete: Promise<unknown>;
     };
@@ -1031,7 +1048,6 @@ describe('recién cobrado, el tique espera a estar completo (sales#308)', () => 
         // Nothing before the ceiling; from then on the lookup never answers.
         'verifactu.records.by_invoice': () => (Date.now() - start >= 9000 ? new Promise<unknown[]>(() => {}) : []),
       });
-      await import('./erp-sales-document');
       const el = document.createElement('erp-sales-document') as Viewer & { issuing: boolean };
       el.issuing = true;
       el.setAttribute('sale-id', 's1');
@@ -1050,7 +1066,6 @@ describe('recién cobrado, el tique espera a estar completo (sales#308)', () => 
         'sales.get': [SALE],
         'sales.lines': [{ product_name: 'Agua mineral 50cl', quantity: 1, unit_price: 150, line_total: 150 }],
       });
-      await import('./erp-sales-document');
       const el = document.createElement('erp-sales-document') as Viewer & { issuing: boolean };
       el.issuing = true;
       el.setAttribute('sale-id', 's1');
@@ -1083,7 +1098,6 @@ describe('recién cobrado, el tique espera a estar completo (sales#308)', () => 
 
     it('a sale that fails to load answers false instead of leaving the caller waiting', async () => {
       sdkDouble = installDocDouble({}, { failing: { 'sales.get': 'internal_error' } });
-      await import('./erp-sales-document');
       const el = document.createElement('erp-sales-document') as Viewer & { issuing: boolean };
       el.issuing = true;
       el.setAttribute('sale-id', 's1');
@@ -1257,7 +1271,6 @@ describe('an invoice reaches the thermal printer as a full invoice (sales#350)',
         customer_tax_id: 'A87654321', customer_address: 'Calle Mayor 3, Madrid' }],
       'verifactu.records.by_invoice': [{ qr_url: 'https://aeat/qr', aeat_csv: '' }],
     });
-    await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document') as unknown as Viewer;
     el.setAttribute('sale-id', 's1');
     document.body.appendChild(el);

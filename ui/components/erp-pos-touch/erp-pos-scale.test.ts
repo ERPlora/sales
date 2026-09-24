@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { SCALE_WEIGHT_EVENT, type ScaleReading } from '../../lib/scale-entry.js';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 const PRODUCTS = [
   // Priced per kg, sold in steps of 1 g (`increment_value` in µ).
@@ -67,7 +68,6 @@ interface Pos {
 
 async function mount(): Promise<Pos> {
   document.body.innerHTML = '';
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch') as unknown as Pos;
   document.body.appendChild(el as unknown as Node);
   await el.updateComplete;

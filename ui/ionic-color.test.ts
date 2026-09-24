@@ -28,6 +28,9 @@ import { ionTone } from './lib/ion-tone';
 import { installErploraDouble } from './test/erplora-double';
 import { installPosDouble } from './test/pos-double';
 import { renderDocumentModal } from './lib/document-modal';
+import './components/erp-pos-departments/erp-pos-departments';
+import './components/erp-pos-quick-notes/erp-pos-quick-notes';
+import './components/erp-pos-touch/erp-pos-touch';
 
 // The `ui/` of THIS checkout, from the test's own URL: a fixed folder name (`modules/sales`, a
 // worktree) would scan a sibling checkout and let a `color=` added HERE through.
@@ -107,9 +110,8 @@ const settle = async (el: Wc) => {
   await el.updateComplete;
 };
 
-async function mount(tag: string, load: () => Promise<unknown>): Promise<Wc> {
+async function mount(tag: string): Promise<Wc> {
   document.body.innerHTML = '';
-  await load();
   const el = document.createElement(tag) as Wc;
   document.body.appendChild(el);
   await settle(el);
@@ -153,7 +155,7 @@ describe('pm#392: the delete confirmations (inside an ion-modal) paint their sol
       queries: { 'sales.departments.list': () => [], 'taxes.categories.list': () => [], 'taxes.rules.list': () => [] },
       t,
     });
-    const el = await mount('erp-pos-departments', () => import('./components/erp-pos-departments/erp-pos-departments'));
+    const el = await mount('erp-pos-departments');
     el.deleteTarget = { id: 'd-1', name: 'Bar' };
     await settle(el);
     const btn = byTestId(el.shadowRoot, 'pos-departments-delete-confirm');
@@ -164,7 +166,7 @@ describe('pm#392: the delete confirmations (inside an ion-modal) paint their sol
 
   it('quick notes: «Delete» carries the danger tone as inline custom properties', async () => {
     installErploraDouble({ queries: { 'sales.quick_notes.list': () => [] }, t });
-    const el = await mount('erp-pos-quick-notes', () => import('./components/erp-pos-quick-notes/erp-pos-quick-notes'));
+    const el = await mount('erp-pos-quick-notes');
     el.deleteTarget = { id: 'qn-1', text: 'no salt' };
     await settle(el);
     const btn = byTestId(el.shadowRoot, 'pos-quick-notes-delete-confirm');
@@ -194,7 +196,7 @@ describe('pm#392: the till paints its tones from classes of its own shadow root'
 
   async function till(): Promise<Wc> {
     installPosDouble({ settings: () => ({ allow_discounts: 1 }), products: PRODUCTS, rules: RULES });
-    return mount('erp-pos-touch', () => import('./components/erp-pos-touch/erp-pos-touch'));
+    return mount('erp-pos-touch');
   }
 
   const LINE = { id: 'p-cafe', line_id: 'l-1', name: 'Café', price: 180, qty: 1 };

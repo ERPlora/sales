@@ -20,12 +20,13 @@
 // 🔴 The block is `aria-disabled`, NEVER the native `disabled` — on Ionic that is
 // `pointer-events: none`, so on a counter tablet the tap dies with the reason stranded in a
 // `title` no finger ever produces (sales#58, sales#185). The tap must ARRIVE and ANSWER.
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import enLocale from '../../../locales/en.json';
 import esLocale from '../../../locales/es.json';
 import { installPosDouble } from '../../test/pos-double';
 
 import { tenderExactCash } from '../../test/cash-tender';
+import './erp-pos-touch';
 const PRODUCTS = [
   { id: 'p-cafe', name: 'Café', sku: 'CAF', price: 150, is_active: 1, tax_category_key: 'product.generic' },
 ];
@@ -86,7 +87,6 @@ const picker = (el: Pos) => el.shadowRoot.querySelector('fake-customer-picker') 
 
 async function mount(): Promise<Pos> {
   document.body.innerHTML = '';
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch') as unknown as Pos;
   document.body.appendChild(el);
   await el.updateComplete;
@@ -115,7 +115,6 @@ async function chooseCustomer(el: Pos) {
 
 const REQUIRED = { require_customer: 1 };
 
-beforeAll(async () => { await import('./erp-pos-touch'); }, 30_000);
 
 describe('1 · with `require_customer` on and no customer, Charge ASKS instead of charging', () => {
   beforeEach(() => { installSdk(REQUIRED); });

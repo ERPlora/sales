@@ -16,6 +16,7 @@
 // come back green because the double was kinder than the hub.
 import { beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 const PRODUCTS = [{ id: 'p-1', name: 'Café', price: 150, is_active: 1, tax_category_key: 'product.generic' }];
 const FOR_SALE = [{ id: 'p-1', price: 150, cost: 0, tax_category_key: 'product.generic', track_stock: 1 }];
@@ -61,7 +62,6 @@ interface MountedPos {
 }
 
 async function mount(): Promise<MountedPos> {
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch');
   document.body.appendChild(el);
   await (el as unknown as MountedPos).updateComplete;

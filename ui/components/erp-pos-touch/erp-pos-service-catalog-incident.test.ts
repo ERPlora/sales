@@ -21,6 +21,7 @@
 // Assertions are on FORM — the i18n key and the app it names — never on prose (ADR-0055).
 import { beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 const PRODUCTS = [{ id: 'p-1', name: 'Champú', price: 850, is_active: 1, tax_category_key: 'product.generic' }];
 const RULES = [{ id: 'r-21', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, is_active: 1 }];
@@ -74,7 +75,6 @@ interface MountedPos {
 }
 
 async function mount(): Promise<MountedPos> {
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch');
   document.body.appendChild(el);
   await (el as unknown as MountedPos).updateComplete;

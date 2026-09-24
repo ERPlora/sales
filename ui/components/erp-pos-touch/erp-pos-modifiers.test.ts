@@ -14,6 +14,7 @@
 // hamburguesa «sin cebolla» sube la cantidad de la normal y cocina nunca se entera.
 import { beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 const BURGER = { id: 'p-burger', name: 'Hamburguesa', price: 500, tax_category_key: 'product.generic' };
 const COFFEE = { id: 'p-coffee', name: 'Café', price: 120, tax_category_key: 'product.generic' };
@@ -57,7 +58,6 @@ interface Pos {
 }
 
 async function mount(): Promise<Pos> {
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch');
   document.body.appendChild(el);
   await (el as unknown as Pos).updateComplete;

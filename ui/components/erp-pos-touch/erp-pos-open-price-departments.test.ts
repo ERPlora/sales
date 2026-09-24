@@ -18,6 +18,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
 import esCatalog from '../../../locales/es.json';
+import './erp-pos-touch';
 
 /** The ten `is_system=1` rows the `taxes` seed plants in EVERY hub — the noise being removed. */
 const SEEDED_TAX_CATS = [
@@ -71,7 +72,6 @@ interface Pos {
 }
 
 async function mount(): Promise<Pos> {
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch');
   document.body.appendChild(el);
   await (el as unknown as Pos).updateComplete;

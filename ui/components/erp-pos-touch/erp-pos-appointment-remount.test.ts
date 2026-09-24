@@ -24,6 +24,7 @@
 // That is the only shape that also survives an F5, which a salon tablet does on its own.
 import { beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 const BOOKING = {
   id: 'ap-ana', customer_id: 'c-ana', customer_name: 'Ana Torres',
@@ -146,7 +147,6 @@ async function settle(el: MountedPos): Promise<void> {
 /** Mounts the till the way the shell does, on whatever URL the cashier is standing on. */
 async function mount(search = ''): Promise<MountedPos> {
   window.history.replaceState({}, '', `/m/sales/pos${search}`);
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch') as MountedPos;
   document.body.appendChild(el);
   await settle(el);

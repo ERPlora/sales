@@ -14,8 +14,9 @@
 //  3. A service whose price is not final (`from`, `hourly`, `variable`) must NOT be charged at its
 //     listed price. The till has no open-price flow yet, so it says so on the tile instead of
 //     quietly charging the wrong amount.
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 const PRODUCTS = [
   { id: 'p-champu', name: 'Champú', price: 900, is_active: 1, tax_category_key: 'product.generic' },
@@ -66,7 +67,6 @@ interface MountedPos {
 }
 
 async function mount(): Promise<MountedPos> {
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch');
   document.body.appendChild(el);
   await (el as unknown as MountedPos).updateComplete;
@@ -235,26 +235,27 @@ function installPagingSdk({ withQueryAllOptional = true } = {}) {
 }
 
 describe('the whole service catalogue reaches the grid (sales#186)', () => {
-  it('paints the service that lives past the request ceiling', async () => {
-    installPagingSdk();
-    const el = await mount();
+  // 620 tiles are the costliest till of the suite, and these three cases only READ the same one:
+  // mounting it three times tripled the one cost that pushed the file past the timeout on a loaded
+  // machine (sales#363). The till is mounted once; what each case reads was settled by the mount.
+  let el: MountedPos;
+  let calls: ReturnType<typeof installPagingSdk>;
+  beforeAll(async () => {
+    calls = installPagingSdk();
+    el = await mount();
+  });
 
+  it('paints the service that lives past the request ceiling', () => {
     expect(() => tileOf(el, 'Servicio 619'),
       'a business with 620 services must be able to charge the 620th').not.toThrow();
   });
 
-  it('offers the category that lives past the first page', async () => {
-    installPagingSdk();
-    const el = await mount();
-
+  it('offers the category that lives past the first page', () => {
     const labels = [...el.shadowRoot.querySelectorAll('.cc-n')].map((n) => n.textContent?.trim());
     expect(labels, 'a salon with 63 families does not lose the last 13').toContain('Familia 62');
   });
 
-  it('asks for the whole set: no `limit`, no `page_size`', async () => {
-    const calls = installPagingSdk();
-    await mount();
-
+  it('asks for the whole set: no `limit`, no `page_size`', () => {
     for (const name of ['services.services.list', 'services.categories.list']) {
       const call = calls.find((c) => c.name === name);
       expect(call, `the till reads ${name}`).toBeTruthy();

@@ -12,6 +12,7 @@
 // control no puede devolver la venta a tique.
 import { beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 const RULES = [{ id: 'r-21', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, is_active: 1 }];
 const TAX_CATS = [{ key: 'product.generic', name: 'General', is_active: 1 }];
@@ -43,7 +44,6 @@ interface Pos {
 }
 
 async function mount(): Promise<Pos> {
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch');
   document.body.appendChild(el);
   const pos = el as unknown as Pos;

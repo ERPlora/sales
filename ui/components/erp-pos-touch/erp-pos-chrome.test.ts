@@ -20,6 +20,7 @@
 // happy-dom NO hace layout: aquí se fija el CONTRATO (qué se pinta, qué se emite), no la posición.
 import { beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 const CATEGORIA_IVA = 'product.generic';
 const REGLAS_IVA = [{ id: 'r-21', tax_category_key: CATEGORIA_IVA, rate_pct: 21, parent_id: null, is_active: 1 }];
@@ -30,7 +31,6 @@ beforeEach(() => {
 
 /** Monta el TPV con los controles de chrome que el shell dice honrar (`undefined` = shell viejo). */
 async function montarTpv(chrome?: string) {
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch');
   if (chrome !== undefined) el.setAttribute('chrome', chrome);
   document.body.appendChild(el);

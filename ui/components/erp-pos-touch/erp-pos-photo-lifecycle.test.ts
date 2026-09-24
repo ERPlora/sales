@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 let releaseProducts: ((rows: unknown[]) => void) | undefined;
 const fetchMediaBlob = vi.fn(async () => new Blob(['webp'], { type: 'image/webp' }));
@@ -21,7 +22,6 @@ beforeEach(() => {
 
 describe('catalogue photo lifecycle', () => {
   it('does not restart media downloads when the initial query resolves after unmount', async () => {
-    await import('./erp-pos-touch');
     const element = document.createElement('erp-pos-touch') as HTMLElement & { updateComplete: Promise<unknown> };
     document.body.appendChild(element);
     // A macrotask, not a single microtask: since sales#25 the catalogue read waits for the till's

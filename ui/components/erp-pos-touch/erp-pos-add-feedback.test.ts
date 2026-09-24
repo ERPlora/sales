@@ -8,6 +8,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import esCatalog from '../../../locales/es.json';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 const notifyCalls: { type: string; message: string }[] = [];
 const CATEGORIA_IVA = 'product.generic';
@@ -22,7 +23,6 @@ beforeEach(() => {
 });
 
 async function montar() {
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch');
   document.body.appendChild(el);
   await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;

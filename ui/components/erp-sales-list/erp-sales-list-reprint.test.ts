@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import esCatalog from '../../../locales/es.json';
 import enCatalog from '../../../locales/en.json';
 import { installErploraDouble, type ErploraDouble } from '../../test/erplora-double';
+import './erp-sales-list';
 
 interface PrintReq { role?: string; documentType?: string; jobId?: string; data?: Record<string, unknown>; html?: string }
 interface Action { id: string; label: unknown; icon?: string; disabled?: (r: Record<string, unknown>) => boolean; loading?: (r: Record<string, unknown>) => boolean }
@@ -53,7 +54,6 @@ function install(locale: 'es' | 'en' = 'es', overrides: Record<string, unknown> 
 }
 
 async function mountList(): Promise<ListEl> {
-  await import('./erp-sales-list');
   const el = document.createElement('erp-sales-list') as ListEl;
   document.body.appendChild(el);
   await el.updateComplete;

@@ -21,6 +21,7 @@ import schema from '../../../schemas/complete_sale.json';
 import { installPosDouble } from '../../test/pos-double';
 
 import { tenderExactCash } from '../../test/cash-tender';
+import './erp-pos-touch';
 // ⚠️ Every sellable carries its `tax_category_key`: without it the tile is BLOCKED (sales#74/#58)
 // and the grid is dead by data, which looks exactly like "the POS does not respond".
 const PRODUCTS = [
@@ -85,7 +86,6 @@ interface Pos extends HTMLElement {
 
 async function mount(): Promise<Pos> {
   document.body.innerHTML = '';
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch') as unknown as Pos;
   document.body.appendChild(el);
   await el.updateComplete;

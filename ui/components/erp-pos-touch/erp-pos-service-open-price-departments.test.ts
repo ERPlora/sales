@@ -18,6 +18,7 @@
 // funcionalidad busca, y las plantillas de sector los van a traer dentro.
 import { beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 const RULES = [
   { id: 'r-21', tax_category_key: 'service.generic', rate_pct: 21, parent_id: null, is_active: 1 },
@@ -68,7 +69,6 @@ interface Pos {
 
 async function mount(): Promise<Pos> {
   document.body.innerHTML = '';
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch');
   document.body.appendChild(el);
   await (el as unknown as Pos).updateComplete;

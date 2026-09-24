@@ -11,6 +11,7 @@
 // montan suelto, salían verdes. Probar la pieza y no la composición es lo que dejó pasar el fallo.
 import { beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos';
 
 const REGLAS_IVA = [{ id: 'r-21', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, is_active: 1 }];
 
@@ -27,7 +28,6 @@ const asentar = async (el: Element) => {
 
 /** Monta el envoltorio TAL Y COMO lo monta el shell: atributos en el elemento exterior. */
 async function montarComoElShell(attrs: Record<string, string> = {}) {
-  await import('./erp-pos');
   const el = document.createElement('erp-pos');
   for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
   document.body.appendChild(el);

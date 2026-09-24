@@ -37,10 +37,10 @@
 // happy-dom does NOT lay out, so what is pinned here is the DECLARED CSS contract that makes the
 // geometry above possible, the same way `erp-pos-scroll.test.ts` pins the scroll contract.
 import { describe, expect, it } from 'vitest';
+import './erp-pos-touch';
 
 /** The CSS the component declares (Lit's `static styles`). */
 async function posCss(): Promise<string> {
-  await import('./erp-pos-touch');
   const ctor = customElements.get('erp-pos-touch') as unknown as {
     styles: { cssText: string } | Array<{ cssText: string }>;
   };

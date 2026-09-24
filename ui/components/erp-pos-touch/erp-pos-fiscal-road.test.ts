@@ -12,11 +12,12 @@
 // separate terminal before «Cobrar» is pressed — and sending the owner to where it is fixed. Both
 // facts come from the CORE query `hub.fiscal.transmission`, the same rule the dispatcher uses, so
 // `sales` never names the fiscal module and never re-derives the rule.
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import enLocale from '../../../locales/en.json';
 import esLocale from '../../../locales/es.json';
 import { installPosDouble } from '../../test/pos-double';
 import { tenderExactCash } from '../../test/cash-tender';
+import './erp-pos-touch';
 
 const PRODUCTS = [
   { id: 'p-cafe', name: 'Café', sku: 'CAF', price: 150, is_active: 1, tax_category_key: 'product.generic' },
@@ -77,7 +78,6 @@ interface Pos extends HTMLElement {
 
 async function mount(): Promise<Pos> {
   document.body.innerHTML = '';
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch') as unknown as Pos;
   document.body.appendChild(el);
   await el.updateComplete;
@@ -96,7 +96,6 @@ async function withLine(): Promise<Pos> {
   return el;
 }
 
-beforeAll(async () => { await import('./erp-pos-touch'); }, 30_000);
 beforeEach(() => { installSdk(); });
 
 describe('1 · a hub that cannot file says so AT MOUNT, with the cause', () => {

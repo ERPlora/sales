@@ -23,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { installPosDouble } from '../../test/pos-double';
 
 import { tenderExactCash } from '../../test/cash-tender';
+import './erp-pos-touch';
 function moduleRoot(): string {
   let dir = dirname(fileURLToPath(import.meta.url));
   while (!existsSync(join(dir, 'module.json'))) {
@@ -117,7 +118,6 @@ interface Pos {
  *  screen never opens and the assertions would be reading the loading state. */
 async function mount(): Promise<Pos> {
   document.body.innerHTML = '';
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch');
   document.body.appendChild(el);
   const pos = el as unknown as Pos;

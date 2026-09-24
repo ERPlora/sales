@@ -14,8 +14,9 @@
 //    read (ADR-0127) — sales#318, in `erp-pos-staff-team.test.ts`.
 //  * Choosing nobody sends `staff_id: null` — on purpose. The till must not guess the session user
 //    and send an id it invented; the server resolves it, and it is the only one that can.
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 const HUB_USERS = [
   { id: 'u-ana', name: 'Ana', role: 'employee', is_active: true },
@@ -81,7 +82,6 @@ interface MountedPos {
 
 async function mount(search = ''): Promise<MountedPos> {
   window.history.replaceState({}, '', `/m/sales/pos${search}`);
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch');
   document.body.appendChild(el);
   await (el as unknown as MountedPos).updateComplete;
@@ -102,11 +102,6 @@ function chip(el: MountedPos): HTMLElement | null {
 function options(el: MountedPos): HTMLElement[] {
   return [...el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid="pos-staff-option"]')];
 }
-
-// The till module pulls in lit + OutfitKit: importing it the first time costs seconds and, if that
-// falls INSIDE the first test, what you see is a timeout that has nothing to do with what is being
-// asserted. It is paid here, outside the tests' clock.
-beforeAll(async () => { await import('./erp-pos-touch'); }, 60_000);
 
 beforeEach(() => { document.body.innerHTML = ''; installSdk(); });
 

@@ -18,10 +18,9 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { ReceiptData } from '@erplora/outfitkit';
 import esLocale from '../../../locales/es.json';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
-// Registering the POS costs seconds (big component, transformed on demand). Out of the tests' budget.
 beforeAll(async () => {
-  await import('./erp-pos-touch');
 }, 60_000);
 
 /** The hub's real Spanish catalog, resolved like the shell's `t()` does (ADR-0055) — so a label
