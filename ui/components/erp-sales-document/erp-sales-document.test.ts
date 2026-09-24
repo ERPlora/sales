@@ -99,18 +99,51 @@ describe('visor del documento de venta', () => {
 // Contrato: si el módulo está instalado pero el registro aún no existe, se REINTENTA con backoff y
 // el QR aparece solo; si el módulo NO está instalado (queryOptional → undefined), no se insiste.
 describe('QR fiscal: reintento mientras el Outbox termina', () => {
+  // sales#305 — the recipe sales#302 gave the block below: THE TEST HOLDS THE CLOCK. These cases
+  // used to wait 80 ms of the machine's clock for a 10 ms backoff, so on a loaded runner the retry
+  // had not happened yet («expected 1 to be greater than 1»). And the viewer each case mounted
+  // stayed in the page, still retrying against `globalThis.erplora` — which by then was the NEXT
+  // case's double, so its lookups were counted there («expected 2 to be 1»). The viewer stops
+  // retrying once it leaves the page, so every case unmounts it.
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.useRealTimers();
+  });
+
+  /** Runs the whole backoff (`fiscalRetryDelays = [10, 10]`) on the test's clock, then lets the
+   *  viewer paint what it got. */
+  async function agotarReintentos(el: { updateComplete: Promise<unknown> }) {
+    await vi.advanceTimersByTimeAsync(50);
+    await el.updateComplete;
+  }
+
   const SALE = {
     id: 's1', sale_number: 'T-1', subtotal: 327, total: 360,
     payment_method_name: 'Efectivo', created_at: '2026-07-16T19:00:30Z',
   };
 
-  async function montarPorSaleId(queryOptional: (name: string) => Promise<unknown>) {
-    installDocDouble({
+  /** The double of the case being run: its `reads` say how many times the viewer really asked. */
+  let docDouble: ReturnType<typeof installDocDouble>;
+
+  /** `sinFacturacion`: the hub has no `invoice` app, declared the way the SDK says it (the optional
+   *  door answers `undefined`), not as a query that answers `undefined` rows — the double rejects
+   *  that shape, and the viewer's tolerant catch then stops for a reason that is not the absence. */
+  async function montarPorSaleId(
+    answer: (name: string) => Promise<unknown>,
+    { sinFacturacion = false }: { sinFacturacion?: boolean } = {},
+  ) {
+    docDouble = installDocDouble({
       'sales.get': [SALE],
       'sales.lines': [{ product_name: 'Cafe', quantity: 1, unit_price: 180, line_total: 180 }],
-      'invoice.by_source': async () => (await queryOptional('invoice.by_source')) as unknown[],
-      'invoice.lines': async () => (await queryOptional('invoice.lines')) as unknown[],
-      'verifactu.records.by_invoice': async () => (await queryOptional('verifactu.records.by_invoice')) as unknown[],
+      ...(sinFacturacion ? {} : {
+        'invoice.by_source': async () => (await answer('invoice.by_source')) as unknown[],
+        'invoice.lines': async () => (await answer('invoice.lines')) as unknown[],
+        'verifactu.records.by_invoice': async () => (await answer('verifactu.records.by_invoice')) as unknown[],
+      }),
     });
     const el = document.createElement('erp-sales-document') as HTMLElement & {
       fiscalRetryDelays: number[]; updateComplete: Promise<unknown>;
@@ -133,22 +166,17 @@ describe('QR fiscal: reintento mientras el Outbox termina', () => {
       return undefined;
     });
 
-    await new Promise((r) => setTimeout(r, 80)); // deja correr los reintentos
-    await el.updateComplete;
+    await agotarReintentos(el);
     const receipt = el.shadowRoot!.querySelector('ok-receipt') as HTMLElement & { receipt: ReceiptData };
     expect(llamadas, 'debe reintentar (no rendirse a la primera)').toBeGreaterThan(1);
     expect(receipt.receipt.qr, 'el QR aparece al llegar el registro').toBe('https://aeat/qr');
   });
 
   it('sin módulo invoice instalado NO insiste (queryOptional → undefined)', async () => {
-    let llamadas = 0;
-    const el = await montarPorSaleId(async (name) => {
-      if (name === 'invoice.by_source') llamadas += 1;
-      return undefined; // módulo ausente (ADR-0127)
-    });
+    const el = await montarPorSaleId(async () => undefined, { sinFacturacion: true }); // ADR-0127
 
-    await new Promise((r) => setTimeout(r, 80));
-    await el.updateComplete;
+    await agotarReintentos(el);
+    const llamadas = docDouble.reads.filter((r) => r.name === 'invoice.by_source').length;
     expect(llamadas, 'módulo ausente = una sola consulta, sin reintentos').toBe(1);
   });
 
@@ -164,8 +192,7 @@ describe('QR fiscal: reintento mientras el Outbox termina', () => {
       return undefined;
     });
 
-    await new Promise((r) => setTimeout(r, 80));
-    await el.updateComplete;
+    await agotarReintentos(el);
     const receipt = el.shadowRoot!.querySelector('ok-receipt') as HTMLElement & { receipt: ReceiptData };
     expect(receipt.receipt.business.name).toBe('Manolo García SL');
     expect(receipt.receipt.business.tax_id).toBe('B12345678');
