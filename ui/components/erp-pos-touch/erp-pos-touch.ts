@@ -1223,6 +1223,9 @@ export class ErpPosTouch extends LitElement {
   // Precio libre / venta por departamento (fuera de catálogo): sheet propio con su importe tecleado
   // y el departamento (categoría fiscal) elegido.
   @state() private openPriceOpen = false;
+  /** sales#319 — the SERVICE that opened the sheet, if any: its name names the line; the department
+   *  only decides the VAT. Empty for the bare «Open price» key, where the department names it. */
+  private openServiceName = '';
   /** sales#71 — descuento de TICKET (%) de la cuenta en curso; 0 = ninguno. Se persiste en el
    *  pedido (`sales.order.set_discount`) y vuelve al retomar la cuenta (`OpenCheck.discount`). */
   @state() ticketDiscount = 0;
@@ -2999,7 +3002,7 @@ export class ErpPosTouch extends LitElement {
     // el importe listado como SUGERENCIA y su categoría fiscal ya elegida. Lo que el cajero
     // confirme entra por la puerta gateada (sales#63), que es donde vive el permiso.
     if (this.needsAmount(p)) {
-      this.openOpenPrice({ amountCents: Number(p.price) || 0, deptKey: p.tax_category_key });
+      this.openOpenPrice({ amountCents: Number(p.price) || 0, deptKey: p.tax_category_key, name: p.name });
       return Promise.resolve();
     }
     return this.queue(() => this.addWithModifiers(p));
@@ -4175,8 +4178,9 @@ export class ErpPosTouch extends LitElement {
   /** Abre la pregunta del importe. Sin argumentos es la tecla suelta «Precio libre» (en blanco);
    *  con ellos viene de un SERVICIO de precio no cerrado y arranca sugerido (services#12).
    *  `0` no se sugiere: un «desde 0 €» no es una pista, es ruido en la casilla. */
-  private openOpenPrice(seed?: { amountCents?: number; deptKey?: string }) {
+  private openOpenPrice(seed?: { amountCents?: number; deptKey?: string; name?: string }) {
     const cents = seed?.amountCents ?? 0;
+    this.openServiceName = seed?.name?.trim() ?? '';
     this.openAmount = cents > 0 ? centsToEuros(cents) : '';
     this.openDept = this.seededDeptKey(seed?.deptKey);
     this.openPriceOpen = true;
@@ -4220,7 +4224,8 @@ export class ErpPosTouch extends LitElement {
     const rates = this.taxCatalog.rates;
     return rates.has(taxCategoryKey) ? `${rates.get(taxCategoryKey)}%` : '';
   }
-  /** Añade la venta libre: nombre = el del DEPARTAMENTO (estilo frutería, sin teclear), precio
+  /** Añade la venta libre: nombre = el del SERVICIO que abrió la hoja (sales#319) o, con la tecla
+   *  suelta, el del DEPARTAMENTO (estilo frutería, sin teclear); precio
    *  tecleado y su categoría fiscal. Nunca fusiona → siempre línea nueva (`pushNewLine`, serializada
    *  por `queue` como el resto del carrito). `buildOpenPriceLine` valida que no sea línea desnuda.
    *  sales#120: el nombre congelado es el del idioma del HUB (`display_name`, taxes#38) — es el que
@@ -4229,7 +4234,7 @@ export class ErpPosTouch extends LitElement {
   private async addOpenPrice(): Promise<void> {
     const dept = this.resolvedDept;
     if (!dept || this.openAmountCents <= 0) return;
-    const line = buildOpenPriceLine({ name: dept.name, priceCents: this.openAmountCents, taxCategoryKey: dept.taxCategoryKey });
+    const line = buildOpenPriceLine({ name: this.openServiceName || dept.name, priceCents: this.openAmountCents, taxCategoryKey: dept.taxCategoryKey });
     line.tax_rate = resolveLineTax(this.taxCatalog.rates, dept.taxCategoryKey); // % SOLO para el preview del total
     // sales#273: el importe lo teclea el cajero, pero el trabajo lo hizo alguien. Un color a medida
     // es la mitad de la caja de una peluquería, así que si esta puerta no sella el profesional el

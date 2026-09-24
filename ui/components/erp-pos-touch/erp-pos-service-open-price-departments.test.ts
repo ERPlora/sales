@@ -62,6 +62,7 @@ interface Pos {
   shadowRoot: ShadowRoot;
   updateComplete: Promise<unknown>;
   openPriceOpen: boolean;
+  openOpenPrice(seed?: { amountCents?: number; deptKey?: string }): void;
   openDept: string;
   openAmount: string;
   addOpenPrice(): Promise<void>;
@@ -114,7 +115,6 @@ describe('un servicio de precio abierto, con departamentos definidos', () => {
     expect(addLines()[0].params).toMatchObject({
       unit_price: 3000,
       tax_category_key: 'service.education',
-      product_name: 'Clases sueltas',
     });
   });
 
@@ -159,5 +159,76 @@ describe('sin departamentos definidos, el camino de siempre sigue intacto', () =
 
     expect(addLines()).toHaveLength(1);
     expect(addLines()[0].params).toMatchObject({ unit_price: 3000, tax_category_key: 'service.education' });
+  });
+});
+
+// 🔴 REGRESIÓN de sales#319 — the line of a variable-price service was named after the DEPARTMENT
+// («Servicio — general», «Clases sueltas») instead of the service the cashier tapped, and that is
+// the name that ends up on the screen, the receipt and the invoice. The department only decides VAT.
+describe('the line of a variable-price service keeps the SERVICE name', () => {
+  async function chargeService(departments: unknown[]) {
+    install(departments);
+    const el = await mount();
+    await tapService(el);
+    el.openAmount = '30';
+    await el.addOpenPrice();
+    await el.updateComplete;
+    return el;
+  }
+
+  it('with the business departments, the name is the service, the VAT the department', async () => {
+    await chargeService(DEPARTMENTS);
+    expect(addLines()).toHaveLength(1);
+    expect(addLines()[0].params).toMatchObject({
+      product_name: 'Clase particular',
+      tax_category_key: 'service.education',
+      unit_price: 3000,
+    });
+  });
+
+  it('with the tax categories fallback, the name is the service, not «Servicio — enseñanza»', async () => {
+    await chargeService([]);
+    expect(addLines()).toHaveLength(1);
+    expect(addLines()[0].params).toMatchObject({
+      product_name: 'Clase particular',
+      tax_category_key: 'service.education',
+    });
+  });
+
+  it('the cart line on screen shows the service name', async () => {
+    const el = await chargeService(DEPARTMENTS);
+    const text = el.shadowRoot.textContent ?? '';
+    expect(text).toContain('Clase particular');
+    expect(text).not.toContain('Clases sueltas');
+  });
+
+  it('the bare «Open price» key afterwards is named after the department again', async () => {
+    // The service name must not stick to the sheet: the next plain open-price sale is a department sale.
+    const el = await chargeService(DEPARTMENTS);
+    el.openOpenPrice();
+    el.openDept = 'd-otros';
+    el.openAmount = '5';
+    await el.addOpenPrice();
+    await el.updateComplete;
+
+    expect(addLines()).toHaveLength(2);
+    expect(addLines()[1].params).toMatchObject({ product_name: 'Otros servicios', tax_category_key: 'service.generic' });
+  });
+
+  it('closing the service sheet without adding does not leak the name into the next plain sale', async () => {
+    install(DEPARTMENTS);
+    const el = await mount();
+    await tapService(el);
+    el.shadowRoot.querySelector<HTMLElement>('[data-testid="pos-open-price-close"]')!.click();
+    await el.updateComplete;
+
+    el.openOpenPrice();
+    el.openDept = 'd-otros';
+    el.openAmount = '5';
+    await el.addOpenPrice();
+    await el.updateComplete;
+
+    expect(addLines()).toHaveLength(1);
+    expect(addLines()[0].params).toMatchObject({ product_name: 'Otros servicios' });
   });
 });
