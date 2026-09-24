@@ -148,6 +148,12 @@ export interface PrintDocument extends Record<string, unknown> {
   claim_note?: string;
   /** The locator IN TEXT — the only way in when the camera won't focus or the ticket is a copy. */
   claim_locator?: string;
+  /** hub#2009 — the business's promotional QR (reviews, social media) from the POS settings, which
+   *  the renderer prints at the foot of a TICKET, smaller than the fiscal one. Only present when
+   *  the URL was configured; never on a full invoice (formal, like the A4). */
+  promo_qr?: string;
+  /** hub#2009 — the text above it («Scan and leave us a review»), as the business typed it. */
+  promo_note?: string;
   receipt_footer?: string;
   /** Printed at the foot of a bill: «this is not an invoice» (ADR-0141). */
   notice?: string;
@@ -249,6 +255,9 @@ export function saleToPrintDocument(
     // sales#103: el bloque «pide tu factura», VACÍO sin locator acuñado — el renderer imprime
     // solo los campos presentes, así que un tique sin claim sale byte a byte como hoy.
     ...claimPrintFields(fiscal, t),
+    // hub#2009: the same promotional QR the screen and the browser paper carry (sales#345). The
+    // keys only exist when the business configured the URL, so its ticket is unchanged otherwise.
+    ...(screen.promo_qr ? { promo_qr: screen.promo_qr, ...(screen.promo_note ? { promo_note: screen.promo_note } : {}) } : {}),
     receipt_footer: screen.footer,
   };
 }
@@ -275,7 +284,8 @@ export function saleToInvoicePrintDocument(
   fallbackName?: string,
   t?: (key: string) => string,
 ): PrintDocument {
-  const ticket = saleToPrintDocument(sale, lines, settings, fiscal, locale, fallbackName, t);
+  // hub#2009 — the full invoice is formal, like the A4: the ticket's promotion stays off it.
+  const { promo_qr: _promoQr, promo_note: _promoNote, ...ticket } = saleToPrintDocument(sale, lines, settings, fiscal, locale, fallbackName, t);
   const invoice = saleToInvoice(sale, lines, settings, { ...fiscal, pending: false }, locale, fallbackName, t);
   const decimals = invoice.decimals;
   return {

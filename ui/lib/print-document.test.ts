@@ -684,3 +684,28 @@ describe('saleToInvoicePrintDocument — the full invoice, for the thermal print
     expect(doc.tax_breakdown).toBeUndefined();
   });
 });
+
+// ERPlora/hub#2009 (sale of sales#345) — the business's promotional QR (reviews, social media)
+// reaches the THERMAL paper too. `saleToReceipt` already fills `promo_qr`/`promo_note` for the
+// screen and the browser paper; the thermal document dropped them, so the roll printed nothing.
+describe('the promotional QR on the thermal ticket (hub#2009)', () => {
+  const SALE = { id: 'sale-2', sale_number: 'T-000124', subtotal: 100, tax_amount: 21, total: 121 };
+  const LINES = [{ product_name: 'Café solo', quantity: 1, unit_price: 121, line_total: 121 }];
+  const PROMO = { ...SETTINGS, receipt_marketing_url: 'https://g.page/r/bar-manolo/review', receipt_marketing_text: 'Escanea y déjanos una reseña' };
+
+  it('carries the promotional QR and its note when the business configured the URL', () => {
+    const doc = saleToPrintDocument(SALE, LINES, PROMO) as Record<string, unknown>;
+    expect(doc.promo_qr).toBe('https://g.page/r/bar-manolo/review');
+    expect(doc.promo_note).toBe('Escanea y déjanos una reseña');
+  });
+
+  it('without a URL the ticket carries no promo_* key: its paper does not change a byte', () => {
+    const doc = saleToPrintDocument(SALE, LINES, { ...SETTINGS, receipt_marketing_text: 'Escanea' });
+    expect(Object.keys(doc).filter((k) => k.startsWith('promo_'))).toEqual([]);
+  });
+
+  it('the full invoice carries no promotion: it is formal, like the A4', () => {
+    const doc = saleToInvoicePrintDocument(SALE, LINES, PROMO, { number: 'F-1', issuer_nif: 'B1', customer_name: 'X SL', customer_tax_id: 'B2' });
+    expect(Object.keys(doc).filter((k) => k.startsWith('promo_'))).toEqual([]);
+  });
+});
