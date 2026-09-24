@@ -279,6 +279,23 @@ describe('printableHtml — the promotional QR reaches the browser paper (sales#
   });
 });
 
+// ERPlora/hub#2009 — the same promotional QR reaches the THERMAL paper: `printableDocument()` is
+// what the ticket screen's print button and the shell's automatic print at checkout send to the
+// ESC/POS renderer.
+describe('printableDocument — the promotional QR reaches the thermal paper (hub#2009)', () => {
+  it('carries promo_qr / promo_note from receipt_marketing_url / receipt_marketing_text', async () => {
+    const el = await montarVisor();
+    (el as unknown as Record<string, unknown>).settings = {
+      receipt_marketing_url: 'https://g.page/r/bar-manolo/review',
+      receipt_marketing_text: 'Leave us a review',
+    };
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    const doc = (el as unknown as { printableDocument(): Record<string, unknown> }).printableDocument();
+    expect(doc.promo_qr).toBe('https://g.page/r/bar-manolo/review');
+    expect(doc.promo_note).toBe('Leave us a review');
+  });
+});
+
 // sales#28 — la unidad congelada de la línea (sales.lines la devuelve desde ADR-0147 §2.4) tiene
 // que llegar HASTA el papel: el visor arma ambos documentos (HTML y térmico) desde el mismo mapper,
 // así que aquí se fija el cableado entero — fila con `unit_code` → «1,5 kg» en los dos soportes.
