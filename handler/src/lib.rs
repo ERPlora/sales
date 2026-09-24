@@ -329,8 +329,29 @@ fn calc_line(unit_price_cents: i64, qty: f64, disc_pct: f64, tax_rate: f64, tax_
     }
 }
 
-fn day_from_now(now: &str) -> String {
-    let date = now.split('T').next().unwrap_or("");
+/// THE BUSINESS'S DATE (sales#323): the `YYYY-MM-DD` day an instant belongs to on the business
+/// clock. `now` is the runtime's instant in UTC (`to_rfc3339`); `context.timezone` is the business
+/// zone the runtime already resolved (hub#1022, `settings::timezone_of`). Cutting the date off
+/// `now` as it came numbered everything charged between local midnight and UTC midnight with the
+/// previous day (`20260918-0006` at 01:57 on the 19th in Madrid). Same helper as invoice#78.
+///
+/// Degrades to the UTC date — the runtime's own fallback (`timezone_name()` → `UTC`) — when the hub
+/// sends no zone or one this table cannot read; a naive instant keeps its own date.
+fn business_date(context: &Value, now: &str) -> String {
+    let tz = context
+        .get("timezone")
+        .and_then(Value::as_str)
+        .and_then(|name| name.parse::<chrono_tz::Tz>().ok())
+        .unwrap_or(chrono_tz::UTC);
+    match chrono::DateTime::parse_from_rfc3339(now) {
+        Ok(instant) => instant.with_timezone(&tz).format("%Y-%m-%d").to_string(),
+        Err(_) => now.split('T').next().unwrap_or(now).to_string(),
+    }
+}
+
+/// `YYYYMMDD` of a business date — the prefix of `sale_number` and the key of its day counter.
+fn day_from_now(date: &str) -> String {
+    let date = date.split('T').next().unwrap_or("");
     let digits: String = date.chars().filter(|c| c.is_ascii_digit()).collect();
     if digits.len() >= 8 { digits[..8].to_string() } else { "00000000".to_string() }
 }
@@ -516,11 +537,6 @@ fn apply_amount_discount(t: &mut LineTotals, parts: &mut [(String, i64, i64)], a
         part.1 = net;
         part.2 = money::round(Decimal::from(net) * Decimal::from_f64(pct).unwrap_or(Decimal::ZERO) / Decimal::from(100));
     }
-}
-
-/// Día ISO `YYYY-MM-DD` de `now` (para la vigencia de las reglas).
-fn iso_date(now: &str) -> String {
-    now.chars().take(10).collect()
 }
 
 /// sales#124 / sales#292 — reparte una cuota YA FIJADA (`bruto − base`) entre los componentes que
@@ -2109,7 +2125,8 @@ fn value_checkout(
     // runtime — no del cliente). Con ellos + la categoría de la línea se resuelve la regla de tipo.
     let cc = context.get("country_code").map(as_str).unwrap_or_default();
     let rc = context.get("region_code").map(as_str).unwrap_or_default();
-    let date = iso_date(&now);
+    // The rules are dated by day: read them on the business clock (sales#323).
+    let date = business_date(context, &now);
 
     // Catálogo fiscal de confianza pre-cargado por el runtime (ADR-0085, reads taxes.rules.list —
     // `required` desde sales#21/hub#701). `&Value::Null` as the payload fallback ON PURPOSE: in
@@ -2629,7 +2646,7 @@ fn complete_sale_inner(input: Value, rule: CapRule) -> Result<Output, Refusal> {
     let empty: Vec<Value> = Vec::new();
     let new_ids = context.get("new_ids").and_then(|v| v.as_array()).unwrap_or(&empty);
     let now = context.get("now").map(as_str).unwrap_or_default();
-    let day = day_from_now(&now);
+    let day = day_from_now(&business_date(&context, &now));
     let sale_id = new_ids.first().map(as_str).unwrap_or_default();
 
     // sales#179 — **WHO ATTENDED cannot be left blank.** The till never asked for the waiter and
@@ -11519,6 +11536,98 @@ mod tests {
                 .refused("no rule, no sale");
             assert_eq!(err.code, "sales.no_tax_rule", "unexpected code: {err:?}");
         }
+    }
+
+    // ── sales#323 · THE SALE NUMBER CARRIES THE BUSINESS DAY, NOT THE UTC ONE ────────────────
+    //
+    // The runtime hands over `context.now` in UTC and the business zone as an IANA name in
+    // `context.timezone` (hub#1022, `settings::timezone_of`). Cutting the day off `now` numbered
+    // everything charged between local midnight and 02:00 (summer in Spain) with YESTERDAY's
+    // date: `20260918-0006` at 01:57 on the 19th. Same root as invoice#78, non-fiscal half.
+
+    /// A one-line sale charged at `now` (UTC instant) in a hub whose zone is `timezone`.
+    fn sale_at(now: &str, timezone: Option<&str>) -> Output {
+        let items = json!([{ "product_name": "Caña", "price": 250, "quantity": 1_000_000, "tax_rate": 10.0 }]);
+        let mut inp = input(items, 3, 250);
+        inp["context"]["now"] = json!(now);
+        if let Some(tz) = timezone {
+            inp["context"]["timezone"] = json!(tz);
+        }
+        sale(inp)
+    }
+
+    /// The `day` the counter is bumped for — the prefix of `sale_number` (`_insert_sale.sql`).
+    fn counter_day(out: &Output) -> Value {
+        let bump = out.operations.iter().find(|op| op.command == "sales._bump_counter").expect("bump");
+        let header = out.operations.iter().find(|op| op.command == "sales._insert_sale").expect("header");
+        assert_eq!(bump.params["day"], header.params["day"], "counter and header must agree on the day");
+        bump.params["day"].clone()
+    }
+
+    #[test]
+    fn a_sale_charged_after_local_midnight_is_numbered_with_the_business_day() {
+        // 01:57 on the 19th in Madrid (CEST, UTC+2) is 23:57 on the 18th in UTC — the QA evidence.
+        assert_eq!(counter_day(&sale_at("2026-09-18T23:57:41+00:00", Some("Europe/Madrid"))), json!("20260919"));
+    }
+
+    #[test]
+    fn the_day_flips_at_the_business_midnight_not_at_utc_midnight() {
+        // 23:30 on the 18th in Madrid is 21:30Z: still the 18th.
+        assert_eq!(counter_day(&sale_at("2026-09-18T21:30:00+00:00", Some("Europe/Madrid"))), json!("20260918"));
+        // 00:00:30 on the 19th in Madrid is 22:00:30Z: already the 19th.
+        assert_eq!(counter_day(&sale_at("2026-09-18T22:00:30+00:00", Some("Europe/Madrid"))), json!("20260919"));
+    }
+
+    #[test]
+    fn a_zone_west_of_utc_moves_the_day_back_not_forward() {
+        // 03:00Z on the 19th is 21:00 on the 18th in Mexico City (UTC−6).
+        assert_eq!(counter_day(&sale_at("2026-09-19T03:00:00+00:00", Some("America/Mexico_City"))), json!("20260918"));
+    }
+
+    #[test]
+    fn the_october_clock_change_moves_the_border_with_it() {
+        // Sat 24/10 22:30Z = Sun 25/10 00:30 CEST (UTC+2) → the 25th.
+        assert_eq!(counter_day(&sale_at("2026-10-24T22:30:00+00:00", Some("Europe/Madrid"))), json!("20261025"));
+        // Sun 25/10 22:30Z = 23:30 CET (UTC+1, after the change) → still the 25th.
+        assert_eq!(counter_day(&sale_at("2026-10-25T22:30:00+00:00", Some("Europe/Madrid"))), json!("20261025"));
+        // The Canaries run one hour behind the peninsula: 23:30Z on the 24th is 00:30 there → 25th.
+        assert_eq!(counter_day(&sale_at("2026-10-24T23:30:00+00:00", Some("Atlantic/Canary"))), json!("20261025"));
+    }
+
+    #[test]
+    fn without_a_usable_zone_the_day_stays_on_utc() {
+        // No zone, an empty one, or a name nobody knows → the runtime's own fallback (`UTC`).
+        assert_eq!(counter_day(&sale_at("2026-09-18T23:57:41+00:00", None)), json!("20260918"));
+        assert_eq!(counter_day(&sale_at("2026-09-18T23:57:41+00:00", Some(""))), json!("20260918"));
+        assert_eq!(counter_day(&sale_at("2026-09-18T23:57:41+00:00", Some("Mars/Olympus"))), json!("20260918"));
+    }
+
+    #[test]
+    fn an_instant_without_an_offset_keeps_its_own_date_never_an_empty_one() {
+        // Not what the runtime sends (it is RFC 3339), but a naive instant must not zero the day.
+        assert_eq!(counter_day(&sale_at("2026-09-18T23:57:41", Some("Europe/Madrid"))), json!("20260918"));
+    }
+
+    #[test]
+    fn a_tax_rate_change_at_new_year_applies_from_the_business_midnight() {
+        // The rule catalogue is dated by day (`valid_from`). At 00:30 on 1 January in Madrid
+        // (23:30Z on 31 December) the NEW rate already governs — the UTC day would still say 2026.
+        let items = json!([
+            { "product_name": "Café", "price": 10000, "quantity": 1_000_000, "tax_category_key": "product.generic" }
+        ]);
+        let rules = json!([
+            { "id": "r-old", "country_code": "ES", "region_code": null, "tax_category_key": "product.generic",
+              "rate_pct": 21.0, "tax_type": "vat", "parent_id": null, "is_active": 1, "valid_from": "2012-09-01", "valid_to": "2026-12-31" },
+            { "id": "r-new", "country_code": "ES", "region_code": null, "tax_category_key": "product.generic",
+              "rate_pct": 10.0, "tax_type": "vat", "parent_id": null, "is_active": 1, "valid_from": "2027-01-01" }
+        ]);
+        let mut inp = input_with_rules(items, 4, rules, "array", "ES", "");
+        inp["context"]["now"] = json!("2026-12-31T23:30:00+00:00");
+        inp["context"]["timezone"] = json!("Europe/Madrid");
+        let out = sale(inp);
+        let line = out.operations.iter().find(|op| op.command == "sales._insert_line").expect("line");
+        assert_eq!(line.params["tax_rule_id"], json!("r-new"));
+        assert_eq!(line.params["tax_rate"], json!(10.0));
     }
 
 }

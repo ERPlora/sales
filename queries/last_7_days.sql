@@ -1,17 +1,27 @@
--- Ventas de los últimos 7 días del hub: una fila por día con la fecha (parte día) y el importe
--- total vendido (ventas completadas). erp_date normaliza el texto ISO a la parte fecha portable.
--- La ventana se acota sumando 7 días a la fecha de la venta y exigiendo que alcance el día de hoy
--- (erp_dateadd con n POSITIVO → portable SQLite/Postgres, ADR-0007 §4a; evita el modificador
--- '+-7 days' inválido en SQLite). Días sin ventas no aparecen (no inventamos ceros: el widget
--- grafica solo los días con datos reales). Alimenta el widget "Ventas últimos 7 días" (chart bar).
--- hub_id y now los inyecta el runtime (§2.5/§2.9).
+-- Sales of the hub's last 7 days: one row per BUSINESS day with the total sold (completed sales).
+-- The window is bounded by adding 7 days to the sale's day and requiring it to reach today
+-- (erp_dateadd with a POSITIVE n, ADR-0007 §4a). Days without sales do not appear (no invented
+-- zeros: the widget plots only days with real data). Feeds the "Sales last 7 days" widget (chart
+-- bar). hub_id, now and timezone are injected by the runtime (§2.5/§2.9, hub#1022).
+--
+-- THE BUSINESS DAY (sales#323). `created_at` is a UTC instant; its day is read on the business
+-- clock — `:timezone`, the IANA zone the runtime binds in every declarative SQL (hub#1022,
+-- `settings::timezone_of`) — never as its UTC date part, which filed everything charged between
+-- local midnight and 02:00 (summer in Spain) under the previous day. Same idiom as invoice#78 and
+-- `appointments`; the COALESCE degrades to UTC like the runtime does (`timezone_name()`), because
+-- `AT TIME ZONE NULL` would silently drop every row.
+-- The day is computed once in the inner SELECT and grouped by name: repeating the expression in the
+-- GROUP BY would bind `:timezone` twice, and Postgres cannot match two parameters as one expression.
 SELECT
-    erp_date(created_at)    AS day,
+    day,
     COALESCE(SUM(total), 0) AS total
-FROM sales_sale
-WHERE hub_id = :hub_id
-  AND is_deleted = 0
-  AND status = 'completed'
-  AND erp_date(erp_dateadd(created_at, 7, 'days')) >= erp_date(:now)
-GROUP BY erp_date(created_at)
+FROM (
+    SELECT CAST(CAST(CAST(created_at AS TEXT) AS timestamptz) AT TIME ZONE COALESCE(NULLIF(TRIM(CAST(:timezone AS TEXT)), ''), 'UTC') AS date) AS day, total
+    FROM sales_sale
+    WHERE hub_id = :hub_id
+      AND is_deleted = 0
+      AND status = 'completed'
+) d
+WHERE erp_date(erp_dateadd(day, 7, 'days')) >= CAST(CAST(CAST(:now AS TEXT) AS timestamptz) AT TIME ZONE COALESCE(NULLIF(TRIM(CAST(:timezone AS TEXT)), ''), 'UTC') AS date)
+GROUP BY day
 ORDER BY day ASC;

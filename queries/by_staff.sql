@@ -40,6 +40,13 @@
 --
 -- Subconsulta en el FROM y no un CTE a propósito: el runtime puede envolver esta consulta, y un
 -- `WITH` inicial no sobrevive a `SELECT * FROM (<sql>)`.
+--
+-- THE BUSINESS DAY (sales#323). `created_at` is a UTC instant; its day is read on the business
+-- clock — `:timezone`, the IANA zone the runtime binds in every declarative SQL (hub#1022,
+-- `settings::timezone_of`) — never as its UTC date part, which filed everything charged between
+-- local midnight and 02:00 (summer in Spain) under the previous day. Same idiom as invoice#78 and
+-- `appointments`; the COALESCE degrades to UTC like the runtime does (`timezone_name()`), because
+-- `AT TIME ZONE NULL` would silently drop every row.
 SELECT
     staff_id,
     COUNT(DISTINCT sale_id)                                  AS sales_count,
@@ -59,8 +66,8 @@ FROM (
     WHERE s.hub_id = :hub_id
       AND s.is_deleted = 0
       AND s.status = 'completed'
-      AND erp_date(s.created_at) >= erp_date(:date_from)
-      AND erp_date(s.created_at) <= erp_date(:date_to)
+      AND CAST(CAST(CAST(s.created_at AS TEXT) AS timestamptz) AT TIME ZONE COALESCE(NULLIF(TRIM(CAST(:timezone AS TEXT)), ''), 'UTC') AS date) >= erp_date(:date_from)
+      AND CAST(CAST(CAST(s.created_at AS TEXT) AS timestamptz) AT TIME ZONE COALESCE(NULLIF(TRIM(CAST(:timezone AS TEXT)), ''), 'UTC') AS date) <= erp_date(:date_to)
 
     UNION ALL
 
@@ -70,8 +77,8 @@ FROM (
     WHERE s.hub_id = :hub_id
       AND s.is_deleted = 0
       AND s.status = 'completed'
-      AND erp_date(s.created_at) >= erp_date(:date_from)
-      AND erp_date(s.created_at) <= erp_date(:date_to)
+      AND CAST(CAST(CAST(s.created_at AS TEXT) AS timestamptz) AT TIME ZONE COALESCE(NULLIF(TRIM(CAST(:timezone AS TEXT)), ''), 'UTC') AS date) >= erp_date(:date_from)
+      AND CAST(CAST(CAST(s.created_at AS TEXT) AS timestamptz) AT TIME ZONE COALESCE(NULLIF(TRIM(CAST(:timezone AS TEXT)), ''), 'UTC') AS date) <= erp_date(:date_to)
       AND NOT EXISTS (
             SELECT 1 FROM sales_sale_item i2
             WHERE i2.sale_id = s.id AND i2.hub_id = s.hub_id
