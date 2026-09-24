@@ -1,5 +1,6 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { property, state } from 'lit/decorators.js';
+import { classMap } from 'lit/directives/class-map.js';
 import { define } from '@erplora/outfitkit/define';
 import { bindTabbar } from '@erplora/outfitkit/tabbar';
 // La frontera EUROS ↔ CÉNTIMOS vive en el SDK (ADR-0123), no copiada en cada WC (como el desktop).
@@ -4970,7 +4971,7 @@ export class ErpPosTouch extends LitElement {
           <div class="foot-actions">
             ${this.discountsAllowed ? html`
             <ion-button data-testid="pos-ticket-discount" fill="outline" ?disabled=${!this.cart.length}
-                        class=${this.ticketDiscount > 0 || this.ticketDiscountAmount > 0 ? 'ticket-discount tone-warning' : 'ticket-discount'}
+                        class="ticket-discount ${classMap({ 'tone-warning': this.ticketDiscount > 0 || this.ticketDiscountAmount > 0 })}"
                         title=${t('ui.discountTicket')} aria-label=${t('ui.discountTicket')}
                         @click=${() => this.openDiscount('ticket')}>
               <ion-icon slot="icon-only" name=${this.ticketDiscount > 0 || this.ticketDiscountAmount > 0 ? 'pricetag' : 'pricetag-outline'}></ion-icon>
@@ -5122,6 +5123,13 @@ export class ErpPosTouch extends LitElement {
     }
   }
 
+  /** pm#392 — an icon's state tone (`on` → `tone`, off → medium) as a classMap: it toggles the two
+   *  classes and leaves the ones Ionic stamps on the host alone (`hydrated`; without it Ionic's
+   *  global CSS hides the element). A `class=${…}` binding would rewrite the whole attribute. */
+  private toneOf(on: boolean, tone: 'primary' | 'warning' | 'success') {
+    return classMap({ [`tone-${tone}`]: on, 'tone-medium': !on });
+  }
+
   private renderLine(l: CartLine) {
     const locked = isLineLocked(l);
     return html`<ion-item data-testid=${`pos-line-${l.id}`} class=${l.line_id && this.splitSel.has(l.line_id) ? 'sel' : ''}
@@ -5129,7 +5137,7 @@ export class ErpPosTouch extends LitElement {
       ${this.cart.length > 1 && l.line_id
         ? html`<ion-icon slot="start"
                   name=${this.splitSel.has(l.line_id) ? 'checkmark-circle' : 'ellipse-outline'}
-                  class=${this.splitSel.has(l.line_id) ? 'selmark tone-primary' : 'selmark tone-medium'}></ion-icon>`
+                  class="selmark ${this.toneOf(this.splitSel.has(l.line_id), 'primary')}"></ion-icon>`
         : nothing}
       <ion-label>
         <h3>
@@ -5175,15 +5183,15 @@ export class ErpPosTouch extends LitElement {
             ${this.discountsAllowed ? html`
             <ion-button data-testid=${`pos-line-${l.id}-discount`} class="line-discount" fill="clear" size="small" title=${t('ui.discountLine')} aria-label=${t('ui.discountLine')}
                         @click=${() => this.openDiscount('line', l.line_id)}>
-              <ion-icon name=${l.discount ? 'pricetag' : 'pricetag-outline'} slot="icon-only" class=${l.discount ? 'tone-warning' : 'tone-medium'}></ion-icon>
+              <ion-icon name=${l.discount ? 'pricetag' : 'pricetag-outline'} slot="icon-only" class=${this.toneOf(!!l.discount, 'warning')}></ion-icon>
             </ion-button>` : nothing}
             <ion-button data-testid=${`pos-line-${l.id}-note`} class="line-note" fill="clear" size="small" title=${t('ui.lineNote')} aria-label=${t('ui.lineNote')}
                         @click=${() => this.openLineNote(l.line_id)}>
               <ion-icon name=${l.note ? 'chatbox-ellipses' : 'chatbox-ellipses-outline'} slot="icon-only"
-                        class=${l.note ? 'tone-primary' : 'tone-medium'}></ion-icon>
+                        class=${this.toneOf(!!l.note, 'primary')}></ion-icon>
             </ion-button>
             <ion-button data-testid=${`pos-line-${l.id}-gift`} fill="clear" size="small" title=${t('ui.giftAction')} @click=${() => this.toggleGift(l.id)}>
-              <ion-icon name=${l.is_gift ? 'gift' : 'gift-outline'} slot="icon-only" class=${l.is_gift ? 'tone-success' : 'tone-medium'}></ion-icon>
+              <ion-icon name=${l.is_gift ? 'gift' : 'gift-outline'} slot="icon-only" class=${this.toneOf(!!l.is_gift, 'success')}></ion-icon>
             </ion-button>
             <ok-qty-stepper .value=${l.qty} .min=${0} .step=${this.stepOf(l)}
               @ok-change=${(e: CustomEvent) => this.setQtyAbs(l.id, (e.detail as { value: number }).value,

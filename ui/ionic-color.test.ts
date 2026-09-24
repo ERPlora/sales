@@ -246,6 +246,37 @@ describe('pm#392: the till paints its tones from classes of its own shadow root'
     expectTone(el, btn(), 'warning');
   });
 
+  // A tone that follows STATE must toggle its class, not rewrite the attribute: Ionic stamps its own
+  // classes on the host (`hydrated`, `ios`, `button`…) and without `hydrated` its global CSS hides the
+  // element (`visibility: hidden`). Measured in a real browser: a `class=${…}` binding made the
+  // ticket discount button vanish the moment a discount applied.
+  it('a tone that follows state keeps the classes Ionic stamped on the host', async () => {
+    const el = await till();
+    el.cart = [{ ...LINE }, { ...LINE, id: 'p-2', line_id: 'l-2', name: 'Té' }];
+    await settle(el);
+    const root = el.shadowRoot;
+    const nodes = () => [
+      byTestId(root, 'pos-ticket-discount'),
+      byTestId(root, 'pos-line-p-cafe-discount')?.querySelector('ion-icon'),
+      byTestId(root, 'pos-line-p-cafe-note')?.querySelector('ion-icon'),
+      byTestId(root, 'pos-line-p-cafe-gift')?.querySelector('ion-icon'),
+      root.querySelector('ion-icon.selmark'),
+    ];
+    for (const n of nodes()) n!.classList.add('hydrated', 'ios');
+    el.ticketDiscount = 10;
+    el.cart = [{ ...LINE, discount: 10, note: 'x', is_gift: true }, { ...LINE, id: 'p-2', line_id: 'l-2', name: 'Té' }];
+    el.splitSel = new Set(['l-1']);
+    await settle(el);
+    for (const n of nodes()) {
+      expect(n!.classList.contains('hydrated'), `${n!.tagName} lost Ionic's hydrated class`).toBe(true);
+      expect(n!.classList.contains('ios')).toBe(true);
+    }
+    expectTone(el, nodes()[0], 'warning');
+    expect(byTestId(root, 'pos-ticket-discount')!.classList.contains('ticket-discount')).toBe(true);
+    expect(root.querySelector('ion-icon.selmark')!.classList.contains('tone-primary')).toBe(true);
+    expect(root.querySelector('ion-icon.selmark')!.classList.contains('tone-medium')).toBe(false);
+  });
+
   it('sheets and dialogs: note/discount «Remove» medium, «Discard and open» and the parked ✕ danger', async () => {
     const el = await till();
     el.cart = [{ ...LINE }];
