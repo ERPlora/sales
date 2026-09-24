@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, afterAll } from 'vitest';
 import { receiptToPrintableHtml } from './receipt-html';
 
 // The paper formats money with the document language (ADR-0400); these fixtures assert Spanish.
@@ -398,9 +398,12 @@ describe('printHtmlInIframe — the frame takes the paper width', () => {
   });
 });
 
-// sales#362 — the guard for the class, not just for the two tests above: this file keeps running
-// long enough for any print timer a test here leaves behind to fire, so a leak turns red HERE and
-// every time, instead of as an unattributed error on whichever runner happens to be slow.
-describe('printHtmlInIframe leaves nothing behind', () => {
-  it('no print timer outlives its test', () => new Promise<void>((done) => setTimeout(done, 300)));
+// sales#362 — the guard for the class, not just for the two tests above: once every test in this
+// file has run, the file stays alive long enough for any print timer a test left behind to fire, so
+// a leak turns red HERE and every time, instead of as an unattributed error on whichever runner
+// happens to be slow. A file-level `afterAll` rather than a last test: it also covers a test someone
+// appends below this line, which a trailing test would not.
+afterAll(() => {
+  vi.useRealTimers();
+  return new Promise<void>((done) => setTimeout(done, 300));
 });
