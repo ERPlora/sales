@@ -22,6 +22,7 @@
 // erp-pos-checkout-landscape.test.ts does. That it really fits is measured in a browser (the PR).
 import { beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 const PRODUCTS = [{ id: 'p-champu', name: 'Champú', price: 900, is_active: 1, tax_category_key: 'product.generic' }];
 const SERVICES = [
@@ -104,7 +105,6 @@ async function addByName(el: Pos, name: string) {
 /** The QA's check: a haircut from the appointment + a shampoo, a customer, the pay sheet on cash. */
 async function checkout(names = ['Corte de señora', 'Champú'], customer = true): Promise<Pos> {
   document.body.innerHTML = '';
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch') as unknown as Pos;
   document.body.appendChild(el);
   await settle(el);
@@ -228,7 +228,6 @@ describe('what the cashier must answer is never folded away (sales#341)', () => 
 
 /** The CSS the component declares (Lit's `static styles`). */
 async function posCss(): Promise<string> {
-  await import('./erp-pos-touch');
   const ctor = customElements.get('erp-pos-touch') as unknown as { styles: { cssText: string } | Array<{ cssText: string }> };
   return [ctor.styles].flat().map((s) => s.cssText).join('\n');
 }

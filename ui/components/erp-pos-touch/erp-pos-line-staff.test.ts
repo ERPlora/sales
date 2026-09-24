@@ -14,9 +14,10 @@
 // Which is why the merge is load-bearing here. `addNow` folds a repeated tap into the line that is
 // already in the cart; if it does not look at the professional, Ana's cut and Marta's cut become
 // one line of quantity 2 attributed to Ana — the exact bug being removed, now written by the fix.
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import schema from '../../../schemas/complete_sale.json';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 const HUB_USERS = [
   { id: 'u-ana', name: 'Ana', role: 'employee', is_active: true },
@@ -166,10 +167,6 @@ async function pay(el: Pos, method: string) {
 const checkout = () => commands.find((c) => c.name === 'sales.complete_sale');
 const itemsOf = (c: { payload: Record<string, unknown> }) =>
   c.payload.items as Record<string, unknown>[];
-
-// The till module pulls in lit + OutfitKit: importing it the first time costs seconds and, inside
-// the first test, that reads as a timeout unrelated to what is asserted. It is paid out here.
-beforeAll(async () => { await import('./erp-pos-touch'); }, 60_000);
 
 beforeEach(installSdk);
 

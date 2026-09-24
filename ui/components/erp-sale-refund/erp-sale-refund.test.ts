@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import esCatalog from '../../../locales/es.json';
 import enCatalog from '../../../locales/en.json';
 import { installErploraDouble } from '../../test/erplora-double';
+import './erp-sale-refund';
 
 interface Sdk {
   command: ReturnType<typeof vi.fn>;
@@ -74,7 +75,6 @@ type Refund = HTMLElement & {
 };
 
 async function mount(saleId = 'sale-1'): Promise<Refund> {
-  await import('./erp-sale-refund');
   const el = document.createElement('erp-sale-refund') as Refund;
   el.saleId = saleId;
   document.body.appendChild(el);
@@ -90,11 +90,10 @@ const confirmButton = (el: Refund): HTMLElement | null =>
   el.shadowRoot?.querySelector('ion-button.refund-confirm') as HTMLElement | null;
 
 beforeEach(() => install());
-afterEach(() => { document.body.innerHTML = ''; vi.resetModules(); });
+afterEach(() => { document.body.innerHTML = ''; });
 
 describe('los tres estados que una pantalla de dinero no puede saltarse', () => {
   it('mientras carga lo DICE, en vez de enseñar una devolución de 0,00 €', async () => {
-    await import('./erp-sale-refund');
     const el = document.createElement('erp-sale-refund') as Refund;
     el.saleId = 'sale-1';
     document.body.appendChild(el);

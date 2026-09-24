@@ -8,9 +8,10 @@
 //
 // Market shape (Square, Toast): the shop's setting is the switch's DEFAULT, and what the cashier
 // leaves on the sheet is what applies to that sale — in both directions.
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
 import { tenderExactCash } from '../../test/cash-tender';
+import './erp-pos-touch';
 
 const PRODUCTS = [
   { id: 'p-1', name: 'Corte', sku: 'CUT', price: 1190, is_active: 1, tax_category_key: 'product.generic' },
@@ -80,7 +81,6 @@ async function charge(el: Pos) {
   await el.updateComplete;
 }
 
-beforeAll(async () => { await import('./erp-pos-touch'); }, 30_000);
 beforeEach(() => { commands = []; });
 
 describe('the switch starts from the shop setting', () => {

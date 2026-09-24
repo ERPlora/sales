@@ -20,10 +20,10 @@
 // DECLARED CSS contract, the same way the other style contracts of this component are written. That
 // the grid really scrolls and CHARGE really lands inside the viewport is verified in a browser.
 import { describe, expect, it } from 'vitest';
+import './erp-pos-touch';
 
 /** The CSS the component declares (Lit's `static styles`). */
 async function posCss(): Promise<string> {
-  await import('./erp-pos-touch');
   const ctor = customElements.get('erp-pos-touch') as unknown as {
     styles: { cssText: string } | Array<{ cssText: string }>;
   };

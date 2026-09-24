@@ -13,8 +13,9 @@
 // decoration. ADR-0141 rebuilds the cart from `sales_order_item` rows, which carry an opaque
 // `staff_id` and no name: a label that only worked because this session happened to pick the
 // person from the chip would go blank on the very reload the salon does every morning.
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 const HUB_USERS = [
   { id: 'u-ana', name: 'Ana', role: 'employee', is_active: true },
@@ -136,7 +137,6 @@ async function serve(el: Pos, name: string) {
 const painted = (el: Pos) => [...el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid="pos-line-staff"]')]
   .map((n) => n.textContent?.trim() ?? '');
 
-beforeAll(async () => { await import('./erp-pos-touch'); }, 60_000);
 
 beforeEach(() => { localStorage.clear(); installSdk(); });
 

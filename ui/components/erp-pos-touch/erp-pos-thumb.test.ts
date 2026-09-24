@@ -24,6 +24,7 @@
 // is painted, with which classes). That the photo visually covers the initials is a browser matter.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 /** A product WITH a photo and one WITHOUT, so both branches are compared in one place. */
 const PRODUCTS = [
@@ -66,7 +67,6 @@ interface MountedPos {
 }
 
 async function mount(): Promise<MountedPos> {
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch');
   document.body.appendChild(el);
   await (el as unknown as MountedPos).updateComplete;

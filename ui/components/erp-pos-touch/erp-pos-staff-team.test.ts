@@ -18,8 +18,9 @@
 // close. A record linked to a person who signs in (`user_id`, ADR-0192) is ONE row, not two: the
 // close already unifies both ids (staff#46), and a picker that listed «Ana» and «Ana García» would
 // be asking the receptionist to guess which one earns the commission.
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 const OWNER = { id: 'u-owner', name: 'Dueña', role: 'admin', is_active: true };
 
@@ -169,7 +170,6 @@ const resumedCut = (staffId: string) => [{
   unit_price: 1800, line_total: 1800, tax_category_key: 'service.generic', is_service: 1, staff_id: staffId,
 }];
 
-beforeAll(async () => { await import('./erp-pos-touch'); }, 60_000);
 
 beforeEach(() => { localStorage.clear(); installSdk(); });
 

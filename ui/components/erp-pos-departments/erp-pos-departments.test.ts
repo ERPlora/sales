@@ -12,6 +12,7 @@
 // what its own hub has.
 import { beforeEach, describe, expect, it } from 'vitest';
 import { installErploraDouble } from '../../test/erplora-double';
+import './erp-pos-departments';
 
 const ROWS = [
   { id: 'd-veg', name: 'Frutas y verduras', tax_category_key: 'product.super_reduced', sort_order: 10 },
@@ -72,7 +73,6 @@ type Mounted = HTMLElement & {
 
 async function mount(): Promise<Mounted> {
   document.body.innerHTML = '';
-  await import('./erp-pos-departments');
   const el = document.createElement('erp-pos-departments') as unknown as Mounted;
   document.body.appendChild(el);
   await el.updateComplete;

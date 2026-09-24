@@ -20,6 +20,7 @@
 // prose: the wording lives in `locales/` and changing it must not turn this file red.
 import { beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 /** Two sellable, three blocked: one without a tax category and two whose category resolves no rule. */
 const PRODUCTS = [
@@ -65,7 +66,6 @@ interface MountedPos {
 }
 
 async function mount(): Promise<MountedPos> {
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch');
   document.body.appendChild(el);
   await (el as unknown as MountedPos).updateComplete;

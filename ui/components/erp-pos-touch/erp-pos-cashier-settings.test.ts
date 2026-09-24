@@ -20,6 +20,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 function moduleRoot(): string {
   let dir = dirname(fileURLToPath(import.meta.url));
@@ -137,7 +138,6 @@ interface Pos {
  *  not open and the test would be measuring the loading state, not the policy. */
 async function mount(): Promise<Pos> {
   document.body.innerHTML = '';
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch');
   document.body.appendChild(el);
   const pos = el as unknown as Pos;

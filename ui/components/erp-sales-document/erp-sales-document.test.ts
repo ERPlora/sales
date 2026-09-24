@@ -12,6 +12,7 @@ import type { ReceiptData } from '@erplora/outfitkit';
 import { installErploraDouble } from '../../test/erplora-double';
 import { forgetOriginalPrints } from '../../lib/original-ticket.js';
 import { CLAIM_FIELD_CHOICES } from '../../lib/public-claim.js';
+import './erp-sales-document';
 
 /** El doble del visor: sus tres lecturas propias, y la cadena fiscal AUSENTE salvo que un test la
  *  ponga en el hub — `invoice`/`verifactu` son apps opcionales (ADR-0127). */
@@ -36,7 +37,6 @@ beforeEach(() => {
 });
 
 async function montarVisor() {
-  await import('./erp-sales-document');
   const el = document.createElement('erp-sales-document');
   // Inyección directa (la vía de test que el componente ya expone): sin SDK ni saleId.
   (el as unknown as Record<string, unknown>).sale = {
@@ -112,7 +112,6 @@ describe('QR fiscal: reintento mientras el Outbox termina', () => {
       'invoice.lines': async () => (await queryOptional('invoice.lines')) as unknown[],
       'verifactu.records.by_invoice': async () => (await queryOptional('verifactu.records.by_invoice')) as unknown[],
     });
-    await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document') as HTMLElement & {
       fiscalRetryDelays: number[]; updateComplete: Promise<unknown>;
     };
@@ -189,7 +188,6 @@ describe('printableDocument — what the thermal printer reads', () => {
   });
 
   it('is empty-safe: no sale loaded yet means nothing to print, not a blank ticket', async () => {
-    await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document');
     document.body.appendChild(el);
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
@@ -301,7 +299,6 @@ describe('printableDocument — the promotional QR reaches the thermal paper (hu
 // así que aquí se fija el cableado entero — fila con `unit_code` → «1,5 kg» en los dos soportes.
 describe('la unidad de la línea llega al papel (sales#28)', () => {
   async function montarVentaConKilo() {
-    await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document');
     (el as unknown as Record<string, unknown>).sale = {
       id: 's-kg', sale_number: 'T-000125', total: 1800, created_at: '2026-08-20T10:00:00Z',
@@ -383,7 +380,6 @@ describe('claim «pide tu factura» — acuñar al resolver la F2 e imprimir el 
       'invoice.lines': F2_LINES,
       'verifactu.records.by_invoice': [{ qr_url: 'https://aeat/qr', aeat_csv: '' }],
     });
-    await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document') as HTMLElement & {
       fiscalRetryDelays: number[]; updateComplete: Promise<unknown>;
     };
@@ -494,7 +490,6 @@ describe('claim «pide tu factura» — acuñar al resolver la F2 e imprimir el 
 // uno de los cuatro casos que la issue exige (dividir, transferir, reabrir, REIMPRIMIR).
 describe('los suplementos sobreviven a la REIMPRESIÓN del tique (sales#148)', () => {
   async function montarVentaConSuplementos() {
-    await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document');
     (el as unknown as Record<string, unknown>).sale = {
       id: 's-mod', sale_number: 'T-000126', total: 1000, created_at: '2026-08-20T10:00:00Z',
@@ -551,7 +546,6 @@ describe('the paper translates the factory payment method (sales#181)', () => {
         key.split('.').reduce<unknown>((acc, part) => (acc as Record<string, unknown>)?.[part], esCatalog) as string ?? key,
     });
     document.body.innerHTML = '';
-    await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document') as HTMLElement & {
       sale: unknown; lines: unknown; settings: unknown; format?: 'ticket' | 'invoice';
       updateComplete: Promise<unknown>;
@@ -653,7 +647,6 @@ describe('la cabecera del tique NO espera a la factura (sales#274)', () => {
       'invoice.lines': [],
       'verifactu.records.by_invoice': [],
     });
-    await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document') as HTMLElement & {
       fiscalRetryDelays: number[]; format?: 'ticket' | 'invoice'; updateComplete: Promise<unknown>;
     };
@@ -733,7 +726,6 @@ describe('la cabecera del tique NO espera a la factura (sales#274)', () => {
       'sales.lines': [{ product_name: 'Corte', quantity: 1, unit_price: 2990, line_total: 2990 }],
       'sales.business.get': BUSINESS,
     });
-    await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document') as HTMLElement & { updateComplete: Promise<unknown> };
     el.setAttribute('sale-id', 's1');
     document.body.appendChild(el);
@@ -748,7 +740,6 @@ describe('la cabecera del tique NO espera a la factura (sales#274)', () => {
       'sales.pos_settings.get': [{ receipt_header: 'AURORA\nCalle Mayor 1' }],
       'sales.business.get': BUSINESS,
     });
-    await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document') as HTMLElement & { updateComplete: Promise<unknown> };
     el.setAttribute('sale-id', 's1');
     document.body.appendChild(el);
@@ -873,7 +864,6 @@ describe('recién cobrado, el tique espera a estar completo (sales#308)', () => 
       'invoice.lines': [],
       'verifactu.records.by_invoice': () => (Date.now() - start >= opts.recordAt ? [RECORD] : []),
     });
-    await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document') as HTMLElement & {
       issuing: boolean; fiscalRetryDelays: number[]; format?: 'ticket' | 'invoice'; updateComplete: Promise<unknown>;
     };
@@ -1031,7 +1021,6 @@ describe('recién cobrado, el tique espera a estar completo (sales#308)', () => 
         // Nothing before the ceiling; from then on the lookup never answers.
         'verifactu.records.by_invoice': () => (Date.now() - start >= 9000 ? new Promise<unknown[]>(() => {}) : []),
       });
-      await import('./erp-sales-document');
       const el = document.createElement('erp-sales-document') as Viewer & { issuing: boolean };
       el.issuing = true;
       el.setAttribute('sale-id', 's1');
@@ -1050,7 +1039,6 @@ describe('recién cobrado, el tique espera a estar completo (sales#308)', () => 
         'sales.get': [SALE],
         'sales.lines': [{ product_name: 'Agua mineral 50cl', quantity: 1, unit_price: 150, line_total: 150 }],
       });
-      await import('./erp-sales-document');
       const el = document.createElement('erp-sales-document') as Viewer & { issuing: boolean };
       el.issuing = true;
       el.setAttribute('sale-id', 's1');
@@ -1083,7 +1071,6 @@ describe('recién cobrado, el tique espera a estar completo (sales#308)', () => 
 
     it('a sale that fails to load answers false instead of leaving the caller waiting', async () => {
       sdkDouble = installDocDouble({}, { failing: { 'sales.get': 'internal_error' } });
-      await import('./erp-sales-document');
       const el = document.createElement('erp-sales-document') as Viewer & { issuing: boolean };
       el.issuing = true;
       el.setAttribute('sale-id', 's1');
@@ -1257,7 +1244,6 @@ describe('an invoice reaches the thermal printer as a full invoice (sales#350)',
         customer_tax_id: 'A87654321', customer_address: 'Calle Mayor 3, Madrid' }],
       'verifactu.records.by_invoice': [{ qr_url: 'https://aeat/qr', aeat_csv: '' }],
     });
-    await import('./erp-sales-document');
     const el = document.createElement('erp-sales-document') as unknown as Viewer;
     el.setAttribute('sale-id', 's1');
     document.body.appendChild(el);

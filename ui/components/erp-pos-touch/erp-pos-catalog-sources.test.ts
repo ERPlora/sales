@@ -16,6 +16,7 @@
 //     default would empty the grid of every salon on the next module update.
 import { beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 const PRODUCTS = [{ id: 'p-1', name: 'Café', price: 150, is_active: 1, tax_category_key: 'product.generic' }];
 const SERVICES = [{ id: 's-1', name: 'Corte', price: 1500, tax_category_key: 'product.generic' }];
@@ -51,7 +52,6 @@ interface MountedPos {
 }
 
 async function mount(): Promise<MountedPos> {
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch');
   document.body.appendChild(el);
   await (el as unknown as MountedPos).updateComplete;

@@ -10,6 +10,7 @@ import { render as litRender } from 'lit';
 import esCatalog from '../../../locales/es.json';
 import enCatalog from '../../../locales/en.json';
 import { installErploraDouble } from '../../test/erplora-double';
+import { rangeBounds } from './erp-sales-list';
 
 interface Column {
   key: string;
@@ -54,7 +55,6 @@ beforeEach(() => {
 });
 
 async function column(key: string): Promise<Column> {
-  await import('./erp-sales-list');
   const el = document.createElement('erp-sales-list');
   document.body.appendChild(el);
   await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
@@ -122,7 +122,6 @@ describe('sales list — the void action (sales#26)', () => {
     sdk().command = async (name: string, params?: Record<string, unknown>) => { commands.push({ name, params }); return {}; };
     sdk().notify = (n: { type: string; message: string }) => { notes.push(n); };
     document.body.innerHTML = '';
-    await import('./erp-sales-list');
     const el = document.createElement('erp-sales-list');
     document.body.appendChild(el);
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
@@ -218,7 +217,6 @@ describe('sales list — today by default, date/time on the row, KPIs for the sa
       'sales.stats': [{ count: 3, total_revenue: 4500, avg_ticket: 1500, tax_total: 780, discount_total: 200, voided_count: 1 }],
     });
     document.body.innerHTML = '';
-    await import('./erp-sales-list');
     const el = document.createElement('erp-sales-list');
     document.body.appendChild(el);
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
@@ -235,7 +233,6 @@ describe('sales list — today by default, date/time on the row, KPIs for the sa
   // suite went red on its own every night between 00:00 and 02:00 CEST. Two implementations of
   // "what day is today" is exactly where that bug came from — now there is only one.
   const today = async (): Promise<string> => {
-    const { rangeBounds } = await import('./erp-sales-list');
     return rangeBounds('today').from!;
   };
 
@@ -316,18 +313,15 @@ describe('sales list — «today» is the LOCAL day, never the UTC day (sales#13
   });
 
   it('at 01:30 local, «today» is the local day — the shift that is still open', async () => {
-    const { rangeBounds } = await import('./erp-sales-list');
     expect(rangeBounds('today')).toEqual({ from: LOCAL_DAY, to: LOCAL_DAY });
   });
 
   it('«7 days» and «30 days» count back in local days too, both ends', async () => {
-    const { rangeBounds } = await import('./erp-sales-list');
     expect(rangeBounds('7d')).toEqual({ from: '2026-08-17', to: LOCAL_DAY });
     expect(rangeBounds('30d')).toEqual({ from: '2026-07-25', to: LOCAL_DAY });
   });
 
   it('«all» stays unbounded: no day is computed at all', async () => {
-    const { rangeBounds } = await import('./erp-sales-list');
     expect(rangeBounds('all')).toEqual({});
   });
 });
@@ -348,7 +342,6 @@ describe('sales list — the range filter asks for DAYS, not timestamps (sales#1
   async function mountList() {
     listSdk = installList();
     document.body.innerHTML = '';
-    await import('./erp-sales-list');
     const el = document.createElement('erp-sales-list');
     document.body.appendChild(el);
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
@@ -366,7 +359,6 @@ describe('sales list — the range filter asks for DAYS, not timestamps (sales#1
 
   it('the segment range filters on `erp_date` (day granularity), never on the raw `created_at`', async () => {
     await mountList();
-    const { rangeBounds } = await import('./erp-sales-list');
     const day = rangeBounds('today').from!;
     const filters = filtersOf(listQueries().find((q) => q.name === 'sales.list'));
     // Day-granularity column with ISO days on both ends: comparing the timestamp with a day
@@ -377,7 +369,6 @@ describe('sales list — the range filter asks for DAYS, not timestamps (sales#1
 
   it('setRange re-points the SAME day column («7 días», «all» clears it)', async () => {
     const el = await mountList();
-    const { rangeBounds } = await import('./erp-sales-list');
     listSdk.reads.splice(0);
     await el.setRange('7d');
     let filters = filtersOf(listQueries().find((q) => q.name === 'sales.list'));
@@ -412,7 +403,6 @@ describe('sales list — clicking the row opens the document (pm#155)', () => {
     const sdk = (globalThis as Record<string, unknown>).erplora as Record<string, unknown>;
     sdk.hasPermission = () => true;
     document.body.innerHTML = '';
-    await import('./erp-sales-list');
     const el = document.createElement('erp-sales-list') as HTMLElement & { shadowRoot: ShadowRoot };
     document.body.appendChild(el);
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
@@ -482,7 +472,6 @@ describe('sales list — la vista gestiona su scroll y sus KPI en móvil (sales#
     installList();
     const { mql } = stubMatchMedia(mobile);
     document.body.innerHTML = '';
-    await import('./erp-sales-list');
     const el = document.createElement('erp-sales-list') as HTMLElement & { shadowRoot: ShadowRoot; updateComplete: Promise<unknown> };
     document.body.appendChild(el);
     await el.updateComplete;
@@ -574,7 +563,6 @@ describe('sales list — filtering by payment method (sales#181)', () => {
   async function paymentColumn(methods: unknown[]): Promise<Column> {
     installList({ 'sales.payment_methods': methods });
     document.body.innerHTML = '';
-    await import('./erp-sales-list');
     const el = document.createElement('erp-sales-list');
     document.body.appendChild(el);
     const view = el as unknown as { updateComplete: Promise<unknown> };
@@ -635,7 +623,6 @@ describe('the payment filter goes missing with a WORD, never in silence (sales#2
   async function mountMethods(methods: unknown[] | (() => unknown[])): Promise<{ shown: string; painted: string[]; col: Column }> {
     installList({ 'sales.payment_methods': methods });
     document.body.innerHTML = '';
-    await import('./erp-sales-list');
     const el = document.createElement('erp-sales-list');
     document.body.appendChild(el);
     const view = el as unknown as { updateComplete: Promise<unknown>; payMethodsError: string; columns: Column[]; shadowRoot: ShadowRoot };
@@ -678,7 +665,6 @@ describe('las métricas fallan con el CATÁLOGO, nunca con el mensaje del servid
   async function mountFailing(thrown: unknown): Promise<string> {
     installList({ 'sales.stats': () => { throw thrown; } });
     document.body.innerHTML = '';
-    await import('./erp-sales-list');
     const el = document.createElement('erp-sales-list');
     document.body.appendChild(el);
     const view = el as unknown as { updateComplete: Promise<unknown>; statsError: string };
@@ -726,7 +712,6 @@ describe('sales list — sorting by «Nº» is numeric, not lexicographic (sales
 
   async function mount(): Promise<ListView> {
     document.body.innerHTML = '';
-    await import('./erp-sales-list');
     const el = document.createElement('erp-sales-list');
     document.body.appendChild(el);
     const view = el as unknown as ListView;
@@ -849,7 +834,6 @@ describe('sales list — el resto llega a la fila y el botón conserva su nombre
       hasPermission: (p?: string) => p === 'sales.refund_sale',
     });
     document.body.innerHTML = '';
-    await import('./erp-sales-list');
     const el = document.createElement('erp-sales-list') as HTMLElement & { shadowRoot: ShadowRoot };
     document.body.appendChild(el);
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
@@ -961,7 +945,6 @@ describe('sales list — what is left to refund is READ on the row (sales#256)',
     });
     stubMatchMedia(mobile);
     document.body.innerHTML = '';
-    await import('./erp-sales-list');
     const el = document.createElement('erp-sales-list') as HTMLElement & { shadowRoot: ShadowRoot };
     document.body.appendChild(el);
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
@@ -1059,7 +1042,6 @@ describe('sales list — what is left to refund is READ on the row (sales#256)',
     });
     stubMatchMedia(false);
     document.body.innerHTML = '';
-    await import('./erp-sales-list');
     const el = document.createElement('erp-sales-list') as HTMLElement & { shadowRoot: ShadowRoot };
     document.body.appendChild(el);
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
@@ -1196,7 +1178,6 @@ describe('sales list — la acción de devolver se anuncia con TEXTO, no con su 
       hasPermission: (p?: string) => p === 'sales.refund_sale',
     });
     document.body.innerHTML = '';
-    await import('./erp-sales-list');
     const el = document.createElement('erp-sales-list') as HTMLElement & { shadowRoot: ShadowRoot };
     document.body.appendChild(el);
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
@@ -1253,7 +1234,6 @@ describe('sales list — la acción de devolver se anuncia con TEXTO, no con su 
       hasPermission: (perm?: string) => perm === 'sales.refund_sale',
     });
     document.body.innerHTML = '';
-    await import('./erp-sales-list');
     const el = document.createElement('erp-sales-list') as HTMLElement & { shadowRoot: ShadowRoot };
     document.body.appendChild(el);
     await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;

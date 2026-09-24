@@ -9,12 +9,10 @@
 // order pad.
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 
-// Registering the POS costs seconds (it is a big component and vitest transforms it on demand).
-// Doing it here instead of inside the first test keeps that cost out of the test's own budget.
 beforeAll(async () => {
-  await import('./erp-pos-touch');
 }, 60_000);
 
 interface PrintRequest {

@@ -23,7 +23,7 @@
 //                            through the required ones
 //   · broken contract      → rejects through ALL FOUR doors with a non-absence code, so the
 //                            screen's classifier calls it an incident and not an absence (ADR-0400)
-import { afterEach } from 'vitest';
+import { afterEach, beforeEach } from 'vitest';
 
 /** What a configured query answers: the rows, or a function of the params it was asked with. */
 export type QueryAnswer =
@@ -157,6 +157,23 @@ afterEach(() => {
     + '\nDeclare each one in `installErploraDouble({ queries: … })`, or say what it is with '
     + '`absent` (the owner module is not in this hub) or `broken` (its contract is broken).',
   );
+});
+
+// The fence (sales#363). Vitest gives up on a test at its timeout but cannot stop it: a till that
+// test mounted keeps calling `globalThis.erplora`, which is by then the NEXT test's double, and the
+// next test reads another test's lines and totals. The timeout is the one true failure of the file;
+// the rest of it is skipped, saying why, instead of failing with a till bug that does not exist.
+let timedOut: string | undefined;
+
+afterEach((ctx) => {
+  const errors = ctx.task.result?.errors ?? [];
+  if (!timedOut && errors.some((e) => /^Test timed out in \d+ms/.test(String(e?.message ?? '')))) {
+    timedOut = ctx.task.name;
+  }
+});
+
+beforeEach((ctx) => {
+  if (timedOut) ctx.skip(`«${timedOut}» timed out in this file and may still be running`);
 });
 
 /** The test file being run, for an error message that says WHERE the double is short. */

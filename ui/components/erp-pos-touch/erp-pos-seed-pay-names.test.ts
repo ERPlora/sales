@@ -13,6 +13,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
@@ -58,7 +59,6 @@ interface Pos extends HTMLElement {
 async function withPaySheet(locale: string): Promise<Pos> {
   installSdk(locale);
   document.body.innerHTML = '';
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch') as unknown as Pos;
   document.body.appendChild(el);
   await el.updateComplete;

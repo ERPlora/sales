@@ -8,6 +8,7 @@
 // layouts for free, instead of a fourth hand-rolled list.
 import { beforeEach, describe, expect, it } from 'vitest';
 import { installErploraDouble } from '../../test/erplora-double';
+import './erp-pos-quick-notes';
 
 const ROWS = [
   { id: 'qn-1', text: 'medium rare', sort_order: 10 },
@@ -54,7 +55,6 @@ type Mounted = HTMLElement & {
 
 async function mount(): Promise<Mounted> {
   document.body.innerHTML = '';
-  await import('./erp-pos-quick-notes');
   const el = document.createElement('erp-pos-quick-notes') as unknown as Mounted;
   document.body.appendChild(el);
   await el.updateComplete;

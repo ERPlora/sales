@@ -17,6 +17,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import esCatalog from '../../../locales/es.json';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 // sales#74 — la rejilla ya no deja añadir lo que el cobro rechazaría: un producto es vendible si
 // tiene categoría fiscal Y esa categoría resuelve tipo. Los dobles de este fichero describen un hub
@@ -54,7 +55,6 @@ beforeEach(() => {
 
 /** Monta el WC y espera a que Lit termine de pintar. */
 async function montarCarrito() {
-  await import('./erp-pos-touch');
   const el = document.createElement('erp-pos-touch');
   document.body.appendChild(el);
   await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;

@@ -10,8 +10,9 @@
 // The money is never invented here: at the picker it is the delta the OPTION was showing, and on a
 // resumed check the one the SERVER froze on the row (sales#200). And it stays display money — the
 // payloads keep travelling with `option_id` alone (sales#68).
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
+import './erp-pos-touch';
 
 const BURGER = { id: 'p-burger', name: 'Hamburguesa', price: 900, tax_category_key: 'product.generic' };
 
@@ -25,7 +26,6 @@ const GROUPS = [
 
 let commands: { name: string; params: Record<string, unknown> }[] = [];
 
-beforeAll(async () => { await import('./erp-pos-touch'); }, 60_000);
 
 beforeEach(() => {
   document.body.innerHTML = '';
