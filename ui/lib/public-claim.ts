@@ -18,7 +18,7 @@
 //    de `sealed_payload`, y `public_fields` es la lista blanca de lo ÚNICO que el visitante puede
 //    rellenar — todo lo demás que mande el navegador del cliente se tira en la puerta.
 
-import { COUNTRY_CODES, HOME_COUNTRY } from './foreign-recipient.js';
+import { COUNTRY_CODES, HOME_COUNTRY, UNLISTED_COUNTRY } from './foreign-recipient.js';
 import enLocale from '../../locales/en.json';
 import esLocale from '../../locales/es.json';
 
@@ -71,7 +71,9 @@ export const CLAIM_FIELD_CHOICES: {
     names: 'region',
     options: [
       { value: '', label: homeCountryName() },
-      ...COUNTRY_CODES.filter((code) => code !== HOME_COUNTRY),
+      // sales#360: QU has no name the browser knows, so it carries its own label.
+      ...COUNTRY_CODES.filter((code) => code !== HOME_COUNTRY).map((code): ChoiceOption =>
+        code === UNLISTED_COUNTRY ? { value: code, label: bothLanguages('countryUnlisted') } : code),
     ],
   },
   customer_id_type: {

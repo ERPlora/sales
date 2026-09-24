@@ -5519,7 +5519,8 @@ var CLAIM_FIELD_CHOICES = {
     names: "region",
     options: [
       { value: "", label: homeCountryName() },
-      ...COUNTRY_CODES.filter((code) => code !== HOME_COUNTRY)
+      // sales#360: QU has no name the browser knows, so it carries its own label.
+      ...COUNTRY_CODES.filter((code) => code !== HOME_COUNTRY).map((code) => code === UNLISTED_COUNTRY ? { value: code, label: bothLanguages("countryUnlisted") } : code)
     ]
   },
   customer_id_type: {
