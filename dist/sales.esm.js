@@ -4485,6 +4485,7 @@ var en_default = {
     errorLoadSale: "The sale could not be loaded, so there is nothing to refund yet. Try again.",
     print: "Print",
     printFailed: "Could not print",
+    printAwaitingPrinter: "The receipt is waiting: no printer is set up yet. Set one up and it comes out on its own.",
     qrValidateNote: "Scan to validate the invoice at the AEAT",
     claimNote: "Get your invoice",
     docEmpty: "No receipt data.",
@@ -5063,6 +5064,7 @@ var es_default = {
     errorLoadSale: "No se ha podido cargar la venta, as\xED que todav\xEDa no hay nada que devolver. Vuelve a intentarlo.",
     print: "Imprimir",
     printFailed: "No se pudo imprimir",
+    printAwaitingPrinter: "El tique est\xE1 en espera: a\xFAn no hay ninguna impresora dada de alta. Da una de alta y saldr\xE1 solo.",
     qrValidateNote: "Escanea para validar la factura en la AEAT",
     claimNote: "Pide tu factura",
     docEmpty: "Sin datos de tiquet.",
@@ -6031,6 +6033,10 @@ async function sendReceipt({ html, data, saleId, t: t7, kind = RECEIPT }) {
     });
   } catch (e8) {
     res = { error: e8 instanceof Error ? e8.message : String(e8) };
+  }
+  if (res?.via === "queue" && res.awaitingHost === true) {
+    sdk.notify?.({ type: "warning", message: t7("ui.printAwaitingPrinter") });
+    return;
   }
   if (res?.via === "bridge" || res?.via === "queue") return;
   if (res?.via === "browser" && kind.format === "a4") return;
