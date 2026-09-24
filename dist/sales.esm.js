@@ -4264,6 +4264,7 @@ var HOME_COUNTRY = "ES";
 var NOT_A_COUNTRY = new Set(
   "EU EZ QO UN XA XB ZZ IC EA AN BU CS DD DY FX HV NH RH SU TP UK VD YD YU ZR AC AX BL CP CQ DG EH GF GP MF MQ SJ TA XK".split(" ")
 );
+var UNLISTED_COUNTRY = "QU";
 var COUNTRY_CODES = (() => {
   const names = new Intl.DisplayNames(["en"], { type: "region", fallback: "none" });
   const out = [];
@@ -4274,6 +4275,7 @@ var COUNTRY_CODES = (() => {
       if (name && name !== code && !NOT_A_COUNTRY.has(code)) out.push(code);
     }
   }
+  out.push(UNLISTED_COUNTRY);
   return out;
 })();
 var EU_MEMBERS = new Set(
@@ -4296,7 +4298,9 @@ var TERRITORY_PARENT = {
   AC: "SH",
   TA: "SH",
   DG: "IO",
-  CQ: "GG"
+  CQ: "GG",
+  XK: UNLISTED_COUNTRY,
+  EH: UNLISTED_COUNTRY
 };
 function recipientFromDetail(raw) {
   const code = typeof raw === "string" ? raw.trim().toUpperCase() : "";
@@ -4308,12 +4312,12 @@ function recipientFromDetail(raw) {
 function recipientCountryPayload(country, idType) {
   return country === HOME_COUNTRY ? { customer_country: "", customer_id_type: "" } : { customer_country: country, customer_id_type: idType };
 }
-function countryOptions(lang) {
+function countryOptions(lang, unlistedName) {
   const names = new Intl.DisplayNames([lang], { type: "region" });
   const named = (code) => ({ code, name: names.of(code) ?? code });
-  const rest = COUNTRY_CODES.filter((c5) => c5 !== HOME_COUNTRY).map(named);
+  const rest = COUNTRY_CODES.filter((c5) => c5 !== HOME_COUNTRY && c5 !== UNLISTED_COUNTRY).map(named);
   rest.sort((a3, b3) => a3.name.localeCompare(b3.name, lang));
-  return [named(HOME_COUNTRY), ...rest];
+  return [named(HOME_COUNTRY), ...rest, { code: UNLISTED_COUNTRY, name: unlistedName }];
 }
 
 // locales/en.json
@@ -4697,6 +4701,7 @@ var en_default = {
     limitFieldTaxId: "Tax ID",
     limitFieldAddress: "Address",
     limitFieldCountry: "Country",
+    countryUnlisted: "Other countries or territories not listed",
     limitFieldIdType: "Kind of document",
     idType02: "EU VAT number",
     idType04: "Tax ID of their country",
@@ -5276,6 +5281,7 @@ var es_default = {
     limitFieldTaxId: "NIF",
     limitFieldAddress: "Domicilio",
     limitFieldCountry: "Pa\xEDs",
+    countryUnlisted: "Otros pa\xEDses o territorios no relacionados",
     limitFieldIdType: "Tipo de documento",
     idType02: "NIF-IVA de la UE",
     idType04: "Identificaci\xF3n fiscal de su pa\xEDs",
@@ -5513,7 +5519,8 @@ var CLAIM_FIELD_CHOICES = {
     names: "region",
     options: [
       { value: "", label: homeCountryName() },
-      ...COUNTRY_CODES.filter((code) => code !== HOME_COUNTRY)
+      // sales#360: QU has no name the browser knows, so it carries its own label.
+      ...COUNTRY_CODES.filter((code) => code !== HOME_COUNTRY).map((code) => code === UNLISTED_COUNTRY ? { value: code, label: bothLanguages("countryUnlisted") } : code)
     ]
   },
   customer_id_type: {
@@ -11679,7 +11686,7 @@ var ErpPosTouch = class extends i3 {
         <ion-select label=${t5("ui.limitFieldCountry")} label-placement="stacked" interface="popover"
                     data-testid="pos-limit-country" .value=${this.customerCountry}
                     @ionChange=${(e8) => this.setCustomerCountry(String(e8.detail?.value ?? HOME_COUNTRY))}>
-          ${countryOptions(lang).map((o9) => b2`<ion-select-option value=${o9.code}>${o9.name}</ion-select-option>`)}
+          ${countryOptions(lang, t5("ui.countryUnlisted")).map((o9) => b2`<ion-select-option value=${o9.code}>${o9.name}</ion-select-option>`)}
         </ion-select>
         ${this.customerCountry === HOME_COUNTRY ? A : b2`<ion-select label=${t5("ui.limitFieldIdType")} label-placement="stacked" interface="popover"
                     data-testid="pos-limit-id-type" .value=${this.customerIdType}

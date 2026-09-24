@@ -97,6 +97,17 @@ describe('mintInvoiceRequestClaim — el cuerpo que la puerta espera', () => {
     expect(country.options.length).toBeLessThanOrEqual(400); // the hub's cap per field
   });
 
+  // sales#360 — QU (the AEAT's «not listed», for Kosovo and Western Sahara) has no CLDR name: the
+  // hub's page names bare codes with Intl.DisplayNames and would leave the customer a raw «QU».
+  it('names the «not listed» country itself, in both languages, once', () => {
+    const options = CLAIM_FIELD_CHOICES.customer_country.options;
+    expect(options).not.toContain('QU');
+    const unlisted = options.filter((o) => typeof o === 'object' && o.value === 'QU');
+    expect(unlisted).toEqual([{ value: 'QU', label: { en: en.ui.countryUnlisted, es: es.ui.countryUnlisted } }]);
+    expect(en.ui.countryUnlisted).toBeTruthy();
+    expect(es.ui.countryUnlisted).toBeTruthy();
+  });
+
   it('asks what the number is: tax or VAT number by default, passport or another document', () => {
     const idType = CLAIM_FIELD_CHOICES.customer_id_type;
     expect(idType.label).toEqual({ en: en.ui.claimIdType, es: es.ui.claimIdType });

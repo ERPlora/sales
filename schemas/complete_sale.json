@@ -396,7 +396,7 @@
     "customer_country": {
       "type": "string",
       "pattern": "^([A-Za-z]{2})?$",
-      "description": "Where the customer is from: ISO 3166 alpha-2 (ES, FR, US…), carried in sale.completed so the invoice declares a foreign customer to the AEAT by country (IDOtro) instead of as a Spanish NIF (sales#332, hub#1967). Empty = the tax id's VAT prefix decides."
+      "description": "Where the customer is from: ISO 3166 alpha-2 (ES, FR, US…), or QU (the AEAT's «other countries or territories not listed»: Kosovo, Western Sahara; sales#360), carried in sale.completed so the invoice declares a foreign customer to the AEAT by country (IDOtro) instead of as a Spanish NIF (sales#332, hub#1967). Empty = the tax id's VAT prefix decides."
     },
     "customer_id_type": {
       "type": "string",
