@@ -39,6 +39,14 @@ describe('the discount a cashier may give alone (sales#269)', () => {
     expect(needsManagerApproval(10, { ...plain, ticketAmountCents: 31 })).toBe(true);
   });
 
+  it('judges each discount on its own, not the stacked saving (sales#287, market decision)', () => {
+    // 10 % on every line + 10 % on the ticket + 10 % of what is left as a fixed amount: each fits
+    // the cap, so the usual door — like Dynamics 365 Commerce, Square, Toast or Lightspeed.
+    const stacked = { ticketPercent: 10, ticketAmountCents: 24, grossCents: 243, linePercents: [10, 10, 10] };
+    expect(needsManagerApproval(10, stacked)).toBe(false);
+    expect(checkoutCommand(10, stacked)).toBe('sales.complete_sale');
+  });
+
   it('asks nobody for anything when the shop set no cap — the day one behaviour', () => {
     expect(needsManagerApproval(100, { ticketPercent: 100, ticketAmountCents: 0, grossCents: 300, linePercents: [100] })).toBe(false);
     expect(checkoutCommand(100, { ...plain, ticketPercent: 100 })).toBe('sales.complete_sale');

@@ -374,6 +374,7 @@ carry the settings row's `id` — **writing** stays on `sales.settings.update` b
 | Mostrar servicios en el TPV | Show the `services` catalogue in the grid. Off = the till sells products only | On |
 | Exigir cliente en cada venta | El TPV pide el cliente al pulsar «Cobrar» y el servidor rechaza la venta sin él (sales#222) | Off |
 | Permitir descuentos | Allow discounts at the till | On |
+| Descuento máximo que puede aplicar solo quien cobra, por descuento (%) | Above it the till asks for the manager's PIN (sales#269). Each discount is checked on its own — a line's, the ticket's, a fixed amount — so stacked discounts can save the customer more than the cap (sales#287) | 100 = no limit |
 | Permitir tiques aparcados | Allow parking checks | On |
 | Precios con IVA incluido por defecto | Whether prices are gross or net by default | On |
 | Emitir factura si el cliente tiene NIF | Auto-issue a full invoice when the customer has a tax id | Off |
