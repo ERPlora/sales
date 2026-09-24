@@ -49,11 +49,30 @@ export function defaultIdType(country: string): string {
   return EU_MEMBERS.has(country) ? '02' : '04';
 }
 
-/** The country the customer file brings (`customers_customer.country`), as a known ISO code.
- *  Free text, an unknown code or nothing falls back to the till's own country. */
-export function countryFromDetail(raw: unknown): string {
+/** sales#336 — territories the AEAT declares under their parent country (not in `CountryType2`),
+ *  and that parent. All of them sit outside the EU VAT territory (Directive 2006/112/EC art. 6)
+ *  or outside the EU, so their usual number is the territory's tax id, never an EU VAT number.
+ *  Kosovo (XK) and Western Sahara (EH) have no parent the AEAT lists: the cashier picks by hand. */
+const TERRITORY_PARENT: Readonly<Record<string, string>> = {
+  GF: 'FR', GP: 'FR', MQ: 'FR', BL: 'FR', MF: 'FR', CP: 'FR',
+  AX: 'FI', SJ: 'NO', AC: 'SH', TA: 'SH', DG: 'IO', CQ: 'GG',
+};
+
+/** Who the customer file (`customers_customer.country`, an ISO code) says the recipient is: the
+ *  country the AEAT accepts and the kind of document usual there. A territory travels as its
+ *  parent country with the territory's tax id (04). Free text, an unknown code or nothing falls
+ *  back to the till's own country. */
+export function recipientFromDetail(raw: unknown): { country: string; idType: string } {
   const code = typeof raw === 'string' ? raw.trim().toUpperCase() : '';
-  return COUNTRY_CODES.includes(code) ? code : HOME_COUNTRY;
+  const parent = TERRITORY_PARENT[code];
+  if (parent) return { country: parent, idType: '04' };
+  const country = COUNTRY_CODES.includes(code) ? code : HOME_COUNTRY;
+  return { country, idType: defaultIdType(country) };
+}
+
+/** The country the customer file brings, as a code the AEAT accepts (see `recipientFromDetail`). */
+export function countryFromDetail(raw: unknown): string {
+  return recipientFromDetail(raw).country;
 }
 
 /** What travels in `sales.complete_sale`. Spain sends '' in both: a forced 'ES' would declare a

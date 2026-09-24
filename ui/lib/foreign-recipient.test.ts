@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   COUNTRY_CODES, ID_TYPE_OPTIONS, countryFromDetail, countryOptions, defaultIdType, recipientCountryPayload,
+  recipientFromDetail,
 } from './foreign-recipient';
 
 describe('defaultIdType — do not ask more than needed', () => {
@@ -28,6 +29,36 @@ describe('countryFromDetail — the customer file pre-fills the country', () => 
   });
   it('anything that is not a known ISO code falls back to Spain, the till’s own country', () => {
     for (const raw of [undefined, null, '', 'España', 'USA', 'ZZ']) expect(countryFromDetail(raw), String(raw)).toBe('ES');
+  });
+});
+
+describe('recipientFromDetail — a territory in the customer file travels as its parent country (sales#336)', () => {
+  // `customers` resolves the file's text to the real ISO code («Guayana Francesa» → GF). The AEAT's
+  // CodigoPais (CountryType2) has no GF, GP… : it declares them under the parent country. They are
+  // also outside the EU VAT territory (Directive 2006/112/EC art. 6), so their usual number is not
+  // an EU VAT number (02) but the tax id of the territory (04).
+  const PARENTS: Record<string, string> = {
+    GF: 'FR', GP: 'FR', MQ: 'FR', BL: 'FR', MF: 'FR', CP: 'FR',
+    AX: 'FI', SJ: 'NO', AC: 'SH', TA: 'SH', DG: 'IO', CQ: 'GG',
+  };
+  it('🔴 a French overseas customer is invoiced as France, not Spain', () => {
+    expect(recipientFromDetail('GF')).toEqual({ country: 'FR', idType: '04' });
+    expect(recipientFromDetail(' gp ')).toEqual({ country: 'FR', idType: '04' });
+  });
+  it('every territory the AEAT does not list maps to an accepted parent, with the tax id (04)', () => {
+    for (const [code, parent] of Object.entries(PARENTS)) {
+      expect(COUNTRY_CODES, parent).toContain(parent);
+      expect(recipientFromDetail(code), code).toEqual({ country: parent, idType: '04' });
+      expect(countryFromDetail(code), code).toBe(parent);
+    }
+  });
+  it('a country keeps its own usual document kind', () => {
+    expect(recipientFromDetail('fr')).toEqual({ country: 'FR', idType: '02' });
+    expect(recipientFromDetail('US')).toEqual({ country: 'US', idType: '04' });
+    expect(recipientFromDetail('ES')).toEqual({ country: 'ES', idType: '' });
+  });
+  it('Canarias and Ceuta y Melilla are Spain; Kosovo and Western Sahara have no parent and stay manual', () => {
+    for (const code of ['IC', 'EA', 'XK', 'EH']) expect(recipientFromDetail(code), code).toEqual({ country: 'ES', idType: '' });
   });
 });
 
