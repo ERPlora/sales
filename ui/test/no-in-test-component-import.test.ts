@@ -39,7 +39,9 @@ const SOURCES = testFiles(UI_DIR)
   .filter((f) => f !== SELF)
   .map((f) => ({ file: f, source: readFileSync(join(UI_DIR, f), 'utf8') }));
 
-/** A dynamic `import('…/erp-something')` — the module of a Web Component (`ui/components/erp-*`). */
+/** A dynamic import of a path ending in `/erp-<name>`: the module of a Web Component
+ *  (`ui/components/erp-*`). Worded without a literal call on purpose: the gate reads import
+ *  specifiers out of every `ui/` file, comments included. */
 const DYNAMIC_COMPONENT_IMPORT = /\bimport\(\s*['"][^'"]*\/erp-[a-z-]+(?:\.js)?['"]\s*\)/;
 
 describe('a component is loaded at the top of its test file, not inside a test (sales#363)', () => {
