@@ -144,8 +144,11 @@ export function renderDocumentModal({ saleId, issuing = false, onClose, t }: Doc
       ion-modal.doc-modal ion-content.doc-body {
         --background: var(--ion-color-light, #f4f5f8);
       }
+      /* The colour of the close button: color= would not paint here (pm#392), this style travels
+         with the modal to <body>. */
       ion-modal.doc-modal ion-button.doc-close {
         margin: 6px;
+        --color: var(--ion-color-medium, #636469);
       }
       ion-modal.doc-modal ion-footer ion-toolbar {
         --background: var(--ion-background-color, #fff);
@@ -167,7 +170,7 @@ export function renderDocumentModal({ saleId, issuing = false, onClose, t }: Doc
          (Y NO metas backticks en comentarios dentro de una plantilla Lit: cierran el literal.) */
     </style>
     <ion-content class="doc-body">
-      <ion-button class="doc-close" slot="fixed" style="top:0;right:0" fill="clear" color="medium"
+      <ion-button class="doc-close" slot="fixed" style="top:0;right:0" fill="clear"
         aria-label=${t('ui.close')} @click=${onClose}>
         <ion-icon name="close" slot="icon-only"></ion-icon>
       </ion-button>

@@ -11,6 +11,7 @@ import type { ListController, ListClient, ListParams, ListPage } from '@erplora/
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
 import { domainErrorText } from '../../lib/domain-error-text';
+import { ionTone } from '../../lib/ion-tone';
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
 
 // «Quick notes» screen of the till (sales#206): the CRUD behind the chips the waiter taps on the
@@ -208,7 +209,7 @@ export class ErpPosQuickNotes extends LitElement {
             </ion-label>
           </ion-item>
         </ion-list>
-        <ion-button class="ion-margin-top" data-testid="pos-quick-notes-delete-confirm" expand="block" color="danger" ?disabled=${this.saving}
+        <ion-button class="ion-margin-top" data-testid="pos-quick-notes-delete-confirm" expand="block" style=${ionTone('solid', 'danger')} ?disabled=${this.saving}
           @click=${() => this.confirmDelete()}>${t('ui.quickNoteDelete')}</ion-button>
         <ion-button data-testid="pos-quick-notes-delete-cancel" expand="block" fill="outline" ?disabled=${this.saving}
           @click=${() => { this.deleteTarget = null; }}>${t('ui.quickNoteCancel')}</ion-button>
