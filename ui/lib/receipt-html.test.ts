@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach, afterAll } from 'vitest';
 import { receiptToPrintableHtml } from './receipt-html';
 
 // The paper formats money with the document language (ADR-0400); these fixtures assert Spanish.
@@ -350,14 +350,60 @@ describe('the duplicate mark (hub#1931)', () => {
 });
 
 // sales#306 — the module's own fallback (no hub print door): the frame is as wide as the paper.
+// sales#362 — the print fires from a timer after the frame loads, and happy-dom has no
+// `window.print`. Left to the real clock, that timer outlived its test and, on a slow runner, blew up
+// between files as an unhandled error that turned the gate red with every test green. Each test
+// here owns the clock and the frame's `print`, and drains both before it ends.
 describe('printHtmlInIframe — the frame takes the paper width', () => {
+  // Gives every frame the helper appended the `print` a browser has, and finishes loading it now:
+  // happy-dom fires the frame's `load` from its own clock, which fake timers do not drive. The
+  // helper listens `once`, so the late real `load` finds no listener.
+  function loadWithPrint(): ReturnType<typeof vi.fn> {
+    const print = vi.fn();
+    for (const frame of document.querySelectorAll('iframe')) {
+      const w = frame.contentWindow!;
+      (w as unknown as { print: () => void }).print = print;
+      w.dispatchEvent(new Event('load'));
+    }
+    return print;
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+    document.body.innerHTML = '';
+  });
+
   it('80 mm for a ticket, 210 mm for an A4 invoice', async () => {
+    vi.useFakeTimers();
     const { printHtmlInIframe } = await import('./receipt-html');
     document.body.innerHTML = '';
     printHtmlInIframe('<p>t</p>');
     expect(document.querySelector('iframe')!.style.width).toBe('80mm');
-    document.body.innerHTML = '';
     printHtmlInIframe('<p>f</p>', document, 'a4');
-    expect(document.querySelector('iframe')!.style.width).toBe('210mm');
+    expect(document.querySelectorAll('iframe')[1].style.width).toBe('210mm');
+    loadWithPrint();
+    await vi.runAllTimersAsync();
+    expect(vi.getTimerCount()).toBe(0);
   });
+
+  it('prints the frame once it has loaded, then takes it out of the page', async () => {
+    vi.useFakeTimers();
+    const { printHtmlInIframe } = await import('./receipt-html');
+    printHtmlInIframe('<p>t</p>');
+    const print = loadWithPrint();
+    await vi.runAllTimersAsync();
+    expect(print).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('iframe')).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+// sales#362 — the guard for the class, not just for the two tests above: once every test in this
+// file has run, the file stays alive long enough for any print timer a test left behind to fire, so
+// a leak turns red HERE and every time, instead of as an unattributed error on whichever runner
+// happens to be slow. A file-level `afterAll` rather than a last test: it also covers a test someone
+// appends below this line, which a trailing test would not.
+afterAll(() => {
+  vi.useRealTimers();
+  return new Promise<void>((done) => setTimeout(done, 300));
 });
