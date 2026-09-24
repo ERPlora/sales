@@ -5130,9 +5130,11 @@ export class ErpPosTouch extends LitElement {
     return classMap({ [`tone-${tone}`]: on, 'tone-medium': !on });
   }
 
+  /** sales#359 — the split mark toggles via classMap too: a `class=${…}` binding would drop the
+   *  `ion-activatable`/`ion-focusable` Ionic stamps once, and the line stops answering the tap. */
   private renderLine(l: CartLine) {
     const locked = isLineLocked(l);
-    return html`<ion-item data-testid=${`pos-line-${l.id}`} class=${l.line_id && this.splitSel.has(l.line_id) ? 'sel' : ''}
+    return html`<ion-item data-testid=${`pos-line-${l.id}`} class=${classMap({ sel: !!l.line_id && this.splitSel.has(l.line_id) })}
         button ?detail=${false} @click=${() => this.toggleSplit(l)}>
       ${this.cart.length > 1 && l.line_id
         ? html`<ion-icon slot="start"
