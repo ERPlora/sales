@@ -8026,6 +8026,9 @@ var ErpPosTouch = class extends i3 {
     this.paying = false;
     this.tendered = "";
     this.openPriceOpen = false;
+    /** sales#319 — the SERVICE that opened the sheet, if any: its name names the line; the department
+     *  only decides the VAT. Empty for the bare «Open price» key, where the department names it. */
+    this.openServiceName = "";
     this.ticketDiscount = 0;
     this.noteInput = "";
     this.quickNotes = [];
@@ -10220,7 +10223,7 @@ var ErpPosTouch = class extends i3 {
     }
     this.blockedNotice = "";
     if (this.needsAmount(p4)) {
-      this.openOpenPrice({ amountCents: Number(p4.price) || 0, deptKey: p4.tax_category_key });
+      this.openOpenPrice({ amountCents: Number(p4.price) || 0, deptKey: p4.tax_category_key, name: p4.name });
       return Promise.resolve();
     }
     return this.queue(() => this.addWithModifiers(p4));
@@ -11226,6 +11229,7 @@ var ErpPosTouch = class extends i3 {
    *  `0` no se sugiere: un «desde 0 €» no es una pista, es ruido en la casilla. */
   openOpenPrice(seed) {
     const cents2 = seed?.amountCents ?? 0;
+    this.openServiceName = seed?.name?.trim() ?? "";
     this.openAmount = cents2 > 0 ? centsToEuros(cents2) : "";
     this.openDept = this.seededDeptKey(seed?.deptKey);
     this.openPriceOpen = true;
@@ -11271,7 +11275,8 @@ var ErpPosTouch = class extends i3 {
     const rates = this.taxCatalog.rates;
     return rates.has(taxCategoryKey) ? `${rates.get(taxCategoryKey)}%` : "";
   }
-  /** Añade la venta libre: nombre = el del DEPARTAMENTO (estilo frutería, sin teclear), precio
+  /** Añade la venta libre: nombre = el del SERVICIO que abrió la hoja (sales#319) o, con la tecla
+   *  suelta, el del DEPARTAMENTO (estilo frutería, sin teclear); precio
    *  tecleado y su categoría fiscal. Nunca fusiona → siempre línea nueva (`pushNewLine`, serializada
    *  por `queue` como el resto del carrito). `buildOpenPriceLine` valida que no sea línea desnuda.
    *  sales#120: el nombre congelado es el del idioma del HUB (`display_name`, taxes#38) — es el que
@@ -11280,7 +11285,7 @@ var ErpPosTouch = class extends i3 {
   async addOpenPrice() {
     const dept = this.resolvedDept;
     if (!dept || this.openAmountCents <= 0) return;
-    const line = buildOpenPriceLine({ name: dept.name, priceCents: this.openAmountCents, taxCategoryKey: dept.taxCategoryKey });
+    const line = buildOpenPriceLine({ name: this.openServiceName || dept.name, priceCents: this.openAmountCents, taxCategoryKey: dept.taxCategoryKey });
     line.tax_rate = resolveLineTax(this.taxCatalog.rates, dept.taxCategoryKey);
     if (this.staffId) line.staff_id = this.staffId;
     this.openPriceOpen = false;
