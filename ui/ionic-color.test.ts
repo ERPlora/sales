@@ -277,6 +277,26 @@ describe('pm#392: the till paints its tones from classes of its own shadow root'
     expect(root.querySelector('ion-icon.selmark')!.classList.contains('tone-medium')).toBe(false);
   });
 
+  // sales#359 — the same trap on the line itself. Splitting the payment, the cashier taps lines to
+  // mark them; a `class=${… 'sel' : ''}` on the `ion-item` rewrote the attribute on every toggle and
+  // dropped `ion-activatable`/`ion-focusable`, which Ionic stamps once: from the second tap on the
+  // line gave no press feedback and no keyboard focus ring (measured on kitchen#88 in <ion-app>).
+  it('marking and unmarking a line for the split keeps the classes Ionic stamped on the item', async () => {
+    const el = await till();
+    el.cart = [{ ...LINE }, { ...LINE, id: 'p-2', line_id: 'l-2', name: 'Té' }];
+    await settle(el);
+    const item = () => byTestId(el.shadowRoot, 'pos-line-p-cafe')!;
+    const ionic = ['item', 'ios', 'hydrated', 'ion-activatable', 'ion-focusable'];
+    item().classList.add(...ionic);
+
+    for (const marked of [true, false, true]) {
+      item().click();
+      await settle(el);
+      expect(item().classList.contains('sel'), `after the tap the line is ${marked ? '' : 'un'}marked`).toBe(marked);
+      for (const c of ionic) expect(item().classList.contains(c), `the line lost Ionic's ${c}`).toBe(true);
+    }
+  });
+
   it('sheets and dialogs: note/discount «Remove» medium, «Discard and open» and the parked ✕ danger', async () => {
     const el = await till();
     el.cart = [{ ...LINE }];
