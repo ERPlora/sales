@@ -1697,6 +1697,44 @@ export class ErpPosTouch extends LitElement {
    */
   private readonly onPopState = (): void => { void this.serveDeepLink(); };
 
+  /**
+   * hub#1906 — the system Back (Android's button, the browser's arrow) closes the TOPMOST layer of
+   * the till before it leaves the screen. The shell cannot see these sheets (they live in this
+   * shadow DOM), so on every Back it dispatches a cancelable `erplora:back` on `window`;
+   * `preventDefault()` answers "I closed something, keep the screen". Checked topmost first, in the
+   * reverse of the order the template paints them. Each close is exactly what that layer's own ✕ /
+   * Cancel does. The dirty-cart question without a Cancel HOLDS the Back: it must be answered.
+   */
+  private readonly onSystemBack = (e: Event): void => {
+    if (this.closeTopmostLayer()) e.preventDefault();
+  };
+
+  private closeTopmostLayer(): boolean {
+    if (this.prebillOpen) { this.prebillOpen = false; return true; }
+    if (this.docSaleId) { this.docSaleId = undefined; return true; }
+    if (this.searchOpen) {
+      (this.renderRoot.querySelector('ok-spotlight-search') as { close?: () => void } | null)?.close?.();
+      this.searchOpen = false;
+      return true;
+    }
+    if (this.dirtyOpen) {
+      if (this.dirtyAllowCancel) this.answerDirty('cancel');
+      return true;
+    }
+    if (this.staffPickerOpen) { this.staffPickerOpen = false; this.staffPickerLine = undefined; return true; }
+    if (this.parkPromptOpen) { this.parkPromptOpen = false; return true; }
+    if (this.discountSheet) { this.discountSheet = undefined; return true; }
+    if (this.noteSheet) { this.noteSheet = undefined; return true; }
+    if (this.openPriceOpen) { this.openPriceOpen = false; return true; }
+    if (this.comboSheet) { this.comboSheet = undefined; return true; }
+    if (this.modifierSheet) { this.modifierSheet = undefined; return true; }
+    if (this.paying) { this.paying = false; return true; }
+    if (this.parkedOpen) { this.parkedOpen = false; return true; }
+    if (this.moreOpen) { this.moreOpen = false; return true; }
+    if (this.cartOpen) { this.cartOpen = false; return true; }
+    return false;
+  }
+
   /** Resolves when the boot settled. A booking that lands mid-boot waits for the services
    *  catalogue instead of seeding a line whose VAT category nobody could resolve. */
   private resolveBoot: () => void = () => {};
@@ -1755,6 +1793,7 @@ export class ErpPosTouch extends LitElement {
     window.addEventListener('erplora:locale-changed', this.onLocaleChange);
     window.addEventListener(SCALE_WEIGHT_EVENT, this.onScaleWeight);
     window.addEventListener('popstate', this.onPopState);
+    window.addEventListener('erplora:back', this.onSystemBack);
     // sales#25 — the reads against a HARD dependency (`inventory`, `taxes`). Every one of them used
     // to end in `.catch(() => [])`, which answers "the app is not in this hub" and "the app is here
     // and its query broke" with the SAME empty catalogue: the shift opens with an empty grid and
@@ -1963,6 +2002,7 @@ export class ErpPosTouch extends LitElement {
     window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
     window.removeEventListener(SCALE_WEIGHT_EVENT, this.onScaleWeight);
     window.removeEventListener('popstate', this.onPopState);
+    window.removeEventListener('erplora:back', this.onSystemBack);
     this.removeEventListener('erp:order-context', this.onOrderContext);
     this.removeEventListener('erp:order-merge', this.onOrderMerge);
     this.removeEventListener('erp:order-split', this.onOrderSplit);
