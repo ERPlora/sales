@@ -30,10 +30,14 @@ export interface DocumentModalOpts {
   t: (key: string) => string;
 }
 
-/** Lo que este modal necesita del SDK del shell: la puerta de impresión y el canal de avisos.
- *  `via` es por dónde salió el papel — `bridge`/`queue` son éxito; el resto, no. */
+/** What the door answers. `via` is where the paper went — `bridge`/`queue` are success, the rest
+ *  is not. `awaitingHost` (hub#1731) is `true` only when the runtime ANSWERED that no printer is
+ *  set up for the station: queued, but nobody drains it. Absent means unanswered, not «nobody». */
+interface PrintResult { via?: string; error?: string; awaitingHost?: boolean }
+
+/** What this modal needs from the shell SDK: the print door and the notice channel. */
 interface PrintCapableSdk {
-  print?: (r: Record<string, unknown>) => Promise<{ via?: string; error?: string } | undefined>;
+  print?: (r: Record<string, unknown>) => Promise<PrintResult | undefined>;
   notify?: (n: { type: string; message: string }) => void;
 }
 
@@ -77,7 +81,7 @@ export async function sendReceipt(
     if (html) printHtmlInIframe(html, document, kind.format); else window.print();
     return;
   }
-  let res: { via?: string; error?: string } | undefined;
+  let res: PrintResult | undefined;
   try {
     // sales#92: el jobId es ÚNICO POR INTENTO (reprintJobId) — la cola deduplica por
     // (hub_id, job_id) y la clave del cobro (sale-<id>) ya la gastó el auto-print del
@@ -87,6 +91,12 @@ export async function sendReceipt(
     });
   } catch (e) {
     res = { error: e instanceof Error ? e.message : String(e) };
+  }
+  // sales#282 — queued with no printer set up: not lost (it comes out once one is set up), so the
+  // cashier is told to set one up, not that printing failed.
+  if (res?.via === 'queue' && res.awaitingHost === true) {
+    sdk.notify?.({ type: 'warning', message: t('ui.printAwaitingPrinter') });
+    return;
   }
   if (res?.via === 'bridge' || res?.via === 'queue') return;
   if (res?.via === 'browser' && kind.format === 'a4') return;

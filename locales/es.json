@@ -167,6 +167,7 @@
     "errorLoadSale": "No se ha podido cargar la venta, así que todavía no hay nada que devolver. Vuelve a intentarlo.",
     "print": "Imprimir",
     "printFailed": "No se pudo imprimir",
+    "printAwaitingPrinter": "El tique está en espera: aún no hay ninguna impresora dada de alta. Da una de alta y saldrá solo.",
     "qrValidateNote": "Escanea para validar la factura en la AEAT",
     "claimNote": "Pide tu factura",
     "docEmpty": "Sin datos de tiquet.",

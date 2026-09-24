@@ -152,6 +152,34 @@ describe('imprimir el documento', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(avisos).toHaveLength(0);
   });
+
+  // sales#282 — queued with no printer set up for the station (hub#1731 `awaitingHost`): the paper
+  // is not lost, it comes out once a printer is set up. Say THAT, not «could not print».
+  it('queued with no printer set up: warns to set one up, not that printing failed', async () => {
+    resultado = { via: 'queue', awaitingHost: true } as typeof resultado;
+    const modal = montarConVenta();
+    modal.querySelector<HTMLElement>('ion-footer ion-button.print')!.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(avisos, 'a queued ticket nobody drains is said').toHaveLength(1);
+    expect(avisos[0]).toEqual({ type: 'warning', message: 'ui.printAwaitingPrinter' });
+  });
+
+  it('queued with a printer reporting (awaitingHost false): silence', async () => {
+    resultado = { via: 'queue', awaitingHost: false } as typeof resultado;
+    const modal = montarConVenta();
+    modal.querySelector<HTMLElement>('ion-footer ion-button.print')!.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(avisos).toHaveLength(0);
+  });
+
+  it('queued on a runtime that does not answer awaitingHost: silence (unknown is not «nobody»)', async () => {
+    resultado = { via: 'queue' };
+    const modal = montarConVenta();
+    modal.querySelector<HTMLElement>('ion-footer ion-button.print')!.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(avisos).toHaveLength(0);
+  });
 });
 
 // sales#92 — reimprimir un tique NO imprimía. La cola del hub es idempotente por
