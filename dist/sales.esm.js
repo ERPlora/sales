@@ -3194,11 +3194,14 @@ function saleToPrintDocument(sale, lines, settings = {}, fiscal = {}, locale = "
     // sales#103: el bloque «pide tu factura», VACÍO sin locator acuñado — el renderer imprime
     // solo los campos presentes, así que un tique sin claim sale byte a byte como hoy.
     ...claimPrintFields(fiscal, t7),
+    // hub#2009: the same promotional QR the screen and the browser paper carry (sales#345). The
+    // keys only exist when the business configured the URL, so its ticket is unchanged otherwise.
+    ...screen.promo_qr ? { promo_qr: screen.promo_qr, ...screen.promo_note ? { promo_note: screen.promo_note } : {} } : {},
     receipt_footer: screen.footer
   };
 }
 function saleToInvoicePrintDocument(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName, t7) {
-  const ticket = saleToPrintDocument(sale, lines, settings, fiscal, locale, fallbackName, t7);
+  const { promo_qr: _promoQr, promo_note: _promoNote, ...ticket } = saleToPrintDocument(sale, lines, settings, fiscal, locale, fallbackName, t7);
   const invoice = saleToInvoice(sale, lines, settings, { ...fiscal, pending: false }, locale, fallbackName, t7);
   const decimals = invoice.decimals;
   return {
