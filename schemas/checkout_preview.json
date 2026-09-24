@@ -234,7 +234,7 @@
     "discount_amount": {
       "type": "integer",
       "minimum": 0,
-      "description": "Fixed ticket discount in minor units (cents), applied AFTER the percentages and split over the non-gift lines by largest remainder (ADR-0210, sales#113). Must not exceed the gross."
+      "description": "Fixed ticket discount in minor units (cents), applied AFTER the percentages and split over the non-gift lines by largest remainder (ADR-0210, sales#113). It comes off the figure the prices are written in and must not exceed it: the gross when the tax rides inside the price, the base with net prices (sales#295)."
     },
     "tax_included": {
       "type": "boolean",

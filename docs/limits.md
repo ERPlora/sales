@@ -21,7 +21,7 @@ sentence each code shows the user lives in `locales/en.json` / `locales/es.json`
 | `sales.customer_required` | The hub is configured to demand a customer and none was assigned | Assign a customer, or turn off **Exigir cliente en cada venta** |
 | `sales.invoice_recipient_incomplete` | The sale is an `invoice` but the customer's name, tax id or address is missing (sales#317). An invoice made out to nobody would print as a full invoice while the tax record files it as a simplified one | Fill in the three fields, or charge it as a `ticket` |
 | `sales.discounts_not_allowed` | A discount was applied but discounts are disabled | Turn on **Permitir descuentos**, or drop the discount |
-| `sales.discount_out_of_range` | The discount percentage is outside the accepted range, or the fixed `discount_amount` exceeds the gross (sales#113) | Use a percentage between 0 and 100 / an amount up to the total |
+| `sales.discount_out_of_range` | The discount percentage is outside the accepted range, or the fixed `discount_amount` exceeds what it comes off — the gross with the tax inside the price, the base with net prices (sales#113, sales#295) | Use a percentage between 0 and 100 / an amount up to the total |
 | `sales.amount_negative` | A computed amount came out negative | Check quantities, prices and the discount |
 | `sales.no_tax_rule` | No tax rule matches the line's category for this hub's country and region | Fix the rule in `taxes`, or the product's tax category in `inventory` |
 | `sales.tax_rate_out_of_range` | The resolved rate is not a sane percentage | Fix the rule in `taxes` |
