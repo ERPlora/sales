@@ -6017,8 +6017,11 @@ function renderDocumentModal({ saleId, issuing = false, onClose, t: t7 }) {
       ion-modal.doc-modal ion-content.doc-body {
         --background: var(--ion-color-light, #f4f5f8);
       }
+      /* The colour of the close button: color= would not paint here (pm#392), this style travels
+         with the modal to <body>. */
       ion-modal.doc-modal ion-button.doc-close {
         margin: 6px;
+        --color: var(--ion-color-medium, #636469);
       }
       ion-modal.doc-modal ion-footer ion-toolbar {
         --background: var(--ion-background-color, #fff);
@@ -6040,7 +6043,7 @@ function renderDocumentModal({ saleId, issuing = false, onClose, t: t7 }) {
          (Y NO metas backticks en comentarios dentro de una plantilla Lit: cierran el literal.) */
     </style>
     <ion-content class="doc-body">
-      <ion-button class="doc-close" slot="fixed" style="top:0;right:0" fill="clear" color="medium"
+      <ion-button class="doc-close" slot="fixed" style="top:0;right:0" fill="clear"
         aria-label=${t7("ui.close")} @click=${onClose}>
         <ion-icon name="close" slot="icon-only"></ion-icon>
       </ion-button>
@@ -8618,6 +8621,24 @@ var ErpPosTouch = class extends i3 {
     .discount-foot { display:flex; gap:.5rem; align-items:center; }
     .discount-foot .charge { flex:1; }
     .line-discount-badge { vertical-align:middle; }
+    /* pm#392 — the tones, from the theme token. color= is resolved by a global .ion-color-* rule
+       that never reaches this shadow root: solid badges came out with no background, the line and
+       course icons never changed colour and the outline/clear buttons fell back to primary blue. */
+    ion-badge.tone-success {
+      --background: var(--ion-color-success, #2dd55b);
+      --color: var(--ion-color-success-contrast, #000);
+    }
+    ion-badge.tone-warning {
+      --background: var(--ion-color-warning, #ffc409);
+      --color: var(--ion-color-warning-contrast, #000);
+    }
+    ion-icon.tone-primary { color: var(--ion-color-primary, #0054e9); }
+    ion-icon.tone-medium { color: var(--ion-color-medium, #636469); }
+    ion-icon.tone-warning { color: var(--ion-color-warning, #ffc409); }
+    ion-icon.tone-success { color: var(--ion-color-success, #2dd55b); }
+    ion-button.tone-danger[fill] { --color: var(--ion-color-danger, #c5000f); --border-color: var(--ion-color-danger, #c5000f); }
+    ion-button.tone-medium[fill] { --color: var(--ion-color-medium, #636469); --border-color: var(--ion-color-medium, #636469); }
+    ion-button.tone-warning[fill] { --color: var(--ion-color-warning, #ffc409); --border-color: var(--ion-color-warning, #ffc409); }
     .foot-actions .prebill { flex:none; width:56px; }
     .foot-actions .charge { flex:1; }
 
@@ -11765,7 +11786,7 @@ var ErpPosTouch = class extends i3 {
                 <span class="pn">${oc.label || this.money(oc.total)}</span>
                 <span class="pm">${(oc.created_at || "").replace("T", " ").slice(11, 16)}${oc.label ? " \xB7 " + this.money(oc.total) : ""}</span>
               </button>
-              <ion-button data-testid=${`pos-parked-${oc.id}-delete`} size="small" fill="clear" color="danger" class="pdel"
+              <ion-button data-testid=${`pos-parked-${oc.id}-delete`} size="small" fill="clear" class="pdel tone-danger"
                           title=${this.armedDelete === oc.id ? t5("ui.deleteCheckConfirm") : t5("ui.deleteCheck")}
                           aria-label=${this.armedDelete === oc.id ? t5("ui.deleteCheckConfirm") : t5("ui.deleteCheck")}
                           @click=${() => void this.deleteCheck(oc)}>
@@ -11821,8 +11842,8 @@ var ErpPosTouch = class extends i3 {
                aporta kitchen si está instalado/activo) y se monta dentro de Comanda actual. -->
           <div class="foot-actions">
             ${this.discountsAllowed ? b2`
-            <ion-button data-testid="pos-ticket-discount" class="ticket-discount" fill="outline" ?disabled=${!this.cart.length}
-                        color=${this.ticketDiscount > 0 || this.ticketDiscountAmount > 0 ? "warning" : void 0}
+            <ion-button data-testid="pos-ticket-discount" fill="outline" ?disabled=${!this.cart.length}
+                        class=${this.ticketDiscount > 0 || this.ticketDiscountAmount > 0 ? "ticket-discount tone-warning" : "ticket-discount"}
                         title=${t5("ui.discountTicket")} aria-label=${t5("ui.discountTicket")}
                         @click=${() => this.openDiscount("ticket")}>
               <ion-icon slot="icon-only" name=${this.ticketDiscount > 0 || this.ticketDiscountAmount > 0 ? "pricetag" : "pricetag-outline"}></ion-icon>
@@ -11942,17 +11963,17 @@ var ErpPosTouch = class extends i3 {
     const locked = isLineLocked(l3);
     return b2`<ion-item data-testid=${`pos-line-${l3.id}`} class=${l3.line_id && this.splitSel.has(l3.line_id) ? "sel" : ""}
         button ?detail=${false} @click=${() => this.toggleSplit(l3)}>
-      ${this.cart.length > 1 && l3.line_id ? b2`<ion-icon slot="start" class="selmark"
+      ${this.cart.length > 1 && l3.line_id ? b2`<ion-icon slot="start"
                   name=${this.splitSel.has(l3.line_id) ? "checkmark-circle" : "ellipse-outline"}
-                  color=${this.splitSel.has(l3.line_id) ? "primary" : "medium"}></ion-icon>` : A}
+                  class=${this.splitSel.has(l3.line_id) ? "selmark tone-primary" : "selmark tone-medium"}></ion-icon>` : A}
       <ion-label>
         <h3>
           ${this.hasKitchen ? locked ? b2`<ok-status-pill tone="success" size="sm" dot>${t5("ui.commandRound", { n: String(l3.round_no ?? "") })}</ok-status-pill>` : b2`<ok-status-pill tone="warning" size="sm" dot>${t5("ui.pendingStatus")}</ok-status-pill>` : A}
-          <span>${l3.name}</span>${l3.is_gift ? b2` <ion-badge color="success">${t5("ui.giftBadge")}</ion-badge>` : A}</h3>
+          <span>${l3.name}</span>${l3.is_gift ? b2` <ion-badge class="tone-success">${t5("ui.giftBadge")}</ion-badge>` : A}</h3>
         <!-- sales#208: el precio unitario que se enseña YA lleva los suplementos, que es el que
              va a salir impreso (el cobro mete el delta por el precio unitario de la línea). Con la
              base a secas, «9,00 €» debajo de un importe de «12,00 €» se lee como un fallo. -->
-        <p>${priceLabel(this.money(unitPriceWithModifiers(l3)), l3.unit_code)}${l3.is_gift && l3.gift_reason ? b2` · ${l3.gift_reason}` : A}${l3.discount ? b2` <ion-badge class="line-discount-badge" color="warning">−${l3.discount}%</ion-badge>` : A}</p>
+        <p>${priceLabel(this.money(unitPriceWithModifiers(l3)), l3.unit_code)}${l3.is_gift && l3.gift_reason ? b2` · ${l3.gift_reason}` : A}${l3.discount ? b2` <ion-badge class="line-discount-badge tone-warning">−${l3.discount}%</ion-badge>` : A}</p>
         <!-- sales#156: if the note is not visible the waiter does not know whether it was typed,
              so it gets typed twice or taken for granted. It goes on a sub-line of its own, the way
              the supplements do on paper. -->
@@ -11984,15 +12005,15 @@ var ErpPosTouch = class extends i3 {
             ${this.discountsAllowed ? b2`
             <ion-button data-testid=${`pos-line-${l3.id}-discount`} class="line-discount" fill="clear" size="small" title=${t5("ui.discountLine")} aria-label=${t5("ui.discountLine")}
                         @click=${() => this.openDiscount("line", l3.line_id)}>
-              <ion-icon name=${l3.discount ? "pricetag" : "pricetag-outline"} slot="icon-only" color=${l3.discount ? "warning" : "medium"}></ion-icon>
+              <ion-icon name=${l3.discount ? "pricetag" : "pricetag-outline"} slot="icon-only" class=${l3.discount ? "tone-warning" : "tone-medium"}></ion-icon>
             </ion-button>` : A}
             <ion-button data-testid=${`pos-line-${l3.id}-note`} class="line-note" fill="clear" size="small" title=${t5("ui.lineNote")} aria-label=${t5("ui.lineNote")}
                         @click=${() => this.openLineNote(l3.line_id)}>
               <ion-icon name=${l3.note ? "chatbox-ellipses" : "chatbox-ellipses-outline"} slot="icon-only"
-                        color=${l3.note ? "primary" : "medium"}></ion-icon>
+                        class=${l3.note ? "tone-primary" : "tone-medium"}></ion-icon>
             </ion-button>
             <ion-button data-testid=${`pos-line-${l3.id}-gift`} fill="clear" size="small" title=${t5("ui.giftAction")} @click=${() => this.toggleGift(l3.id)}>
-              <ion-icon name=${l3.is_gift ? "gift" : "gift-outline"} slot="icon-only" color=${l3.is_gift ? "success" : "medium"}></ion-icon>
+              <ion-icon name=${l3.is_gift ? "gift" : "gift-outline"} slot="icon-only" class=${l3.is_gift ? "tone-success" : "tone-medium"}></ion-icon>
             </ion-button>
             <ok-qty-stepper .value=${l3.qty} .min=${0} .step=${this.stepOf(l3)}
               @ok-change=${(e7) => this.setQtyAbs(
@@ -12014,7 +12035,7 @@ var ErpPosTouch = class extends i3 {
     return b2`<div class="secs">
       ${pendientes.length ? b2`<div class="sec sec-pending">
         <div class="sec-h">
-          <ion-icon name="create-outline" color="primary"></ion-icon>
+          <ion-icon name="create-outline" class="tone-primary"></ion-icon>
           <span>${t5("ui.courseInProgress")}</span>
           <span class="ccount">· ${pendientes.length}</span>
         </div>
@@ -12022,7 +12043,7 @@ var ErpPosTouch = class extends i3 {
       </div>` : A}
       ${enviadas.length ? b2`<div class="sec sec-sent">
         <div class="sec-h">
-          <ion-icon name="flame" color="warning"></ion-icon>
+          <ion-icon name="flame" class="tone-warning"></ion-icon>
           <span>${t5("ui.sentHeader")}</span>
           <span class="ccount">· ${enviadas.length}</span>
           <span class="sec-slot"></span>
@@ -12536,7 +12557,7 @@ var ErpPosTouch = class extends i3 {
                 <p class="note-hint">${t5("ui.lineNoteHint")}</p>
               </div>
               <div class="sheet-foot discount-foot">
-                <ion-button data-testid="pos-note-remove" fill="clear" color="medium"
+                <ion-button data-testid="pos-note-remove" class="tone-medium" fill="clear"
                   @click=${() => this.applyLineNote("")}>${t5("ui.lineNoteRemove")}</ion-button>
                 <ion-button data-testid="pos-note-save" class="charge note-save" expand="block"
                   @click=${() => this.applyLineNote(this.noteInput)}>${t5("ui.lineNoteSave")}</ion-button>
@@ -12571,7 +12592,7 @@ var ErpPosTouch = class extends i3 {
                 </div>
               </div>
               <div class="sheet-foot discount-foot">
-                <ion-button data-testid="pos-discount-remove" fill="outline" color="medium"
+                <ion-button data-testid="pos-discount-remove" class="tone-medium" fill="outline"
                   @click=${() => this.discountMode === "amount" ? this.applyDiscountAmount(0) : this.applyDiscount(0)}>${t5("ui.discountRemove")}</ion-button>
                 ${this.discountMode === "amount" ? b2`<ion-button data-testid="pos-discount-apply-amount" class="charge" expand="block" ?disabled=${this.discountInputCents > cartTotal(this.cart, this.ticketDiscount)}
                       @click=${() => this.applyDiscountAmount(this.discountInputCents)}>
@@ -12658,7 +12679,7 @@ var ErpPosTouch = class extends i3 {
           <p>${t5("ui.dirtyCartBody")}</p>
           <div class="dlg-actions">
             ${this.dirtyAllowCancel ? b2`<ion-button data-testid="pos-dirty-cancel" fill="clear" @click=${() => this.answerDirty("cancel")}>${t5("ui.cancel")}</ion-button>` : A}
-            <ion-button data-testid="pos-dirty-discard" class="discard-opt" color="danger" fill="outline"
+            <ion-button data-testid="pos-dirty-discard" class="discard-opt tone-danger" fill="outline"
                         @click=${() => this.answerDirty("discard")}>${t5("ui.discardAndOpen")}</ion-button>
             <ion-button data-testid="pos-dirty-park" class="park-opt" @click=${() => this.answerDirty("park")}>${t5("ui.parkAndOpen")}</ion-button>
           </div>
@@ -15074,6 +15095,22 @@ __decorateClass11([
 var OkDataTable = _OkDataTable;
 define("ok-data-table", OkDataTable);
 
+// ui/lib/ion-tone.ts
+var PALETTE = {
+  danger: { base: "#c5000f", contrast: "#fff", shade: "#ad000d", tint: "#cb1a27" }
+};
+function ionTone(_kind, tone) {
+  const p4 = PALETTE[tone];
+  const token = (suffix, fallback) => `var(--ion-color-${tone}${suffix}, ${fallback})`;
+  return [
+    `--background: ${token("", p4.base)}`,
+    `--background-activated: ${token("-shade", p4.shade)}`,
+    `--background-focused: ${token("-shade", p4.shade)}`,
+    `--background-hover: ${token("-tint", p4.tint)}`,
+    `--color: ${token("-contrast", p4.contrast)};`
+  ].join("; ");
+}
+
 // ui/components/erp-pos-departments/erp-pos-departments.ts
 var CATALOG3 = { es: es_default, en: en_default };
 function rows3(r6) {
@@ -15276,7 +15313,7 @@ var ErpPosDepartments = class extends i3 {
             </ion-label>
           </ion-item>
         </ion-list>
-        <ion-button class="ion-margin-top" data-testid="pos-departments-delete-confirm" expand="block" color="danger" ?disabled=${this.saving}
+        <ion-button class="ion-margin-top" data-testid="pos-departments-delete-confirm" expand="block" style=${ionTone("solid", "danger")} ?disabled=${this.saving}
           @click=${() => this.confirmDelete()}>${t7("ui.departmentDelete")}</ion-button>
         <ion-button data-testid="pos-departments-delete-cancel" expand="block" fill="outline" ?disabled=${this.saving}
           @click=${() => {
@@ -15530,7 +15567,7 @@ var ErpPosQuickNotes = class extends i3 {
             </ion-label>
           </ion-item>
         </ion-list>
-        <ion-button class="ion-margin-top" data-testid="pos-quick-notes-delete-confirm" expand="block" color="danger" ?disabled=${this.saving}
+        <ion-button class="ion-margin-top" data-testid="pos-quick-notes-delete-confirm" expand="block" style=${ionTone("solid", "danger")} ?disabled=${this.saving}
           @click=${() => this.confirmDelete()}>${t7("ui.quickNoteDelete")}</ion-button>
         <ion-button data-testid="pos-quick-notes-delete-cancel" expand="block" fill="outline" ?disabled=${this.saving}
           @click=${() => {
