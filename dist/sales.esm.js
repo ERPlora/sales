@@ -1646,6 +1646,18 @@ function pushTypedKey(cur, k2) {
   return (cur + k2).slice(0, 9);
 }
 
+// ui/lib/currency-symbol.ts
+function currencySymbol(code, locale) {
+  const iso = (code ?? "").trim();
+  if (!iso) return "";
+  try {
+    const parts = new Intl.NumberFormat(locale, { style: "currency", currency: iso }).formatToParts(0);
+    return parts.find((p4) => p4.type === "currency")?.value ?? iso;
+  } catch {
+    return iso;
+  }
+}
+
 // ui/lib/quantity.ts
 var QUANTITY_SCALE2 = 1e6;
 function toMicro2(qty) {
@@ -9613,6 +9625,11 @@ var ErpPosTouch = class extends i3 {
   money(n6) {
     return erplora2().formatMoney(Number(n6) || 0);
   }
+  /** The hub currency's symbol for a label (sales#380): the one `formatMoney` paints after the number. */
+  currencyLabel() {
+    const c5 = erplora2();
+    return currencySymbol(c5.currency, c5.locale || "es");
+  }
   /** Formas de pago que se ofrecen: activas (query) y permitidas por Ajustes (allow_*). */
   get payMethods() {
     return enabledPayMethods(this.methods, {
@@ -12740,11 +12757,12 @@ var ErpPosTouch = class extends i3 {
     }}>✕</button>
               </div>
               ${this.discountSheet.target === "ticket" ? b2`
-              <!-- sales#113: % o € (importe fijo, «5 € menos»); ambos estándar en el mercado. -->
+              <!-- sales#113: % or a fixed amount («5 € off»), both market standard. sales#380: the amount
+                   button names the HUB currency (¥, £, €), never a hard «€». -->
               <ion-segment data-testid="pos-discount-mode" class="discount-mode" value=${this.discountMode}
                 @ionChange=${(e8) => this.setDiscountMode(e8.detail.value === "amount" ? "amount" : "percent")}>
                 <ion-segment-button data-testid="pos-discount-mode-percent" value="percent"><ion-label>%</ion-label></ion-segment-button>
-                <ion-segment-button data-testid="pos-discount-mode-amount" value="amount"><ion-label>€</ion-label></ion-segment-button>
+                <ion-segment-button data-testid="pos-discount-mode-amount" value="amount"><ion-label>${this.currencyLabel()}</ion-label></ion-segment-button>
               </ion-segment>` : A}
               <div class="sheet-top"><div class="pay-total">${this.discountMode === "amount" ? this.money(this.discountInputCents) : `${this.discountInput || "0"} %`}</div></div>
               <div class="pay">

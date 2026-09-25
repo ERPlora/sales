@@ -22,10 +22,11 @@ const METHODS = [
 
 let commands: { name: string; payload: Record<string, unknown> }[] = [];
 
-function installSdk(currencyDecimals: number) {
+function installSdk(currencyDecimals: number, hub: { currency?: string; locale?: string } = {}) {
   commands = [];
   const orderLines: Record<string, unknown>[] = [];
   installPosDouble({
+    ...hub,
     extra: { currencyDecimals },
     settings: () => ({ allow_discounts: 1 }),
     paymentMethods: METHODS,
@@ -289,5 +290,30 @@ describe('a PERCENT discount is not money: the currency scale does not cap it (r
     el.discountMode = 'percent';
     await el.updateComplete;
     expect(dot().disabled).toBe(false);
+  });
+});
+
+describe('the amount-mode button of the discount sheet names the hub currency (sales#380)', () => {
+  async function amountLabel(currency: string, locale: string): Promise<string> {
+    installSdk(currency === 'JPY' ? 0 : 2, { currency, locale });
+    const el = await mount();
+    await addMenu(el);
+    el.openDiscount('ticket');
+    await el.updateComplete;
+    const btn = el.shadowRoot.querySelector<HTMLElement>('[data-testid="pos-discount-mode-amount"]');
+    expect(btn, 'the amount mode is offered').toBeTruthy();
+    return btn!.textContent!.trim();
+  }
+
+  it('a hub in yen shows ¥, not €', async () => {
+    expect(await amountLabel('JPY', 'en')).toBe('¥');
+  });
+
+  it('a hub in pounds shows £', async () => {
+    expect(await amountLabel('GBP', 'en')).toBe('£');
+  });
+
+  it('a hub in euros still shows €', async () => {
+    expect(await amountLabel('EUR', 'es')).toBe('€');
   });
 });

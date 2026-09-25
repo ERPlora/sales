@@ -4,6 +4,7 @@ import { classMap } from 'lit/directives/class-map.js';
 import { define } from '@erplora/outfitkit/define';
 import { bindTabbar } from '@erplora/outfitkit/tabbar';
 import { hubDecimals, minorToTyped, pushTypedKey, typedToMinor } from '../../lib/hub-currency.js';
+import { currencySymbol } from '../../lib/currency-symbol.js';
 import { renderDocumentModal } from '../../lib/document-modal.js';
 import { orderToPrebill, receiptLabels, type PrebillValuation } from '../../lib/document-mappers.js';
 // La CUENTA se imprime con la forma que lee el renderizador ESC/POS, no con la de la pantalla
@@ -2233,6 +2234,11 @@ export class ErpPosTouch extends LitElement {
   // FIX QA (2026-06-25): el POS trabaja en CÉNTIMOS → formatMoney (divide /100), NO formatAmount
   // (que mostraba precios ×100).
   private money(n: number) { return erplora().formatMoney(Number(n) || 0); }
+  /** The hub currency's symbol for a label (sales#380): the one `formatMoney` paints after the number. */
+  private currencyLabel(): string {
+    const c = erplora();
+    return currencySymbol(c.currency, (c as unknown as I18nClient).locale || 'es');
+  }
   /** Formas de pago que se ofrecen: activas (query) y permitidas por Ajustes (allow_*). */
   private get payMethods(): PayMethod[] {
     return enabledPayMethods(this.methods, {
@@ -5849,11 +5855,12 @@ export class ErpPosTouch extends LitElement {
                 <button data-testid="pos-discount-close" class="x" aria-label=${t('ui.closeAction')} @click=${() => { this.discountSheet = undefined; }}>✕</button>
               </div>
               ${this.discountSheet.target === 'ticket' ? html`
-              <!-- sales#113: % o € (importe fijo, «5 € menos»); ambos estándar en el mercado. -->
+              <!-- sales#113: % or a fixed amount («5 € off»), both market standard. sales#380: the amount
+                   button names the HUB currency (¥, £, €), never a hard «€». -->
               <ion-segment data-testid="pos-discount-mode" class="discount-mode" value=${this.discountMode}
                 @ionChange=${(e: CustomEvent<{ value?: string }>) => this.setDiscountMode(e.detail.value === 'amount' ? 'amount' : 'percent')}>
                 <ion-segment-button data-testid="pos-discount-mode-percent" value="percent"><ion-label>%</ion-label></ion-segment-button>
-                <ion-segment-button data-testid="pos-discount-mode-amount" value="amount"><ion-label>€</ion-label></ion-segment-button>
+                <ion-segment-button data-testid="pos-discount-mode-amount" value="amount"><ion-label>${this.currencyLabel()}</ion-label></ion-segment-button>
               </ion-segment>` : nothing}
               <div class="sheet-top"><div class="pay-total">${this.discountMode === 'amount'
                 ? this.money(this.discountInputCents)

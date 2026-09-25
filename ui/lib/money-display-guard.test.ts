@@ -86,6 +86,10 @@ const NOT_DISPLAY: Record<string, string> = {
   // A tax RATE (21.00 → "21"), not an amount.
   'lib/document-mappers.ts: const pct = Number.isFinite(r) ? String(Number(r.toFixed(2))) : rate;':
     'percentage, not money',
+  // sales#380: reads only the currency SYMBOL of the hub's ISO code for a label (the amount mode of
+  // the discount sheet); no amount goes through it.
+  "lib/currency-symbol.ts: NumberFormat(locale, { style: 'currency', currency: iso })":
+    'currency symbol for a label, not an amount',
 };
 
 describe('money display goes through the shared formatter (pm#289)', () => {
