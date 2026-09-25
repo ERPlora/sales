@@ -71,6 +71,14 @@ export function handFormattedMoney(src: string): string[] {
   return hits.concat(currencyNumberFormatCalls(code));
 }
 
+/** Each code line naming the SDK's two-decimal conversions (`eurosToCents`/`centsToEuros`). */
+export function fixedTwoDecimalConversions(src: string): string[] {
+  return stripComments(src)
+    .split('\n')
+    .filter((line) => /\b(eurosToCents|centsToEuros)\b/.test(line))
+    .map((line) => line.trim());
+}
+
 /** Triaged pm#289: formatting that is not a screen amount. `file: exact code line → why`. */
 const NOT_DISPLAY: Record<string, string> = {
   // sales#377: the menu supplement (paper-combos) and the refund input (refund-allocation) left
@@ -103,6 +111,26 @@ describe('money display goes through the shared formatter (pm#289)', () => {
       for (const h of handFormattedMoney(readFileSync(f, 'utf8'))) found.add(`${rel}: ${h}`);
     }
     expect(Object.keys(NOT_DISPLAY).filter((k) => !found.has(k))).toEqual([]);
+  });
+
+  // sales#379: the SDK's `eurosToCents`/`centsToEuros` pin TWO decimals (the SDK keeps them for
+  // what is EUR by contract: VeriFactu). In this module every typed amount is the hub currency, so
+  // they are a hard `/ 100` in disguise — in yen the till took 1000 ¥ handed over as 100000.
+  it('no two-decimal SDK conversion in ui/: typed amounts go through the hub scale', () => {
+    const uiRoot = join(moduleRoot(), 'ui');
+    const found: string[] = [];
+    for (const f of uiSources(uiRoot)) {
+      const rel = f.slice(uiRoot.length + 1);
+      for (const h of fixedTwoDecimalConversions(readFileSync(f, 'utf8'))) found.push(`${rel}: ${h}`);
+    }
+    expect(found, 'use typedToMinor/minorToTyped from lib/hub-currency').toEqual([]);
+  });
+
+  it('the conversion detector catches the positive', () => {
+    expect(fixedTwoDecimalConversions("import { eurosToCents, centsToEuros } from '@erplora/module-sdk';")).toHaveLength(1);
+    expect(fixedTwoDecimalConversions('const c = erplora().eurosToCents(x);')).toHaveLength(1);
+    expect(fixedTwoDecimalConversions('const s = sdk.centsToEuros(\n  c,\n);')).toHaveLength(1);
+    expect(fixedTwoDecimalConversions('// was eurosToCents(x)\nconst c = typedToMinor(x);')).toHaveLength(0);
   });
 
   it('the detector catches the positive (otherwise this guard is decorative)', () => {

@@ -3,8 +3,7 @@ import { property, state } from 'lit/decorators.js';
 import { classMap } from 'lit/directives/class-map.js';
 import { define } from '@erplora/outfitkit/define';
 import { bindTabbar } from '@erplora/outfitkit/tabbar';
-// La frontera EUROS ↔ CÉNTIMOS vive en el SDK (ADR-0123), no copiada en cada WC (como el desktop).
-import { eurosToCents, centsToEuros } from '@erplora/module-sdk';
+import { hubDecimals, minorToTyped, pushTypedKey, typedToMinor } from '../../lib/hub-currency.js';
 import { renderDocumentModal } from '../../lib/document-modal.js';
 import { orderToPrebill, receiptLabels, type PrebillValuation } from '../../lib/document-mappers.js';
 // La CUENTA se imprime con la forma que lee el renderizador ESC/POS, no con la de la pantalla
@@ -250,13 +249,6 @@ function toDepartments(own: DepartmentRow[], taxCats: TaxCategory[]): PosDepartm
   return taxCats.map((c) => ({ key: c.key, name: deptDisplayName(c), taxCategoryKey: c.key }));
 }
 
-/** Acumulador de dígitos del numpad (euros como texto): 'C' limpia, un solo separador decimal, tope
- *  9 chars. Puro para poder compartirlo entre el numpad de COBRO y el de PRECIO LIBRE sin duplicar. */
-function pushDigit(cur: string, k: string): string {
-  if (k === 'C') return '';
-  if (k === '.' && cur.includes('.')) return cur;
-  return (cur + k).slice(0, 9);
-}
 interface IonicAlertElement extends HTMLElement {
   header: string;
   message: string;
@@ -860,6 +852,7 @@ export class ErpPosTouch extends LitElement {
     .change { color:var(--ion-color-success, #2f9e44); }
     .numpad { display:grid; grid-template-columns: repeat(3, 1fr); gap:.35rem; margin-bottom:.2rem; }
     .numpad button { font-size:1.15rem; padding:.6rem; border-radius:var(--ok-radius-sm,10px); border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); cursor:pointer; }
+    .numpad button:disabled { opacity:.35; cursor:default; }
     /* Precio libre: el tile fijo del catálogo + los botones de DEPARTAMENTO dentro del sheet. */
     .tile.open-price .op-thumb { display:flex; align-items:center; justify-content:center; font-size:2rem; color:var(--ion-color-primary,#3880ff); background:var(--ion-color-primary-tint,rgba(56,128,255,.14)); }
     .dept-label { margin:.5rem 0 .3rem; font-size:.8rem; opacity:.7; }
@@ -3843,7 +3836,7 @@ export class ErpPosTouch extends LitElement {
   private tap(k: string) {
     const base = this.padPrimed ? '' : this.tendered;
     this.padPrimed = false;
-    this.tendered = pushDigit(base, k);
+    this.tendered = pushTypedKey(base, k);
   }
   /** ¿Está el importe tecleado a la espera de ser sustituido por la siguiente tecla? */
   @state() private padPrimed = false;
@@ -3926,7 +3919,7 @@ export class ErpPosTouch extends LitElement {
     // sales#113: si la cuenta ya lleva importe fijo, el sheet abre en € con él; si no, en %.
     this.discountMode = target === 'ticket' && this.ticketDiscountAmount > 0 && this.ticketDiscount === 0 ? 'amount' : 'percent';
     const current = target === 'ticket'
-      ? (this.discountMode === 'amount' ? Number(centsToEuros(this.ticketDiscountAmount)) : this.ticketDiscount)
+      ? (this.discountMode === 'amount' ? Number(minorToTyped(this.ticketDiscountAmount)) : this.ticketDiscount)
       : (this.cart.find((l) => l.line_id === lineId)?.discount ?? 0);
     this.discountInput = current > 0 ? String(current) : '';
     this.discountSheet = { target, lineId };
@@ -3937,12 +3930,12 @@ export class ErpPosTouch extends LitElement {
     this.discountInput = '';
   }
   private tapDiscount(k: string) {
-    const next = pushDigit(this.discountInput, k);
-    // Un %: nunca por encima de 100 (el servidor también lo rechaza). Un importe: teclea EUROS.
+    const next = pushTypedKey(this.discountInput, k);
+    // A %: never above 100 (the server refuses it too). An amount: typed in the hub currency.
     if (this.discountMode === 'amount' || Number(next || '0') <= 100) this.discountInput = next;
   }
-  /** Importe tecleado en céntimos (modo €). */
-  private get discountInputCents(): number { return Math.max(0, eurosToCents(this.discountInput || '0')); }
+  /** The typed amount in minor units of the hub currency (amount mode, sales#379). */
+  private get discountInputCents(): number { return Math.max(0, typedToMinor(this.discountInput)); }
   /** sales#113 — aplica un importe FIJO (céntimos; 0 = quitar) al ticket, persistiéndolo en el pedido. */
   async applyDiscountAmount(cents: number): Promise<void> {
     const sheet = this.discountSheet;
@@ -3979,9 +3972,9 @@ export class ErpPosTouch extends LitElement {
       catch (e) { this.error = e instanceof Error ? e.message : String(e); }
     }
   }
-  // El pinpad teclea EUROS («20» = 20 €); el contrato de la venta es CÉNTIMOS (ADR-0007/0123),
-  // como `total`. Sin esta conversión: «Efectivo 0.20 €» y cambio 0 en el tiquet (QA 2026-07-17).
-  private get tenderedNum() { return eurosToCents(this.tendered || '0'); }
+  // The pinpad types the MAJOR unit («20» = 20 €); the sale contract is MINOR units (ADR-0007/0123),
+  // like `total`, in the hub scale: «2000» in yen is 2000, not 200000 (sales#379).
+  private get tenderedNum() { return typedToMinor(this.tendered); }
   private get change() { return Math.max(0, this.tenderedNum - this.payable); }
   /** sales#24 — cash typed in but SHORT of the payable. The server refuses the same case
    *  (`sales.insufficient_tendered`), this just spares the trip. Nothing typed is `tenderedMissing`. */
@@ -4054,7 +4047,7 @@ export class ErpPosTouch extends LitElement {
     if (!leg) return;
     this.tenders = this.tenders.filter((t) => t.id !== id);
     this.payMethod = leg.method as PayMethod;
-    this.tendered = centsToEuros(leg.tendered);
+    this.tendered = minorToTyped(leg.tendered);
     this.padPrimed = true;
     this.error = '';
   }
@@ -4222,7 +4215,7 @@ export class ErpPosTouch extends LitElement {
   private openOpenPrice(seed?: { amountCents?: number; deptKey?: string; name?: string }) {
     const cents = seed?.amountCents ?? 0;
     this.openServiceName = seed?.name?.trim() ?? '';
-    this.openAmount = cents > 0 ? centsToEuros(cents) : '';
+    this.openAmount = cents > 0 ? minorToTyped(cents) : '';
     this.openDept = this.seededDeptKey(seed?.deptKey);
     this.openPriceOpen = true;
   }
@@ -4243,9 +4236,9 @@ export class ErpPosTouch extends LitElement {
     const match = depts.find((d) => d.taxCategoryKey === taxCategoryKey);
     return match ? match.key : '';
   }
-  private tapOpen(k: string) { this.openAmount = pushDigit(this.openAmount, k); }
-  /** El numpad teclea EUROS; el contrato es CÉNTIMOS (ADR-0007), igual que en el cobro. */
-  private get openAmountCents() { return eurosToCents(this.openAmount || '0'); }
+  private tapOpen(k: string) { this.openAmount = pushTypedKey(this.openAmount, k); }
+  /** The numpad types the major unit; the contract is minor units in the hub scale, as at checkout. */
+  private get openAmountCents() { return typedToMinor(this.openAmount); }
   /** Lo que la hoja de precio libre ofrece: los departamentos del negocio, o las categorías
    *  fiscales activas mientras no haya definido ninguno (sales#267). */
   private get departments(): PosDepartment[] {
@@ -5561,7 +5554,7 @@ export class ErpPosTouch extends LitElement {
                     <!-- SIN atajos de importe (73/75/80…): Ioan los eliminó el 2026-07-19 y pidió
                          NO volver a añadirlos. El entregado se teclea en el numpad, punto. -->
                     <div class="numpad">
-                      ${['1','2','3','4','5','6','7','8','9','.','0','C'].map((k) => html`<button data-testid=${`pos-keypad-${keypadId(k)}`} @click=${() => this.tap(k)}>${k}</button>`)}
+                      ${['1','2','3','4','5','6','7','8','9','.','0','C'].map((k) => html`<button data-testid=${`pos-keypad-${keypadId(k)}`} ?disabled=${k === '.' && hubDecimals() === 0} @click=${() => this.tap(k)}>${k}</button>`)}
                     </div>`
                   : html`
                     <div class="amt pay-exact"><span>${t('ui.payExact')}</span><span class="v">${this.money(this.payable)}</span></div>
@@ -5762,7 +5755,7 @@ export class ErpPosTouch extends LitElement {
               <div class="sheet-top"><div class="pay-total">${this.money(this.openAmountCents)}</div></div>
               <div class="pay">
                 <div class="numpad">
-                  ${['1','2','3','4','5','6','7','8','9','.','0','C'].map((k) => html`<button data-testid=${`pos-open-price-key-${keypadId(k)}`} @click=${() => this.tapOpen(k)}>${k}</button>`)}
+                  ${['1','2','3','4','5','6','7','8','9','.','0','C'].map((k) => html`<button data-testid=${`pos-open-price-key-${keypadId(k)}`} ?disabled=${k === '.' && hubDecimals() === 0} @click=${() => this.tapOpen(k)}>${k}</button>`)}
                 </div>
                 <div class="dept-label">${t('ui.department')}</div>
                 <div class="dept-grid" role="group" aria-label=${t('ui.department')}>
@@ -5859,7 +5852,7 @@ export class ErpPosTouch extends LitElement {
                 : `${this.discountInput || '0'} %`}</div></div>
               <div class="pay">
                 <div class="numpad">
-                  ${['1','2','3','4','5','6','7','8','9','.','0','C'].map((k) => html`<button data-testid=${`pos-discount-key-${keypadId(k)}`} @click=${() => this.tapDiscount(k)}>${k}</button>`)}
+                  ${['1','2','3','4','5','6','7','8','9','.','0','C'].map((k) => html`<button data-testid=${`pos-discount-key-${keypadId(k)}`} ?disabled=${k === '.' && hubDecimals() === 0} @click=${() => this.tapDiscount(k)}>${k}</button>`)}
                 </div>
               </div>
               <div class="sheet-foot discount-foot">
