@@ -13,7 +13,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   saleToReceipt,
   saleToInvoice,
@@ -642,6 +642,14 @@ describe('a line covered by an external tender says so on the paper (sales#162)'
 // every sibling (`sales_sale_item.combo`), and its amount is the SUM of the siblings — the tax
 // footer keeps the real breakdown untouched. Why the market decided it this way: `paper-combos.ts`.
 describe('the menu reaches the document (sales#154)', () => {
+  // A Spanish hub in euros («+3,00»): since sales#377 the supplement takes the document language.
+  beforeEach(() => {
+    document.documentElement.lang = 'es';
+  });
+  afterEach(() => {
+    document.documentElement.lang = '';
+  });
+
   const snapshot = JSON.stringify({
     combo_id: 'c-menu', name: 'Menú del día', kitchen_name: 'MENU', price: 1350, price_charged: 1350,
     supply_kind: 'goods',

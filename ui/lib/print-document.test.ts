@@ -11,7 +11,7 @@
 //
 // A blank ticket that looks printed is worse than one that never prints, so the shape is pinned
 // here, key by key, against the renderer's field names.
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { orderToPrebill, saleToInvoice } from './document-mappers.js';
 import { prebillToPrintDocument, saleToPrintDocument, saleToInvoicePrintDocument, prebillJobId } from './print-document.js';
 import { quantityLabel } from './price-label.js';
@@ -450,6 +450,14 @@ describe('sales#229 — the supplements ALSO travel as a list, keeping `notes`',
 // component list needs the renderer to learn it (ERPlora/hub issue in the PR), and this shape is
 // forward-compatible with that: the header item stays, the list is an extra optional key.
 describe('the menu on the thermal paper (sales#154)', () => {
+  // A Spanish hub in euros («+3,00»): since sales#377 the supplement takes the document language.
+  beforeEach(() => {
+    document.documentElement.lang = 'es';
+  });
+  afterEach(() => {
+    document.documentElement.lang = '';
+  });
+
   const snapshot = JSON.stringify({
     combo_id: 'c-menu', name: 'Menú del día', price: 1350, price_charged: 1350, supply_kind: 'goods',
     components: [

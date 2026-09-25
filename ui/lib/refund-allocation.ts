@@ -170,8 +170,9 @@ export function reasonKey(reason: string): string {
 }
 
 /**
- * Lo que el operador teclea (EUROS, en su idioma) → céntimos enteros, que es la unidad del hub
- * (ADR-0123).
+ * Lo que el operador teclea (en la moneda del hub, en su idioma) → unidades MENORES enteras, que
+ * es la unidad del hub (ADR-0123). `decimals` es la escala de la moneda (ADR-0123 §7): 2 en EUR,
+ * 0 en JPY, 3 en KWD. El nombre dice «Cents» por historia; lo que devuelve son unidades menores.
  *
  * 🔴 No es `Number(text) * 100`. En español un importe se escribe «25,00» y `Number('25,00')` es
  * `NaN`; un `NaN` que se cuela como importe de devolución es dinero que no sale, o que sale de
@@ -181,37 +182,48 @@ export function reasonKey(reason: string): string {
  * El separador DECIMAL es el ÚLTIMO `,` o `.` que aparezca; lo anterior es separador de miles y se
  * tira, junto con el símbolo de moneda y los espacios. Así «1.234,56 €» y «1,234.56» dan lo mismo
  * sin tener que saber el locale.
+ *
+ * sales#377: con escala 0 (yenes) no hay decimales que escribir, así que un separador seguido de
+ * EXACTAMENTE tres cifras es de miles («1.500» o «1,500 ¥» son mil quinientos, nunca 1,5 → 2 ¥).
+ * Cualquier otra fracción tecleada se redondea a la unidad.
  */
-export function parseAmountToCents(text: string): number {
+export function parseAmountToCents(text: string, decimals = 2): number {
+  const scale = Number.isInteger(decimals) && decimals >= 0 ? decimals : 2;
   const raw = String(text ?? '').replace(/[^\d.,-]/g, '');
   if (!raw || raw.startsWith('-')) return 0;
-  const cut = Math.max(raw.lastIndexOf(','), raw.lastIndexOf('.'));
+  const lastSep = Math.max(raw.lastIndexOf(','), raw.lastIndexOf('.'));
   const digits = (part: string): string => part.replace(/[^\d]/g, '');
+  const grouping = scale === 0 && lastSep >= 0 && /^\d{3}$/.test(raw.slice(lastSep + 1));
+  const cut = grouping ? -1 : lastSep;
   const whole = digits(cut >= 0 ? raw.slice(0, cut) : raw);
   const frac = cut >= 0 ? digits(raw.slice(cut + 1)) : '';
   // Aritmética sobre los DÍGITOS, no sobre un float: `1.005 * 100` es `100.49999999999999` en
-  // IEEE-754 y `Math.round` lo baja a 100. Un céntimo perdido por redondeo binario es exactamente
+  // IEEE-754 y `Math.round` lo baja a 100. Una unidad perdida por redondeo binario es exactamente
   // lo que ADR-0123 prohíbe, y el modo del hub es HALF_UP (art. 11 de la Ley 46/1998 del euro).
-  const padded = (frac + '000').slice(0, 3);
+  const padded = frac.padEnd(scale + 1, '0').slice(0, scale + 1);
   const units = Number(whole || '0');
   if (!Number.isFinite(units)) return 0;
-  const cents = units * 100 + Number(padded.slice(0, 2));
-  return Number(padded[2]) >= 5 ? cents + 1 : cents;
+  const minor = units * 10 ** scale + Number(padded.slice(0, scale) || '0');
+  return Number(padded[scale]) >= 5 ? minor + 1 : minor;
 }
 
 /**
- * Céntimos → lo que se ESCRIBE en el campo editable, con el separador decimal del idioma activo.
+ * Unidades menores → lo que se ESCRIBE en el campo editable, con el separador decimal del idioma
+ * activo y la escala de la moneda del hub (`decimals`: 2 en EUR, 0 en JPY, 3 en KWD — sales#377).
  *
  * 🔴 Sin esto el campo pintaba «50.00» justo encima de un «Cobrado: 50,00 €», y el operador tiene
  * que decidir sobre ese número si el punto es decimal o de miles. Es el campo con el que se decide
  * cuánto dinero sale de la caja.
  *
  * SIN separador de miles a propósito: lo que se pinta se tiene que poder reeditar a mano y volver
- * a leer igual (`parseAmountToCents(formatAmountInput(x)) === x`). Agrupar en un campo editable es
- * la forma más rápida de que un importe cambie solo.
+ * a leer igual (`parseAmountToCents(formatAmountInput(x, l, d), d) === x`). Agrupar en un campo
+ * editable es la forma más rápida de que un importe cambie solo. Por CADENA, sin dividir: ninguna
+ * unidad puede cambiar por redondeo binario.
  */
-export function formatAmountInput(amount: number, locale: string): string {
-  const fixed = (Math.max(0, Math.round(Number(amount) || 0)) / 100).toFixed(2);
+export function formatAmountInput(amount: number, locale: string, decimals = 2): string {
+  const scale = Number.isInteger(decimals) && decimals >= 0 ? decimals : 2;
+  const padded = String(Math.max(0, Math.round(Number(amount) || 0))).padStart(scale + 1, '0');
+  if (scale === 0) return padded;
   let decimal = '.';
   try {
     decimal = new Intl.NumberFormat(locale || undefined)
@@ -221,5 +233,5 @@ export function formatAmountInput(amount: number, locale: string): string {
     // Un locale que Intl no reconoce no puede dejar el campo vacío: se cae al punto y sigue.
     decimal = '.';
   }
-  return fixed.replace('.', decimal);
+  return `${padded.slice(0, -scale)}${decimal}${padded.slice(-scale)}`;
 }
