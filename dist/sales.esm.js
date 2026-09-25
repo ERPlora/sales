@@ -1673,72 +1673,6 @@ function modifierIdentity(m4) {
   return `${m4.option_id || m4.name || ""}:${m4.price_delta ?? 0}`;
 }
 
-// ui/lib/paper-combos.ts
-var SEP2 = " \xB7 ";
-function deltaLabel(cents2) {
-  const sign = cents2 < 0 ? "-" : "+";
-  return `${sign}${(Math.abs(cents2) / 100).toFixed(2).replace(".", ",")}`;
-}
-function componentLabel(c5) {
-  const name = (c5.name || "").trim() || (c5.option_id || "").trim();
-  const delta = Number(c5.price_delta);
-  return Number.isFinite(delta) && delta !== 0 ? `${name} (${deltaLabel(delta)})` : name;
-}
-function comboNote(combo) {
-  const parts = (combo?.components ?? []).map(componentLabel).filter(Boolean);
-  return parts.length ? parts.join(SEP2) : void 0;
-}
-function comboIdentity(combo) {
-  if (!combo) return "";
-  const parts = combo.components.map((c5) => `${c5.option_id || c5.name || ""}:${c5.price_delta ?? 0}`);
-  return `{${combo.name}|${parts.join("|")}}`;
-}
-function parseComboSnapshot(raw) {
-  if (typeof raw !== "string" || !raw.trim()) return void 0;
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return void 0;
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return void 0;
-  const v3 = parsed;
-  const name = v3.name == null ? "" : String(v3.name).trim();
-  if (!name) return void 0;
-  const rawComponents = Array.isArray(v3.components) ? v3.components : [];
-  const components = rawComponents.filter((c5) => !!c5 && typeof c5 === "object").map((c5) => {
-    const option_id = c5.option_id == null ? void 0 : String(c5.option_id);
-    const cname = c5.name == null || String(c5.name) === "" ? void 0 : String(c5.name);
-    const delta = Number(c5.price_delta);
-    return {
-      ...option_id ? { option_id } : {},
-      ...cname ? { name: cname } : {},
-      ...Number.isFinite(delta) ? { price_delta: delta } : {}
-    };
-  }).filter((c5) => c5.name || c5.option_id);
-  return { name, components };
-}
-function groupComboLines(lines) {
-  const out = [];
-  const byRef = /* @__PURE__ */ new Map();
-  for (const line of lines) {
-    const ref2 = line.combo_group_ref ? String(line.combo_group_ref) : "";
-    if (!ref2) {
-      out.push({ head: line, siblings: [line] });
-      continue;
-    }
-    const existing = byRef.get(ref2);
-    if (existing) {
-      existing.siblings.push(line);
-      continue;
-    }
-    const group = { head: line, siblings: [line], combo: parseComboSnapshot(line.combo) };
-    byRef.set(ref2, group);
-    out.push(group);
-  }
-  return out;
-}
-
 // @erplora/outfitkit/dist/ok-money.js
 var __defProp2 = Object.defineProperty;
 var __decorateClass2 = (decorators, target, key, kind) => {
@@ -1816,6 +1750,78 @@ __decorateClass2([
   n4()
 ], OkMoney.prototype, "locale");
 define("ok-money", OkMoney);
+
+// ui/lib/hub-currency.ts
+function hubDecimals() {
+  const d3 = globalThis.erplora?.currencyDecimals;
+  return typeof d3 === "number" && Number.isInteger(d3) && d3 >= 0 ? d3 : 2;
+}
+
+// ui/lib/paper-combos.ts
+var SEP2 = " \xB7 ";
+function deltaLabel(minor2) {
+  const sign = minor2 < 0 ? "-" : "+";
+  return `${sign}${formatMinor(Math.abs(minor2), { decimals: hubDecimals(), locale: documentLocale() })}`;
+}
+function componentLabel(c5) {
+  const name = (c5.name || "").trim() || (c5.option_id || "").trim();
+  const delta = Number(c5.price_delta);
+  return Number.isFinite(delta) && delta !== 0 ? `${name} (${deltaLabel(delta)})` : name;
+}
+function comboNote(combo) {
+  const parts = (combo?.components ?? []).map(componentLabel).filter(Boolean);
+  return parts.length ? parts.join(SEP2) : void 0;
+}
+function comboIdentity(combo) {
+  if (!combo) return "";
+  const parts = combo.components.map((c5) => `${c5.option_id || c5.name || ""}:${c5.price_delta ?? 0}`);
+  return `{${combo.name}|${parts.join("|")}}`;
+}
+function parseComboSnapshot(raw) {
+  if (typeof raw !== "string" || !raw.trim()) return void 0;
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return void 0;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return void 0;
+  const v3 = parsed;
+  const name = v3.name == null ? "" : String(v3.name).trim();
+  if (!name) return void 0;
+  const rawComponents = Array.isArray(v3.components) ? v3.components : [];
+  const components = rawComponents.filter((c5) => !!c5 && typeof c5 === "object").map((c5) => {
+    const option_id = c5.option_id == null ? void 0 : String(c5.option_id);
+    const cname = c5.name == null || String(c5.name) === "" ? void 0 : String(c5.name);
+    const delta = Number(c5.price_delta);
+    return {
+      ...option_id ? { option_id } : {},
+      ...cname ? { name: cname } : {},
+      ...Number.isFinite(delta) ? { price_delta: delta } : {}
+    };
+  }).filter((c5) => c5.name || c5.option_id);
+  return { name, components };
+}
+function groupComboLines(lines) {
+  const out = [];
+  const byRef = /* @__PURE__ */ new Map();
+  for (const line of lines) {
+    const ref2 = line.combo_group_ref ? String(line.combo_group_ref) : "";
+    if (!ref2) {
+      out.push({ head: line, siblings: [line] });
+      continue;
+    }
+    const existing = byRef.get(ref2);
+    if (existing) {
+      existing.siblings.push(line);
+      continue;
+    }
+    const group = { head: line, siblings: [line], combo: parseComboSnapshot(line.combo) };
+    byRef.set(ref2, group);
+    out.push(group);
+  }
+  return out;
+}
 
 // @erplora/outfitkit/dist/ok-qr.js
 var __defProp3 = Object.defineProperty;
@@ -2824,10 +2830,6 @@ function previewTaxBreakdown(lines, taxIncluded = POS_SETTINGS_DEFAULTS.default_
 // ui/lib/document-mappers.ts
 function minor(cents2) {
   return Number(cents2 ?? 0);
-}
-function hubDecimals() {
-  const d3 = globalThis.erplora?.currencyDecimals;
-  return typeof d3 === "number" && Number.isInteger(d3) && d3 >= 0 ? d3 : 2;
 }
 function formatDateTime(iso, locale = "es") {
   if (!iso) return void 0;
@@ -15873,28 +15875,33 @@ var REASON_KEYS = {
 function reasonKey(reason) {
   return REASON_KEYS[reason] ?? "ui.refundReasonNotEligible";
 }
-function parseAmountToCents(text) {
+function parseAmountToCents(text, decimals = 2) {
+  const scale = Number.isInteger(decimals) && decimals >= 0 ? decimals : 2;
   const raw = String(text ?? "").replace(/[^\d.,-]/g, "");
   if (!raw || raw.startsWith("-")) return 0;
-  const cut = Math.max(raw.lastIndexOf(","), raw.lastIndexOf("."));
+  const lastSep = Math.max(raw.lastIndexOf(","), raw.lastIndexOf("."));
   const digits = (part) => part.replace(/[^\d]/g, "");
+  const grouping = scale === 0 && lastSep >= 0 && /^\d{3}$/.test(raw.slice(lastSep + 1));
+  const cut = grouping ? -1 : lastSep;
   const whole = digits(cut >= 0 ? raw.slice(0, cut) : raw);
   const frac = cut >= 0 ? digits(raw.slice(cut + 1)) : "";
-  const padded = (frac + "000").slice(0, 3);
+  const padded = frac.padEnd(scale + 1, "0").slice(0, scale + 1);
   const units = Number(whole || "0");
   if (!Number.isFinite(units)) return 0;
-  const cents2 = units * 100 + Number(padded.slice(0, 2));
-  return Number(padded[2]) >= 5 ? cents2 + 1 : cents2;
+  const minor2 = units * 10 ** scale + Number(padded.slice(0, scale) || "0");
+  return Number(padded[scale]) >= 5 ? minor2 + 1 : minor2;
 }
-function formatAmountInput(amount, locale) {
-  const fixed = (Math.max(0, Math.round(Number(amount) || 0)) / 100).toFixed(2);
+function formatAmountInput(amount, locale, decimals = 2) {
+  const scale = Number.isInteger(decimals) && decimals >= 0 ? decimals : 2;
+  const padded = String(Math.max(0, Math.round(Number(amount) || 0))).padStart(scale + 1, "0");
+  if (scale === 0) return padded;
   let decimal = ".";
   try {
     decimal = new Intl.NumberFormat(locale || void 0).formatToParts(1.1).find((p4) => p4.type === "decimal")?.value ?? ".";
   } catch {
     decimal = ".";
   }
-  return fixed.replace(".", decimal);
+  return `${padded.slice(0, -scale)}${decimal}${padded.slice(-scale)}`;
 }
 
 // ui/lib/refund-tender.ts
@@ -16155,9 +16162,10 @@ var ErpSaleRefund = class extends i3 {
       this.tenderEls.delete(key);
     }
   }
-  /** El operador teclea EUROS; lo que se guarda son céntimos. Nada más se recalcula: su reparto. */
+  /** The operator types in the hub currency; what is kept is minor units, in its scale (sales#377).
+   *  Nothing else is recalculated: the split is theirs. */
   setAmount(paymentId, text) {
-    this.draft = { ...this.draft, [paymentId]: { ...this.draft[paymentId], amount: parseAmountToCents(text) } };
+    this.draft = { ...this.draft, [paymentId]: { ...this.draft[paymentId], amount: parseAmountToCents(text, hubDecimals()) } };
   }
   setDestination(paymentId, methodId) {
     this.draft = { ...this.draft, [paymentId]: { ...this.draft[paymentId], to: methodId || void 0 } };
@@ -16308,7 +16316,7 @@ var ErpSaleRefund = class extends i3 {
           inputmode="decimal"
           label=${t7("ui.refundLegAmount")}
           label-placement="stacked"
-          .value=${formatAmountInput(entry?.amount ?? 0, erplora5().locale)}
+          .value=${formatAmountInput(entry?.amount ?? 0, erplora5().locale, hubDecimals())}
           @ionInput=${(e8) => this.setAmount(leg.payment_id, e8.detail?.value ?? "")}
         ></ion-input>
       </div>
