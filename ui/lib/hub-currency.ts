@@ -1,5 +1,6 @@
 // The hub currency, as the module's UI reads it. Its own file so that `paper-combos` (imported BY
 // `document-mappers`) can read the scale without an import cycle.
+import { majorToMinor } from '@erplora/module-sdk';
 
 /** The hub currency's scale (ADR-0123 §7): what the SDK says when the shell injected it (JPY 0,
  *  KWD 3), else 2. Read at call time, not at module load: the SDK arrives after the bundle. */
@@ -15,8 +16,7 @@ export function hubDecimals(): number {
 
 /** Keypad text → minor units in the hub scale. Empty or garbage is 0, never NaN. */
 export function typedToMinor(text: string): number {
-  const n = Number(text || '0');
-  return Number.isFinite(n) ? Math.round(n * 10 ** hubDecimals()) : 0;
+  return majorToMinor(text || '0', hubDecimals());
 }
 
 /** Minor units → the keypad text that `typedToMinor` reads back (1250 → '12.50' in EUR, '1.250'
