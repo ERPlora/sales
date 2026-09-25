@@ -2078,6 +2078,12 @@ struct ValuedLine {
     /// `parent_line_ref` when the batch of ids is handed out, and it lets the preview answer the
     /// same hierarchy the sale persists without inventing ids that do not exist.
     parent: Option<usize>,
+    /// sales#299 — resolved ONCE here, so the row, the `sale.completed` event and the preview all
+    /// say the same name: the set menu's own name, the open check's frozen row, or the product
+    /// catalogue, in that order, degrading to the payload's own text when none of them has one.
+    product_name: String,
+    /// sales#299 — same resolution as [`product_name`](ValuedLine::product_name), for the SKU.
+    product_sku: String,
 }
 
 /// WHAT A TICKET IS WORTH: its priced lines, the breakdown by rate and the totals. Nothing in
@@ -2228,6 +2234,29 @@ fn value_checkout(
             Some(row) => field(row, "notes"),
             None => line_note(item),
         };
+        // sales#299 — WHO NAMES THE LINE, resolved ONCE so the row, the `sale.completed` event and
+        // the preview all agree. Same rule as the price (sales#175) and the note (sales#156): a set
+        // menu is named by `combos` (ADR-0381, guarded below), the open check's row is what the
+        // kitchen was given and the customer's paper has to agree with, and otherwise the trusted
+        // catalogue — never the payload, which the API door makes trivial to spoof.
+        //
+        // It DEGRADES instead of refusing: an `inventory` older than sales#288 that serves no
+        // `name`/`sku` leaves the caller's own text standing, exactly as before — a name decides no
+        // money, so there is nothing here worth rejecting a sale over.
+        let payload_name = as_str(item.get("product_name").unwrap_or(&Value::Null));
+        let payload_sku = str_or(item, "product_sku", "");
+        let (product_name, product_sku) = if combo.is_some() {
+            (payload_name.clone(), payload_sku.clone())
+        } else if let Some(row) = frozen {
+            (str_or(row, "product_name", &payload_name), str_or(row, "product_sku", &payload_sku))
+        } else {
+            // Safe: `line_price` above already ran this same catalogue lookup for this line and
+            // refused before this point if the line claimed the catalogue and could not sustain it.
+            match catalog_row(item, product_catalog.as_ref())? {
+                Some(row) => (str_or(row, "name", &payload_name), str_or(row, "sku", &payload_sku)),
+                None => (payload_name.clone(), payload_sku.clone()),
+            }
+        };
         let (unit_price, item_cost) = match &from_catalog {
             Some((price, cost, _)) => (*price, *cost),
             None => (
@@ -2332,7 +2361,7 @@ fn value_checkout(
         }
         // sales#113: la línea se guarda calculada; el importe fijo se reparte cuando se conocen
         // TODAS (fase 2, más abajo) y solo entonces se agrega y se emite.
-        pending_lines.push(ValuedLine { t, parts, is_gift, covered, resolved, combined_pct, unit_price, qty, line_disc, item: item.clone(), modifiers: modifier_snapshot, note, combo: combo.clone(), parent: expanded.parent });
+        pending_lines.push(ValuedLine { t, parts, is_gift, covered, resolved, combined_pct, unit_price, qty, line_disc, item: item.clone(), modifiers: modifier_snapshot, note, combo: combo.clone(), parent: expanded.parent, product_name, product_sku });
     }
 
     // ── Fase 2 (sales#113): reparto del importe fijo por RESTO MAYOR entre las líneas cobradas ──
@@ -2614,7 +2643,9 @@ fn preview_checkout_inner(input: Value) -> Result<Output, Refusal> {
         .map(|l| {
             json!({
                 "product_id": l.item.get("product_id").cloned().unwrap_or(Value::Null),
-                "product_name": as_str(l.item.get("product_name").unwrap_or(&Value::Null)),
+                // sales#299: resolved once in `value_checkout` (catalogue/open-check row), not
+                // read back from the payload — the preview must say what the sale would freeze.
+                "product_name": l.product_name.clone(),
                 // sales#195: the RESOLVED category, the same one the sale freezes on its row.
                 "tax_category_key": l.resolved.category_key.clone(),
                 "tax_rate": l.combined_pct,          // combined rate % (server-authoritative)
@@ -2754,8 +2785,10 @@ fn complete_sale_inner(input: Value, rule: CapRule) -> Result<Output, Refusal> {
         p.insert("line_id".into(), json!(line_id));
         p.insert("sale_id".into(), json!(sale_id));
         p.insert("product_id".into(), item.get("product_id").cloned().unwrap_or(Value::Null));
-        p.insert("product_name".into(), json!(as_str(item.get("product_name").unwrap_or(&Value::Null))));
-        p.insert("product_sku".into(), json!(str_or(item, "product_sku", "")));
+        // sales#299: the name/sku `value_checkout` resolved once (catalogue/open-check row), not
+        // the caller's payload.
+        p.insert("product_name".into(), json!(l.product_name.clone()));
+        p.insert("product_sku".into(), json!(l.product_sku.clone()));
         p.insert("is_service".into(), json!(item.get("is_service").map(as_bool).unwrap_or(false) as i64));
         p.insert("quantity".into(), json!(qty)); // punto fijo, escala 10⁶ (INTEGER, ADR-0147)
         // Contexto de unidades CONGELADO en la línea (ADR-0147 §2.4): el histórico no relee el maestro.
@@ -3040,7 +3073,9 @@ fn complete_sale_inner(input: Value, rule: CapRule) -> Result<Output, Refusal> {
             let it_category_key = l.resolved.category_key.clone();
             json!({
                 "product_id": it.get("product_id").cloned().unwrap_or(Value::Null),
-                "product_name": as_str(it.get("product_name").unwrap_or(&Value::Null)),
+                // sales#299: same name `value_checkout` resolved and persisted on the row, not the
+                // caller's payload — the invoice and the AEAT record read this event.
+                "product_name": l.product_name.clone(),
                 // ENTERO en escala 10⁶ (ADR-0147): `inventory` hace as_i64 — un float aquí era
                 // 0 → `qty <= 0 → continue` → la venta no descontaba stock, en silencio.
                 "quantity": qty,
@@ -10284,6 +10319,102 @@ mod tests {
         inp["payload"]["product_name"] = json!("Varios");
         let row = &order_lines(&add_order_line_pure(inp).accepted("the line goes in"))[0];
         assert_eq!(row["product_name"], json!("Varios"));
+    }
+
+    // ── sales#299 · the COUNTER sale names its lines from the catalogue too ─────────────────────
+    //
+    // sales#288 fixed the two doors of the open check and left the direct checkout out on purpose:
+    // `complete_sale_inner` kept copying `product_name`/`product_sku` from the payload while the
+    // price, the cost and the tax category of the very same line came from
+    // `inventory.products.for_sale`. That name is what the receipt, the sales history and every
+    // report read afterwards.
+
+    /// A counter sale (no `order_id`) of one catalogue line, with the fiscal catalogues in place.
+    fn counter_sale_of_burger(products: Value, payload_name: &str) -> Value {
+        let items = json!([{ "product_id": "p-burger", "product_name": payload_name, "price": 1,
+                             "quantity": 1_000_000 }]);
+        input_fiscal(items, products, tax_catalog())
+    }
+
+    #[test]
+    fn a_counter_sale_by_id_alone_is_named_by_the_catalogue() {
+        let mut inp = counter_sale_of_burger(named_burger_catalog(), "");
+        inp["payload"]["items"][0].as_object_mut().map(|o| o.remove("product_name"));
+        let preview = preview_checkout_pure(inp.clone()).accepted("the preview values the ticket");
+        let out = sale(inp);
+        let lines = sale_lines(&out);
+        assert_eq!(lines[0]["product_name"], json!("Hamburguesa doble"),
+                   "the sale line went in with no name, so the receipt and the reports show nothing");
+        assert_eq!(lines[0]["product_sku"], json!("BUR-2"));
+        // The row, the event the invoice is built from and the preview the till shows say the SAME
+        // name: three readers of one fact.
+        assert_eq!(out.events[0].payload["items"][0]["product_name"], json!("Hamburguesa doble"));
+        let result = preview.result.expect("the preview answers through `result`");
+        assert_eq!(result["lines"][0]["product_name"], json!("Hamburguesa doble"));
+    }
+
+    #[test]
+    fn a_counter_sale_keeps_the_catalogue_name_over_the_one_the_caller_proposed() {
+        let mut inp = counter_sale_of_burger(named_burger_catalog(), "Ensalada");
+        inp["payload"]["items"][0]["product_sku"] = json!("SAL-1");
+        let lines = sale_lines(&sale(inp));
+        assert_eq!(lines[0]["product_name"], json!("Hamburguesa doble"));
+        assert_eq!(lines[0]["product_sku"], json!("BUR-2"));
+    }
+
+    #[test]
+    fn a_counter_sale_against_a_catalogue_with_no_display_columns_keeps_the_callers_name() {
+        // Degrades, never refuses: an `inventory` older than sales#288 serves no `name`/`sku`, and a
+        // name decides no money — the sale goes through with the caller's text, as it did before.
+        let mut inp = counter_sale_of_burger(burger_catalog(900), "Hamburguesa");
+        inp["payload"]["items"][0]["product_sku"] = json!("BUR-OLD");
+        let lines = sale_lines(&sale(inp));
+        assert_eq!(lines[0]["product_name"], json!("Hamburguesa"));
+        assert_eq!(lines[0]["product_sku"], json!("BUR-OLD"));
+        assert_eq!(lines[0]["unit_price"], json!(900), "the money still comes from the catalogue");
+    }
+
+    #[test]
+    fn a_counter_sale_open_price_line_keeps_the_name_the_till_typed() {
+        let items = json!([{ "product_id": null, "product_name": "Varios", "price": 250,
+                             "quantity": 1_000_000, "tax_rate": 21.0 }]);
+        let lines = sale_lines(&sale(input_fiscal(items, named_burger_catalog(), tax_catalog())));
+        assert_eq!(lines[0]["product_name"], json!("Varios"));
+    }
+
+    #[test]
+    fn charging_an_open_check_names_the_line_as_the_check_froze_it() {
+        // The open check's ROW was written by the server with the catalogue in hand (sales#288) and
+        // it is what the kitchen was given. Same rule as its price (sales#175) and its note
+        // (sales#156): the payload's text is not the authority on what was ordered.
+        let mut row = order_row("line-1", 900);
+        row["product_name"] = json!("Hamburguesa doble");
+        row["product_sku"] = json!("BUR-2");
+        let mut inp = charge_open_check(900, json!([row]), 1);
+        inp["payload"]["items"][0]["product_name"] = json!("Ensalada");
+        let lines = sale_lines(&sale(inp));
+        assert_eq!(lines[0]["product_name"], json!("Hamburguesa doble"));
+        assert_eq!(lines[0]["product_sku"], json!("BUR-2"));
+    }
+
+    #[test]
+    fn a_set_menu_line_keeps_the_set_menus_own_name_with_a_named_catalogue() {
+        // Guard: a set menu is named by `combos` (ADR-0381), not by the product rows its
+        // components price against. A named product catalogue must not rename it.
+        let named = |id: &str, name: &str, price: i64, cat: &str| {
+            let mut p = combo_product(id, price, cat);
+            p["name"] = json!(name);
+            p
+        };
+        let out = sale(combo_input(
+            json!([{ "option_id": "o-first" }, { "option_id": "o-second" }]),
+            json!([combo_option("o-first", "g1", 1, "p-a", 0, "service", 1350, "shop.food"),
+                   combo_option("o-second", "g2", 1, "p-b", 0, "service", 1350, "shop.food")]),
+            json!([named("p-a", "Plato A del catálogo", 600, "shop.food"),
+                   named("p-b", "Plato B del catálogo", 800, "shop.food")]),
+            8,
+        ));
+        assert_eq!(sale_lines(&out)[0]["product_name"], json!("Pack merienda"));
     }
 
     #[test]
