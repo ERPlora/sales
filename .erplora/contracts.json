@@ -7,6 +7,7 @@
       "hub.fiscal.transmission",
       "hub.users.list",
       "sales.business.get",
+      "sales.business_day",
       "sales.by_idempotency_key",
       "sales.departments.list",
       "sales.get",

@@ -12,6 +12,10 @@ import enCatalog from '../../../locales/en.json';
 import { installErploraDouble } from '../../test/erplora-double';
 import { rangeBounds } from './erp-sales-list';
 
+/** The hub's business day, as `sales.business_day` answers it (sales#368). Deliberately far from
+ *  the machine running the suite: a screen that still read the device clock could never hit it. */
+const HUB_DAY = '2031-01-15';
+
 interface Column {
   key: string;
   format?: (row: Record<string, unknown>) => unknown;
@@ -32,6 +36,7 @@ function installList(overrides: Record<string, unknown[] | (() => unknown[])> = 
       'sales.get': [],
       'sales.lines': [],
       'sales.pos_settings.get': [], 'sales.business.get': [],
+      'sales.business_day': [{ today: HUB_DAY }],
       ...overrides,
     },
     // `invoice`/`verifactu` are optional apps (ADR-0127) and this hub does not have them.
@@ -232,9 +237,10 @@ describe('sales list — today by default, date/time on the row, KPIs for the sa
   // (`new Date().toISOString().slice(0, 10)`) while `isoDay()` builds it in local time, so the
   // suite went red on its own every night between 00:00 and 02:00 CEST. Two implementations of
   // "what day is today" is exactly where that bug came from — now there is only one.
-  const today = async (): Promise<string> => {
-    return rangeBounds('today').from!;
-  };
+  //
+  // sales#368 — and that one implementation is now the HUB's: the day comes from
+  // `sales.business_day`, never from the machine running the suite.
+  const today = async (): Promise<string> => HUB_DAY;
 
   it('shows the date and time of every sale, formatted, not the raw ISO string', async () => {
     const el = await mountList();
@@ -276,28 +282,25 @@ describe('sales list — today by default, date/time on the row, KPIs for the sa
 });
 
 
-// sales#133 — GUARD: «today» is the LOCAL day, never the UTC day.
+// sales#368 — «today» is the BUSINESS day, whatever the clock of the device looking at it.
 //
-// For a bar that closes at three in the morning, "today" is the day the till has been open, so the
-// business day runs in the shop timezone (what Square, Toast and Lightspeed all do). If
-// `isoDay()` ever went back to `toISOString().slice(0, 10)`, at 01:00 the history would jump to
-// the next day in the middle of the shift, the cashier would not find the ticket she just charged
-// and the cash count would not add up.
-//
-// The clock and the timezone are frozen here so this is deterministic instead of only failing
-// between 00:00 and 02:00 CEST, which is how the defect stayed alive.
-describe('sales list — «today» is the LOCAL day, never the UTC day (sales#133)', () => {
-  // 01:30 in Europe/Madrid (CEST, UTC+2) on the 23rd — still the 22nd in UTC.
-  const AT_0130_LOCAL = new Date('2026-08-22T23:30:00Z');
-  const LOCAL_DAY = '2026-08-23';
-  const UTC_DAY = '2026-08-22';
+// Since sales#323 the server files every sale under the business day (`:timezone`, hub#1022). The
+// screen used to compute «today» on the DEVICE clock (sales#133 made it the local day instead of
+// the UTC one), so both only agreed when the tablet's zone was the shop's: a tablet on the wrong
+// zone, or the owner checking from abroad, asked for a day the server does not count and «Hoy»
+// came out empty or with yesterday's sales. The screen now asks the hub (`sales.business_day`)
+// and derives every range from that day — the same answer `sales.today` gives the dashboard.
+describe('sales list — «today» is the business day of the hub, not of the device (sales#368)', () => {
+  // 11:30 on the 16th in Kiritimati (UTC+14) — the device; the hub (Madrid) is still on the 15th.
+  const AT = new Date('2031-01-15T21:30:00Z');
+  const DEVICE_DAY = '2031-01-16';
   let realTz: string | undefined;
 
   beforeEach(() => {
     realTz = process.env.TZ;
-    process.env.TZ = 'Europe/Madrid';
-    vi.useFakeTimers();
-    vi.setSystemTime(AT_0130_LOCAL);
+    process.env.TZ = 'Pacific/Kiritimati';
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(AT);
   });
 
   afterEach(() => {
@@ -306,23 +309,84 @@ describe('sales list — «today» is the LOCAL day, never the UTC day (sales#13
     else process.env.TZ = realTz;
   });
 
-  it('the two days really differ at that instant (otherwise this guard proves nothing)', () => {
-    expect(AT_0130_LOCAL.toISOString().slice(0, 10)).toBe(UTC_DAY);
-    expect(new Date().getDate()).toBe(23);
-    expect(UTC_DAY).not.toBe(LOCAL_DAY);
+  async function mount(overrides: Record<string, unknown[] | (() => unknown[])> = {}, broken: string[] = []) {
+    const sdk = installErploraDouble({
+      queries: {
+        'sales.list': [], 'sales.stats': [], 'sales.payment_methods': [],
+        'sales.business_day': [{ today: HUB_DAY }],
+        ...overrides,
+      },
+      broken,
+    });
+    document.body.innerHTML = '';
+    const el = document.createElement('erp-sales-list');
+    document.body.appendChild(el);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    await new Promise((r) => setTimeout(r, 0));
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    const statsOf = () => sdk.reads.filter((q) => q.name === 'sales.stats').at(-1)?.params;
+    const listFilterOf = () =>
+      (sdk.reads.filter((q) => q.name === 'sales.list').at(-1)?.params as { filters?: Record<string, unknown> } | undefined)
+        ?.filters?.erp_date;
+    return { sdk, el: el as unknown as { setRange(r: 'today' | '7d' | '30d' | 'all'): Promise<void> }, statsOf, listFilterOf };
+  }
+
+  it('the device really is on another day (otherwise this guard proves nothing)', () => {
+    expect(new Date().getDate()).toBe(16);
+    expect(DEVICE_DAY).not.toBe(HUB_DAY);
   });
 
-  it('at 01:30 local, «today» is the local day — the shift that is still open', async () => {
-    expect(rangeBounds('today')).toEqual({ from: LOCAL_DAY, to: LOCAL_DAY });
+  it('opens on the hub\'s day: the KPIs and the rows ask for it, not for the device\'s', async () => {
+    const { statsOf, listFilterOf } = await mount();
+    expect(statsOf()).toMatchObject({ date_from: HUB_DAY, date_to: HUB_DAY });
+    expect(listFilterOf()).toEqual({ from: HUB_DAY, to: HUB_DAY });
   });
 
-  it('«7 days» and «30 days» count back in local days too, both ends', async () => {
-    expect(rangeBounds('7d')).toEqual({ from: '2026-08-17', to: LOCAL_DAY });
-    expect(rangeBounds('30d')).toEqual({ from: '2026-07-25', to: LOCAL_DAY });
+  it('«7 días» and «30 días» count back from the hub\'s day', async () => {
+    const { el, statsOf, listFilterOf } = await mount();
+    await el.setRange('7d');
+    expect(statsOf()).toMatchObject({ date_from: '2031-01-09', date_to: HUB_DAY });
+    expect(listFilterOf()).toEqual({ from: '2031-01-09', to: HUB_DAY });
+    await el.setRange('30d');
+    expect(statsOf()).toMatchObject({ date_from: '2030-12-17', date_to: HUB_DAY });
   });
 
-  it('«all» stays unbounded: no day is computed at all', async () => {
-    expect(rangeBounds('all')).toEqual({});
+  it('pressing a range again re-asks the hub: a screen left open past midnight follows the day', async () => {
+    let day = HUB_DAY;
+    const { el, statsOf } = await mount({ 'sales.business_day': () => [{ today: day }] });
+    // Not the device's day either (the 16th), so only a re-ask of the hub can produce it.
+    day = '2031-01-20';
+    await el.setRange('today');
+    expect(statsOf()).toMatchObject({ date_from: '2031-01-20', date_to: '2031-01-20' });
+  });
+
+  it('if the hub cannot answer, it degrades to the device\'s LOCAL day — never the UTC one (sales#133)', async () => {
+    const { statsOf } = await mount({}, ['sales.business_day']);
+    expect(statsOf()).toMatchObject({ date_from: DEVICE_DAY, date_to: DEVICE_DAY });
+  });
+});
+
+describe('rangeBounds — pure day arithmetic on the anchor day (sales#368)', () => {
+  it('«today» is the anchor itself, both ends', () => {
+    expect(rangeBounds('today', '2026-09-19')).toEqual({ from: '2026-09-19', to: '2026-09-19' });
+  });
+
+  it('counts back whole calendar days across months, years and the DST change', () => {
+    expect(rangeBounds('7d', '2026-09-19')).toEqual({ from: '2026-09-13', to: '2026-09-19' });
+    expect(rangeBounds('30d', '2026-01-10')).toEqual({ from: '2025-12-12', to: '2026-01-10' });
+    // 25/10/2026 is a 25-hour day in Madrid: millisecond arithmetic on local time would slip a day.
+    const realTz = process.env.TZ;
+    process.env.TZ = 'Europe/Madrid';
+    try {
+      expect(rangeBounds('7d', '2026-10-28')).toEqual({ from: '2026-10-22', to: '2026-10-28' });
+    } finally {
+      if (realTz === undefined) delete process.env.TZ;
+      else process.env.TZ = realTz;
+    }
+  });
+
+  it('«all» stays unbounded: no day is computed at all', () => {
+    expect(rangeBounds('all', '2026-09-19')).toEqual({});
   });
 });
 
@@ -359,7 +423,7 @@ describe('sales list — the range filter asks for DAYS, not timestamps (sales#1
 
   it('the segment range filters on `erp_date` (day granularity), never on the raw `created_at`', async () => {
     await mountList();
-    const day = rangeBounds('today').from!;
+    const day = HUB_DAY;
     const filters = filtersOf(listQueries().find((q) => q.name === 'sales.list'));
     // Day-granularity column with ISO days on both ends: comparing the timestamp with a day
     // is what emptied the screen (the engine reads `<=`, so «today» stopped at 00:00).
@@ -372,7 +436,7 @@ describe('sales list — the range filter asks for DAYS, not timestamps (sales#1
     listSdk.reads.splice(0);
     await el.setRange('7d');
     let filters = filtersOf(listQueries().find((q) => q.name === 'sales.list'));
-    expect(filters.erp_date).toEqual(rangeBounds('7d'));
+    expect(filters.erp_date).toEqual(rangeBounds('7d', HUB_DAY));
 
     listSdk.reads.splice(0);
     await el.setRange('all');
@@ -820,6 +884,7 @@ describe('sales list — el resto llega a la fila y el botón conserva su nombre
     installErploraDouble({
       queries: {
         'sales.list': ROWS,
+        'sales.business_day': [{ today: HUB_DAY }],
         'sales.stats': [],
         'sales.payment_methods': [],
         'sales.get': [],
@@ -930,6 +995,7 @@ describe('sales list — what is left to refund is READ on the row (sales#256)',
     installErploraDouble({
       queries: {
         'sales.list': ROWS,
+        'sales.business_day': [{ today: HUB_DAY }],
         'sales.stats': [],
         'sales.payment_methods': [],
         'sales.get': [],
@@ -1027,6 +1093,7 @@ describe('sales list — what is left to refund is READ on the row (sales#256)',
     installErploraDouble({
       queries: {
         'sales.list': ROWS, 'sales.stats': [], 'sales.payment_methods': [],
+        'sales.business_day': [{ today: HUB_DAY }],
         'sales.get': [], 'sales.lines': [], 'sales.pos_settings.get': [], 'sales.business.get': [],
       },
       absent: ['invoice.by_source', 'invoice.lines', 'verifactu.records.by_invoice'],
@@ -1164,6 +1231,7 @@ describe('sales list — la acción de devolver se anuncia con TEXTO, no con su 
     installErploraDouble({
       queries: {
         'sales.list': ROWS,
+        'sales.business_day': [{ today: HUB_DAY }],
         'sales.stats': [],
         'sales.payment_methods': [],
         'sales.get': [],
@@ -1220,6 +1288,7 @@ describe('sales list — la acción de devolver se anuncia con TEXTO, no con su 
     installErploraDouble({
       queries: {
         'sales.list': ROWS, 'sales.stats': [], 'sales.payment_methods': [],
+        'sales.business_day': [{ today: HUB_DAY }],
         'sales.get': [], 'sales.lines': [], 'sales.pos_settings.get': [], 'sales.business.get': [],
       },
       absent: ['invoice.by_source', 'invoice.lines', 'verifactu.records.by_invoice'],

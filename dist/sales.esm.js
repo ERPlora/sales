@@ -16492,16 +16492,17 @@ function voidErrorKey(code) {
   return VOID_MESSAGES[code] ?? "ui.voidFailed";
 }
 var RANGE_KEYS = { today: "ui.rangeToday", "7d": "ui.range7d", "30d": "ui.range30d", all: "ui.rangeAll" };
-function isoDay(daysAgo = 0) {
+function deviceDay() {
   const d3 = /* @__PURE__ */ new Date();
-  d3.setDate(d3.getDate() - daysAgo);
   const pad = (n6) => String(n6).padStart(2, "0");
   return `${d3.getFullYear()}-${pad(d3.getMonth() + 1)}-${pad(d3.getDate())}`;
 }
-function rangeBounds(range) {
+function rangeBounds(range, today) {
   if (range === "all") return {};
   const days = range === "today" ? 0 : range === "7d" ? 6 : 29;
-  return { from: isoDay(days), to: isoDay(0) };
+  const [y3, m4, d3] = today.split("-").map(Number);
+  const from = new Date(Date.UTC(y3, m4 - 1, d3 - days)).toISOString().slice(0, 10);
+  return { from, to: today };
 }
 function erplora6() {
   const c5 = globalThis.erplora;
@@ -16513,6 +16514,8 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
     super(...arguments);
     this.stats = { count: 0, total_revenue: 0, avg_ticket: 0 };
     this.range = "today";
+    /** sales#368 — the hub's business day every range is counted from (`sales.business_day`). */
+    this.businessDay = "";
     this.statsError = "";
     this.payMethodsError = "";
     this.tick = 0;
@@ -16760,7 +16763,8 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
       this.kpiRow = this.kpiMq.matches;
       this.kpiMq.addEventListener("change", this.onKpiMqChange);
     }
-    const b3 = rangeBounds(this.range);
+    await this.loadBusinessDay();
+    const b3 = rangeBounds(this.range, this.businessDay);
     this.ctrl = createListController(erplora6(), "sales.list", () => this.requestUpdate(), {
       pageSize: 50,
       sort: "created_at",
@@ -16847,13 +16851,28 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
   /** sales#27: cambia el rango de filas Y KPIs a la vez. */
   async setRange(range) {
     this.range = range;
-    const b3 = rangeBounds(range);
+    await this.loadBusinessDay();
+    const b3 = rangeBounds(range, this.businessDay);
     this.ctrl.setFilter("erp_date", b3.from ? { from: b3.from, to: b3.to } : null);
     await this.loadStats();
   }
+  /** sales#368 — «today» is the hub's business day (`:timezone`), the one the server files every
+   *  sale under since sales#323, not the device's: a tablet on the wrong zone or an owner abroad
+   *  asked for a day the server does not count. If the read fails (older hub, denied), the screen
+   *  still opens on the device's local day — right on any well-set tablet, which is what it
+   *  always did. */
+  async loadBusinessDay() {
+    try {
+      const rows4 = await erplora6().query("sales.business_day");
+      const day = Array.isArray(rows4) ? rows4[0]?.today : void 0;
+      this.businessDay = typeof day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : deviceDay();
+    } catch {
+      this.businessDay = deviceDay();
+    }
+  }
   async loadStats() {
     try {
-      const b3 = rangeBounds(this.range);
+      const b3 = rangeBounds(this.range, this.businessDay);
       const rows4 = await erplora6().query("sales.stats", { date_from: b3.from ?? null, date_to: b3.to ?? null });
       this.stats = rows4 && rows4[0] || { count: 0, total_revenue: 0, avg_ticket: 0 };
     } catch (e8) {
