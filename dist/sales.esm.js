@@ -1622,11 +1622,28 @@ function majorToMinor(amount, decimals) {
   const n6 = Number(amount);
   return Number.isFinite(n6) ? Math.round(n6 * 10 ** decimals) : 0;
 }
-function eurosToCents(euros2) {
-  return majorToMinor(euros2, 2);
+
+// ui/lib/hub-currency.ts
+function hubDecimals() {
+  const d3 = globalThis.erplora?.currencyDecimals;
+  return typeof d3 === "number" && Number.isInteger(d3) && d3 >= 0 ? d3 : 2;
 }
-function centsToEuros(cents2) {
-  return cents2 == null ? "" : (cents2 / 100).toFixed(2);
+function typedToMinor(text) {
+  return majorToMinor(text || "0", hubDecimals());
+}
+function minorToTyped(minor2) {
+  const d3 = hubDecimals();
+  const digits = String(Math.abs(Math.round(minor2))).padStart(d3 + 1, "0");
+  const sign = minor2 < 0 ? "-" : "";
+  return d3 === 0 ? `${sign}${digits}` : `${sign}${digits.slice(0, -d3)}.${digits.slice(-d3)}`;
+}
+function pushTypedKey(cur, k2) {
+  if (k2 === "C") return "";
+  const d3 = hubDecimals();
+  if (k2 === ".") return d3 === 0 || cur.includes(".") ? cur : (cur + k2).slice(0, 9);
+  const dot = cur.indexOf(".");
+  if (dot >= 0 && cur.length - dot - 1 >= d3) return cur;
+  return (cur + k2).slice(0, 9);
 }
 
 // ui/lib/quantity.ts
@@ -1750,12 +1767,6 @@ __decorateClass2([
   n4()
 ], OkMoney.prototype, "locale");
 define("ok-money", OkMoney);
-
-// ui/lib/hub-currency.ts
-function hubDecimals() {
-  const d3 = globalThis.erplora?.currencyDecimals;
-  return typeof d3 === "number" && Number.isInteger(d3) && d3 >= 0 ? d3 : 2;
-}
 
 // ui/lib/paper-combos.ts
 var SEP2 = " \xB7 ";
@@ -7939,7 +7950,7 @@ function toDepartments(own, taxCats) {
   }
   return taxCats.map((c5) => ({ key: c5.key, name: deptDisplayName(c5), taxCategoryKey: c5.key }));
 }
-function pushDigit(cur, k2) {
+function pushPercentKey(cur, k2) {
   if (k2 === "C") return "";
   if (k2 === "." && cur.includes(".")) return cur;
   return (cur + k2).slice(0, 9);
@@ -8793,6 +8804,7 @@ var ErpPosTouch = class extends i3 {
     .change { color:var(--ion-color-success, #2f9e44); }
     .numpad { display:grid; grid-template-columns: repeat(3, 1fr); gap:.35rem; margin-bottom:.2rem; }
     .numpad button { font-size:1.15rem; padding:.6rem; border-radius:var(--ok-radius-sm,10px); border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); cursor:pointer; }
+    .numpad button:disabled { opacity:.35; cursor:default; }
     /* Precio libre: el tile fijo del catálogo + los botones de DEPARTAMENTO dentro del sheet. */
     .tile.open-price .op-thumb { display:flex; align-items:center; justify-content:center; font-size:2rem; color:var(--ion-color-primary,#3880ff); background:var(--ion-color-primary-tint,rgba(56,128,255,.14)); }
     .dept-label { margin:.5rem 0 .3rem; font-size:.8rem; opacity:.7; }
@@ -10987,7 +10999,7 @@ var ErpPosTouch = class extends i3 {
   tap(k2) {
     const base = this.padPrimed ? "" : this.tendered;
     this.padPrimed = false;
-    this.tendered = pushDigit(base, k2);
+    this.tendered = pushTypedKey(base, k2);
   }
   // ── sales#156 · the LINE NOTE ──────────────────────────────────────────────────────────────
   //
@@ -11054,7 +11066,7 @@ var ErpPosTouch = class extends i3 {
   // ── sales#71 · descuentos manuales ─────────────────────────────────────────────────────────
   openDiscount(target, lineId) {
     this.discountMode = target === "ticket" && this.ticketDiscountAmount > 0 && this.ticketDiscount === 0 ? "amount" : "percent";
-    const current = target === "ticket" ? this.discountMode === "amount" ? Number(centsToEuros(this.ticketDiscountAmount)) : this.ticketDiscount : this.cart.find((l3) => l3.line_id === lineId)?.discount ?? 0;
+    const current = target === "ticket" ? this.discountMode === "amount" ? Number(minorToTyped(this.ticketDiscountAmount)) : this.ticketDiscount : this.cart.find((l3) => l3.line_id === lineId)?.discount ?? 0;
     this.discountInput = current > 0 ? String(current) : "";
     this.discountSheet = { target, lineId };
   }
@@ -11064,12 +11076,12 @@ var ErpPosTouch = class extends i3 {
     this.discountInput = "";
   }
   tapDiscount(k2) {
-    const next = pushDigit(this.discountInput, k2);
+    const next = this.discountMode === "amount" ? pushTypedKey(this.discountInput, k2) : pushPercentKey(this.discountInput, k2);
     if (this.discountMode === "amount" || Number(next || "0") <= 100) this.discountInput = next;
   }
-  /** Importe tecleado en céntimos (modo €). */
+  /** The typed amount in minor units of the hub currency (amount mode, sales#379). */
   get discountInputCents() {
-    return Math.max(0, eurosToCents(this.discountInput || "0"));
+    return Math.max(0, typedToMinor(this.discountInput));
   }
   /** sales#113 — aplica un importe FIJO (céntimos; 0 = quitar) al ticket, persistiéndolo en el pedido. */
   async applyDiscountAmount(cents2) {
@@ -11118,10 +11130,10 @@ var ErpPosTouch = class extends i3 {
       }
     }
   }
-  // El pinpad teclea EUROS («20» = 20 €); el contrato de la venta es CÉNTIMOS (ADR-0007/0123),
-  // como `total`. Sin esta conversión: «Efectivo 0.20 €» y cambio 0 en el tiquet (QA 2026-07-17).
+  // The pinpad types the MAJOR unit («20» = 20 €); the sale contract is MINOR units (ADR-0007/0123),
+  // like `total`, in the hub scale: «2000» in yen is 2000, not 200000 (sales#379).
   get tenderedNum() {
-    return eurosToCents(this.tendered || "0");
+    return typedToMinor(this.tendered);
   }
   get change() {
     return Math.max(0, this.tenderedNum - this.payable);
@@ -11186,7 +11198,7 @@ var ErpPosTouch = class extends i3 {
     if (!leg) return;
     this.tenders = this.tenders.filter((t7) => t7.id !== id);
     this.payMethod = leg.method;
-    this.tendered = centsToEuros(leg.tendered);
+    this.tendered = minorToTyped(leg.tendered);
     this.padPrimed = true;
     this.error = "";
   }
@@ -11323,7 +11335,7 @@ var ErpPosTouch = class extends i3 {
   openOpenPrice(seed) {
     const cents2 = seed?.amountCents ?? 0;
     this.openServiceName = seed?.name?.trim() ?? "";
-    this.openAmount = cents2 > 0 ? centsToEuros(cents2) : "";
+    this.openAmount = cents2 > 0 ? minorToTyped(cents2) : "";
     this.openDept = this.seededDeptKey(seed?.deptKey);
     this.openPriceOpen = true;
   }
@@ -11344,11 +11356,11 @@ var ErpPosTouch = class extends i3 {
     return match ? match.key : "";
   }
   tapOpen(k2) {
-    this.openAmount = pushDigit(this.openAmount, k2);
+    this.openAmount = pushTypedKey(this.openAmount, k2);
   }
-  /** El numpad teclea EUROS; el contrato es CÉNTIMOS (ADR-0007), igual que en el cobro. */
+  /** The numpad types the major unit; the contract is minor units in the hub scale, as at checkout. */
   get openAmountCents() {
-    return eurosToCents(this.openAmount || "0");
+    return typedToMinor(this.openAmount);
   }
   /** Lo que la hoja de precio libre ofrece: los departamentos del negocio, o las categorías
    *  fiscales activas mientras no haya definido ninguno (sales#267). */
@@ -12453,7 +12465,7 @@ var ErpPosTouch = class extends i3 {
                     <!-- SIN atajos de importe (73/75/80…): Ioan los eliminó el 2026-07-19 y pidió
                          NO volver a añadirlos. El entregado se teclea en el numpad, punto. -->
                     <div class="numpad">
-                      ${["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "C"].map((k2) => b2`<button data-testid=${`pos-keypad-${keypadId(k2)}`} @click=${() => this.tap(k2)}>${k2}</button>`)}
+                      ${["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "C"].map((k2) => b2`<button data-testid=${`pos-keypad-${keypadId(k2)}`} ?disabled=${k2 === "." && hubDecimals() === 0} @click=${() => this.tap(k2)}>${k2}</button>`)}
                     </div>` : b2`
                     <div class="amt pay-exact"><span>${t5("ui.payExact")}</span><span class="v">${this.money(this.payable)}</span></div>
                     <p class="pay-hint">${t5("ui.payCardHint", { amount: this.money(this.payable) })}</p>`}
@@ -12640,7 +12652,7 @@ var ErpPosTouch = class extends i3 {
               <div class="sheet-top"><div class="pay-total">${this.money(this.openAmountCents)}</div></div>
               <div class="pay">
                 <div class="numpad">
-                  ${["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "C"].map((k2) => b2`<button data-testid=${`pos-open-price-key-${keypadId(k2)}`} @click=${() => this.tapOpen(k2)}>${k2}</button>`)}
+                  ${["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "C"].map((k2) => b2`<button data-testid=${`pos-open-price-key-${keypadId(k2)}`} ?disabled=${k2 === "." && hubDecimals() === 0} @click=${() => this.tapOpen(k2)}>${k2}</button>`)}
                 </div>
                 <div class="dept-label">${t5("ui.department")}</div>
                 <div class="dept-grid" role="group" aria-label=${t5("ui.department")}>
@@ -12737,7 +12749,7 @@ var ErpPosTouch = class extends i3 {
               <div class="sheet-top"><div class="pay-total">${this.discountMode === "amount" ? this.money(this.discountInputCents) : `${this.discountInput || "0"} %`}</div></div>
               <div class="pay">
                 <div class="numpad">
-                  ${["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "C"].map((k2) => b2`<button data-testid=${`pos-discount-key-${keypadId(k2)}`} @click=${() => this.tapDiscount(k2)}>${k2}</button>`)}
+                  ${["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "C"].map((k2) => b2`<button data-testid=${`pos-discount-key-${keypadId(k2)}`} ?disabled=${k2 === "." && this.discountMode === "amount" && hubDecimals() === 0} @click=${() => this.tapDiscount(k2)}>${k2}</button>`)}
                 </div>
               </div>
               <div class="sheet-foot discount-foot">
