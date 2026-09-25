@@ -40,16 +40,35 @@ function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\])\/\/.*$/gm, '$1');
 }
 
-/** Each hand-formatted number in the code: `.toFixed(2)` or `Intl.NumberFormat(…currency…)`. */
+/** Every `NumberFormat(…)` call whose arguments (up to the balancing paren, across lines) name a
+ *  `currency`: the options object usually sits on its own lines, so a per-line match misses it. */
+function currencyNumberFormatCalls(code: string): string[] {
+  const calls: string[] = [];
+  const open = /NumberFormat\s*\(/g;
+  let m: RegExpExecArray | null;
+  while ((m = open.exec(code))) {
+    let depth = 1;
+    let i = open.lastIndex;
+    while (i < code.length && depth > 0) {
+      if (code[i] === '(') depth++;
+      else if (code[i] === ')') depth--;
+      i++;
+    }
+    const call = code.slice(m.index, i);
+    if (/\bcurrency\b/.test(call)) calls.push(call.replace(/\s+/g, ' ').trim());
+  }
+  return calls;
+}
+
+/** Each hand-formatted number in the code: `.toFixed(2)` (per line) or a `NumberFormat(…currency…)`
+ *  call (collapsed to one line, however many it spans). */
 export function handFormattedMoney(src: string): string[] {
   const code = stripComments(src);
   const hits: string[] = [];
   for (const line of code.split('\n')) {
-    if (/\.toFixed\(\s*2\s*\)/.test(line) || /NumberFormat\([^)]*currency/.test(line)) {
-      hits.push(line.trim());
-    }
+    if (/\.toFixed\(\s*2\s*\)/.test(line)) hits.push(line.trim());
   }
-  return hits;
+  return hits.concat(currencyNumberFormatCalls(code));
 }
 
 /** Triaged pm#289: formatting that is not a screen amount. `file: exact code line → why`. */
@@ -96,5 +115,7 @@ describe('money display goes through the shared formatter (pm#289)', () => {
     expect(handFormattedMoney('const s = erplora().formatMoney(total);')).toHaveLength(0);
     expect(handFormattedMoney('// was (x / 100).toFixed(2)\nconst s = erplora().formatMoney(x);')).toHaveLength(0);
     expect(handFormattedMoney("new Intl.NumberFormat(locale, { maximumFractionDigits: 3 })")).toHaveLength(0);
+    // The shape prettier produces: the options object on its own lines (this is how it comes back).
+    expect(handFormattedMoney("new Intl.NumberFormat('es-ES', {\n  style: 'currency',\n  currency: 'EUR',\n});")).toHaveLength(1);
   });
 });
