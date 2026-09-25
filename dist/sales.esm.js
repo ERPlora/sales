@@ -7950,6 +7950,11 @@ function toDepartments(own, taxCats) {
   }
   return taxCats.map((c5) => ({ key: c5.key, name: deptDisplayName(c5), taxCategoryKey: c5.key }));
 }
+function pushPercentKey(cur, k2) {
+  if (k2 === "C") return "";
+  if (k2 === "." && cur.includes(".")) return cur;
+  return (cur + k2).slice(0, 9);
+}
 function erplora2() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -11071,7 +11076,7 @@ var ErpPosTouch = class extends i3 {
     this.discountInput = "";
   }
   tapDiscount(k2) {
-    const next = pushTypedKey(this.discountInput, k2);
+    const next = this.discountMode === "amount" ? pushTypedKey(this.discountInput, k2) : pushPercentKey(this.discountInput, k2);
     if (this.discountMode === "amount" || Number(next || "0") <= 100) this.discountInput = next;
   }
   /** The typed amount in minor units of the hub currency (amount mode, sales#379). */
@@ -12744,7 +12749,7 @@ var ErpPosTouch = class extends i3 {
               <div class="sheet-top"><div class="pay-total">${this.discountMode === "amount" ? this.money(this.discountInputCents) : `${this.discountInput || "0"} %`}</div></div>
               <div class="pay">
                 <div class="numpad">
-                  ${["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "C"].map((k2) => b2`<button data-testid=${`pos-discount-key-${keypadId(k2)}`} ?disabled=${k2 === "." && hubDecimals() === 0} @click=${() => this.tapDiscount(k2)}>${k2}</button>`)}
+                  ${["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "C"].map((k2) => b2`<button data-testid=${`pos-discount-key-${keypadId(k2)}`} ?disabled=${k2 === "." && this.discountMode === "amount" && hubDecimals() === 0} @click=${() => this.tapDiscount(k2)}>${k2}</button>`)}
                 </div>
               </div>
               <div class="sheet-foot discount-foot">

@@ -261,3 +261,33 @@ describe('the keypads refuse what the hub currency cannot hold (sales#379)', () 
     }
   });
 });
+
+describe('a PERCENT discount is not money: the currency scale does not cap it (rv-sales-381)', () => {
+  it('in yen «12.5 %» can still be typed and the separator key stays live in percent mode', async () => {
+    installSdk(0);
+    const el = await mount();
+    await addMenu(el);
+    el.openDiscount('ticket');
+    await el.updateComplete;
+    expect(el.discountMode).toBe('percent');
+    const dot = el.shadowRoot.querySelector<HTMLButtonElement>('[data-testid="pos-discount-key-dot"]');
+    expect(dot!.disabled, 'percent mode: the separator is live in a hub without decimals').toBe(false);
+    await press(el, 'pos-discount-key', '12.5');
+    expect(el.discountInput).toBe('12.5');
+    expect((el as unknown as { discountInputPct: number }).discountInputPct).toBe(12.5);
+  });
+
+  it('switching to amount mode in yen disables the separator; back to percent re-enables it', async () => {
+    installSdk(0);
+    const el = await mount();
+    await addMenu(el);
+    el.openDiscount('ticket');
+    el.discountMode = 'amount';
+    await el.updateComplete;
+    const dot = () => el.shadowRoot.querySelector<HTMLButtonElement>('[data-testid="pos-discount-key-dot"]')!;
+    expect(dot().disabled).toBe(true);
+    el.discountMode = 'percent';
+    await el.updateComplete;
+    expect(dot().disabled).toBe(false);
+  });
+});

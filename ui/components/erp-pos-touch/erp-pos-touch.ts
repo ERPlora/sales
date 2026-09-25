@@ -249,6 +249,13 @@ function toDepartments(own: DepartmentRow[], taxCats: TaxCategory[]): PosDepartm
   return taxCats.map((c) => ({ key: c.key, name: deptDisplayName(c), taxCategoryKey: c.key }));
 }
 
+/** The PERCENT discount keypad: 'C' clears, one separator, 9 characters at most. A percentage is
+ *  not money, so the hub currency scale does not apply (12.5 % is fine in a hub in yen). */
+function pushPercentKey(cur: string, k: string): string {
+  if (k === 'C') return '';
+  if (k === '.' && cur.includes('.')) return cur;
+  return (cur + k).slice(0, 9);
+}
 interface IonicAlertElement extends HTMLElement {
   header: string;
   message: string;
@@ -3930,7 +3937,8 @@ export class ErpPosTouch extends LitElement {
     this.discountInput = '';
   }
   private tapDiscount(k: string) {
-    const next = pushTypedKey(this.discountInput, k);
+    // A % is not money: only the AMOUNT mode follows the hub currency scale (rv-sales-381).
+    const next = this.discountMode === 'amount' ? pushTypedKey(this.discountInput, k) : pushPercentKey(this.discountInput, k);
     // A %: never above 100 (the server refuses it too). An amount: typed in the hub currency.
     if (this.discountMode === 'amount' || Number(next || '0') <= 100) this.discountInput = next;
   }
@@ -5852,7 +5860,7 @@ export class ErpPosTouch extends LitElement {
                 : `${this.discountInput || '0'} %`}</div></div>
               <div class="pay">
                 <div class="numpad">
-                  ${['1','2','3','4','5','6','7','8','9','.','0','C'].map((k) => html`<button data-testid=${`pos-discount-key-${keypadId(k)}`} ?disabled=${k === '.' && hubDecimals() === 0} @click=${() => this.tapDiscount(k)}>${k}</button>`)}
+                  ${['1','2','3','4','5','6','7','8','9','.','0','C'].map((k) => html`<button data-testid=${`pos-discount-key-${keypadId(k)}`} ?disabled=${k === '.' && this.discountMode === 'amount' && hubDecimals() === 0} @click=${() => this.tapDiscount(k)}>${k}</button>`)}
                 </div>
               </div>
               <div class="sheet-foot discount-foot">
