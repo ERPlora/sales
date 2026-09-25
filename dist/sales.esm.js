@@ -1500,14 +1500,136 @@ function bindTabbar(segment, opts = {}) {
   };
 }
 
+// @erplora/module-sdk/src/index.ts
+function isEmpty(v3) {
+  return v3 === null || v3 === void 0 || v3 === "";
+}
+var ListController = class {
+  constructor(client, queryName, onChange = () => {
+  }, opts = {}) {
+    this.client = client;
+    this.queryName = queryName;
+    this.onChange = onChange;
+    this.rows = [];
+    this.total = 0;
+    this.loading = false;
+    this.error = "";
+    /** Descarta respuestas obsoletas si llegan fuera de orden (race de cargas concurrentes). */
+    this.seq = 0;
+    this.state = {
+      page: 0,
+      pageSize: opts.pageSize ?? 50,
+      search: "",
+      sort: opts.sort,
+      dir: opts.dir ?? "asc",
+      filters: { ...opts.filters ?? {} },
+      context: { ...opts.context ?? {} }
+    };
+  }
+  /** Nº de páginas según el total del servidor (mínimo 1). */
+  get pageCount() {
+    return Math.max(1, Math.ceil(this.total / this.state.pageSize));
+  }
+  /** (Re)carga la página actual desde el servidor. */
+  async load() {
+    const s5 = this.state;
+    const mySeq = ++this.seq;
+    this.loading = true;
+    this.error = "";
+    this.onChange();
+    try {
+      const page2 = await this.client.queryPage(this.queryName, {
+        limit: s5.pageSize,
+        offset: s5.page * s5.pageSize,
+        search: s5.search,
+        sort: s5.sort,
+        dir: s5.dir,
+        filters: s5.filters,
+        params: s5.context
+      });
+      if (mySeq !== this.seq) return;
+      this.rows = page2.rows ?? [];
+      this.total = page2.total ?? this.rows.length;
+    } catch (e8) {
+      if (mySeq !== this.seq) return;
+      this.rows = [];
+      this.total = 0;
+      this.error = e8 instanceof Error ? e8.message : "Error cargando datos";
+    } finally {
+      if (mySeq === this.seq) {
+        this.loading = false;
+        this.onChange();
+      }
+    }
+  }
+  setPage(page2) {
+    this.state.page = Math.max(0, page2);
+    void this.load();
+  }
+  setSort(sort, dir) {
+    this.state.sort = sort;
+    this.state.dir = dir;
+    this.state.page = 0;
+    void this.load();
+  }
+  setSearch(search) {
+    this.state.search = search;
+    this.state.page = 0;
+    void this.load();
+  }
+  /** Cambia el nº de filas por página y recarga desde la página 0. */
+  setPageSize(pageSize) {
+    this.state.pageSize = Math.max(1, pageSize);
+    this.state.page = 0;
+    void this.load();
+  }
+  /** Aplica/quita un filtro de columna; valores vacíos lo eliminan. Vuelve a la página 0. */
+  setFilter(col, value) {
+    if (isEmpty(value)) {
+      delete this.state.filters[col];
+    } else if (typeof value === "object" && value !== null) {
+      const prev = this.state.filters[col] ?? {};
+      const merged = { ...prev, ...value };
+      const cleaned = Object.fromEntries(Object.entries(merged).filter(([, v3]) => !isEmpty(v3)));
+      if (Object.keys(cleaned).length === 0) delete this.state.filters[col];
+      else this.state.filters[col] = cleaned;
+    } else {
+      this.state.filters[col] = value;
+    }
+    this.state.page = 0;
+    void this.load();
+  }
+  /** Fija/actualiza los params de contexto obligatorios (p.ej. al seleccionar el padre).
+   *  Vuelve a la página 0 y recarga. Pasa `{}` o keys con valor vacío para limpiar. */
+  setContext(context) {
+    this.state.context = { ...context };
+    this.state.page = 0;
+    void this.load();
+  }
+  reset() {
+    this.state.page = 0;
+    this.state.search = "";
+    this.state.filters = {};
+    void this.load();
+  }
+};
+function createListController(client, queryName, onChange = () => {
+}, opts = {}) {
+  return new ListController(client, queryName, onChange, opts);
+}
+var SERVER_UNAVAILABLE = "server_unavailable";
+function majorToMinor(amount, decimals) {
+  const n6 = Number(amount);
+  return Number.isFinite(n6) ? Math.round(n6 * 10 ** decimals) : 0;
+}
+
 // ui/lib/hub-currency.ts
 function hubDecimals() {
   const d3 = globalThis.erplora?.currencyDecimals;
   return typeof d3 === "number" && Number.isInteger(d3) && d3 >= 0 ? d3 : 2;
 }
 function typedToMinor(text) {
-  const n6 = Number(text || "0");
-  return Number.isFinite(n6) ? Math.round(n6 * 10 ** hubDecimals()) : 0;
+  return majorToMinor(text || "0", hubDecimals());
 }
 function minorToTyped(minor2) {
   const d3 = hubDecimals();
@@ -1525,17 +1647,17 @@ function pushTypedKey(cur, k2) {
 }
 
 // ui/lib/quantity.ts
-var QUANTITY_SCALE = 1e6;
-function toMicro(qty) {
-  return Math.round(qty * QUANTITY_SCALE);
+var QUANTITY_SCALE2 = 1e6;
+function toMicro2(qty) {
+  return Math.round(qty * QUANTITY_SCALE2);
 }
-function fromMicro(raw) {
-  return raw / QUANTITY_SCALE;
+function fromMicro2(raw) {
+  return raw / QUANTITY_SCALE2;
 }
-function formatQuantity(raw) {
-  return String(fromMicro(raw));
+function formatQuantity2(raw) {
+  return String(fromMicro2(raw));
 }
-function onGrid(raw, increment) {
+function onGrid2(raw, increment) {
   if (!Number.isFinite(increment) || increment <= 0) return true;
   return raw % increment === 0;
 }
@@ -1550,7 +1672,7 @@ function priceLabel(money3, unitCode) {
   return tag ? `${money3} / ${tag}` : money3;
 }
 function quantityLabel(qty, unitCode) {
-  const n6 = formatQuantity(toMicro(qty)).replace(".", ",");
+  const n6 = formatQuantity2(toMicro2(qty)).replace(".", ",");
   const tag = unitTag(unitCode);
   return tag ? `${n6} ${tag}` : n6;
 }
@@ -2913,7 +3035,7 @@ function menuLine(siblings, combo, t7) {
   const mods = siblings.flatMap((l3) => parseModifierSnapshot(l3.modifiers) ?? []);
   return {
     name: lineLabel({ ...head, product_name: combo.name }, t7),
-    qty: fromMicro(Number(head.quantity)),
+    qty: fromMicro2(Number(head.quantity)),
     unit_price: minor(sum((l3) => l3.unit_price)),
     total: minor(sum((l3) => l3.line_total)),
     ...paperModifiers(mods.length ? mods : void 0, combo, head.notes),
@@ -2939,7 +3061,7 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", f
     // orden del papel sea el de la jerarquía y no el que devuelva la base de datos.
     lines: groupComboLines(orderChildLines(lines)).map((g3) => g3.combo ? menuLine(g3.siblings, g3.combo, t7) : {
       name: lineLabel(g3.head, t7),
-      qty: fromMicro(Number(g3.head.quantity)),
+      qty: fromMicro2(Number(g3.head.quantity)),
       // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
       unit_price: minor(g3.head.unit_price),
       total: minor(g3.head.line_total),
@@ -2973,7 +3095,7 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", f
     // igualmente en qué va la línea — el hueco honesto es la descripción, como «Vino (botella)»:
     // «Tomate rosa (kg)». Sin unidad o con la suelta, la descripción queda como estaba.
     description: unitTag(l3.unit_code) ? `${lineLabel(l3, t7)} (${unitTag(l3.unit_code)})` : lineLabel(l3, t7),
-    qty: fromMicro(Number(l3.quantity)),
+    qty: fromMicro2(Number(l3.quantity)),
     // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
     unit_price: minor(l3.unit_price),
     discount_percent: l3.discount_percent ? Number(l3.discount_percent) : void 0,
@@ -6086,7 +6208,7 @@ function buildFirePayload(orderId, label, lines, roundNo, waiterId, priority) {
       product_id: l3.id,
       product_name: l3.name,
       // Punto fijo 10⁶ (ADR-0147): cocina recibe 500000 y pinta 0,5 — su frontera, su formato.
-      quantity: toMicro(l3.qty),
+      quantity: toMicro2(l3.qty),
       unit_price: l3.price,
       // sales#156: what the waiter typed and — when the line is comped — the reason, which is
       // floor information the cook needs to see.
@@ -6237,7 +6359,7 @@ function toItemPayload(l3) {
     product_name: l3.name,
     product_sku: l3.sku ?? "",
     price: l3.price,
-    quantity: toMicro(l3.qty),
+    quantity: toMicro2(l3.qty),
     // punto fijo 10⁶ (ADR-0147)
     is_gift: !!l3.is_gift,
     gift_reason: l3.gift_reason ?? "",
@@ -6279,7 +6401,7 @@ function orderLinePayload(orderId, l3) {
     product_id: l3.id || null,
     product_name: l3.name,
     product_sku: l3.sku ?? "",
-    quantity: toMicro(l3.qty),
+    quantity: toMicro2(l3.qty),
     // punto fijo 10⁶ (ADR-0147)
     unit_price: l3.price,
     is_gift: !!l3.is_gift,
@@ -6342,7 +6464,7 @@ async function updateOrderLineQty(client, orderId, lineId, qty, unitPrice, isGif
   await client.command("sales.order.update_line", {
     order_id: orderId,
     line_id: lineId,
-    quantity: toMicro(qty),
+    quantity: toMicro2(qty),
     // punto fijo 10⁶ (ADR-0147)
     line_total: provisionalLineTotal(unitPrice, qty, isGift, discount, modifierDelta({ modifiers })),
     // Alternar invitación cambia el importe: viaja junto para que la fila quede coherente.
@@ -6355,7 +6477,7 @@ async function updateOrderLineDiscount(client, orderId, line, discount) {
   await client.command("sales.order.update_line", {
     order_id: orderId,
     line_id: line.line_id,
-    quantity: toMicro(line.qty),
+    quantity: toMicro2(line.qty),
     line_total: provisionalLineTotal(line.price, line.qty, line.is_gift, discount, modifierDelta(line)),
     discount_percent: discount,
     is_gift: null,
@@ -6367,7 +6489,7 @@ async function updateOrderLineNote(client, orderId, line, note) {
   await client.command("sales.order.update_line", {
     order_id: orderId,
     line_id: line.line_id,
-    quantity: toMicro(line.qty),
+    quantity: toMicro2(line.qty),
     line_total: provisionalLineTotal(line.price, line.qty, line.is_gift, line.discount ?? 0, modifierDelta(line)),
     notes: note,
     is_gift: null,
@@ -6396,7 +6518,7 @@ async function loadOrderLines(client, orderId) {
       price: Number(x2.unit_price) || 0,
       // La fila trae punto fijo 10⁶ (ADR-0147); la UI trabaja en lógico. Cerrar y reabrir el
       // pedido debe seguir mostrando 0,5 kg — no 500000 ni 1.
-      qty: fromMicro(Number(x2.quantity) || 1e6),
+      qty: fromMicro2(Number(x2.quantity) || 1e6),
       is_gift: x2.is_gift === 1 || x2.is_gift === true ? true : void 0,
       gift_reason: x2.gift_reason ? String(x2.gift_reason) : void 0,
       // Autoridad del IVA en servidor (ADR-0085) y coste para el arqueo de invitaciones: se
@@ -7445,7 +7567,7 @@ function checkoutItems(lines, opts) {
     product_name: l3.name,
     product_sku: l3.sku || "",
     price: l3.price,
-    quantity: toMicro(l3.qty),
+    quantity: toMicro2(l3.qty),
     tax_category_key: l3.tax_category_key ?? null,
     tax_rate: l3.tax_rate ?? 0,
     category_id: l3.category_id ?? opts.primaryCategory?.(l3.id) ?? null,
@@ -7668,125 +7790,6 @@ function readAutoPrint(answer) {
 function printReceiptIntent(choice, setting) {
   return choice ?? setting;
 }
-
-// @erplora/module-sdk/src/index.ts
-function isEmpty(v3) {
-  return v3 === null || v3 === void 0 || v3 === "";
-}
-var ListController = class {
-  constructor(client, queryName, onChange = () => {
-  }, opts = {}) {
-    this.client = client;
-    this.queryName = queryName;
-    this.onChange = onChange;
-    this.rows = [];
-    this.total = 0;
-    this.loading = false;
-    this.error = "";
-    /** Descarta respuestas obsoletas si llegan fuera de orden (race de cargas concurrentes). */
-    this.seq = 0;
-    this.state = {
-      page: 0,
-      pageSize: opts.pageSize ?? 50,
-      search: "",
-      sort: opts.sort,
-      dir: opts.dir ?? "asc",
-      filters: { ...opts.filters ?? {} },
-      context: { ...opts.context ?? {} }
-    };
-  }
-  /** Nº de páginas según el total del servidor (mínimo 1). */
-  get pageCount() {
-    return Math.max(1, Math.ceil(this.total / this.state.pageSize));
-  }
-  /** (Re)carga la página actual desde el servidor. */
-  async load() {
-    const s5 = this.state;
-    const mySeq = ++this.seq;
-    this.loading = true;
-    this.error = "";
-    this.onChange();
-    try {
-      const page2 = await this.client.queryPage(this.queryName, {
-        limit: s5.pageSize,
-        offset: s5.page * s5.pageSize,
-        search: s5.search,
-        sort: s5.sort,
-        dir: s5.dir,
-        filters: s5.filters,
-        params: s5.context
-      });
-      if (mySeq !== this.seq) return;
-      this.rows = page2.rows ?? [];
-      this.total = page2.total ?? this.rows.length;
-    } catch (e8) {
-      if (mySeq !== this.seq) return;
-      this.rows = [];
-      this.total = 0;
-      this.error = e8 instanceof Error ? e8.message : "Error cargando datos";
-    } finally {
-      if (mySeq === this.seq) {
-        this.loading = false;
-        this.onChange();
-      }
-    }
-  }
-  setPage(page2) {
-    this.state.page = Math.max(0, page2);
-    void this.load();
-  }
-  setSort(sort, dir) {
-    this.state.sort = sort;
-    this.state.dir = dir;
-    this.state.page = 0;
-    void this.load();
-  }
-  setSearch(search) {
-    this.state.search = search;
-    this.state.page = 0;
-    void this.load();
-  }
-  /** Cambia el nº de filas por página y recarga desde la página 0. */
-  setPageSize(pageSize) {
-    this.state.pageSize = Math.max(1, pageSize);
-    this.state.page = 0;
-    void this.load();
-  }
-  /** Aplica/quita un filtro de columna; valores vacíos lo eliminan. Vuelve a la página 0. */
-  setFilter(col, value) {
-    if (isEmpty(value)) {
-      delete this.state.filters[col];
-    } else if (typeof value === "object" && value !== null) {
-      const prev = this.state.filters[col] ?? {};
-      const merged = { ...prev, ...value };
-      const cleaned = Object.fromEntries(Object.entries(merged).filter(([, v3]) => !isEmpty(v3)));
-      if (Object.keys(cleaned).length === 0) delete this.state.filters[col];
-      else this.state.filters[col] = cleaned;
-    } else {
-      this.state.filters[col] = value;
-    }
-    this.state.page = 0;
-    void this.load();
-  }
-  /** Fija/actualiza los params de contexto obligatorios (p.ej. al seleccionar el padre).
-   *  Vuelve a la página 0 y recarga. Pasa `{}` o keys con valor vacío para limpiar. */
-  setContext(context) {
-    this.state.context = { ...context };
-    this.state.page = 0;
-    void this.load();
-  }
-  reset() {
-    this.state.page = 0;
-    this.state.search = "";
-    this.state.filters = {};
-    void this.load();
-  }
-};
-function createListController(client, queryName, onChange = () => {
-}, opts = {}) {
-  return new ListController(client, queryName, onChange, opts);
-}
-var SERVER_UNAVAILABLE = "server_unavailable";
 
 // ui/lib/transport-error.ts
 var SERVER_UNAVAILABLE_KEY = "ui.serverUnavailable";
@@ -10643,22 +10646,22 @@ var ErpPosTouch = class extends i3 {
   }
   /** Paso del stepper de una línea: el incremento congelado de su unidad (1 para `ud`). */
   stepOf(l3) {
-    return l3.increment_value ? fromMicro(l3.increment_value) : 1;
+    return l3.increment_value ? fromMicro2(l3.increment_value) : 1;
   }
   /** Fija la cantidad de una línea (desde ok-qty-stepper); al llegar a 0 la línea se elimina. */
   async setQtyAbs(id, v3, stepper) {
     const ex = this.cart.find((l3) => l3.id === id);
     if (!ex) return;
-    const qtyMicro = toMicro(Math.max(0, v3));
-    if (!onGrid(qtyMicro, ex.increment_value ?? 0)) {
-      this.error = `${t5("ui.qtyOffGrid")} (${formatQuantity(ex.increment_value ?? 0)} ${ex.unit_code ?? ""})`.trim();
+    const qtyMicro = toMicro2(Math.max(0, v3));
+    if (!onGrid2(qtyMicro, ex.increment_value ?? 0)) {
+      this.error = `${t5("ui.qtyOffGrid")} (${formatQuantity2(ex.increment_value ?? 0)} ${ex.unit_code ?? ""})`.trim();
       if (stepper) {
         await stepper.updateComplete;
         stepper.value = ex.qty;
       }
       return;
     }
-    const qty = fromMicro(qtyMicro);
+    const qty = fromMicro2(qtyMicro);
     this.cart = qty > 0 ? this.cart.map((l3) => l3 === ex ? { ...l3, qty } : l3) : this.cart.filter((l3) => l3 !== ex);
     if (!this.orderId || !ex.line_id) return;
     if (qty > 0) await updateOrderLineQty(erplora2(), this.orderId, ex.line_id, qty, ex.price, ex.is_gift, void 0, ex.discount ?? 0);
@@ -12154,7 +12157,7 @@ var ErpPosTouch = class extends i3 {
       </ion-label>
       <div slot="end" class="lineend">
         <span class="lt ${l3.is_gift ? "is-gift" : ""}">${this.money(lineAmount(l3))}</span>
-        ${locked ? b2`<span class="lqty">×${formatQuantity(toMicro(l3.qty))}</span>` : b2`
+        ${locked ? b2`<span class="lqty">×${formatQuantity2(toMicro2(l3.qty))}</span>` : b2`
             ${this.discountsAllowed ? b2`
             <ion-button data-testid=${`pos-line-${l3.id}-discount`} class="line-discount" fill="clear" size="small" title=${t5("ui.discountLine")} aria-label=${t5("ui.discountLine")}
                         @click=${() => this.openDiscount("line", l3.line_id)}>
