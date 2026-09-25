@@ -34,6 +34,7 @@ function install(locale: 'es' | 'en' = 'es', overrides: Record<string, unknown> 
   double = installErploraDouble({
     queries: {
       'sales.list': [ROW], 'sales.stats': [], 'sales.payment_methods': [],
+      'sales.business_day': [{ today: '2031-01-15' }],
       'sales.get': [{ id: 'venta-1', sale_number: 'T-42', subtotal: 327, tax_amount: 33, total: 360, payment_method_name: 'Efectivo' }],
       'sales.lines': [{ product_name: 'Cafe solo', quantity: 2, unit_price: 180, line_total: 360 }],
       'sales.pos_settings.get': [], 'sales.business.get': [],

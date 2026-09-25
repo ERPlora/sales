@@ -348,6 +348,10 @@
         "description": "Returns the hub's legal business name and tax id, as printed on the receipt header"
       }
     },
+    "sales.business_day": {
+      "permission": "sales.view_sale",
+      "sql": "queries/business_day.sql"
+    },
     "sales.today": {
       "permission": "sales.view_reports",
       "sql": "queries/today.sql",

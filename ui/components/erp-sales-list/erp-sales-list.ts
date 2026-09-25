@@ -89,17 +89,23 @@ interface Stats { count: number; total_revenue: number; avg_ticket: number; tax_
 /** sales#27 — el rango que gobierna filas y KPIs a la vez. `today` por defecto (Odoo, Square). */
 type Range = 'today' | '7d' | '30d' | 'all';
 const RANGE_KEYS: Record<Range, string> = { today: 'ui.rangeToday', '7d': 'ui.range7d', '30d': 'ui.range30d', all: 'ui.rangeAll' };
-/** Día ISO local `YYYY-MM-DD` de hace `daysAgo` días. */
-function isoDay(daysAgo = 0): string {
-  const d = new Date(); d.setDate(d.getDate() - daysAgo);
+/** The DEVICE's local ISO day `YYYY-MM-DD` — only the fallback when the hub cannot say its
+ *  business day (sales#368); local and never UTC, so it is at least right on a well-set tablet
+ *  (sales#133). */
+function deviceDay(): string {
+  const d = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
-/** Límites del rango (ambos inclusivos); `all` = sin límites. */
-export function rangeBounds(range: Range): { from?: string; to?: string } {
+/** Range bounds (both inclusive) counted back from `today`, an ISO day; `all` = unbounded.
+ *  Calendar arithmetic in UTC on purpose: the day is already decided, and local-time maths would
+ *  slip a day across a DST change. */
+export function rangeBounds(range: Range, today: string): { from?: string; to?: string } {
   if (range === 'all') return {};
   const days = range === 'today' ? 0 : range === '7d' ? 6 : 29;
-  return { from: isoDay(days), to: isoDay(0) };
+  const [y, m, d] = today.split('-').map(Number);
+  const from = new Date(Date.UTC(y, m - 1, d - days)).toISOString().slice(0, 10);
+  return { from, to: today };
 }
 
 function erplora(): ErploraClientLike {
@@ -135,6 +141,8 @@ export class ErpSalesList extends LitElement {
   @state() stats: Stats = { count: 0, total_revenue: 0, avg_ticket: 0 };
   /** sales#27: rango activo; hoy por defecto. */
   @state() range: Range = 'today';
+  /** sales#368 — the hub's business day every range is counted from (`sales.business_day`). */
+  private businessDay = '';
 
   @state() statsError = '';
   /** sales#260 — the read that feeds the payment filter failed: told on screen, never swallowed. */
@@ -408,7 +416,8 @@ export class ErpSalesList extends LitElement {
       this.kpiRow = this.kpiMq.matches;
       this.kpiMq.addEventListener('change', this.onKpiMqChange);
     }
-    const b = rangeBounds(this.range);
+    await this.loadBusinessDay();
+    const b = rangeBounds(this.range, this.businessDay);
     this.ctrl = createListController<Sale>(erplora(), 'sales.list', () => this.requestUpdate(), {
       pageSize: 50,
       sort: 'created_at',
@@ -495,15 +504,32 @@ export class ErpSalesList extends LitElement {
   /** sales#27: cambia el rango de filas Y KPIs a la vez. */
   async setRange(range: Range): Promise<void> {
     this.range = range;
-    const b = rangeBounds(range);
+    // sales#368: re-asked on every press, so a screen left open past midnight follows the day.
+    await this.loadBusinessDay();
+    const b = rangeBounds(range, this.businessDay);
     // sales#125: el filtro es la columna DÍA (`erp_date`), no el timestamp.
     this.ctrl.setFilter('erp_date', b.from ? { from: b.from, to: b.to } : null);
     await this.loadStats();
   }
 
+  /** sales#368 — «today» is the hub's business day (`:timezone`), the one the server files every
+   *  sale under since sales#323, not the device's: a tablet on the wrong zone or an owner abroad
+   *  asked for a day the server does not count. If the read fails (older hub, denied), the screen
+   *  still opens on the device's local day — right on any well-set tablet, which is what it
+   *  always did. */
+  private async loadBusinessDay(): Promise<void> {
+    try {
+      const rows = await erplora().query<{ today?: string }[]>('sales.business_day');
+      const day = Array.isArray(rows) ? rows[0]?.today : undefined;
+      this.businessDay = typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : deviceDay();
+    } catch {
+      this.businessDay = deviceDay();
+    }
+  }
+
   private async loadStats() {
     try {
-      const b = rangeBounds(this.range);
+      const b = rangeBounds(this.range, this.businessDay);
       const rows = await erplora().query<Stats[]>('sales.stats', { date_from: b.from ?? null, date_to: b.to ?? null });
       this.stats = (rows && rows[0]) || { count: 0, total_revenue: 0, avg_ticket: 0 };
     } catch (e) {

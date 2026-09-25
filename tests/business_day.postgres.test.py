@@ -107,7 +107,9 @@ def lower(sql: str) -> str:
 
 
 def query(name: str, params: dict) -> list:
-    sql = (MODULE_DIR / MANIFEST["queries"][name]["sql"]).read_text().strip().rstrip(";")
+    sql = (
+        (MODULE_DIR / MANIFEST["queries"][name]["sql"]).read_text().strip().rstrip(";")
+    )
     bound = bind(lower(sql), {**params, "hub_id": s.hub})
     try:
         raw = s.psql(["-tAc", f"SELECT json_agg(t) FROM ({bound}) t"]).strip()
@@ -163,6 +165,24 @@ def main() -> int:
             "without a zone it stays on the UTC day (runtime fallback)",
             s.field(rows, "tickets"),
             4,
+        )
+
+        # sales#368 — the screen no longer computes «today» on the DEVICE clock: it asks the hub.
+        # A tablet with the wrong zone (or the owner abroad) used to ask for a day the server
+        # does not count, and «Hoy» came out empty or with yesterday's sales.
+        print("sales.business_day (the day the history screen anchors its ranges on)")
+        rows = query("sales.business_day", {"now": NOW, "timezone": TZ})
+        s.check(
+            "at 00:30 local the business day is already the 19th",
+            s.field(rows, "today"),
+            TODAY,
+        )
+        # Positive control: the same instant without a zone is the UTC day, like every door.
+        rows = query("sales.business_day", {"now": NOW, "timezone": None})
+        s.check(
+            "without a zone it stays on the UTC day (runtime fallback)",
+            s.field(rows, "today"),
+            YESTERDAY,
         )
 
         print("sales.stats (history KPIs, range = the screen's local days)")
