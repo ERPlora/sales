@@ -16,6 +16,7 @@ import { payMethodDisplayName } from './pay-icons.js';
 import { modifierLabel, modifierNote, type PrintedModifier } from './paper-modifiers.js';
 // sales#154 — the menu on the paper lives in ONE place too (`paper-combos.ts`), for the same reason.
 import { comboNote, componentLabel, groupComboLines, type PrintedCombo } from './paper-combos.js';
+import { hubDecimals } from './hub-currency.js';
 // sales#180 — the bill's PROVISIONAL tax breakdown comes through the same door as the cart's tax
 // preview, not through a second arithmetic that would end up disagreeing with it.
 import { previewTaxBreakdown, type TaxBreakdownEntry } from './pos-tax.js';
@@ -40,12 +41,9 @@ function minor(cents: number | string | undefined): number {
   return Number(cents ?? 0);
 }
 
-/** The hub currency's scale (ADR-0123 §7): what the SDK says when the shell injected it (JPY 0,
- *  KWD 3), else 2. Read at mapping time, not at module load: the SDK arrives after the bundle. */
-export function hubDecimals(): number {
-  const d = (globalThis as { erplora?: { currencyDecimals?: unknown } }).erplora?.currencyDecimals;
-  return typeof d === 'number' && Number.isInteger(d) && d >= 0 ? d : 2;
-}
+// The hub currency's scale (ADR-0123 §7), read at mapping time. Lives in `hub-currency.ts` so the
+// paper composers can read it too; re-exported here for the callers that already import it.
+export { hubDecimals };
 
 /** Fecha legible según locale («16/07/2026, 19:00»). ISO no parseable → se devuelve tal cual;
  *  vacía → undefined. Nunca "Invalid Date" en un tiquet. */

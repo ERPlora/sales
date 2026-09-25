@@ -33,6 +33,9 @@
 //   footer keeps both bases (ADR-0381 rule 2). The presentation groups; it never rewrites the
 //   breakdown.
 
+import { documentLocale, formatMinor } from '@erplora/outfitkit/ok-money';
+import { hubDecimals } from './hub-currency.js';
+
 /** A component **as the customer reads it** — the minimum the paper needs, not the catalogue row. */
 export interface PrintedComboComponent {
   /** Catalogue identity: only printed when the name could not be resolved. */
@@ -53,11 +56,14 @@ export interface PrintedCombo {
 /** Same separator as the supplements sub-line: in 32 thermal columns a comma reads as a decimal. */
 const SEP = ' · ';
 
-/** Cents → «+3,00» / «-0,50»: the supplement beside the component name. No currency: the column
- *  already says which one, and the thermal renderer prints the string verbatim. */
-function deltaLabel(cents: number): string {
-  const sign = cents < 0 ? '-' : '+';
-  return `${sign}${(Math.abs(cents) / 100).toFixed(2).replace('.', ',')}`;
+/** Minor units → «+3,00» / «-0,50»: the supplement beside the component name. No currency: the
+ *  column already says which one, and the thermal renderer prints the string verbatim.
+ *  sales#377: in the hub currency's scale (JPY «+300», KWD «+3,000») and with the document
+ *  language's separators — the same door (`formatMinor`) the rest of the HTML paper goes through,
+ *  so the supplement never reads in a different currency than the menu it explains. */
+function deltaLabel(minor: number): string {
+  const sign = minor < 0 ? '-' : '+';
+  return `${sign}${formatMinor(Math.abs(minor), { decimals: hubDecimals(), locale: documentLocale() })}`;
 }
 
 /** What is read for ONE component: the commercial name (falling back to the id — an ugly line beats

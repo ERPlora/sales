@@ -222,3 +222,38 @@ describe('y lo que se le enseña al operador vuelve en SU separador decimal', ()
     expect(formatAmountInput(0, 'es')).toBe('0,00');
   });
 });
+
+describe('el campo sigue la ESCALA de la moneda del hub, no un euro fijo (sales#377)', () => {
+  // 🔴 En un hub en yenes, una devolución de 1.500 ¥ aparecía como «15.00» en el campo que decide
+  // cuánto dinero sale de la caja. La unidad es la MENOR de la moneda (ADR-0123 §7): 0 decimales
+  // en JPY, 3 en KWD, 2 en EUR.
+  it('JPY (escala 0): 1500 unidades se escriben «1500» y vuelven a leerse 1500', () => {
+    expect(formatAmountInput(1500, 'es', 0)).toBe('1500');
+    expect(parseAmountToCents('1500', 0)).toBe(1500);
+    expect(parseAmountToCents(formatAmountInput(1500, 'es', 0), 0)).toBe(1500);
+  });
+
+  it('JPY: un separador seguido de tres cifras es de MILES, nunca decimal', () => {
+    // Un yen no tiene decimales: «1.500» o «1,500 ¥» solo puede ser mil quinientos.
+    expect(parseAmountToCents('1.500', 0)).toBe(1500);
+    expect(parseAmountToCents('1,500 ¥', 0)).toBe(1500);
+  });
+
+  it('JPY: una fracción tecleada redondea a la unidad (HALF_UP)', () => {
+    expect(parseAmountToCents('15,5', 0)).toBe(16);
+    expect(parseAmountToCents('15,4', 0)).toBe(15);
+  });
+
+  it('KWD (escala 3): tres decimales en los dos sentidos', () => {
+    expect(formatAmountInput(1234, 'en', 3)).toBe('1.234');
+    expect(formatAmountInput(5, 'es', 3)).toBe('0,005');
+    expect(parseAmountToCents('1.234', 3)).toBe(1234);
+    expect(parseAmountToCents('1,5', 3)).toBe(1500);
+    expect(parseAmountToCents('0,0005', 3)).toBe(1);
+  });
+
+  it('sin escala es EUR (2): lo de siempre no cambia', () => {
+    expect(formatAmountInput(5000, 'es')).toBe('50,00');
+    expect(parseAmountToCents('50,00')).toBe(5000);
+  });
+});

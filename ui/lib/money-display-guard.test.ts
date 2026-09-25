@@ -73,12 +73,8 @@ export function handFormattedMoney(src: string): string[] {
 
 /** Triaged pm#289: formatting that is not a screen amount. `file: exact code line → why`. */
 const NOT_DISPLAY: Record<string, string> = {
-  // Thermal paper: the ESC/POS renderer prints the string verbatim; a Web Component cannot go there.
-  'lib/paper-combos.ts: return `${sign}${(Math.abs(cents) / 100).toFixed(2).replace(\'.\', \',\')}`;':
-    'ticket text (paper), not screen',
-  // The value of an EDITABLE input: it must re-parse to the same cents, so no grouping and no symbol.
-  'lib/refund-allocation.ts: const fixed = (Math.max(0, Math.round(Number(amount) || 0)) / 100).toFixed(2);':
-    'editable input value, not display',
+  // sales#377: the menu supplement (paper-combos) and the refund input (refund-allocation) left
+  // this list — both now follow the hub currency's scale instead of a hard `/ 100`.
   // A tax RATE (21.00 → "21"), not an amount.
   'lib/document-mappers.ts: const pct = Number.isFinite(r) ? String(Number(r.toFixed(2))) : rate;':
     'percentage, not money',

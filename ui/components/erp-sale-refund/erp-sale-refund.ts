@@ -34,6 +34,7 @@ import {
 } from '../../lib/refund-allocation.js';
 import { coveredLines, serviceOrdinals, type SaleLine } from '../../lib/refund-tender.js';
 import { payMethodDisplayName } from '../../lib/pay-icons.js';
+import { hubDecimals } from '../../lib/hub-currency.js';
 import { errorCode } from '../../lib/checkout-key.js';
 import { domainErrorText } from '../../lib/domain-error-text.js';
 import { transportErrorKey } from '../../lib/transport-error.js';
@@ -344,9 +345,10 @@ export class ErpSaleRefund extends LitElement {
     }
   }
 
-  /** El operador teclea EUROS; lo que se guarda son céntimos. Nada más se recalcula: su reparto. */
+  /** The operator types in the hub currency; what is kept is minor units, in its scale (sales#377).
+   *  Nothing else is recalculated: the split is theirs. */
   setAmount(paymentId: string, text: string): void {
-    this.draft = { ...this.draft, [paymentId]: { ...this.draft[paymentId], amount: parseAmountToCents(text) } };
+    this.draft = { ...this.draft, [paymentId]: { ...this.draft[paymentId], amount: parseAmountToCents(text, hubDecimals()) } };
   }
 
   private setDestination(paymentId: string, methodId: string): void {
@@ -514,7 +516,7 @@ export class ErpSaleRefund extends LitElement {
           inputmode="decimal"
           label=${t('ui.refundLegAmount')}
           label-placement="stacked"
-          .value=${formatAmountInput(entry?.amount ?? 0, erplora().locale)}
+          .value=${formatAmountInput(entry?.amount ?? 0, erplora().locale, hubDecimals())}
           @ionInput=${(e: CustomEvent<{ value?: string }>) => this.setAmount(leg.payment_id, e.detail?.value ?? '')}
         ></ion-input>
       </div>

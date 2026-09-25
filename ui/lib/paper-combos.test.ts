@@ -35,7 +35,14 @@
 //
 //  5. THE BILL (pre-bill) IS PRINTED LIKE THE TICKET — one composer, both papers, same as
 //     sales#148 decided for supplements.
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { installErploraDouble } from '../test/erplora-double';
+
+// The fixtures below are a Spanish hub in euros («+3,00»). Since sales#377 the supplement takes the
+// document language's separator, like every other amount on the paper, so the language is stated.
+beforeEach(() => {
+  document.documentElement.lang = 'es';
+});
 import {
   comboIdentity,
   comboNote,
@@ -71,6 +78,41 @@ describe('componentLabel — what the customer reads for one component', () => {
 
   it('falls back to the option id: an ugly line beats an invisible component', () => {
     expect(componentLabel({ option_id: 'o-orphan' })).toBe('o-orphan');
+  });
+});
+
+describe('the supplement follows the HUB currency, not a hard-coded euro (sales#377)', () => {
+  // The rest of the paper already prints in the hub's scale (ADR-0123 §7) and the document's
+  // language: a supplement divided by 100 in a yen hub reads «+15,00» beside a menu of 1.650 ¥.
+  beforeEach(() => {
+    delete (globalThis as { erplora?: unknown }).erplora;
+    document.documentElement.lang = 'es';
+  });
+  afterEach(() => {
+    delete (globalThis as { erplora?: unknown }).erplora;
+    document.documentElement.lang = '';
+  });
+
+  it('JPY (scale 0): 300 minor units is «+300», never «+3,00»', () => {
+    installErploraDouble({ extra: { currencyDecimals: 0 } });
+    expect(componentLabel({ name: 'Postre especial', price_delta: 300 })).toBe('Postre especial (+300)');
+    expect(componentLabel({ name: 'Wagyu', price_delta: 1500 }), 'grouped like the amounts beside it').toBe('Wagyu (+1.500)');
+    expect(componentLabel({ name: 'Agua', price_delta: -50 })).toBe('Agua (-50)');
+  });
+
+  it('KWD (scale 3): three decimals', () => {
+    installErploraDouble({ extra: { currencyDecimals: 3 } });
+    expect(componentLabel({ name: 'Solomillo', price_delta: 3000 })).toBe('Solomillo (+3,000)');
+  });
+
+  it('the decimal separator is the document language\'s, like the rest of the paper', () => {
+    document.documentElement.lang = 'en';
+    expect(componentLabel({ name: 'Solomillo', price_delta: 300 })).toBe('Solomillo (+3.00)');
+  });
+
+  it('in euros and in Spanish nothing changes', () => {
+    expect(componentLabel({ name: 'Solomillo', price_delta: 300 })).toBe('Solomillo (+3,00)');
+    expect(comboNote({ name: 'Menú', components: [{ name: 'Solomillo', price_delta: 300 }] })).toBe('Solomillo (+3,00)');
   });
 });
 

@@ -35,7 +35,12 @@ const METHODS = [
 
 let sdk: Sdk;
 
-function install(over: Partial<Record<string, unknown[]>> = {}, fail?: string, thrown?: unknown): void {
+function install(
+  over: Partial<Record<string, unknown[]>> = {},
+  fail?: string,
+  thrown?: unknown,
+  extra?: Record<string, unknown>,
+): void {
   const table: Record<string, unknown[]> = {
     'sales.get': SALE, 'sales.refund_options': LEGS, 'sales.payment_methods': METHODS, ...over,
   };
@@ -51,6 +56,7 @@ function install(over: Partial<Record<string, unknown[]>> = {}, fail?: string, t
     command: (name: string, payload: Record<string, unknown>) => sdk.command(name, payload),
     notify: (n) => sdk.notify(n),
     locale: 'es',
+    ...(extra ? { extra } : {}),
     // Formato ESPAÑOL, que es el de la UI que se está probando: con punto decimal, un «25,00 €»
     // en pantalla habría pasado el test sin existir.
     formatMoney: (c: number) => `${((c || 0) / 100).toFixed(2).replace('.', ',')} €`,
@@ -113,6 +119,26 @@ describe('los tres estados que una pantalla de dinero no puede saltarse', () => 
     const el = await mount();
     expect(text(el)).toContain(esCatalog.ui.refundNothing);
     expect(confirmButton(el)).toBeNull();
+  });
+});
+
+describe('el campo del importe va en la moneda del hub (sales#377)', () => {
+  // 🔴 En un hub en yenes el campo proponía «15,00» para una devolución de 1.500 ¥: el número con
+  // el que se decide cuánto dinero sale de la caja, dividido entre 100.
+  const YEN_LEG = [{ ...LEGS[1], charged: 1500, remaining: 1500 }];
+
+  it('en yenes propone «1500», no «15,00»', async () => {
+    install({ 'sales.refund_options': YEN_LEG }, undefined, undefined, { currencyDecimals: 0 });
+    const el = await mount();
+    const input = el.shadowRoot?.querySelector('[data-testid="refund-amount-pay-cash"]') as HTMLElement & { value?: string };
+    expect(input?.value).toBe('1500');
+  });
+
+  it('y lo que el operador teclea se lee en yenes: «1.200» son 1200 ¥', async () => {
+    install({ 'sales.refund_options': YEN_LEG }, undefined, undefined, { currencyDecimals: 0 });
+    const el = await mount();
+    el.setAmount('pay-cash', '1.200');
+    expect(el.draft['pay-cash'].amount).toBe(1200);
   });
 });
 
