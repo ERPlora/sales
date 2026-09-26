@@ -253,6 +253,21 @@ describe('the note under the fiscal QR names the document on screen (sales#411)'
     }
   });
 
+  // The symptom lives in the WORDS, not in the key: the double's `t()` answers the key, so a
+  // ticket sentence that went back to «…la factura…» passed every test above.
+  it('the ticket sentence names the ticket and never the invoice, in en and es', () => {
+    const words = [
+      { catalog: esLocale, ticket: /\btique\b/i, invoice: /\bfactura\b/i },
+      { catalog: enLocale, ticket: /\breceipt\b/i, invoice: /\binvoice\b/i },
+    ] as Array<{ catalog: { ui: Record<string, string> }; ticket: RegExp; invoice: RegExp }>;
+    for (const { catalog, ticket, invoice } of words) {
+      expect(catalog.ui.qrValidateNoteTicket).toMatch(ticket);
+      expect(catalog.ui.qrValidateNoteTicket).not.toMatch(invoice);
+      expect(catalog.ui.qrValidateNoteInvoice).toMatch(invoice);
+      expect(catalog.ui.qrValidateNoteInvoice).not.toMatch(ticket);
+    }
+  });
+
   it('once the AEAT answers, both show its CSV instead of the note', async () => {
     for (const type of ['ticket', 'invoice'] as const) {
       const el = await mountIssued(type, 'A-7F3K9QX2M1');
