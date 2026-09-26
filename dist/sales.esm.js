@@ -4921,6 +4921,59 @@ var en_default = {
     claimCountry: "Country",
     claimIdType: "Your number is",
     claimIdTypeTax: "A tax or VAT number"
+  },
+  commands: {
+    "sales.complete_sale": {
+      label: "Charge a sale"
+    },
+    "sales.complete_sale_over_limit": {
+      label: "Charge a sale with a discount above the limit"
+    },
+    "sales.create_payment_method": {
+      label: "Add a payment method"
+    },
+    "sales.departments.create": {
+      label: "Add a department"
+    },
+    "sales.departments.delete": {
+      label: "Delete a department"
+    },
+    "sales.departments.update": {
+      label: "Edit a department"
+    },
+    "sales.order.add_open_line": {
+      label: "Sell an item at an open price"
+    },
+    "sales.order.set_discount_over_limit": {
+      label: "Apply a ticket discount above the limit"
+    },
+    "sales.order.set_line_discount_over_limit": {
+      label: "Apply a line discount above the limit"
+    },
+    "sales.order.void": {
+      label: "Cancel an open ticket"
+    },
+    "sales.quick_notes.create": {
+      label: "Add a quick note"
+    },
+    "sales.quick_notes.delete": {
+      label: "Delete a quick note"
+    },
+    "sales.quick_notes.update": {
+      label: "Edit a quick note"
+    },
+    "sales.refund": {
+      label: "Refund a sale"
+    },
+    "sales.settings.adopt_receipt_text": {
+      label: "Copy the receipt header and footer into the till settings"
+    },
+    "sales.settings.update": {
+      label: "Change the till settings"
+    },
+    "sales.void": {
+      label: "Void a completed sale"
+    }
   }
 };
 
@@ -5516,6 +5569,59 @@ var es_default = {
     },
     "sales.recent_activity": {
       title: "Actividad reciente"
+    }
+  },
+  commands: {
+    "sales.complete_sale": {
+      label: "Cobrar una venta"
+    },
+    "sales.complete_sale_over_limit": {
+      label: "Cobrar una venta con un descuento por encima del l\xEDmite"
+    },
+    "sales.create_payment_method": {
+      label: "A\xF1adir un m\xE9todo de pago"
+    },
+    "sales.departments.create": {
+      label: "A\xF1adir un departamento"
+    },
+    "sales.departments.delete": {
+      label: "Eliminar un departamento"
+    },
+    "sales.departments.update": {
+      label: "Editar un departamento"
+    },
+    "sales.order.add_open_line": {
+      label: "Vender un art\xEDculo a precio libre"
+    },
+    "sales.order.set_discount_over_limit": {
+      label: "Aplicar al tique un descuento por encima del l\xEDmite"
+    },
+    "sales.order.set_line_discount_over_limit": {
+      label: "Aplicar a una l\xEDnea un descuento por encima del l\xEDmite"
+    },
+    "sales.order.void": {
+      label: "Anular una cuenta abierta"
+    },
+    "sales.quick_notes.create": {
+      label: "A\xF1adir una nota r\xE1pida"
+    },
+    "sales.quick_notes.delete": {
+      label: "Eliminar una nota r\xE1pida"
+    },
+    "sales.quick_notes.update": {
+      label: "Editar una nota r\xE1pida"
+    },
+    "sales.refund": {
+      label: "Devolver el importe de una venta"
+    },
+    "sales.settings.adopt_receipt_text": {
+      label: "Copiar la cabecera y el pie del tique a los ajustes del TPV"
+    },
+    "sales.settings.update": {
+      label: "Cambiar los ajustes del TPV"
+    },
+    "sales.void": {
+      label: "Anular una venta cobrada"
     }
   }
 };
