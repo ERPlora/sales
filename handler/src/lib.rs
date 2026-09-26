@@ -11869,4 +11869,121 @@ mod tests {
         assert_eq!(line.params["tax_rate"], json!(10.0));
     }
 
+
+    // sales#284 — the discount on an OPEN check is judged when it is APPLIED, not only when the
+    // check is charged. Before, `sales.order.set_discount` was a bare UPDATE: anybody who could
+    // sell put 100 % on a table and the check showed the reduced total to the customer until the
+    // manager said no at the till. Same cap, same two doors as the checkout (sales#269).
+    mod order_discount_cap {
+        use super::*;
+
+        /// An open check of three 1,00 € lines, as `sales.order.lines` hands it back.
+        fn open_lines() -> Value {
+            json!([
+                { "id": "l1", "line_total": 100, "is_gift": 0 },
+                { "id": "l2", "line_total": 100, "is_gift": 0 },
+                { "id": "l3", "line_total": 100, "is_gift": 0 },
+            ])
+        }
+
+        fn set_discount(payload: Value, settings: Value) -> Value {
+            let mut reads = Map::new();
+            if !settings.is_null() {
+                reads.insert("sales.settings.get".into(), settings);
+            }
+            reads.insert("sales.order.lines".into(), open_lines());
+            json!({
+                "payload": payload,
+                "context": { "reads": Value::Object(reads), "current_user_id": "u-waiter", "now": "2026-09-26T10:00:00Z" },
+            })
+        }
+
+        fn capped() -> Value {
+            json!([{ "max_discount_percent": 10, "allow_discounts": 1 }])
+        }
+
+        #[test]
+        fn a_percent_over_the_cap_is_refused_on_the_usual_door_and_accepted_on_the_managers() {
+            let inp = set_discount(json!({ "order_id": "ord-1", "discount_percent": 90 }), capped());
+            let err = set_order_discount_pure(inp.clone()).refused("90 % on an open check with the cap at 10");
+            assert_eq!(err.code, "sales.discount_over_limit", "{err:?}");
+
+            let out = set_order_discount_over_limit_pure(inp).accepted("the manager authorised it");
+            assert_eq!(out.operations.len(), 1, "{out:?}");
+            let op = &out.operations[0];
+            assert_eq!(op.command, "sales._set_order_discount");
+            assert_eq!(op.params["order_id"], json!("ord-1"));
+            assert_eq!(op.params["discount_percent"], json!(90.0));
+            assert_eq!(op.params["discount_amount"], Value::Null, "no amount sent = keep the stored one");
+        }
+
+        #[test]
+        fn a_percent_within_the_cap_goes_through_the_usual_door() {
+            let inp = set_discount(json!({ "order_id": "ord-1", "discount_percent": 10, "discount_amount": 0 }), capped());
+            let out = set_order_discount_pure(inp).accepted("10 % with the cap at 10 is the cashier's");
+            let op = &out.operations[0];
+            assert_eq!(op.command, "sales._set_order_discount");
+            assert_eq!(op.params["discount_percent"], json!(10.0));
+            assert_eq!(op.params["discount_amount"], json!(0));
+        }
+
+        #[test]
+        fn a_fixed_amount_is_judged_as_its_share_of_the_open_lines() {
+            // 3,00 € on the check with the cap at 10 % buys 30 cents on the cashier's door.
+            let inp = set_discount(json!({ "order_id": "ord-1", "discount_percent": 0, "discount_amount": 31 }), capped());
+            let err = set_order_discount_pure(inp.clone()).refused("31 cents of 3,00 € with the cap at 10 %");
+            assert_eq!(err.code, "sales.discount_over_limit", "{err:?}");
+            set_order_discount_over_limit_pure(inp).accepted("the manager authorised the amount");
+
+            let inp = set_discount(json!({ "order_id": "ord-1", "discount_percent": 0, "discount_amount": 30 }), capped());
+            set_order_discount_pure(inp).accepted("30 cents of 3,00 € are exactly 10 %");
+        }
+
+        #[test]
+        fn a_gift_line_does_not_count_towards_what_the_amount_is_judged_against() {
+            let mut inp = set_discount(json!({ "order_id": "ord-1", "discount_percent": 0, "discount_amount": 30 }), capped());
+            inp["context"]["reads"]["sales.order.lines"][2]["is_gift"] = json!(1);
+            let err = set_order_discount_pure(inp).refused("30 cents of the 2,00 € actually charged");
+            assert_eq!(err.code, "sales.discount_over_limit", "{err:?}");
+        }
+
+        #[test]
+        fn a_shop_without_a_cap_keeps_applying_any_discount() {
+            let inp = set_discount(json!({ "order_id": "ord-1", "discount_percent": 100 }), Value::Null);
+            set_order_discount_pure(inp).accepted("no settings row = no cap, as before");
+            let inp = set_discount(json!({ "order_id": "ord-1", "discount_percent": 100 }), json!([{ "max_discount_percent": 100 }]));
+            set_order_discount_pure(inp).accepted("cap at 100 = no cap");
+        }
+
+        #[test]
+        fn removing_the_discount_never_needs_the_manager() {
+            let inp = set_discount(json!({ "order_id": "ord-1", "discount_percent": 0, "discount_amount": 0 }), json!([{ "max_discount_percent": 0 }]));
+            set_order_discount_pure(inp).accepted("taking the discount off is always the cashier's");
+        }
+
+        #[test]
+        fn a_shop_that_turned_discounts_off_refuses_them_on_both_doors() {
+            let off = json!([{ "allow_discounts": 0 }]);
+            let inp = set_discount(json!({ "order_id": "ord-1", "discount_percent": 5 }), off.clone());
+            let err = set_order_discount_pure(inp.clone()).refused("discounts off");
+            assert_eq!(err.code, "sales.discounts_not_allowed", "{err:?}");
+            let err = set_order_discount_over_limit_pure(inp).refused("discounts off, even for the manager");
+            assert_eq!(err.code, "sales.discounts_not_allowed", "{err:?}");
+            let inp = set_discount(json!({ "order_id": "ord-1", "discount_percent": 0, "discount_amount": 0 }), off);
+            set_order_discount_pure(inp).accepted("clearing is still allowed with discounts off");
+        }
+
+        #[test]
+        fn out_of_range_values_and_a_missing_order_are_refused() {
+            for (payload, code) in [
+                (json!({ "order_id": "ord-1", "discount_percent": 101 }), "sales.discount_out_of_range"),
+                (json!({ "order_id": "ord-1", "discount_percent": -1 }), "sales.discount_out_of_range"),
+                (json!({ "order_id": "ord-1", "discount_percent": 0, "discount_amount": -5 }), "sales.discount_out_of_range"),
+                (json!({ "discount_percent": 5 }), "sales.order_id_required"),
+            ] {
+                let err = set_order_discount_over_limit_pure(set_discount(payload.clone(), Value::Null)).refused("bad payload");
+                assert_eq!(err.code, code, "{payload}: {err:?}");
+            }
+        }
+    }
 }
