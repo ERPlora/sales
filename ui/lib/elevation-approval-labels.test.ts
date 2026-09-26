@@ -7,9 +7,10 @@
 // the figure-less sentence this issue exists to remove. That is why every hole is checked here
 // against the payload the till REALLY sends (captured from the very functions that send it).
 //
-// `sales.complete_sale_over_limit` deliberately has NO template: at Charge the over-limit discount
-// may come from the lines, not the ticket, so `discount_percent` can be 0 while the PIN is asked,
-// and `discount_amount` is left out of the payload when it is 0. Any single figure would lie.
+// sales#403 — `sales.complete_sale_over_limit` names its figure through a field of its own: at Charge
+// the over-limit discount may come from the lines, not the ticket, so `discount_percent` can be 0
+// while the PIN is asked, and `discount_amount` is left out when it is 0. The till sends
+// `approval_discount_percent` (the biggest discount being approved) on that door only.
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -75,6 +76,14 @@ function ticketDiscountPayload(): Record<string, unknown> {
   return { order_id: 'order-1', discount_percent: 15, discount_amount: 500 };
 }
 
+/** The checkout is charged from the touch component; the over-limit door carries the figure built
+ *  by `approvalDiscountPercent` (pinned in `discount-cap.test.ts`), read here from source. */
+function checkoutPayload(): Record<string, unknown> {
+  const src = readFileSync(join(import.meta.dirname, '../components/erp-pos-touch/erp-pos-touch.ts'), 'utf8');
+  expect(src).toMatch(/approval_discount_percent: approvalDiscountPercent\(/);
+  return { items: [], idempotency_key: 'checkout-1', discount_percent: 0, approval_discount_percent: 50 };
+}
+
 const cases: Array<{ cmd: string; payload: () => Promise<Record<string, unknown>> | Record<string, unknown>; en: string; es: string }> = [
   {
     cmd: 'sales.order.set_line_discount_over_limit',
@@ -93,6 +102,12 @@ const cases: Array<{ cmd: string; payload: () => Promise<Record<string, unknown>
     payload: openPricePayload,
     en: 'Sell an item at an open price of €12.50',
     es: 'Vender un artículo a precio libre de 12,50 €',
+  },
+  {
+    cmd: 'sales.complete_sale_over_limit',
+    payload: checkoutPayload,
+    en: 'Charge a sale with a discount of up to 50%',
+    es: 'Cobrar una venta con un descuento de hasta el 50 %',
   },
 ];
 
@@ -124,8 +139,11 @@ describe('manager approval dialog shows the figure being approved (sales#398)', 
     expect(label(es, cmd)).not.toBe('');
   });
 
-  it('the checkout door has no template: its over-limit figure may live on the lines', () => {
-    expect(approval(en, 'sales.complete_sale_over_limit')).toBe('');
-    expect(approval(es, 'sales.complete_sale_over_limit')).toBe('');
+  it('the checkout door names its own figure, never the ticket-only discount fields', () => {
+    // `discount_percent` is 0 when the over-limit discount sits on a line: a hole on it would lie.
+    for (const locale of [en, es]) {
+      const fields = holes(approval(locale, 'sales.complete_sale_over_limit')).map(([f]) => f);
+      expect(fields).toEqual(['approval_discount_percent']);
+    }
   });
 });

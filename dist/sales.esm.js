@@ -4927,7 +4927,8 @@ var en_default = {
       label: "Charge a sale"
     },
     "sales.complete_sale_over_limit": {
-      label: "Charge a sale with a discount above the limit"
+      label: "Charge a sale with a discount above the limit",
+      approval_label: "Charge a sale with a discount of up to {approval_discount_percent, percent}"
     },
     "sales.create_payment_method": {
       label: "Add a payment method"
@@ -5579,7 +5580,8 @@ var es_default = {
       label: "Cobrar una venta"
     },
     "sales.complete_sale_over_limit": {
-      label: "Cobrar una venta con un descuento por encima del l\xEDmite"
+      label: "Cobrar una venta con un descuento por encima del l\xEDmite",
+      approval_label: "Cobrar una venta con un descuento de hasta el {approval_discount_percent, percent}"
     },
     "sales.create_payment_method": {
       label: "A\xF1adir un m\xE9todo de pago"
@@ -6976,10 +6978,18 @@ function needsManagerApproval(cap, discounts) {
   if (discounts.linePercents.some((percent2) => percent2 > cap)) return true;
   return discounts.ticketAmountCents > 0 && discounts.ticketAmountCents > allowedAmountCents(cap, discounts.grossCents);
 }
-function checkoutCommand(cap, discounts, approved) {
+function judgedDiscounts(discounts, approved) {
   const ticketCovered = !!approved && discounts.ticketPercent <= approved.percent && discounts.ticketAmountCents <= approved.amountCents;
-  const judged = ticketCovered ? { ...discounts, ticketPercent: 0, ticketAmountCents: 0 } : discounts;
-  return needsManagerApproval(cap, judged) ? CHECKOUT_OVER_LIMIT_COMMAND : CHECKOUT_COMMAND;
+  return ticketCovered ? { ...discounts, ticketPercent: 0, ticketAmountCents: 0 } : discounts;
+}
+function checkoutCommand(cap, discounts, approved) {
+  return needsManagerApproval(cap, judgedDiscounts(discounts, approved)) ? CHECKOUT_OVER_LIMIT_COMMAND : CHECKOUT_COMMAND;
+}
+function approvalDiscountPercent(discounts, approved) {
+  const judged = judgedDiscounts(discounts, approved);
+  const amountShare = judged.ticketAmountCents > 0 ? judged.grossCents <= 0 ? 100 : Math.ceil(judged.ticketAmountCents * 1e4 / judged.grossCents) / 100 : 0;
+  const biggest = Math.max(judged.ticketPercent, ...judged.linePercents, amountShare);
+  return Math.min(100, Math.max(0, biggest));
 }
 
 // ui/lib/split-tender.ts
@@ -11584,12 +11594,14 @@ var ErpPosTouch = class extends i3 {
         covered: new Set(this.covered.keys()),
         primaryCategory: (id) => this.primaryCategory(id)
       });
-      const checkoutDoor = checkoutCommand(discountCap(this.settings), {
+      const checkoutDiscounts = {
         ticketPercent: this.ticketDiscount,
         ticketAmountCents: this.ticketDiscountAmount > 0 && !split.line_ids ? this.ticketDiscountAmount : 0,
         grossCents: cartTotal(this.chargedLines, this.ticketDiscount),
         linePercents: cobradas.map((l3) => l3.discountApproved ? 0 : l3.discount ?? 0)
-      }, this.ticketDiscountApproved ? { percent: this.ticketDiscount, amountCents: this.ticketDiscountAmount } : null);
+      };
+      const ticketApproval = this.ticketDiscountApproved ? { percent: this.ticketDiscount, amountCents: this.ticketDiscountAmount } : null;
+      const checkoutDoor = checkoutCommand(discountCap(this.settings), checkoutDiscounts, ticketApproval);
       const checkoutPayload = {
         items,
         // sales#71: descuento de TICKET (%); el servidor lo prorratea por línea antes del IVA.
@@ -11597,6 +11609,9 @@ var ErpPosTouch = class extends i3 {
         // sales#113: importe FIJO (céntimos), repartido por resto mayor en el servidor (ADR-0210).
         // Con split (cobro parcial) no se manda: se aplica al cerrar la cuenta entera.
         ...this.ticketDiscountAmount > 0 && !split.line_ids ? { discount_amount: this.ticketDiscountAmount } : {},
+        // sales#403 — the figure the manager's PIN dialog shows (`approval_label`). Display only:
+        // the handler ignores it, and it travels only on the manager's door.
+        ...checkoutDoor === CHECKOUT_OVER_LIMIT_COMMAND ? { approval_discount_percent: approvalDiscountPercent(checkoutDiscounts, ticketApproval) } : {},
         // sales#20: el servidor no cierra una venta sin clave, y con la misma clave dos veces
         // registra UNA. Es lo que hace seguro reintentar cuando el wifi del local parpadea.
         idempotency_key: checkoutKey,

@@ -7721,6 +7721,33 @@ mod tests {
     }
 
     #[test]
+    fn the_figure_shown_to_the_manager_decides_nothing_at_checkout() {
+        // sales#403 — the till sends `approval_discount_percent` so the PIN dialog can say how big
+        // a discount the manager signs off. It is DISPLAY only: the cap, the approval and the
+        // amounts charged come from the payload's real levers and the server's own reads.
+        let capped = json!([{ "max_discount_percent": 10 }]);
+        let mut plain = input_with_catalogs(three_equal_lines(), 5, Value::Null, capped, Value::Null);
+        plain["payload"]["discount_percent"] = json!(90);
+        let mut shown = plain.clone();
+        shown["payload"]["approval_discount_percent"] = json!(3.5);
+
+        assert_eq!(
+            complete_sale_over_limit_pure(shown.clone()).accepted("manager's door with the figure"),
+            complete_sale_over_limit_pure(plain.clone()).accepted("manager's door without it"),
+        );
+        // A small figure does not sneak a 90 % ticket through the cashier's door either.
+        let err = complete_sale_pure(shown).refused("the figure is not the discount");
+        assert_eq!(err.code, "sales.discount_over_limit", "{err:?}");
+
+        // Nor does it count as a discount of its own: with discounts switched off, a sale that
+        // carries only the figure is still a sale without a discount.
+        let mut only_figure =
+            input_with_catalogs(three_equal_lines(), 5, Value::Null, json!([{ "allow_discounts": 0 }]), Value::Null);
+        only_figure["payload"]["approval_discount_percent"] = json!(3.5);
+        complete_sale_over_limit_pure(only_figure).accepted("the figure alone is no discount");
+    }
+
+    #[test]
     fn a_discount_above_the_shops_cap_needs_the_managers_door() {
         // sales#269 — a 100 % discount used to be one tap away for anybody who could charge: the
         // only lever was `allow_discounts`, all-or-nothing. The shop now says «up to 10 % is the

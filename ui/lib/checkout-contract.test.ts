@@ -92,6 +92,20 @@ describe('complete_sale payload contract (sales#20)', () => {
   });
 });
 
+describe('the figure the manager approves at Charge (sales#403)', () => {
+  // The PIN dialog fills `approval_label` from the payload it signs off, and the payload is a
+  // closed contract: without the property the runtime refuses the whole charge as invalid_payload.
+  it('declares approval_discount_percent as a 0..100 percentage, decimals allowed', () => {
+    const p = s.properties.approval_discount_percent;
+    expect(p, 'missing property approval_discount_percent').toBeDefined();
+    // `number`, not `integer`: a fixed amount's share carries decimals, and the runtime refuses a
+    // JSON float on an integer property.
+    expect(p.type).toBe('number');
+    expect(p.minimum).toBe(0);
+    expect(p.maximum).toBe(100);
+  });
+});
+
 describe('a customer from abroad (sales#332)', () => {
   // The same contract `invoice.create_invoice` declares (hub#1967): ISO alpha-2 country, AEAT
   // IDType of the number. '' in both = the tax id's VAT prefix decides, as every sale did before.

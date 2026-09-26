@@ -50,7 +50,7 @@ import { withPosSettingsDefaults, type PosSettings } from '../../lib/pos-setting
 // sales#269 — the discount whoever is charging may give ALONE, and which checkout the till uses
 // above it. The arithmetic mirrors the server's `enforce_discount_cap`, which is the authority.
 import {
-  CHECKOUT_OVER_LIMIT_COMMAND, checkoutCommand, discountCap, needsManagerApproval,
+  CHECKOUT_OVER_LIMIT_COMMAND, approvalDiscountPercent, checkoutCommand, discountCap, needsManagerApproval,
 } from '../../lib/discount-cap.js';
 // sales#159 (ADR-0386) — una venta, N cobros. La ARITMÉTICA del reparto vive en lib (probada sin
 // DOM): el restante, lo que cubre cada pata, el cambio —que sale SOLO del efectivo— y el
@@ -4457,12 +4457,16 @@ export class ErpPosTouch extends LitElement {
       // manager already signed THAT discount off on the open check, so it is judged as 0 here too.
       // The SERVER honours the approval it stored on the row, never this flag — this only spares a
       // second PIN for a discount already authorised.
-      const checkoutDoor = checkoutCommand(discountCap(this.settings), {
+      const checkoutDiscounts = {
         ticketPercent: this.ticketDiscount,
         ticketAmountCents: this.ticketDiscountAmount > 0 && !split.line_ids ? this.ticketDiscountAmount : 0,
         grossCents: cartTotal(this.chargedLines, this.ticketDiscount),
         linePercents: cobradas.map((l) => (l.discountApproved ? 0 : (l.discount ?? 0))),
-      }, this.ticketDiscountApproved ? { percent: this.ticketDiscount, amountCents: this.ticketDiscountAmount } : null);
+      };
+      const ticketApproval = this.ticketDiscountApproved
+        ? { percent: this.ticketDiscount, amountCents: this.ticketDiscountAmount }
+        : null;
+      const checkoutDoor = checkoutCommand(discountCap(this.settings), checkoutDiscounts, ticketApproval);
       const checkoutPayload = {
         items,
         // sales#71: descuento de TICKET (%); el servidor lo prorratea por línea antes del IVA.
@@ -4470,6 +4474,11 @@ export class ErpPosTouch extends LitElement {
         // sales#113: importe FIJO (céntimos), repartido por resto mayor en el servidor (ADR-0210).
         // Con split (cobro parcial) no se manda: se aplica al cerrar la cuenta entera.
         ...(this.ticketDiscountAmount > 0 && !split.line_ids ? { discount_amount: this.ticketDiscountAmount } : {}),
+        // sales#403 — the figure the manager's PIN dialog shows (`approval_label`). Display only:
+        // the handler ignores it, and it travels only on the manager's door.
+        ...(checkoutDoor === CHECKOUT_OVER_LIMIT_COMMAND
+          ? { approval_discount_percent: approvalDiscountPercent(checkoutDiscounts, ticketApproval) }
+          : {}),
         // sales#20: el servidor no cierra una venta sin clave, y con la misma clave dos veces
         // registra UNA. Es lo que hace seguro reintentar cuando el wifi del local parpadea.
         idempotency_key: checkoutKey,

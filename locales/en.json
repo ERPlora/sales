@@ -579,7 +579,8 @@
       "label": "Charge a sale"
     },
     "sales.complete_sale_over_limit": {
-      "label": "Charge a sale with a discount above the limit"
+      "label": "Charge a sale with a discount above the limit",
+      "approval_label": "Charge a sale with a discount of up to {approval_discount_percent, percent}"
     },
     "sales.create_payment_method": {
       "label": "Add a payment method"

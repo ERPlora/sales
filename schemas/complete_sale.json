@@ -268,6 +268,12 @@
       "minimum": 0,
       "description": "Fixed ticket discount in minor units (cents), applied AFTER the percentages and split over the non-gift lines by largest remainder (ADR-0210, sales#113). It comes off the figure the prices are written in and must not exceed it: the gross when the tax rides inside the price, the base with net prices (sales#295)."
     },
+    "approval_discount_percent": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "DISPLAY only (sales#403): the biggest discount the manager signs off at Charge — the ticket percentage, a line's, or the fixed amount as its share of the gross, rounded up to two decimals. The till sends it on sales.complete_sale_over_limit so the PIN dialog can say the figure (locales commands[...].approval_label). It decides NOTHING: the cap, the approval and the amounts come from the discount fields and the server's own reads. `number`, not `integer`, because a share carries decimals."
+    },
     "amount_tendered": {
       "type": "integer",
       "minimum": 0,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { discountCap, needsManagerApproval, checkoutCommand } from './discount-cap';
+import { discountCap, needsManagerApproval, checkoutCommand, approvalDiscountPercent } from './discount-cap';
 import { POS_SETTINGS_DEFAULTS } from './pos-settings';
 
 /** A ticket of 3,00 € with nothing discounted yet. */
@@ -72,5 +72,42 @@ describe('a ticket discount the manager already approved on the check (sales#386
 
   it('without an approval, the cap rules as before', () => {
     expect(checkoutCommand(10, { ...plain, ticketPercent: 90 }, null)).toBe('sales.complete_sale_over_limit');
+  });
+});
+
+// sales#403 — at Charge the manager's PIN dialog names the discount it signs off. The over-limit
+// lever may be the ticket percentage, a line's, or the fixed amount, so the till sends ONE figure:
+// the biggest discount being approved, each lever as the share it is judged as against the cap.
+describe('the figure the manager approves at Charge (sales#403)', () => {
+  it('is the ticket percentage when that is the biggest lever', () => {
+    expect(approvalDiscountPercent({ ...plain, ticketPercent: 40, linePercents: [15] })).toBe(40);
+  });
+
+  it('is a line percentage when the ticket carries none', () => {
+    expect(approvalDiscountPercent({ ...plain, linePercents: [5, 50, 20] })).toBe(50);
+  });
+
+  it('weighs a fixed amount as the share of the gross it is judged as', () => {
+    // 3,00 € off 10,00 € is 30 %.
+    expect(approvalDiscountPercent({ ...plain, ticketAmountCents: 300, grossCents: 1000, linePercents: [20] })).toBe(30);
+  });
+
+  it('rounds a fixed amount share UP to two decimals, never below the cap it broke', () => {
+    // 100,01 € off 1.000,01 € is 10,0009… %: shown as 10 % it would read as within a 10 % cap.
+    expect(approvalDiscountPercent({ ...plain, ticketAmountCents: 10_001, grossCents: 100_001 })).toBe(10.01);
+  });
+
+  it('a fixed amount over nothing is the whole ticket', () => {
+    expect(approvalDiscountPercent({ ...plain, ticketAmountCents: 50, grossCents: 0 })).toBe(100);
+  });
+
+  it('leaves out the ticket discount a manager already approved on the check (sales#386)', () => {
+    const approved = { percent: 60, amountCents: 0 };
+    expect(approvalDiscountPercent({ ...plain, ticketPercent: 60, linePercents: [25] }, approved)).toBe(25);
+  });
+
+  it('keeps the ticket discount when it grew past what was approved', () => {
+    const approved = { percent: 20, amountCents: 0 };
+    expect(approvalDiscountPercent({ ...plain, ticketPercent: 45, linePercents: [25] }, approved)).toBe(45);
   });
 });

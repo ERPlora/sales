@@ -90,6 +90,17 @@ export interface ApprovedTicketDiscount {
   amountCents: number;
 }
 
+/** The ticket levers as `checkoutCommand` (and `approvalDiscountPercent`) judge them: when `approved`
+ *  already covers what is on the ticket, the ticket percentage and fixed amount count as zero — a
+ *  manager already signed those off — while the line discounts are judged as they came in, since
+ *  nobody approved those. Shared so both functions agree on what «still needs signing off» means. */
+function judgedDiscounts(discounts: TicketDiscounts, approved?: ApprovedTicketDiscount | null): TicketDiscounts {
+  const ticketCovered = !!approved
+    && discounts.ticketPercent <= approved.percent
+    && discounts.ticketAmountCents <= approved.amountCents;
+  return ticketCovered ? { ...discounts, ticketPercent: 0, ticketAmountCents: 0 } : discounts;
+}
+
 /** The command the till charges with: the manager's door when the discount is over the cap, the
  *  usual one otherwise.
  *
@@ -104,9 +115,23 @@ export function checkoutCommand(
   discounts: TicketDiscounts,
   approved?: ApprovedTicketDiscount | null,
 ): string {
-  const ticketCovered = !!approved
-    && discounts.ticketPercent <= approved.percent
-    && discounts.ticketAmountCents <= approved.amountCents;
-  const judged = ticketCovered ? { ...discounts, ticketPercent: 0, ticketAmountCents: 0 } : discounts;
-  return needsManagerApproval(cap, judged) ? CHECKOUT_OVER_LIMIT_COMMAND : CHECKOUT_COMMAND;
+  return needsManagerApproval(cap, judgedDiscounts(discounts, approved)) ? CHECKOUT_OVER_LIMIT_COMMAND : CHECKOUT_COMMAND;
+}
+
+/** The figure the manager's PIN dialog shows at Charge (sales#403): the over-limit lever may be the
+ *  ticket percentage, a line's, or the fixed amount, so the till needs ONE number to put on screen —
+ *  the biggest discount actually being signed off, each lever judged exactly as `checkoutCommand`
+ *  judges it (an approval already on the check zeroes the ticket levers, never the lines). The fixed
+ *  amount is turned into the percentage share of the gross it really is, rounded UP to two decimals
+ *  so it never reads as within a cap it broke. */
+export function approvalDiscountPercent(
+  discounts: TicketDiscounts,
+  approved?: ApprovedTicketDiscount | null,
+): number {
+  const judged = judgedDiscounts(discounts, approved);
+  const amountShare = judged.ticketAmountCents > 0
+    ? (judged.grossCents <= 0 ? 100 : Math.ceil((judged.ticketAmountCents * 10_000) / judged.grossCents) / 100)
+    : 0;
+  const biggest = Math.max(judged.ticketPercent, ...judged.linePercents, amountShare);
+  return Math.min(100, Math.max(0, biggest));
 }
