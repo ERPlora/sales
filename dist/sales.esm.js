@@ -4515,7 +4515,8 @@ var en_default = {
     print: "Print",
     printFailed: "Could not print",
     printAwaitingPrinter: "The receipt is waiting: no printer is set up yet. Set one up and it comes out on its own.",
-    qrValidateNote: "Scan to validate the invoice at the AEAT",
+    qrValidateNoteTicket: "Scan to check this receipt at the AEAT",
+    qrValidateNoteInvoice: "Scan to check this invoice at the AEAT",
     claimNote: "Get your invoice",
     docEmpty: "No receipt data.",
     docEmptyInvoice: "No invoice data.",
@@ -5154,7 +5155,8 @@ var es_default = {
     print: "Imprimir",
     printFailed: "No se pudo imprimir",
     printAwaitingPrinter: "El tique est\xE1 en espera: a\xFAn no hay ninguna impresora dada de alta. Da una de alta y saldr\xE1 solo.",
-    qrValidateNote: "Escanea para validar la factura en la AEAT",
+    qrValidateNoteTicket: "Escanea para comprobar este tique en la AEAT",
+    qrValidateNoteInvoice: "Escanea para comprobar esta factura en la AEAT",
     claimNote: "Pide tu factura",
     docEmpty: "Sin datos de tiquet.",
     docEmptyInvoice: "Sin datos de factura.",
@@ -5932,7 +5934,9 @@ var ErpSalesDocument = class extends i3 {
         fiscal: {
           ...base,
           qr: qr || void 0,
-          qr_note: csv ? `CSV: ${csv}` : qr ? t7("ui.qrValidateNote") : void 0
+          // sales#411 — the note names the document on screen (and on paper, sales#306): a ticket
+          // under a «Ticket» header must not talk about «the invoice».
+          qr_note: csv ? `CSV: ${csv}` : qr ? t7(this.resolvedFormat() === "invoice" ? "ui.qrValidateNoteInvoice" : "ui.qrValidateNoteTicket") : void 0
         },
         retry: false,
         claimInvoiceId
