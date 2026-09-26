@@ -4843,14 +4843,14 @@ export class ErpPosTouch extends LitElement {
   private renderRecipientCountry() {
     const lang = (erplora() as unknown as I18nClient).locale || 'en';
     return html`
-        <ion-select label=${t('ui.limitFieldCountry')} label-placement="stacked" interface="popover"
+        <ion-select label=${t('ui.limitFieldCountry')} label-placement="stacked" fill="outline" mode="md" interface="popover"
                     data-testid="pos-limit-country" .value=${this.customerCountry}
                     @ionChange=${(e: CustomEvent<{ value?: string }>) => this.setCustomerCountry(String(e.detail?.value ?? HOME_COUNTRY))}>
           ${countryOptions(lang, t('ui.countryUnlisted')).map((o) => html`<ion-select-option value=${o.code}>${o.name}</ion-select-option>`)}
         </ion-select>
         ${this.customerCountry === HOME_COUNTRY
           ? nothing
-          : html`<ion-select label=${t('ui.limitFieldIdType')} label-placement="stacked" interface="popover"
+          : html`<ion-select label=${t('ui.limitFieldIdType')} label-placement="stacked" fill="outline" mode="md" interface="popover"
                     data-testid="pos-limit-id-type" .value=${this.customerIdType}
                     @ionChange=${(e: CustomEvent<{ value?: string }>) => { this.customerIdType = String(e.detail?.value ?? ''); }}>
               ${ID_TYPE_OPTIONS.map((c) => html`<ion-select-option value=${c}>${t(`ui.idType${c}`)}</ion-select-option>`)}
@@ -4870,14 +4870,14 @@ export class ErpPosTouch extends LitElement {
             <p>${done ? t('ui.limitReadyBody') : pending.body}</p>
           </div>
         </div>
-        <ion-input label=${t('ui.limitFieldName')} label-placement="stacked" .value=${this.customerName}
+        <ion-input label=${t('ui.limitFieldName')} label-placement="stacked" fill="outline" mode="md" .value=${this.customerName}
                    data-testid="pos-limit-name" autocomplete="off"
                    @ionInput=${(e: CustomEvent) => { this.customerName = String((e.target as HTMLInputElement).value ?? ''); }}></ion-input>
         ${this.renderRecipientCountry()}
-        <ion-input label=${t('ui.limitFieldTaxId')} label-placement="stacked" .value=${this.customerTaxId}
+        <ion-input label=${t('ui.limitFieldTaxId')} label-placement="stacked" fill="outline" mode="md" .value=${this.customerTaxId}
                    data-testid="pos-limit-tax-id" autocomplete="off"
                    @ionInput=${(e: CustomEvent) => { this.customerTaxId = String((e.target as HTMLInputElement).value ?? ''); }}></ion-input>
-        <ion-input label=${t('ui.limitFieldAddress')} label-placement="stacked" .value=${this.customerAddress}
+        <ion-input label=${t('ui.limitFieldAddress')} label-placement="stacked" fill="outline" mode="md" .value=${this.customerAddress}
                    data-testid="pos-limit-address" autocomplete="off"
                    @ionInput=${(e: CustomEvent) => { this.customerAddress = String((e.target as HTMLInputElement).value ?? ''); }}></ion-input>`;
     // Two literal hooks, one per reason: the QA addresses each case by name, and the testid guard

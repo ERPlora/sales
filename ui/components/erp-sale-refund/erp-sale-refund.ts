@@ -515,6 +515,8 @@ export class ErpSaleRefund extends LitElement {
           type="text"
           inputmode="decimal"
           label=${t('ui.refundLegAmount')}
+          fill="outline"
+          mode="md"
           label-placement="stacked"
           .value=${formatAmountInput(entry?.amount ?? 0, erplora().locale, hubDecimals())}
           @ionInput=${(e: CustomEvent<{ value?: string }>) => this.setAmount(leg.payment_id, e.detail?.value ?? '')}
@@ -533,6 +535,8 @@ export class ErpSaleRefund extends LitElement {
                   class="refund-destination"
                   data-testid=${`refund-destination-${leg.payment_id}`}
                   label=${t('ui.refundDestination')}
+                  fill="outline"
+                  mode="md"
                   label-placement="stacked"
                   .value=${entry?.to ?? ''}
                   @ionChange=${(e: CustomEvent<{ value?: string }>) => this.setDestination(leg.payment_id, e.detail?.value ?? '')}
@@ -572,6 +576,8 @@ export class ErpSaleRefund extends LitElement {
         class="refund-reason"
         data-testid="refund-reason"
         label=${t('ui.refundReasonLabel')}
+        fill="outline"
+        mode="md"
         label-placement="stacked"
         maxlength="500"
         placeholder=${t('ui.refundReasonPlaceholder')}
