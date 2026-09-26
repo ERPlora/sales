@@ -133,6 +133,22 @@ describe('with the cap at 10 %, a discount the manager approved on the check', (
     expect(checkoutCalls()).toEqual(['sales.complete_sale']);
   });
 
+  it('the approval leaves with the check: the next sale does not inherit it', async () => {
+    const el = await mount();
+    await addTile(el, 'Café');
+    el.openDiscount('ticket');
+    await el.applyDiscount(90);
+    await charge(el);
+    await el.updateComplete;
+    // A new sale: the 90 % is typed before any check exists, so nobody approved THIS one.
+    commands = [];
+    el.openDiscount('ticket');
+    await el.applyDiscount(90);
+    await addTile(el, 'Tarta');
+    await charge(el);
+    expect(checkoutCalls()).toEqual(['sales.complete_sale_over_limit']);
+  });
+
   it('a retrieved check with the same discount but NO approval still asks for the manager', async () => {
     orders = [{ id: 'ord-9', status: 'open', provisional_total: 180, created_at: '2026-09-26T10:00:00Z', discount_percent: 90, discount_amount: 0, discount_approved_by: null }];
     const el = await mount();
