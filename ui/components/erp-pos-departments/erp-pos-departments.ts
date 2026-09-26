@@ -335,6 +335,7 @@ export class ErpPosDepartments extends LitElement {
         : nothing}
       <ok-data-table
         data-testid="pos-departments-table"
+        testid="pos-departments-table"
         .serverSide=${true}
         .fill=${true}
         .views=${true}

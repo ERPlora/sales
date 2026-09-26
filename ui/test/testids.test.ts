@@ -29,6 +29,15 @@
 //     is seen.
 //   · RATCHET — every surface with a control or an action is classified: covered, or pending with
 //     its issue. A new component cannot slip in unclassified, and the pending list only shrinks.
+//
+// And one more, because a table is not painted by this repo:
+//
+//   · TABLE — the chrome of `<ok-data-table>` (the «+», the searchbar, the pager, every row and
+//     every row action) is painted by OutfitKit, which names it ONLY when the host gives it a
+//     namespace with `testid="…"` (outfitkit#143, ≥ 0.1.72). Without that one attribute a CRUD
+//     screen is a table no spec can drive, and the coverage rule above cannot see it: the buttons
+//     live in another shadow root. So every table declares its namespace, and the declared set is
+//     EXACTLY the one in the file (sales#297).
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -45,11 +54,11 @@ const COMPONENTS = join(import.meta.dirname, '..', 'components');
  * change to this list — on purpose: that is the moment somebody decides what that button is going
  * to be called for the rest of the world.
  */
-const COVERED: Record<string, { prefix: string; contract: string[] }> = {
+const COVERED: Record<string, { prefix: string; contract: string[]; tables?: string[] }> = {
   // The departments of the till (`/m/sales/settings`, ADR-0248): the till's own grouping, which
   // is what carries the tax category an open-price sale is charged with. The table's own chrome —
-  // add, search, row actions — is not named from here: it belongs to `ok-data-table`
-  // (outfitkit#143) and reaches this module when the shared checkout publishes it (sales#297).
+  // add, search, pager, row actions — is named by `ok-data-table` under the `tables` namespace
+  // (`pos-departments-table-add`, `pos-departments-table-row-<id>-edit`…, sales#297).
   'erp-pos-departments/erp-pos-departments.ts': {
     prefix: 'pos-departments-',
     contract: [
@@ -67,6 +76,7 @@ const COVERED: Record<string, { prefix: string; contract: string[] }> = {
       'pos-departments-table',
       'pos-departments-tax-category',
     ],
+    tables: ['pos-departments-table'],
   },
   // The quick notes the business preconfigures for a line ("no onion"), same settings screen and
   // same shape as the departments above.
@@ -85,6 +95,7 @@ const COVERED: Record<string, { prefix: string; contract: string[] }> = {
       'pos-quick-notes-table',
       'pos-quick-notes-text',
     ],
+    tables: ['pos-quick-notes-table'],
   },
   // The refund of a charged ticket (`erp-sale-refund`, opened from the sales list and from the
   // POS). Every leg is named by the payment it gives back — `refund-amount-<paymentId>` — because
@@ -188,6 +199,22 @@ const NOT_YET_COVERED: Record<string, string> = {};
  * says it is not raised.
  */
 const PENDING_TODAY = 0;
+
+/**
+ * Covered surfaces whose `<ok-data-table>` does not declare its `testid` namespace yet, each with
+ * the issue that asks for it. Same ratchet as `NOT_YET_COVERED`: it only shrinks, and an entry
+ * whose table already declares it must leave (and its namespace go up into `tables`).
+ */
+const TABLES_WITHOUT_NAMESPACE: Record<string, string> = {
+  // The sales history: out of sales#297, which was the two tables of the settings screen.
+  'erp-sales-list/erp-sales-list.ts': 'sales#388',
+};
+
+/** How many tables are pending TODAY. This number ONLY GOES DOWN. */
+const TABLES_PENDING_TODAY = 1;
+
+/** The table is its own rule: it carries `testid`, not `data-testid` (outfitkit#143). */
+const TABLE_TAG = 'ok-data-table';
 
 /** What a person fills in. Buttons are not here: actions have their own rule below. */
 const CONTROL_TAGS = [
@@ -371,6 +398,12 @@ const literalsOf = (name: string): string[] =>
     .map((h) => h.literal)
     .filter((v): v is string => v !== undefined);
 
+/** The `testid` namespace each `<ok-data-table>` declares, or `null` when it declares none. */
+const tablesOf = (source: string): Array<string | null> =>
+  elements(source)
+    .filter((el) => el.tag === TABLE_TAG)
+    .map((el) => el.open.match(/(?<![:\w.-])testid="([^"]*)"/)?.[1]?.trim() || null);
+
 const headsOf = (name: string): string[] =>
   hooks(withoutComments(sourceOf(name)))
     .map((h) => h.head)
@@ -452,6 +485,64 @@ describe('data-testid — the module UI convention (sales#291)', () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('every ok-data-table declares the testid namespace of its chrome', () => {
+    // Without it `<ok-data-table>` paints NO hook at all (outfitkit#143): no «+», no searchbar, no
+    // pager, no row, no row action. A blank one counts as none: OutfitKit ignores it too.
+    const offenders: string[] = [];
+    for (const { name, source } of SURFACES) {
+      if (name in TABLES_WITHOUT_NAMESPACE) continue;
+      tablesOf(source).forEach((testid, i) => {
+        if (testid === null) offenders.push(`${name}: <ok-data-table> #${i + 1} has no testid="…"`);
+      });
+    }
+    expect(offenders, 'a table with no testid is a CRUD no spec can drive').toEqual([]);
+  });
+
+  it('the declared table namespace is EXACTLY the one in the surface', () => {
+    const drift: string[] = [];
+    for (const [name, spec] of Object.entries(COVERED)) {
+      const found = tablesOf(sourceOf(name))
+        .filter((v): v is string => v !== null)
+        .sort();
+      const declared = [...(spec.tables ?? [])].sort();
+      if (JSON.stringify(found) !== JSON.stringify(declared)) {
+        drift.push(`${name}: the surface has [${found}] and the contract declares [${declared}]`);
+      }
+    }
+    expect(drift, 'renaming a table namespace renames every hook of its chrome').toEqual([]);
+  });
+
+  it('a table namespace lives in its surface namespace and is not shared with another table', () => {
+    const offenders: string[] = [];
+    const seen = new Map<string, string>();
+    for (const [name, spec] of Object.entries(COVERED)) {
+      for (const ns of spec.tables ?? []) {
+        if (!ns.startsWith(spec.prefix) || !KEBAB.test(ns)) offenders.push(`${name}: "${ns}" ≠ ${spec.prefix}* kebab-case`);
+        const other = seen.get(ns);
+        if (other) offenders.push(`"${ns}" is declared by ${other} and ${name}`);
+        seen.set(ns, name);
+      }
+    }
+    expect(offenders, 'two tables with one namespace make getByTestId pick one at random').toEqual([]);
+  });
+
+  it('a pending table that already declares its namespace does not stay pending', () => {
+    const stale = Object.keys(TABLES_WITHOUT_NAMESPACE).filter((name) => {
+      const tables = tablesOf(sourceOf(name));
+      return !SURFACES.some((s) => s.name === name) || tables.length === 0 || tables.every((t) => t !== null);
+    });
+    expect(stale, 'it already names its chrome (or is gone): move its namespace to `tables`').toEqual([]);
+  });
+
+  it('the pending tables only shrink and cite a real issue', () => {
+    const pending = Object.keys(TABLES_WITHOUT_NAMESPACE).length;
+    expect(pending, `lower TABLES_PENDING_TODAY to ${pending}; it never goes up`).toBe(TABLES_PENDING_TODAY);
+    const placeholders = Object.entries(TABLES_WITHOUT_NAMESPACE)
+      .filter(([, issue]) => !/^[a-z][a-z0-9_-]*#\d+$/.test(issue))
+      .map(([name, issue]) => `${name}: "${issue}"`);
+    expect(placeholders).toEqual([]);
   });
 
   it('every surface with a control or an action is classified: covered, or with its issue', () => {

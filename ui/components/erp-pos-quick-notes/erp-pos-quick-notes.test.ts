@@ -103,6 +103,13 @@ describe('the CRUD lives inside the data-table', () => {
     expect(el.shadowRoot.querySelector('form[slot="create"]')?.closest('ok-data-table')).toBeTruthy();
   });
 
+  it('gives the table the namespace its chrome is named under, so the QA can press «+» (sales#297)', async () => {
+    // ok-data-table names its «+», searchbar, pager and row actions ONLY under the host's
+    // `testid` (outfitkit#143): `pos-quick-notes-table-add`, `pos-quick-notes-table-row-<id>-edit`…
+    const el = await mount();
+    expect(table(el)?.getAttribute('testid')).toBe('pos-quick-notes-table');
+  });
+
   it('the actions follow the permission — read-only for whoever cannot configure the till', async () => {
     let el = await mount();
     expect(el.actions.map((a) => a.id)).toEqual(['edit', 'delete']);
