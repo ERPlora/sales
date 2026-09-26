@@ -4582,6 +4582,15 @@ pub fn update_order_line_pure(input: Value) -> Result<Output, String> {
     finish(update_order_line_inner(input))
 }
 
+/// True when the row's frozen step (ADR-0147 §2.4) was INFERRED by `frozen_increment` rather than
+/// declared by a real unit: `increment_value` sits at exactly one whole unit, `unit_name` is
+/// empty, and `unit_code` defaults to `ud`. A line whose till sent a unit always freezes its
+/// registry name, so an empty name on `ud` with step 1 is the no-unit case — the only one
+/// sales#399 lets a quantity change drop the step for, instead of refusing it.
+fn step_was_inferred(row: &Value) -> bool {
+    declared_increment(row) == QUANTITY_SCALE && field(row, "unit_name").is_empty() && str_or(row, "unit_code", "ud") == "ud"
+}
+
 /// sales#394 — the till's + / − stepper, the scale, the note editor and the comp toggle all land
 /// here as `sales.order.update_line`. It used to write whatever `line_total` the screen sent
 /// through a bare SQL `UPDATE`, so a tampered till could ring up any amount for any quantity. The
@@ -4628,15 +4637,35 @@ fn update_order_line_inner(input: Value) -> Result<Output, Refusal> {
     }
 
     // A quantity in the payload wins; the row's own otherwise, since a note-only or comp-only edit
-    // sends none at all. Out of scope here (sales#394): a grid/increment check like `line_qty`'s —
-    // this door changes an existing line's quantity, it does not reweigh one added as a whole unit.
-    let qty = match payload.get("quantity").filter(|v| !v.is_null()) {
+    // sends none at all — and is never judged against the grid below (sales#399).
+    let quantity_in_payload = payload.get("quantity").filter(|v| !v.is_null());
+    let qty = match quantity_in_payload {
         Some(v) => as_qty(v, QUANTITY_SCALE),
         None => item_i64(row, "quantity", QUANTITY_SCALE),
     };
     if qty <= 0 {
         return Err(reject("sales.quantity_not_positive", format!("quantity {qty}")));
     }
+
+    // sales#399 — the same grid `line_qty` enforces on add, now for a quantity CHANGE: it may not
+    // silently slip off the row's declared step. `Value::Null` tells `order_update_line.sql` to
+    // keep the frozen step; `0` is the one case a change may DROP it instead of being refused
+    // (see `step_was_inferred`).
+    let increment_value = match quantity_in_payload {
+        None => Value::Null,
+        Some(_) => {
+            let inc = declared_increment(row);
+            if inc > 0 && qty % inc != 0 {
+                if step_was_inferred(row) {
+                    json!(0)
+                } else {
+                    return Err(reject("sales.quantity_off_grid", format!("{qty} % {inc} != 0")));
+                }
+            } else {
+                Value::Null
+            }
+        }
+    };
 
     // `is_gift` for PRICING: the payload's flag when it sends one, the row's own otherwise — a
     // note-only edit or a quantity change on a comp must not un-comp it by omission.
@@ -4662,6 +4691,9 @@ fn update_order_line_inner(input: Value) -> Result<Output, Refusal> {
     params.insert("line_id".into(), json!(line_id));
     params.insert("quantity".into(), json!(qty));
     params.insert("line_total".into(), json!(line_total));
+    // sales#399 — `Null` keeps the frozen step; `0` is the sole case (`step_was_inferred`) where a
+    // quantity change is allowed to drop it instead of being refused.
+    params.insert("increment_value".into(), increment_value);
     // Everything the statement COALESCEs is copied AS-IS from the payload — `Null` when absent,
     // which `order_update_line.sql` takes as "leave the stored value alone".
     params.insert("is_gift".into(), payload.get("is_gift").cloned().unwrap_or(Value::Null));
@@ -12983,6 +13015,88 @@ mod tests {
             inp["context"]["reads"]["sales.order.get"] = json!([]);
             let err = update_order_line_pure(inp).refused("not a check of this business");
             assert_eq!(err.code, "sales.order_unavailable", "{err:?}");
+        }
+
+        // sales#399 — changing the quantity applies the same step rule as adding the line.
+
+        /// A coffee whose product DECLARES the whole unit (`ud`, step 1): the till froze its name.
+        fn declared_unit_row() -> Value {
+            let mut row = coffee_row();
+            row["unit_code"] = json!("ud");
+            row["unit_name"] = json!("Unit");
+            row["increment_value"] = json!(1_000_000);
+            row
+        }
+
+        #[test]
+        fn a_quantity_off_the_step_the_line_declares_is_refused() {
+            let inp = update_line(json!({ "order_id": "ord-1", "line_id": "line-1", "quantity": 1_500_000 }), declared_unit_row());
+            let err = update_order_line_pure(inp).refused("1,5 coffees sold by the whole unit");
+            assert_eq!(err.code, "sales.quantity_off_grid", "{err:?}");
+
+            let inp = update_line(json!({ "order_id": "ord-1", "line_id": "line-1", "quantity": 3_000_000 }), declared_unit_row());
+            let out = update_order_line_pure(inp).accepted("three whole coffees");
+            assert_eq!(write(&out).params["quantity"], json!(3_000_000));
+            assert_eq!(write(&out).params["increment_value"], Value::Null, "the declared step stays: {out:?}");
+        }
+
+        #[test]
+        fn a_line_added_as_one_kilo_can_still_be_weighed() {
+            // The scale case: a kilo article added with the default quantity (1 kg), then weighed.
+            // The step is the kilo's (0,001 kg), not «one whole unit».
+            let mut row = coffee_row();
+            row["unit_code"] = json!("kg");
+            row["unit_name"] = json!("Kilogram");
+            row["increment_value"] = json!(1_000);
+            row["quantity"] = json!(1_000_000);
+            row["unit_price"] = json!(1200);
+            let inp = update_line(json!({ "order_id": "ord-1", "line_id": "line-1", "quantity": 345_000 }), row.clone());
+            let out = update_order_line_pure(inp).accepted("0,345 kg on the platter");
+            assert_eq!(write(&out).params["quantity"], json!(345_000));
+            assert_eq!(write(&out).params["line_total"], json!(414), "0,345 × 12,00 €: {out:?}");
+            assert_eq!(write(&out).params["increment_value"], Value::Null, "{out:?}");
+
+            let inp = update_line(json!({ "order_id": "ord-1", "line_id": "line-1", "quantity": 345_500 }), row);
+            let err = update_order_line_pure(inp).refused("half a gram on a kilo line");
+            assert_eq!(err.code, "sales.quantity_off_grid", "{err:?}");
+        }
+
+        #[test]
+        fn a_line_without_a_unit_still_takes_half_a_portion_and_stops_claiming_whole_units() {
+            // No unit context: the row froze «whole units» only because its quantity was whole
+            // (`frozen_increment`). Half a portion still goes in, like on add, and the row drops
+            // that inferred step so it never says «sold whole» while holding 0,5.
+            let mut row = coffee_row();
+            row["unit_code"] = json!("ud");
+            row["unit_name"] = json!("");
+            row["increment_value"] = json!(1_000_000);
+            let inp = update_line(json!({ "order_id": "ord-1", "line_id": "line-1", "quantity": 500_000 }), row.clone());
+            let out = update_order_line_pure(inp).accepted("half a portion of a line without a unit");
+            assert_eq!(write(&out).params["quantity"], json!(500_000));
+            assert_eq!(write(&out).params["increment_value"], json!(0), "{out:?}");
+
+            // A whole quantity keeps the stored step untouched.
+            let inp = update_line(json!({ "order_id": "ord-1", "line_id": "line-1", "quantity": 3_000_000 }), row);
+            let out = update_order_line_pure(inp).accepted("three portions");
+            assert_eq!(write(&out).params["increment_value"], Value::Null, "{out:?}");
+
+            // A line already without a step takes anything positive.
+            let mut free = coffee_row();
+            free["increment_value"] = json!(0);
+            let inp = update_line(json!({ "order_id": "ord-1", "line_id": "line-1", "quantity": 1_500_000 }), free);
+            let out = update_order_line_pure(inp).accepted("a line with no step");
+            assert_eq!(write(&out).params["increment_value"], Value::Null, "{out:?}");
+        }
+
+        #[test]
+        fn a_note_edit_is_not_judged_on_the_quantity_the_row_already_holds() {
+            // A row written before this check may already hold an off-step quantity; editing only
+            // its note must not lock the line.
+            let mut row = declared_unit_row();
+            row["quantity"] = json!(1_500_000);
+            let inp = update_line(json!({ "order_id": "ord-1", "line_id": "line-1", "notes": "decaf" }), row);
+            let out = update_order_line_pure(inp).accepted("only the note of a legacy row");
+            assert_eq!(write(&out).params["quantity"], json!(1_500_000));
         }
     }
 }

@@ -558,6 +558,38 @@ def test_another_hub_cannot_touch_the_note():
     check("our own line DOES change (the control)", "room temperature", note_of("n8"))
 
 
+# ── 7. The inferred step is dropped only when the handler says so (sales#399) ─────────────
+
+
+def step_of(line_id: str) -> str:
+    return q(f"SELECT increment_value FROM sales_order_item WHERE id = '{line_id}' AND hub_id = '{HUB}'")
+
+
+def test_update_line_drops_the_inferred_step_only_when_asked():
+    print("\n== 7. `sales._update_order_line` writes `increment_value` only when it is bound ==")
+
+    open_order("S7", "Table 12")
+    insert_line("step7", "S7", "Tapa")
+
+    command_ok(
+        "a whole quantity binds no step",
+        "sales._update_order_line",
+        {"order_id": "S7", "line_id": "step7", "quantity": 2_000_000, "line_total": 2_000},
+        "2026-08-26T14:00:00+00:00",
+    )
+    check("the stored step is untouched", "1000000", step_of("step7"))
+
+    # Half a portion of a line with no unit: the handler binds 0 so the row stops saying
+    # «sold whole» while it holds 0,5 (the invariant `frozen_increment` documents).
+    command_ok(
+        "half a portion binds step 0",
+        "sales._update_order_line",
+        {"order_id": "S7", "line_id": "step7", "quantity": 500_000, "line_total": 500, "increment_value": 0},
+        "2026-08-26T14:01:00+00:00",
+    )
+    check("the row no longer claims a whole-unit step", "0", step_of("step7"))
+
+
 # ── Runner ───────────────────────────────────────────────────────────────────────────────
 
 
@@ -587,6 +619,7 @@ def main() -> int:
         test_a_fired_line_refuses_the_edit()
         test_the_note_travels_with_the_row()
         test_another_hub_cannot_touch_the_note()
+        test_update_line_drops_the_inferred_step_only_when_asked()
     finally:
         psql(["-c", f"DROP DATABASE IF EXISTS {DB} WITH (FORCE)"])
 

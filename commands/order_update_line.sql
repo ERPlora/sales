@@ -1,9 +1,10 @@
--- ADR-0141 Gate 3/6: cambia cantidad (y su line_total provisional) de una línea de un pedido
--- abierto; también permite alternar INVITACIÓN (is_gift/gift_reason), que cambia el importe.
--- `quantity` en punto fijo 10⁶ (ADR-0147). El contexto de unidades congelado NO se toca aquí:
--- se fijó al añadir la línea y cambiar la cantidad no cambia lo que significa.
--- COALESCE deja intacto lo que no se envía. Solo líneas vivas del pedido/hub (aislamiento).
--- El total del pedido se recompone en la 2ª sentencia (order_recompute_total.sql).
+-- ADR-0141 Gate 3/6: changes the quantity (and its provisional line_total) of a line on an open
+-- order; also toggles a COMP (is_gift/gift_reason), which changes the amount.
+-- `quantity` is fixed point 10⁶ (ADR-0147). The frozen unit context is NOT touched here: it was
+-- set when the line was added and changing the quantity does not change what it means — the one
+-- exception is `increment_value` (sales#399, see the comment next to that column).
+-- COALESCE leaves alone whatever is not sent. Only live lines of the order/hub (isolation).
+-- The order total is recomputed in the 2nd statement (order_recompute_total.sql).
 --
 -- sales#385: the line discount is NOT written here any more — it goes through the capped doors
 -- `sales.order.set_line_discount` / `sales.order.set_line_discount_over_limit`, which price the
@@ -21,6 +22,9 @@ SET quantity    = :quantity,
     -- typed, and nobody would find out until the plate reached the table. Clearing it is an
     -- explicit empty string, which this does honour.
     notes       = COALESCE(:notes, notes),
+    -- sales#399: only bound (to 0) when a line with no unit takes a fractional quantity, so the
+    -- row drops the whole-unit step it inferred; NULL keeps the frozen step.
+    increment_value = COALESCE(:increment_value, increment_value),
     updated_by  = :current_user_id,
     updated_at  = :now
 -- `fired_at IS NULL`: una línea YA ENVIADA a cocina no se edita desde el TPV (tandas,
