@@ -2322,7 +2322,12 @@ export class ErpPosTouch extends LitElement {
       if (this.pendingSwitchAlert === alert) this.pendingSwitchAlert = undefined;
       alert.remove();
     };
-    alert.addEventListener('ionAlertDidDismiss', cleanup, { once: true });
+    // Ionic moves the teleported overlay back to body right AFTER emitting ionAlertDidDismiss:
+    // a synchronous remove() is undone, so it goes on the next task (sales#406).
+    alert.addEventListener('ionAlertDidDismiss', () => {
+      if (this.pendingSwitchAlert === alert) this.pendingSwitchAlert = undefined;
+      setTimeout(() => alert.remove(), 0);
+    }, { once: true });
     document.body.appendChild(alert);
     this.pendingSwitchAlert = alert;
     try {

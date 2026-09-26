@@ -790,6 +790,30 @@ describe('slot sales.pos.actions: cocina inyectada dentro de Comanda actual', ()
     expect(comandos).not.toContain('sales.order.set_label');
   });
 
+  // sales#406 — Ionic emits ionAlertDidDismiss and only THEN moves the teleported overlay back to
+  // body (framework-delegate removeViewFromDom): a synchronous remove() is undone and one hidden
+  // <ion-alert> piled up per warning for the whole shift.
+  it('el aviso cerrado (Cerrar o fondo) no se queda escondido en la página (sales#406)', async () => {
+    // The previous test leaves its warning open on body on purpose; start from a clean page.
+    document.body.querySelectorAll('ion-alert').forEach((n) => n.remove());
+    const el = await conCafe();
+    const park = (el as unknown as { requestPark(): Promise<void> });
+    for (const role of ['cancel', 'backdrop']) {
+      await park.requestPark();
+      const aviso = document.body.querySelector('ion-alert') as HTMLElement & {
+        isOpen: boolean; buttons: { text: string; role?: string }[];
+      };
+      expect(aviso.isOpen).toBe(true);
+      expect(aviso.buttons.map((b) => [b.role, b.text])).toEqual([['cancel', 'ui.close']]);
+      aviso.addEventListener('ionAlertDidDismiss', () => {
+        void Promise.resolve().then(() => document.body.appendChild(aviso));
+      });
+      aviso.dispatchEvent(new CustomEvent('ionAlertDidDismiss', { detail: { role } }));
+      for (let i = 0; i < 3; i++) await new Promise((r) => setTimeout(r, 0));
+      expect(document.body.querySelectorAll('ion-alert').length, `tras cerrar con ${role}`).toBe(0);
+    }
+  });
+
   it('el filler recibe erp:pos-state al montarse y al cambiar el carrito (con pending_count)', async () => {
     const estados: Array<{ items_count: number; pending_count: number }> = [];
     const el = await montarCarrito();
