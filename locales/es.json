@@ -596,7 +596,8 @@
       "label": "Cobrar una venta"
     },
     "sales.complete_sale_over_limit": {
-      "label": "Cobrar una venta con un descuento por encima del límite"
+      "label": "Cobrar una venta con un descuento por encima del límite",
+      "approval_label": "Cobrar una venta con un descuento de hasta el {approval_discount_percent, percent}"
     },
     "sales.create_payment_method": {
       "label": "Añadir un método de pago"
