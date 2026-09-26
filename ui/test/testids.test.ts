@@ -182,6 +182,7 @@ const COVERED: Record<string, { prefix: string; contract: string[]; tables?: str
       'sales-stats-error',
       'sales-table',
     ],
+    tables: ['sales-table'],
   },
 };
 
@@ -205,13 +206,10 @@ const PENDING_TODAY = 0;
  * the issue that asks for it. Same ratchet as `NOT_YET_COVERED`: it only shrinks, and an entry
  * whose table already declares it must leave (and its namespace go up into `tables`).
  */
-const TABLES_WITHOUT_NAMESPACE: Record<string, string> = {
-  // The sales history: out of sales#297, which was the two tables of the settings screen.
-  'erp-sales-list/erp-sales-list.ts': 'sales#388',
-};
+const TABLES_WITHOUT_NAMESPACE: Record<string, string> = {};
 
 /** How many tables are pending TODAY. This number ONLY GOES DOWN. */
-const TABLES_PENDING_TODAY = 1;
+const TABLES_PENDING_TODAY = 0;
 
 /** The table is its own rule: it carries `testid`, not `data-testid` (outfitkit#143). */
 const TABLE_TAG = 'ok-data-table';
