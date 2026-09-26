@@ -23,6 +23,8 @@ their ids and wraps their transaction, so they are proven here, through HTTP, an
   6. «Each pays their own» (ADR-0146): a partial checkout with `line_ids` retires those lines from
      the open check — what was paid never comes back to the screen, so it is never charged twice.
   7. Voiding an open order cancels the ticket before any money moves.
+  3b. (sales#399) Changing a line's quantity applies the step the line declares, like adding it:
+     off-step on a declared unit is refused, a line without a unit still takes half a portion.
 
 Usage: `erplora test <dir> --against-hub [dev|stable|sha256:…]` (module-toolkit#110). Never on
 its own: without a runtime it fails, it does not skip.
@@ -156,6 +158,70 @@ def test_mutating_an_open_order_recomputes_its_total(hub: Hub) -> None:
 
     hub.run("sales.order.void", {"order_id": oid})
     hub.check("void cancels the open ticket", order(hub, oid).get("status"), "voided")
+
+
+def test_a_quantity_change_keeps_the_step_the_line_declares(hub: Hub) -> None:
+    print(
+        "\n3b · update_line applies the step the line declares, like add does (sales#399)"
+    )
+    oid, _ = open_order(
+        hub,
+        [
+            # Sold by the whole unit: the till froze the registry unit with its name.
+            {"product_name": "Café", "price": 121, "quantity": ONE,
+             "unit_code": "ud", "unit_name": "Unit", "increment_value": ONE},
+            # No unit at all: «whole» is only inferred from the quantity.
+            {"product_name": "Tapa", "price": 400, "quantity": ONE},
+            # Sold by the kilo (step 0,001 kg), added with the default 1 kg and then weighed.
+            {"product_name": "Queso", "price": 1200, "quantity": ONE,
+             "unit_code": "kg", "unit_name": "Kilogram", "increment_value": 1_000},
+        ],
+    )
+    by_name = {l["product_name"]: l for l in lines(hub, oid)}
+
+    hub.refused(
+        "1,5 coffees on a line sold by the whole unit",
+        "sales.order.update_line",
+        {"order_id": oid, "line_id": by_name["Café"]["id"], "quantity": 1_500_000},
+        "sales.quantity_off_grid",
+    )
+    by_name = {l["product_name"]: l for l in lines(hub, oid)}
+    hub.check("the coffee line did not move", by_name["Café"].get("quantity"), ONE)
+
+    hub.run(
+        "sales.order.update_line",
+        {"order_id": oid, "line_id": by_name["Tapa"]["id"], "quantity": 500_000},
+    )
+    hub.run(
+        "sales.order.update_line",
+        {"order_id": oid, "line_id": by_name["Queso"]["id"], "quantity": 345_000},
+    )
+    by_name = {l["product_name"]: l for l in lines(hub, oid)}
+    hub.check("half a portion of a line without a unit goes in", by_name["Tapa"].get("quantity"), 500_000)
+    hub.check(
+        "and that row stops claiming a whole-unit step",
+        by_name["Tapa"].get("increment_value"),
+        0,
+    )
+    hub.check("the kilo line takes the weighed 0,345 kg", by_name["Queso"].get("quantity"), 345_000)
+    hub.check("priced 0,345 × 12,00 €", cents(by_name["Queso"].get("line_total")), 414)
+
+    # The split writes the source row through the same statement: it must still bind.
+    hub.run(
+        "sales.order.update_line",
+        {"order_id": oid, "line_id": by_name["Café"]["id"], "quantity": 2 * ONE},
+    )
+    hub.run(
+        "sales.order.split_line",
+        {"order_id": oid, "line_id": by_name["Café"]["id"]},
+    )
+    cafes = [l for l in lines(hub, oid) if l.get("product_name") == "Café"]
+    hub.check("the split leaves two coffees of one unit", sorted(l.get("quantity") for l in cafes), [ONE, ONE])
+    hub.check(
+        "each keeps the whole-unit step",
+        sorted(l.get("increment_value") for l in cafes),
+        [ONE, ONE],
+    )
 
 
 def test_checkout_completes_the_order_and_links_the_sale(hub: Hub, cash: str) -> None:
@@ -336,6 +402,7 @@ def main() -> int:
     test_open_materialises_the_lines_and_answers_the_id(hub)
     test_the_order_knows_nothing_about_customers(hub)
     test_mutating_an_open_order_recomputes_its_total(hub)
+    test_a_quantity_change_keeps_the_step_the_line_declares(hub)
     test_checkout_completes_the_order_and_links_the_sale(hub, cash)
     test_split_bill_one_order_two_sales(hub, cash)
     test_each_diner_pays_their_own_lines(hub, cash)
