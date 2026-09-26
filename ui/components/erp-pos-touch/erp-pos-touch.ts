@@ -3975,7 +3975,7 @@ export class ErpPosTouch extends LitElement {
   private async persistTicketDiscount(percent: number, amountCents: number): Promise<boolean> {
     const payload = { order_id: this.orderId, discount_percent: percent, discount_amount: amountCents };
     // Only the ticket-wide levers matter here: line discounts go through their own door
-    // (`updateOrderLineDiscount`, below), so `linePercents` is empty on purpose.
+    // (`updateOrderLineDiscount`, sales#385), so `linePercents` is empty on purpose.
     const overCap = needsManagerApproval(discountCap(this.settings), {
       ticketPercent: percent,
       ticketAmountCents: amountCents,
@@ -4021,10 +4021,22 @@ export class ErpPosTouch extends LitElement {
     const line = this.cart.find((l) => l.line_id === sheet.lineId);
     if (!line) return;
     const discount = value > 0 ? value : undefined;
-    this.cart = this.cart.map((l) => (l === line ? { ...l, discount } : l));
-    if (this.orderId && line.line_id) {
-      try { await updateOrderLineDiscount(erplora(), this.orderId, { ...line, discount }, value); }
-      catch (e) { this.error = e instanceof Error ? e.message : String(e); }
+    // sales#385: nothing to route through — no order yet, or the line is not backed by a real row
+    // (still local). Paint it directly, like before there was an order to send to.
+    if (!this.orderId || !line.line_id) {
+      this.cart = this.cart.map((l) => (l === line ? { ...l, discount } : l));
+      return;
+    }
+    // sales#385 — a LINE discount above the shop's cap is authorised when it is APPLIED, exactly
+    // like the ticket one (sales#284): 0 always goes through the usual door (removing a discount
+    // needs nobody's permission), and 100 = no cap never routes over it. Keep the line's old
+    // discount/approval until the server says yes.
+    const overCap = value > discountCap(this.settings);
+    try {
+      await updateOrderLineDiscount(erplora(), this.orderId, { ...line, discount }, value, overCap);
+      this.cart = this.cart.map((l) => (l === line ? { ...l, discount, discountApproved: overCap ? true : undefined } : l));
+    } catch (e) {
+      this.error = e instanceof Error ? e.message : String(e);
     }
   }
   // The pinpad types the MAJOR unit («20» = 20 €); the sale contract is MINOR units (ADR-0007/0123),
@@ -4440,11 +4452,16 @@ export class ErpPosTouch extends LitElement {
       // outright. The SERVER honours the approval it stored on the order, never this payload, and
       // refuses anything charged above it — this only spares the manager a second PIN for the same
       // number they already signed off.
+      //
+      // sales#385 — the same per-line, one level down: a line's own `discountApproved` means a
+      // manager already signed THAT discount off on the open check, so it is judged as 0 here too.
+      // The SERVER honours the approval it stored on the row, never this flag — this only spares a
+      // second PIN for a discount already authorised.
       const checkoutDoor = checkoutCommand(discountCap(this.settings), {
         ticketPercent: this.ticketDiscount,
         ticketAmountCents: this.ticketDiscountAmount > 0 && !split.line_ids ? this.ticketDiscountAmount : 0,
         grossCents: cartTotal(this.chargedLines, this.ticketDiscount),
-        linePercents: cobradas.map((l) => l.discount ?? 0),
+        linePercents: cobradas.map((l) => (l.discountApproved ? 0 : (l.discount ?? 0))),
       }, this.ticketDiscountApproved ? { percent: this.ticketDiscount, amountCents: this.ticketDiscountAmount } : null);
       const checkoutPayload = {
         items,

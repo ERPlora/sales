@@ -92,8 +92,9 @@ describe('with discounts allowed', () => {
     await el.applyDiscount(10);
     await el.updateComplete;
     expect(el.cart[0].discount).toBe(10);
-    const upd = commands.find((c) => c.name === 'sales.order.update_line');
-    expect(upd?.payload).toMatchObject({ discount_percent: 10, line_total: 162 });
+    // sales#385: through the line discount door, priced by the server from the row.
+    const upd = commands.find((c) => c.name === 'sales.order.set_line_discount');
+    expect(upd?.payload).toMatchObject({ line_id: el.cart[0].line_id, discount_percent: 10 });
     expect(el.shadowRoot.querySelector('.line-discount-badge')?.textContent).toContain('10');
     // The footer total is the discounted one: 1,62 €.
     expect(el.shadowRoot.querySelector('.cart-foot .total b')?.textContent).toContain('1.62');
