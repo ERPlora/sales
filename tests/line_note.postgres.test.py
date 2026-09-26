@@ -20,7 +20,8 @@ Contract under test:
   2. RESUMING. `queries/order_lines.sql` gives the note back, next to the supplements and the
      frozen tax category. Without this the note is written and unreadable — the very failure
      sales#148 fixed for the supplements.
-  3. EDITING. `sales.order.update_line` writes the note, and a payload WITHOUT `notes` leaves the
+  3. EDITING. `sales._update_order_line` (the write the `sales.order.update_line` handler emits,
+     sales#394) writes the note, and a payload WITHOUT `notes` leaves the
      stored one alone (the quantity stepper must not wipe what the waiter typed).
   4. FIRED LINES. A line already in the kitchen refuses the edit, same guard as the quantity: the
      food is on the fire and the ticket has been printed.
@@ -391,7 +392,7 @@ def test_update_line_writes_the_note_and_leaves_it_alone():
 
     command_ok(
         "the waiter corrects the note",
-        "sales.order.update_line",
+        "sales._update_order_line",
         {
             "order_id": "N2",
             "line_id": "n3",
@@ -408,7 +409,7 @@ def test_update_line_writes_the_note_and_leaves_it_alone():
     # allergy the waiter typed, and nobody finds out until the plate reaches the table.
     command_ok(
         "bumping the quantity does not touch the note",
-        "sales.order.update_line",
+        "sales._update_order_line",
         {
             "order_id": "N2",
             "line_id": "n3",
@@ -425,7 +426,7 @@ def test_update_line_writes_the_note_and_leaves_it_alone():
     # removed is worse than no note (the kitchen keeps cooking to a request that was cancelled).
     command_ok(
         "and it can be cleared",
-        "sales.order.update_line",
+        "sales._update_order_line",
         {
             "order_id": "N2",
             "line_id": "n3",
@@ -454,7 +455,7 @@ def test_a_fired_line_refuses_the_edit():
     # note the kitchen already read.
     command_ok(
         "the command runs (it is an UPDATE with a guard, not an error)",
-        "sales.order.update_line",
+        "sales._update_order_line",
         {
             "order_id": "N3",
             "line_id": "n4",
@@ -525,7 +526,7 @@ def test_another_hub_cannot_touch_the_note():
     # Same payload, our hub injected by the runtime: the WHERE never matches. This is the door
     # that applies `hub_id`, so a test that seeded by hand and asserted here would prove nothing.
     run_command(
-        "sales.order.update_line",
+        "sales._update_order_line",
         {
             "order_id": "N5",
             "line_id": "n7",
@@ -544,7 +545,7 @@ def test_another_hub_cannot_touch_the_note():
     open_order("N6", "Table 12")
     insert_line("n8", "N6", "Cider", "very cold")
     run_command(
-        "sales.order.update_line",
+        "sales._update_order_line",
         {
             "order_id": "N6",
             "line_id": "n8",

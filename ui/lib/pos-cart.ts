@@ -570,16 +570,16 @@ export async function persistLineQty(
 }
 
 export async function updateOrderLineQty(
-  client: ErploraClientLike, orderId: string, lineId: string, qty: number, unitPrice: number,
-  isGift?: boolean, giftReason?: string, discount = 0,
-  /** sales#208 — los suplementos de la línea: sin ellos el stepper reescribía el `line_total` a la
-   *  base y la cuenta abierta perdía el suplemento cada vez que alguien tocaba la cantidad. */
-  modifiers?: { option_id: string; price_delta?: number }[],
+  client: ErploraClientLike, orderId: string, lineId: string, qty: number, _unitPrice: number,
+  isGift?: boolean, giftReason?: string, _discount = 0,
+  /** sales#208 — kept for call-site compatibility only: since sales#394 the server prices the line
+   *  SERVER-SIDE from its own row (frozen unit price + frozen supplements + the line's own
+   *  discount), so this list no longer travels in the payload and is unused here. */
+  _modifiers?: { option_id: string; price_delta?: number }[],
 ): Promise<void> {
   await client.command('sales.order.update_line', {
     order_id: orderId, line_id: lineId, quantity: toMicro(qty), // punto fijo 10⁶ (ADR-0147)
-    line_total: provisionalLineTotal(unitPrice, qty, isGift, discount, modifierDelta({ modifiers })),
-    // Alternar invitación cambia el importe: viaja junto para que la fila quede coherente.
+    // Toggling the gift flag changes the amount: it travels along so the row stays consistent.
     is_gift: isGift === undefined ? null : (isGift ? 1 : 0),
     gift_reason: giftReason ?? null,
   });
@@ -607,10 +607,10 @@ export async function updateOrderLineDiscount(
 
 /** sales#156 — changes the free-text NOTE of an order line.
  *
- * It goes through the same `update_line` as the quantity and the discount, which is why it sends
- * the quantity and total the line ALREADY has: the statement always writes them, so omitting them
- * would rewrite the row to a quantity nobody asked for. Every other field travels as `null` so the
- * SQL's `COALESCE` leaves it alone.
+ * sales#394 — `update_line` is now a WASM handler that keeps the row's OWN quantity when none is
+ * sent: this call no longer carries `quantity` (nor an amount), so a stale quantity read by this
+ * screen can never undo a change another till just made to the same line. The server prices the
+ * line itself from the row. Every other field travels as `null` so the handler leaves it alone.
  *
  * Without a `line_id` there is no row to address and NOTHING is written: inventing the write would
  * send it against whatever row the server guessed — or against none, in silence. */
@@ -619,9 +619,7 @@ export async function updateOrderLineNote(
 ): Promise<void> {
   if (!line.line_id) return;
   await client.command('sales.order.update_line', {
-    order_id: orderId, line_id: line.line_id, quantity: toMicro(line.qty),
-    line_total: provisionalLineTotal(line.price, line.qty, line.is_gift, line.discount ?? 0, modifierDelta(line)),
-    notes: note,
+    order_id: orderId, line_id: line.line_id, notes: note,
     is_gift: null, gift_reason: null,
   });
 }

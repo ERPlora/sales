@@ -99,8 +99,9 @@ function installSdk(servicesInstalled = true) {
       if (name === 'sales.order.update_line') {
         const row = orderLines.find((l) => l.id === payload.line_id);
         if (row) {
+          // sales#394: the server prices the line from its row; no amount comes from the till.
           row.quantity = payload.quantity;
-          row.line_total = payload.line_total;
+          row.line_total = Math.round((Number(row.unit_price) * Number(payload.quantity)) / 1_000_000);
         }
         return { ok: true, new_ids: [] };
       }

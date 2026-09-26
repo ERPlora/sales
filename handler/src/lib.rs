@@ -200,6 +200,17 @@ pub fn set_order_line_discount_over_limit(input: Json<erplora_guest_sdk::Input>)
     }
 }
 
+/// sales#394: changes the quantity (and comp flag / note) of an open order's line, priced by the
+/// server from the row. See `update_order_line_pure`.
+#[cfg(feature = "guest")]
+#[plugin_fn]
+pub fn update_order_line(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
+    match update_order_line_pure(input.into_inner().into_value()) {
+        Ok(out) => Ok(Json(out)),
+        Err(e) => Err(Error::msg(e).into()),
+    }
+}
+
 /// Redondeo a la unidad mínima. **No decide el modo**: delega en `guest_sdk::money::round`, que es
 /// EL redondeo del hub (HALF_UP, ADR-0123 §4 — la única regla de redondeo monetario escrita en
 /// Derecho español: art. 11 de la Ley 46/1998 del euro).
@@ -4564,6 +4575,104 @@ fn set_order_line_discount_inner(input: Value, rule: CapRule) -> Result<Output, 
     // The internal command recomputes the check's provisional total in the same transaction
     // (`order_recompute_total.sql`, second statement), with its row guard anchored to the line write.
     Ok(Output::new().with_operation(Operation::sql("sales._set_order_line_discount", params)))
+}
+
+/// sales#394 — see `update_order_line_inner`.
+pub fn update_order_line_pure(input: Value) -> Result<Output, String> {
+    finish(update_order_line_inner(input))
+}
+
+/// sales#394 — the till's + / − stepper, the scale, the note editor and the comp toggle all land
+/// here as `sales.order.update_line`. It used to write whatever `line_total` the screen sent
+/// through a bare SQL `UPDATE`, so a tampered till could ring up any amount for any quantity. The
+/// line is now priced by the SERVER from its own row, the same formula `split_order_line_inner`
+/// (sales#242) and `set_order_line_discount_inner` (sales#385) already use: frozen unit price +
+/// frozen supplements, × the (possibly new) quantity and price-quantity, with the discount the
+/// row already carries — never one from the payload, which this door does not accept
+/// (sales#385 moved the discount behind its own capped doors).
+fn update_order_line_inner(input: Value) -> Result<Output, Refusal> {
+    let payload = input.get("payload").cloned().unwrap_or(Value::Null);
+    let context = input.get("context").cloned().unwrap_or(Value::Null);
+
+    let order_id = field(&payload, "order_id");
+    if order_id.is_empty() {
+        return Err(reject("sales.order_id_required", "a line update needs the order it applies to"));
+    }
+
+    // The order has to exist, belong to THIS hub and be open. The query filters by `hub_id` (the
+    // runtime injects it) but returns the order whatever its status, so a completed or cancelled
+    // check is refused here too, not only a missing one.
+    let open = tax::read_rows(&context, "sales.order.get")
+        .and_then(|rows| rows.first().copied())
+        .is_some_and(|row| field(row, "status") == "open");
+    if !open {
+        return Err(reject(
+            "sales.order_unavailable",
+            format!("`{order_id}` is not an open order of this business"),
+        ));
+    }
+
+    let line_id = field(&payload, "line_id");
+    let lines = tax::read_rows(&context, "sales.order.lines").unwrap_or_default();
+    let row = *lines.iter().find(|r| !line_id.is_empty() && field(r, "id") == line_id).ok_or_else(|| {
+        reject(
+            "sales.order_line_not_available",
+            format!("`{line_id}` is not a live unfired line of `{order_id}`"),
+        )
+    })?;
+    if !field(row, "fired_at").is_empty() {
+        return Err(reject(
+            "sales.order_line_not_available",
+            format!("`{line_id}` already went to production and can no longer change"),
+        ));
+    }
+
+    // A quantity in the payload wins; the row's own otherwise, since a note-only or comp-only edit
+    // sends none at all. Out of scope here (sales#394): a grid/increment check like `line_qty`'s —
+    // this door changes an existing line's quantity, it does not reweigh one added as a whole unit.
+    let qty = match payload.get("quantity").filter(|v| !v.is_null()) {
+        Some(v) => as_qty(v, QUANTITY_SCALE),
+        None => item_i64(row, "quantity", QUANTITY_SCALE),
+    };
+    if qty <= 0 {
+        return Err(reject("sales.quantity_not_positive", format!("quantity {qty}")));
+    }
+
+    // `is_gift` for PRICING: the payload's flag when it sends one, the row's own otherwise — a
+    // note-only edit or a quantity change on a comp must not un-comp it by omission.
+    let is_gift = match payload.get("is_gift").filter(|v| !v.is_null()) {
+        Some(v) => as_bool(v),
+        None => row.get("is_gift").map(as_bool).unwrap_or(false),
+    };
+
+    // The discount is the ROW's, never the payload's: sales#385 already moved it behind its own
+    // capped doors (`sales.order.set_line_discount` / `…_over_limit`), so it is validated here
+    // but never bound below, the same way `split_order_line_inner` treats it.
+    let line_disc = row.get("discount_percent").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
+    if !rate_in_range(line_disc) {
+        return Err(reject("sales.discount_out_of_range", format!("line discount {line_disc}")));
+    }
+
+    let (modifier_delta, _) = fold_modifiers(&resolve_modifiers(row, Some(row), None)?)?;
+    let unit_price = as_cents(row.get("unit_price").unwrap_or(&Value::Null), 0);
+    let line_total = order_line_amount(unit_price + modifier_delta, qty, line_price_qty(row), is_gift, line_disc)?;
+
+    let mut params = Map::new();
+    params.insert("order_id".into(), json!(order_id));
+    params.insert("line_id".into(), json!(line_id));
+    params.insert("quantity".into(), json!(qty));
+    params.insert("line_total".into(), json!(line_total));
+    // Everything the statement COALESCEs is copied AS-IS from the payload — `Null` when absent,
+    // which `order_update_line.sql` takes as "leave the stored value alone".
+    params.insert("is_gift".into(), payload.get("is_gift").cloned().unwrap_or(Value::Null));
+    params.insert("gift_reason".into(), payload.get("gift_reason").cloned().unwrap_or(Value::Null));
+    params.insert("notes".into(), payload.get("notes").cloned().unwrap_or(Value::Null));
+
+    let mut ops = vec![Operation::sql("sales._update_order_line", params)];
+    let mut recompute = Map::new();
+    recompute.insert("order_id".into(), json!(order_id));
+    ops.push(Operation::sql("sales._recompute_order_total", recompute));
+    Ok(Output { operations: ops, ..Default::default() })
 }
 
 /// sales#26 — **anular es auditable, idempotente y respeta la factura.**
@@ -12716,6 +12825,164 @@ mod tests {
             inp["payload"]["discount_percent"] = json!(50);
             let err = complete_sale_pure(inp).refused("a ticket discount nobody approved");
             assert_eq!(err.code, "sales.discount_over_limit", "{err:?}");
+        }
+    }
+
+    // sales#394 — changing the QUANTITY of a line on an open check (the till's + / − stepper, the
+    // scale, the note editor and the comp toggle) used to write whatever `line_total` the screen
+    // sent, through a bare SQL UPDATE. The server now prices the line from its own row, the way
+    // the split (sales#242) and the line discount (sales#385) already do: frozen unit price +
+    // frozen supplements, × the new quantity, with the discount the row already carries.
+    mod order_line_quantity_priced {
+        use super::*;
+
+        /// A live, unfired row of `sales.order.lines`: two coffees at 1,50 €.
+        fn coffee_row() -> Value {
+            json!({
+                "id": "line-1", "order_id": "ord-1", "product_id": "p-cafe",
+                "product_name": "Café", "quantity": 2_000_000, "unit_price": 150,
+                "is_gift": 0, "line_total": 300, "discount_percent": 0, "modifiers": "[]",
+                "price_quantity_value": 1_000_000, "fired_at": null, "combo": "{}",
+                "combo_group_ref": null, "notes": "no sugar",
+            })
+        }
+
+        fn update_line(payload: Value, row: Value) -> Value {
+            json!({
+                "payload": payload,
+                "context": {
+                    "reads": {
+                        "sales.order.get": [{ "id": "ord-1", "status": "open" }],
+                        "sales.order.lines": [row],
+                    },
+                    "current_user_id": "u-waiter", "now": "2026-09-26T10:00:00Z",
+                },
+            })
+        }
+
+        fn write(out: &Output) -> &Operation {
+            out.operations
+                .iter()
+                .find(|o| o.command == "sales._update_order_line")
+                .expect("the line is written")
+        }
+
+        #[test]
+        fn the_line_amount_is_priced_by_the_server_from_the_row_not_the_payload() {
+            // 3 × 1,50 € = 4,50 €. The 0,01 € a tampered till sends is ignored.
+            let inp = update_line(
+                json!({ "order_id": "ord-1", "line_id": "line-1", "quantity": 3_000_000, "line_total": 1 }),
+                coffee_row(),
+            );
+            let out = update_order_line_pure(inp).accepted("a quantity change");
+            let op = write(&out);
+            assert_eq!(op.params["order_id"], json!("ord-1"));
+            assert_eq!(op.params["line_id"], json!("line-1"));
+            assert_eq!(op.params["quantity"], json!(3_000_000));
+            assert_eq!(op.params["line_total"], json!(450), "{out:?}");
+            // The check's provisional total follows the line in the same command.
+            assert!(
+                out.operations.iter().any(|o| o.command == "sales._recompute_order_total"
+                    && o.params["order_id"] == json!("ord-1")),
+                "the check total is recomputed: {out:?}"
+            );
+        }
+
+        #[test]
+        fn frozen_supplements_and_the_discount_the_row_carries_are_part_of_the_price() {
+            // 2 × (1,50 + 0,50) = 4,00 €; the 25 % the row already carries leaves 3,00 €.
+            let mut row = coffee_row();
+            row["modifiers"] = json!("[{\"option_id\":\"m-oat\",\"price_delta\":50}]");
+            row["discount_percent"] = json!(25);
+            let inp = update_line(json!({ "order_id": "ord-1", "line_id": "line-1", "quantity": 2_000_000 }), row);
+            let out = update_order_line_pure(inp).accepted("a line with a supplement and a discount");
+            assert_eq!(write(&out).params["line_total"], json!(300), "{out:?}");
+            // The discount is never written here (sales#385): the statement does not bind it.
+            assert!(write(&out).params.get("discount_percent").is_none(), "{out:?}");
+        }
+
+        #[test]
+        fn the_price_quantity_the_row_froze_is_honoured() {
+            // A product priced per kilo (price quantity 1 kg = 10⁶) weighed at 0,532 kg, 12,00 €/kg.
+            let mut row = coffee_row();
+            row["unit_price"] = json!(1200);
+            let inp = update_line(json!({ "order_id": "ord-1", "line_id": "line-1", "quantity": 532_000 }), row.clone());
+            let out = update_order_line_pure(inp).accepted("a weighed quantity");
+            assert_eq!(write(&out).params["line_total"], json!(638), "0,532 × 12,00 € = 6,384 €: {out:?}");
+
+            // Priced per 100 g: 1,20 € per 100 g × 532 g = 6,384 €, the same money.
+            row["unit_price"] = json!(120);
+            row["price_quantity_value"] = json!(100_000);
+            let inp = update_line(json!({ "order_id": "ord-1", "line_id": "line-1", "quantity": 532_000 }), row);
+            let out = update_order_line_pure(inp).accepted("priced per 100 g");
+            assert_eq!(write(&out).params["line_total"], json!(638), "{out:?}");
+        }
+
+        #[test]
+        fn a_comp_costs_nothing_and_undoing_it_prices_the_line_again() {
+            let inp = update_line(
+                json!({ "order_id": "ord-1", "line_id": "line-1", "quantity": 2_000_000, "is_gift": 1, "gift_reason": "birthday" }),
+                coffee_row(),
+            );
+            let out = update_order_line_pure(inp).accepted("comp the line");
+            let op = write(&out);
+            assert_eq!(op.params["line_total"], json!(0), "{out:?}");
+            assert_eq!(op.params["is_gift"], json!(1));
+            assert_eq!(op.params["gift_reason"], json!("birthday"));
+
+            let mut gift = coffee_row();
+            gift["is_gift"] = json!(1);
+            let inp = update_line(json!({ "order_id": "ord-1", "line_id": "line-1", "quantity": 3_000_000, "is_gift": 0 }), gift.clone());
+            let out = update_order_line_pure(inp).accepted("undo the comp");
+            assert_eq!(write(&out).params["line_total"], json!(450), "{out:?}");
+
+            // No `is_gift` in the payload keeps what the row says: a comp stays free.
+            let inp = update_line(json!({ "order_id": "ord-1", "line_id": "line-1", "quantity": 3_000_000, "is_gift": null }), gift);
+            let out = update_order_line_pure(inp).accepted("a comp whose quantity changes");
+            assert_eq!(write(&out).params["line_total"], json!(0), "{out:?}");
+            assert_eq!(write(&out).params["is_gift"], Value::Null, "the statement keeps the row's flag: {out:?}");
+        }
+
+        #[test]
+        fn a_note_edit_without_a_quantity_keeps_the_rows_quantity_and_price() {
+            let inp = update_line(json!({ "order_id": "ord-1", "line_id": "line-1", "notes": "oat milk" }), coffee_row());
+            let out = update_order_line_pure(inp).accepted("only the note");
+            let op = write(&out);
+            assert_eq!(op.params["quantity"], json!(2_000_000));
+            assert_eq!(op.params["line_total"], json!(300));
+            assert_eq!(op.params["notes"], json!("oat milk"));
+
+            // A payload without `notes` binds NULL, so the SQL's COALESCE keeps the stored text.
+            let inp = update_line(json!({ "order_id": "ord-1", "line_id": "line-1", "quantity": 1_000_000 }), coffee_row());
+            let out = update_order_line_pure(inp).accepted("only the quantity");
+            assert_eq!(write(&out).params["notes"], Value::Null, "{out:?}");
+        }
+
+        #[test]
+        fn a_line_that_is_not_live_on_this_open_check_is_refused() {
+            let mut fired = coffee_row();
+            fired["fired_at"] = json!("2026-09-26T09:00:00Z");
+            for (what, payload, row, code) in [
+                ("another line id", json!({ "order_id": "ord-1", "line_id": "line-x", "quantity": 1_000_000 }), coffee_row(), "sales.order_line_not_available"),
+                ("a line already fired to production", json!({ "order_id": "ord-1", "line_id": "line-1", "quantity": 3_000_000 }), fired, "sales.order_line_not_available"),
+                ("no line id", json!({ "order_id": "ord-1", "quantity": 1_000_000 }), coffee_row(), "sales.order_line_not_available"),
+                ("no order id", json!({ "line_id": "line-1", "quantity": 1_000_000 }), coffee_row(), "sales.order_id_required"),
+                ("a zero quantity", json!({ "order_id": "ord-1", "line_id": "line-1", "quantity": 0 }), coffee_row(), "sales.quantity_not_positive"),
+                ("a negative quantity", json!({ "order_id": "ord-1", "line_id": "line-1", "quantity": -1_000_000 }), coffee_row(), "sales.quantity_not_positive"),
+            ] {
+                let err = update_order_line_pure(update_line(payload, row)).refused(what);
+                assert_eq!(err.code, code, "{what}: {err:?}");
+            }
+            for status in ["cancelled", "completed"] {
+                let mut inp = update_line(json!({ "order_id": "ord-1", "line_id": "line-1", "quantity": 1_000_000 }), coffee_row());
+                inp["context"]["reads"]["sales.order.get"] = json!([{ "id": "ord-1", "status": status }]);
+                let err = update_order_line_pure(inp).refused(status);
+                assert_eq!(err.code, "sales.order_unavailable", "{status}: {err:?}");
+            }
+            let mut inp = update_line(json!({ "order_id": "ord-1", "line_id": "line-1", "quantity": 1_000_000 }), coffee_row());
+            inp["context"]["reads"]["sales.order.get"] = json!([]);
+            let err = update_order_line_pure(inp).refused("not a check of this business");
+            assert_eq!(err.code, "sales.order_unavailable", "{err:?}");
         }
     }
 }

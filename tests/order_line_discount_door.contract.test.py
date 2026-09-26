@@ -116,9 +116,10 @@ def main() -> int:
 
     print("\n4 · the old ungated door no longer writes a discount")
     update = COMMANDS.get("sales.order.update_line", {})
+    # sales#394: the public door is a handler now; the SQL it emits is `sales._update_order_line`.
     check(
         "update_line SQL does not write discount_percent",
-        ":discount_percent" in sql_of(update),
+        ":discount_percent" in sql_of(COMMANDS.get("sales._update_order_line", {})),
         False,
     )
     schema_path = update.get("schema")
