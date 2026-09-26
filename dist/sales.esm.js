@@ -4942,13 +4942,16 @@ var en_default = {
       label: "Edit a department"
     },
     "sales.order.add_open_line": {
-      label: "Sell an item at an open price"
+      label: "Sell an item at an open price",
+      approval_label: "Sell an item at an open price of {unit_price, money}"
     },
     "sales.order.set_discount_over_limit": {
-      label: "Apply a ticket discount above the limit"
+      label: "Apply a ticket discount above the limit",
+      approval_label: "Apply a ticket discount of {discount_percent, percent} and {discount_amount, money}"
     },
     "sales.order.set_line_discount_over_limit": {
-      label: "Apply a line discount above the limit"
+      label: "Apply a line discount above the limit",
+      approval_label: "Apply a {discount_percent, percent} discount to a line"
     },
     "sales.order.void": {
       label: "Cancel an open ticket"
@@ -5591,13 +5594,16 @@ var es_default = {
       label: "Editar un departamento"
     },
     "sales.order.add_open_line": {
-      label: "Vender un art\xEDculo a precio libre"
+      label: "Vender un art\xEDculo a precio libre",
+      approval_label: "Vender un art\xEDculo a precio libre de {unit_price, money}"
     },
     "sales.order.set_discount_over_limit": {
-      label: "Aplicar al tique un descuento por encima del l\xEDmite"
+      label: "Aplicar al tique un descuento por encima del l\xEDmite",
+      approval_label: "Aplicar al tique un descuento del {discount_percent, percent} y {discount_amount, money}"
     },
     "sales.order.set_line_discount_over_limit": {
-      label: "Aplicar a una l\xEDnea un descuento por encima del l\xEDmite"
+      label: "Aplicar a una l\xEDnea un descuento por encima del l\xEDmite",
+      approval_label: "Aplicar a una l\xEDnea un descuento del {discount_percent, percent}"
     },
     "sales.order.void": {
       label: "Anular una cuenta abierta"
