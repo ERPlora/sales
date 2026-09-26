@@ -4506,9 +4506,12 @@ fn set_order_line_discount_inner(input: Value, rule: CapRule) -> Result<Output, 
     }
 
     // The order has to exist, belong to THIS hub and be open. The query filters by `hub_id` (the
-    // runtime injects it), so zero rows means exactly that (same read `split_order_line_inner`
-    // fails closed on).
-    if tax::read_rows(&context, "sales.order.get").unwrap_or_default().is_empty() {
+    // runtime injects it) but returns the order whatever its status, so a completed or cancelled
+    // check is refused here too, not only a missing one.
+    let open = tax::read_rows(&context, "sales.order.get")
+        .and_then(|rows| rows.first().copied())
+        .is_some_and(|row| field(row, "status") == "open");
+    if !open {
         return Err(reject(
             "sales.order_unavailable",
             format!("`{order_id}` is not an open order of this business"),
@@ -4558,11 +4561,9 @@ fn set_order_line_discount_inner(input: Value, rule: CapRule) -> Result<Output, 
     params.insert("line_total".into(), json!(line_total));
     params.insert("discount_approved".into(), if rule == CapRule::Approved { json!(1) } else { json!(0) });
 
-    let mut ops = vec![Operation::sql("sales._set_order_line_discount", params)];
-    let mut recompute = Map::new();
-    recompute.insert("order_id".into(), json!(order_id));
-    ops.push(Operation::sql("sales._recompute_order_total", recompute));
-    Ok(Output { operations: ops, ..Default::default() })
+    // The internal command recomputes the check's provisional total in the same transaction
+    // (`order_recompute_total.sql`, second statement), with its row guard anchored to the line write.
+    Ok(Output::new().with_operation(Operation::sql("sales._set_order_line_discount", params)))
 }
 
 /// sales#26 — **anular es auditable, idempotente y respeta la factura.**
@@ -12543,10 +12544,8 @@ mod tests {
             assert_eq!(op.params["line_id"], json!("line-1"));
             assert_eq!(op.params["discount_percent"], json!(50.0));
             assert_eq!(op.params["discount_approved"], json!(1), "the manager's door marks the line approved");
-            assert!(
-                out.operations.iter().any(|o| o.command == "sales._recompute_order_total" && o.params["order_id"] == json!("ord-1")),
-                "the check's provisional total follows the line: {out:?}"
-            );
+            // The check's total follows the line inside the write itself (manifest, checked by
+            // tests/order_line_discount_door.contract.test.py), not through a second operation.
         }
 
         #[test]
@@ -12614,6 +12613,20 @@ mod tests {
             inp["context"]["reads"]["sales.order.get"] = json!([]);
             let err = set_order_line_discount_over_limit_pure(inp).refused("the check is not open in this business");
             assert_eq!(err.code, "sales.order_unavailable", "{err:?}");
+        }
+
+        #[test]
+        fn a_check_that_is_no_longer_open_is_refused_on_both_doors() {
+            // `sales.order.get` returns the order whatever its status: a cancelled or closed check
+            // still comes back, and its lines are not the till's to discount any more.
+            for status in ["cancelled", "completed"] {
+                let mut inp = set_line_discount(json!({ "order_id": "ord-1", "line_id": "line-1", "discount_percent": 5 }), Value::Null, coffee_row());
+                inp["context"]["reads"]["sales.order.get"] = json!([{ "id": "ord-1", "status": status }]);
+                let err = set_order_line_discount_pure(inp.clone()).refused(status);
+                assert_eq!(err.code, "sales.order_unavailable", "{status}: {err:?}");
+                let err = set_order_line_discount_over_limit_pure(inp).refused(status);
+                assert_eq!(err.code, "sales.order_unavailable", "{status}: {err:?}");
+            }
         }
     }
 

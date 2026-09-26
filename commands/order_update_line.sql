@@ -5,11 +5,11 @@
 -- COALESCE deja intacto lo que no se envía. Solo líneas vivas del pedido/hub (aislamiento).
 -- El total del pedido se recompone en la 2ª sentencia (order_recompute_total.sql).
 --
--- sales#385: el descuento de línea ya NO se escribe aquí — va por las puertas con techo
--- `sales.order.set_line_discount` / `sales.order.set_line_discount_over_limit`, que valoran el
--- `line_total` en servidor. Un cambio de cantidad conserva el descuento y su aprobación
--- (`discount_approved_by`) tal como estaban: `schemas/update_order_line.json` rechaza un payload
--- que traiga `discount_percent`.
+-- sales#385: the line discount is NOT written here any more — it goes through the capped doors
+-- `sales.order.set_line_discount` / `sales.order.set_line_discount_over_limit`, which price the
+-- `line_total` on the server. A quantity change keeps the discount and its approval
+-- (`discount_approved_by`) as they were: `schemas/update_order_line.json` refuses a payload that
+-- carries `discount_percent`.
 UPDATE sales_order_item
 SET quantity    = :quantity,
     line_total  = :line_total,

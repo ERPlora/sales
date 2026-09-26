@@ -95,6 +95,16 @@ def main() -> int:
         "sales.order_line_not_available",
     )
     check("the write and the total move together", write.get("transaction"), True)
+    # hub#1091: `expect_rows` counts the WHOLE batch unless anchored. The recompute UPDATE always
+    # touches the order row, so it would satisfy `min 1` by itself and a refused line write would
+    # come back 200 with nothing written. The guard must count the line write alone.
+    write_sqls = write.get("sql") if isinstance(write.get("sql"), list) else [write.get("sql")]
+    guarded = (write.get("expect_rows") or {}).get("statement") == "commands/order_set_line_discount.sql"
+    check(
+        "the gate counts the line write alone (single statement or anchored)",
+        write_sqls == ["commands/order_set_line_discount.sql"] or guarded,
+        True,
+    )
     sql = sql_of(write)
     check("the write is scoped to the hub", "hub_id = :hub_id" in sql, True)
     check("the write only touches unfired lines", "fired_at IS NULL" in sql, True)

@@ -12,8 +12,8 @@
 -- la cabecera. El handler es quien normaliza el vacío a NULL (`order_line_row`).
 -- sales#169: `combo`/`combo_group_ref` congelan la COMPOSICIÓN del menú (fila de trabajo, sin
 -- dinero): el precio cerrado y el reparto los decide el COBRO contra `combos.options.all`.
--- sales#385: `discount_approved_by` viaja también, para que una línea nacida de un split herede la
--- aprobación de su origen (`split_clone_row`); ausente/NULL = sin aprobación, el caso general.
+-- sales#385: `discount_approved_by` travels too, so a line born from a split inherits its source's
+-- approval (`split_clone_row`); absent/NULL = not approved, the general case.
 INSERT INTO sales_order_item (
     id, hub_id, order_id, product_id, product_name, product_sku,
     quantity, unit_price, is_gift, gift_reason, line_total, tax_category_key, cost, is_service,

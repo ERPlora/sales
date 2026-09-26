@@ -772,6 +772,7 @@
       "expect_rows": {
         "op": "min",
         "n": 1,
+        "statement": "commands/order_set_line_discount.sql",
         "error": "sales.order_line_not_available",
         "message": "That line is not live on an open check of this business."
       }
