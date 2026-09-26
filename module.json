@@ -733,6 +733,19 @@
         "commands/_mark_lines_fired.sql"
       ]
     },
+    "sales._set_order_discount": {
+      "permission": "sales.add_sale",
+      "transaction": true,
+      "sql": [
+        "commands/order_set_discount.sql"
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "sales.order_unavailable",
+        "message": "That order is not open in this business."
+      }
+    },
     "sales._complete_order": {
       "permission": "sales.add_sale",
       "sql": [
@@ -913,18 +926,45 @@
     },
     "sales.order.set_discount": {
       "permission": "sales.add_sale",
-      "transaction": true,
-      "sql": [
-        "commands/order_set_discount.sql"
+      "reads": [
+        "sales.settings.get",
+        {
+          "query": "sales.order.lines",
+          "params": {
+            "order_id": "payload.order_id"
+          },
+          "required": false
+        }
       ],
-      "expect_rows": {
-        "op": "min",
-        "n": 1,
-        "error": "sales.order_unavailable",
-        "message": "That order is not open in this business."
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "set_order_discount"
       },
       "ai": {
-        "description": "Sets the manual TICKET discount of an OPEN order: percent (0-100, sales#71) and/or a fixed amount in cents (discount_amount, sales#113). Applied by the server at checkout (sales.complete_sale discount_percent / discount_amount, prorated over the lines before the VAT — the amount by largest remainder, ADR-0210); allow_discounts is enforced there."
+        "description": "Sets the manual TICKET discount of an OPEN order: percent (0-100, sales#71) and/or a fixed amount in cents (discount_amount, sales#113). Enforced at APPLY time (sales#284) against the shop's max_discount_percent: above the cap it is refused with sales.discount_over_limit, and the manager's door for that same discount is sales.order.set_discount_over_limit. allow_discounts is enforced here too."
+      }
+    },
+    "sales.order.set_discount_over_limit": {
+      "permission": "sales.discount.over_limit",
+      "expose_api": false,
+      "reads": [
+        "sales.settings.get",
+        {
+          "query": "sales.order.lines",
+          "params": {
+            "order_id": "payload.order_id"
+          },
+          "required": false
+        }
+      ],
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "set_order_discount_over_limit"
+      },
+      "ai": {
+        "description": "The MANAGER's door to the very same discount as sales.order.set_discount, for a manual discount bigger than max_discount_percent (sales#284, same shape as sales.complete_sale_over_limit / sales#269). Same payload, same result; it exists so the runtime can demand sales.discount.over_limit, which a cashier does not have — they get requires_elevation and the till asks for the manager's PIN. Never offer it to dodge the cap: if the discount fits under the cap, sales.order.set_discount is the door."
       }
     },
     "sales.order.set_label": {
