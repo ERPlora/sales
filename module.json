@@ -1127,6 +1127,13 @@
       "sql": [
         "commands/_mark_refunded.sql"
       ]
+    },
+    "sales._on_customer_merged": {
+      "permission": "sales.change_sale",
+      "transaction": true,
+      "sql": [
+        "commands/customer_merge_sales.sql"
+      ]
     }
   },
   "errors": {
@@ -1188,7 +1195,11 @@
     "sales.void_requires_credit_note": {}
   },
   "events": {
-    "listen": {},
+    "listen": {
+      "customer.merged": {
+        "command": "sales._on_customer_merged"
+      }
+    },
     "emits": [
       "order.completed",
       "order.fired",
