@@ -56,6 +56,7 @@
       "sales.order.remove_line",
       "sales.order.set_appointment",
       "sales.order.set_discount",
+      "sales.order.set_discount_over_limit",
       "sales.order.set_label",
       "sales.order.set_line_staff",
       "sales.order.split",

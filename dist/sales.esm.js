@@ -11100,20 +11100,46 @@ var ErpPosTouch = class extends i3 {
   get discountInputCents() {
     return Math.max(0, typedToMinor(this.discountInput));
   }
+  /** sales#284 — routes a ticket discount through the same two doors the checkout uses: the usual
+   *  `sales.order.set_discount` under the shop's cap, the manager's `sales.order.set_discount_over_limit`
+   *  above it. Before this, the till wrote the discount straight onto the order and painted the
+   *  reduced total at once — the cap was only enforced at Charge, so a waiter could show a customer
+   *  a price nobody had authorised yet. Returns whether the server accepted it; the caller only
+   *  paints the new value on success, so a refusal (the manager's PIN cancelled) leaves the check
+   *  showing what it showed before.
+   *
+   *  🔴 The two doors are named LITERALLY at the call sites below, same reason as the checkout's
+   *  own doors: `.erplora/contracts.json` is extracted STATICALLY, so a command reached through a
+   *  variable vanishes from it. */
+  async persistTicketDiscount(percent2, amountCents) {
+    const payload = { order_id: this.orderId, discount_percent: percent2, discount_amount: amountCents };
+    const overCap = needsManagerApproval(discountCap(this.settings), {
+      ticketPercent: percent2,
+      ticketAmountCents: amountCents,
+      // After the ticket percent, exactly as the checkout weighs it (`checkoutCommand` below).
+      grossCents: cartTotal(this.chargedLines, percent2),
+      linePercents: []
+    });
+    try {
+      if (overCap) await erplora2().command("sales.order.set_discount_over_limit", payload);
+      else await erplora2().command("sales.order.set_discount", payload);
+      return true;
+    } catch (e8) {
+      this.error = e8 instanceof Error ? e8.message : String(e8);
+      return false;
+    }
+  }
   /** sales#113 — aplica un importe FIJO (céntimos; 0 = quitar) al ticket, persistiéndolo en el pedido. */
   async applyDiscountAmount(cents2) {
     const sheet = this.discountSheet;
     this.discountSheet = void 0;
     if (!sheet || sheet.target !== "ticket") return;
     const value = Math.max(0, Math.round(cents2));
-    this.ticketDiscountAmount = value;
-    if (this.orderId) {
-      try {
-        await erplora2().command("sales.order.set_discount", { order_id: this.orderId, discount_percent: this.ticketDiscount, discount_amount: value });
-      } catch (e8) {
-        this.error = e8 instanceof Error ? e8.message : String(e8);
-      }
+    if (!this.orderId) {
+      this.ticketDiscountAmount = value;
+      return;
     }
+    if (await this.persistTicketDiscount(this.ticketDiscount, value)) this.ticketDiscountAmount = value;
   }
   get discountInputPct() {
     return Math.min(100, Math.max(0, Number(this.discountInput || "0")));
@@ -11125,14 +11151,11 @@ var ErpPosTouch = class extends i3 {
     if (!sheet) return;
     const value = Math.min(100, Math.max(0, pct));
     if (sheet.target === "ticket") {
-      this.ticketDiscount = value;
-      if (this.orderId) {
-        try {
-          await erplora2().command("sales.order.set_discount", { order_id: this.orderId, discount_percent: value, discount_amount: this.ticketDiscountAmount });
-        } catch (e8) {
-          this.error = e8 instanceof Error ? e8.message : String(e8);
-        }
+      if (!this.orderId) {
+        this.ticketDiscount = value;
+        return;
       }
+      if (await this.persistTicketDiscount(value, this.ticketDiscountAmount)) this.ticketDiscount = value;
       return;
     }
     const line = this.cart.find((l3) => l3.line_id === sheet.lineId);
