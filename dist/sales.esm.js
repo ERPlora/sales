@@ -15511,6 +15511,7 @@ var ErpPosDepartments = class extends i3 {
       ${this.ctrl?.error ? b2`<ok-inline-feedback data-testid="pos-departments-load-error" tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : A}
       <ok-data-table
         data-testid="pos-departments-table"
+        testid="pos-departments-table"
         .serverSide=${true}
         .fill=${true}
         .views=${true}
@@ -15764,6 +15765,7 @@ var ErpPosQuickNotes = class extends i3 {
       ${this.ctrl?.error ? b2`<ok-inline-feedback data-testid="pos-quick-notes-load-error" tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : A}
       <ok-data-table
         data-testid="pos-quick-notes-table"
+        testid="pos-quick-notes-table"
         .serverSide=${true}
         .fill=${true}
         .views=${true}
