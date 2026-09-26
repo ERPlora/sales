@@ -8826,8 +8826,10 @@ var ErpPosTouch = class extends i3 {
     .limit-head ion-icon { font-size:1.35rem; flex:0 0 auto; margin-top:.1rem; }
     .limit-head strong { display:block; font-size:.98rem; }
     .limit-head p { margin:.15rem 0 0; font-size:.86rem; color:var(--mut); }
-    .limit-capture ion-input { --background:var(--ion-background-color,#fff); --padding-start:.6rem;
-      --padding-end:.6rem; border-radius:.5rem; }
+    /* Outlined boxes (sales#414): the label sits on the top border, so each box needs room above,
+       and the selects get the same white fill as the inputs over the tinted capture. */
+    .limit-capture ion-input, .limit-capture ion-select { --background:var(--ion-background-color,#fff);
+      --padding-start:.6rem; --padding-end:.6rem; border-radius:.5rem; margin-top:.4rem; }
     .err { color:var(--ion-color-danger,#d9480f); }
     .pay-actions { display:flex; gap:.5rem; }
     .pay-actions .charge { flex:1; }
@@ -16243,6 +16245,9 @@ var ErpSaleRefund = class extends i3 {
     .leg-figures { display:flex; gap:.9rem; flex-wrap:wrap; color:var(--ion-color-medium,#8b897f); font-size:.78rem; margin:.25rem 0 .1rem; }
     /* El motivo se LEE sin tocar nada y sin ratón: nunca en un title ni dentro del botón. */
     .leg-reason { margin:.35rem 0 0; color:var(--ion-color-warning-shade,#b26a00); font-size:.82rem; }
+    /* The outlined box carries its label on the top border (sales#414): without room above, the
+       label runs into the reason line. */
+    .refund-destination { margin-top:.75rem; }
     /* sales#166 - WHAT WAS NOT PAID IN MONEY: one card per covered line, with the slot hole
        underneath. A rule separates it from the split above, because they answer two different
        questions: how much money goes back, and what goes back to its tender. */
