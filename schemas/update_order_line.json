@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "sales.order.update_line",
+  "description": "Changes the quantity of a line of an open order — and, through it, whether it is a gift (is_gift/gift_reason), its note (notes) — and recomputes the check's provisional total (ADR-0141). The discount of a line does NOT go through here any more (sales#385): it goes through the capped doors `sales.order.set_line_discount` / `sales.order.set_line_discount_over_limit`, which price the line on the server. This schema refuses a payload that still carries `discount_percent`, so a stale caller fails loudly instead of writing a discount with no cap.",
+  "type": "object",
+  "required": [
+    "order_id",
+    "line_id"
+  ],
+  "properties": {
+    "order_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "line_id": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "not": {
+    "required": [
+      "discount_percent"
+    ]
+  }
+}

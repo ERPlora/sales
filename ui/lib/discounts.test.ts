@@ -56,11 +56,15 @@ describe('the line discount is persisted with the order line and comes back on r
     await addOrderLine(client, 'ord-1', line({ discount: 10 }));
     expect(calls[1].payload).toMatchObject({ discount_percent: 10, line_total: 162 });
   });
-  it('updateOrderLineDiscount rewrites the percent and the provisional total of the line', async () => {
+  // sales#385: the line discount has its own two doors (capped / manager) and the SERVER prices the
+  // line from its row, so neither `update_line` nor a browser-computed `line_total` is involved.
+  it('updateOrderLineDiscount writes the percent through the line discount doors', async () => {
     const { client, calls } = orderClient();
-    await updateOrderLineDiscount(client, 'ord-1', line({ line_id: 'l1', qty: 2 }), 25);
-    expect(calls[0].name).toBe('sales.order.update_line');
-    expect(calls[0].payload).toMatchObject({ order_id: 'ord-1', line_id: 'l1', discount_percent: 25, line_total: 270 });
+    await updateOrderLineDiscount(client, 'ord-1', line({ line_id: 'l1', qty: 2 }), 25, false);
+    expect(calls[0].name).toBe('sales.order.set_line_discount');
+    expect(calls[0].payload).toEqual({ order_id: 'ord-1', line_id: 'l1', discount_percent: 25 });
+    await updateOrderLineDiscount(client, 'ord-1', line({ line_id: 'l1', qty: 2 }), 90, true);
+    expect(calls[1].name).toBe('sales.order.set_line_discount_over_limit');
   });
   it('loadOrderLines restores it (0 → undefined: no badge on an undiscounted line)', async () => {
     const { client } = orderClient([

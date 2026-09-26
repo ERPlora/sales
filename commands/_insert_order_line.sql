@@ -12,11 +12,13 @@
 -- la cabecera. El handler es quien normaliza el vacío a NULL (`order_line_row`).
 -- sales#169: `combo`/`combo_group_ref` congelan la COMPOSICIÓN del menú (fila de trabajo, sin
 -- dinero): el precio cerrado y el reparto los decide el COBRO contra `combos.options.all`.
+-- sales#385: `discount_approved_by` travels too, so a line born from a split inherits its source's
+-- approval (`split_clone_row`); absent/NULL = not approved, the general case.
 INSERT INTO sales_order_item (
     id, hub_id, order_id, product_id, product_name, product_sku,
     quantity, unit_price, is_gift, gift_reason, line_total, tax_category_key, cost, is_service,
-    category_id, discount_percent, modifiers, notes, combo_group_ref, combo, staff_id,
-    is_deleted, created_by, updated_by, created_at, updated_at,
+    category_id, discount_percent, discount_approved_by, modifiers, notes, combo_group_ref, combo,
+    staff_id, is_deleted, created_by, updated_by, created_at, updated_at,
     unit_code, unit_name, factor_num, factor_den, increment_value,
     price_quantity_value, pricing_unit_code, pricing_unit_name,
     pricing_factor_num, pricing_factor_den
@@ -24,7 +26,7 @@ INSERT INTO sales_order_item (
     :id, :hub_id, :order_id, :product_id, :product_name, :product_sku,
     :quantity, :unit_price, :is_gift, COALESCE(:gift_reason, ''), :line_total,
     COALESCE(:tax_category_key, ''), COALESCE(:cost, 0), COALESCE(:is_service, 0),
-    :category_id, COALESCE(:discount_percent, 0), COALESCE(:modifiers, '[]'),
+    :category_id, COALESCE(:discount_percent, 0), :discount_approved_by, COALESCE(:modifiers, '[]'),
     -- sales#156: the waiter's free-text note. Verbatim: it is production text for the cook, and
     -- `sales` interprets none of it. NULL/absent = '', so a caller that never heard of the column
     -- writes the same row it wrote yesterday.

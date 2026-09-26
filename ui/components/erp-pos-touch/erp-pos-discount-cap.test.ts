@@ -120,8 +120,9 @@ describe('with a 10 % cap on what a cashier may discount alone (sales#269)', () 
   it('counts a LINE discount too — capping only the ticket would be one tap away from nothing', async () => {
     const el = await mount();
     await addTile(el, 'Café');
-    el.openDiscount('line', el.cart[0].line_id);
-    await el.applyDiscount(90);
+    // A line carrying 90 % that nobody approved (sales#385: applying it at the till would already
+    // have asked for the manager and marked the line approved, so it is set on the cart directly).
+    el.cart = el.cart.map((l) => ({ ...l, discount: 90 }));
     await el.updateComplete;
     await charge(el);
     expect(checkoutCalls()).toEqual(['sales.complete_sale_over_limit']);

@@ -6485,17 +6485,11 @@ async function updateOrderLineQty(client, orderId, lineId, qty, unitPrice, isGif
     gift_reason: giftReason ?? null
   });
 }
-async function updateOrderLineDiscount(client, orderId, line, discount) {
+async function updateOrderLineDiscount(client, orderId, line, discount, overCap) {
   if (!line.line_id) return;
-  await client.command("sales.order.update_line", {
-    order_id: orderId,
-    line_id: line.line_id,
-    quantity: toMicro2(line.qty),
-    line_total: provisionalLineTotal(line.price, line.qty, line.is_gift, discount, modifierDelta(line)),
-    discount_percent: discount,
-    is_gift: null,
-    gift_reason: null
-  });
+  const payload = { order_id: orderId, line_id: line.line_id, discount_percent: discount };
+  if (overCap) await client.command("sales.order.set_line_discount_over_limit", payload);
+  else await client.command("sales.order.set_line_discount", payload);
 }
 async function updateOrderLineNote(client, orderId, line, note) {
   if (!line.line_id) return;
@@ -6549,6 +6543,8 @@ async function loadOrderLines(client, orderId) {
       staff_id: x2.staff_id ? String(x2.staff_id) : void 0,
       // sales#71: el descuento de la línea vuelve al retomar la cuenta.
       discount: Number(x2.discount_percent) > 0 ? Number(x2.discount_percent) : void 0,
+      // sales#385: and whether a manager already approved it, so Charge does not ask again.
+      discountApproved: x2.discount_approved_by ? true : void 0,
       // sales#156: the note comes back with the line. `undefined` and NOT '' when there is none:
       // the line then looks identical to those of every check opened before the column, and
       // nothing paints an empty sub-line under it.
@@ -11169,13 +11165,16 @@ var ErpPosTouch = class extends i3 {
     const line = this.cart.find((l3) => l3.line_id === sheet.lineId);
     if (!line) return;
     const discount = value > 0 ? value : void 0;
-    this.cart = this.cart.map((l3) => l3 === line ? { ...l3, discount } : l3);
-    if (this.orderId && line.line_id) {
-      try {
-        await updateOrderLineDiscount(erplora2(), this.orderId, { ...line, discount }, value);
-      } catch (e8) {
-        this.error = e8 instanceof Error ? e8.message : String(e8);
-      }
+    if (!this.orderId || !line.line_id) {
+      this.cart = this.cart.map((l3) => l3 === line ? { ...l3, discount } : l3);
+      return;
+    }
+    const overCap = value > discountCap(this.settings);
+    try {
+      await updateOrderLineDiscount(erplora2(), this.orderId, { ...line, discount }, value, overCap);
+      this.cart = this.cart.map((l3) => l3 === line ? { ...l3, discount, discountApproved: overCap ? true : void 0 } : l3);
+    } catch (e8) {
+      this.error = e8 instanceof Error ? e8.message : String(e8);
     }
   }
   // The pinpad types the MAJOR unit («20» = 20 €); the sale contract is MINOR units (ADR-0007/0123),
@@ -11480,7 +11479,7 @@ var ErpPosTouch = class extends i3 {
         ticketPercent: this.ticketDiscount,
         ticketAmountCents: this.ticketDiscountAmount > 0 && !split.line_ids ? this.ticketDiscountAmount : 0,
         grossCents: cartTotal(this.chargedLines, this.ticketDiscount),
-        linePercents: cobradas.map((l3) => l3.discount ?? 0)
+        linePercents: cobradas.map((l3) => l3.discountApproved ? 0 : l3.discount ?? 0)
       }, this.ticketDiscountApproved ? { percent: this.ticketDiscount, amountCents: this.ticketDiscountAmount } : null);
       const checkoutPayload = {
         items,

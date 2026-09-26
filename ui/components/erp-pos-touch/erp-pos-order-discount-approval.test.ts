@@ -49,6 +49,7 @@ function installSdk(cap: number) {
 interface Pos {
   shadowRoot: ShadowRoot;
   updateComplete: Promise<unknown>;
+  cart: { id: string; line_id?: string; discount?: number }[];
   queue<T>(t: () => Promise<T>): Promise<T>;
   openDiscount(target: 'line' | 'ticket', lineId?: string): void;
   applyDiscount(pct: number): Promise<void>;
@@ -116,8 +117,9 @@ describe('with the cap at 10 %, a discount the manager approved on the check', (
     await addTile(el, 'Café');
     el.openDiscount('ticket');
     await el.applyDiscount(90);
-    el.openDiscount('line', 'line-1');
-    await el.applyDiscount(90);
+    // A line carrying 90 % that nobody approved (applied at the till it would go through the
+    // manager's line door and be approved, sales#385 — so it is set on the cart directly).
+    el.cart = el.cart.map((l) => ({ ...l, discount: 90 }));
     await charge(el);
     expect(checkoutCalls()).toEqual(['sales.complete_sale_over_limit']);
   });

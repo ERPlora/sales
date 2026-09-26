@@ -86,6 +86,11 @@ export interface CartLine {
    *  antes de extraer el IVA (`items[].discount`); aquí solo se persiste con la línea del pedido
    *  (sobrevive a retomar la cuenta) y se pinta. Ausente = sin descuento. */
   discount?: number;
+  /** sales#385: a manager already approved THIS LINE's discount on the open check
+   *  (`discount_approved_by` on the row, written by the manager's line door only). Comes back with
+   *  the line so Charge does not ask for the PIN a second time for the same discount — the sales#386
+   *  rule, per line instead of per ticket. */
+  discountApproved?: boolean;
   /** SERVICIO (sales#89): la línea no sale del catálogo de `inventory` — su precio es el que manda
    *  y no descuenta stock. Viaja hasta `complete_sale` y de ahí a `sale.completed`, donde
    *  `inventory` la salta. Persistida en el pedido para sobrevivir al RETOMAR la cuenta. */
@@ -580,17 +585,24 @@ export async function updateOrderLineQty(
   });
 }
 
-/** sales#71 — cambia el DESCUENTO (%) de una línea del pedido y su total provisional. */
+/** sales#385 — routes a LINE discount through the same two doors the ticket one already uses
+ *  (sales#284): the usual `sales.order.set_line_discount` under the shop's cap, the manager's
+ *  `sales.order.set_line_discount_over_limit` above it (the shell paints the PIN on top, hub#363).
+ *
+ *  `sales.order.update_line` no longer prices the line's discount — the server prices the line
+ *  itself on these two doors, so no `line_total` travels either. Without a `line_id` there is no
+ *  row to address and nothing is written, same rule as every other per-line mutation here.
+ *
+ *  🔴 The two doors are named LITERALLY at the call sites below, same reason as the ticket's own
+ *  doors and the checkout's: `.erplora/contracts.json` is extracted STATICALLY, so a command
+ *  reached through a variable vanishes from it. */
 export async function updateOrderLineDiscount(
-  client: ErploraClientLike, orderId: string, line: CartLine, discount: number,
+  client: ErploraClientLike, orderId: string, line: CartLine, discount: number, overCap: boolean,
 ): Promise<void> {
   if (!line.line_id) return;
-  await client.command('sales.order.update_line', {
-    order_id: orderId, line_id: line.line_id, quantity: toMicro(line.qty),
-    line_total: provisionalLineTotal(line.price, line.qty, line.is_gift, discount, modifierDelta(line)),
-    discount_percent: discount,
-    is_gift: null, gift_reason: null,
-  });
+  const payload = { order_id: orderId, line_id: line.line_id, discount_percent: discount };
+  if (overCap) await client.command('sales.order.set_line_discount_over_limit', payload);
+  else await client.command('sales.order.set_line_discount', payload);
 }
 
 /** sales#156 — changes the free-text NOTE of an order line.
@@ -666,6 +678,8 @@ export async function loadOrderLines(client: ErploraClientLike, orderId: string)
       staff_id: x.staff_id ? String(x.staff_id) : undefined,
       // sales#71: el descuento de la línea vuelve al retomar la cuenta.
       discount: Number(x.discount_percent) > 0 ? Number(x.discount_percent) : undefined,
+      // sales#385: and whether a manager already approved it, so Charge does not ask again.
+      discountApproved: x.discount_approved_by ? true : undefined,
       // sales#156: the note comes back with the line. `undefined` and NOT '' when there is none:
       // the line then looks identical to those of every check opened before the column, and
       // nothing paints an empty sub-line under it.

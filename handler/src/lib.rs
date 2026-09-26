@@ -49,6 +49,7 @@ use erplora_guest_sdk::tax;
 use erplora_guest_sdk::units::{calculate_line_amount, QuantityValue, QUANTITY_SCALE};
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
+use std::collections::HashMap;
 use std::str::FromStr;
 use erplora_guest_sdk::{DomainError, Event, Operation, Output};
 use serde_json::{json, Map, Value};
@@ -172,6 +173,28 @@ pub fn set_order_discount(input: Json<erplora_guest_sdk::Input>) -> FnResult<Jso
 #[plugin_fn]
 pub fn set_order_discount_over_limit(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
     match set_order_discount_over_limit_pure(input.into_inner().into_value()) {
+        Ok(out) => Ok(Json(out)),
+        Err(e) => Err(Error::msg(e).into()),
+    }
+}
+
+/// sales#385: sets the manual LINE discount of an open order's line, with the shop's cap enforced.
+/// See `set_order_line_discount_pure`.
+#[cfg(feature = "guest")]
+#[plugin_fn]
+pub fn set_order_line_discount(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
+    match set_order_line_discount_pure(input.into_inner().into_value()) {
+        Ok(out) => Ok(Json(out)),
+        Err(e) => Err(Error::msg(e).into()),
+    }
+}
+
+/// sales#385: the same LINE discount, entered through the door that already required the manager.
+/// See `set_order_line_discount_over_limit_pure`.
+#[cfg(feature = "guest")]
+#[plugin_fn]
+pub fn set_order_line_discount_over_limit(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
+    match set_order_line_discount_over_limit_pure(input.into_inner().into_value()) {
         Ok(out) => Ok(Json(out)),
         Err(e) => Err(Error::msg(e).into()),
     }
@@ -1844,26 +1867,32 @@ fn discount_cap(context: &Value) -> f64 {
         .clamp(0.0, 100.0)
 }
 
+/// The order row for THIS check, but only when it is trustworthy: it must be the very order the
+/// payload names (`order_id`), read from `sales.order.get` — never assumed — and it must still be
+/// open. Shared by `ticket_discount_approved_on_check` (sales#386) and `line_discount_approvals`
+/// (sales#385): neither may resurrect an approval off a stale or foreign check.
+fn open_check_row<'a>(payload: &Value, context: &'a Value) -> Option<&'a Value> {
+    let order_id = field(payload, "order_id");
+    if order_id.is_empty() {
+        return None;
+    }
+    let row = tax::read_rows(context, "sales.order.get").and_then(|rows| rows.first().copied())?;
+    if order_id != field(row, "id") || field(row, "status") != "open" {
+        return None;
+    }
+    Some(row)
+}
+
 /// sales#386 — the manager's PIN given when the discount went on the check is the approval the
 /// charge needs; it lives on the ORDER row, written only by the manager's door
 /// (`sales.order.set_discount_over_limit`), and covers what the check stores — never read from
-/// the payload; it lifts the cap on the TICKET discount only, line discounts are still judged
-/// against the cap.
+/// the payload; it lifts the cap on the TICKET discount only. A LINE discount is covered by its OWN
+/// row's approval instead (sales#385, see `line_discount_approvals`), not by this one.
 fn ticket_discount_approved_on_check(payload: &Value, context: &Value) -> bool {
-    let order_id = field(payload, "order_id");
-    if order_id.is_empty() {
-        return false;
-    }
-    let row = match tax::read_rows(context, "sales.order.get").and_then(|rows| rows.first().copied()) {
+    let row = match open_check_row(payload, context) {
         Some(row) => row,
         None => return false,
     };
-    if order_id != field(row, "id") {
-        return false;
-    }
-    if field(row, "status") != "open" {
-        return false;
-    }
     if field(row, "discount_approved_by").is_empty() {
         return false;
     }
@@ -1875,6 +1904,29 @@ fn ticket_discount_approved_on_check(payload: &Value, context: &Value) -> bool {
     let ticket_amount = as_cents(payload.get("discount_amount").unwrap_or(&Value::Null), 0);
     let approved_amount = as_cents(row.get("discount_amount").unwrap_or(&Value::Null), 0);
     ticket_amount <= approved_amount
+}
+
+/// sales#385 — which LINES of THIS open check the manager already approved, and up to what percent:
+/// read straight off `sales.order.lines`' `discount_approved_by` column, never from the payload, so
+/// a checkout cannot claim an approval that was never written on the row. Trusted only under the
+/// same header guard as the ticket's approval (`open_check_row`): a stale/foreign order id, or a
+/// check that is no longer open, resurrects nothing — the map comes back empty.
+fn line_discount_approvals(payload: &Value, context: &Value) -> HashMap<String, f64> {
+    let mut approvals = HashMap::new();
+    if open_check_row(payload, context).is_none() {
+        return approvals;
+    }
+    for row in tax::read_rows(context, "sales.order.lines").unwrap_or_default() {
+        if field(row, "discount_approved_by").is_empty() {
+            continue;
+        }
+        let id = field(row, "id");
+        if id.is_empty() {
+            continue;
+        }
+        approvals.insert(id, row.get("discount_percent").map(|v| as_f64(v, 0.0)).unwrap_or(0.0));
+    }
+    approvals
 }
 
 /// Refuses a manual discount bigger than the one the shop lets whoever is charging give alone.
@@ -1897,7 +1949,19 @@ fn ticket_discount_approved_on_check(payload: &Value, context: &Value) -> bool {
 /// sales#386 — the ticket and the line percentages can be judged against DIFFERENT caps: the
 /// manager's approval on the open check lifts the TICKET cap alone, so `ticket_cap` and `line_cap`
 /// arrive separately instead of a single shared `cap`.
-fn enforce_discount_cap(ticket_cap: f64, line_cap: f64, payload: &Value, items: &[Value]) -> Result<(), Refusal> {
+///
+/// sales#385 — a line the manager already approved on the OPEN check (its own row,
+/// `line_approvals`, built by `line_discount_approvals`) is covered up to what that row stores:
+/// charging it again at the same percent, or less, does not need the PIN a second time. Going
+/// higher than what was approved still needs it — the approval is not a blank cheque for the line —
+/// and it covers ONLY the line it names, never a sibling line nor the ticket discount.
+fn enforce_discount_cap(
+    ticket_cap: f64,
+    line_cap: f64,
+    payload: &Value,
+    items: &[Value],
+    line_approvals: &HashMap<String, f64>,
+) -> Result<(), Refusal> {
     if ticket_cap >= 100.0 && line_cap >= 100.0 {
         return Ok(());
     }
@@ -1910,6 +1974,14 @@ fn enforce_discount_cap(ticket_cap: f64, line_cap: f64, payload: &Value, items: 
     }
     for item in items {
         let line_disc = item.get("discount").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
+        let order_item_id = field(item, "order_item_id");
+        if !order_item_id.is_empty() {
+            if let Some(&approved) = line_approvals.get(&order_item_id) {
+                if line_disc <= approved {
+                    continue;
+                }
+            }
+        }
         if line_disc > line_cap {
             return Err(reject(
                 "sales.discount_over_limit",
@@ -1948,10 +2020,11 @@ fn decide_checkout(
     items: &[Value],
     ticket_cap: f64,
     line_cap: f64,
+    line_approvals: &HashMap<String, f64>,
 ) -> Result<ServerDecision, Refusal> {
     let discounted = validate_checkout_shape(payload, items)?;
     enforce_discount_policy(context, discounted)?;
-    enforce_discount_cap(ticket_cap, line_cap, payload, items)?;
+    enforce_discount_cap(ticket_cap, line_cap, payload, items, line_approvals)?;
     if hub_setting(context, "require_customer", false) && field(payload, "customer_id").is_empty() {
         return Err(reject("sales.customer_required", "this hub requires a customer on every sale"));
     }
@@ -2813,14 +2886,22 @@ fn complete_sale_inner(input: Value, rule: CapRule) -> Result<Output, Refusal> {
     let cap = rule.cap(&context);
     // sales#386 — on the usual door, a ticket discount the manager already approved on the open
     // check does not need asking again: it lifts the TICKET cap to "no cap" for this charge, but
-    // only when the discount does not go above what was approved. Line discounts stay under the
-    // shop's cap regardless, and the manager's own door (`Approved`) already has no cap to lift.
+    // only when the discount does not go above what was approved. The manager's own door
+    // (`Approved`) already has no cap to lift.
     let ticket_cap = if rule == CapRule::Enforced && ticket_discount_approved_on_check(&payload, &context) {
         100.0
     } else {
         cap
     };
-    let decision = decide_checkout(&payload, &context, items, ticket_cap, cap)?;
+    // sales#385 — the LINE equivalent: which lines of this open check the manager already approved
+    // on their own row, and up to what percent (`line_discount_approvals`). Built only on the usual
+    // door — the manager's own door (`Approved`) already has no cap for it to lift.
+    let line_approvals = if rule == CapRule::Enforced {
+        line_discount_approvals(&payload, &context)
+    } else {
+        HashMap::new()
+    };
+    let decision = decide_checkout(&payload, &context, items, ticket_cap, cap, &line_approvals)?;
     let tax_incl = decision
         .tax_included
         .unwrap_or_else(|| payload.get("tax_included").map(as_bool).unwrap_or(true));
@@ -3933,10 +4014,11 @@ fn split_order_line_inner(input: Value) -> Result<Output, Refusal> {
     source.insert("quantity".into(), json!(QUANTITY_SCALE));
     source.insert("line_total".into(), json!(part_total));
     // Everything the statement COALESCEs is sent as NULL on purpose: the split changes the quantity
-    // and the amount, and nothing else about the line.
+    // and the amount, and nothing else about the line. sales#385 moved the discount out of this
+    // statement entirely (`sales.order.set_line_discount` writes it now), so it is no longer bound
+    // here at all — the source keeps whatever discount it already carried.
     source.insert("is_gift".into(), Value::Null);
     source.insert("gift_reason".into(), Value::Null);
-    source.insert("discount_percent".into(), Value::Null);
     source.insert("notes".into(), Value::Null);
     ops.push(Operation::sql("sales._update_order_line", source));
 
@@ -4025,6 +4107,10 @@ fn split_clone_row(
         "discount_percent".into(),
         json!(row.get("discount_percent").map(|v| as_f64(v, 0.0)).unwrap_or(0.0)),
     );
+    // sales#385: a split unit keeps whatever approval its source line already carried — splitting a
+    // line the manager cleared must not make either half ask for the PIN again.
+    let approved_by = field(row, "discount_approved_by");
+    p.insert("discount_approved_by".into(), if approved_by.is_empty() { Value::Null } else { json!(approved_by) });
     p.insert("notes".into(), json!(field(row, "notes")));
     // sales#273: and WHO did it. Splitting «haircut x 2» into two haircuts of one does not change
     // who cut the hair, so both parts stay hers — otherwise half the work of the day would fall to
@@ -4375,6 +4461,109 @@ fn set_order_discount_inner(input: Value, rule: CapRule) -> Result<Output, Refus
     params.insert("discount_approved".into(), if rule == CapRule::Approved { json!(1) } else { json!(0) });
 
     Ok(Output::new().with_operation(Operation::sql("sales._set_order_discount", params)))
+}
+
+pub fn set_order_line_discount_pure(input: Value) -> Result<Output, String> {
+    finish(set_order_line_discount_inner(input, CapRule::Enforced))
+}
+
+/// The MANAGER's door to the very same LINE discount (sales#385), the same shape as
+/// `set_order_discount_over_limit_pure` (sales#284): identical logic, cap not applied, because
+/// reaching this exported function already required `sales.discount.over_limit` — a permission a
+/// `cashier` does not have, so the runtime answers them `requires_elevation` and the till asks for
+/// the manager's PIN.
+pub fn set_order_line_discount_over_limit_pure(input: Value) -> Result<Output, String> {
+    finish(set_order_line_discount_inner(input, CapRule::Approved))
+}
+
+/// sales#385 — a LINE discount on an open check is judged when it is APPLIED, exactly like the
+/// TICKET one since sales#284/#386, and for the same reason: `sales.order.update_line` used to
+/// write `discount_percent` through a bare `UPDATE` with no cap at all, so the reduced price showed
+/// on the till screen before anybody with the permission had actually authorised it.
+///
+/// Same shop cap as the ticket discount (`enforce_discount_cap`'s `line_cap`, sales#287), same two
+/// doors (`sales.order.set_line_discount` / `sales.order.set_line_discount_over_limit`, one exported
+/// function each — a flag in the payload would let the caller grant itself the permission the second
+/// door exists to require). The MANAGER's door additionally marks the LINE as approved
+/// (`sales_order_item.discount_approved_by`), so `complete_sale` (sales#385, mirroring sales#386 for
+/// the ticket) can honour it later without asking for the PIN a second time; the usual door always
+/// wipes that mark, since a discount it accepts on its own never needed one.
+fn set_order_line_discount_inner(input: Value, rule: CapRule) -> Result<Output, Refusal> {
+    let payload = input.get("payload").cloned().unwrap_or(Value::Null);
+    let context = input.get("context").cloned().unwrap_or(Value::Null);
+
+    let order_id = field(&payload, "order_id");
+    if order_id.is_empty() {
+        return Err(reject("sales.order_id_required", "a line discount needs the order it applies to"));
+    }
+
+    let percent = payload.get("discount_percent").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
+    if !(0.0..=100.0).contains(&percent) {
+        return Err(reject(
+            "sales.discount_out_of_range",
+            format!("discount_percent {percent} is not between 0 and 100"),
+        ));
+    }
+
+    // The order has to exist, belong to THIS hub and be open. The query filters by `hub_id` (the
+    // runtime injects it) but returns the order whatever its status, so a completed or cancelled
+    // check is refused here too, not only a missing one.
+    let open = tax::read_rows(&context, "sales.order.get")
+        .and_then(|rows| rows.first().copied())
+        .is_some_and(|row| field(row, "status") == "open");
+    if !open {
+        return Err(reject(
+            "sales.order_unavailable",
+            format!("`{order_id}` is not an open order of this business"),
+        ));
+    }
+
+    let line_id = field(&payload, "line_id");
+    let lines = tax::read_rows(&context, "sales.order.lines").unwrap_or_default();
+    let row = *lines.iter().find(|r| !line_id.is_empty() && field(r, "id") == line_id).ok_or_else(|| {
+        reject(
+            "sales.order_line_not_available",
+            format!("`{line_id}` is not a live unfired line of `{order_id}`"),
+        )
+    })?;
+    if !field(row, "fired_at").is_empty() {
+        return Err(reject(
+            "sales.order_line_not_available",
+            format!("`{line_id}` already went to production and its discount can no longer change"),
+        ));
+    }
+
+    let discounted = percent > 0.0;
+    enforce_discount_policy(&context, discounted)?;
+
+    let cap = rule.cap(&context);
+    if cap < 100.0 && percent > cap {
+        return Err(reject(
+            "sales.discount_over_limit",
+            format!("line discount {percent} is more than the {cap} this business allows"),
+        ));
+    }
+
+    // 🔴 THE LINE IS PRICED BY THE SERVER, from the row the runtime handed over — never from a
+    // `line_total` in the payload, which a tampered till could set to anything. Same formula
+    // `split_order_line_inner` uses to price a part: the frozen supplement, the frozen unit price,
+    // and THIS line's own quantity and price-quantity (not one unit, like a split writes).
+    let (modifier_delta, _) = fold_modifiers(&resolve_modifiers(row, Some(row), None)?)?;
+    let unit_price = as_cents(row.get("unit_price").unwrap_or(&Value::Null), 0);
+    let qty = item_i64(row, "quantity", QUANTITY_SCALE);
+    let is_gift = row.get("is_gift").map(as_bool).unwrap_or(false);
+    let line_total = order_line_amount(unit_price + modifier_delta, qty, line_price_qty(row), is_gift, percent)?;
+
+    let mut params = Map::new();
+    params.insert("order_id".into(), json!(order_id));
+    params.insert("line_id".into(), json!(line_id));
+    params.insert("discount_percent".into(), json!(percent));
+    params.insert("line_total".into(), json!(line_total));
+    params.insert("discount_approved".into(), if rule == CapRule::Approved { json!(1) } else { json!(0) });
+
+    // The internal command recomputes the check's provisional total in the same transaction
+    // (`order_recompute_total.sql`, second statement), with its row guard anchored to the line write.
+    Ok(Output::new().with_operation(Operation::sql("sales._set_order_line_discount", params)))
 }
 
 /// sales#26 — **anular es auditable, idempotente y respeta la factura.**
@@ -10848,6 +11037,24 @@ mod tests {
     }
 
     #[test]
+    fn a_split_line_keeps_the_managers_approval_on_every_part() {
+        // sales#385: splitting a line the manager cleared must not make either half ask for the PIN
+        // again at the checkout. The source row keeps its column (the split does not rewrite it);
+        // each clone has to be born with it.
+        let mut row = split_line_row();
+        row["discount_percent"] = json!(50.0);
+        row["discount_approved_by"] = json!("u-manager");
+        let out = split_order_line_pure(split_input(row, open_order_row())).accepted("an approved line splits too");
+        for clone in order_lines(&out) {
+            assert_eq!(clone["discount_approved_by"], json!("u-manager"), "the approval travels with the unit");
+        }
+        let out = split_order_line_pure(split_input(split_line_row(), open_order_row())).accepted("an unapproved line");
+        for clone in order_lines(&out) {
+            assert_eq!(clone["discount_approved_by"], Value::Null, "no approval is invented: {clone:?}");
+        }
+    }
+
+    #[test]
     fn the_clones_carry_the_frozen_snapshot_of_the_line() {
         let mut row = split_line_row();
         row["notes"] = json!("sin secador");
@@ -12296,6 +12503,219 @@ mod tests {
             });
             let out = set_order_discount_pure(inp).accepted("the usual door");
             assert_eq!(out.operations[0].params["discount_approved"], json!(0), "the usual door clears it: {out:?}");
+        }
+    }
+
+    // sales#385 — a LINE discount on an open check is judged when it is APPLIED, like the ticket
+    // one since sales#284. Before, the till wrote it through `sales.order.update_line`, a bare
+    // UPDATE with no cap: the line showed the reduced price to the customer and the manager's PIN
+    // only came at Charge. Same cap, same two doors (`set_order_line_discount` /
+    // `set_order_line_discount_over_limit`), and the manager's door marks the LINE as approved so
+    // the checkout does not ask for the PIN a second time (the sales#386 rule, per line).
+    mod order_line_discount_cap {
+        use super::*;
+
+        /// A live, unfired row of `sales.order.lines`: two coffees at 1,50 €.
+        fn coffee_row() -> Value {
+            json!({
+                "id": "line-1", "order_id": "ord-1", "product_id": "p-cafe",
+                "product_name": "Café", "quantity": 2_000_000, "unit_price": 150,
+                "is_gift": 0, "line_total": 300, "discount_percent": 0, "modifiers": "[]",
+                "price_quantity_value": 1_000_000, "fired_at": null, "combo": "{}",
+                "combo_group_ref": null,
+            })
+        }
+
+        fn set_line_discount(payload: Value, settings: Value, row: Value) -> Value {
+            let mut reads = Map::new();
+            if !settings.is_null() {
+                reads.insert("sales.settings.get".into(), settings);
+            }
+            reads.insert("sales.order.get".into(), json!([{ "id": "ord-1", "status": "open" }]));
+            reads.insert("sales.order.lines".into(), json!([row]));
+            json!({
+                "payload": payload,
+                "context": { "reads": Value::Object(reads), "current_user_id": "u-waiter", "now": "2026-09-26T10:00:00Z" },
+            })
+        }
+
+        fn capped() -> Value {
+            json!([{ "max_discount_percent": 10, "allow_discounts": 1 }])
+        }
+
+        fn write(out: &Output) -> &Operation {
+            out.operations
+                .iter()
+                .find(|o| o.command == "sales._set_order_line_discount")
+                .expect("the line discount is written")
+        }
+
+        #[test]
+        fn a_line_percent_over_the_cap_is_refused_on_the_usual_door_and_accepted_on_the_managers() {
+            let inp = set_line_discount(json!({ "order_id": "ord-1", "line_id": "line-1", "discount_percent": 50 }), capped(), coffee_row());
+            let err = set_order_line_discount_pure(inp.clone()).refused("50 % on a line with the cap at 10");
+            assert_eq!(err.code, "sales.discount_over_limit", "{err:?}");
+
+            let out = set_order_line_discount_over_limit_pure(inp).accepted("the manager authorised it");
+            let op = write(&out);
+            assert_eq!(op.params["order_id"], json!("ord-1"));
+            assert_eq!(op.params["line_id"], json!("line-1"));
+            assert_eq!(op.params["discount_percent"], json!(50.0));
+            assert_eq!(op.params["discount_approved"], json!(1), "the manager's door marks the line approved");
+            // The check's total follows the line inside the write itself (manifest, checked by
+            // tests/order_line_discount_door.contract.test.py), not through a second operation.
+        }
+
+        #[test]
+        fn a_line_percent_within_the_cap_goes_through_the_usual_door_and_wipes_any_approval() {
+            let inp = set_line_discount(json!({ "order_id": "ord-1", "line_id": "line-1", "discount_percent": 10 }), capped(), coffee_row());
+            let out = set_order_line_discount_pure(inp).accepted("10 % with the cap at 10 is the cashier's");
+            let op = write(&out);
+            assert_eq!(op.params["discount_percent"], json!(10.0));
+            assert_eq!(op.params["discount_approved"], json!(0), "the usual door clears the mark");
+        }
+
+        #[test]
+        fn the_new_line_amount_is_priced_by_the_server_from_the_row_not_the_payload() {
+            // 2 × 1,50 € = 3,00 €; 50 % off = 1,50 €. A `line_total` in the payload is ignored.
+            let inp = set_line_discount(
+                json!({ "order_id": "ord-1", "line_id": "line-1", "discount_percent": 50, "line_total": 1 }),
+                Value::Null,
+                coffee_row(),
+            );
+            let out = set_order_line_discount_pure(inp).accepted("no cap");
+            assert_eq!(write(&out).params["line_total"], json!(150), "{out:?}");
+
+            // A supplement frozen on the row is part of what the line costs (sales#208).
+            let mut row = coffee_row();
+            row["modifiers"] = json!("[{\"option_id\":\"m-oat\",\"price_delta\":50}]");
+            let inp = set_line_discount(json!({ "order_id": "ord-1", "line_id": "line-1", "discount_percent": 50 }), Value::Null, row);
+            let out = set_order_line_discount_pure(inp).accepted("no cap");
+            assert_eq!(write(&out).params["line_total"], json!(200), "2 × (1,50 + 0,50) × 50 %: {out:?}");
+        }
+
+        #[test]
+        fn a_shop_without_a_cap_keeps_applying_any_line_discount_and_removing_one_is_always_allowed() {
+            let inp = set_line_discount(json!({ "order_id": "ord-1", "line_id": "line-1", "discount_percent": 100 }), Value::Null, coffee_row());
+            set_order_line_discount_pure(inp).accepted("no settings row = no cap");
+            let inp = set_line_discount(json!({ "order_id": "ord-1", "line_id": "line-1", "discount_percent": 0 }), json!([{ "max_discount_percent": 0 }]), coffee_row());
+            set_order_line_discount_pure(inp).accepted("taking the discount off never needs the manager");
+        }
+
+        #[test]
+        fn a_shop_that_turned_discounts_off_refuses_them_on_both_doors() {
+            let off = json!([{ "allow_discounts": 0 }]);
+            let inp = set_line_discount(json!({ "order_id": "ord-1", "line_id": "line-1", "discount_percent": 5 }), off, coffee_row());
+            let err = set_order_line_discount_pure(inp.clone()).refused("discounts off");
+            assert_eq!(err.code, "sales.discounts_not_allowed", "{err:?}");
+            let err = set_order_line_discount_over_limit_pure(inp).refused("discounts off, even for the manager");
+            assert_eq!(err.code, "sales.discounts_not_allowed", "{err:?}");
+        }
+
+        #[test]
+        fn a_line_that_is_not_live_on_this_open_check_is_refused() {
+            let mut fired = coffee_row();
+            fired["fired_at"] = json!("2026-09-26T09:00:00Z");
+            for (what, payload, row, code) in [
+                ("another line id", json!({ "order_id": "ord-1", "line_id": "line-x", "discount_percent": 5 }), coffee_row(), "sales.order_line_not_available"),
+                ("a line already fired to production", json!({ "order_id": "ord-1", "line_id": "line-1", "discount_percent": 5 }), fired, "sales.order_line_not_available"),
+                ("no line id", json!({ "order_id": "ord-1", "discount_percent": 5 }), coffee_row(), "sales.order_line_not_available"),
+                ("no order id", json!({ "line_id": "line-1", "discount_percent": 5 }), coffee_row(), "sales.order_id_required"),
+                ("over 100 %", json!({ "order_id": "ord-1", "line_id": "line-1", "discount_percent": 101 }), coffee_row(), "sales.discount_out_of_range"),
+                ("negative", json!({ "order_id": "ord-1", "line_id": "line-1", "discount_percent": -1 }), coffee_row(), "sales.discount_out_of_range"),
+            ] {
+                let err = set_order_line_discount_over_limit_pure(set_line_discount(payload, Value::Null, row)).refused(what);
+                assert_eq!(err.code, code, "{what}: {err:?}");
+            }
+            let mut inp = set_line_discount(json!({ "order_id": "ord-1", "line_id": "line-1", "discount_percent": 5 }), Value::Null, coffee_row());
+            inp["context"]["reads"]["sales.order.get"] = json!([]);
+            let err = set_order_line_discount_over_limit_pure(inp).refused("the check is not open in this business");
+            assert_eq!(err.code, "sales.order_unavailable", "{err:?}");
+        }
+
+        #[test]
+        fn a_check_that_is_no_longer_open_is_refused_on_both_doors() {
+            // `sales.order.get` returns the order whatever its status: a cancelled or closed check
+            // still comes back, and its lines are not the till's to discount any more.
+            for status in ["cancelled", "completed"] {
+                let mut inp = set_line_discount(json!({ "order_id": "ord-1", "line_id": "line-1", "discount_percent": 5 }), Value::Null, coffee_row());
+                inp["context"]["reads"]["sales.order.get"] = json!([{ "id": "ord-1", "status": status }]);
+                let err = set_order_line_discount_pure(inp.clone()).refused(status);
+                assert_eq!(err.code, "sales.order_unavailable", "{status}: {err:?}");
+                let err = set_order_line_discount_over_limit_pure(inp).refused(status);
+                assert_eq!(err.code, "sales.order_unavailable", "{status}: {err:?}");
+            }
+        }
+    }
+
+    // sales#385 — the checkout honours a LINE discount the manager approved on the open check,
+    // like sales#386 does for the ticket one: the approval lives on the ROW
+    // (`sales_order_item.discount_approved_by`), is read from `sales.order.lines`, never from the
+    // payload, and covers that line up to the percent it stores.
+    mod order_line_discount_approval {
+        use super::*;
+
+        fn row(id: &str, percent: f64, approved_by: Value) -> Value {
+            json!({
+                "id": id, "order_id": "ord-1", "product_id": "", "product_name": "A",
+                "quantity": 1_000_000, "unit_price": 100, "is_gift": 0, "line_total": 100,
+                "discount_percent": percent, "discount_approved_by": approved_by,
+                "modifiers": "[]", "combo": "{}", "combo_group_ref": null, "tax_category_key": "",
+            })
+        }
+
+        /// Charging `ord-1` through the USUAL door (cap 10 %): line `line-1` carries `discount`.
+        fn charge(discount: f64, rows: Value, status: &str) -> Value {
+            let mut items = three_equal_lines();
+            items[0]["order_item_id"] = json!("line-1");
+            items[0]["discount"] = json!(discount);
+            let mut inp = input_with_catalogs(items, 5, Value::Null, json!([{ "max_discount_percent": 10 }]), Value::Null);
+            inp["payload"]["order_id"] = json!("ord-1");
+            inp["context"]["reads"]["sales.order.get"] = json!([{ "id": "ord-1", "status": status, "discount_percent": 0, "discount_amount": 0 }]);
+            inp["context"]["reads"]["sales.order.lines"] = rows;
+            inp
+        }
+
+        #[test]
+        fn the_line_discount_the_manager_approved_is_charged_without_asking_again() {
+            complete_sale_pure(charge(50.0, json!([row("line-1", 50.0, json!("u-manager"))]), "open"))
+                .accepted("50 % the manager approved on the line");
+            complete_sale_pure(charge(30.0, json!([row("line-1", 50.0, json!("u-manager"))]), "open"))
+                .accepted("less than what was approved");
+        }
+
+        #[test]
+        fn a_line_nobody_approved_is_still_capped_at_the_usual_door() {
+            for (what, rows, status) in [
+                ("approval column empty", json!([row("line-1", 50.0, Value::Null)]), "open"),
+                ("approval column blank", json!([row("line-1", 50.0, json!(""))]), "open"),
+                ("the approval is on ANOTHER line", json!([row("line-2", 50.0, json!("u-manager")), row("line-1", 50.0, Value::Null)]), "open"),
+                ("no rows handed over", Value::Null, "open"),
+                ("the check is no longer open", json!([row("line-1", 50.0, json!("u-manager"))]), "completed"),
+            ] {
+                let err = complete_sale_pure(charge(50.0, rows, status)).refused(what);
+                assert_eq!(err.code, "sales.discount_over_limit", "{what}: {err:?}");
+            }
+        }
+
+        #[test]
+        fn going_above_what_was_approved_on_the_line_needs_the_manager_again() {
+            let err = complete_sale_pure(charge(51.0, json!([row("line-1", 50.0, json!("u-manager"))]), "open"))
+                .refused("51 % over an approved 50 %");
+            assert_eq!(err.code, "sales.discount_over_limit", "{err:?}");
+        }
+
+        #[test]
+        fn the_approval_covers_its_own_line_not_the_others_nor_the_ticket() {
+            let mut inp = charge(50.0, json!([row("line-1", 50.0, json!("u-manager"))]), "open");
+            inp["payload"]["items"][1]["discount"] = json!(50);
+            let err = complete_sale_pure(inp).refused("50 % on a second line nobody approved");
+            assert_eq!(err.code, "sales.discount_over_limit", "{err:?}");
+
+            let mut inp = charge(50.0, json!([row("line-1", 50.0, json!("u-manager"))]), "open");
+            inp["payload"]["discount_percent"] = json!(50);
+            let err = complete_sale_pure(inp).refused("a ticket discount nobody approved");
+            assert_eq!(err.code, "sales.discount_over_limit", "{err:?}");
         }
     }
 }

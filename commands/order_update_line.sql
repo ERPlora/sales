@@ -4,12 +4,17 @@
 -- se fijó al añadir la línea y cambiar la cantidad no cambia lo que significa.
 -- COALESCE deja intacto lo que no se envía. Solo líneas vivas del pedido/hub (aislamiento).
 -- El total del pedido se recompone en la 2ª sentencia (order_recompute_total.sql).
+--
+-- sales#385: the line discount is NOT written here any more — it goes through the capped doors
+-- `sales.order.set_line_discount` / `sales.order.set_line_discount_over_limit`, which price the
+-- `line_total` on the server. A quantity change keeps the discount and its approval
+-- (`discount_approved_by`) as they were: `schemas/update_order_line.json` refuses a payload that
+-- carries `discount_percent`.
 UPDATE sales_order_item
 SET quantity    = :quantity,
     line_total  = :line_total,
     is_gift     = COALESCE(:is_gift, is_gift),
     gift_reason = COALESCE(:gift_reason, gift_reason),
-    discount_percent = COALESCE(:discount_percent, discount_percent), -- sales#71
     -- sales#156: the line's free-text note. COALESCE is load-bearing here, not decoration: the
     -- quantity stepper sends no `notes` at all, so binding NULL has to leave the stored text
     -- alone. Without it, bumping a burger from 1 to 2 would silently erase the allergy the waiter
