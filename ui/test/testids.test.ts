@@ -156,7 +156,7 @@ const COVERED: Record<string, { prefix: string; contract: string[]; tables?: str
       'pos-parked-backdrop', 'pos-parked-toggle',
       'pos-pay-add-tender', 'pos-pay-close', 'pos-pay-confirm', 'pos-pay-scrim', 'pos-pay-side-summary', 'pos-pay-split',
       'pos-prebill', 'pos-prebill-close', 'pos-prebill-print', 'pos-print-on-charge',
-      'pos-search', 'pos-simplified-limit-capture',
+      'pos-search', 'pos-services-hidden', 'pos-services-hidden-show', 'pos-simplified-limit-capture',
       'pos-staff-cancel', 'pos-staff-chip', 'pos-staff-empty', 'pos-staff-error',
       'pos-staff-loading', 'pos-staff-option', 'pos-staff-option-me', 'pos-staff-team-error',
       'pos-ticket-discount',

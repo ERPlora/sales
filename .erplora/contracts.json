@@ -36,6 +36,7 @@
       "modifiers.for_target",
       "modifiers.options.all",
       "printing.settings.get",
+      "services.catalog.status",
       "services.categories.list",
       "services.services.list",
       "staff.members.list",

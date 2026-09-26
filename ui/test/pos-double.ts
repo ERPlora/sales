@@ -42,6 +42,8 @@ const READS: { name: string; module: string; field: keyof PosCatalogue }[] = [
   { name: 'staff.members.list', module: 'staff', field: 'team' },
   { name: 'services.services.list', module: 'services', field: 'services' },
   { name: 'services.categories.list', module: 'services', field: 'serviceCategories' },
+  // sales#409 — whether a salon holds sellable services while «Sync services» hides them.
+  { name: 'services.catalog.status', module: 'services', field: 'serviceCatalogStatus' },
   { name: 'modifiers.for_target', module: 'modifiers', field: 'modifierGroups' },
   { name: 'modifiers.options.all', module: 'modifiers', field: 'modifierOptions' },
   { name: 'combos.options.all', module: 'combos', field: 'comboOptions' },
@@ -100,6 +102,8 @@ interface PosCatalogue {
   fiscalRoad?: QueryAnswer;
   services?: QueryAnswer;
   serviceCategories?: QueryAnswer;
+  /** `services.catalog.status` — one row, `{ sellable_services }` (sales#409). */
+  serviceCatalogStatus?: QueryAnswer;
   modifierGroups?: QueryAnswer;
   modifierOptions?: QueryAnswer;
   comboOptions?: QueryAnswer;
@@ -141,7 +145,7 @@ export function installPosDouble(spec: PosDoubleSpec = {}): ErploraDouble {
     products, forSale, categories, productCategories, units, rules, taxCategories,
     paymentMethods, quickNotes, departments, business, orders, orderLines, byIdempotencyKey, sale, saleLines,
     users, team, fiscalLimits, fiscalRoad,
-    services, serviceCategories, modifierGroups, modifierOptions, comboOptions, appointment,
+    services, serviceCategories, serviceCatalogStatus, modifierGroups, modifierOptions, comboOptions, appointment,
     invoiceBySource, invoiceLines, verifactuRecord, printingSettings,
     ...rest
   } = spec;
@@ -149,7 +153,7 @@ export function installPosDouble(spec: PosDoubleSpec = {}): ErploraDouble {
     products, forSale, categories, productCategories, units, rules, taxCategories,
     paymentMethods, quickNotes, departments, business, orders, orderLines, byIdempotencyKey, sale, saleLines,
     users, team, fiscalLimits, fiscalRoad,
-    services, serviceCategories, modifierGroups, modifierOptions, comboOptions,
+    services, serviceCategories, serviceCatalogStatus, modifierGroups, modifierOptions, comboOptions,
     appointment: appointment && bindAppointmentGet(appointment),
     invoiceBySource, invoiceLines, verifactuRecord, printingSettings,
   };

@@ -1274,6 +1274,8 @@ export class ErpPosTouch extends LitElement {
   @state() private brokenCatalogApps: string[] = [];
   /** sales#25 — the catalogue app is not in this hub: the grid says so instead of showing nothing. */
   @state() private catalogAppAbsent = false;
+  /** sales#409 — `services` holds sellable services and «Show services in the till» hides them. */
+  @state() private servicesHidden = false;
   @state() comboSheet?: { combo: Combo };
   /** Lo elegido, EN EL ORDEN de elección y con repeticiones si el grupo las permite. */
   @state() comboPicks: string[] = [];
@@ -1838,6 +1840,10 @@ export class ErpPosTouch extends LitElement {
     const policy = this.loadPosSettings();
     const fromSource = async <T>(flag: 'sync_products' | 'sync_services', read: () => Promise<T[]>): Promise<T[]> =>
       (catalogSourceOn((await policy)[flag]) ? read() : []);
+    // sales#409 — with the service source OFF the till never asks `services` for its catalogue, and
+    // a salon's grid then looks exactly like a shop's that never sold a haircut. ONE cheap question
+    // (a single COUNT row, never the catalogue) tells the two apart, so the screen can say why.
+    const servicesHidden = this.probeHiddenServices(policy);
     try {
       const [prods, methods, businessRows, savedCart, parked, cats, prodCats, taxCatalog, unitRows,
              svcRows, svcCats, taxCats, ownDepartments, fiscalLimits, fiscalRoadRows, printingRows] = await Promise.all([
@@ -1930,6 +1936,7 @@ export class ErpPosTouch extends LitElement {
       // explanation is how a business concludes the till is broken. Gated on the product source
       // being ON: a shop that switched the product grid off asked for an empty grid.
       this.catalogAppAbsent = absentApps.has('inventory') && catalogSourceOn((await policy).sync_products);
+      this.servicesHidden = await servicesHidden;
       this.taxCatalog = taxCatalog;
       // sales#185 — PREFLIGHT. `sales.complete_sale` declares `taxes.rules.list` as a read with
       // `required: true`: with no tax app NO sale can close, and until now the POS looked perfectly
@@ -2958,6 +2965,17 @@ export class ErpPosTouch extends LitElement {
    *  sales#223 — absence and failure both come out of `withPosSettingsDefaults`, which is the ONE
    *  place the UI declares what the till is out of the box. No reader below sees `undefined` again:
    *  they used to, and `undefined !== 0` turned every switch that ships OFF into an ON. */
+  /** sales#409 — are there sellable services this till is hiding on purpose?
+   *
+   *  Asked only while `sync_services` is OFF, through the optional door (ADR-0127): a hub without
+   *  `services` answers `undefined` and hides nothing. A failed read claims nothing either — the
+   *  notice is advice, and an advice built on a read that did not answer would be a guess. */
+  private async probeHiddenServices(policy: Promise<PosSettings>): Promise<boolean> {
+    if (catalogSourceOn((await policy).sync_services)) return false;
+    const status = await optionalRead((c) => c.queryOptional('services.catalog.status'));
+    return Number(rows<{ sellable_services?: unknown }>(status)[0]?.sellable_services) > 0;
+  }
+
   private async loadPosSettings(): Promise<PosSettings> {
     try {
       return withPosSettingsDefaults(rows<Record<string, unknown>>(await erplora().query('sales.pos_settings.get'))[0]);
@@ -4766,10 +4784,37 @@ export class ErpPosTouch extends LitElement {
    *  `role="status"`, never `alert`: nothing broke. A broken app is the notice above, and mixing
    *  the two is how an alert stops meaning anything. */
   private renderEmptyGrid() {
-    if (!this.catalogAppAbsent) return html`<div class="empty">${t('ui.noProducts')}</div>`;
-    return html`<div class="empty catalog-absent" role="status" data-testid="pos-catalog-app-absent">
+    if (!this.catalogAppAbsent) return this.servicesHidden ? this.renderServicesHidden() : html`<div class="empty">${t('ui.noProducts')}</div>`;
+    return html`${this.servicesHidden ? this.renderServicesHidden() : nothing}<div class="empty catalog-absent" role="status" data-testid="pos-catalog-app-absent">
       ${t('ui.catalogAppAbsent', { app: this.appName('inventory') })}
     </div>`;
+  }
+
+  /** sales#409 — the services are not missing, they are HIDDEN by the till's own setting. Said
+   *  where they would have been (the empty grid, the search with no results), the way Square says
+   *  «hidden from POS» on the item. `role="status"`: nothing broke, the business asked for it — it
+   *  may just not remember asking. The way back is offered only to whoever can change the setting
+   *  (`sales.manage_settings`, the permission of the settings tab); a cashier gets the reason. */
+  private renderServicesHidden() {
+    return html`<div class="empty services-hidden" role="status" data-testid="pos-services-hidden">
+      <span>${t('ui.servicesHidden')}</span>
+      ${this.canManageTillSettings() ? html`<ion-button size="small" fill="clear" data-testid="pos-services-hidden-show"
+        @click=${() => this.goToTillSettings()}>${t('ui.servicesHiddenShow')}</ion-button>` : nothing}
+    </div>`;
+  }
+
+  /** Same filter as `canFixCatalog`: a shell without the permission channel is not saying "no". */
+  private canManageTillSettings(): boolean {
+    const c = erplora() as Partial<{ hasPermission(perm: string): boolean }>;
+    if (typeof c.hasPermission !== 'function') return true;
+    return c.hasPermission('sales.manage_settings');
+  }
+
+  private goToTillSettings() {
+    // The settings tab the shell builds from this module's `settings` block (`/m/:moduleId/settings`),
+    // where «Show services in the till» lives. Same module→shell channel as `goToProductSetup`.
+    window.history.pushState({}, '', '/m/sales/settings');
+    window.dispatchEvent(new PopStateEvent('popstate'));
   }
 
   /** The recipient capture: name, tax ID and address of whoever the invoice is made out to.
@@ -6059,7 +6104,7 @@ export class ErpPosTouch extends LitElement {
               <span slot="end" class="sp-price">${this.money(Number(p.price))}</span>
             </ion-item>`;
           })}
-          ${this.q.trim() && !this.searchResults.length ? html`<div class="empty">${t('ui.noProducts')}</div>` : nothing}
+          ${this.q.trim() && !this.searchResults.length ? html`<div class="empty">${t('ui.noProducts')}</div>${this.servicesHidden ? this.renderServicesHidden() : nothing}` : nothing}
         </ion-list>
       </ok-spotlight-search>
 
