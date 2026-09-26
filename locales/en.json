@@ -304,6 +304,8 @@
     "searchAction": "Search",
     "assign": "Assign",
     "noProducts": "No products.",
+    "servicesHidden": "Services are hidden in the till: «Show services in the till» is off in the point of sale settings.",
+    "servicesHiddenShow": "Show them",
     "catalogAppAbsent": "{app} is not installed, so there is no product grid. You can still charge services and free-price sales; install it from the marketplace to sell from a catalogue.",
     "notSellableBadge": "VAT missing",
     "notSellableNoTaxCategory": "Cannot be sold: no tax category. VAT needs to be set up.",

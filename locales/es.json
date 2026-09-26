@@ -305,6 +305,8 @@
     "searchAction": "Buscar",
     "assign": "Asignar",
     "noProducts": "Sin productos.",
+    "servicesHidden": "Los servicios están ocultos en el TPV: «Mostrar servicios en el TPV» está apagado en los ajustes del punto de venta.",
+    "servicesHiddenShow": "Mostrarlos",
     "catalogAppAbsent": "{app} no está instalada, así que no hay rejilla de productos. Puedes cobrar servicios y ventas a precio libre; instálala desde el marketplace para vender desde un catálogo.",
     "notSellableBadge": "Falta el IVA",
     "notSellableNoTaxCategory": "No se puede vender: sin categoría fiscal. Falta configurar el IVA.",
