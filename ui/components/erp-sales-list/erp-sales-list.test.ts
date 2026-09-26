@@ -482,6 +482,13 @@ describe('sales list — clicking the row opens the document (pm#155)', () => {
     ).toBe(true);
   });
 
+  it('gives the table the namespace its chrome is named under, so the QA can search and press a row action (sales#388)', async () => {
+    // ok-data-table names its searchbar, pager, rows and row actions ONLY under the host's
+    // `testid` (outfitkit#143): `sales-table-search`, `sales-table-row-<id>-reprint`…
+    const el = await mountList();
+    expect(el.shadowRoot.querySelector('ok-data-table')?.getAttribute('testid')).toBe('sales-table');
+  });
+
   it('`rowClick` opens the document of the clicked sale, same as the «document» action', async () => {
     const el = await mountList();
     const table = el.shadowRoot.querySelector('ok-data-table') as HTMLElement | null;
