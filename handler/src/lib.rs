@@ -11037,6 +11037,24 @@ mod tests {
     }
 
     #[test]
+    fn a_split_line_keeps_the_managers_approval_on_every_part() {
+        // sales#385: splitting a line the manager cleared must not make either half ask for the PIN
+        // again at the checkout. The source row keeps its column (the split does not rewrite it);
+        // each clone has to be born with it.
+        let mut row = split_line_row();
+        row["discount_percent"] = json!(50.0);
+        row["discount_approved_by"] = json!("u-manager");
+        let out = split_order_line_pure(split_input(row, open_order_row())).accepted("an approved line splits too");
+        for clone in order_lines(&out) {
+            assert_eq!(clone["discount_approved_by"], json!("u-manager"), "the approval travels with the unit");
+        }
+        let out = split_order_line_pure(split_input(split_line_row(), open_order_row())).accepted("an unapproved line");
+        for clone in order_lines(&out) {
+            assert_eq!(clone["discount_approved_by"], Value::Null, "no approval is invented: {clone:?}");
+        }
+    }
+
+    #[test]
     fn the_clones_carry_the_frozen_snapshot_of_the_line() {
         let mut row = split_line_row();
         row["notes"] = json!("sin secador");
