@@ -155,6 +155,28 @@ pub fn split_order_line(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<
     }
 }
 
+/// sales#284: sets the manual TICKET discount of an OPEN order, with the shop's cap enforced. See
+/// `set_order_discount_pure`.
+#[cfg(feature = "guest")]
+#[plugin_fn]
+pub fn set_order_discount(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
+    match set_order_discount_pure(input.into_inner().into_value()) {
+        Ok(out) => Ok(Json(out)),
+        Err(e) => Err(Error::msg(e).into()),
+    }
+}
+
+/// sales#284: the same discount, entered through the door that already required the manager. See
+/// `set_order_discount_over_limit_pure`.
+#[cfg(feature = "guest")]
+#[plugin_fn]
+pub fn set_order_discount_over_limit(input: Json<erplora_guest_sdk::Input>) -> FnResult<Json<Output>> {
+    match set_order_discount_over_limit_pure(input.into_inner().into_value()) {
+        Ok(out) => Ok(Json(out)),
+        Err(e) => Err(Error::msg(e).into()),
+    }
+}
+
 /// Redondeo a la unidad mínima. **No decide el modo**: delega en `guest_sdk::money::round`, que es
 /// EL redondeo del hub (HALF_UP, ADR-0123 §4 — la única regla de redondeo monetario escrita en
 /// Derecho español: art. 11 de la Ley 46/1998 del euro).
@@ -4187,6 +4209,109 @@ fn fire_order_inner(input: Value) -> Result<Output, Refusal> {
     }
     let event = Event::new("order.fired", ev);
     Ok(Output { operations: ops, events: vec![event], ..Default::default() })
+}
+
+pub fn set_order_discount_pure(input: Value) -> Result<Output, String> {
+    finish(set_order_discount_inner(input, CapRule::Enforced))
+}
+
+/// The MANAGER's door to the very same discount (sales#284), the same shape as
+/// `complete_sale_over_limit_pure` (sales#269): identical logic, cap not applied, because reaching
+/// this exported function already required `sales.discount.over_limit` — a permission a `cashier`
+/// does not have, so the runtime answers them `requires_elevation` and the till asks for the
+/// manager's PIN.
+pub fn set_order_discount_over_limit_pure(input: Value) -> Result<Output, String> {
+    finish(set_order_discount_inner(input, CapRule::Approved))
+}
+
+/// sales#284 — the manual TICKET discount of an OPEN order is judged when it is APPLIED, not only
+/// when the check is later charged.
+///
+/// # Why at apply time
+///
+/// `sales.order.set_discount` used to be a bare declarative `UPDATE`, with no cap check at all:
+/// anybody who could sell put 100 % on an open check, and the customer read the reduced total on
+/// the till screen from that moment — the shop's `max_discount_percent` only bit later, at
+/// `sales.complete_sale`, by which point the discounted total had already been shown, and possibly
+/// printed on a proforma, without anybody having authorised it. Checking the same cap the checkout
+/// already enforces (sales#269), but at the moment the discount is SET, closes that gap.
+///
+/// # Why two exported functions, not a flag in the payload
+///
+/// The guest receives `{payload, context}` and the context carries no command name, so this is the
+/// only way the handler can tell which door it was called through. A flag in the payload would let
+/// the caller grant itself the permission the flag is supposed to require — exactly the hole
+/// `sales.order.set_discount_over_limit` (permission `sales.discount.over_limit`, `expose_api:
+/// false`) exists to keep closed: only a manager's PIN reaches it (same shape as
+/// `complete_sale_over_limit_pure`, sales#269).
+fn set_order_discount_inner(input: Value, rule: CapRule) -> Result<Output, Refusal> {
+    let payload = input.get("payload").cloned().unwrap_or(Value::Null);
+    let context = input.get("context").cloned().unwrap_or(Value::Null);
+
+    let order_id = field(&payload, "order_id");
+    if order_id.is_empty() {
+        return Err(reject("sales.order_id_required", "a discount needs the order it applies to"));
+    }
+
+    let percent = payload.get("discount_percent").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
+    if !(0.0..=100.0).contains(&percent) {
+        return Err(reject(
+            "sales.discount_out_of_range",
+            format!("discount_percent {percent} is not between 0 and 100"),
+        ));
+    }
+
+    // Absent or JSON `null` means "keep the stored one" — the SQL COALESCEs it (sales#113). Only a
+    // value the caller actually sent is a new amount to validate.
+    let amount: Option<i64> = match payload.get("discount_amount") {
+        None | Some(Value::Null) => None,
+        Some(v) => Some(as_cents(v, 0)),
+    };
+    if let Some(a) = amount {
+        if a < 0 {
+            return Err(reject("sales.discount_out_of_range", format!("discount_amount {a} is negative")));
+        }
+    }
+
+    let discounted = percent > 0.0 || amount.unwrap_or(0) > 0;
+    enforce_discount_policy(&context, discounted)?;
+
+    let cap = rule.cap(&context);
+    if cap < 100.0 {
+        if percent > cap {
+            return Err(reject(
+                "sales.discount_over_limit",
+                format!("discount_percent {percent} is more than the {cap} this business allows"),
+            ));
+        }
+        if let Some(a) = amount {
+            if a > 0 {
+                // sales#269's basis-points floor, over the OPEN check's own lines instead of the
+                // checkout's valued ones: a gift line is never charged, so it is not part of what
+                // the amount is judged against (same reasoning as `value_checkout`'s weights).
+                let gross: i64 = tax::read_rows(&context, "sales.order.lines")
+                    .unwrap_or_default()
+                    .iter()
+                    .filter(|row| !as_bool(row.get("is_gift").unwrap_or(&Value::Null)))
+                    .map(|row| as_f64(row.get("line_total").unwrap_or(&Value::Null), 0.0) as i64)
+                    .sum();
+                let allowed = ((gross as i128 * (cap * 100.0).round() as i128) / 10_000) as i64;
+                if a > allowed {
+                    return Err(reject(
+                        "sales.discount_over_limit",
+                        format!("discount_amount {a} is more than the {cap} of the {gross} gross this business allows"),
+                    ));
+                }
+            }
+        }
+    }
+
+    let mut params = Map::new();
+    params.insert("order_id".into(), json!(order_id));
+    params.insert("discount_percent".into(), json!(percent));
+    params.insert("discount_amount".into(), amount.map(|a| json!(a)).unwrap_or(Value::Null));
+
+    Ok(Output::new().with_operation(Operation::sql("sales._set_order_discount", params)))
 }
 
 /// sales#26 — **anular es auditable, idempotente y respeta la factura.**

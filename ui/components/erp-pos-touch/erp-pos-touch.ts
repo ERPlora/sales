@@ -49,7 +49,9 @@ import { payMethodIcon, needsTendered, enabledPayMethods, defaultPayMethod, payM
 import { withPosSettingsDefaults, type PosSettings } from '../../lib/pos-settings.js';
 // sales#269 — the discount whoever is charging may give ALONE, and which checkout the till uses
 // above it. The arithmetic mirrors the server's `enforce_discount_cap`, which is the authority.
-import { CHECKOUT_OVER_LIMIT_COMMAND, checkoutCommand, discountCap } from '../../lib/discount-cap.js';
+import {
+  CHECKOUT_OVER_LIMIT_COMMAND, checkoutCommand, discountCap, needsManagerApproval,
+} from '../../lib/discount-cap.js';
 // sales#159 (ADR-0386) — una venta, N cobros. La ARITMÉTICA del reparto vive en lib (probada sin
 // DOM): el restante, lo que cubre cada pata, el cambio —que sale SOLO del efectivo— y el
 // `payments[]` que se le entrega al servidor.
@@ -3950,17 +3952,46 @@ export class ErpPosTouch extends LitElement {
   }
   /** The typed amount in minor units of the hub currency (amount mode, sales#379). */
   private get discountInputCents(): number { return Math.max(0, typedToMinor(this.discountInput)); }
+
+  /** sales#284 — routes a ticket discount through the same two doors the checkout uses: the usual
+   *  `sales.order.set_discount` under the shop's cap, the manager's `sales.order.set_discount_over_limit`
+   *  above it. Before this, the till wrote the discount straight onto the order and painted the
+   *  reduced total at once — the cap was only enforced at Charge, so a waiter could show a customer
+   *  a price nobody had authorised yet. Returns whether the server accepted it; the caller only
+   *  paints the new value on success, so a refusal (the manager's PIN cancelled) leaves the check
+   *  showing what it showed before.
+   *
+   *  🔴 The two doors are named LITERALLY at the call sites below, same reason as the checkout's
+   *  own doors: `.erplora/contracts.json` is extracted STATICALLY, so a command reached through a
+   *  variable vanishes from it. */
+  private async persistTicketDiscount(percent: number, amountCents: number): Promise<boolean> {
+    const payload = { order_id: this.orderId, discount_percent: percent, discount_amount: amountCents };
+    // Only the ticket-wide levers matter here: line discounts go through their own door
+    // (`updateOrderLineDiscount`, below), so `linePercents` is empty on purpose.
+    const overCap = needsManagerApproval(discountCap(this.settings), {
+      ticketPercent: percent,
+      ticketAmountCents: amountCents,
+      grossCents: cartTotal(this.chargedLines, 0),
+      linePercents: [],
+    });
+    try {
+      if (overCap) await erplora().command('sales.order.set_discount_over_limit', payload);
+      else await erplora().command('sales.order.set_discount', payload);
+      return true;
+    } catch (e) {
+      this.error = e instanceof Error ? e.message : String(e);
+      return false;
+    }
+  }
   /** sales#113 — aplica un importe FIJO (céntimos; 0 = quitar) al ticket, persistiéndolo en el pedido. */
   async applyDiscountAmount(cents: number): Promise<void> {
     const sheet = this.discountSheet;
     this.discountSheet = undefined;
     if (!sheet || sheet.target !== 'ticket') return;
     const value = Math.max(0, Math.round(cents));
-    this.ticketDiscountAmount = value;
-    if (this.orderId) {
-      try { await erplora().command('sales.order.set_discount', { order_id: this.orderId, discount_percent: this.ticketDiscount, discount_amount: value }); }
-      catch (e) { this.error = e instanceof Error ? e.message : String(e); }
-    }
+    // sales#284: nothing persisted yet — paint locally, like before there was an order to send to.
+    if (!this.orderId) { this.ticketDiscountAmount = value; return; }
+    if (await this.persistTicketDiscount(this.ticketDiscount, value)) this.ticketDiscountAmount = value;
   }
   private get discountInputPct(): number { return Math.min(100, Math.max(0, Number(this.discountInput || '0'))); }
   /** Aplica el % tecleado (0 = quitar) a la línea o al ticket, persistiéndolo en el pedido. */
@@ -3970,11 +4001,9 @@ export class ErpPosTouch extends LitElement {
     if (!sheet) return;
     const value = Math.min(100, Math.max(0, pct));
     if (sheet.target === 'ticket') {
-      this.ticketDiscount = value;
-      if (this.orderId) {
-        try { await erplora().command('sales.order.set_discount', { order_id: this.orderId, discount_percent: value, discount_amount: this.ticketDiscountAmount }); }
-        catch (e) { this.error = e instanceof Error ? e.message : String(e); }
-      }
+      // sales#284: nothing persisted yet — paint locally, like before there was an order to send to.
+      if (!this.orderId) { this.ticketDiscount = value; return; }
+      if (await this.persistTicketDiscount(value, this.ticketDiscountAmount)) this.ticketDiscount = value;
       return;
     }
     const line = this.cart.find((l) => l.line_id === sheet.lineId);
