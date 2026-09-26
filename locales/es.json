@@ -611,13 +611,16 @@
       "label": "Editar un departamento"
     },
     "sales.order.add_open_line": {
-      "label": "Vender un artículo a precio libre"
+      "label": "Vender un artículo a precio libre",
+      "approval_label": "Vender un artículo a precio libre de {unit_price, money}"
     },
     "sales.order.set_discount_over_limit": {
-      "label": "Aplicar al tique un descuento por encima del límite"
+      "label": "Aplicar al tique un descuento por encima del límite",
+      "approval_label": "Aplicar al tique un descuento del {discount_percent, percent} y {discount_amount, money}"
     },
     "sales.order.set_line_discount_over_limit": {
-      "label": "Aplicar a una línea un descuento por encima del límite"
+      "label": "Aplicar a una línea un descuento por encima del límite",
+      "approval_label": "Aplicar a una línea un descuento del {discount_percent, percent}"
     },
     "sales.order.void": {
       "label": "Anular una cuenta abierta"
