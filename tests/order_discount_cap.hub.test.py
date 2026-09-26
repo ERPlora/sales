@@ -21,8 +21,9 @@ Usage: `erplora test <dir> --against-hub [dev|stable|sha256:…]`. Never on its 
 runtime it fails, it does not skip.
 """
 
+import json
+import pathlib
 import sys
-import uuid
 
 import hub_harness
 from hub_harness import ONE, Hub, cents
@@ -50,8 +51,19 @@ def current_policy(hub: Hub) -> dict:
     return {c: (row.get(c) if row.get(c) is not None else DEFAULTS[c]) for c in SETTINGS_COLUMNS}
 
 
+#: The settings door validates its payload against this schema: the switches travel as booleans
+#: even though the row stores them as 0/1, so the payload is shaped from the schema, not the row.
+SETTINGS_SCHEMA = json.loads(
+    (pathlib.Path(__file__).resolve().parent.parent / "schemas" / "settings_update.json").read_text()
+)["properties"]
+
+
 def save_policy(hub: Hub, policy: dict) -> None:
-    hub.run("sales.settings.update", {"new_id": str(uuid.uuid4()), **policy})
+    payload = {
+        c: bool(v) if SETTINGS_SCHEMA.get(c, {}).get("type") == "boolean" else v
+        for c, v in policy.items()
+    }
+    hub.run("sales.settings.update", payload)
 
 
 def open_check(hub: Hub) -> str:
