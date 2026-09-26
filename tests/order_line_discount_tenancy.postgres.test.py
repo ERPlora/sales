@@ -15,7 +15,8 @@ runtime's `hub_id`, never the payload. This battery plays that statement as the 
   3. The SAME ids written from the neighbour's hub touch nothing: it can neither discount, approve
      nor wipe our line.
   4. A line already fired to production is not rewritten.
-  5. `sales.order.update_line` no longer writes a discount: the ungated door is closed, and a
+  5. `sales._update_order_line` (the write behind `sales.order.update_line`, sales#394) no longer
+     writes a discount: the ungated door is closed, and a
      quantity change keeps the approval the line carries.
 
 Usage: tests/order_line_discount_tenancy.postgres.test.py
@@ -147,7 +148,7 @@ def scenario(s: Session) -> None:
     )
     s.command_ok(
         "a quantity change carrying a discount it may no longer write",
-        "sales.order.update_line",
+        "sales._update_order_line",
         {
             "order_id": "ord-1",
             "line_id": "line-1",

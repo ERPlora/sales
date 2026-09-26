@@ -92,12 +92,13 @@ describe('carrito respaldado por pedido (ADR-0141)', () => {
     });
   });
 
-  it('actualiza la cantidad por line_id recalculando el total provisional', async () => {
+  it('updates the quantity by line_id and lets the SERVER price the line (sales#394)', async () => {
     const { client, calls } = orderClient();
     await updateOrderLineQty(client, 'ord-1', 'line-9', 4, 250);
-    expect(calls.find((c) => c.name === 'sales.order.update_line')!.payload).toMatchObject({
-      order_id: 'ord-1', line_id: 'line-9', quantity: 4_000_000, line_total: 1000,
-    });
+    const payload = calls.find((c) => c.name === 'sales.order.update_line')!.payload;
+    expect(payload).toMatchObject({ order_id: 'ord-1', line_id: 'line-9', quantity: 4_000_000 });
+    // The server prices the line from its own row; an amount from the screen is never sent.
+    expect(payload).not.toHaveProperty('line_total');
   });
 
   it('elimina una línea por line_id', async () => {

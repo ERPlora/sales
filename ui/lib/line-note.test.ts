@@ -59,15 +59,16 @@ describe('the note travels to the server with its line', () => {
     expect(commands[0].payload.notes).toBe('no onion');
   });
 
-  it('changing the note writes ONLY the note, with the quantity the line already had', async () => {
-    // It goes through the same `update_line` the stepper uses, so the quantity has to travel with
-    // it or the row would be rewritten to a quantity nobody asked for.
+  it('changing the note writes ONLY the note: quantity and amount stay the row\'s (sales#394)', async () => {
+    // It goes through the same `update_line` the stepper uses. Since sales#394 the server keeps the
+    // row's own quantity when none is sent and prices the line itself, so the note editor sends
+    // neither: a stale quantity from this screen could undo another till's change.
     const { client, commands } = spyClient();
     await updateOrderLineNote(client, 'ord-1', line({ line_id: 'l-1', qty: 2 }), 'well done');
     expect(commands[0].name).toBe('sales.order.update_line');
-    expect(commands[0].payload).toMatchObject({
-      order_id: 'ord-1', line_id: 'l-1', quantity: 2_000_000, notes: 'well done',
-    });
+    expect(commands[0].payload).toMatchObject({ order_id: 'ord-1', line_id: 'l-1', notes: 'well done' });
+    expect(commands[0].payload).not.toHaveProperty('quantity');
+    expect(commands[0].payload).not.toHaveProperty('line_total');
   });
 
   it('without a `line_id` no write is invented', async () => {

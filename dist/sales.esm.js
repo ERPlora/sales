@@ -6579,14 +6579,13 @@ async function persistLineQty(client, orderId, line, qty) {
   );
   return true;
 }
-async function updateOrderLineQty(client, orderId, lineId, qty, unitPrice, isGift, giftReason, discount = 0, modifiers) {
+async function updateOrderLineQty(client, orderId, lineId, qty, _unitPrice, isGift, giftReason, _discount = 0, _modifiers) {
   await client.command("sales.order.update_line", {
     order_id: orderId,
     line_id: lineId,
     quantity: toMicro2(qty),
     // punto fijo 10⁶ (ADR-0147)
-    line_total: provisionalLineTotal(unitPrice, qty, isGift, discount, modifierDelta({ modifiers })),
-    // Alternar invitación cambia el importe: viaja junto para que la fila quede coherente.
+    // Toggling the gift flag changes the amount: it travels along so the row stays consistent.
     is_gift: isGift === void 0 ? null : isGift ? 1 : 0,
     gift_reason: giftReason ?? null
   });
@@ -6602,8 +6601,6 @@ async function updateOrderLineNote(client, orderId, line, note) {
   await client.command("sales.order.update_line", {
     order_id: orderId,
     line_id: line.line_id,
-    quantity: toMicro2(line.qty),
-    line_total: provisionalLineTotal(line.price, line.qty, line.is_gift, line.discount ?? 0, modifierDelta(line)),
     notes: note,
     is_gift: null,
     gift_reason: null

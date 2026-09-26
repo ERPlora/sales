@@ -849,14 +849,30 @@
     },
     "sales.order.update_line": {
       "permission": "sales.add_sale",
-      "transaction": true,
-      "schema": "schemas/update_order_line.json",
-      "sql": [
-        "commands/order_update_line.sql",
-        "commands/order_recompute_total.sql"
+      "reads": [
+        {
+          "query": "sales.order.get",
+          "params": {
+            "order_id": "payload.order_id"
+          },
+          "required": true
+        },
+        {
+          "query": "sales.order.lines",
+          "params": {
+            "order_id": "payload.order_id"
+          },
+          "required": true
+        }
       ],
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "update_order_line"
+      },
+      "schema": "schemas/update_order_line.json",
       "ai": {
-        "description": "Updates the quantity of a line in an open order and recomputes its provisional total (ADR-0141) — and, through it, whether the line is a gift (is_gift/gift_reason) and its free-text note (notes). The discount of a line does not go through here (sales#385): use sales.order.set_line_discount / sales.order.set_line_discount_over_limit, which price the line on the server against the shop's cap."
+        "description": "Updates the quantity of a line in an open order and recomputes its provisional total (ADR-0141) — and, through it, whether the line is a gift (is_gift/gift_reason) and its free-text note (notes). The line amount is priced SERVER-SIDE from the line's own row (sales#394): frozen unit price plus frozen supplements, times the new quantity, with the discount the line already carries; the caller never sends an amount. Omit `quantity` to keep the line's own. The discount of a line does not go through here (sales#385): use sales.order.set_line_discount / sales.order.set_line_discount_over_limit."
       }
     },
     "sales.order.set_line_staff": {

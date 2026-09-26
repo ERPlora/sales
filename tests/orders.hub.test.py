@@ -125,16 +125,23 @@ def test_mutating_an_open_order_recomputes_its_total(hub: Hub) -> None:
     )
     cafe_id = next(l["id"] for l in ls if l.get("product_name") == "Café")
 
+    # sales#394: the server prices the line from its own row. A till that sends 0,01 € for three
+    # coffees (tampered, or an API client that got the sum wrong) changes nothing.
     hub.run(
         "sales.order.update_line",
-        {"order_id": oid, "line_id": cafe_id, "quantity": 3 * ONE, "line_total": 363},
+        {"order_id": oid, "line_id": cafe_id, "quantity": 3 * ONE, "line_total": 1},
     )
     hub.check(
-        "after update_line: 363 + 110",
+        "after update_line: 363 + 110, priced by the server",
         cents(order(hub, oid).get("provisional_total")),
         473,
     )
     cafe = next(l for l in lines(hub, oid) if l["id"] == cafe_id)
+    hub.check(
+        "the line amount is 3 × 1,21 €, not what the payload said",
+        cents(cafe.get("line_total")),
+        363,
+    )
     hub.check(
         "the quantity really moved (five taps, five coffees)",
         cafe.get("quantity"),

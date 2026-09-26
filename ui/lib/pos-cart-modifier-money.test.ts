@@ -87,11 +87,15 @@ describe('the row the till writes carries the same amount (the open check adds T
     expect(JSON.parse(String(params.modifiers))).toEqual([{ option_id: 'o-cheese' }]);
   });
 
-  it('changing the QUANTITY keeps the supplement in the row (the stepper wrote the base before)', async () => {
+  it('changing the QUANTITY sends the quantity only: the server prices base + supplement (sales#394)', async () => {
+    // sales#208 made the stepper send a `line_total` with the supplement in it; since sales#394 the
+    // server prices the line from the row it froze (handler `update_order_line`), so no amount
+    // travels at all and the supplement cannot be lost on the way.
     const { client, calls } = recordingClient();
     await updateOrderLineQty(client, 'ord-1', 'line-1', 2, 900, false, '', 0, [CHEESE]);
     const params = calls.find((c) => c.name === 'sales.order.update_line')!.payload;
-    expect(params.line_total).toBe(2400);
+    expect(params.quantity).toBe(2_000_000);
+    expect(params).not.toHaveProperty('line_total');
   });
 });
 
