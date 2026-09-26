@@ -74,7 +74,16 @@ function expectBox(f: Element): void {
 function expectAllBoxed(box: Element): void {
   const fields = [...box.querySelectorAll('ion-input, ion-select, ion-textarea')];
   expect(fields.map((f) => f.getAttribute('data-testid'))).toEqual(FIELDS);
-  for (const f of fields) expectBox(f);
+  for (const f of fields) {
+    expectBox(f);
+    // The outlined label sits on the top border: without room above it runs into the box over it,
+    // and a select without the white fill reads as a hole in the tinted capture.
+    const id = f.getAttribute('data-testid');
+    const css = getComputedStyle(f);
+    expect(css.marginTop, `${id}: no room above for the label on the border`).toBe('6.4px'); // .4rem
+    expect(css.getPropertyValue('--background').trim(), `${id}: no white fill over the tinted capture`)
+      .toBe('#fff');
+  }
 }
 
 describe('customer details at the till: every field has its box in ios mode (sales#414)', () => {

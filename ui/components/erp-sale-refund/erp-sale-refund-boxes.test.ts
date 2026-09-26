@@ -66,5 +66,8 @@ describe('refund form: every field has its box in ios mode (sales#414)', () => {
       'refund-amount-pay-card', 'refund-destination-pay-card', 'refund-amount-pay-cash', 'refund-reason',
     ]);
     for (const f of fields) expectBox(f);
+    // Its label sits on the top border and would run into the «method unavailable» line above.
+    const destination = form!.querySelector('[data-testid="refund-destination-pay-card"]')!;
+    expect(getComputedStyle(destination).marginTop, 'no room above the destination label').toBe('12px'); // .75rem
   });
 });
