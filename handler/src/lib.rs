@@ -12130,4 +12130,115 @@ mod tests {
             }
         }
     }
+
+    // sales#386 — the manager's PIN given when the discount went ON the check is the approval the
+    // charge needs too. Before, a cashier asked for the PIN twice for one discount: once to set it
+    // on the open check (sales#284) and again at Charge, because the checkout only looked at the
+    // payload and knew nothing of what the check already carried — and if the manager had left,
+    // the table could not be charged. Toast and Square carry the approval WITH the discount.
+    //
+    // The approval lives on the ORDER row (`discount_approved_by`), written only by the manager's
+    // door, and covers what the check stores: the usual checkout lifts the cap on the TICKET
+    // discount as long as the charge does not go above it. It is never read from the payload.
+    mod order_discount_approval {
+        use super::*;
+
+        /// The header `sales.order.get` hands back for the open check being charged.
+        fn check_row(percent: f64, amount: i64, approved_by: Value, status: &str) -> Value {
+            json!([{
+                "id": "ord-1", "status": status,
+                "discount_percent": percent, "discount_amount": amount,
+                "discount_approved_by": approved_by,
+            }])
+        }
+
+        /// Charging `ord-1` (three 1,00 € lines, cap at 10 %) through the USUAL door.
+        fn charge(percent: f64, amount: i64, check: Value) -> Value {
+            let mut inp = input_with_catalogs(three_equal_lines(), 5, Value::Null, json!([{ "max_discount_percent": 10 }]), Value::Null);
+            inp["payload"]["order_id"] = json!("ord-1");
+            inp["payload"]["discount_percent"] = json!(percent);
+            if amount > 0 {
+                inp["payload"]["discount_amount"] = json!(amount);
+            }
+            if !check.is_null() {
+                inp["context"]["reads"]["sales.order.get"] = check;
+            }
+            inp
+        }
+
+        fn approved(percent: f64, amount: i64) -> Value {
+            check_row(percent, amount, json!("u-manager"), "open")
+        }
+
+        #[test]
+        fn the_discount_the_manager_approved_on_the_check_is_charged_without_asking_again() {
+            complete_sale_pure(charge(90.0, 0, approved(90.0, 0))).accepted("90 % the manager approved on the check");
+            complete_sale_pure(charge(50.0, 0, approved(90.0, 0))).accepted("less than what was approved");
+            complete_sale_pure(charge(0.0, 200, approved(0.0, 200))).accepted("the 2,00 € the manager approved");
+            complete_sale_pure(charge(90.0, 20, approved(90.0, 20))).accepted("percent and amount, both approved");
+        }
+
+        #[test]
+        fn a_check_nobody_approved_is_still_capped_at_the_usual_door() {
+            for (what, check) in [
+                ("approval column empty", check_row(90.0, 0, Value::Null, "open")),
+                ("approval column blank", check_row(90.0, 0, json!(""), "open")),
+                ("no check header at all (counter sale)", Value::Null),
+                ("the header read came back empty", json!([])),
+            ] {
+                let err = complete_sale_pure(charge(90.0, 0, check)).refused(what);
+                assert_eq!(err.code, "sales.discount_over_limit", "{what}: {err:?}");
+            }
+        }
+
+        #[test]
+        fn going_above_what_was_approved_needs_the_manager_again() {
+            for (what, inp) in [
+                ("91 % over an approved 90 %", charge(91.0, 0, approved(90.0, 0))),
+                ("an amount on top of an approved percent", charge(90.0, 31, approved(90.0, 0))),
+                ("2,01 € over an approved 2,00 €", charge(0.0, 201, approved(0.0, 200))),
+            ] {
+                let err = complete_sale_pure(inp).refused(what);
+                assert_eq!(err.code, "sales.discount_over_limit", "{what}: {err:?}");
+            }
+        }
+
+        #[test]
+        fn the_approval_covers_the_ticket_discount_not_the_lines() {
+            let mut inp = charge(90.0, 0, approved(90.0, 0));
+            inp["payload"]["items"][0]["discount"] = json!(90);
+            let err = complete_sale_pure(inp).refused("90 % on a line nobody approved");
+            assert_eq!(err.code, "sales.discount_over_limit", "{err:?}");
+        }
+
+        #[test]
+        fn an_approval_on_another_check_or_a_closed_one_does_not_count() {
+            let mut other = approved(90.0, 0);
+            other[0]["id"] = json!("ord-other");
+            for (what, check) in [
+                ("the header is another check's", other),
+                ("the check is no longer open", check_row(90.0, 0, json!("u-manager"), "completed")),
+            ] {
+                let err = complete_sale_pure(charge(90.0, 0, check)).refused(what);
+                assert_eq!(err.code, "sales.discount_over_limit", "{what}: {err:?}");
+            }
+        }
+
+        #[test]
+        fn only_the_managers_door_marks_the_discount_as_approved() {
+            let inp = json!({
+                "payload": { "order_id": "ord-1", "discount_percent": 90, "discount_amount": 0 },
+                "context": { "reads": { "sales.settings.get": [{ "max_discount_percent": 10 }] } },
+            });
+            let out = set_order_discount_over_limit_pure(inp).accepted("the manager's door");
+            assert_eq!(out.operations[0].params["discount_approved"], json!(1), "{out:?}");
+
+            let inp = json!({
+                "payload": { "order_id": "ord-1", "discount_percent": 5, "discount_amount": 0 },
+                "context": { "reads": { "sales.settings.get": [{ "max_discount_percent": 10 }] } },
+            });
+            let out = set_order_discount_pure(inp).accepted("the usual door");
+            assert_eq!(out.operations[0].params["discount_approved"], json!(0), "the usual door clears it: {out:?}");
+        }
+    }
 }

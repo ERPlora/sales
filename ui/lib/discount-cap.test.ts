@@ -52,3 +52,25 @@ describe('the discount a cashier may give alone (sales#269)', () => {
     expect(checkoutCommand(100, { ...plain, ticketPercent: 100 })).toBe('sales.complete_sale');
   });
 });
+
+describe('a ticket discount the manager already approved on the check (sales#386)', () => {
+  const approved = { percent: 90, amountCents: 20 };
+
+  it('charges what was approved through the usual door, with no second PIN', () => {
+    expect(checkoutCommand(10, { ...plain, ticketPercent: 90, ticketAmountCents: 20 }, approved)).toBe('sales.complete_sale');
+    expect(checkoutCommand(10, { ...plain, ticketPercent: 50 }, approved)).toBe('sales.complete_sale');
+  });
+
+  it('asks for the manager again for anything above what was approved', () => {
+    expect(checkoutCommand(10, { ...plain, ticketPercent: 91 }, approved)).toBe('sales.complete_sale_over_limit');
+    expect(checkoutCommand(10, { ...plain, ticketPercent: 90, ticketAmountCents: 21 }, approved)).toBe('sales.complete_sale_over_limit');
+  });
+
+  it('covers the ticket discount, never a line discount nobody approved', () => {
+    expect(checkoutCommand(10, { ...plain, ticketPercent: 90, linePercents: [90] }, approved)).toBe('sales.complete_sale_over_limit');
+  });
+
+  it('without an approval, the cap rules as before', () => {
+    expect(checkoutCommand(10, { ...plain, ticketPercent: 90 }, null)).toBe('sales.complete_sale_over_limit');
+  });
+});

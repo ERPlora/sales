@@ -13,6 +13,9 @@ the check showed the reduced total to the customer, and the manager was only ask
      cashier's, 31 are not.
   4. A discount within the cap goes through the usual door, as before.
   5. An order that is not open is still `sales.order_unavailable`, on either door.
+  6. sales#386 — what the manager approved on the check is CHARGED through the usual door
+     (`sales.complete_sale`) without asking again; a discount that went back through the usual
+     door has lost its approval, and so has a charge that asks for more than was approved.
 
 The cap is restored to what the hub had at the end, pass or fail: the settings row is the
 hub's singleton and other batteries charge against it.
@@ -26,7 +29,7 @@ import pathlib
 import sys
 
 import hub_harness
-from hub_harness import ONE, Hub, cents
+from hub_harness import ONE, Hub, cash_method_id, cents, key
 
 SETTINGS_COLUMNS = (
     "allow_cash", "allow_card", "allow_transfer", "sync_products", "sync_services",
@@ -130,6 +133,61 @@ def scenario(hub: Hub) -> None:
         )
 
 
+def charge(hub: Hub, order_id: str, percent: float, tag: str) -> dict:
+    """The usual checkout of the whole check (three 1,00 € lines) with a ticket discount."""
+    return {
+        "idempotency_key": key(tag),
+        "payment_method_id": cash_method_id(hub),
+        "order_id": order_id,
+        "discount_percent": percent,
+        "amount_tendered": 300,
+        "items": [
+            {"product_name": f"Caña {n}", "price": 100, "quantity": ONE, "tax_rate": 21.0}
+            for n in range(3)
+        ],
+    }
+
+
+def approval_carries_to_the_charge(hub: Hub) -> None:
+    print("\n6 · what the manager approved on the check is charged without asking again (sales#386)")
+    order_id = open_check(hub)
+    hub.run(
+        "sales.order.set_discount_over_limit",
+        {"order_id": order_id, "discount_percent": 90, "discount_amount": 0},
+    )
+    rows = hub.query("sales.order.get", {"order_id": order_id})
+    hub.check_true(
+        "the check says somebody approved its discount",
+        bool(rows and rows[0].get("discount_approved_by")),
+        rows,
+    )
+    hub.refused(
+        "91 % is more than the manager approved",
+        "sales.complete_sale",
+        charge(hub, order_id, 91, "approval-over"),
+        "sales.discount_over_limit",
+    )
+    hub.run("sales.complete_sale", charge(hub, order_id, 90, "approval-ok"))
+    rows = hub.query("sales.order.get", {"order_id": order_id})
+    hub.check("the approved check is charged through the usual door", rows[0].get("status") if rows else None, "completed")
+
+    order_id = open_check(hub)
+    hub.run(
+        "sales.order.set_discount_over_limit",
+        {"order_id": order_id, "discount_percent": 90, "discount_amount": 0},
+    )
+    hub.run("sales.order.set_discount", {"order_id": order_id, "discount_percent": 5, "discount_amount": 0})
+    rows = hub.query("sales.order.get", {"order_id": order_id})
+    hub.check("the usual door wiped the approval", rows[0].get("discount_approved_by") if rows else "?", None)
+    hub.refused(
+        "the 90 % that was approved before is not approved any more",
+        "sales.complete_sale",
+        charge(hub, order_id, 90, "approval-wiped"),
+        "sales.discount_over_limit",
+    )
+    hub.run("sales.order.void", {"order_id": order_id})
+
+
 def main() -> int:
     hub = Hub("order_discount_cap.hub")
     print(f"Hub battery · discount on an open check (sales#284) · {hub_harness.BASE} · hub {hub.hub_id}")
@@ -137,6 +195,7 @@ def main() -> int:
     save_policy(hub, {**before, "allow_discounts": 1, "max_discount_percent": 10})
     try:
         scenario(hub)
+        approval_carries_to_the_charge(hub)
     finally:
         save_policy(hub, before)
     return hub.finish("the discount on an open check is authorised when it is applied")
