@@ -136,6 +136,23 @@ describe('ticket discount on an open check, with the cap at 10 %', () => {
     // 6,80 − 0,68 = 6,12
     expect(footTotal(el)).toContain('6.12');
   });
+
+  it('a fixed amount is judged after the ticket percent, like the checkout', async () => {
+    const el = await mount();
+    await addTile(el, 'Café');
+    await addTile(el, 'Tarta');
+    // 6,80 € with 10 % already off leaves 6,12 €: the cashier's share is 0,61 €, not 0,68 €.
+    el.openDiscount('ticket');
+    await el.applyDiscount(10);
+    el.openDiscount('ticket');
+    await el.applyDiscountAmount(68);
+    expect(commands.find((c) => c.name === 'sales.order.set_discount_over_limit')?.payload)
+      .toMatchObject({ order_id: 'ord-1', discount_percent: 10, discount_amount: 68 });
+    el.openDiscount('ticket');
+    await el.applyDiscountAmount(61);
+    expect(commands.filter((c) => c.name === 'sales.order.set_discount').at(-1)?.payload)
+      .toMatchObject({ discount_percent: 10, discount_amount: 61 });
+  });
 });
 
 describe('a shop with no cap', () => {

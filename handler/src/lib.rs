@@ -4289,11 +4289,17 @@ fn set_order_discount_inner(input: Value, rule: CapRule) -> Result<Output, Refus
                 // sales#269's basis-points floor, over the OPEN check's own lines instead of the
                 // checkout's valued ones: a gift line is never charged, so it is not part of what
                 // the amount is judged against (same reasoning as `value_checkout`'s weights).
+                // Judged on what is left AFTER the ticket percent, per line and HALF_UP like the
+                // checkout does (`value_checkout` phase 2 weighs `l.t.line`, which already carries
+                // the combined percent). Judging it before the percent would let «10 % + 0,30 €»
+                // through here and have the checkout refuse it later — the very gap sales#284 closes.
+                let keep = Decimal::ONE - Decimal::from_f64(percent).unwrap_or(Decimal::ZERO) / Decimal::from(100);
                 let gross: i64 = tax::read_rows(&context, "sales.order.lines")
                     .unwrap_or_default()
                     .iter()
                     .filter(|row| !as_bool(row.get("is_gift").unwrap_or(&Value::Null)))
                     .map(|row| as_f64(row.get("line_total").unwrap_or(&Value::Null), 0.0) as i64)
+                    .map(|line| money::round(Decimal::from(line) * keep))
                     .sum();
                 let allowed = ((gross as i128 * (cap * 100.0).round() as i128) / 10_000) as i64;
                 if a > allowed {
@@ -12070,6 +12076,19 @@ mod tests {
             inp["context"]["reads"]["sales.order.lines"][2]["is_gift"] = json!(1);
             let err = set_order_discount_pure(inp).refused("30 cents of the 2,00 € actually charged");
             assert_eq!(err.code, "sales.discount_over_limit", "{err:?}");
+        }
+
+        #[test]
+        fn a_fixed_amount_is_judged_after_the_ticket_percent_like_the_checkout() {
+            // 3,00 € with 10 % already off leaves 2,70 €: the cap at 10 % buys 27 cents, not 30 —
+            // the checkout weighs the amount on the lines AFTER the ticket percent, so must this.
+            let inp = set_discount(json!({ "order_id": "ord-1", "discount_percent": 10, "discount_amount": 30 }), capped());
+            let err = set_order_discount_pure(inp.clone()).refused("30 cents on top of 10 % of 3,00 €");
+            assert_eq!(err.code, "sales.discount_over_limit", "{err:?}");
+            set_order_discount_over_limit_pure(inp).accepted("the manager authorised it");
+
+            let inp = set_discount(json!({ "order_id": "ord-1", "discount_percent": 10, "discount_amount": 27 }), capped());
+            set_order_discount_pure(inp).accepted("27 cents of the 2,70 € left are exactly 10 %");
         }
 
         #[test]

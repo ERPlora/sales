@@ -11116,7 +11116,8 @@ var ErpPosTouch = class extends i3 {
     const overCap = needsManagerApproval(discountCap(this.settings), {
       ticketPercent: percent2,
       ticketAmountCents: amountCents,
-      grossCents: cartTotal(this.chargedLines, 0),
+      // After the ticket percent, exactly as the checkout weighs it (`checkoutCommand` below).
+      grossCents: cartTotal(this.chargedLines, percent2),
       linePercents: []
     });
     try {

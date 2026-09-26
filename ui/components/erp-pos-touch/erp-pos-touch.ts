@@ -3971,7 +3971,8 @@ export class ErpPosTouch extends LitElement {
     const overCap = needsManagerApproval(discountCap(this.settings), {
       ticketPercent: percent,
       ticketAmountCents: amountCents,
-      grossCents: cartTotal(this.chargedLines, 0),
+      // After the ticket percent, exactly as the checkout weighs it (`checkoutCommand` below).
+      grossCents: cartTotal(this.chargedLines, percent),
       linePercents: [],
     });
     try {
