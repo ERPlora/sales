@@ -2,6 +2,7 @@
 -- como la lectura cruzada «pedidos por cliente/mesa» (ADR-0127): los satélites (tables/customers)
 -- guardan solo el FK y llaman aquí filtrando por ids. hub_id lo auto-inyecta el runtime.
 SELECT id, status, provisional_total, notes, label, source_module, created_at, discount_percent, discount_amount,
+       discount_approved_by, -- sales#386: who approved the discount the check stores
        -- sales#280: la cita de la que nació la cuenta, para que el enlace vuelva CON ella.
        appointment_id
 FROM sales_order

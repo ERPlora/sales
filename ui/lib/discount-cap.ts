@@ -80,8 +80,33 @@ export function needsManagerApproval(cap: number, discounts: TicketDiscounts): b
     && discounts.ticketAmountCents > allowedAmountCents(cap, discounts.grossCents);
 }
 
+/** The ticket discount a manager already approved on the open check (sales#386): the check stores
+ *  it with `discount_approved_by`, and the till carries it forward so Charge does not ask for the
+ *  PIN a second time for the same discount. */
+export interface ApprovedTicketDiscount {
+  /** The ticket percentage the manager signed off, as it stood when they approved it. */
+  percent: number;
+  /** The ticket fixed amount, in cents, the manager signed off. */
+  amountCents: number;
+}
+
 /** The command the till charges with: the manager's door when the discount is over the cap, the
- *  usual one otherwise. */
-export function checkoutCommand(cap: number, discounts: TicketDiscounts): string {
-  return needsManagerApproval(cap, discounts) ? CHECKOUT_OVER_LIMIT_COMMAND : CHECKOUT_COMMAND;
+ *  usual one otherwise.
+ *
+ *  sales#386 — `approved` is the ticket discount a manager already signed off on the open check.
+ *  When what is on the ticket now is still within it, the ticket levers are already covered and
+ *  judged as zero; the line discounts are not — nobody approved those — so they are still judged
+ *  as they came in. Mirrors `ticket_discount_approved_on_check` in `handler/src/lib.rs`, which is
+ *  the authority: the server honours the approval it stored, never the payload, and this is only
+ *  the routing that keeps the screen from asking for a PIN the server would not have asked for. */
+export function checkoutCommand(
+  cap: number,
+  discounts: TicketDiscounts,
+  approved?: ApprovedTicketDiscount | null,
+): string {
+  const ticketCovered = !!approved
+    && discounts.ticketPercent <= approved.percent
+    && discounts.ticketAmountCents <= approved.amountCents;
+  const judged = ticketCovered ? { ...discounts, ticketPercent: 0, ticketAmountCents: 0 } : discounts;
+  return needsManagerApproval(cap, judged) ? CHECKOUT_OVER_LIMIT_COMMAND : CHECKOUT_COMMAND;
 }

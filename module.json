@@ -151,7 +151,8 @@
       "migrations/postgres/034_line_staff.sql",
       "migrations/postgres/035_order_line_staff.sql",
       "migrations/postgres/036_discount_cap.sql",
-      "migrations/postgres/037_order_appointment.sql"
+      "migrations/postgres/037_order_appointment.sql",
+      "migrations/postgres/038_order_discount_approval.sql"
     ]
   },
   "seed": {
@@ -451,6 +452,13 @@
             "order_id": "payload.order_id"
           },
           "required": false
+        },
+        {
+          "query": "sales.order.get",
+          "params": {
+            "order_id": "payload.order_id"
+          },
+          "required": false
         }
       ],
       "handler": {
@@ -493,6 +501,13 @@
         },
         {
           "query": "sales.order.lines",
+          "params": {
+            "order_id": "payload.order_id"
+          },
+          "required": false
+        },
+        {
+          "query": "sales.order.get",
           "params": {
             "order_id": "payload.order_id"
           },

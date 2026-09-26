@@ -10,6 +10,7 @@
 // the ticket discount is not above what was approved.
 import { beforeEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
+import { makeErploraDouble } from '../../test/erplora-double';
 import './erp-pos-touch';
 
 const PRODUCTS = [
@@ -147,12 +148,10 @@ describe('with the cap at 10 %, a discount the manager approved on the check', (
 describe('the open-check list carries the approval (sales#386)', () => {
   it('maps discount_approved_by to a flag the till keeps with the check', async () => {
     const { listOpenChecks } = await import('../../lib/pos-cart');
-    const client = {
-      query: async () => ({ rows: [
-        { id: 'a', status: 'open', created_at: '2', discount_percent: 90, discount_approved_by: 'u-manager' },
-        { id: 'b', status: 'open', created_at: '1', discount_percent: 90, discount_approved_by: null },
-      ] }),
-    };
+    const client = makeErploraDouble({ queries: { 'sales.orders.list': [
+      { id: 'a', status: 'open', created_at: '2', discount_percent: 90, discount_approved_by: 'u-manager' },
+      { id: 'b', status: 'open', created_at: '1', discount_percent: 90, discount_approved_by: null },
+    ] } }).sdk;
     const checks = await listOpenChecks(client as never);
     expect(checks.find((c) => c.id === 'a')?.discountApproved).toBe(true);
     expect(checks.find((c) => c.id === 'b')?.discountApproved).toBeFalsy();

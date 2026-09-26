@@ -1,0 +1,13 @@
+-- sales#386 · The manager's PIN given when a discount over the cap went ON the open check is the
+-- approval the checkout needs too (sales#284, `sales.order.set_discount_over_limit`). Until now
+-- the approval was never kept: Charge asked for the PIN again for the very same discount, and once
+-- the manager had left the building a check they had already approved could not be charged at all.
+--
+-- Records WHO approved the discount the check stores: the hub_user id the runtime names in
+-- `:approved_by` (opaque TEXT, no FK cross-module, same shape as sales_order.appointment_id).
+-- NULL means nobody approved it. Written only by the manager's door (`sales.order.set_discount_over_limit`
+-- via `sales._set_order_discount`); the usual door (`sales.order.set_discount`) wipes it on every
+-- apply, since a discount it accepts never needed a PIN in the first place.
+--
+-- Reversal: ALTER TABLE sales_order DROP COLUMN discount_approved_by;
+ALTER TABLE sales_order ADD COLUMN IF NOT EXISTS discount_approved_by TEXT;
