@@ -12,6 +12,8 @@ import type { ReceiptData } from '@erplora/outfitkit';
 import { installErploraDouble } from '../../test/erplora-double';
 import { forgetOriginalPrints } from '../../lib/original-ticket.js';
 import { CLAIM_FIELD_CHOICES } from '../../lib/public-claim.js';
+import enLocale from '../../../locales/en.json';
+import esLocale from '../../../locales/es.json';
 import './erp-sales-document';
 
 /** El doble del visor: sus tres lecturas propias, y la cadena fiscal AUSENTE salvo que un test la
@@ -241,6 +243,14 @@ describe('the note under the fiscal QR names the document on screen (sales#411)'
     const el = await mountIssued('invoice');
     const invoice = el.shadowRoot!.querySelector('ok-invoice') as HTMLElement & { invoice: { qr_note?: string } };
     expect(invoice.invoice.qr_note).toBe('ui.qrValidateNoteInvoice');
+  });
+
+  it('both notes are written in en and es, and each is its own sentence', () => {
+    for (const catalog of [enLocale, esLocale] as Array<{ ui: Record<string, string> }>) {
+      expect(catalog.ui.qrValidateNoteTicket?.trim()).toBeTruthy();
+      expect(catalog.ui.qrValidateNoteInvoice?.trim()).toBeTruthy();
+      expect(catalog.ui.qrValidateNoteTicket).not.toBe(catalog.ui.qrValidateNoteInvoice);
+    }
   });
 
   it('once the AEAT answers, both show its CSV instead of the note', async () => {
