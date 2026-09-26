@@ -230,6 +230,7 @@ export class ErpPosQuickNotes extends LitElement {
         : nothing}
       <ok-data-table
         data-testid="pos-quick-notes-table"
+        testid="pos-quick-notes-table"
         .serverSide=${true}
         .fill=${true}
         .views=${true}
