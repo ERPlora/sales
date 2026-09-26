@@ -103,6 +103,16 @@ describe('the cart button carries the running total on a phone (sales#412)', () 
     expect(fabTotal(el)!.textContent!.trim()).not.toBe(before);
   });
 
+  it('an amount discount on the ticket is in it too (sales#113), not only the percentage one', async () => {
+    const el = await mount() as Pos & { ticketDiscountAmount: number };
+    await tapTile(el);
+    const before = fabTotal(el)!.textContent!.trim();
+    el.ticketDiscountAmount = 500;
+    await el.updateComplete;
+    expect(fabTotal(el)!.textContent!.trim(), 'the total minus the fixed discount').toBe(cartTotal(el));
+    expect(fabTotal(el)!.textContent!.trim()).not.toBe(before);
+  });
+
   it('the screen reader hears the total too, not just the count', async () => {
     // A t() that shows the params it was given, so the label can be read with its values.
     installPosDouble({
@@ -141,9 +151,15 @@ describe('the cart button carries the running total on a phone (sales#412)', () 
     // happy-dom resolves the var() to its fallback: the pill radius of the chips of the till.
     expect(button.borderRadius, 'pill-shaped, like the rest of the chips of the till').toBe('999px');
     expect(parseFloat(button.paddingLeft), 'the amount does not touch the edge of the pill').toBeGreaterThan(0);
+    expect(parseFloat(button.gap), 'the cart icon and the amount do not touch').toBeGreaterThan(0);
 
     const amount = getComputedStyle(fabTotal(el)!);
     expect(amount.display, 'the amount is painted').not.toBe('none');
     expect(amount.whiteSpace, '«29,90 €» never breaks between the figure and the €').toBe('nowrap');
+    // Read at arm's length: the amount is bold and its digits keep their width, so the pill does not
+    // wobble on every tap. (Its 1rem size is not checked here: happy-dom already reports 16px for a
+    // button's text, so only a real browser tells it apart from the 13.33px of a bare button.)
+    expect(amount.fontWeight, 'bold').toBe('800');
+    expect(amount.fontVariantNumeric, 'fixed-width digits').toBe('tabular-nums');
   });
 });
