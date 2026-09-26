@@ -42,7 +42,11 @@ rate of every line.
 `sales.sale.created_from_appointment` is **additive** — a sale born from an appointment emits both it
 and `sale.completed`.
 
-**Events it listens to** — none. Sales never reacts to another module; other modules react to it.
+**Events it listens to**
+
+| Event | Command | What it does |
+|---|---|---|
+| `customer.merged` (from `customers`) | `sales._on_customer_merged` | When two customer sheets are merged, every sale of the absorbed sheet (any status, live or deleted) moves to the surviving one, in this hub only. What was issued is not rewritten: the name printed on the ticket or invoice, its number and its amounts stay exactly as they were filed (customers#86) |
 
 **Who reacts to `sale.completed`**: `inventory` (subtract stock), `customers` (loyalty),
 `cash_register` (till reconciliation), `invoice` / `verifactu` (fiscal record), `kitchen`. Each is
