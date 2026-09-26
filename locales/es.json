@@ -590,5 +590,58 @@
     "sales.recent_activity": {
       "title": "Actividad reciente"
     }
+  },
+  "commands": {
+    "sales.complete_sale": {
+      "label": "Cobrar una venta"
+    },
+    "sales.complete_sale_over_limit": {
+      "label": "Cobrar una venta con un descuento por encima del límite"
+    },
+    "sales.create_payment_method": {
+      "label": "Añadir un método de pago"
+    },
+    "sales.departments.create": {
+      "label": "Añadir un departamento"
+    },
+    "sales.departments.delete": {
+      "label": "Eliminar un departamento"
+    },
+    "sales.departments.update": {
+      "label": "Editar un departamento"
+    },
+    "sales.order.add_open_line": {
+      "label": "Vender un artículo a precio libre"
+    },
+    "sales.order.set_discount_over_limit": {
+      "label": "Aplicar al tique un descuento por encima del límite"
+    },
+    "sales.order.set_line_discount_over_limit": {
+      "label": "Aplicar a una línea un descuento por encima del límite"
+    },
+    "sales.order.void": {
+      "label": "Anular una cuenta abierta"
+    },
+    "sales.quick_notes.create": {
+      "label": "Añadir una nota rápida"
+    },
+    "sales.quick_notes.delete": {
+      "label": "Eliminar una nota rápida"
+    },
+    "sales.quick_notes.update": {
+      "label": "Editar una nota rápida"
+    },
+    "sales.refund": {
+      "label": "Devolver el importe de una venta"
+    },
+    "sales.settings.adopt_receipt_text": {
+      "label": "Copiar la cabecera y el pie del tique a los ajustes del TPV"
+    },
+    "sales.settings.update": {
+      "label": "Cambiar los ajustes del TPV"
+    },
+    "sales.void": {
+      "label": "Anular una venta cobrada"
+    }
   }
 }
