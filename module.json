@@ -152,7 +152,8 @@
       "migrations/postgres/035_order_line_staff.sql",
       "migrations/postgres/036_discount_cap.sql",
       "migrations/postgres/037_order_appointment.sql",
-      "migrations/postgres/038_order_discount_approval.sql"
+      "migrations/postgres/038_order_discount_approval.sql",
+      "migrations/postgres/039_order_line_discount_approval.sql"
     ]
   },
   "seed": {
@@ -761,6 +762,20 @@
         "message": "That order is not open in this business."
       }
     },
+    "sales._set_order_line_discount": {
+      "permission": "sales.add_sale",
+      "transaction": true,
+      "sql": [
+        "commands/order_set_line_discount.sql",
+        "commands/order_recompute_total.sql"
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "sales.order_line_not_available",
+        "message": "That line is not live on an open check of this business."
+      }
+    },
     "sales._complete_order": {
       "permission": "sales.add_sale",
       "sql": [
@@ -834,12 +849,13 @@
     "sales.order.update_line": {
       "permission": "sales.add_sale",
       "transaction": true,
+      "schema": "schemas/update_order_line.json",
       "sql": [
         "commands/order_update_line.sql",
         "commands/order_recompute_total.sql"
       ],
       "ai": {
-        "description": "Updates the quantity of a line in an open order and recomputes its provisional total (ADR-0141)."
+        "description": "Updates the quantity of a line in an open order and recomputes its provisional total (ADR-0141) — and, through it, whether the line is a gift (is_gift/gift_reason) and its free-text note (notes). The discount of a line does not go through here (sales#385): use sales.order.set_line_discount / sales.order.set_line_discount_over_limit, which price the line on the server against the shop's cap."
       }
     },
     "sales.order.set_line_staff": {
@@ -980,6 +996,63 @@
       },
       "ai": {
         "description": "The MANAGER's door to the very same discount as sales.order.set_discount, for a manual discount bigger than max_discount_percent (sales#284, same shape as sales.complete_sale_over_limit / sales#269). Same payload, same result; it exists so the runtime can demand sales.discount.over_limit, which a cashier does not have — they get requires_elevation and the till asks for the manager's PIN. Never offer it to dodge the cap: if the discount fits under the cap, sales.order.set_discount is the door."
+      }
+    },
+    "sales.order.set_line_discount": {
+      "permission": "sales.add_sale",
+      "reads": [
+        "sales.settings.get",
+        {
+          "query": "sales.order.get",
+          "params": {
+            "order_id": "payload.order_id"
+          },
+          "required": true
+        },
+        {
+          "query": "sales.order.lines",
+          "params": {
+            "order_id": "payload.order_id"
+          },
+          "required": true
+        }
+      ],
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "set_order_line_discount"
+      },
+      "ai": {
+        "description": "Sets the manual LINE discount of a live, unfired line of an OPEN order: percent (0-100). Enforced at APPLY time (sales#385, same door pair as the ticket discount sales#284) against the shop's max_discount_percent: above the cap it is refused with sales.discount_over_limit, and the manager's door for that same line discount is sales.order.set_line_discount_over_limit. allow_discounts is enforced here too. The new line_total is priced by the server from the row, never taken from the payload."
+      }
+    },
+    "sales.order.set_line_discount_over_limit": {
+      "permission": "sales.discount.over_limit",
+      "expose_api": false,
+      "reads": [
+        "sales.settings.get",
+        {
+          "query": "sales.order.get",
+          "params": {
+            "order_id": "payload.order_id"
+          },
+          "required": true
+        },
+        {
+          "query": "sales.order.lines",
+          "params": {
+            "order_id": "payload.order_id"
+          },
+          "required": true
+        }
+      ],
+      "handler": {
+        "type": "wasm",
+        "file": "dist/handler.wasm",
+        "function": "set_order_line_discount_over_limit"
+      },
+      "ai": {
+        "description": "The MANAGER's door to the very same LINE discount as sales.order.set_line_discount, for a manual line discount bigger than max_discount_percent (sales#385, same shape as sales.order.set_discount_over_limit / sales#284). Same payload, same result; it exists so the runtime can demand sales.discount.over_limit, which a cashier does not have — they get requires_elevation and the till asks for the manager's PIN. It also marks the LINE as approved, so sales.complete_sale can honour it later without asking again. Never offer it to dodge the cap: if the discount fits under the cap, sales.order.set_line_discount is the door."
       }
     },
     "sales.order.set_label": {

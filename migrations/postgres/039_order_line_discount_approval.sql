@@ -1,0 +1,14 @@
+-- sales#385 · The manager's PIN given when a LINE discount over the cap went on the open check is
+-- the approval the checkout needs, too — the line-level twin of 038_order_discount_approval.sql
+-- (sales#386, `sales_order.discount_approved_by`). Until now a line discount had no cap at all
+-- (`sales.order.update_line` wrote it through a bare `UPDATE`), so there was nothing to approve.
+--
+-- Records WHO approved the discount THIS line stores: the hub_user id the runtime names in
+-- `:approved_by` (opaque TEXT, no FK cross-module, same shape as sales_order.discount_approved_by).
+-- NULL means nobody approved it. Written only by the manager's door
+-- (`sales.order.set_line_discount_over_limit` via `sales._set_order_line_discount`); the usual door
+-- (`sales.order.set_line_discount`) wipes it on every apply, since a discount it accepts never
+-- needed a PIN in the first place.
+--
+-- Reversal: ALTER TABLE sales_order_item DROP COLUMN discount_approved_by;
+ALTER TABLE sales_order_item ADD COLUMN IF NOT EXISTS discount_approved_by TEXT;
