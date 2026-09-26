@@ -11910,12 +11910,12 @@ var ErpPosTouch = class extends i3 {
   renderRecipientCountry() {
     const lang = erplora2().locale || "en";
     return b2`
-        <ion-select label=${t5("ui.limitFieldCountry")} label-placement="stacked" interface="popover"
+        <ion-select label=${t5("ui.limitFieldCountry")} label-placement="stacked" fill="outline" mode="md" interface="popover"
                     data-testid="pos-limit-country" .value=${this.customerCountry}
                     @ionChange=${(e8) => this.setCustomerCountry(String(e8.detail?.value ?? HOME_COUNTRY))}>
           ${countryOptions(lang, t5("ui.countryUnlisted")).map((o9) => b2`<ion-select-option value=${o9.code}>${o9.name}</ion-select-option>`)}
         </ion-select>
-        ${this.customerCountry === HOME_COUNTRY ? A : b2`<ion-select label=${t5("ui.limitFieldIdType")} label-placement="stacked" interface="popover"
+        ${this.customerCountry === HOME_COUNTRY ? A : b2`<ion-select label=${t5("ui.limitFieldIdType")} label-placement="stacked" fill="outline" mode="md" interface="popover"
                     data-testid="pos-limit-id-type" .value=${this.customerIdType}
                     @ionChange=${(e8) => {
       this.customerIdType = String(e8.detail?.value ?? "");
@@ -11934,18 +11934,18 @@ var ErpPosTouch = class extends i3 {
             <p>${done ? t5("ui.limitReadyBody") : pending.body}</p>
           </div>
         </div>
-        <ion-input label=${t5("ui.limitFieldName")} label-placement="stacked" .value=${this.customerName}
+        <ion-input label=${t5("ui.limitFieldName")} label-placement="stacked" fill="outline" mode="md" .value=${this.customerName}
                    data-testid="pos-limit-name" autocomplete="off"
                    @ionInput=${(e8) => {
       this.customerName = String(e8.target.value ?? "");
     }}></ion-input>
         ${this.renderRecipientCountry()}
-        <ion-input label=${t5("ui.limitFieldTaxId")} label-placement="stacked" .value=${this.customerTaxId}
+        <ion-input label=${t5("ui.limitFieldTaxId")} label-placement="stacked" fill="outline" mode="md" .value=${this.customerTaxId}
                    data-testid="pos-limit-tax-id" autocomplete="off"
                    @ionInput=${(e8) => {
       this.customerTaxId = String(e8.target.value ?? "");
     }}></ion-input>
-        <ion-input label=${t5("ui.limitFieldAddress")} label-placement="stacked" .value=${this.customerAddress}
+        <ion-input label=${t5("ui.limitFieldAddress")} label-placement="stacked" fill="outline" mode="md" .value=${this.customerAddress}
                    data-testid="pos-limit-address" autocomplete="off"
                    @ionInput=${(e8) => {
       this.customerAddress = String(e8.target.value ?? "");
@@ -16549,6 +16549,8 @@ var ErpSaleRefund = class extends i3 {
           type="text"
           inputmode="decimal"
           label=${t7("ui.refundLegAmount")}
+          fill="outline"
+          mode="md"
           label-placement="stacked"
           .value=${formatAmountInput(entry?.amount ?? 0, erplora5().locale, hubDecimals())}
           @ionInput=${(e8) => this.setAmount(leg.payment_id, e8.detail?.value ?? "")}
@@ -16564,6 +16566,8 @@ var ErpSaleRefund = class extends i3 {
                   class="refund-destination"
                   data-testid=${`refund-destination-${leg.payment_id}`}
                   label=${t7("ui.refundDestination")}
+                  fill="outline"
+                  mode="md"
                   label-placement="stacked"
                   .value=${entry?.to ?? ""}
                   @ionChange=${(e8) => this.setDestination(leg.payment_id, e8.detail?.value ?? "")}
@@ -16600,6 +16604,8 @@ var ErpSaleRefund = class extends i3 {
         class="refund-reason"
         data-testid="refund-reason"
         label=${t7("ui.refundReasonLabel")}
+        fill="outline"
+        mode="md"
         label-placement="stacked"
         maxlength="500"
         placeholder=${t7("ui.refundReasonPlaceholder")}
