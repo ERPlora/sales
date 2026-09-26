@@ -748,8 +748,10 @@ export class ErpPosTouch extends LitElement {
     .limit-head ion-icon { font-size:1.35rem; flex:0 0 auto; margin-top:.1rem; }
     .limit-head strong { display:block; font-size:.98rem; }
     .limit-head p { margin:.15rem 0 0; font-size:.86rem; color:var(--mut); }
-    .limit-capture ion-input { --background:var(--ion-background-color,#fff); --padding-start:.6rem;
-      --padding-end:.6rem; border-radius:.5rem; }
+    /* Outlined boxes (sales#414): the label sits on the top border, so each box needs room above,
+       and the selects get the same white fill as the inputs over the tinted capture. */
+    .limit-capture ion-input, .limit-capture ion-select { --background:var(--ion-background-color,#fff);
+      --padding-start:.6rem; --padding-end:.6rem; border-radius:.5rem; margin-top:.4rem; }
     .err { color:var(--ion-color-danger,#d9480f); }
     .pay-actions { display:flex; gap:.5rem; }
     .pay-actions .charge { flex:1; }
