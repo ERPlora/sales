@@ -115,6 +115,8 @@ describe('with a 10 % cap on what a cashier may discount alone (sales#269)', () 
     await el.updateComplete;
     await charge(el);
     expect(checkoutCalls()).toEqual(['sales.complete_sale']);
+    // sales#403 — the figure travels only on the manager's door: nobody is approving anything here.
+    expect(commands.find((c) => c.name === 'sales.complete_sale')!.payload).not.toHaveProperty('approval_discount_percent');
   });
 
   it('counts a LINE discount too — capping only the ticket would be one tap away from nothing', async () => {
@@ -126,6 +128,11 @@ describe('with a 10 % cap on what a cashier may discount alone (sales#269)', () 
     await el.updateComplete;
     await charge(el);
     expect(checkoutCalls()).toEqual(['sales.complete_sale_over_limit']);
+    // sales#403 — the PIN dialog names the figure being approved. With the over-limit discount on a
+    // LINE the ticket's `discount_percent` is 0, so the till sends the biggest lever on its own field.
+    const overLimit = commands.find((c) => c.name === 'sales.complete_sale_over_limit')!.payload;
+    expect(overLimit.discount_percent).toBe(0);
+    expect(overLimit.approval_discount_percent).toBe(90);
   });
 
   it('counts a FIXED amount as the share of the ticket it really is (sales#113)', async () => {
