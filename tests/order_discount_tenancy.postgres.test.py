@@ -11,6 +11,10 @@ plays that statement as the runtime does and checks the neighbour's check is out
   2. An absent amount (`null`) keeps the stored one — the percent-only apply does not wipe it.
   3. The SAME order id written from the neighbour's hub touches nothing.
   4. A check that is no longer open is not rewritten.
+  5. sales#386 — the manager's door marks the discount as APPROVED on the check (who: the manager
+     the runtime names in `:approved_by`, or the caller when they hold the permission themselves),
+     `sales.order.get` hands the mark back, the usual door wipes it, and the neighbour's hub can
+     neither set nor wipe ours.
 
 Usage: tests/order_discount_tenancy.postgres.test.py
 """
@@ -48,6 +52,10 @@ def discount(s: Session, order_id: str):
     )
 
 
+def approval(s: Session, order_id: str):
+    return s.rows(f"SELECT discount_approved_by FROM sales_order WHERE id = '{order_id}'")
+
+
 def scenario(s: Session) -> None:
     open_check(s, "ord-1")
 
@@ -72,6 +80,49 @@ def scenario(s: Session) -> None:
     open_check(s, "ord-done", status="completed")
     s.command_ok("the write on a closed check", WRITE, {"order_id": "ord-done", "discount_percent": 50.0, "discount_amount": 0})
     s.check("the closed check keeps no discount", discount(s, "ord-done"), [{"discount_percent": 0, "discount_amount": 0}])
+
+    print("\n5 · the manager's door marks the discount as approved; the usual door wipes it")
+    open_check(s, "ord-2")
+    s.check("a fresh check carries no approval", approval(s, "ord-2"), [{"discount_approved_by": None}])
+    s.command_ok(
+        "the manager's write, elevated by a PIN",
+        WRITE,
+        {"order_id": "ord-2", "discount_percent": 90.0, "discount_amount": 0, "discount_approved": 1, "approved_by": "u-manager"},
+    )
+    s.check("the approval names the manager who gave the PIN", approval(s, "ord-2"), [{"discount_approved_by": "u-manager"}])
+    s.check(
+        "sales.order.get hands the approval back",
+        s.field(s.query("sales.order.get", {"order_id": "ord-2"}), "discount_approved_by"),
+        "u-manager",
+    )
+    s.command_ok(
+        "the neighbour's usual write runs",
+        WRITE,
+        {"order_id": "ord-2", "discount_percent": 0.0, "discount_amount": 0, "discount_approved": 0, "approved_by": ""},
+        hub=OTHER_HUB,
+    )
+    s.check("the neighbour cannot wipe our approval", approval(s, "ord-2"), [{"discount_approved_by": "u-manager"}])
+    s.command_ok(
+        "the usual write",
+        WRITE,
+        {"order_id": "ord-2", "discount_percent": 5.0, "discount_amount": 0, "discount_approved": 0, "approved_by": ""},
+    )
+    s.check("the usual door wipes the approval", approval(s, "ord-2"), [{"discount_approved_by": None}])
+    s.command_ok(
+        "a manager holding the permission themselves (no PIN)",
+        WRITE,
+        {"order_id": "ord-2", "discount_percent": 90.0, "discount_amount": 0, "discount_approved": 1, "approved_by": ""},
+    )
+    s.check("the approval names whoever holds the permission", approval(s, "ord-2"), [{"discount_approved_by": "u-waiter"}])
+
+    open_check(s, "ord-3")
+    s.command_ok(
+        "the neighbour's manager write runs",
+        WRITE,
+        {"order_id": "ord-3", "discount_percent": 90.0, "discount_amount": 0, "discount_approved": 1, "approved_by": "u-intruder"},
+        hub=OTHER_HUB,
+    )
+    s.check("the neighbour cannot approve our check", approval(s, "ord-3"), [{"discount_approved_by": None}])
 
 
 def main() -> int:

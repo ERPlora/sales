@@ -65,6 +65,17 @@ def main() -> int:
     check("the write is scoped to the hub", "hub_id = :hub_id" in sql, True)
     check("the write only touches OPEN orders", "status = 'open'" in sql, True)
 
+    print("\n4 · sales#386: the usual checkout reads THIS check's header, where the approval lives")
+    checkout = COMMANDS.get("sales.complete_sale", {})
+    header = next(
+        (r for r in checkout.get("reads", []) if isinstance(r, dict) and r.get("query") == "sales.order.get"),
+        {},
+    )
+    check("the checkout reads the check it charges", (header.get("params") or {}).get("order_id"), "payload.order_id")
+    check("a counter sale has no check: the read is optional", header.get("required", True), False)
+    get_sql = (MODULE_DIR / MANIFEST["queries"]["sales.order.get"]["sql"]).read_text()
+    check("sales.order.get hands the approval back", "discount_approved_by" in get_sql, True)
+
     print()
     if failures:
         print(f"✗ {len(failures)} failure(s)")

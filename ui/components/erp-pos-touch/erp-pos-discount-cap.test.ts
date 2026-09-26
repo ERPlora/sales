@@ -92,11 +92,14 @@ function checkoutCalls(): string[] {
 describe('with a 10 % cap on what a cashier may discount alone (sales#269)', () => {
   beforeEach(() => installSdk(10));
 
-  it('charges a ticket discount over the cap through the MANAGER door', async () => {
+  // sales#386: a discount the manager approved when it went ON the check is charged through the
+  // usual door (erp-pos-order-discount-approval.test.ts). The door below is for a ticket discount
+  // nobody approved yet — typed before the check exists, so no door was crossed to set it.
+  it('charges a ticket discount over the cap nobody approved yet through the MANAGER door', async () => {
     const el = await mount();
-    await addTile(el, 'Café');
     el.openDiscount('ticket');
     await el.applyDiscount(90);
+    await addTile(el, 'Café');
     await el.updateComplete;
     await charge(el);
     expect(checkoutCalls()).toEqual(['sales.complete_sale_over_limit']);
@@ -126,11 +129,12 @@ describe('with a 10 % cap on what a cashier may discount alone (sales#269)', () 
 
   it('counts a FIXED amount as the share of the ticket it really is (sales#113)', async () => {
     const el = await mount();
+    // Typed before the check exists (sales#386: once approved on the check, it would not ask again).
+    el.openDiscount('ticket');
+    await el.applyDiscountAmount(100);
     await addTile(el, 'Café');
     await addTile(el, 'Tarta');
     // 6,80 € of gross: the cap buys 68 cents, and «te lo dejo en 1 € menos» is past it.
-    el.openDiscount('ticket');
-    await el.applyDiscountAmount(100);
     await el.updateComplete;
     await charge(el);
     expect(checkoutCalls()).toEqual(['sales.complete_sale_over_limit']);

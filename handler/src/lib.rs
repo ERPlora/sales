@@ -1844,6 +1844,39 @@ fn discount_cap(context: &Value) -> f64 {
         .clamp(0.0, 100.0)
 }
 
+/// sales#386 — the manager's PIN given when the discount went on the check is the approval the
+/// charge needs; it lives on the ORDER row, written only by the manager's door
+/// (`sales.order.set_discount_over_limit`), and covers what the check stores — never read from
+/// the payload; it lifts the cap on the TICKET discount only, line discounts are still judged
+/// against the cap.
+fn ticket_discount_approved_on_check(payload: &Value, context: &Value) -> bool {
+    let order_id = field(payload, "order_id");
+    if order_id.is_empty() {
+        return false;
+    }
+    let row = match tax::read_rows(context, "sales.order.get").and_then(|rows| rows.first().copied()) {
+        Some(row) => row,
+        None => return false,
+    };
+    if order_id != field(row, "id") {
+        return false;
+    }
+    if field(row, "status") != "open" {
+        return false;
+    }
+    if field(row, "discount_approved_by").is_empty() {
+        return false;
+    }
+    let ticket_percent = payload.get("discount_percent").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
+    let approved_percent = row.get("discount_percent").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
+    if ticket_percent > approved_percent {
+        return false;
+    }
+    let ticket_amount = as_cents(payload.get("discount_amount").unwrap_or(&Value::Null), 0);
+    let approved_amount = as_cents(row.get("discount_amount").unwrap_or(&Value::Null), 0);
+    ticket_amount <= approved_amount
+}
+
 /// Refuses a manual discount bigger than the one the shop lets whoever is charging give alone.
 ///
 /// 🔴 This is the SERVER's copy of the rule, and the one that counts. The till knows the cap too
@@ -1860,23 +1893,27 @@ fn discount_cap(context: &Value) -> f64 {
 /// not believe a 10 % cap also stops 10 % per line + 10 % on the ticket + a fixed amount. The FIXED amount (sales#113)
 /// cannot be judged here — it is cents, and what share of the ticket they are is not known until
 /// the lines are valued — so it is checked in `value_checkout`, where the gross exists.
-fn enforce_discount_cap(cap: f64, payload: &Value, items: &[Value]) -> Result<(), Refusal> {
-    if cap >= 100.0 {
+///
+/// sales#386 — the ticket and the line percentages can be judged against DIFFERENT caps: the
+/// manager's approval on the open check lifts the TICKET cap alone, so `ticket_cap` and `line_cap`
+/// arrive separately instead of a single shared `cap`.
+fn enforce_discount_cap(ticket_cap: f64, line_cap: f64, payload: &Value, items: &[Value]) -> Result<(), Refusal> {
+    if ticket_cap >= 100.0 && line_cap >= 100.0 {
         return Ok(());
     }
     let sale_disc = payload.get("discount_percent").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
-    if sale_disc > cap {
+    if sale_disc > ticket_cap {
         return Err(reject(
             "sales.discount_over_limit",
-            format!("ticket discount {sale_disc} above the {cap} this business allows"),
+            format!("ticket discount {sale_disc} above the {ticket_cap} this business allows"),
         ));
     }
     for item in items {
         let line_disc = item.get("discount").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
-        if line_disc > cap {
+        if line_disc > line_cap {
             return Err(reject(
                 "sales.discount_over_limit",
-                format!("line discount {line_disc} above the {cap} this business allows"),
+                format!("line discount {line_disc} above the {line_cap} this business allows"),
             ));
         }
     }
@@ -1905,10 +1942,16 @@ fn enforce_discount_cap(cap: f64, payload: &Value, items: &[Value]) -> Result<()
 ///    vacío, manda: un id que no esté ahí (inactivo, borrado, de otro hub, inventado) se rechaza y
 ///    el NOMBRE del recibo sale de la fila, no del payload. Si no lo entrega —runtime sin `reads` o
 ///    hub sin métodos sembrados— se degrada al payload: cobrar es lo último que puede romperse.
-fn decide_checkout(payload: &Value, context: &Value, items: &[Value], cap: f64) -> Result<ServerDecision, Refusal> {
+fn decide_checkout(
+    payload: &Value,
+    context: &Value,
+    items: &[Value],
+    ticket_cap: f64,
+    line_cap: f64,
+) -> Result<ServerDecision, Refusal> {
     let discounted = validate_checkout_shape(payload, items)?;
     enforce_discount_policy(context, discounted)?;
-    enforce_discount_cap(cap, payload, items)?;
+    enforce_discount_cap(ticket_cap, line_cap, payload, items)?;
     if hub_setting(context, "require_customer", false) && field(payload, "customer_id").is_empty() {
         return Err(reject("sales.customer_required", "this hub requires a customer on every sale"));
     }
@@ -2768,15 +2811,25 @@ fn complete_sale_inner(input: Value, rule: CapRule) -> Result<Output, Refusal> {
 
     // El servidor valida la oferta del cliente y decide lo que no le corresponde decidir a él.
     let cap = rule.cap(&context);
-    let decision = decide_checkout(&payload, &context, items, cap)?;
+    // sales#386 — on the usual door, a ticket discount the manager already approved on the open
+    // check does not need asking again: it lifts the TICKET cap to "no cap" for this charge, but
+    // only when the discount does not go above what was approved. Line discounts stay under the
+    // shop's cap regardless, and the manager's own door (`Approved`) already has no cap to lift.
+    let ticket_cap = if rule == CapRule::Enforced && ticket_discount_approved_on_check(&payload, &context) {
+        100.0
+    } else {
+        cap
+    };
+    let decision = decide_checkout(&payload, &context, items, ticket_cap, cap)?;
     let tax_incl = decision
         .tax_included
         .unwrap_or_else(|| payload.get("tax_included").map(as_bool).unwrap_or(true));
 
     // 🔴 THE VERY SAME VALUATION THE PREVIEW ANSWERS WITH (sales#164/#172). One function: if the
     // preview and the checkout did not share code, "adds up to the cent" would last until the
-    // first change to either of them.
-    let valuation = value_checkout(&payload, &context, &sale_id, tax_incl, Some(new_ids.len()), cap)?;
+    // first change to either of them. `ticket_cap` here too (sales#386): `value_checkout`'s `cap`
+    // parameter only bounds the ticket's FIXED amount, so it is the ticket cap, not the line one.
+    let valuation = value_checkout(&payload, &context, &sale_id, tax_incl, Some(new_ids.len()), ticket_cap)?;
     let cc = valuation.country_code.as_str();
     let rc = valuation.region_code.as_str();
     let subtotal = valuation.subtotal;
@@ -4316,6 +4369,10 @@ fn set_order_discount_inner(input: Value, rule: CapRule) -> Result<Output, Refus
     params.insert("order_id".into(), json!(order_id));
     params.insert("discount_percent".into(), json!(percent));
     params.insert("discount_amount".into(), amount.map(|a| json!(a)).unwrap_or(Value::Null));
+    // sales#386 — the manager's door marks the stored discount as APPROVED, so the usual checkout
+    // can honour it without asking for the PIN again; the usual door wipes the mark, because
+    // whatever it just set went through the everyday cap and needs no standing approval.
+    params.insert("discount_approved".into(), if rule == CapRule::Approved { json!(1) } else { json!(0) });
 
     Ok(Output::new().with_operation(Operation::sql("sales._set_order_discount", params)))
 }
@@ -12128,6 +12185,117 @@ mod tests {
                 let err = set_order_discount_over_limit_pure(set_discount(payload.clone(), Value::Null)).refused("bad payload");
                 assert_eq!(err.code, code, "{payload}: {err:?}");
             }
+        }
+    }
+
+    // sales#386 — the manager's PIN given when the discount went ON the check is the approval the
+    // charge needs too. Before, a cashier asked for the PIN twice for one discount: once to set it
+    // on the open check (sales#284) and again at Charge, because the checkout only looked at the
+    // payload and knew nothing of what the check already carried — and if the manager had left,
+    // the table could not be charged. Toast and Square carry the approval WITH the discount.
+    //
+    // The approval lives on the ORDER row (`discount_approved_by`), written only by the manager's
+    // door, and covers what the check stores: the usual checkout lifts the cap on the TICKET
+    // discount as long as the charge does not go above it. It is never read from the payload.
+    mod order_discount_approval {
+        use super::*;
+
+        /// The header `sales.order.get` hands back for the open check being charged.
+        fn check_row(percent: f64, amount: i64, approved_by: Value, status: &str) -> Value {
+            json!([{
+                "id": "ord-1", "status": status,
+                "discount_percent": percent, "discount_amount": amount,
+                "discount_approved_by": approved_by,
+            }])
+        }
+
+        /// Charging `ord-1` (three 1,00 € lines, cap at 10 %) through the USUAL door.
+        fn charge(percent: f64, amount: i64, check: Value) -> Value {
+            let mut inp = input_with_catalogs(three_equal_lines(), 5, Value::Null, json!([{ "max_discount_percent": 10 }]), Value::Null);
+            inp["payload"]["order_id"] = json!("ord-1");
+            inp["payload"]["discount_percent"] = json!(percent);
+            if amount > 0 {
+                inp["payload"]["discount_amount"] = json!(amount);
+            }
+            if !check.is_null() {
+                inp["context"]["reads"]["sales.order.get"] = check;
+            }
+            inp
+        }
+
+        fn approved(percent: f64, amount: i64) -> Value {
+            check_row(percent, amount, json!("u-manager"), "open")
+        }
+
+        #[test]
+        fn the_discount_the_manager_approved_on_the_check_is_charged_without_asking_again() {
+            complete_sale_pure(charge(90.0, 0, approved(90.0, 0))).accepted("90 % the manager approved on the check");
+            complete_sale_pure(charge(50.0, 0, approved(90.0, 0))).accepted("less than what was approved");
+            complete_sale_pure(charge(0.0, 200, approved(0.0, 200))).accepted("the 2,00 € the manager approved");
+            complete_sale_pure(charge(90.0, 20, approved(90.0, 20))).accepted("percent and amount, both approved");
+        }
+
+        #[test]
+        fn a_check_nobody_approved_is_still_capped_at_the_usual_door() {
+            for (what, check) in [
+                ("approval column empty", check_row(90.0, 0, Value::Null, "open")),
+                ("approval column blank", check_row(90.0, 0, json!(""), "open")),
+                ("no check header at all (counter sale)", Value::Null),
+                ("the header read came back empty", json!([])),
+            ] {
+                let err = complete_sale_pure(charge(90.0, 0, check)).refused(what);
+                assert_eq!(err.code, "sales.discount_over_limit", "{what}: {err:?}");
+            }
+        }
+
+        #[test]
+        fn going_above_what_was_approved_needs_the_manager_again() {
+            for (what, inp) in [
+                ("91 % over an approved 90 %", charge(91.0, 0, approved(90.0, 0))),
+                ("an amount on top of an approved percent", charge(90.0, 31, approved(90.0, 0))),
+                ("2,01 € over an approved 2,00 €", charge(0.0, 201, approved(0.0, 200))),
+            ] {
+                let err = complete_sale_pure(inp).refused(what);
+                assert_eq!(err.code, "sales.discount_over_limit", "{what}: {err:?}");
+            }
+        }
+
+        #[test]
+        fn the_approval_covers_the_ticket_discount_not_the_lines() {
+            let mut inp = charge(90.0, 0, approved(90.0, 0));
+            inp["payload"]["items"][0]["discount"] = json!(90);
+            let err = complete_sale_pure(inp).refused("90 % on a line nobody approved");
+            assert_eq!(err.code, "sales.discount_over_limit", "{err:?}");
+        }
+
+        #[test]
+        fn an_approval_on_another_check_or_a_closed_one_does_not_count() {
+            let mut other = approved(90.0, 0);
+            other[0]["id"] = json!("ord-other");
+            for (what, check) in [
+                ("the header is another check's", other),
+                ("the check is no longer open", check_row(90.0, 0, json!("u-manager"), "completed")),
+            ] {
+                let err = complete_sale_pure(charge(90.0, 0, check)).refused(what);
+                assert_eq!(err.code, "sales.discount_over_limit", "{what}: {err:?}");
+            }
+        }
+
+        #[test]
+        fn only_the_managers_door_marks_the_discount_as_approved() {
+            let inp = json!({
+                "payload": { "order_id": "ord-1", "discount_percent": 90, "discount_amount": 0 },
+                "context": { "reads": { "sales.settings.get": [{ "max_discount_percent": 10 }] } },
+            });
+            let out = set_order_discount_over_limit_pure(inp).accepted("the manager's door");
+            assert_eq!(out.operations[0].params["discount_approved"], json!(1), "{out:?}");
+
+            let inp = json!({
+                "payload": { "order_id": "ord-1", "discount_percent": 5, "discount_amount": 0 },
+                "context": { "reads": { "sales.settings.get": [{ "max_discount_percent": 10 }] } },
+            });
+            let out = set_order_discount_pure(inp).accepted("the usual door");
+            assert_eq!(out.operations[0].params["discount_approved"], json!(0), "the usual door clears it: {out:?}");
         }
     }
 }

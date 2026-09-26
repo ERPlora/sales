@@ -1232,6 +1232,12 @@ export class ErpPosTouch extends LitElement {
   /** sales#71 — descuento de TICKET (%) de la cuenta en curso; 0 = ninguno. Se persiste en el
    *  pedido (`sales.order.set_discount`) y vuelve al retomar la cuenta (`OpenCheck.discount`). */
   @state() ticketDiscount = 0;
+  /** sales#386 — the manager approved the ticket discount this check carries: set when the
+   *  manager's door (`sales.order.set_discount_over_limit`) accepted it, restored with the check
+   *  (`OpenCheck.discountApproved`), and wiped as soon as the usual door writes a new discount.
+   *  Lets Charge go through the usual `sales.complete_sale` for that same discount, with no second
+   *  PIN. */
+  @state() ticketDiscountApproved = false;
   /** El sheet de descuento: sobre una LÍNEA o sobre el TICKET. */
   @state() private discountSheet?: { target: 'line' | 'ticket'; lineId?: string };
   /** sales#156 — the sheet for a line's NOTE. `lineId` is the order row being annotated; without
@@ -2497,6 +2503,7 @@ export class ErpPosTouch extends LitElement {
       this.orderLabel = c.label ?? '';
       this.ticketDiscount = c.discount ?? 0; // sales#71
       this.ticketDiscountAmount = c.discount_amount ?? 0; // sales#113
+      this.ticketDiscountApproved = c.discountApproved ?? false; // sales#386
       await this.adoptCheckAppointment(c.appointmentId); // sales#280
       rememberCurrentCheck(localStorage, c.id);
       this.cart = await loadOrderLines(erplora(), c.id);
@@ -2538,6 +2545,7 @@ export class ErpPosTouch extends LitElement {
       this.orderLabel = cuentas.find((c) => c.id === id)?.label ?? '';
       this.ticketDiscount = cuentas.find((c) => c.id === id)?.discount ?? 0; // sales#71
       this.ticketDiscountAmount = cuentas.find((c) => c.id === id)?.discount_amount ?? 0; // sales#113
+      this.ticketDiscountApproved = cuentas.find((c) => c.id === id)?.discountApproved ?? false; // sales#386
       // sales#280: y la cita con la que se armó, si vino de la agenda. Va antes del deep link del
       // arranque a propósito — si la navegación trae una cita nueva, esa es la que manda.
       await this.adoptCheckAppointment(cuentas.find((c) => c.id === id)?.appointmentId);
@@ -3835,7 +3843,7 @@ export class ErpPosTouch extends LitElement {
   protected override willUpdate(changed: Map<PropertyKey, unknown>): void {
     // sales#71: el descuento de ticket pertenece a la CUENTA. Al soltarla (cobrada, aparcada,
     // eliminada, mesa cambiada) no puede arrastrarse a la siguiente.
-    if (changed.has('orderId') && !this.orderId) { this.ticketDiscount = 0; this.ticketDiscountAmount = 0; }
+    if (changed.has('orderId') && !this.orderId) { this.ticketDiscount = 0; this.ticketDiscountAmount = 0; this.ticketDiscountApproved = false; }
     // sales#277 — a cart with an attributed line needs NAMES, and the till may never have opened
     // the picker: the check resumed this morning comes back from `sales_order_item` with opaque
     // ids and nothing else. Asked for HERE and not at boot for the reason `openStaffPicker`
@@ -3978,6 +3986,9 @@ export class ErpPosTouch extends LitElement {
     try {
       if (overCap) await erplora().command('sales.order.set_discount_over_limit', payload);
       else await erplora().command('sales.order.set_discount', payload);
+      // sales#386: mirror what the server just did — the manager's door wrote the approval on the
+      // check, the usual door wiped whatever approval was there before.
+      this.ticketDiscountApproved = overCap;
       return true;
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e);
@@ -4422,12 +4433,19 @@ export class ErpPosTouch extends LitElement {
       //
       // The gross is `chargedLines` (billed, minus what an external tender already covered, minus
       // gifts): the same set the server's fixed-amount cap weighs, so both round the same 30 cents.
+      //
+      // sales#386 — a ticket discount the manager already approved ON THE CHECK goes through the
+      // usual door instead: `ticketDiscountApproved` only records that the manager's door accepted
+      // it once, not that it is safe forever, so it is passed as the approval to weigh, not trusted
+      // outright. The SERVER honours the approval it stored on the order, never this payload, and
+      // refuses anything charged above it — this only spares the manager a second PIN for the same
+      // number they already signed off.
       const checkoutDoor = checkoutCommand(discountCap(this.settings), {
         ticketPercent: this.ticketDiscount,
         ticketAmountCents: this.ticketDiscountAmount > 0 && !split.line_ids ? this.ticketDiscountAmount : 0,
         grossCents: cartTotal(this.chargedLines, this.ticketDiscount),
         linePercents: cobradas.map((l) => l.discount ?? 0),
-      });
+      }, this.ticketDiscountApproved ? { percent: this.ticketDiscount, amountCents: this.ticketDiscountAmount } : null);
       const checkoutPayload = {
         items,
         // sales#71: descuento de TICKET (%); el servidor lo prorratea por línea antes del IVA.

@@ -5,8 +5,16 @@
 -- there — this statement itself has no cap logic. Only on open orders: a charged sale is never
 -- discounted this way (guard, ADR-0141). The provisional total does NOT change here: it is the sum
 -- of the lines (display); the ticket discount is shown by the till and applied at checkout.
+--
+-- sales#386: `discount_approved_by` records WHO cleared the cap for the discount this write
+-- stores, so the checkout can honour it without asking for the PIN a second time. `:discount_approved`
+-- comes as 1 from the manager's door and 0 from the usual door: the usual door always wipes the
+-- column, since a discount it accepts on its own never needed approval. `:approved_by` is the
+-- manager the runtime named when the PIN was typed; it arrives empty when the caller already held
+-- the permission themselves, in which case the approval names the caller (`:current_user_id`).
 UPDATE sales_order
 SET discount_percent = :discount_percent,
-    discount_amount = COALESCE(:discount_amount, discount_amount), -- sales#113 (céntimos)
+    discount_amount = COALESCE(:discount_amount, discount_amount), -- sales#113 (cents)
+    discount_approved_by = CASE WHEN :discount_approved = 1 THEN COALESCE(NULLIF(:approved_by, ''), :current_user_id) ELSE NULL END,
     updated_by = :current_user_id, updated_at = :now
 WHERE id = :order_id AND hub_id = :hub_id AND status = 'open' AND is_deleted = 0;

@@ -6320,7 +6320,8 @@ async function listOpenChecks(client, excluir) {
       discount_amount: Number(o9.discount_amount) > 0 ? Number(o9.discount_amount) : void 0,
       // `undefined` y no '' cuando la cuenta no vino de ninguna cita: es lo que distingue «no
       // tiene» de «tiene una vacía», y lo que viaja como `null` en el cobro.
-      appointmentId: o9.appointment_id ? String(o9.appointment_id) : void 0
+      appointmentId: o9.appointment_id ? String(o9.appointment_id) : void 0,
+      discountApproved: o9.discount_approved_by ? true : void 0
     })).sort((a3, b3) => b3.created_at.localeCompare(a3.created_at));
   } catch {
     return [];
@@ -6870,8 +6871,10 @@ function needsManagerApproval(cap, discounts) {
   if (discounts.linePercents.some((percent2) => percent2 > cap)) return true;
   return discounts.ticketAmountCents > 0 && discounts.ticketAmountCents > allowedAmountCents(cap, discounts.grossCents);
 }
-function checkoutCommand(cap, discounts) {
-  return needsManagerApproval(cap, discounts) ? CHECKOUT_OVER_LIMIT_COMMAND : CHECKOUT_COMMAND;
+function checkoutCommand(cap, discounts, approved) {
+  const ticketCovered = !!approved && discounts.ticketPercent <= approved.percent && discounts.ticketAmountCents <= approved.amountCents;
+  const judged = ticketCovered ? { ...discounts, ticketPercent: 0, ticketAmountCents: 0 } : discounts;
+  return needsManagerApproval(cap, judged) ? CHECKOUT_OVER_LIMIT_COMMAND : CHECKOUT_COMMAND;
 }
 
 // ui/lib/split-tender.ts
@@ -8068,6 +8071,7 @@ var ErpPosTouch = class extends i3 {
      *  only decides the VAT. Empty for the bare «Open price» key, where the department names it. */
     this.openServiceName = "";
     this.ticketDiscount = 0;
+    this.ticketDiscountApproved = false;
     this.noteInput = "";
     this.quickNotes = [];
     this.quickNotesState = "idle";
@@ -9891,6 +9895,7 @@ var ErpPosTouch = class extends i3 {
       this.orderLabel = c5.label ?? "";
       this.ticketDiscount = c5.discount ?? 0;
       this.ticketDiscountAmount = c5.discount_amount ?? 0;
+      this.ticketDiscountApproved = c5.discountApproved ?? false;
       await this.adoptCheckAppointment(c5.appointmentId);
       rememberCurrentCheck(localStorage, c5.id);
       this.cart = await loadOrderLines(erplora2(), c5.id);
@@ -9929,6 +9934,7 @@ var ErpPosTouch = class extends i3 {
       this.orderLabel = cuentas.find((c5) => c5.id === id)?.label ?? "";
       this.ticketDiscount = cuentas.find((c5) => c5.id === id)?.discount ?? 0;
       this.ticketDiscountAmount = cuentas.find((c5) => c5.id === id)?.discount_amount ?? 0;
+      this.ticketDiscountApproved = cuentas.find((c5) => c5.id === id)?.discountApproved ?? false;
       await this.adoptCheckAppointment(cuentas.find((c5) => c5.id === id)?.appointmentId);
       for (const f3 of this.assignFillers) {
         f3.el.dispatchEvent(new CustomEvent("erp:order-restored", { detail: { order_id: id }, bubbles: false }));
@@ -11005,6 +11011,7 @@ var ErpPosTouch = class extends i3 {
     if (changed.has("orderId") && !this.orderId) {
       this.ticketDiscount = 0;
       this.ticketDiscountAmount = 0;
+      this.ticketDiscountApproved = false;
     }
     if (changed.has("cart") && this.cart.some((l3) => l3.staff_id && !this.staffNames.has(l3.staff_id))) {
       void this.ensureStaffOptions();
@@ -11123,6 +11130,7 @@ var ErpPosTouch = class extends i3 {
     try {
       if (overCap) await erplora2().command("sales.order.set_discount_over_limit", payload);
       else await erplora2().command("sales.order.set_discount", payload);
+      this.ticketDiscountApproved = overCap;
       return true;
     } catch (e8) {
       this.error = e8 instanceof Error ? e8.message : String(e8);
@@ -11473,7 +11481,7 @@ var ErpPosTouch = class extends i3 {
         ticketAmountCents: this.ticketDiscountAmount > 0 && !split.line_ids ? this.ticketDiscountAmount : 0,
         grossCents: cartTotal(this.chargedLines, this.ticketDiscount),
         linePercents: cobradas.map((l3) => l3.discount ?? 0)
-      });
+      }, this.ticketDiscountApproved ? { percent: this.ticketDiscount, amountCents: this.ticketDiscountAmount } : null);
       const checkoutPayload = {
         items,
         // sales#71: descuento de TICKET (%); el servidor lo prorratea por línea antes del IVA.
@@ -13003,6 +13011,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "ticketDiscount", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "ticketDiscountApproved", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "discountSheet", 2);
