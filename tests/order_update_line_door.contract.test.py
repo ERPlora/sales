@@ -82,6 +82,17 @@ def main() -> int:
         True,
     )
 
+    print("\n5 · the quantity is fixed-point INTEGER or absent, never a float (ADR-0147)")
+    # Probed against hub:stable (rv-397): `quantity: 2.5` slipped past the schema and the handler's
+    # lenient parse fell back to ONE unit — the till asked for 2,5 and the check silently sold 1.
+    # `open_order.json` / `complete_sale.json` / `fire_order.json` already type it as integer.
+    qty = (schema.get("properties") or {}).get("quantity") or {}
+    types = qty.get("type")
+    types = types if isinstance(types, list) else [types]
+    check("quantity is typed as integer", "integer" in types, True)
+    check("quantity is never a bare number", "number" in types, False)
+    check("quantity may be omitted/null (note-only edit keeps the row's)", "null" in types, True)
+
     if failures:
         print(f"\n{len(failures)} failure(s)")
         return 1
