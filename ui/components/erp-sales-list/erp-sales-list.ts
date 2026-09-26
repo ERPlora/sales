@@ -276,7 +276,9 @@ export class ErpSalesList extends LitElement {
         return true;
       } },
     ];
-    alert.addEventListener('ionAlertDidDismiss', () => alert.remove(), { once: true });
+    // Ionic moves the teleported overlay back to its original parent right AFTER emitting
+    // ionAlertDidDismiss: remove it on the next task or a hidden alert is left on every void (sales#406).
+    alert.addEventListener('ionAlertDidDismiss', () => setTimeout(() => alert.remove(), 0), { once: true });
     document.body.appendChild(alert);
     try {
       if (typeof alert.present === 'function') await alert.present();

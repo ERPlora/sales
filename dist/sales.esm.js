@@ -9837,7 +9837,10 @@ var ErpPosTouch = class extends i3 {
       if (this.pendingSwitchAlert === alert) this.pendingSwitchAlert = void 0;
       alert.remove();
     };
-    alert.addEventListener("ionAlertDidDismiss", cleanup, { once: true });
+    alert.addEventListener("ionAlertDidDismiss", () => {
+      if (this.pendingSwitchAlert === alert) this.pendingSwitchAlert = void 0;
+      setTimeout(() => alert.remove(), 0);
+    }, { once: true });
     document.body.appendChild(alert);
     this.pendingSwitchAlert = alert;
     try {
@@ -16796,7 +16799,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
         return true;
       } }
     ];
-    alert.addEventListener("ionAlertDidDismiss", () => alert.remove(), { once: true });
+    alert.addEventListener("ionAlertDidDismiss", () => setTimeout(() => alert.remove(), 0), { once: true });
     document.body.appendChild(alert);
     try {
       if (typeof alert.present === "function") await alert.present();
