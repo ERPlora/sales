@@ -13038,6 +13038,16 @@ mod tests {
             let out = update_order_line_pure(inp).accepted("three whole coffees");
             assert_eq!(write(&out).params["quantity"], json!(3_000_000));
             assert_eq!(write(&out).params["increment_value"], Value::Null, "the declared step stays: {out:?}");
+
+            // A unit other than `ud` is declared even when no name was frozen with it (a line
+            // added through the API): whole grams stay whole grams.
+            let mut grams = coffee_row();
+            grams["unit_code"] = json!("g");
+            grams["unit_name"] = json!("");
+            grams["increment_value"] = json!(1_000_000);
+            let inp = update_line(json!({ "order_id": "ord-1", "line_id": "line-1", "quantity": 1_500_000 }), grams);
+            let err = update_order_line_pure(inp).refused("1,5 g on a whole-gram line");
+            assert_eq!(err.code, "sales.quantity_off_grid", "{err:?}");
         }
 
         #[test]
