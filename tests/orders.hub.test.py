@@ -25,6 +25,8 @@ their ids and wraps their transaction, so they are proven here, through HTTP, an
   7. Voiding an open order cancels the ticket before any money moves.
   3b. (sales#399) Changing a line's quantity applies the step the line declares, like adding it:
      off-step on a declared unit is refused, a line without a unit still takes half a portion.
+  3c. (sales#401) Adding a line refuses a quantity that is not a fixed-point integer
+     (`invalid_payload`) instead of silently storing one unit.
 
 Usage: `erplora test <dir> --against-hub [dev|stable|sha256:…]` (module-toolkit#110). Never on
 its own: without a runtime it fails, it does not skip.
@@ -224,6 +226,39 @@ def test_a_quantity_change_keeps_the_step_the_line_declares(hub: Hub) -> None:
     )
 
 
+def test_adding_a_line_refuses_a_quantity_that_is_not_fixed_point(hub: Hub) -> None:
+    print(
+        "\n3c · add_line / add_open_line refuse a decimal quantity instead of selling one unit (sales#401)"
+    )
+    oid, _ = open_order(hub, [{"product_name": "Café", "price": 121, "quantity": ONE}])
+    before = cents(order(hub, oid).get("provisional_total"))
+    for door in ("sales.order.add_line", "sales.order.add_open_line"):
+        for bad in (2.5, "2.5"):
+            hub.refused(
+                f"{door} with quantity {bad!r} (not fixed-point 10^6)",
+                door,
+                {"order_id": oid, "product_name": "Agua", "unit_price": 110, "quantity": bad},
+                "invalid_payload",
+            )
+    hub.check("no line was added by the refused calls", len(lines(hub, oid)), 1)
+    hub.check(
+        "the provisional total did not move",
+        cents(order(hub, oid).get("provisional_total")),
+        before,
+    )
+
+    # What the till really sends (fixed-point integer) still goes in, and so does a payload that
+    # omits the quantity (one unit by default) — the schema only closes the lenient parse.
+    hub.run(
+        "sales.order.add_line",
+        {"order_id": oid, "product_name": "Agua", "unit_price": 110, "quantity": 2_500_000},
+    )
+    hub.run("sales.order.add_line", {"order_id": oid, "product_name": "Pan", "unit_price": 50})
+    by_name = {l["product_name"]: l for l in lines(hub, oid)}
+    hub.check("2,5 waters sent as 2500000 are stored as 2,5", by_name["Agua"].get("quantity"), 2_500_000)
+    hub.check("an omitted quantity is one unit", by_name["Pan"].get("quantity"), ONE)
+
+
 def test_checkout_completes_the_order_and_links_the_sale(hub: Hub, cash: str) -> None:
     print(
         "\n4 · checkout freezes one immutable sale linked to the order and completes it"
@@ -403,6 +438,7 @@ def main() -> int:
     test_the_order_knows_nothing_about_customers(hub)
     test_mutating_an_open_order_recomputes_its_total(hub)
     test_a_quantity_change_keeps_the_step_the_line_declares(hub)
+    test_adding_a_line_refuses_a_quantity_that_is_not_fixed_point(hub)
     test_checkout_completes_the_order_and_links_the_sale(hub, cash)
     test_split_bill_one_order_two_sales(hub, cash)
     test_each_diner_pays_their_own_lines(hub, cash)

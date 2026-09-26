@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "sales.order.add_line / sales.order.add_open_line",
+  "description": "Adds one line to an open check (ADR-0141). The payload is FLAT and carries the line's optional columns (unit context, supplements, set menu, note…), so the rest of the shape goes through untouched; what this schema closes is the quantity (sales#401): the handler reads it with a lenient parse, and a float or a decimal string fell back to ONE unit with HTTP 200 — an API client asking for 2,5 got 1. The step the line declares is still enforced by the handler (`sales.quantity_off_grid`).",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "order_id"
+  ],
+  "properties": {
+    "order_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "quantity": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Quantity in fixed-point INTEGER, global scale 10^6 (ADR-0147): 1 unit = 1000000, 2,5 = 2500000. Never a float nor a string. Omit it (or send null) for one unit."
+    }
+  }
+}

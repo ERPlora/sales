@@ -811,6 +811,7 @@
         "file": "dist/handler.wasm",
         "function": "add_order_line"
       },
+      "schema": "schemas/add_order_line.json",
       "ai": {
         "description": "Adds a line item to an open order and recomputes its provisional total (ADR-0141). The unit price is resolved SERVER-SIDE from the product catalogue (and, for a set menu, from the combo catalogue), and each supplement's delta from the modifier catalogue (sales#200): the check is charged at the price the line had when it was ordered (sales#175), so the price on the row decides money and the caller does not set it."
       }
@@ -843,6 +844,7 @@
         "file": "dist/handler.wasm",
         "function": "add_order_line"
       },
+      "schema": "schemas/add_order_line.json",
       "ai": {
         "description": "Adds an OPEN-PRICE line (free amount, no catalogue product) to an open order and recomputes its provisional total. Same effect as sales.order.add_line but gated by sales.sell_open_price: nothing contradicts a typed amount, so the cashier needs the permission or a manager's PIN approval (ADR-0238)."
       }
