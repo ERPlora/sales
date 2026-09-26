@@ -199,6 +199,61 @@ describe('QR fiscal: reintento mientras el Outbox termina', () => {
   });
 });
 
+// sales#411 — the note under the fiscal QR names the document the customer holds. A ticket said
+// «scan to validate the INVOICE at the AEAT» under a header reading «Ticket»: one sentence served
+// both documents. The note follows the document this viewer shows (and prints, sales#306).
+describe('the note under the fiscal QR names the document on screen (sales#411)', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  async function mountIssued(document_type: 'ticket' | 'invoice', aeat_csv = '') {
+    installDocDouble({
+      'sales.get': [{
+        id: 's1', sale_number: 'T-1', subtotal: 327, tax_amount: 33, total: 360, document_type,
+        payment_method_name: 'Efectivo', created_at: '2026-09-26T10:00:00Z',
+      }],
+      'sales.lines': [{ product_name: 'Cafe', quantity: 1, unit_price: 360, line_total: 360 }],
+      'invoice.by_source': [{ id: 'inv1', number: 'F-1', invoice_type: document_type === 'invoice' ? 'F1' : 'F2', customer_tax_id: 'B87654321' }],
+      'invoice.lines': [],
+      'verifactu.records.by_invoice': [{ qr_url: 'https://aeat/qr', aeat_csv }],
+    });
+    const el = document.createElement('erp-sales-document') as HTMLElement & { updateComplete: Promise<unknown> };
+    el.setAttribute('sale-id', 's1');
+    document.body.appendChild(el);
+    await vi.waitFor(() => {
+      const shown = el.shadowRoot!.querySelector(document_type === 'invoice' ? 'ok-invoice' : 'ok-receipt') as
+        (HTMLElement & { receipt?: ReceiptData; invoice?: { qr?: string } }) | null;
+      expect((shown?.receipt ?? shown?.invoice)?.qr).toBe('https://aeat/qr');
+    });
+    return el;
+  }
+
+  it('a ticket says «this ticket», never «the invoice»', async () => {
+    const el = await mountIssued('ticket');
+    const receipt = el.shadowRoot!.querySelector('ok-receipt') as HTMLElement & { receipt: ReceiptData };
+    expect(receipt.receipt.qr_note).toBe('ui.qrValidateNoteTicket');
+    const paper = (el as unknown as { printableDocument(): Record<string, unknown> }).printableDocument();
+    expect(JSON.stringify(paper), 'the paper is the ticket on screen (sales#306)').not.toContain('ui.qrValidateNoteInvoice');
+  });
+
+  it('an invoice says «this invoice»', async () => {
+    const el = await mountIssued('invoice');
+    const invoice = el.shadowRoot!.querySelector('ok-invoice') as HTMLElement & { invoice: { qr_note?: string } };
+    expect(invoice.invoice.qr_note).toBe('ui.qrValidateNoteInvoice');
+  });
+
+  it('once the AEAT answers, both show its CSV instead of the note', async () => {
+    for (const type of ['ticket', 'invoice'] as const) {
+      const el = await mountIssued(type, 'A-7F3K9QX2M1');
+      const shown = el.shadowRoot!.querySelector(type === 'invoice' ? 'ok-invoice' : 'ok-receipt') as
+        HTMLElement & { receipt?: ReceiptData; invoice?: { qr_note?: string } };
+      expect((shown.receipt ?? shown.invoice)?.qr_note).toBe('CSV: A-7F3K9QX2M1');
+      document.body.innerHTML = '';
+    }
+  });
+});
+
 // The paper, not the screen (sales#79). `printableHtml()` is what a browser prints; a thermal
 // printer reads a STRUCTURED document instead, and reprinting used to send it nothing at all —
 // the renderer reads by key, found none, and printed «ERPlora», no lines, TOTAL 0.00.
