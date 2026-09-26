@@ -4031,6 +4031,8 @@ fn split_order_line_inner(input: Value) -> Result<Output, Refusal> {
     source.insert("is_gift".into(), Value::Null);
     source.insert("gift_reason".into(), Value::Null);
     source.insert("notes".into(), Value::Null);
+    // The split lands on whole units, so the frozen step stays (sales#399).
+    source.insert("increment_value".into(), Value::Null);
     ops.push(Operation::sql("sales._update_order_line", source));
 
     for i in 0..(parts - 1) {
