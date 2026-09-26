@@ -16,6 +16,10 @@ the check showed the reduced total to the customer, and the manager was only ask
   6. sales#386 — what the manager approved on the check is CHARGED through the usual door
      (`sales.complete_sale`) without asking again; a discount that went back through the usual
      door has lost its approval, and so has a charge that asks for more than was approved.
+  7. sales#385 — the same for a LINE discount: `sales.order.set_line_discount` refuses 50 % with
+     the cap at 10 and the line keeps its price, the manager's door stores it (priced by the
+     server) and marks the line approved, the usual checkout charges that line at 50 % without
+     asking again but not a sibling line, and a voided check refuses both doors.
 
 The cap is restored to what the hub had at the end, pass or fail: the settings row is the
 hub's singleton and other batteries charge against it.
@@ -187,6 +191,55 @@ def approval_carries_to_the_charge(hub: Hub) -> None:
     )
     hub.run("sales.order.void", {"order_id": order_id})
 
+def lines(hub: Hub, order_id: str) -> list[dict]:
+    return hub.query("sales.order.lines", {"order_id": order_id})
+
+
+def line_discount_is_authorised_when_applied(hub: Hub) -> None:
+    print("\n7 · a LINE discount is authorised when it is applied, and charged without asking again (sales#385)")
+    order_id = open_check(hub)
+    first, second = lines(hub, order_id)[:2]
+    payload = {"order_id": order_id, "line_id": first["id"], "discount_percent": 50}
+    hub.refused("50 % on a line with the cap at 10", "sales.order.set_line_discount", payload, "sales.discount_over_limit")
+    row = next(r for r in lines(hub, order_id) if r["id"] == first["id"])
+    hub.check("the refused line keeps its price", (float(row.get("discount_percent") or 0), cents(row["line_total"])), (0.0, 100))
+
+    hub.run("sales.order.set_line_discount_over_limit", payload)
+    row = next(r for r in lines(hub, order_id) if r["id"] == first["id"])
+    hub.check("the manager's 50 % is stored and priced by the server", (float(row["discount_percent"]), cents(row["line_total"])), (50.0, 50))
+    hub.check_true("the line says somebody approved its discount", bool(row.get("discount_approved_by")), row)
+    header = hub.query("sales.order.get", {"order_id": order_id})
+    hub.check("the check's provisional total follows the line", cents(header[0]["provisional_total"]) if header else None, 250)
+
+    def charge_lines(second_percent: float, tag: str) -> dict:
+        body = charge(hub, order_id, 0, tag)
+        body["amount_tendered"] = 300
+        for item, row, pct in zip(body["items"], lines(hub, order_id), (50, second_percent, 0)):
+            item["order_item_id"] = row["id"]
+            item["discount"] = pct
+        return body
+
+    hub.refused(
+        "the approval covers its own line, not the one next to it",
+        "sales.complete_sale",
+        charge_lines(50, "line-approval-sibling"),
+        "sales.discount_over_limit",
+    )
+    hub.run("sales.complete_sale", charge_lines(0, "line-approval-ok"))
+    header = hub.query("sales.order.get", {"order_id": order_id})
+    hub.check("the approved line is charged through the usual door", header[0].get("status") if header else None, "completed")
+
+    order_id = open_check(hub)
+    line_id = lines(hub, order_id)[0]["id"]
+    hub.run("sales.order.void", {"order_id": order_id})
+    for door in ("sales.order.set_line_discount", "sales.order.set_line_discount_over_limit"):
+        hub.refused(
+            f"{door} on a voided check",
+            door,
+            {"order_id": order_id, "line_id": line_id, "discount_percent": 5},
+            "sales.order_unavailable",
+        )
+
 
 def main() -> int:
     hub = Hub("order_discount_cap.hub")
@@ -196,6 +249,7 @@ def main() -> int:
     try:
         scenario(hub)
         approval_carries_to_the_charge(hub)
+        line_discount_is_authorised_when_applied(hub)
     finally:
         save_policy(hub, before)
     return hub.finish("the discount on an open check is authorised when it is applied")
