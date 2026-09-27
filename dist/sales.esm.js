@@ -4604,6 +4604,7 @@ var en_default = {
     parkedTickets: "Open checks",
     openCart: "Open cart",
     openCartWithItems: "Open cart, {count} items, total {total}",
+    openCartWithItemsOne: "Open cart, 1 item, total {total}",
     openChecksAction: "Checks",
     openChecksHint: "Tap a check to resume it.",
     parkForLaterHint: "Park the current check to resume it later. The title is optional.",
@@ -4646,7 +4647,8 @@ var en_default = {
     all: "All",
     categoryFilter: "Categories",
     products: "products",
-    items: "items",
+    itemCount: "{count} items",
+    itemCountOne: "1 item",
     previous: "Previous",
     next: "Next",
     searchProductPlaceholder: "Search product\u2026",
@@ -5249,6 +5251,7 @@ var es_default = {
     parkedTickets: "Cuentas abiertas",
     openCart: "Abrir carrito",
     openCartWithItems: "Abrir carrito, {count} art\xEDculos, total {total}",
+    openCartWithItemsOne: "Abrir carrito, 1 art\xEDculo, total {total}",
     openChecksAction: "Cuentas",
     openChecksHint: "Toca una cuenta para retomarla.",
     parkForLaterHint: "Aparca la cuenta actual para retomarla m\xE1s tarde. El t\xEDtulo es opcional.",
@@ -5291,7 +5294,8 @@ var es_default = {
     all: "Todos",
     categoryFilter: "Categor\xEDas",
     products: "productos",
-    items: "art\xEDculos",
+    itemCount: "{count} art\xEDculos",
+    itemCountOne: "1 art\xEDculo",
     previous: "Anterior",
     next: "Siguiente",
     searchProductPlaceholder: "Buscar producto\u2026",
@@ -12109,7 +12113,7 @@ var ErpPosTouch = class extends i3 {
     const cell = (id, name, count) => b2`
       <ion-segment-button data-testid=${`pos-category-${id || "all"}`} class="cat-segment-button" value=${id}>
         <ion-label class="cat-segment-label">
-          <span class="cc-n">${name}</span><span class="cc-c">${count} ${t5("ui.items")}</span>
+          <span class="cc-n">${name}</span><span class="cc-c">${count === 1 ? t5("ui.itemCountOne") : t5("ui.itemCount", { count })}</span>
         </ion-label>
       </ion-segment-button>`;
     return b2`
@@ -12686,9 +12690,10 @@ var ErpPosTouch = class extends i3 {
         <!-- Cart FAB (mobile only). sales#84: accessible name with the count (nobody reads the
              visual badge), and the open/closed state of the drawer it controls. sales#412: with
              items it carries the running total, as Square/Toast/Shopify POS do on their cart
-             button, so «how much is it?» does not need the drawer opened. -->
+             button, so «how much is it?» does not need the drawer opened. sales#417: one item is
+             «1 item», not «1 items» — the singular is its own key. -->
         <button data-testid="pos-cart-fab" class="fab" ?data-has-items=${this.itemCount > 0}
-                aria-label=${this.itemCount ? t5("ui.openCartWithItems", { count: this.itemCount, total: this.money(this.total) }) : t5("ui.openCart")}
+                aria-label=${this.itemCount === 0 ? t5("ui.openCart") : this.itemCount === 1 ? t5("ui.openCartWithItemsOne", { total: this.money(this.total) }) : t5("ui.openCartWithItems", { count: this.itemCount, total: this.money(this.total) })}
                 aria-expanded=${this.cartOpen ? "true" : "false"} aria-controls="pos-cart-drawer"
                 @click=${() => {
       this.cartOpen = true;

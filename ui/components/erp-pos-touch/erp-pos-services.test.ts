@@ -52,6 +52,11 @@ function installSdk(servicesInstalled: boolean) {
     ...(servicesInstalled
       ? { services: SERVICES, serviceCategories: SERVICE_CATS }
       : { absentModules: ['services'] }),
+    // Keys come back raw; a key with params shows them, so a count is readable (sales#417 moved
+    // the tab counter's number into its key: «{count} items» / «1 item»).
+    t: (_catalog, key, params) => (params
+      ? `${key}(${Object.entries(params).map(([k, v]) => `${k}=${v}`).join(',')})`
+      : key),
     command: async (name: string, params?: Record<string, unknown>) => {
       commands.push({ name, params });
       return { rows: [{ id: 'line-1' }] };
@@ -126,7 +131,7 @@ describe('the till offers services alongside products (sales#89)', () => {
       .find((b) => b.querySelector('.cc-n')?.textContent?.trim() === 'Cabello');
     expect(tab, 'the Cabello tab is painted').toBeTruthy();
     // The three fixtures are all in `sc-pelo` (the unconfigured one is painted, blocked).
-    expect(tab!.querySelector('.cc-c')?.textContent).toMatch(/^3 /);
+    expect(tab!.querySelector('.cc-c')?.textContent?.trim()).toBe('ui.itemCount(count=3)');
 
     (el as unknown as { activeCat: string }).activeCat = 'sc-pelo';
     await el.updateComplete;
@@ -140,7 +145,7 @@ describe('the till offers services alongside products (sales#89)', () => {
   it('the tab counter uses a neutral noun: a salon does not sell «products» (sales#99)', async () => {
     const el = await mount();
     const counter = el.shadowRoot.querySelector('.cc-c')?.textContent ?? '';
-    expect(counter).toContain('ui.items');
+    expect(counter).toContain('ui.itemCount');
     expect(counter).not.toContain('ui.products');
   });
 });

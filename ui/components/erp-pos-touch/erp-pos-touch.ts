@@ -5050,7 +5050,7 @@ export class ErpPosTouch extends LitElement {
     const cell = (id: string, name: string, count: number) => html`
       <ion-segment-button data-testid=${`pos-category-${id || "all"}`} class="cat-segment-button" value=${id}>
         <ion-label class="cat-segment-label">
-          <span class="cc-n">${name}</span><span class="cc-c">${count} ${t('ui.items')}</span>
+          <span class="cc-n">${name}</span><span class="cc-c">${count === 1 ? t('ui.itemCountOne') : t('ui.itemCount', { count })}</span>
         </ion-label>
       </ion-segment-button>`;
     return html`
@@ -5701,11 +5701,14 @@ export class ErpPosTouch extends LitElement {
         <!-- Cart FAB (mobile only). sales#84: accessible name with the count (nobody reads the
              visual badge), and the open/closed state of the drawer it controls. sales#412: with
              items it carries the running total, as Square/Toast/Shopify POS do on their cart
-             button, so «how much is it?» does not need the drawer opened. -->
+             button, so «how much is it?» does not need the drawer opened. sales#417: one item is
+             «1 item», not «1 items» — the singular is its own key. -->
         <button data-testid="pos-cart-fab" class="fab" ?data-has-items=${this.itemCount > 0}
-                aria-label=${this.itemCount
-                  ? t('ui.openCartWithItems', { count: this.itemCount, total: this.money(this.total) })
-                  : t('ui.openCart')}
+                aria-label=${this.itemCount === 0
+                  ? t('ui.openCart')
+                  : this.itemCount === 1
+                    ? t('ui.openCartWithItemsOne', { total: this.money(this.total) })
+                    : t('ui.openCartWithItems', { count: this.itemCount, total: this.money(this.total) })}
                 aria-expanded=${this.cartOpen ? 'true' : 'false'} aria-controls="pos-cart-drawer"
                 @click=${() => { this.cartOpen = true; }}>
           <ion-icon name="cart-outline" aria-hidden="true"></ion-icon>
