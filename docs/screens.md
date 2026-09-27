@@ -81,6 +81,13 @@ how many products it holds) and a search box, with products as cards carrying ph
 and price. **Check** on the right: the lines of the current order, a quantity stepper on each one,
 and a fixed footer with the running total and the **Cobrar** (charge) button.
 
+On a phone the check is a drawer opened from the cart button, which shows the running total and
+always sits above the tab bar (sales#412 / sales#418). The open drawer spans only what the screen
+shows between the header and the tab bar — also on a low phone under the «You can't invoice yet»
+strip, or a phone on its side: the total and **Cobrar** stay on screen and the lines scroll inside.
+Where even that does not leave room for the first line, the drawer scrolls on its own, still above
+the tab bar (sales#420).
+
 ### Sell something and charge it
 
 1. Pick a category, or search for the product by name.

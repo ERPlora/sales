@@ -796,8 +796,10 @@ export class ErpPosTouch extends LitElement {
     .limit-head ion-icon { font-size:1.35rem; flex:0 0 auto; margin-top:.1rem; }
     .limit-head strong { display:block; font-size:.98rem; }
     .limit-head p { margin:.15rem 0 0; font-size:.86rem; color:var(--mut); }
-    .limit-capture ion-input { --background:var(--ion-background-color,#fff); --padding-start:.6rem;
-      --padding-end:.6rem; border-radius:.5rem; }
+    /* Outlined boxes (sales#414): the label sits on the top border, so each box needs room above,
+       and the selects get the same white fill as the inputs over the tinted capture. */
+    .limit-capture ion-input, .limit-capture ion-select { --background:var(--ion-background-color,#fff);
+      --padding-start:.6rem; --padding-end:.6rem; border-radius:.5rem; margin-top:.4rem; }
     .err { color:var(--ion-color-danger,#d9480f); }
     .pay-actions { display:flex; gap:.5rem; }
     .pay-actions .charge { flex:1; }
@@ -1046,11 +1048,18 @@ export class ErpPosTouch extends LitElement {
          todo el subárbol, así que este único punto cubre TODOS los controles de la cuenta, incluidos
          los que montan otros módulos en el slot. La transición retrasa el ocultado hasta que termina
          el deslizamiento; al abrir es inmediata. */
-      .cart { position:absolute; top:0; right:0; bottom:0; width:min(92%,26rem); z-index:60;
+      /* sales#420: top/bottom are the parts of the body the shell hides (see watchCartViewport),
+         so the drawer spans what is on screen: its foot above the tab bar, its lines scrolling. */
+      .cart { position:absolute; top:var(--pos-cart-top, 0px); right:0; bottom:var(--pos-cart-bottom, 0px); width:min(92%,26rem); z-index:60;
         transform:translateX(100%); visibility:hidden;
         transition:transform .25s ease, visibility 0s linear .25s; }
       .cart[data-open] { transform:translateX(0); visibility:visible;
         transition:transform .25s ease, visibility 0s; }
+      /* sales#420: with the insets, 320x568 under the strip or a phone on its side leave ~230-280px,
+         and the header and the foot alone take that: the lines shrank to 0px. They keep room for the
+         first line, and what then does not fit scrolls inside the drawer -- never under the tab bar. */
+      .cart { overflow-y:auto; }
+      .cart ion-content.cart-body { min-height:5rem; }
       .cart-close { display:inline-flex; }
       .cart-backdrop[data-open] { display:block; position:absolute; inset:0; background:var(--ok-scrim, rgba(0,0,0,.5)); z-index:55; }
       /* sales#418: the shell floors a module screen at 480px and scrolls it below that, so with the
@@ -1390,6 +1399,8 @@ export class ErpPosTouch extends LitElement {
   @state() private covered = new Map<string, string>();
   @state() private parkedOpen = false;
   @state() private cartOpen = false;
+  /** sales#420 — stops following the shell's visible area; set while the cart drawer is open. */
+  private cartViewportCleanup?: () => void;
   /** sales#422 — stops following the shell's visible area; set while any sheet (.scrim) is open.
    *  `null` = a sheet is open but there is no shell around the till to follow. */
   private sheetViewportCleanup?: (() => void) | null;
@@ -2088,6 +2099,7 @@ export class ErpPosTouch extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     ++this.connectionEpoch;
+    this.unwatchCartViewport();
     this.photos.dispose();
     window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
     this.unwatchSheetViewport();
@@ -2285,8 +2297,37 @@ export class ErpPosTouch extends LitElement {
     host?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   }
 
+  /** sales#420 — the shell floors a module screen at 480 px (hub#1730) and scrolls it inside its
+   *  ion-content below that, so on a low phone (the «You can't invoice yet» strip up, or the phone
+   *  on its side) the till's body is taller than what is on screen. The drawer spans the body, so
+   *  its foot -- the total and Charge -- sat under the tab bar. CSS inside a shadow root cannot see
+   *  the shell's scroller, so while the drawer is open the till measures how much of the body the
+   *  closest ion-content hides above and below and hands both over as insets
+   *  (`--pos-cart-top/--pos-cart-bottom`, used by the phone drawer only). It follows the scroller,
+   *  the window and the ion-content's own size (followShellView); outside a shell nothing is set and
+   *  the drawer keeps the whole body. */
+  private watchCartViewport(): void {
+    this.unwatchCartViewport();
+    this.cartViewportCleanup = followShellView(this, (shown) => {
+      const body = this.renderRoot.querySelector('.body');
+      if (!body) return;
+      const box = body.getBoundingClientRect();
+      this.style.setProperty('--pos-cart-top', `${Math.max(0, Math.round(shown.top - box.top))}px`);
+      this.style.setProperty('--pos-cart-bottom', `${Math.max(0, Math.round(box.bottom - shown.bottom))}px`);
+    });
+  }
+
+  private unwatchCartViewport(): void {
+    this.cartViewportCleanup?.();
+    this.cartViewportCleanup = undefined;
+  }
+
   protected updated(_changed: Map<PropertyKey, unknown>) {
     this.ensureSlotsMounted();
+    if (_changed.has('cartOpen')) {
+      if (this.cartOpen) this.watchCartViewport();
+      else this.unwatchCartViewport();
+    }
     this.syncChargeState();
     // sales#164 — while the charge or the bill is on screen, the total is the server's.
     if (this.paying || this.prebillOpen) void this.refreshValuation();
@@ -4945,14 +4986,14 @@ export class ErpPosTouch extends LitElement {
   private renderRecipientCountry() {
     const lang = (erplora() as unknown as I18nClient).locale || 'en';
     return html`
-        <ion-select label=${t('ui.limitFieldCountry')} label-placement="stacked" interface="popover"
+        <ion-select label=${t('ui.limitFieldCountry')} label-placement="stacked" fill="outline" mode="md" interface="popover"
                     data-testid="pos-limit-country" .value=${this.customerCountry}
                     @ionChange=${(e: CustomEvent<{ value?: string }>) => this.setCustomerCountry(String(e.detail?.value ?? HOME_COUNTRY))}>
           ${countryOptions(lang, t('ui.countryUnlisted')).map((o) => html`<ion-select-option value=${o.code}>${o.name}</ion-select-option>`)}
         </ion-select>
         ${this.customerCountry === HOME_COUNTRY
           ? nothing
-          : html`<ion-select label=${t('ui.limitFieldIdType')} label-placement="stacked" interface="popover"
+          : html`<ion-select label=${t('ui.limitFieldIdType')} label-placement="stacked" fill="outline" mode="md" interface="popover"
                     data-testid="pos-limit-id-type" .value=${this.customerIdType}
                     @ionChange=${(e: CustomEvent<{ value?: string }>) => { this.customerIdType = String(e.detail?.value ?? ''); }}>
               ${ID_TYPE_OPTIONS.map((c) => html`<ion-select-option value=${c}>${t(`ui.idType${c}`)}</ion-select-option>`)}
@@ -4972,14 +5013,14 @@ export class ErpPosTouch extends LitElement {
             <p>${done ? t('ui.limitReadyBody') : pending.body}</p>
           </div>
         </div>
-        <ion-input label=${t('ui.limitFieldName')} label-placement="stacked" .value=${this.customerName}
+        <ion-input label=${t('ui.limitFieldName')} label-placement="stacked" fill="outline" mode="md" .value=${this.customerName}
                    data-testid="pos-limit-name" autocomplete="off"
                    @ionInput=${(e: CustomEvent) => { this.customerName = String((e.target as HTMLInputElement).value ?? ''); }}></ion-input>
         ${this.renderRecipientCountry()}
-        <ion-input label=${t('ui.limitFieldTaxId')} label-placement="stacked" .value=${this.customerTaxId}
+        <ion-input label=${t('ui.limitFieldTaxId')} label-placement="stacked" fill="outline" mode="md" .value=${this.customerTaxId}
                    data-testid="pos-limit-tax-id" autocomplete="off"
                    @ionInput=${(e: CustomEvent) => { this.customerTaxId = String((e.target as HTMLInputElement).value ?? ''); }}></ion-input>
-        <ion-input label=${t('ui.limitFieldAddress')} label-placement="stacked" .value=${this.customerAddress}
+        <ion-input label=${t('ui.limitFieldAddress')} label-placement="stacked" fill="outline" mode="md" .value=${this.customerAddress}
                    data-testid="pos-limit-address" autocomplete="off"
                    @ionInput=${(e: CustomEvent) => { this.customerAddress = String((e.target as HTMLInputElement).value ?? ''); }}></ion-input>`;
     // Two literal hooks, one per reason: the QA addresses each case by name, and the testid guard

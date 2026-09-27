@@ -8879,8 +8879,10 @@ var ErpPosTouch = class extends i3 {
     .limit-head ion-icon { font-size:1.35rem; flex:0 0 auto; margin-top:.1rem; }
     .limit-head strong { display:block; font-size:.98rem; }
     .limit-head p { margin:.15rem 0 0; font-size:.86rem; color:var(--mut); }
-    .limit-capture ion-input { --background:var(--ion-background-color,#fff); --padding-start:.6rem;
-      --padding-end:.6rem; border-radius:.5rem; }
+    /* Outlined boxes (sales#414): the label sits on the top border, so each box needs room above,
+       and the selects get the same white fill as the inputs over the tinted capture. */
+    .limit-capture ion-input, .limit-capture ion-select { --background:var(--ion-background-color,#fff);
+      --padding-start:.6rem; --padding-end:.6rem; border-radius:.5rem; margin-top:.4rem; }
     .err { color:var(--ion-color-danger,#d9480f); }
     .pay-actions { display:flex; gap:.5rem; }
     .pay-actions .charge { flex:1; }
@@ -9129,11 +9131,18 @@ var ErpPosTouch = class extends i3 {
          todo el subárbol, así que este único punto cubre TODOS los controles de la cuenta, incluidos
          los que montan otros módulos en el slot. La transición retrasa el ocultado hasta que termina
          el deslizamiento; al abrir es inmediata. */
-      .cart { position:absolute; top:0; right:0; bottom:0; width:min(92%,26rem); z-index:60;
+      /* sales#420: top/bottom are the parts of the body the shell hides (see watchCartViewport),
+         so the drawer spans what is on screen: its foot above the tab bar, its lines scrolling. */
+      .cart { position:absolute; top:var(--pos-cart-top, 0px); right:0; bottom:var(--pos-cart-bottom, 0px); width:min(92%,26rem); z-index:60;
         transform:translateX(100%); visibility:hidden;
         transition:transform .25s ease, visibility 0s linear .25s; }
       .cart[data-open] { transform:translateX(0); visibility:visible;
         transition:transform .25s ease, visibility 0s; }
+      /* sales#420: with the insets, 320x568 under the strip or a phone on its side leave ~230-280px,
+         and the header and the foot alone take that: the lines shrank to 0px. They keep room for the
+         first line, and what then does not fit scrolls inside the drawer -- never under the tab bar. */
+      .cart { overflow-y:auto; }
+      .cart ion-content.cart-body { min-height:5rem; }
       .cart-close { display:inline-flex; }
       .cart-backdrop[data-open] { display:block; position:absolute; inset:0; background:var(--ok-scrim, rgba(0,0,0,.5)); z-index:55; }
       /* sales#418: the shell floors a module screen at 480px and scrolls it below that, so with the
@@ -9611,6 +9620,7 @@ var ErpPosTouch = class extends i3 {
   disconnectedCallback() {
     super.disconnectedCallback();
     ++this.connectionEpoch;
+    this.unwatchCartViewport();
     this.photos.dispose();
     window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
     this.unwatchSheetViewport();
@@ -9793,8 +9803,35 @@ var ErpPosTouch = class extends i3 {
     const host = this.renderRoot.querySelector(".cart-actions-slot");
     host?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
   }
+  /** sales#420 — the shell floors a module screen at 480 px (hub#1730) and scrolls it inside its
+   *  ion-content below that, so on a low phone (the «You can't invoice yet» strip up, or the phone
+   *  on its side) the till's body is taller than what is on screen. The drawer spans the body, so
+   *  its foot -- the total and Charge -- sat under the tab bar. CSS inside a shadow root cannot see
+   *  the shell's scroller, so while the drawer is open the till measures how much of the body the
+   *  closest ion-content hides above and below and hands both over as insets
+   *  (`--pos-cart-top/--pos-cart-bottom`, used by the phone drawer only). It follows the scroller,
+   *  the window and the ion-content's own size (followShellView); outside a shell nothing is set and
+   *  the drawer keeps the whole body. */
+  watchCartViewport() {
+    this.unwatchCartViewport();
+    this.cartViewportCleanup = followShellView(this, (shown) => {
+      const body = this.renderRoot.querySelector(".body");
+      if (!body) return;
+      const box = body.getBoundingClientRect();
+      this.style.setProperty("--pos-cart-top", `${Math.max(0, Math.round(shown.top - box.top))}px`);
+      this.style.setProperty("--pos-cart-bottom", `${Math.max(0, Math.round(box.bottom - shown.bottom))}px`);
+    });
+  }
+  unwatchCartViewport() {
+    this.cartViewportCleanup?.();
+    this.cartViewportCleanup = void 0;
+  }
   updated(_changed) {
     this.ensureSlotsMounted();
+    if (_changed.has("cartOpen")) {
+      if (this.cartOpen) this.watchCartViewport();
+      else this.unwatchCartViewport();
+    }
     this.syncChargeState();
     if (this.paying || this.prebillOpen) void this.refreshValuation();
     const categorySegment = this.renderRoot.querySelector("ion-segment.category-segment") ?? void 0;
@@ -12012,12 +12049,12 @@ var ErpPosTouch = class extends i3 {
   renderRecipientCountry() {
     const lang = erplora2().locale || "en";
     return b2`
-        <ion-select label=${t5("ui.limitFieldCountry")} label-placement="stacked" interface="popover"
+        <ion-select label=${t5("ui.limitFieldCountry")} label-placement="stacked" fill="outline" mode="md" interface="popover"
                     data-testid="pos-limit-country" .value=${this.customerCountry}
                     @ionChange=${(e8) => this.setCustomerCountry(String(e8.detail?.value ?? HOME_COUNTRY))}>
           ${countryOptions(lang, t5("ui.countryUnlisted")).map((o9) => b2`<ion-select-option value=${o9.code}>${o9.name}</ion-select-option>`)}
         </ion-select>
-        ${this.customerCountry === HOME_COUNTRY ? A : b2`<ion-select label=${t5("ui.limitFieldIdType")} label-placement="stacked" interface="popover"
+        ${this.customerCountry === HOME_COUNTRY ? A : b2`<ion-select label=${t5("ui.limitFieldIdType")} label-placement="stacked" fill="outline" mode="md" interface="popover"
                     data-testid="pos-limit-id-type" .value=${this.customerIdType}
                     @ionChange=${(e8) => {
       this.customerIdType = String(e8.detail?.value ?? "");
@@ -12036,18 +12073,18 @@ var ErpPosTouch = class extends i3 {
             <p>${done ? t5("ui.limitReadyBody") : pending.body}</p>
           </div>
         </div>
-        <ion-input label=${t5("ui.limitFieldName")} label-placement="stacked" .value=${this.customerName}
+        <ion-input label=${t5("ui.limitFieldName")} label-placement="stacked" fill="outline" mode="md" .value=${this.customerName}
                    data-testid="pos-limit-name" autocomplete="off"
                    @ionInput=${(e8) => {
       this.customerName = String(e8.target.value ?? "");
     }}></ion-input>
         ${this.renderRecipientCountry()}
-        <ion-input label=${t5("ui.limitFieldTaxId")} label-placement="stacked" .value=${this.customerTaxId}
+        <ion-input label=${t5("ui.limitFieldTaxId")} label-placement="stacked" fill="outline" mode="md" .value=${this.customerTaxId}
                    data-testid="pos-limit-tax-id" autocomplete="off"
                    @ionInput=${(e8) => {
       this.customerTaxId = String(e8.target.value ?? "");
     }}></ion-input>
-        <ion-input label=${t5("ui.limitFieldAddress")} label-placement="stacked" .value=${this.customerAddress}
+        <ion-input label=${t5("ui.limitFieldAddress")} label-placement="stacked" fill="outline" mode="md" .value=${this.customerAddress}
                    data-testid="pos-limit-address" autocomplete="off"
                    @ionInput=${(e8) => {
       this.customerAddress = String(e8.target.value ?? "");
@@ -16348,6 +16385,9 @@ var ErpSaleRefund = class extends i3 {
     .leg-figures { display:flex; gap:.9rem; flex-wrap:wrap; color:var(--ion-color-medium,#8b897f); font-size:.78rem; margin:.25rem 0 .1rem; }
     /* El motivo se LEE sin tocar nada y sin ratón: nunca en un title ni dentro del botón. */
     .leg-reason { margin:.35rem 0 0; color:var(--ion-color-warning-shade,#b26a00); font-size:.82rem; }
+    /* The outlined box carries its label on the top border (sales#414): without room above, the
+       label runs into the reason line. */
+    .refund-destination { margin-top:.75rem; }
     /* sales#166 - WHAT WAS NOT PAID IN MONEY: one card per covered line, with the slot hole
        underneath. A rule separates it from the split above, because they answer two different
        questions: how much money goes back, and what goes back to its tender. */
@@ -16654,6 +16694,8 @@ var ErpSaleRefund = class extends i3 {
           type="text"
           inputmode="decimal"
           label=${t7("ui.refundLegAmount")}
+          fill="outline"
+          mode="md"
           label-placement="stacked"
           .value=${formatAmountInput(entry?.amount ?? 0, erplora5().locale, hubDecimals())}
           @ionInput=${(e8) => this.setAmount(leg.payment_id, e8.detail?.value ?? "")}
@@ -16669,6 +16711,8 @@ var ErpSaleRefund = class extends i3 {
                   class="refund-destination"
                   data-testid=${`refund-destination-${leg.payment_id}`}
                   label=${t7("ui.refundDestination")}
+                  fill="outline"
+                  mode="md"
                   label-placement="stacked"
                   .value=${entry?.to ?? ""}
                   @ionChange=${(e8) => this.setDestination(leg.payment_id, e8.detail?.value ?? "")}
@@ -16705,6 +16749,8 @@ var ErpSaleRefund = class extends i3 {
         class="refund-reason"
         data-testid="refund-reason"
         label=${t7("ui.refundReasonLabel")}
+        fill="outline"
+        mode="md"
         label-placement="stacked"
         maxlength="500"
         placeholder=${t7("ui.refundReasonPlaceholder")}
