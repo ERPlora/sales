@@ -16922,6 +16922,19 @@ function rangeBounds(range, today) {
   const from = new Date(Date.UTC(y3, m4 - 1, d3 - days)).toISOString().slice(0, 10);
   return { from, to: today };
 }
+var MONEY_RANGE_FILTERS = /* @__PURE__ */ new Set(["total"]);
+function moneyEdgeToMinor(edge, decimals) {
+  const text = typeof edge === "string" ? edge.trim().replace(",", ".") : edge;
+  if (text === "" || text === null || text === void 0) return "";
+  const n6 = Number(text);
+  return Number.isFinite(n6) ? majorToMinor(n6, decimals) : "";
+}
+function moneyRangeToMinor(value, decimals) {
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([edge, v3]) => [edge, moneyEdgeToMinor(v3, decimals)])
+  );
+}
 function erplora6() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -17230,12 +17243,14 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
       this.payMethodsError = transport ? t7(transport) : domainErrorText(CATALOG6, erplora6().locale, e8) || t7("ui.errorPayMethods");
     }
   }
-  /** El selector de fechas de la propia tabla (columna «Fecha») también filtra por DÍA: la
-   *  columna pinta `created_at`, pero el rango que pide el usuario es de días y el filtro del
-   *  servidor es `erp_date` (sales#125). Mandarlo al timestamp repetiría el corte a las 00:00. */
+  /** The table's own date picker («Date» column) also filters by DAY: the column paints
+   *  `created_at`, but the range the user asks for is in days and the server filter is `erp_date`
+   *  (sales#125); sending it to the timestamp would repeat the cut at 00:00. Money ranges travel in
+   *  the minor unit (sales#428, pm#498). */
   onFilterChange(e8) {
     const col = e8.detail.col === "created_at" ? "erp_date" : e8.detail.col;
-    this.ctrl.setFilter(col, e8.detail.value);
+    const value = e8.detail.value;
+    this.ctrl.setFilter(col, MONEY_RANGE_FILTERS.has(col) ? moneyRangeToMinor(value, hubDecimals()) : value);
   }
   static {
     /** sales#243 — la columna «Nº» PINTA `sale_number` y ORDENA por `sale_seq`.
