@@ -247,6 +247,17 @@ describe('8 · the rest of the shell surface the till needs is there by default'
     expect((sdk().hasPermission as () => boolean)()).toBe(true);
   });
 
+  it('carries the scale of the hub currency, as the real client always does (pm#501)', () => {
+    // The SDK client answers `currencyDecimals` with a number in every shell (a getter with its own
+    // fallback), and a list that declares `moneyFilters` refuses to be built without it. A double
+    // without it would fail every screen with a money filter for a reason the hub never has.
+    installErploraDouble();
+    expect(sdk().currencyDecimals).toBe(2);
+
+    installErploraDouble({ extra: { currencyDecimals: 0 } });
+    expect(sdk().currencyDecimals, 'a yen hub still says so through `extra`').toBe(0);
+  });
+
   it('a spec value wins over the default, and `extra` adds what only one screen needs', () => {
     installErploraDouble({
       locale: 'en',

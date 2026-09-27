@@ -446,6 +446,9 @@ describe('sales list — the range filter asks for DAYS, not timestamps (sales#1
 
   it('the table\'s own date-range picker on the date column feeds the day column too', async () => {
     const el = await mountList();
+    // Only the read the picker causes: the mount's read carries today's day, and it must not be
+    // the one judged (it only matched while the SDK handed the same mutable object to every read).
+    listSdk.reads.splice(0);
     const table = (el as unknown as { shadowRoot: ShadowRoot }).shadowRoot.querySelector('ok-data-table');
     table!.dispatchEvent(new CustomEvent('filterChange', { detail: { col: 'created_at', value: { from: '2026-01-01', to: '2026-01-31' } } }));
     await new Promise((r) => setTimeout(r, 0));

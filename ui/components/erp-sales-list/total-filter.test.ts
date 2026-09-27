@@ -8,6 +8,7 @@
 // What the table types (major unit) is scaled to the minor unit with the hub's currency decimals
 // before the list is asked for; the edges of every other column travel untouched.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { buildListParams } from '@erplora/module-sdk';
 import { installErploraDouble } from '../../test/erplora-double';
 import './erp-sales-list';
 
@@ -109,9 +110,12 @@ describe('«Total» range filter compares in the unit the column shows (sales#42
   });
 
   it('text that is not a number is not turned into «from 0»', async () => {
+    // Judged on what the hub RECEIVES (`buildListParams`, what the real `queryPage` sends): the
+    // edge that is not a number travels as nothing, never as 0, and the day filter stays.
     const el = await mount();
-    expect(await type(el, 'total', { from: 'abc' })).toEqual(TODAY);
-    expect(await type(el, 'total', { to: '   ' })).toEqual(TODAY);
+    const onlyToday = { f_erp_date_from: HUB_DAY, f_erp_date_to: HUB_DAY };
+    expect(buildListParams({ filters: await type(el, 'total', { from: 'abc' }) })).toEqual(onlyToday);
+    expect(buildListParams({ filters: await type(el, 'total', { to: '   ' }) })).toEqual(onlyToday);
   });
 
   it('a cleared filter (null) clears it, never a crash', async () => {

@@ -277,6 +277,8 @@ export function makeErploraDouble(spec: ErploraDoubleSpec = {}): ErploraDouble {
     hasPermission: spec.hasPermission ?? (() => true),
     locale: spec.locale ?? 'es',
     currency: spec.currency ?? 'EUR',
+    // The real client always answers a number here; a list with `moneyFilters` needs it (pm#501).
+    currencyDecimals: 2,
     formatMoney: spec.formatMoney ?? ((cents: number) => `${((cents || 0) / 100).toFixed(2)} €`),
     formatAmount: spec.formatAmount ?? ((units: number) => `${(units || 0).toFixed(2)} €`),
     t: spec.t ?? ((_catalog: Record<string, unknown>, key: string) => key),
