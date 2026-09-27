@@ -154,6 +154,18 @@ describe('the open cart drawer fits what the shell shows (sales#420)', () => {
     expect(insets(pos)).toEqual(['87px', '0px']);
   });
 
+  it('its lines keep a minimum, and when the shell shows less than that the drawer scrolls inside', async () => {
+    // 320×568 with the strip leaves ~283 px, a phone on its side ~232: the header (~145) and the
+    // foot (~125) alone take it all, and without a floor the lines shrank to 0 px — the cashier saw
+    // the total of a ticket whose lines could not be reached. With the floor the drawer overflows
+    // and scrolls on its own, still inside what the shell shows, never under the tab bar.
+    const { pos, root } = await mountInShell(390, 667);
+    await openCart(pos);
+
+    expect(getComputedStyle(root.querySelector('.cart ion-content.cart-body')!).minHeight, 'room for the first line').toBe('80px');
+    expect(getComputedStyle(root.querySelector('.cart')!).overflowY, 'what does not fit scrolls in the drawer').toBe('auto');
+  });
+
   it('outside a shell (no ion-content around it) the drawer keeps the whole body', async () => {
     const { pos, root } = await mountInShell(390, 667, false);
     await openCart(pos);
@@ -170,5 +182,7 @@ describe('the open cart drawer fits what the shell shows (sales#420)', () => {
 
     expect(cart.position).toBe('relative');
     expect(cart.bottom).not.toBe('87px');
+    expect(cart.overflowY, 'the column never scrolls as a whole: its lines do').not.toBe('auto');
+    expect(getComputedStyle(root.querySelector('.cart ion-content.cart-body')!).minHeight, 'declared as written: happy-dom keeps 0').toBe('0');
   });
 });

@@ -997,6 +997,11 @@ export class ErpPosTouch extends LitElement {
         transition:transform .25s ease, visibility 0s linear .25s; }
       .cart[data-open] { transform:translateX(0); visibility:visible;
         transition:transform .25s ease, visibility 0s; }
+      /* sales#420: with the insets, 320x568 under the strip or a phone on its side leave ~230-280px,
+         and the header and the foot alone take that: the lines shrank to 0px. They keep room for the
+         first line, and what then does not fit scrolls inside the drawer -- never under the tab bar. */
+      .cart { overflow-y:auto; }
+      .cart ion-content.cart-body { min-height:5rem; }
       .cart-close { display:inline-flex; }
       .cart-backdrop[data-open] { display:block; position:absolute; inset:0; background:var(--ok-scrim, rgba(0,0,0,.5)); z-index:55; }
       /* sales#418: the shell floors a module screen at 480px and scrolls it below that, so with the
