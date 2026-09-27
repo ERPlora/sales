@@ -469,8 +469,12 @@ export class ErpPosTouch extends LitElement {
     /* position:relative is load-bearing (sales#314): .card is the box the SHELL laid this module
        out in -- everything between its topbar and its module tab bar -- and it is what every sheet
        is anchored to. Without it the position:absolute of .scrim walks out of the module and lands
-       on the viewport again, which is the defect itself. */
-    .card { position:relative; height:100%; display:flex; flex-direction:column; overflow:hidden; background:var(--bg);
+       on the viewport again, which is the defect itself.
+       overflow:clip, not hidden (sales#418): both clip the rounded corners and the closed cart
+       drawer, but hidden also makes .card a scroll container, and then the phone's sticky cart
+       button measures against a box that never scrolls instead of the shell's scroller. hidden
+       stays first as the fallback for a WebView without clip. */
+    .card { position:relative; height:100%; display:flex; flex-direction:column; overflow:hidden; overflow:clip; background:var(--bg);
       border:1px solid var(--ion-border-color); border-radius:16px; }
     /* sales#178 - grid-template-rows is the load-bearing half of the fix. .body holds ONE row and
        an implicit auto row is sized by its CONTENT: its base size is .catalog's min-content, which
@@ -852,6 +856,10 @@ export class ErpPosTouch extends LitElement {
     .fab ion-icon { font-size:1.6rem; }
     .fab .badge { position:absolute; top:-.2rem; right:-.2rem; min-width:1.3rem; height:1.3rem; padding:0 .25rem; border-radius:var(--ok-radius-pill,999px);
       background:var(--ok-on-accent,#fff); color:var(--accent); font-size:.72rem; font-weight:800; display:inline-flex; align-items:center; justify-content:center; }
+    /* sales#412 — with items the circle becomes a pill carrying the running total (same height, so
+       the room the grid reserves under its last row still fits it). */
+    .fab[data-has-items] { width:auto; padding:0 1.15rem 0 1rem; gap:.5rem; border-radius:var(--ok-radius-pill,999px); }
+    .fab-total { font-size:1rem; font-weight:800; white-space:nowrap; font-variant-numeric:tabular-nums; }
     .cart-close { display:none; }
 
     /* cobro / numpad (sheet oscuro) */
@@ -991,7 +999,14 @@ export class ErpPosTouch extends LitElement {
         transition:transform .25s ease, visibility 0s; }
       .cart-close { display:inline-flex; }
       .cart-backdrop[data-open] { display:block; position:absolute; inset:0; background:var(--ok-scrim, rgba(0,0,0,.5)); z-index:55; }
-      .fab { display:inline-flex; }
+      /* sales#418: the shell floors a module screen at 480px and scrolls it below that, so with the
+         «You can't invoice yet» strip up a low phone lays the till out taller than what it shows.
+         position:absolute pinned the button to the bottom of that box, under the tab bar; sticky
+         keeps it 1rem (the base bottom) above the visible bottom of the shell scroller. It is in
+         flow now, so it is placed in the catalogue's cell -- and the catalogue with it, or
+         auto-placement would push it to a second row -- at the corner the absolute put it in. */
+      .catalog { grid-area:1 / 1; }
+      .fab { display:inline-flex; position:sticky; grid-area:1 / 1; align-self:end; justify-self:end; margin:0 1rem 1rem 0; }
     }
     .cart-backdrop { display:none; }
 
@@ -5557,14 +5572,21 @@ export class ErpPosTouch extends LitElement {
         <div data-testid="pos-cart-backdrop" class="cart-backdrop" ?data-open=${this.cartOpen} @click=${() => { this.cartOpen = false; }}></div>
         <aside class="cart" id="pos-cart-drawer" ?data-open=${this.cartOpen}>${this.renderCart()}</aside>
 
-        <!-- Botón flotante de carrito (solo móvil). sales#84: nombre accesible con la cantidad (el
-             badge visual no lo lee nadie), y estado abierto/cerrado del cajón que controla. -->
-        <button data-testid="pos-cart-fab" class="fab"
-                aria-label=${this.itemCount ? t('ui.openCartWithItems', { count: this.itemCount }) : t('ui.openCart')}
+        <!-- Cart FAB (mobile only). sales#84: accessible name with the count (nobody reads the
+             visual badge), and the open/closed state of the drawer it controls. sales#412: with
+             items it carries the running total, as Square/Toast/Shopify POS do on their cart
+             button, so «how much is it?» does not need the drawer opened. -->
+        <button data-testid="pos-cart-fab" class="fab" ?data-has-items=${this.itemCount > 0}
+                aria-label=${this.itemCount
+                  ? t('ui.openCartWithItems', { count: this.itemCount, total: this.money(this.total) })
+                  : t('ui.openCart')}
                 aria-expanded=${this.cartOpen ? 'true' : 'false'} aria-controls="pos-cart-drawer"
                 @click=${() => { this.cartOpen = true; }}>
           <ion-icon name="cart-outline" aria-hidden="true"></ion-icon>
-          ${this.itemCount ? html`<span class="badge">${this.itemCount}</span>` : nothing}
+          ${this.itemCount
+            ? html`<span class="fab-total" data-testid="pos-cart-fab-total" aria-hidden="true">${this.money(this.total)}</span>
+                <span class="badge">${this.itemCount}</span>`
+            : nothing}
         </button>
       </div>
 

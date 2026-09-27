@@ -167,7 +167,8 @@
     "print": "Print",
     "printFailed": "Could not print",
     "printAwaitingPrinter": "The receipt is waiting: no printer is set up yet. Set one up and it comes out on its own.",
-    "qrValidateNote": "Scan to validate the invoice at the AEAT",
+    "qrValidateNoteTicket": "Scan to check this receipt at the AEAT",
+    "qrValidateNoteInvoice": "Scan to check this invoice at the AEAT",
     "claimNote": "Get your invoice",
     "docEmpty": "No receipt data.",
     "docEmptyInvoice": "No invoice data.",
@@ -254,7 +255,7 @@
     "chargeShortcut": "Charge (F2)",
     "parkedTickets": "Open checks",
     "openCart": "Open cart",
-    "openCartWithItems": "Open cart, {count} items",
+    "openCartWithItems": "Open cart, {count} items, total {total}",
     "openChecksAction": "Checks",
     "openChecksHint": "Tap a check to resume it.",
     "parkForLaterHint": "Park the current check to resume it later. The title is optional.",
@@ -602,7 +603,12 @@
     },
     "sales.order.set_discount_over_limit": {
       "label": "Apply a ticket discount above the limit",
-      "approval_label": "Apply a ticket discount of {discount_percent, percent} and {discount_amount, money}"
+      "approval_label": "Apply a ticket discount of {discount_percent, percent} and {discount_amount, money}",
+      "approval_labels": [
+        "Apply a ticket discount of {discount_percent, percent} and {discount_amount, money}",
+        "Apply a ticket discount of {discount_percent, percent}",
+        "Apply a ticket discount of {discount_amount, money}"
+      ]
     },
     "sales.order.set_line_discount_over_limit": {
       "label": "Apply a line discount above the limit",

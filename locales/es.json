@@ -168,7 +168,8 @@
     "print": "Imprimir",
     "printFailed": "No se pudo imprimir",
     "printAwaitingPrinter": "El tique está en espera: aún no hay ninguna impresora dada de alta. Da una de alta y saldrá solo.",
-    "qrValidateNote": "Escanea para validar la factura en la AEAT",
+    "qrValidateNoteTicket": "Escanea para comprobar este tique en la AEAT",
+    "qrValidateNoteInvoice": "Escanea para comprobar esta factura en la AEAT",
     "claimNote": "Pide tu factura",
     "docEmpty": "Sin datos de tiquet.",
     "docEmptyInvoice": "Sin datos de factura.",
@@ -255,7 +256,7 @@
     "chargeShortcut": "Cobrar (F2)",
     "parkedTickets": "Cuentas abiertas",
     "openCart": "Abrir carrito",
-    "openCartWithItems": "Abrir carrito, {count} artículos",
+    "openCartWithItems": "Abrir carrito, {count} artículos, total {total}",
     "openChecksAction": "Cuentas",
     "openChecksHint": "Toca una cuenta para retomarla.",
     "parkForLaterHint": "Aparca la cuenta actual para retomarla más tarde. El título es opcional.",
@@ -619,7 +620,12 @@
     },
     "sales.order.set_discount_over_limit": {
       "label": "Aplicar al tique un descuento por encima del límite",
-      "approval_label": "Aplicar al tique un descuento del {discount_percent, percent} y {discount_amount, money}"
+      "approval_label": "Aplicar al tique un descuento del {discount_percent, percent} y {discount_amount, money}",
+      "approval_labels": [
+        "Aplicar al tique un descuento del {discount_percent, percent} y {discount_amount, money}",
+        "Aplicar al tique un descuento del {discount_percent, percent}",
+        "Aplicar al tique un descuento de {discount_amount, money}"
+      ]
     },
     "sales.order.set_line_discount_over_limit": {
       "label": "Aplicar a una línea un descuento por encima del límite",

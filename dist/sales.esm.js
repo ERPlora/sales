@@ -4515,7 +4515,8 @@ var en_default = {
     print: "Print",
     printFailed: "Could not print",
     printAwaitingPrinter: "The receipt is waiting: no printer is set up yet. Set one up and it comes out on its own.",
-    qrValidateNote: "Scan to validate the invoice at the AEAT",
+    qrValidateNoteTicket: "Scan to check this receipt at the AEAT",
+    qrValidateNoteInvoice: "Scan to check this invoice at the AEAT",
     claimNote: "Get your invoice",
     docEmpty: "No receipt data.",
     docEmptyInvoice: "No invoice data.",
@@ -4602,7 +4603,7 @@ var en_default = {
     chargeShortcut: "Charge (F2)",
     parkedTickets: "Open checks",
     openCart: "Open cart",
-    openCartWithItems: "Open cart, {count} items",
+    openCartWithItems: "Open cart, {count} items, total {total}",
     openChecksAction: "Checks",
     openChecksHint: "Tap a check to resume it.",
     parkForLaterHint: "Park the current check to resume it later. The title is optional.",
@@ -4950,7 +4951,12 @@ var en_default = {
     },
     "sales.order.set_discount_over_limit": {
       label: "Apply a ticket discount above the limit",
-      approval_label: "Apply a ticket discount of {discount_percent, percent} and {discount_amount, money}"
+      approval_label: "Apply a ticket discount of {discount_percent, percent} and {discount_amount, money}",
+      approval_labels: [
+        "Apply a ticket discount of {discount_percent, percent} and {discount_amount, money}",
+        "Apply a ticket discount of {discount_percent, percent}",
+        "Apply a ticket discount of {discount_amount, money}"
+      ]
     },
     "sales.order.set_line_discount_over_limit": {
       label: "Apply a line discount above the limit",
@@ -5154,7 +5160,8 @@ var es_default = {
     print: "Imprimir",
     printFailed: "No se pudo imprimir",
     printAwaitingPrinter: "El tique est\xE1 en espera: a\xFAn no hay ninguna impresora dada de alta. Da una de alta y saldr\xE1 solo.",
-    qrValidateNote: "Escanea para validar la factura en la AEAT",
+    qrValidateNoteTicket: "Escanea para comprobar este tique en la AEAT",
+    qrValidateNoteInvoice: "Escanea para comprobar esta factura en la AEAT",
     claimNote: "Pide tu factura",
     docEmpty: "Sin datos de tiquet.",
     docEmptyInvoice: "Sin datos de factura.",
@@ -5241,7 +5248,7 @@ var es_default = {
     chargeShortcut: "Cobrar (F2)",
     parkedTickets: "Cuentas abiertas",
     openCart: "Abrir carrito",
-    openCartWithItems: "Abrir carrito, {count} art\xEDculos",
+    openCartWithItems: "Abrir carrito, {count} art\xEDculos, total {total}",
     openChecksAction: "Cuentas",
     openChecksHint: "Toca una cuenta para retomarla.",
     parkForLaterHint: "Aparca la cuenta actual para retomarla m\xE1s tarde. El t\xEDtulo es opcional.",
@@ -5605,7 +5612,12 @@ var es_default = {
     },
     "sales.order.set_discount_over_limit": {
       label: "Aplicar al tique un descuento por encima del l\xEDmite",
-      approval_label: "Aplicar al tique un descuento del {discount_percent, percent} y {discount_amount, money}"
+      approval_label: "Aplicar al tique un descuento del {discount_percent, percent} y {discount_amount, money}",
+      approval_labels: [
+        "Aplicar al tique un descuento del {discount_percent, percent} y {discount_amount, money}",
+        "Aplicar al tique un descuento del {discount_percent, percent}",
+        "Aplicar al tique un descuento de {discount_amount, money}"
+      ]
     },
     "sales.order.set_line_discount_over_limit": {
       label: "Aplicar a una l\xEDnea un descuento por encima del l\xEDmite",
@@ -5932,7 +5944,9 @@ var ErpSalesDocument = class extends i3 {
         fiscal: {
           ...base,
           qr: qr || void 0,
-          qr_note: csv ? `CSV: ${csv}` : qr ? t7("ui.qrValidateNote") : void 0
+          // sales#411 — the note names the document on screen (and on paper, sales#306): a ticket
+          // under a «Ticket» header must not talk about «the invoice».
+          qr_note: csv ? `CSV: ${csv}` : qr ? t7(this.resolvedFormat() === "invoice" ? "ui.qrValidateNoteInvoice" : "ui.qrValidateNoteTicket") : void 0
         },
         retry: false,
         claimInvoiceId
@@ -8547,8 +8561,12 @@ var ErpPosTouch = class extends i3 {
     /* position:relative is load-bearing (sales#314): .card is the box the SHELL laid this module
        out in -- everything between its topbar and its module tab bar -- and it is what every sheet
        is anchored to. Without it the position:absolute of .scrim walks out of the module and lands
-       on the viewport again, which is the defect itself. */
-    .card { position:relative; height:100%; display:flex; flex-direction:column; overflow:hidden; background:var(--bg);
+       on the viewport again, which is the defect itself.
+       overflow:clip, not hidden (sales#418): both clip the rounded corners and the closed cart
+       drawer, but hidden also makes .card a scroll container, and then the phone's sticky cart
+       button measures against a box that never scrolls instead of the shell's scroller. hidden
+       stays first as the fallback for a WebView without clip. */
+    .card { position:relative; height:100%; display:flex; flex-direction:column; overflow:hidden; overflow:clip; background:var(--bg);
       border:1px solid var(--ion-border-color); border-radius:16px; }
     /* sales#178 - grid-template-rows is the load-bearing half of the fix. .body holds ONE row and
        an implicit auto row is sized by its CONTENT: its base size is .catalog's min-content, which
@@ -8930,6 +8948,10 @@ var ErpPosTouch = class extends i3 {
     .fab ion-icon { font-size:1.6rem; }
     .fab .badge { position:absolute; top:-.2rem; right:-.2rem; min-width:1.3rem; height:1.3rem; padding:0 .25rem; border-radius:var(--ok-radius-pill,999px);
       background:var(--ok-on-accent,#fff); color:var(--accent); font-size:.72rem; font-weight:800; display:inline-flex; align-items:center; justify-content:center; }
+    /* sales#412 — with items the circle becomes a pill carrying the running total (same height, so
+       the room the grid reserves under its last row still fits it). */
+    .fab[data-has-items] { width:auto; padding:0 1.15rem 0 1rem; gap:.5rem; border-radius:var(--ok-radius-pill,999px); }
+    .fab-total { font-size:1rem; font-weight:800; white-space:nowrap; font-variant-numeric:tabular-nums; }
     .cart-close { display:none; }
 
     /* cobro / numpad (sheet oscuro) */
@@ -9069,7 +9091,14 @@ var ErpPosTouch = class extends i3 {
         transition:transform .25s ease, visibility 0s; }
       .cart-close { display:inline-flex; }
       .cart-backdrop[data-open] { display:block; position:absolute; inset:0; background:var(--ok-scrim, rgba(0,0,0,.5)); z-index:55; }
-      .fab { display:inline-flex; }
+      /* sales#418: the shell floors a module screen at 480px and scrolls it below that, so with the
+         «You can't invoice yet» strip up a low phone lays the till out taller than what it shows.
+         position:absolute pinned the button to the bottom of that box, under the tab bar; sticky
+         keeps it 1rem (the base bottom) above the visible bottom of the shell scroller. It is in
+         flow now, so it is placed in the catalogue's cell -- and the catalogue with it, or
+         auto-placement would push it to a second row -- at the corner the absolute put it in. */
+      .catalog { grid-area:1 / 1; }
+      .fab { display:inline-flex; position:sticky; grid-area:1 / 1; align-self:end; justify-self:end; margin:0 1rem 1rem 0; }
     }
     .cart-backdrop { display:none; }
 
@@ -12546,16 +12575,19 @@ var ErpPosTouch = class extends i3 {
     }}></div>
         <aside class="cart" id="pos-cart-drawer" ?data-open=${this.cartOpen}>${this.renderCart()}</aside>
 
-        <!-- Botón flotante de carrito (solo móvil). sales#84: nombre accesible con la cantidad (el
-             badge visual no lo lee nadie), y estado abierto/cerrado del cajón que controla. -->
-        <button data-testid="pos-cart-fab" class="fab"
-                aria-label=${this.itemCount ? t5("ui.openCartWithItems", { count: this.itemCount }) : t5("ui.openCart")}
+        <!-- Cart FAB (mobile only). sales#84: accessible name with the count (nobody reads the
+             visual badge), and the open/closed state of the drawer it controls. sales#412: with
+             items it carries the running total, as Square/Toast/Shopify POS do on their cart
+             button, so «how much is it?» does not need the drawer opened. -->
+        <button data-testid="pos-cart-fab" class="fab" ?data-has-items=${this.itemCount > 0}
+                aria-label=${this.itemCount ? t5("ui.openCartWithItems", { count: this.itemCount, total: this.money(this.total) }) : t5("ui.openCart")}
                 aria-expanded=${this.cartOpen ? "true" : "false"} aria-controls="pos-cart-drawer"
                 @click=${() => {
       this.cartOpen = true;
     }}>
           <ion-icon name="cart-outline" aria-hidden="true"></ion-icon>
-          ${this.itemCount ? b2`<span class="badge">${this.itemCount}</span>` : A}
+          ${this.itemCount ? b2`<span class="fab-total" data-testid="pos-cart-fab-total" aria-hidden="true">${this.money(this.total)}</span>
+                <span class="badge">${this.itemCount}</span>` : A}
         </button>
       </div>
 
