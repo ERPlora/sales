@@ -128,9 +128,14 @@ describe('the cart button carries the running total on a phone (sales#412)', () 
     const el = await mount();
     await tapTile(el);
     const label = fab(el).getAttribute('aria-label')!;
-    expect(label.split('|')[0], 'the same published key, now with the amount').toBe('ui.openCartWithItems');
-    expect(label).toContain('count=1');
+    // One item takes the singular key (sales#417: «1 artículos» was this very label).
+    expect(label.split('|')[0], 'one item: the singular key, with the amount').toBe('ui.openCartWithItemsOne');
     expect(label, 'the amount the cart asks for').toContain(`total=${cartTotal(el)}`);
+    await tapTile(el, 1);
+    const two = fab(el).getAttribute('aria-label')!;
+    expect(two.split('|')[0], 'two items: the published plural key').toBe('ui.openCartWithItems');
+    expect(two).toContain('count=2');
+    expect(two, 'the amount the cart asks for').toContain(`total=${cartTotal(el)}`);
   });
 
   it('the label carries {total} in both languages: a key without it would drop the amount silently', () => {
@@ -139,6 +144,7 @@ describe('the cart button carries the running total on a phone (sales#412)', () 
       const text: string = catalog.ui.openCartWithItems;
       expect(text, `${lang}: the count`).toContain('{count}');
       expect(text, `${lang}: the total`).toContain('{total}');
+      expect(catalog.ui.openCartWithItemsOne, `${lang}: the total of the singular (sales#417)`).toContain('{total}');
     }
   });
 
