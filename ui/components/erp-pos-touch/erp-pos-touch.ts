@@ -854,6 +854,10 @@ export class ErpPosTouch extends LitElement {
     .fab ion-icon { font-size:1.6rem; }
     .fab .badge { position:absolute; top:-.2rem; right:-.2rem; min-width:1.3rem; height:1.3rem; padding:0 .25rem; border-radius:var(--ok-radius-pill,999px);
       background:var(--ok-on-accent,#fff); color:var(--accent); font-size:.72rem; font-weight:800; display:inline-flex; align-items:center; justify-content:center; }
+    /* sales#412 — with items the circle becomes a pill carrying the running total (same height, so
+       the room the grid reserves under its last row still fits it). */
+    .fab[data-has-items] { width:auto; padding:0 1.15rem 0 1rem; gap:.5rem; border-radius:var(--ok-radius-pill,999px); }
+    .fab-total { font-size:1rem; font-weight:800; white-space:nowrap; font-variant-numeric:tabular-nums; }
     .cart-close { display:none; }
 
     /* cobro / numpad (sheet oscuro) */
@@ -5566,14 +5570,21 @@ export class ErpPosTouch extends LitElement {
         <div data-testid="pos-cart-backdrop" class="cart-backdrop" ?data-open=${this.cartOpen} @click=${() => { this.cartOpen = false; }}></div>
         <aside class="cart" id="pos-cart-drawer" ?data-open=${this.cartOpen}>${this.renderCart()}</aside>
 
-        <!-- Botón flotante de carrito (solo móvil). sales#84: nombre accesible con la cantidad (el
-             badge visual no lo lee nadie), y estado abierto/cerrado del cajón que controla. -->
-        <button data-testid="pos-cart-fab" class="fab"
-                aria-label=${this.itemCount ? t('ui.openCartWithItems', { count: this.itemCount }) : t('ui.openCart')}
+        <!-- Cart FAB (mobile only). sales#84: accessible name with the count (nobody reads the
+             visual badge), and the open/closed state of the drawer it controls. sales#412: with
+             items it carries the running total, as Square/Toast/Shopify POS do on their cart
+             button, so «how much is it?» does not need the drawer opened. -->
+        <button data-testid="pos-cart-fab" class="fab" ?data-has-items=${this.itemCount > 0}
+                aria-label=${this.itemCount
+                  ? t('ui.openCartWithItems', { count: this.itemCount, total: this.money(this.total) })
+                  : t('ui.openCart')}
                 aria-expanded=${this.cartOpen ? 'true' : 'false'} aria-controls="pos-cart-drawer"
                 @click=${() => { this.cartOpen = true; }}>
           <ion-icon name="cart-outline" aria-hidden="true"></ion-icon>
-          ${this.itemCount ? html`<span class="badge">${this.itemCount}</span>` : nothing}
+          ${this.itemCount
+            ? html`<span class="fab-total" data-testid="pos-cart-fab-total" aria-hidden="true">${this.money(this.total)}</span>
+                <span class="badge">${this.itemCount}</span>`
+            : nothing}
         </button>
       </div>
 
