@@ -269,6 +269,28 @@ describe('the till sheets fit what the shell shows (sales#422)', () => {
     expect([scrim.top, scrim.bottom]).toEqual(['0px', '0px']);
   });
 
+  it('outside a shell, typing in an open sheet does not look for the shell again on every re-render', async () => {
+    const { pos } = await mountInShell(390, 667, false);
+    // The walk ends at the document, the one node it asks for its root: that call counts the walks.
+    const rootOf = document.getRootNode.bind(document);
+    let walks = 0;
+    document.getRootNode = (options?: GetRootNodeOptions) => { walks++; return rootOf(options); };
+    await openDiscount(pos);
+    const afterOpen = walks;
+    expect(afterOpen, 'opening the sheet looks for the shell once').toBeGreaterThan(0);
+
+    for (const k of ['1', '5']) {
+      (pos.shadowRoot!.querySelector(`[data-testid="pos-discount-key-${k}"]`) as HTMLElement).click();
+      await flush(pos);
+    }
+
+    try {
+      expect(walks, 'no shell was found on open; the re-renders do not search again').toBe(afterOpen);
+    } finally {
+      delete (document as { getRootNode?: unknown }).getRootNode;
+    }
+  });
+
   it('when the shell shows less than the sheet needs, the sheet scrolls and its button stays at its foot', async () => {
     // A phone on its side shows 249 px, 217 inside the scrim's padding. The discount sheet's header,
     // mode, figure and foot alone take ~230, and the charge sheet's more: MEASURED on hub:stable (md),
