@@ -288,3 +288,86 @@ describe('Charge fits a low drawer whatever the amount (sales#423)', () => {
       .toBeLessThanOrEqual(0.5);
   });
 });
+
+// sales#432 — a phone on its side under the «You can't invoice yet» strip leaves a drawer of
+// 131-193 px (568×320, 667×375; 170 px on a 568×320 without the strip). The low block above still
+// spends ~105 px on the header (toolbar, then the name and chips) and ~67 px on the foot, so the
+// first line of the check sat under the foot: the cashier did not see what was being charged
+// without scrolling. Square and Toast leave ONE bar on a phone: the name of the check and its
+// icons. So a VERY low drawer (no taller than 13rem) lays the header in one row — the name first,
+// the icons after it, the close button icon-only — trims the foot to Charge's height and the air
+// above the first line. Measured on hub:stable in ios and md (the PR): the name of the first line
+// shows whole at 667×375 and 568×320, with and without the strip.
+const VERY_LOW = /pos-cart\s*\(\s*max-height:\s*13rem\s*\)\s*$/;
+
+describe('a very low drawer shows the first line of the check without scrolling (sales#432)', () => {
+  const veryLow = () => blocks(posCss(), VERY_LOW).join('\n');
+
+  it('declares the very-low block once, AFTER the low ones, so it wins where they tie', () => {
+    const css = posCss();
+    expect(blocks(css, VERY_LOW), '@container pos-cart (max-height: 13rem)').toHaveLength(1);
+    const at = (re: RegExp) => [...css.matchAll(/@container\s*([^{]*)\{/g)].findIndex((m) => re.test(m[1]));
+    const order = [...css.matchAll(/@container\s*([^{]*)\{/g)].map((m) => m[1].trim());
+    expect(at(VERY_LOW), `order: ${order.join(' | ')}`).toBeGreaterThan(at(LOW));
+    expect(at(VERY_LOW)).toBeGreaterThan(at(LOW_WIDE));
+  });
+
+  it('the header is one row: the name first, then the icons', () => {
+    const css = veryLow();
+    const header = rules(css, '.cart ion-header');
+    expect(header).toMatch(/display:\s*flex/);
+    expect(header).toMatch(/align-items:\s*center/);
+    expect(header, 'the kitchen tabs still get a row of their own').toMatch(/flex-wrap:\s*wrap/);
+    const heading = rules(css, '.order-heading');
+    expect(heading, 'the name of the check leads the bar, as on Square and Toast').toMatch(/order:\s*-1/);
+    expect(heading, 'it takes what the icons leave').toMatch(/flex:\s*1\s+1\s+0/);
+    expect(heading, 'and can shrink to it').toMatch(/min-width:\s*0/);
+    expect(heading, 'no rule between the name and the icons of the same row').toMatch(/border-bottom:\s*0/);
+    expect(heading, 'the toolbar sets the height of the row').toMatch(/padding-top:\s*0;/);
+    expect(heading).toMatch(/padding-bottom:\s*0;/);
+    const toolbar = rules(css, '.cart ion-toolbar');
+    expect(toolbar, 'the icons keep their size').toMatch(/flex:\s*none/);
+    expect(toolbar, 'as wide as its icons, not the whole row').toMatch(/width:\s*auto/);
+    // ios pads a toolbar 4px above and below: the bar was 49 px for 38 px buttons.
+    expect(toolbar).toMatch(/--padding-top:\s*0/);
+    expect(toolbar).toMatch(/--padding-bottom:\s*0/);
+    expect(rules(css, 'ion-segment.view-tabs'), 'the kitchen tabs wrap to the next row').toMatch(/flex:\s*1\s+1\s+100%/);
+  });
+
+  it('the close button is icon-only (its name stays in aria-label) and no taller than the bar', async () => {
+    const css = veryLow();
+    // As specific as the base rule that shows it (ion-button.header-action small { display:block }):
+    // `.cart-close small` lost to it and «> C…» stayed squeezed into the 2.4rem button.
+    expect(rules(posCss(), 'ion-button.header-action small'), 'the base rule it overrides').toMatch(/display:\s*block/);
+    expect(rules(css, 'ion-button.header-action.cart-close small')).toMatch(/display:\s*none/);
+    const close = rules(css, 'ion-button.header-action.cart-close');
+    const h = rem(close, 'height');
+    expect(h, 'the icons next to it are 2.4rem').toBeLessThanOrEqual(2.4);
+    // ios gives a button with a label min-height 3.1em (52 px here): height alone left it at 52.
+    expect(rem(close, 'min-height')).toBe(h);
+    const root = await mountAt(568, 320);
+    expect(root.querySelector('[data-testid="pos-cart-close"]')?.getAttribute('aria-label')).toBe('ui.closeAction');
+  });
+
+  it('less air above the first line', () => {
+    const css = veryLow();
+    expect(rules(css, '.cart ion-content.cart-body')).toMatch(/--padding-top:\s*0/);
+    expect(rules(css, 'ion-list.lines')).toMatch(/padding-top:\s*0/);
+    expect(rem(rules(css, 'ion-list.lines ion-item:first-child'), 'margin-top'), 'less than .35rem').toBeLessThan(0.35);
+    // ion-label takes 10 px above the name in ios (11 in md).
+    expect(rem(rules(css, 'ion-list.lines ion-item ion-label'), 'margin-top'), 'less than 10 px').toBeLessThan(0.6);
+  });
+
+  it('the foot is as tall as Charge: the total beside its label, no margins around the buttons', () => {
+    const css = veryLow();
+    const foot = rules(css, '.cart-foot');
+    expect(rem(foot, 'padding-top') + rem(foot, 'padding-bottom'), 'thinner than .4 + .45').toBeLessThanOrEqual(0.4);
+    const total = rules(css, '.total');
+    expect(total, '«Total 1,80 €» on one line, not the label over the amount').toMatch(/flex-direction:\s*row/);
+    expect(total).toMatch(/align-items:\s*baseline/);
+    // ios puts 4 px above and below every ion-button: the actions row was 52 px for 44 px buttons.
+    const buttons = rules(css, '.foot-actions ion-button');
+    expect(buttons).toMatch(/margin-top:\s*0/);
+    expect(buttons).toMatch(/margin-bottom:\s*0/);
+  });
+});

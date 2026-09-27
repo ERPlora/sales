@@ -9398,6 +9398,29 @@ var ErpPosTouch = class extends i3 {
       .total { flex-direction:column; align-items:flex-start; margin:0; }
       .foot-actions { flex:1 1 0; min-width:0; }
     }
+    /* sales#432: a VERY low drawer -- a phone on its side under the «You can't invoice yet» strip
+       (131-193px) or a 568x320 (170px) -- still spent ~105px on the header and ~67px on the foot:
+       the first line of the check sat under the foot. As on Square and Toast, the header is ONE bar,
+       the name of the check first and its icons after it (the kitchen tabs wrap to their own row),
+       the close button is icon-only (its name stays in aria-label), and the foot is as tall as
+       Charge. Written after the low blocks so it wins where they tie. */
+    @container pos-cart (max-height: 13rem) {
+      .cart ion-header { display:flex; flex-wrap:wrap; align-items:center; }
+      .cart ion-toolbar { flex:none; width:auto; --padding-top:0; --padding-bottom:0; }
+      .order-toolbar { padding-top:0; padding-bottom:0; }
+      .order-heading { order:-1; flex:1 1 0; min-width:0; border-bottom:0; padding-top:0; padding-bottom:0; padding-right:.2rem; }
+      ion-segment.view-tabs { flex:1 1 100%; }
+      /* ios gives a button with a label min-height:3.1em, so height alone left it 52px tall. */
+      ion-button.header-action.cart-close { width:2.4rem; height:2.4rem; min-height:2.4rem; margin:auto 0; }
+      ion-button.header-action.cart-close small { display:none; }
+      .cart ion-content.cart-body { --padding-top:0; }
+      ion-list.lines { padding-top:0; }
+      ion-list.lines ion-item:first-child { margin-top:.15rem; }
+      ion-list.lines ion-item ion-label { margin-top:.3rem; }
+      .cart-foot { padding-top:.2rem; padding-bottom:.2rem; }
+      .total { flex-direction:row; align-items:baseline; gap:.35rem; }
+      .foot-actions ion-button { margin-top:0; margin-bottom:0; }
+    }
   `;
   }
   closeTopmostLayer() {
