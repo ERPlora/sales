@@ -8844,8 +8844,10 @@ var ErpPosTouch = class extends i3 {
     .limit-head ion-icon { font-size:1.35rem; flex:0 0 auto; margin-top:.1rem; }
     .limit-head strong { display:block; font-size:.98rem; }
     .limit-head p { margin:.15rem 0 0; font-size:.86rem; color:var(--mut); }
-    .limit-capture ion-input { --background:var(--ion-background-color,#fff); --padding-start:.6rem;
-      --padding-end:.6rem; border-radius:.5rem; }
+    /* Outlined boxes (sales#414): the label sits on the top border, so each box needs room above,
+       and the selects get the same white fill as the inputs over the tinted capture. */
+    .limit-capture ion-input, .limit-capture ion-select { --background:var(--ion-background-color,#fff);
+      --padding-start:.6rem; --padding-end:.6rem; border-radius:.5rem; margin-top:.4rem; }
     .err { color:var(--ion-color-danger,#d9480f); }
     .pay-actions { display:flex; gap:.5rem; }
     .pay-actions .charge { flex:1; }
@@ -11939,12 +11941,12 @@ var ErpPosTouch = class extends i3 {
   renderRecipientCountry() {
     const lang = erplora2().locale || "en";
     return b2`
-        <ion-select label=${t5("ui.limitFieldCountry")} label-placement="stacked" interface="popover"
+        <ion-select label=${t5("ui.limitFieldCountry")} label-placement="stacked" fill="outline" mode="md" interface="popover"
                     data-testid="pos-limit-country" .value=${this.customerCountry}
                     @ionChange=${(e8) => this.setCustomerCountry(String(e8.detail?.value ?? HOME_COUNTRY))}>
           ${countryOptions(lang, t5("ui.countryUnlisted")).map((o9) => b2`<ion-select-option value=${o9.code}>${o9.name}</ion-select-option>`)}
         </ion-select>
-        ${this.customerCountry === HOME_COUNTRY ? A : b2`<ion-select label=${t5("ui.limitFieldIdType")} label-placement="stacked" interface="popover"
+        ${this.customerCountry === HOME_COUNTRY ? A : b2`<ion-select label=${t5("ui.limitFieldIdType")} label-placement="stacked" fill="outline" mode="md" interface="popover"
                     data-testid="pos-limit-id-type" .value=${this.customerIdType}
                     @ionChange=${(e8) => {
       this.customerIdType = String(e8.detail?.value ?? "");
@@ -11963,18 +11965,18 @@ var ErpPosTouch = class extends i3 {
             <p>${done ? t5("ui.limitReadyBody") : pending.body}</p>
           </div>
         </div>
-        <ion-input label=${t5("ui.limitFieldName")} label-placement="stacked" .value=${this.customerName}
+        <ion-input label=${t5("ui.limitFieldName")} label-placement="stacked" fill="outline" mode="md" .value=${this.customerName}
                    data-testid="pos-limit-name" autocomplete="off"
                    @ionInput=${(e8) => {
       this.customerName = String(e8.target.value ?? "");
     }}></ion-input>
         ${this.renderRecipientCountry()}
-        <ion-input label=${t5("ui.limitFieldTaxId")} label-placement="stacked" .value=${this.customerTaxId}
+        <ion-input label=${t5("ui.limitFieldTaxId")} label-placement="stacked" fill="outline" mode="md" .value=${this.customerTaxId}
                    data-testid="pos-limit-tax-id" autocomplete="off"
                    @ionInput=${(e8) => {
       this.customerTaxId = String(e8.target.value ?? "");
     }}></ion-input>
-        <ion-input label=${t5("ui.limitFieldAddress")} label-placement="stacked" .value=${this.customerAddress}
+        <ion-input label=${t5("ui.limitFieldAddress")} label-placement="stacked" fill="outline" mode="md" .value=${this.customerAddress}
                    data-testid="pos-limit-address" autocomplete="off"
                    @ionInput=${(e8) => {
       this.customerAddress = String(e8.target.value ?? "");
@@ -16275,6 +16277,9 @@ var ErpSaleRefund = class extends i3 {
     .leg-figures { display:flex; gap:.9rem; flex-wrap:wrap; color:var(--ion-color-medium,#8b897f); font-size:.78rem; margin:.25rem 0 .1rem; }
     /* El motivo se LEE sin tocar nada y sin ratón: nunca en un title ni dentro del botón. */
     .leg-reason { margin:.35rem 0 0; color:var(--ion-color-warning-shade,#b26a00); font-size:.82rem; }
+    /* The outlined box carries its label on the top border (sales#414): without room above, the
+       label runs into the reason line. */
+    .refund-destination { margin-top:.75rem; }
     /* sales#166 - WHAT WAS NOT PAID IN MONEY: one card per covered line, with the slot hole
        underneath. A rule separates it from the split above, because they answer two different
        questions: how much money goes back, and what goes back to its tender. */
@@ -16581,6 +16586,8 @@ var ErpSaleRefund = class extends i3 {
           type="text"
           inputmode="decimal"
           label=${t7("ui.refundLegAmount")}
+          fill="outline"
+          mode="md"
           label-placement="stacked"
           .value=${formatAmountInput(entry?.amount ?? 0, erplora5().locale, hubDecimals())}
           @ionInput=${(e8) => this.setAmount(leg.payment_id, e8.detail?.value ?? "")}
@@ -16596,6 +16603,8 @@ var ErpSaleRefund = class extends i3 {
                   class="refund-destination"
                   data-testid=${`refund-destination-${leg.payment_id}`}
                   label=${t7("ui.refundDestination")}
+                  fill="outline"
+                  mode="md"
                   label-placement="stacked"
                   .value=${entry?.to ?? ""}
                   @ionChange=${(e8) => this.setDestination(leg.payment_id, e8.detail?.value ?? "")}
@@ -16632,6 +16641,8 @@ var ErpSaleRefund = class extends i3 {
         class="refund-reason"
         data-testid="refund-reason"
         label=${t7("ui.refundReasonLabel")}
+        fill="outline"
+        mode="md"
         label-placement="stacked"
         maxlength="500"
         placeholder=${t7("ui.refundReasonPlaceholder")}
