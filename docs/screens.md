@@ -95,6 +95,11 @@ and a fixed footer with the running total and the **Cobrar** (charge) button.
    this sale only — on prints even with the setting off, off prints nothing.
 6. Confirm. The sale is recorded, the receipt is available, and the check closes.
 
+With VeriFactu on, the document carries the fiscal QR: «QR tributario:» above it, «VERI*FACTU»
+under it, and a note that names the document the customer holds — «Scan to check this receipt at
+the AEAT» on a receipt, «…this invoice…» on an invoice (sales#411). Once the AEAT has answered, the
+note becomes its CSV code.
+
 Requires `sales.add_sale` to build the check and `sales.take_payment` to charge it.
 
 ### Selling by weight, with or without a scale (sales#28)

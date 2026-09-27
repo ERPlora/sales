@@ -364,7 +364,9 @@ export class ErpSalesDocument extends LitElement {
         fiscal: {
           ...base,
           qr: qr || undefined,
-          qr_note: csv ? `CSV: ${csv}` : (qr ? t('ui.qrValidateNote') : undefined),
+          // sales#411 — the note names the document on screen (and on paper, sales#306): a ticket
+          // under a «Ticket» header must not talk about «the invoice».
+          qr_note: csv ? `CSV: ${csv}` : (qr ? t(this.resolvedFormat() === 'invoice' ? 'ui.qrValidateNoteInvoice' : 'ui.qrValidateNoteTicket') : undefined),
         },
         retry: false,
         claimInvoiceId,
