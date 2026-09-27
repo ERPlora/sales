@@ -102,6 +102,13 @@ the tab bar (sales#420).
    this sale only — on prints even with the setting off, off prints nothing.
 6. Confirm. The sale is recorded, the receipt is available, and the check closes.
 
+The sheets the till opens — charge, discount, open price, the note on a line, supplements, combo —
+always sit between the header and the tab bar, also on a low phone under the «You can't invoice yet»
+strip or on a phone on its side, and they follow the screen when it scrolls. Their confirm button
+(**Cobrar**, **Aplicar**…) is always on screen at the foot of the sheet; when the screen is too low
+for the whole sheet, its middle (the keypad, the payment methods) scrolls behind that foot
+(sales#422).
+
 With VeriFactu on, the document carries the fiscal QR: «QR tributario:» above it, «VERI*FACTU»
 under it, and a note that names the document the customer holds — «Scan to check this receipt at
 the AEAT» on a receipt, «…this invoice…» on an invoice (sales#411). Once the AEAT has answered, the

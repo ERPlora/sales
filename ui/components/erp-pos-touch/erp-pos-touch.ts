@@ -449,6 +449,50 @@ function gradient(s: string): string {
   return `linear-gradient(135deg, hsl(${h} 42% 38%), hsl(${h2} 44% 26%))`;
 }
 
+/** sales#422 — the shell floors a module screen at 480 px (hub#1730) and scrolls it inside its
+ *  ion-content below that, so on a low phone (the «You can't invoice yet» strip up, or the phone on
+ *  its side) the till is taller than what is on screen. CSS inside a shadow root cannot see that
+ *  scroller, so this finds the closest ion-content around `host` (same walk as ok-data-table's
+ *  sheet, outfitkit#75) and calls `onChange` with the rect it shows: now, on every scroll of the
+ *  shell, on a window resize and when the ion-content itself changes size. Returns the function
+ *  that stops following it, or undefined outside a shell (nothing to follow). */
+function followShellView(host: HTMLElement, onChange: (shown: DOMRect) => void): (() => void) | undefined {
+  let node: Node | null = host;
+  let content: HTMLElement | null = null;
+  while (node && !content) {
+    const parent: Node | null = node.parentNode ?? (node.getRootNode() as ShadowRoot).host ?? null;
+    if (parent instanceof HTMLElement && parent.tagName === 'ION-CONTENT') content = parent;
+    node = parent === node ? null : parent;
+  }
+  if (!content) return undefined;
+  const shell = content;
+  const sync = () => onChange(shell.getBoundingClientRect());
+  sync();
+  let live = true;
+  let scroller: HTMLElement | null = null;
+  window.addEventListener('resize', sync);
+  const resized = typeof ResizeObserver === 'function' ? new ResizeObserver(sync) : null;
+  resized?.observe(shell);
+  const getScrollElement = (shell as HTMLElement & { getScrollElement?: () => Promise<HTMLElement> }).getScrollElement;
+  if (typeof getScrollElement === 'function') {
+    // A rejected lookup keeps the measure taken now, which stays right until the shell scrolls.
+    getScrollElement.call(shell).then((el) => {
+      if (!live || !el) return;
+      scroller = el;
+      scroller.addEventListener('scroll', sync, { passive: true });
+      sync();
+    }, (err: unknown) => {
+      console.warn('[sales] pos: shell scroller unavailable, keeping the measure taken on open', err);
+    });
+  }
+  return () => {
+    live = false;
+    window.removeEventListener('resize', sync);
+    resized?.disconnect();
+    scroller?.removeEventListener('scroll', sync);
+  };
+}
+
 export class ErpPosTouch extends LitElement {
   static styles = css`
     /* El COLOR lo pone el tema de Ionic (claro/oscuro según el hub); el POS solo aporta el LAYOUT.
@@ -923,6 +967,10 @@ export class ErpPosTouch extends LitElement {
        safe-area inset is -- and a px number here would only ever be right on one of them.
        The padding is the breathing room the old 88vh cap used to leave. */
     .scrim { position:absolute; inset:0; padding:1rem; background:var(--ok-scrim, rgba(0,0,0,.6)); display:flex; align-items:center; justify-content:center; z-index:70; }
+    /* sales#422: on a low phone the shell shows less than .card (its 480 px floor, hub#1730) and
+       scrolls the rest; top/bottom are the parts of the card it hides (see syncSheetViewport), so
+       the sheet sits between the header and the tab bar. 0 outside a shell or when it all fits. */
+    .scrim { top:var(--pos-sheet-top, 0px); bottom:var(--pos-sheet-bottom, 0px); }
     /* Columna flex: el importe y el botón de cobrar NO se mueven; solo scrollea el centro. Antes
        el sheet entero scrolleaba y el botón principal quedaba fuera de pantalla — la acción más
        importante del TPV no puede exigir scroll. */
@@ -933,6 +981,14 @@ export class ErpPosTouch extends LitElement {
     .sheet-h { padding-top:1rem; }
     .sheet-foot { padding:.75rem 1rem 1rem; border-top:1px solid var(--ion-border-color); }
     .pay { flex:1; min-height:0; overflow:auto; padding:0 1rem; }
+    /* sales#422: a phone on its side leaves ~217 px inside the scrim, and the header, figure and
+       foot alone took it all: the keypad shrank to 0 px and the button spilled out under the tab
+       bar. The middle keeps room for the keypad; what then does not fit scrolls inside the sheet,
+       with the foot stuck to its bottom on the sheet's own ground, so the button is always shown.
+       Where it all fits (every other screen) nothing changes: the sheet has nothing to scroll. */
+    .sheet { overflow-y:auto; }
+    .pay { min-height:8rem; }
+    .sheet-foot { position:sticky; bottom:0; z-index:1; background:var(--panel); }
     .sheet-h { display:flex; justify-content:space-between; align-items:center; margin-bottom:.8rem; }
     .sheet-h .t { font-size:1.2rem; font-weight:700; }
     .x { background:none; border:none; font-size:1.3rem; cursor:pointer; color:var(--mut); }
@@ -1345,6 +1401,9 @@ export class ErpPosTouch extends LitElement {
   @state() private cartOpen = false;
   /** sales#420 — stops following the shell's visible area; set while the cart drawer is open. */
   private cartViewportCleanup?: () => void;
+  /** sales#422 — stops following the shell's visible area; set while any sheet (.scrim) is open.
+   *  `null` = a sheet is open but there is no shell around the till to follow. */
+  private sheetViewportCleanup?: (() => void) | null;
   /** Etiqueta visible de la cuenta. Se persiste en el pedido existente con sales.order.set_label. */
   @state() private orderLabel = '';
   /** Cocina aporta la segunda vista; sin su slot el POS queda en una única cuenta universal. */
@@ -2043,6 +2102,7 @@ export class ErpPosTouch extends LitElement {
     this.unwatchCartViewport();
     this.photos.dispose();
     window.removeEventListener('erplora:locale-changed', this.onLocaleChange);
+    this.unwatchSheetViewport();
     window.removeEventListener(SCALE_WEIGHT_EVENT, this.onScaleWeight);
     window.removeEventListener('popstate', this.onPopState);
     window.removeEventListener('erplora:back', this.onSystemBack);
@@ -2244,52 +2304,17 @@ export class ErpPosTouch extends LitElement {
    *  the shell's scroller, so while the drawer is open the till measures how much of the body the
    *  closest ion-content hides above and below and hands both over as insets
    *  (`--pos-cart-top/--pos-cart-bottom`, used by the phone drawer only). It follows the scroller,
-   *  the window and the ion-content's own size; outside a shell nothing is set and the drawer keeps
-   *  the whole body. Same walk as ok-data-table's sheet (outfitkit#75). */
+   *  the window and the ion-content's own size (followShellView); outside a shell nothing is set and
+   *  the drawer keeps the whole body. */
   private watchCartViewport(): void {
     this.unwatchCartViewport();
-    let node: Node | null = this;
-    let content: HTMLElement | null = null;
-    while (node && !content) {
-      const parent: Node | null = node.parentNode ?? (node.getRootNode() as ShadowRoot).host ?? null;
-      if (parent instanceof HTMLElement && parent.tagName === 'ION-CONTENT') content = parent;
-      node = parent === node ? null : parent;
-    }
-    if (!content) return;
-    const shell = content;
-    const sync = () => {
+    this.cartViewportCleanup = followShellView(this, (shown) => {
       const body = this.renderRoot.querySelector('.body');
       if (!body) return;
-      const shown = shell.getBoundingClientRect();
       const box = body.getBoundingClientRect();
       this.style.setProperty('--pos-cart-top', `${Math.max(0, Math.round(shown.top - box.top))}px`);
       this.style.setProperty('--pos-cart-bottom', `${Math.max(0, Math.round(box.bottom - shown.bottom))}px`);
-    };
-    sync();
-    let live = true;
-    let scroller: HTMLElement | null = null;
-    window.addEventListener('resize', sync);
-    const resized = typeof ResizeObserver === 'function' ? new ResizeObserver(sync) : null;
-    resized?.observe(shell);
-    const getScrollElement = (shell as HTMLElement & { getScrollElement?: () => Promise<HTMLElement> }).getScrollElement;
-    if (typeof getScrollElement === 'function') {
-      // A rejected lookup leaves the insets measured on open, which is still the right answer
-      // until the shell scrolls; the drawer is never left without a measure.
-      getScrollElement.call(shell).then((el) => {
-        if (!live || !el) return;
-        scroller = el;
-        scroller.addEventListener('scroll', sync, { passive: true });
-        sync();
-      }, (err: unknown) => {
-        console.warn('[sales] pos: shell scroller unavailable, the cart drawer keeps its measure on open', err);
-      });
-    }
-    this.cartViewportCleanup = () => {
-      live = false;
-      window.removeEventListener('resize', sync);
-      resized?.disconnect();
-      scroller?.removeEventListener('scroll', sync);
-    };
+    });
   }
 
   private unwatchCartViewport(): void {
@@ -2332,6 +2357,33 @@ export class ErpPosTouch extends LitElement {
     // un blob JSON: si se iba la luz (o moría la tablet) dentro de esa ventana, el último artículo
     // se perdía. Ahora cada mutación (add/qty/invitación/quitar) escribe su FILA en el pedido de
     // forma transaccional e inmediata, así que aquí no queda nada pendiente que persistir.
+    this.syncSheetViewport();
+  }
+
+  /** sales#422 — every sheet (discount, charge, open price, note, modifiers, combo) hangs from a
+   *  `.scrim` over `.card`, and on a low phone the shell shows less than the card: the sheet was
+   *  centred in the whole card and its button sat under the tab bar. While any scrim is on screen
+   *  the till measures how much of the card the shell hides above and below and hands both over as
+   *  the scrim's insets (`--pos-sheet-top/--pos-sheet-bottom`). Keyed on the scrim itself, so a
+   *  new sheet is covered without a list to keep in step. */
+  private syncSheetViewport(): void {
+    const open = !!this.renderRoot.querySelector('.scrim');
+    if (open && this.sheetViewportCleanup === undefined) {
+      this.sheetViewportCleanup = followShellView(this, (shown) => {
+        const card = this.renderRoot.querySelector('.card');
+        if (!card) return;
+        const box = card.getBoundingClientRect();
+        this.style.setProperty('--pos-sheet-top', `${Math.max(0, Math.round(shown.top - box.top))}px`);
+        this.style.setProperty('--pos-sheet-bottom', `${Math.max(0, Math.round(box.bottom - shown.bottom))}px`);
+      }) ?? null;
+    } else if (!open) {
+      this.unwatchSheetViewport();
+    }
+  }
+
+  private unwatchSheetViewport(): void {
+    this.sheetViewportCleanup?.();
+    this.sheetViewportCleanup = undefined;
   }
 
 
