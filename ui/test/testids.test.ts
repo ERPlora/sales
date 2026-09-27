@@ -132,7 +132,7 @@ const COVERED: Record<string, { prefix: string; contract: string[]; tables?: str
   'erp-pos-touch/erp-pos-touch.ts': {
     prefix: 'pos-',
     contract: [
-      'pos-cart-backdrop', 'pos-cart-close', 'pos-cart-fab',
+      'pos-cart-backdrop', 'pos-cart-close', 'pos-cart-fab', 'pos-cart-fab-total',
       'pos-catalog-app-absent', 'pos-catalog-blocked-fix', 'pos-catalog-blocked-summary',
       'pos-category-filter', 'pos-charge', 'pos-check-sales',
       'pos-combo-close', 'pos-combo-confirm', 'pos-combo-scrim',
