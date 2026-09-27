@@ -14,7 +14,7 @@
 //
 // happy-dom does not lay out, so the rects are stubbed with the numbers measured on the real shell
 // (hub:stable, 390×667 with the strip); that it really fits is measured in a browser (the PR).
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
 import './erp-pos-touch';
 
@@ -236,5 +236,55 @@ describe('the open cart drawer fits what the shell shows (sales#420)', () => {
     expect(cart.bottom).not.toBe('87px');
     expect(cart.overflowY, 'the column never scrolls as a whole: its lines do').not.toBe('auto');
     expect(getComputedStyle(root.querySelector('.cart ion-content.cart-body')!).minHeight, 'declared as written: happy-dom keeps 0').toBe('0');
+  });
+
+  it('mounted inside another component\'s shadow root, it still finds the shell around that component', async () => {
+    (window as HappyWindow).happyDOM?.setViewport({ width: 390, height: 667 });
+    installPosDouble({});
+    document.body.innerHTML = '';
+    const content = document.createElement('ion-content') as HTMLElement & { getScrollElement?: () => Promise<HTMLElement> };
+    content.getScrollElement = () => Promise.resolve(document.createElement('div'));
+    stubRect(content, () => ({ top: 193, bottom: 601 }));
+    const wrapper = document.createElement('div');
+    content.appendChild(wrapper);
+    document.body.appendChild(content);
+    const pos = document.createElement('erp-pos-touch') as Pos;
+    wrapper.attachShadow({ mode: 'open' }).appendChild(pos);
+    await pos.updateComplete;
+    stubRect(pos.shadowRoot!.querySelector('.body')!, () => ({ top: 210, bottom: 688 }));
+
+    await openCart(pos);
+
+    expect(insets(pos)).toEqual(['0px', '87px']);
+  });
+
+  it('a re-render while it is open does not look the shell up again', async () => {
+    const { pos } = await mountInShell(390, 667);
+    const content = pos.closest('ion-content') as HTMLElement & { getScrollElement: () => Promise<HTMLElement> };
+    const lookup = content.getScrollElement;
+    let lookups = 0;
+    content.getScrollElement = () => { lookups++; return lookup(); };
+    await openCart(pos);
+    expect(lookups).toBe(1);
+
+    (pos as unknown as { requestUpdate(): void }).requestUpdate();
+    await flush(pos);
+
+    expect(lookups, 'the till re-renders on every cart change; it keeps the one watch').toBe(1);
+  });
+
+  it('when the shell cannot hand its scroller over, the drawer keeps what it measured on open and says so', async () => {
+    const { pos } = await mountInShell(390, 667);
+    const content = pos.closest('ion-content') as HTMLElement & { getScrollElement: () => Promise<HTMLElement> };
+    content.getScrollElement = () => Promise.reject(new Error('scroller gone'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await openCart(pos);
+
+      expect(insets(pos)).toEqual(['0px', '87px']);
+      expect(warn, 'the failure is visible in the log, not swallowed').toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
