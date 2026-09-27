@@ -578,7 +578,7 @@ var ElementShim = class Element extends NodeShim {
     return value ?? null;
   }
 };
-var HTMLElementShim = class HTMLElement extends ElementShim {
+var HTMLElementShim = class HTMLElement2 extends ElementShim {
 };
 var HTMLElementShimWithRealType = HTMLElementShim;
 var ShadowRootShim = class ShadowRoot extends NodeShim {
@@ -8171,6 +8171,41 @@ function gradient(s5) {
   const h22 = (h4 + 38) % 360;
   return `linear-gradient(135deg, hsl(${h4} 42% 38%), hsl(${h22} 44% 26%))`;
 }
+function followShellView(host, onChange) {
+  let node = host;
+  let content = null;
+  while (node && !content) {
+    const parent = node.parentNode ?? node.getRootNode().host ?? null;
+    if (parent instanceof HTMLElement && parent.tagName === "ION-CONTENT") content = parent;
+    node = parent === node ? null : parent;
+  }
+  if (!content) return void 0;
+  const shell = content;
+  const sync = () => onChange(shell.getBoundingClientRect());
+  sync();
+  let live = true;
+  let scroller = null;
+  window.addEventListener("resize", sync);
+  const resized = typeof ResizeObserver === "function" ? new ResizeObserver(sync) : null;
+  resized?.observe(shell);
+  const getScrollElement = shell.getScrollElement;
+  if (typeof getScrollElement === "function") {
+    getScrollElement.call(shell).then((el) => {
+      if (!live || !el) return;
+      scroller = el;
+      scroller.addEventListener("scroll", sync, { passive: true });
+      sync();
+    }, (err) => {
+      console.warn("[sales] pos: shell scroller unavailable, keeping the measure taken on open", err);
+    });
+  }
+  return () => {
+    live = false;
+    window.removeEventListener("resize", sync);
+    resized?.disconnect();
+    scroller?.removeEventListener("scroll", sync);
+  };
+}
 var ErpPosTouch = class extends i3 {
   constructor() {
     super(...arguments);
@@ -9013,6 +9048,10 @@ var ErpPosTouch = class extends i3 {
        safe-area inset is -- and a px number here would only ever be right on one of them.
        The padding is the breathing room the old 88vh cap used to leave. */
     .scrim { position:absolute; inset:0; padding:1rem; background:var(--ok-scrim, rgba(0,0,0,.6)); display:flex; align-items:center; justify-content:center; z-index:70; }
+    /* sales#422: on a low phone the shell shows less than .card (its 480 px floor, hub#1730) and
+       scrolls the rest; top/bottom are the parts of the card it hides (see syncSheetViewport), so
+       the sheet sits between the header and the tab bar. 0 outside a shell or when it all fits. */
+    .scrim { top:var(--pos-sheet-top, 0px); bottom:var(--pos-sheet-bottom, 0px); }
     /* Columna flex: el importe y el botón de cobrar NO se mueven; solo scrollea el centro. Antes
        el sheet entero scrolleaba y el botón principal quedaba fuera de pantalla — la acción más
        importante del TPV no puede exigir scroll. */
@@ -9023,6 +9062,14 @@ var ErpPosTouch = class extends i3 {
     .sheet-h { padding-top:1rem; }
     .sheet-foot { padding:.75rem 1rem 1rem; border-top:1px solid var(--ion-border-color); }
     .pay { flex:1; min-height:0; overflow:auto; padding:0 1rem; }
+    /* sales#422: a phone on its side leaves ~217 px inside the scrim, and the header, figure and
+       foot alone took it all: the keypad shrank to 0 px and the button spilled out under the tab
+       bar. The middle keeps room for the keypad; what then does not fit scrolls inside the sheet,
+       with the foot stuck to its bottom on the sheet's own ground, so the button is always shown.
+       Where it all fits (every other screen) nothing changes: the sheet has nothing to scroll. */
+    .sheet { overflow-y:auto; }
+    .pay { min-height:8rem; }
+    .sheet-foot { position:sticky; bottom:0; z-index:1; background:var(--panel); }
     .sheet-h { display:flex; justify-content:space-between; align-items:center; margin-bottom:.8rem; }
     .sheet-h .t { font-size:1.2rem; font-weight:700; }
     .x { background:none; border:none; font-size:1.3rem; cursor:pointer; color:var(--mut); }
@@ -9566,6 +9613,7 @@ var ErpPosTouch = class extends i3 {
     ++this.connectionEpoch;
     this.photos.dispose();
     window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
+    this.unwatchSheetViewport();
     window.removeEventListener(SCALE_WEIGHT_EVENT, this.onScaleWeight);
     window.removeEventListener("popstate", this.onPopState);
     window.removeEventListener("erplora:back", this.onSystemBack);
@@ -9772,6 +9820,31 @@ var ErpPosTouch = class extends i3 {
         campo.select();
       }
     }
+    this.syncSheetViewport();
+  }
+  /** sales#422 — every sheet (discount, charge, open price, note, modifiers, combo) hangs from a
+   *  `.scrim` over `.card`, and on a low phone the shell shows less than the card: the sheet was
+   *  centred in the whole card and its button sat under the tab bar. While any scrim is on screen
+   *  the till measures how much of the card the shell hides above and below and hands both over as
+   *  the scrim's insets (`--pos-sheet-top/--pos-sheet-bottom`). Keyed on the scrim itself, so a
+   *  new sheet is covered without a list to keep in step. */
+  syncSheetViewport() {
+    const open = !!this.renderRoot.querySelector(".scrim");
+    if (open && this.sheetViewportCleanup === void 0) {
+      this.sheetViewportCleanup = followShellView(this, (shown) => {
+        const card = this.renderRoot.querySelector(".card");
+        if (!card) return;
+        const box = card.getBoundingClientRect();
+        this.style.setProperty("--pos-sheet-top", `${Math.max(0, Math.round(shown.top - box.top))}px`);
+        this.style.setProperty("--pos-sheet-bottom", `${Math.max(0, Math.round(box.bottom - shown.bottom))}px`);
+      }) ?? null;
+    } else if (!open) {
+      this.unwatchSheetViewport();
+    }
+  }
+  unwatchSheetViewport() {
+    this.sheetViewportCleanup?.();
+    this.sheetViewportCleanup = void 0;
   }
   // Dinero formateado con la MONEDA DEL HUB (ADR-0059): el SDK la resuelve de /api/hub/context
   // (misma fuente que dashboard/billing). Antes hardcodeaba '€' / la moneda por-módulo.
