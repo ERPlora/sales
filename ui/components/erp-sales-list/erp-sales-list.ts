@@ -12,7 +12,8 @@ import { formatDateTime } from '../../lib/document-mappers.js';
 import { errorCode } from '../../lib/checkout-key.js';
 import { domainErrorText } from '../../lib/domain-error-text.js';
 import { transportErrorKey } from '../../lib/transport-error.js';
-import { createListController } from '@erplora/module-sdk';
+import { createListController, majorToMinor } from '@erplora/module-sdk';
+import { hubDecimals } from '../../lib/hub-currency.js';
 import type { ListController, ListClient, ListParams, ListPage } from '@erplora/module-sdk';
 // Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC.
 import esLocale from '../../../locales/es.json';
@@ -106,6 +107,33 @@ export function rangeBounds(range: Range, today: string): { from?: string; to?: 
   const [y, m, d] = today.split('-').map(Number);
   const from = new Date(Date.UTC(y, m - 1, d - days)).toISOString().slice(0, 10);
   return { from, to: today };
+}
+
+/**
+ * Columns whose `range` filter is money (sales#428, pm#498). The column paints the INTEGER in the
+ * minor unit as money of the hub («12,10 €»), so the person types the major unit («12»); the
+ * dispatcher compares against the integer, so each edge is scaled before the list is asked for.
+ */
+const MONEY_RANGE_FILTERS = new Set(['total']);
+
+/**
+ * One typed edge of a money range → minor units, with the hub's currency decimals. The table emits
+ * a Number from the panel and text from the inline control («12,5» included). Empty or not a
+ * number → `''`, which the list controller drops: a stray keystroke never becomes «from 0».
+ */
+function moneyEdgeToMinor(edge: unknown, decimals: number): number | '' {
+  const text = typeof edge === 'string' ? edge.trim().replace(',', '.') : edge;
+  if (text === '' || text === null || text === undefined) return '';
+  const n = Number(text);
+  return Number.isFinite(n) ? majorToMinor(n, decimals) : '';
+}
+
+/** The `{ from?, to? }` a money range emits, scaled edge by edge; any other shape travels as is. */
+function moneyRangeToMinor(value: unknown, decimals: number): unknown {
+  if (value === null || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([edge, v]) => [edge, moneyEdgeToMinor(v, decimals)]),
+  );
 }
 
 function erplora(): ErploraClientLike {
@@ -465,12 +493,14 @@ export class ErpSalesList extends LitElement {
     }
   }
 
-  /** El selector de fechas de la propia tabla (columna «Fecha») también filtra por DÍA: la
-   *  columna pinta `created_at`, pero el rango que pide el usuario es de días y el filtro del
-   *  servidor es `erp_date` (sales#125). Mandarlo al timestamp repetiría el corte a las 00:00. */
+  /** The table's own date picker («Date» column) also filters by DAY: the column paints
+   *  `created_at`, but the range the user asks for is in days and the server filter is `erp_date`
+   *  (sales#125); sending it to the timestamp would repeat the cut at 00:00. Money ranges travel in
+   *  the minor unit (sales#428, pm#498). */
   private onFilterChange(e: CustomEvent<{ col: string; value: unknown }>): void {
     const col = e.detail.col === 'created_at' ? 'erp_date' : e.detail.col;
-    this.ctrl.setFilter(col, e.detail.value);
+    const value = e.detail.value;
+    this.ctrl.setFilter(col, MONEY_RANGE_FILTERS.has(col) ? moneyRangeToMinor(value, hubDecimals()) : value);
   }
 
   /** sales#243 — la columna «Nº» PINTA `sale_number` y ORDENA por `sale_seq`.
