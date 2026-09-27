@@ -86,7 +86,13 @@ always sits above the tab bar (sales#412 / sales#418). The open drawer spans onl
 shows between the header and the tab bar — also on a low phone under the «You can't invoice yet»
 strip, or a phone on its side: the total and **Cobrar** stay on screen and the lines scroll inside.
 Where even that does not leave room for the first line, the drawer scrolls on its own, still above
-the tab bar (sales#420).
+the tab bar (sales#420) — and its footer stays pinned: what scrolls is the header and the lines,
+never the total and **Cobrar**. A phone on its side (a screen 500 px tall or less) always gets this
+phone till, whatever its width. When the drawer is low (24rem or less: a small phone under the
+«You can't invoice yet» strip, any phone on its side) its header shrinks to one row — the check's
+name, then the table/customer chips scrolling sideways — and its footer gets thinner, with
+**Cobrar** over the amount still owed on two short lines so any amount fits; on a phone on its
+side the footer is a single row, the total and then the actions (sales#423).
 
 ### Sell something and charge it
 
