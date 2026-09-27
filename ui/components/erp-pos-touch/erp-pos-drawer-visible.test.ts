@@ -35,7 +35,7 @@ async function flush(pos: Pos): Promise<void> {
 }
 
 /** Mounts the till the way the shell does: inside an ion-content whose scroll element is its own. */
-async function mountInShell(width: number, height: number, withContent = true) {
+async function mountInShell(width: number, height: number, withContent = true, scrollerLookup: 'ready' | 'held' | 'none' = 'ready') {
   (window as HappyWindow).happyDOM?.setViewport({ width, height });
   installPosDouble({});
   document.body.innerHTML = '';
@@ -43,7 +43,12 @@ async function mountInShell(width: number, height: number, withContent = true) {
   const body: Box = { top: 210, bottom: 688 };
   const scroller = document.createElement('div');
   const content = document.createElement(withContent ? 'ion-content' : 'div') as HTMLElement & { getScrollElement?: () => Promise<HTMLElement> };
-  if (withContent) content.getScrollElement = () => Promise.resolve(scroller);
+  // 'held': the shell has not handed its scroller over yet (release() does); 'none': an
+  // ion-content that is not upgraded yet, so it has no getScrollElement at all.
+  let release: () => void = () => {};
+  const held = new Promise<HTMLElement>((resolve) => { release = () => resolve(scroller); });
+  if (withContent && scrollerLookup === 'ready') content.getScrollElement = () => Promise.resolve(scroller);
+  if (withContent && scrollerLookup === 'held') content.getScrollElement = () => held;
   stubRect(content, () => view);
   const outlet = document.createElement('div');
   content.appendChild(outlet);
@@ -53,7 +58,7 @@ async function mountInShell(width: number, height: number, withContent = true) {
   await pos.updateComplete;
   const root = pos.shadowRoot!;
   stubRect(root.querySelector('.body')!, () => body);
-  return { pos, root, view, body, scroller };
+  return { pos, root, view, body, scroller, release };
 }
 
 async function openCart(pos: Pos): Promise<void> {
@@ -131,6 +136,46 @@ describe('the open cart drawer fits what the shell shows (sales#420)', () => {
     expect(insets(pos), 'still what it measured while open').toEqual(['0px', '87px']);
   });
 
+  it('closed before the shell handed its scroller over, it never starts listening to it', async () => {
+    const { pos, body, scroller, release } = await mountInShell(390, 667, true, 'held');
+    await openCart(pos);
+    await closeCart(pos);
+    release(); // the scroller arrives after the drawer closed
+    await flush(pos);
+
+    body.top = 106; body.bottom = 584;
+    scroller.dispatchEvent(new Event('scroll'));
+
+    expect(insets(pos)).toEqual(['0px', '87px']);
+  });
+
+  it('follows the size of the shell area itself (the strip comes or goes without a window resize)', async () => {
+    const observed: { target: Element; cb: () => void; live: boolean }[] = [];
+    const Real = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      private entry: { target: Element; cb: () => void; live: boolean } | undefined;
+      constructor(private cb: () => void) {}
+      observe(target: Element) { this.entry = { target, cb: this.cb, live: true }; observed.push(this.entry); }
+      unobserve() {}
+      disconnect() { if (this.entry) this.entry.live = false; }
+    } as unknown as typeof ResizeObserver;
+    try {
+      const { pos, view } = await mountInShell(390, 667);
+      await openCart(pos);
+      const watch = observed.find((o) => o.target.tagName === 'ION-CONTENT');
+      expect(watch, 'the ion-content is observed').toBeTruthy();
+
+      view.top = 60; view.bottom = 700;
+      watch!.cb();
+      expect(insets(pos)).toEqual(['0px', '0px']);
+
+      await closeCart(pos);
+      expect(watch!.live, 'closing disconnects it').toBe(false);
+    } finally {
+      globalThis.ResizeObserver = Real;
+    }
+  });
+
   it('removed from the page while open, it stops listening too', async () => {
     const { pos, body, scroller } = await mountInShell(390, 667);
     await openCart(pos);
@@ -164,6 +209,13 @@ describe('the open cart drawer fits what the shell shows (sales#420)', () => {
 
     expect(getComputedStyle(root.querySelector('.cart ion-content.cart-body')!).minHeight, 'room for the first line').toBe('80px');
     expect(getComputedStyle(root.querySelector('.cart')!).overflowY, 'what does not fit scrolls in the drawer').toBe('auto');
+  });
+
+  it('measured on open even before the shell can hand its scroller over', async () => {
+    const { pos } = await mountInShell(390, 667, true, 'none');
+    await openCart(pos);
+
+    expect(insets(pos)).toEqual(['0px', '87px']);
   });
 
   it('outside a shell (no ion-content around it) the drawer keeps the whole body', async () => {
