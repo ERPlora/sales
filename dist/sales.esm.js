@@ -1500,6 +1500,12 @@ function bindTabbar(segment, opts = {}) {
   };
 }
 
+// @erplora/module-sdk/src/quantity.ts
+var QUANTITY_SCALE = 1e6;
+function toMicro(quantity2) {
+  return Math.round(quantity2 * QUANTITY_SCALE);
+}
+
 // @erplora/module-sdk/src/index.ts
 function isEmpty(v3) {
   return v3 === null || v3 === void 0 || v3 === "";
@@ -1525,6 +1531,29 @@ var ListController = class {
       filters: { ...opts.filters ?? {} },
       context: { ...opts.context ?? {} }
     };
+    this.moneyFilters = new Set(opts.moneyFilters ?? []);
+    this.quantityFilters = new Set(opts.quantityFilters ?? []);
+    if (this.moneyFilters.size > 0 && typeof client.currencyDecimals !== "number") {
+      throw new ErploraError(
+        "list_money_filters_need_currency_decimals",
+        "moneyFilters needs a list client that exposes currencyDecimals"
+      );
+    }
+  }
+  /**
+   * The filters as the runtime compares them: money and quantity columns scaled from what the
+   * person typed to the stored integer. `state.filters` stays as typed, so a table that echoes it
+   * back keeps showing «12», not «1200».
+   */
+  wireFilters() {
+    if (this.moneyFilters.size === 0 && this.quantityFilters.size === 0) return this.state.filters;
+    const decimals = this.client.currencyDecimals ?? 0;
+    const out = {};
+    for (const [col, value] of Object.entries(this.state.filters)) {
+      const scale = this.moneyFilters.has(col) ? (n6) => majorToMinor(n6, decimals) : this.quantityFilters.has(col) ? toMicro : null;
+      out[col] = scale ? scaleFilterValue(value, scale) : value;
+    }
+    return out;
   }
   /** Nº de páginas según el total del servidor (mínimo 1). */
   get pageCount() {
@@ -1544,7 +1573,7 @@ var ListController = class {
         search: s5.search,
         sort: s5.sort,
         dir: s5.dir,
-        filters: s5.filters,
+        filters: this.wireFilters(),
         params: s5.context
       });
       if (mySeq !== this.seq) return;
@@ -1613,10 +1642,33 @@ var ListController = class {
     void this.load();
   }
 };
+function scaleFilterEdge(edge, scale) {
+  const text = typeof edge === "string" ? edge.trim().replace(",", ".") : edge;
+  if (text === "" || text === null || text === void 0) return "";
+  const n6 = Number(text);
+  return Number.isFinite(n6) ? scale(n6) : "";
+}
+function scaleFilterValue(value, scale) {
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([edge, v3]) => [edge, scaleFilterEdge(v3, scale)])
+    );
+  }
+  return scaleFilterEdge(value, scale);
+}
 function createListController(client, queryName, onChange = () => {
 }, opts = {}) {
   return new ListController(client, queryName, onChange, opts);
 }
+var ErploraError = class extends Error {
+  constructor(code, message, permission, fields) {
+    super(message);
+    this.code = code;
+    this.permission = permission;
+    this.fields = fields;
+    this.name = "ErploraError";
+  }
+};
 var SERVER_UNAVAILABLE = "server_unavailable";
 function majorToMinor(amount, decimals) {
   const n6 = Number(amount);
@@ -16945,19 +16997,6 @@ function rangeBounds(range, today) {
   const from = new Date(Date.UTC(y3, m4 - 1, d3 - days)).toISOString().slice(0, 10);
   return { from, to: today };
 }
-var MONEY_RANGE_FILTERS = /* @__PURE__ */ new Set(["total"]);
-function moneyEdgeToMinor(edge, decimals) {
-  const text = typeof edge === "string" ? edge.trim().replace(",", ".") : edge;
-  if (text === "" || text === null || text === void 0) return "";
-  const n6 = Number(text);
-  return Number.isFinite(n6) ? majorToMinor(n6, decimals) : "";
-}
-function moneyRangeToMinor(value, decimals) {
-  if (value === null || typeof value !== "object") return value;
-  return Object.fromEntries(
-    Object.entries(value).map(([edge, v3]) => [edge, moneyEdgeToMinor(v3, decimals)])
-  );
-}
 function erplora6() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -17228,7 +17267,11 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
       // sobre el timestamp crudo: el motor compara la columna tal cual y «hasta hoy» cortaba a las
       // 00:00 — «Hoy»/«7 días»/«30 días» salían vacías mientras los KPIs (que comparan por día)
       // sí contaban el día en curso.
-      filters: b3.from ? { erp_date: { from: b3.from, to: b3.to } } : {}
+      filters: b3.from ? { erp_date: { from: b3.from, to: b3.to } } : {},
+      // sales#428, pm#501: `total` is an INTEGER in the minor unit and the column paints it as money
+      // of the hub, so the person types the major unit («12»). The SDK scales each edge with the
+      // hub's currency decimals before asking; the screen must NOT scale it again.
+      moneyFilters: ["total"]
     });
     await Promise.all([this.ctrl.load(), this.loadStats(), this.loadPayMethods()]);
     try {
@@ -17268,12 +17311,11 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
   }
   /** The table's own date picker («Date» column) also filters by DAY: the column paints
    *  `created_at`, but the range the user asks for is in days and the server filter is `erp_date`
-   *  (sales#125); sending it to the timestamp would repeat the cut at 00:00. Money ranges travel in
-   *  the minor unit (sales#428, pm#498). */
+   *  (sales#125); sending it to the timestamp would repeat the cut at 00:00. The value travels as
+   *  typed: the money range is scaled by the list controller (`moneyFilters`, pm#501). */
   onFilterChange(e8) {
     const col = e8.detail.col === "created_at" ? "erp_date" : e8.detail.col;
-    const value = e8.detail.value;
-    this.ctrl.setFilter(col, MONEY_RANGE_FILTERS.has(col) ? moneyRangeToMinor(value, hubDecimals()) : value);
+    this.ctrl.setFilter(col, e8.detail.value);
   }
   static {
     /** sales#243 — la columna «Nº» PINTA `sale_number` y ORDENA por `sale_seq`.
