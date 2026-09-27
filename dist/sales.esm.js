@@ -578,7 +578,7 @@ var ElementShim = class Element extends NodeShim {
     return value ?? null;
   }
 };
-var HTMLElementShim = class HTMLElement extends ElementShim {
+var HTMLElementShim = class HTMLElement2 extends ElementShim {
 };
 var HTMLElementShimWithRealType = HTMLElementShim;
 var ShadowRootShim = class ShadowRoot extends NodeShim {
@@ -9082,7 +9082,9 @@ var ErpPosTouch = class extends i3 {
          todo el subárbol, así que este único punto cubre TODOS los controles de la cuenta, incluidos
          los que montan otros módulos en el slot. La transición retrasa el ocultado hasta que termina
          el deslizamiento; al abrir es inmediata. */
-      .cart { position:absolute; top:0; right:0; bottom:0; width:min(92%,26rem); z-index:60;
+      /* sales#420: top/bottom are the parts of the body the shell hides (see watchCartViewport),
+         so the drawer spans what is on screen: its foot above the tab bar, its lines scrolling. */
+      .cart { position:absolute; top:var(--pos-cart-top, 0px); right:0; bottom:var(--pos-cart-bottom, 0px); width:min(92%,26rem); z-index:60;
         transform:translateX(100%); visibility:hidden;
         transition:transform .25s ease, visibility 0s linear .25s; }
       .cart[data-open] { transform:translateX(0); visibility:visible;
@@ -9564,6 +9566,7 @@ var ErpPosTouch = class extends i3 {
   disconnectedCallback() {
     super.disconnectedCallback();
     ++this.connectionEpoch;
+    this.unwatchCartViewport();
     this.photos.dispose();
     window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
     window.removeEventListener(SCALE_WEIGHT_EVENT, this.onScaleWeight);
@@ -9745,8 +9748,68 @@ var ErpPosTouch = class extends i3 {
     const host = this.renderRoot.querySelector(".cart-actions-slot");
     host?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
   }
+  /** sales#420 — the shell floors a module screen at 480 px (hub#1730) and scrolls it inside its
+   *  ion-content below that, so on a low phone (the «You can't invoice yet» strip up, or the phone
+   *  on its side) the till's body is taller than what is on screen. The drawer spans the body, so
+   *  its foot -- the total and Charge -- sat under the tab bar. CSS inside a shadow root cannot see
+   *  the shell's scroller, so while the drawer is open the till measures how much of the body the
+   *  closest ion-content hides above and below and hands both over as insets
+   *  (`--pos-cart-top/--pos-cart-bottom`, used by the phone drawer only). It follows the scroller,
+   *  the window and the ion-content's own size; outside a shell nothing is set and the drawer keeps
+   *  the whole body. Same walk as ok-data-table's sheet (outfitkit#75). */
+  watchCartViewport() {
+    this.unwatchCartViewport();
+    let node = this;
+    let content = null;
+    while (node && !content) {
+      const parent = node.parentNode ?? node.getRootNode().host ?? null;
+      if (parent instanceof HTMLElement && parent.tagName === "ION-CONTENT") content = parent;
+      node = parent === node ? null : parent;
+    }
+    if (!content) return;
+    const shell = content;
+    const sync = () => {
+      const body = this.renderRoot.querySelector(".body");
+      if (!body) return;
+      const shown = shell.getBoundingClientRect();
+      const box = body.getBoundingClientRect();
+      this.style.setProperty("--pos-cart-top", `${Math.max(0, Math.round(shown.top - box.top))}px`);
+      this.style.setProperty("--pos-cart-bottom", `${Math.max(0, Math.round(box.bottom - shown.bottom))}px`);
+    };
+    sync();
+    let live = true;
+    let scroller = null;
+    window.addEventListener("resize", sync);
+    const resized = typeof ResizeObserver === "function" ? new ResizeObserver(sync) : null;
+    resized?.observe(shell);
+    const getScrollElement = shell.getScrollElement;
+    if (typeof getScrollElement === "function") {
+      getScrollElement.call(shell).then((el) => {
+        if (!live || !el) return;
+        scroller = el;
+        scroller.addEventListener("scroll", sync, { passive: true });
+        sync();
+      }, (err) => {
+        console.warn("[sales] pos: shell scroller unavailable, the cart drawer keeps its measure on open", err);
+      });
+    }
+    this.cartViewportCleanup = () => {
+      live = false;
+      window.removeEventListener("resize", sync);
+      resized?.disconnect();
+      scroller?.removeEventListener("scroll", sync);
+    };
+  }
+  unwatchCartViewport() {
+    this.cartViewportCleanup?.();
+    this.cartViewportCleanup = void 0;
+  }
   updated(_changed) {
     this.ensureSlotsMounted();
+    if (_changed.has("cartOpen")) {
+      if (this.cartOpen) this.watchCartViewport();
+      else this.unwatchCartViewport();
+    }
     this.syncChargeState();
     if (this.paying || this.prebillOpen) void this.refreshValuation();
     const categorySegment = this.renderRoot.querySelector("ion-segment.category-segment") ?? void 0;
