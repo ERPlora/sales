@@ -9124,7 +9124,12 @@ var ErpPosTouch = class extends i3 {
       .pay-sheet { width:100%; border-bottom:0; border-radius:var(--ok-radius-lg,16px) var(--ok-radius-lg,16px) 0 0; }
     }
 
-    @media (max-width: 820px) {
+    /* The phone till: everywhere EXCEPT where the check fits as a column -- 821px wide AND more
+       than 500px tall. sales#423: a phone on its side (844x390, 932x430) is wide enough but not
+       tall enough: as a column, its check was laid out in the shell's 480px floor, the foot under
+       the tab bar until the shell was scrolled; as a drawer it spans what the shell shows.
+       ('not all and A and B' negates the whole query: narrow OR low.) */
+    @media not all and (min-width: 821px) and (min-height: 501px) {
       .body { grid-template-columns: 1fr; }
       /* Sin sombra: aun cerrado (translateX(100%)) su box-shadow se derramaba ~30px hacia dentro
          por el borde derecho de la tarjeta; la separación al abrir la dan el backdrop y el borde. */
@@ -9147,6 +9152,11 @@ var ErpPosTouch = class extends i3 {
          first line, and what then does not fit scrolls inside the drawer -- never under the tab bar. */
       .cart { overflow-y:auto; }
       .cart ion-content.cart-body { min-height:5rem; }
+      /* sales#423: when the check does not fit, what scrolls is its header and its lines -- the
+         total and Charge stay pinned to the bottom of the drawer, as on Square or Toast. The drawer
+         is also the size container the compact rules below measure (@container pos-cart). */
+      .cart { container:pos-cart / size; }
+      .cart ion-footer { position:sticky; bottom:0; z-index:1; }
       .cart-close { display:inline-flex; }
       .cart-backdrop[data-open] { display:block; position:absolute; inset:0; background:var(--ok-scrim, rgba(0,0,0,.5)); z-index:55; }
       /* sales#418: the shell floors a module screen at 480px and scrolls it below that, so with the
@@ -9340,6 +9350,53 @@ var ErpPosTouch = class extends i3 {
       ion-segment-button.cat-segment-button { flex-basis:7rem; min-width:7rem; }
       ion-card.tile { min-height:7.7rem; }
       .thumb { height:4.5rem; }
+    }
+    /* sales#423: a phone on its side wider than 820px -- the drawer layout above, without the
+       two-column grid of a portrait phone (its tiles would be 450px wide). */
+    @media (min-width:821px) and (max-height:500px) {
+      .body { grid-template-columns:1fr; }
+      .cart { width:min(100%,27rem); }
+      .grid { padding-bottom:5.2rem; }
+    }
+    /* sales#423: a LOW drawer (320x568 under the «You can't invoice yet» strip, any phone on its
+       side) is 170-300px tall, and the header (~145px) and the foot (~125-139px) alone took it:
+       Charge sat below its edge. Here the header is one toolbar and one row -- the name, then the
+       chips scrolling sideways -- and the foot is thinner, so the first line is seen whole too. */
+    @container pos-cart (max-height: 24rem) {
+      .cart ion-toolbar { --min-height:2.75rem; }
+      .order-toolbar { min-height:2.75rem; padding-top:.1rem; padding-bottom:.1rem; }
+      ion-button.header-action { height:2.5rem; }
+      .order-heading { display:flex; align-items:center; gap:.5rem; padding-top:.3rem; padding-bottom:.3rem; }
+      .order-title-row { flex:1 0 7rem; min-width:0; }
+      .order-context { flex:0 1 auto; min-width:0; flex-wrap:nowrap; overflow-x:auto; margin-top:0; scrollbar-width:none; }
+      .order-context > * { flex:none; }
+      .context-empty { display:none; }
+      /* A line's card (~105px: amount, three actions, stepper) centred its label, so the ~80px left
+         here showed the amount and not the product name. */
+      ion-list.lines ion-item { align-items:flex-start; }
+      ion-segment.view-tabs { margin-top:.3rem; margin-bottom:.2rem; }
+      ion-segment.view-tabs ion-segment-button { min-height:2.4rem; }
+      .cart-foot { padding-top:.4rem; padding-bottom:.45rem; }
+      .total { margin-bottom:.3rem; }
+      .total b { font-size:1.3rem; }
+      .foot-actions .charge { min-height:2.75rem; min-width:0; white-space:nowrap; --padding-top:.2rem; --padding-bottom:.2rem; }
+      /* «Charge · 45,50 €» broke in two at 320px and made the foot ~120px tall; kept on one line it
+         ran past the drawer's edge (41px in md, uppercase). So the label sits over the amount, two
+         tight lines inside the same 44px, which fit any amount. The amount is what is still OWED,
+         not always the total above it, so it is never dropped. */
+      .foot-actions .ticket-discount, .foot-actions .prebill { width:2.75rem; }
+      .foot-actions .charge ion-icon { display:none; }
+      .foot-actions .charge .charge-text { display:flex; flex-direction:column; align-items:center; line-height:1.1; }
+      .foot-actions .charge .charge-sep { display:none; }
+      .foot-actions .charge .charge-label { font-size:.72rem; }
+    }
+    /* ...and when it is also wide (a phone on its side), the foot is ONE row: the total, then the
+       actions. A ticket discount keeps its own line above. */
+    @container pos-cart (max-height: 24rem) and (min-width: 26rem) {
+      .cart-foot { display:flex; flex-wrap:wrap; align-items:center; gap:.3rem .75rem; }
+      .ticket-discount-row { flex-basis:100%; }
+      .total { flex-direction:column; align-items:flex-start; margin:0; }
+      .foot-actions { flex:1 1 0; min-width:0; }
     }
   `;
   }
@@ -12376,7 +12433,8 @@ var ErpPosTouch = class extends i3 {
                         aria-label=${t5("ui.charge")}
                         @click=${() => this.openPay()}>
               <ion-icon slot="start" name="card-outline"></ion-icon>
-              ${t5("ui.charge")} · ${this.money(this.owed)}
+              <!-- Two pieces so a low drawer can stack them (sales#423); one line, no gaps: it reads «Charge · amount». -->
+              <span class="charge-text"><span class="charge-label">${t5("ui.charge")}</span><span class="charge-sep"> · </span><span class="charge-amount">${this.money(this.owed)}</span></span>
             </ion-button>
           </div>
         </div>

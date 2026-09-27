@@ -37,13 +37,15 @@ function rules(css: string, selector: string): string {
 }
 
 /**
- * The `@media (max-width: 820px)` blocks -- where the cart becomes a drawer and the FAB appears.
+ * The phone blocks -- where the cart becomes a drawer and the FAB appears: `(max-width: 820px)`,
+ * and since sales#423 the phone till itself, `not all and (min-width: 821px) and (min-height:
+ * 501px)` (narrow OR low, so a phone on its side gets it too).
  * They are cut by COUNTING BRACES: keeping "everything after the @media" would let a rule written
  * outside the media query pass, which is the opposite of what these tests mean to prove.
  */
 function mobileBlock(css: string): string {
   const blocks: string[] = [];
-  const opening = /@media[^{]*\(max-width:\s*820px\)[^{]*\{/g;
+  const opening = /@media(?:[^{]*\(max-width:\s*820px\)|\s*not all and \(min-width:\s*821px\) and \(min-height:\s*501px\))[^{]*\{/g;
   for (let m = opening.exec(css); m; m = opening.exec(css)) {
     let depth = 1;
     let i = m.index + m[0].length;
