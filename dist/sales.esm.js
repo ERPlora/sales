@@ -4950,7 +4950,12 @@ var en_default = {
     },
     "sales.order.set_discount_over_limit": {
       label: "Apply a ticket discount above the limit",
-      approval_label: "Apply a ticket discount of {discount_percent, percent} and {discount_amount, money}"
+      approval_label: "Apply a ticket discount of {discount_percent, percent} and {discount_amount, money}",
+      approval_labels: [
+        "Apply a ticket discount of {discount_percent, percent} and {discount_amount, money}",
+        "Apply a ticket discount of {discount_percent, percent}",
+        "Apply a ticket discount of {discount_amount, money}"
+      ]
     },
     "sales.order.set_line_discount_over_limit": {
       label: "Apply a line discount above the limit",
@@ -5605,7 +5610,12 @@ var es_default = {
     },
     "sales.order.set_discount_over_limit": {
       label: "Aplicar al tique un descuento por encima del l\xEDmite",
-      approval_label: "Aplicar al tique un descuento del {discount_percent, percent} y {discount_amount, money}"
+      approval_label: "Aplicar al tique un descuento del {discount_percent, percent} y {discount_amount, money}",
+      approval_labels: [
+        "Aplicar al tique un descuento del {discount_percent, percent} y {discount_amount, money}",
+        "Aplicar al tique un descuento del {discount_percent, percent}",
+        "Aplicar al tique un descuento de {discount_amount, money}"
+      ]
     },
     "sales.order.set_line_discount_over_limit": {
       label: "Aplicar a una l\xEDnea un descuento por encima del l\xEDmite",
