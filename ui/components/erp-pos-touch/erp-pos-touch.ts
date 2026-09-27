@@ -469,8 +469,12 @@ export class ErpPosTouch extends LitElement {
     /* position:relative is load-bearing (sales#314): .card is the box the SHELL laid this module
        out in -- everything between its topbar and its module tab bar -- and it is what every sheet
        is anchored to. Without it the position:absolute of .scrim walks out of the module and lands
-       on the viewport again, which is the defect itself. */
-    .card { position:relative; height:100%; display:flex; flex-direction:column; overflow:hidden; background:var(--bg);
+       on the viewport again, which is the defect itself.
+       overflow:clip, not hidden (sales#418): both clip the rounded corners and the closed cart
+       drawer, but hidden also makes .card a scroll container, and then the phone's sticky cart
+       button measures against a box that never scrolls instead of the shell's scroller. hidden
+       stays first as the fallback for a WebView without clip. */
+    .card { position:relative; height:100%; display:flex; flex-direction:column; overflow:hidden; overflow:clip; background:var(--bg);
       border:1px solid var(--ion-border-color); border-radius:16px; }
     /* sales#178 - grid-template-rows is the load-bearing half of the fix. .body holds ONE row and
        an implicit auto row is sized by its CONTENT: its base size is .catalog's min-content, which
@@ -993,7 +997,14 @@ export class ErpPosTouch extends LitElement {
         transition:transform .25s ease, visibility 0s; }
       .cart-close { display:inline-flex; }
       .cart-backdrop[data-open] { display:block; position:absolute; inset:0; background:var(--ok-scrim, rgba(0,0,0,.5)); z-index:55; }
-      .fab { display:inline-flex; }
+      /* sales#418: the shell floors a module screen at 480px and scrolls it below that, so with the
+         «You can't invoice yet» strip up a low phone lays the till out taller than what it shows.
+         position:absolute pinned the button to the bottom of that box, under the tab bar; sticky
+         keeps it 1rem (the base bottom) above the visible bottom of the shell scroller. It is in
+         flow now, so it is placed in the catalogue's cell -- and the catalogue with it, or
+         auto-placement would push it to a second row -- at the corner the absolute put it in. */
+      .catalog { grid-area:1 / 1; }
+      .fab { display:inline-flex; position:sticky; grid-area:1 / 1; align-self:end; justify-self:end; margin:0 1rem 1rem 0; }
     }
     .cart-backdrop { display:none; }
 
