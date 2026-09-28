@@ -6656,11 +6656,14 @@ async function addOrderLine(client, orderId, l3) {
   const res = await client.command("sales.order.add_line", orderLinePayload(orderId, l3));
   return firstNewId(res);
 }
-async function persistLineQty(client, orderId, line, qty) {
+async function persistLineQty(client, orderId, line, qty, heldByOthers = []) {
   let lineId = line.line_id;
   if (!lineId) {
+    const taken = new Set(heldByOthers);
     const persisted = await loadOrderLines(client, orderId);
-    lineId = persisted.find((p4) => p4.id === line.id && !p4.is_gift === !line.is_gift)?.line_id;
+    lineId = persisted.find(
+      (p4) => p4.id === line.id && !p4.is_gift === !line.is_gift && !taken.has(p4.line_id ?? "")
+    )?.line_id;
   }
   if (!lineId) return false;
   line.line_id = lineId;
@@ -11098,7 +11101,10 @@ var ErpPosTouch = class extends i3 {
     };
     let saved2 = true;
     try {
-      if (this.orderId) saved2 = await persistLineQty(erplora2(), this.orderId, raised, raised.qty);
+      if (this.orderId) {
+        const heldByOthers = this.cart.flatMap((l3) => l3.line_id ? [l3.line_id] : []);
+        saved2 = await persistLineQty(erplora2(), this.orderId, raised, raised.qty, heldByOthers);
+      }
     } catch (e8) {
       putBack();
       throw e8;
@@ -12746,7 +12752,8 @@ var ErpPosTouch = class extends i3 {
    *  `ion-activatable`/`ion-focusable` Ionic stamps once, and the line stops answering the tap. */
   renderLine(l3) {
     const locked = isLineLocked(l3);
-    return b2`<ion-item data-testid=${`pos-line-${l3.id}`} class=${e6({ sel: !!l3.line_id && this.splitSel.has(l3.line_id) })}
+    const key = l3.line_id || l3.id;
+    return b2`<ion-item data-testid=${`pos-line-${key}`} data-product-id=${l3.id} class=${e6({ sel: !!l3.line_id && this.splitSel.has(l3.line_id) })}
         button ?detail=${false} @click=${() => this.toggleSplit(l3)}>
       ${this.cart.length > 1 && l3.line_id ? b2`<ion-icon slot="start"
                   name=${this.splitSel.has(l3.line_id) ? "checkmark-circle" : "ellipse-outline"}
@@ -12788,16 +12795,16 @@ var ErpPosTouch = class extends i3 {
         <span class="lt ${l3.is_gift ? "is-gift" : ""}">${this.money(lineAmount(l3))}</span>
         ${locked ? b2`<span class="lqty">×${formatQuantity2(toMicro2(l3.qty))}</span>` : b2`
             ${this.discountsAllowed ? b2`
-            <ion-button data-testid=${`pos-line-${l3.id}-discount`} class="line-discount" fill="clear" size="small" title=${t5("ui.discountLine")} aria-label=${t5("ui.discountLine")}
+            <ion-button data-testid=${`pos-line-${key}-discount`} class="line-discount" fill="clear" size="small" title=${t5("ui.discountLine")} aria-label=${t5("ui.discountLine")}
                         @click=${() => this.openDiscount("line", l3.line_id)}>
               <ion-icon name=${l3.discount ? "pricetag" : "pricetag-outline"} slot="icon-only" class=${this.toneOf(!!l3.discount, "warning")}></ion-icon>
             </ion-button>` : A}
-            <ion-button data-testid=${`pos-line-${l3.id}-note`} class="line-note" fill="clear" size="small" title=${t5("ui.lineNote")} aria-label=${t5("ui.lineNote")}
+            <ion-button data-testid=${`pos-line-${key}-note`} class="line-note" fill="clear" size="small" title=${t5("ui.lineNote")} aria-label=${t5("ui.lineNote")}
                         @click=${() => this.openLineNote(l3.line_id)}>
               <ion-icon name=${l3.note ? "chatbox-ellipses" : "chatbox-ellipses-outline"} slot="icon-only"
                         class=${this.toneOf(!!l3.note, "primary")}></ion-icon>
             </ion-button>
-            <ion-button data-testid=${`pos-line-${l3.id}-gift`} fill="clear" size="small" title=${t5("ui.giftAction")} @click=${() => this.toggleGift(l3)}>
+            <ion-button data-testid=${`pos-line-${key}-gift`} fill="clear" size="small" title=${t5("ui.giftAction")} @click=${() => this.toggleGift(l3)}>
               <ion-icon name=${l3.is_gift ? "gift" : "gift-outline"} slot="icon-only" class=${this.toneOf(!!l3.is_gift, "success")}></ion-icon>
             </ion-button>
             <ok-qty-stepper .value=${l3.qty} .min=${0} .step=${this.stepOf(l3)}
