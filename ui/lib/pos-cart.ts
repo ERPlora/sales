@@ -553,12 +553,19 @@ export async function addOrderLine(client: ErploraClientLike, orderId: string, l
  */
 export async function persistLineQty(
   client: ErploraClientLike, orderId: string, line: CartLine, qty: number,
+  /** sales#448 — the order rows OTHER lines on screen already hold. The same product can be on
+   *  the check twice (two professionals, other supplements), and matching by product alone took
+   *  the first row of it — the sibling's, so the write landed on the other line. */
+  heldByOthers: Iterable<string> = [],
 ): Promise<boolean> {
   let lineId = line.line_id;
   if (!lineId) {
-    // Relee el pedido y busca la fila por producto: es la misma que creó `add_line`.
+    // Re-reads the order and looks the row up by product: it is the one `add_line` created.
+    const taken = new Set(heldByOthers);
     const persisted = await loadOrderLines(client, orderId);
-    lineId = persisted.find((p) => p.id === line.id && !p.is_gift === !line.is_gift)?.line_id;
+    lineId = persisted.find(
+      (p) => p.id === line.id && !p.is_gift === !line.is_gift && !taken.has(p.line_id ?? ''),
+    )?.line_id;
   }
   if (!lineId) return false;
   line.line_id = lineId;

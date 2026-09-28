@@ -139,7 +139,7 @@ beforeEach(() => { localStorage.clear(); installSdk(); });
 const CART_ACTIONS: [string, string, (el: Pos) => Promise<void>][] = [
   ['naming the check', 'sales.order.set_label', (el) => el.saveOrderLabel('Terraza')],
   ['a line note', 'sales.order.update_line', async (el) => {
-    el.shadowRoot.querySelector<HTMLElement>(`[data-testid="pos-line-${el.cart[0].id}-note"]`)!.click();
+    el.shadowRoot.querySelector<HTMLElement>(`[data-testid="pos-line-${el.cart[0].line_id}-note"]`)!.click();
     await el.updateComplete;
     await el.applyLineNote('sin azúcar');
   }],
@@ -427,7 +427,7 @@ describe('3 · a refused gift, quantity or note puts the line BACK and says so',
   it('note: a refused note is taken off the line, the order does not have it', async () => {
     const el = await openCartWithLine();
     refused.add('sales.order.update_line');
-    el.shadowRoot.querySelector<HTMLElement>(`[data-testid="pos-line-${el.cart[0].id}-note"]`)!.click();
+    el.shadowRoot.querySelector<HTMLElement>(`[data-testid="pos-line-${el.cart[0].line_id}-note"]`)!.click();
     await el.updateComplete;
     await el.applyLineNote('sin azúcar');
     await settle(el);
@@ -481,7 +481,7 @@ describe('3 · a refused gift, quantity or note puts the line BACK and says so',
     it('note', async () => {
       const el = await twoLinesOfOneProduct();
       refused.add('sales.order.update_line');
-      el.shadowRoot.querySelector<HTMLElement>(`[data-testid="pos-line-${el.cart[0].id}-note"]`)!.click();
+      el.shadowRoot.querySelector<HTMLElement>(`[data-testid="pos-line-${el.cart[0].line_id}-note"]`)!.click();
       await el.updateComplete;
       await el.applyLineNote('sin azúcar');
       await settle(el);

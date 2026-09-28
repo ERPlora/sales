@@ -3692,7 +3692,12 @@ export class ErpPosTouch extends LitElement {
     const putBack = () => { this.cart = this.cart.map((l) => (l === raised ? { ...l, qty: ex.qty } : l)); };
     let saved = true;
     try {
-      if (this.orderId) saved = await persistLineQty(erplora(), this.orderId, raised, raised.qty);
+      if (this.orderId) {
+        // sales#448 — the rows the check already holds. `raised` only re-reads the order when it
+        // has no row id of its own, so it never adds one here.
+        const heldByOthers = this.cart.flatMap((l) => (l.line_id ? [l.line_id] : []));
+        saved = await persistLineQty(erplora(), this.orderId, raised, raised.qty, heldByOthers);
+      }
     } catch (e) {
       putBack();
       throw e;
@@ -5705,7 +5710,12 @@ export class ErpPosTouch extends LitElement {
    *  `ion-activatable`/`ion-focusable` Ionic stamps once, and the line stops answering the tap. */
   private renderLine(l: CartLine) {
     const locked = isLineLocked(l);
-    return html`<ion-item data-testid=${`pos-line-${l.id}`} class=${classMap({ sel: !!l.line_id && this.splitSel.has(l.line_id) })}
+    // sales#448 — the row is named by its OWN identity, the order row: `l.id` is the product, and
+    // the same product on two lines gave both rows (and their comp/note/discount) the same hooks,
+    // so a spec pressing the second line's got the first one's. A line not saved yet has no row
+    // and is named by its product; the product stays on the row as `data-product-id`.
+    const key = l.line_id || l.id;
+    return html`<ion-item data-testid=${`pos-line-${key}`} data-product-id=${l.id} class=${classMap({ sel: !!l.line_id && this.splitSel.has(l.line_id) })}
         button ?detail=${false} @click=${() => this.toggleSplit(l)}>
       ${this.cart.length > 1 && l.line_id
         ? html`<ion-icon slot="start"
@@ -5754,16 +5764,16 @@ export class ErpPosTouch extends LitElement {
           ? html`<span class="lqty">×${formatQuantity(toMicro(l.qty))}</span>`
           : html`
             ${this.discountsAllowed ? html`
-            <ion-button data-testid=${`pos-line-${l.id}-discount`} class="line-discount" fill="clear" size="small" title=${t('ui.discountLine')} aria-label=${t('ui.discountLine')}
+            <ion-button data-testid=${`pos-line-${key}-discount`} class="line-discount" fill="clear" size="small" title=${t('ui.discountLine')} aria-label=${t('ui.discountLine')}
                         @click=${() => this.openDiscount('line', l.line_id)}>
               <ion-icon name=${l.discount ? 'pricetag' : 'pricetag-outline'} slot="icon-only" class=${this.toneOf(!!l.discount, 'warning')}></ion-icon>
             </ion-button>` : nothing}
-            <ion-button data-testid=${`pos-line-${l.id}-note`} class="line-note" fill="clear" size="small" title=${t('ui.lineNote')} aria-label=${t('ui.lineNote')}
+            <ion-button data-testid=${`pos-line-${key}-note`} class="line-note" fill="clear" size="small" title=${t('ui.lineNote')} aria-label=${t('ui.lineNote')}
                         @click=${() => this.openLineNote(l.line_id)}>
               <ion-icon name=${l.note ? 'chatbox-ellipses' : 'chatbox-ellipses-outline'} slot="icon-only"
                         class=${this.toneOf(!!l.note, 'primary')}></ion-icon>
             </ion-button>
-            <ion-button data-testid=${`pos-line-${l.id}-gift`} fill="clear" size="small" title=${t('ui.giftAction')} @click=${() => this.toggleGift(l)}>
+            <ion-button data-testid=${`pos-line-${key}-gift`} fill="clear" size="small" title=${t('ui.giftAction')} @click=${() => this.toggleGift(l)}>
               <ion-icon name=${l.is_gift ? 'gift' : 'gift-outline'} slot="icon-only" class=${this.toneOf(!!l.is_gift, 'success')}></ion-icon>
             </ion-button>
             <ok-qty-stepper .value=${l.qty} .min=${0} .step=${this.stepOf(l)}

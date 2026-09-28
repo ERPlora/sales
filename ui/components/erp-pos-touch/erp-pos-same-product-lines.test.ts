@@ -113,7 +113,9 @@ async function setQtyOnRow(el: Pos, index: number, value: number): Promise<void>
 }
 
 async function giftRow(el: Pos, index: number): Promise<void> {
-  lineItems(el)[index]!.querySelector<HTMLElement>(`[data-testid="pos-line-p-corte-gift"]`)!.click();
+  // sales#448 — every row names its controls by its own row id, so the comp is `<row hook>-gift`.
+  const item = lineItems(el)[index]!;
+  item.querySelector<HTMLElement>(`[data-testid="${item.dataset.testid}-gift"]`)!.click();
   await settle(el);
 }
 
