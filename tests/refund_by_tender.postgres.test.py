@@ -502,6 +502,74 @@ def test_the_same_key_can_never_write_a_second_refund() -> None:
         "sales.refund_by_idempotency_key", {"idempotency_key": ""}), [])
 
 
+# ── 6b · sales#456: la sonda de la pantalla, con el vecino VIVO ─────────────────────────
+#
+# Tras un «no sabemos si se registró», la pantalla de devolución pregunta ella sola por la clave del
+# intento, y al reabrirla pregunta por la clave que quedó pendiente. Lo que conteste la sonda decide
+# si la pantalla da la devolución por hecha o deja repetirla — así que una respuesta que se cuele de
+# otro hub diría «ya consta» sobre un dinero que aquí NO ha salido, o al revés.
+
+
+def test_the_probe_answers_only_for_this_hub() -> None:
+    print("\n6b · la sonda por clave contesta SOLO lo de este hub (sales#456)")
+    # La misma clave en los dos hubs: el índice único es por (hub_id, clave), así que es legítimo.
+    ok, err = run_command("sales._insert_refund", {
+        "refund_id": "ref-vecino-comp", "sale_id": OTHER_SALE, "total": 700,
+        "reason": "lo suyo", "note": "", "idempotency_key": "idem-compartida",
+    }, hub=OTHER_HUB)
+    check("el vecino escribe con la clave compartida", (ok, err), (True, ""))
+
+    # Control positivo: la sonda SÍ ve la fila cuando se la pide su hub.
+    check("control positivo: el vecino encuentra lo suyo", [r["id"] for r in run_query(
+        "sales.refund_by_idempotency_key", {"idempotency_key": "idem-compartida"},
+        hub=OTHER_HUB)], ["ref-vecino-comp"])
+    check("y su clave de antes también", [r["id"] for r in run_query(
+        "sales.refund_by_idempotency_key", {"idempotency_key": "idem-vecino"},
+        hub=OTHER_HUB)], ["ref-vecino"])
+
+    # 🔴 Nuestro hub pregunta por las claves del vecino: «no consta», jamás su documento.
+    check("la clave del vecino no nos contesta con su devolución", run_query(
+        "sales.refund_by_idempotency_key", {"idempotency_key": "idem-vecino"}), [])
+    check("ni la compartida mientras aquí no se haya escrito", run_query(
+        "sales.refund_by_idempotency_key", {"idempotency_key": "idem-compartida"}), [])
+
+    # Nuestro intento con la MISMA clave entra, y cada hub ve el suyo.
+    ok, err = refund("ref-comp", [("ref-leg-comp", "pay-cash", 100)], idem="idem-compartida")
+    check("nuestro documento con la clave compartida entra", (ok, err), (True, ""))
+    check("y la sonda contesta el NUESTRO", [r["id"] for r in run_query(
+        "sales.refund_by_idempotency_key", {"idempotency_key": "idem-compartida"})], ["ref-comp"])
+    check("y el vecino sigue viendo el SUYO", [r["id"] for r in run_query(
+        "sales.refund_by_idempotency_key", {"idempotency_key": "idem-compartida"},
+        hub=OTHER_HUB)], ["ref-vecino-comp"])
+
+
+def test_a_partial_refund_retried_under_its_key_is_found_not_rewritten() -> None:
+    print("\n6c · una devolución PARCIAL en duda: la sonda la encuentra y la clave no admite otra")
+    # El caso de la revisión de sales#457: se devuelve UNA PARTE, se pierde la respuesta, se cierra
+    # y se reabre. La pantalla reabierta usa la clave pendiente; esto es lo que el hub le contesta.
+    ok, err = refund("ref-parcial", [("ref-leg-parcial", "pay-card", 300)], idem="idem-parcial")
+    check("la parte se escribe", (ok, err), (True, ""))
+    found = run_query("sales.refund_by_idempotency_key", {"idempotency_key": "idem-parcial"})
+    check("la sonda la encuentra: la pantalla dice «sí se registró»",
+          [r["id"] for r in found], ["ref-parcial"])
+    check("con el importe de la parte, no el de la venta", found[0]["total"] if found else None, 300)
+    card_before = options()["pay-card"]["remaining"]
+    # La misma parte otra vez con la misma clave: el índice la rechaza y el tope no se mueve.
+    ok, err = refund("ref-parcial-2", [("ref-leg-parcial-2", "pay-card", 300)], idem="idem-parcial")
+    check("la misma parte con la misma clave NO se escribe dos veces", ok, False)
+    check("por la clave duplicada", "uq_sales_refund_idempotency" in err, True)
+    check("y lo que queda por devolver en tarjeta no baja otra vez",
+          options()["pay-card"]["remaining"], card_before)
+
+    # Una devolución borrada (contrato de fila) no cuenta como «ya consta».
+    psql(["-c", f"UPDATE sales_sale_refund SET is_deleted = 1 WHERE hub_id = '{HUB}'"
+                " AND id = 'ref-parcial'"], db=DB)
+    check("una fila borrada no contesta a la sonda", run_query(
+        "sales.refund_by_idempotency_key", {"idempotency_key": "idem-parcial"}), [])
+    psql(["-c", f"UPDATE sales_sale_refund SET is_deleted = 0 WHERE hub_id = '{HUB}'"
+                " AND id = 'ref-parcial'"], db=DB)
+
+
 # ── 7 · el histórico se puede contar ─────────────────────────────────────────────────────
 
 
@@ -535,6 +603,8 @@ def main() -> int:
         test_a_dead_payment_method_is_not_eligible_but_the_money_is_still_refundable()
         test_a_neighbour_hub_never_shows_up()
         test_the_same_key_can_never_write_a_second_refund()
+        test_the_probe_answers_only_for_this_hub()
+        test_a_partial_refund_retried_under_its_key_is_found_not_rewritten()
         test_the_refunds_of_a_sale_come_back_out()
     finally:
         psql(["-c", f"DROP DATABASE IF EXISTS {DB} WITH (FORCE)"])

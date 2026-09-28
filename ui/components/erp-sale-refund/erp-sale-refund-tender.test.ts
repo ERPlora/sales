@@ -22,6 +22,7 @@
 // against today would lose the customer the session AND the money path with it.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { installErploraDouble } from '../../test/erplora-double';
+import { forgetPendingRefundKey } from '../../lib/refund-pending-key';
 import './erp-sale-refund';
 
 const SALE = [{ id: 'sale-1', sale_number: '20260825-0007', status: 'completed', total: 1800 }];
@@ -86,10 +87,15 @@ if (!customElements.get('erp-fake-tender-refund')) {
   customElements.define('erp-fake-tender-refund', FakeTenderRefund);
 }
 
-interface Options { fillers?: boolean; lines?: unknown[]; linesFail?: boolean }
+interface Options {
+  fillers?: boolean; lines?: unknown[]; linesFail?: boolean;
+  /** sales#456: the first `sales.refund` loses its answer; the hub has the document `ref-7`. */
+  lostAnswer?: boolean;
+}
 
 function install(opts: Options = {}): void {
-  const { fillers = true, lines = LINES, linesFail = false } = opts;
+  const { fillers = true, lines = LINES, linesFail = false, lostAnswer = false } = opts;
+  let answerLost = false;
   slotsAsked = [];
   commands = [];
   commitBehaviour = 'silent';
@@ -97,6 +103,7 @@ function install(opts: Options = {}): void {
   const table: Record<string, unknown[]> = {
     'sales.get': SALE, 'sales.refund_options': LEGS, 'sales.payment_methods': METHODS,
     'sales.lines': lines,
+    'sales.refund_by_idempotency_key': [{ id: 'ref-7', sale_id: 'sale-1', total: 1800 }],
   };
   refundSdk = installErploraDouble({
     queries: Object.fromEntries(Object.entries(table).map(([name, rows]) => [name, () => {
@@ -105,6 +112,10 @@ function install(opts: Options = {}): void {
     }])),
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
+      if (lostAnswer && !answerLost) {
+        answerLost = true;
+        throw Object.assign(new Error('the hub did not answer'), { code: 'server_unavailable', outcomeUnknown: true });
+      }
       return { refund_id: 'ref-9', refund_ref: 'ref-9', total: 1800, fully_refunded: 1, already: 0 };
     },
     loadSlot: (slot: string) => {
@@ -155,7 +166,10 @@ function ready(el: Refund): void {
 }
 
 beforeEach(() => install());
-afterEach(() => { document.body.innerHTML = ''; });
+afterEach(() => {
+  document.body.innerHTML = '';
+  forgetPendingRefundKey('sale-1');
+});
 
 describe('the hole: one COVERED line, one slot', () => {
   it('asks for the slot by its literal, the way the till asks for its own', async () => {
@@ -247,6 +261,19 @@ describe('the document: the reference goes down to the filler, and the screen wa
     expect(commit.refundId).toBe('ref-9');
     expect(commit.saleId).toBe('sale-1');
     expect(typeof commit.waitFor).toBe('function');
+  });
+
+  it('sales#456: a refund recovered after «we can\'t tell» hands the filler the RECOVERED document', async () => {
+    // The answer was lost, so `sales.refund` returned no `refund_ref`; the check by key found the
+    // document. Without handing its id down, the voucher session would stay spent.
+    install({ lostAnswer: true });
+    const el = await mount();
+    ready(el);
+    await el.confirm();
+    expect(commands).toHaveLength(1);
+    const commit = fillersOf(el)[0].commits[0];
+    expect(commit?.refundRef).toBe('ref-7');
+    expect(commit?.refundId).toBe('ref-7');
   });
 
   it('also leaves the reference as a PROPERTY, for a filler that reads instead of listening', async () => {

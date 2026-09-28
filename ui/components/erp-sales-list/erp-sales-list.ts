@@ -598,8 +598,17 @@ export class ErpSalesList extends LitElement {
       ${renderDocumentModal({ saleId: this.docSaleId, onClose: () => { this.docSaleId = undefined; }, t })}
       <!-- sales#160 — la devolución vive en su propio modal: el reparto por tender no cabe en un
            ion-alert, y el operador tiene que poder leer los topes mientras teclea. -->
+      <!-- sales#456: closing reloads the rows. After «we can't tell» the operator is sent to check
+           the sale, and the row must not show the totals from BEFORE a refund that went through.
+           A refund that did go through has already cleared the id and reloaded on refunded, so
+           its own dismiss finds nothing open and does not load twice. -->
       <ion-modal class="refund-modal" .isOpen=${!!this.refundSaleId}
-        @ionModalDidDismiss=${() => { this.refundSaleId = undefined; }}>
+        @ionModalDidDismiss=${() => {
+          if (!this.refundSaleId) return;
+          this.refundSaleId = undefined;
+          void this.ctrl.load();
+          void this.loadStats();
+        }}>
         <ion-content>
           ${this.refundSaleId
             ? html`<erp-sale-refund data-testid="sales-refund-modal" .saleId=${this.refundSaleId} @refunded=${() => {

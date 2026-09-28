@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import esCatalog from '../../../locales/es.json';
 import enCatalog from '../../../locales/en.json';
 import { installErploraDouble } from '../../test/erplora-double';
+import { forgetPendingRefundKey, pendingRefundKey } from '../../lib/refund-pending-key';
 import './erp-sale-refund';
 
 interface Sdk {
@@ -35,23 +36,26 @@ const METHODS = [
 
 let sdk: Sdk;
 
+/** Rows, or — for a read that answers by its params, like the idempotency probe — a function. */
+type Answer = unknown[] | ((params: Record<string, unknown> | undefined) => unknown[] | Promise<unknown[]>);
+
 function install(
-  over: Partial<Record<string, unknown[]>> = {},
+  over: Partial<Record<string, Answer>> = {},
   fail?: string,
   thrown?: unknown,
   extra?: Record<string, unknown>,
 ): void {
-  const table: Record<string, unknown[]> = {
+  const table: Record<string, Answer> = {
     'sales.get': SALE, 'sales.refund_options': LEGS, 'sales.payment_methods': METHODS, ...over,
-  };
+  } as Record<string, Answer>;
   sdk = {
     command: vi.fn(async () => ({ refund_id: 'ref-1', refund_ref: 'ref-1' })),
     notify: vi.fn(),
   };
   installErploraDouble({
-    queries: Object.fromEntries(Object.entries(table).map(([name, rows]) => [name, () => {
+    queries: Object.fromEntries(Object.entries(table).map(([name, rows]) => [name, (params?: Record<string, unknown>) => {
       if (fail === name) throw thrown ?? new Error('boom');
-      return rows;
+      return typeof rows === 'function' ? rows(params) : rows;
     }])),
     command: (name: string, payload: Record<string, unknown>) => sdk.command(name, payload),
     notify: (n) => sdk.notify(n),
@@ -78,15 +82,22 @@ type Refund = HTMLElement & {
   reason: string;
   confirm(): Promise<void>;
   setAmount(paymentId: string, text: string): void;
+  recoveryDelayMs: number;
 };
 
 async function mount(saleId = 'sale-1'): Promise<Refund> {
   const el = document.createElement('erp-sale-refund') as Refund;
   el.saleId = saleId;
+  // sales#456: the pause between two questions to a hub that did not answer. Real time in the
+  // product (a restarting hub is back in seconds), none here.
+  el.recoveryDelayMs = 0;
   document.body.appendChild(el);
-  await el.updateComplete;
-  // Las cargas son asíncronas: se deja correr la microcola y se re-renderiza.
-  await new Promise((r) => setTimeout(r, 0));
+  // Las cargas son asíncronas: se deja correr la microcola y se re-renderiza. Varias vueltas: la
+  // pregunta por un intento en duda (sales#456) va DESPUÉS de las lecturas y reintenta una vez.
+  for (let i = 0; i < 4; i++) {
+    await el.updateComplete;
+    await new Promise((r) => setTimeout(r, 0));
+  }
   await el.updateComplete;
   return el;
 }
@@ -96,7 +107,12 @@ const confirmButton = (el: Refund): HTMLElement | null =>
   el.shadowRoot?.querySelector('ion-button.refund-confirm') as HTMLElement | null;
 
 beforeEach(() => install());
-afterEach(() => { document.body.innerHTML = ''; });
+afterEach(() => {
+  document.body.innerHTML = '';
+  // sales#456: an attempt left in doubt is remembered per sale, on purpose across screens — and so
+  // across tests too, unless it is dropped here.
+  forgetPendingRefundKey('sale-1');
+});
 
 describe('los tres estados que una pantalla de dinero no puede saltarse', () => {
   it('mientras carga lo DICE, en vez de enseñar una devolución de 0,00 €', async () => {
@@ -329,7 +345,9 @@ describe('confirmar', () => {
     // Un corte de red no es «te has pasado del tope». Traducir todo al mensaje más concreto que
     // haya a mano manda al operador a arreglar un problema que no tiene. (Until sales#451 this case
     // asserted «could not be recorded»: a cut network is NOT a refusal either — the request may have
-    // landed — so it is the unknown-outcome notice now, never a business reason.)
+    // landed — so it is the unknown-outcome notice now, never a business reason.) The network stays
+    // cut, so the check by key that follows (sales#456) cannot answer either.
+    install({ 'sales.refund_by_idempotency_key': () => { throw new Error('NetworkError: failed to fetch'); } });
     const el = await mount();
     el.reason = 'devolución';
     sdk.command.mockRejectedValueOnce(new Error('NetworkError: failed to fetch'));
@@ -369,6 +387,11 @@ describe('sales#451: the hub never answered the refund (unknown outcome)', () =>
     });
   const panel = (el: Refund): HTMLElement | null =>
     el.shadowRoot?.querySelector('[data-testid="refund-unknown"]') as HTMLElement | null;
+
+  // sales#456 asks the hub afterwards; here the hub stays unreachable, so the doubt is what is left.
+  beforeEach(() => install({
+    'sales.refund_by_idempotency_key': () => { throw Object.assign(new Error('down'), { code: 'server_unavailable' }); },
+  }));
 
   async function failOnce(thrown: unknown): Promise<Refund> {
     const el = await mount();
@@ -443,17 +466,256 @@ describe('sales#451: the hub never answered the refund (unknown outcome)', () =>
     expect(sdk.notify).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', message: esCatalog.ui.refundFailed }));
   });
 
-  it('the words: doubt + retry here is safe + check the sale if closed, in es and en (never «could not»)', () => {
+  // sales#456 changed the last clause: closing is no longer the unsafe path — the key survives the
+  // close on this device and the next screen asks the hub before anything else. What stays true is
+  // «this device»: another till does not know the key, so the words say where the promise holds.
+  it('the words: doubt + retry is safe even after closing, on this device, in es and en (never «could not»)', () => {
     const es = esCatalog.ui.refundUnknown;
     const en = enCatalog.ui.refundUnknown;
     expect(es).toMatch(/no hemos podido confirmar si la devolución se registró/i);
     expect(es).toMatch(/no se duplicará/i);
-    expect(es).toMatch(/compruébalo en la venta antes de volver a devolver/i);
+    expect(es).toMatch(/aunque cierres esta pantalla/i);
+    expect(es).toMatch(/en este dispositivo/i);
     expect(es).not.toMatch(/no se ha podido registrar/i);
     expect(en).toMatch(/couldn't confirm whether the refund was recorded/i);
     expect(en).toMatch(/won't record it twice/i);
-    expect(en).toMatch(/check the sale before refunding again/i);
+    expect(en).toMatch(/even if you close this screen/i);
+    expect(en).toMatch(/on this device/i);
     expect(en).not.toMatch(/could not be recorded/i);
+  });
+});
+
+// sales#456 (out of sales#451, P1 by the review of sales#457) — after «we can't tell», the screen
+// asks the hub ITSELF, by the same key, the way the till does after a checkout without an answer
+// (sales#91, `recoverCheckout`): recorded → it closes as recorded; not recorded → it says so and a
+// retry is safe; cannot ask → the sales#451 doubt. And the key outlives the screen: closing after
+// the doubt and reopening to refund a PART again used to mint a new key, and the money went out
+// twice.
+describe('sales#456: after the doubt, the screen finds out by itself', () => {
+  const unknownOutcome = (): Error =>
+    Object.assign(new Error('No sabemos si la operación se completó.'), {
+      code: 'server_unavailable',
+      outcomeUnknown: true,
+    });
+  const byTestId = (el: Refund, id: string): HTMLElement | null =>
+    el.shadowRoot?.querySelector(`[data-testid="${id}"]`) as HTMLElement | null;
+  const RECORDED = [{ id: 'ref-7', sale_id: 'sale-1', total: 7000, reason: 'devolución', created_at: '2026-09-28T10:00:00Z' }];
+
+  let probes: Array<Record<string, unknown> | undefined>;
+  type Hub = 'recorded' | 'not-recorded' | 'unreachable';
+  let hub: Hub;
+
+  function installHub(over: Partial<Record<string, Answer>> = {}): void {
+    install({
+      'sales.refund_by_idempotency_key': (params) => {
+        probes.push(params);
+        if (hub === 'unreachable') throw Object.assign(new Error('down'), { code: 'server_unavailable' });
+        return hub === 'recorded' ? RECORDED : [];
+      },
+      ...over,
+    });
+  }
+
+  beforeEach(() => {
+    probes = [];
+    hub = 'recorded';
+    installHub();
+  });
+
+  const keyOf = (call: number): unknown =>
+    (sdk.command.mock.calls[call][1] as Record<string, unknown>).idempotency_key;
+
+  /** A refund whose answer is lost on the way back; the probe then meets `hub`. */
+  async function lostAnswer(): Promise<Refund> {
+    const el = await mount();
+    el.reason = 'devolución';
+    sdk.command.mockRejectedValueOnce(unknownOutcome());
+    await el.confirm();
+    await el.updateComplete;
+    return el;
+  }
+
+  it('asks the hub by the SAME key the refund was sent with', async () => {
+    await lostAnswer();
+    expect(probes).toHaveLength(1);
+    expect(probes[0]?.idempotency_key).toBe(keyOf(0));
+  });
+
+  it('recorded → it closes as «Refund recorded», and tells the list', async () => {
+    const onRefunded = vi.fn();
+    document.body.addEventListener('refunded', onRefunded);
+    const el = await lostAnswer();
+    document.body.removeEventListener('refunded', onRefunded);
+    expect(sdk.notify).toHaveBeenCalledWith(expect.objectContaining({ type: 'success', message: esCatalog.ui.refundDone }));
+    expect(onRefunded).toHaveBeenCalledTimes(1);
+    expect(byTestId(el, 'refund-unknown')).toBeNull();
+    expect(byTestId(el, 'refund-not-recorded')).toBeNull();
+  });
+
+  it('recorded → no second refund is sent', async () => {
+    await lostAnswer();
+    expect(sdk.command).toHaveBeenCalledTimes(1);
+  });
+
+  it('not recorded → it says so, and that refunding again is safe', async () => {
+    hub = 'not-recorded';
+    const el = await lostAnswer();
+    expect(byTestId(el, 'refund-not-recorded')?.textContent).toContain(esCatalog.ui.refundNotRecorded);
+    expect(byTestId(el, 'refund-unknown')).toBeNull();
+    expect(sdk.notify).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'success' }));
+  });
+
+  it('not recorded → the retry still carries the SAME key (a late write collapses into one)', async () => {
+    hub = 'not-recorded';
+    const el = await lostAnswer();
+    await el.confirm();
+    expect(keyOf(1)).toBe(keyOf(0));
+  });
+
+  it('cannot ask → it asks twice, then keeps the sales#451 doubt', async () => {
+    hub = 'unreachable';
+    const el = await lostAnswer();
+    expect(probes).toHaveLength(2);
+    expect(byTestId(el, 'refund-unknown')?.textContent).toContain(esCatalog.ui.refundUnknown);
+    expect(byTestId(el, 'refund-not-recorded')).toBeNull();
+  });
+
+  it('while it asks, it says so and the button cannot send a second refund', async () => {
+    let answer: (rows: unknown[]) => void = () => {};
+    installHub({
+      'sales.refund_by_idempotency_key': () => new Promise<unknown[]>((r) => { answer = r; }),
+    });
+    const el = await mount();
+    el.reason = 'devolución';
+    sdk.command.mockRejectedValueOnce(unknownOutcome());
+    const pending = el.confirm();
+    await new Promise((r) => setTimeout(r, 0));
+    await el.updateComplete;
+    expect(byTestId(el, 'refund-checking')?.textContent).toContain(esCatalog.ui.refundChecking);
+    expect(confirmButton(el)?.hasAttribute('disabled')).toBe(true);
+    await el.confirm();
+    expect(sdk.command).toHaveBeenCalledTimes(1);
+    answer([]);
+    await pending;
+    await el.updateComplete;
+    expect(byTestId(el, 'refund-checking')).toBeNull();
+  });
+
+  describe('the key outlives the screen: close after the doubt, open again', () => {
+    /** The doubt with the hub still down, then the screen closed. Returns the key it was sent with. */
+    async function doubtThenClose(): Promise<unknown> {
+      hub = 'unreachable';
+      await lostAnswer();
+      const first = keyOf(0);
+      document.body.innerHTML = '';
+      probes = [];
+      return first;
+    }
+
+    it('the new screen asks the hub about THAT key before anything else', async () => {
+      const first = await doubtThenClose();
+      hub = 'recorded';
+      await mount();
+      expect(probes).toHaveLength(1);
+      expect(probes[0]?.idempotency_key).toBe(first);
+    });
+
+    it('recorded → it says the earlier refund went through, and a new refund is a NEW one', async () => {
+      const first = await doubtThenClose();
+      hub = 'recorded';
+      const el = await mount();
+      expect(byTestId(el, 'refund-recovered')?.textContent).toContain(esCatalog.ui.refundRecoveredOnOpen);
+      el.reason = 'otra parte';
+      await el.confirm();
+      expect(keyOf(1)).toBeTruthy();
+      expect(keyOf(1)).not.toBe(first);
+    });
+
+    it('recorded and nothing left to refund → the notice is still read', async () => {
+      await doubtThenClose();
+      hub = 'recorded';
+      installHub({ 'sales.refund_options': [] });
+      const el = await mount();
+      expect(byTestId(el, 'refund-recovered')?.textContent).toContain(esCatalog.ui.refundRecoveredOnOpen);
+      expect(byTestId(el, 'refund-nothing')).toBeTruthy();
+    });
+
+    it('🔴 not recorded → refunding a PART again reuses the SAME key: it cannot go out twice', async () => {
+      const first = await doubtThenClose();
+      hub = 'not-recorded';
+      const el = await mount();
+      expect(byTestId(el, 'refund-not-recorded')?.textContent).toContain(esCatalog.ui.refundNotRecorded);
+      el.setAmount('pay-card', '10');
+      el.setAmount('pay-cash', '0');
+      el.reason = 'una parte';
+      await el.confirm();
+      expect(keyOf(1)).toBe(first);
+    });
+
+    it('still unreachable → the doubt is on screen from the start, and the retry reuses the key', async () => {
+      const first = await doubtThenClose();
+      hub = 'unreachable';
+      const el = await mount();
+      expect(byTestId(el, 'refund-unknown')?.textContent).toContain(esCatalog.ui.refundUnknown);
+      el.reason = 'devolución';
+      await el.confirm();
+      expect(keyOf(1)).toBe(first);
+    });
+
+    it('a refund recorded at the first try leaves nothing pending: no question, a new key', async () => {
+      const el = await mount();
+      el.reason = 'devolución';
+      await el.confirm();
+      const first = keyOf(0);
+      expect(pendingRefundKey('sale-1')).toBeUndefined();
+      document.body.innerHTML = '';
+      const again = await mount();
+      again.reason = 'otra';
+      await again.confirm();
+      expect(probes).toHaveLength(0);
+      expect(keyOf(1)).not.toBe(first);
+    });
+
+    it('a refund the hub REFUSED leaves nothing pending either: nothing was written', async () => {
+      const el = await mount();
+      el.reason = 'devolución';
+      sdk.command.mockRejectedValueOnce(Object.assign(new Error('over'), { code: 'sales.refund_exceeds_tender' }));
+      await el.confirm();
+      expect(pendingRefundKey('sale-1')).toBeUndefined();
+    });
+
+    it('the recovered answer is dropped too: the next screen asks nothing', async () => {
+      await doubtThenClose();
+      hub = 'recorded';
+      await mount();
+      expect(pendingRefundKey('sale-1')).toBeUndefined();
+    });
+
+    it('the key is remembered BEFORE the refund leaves, not after it failed', async () => {
+      const el = await mount();
+      el.reason = 'devolución';
+      let seen: string | undefined;
+      sdk.command.mockImplementationOnce(async (_n: string, payload: Record<string, unknown>) => {
+        seen = pendingRefundKey('sale-1');
+        expect(seen).toBe(payload.idempotency_key);
+        return { refund_id: 'ref-1', refund_ref: 'ref-1' };
+      });
+      await el.confirm();
+      expect(seen).toBeTruthy();
+    });
+  });
+
+  it('the words, in es and en', () => {
+    expect(esCatalog.ui.refundChecking).toMatch(/comprobando si la devolución se registró/i);
+    expect(enCatalog.ui.refundChecking).toMatch(/checking whether the refund was recorded/i);
+    expect(esCatalog.ui.refundNotRecorded).toMatch(/no se registró/i);
+    expect(esCatalog.ui.refundNotRecorded).toMatch(/puedes volver a devolver/i);
+    expect(enCatalog.ui.refundNotRecorded).toMatch(/was not recorded/i);
+    expect(enCatalog.ui.refundNotRecorded).toMatch(/you can refund again/i);
+    expect(esCatalog.ui.refundRecoveredOnOpen).toMatch(/sí se registró/i);
+    expect(esCatalog.ui.refundRecoveredOnOpen).toMatch(/lo que aún queda por devolver/i);
+    expect(enCatalog.ui.refundRecoveredOnOpen).toMatch(/was recorded/i);
+    expect(enCatalog.ui.refundRecoveredOnOpen).toMatch(/what is still left to refund/i);
   });
 });
 
