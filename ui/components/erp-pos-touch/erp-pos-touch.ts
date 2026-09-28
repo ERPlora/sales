@@ -1084,6 +1084,9 @@ export class ErpPosTouch extends LitElement {
          is also the size container the compact rules below measure (@container pos-cart). */
       .cart { container:pos-cart / size; }
       .cart ion-footer { position:sticky; bottom:0; z-index:1; }
+      /* sales#433: the card of a line (~177 px upright: amount, three actions, stepper) centred its
+         label, so under the «You can't invoice yet» strip the product name sat under the foot. */
+      ion-list.lines ion-item { align-items:flex-start; }
       .cart-close { display:inline-flex; }
       .cart-backdrop[data-open] { display:block; position:absolute; inset:0; background:var(--ok-scrim, rgba(0,0,0,.5)); z-index:55; }
       /* sales#418: the shell floors a module screen at 480px and scrolls it below that, so with the
@@ -1182,6 +1185,8 @@ export class ErpPosTouch extends LitElement {
     ion-segment.view-tabs ion-segment-button { min-height:2.85rem; --indicator-color:var(--tile-hi);
       --color:var(--mut); --color-checked:var(--tx); font-weight:700; text-transform:none; }
     .view-tab-label { display:inline-flex; align-items:center; justify-content:center; gap:.38rem; }
+    /* sales#433: only a low drawer trades the words of the tabs for these icons. */
+    .view-tab-icon { display:none; font-size:1.25rem; }
     .pending-dot { display:inline-grid; place-items:center; min-width:1.18rem; height:1.18rem; padding:0 .25rem;
       border-radius:var(--ok-radius-pill,999px); background:var(--ion-color-warning,#f5a623); color:var(--ion-color-warning-contrast,#241700); font-size:.65rem; font-weight:850; }
 
@@ -1293,7 +1298,12 @@ export class ErpPosTouch extends LitElement {
       .cart ion-toolbar { --min-height:2.75rem; }
       .order-toolbar { min-height:2.75rem; padding-top:.1rem; padding-bottom:.1rem; }
       ion-button.header-action { height:2.5rem; }
-      .order-heading { display:flex; align-items:center; gap:.5rem; padding-top:.3rem; padding-bottom:.3rem; }
+      /* sales#433: with Kitchen, the «Account / Current order» tabs were a row of their own (~50 px)
+         that alone hid the first line. They are icons now, on the row of the check's name. */
+      .cart ion-header { display:flex; flex-wrap:wrap; align-items:center; }
+      .cart ion-toolbar { flex:1 1 100%; }
+      .order-heading { display:flex; align-items:center; gap:.5rem; padding-top:.3rem; padding-bottom:.3rem;
+        flex:1 1 0; min-width:0; border-bottom:0; }
       .order-title-row { flex:1 0 7rem; min-width:0; }
       .order-context { flex:0 1 auto; min-width:0; flex-wrap:nowrap; overflow-x:auto; margin-top:0; scrollbar-width:none; }
       .order-context > * { flex:none; }
@@ -1301,8 +1311,10 @@ export class ErpPosTouch extends LitElement {
       /* A line's card (~105px: amount, three actions, stepper) centred its label, so the ~80px left
          here showed the amount and not the product name. */
       ion-list.lines ion-item { align-items:flex-start; }
-      ion-segment.view-tabs { margin-top:.3rem; margin-bottom:.2rem; }
-      ion-segment.view-tabs ion-segment-button { min-height:2.4rem; }
+      ion-segment.view-tabs { flex:none; margin-top:.2rem; margin-bottom:.2rem; margin-left:0; margin-right:.6rem; }
+      ion-segment.view-tabs ion-segment-button { min-height:2.4rem; min-width:2.75rem; --padding-start:.45rem; --padding-end:.45rem; }
+      ion-segment.view-tabs .view-tab-text { display:none; }
+      ion-segment.view-tabs .view-tab-icon { display:block; }
       .cart-foot { padding-top:.4rem; padding-bottom:.45rem; }
       .total { margin-bottom:.3rem; }
       .total b { font-size:1.3rem; }
@@ -1328,7 +1340,7 @@ export class ErpPosTouch extends LitElement {
     /* sales#432: a VERY low drawer -- a phone on its side under the «You can't invoice yet» strip
        (131-193px) or a 568x320 (170px) -- still spent ~105px on the header and ~67px on the foot:
        the first line of the check sat under the foot. As on Square and Toast, the header is ONE bar,
-       the name of the check first and its icons after it (the kitchen tabs wrap to their own row),
+       the name of the check first and its icons after it (the kitchen tabs as icons, sales#433),
        the close button is icon-only (its name stays in aria-label), and the foot is as tall as
        Charge. Written after the low blocks so it wins where they tie. */
     @container pos-cart (max-height: 13rem) {
@@ -1336,7 +1348,9 @@ export class ErpPosTouch extends LitElement {
       .cart ion-toolbar { flex:none; width:auto; --padding-top:0; --padding-bottom:0; }
       .order-toolbar { padding-top:0; padding-bottom:0; }
       .order-heading { order:-1; flex:1 1 0; min-width:0; border-bottom:0; padding-top:0; padding-bottom:0; padding-right:.2rem; }
-      ion-segment.view-tabs { flex:1 1 100%; }
+      /* sales#433: the tab icons stay in the one bar, after the name (order, then markup) and
+         before the header icons. */
+      ion-segment.view-tabs { order:-1; flex:none; }
       /* ios gives a button with a label min-height:3.1em, so height alone left it 52px tall. */
       ion-button.header-action.cart-close { width:2.4rem; height:2.4rem; min-height:2.4rem; margin:auto 0; }
       ion-button.header-action.cart-close small { display:none; }
@@ -5445,11 +5459,19 @@ export class ErpPosTouch extends LitElement {
         ${this.hasKitchen ? html`
           <ion-segment data-testid="pos-view-tabs" class="view-tabs" .value=${this.orderView}
             @ionChange=${(e: CustomEvent) => { this.orderView = (e.detail as { value: 'account' | 'draft' }).value; }}>
-            <ion-segment-button data-testid="pos-view-tab-account" value="account"><ion-label>${t('ui.accountTab')}</ion-label></ion-segment-button>
-            <ion-segment-button data-testid="pos-view-tab-draft" value="draft"><ion-label><span class="view-tab-label">
-              ${t('ui.currentCommandTab')}
-              ${this.pendingCount ? html`<span class="pending-dot">${this.pendingCount}</span>` : nothing}
-            </span></ion-label></ion-segment-button>
+            <!-- sales#433: a low drawer shows the icons instead of the words (the name stays in
+                 aria-label), so the tabs fit on the row of the check's name. -->
+            <ion-segment-button data-testid="pos-view-tab-account" value="account" layout="icon-start" aria-label=${t('ui.accountTab')}>
+              <ion-icon class="view-tab-icon" name="list-outline" aria-hidden="true"></ion-icon>
+              <ion-label><span class="view-tab-text">${t('ui.accountTab')}</span></ion-label>
+            </ion-segment-button>
+            <ion-segment-button data-testid="pos-view-tab-draft" value="draft" layout="icon-start" aria-label=${t('ui.currentCommandTab')}>
+              <ion-icon class="view-tab-icon" name="restaurant-outline" aria-hidden="true"></ion-icon>
+              <ion-label><span class="view-tab-label">
+                <span class="view-tab-text">${t('ui.currentCommandTab')}</span>
+                ${this.pendingCount ? html`<span class="pending-dot">${this.pendingCount}</span>` : nothing}
+              </span></ion-label>
+            </ion-segment-button>
           </ion-segment>` : nothing}
       </ion-header>
 

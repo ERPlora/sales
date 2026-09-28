@@ -331,7 +331,9 @@ describe('a very low drawer shows the first line of the check without scrolling 
     // ios pads a toolbar 4px above and below: the bar was 49 px for 38 px buttons.
     expect(toolbar).toMatch(/--padding-top:\s*0/);
     expect(toolbar).toMatch(/--padding-bottom:\s*0/);
-    expect(rules(css, 'ion-segment.view-tabs'), 'the kitchen tabs wrap to the next row').toMatch(/flex:\s*1\s+1\s+100%/);
+    // sales#433 superseded «the kitchen tabs wrap to the next row»: that second row (~50 px) was
+    // what still hid the first line with Kitchen installed. They sit in the bar now (see below).
+    expect(rules(css, 'ion-segment.view-tabs'), 'the kitchen tabs no longer take a row of their own').not.toMatch(/flex:\s*1\s+1\s+100%/);
   });
 
   it('the close button is icon-only (its name stays in aria-label) and no taller than the bar', async () => {
@@ -369,5 +371,121 @@ describe('a very low drawer shows the first line of the check without scrolling 
     const buttons = rules(css, '.foot-actions ion-button');
     expect(buttons).toMatch(/margin-top:\s*0/);
     expect(buttons).toMatch(/margin-bottom:\s*0/);
+  });
+});
+
+// sales#433 — with Kitchen installed the check has two tabs, «Account / Current order», on a row of
+// their own (~50 px) under the name. That row alone hid the first line of the check in every phone
+// drawer measured but the tallest: 390×667 under the «You can't invoice yet» strip, 320×568 with
+// it, and a phone on its side (667×375, 844×390, 568×320). The cashier saw the total and Charge
+// but not WHAT was being charged. And upright, the card of a line (~177 px: amount, three actions,
+// stepper) centred the product name under the foot.
+//
+// Square and Toast keep one bar on a phone: the check's name and its controls as icons. So in a
+// low drawer the tabs are an icon pair (their names in aria-label, the pending count still on
+// them) on the row of the check's name, and in any phone drawer a line shows its name at the top of
+// its card. Measured on hub:dev + kitchen in ios and md (the PR): the first line's name shows at
+// 390×667, 320×568, 667×375, 844×390 and 568×320, with and without the strip.
+const KITCHEN_PRODUCTS = [{ id: 'p-1', name: 'Café', sku: 'CAF', price: 180, is_active: 1, tax_category_key: 'product.generic' }];
+
+type Pos = HTMLElement & { updateComplete: Promise<unknown>; queue<T>(t: () => Promise<T>): Promise<T> };
+
+/** The till with Kitchen installed (it fills sales.pos.actions) and one line still to fire. */
+async function mountWithKitchenAt(width: number, height: number): Promise<ShadowRoot> {
+  (window as HappyWindow).happyDOM?.setViewport({ width, height });
+  const lines: Record<string, unknown>[] = [];
+  installPosDouble({
+    settings: null,
+    products: KITCHEN_PRODUCTS,
+    rules: [{ id: 'r-21', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, is_active: 1 }],
+    orderLines: () => lines.map((l) => ({ ...l })),
+    loadSlot: (slot: string) => (slot === 'sales.pos.actions' ? [{ component: 'erp-fake-fire-433' }] : []),
+    command: async (name: string) => {
+      if (name === 'sales.order.open') {
+        lines.push({ id: 'l1', product_id: 'p-1', product_name: 'Café', unit_price: 180, quantity: 1_000_000, tax_category_key: 'product.generic', fired_at: null, round_no: 0 });
+        return { ok: true, new_ids: ['o1', 'l1'] };
+      }
+      return { ok: true };
+    },
+  });
+  document.body.innerHTML = '';
+  const el = document.createElement('erp-pos-touch') as Pos;
+  document.body.appendChild(el);
+  await el.updateComplete;
+  await new Promise((r) => setTimeout(r, 0));
+  await el.updateComplete;
+  el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+  await el.queue(async () => undefined);
+  await el.updateComplete;
+  return el.shadowRoot!;
+}
+
+describe('with Kitchen, a phone drawer shows the first line of the check (sales#433)', () => {
+  it('each tab carries its icon, its name for screen readers, and the name as a text that can hide', async () => {
+    const root = await mountWithKitchenAt(390, 667);
+    const tabs = root.querySelector('[data-testid="pos-view-tabs"]');
+    expect(tabs, 'the kitchen tabs are there').toBeTruthy();
+    for (const [id, key] of [['pos-view-tab-account', 'ui.accountTab'], ['pos-view-tab-draft', 'ui.currentCommandTab']]) {
+      const tab = root.querySelector(`[data-testid="${id}"]`)!;
+      expect(tab.getAttribute('aria-label'), `${id}: named when only its icon shows`).toBe(key);
+      expect(tab.querySelector('ion-icon.view-tab-icon')?.getAttribute('name'), `${id}: a literal icon`).toMatch(/-outline$/);
+      expect(tab.querySelector('.view-tab-text')?.textContent?.trim(), `${id}: the visible name`).toBe(key);
+    }
+    const draft = root.querySelector('[data-testid="pos-view-tab-draft"]')!;
+    const dot = draft.querySelector('.pending-dot');
+    expect(dot?.textContent?.trim(), 'the pending count').toBe('1');
+    expect(dot!.closest('.view-tab-text'), 'the count stays when the name hides').toBeNull();
+  });
+
+  it('the two tabs show different icons', async () => {
+    const root = await mountWithKitchenAt(390, 667);
+    const icon = (id: string) => root.querySelector(`[data-testid="${id}"] ion-icon.view-tab-icon`)?.getAttribute('name');
+    expect(icon('pos-view-tab-account')).not.toBe(icon('pos-view-tab-draft'));
+  });
+
+  it('a tablet column keeps the tabs as words: the icons do not show outside a low drawer', () => {
+    expect(rules(posCss(), '.view-tab-icon')).toMatch(/display:\s*none/);
+  });
+
+  it('upright, a line shows its NAME at the top of its card in the drawer (390×667 under the strip)', async () => {
+    const root = await mountWithKitchenAt(390, 667);
+    const item = root.querySelector('.cart ion-list.lines ion-item');
+    expect(item, 'the line is in the check').toBeTruthy();
+    expect(getComputedStyle(item as Element).alignItems, 'not centred under the foot').toBe('flex-start');
+  });
+
+  it('a tablet column keeps a line centred in its card', async () => {
+    const root = await mountWithKitchenAt(1280, 800);
+    const item = root.querySelector('.cart ion-list.lines ion-item');
+    expect(item).toBeTruthy();
+    expect(getComputedStyle(item as Element).alignItems).not.toBe('flex-start');
+  });
+
+  it('a low drawer puts the tabs on the row of the check\'s name, as icons a finger wide', () => {
+    const low = blocks(posCss(), LOW).join('\n');
+    const header = rules(low, '.cart ion-header');
+    expect(header).toMatch(/display:\s*flex/);
+    expect(header, 'the toolbar keeps its own row above').toMatch(/flex-wrap:\s*wrap/);
+    expect(header).toMatch(/align-items:\s*center/);
+    expect(rules(low, '.cart ion-toolbar'), 'the toolbar row is whole').toMatch(/flex:\s*1\s+1\s+100%/);
+    const heading = rules(low, '.order-heading');
+    expect(heading, 'the name takes what the tabs leave').toMatch(/flex:\s*1\s+1\s+0/);
+    expect(heading).toMatch(/min-width:\s*0/);
+    expect(heading, 'no rule between the name and the tabs of the same row').toMatch(/border-bottom:\s*0/);
+    const tabs = rules(low, 'ion-segment.view-tabs');
+    expect(tabs, 'the tabs keep their size next to the name').toMatch(/flex:\s*none/);
+    expect(rules(low, 'ion-segment.view-tabs .view-tab-text'), 'the words hide').toMatch(/display:\s*none/);
+    expect(rules(low, 'ion-segment.view-tabs .view-tab-icon'), 'the icons show').toMatch(/display:\s*(inline-)?block/);
+    const button = rules(low, 'ion-segment.view-tabs ion-segment-button');
+    expect(rem(button, 'min-width'), 'a 44 px touch target').toBeGreaterThanOrEqual(2.75);
+    expect(rem(button, 'min-height'), 'as tall as the icons of the header').toBeGreaterThanOrEqual(2.4);
+  });
+
+  it('a very low drawer keeps the tabs in its one bar, after the name and before the icons', () => {
+    const veryLow = blocks(posCss(), VERY_LOW).join('\n');
+    const tabs = rules(veryLow, 'ion-segment.view-tabs');
+    expect(tabs, 'beside the name (order -1, after it in the markup)').toMatch(/order:\s*-1/);
+    expect(tabs).toMatch(/flex:\s*none/);
+    expect(rules(veryLow, '.cart ion-toolbar'), 'the icons share the bar').toMatch(/flex:\s*none/);
   });
 });
