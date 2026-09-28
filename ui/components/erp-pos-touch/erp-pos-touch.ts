@@ -1088,6 +1088,11 @@ export class ErpPosTouch extends LitElement {
          label, so under the «You can't invoice yet» strip the product name sat under the foot. */
       ion-list.lines ion-item { align-items:flex-start; }
       .cart-close { display:inline-flex; }
+      /* sales#454: its icon and «Cerrar» shared one row of 52px, and md's capitals left «CER…». As in
+         the low drawers (sales#433) and on Square or Toast, close is an icon in every drawer; its name
+         stays in aria-label and title. As specific as the base rules it overrides. */
+      ion-button.header-action.cart-close { width:2.4rem; height:2.4rem; min-height:2.4rem; margin:auto 0; }
+      ion-button.header-action.cart-close small { display:none; }
       .cart-backdrop[data-open] { display:block; position:absolute; inset:0; background:var(--ok-scrim, rgba(0,0,0,.5)); z-index:55; }
       /* sales#418: the shell floors a module screen at 480px and scrolls it below that, so with the
          «You can't invoice yet» strip up a low phone lays the till out taller than what it shows.
@@ -1180,10 +1185,16 @@ export class ErpPosTouch extends LitElement {
       color:var(--ion-color-warning-shade, #e0ac08); background:var(--tile); }
     .ctx-chip.needs-customer:hover { color:var(--ion-color-warning-shade, #e0ac08); }
 
+    /* sales#454: two equal halves (1fr in ios, minmax(auto,360px) in md), md padding each 16px a
+       side and spacing the letters: «Current order» and its count needed 161px where md gave 110 at
+       360px (143 on a desktop). Each tab takes the width of its words, spaced and padded as in ios,
+       and the room left over is shared out: Ionic centres the columns, which bunched them in the
+       middle of an empty box on a tablet or a desktop. */
     ion-segment.view-tabs { margin:.62rem .72rem .28rem; width:auto; border:1px solid var(--line);
-      border-radius:var(--ok-radius-sm,11px); background:var(--tile); }
+      border-radius:var(--ok-radius-sm,11px); background:var(--tile); grid-auto-columns:auto; justify-content:stretch; }
     ion-segment.view-tabs ion-segment-button { min-height:2.85rem; --indicator-color:var(--tile-hi);
-      --color:var(--mut); --color-checked:var(--tx); font-weight:700; text-transform:none; }
+      --color:var(--mut); --color-checked:var(--tx); font-weight:700; text-transform:none;
+      letter-spacing:0; --padding-start:.6rem; --padding-end:.6rem; }
     .view-tab-label { display:inline-flex; align-items:center; justify-content:center; gap:.38rem; }
     /* sales#433: only a low drawer trades the words of the tabs for these icons. */
     .view-tab-icon { display:none; font-size:1.25rem; }
@@ -1195,7 +1206,11 @@ export class ErpPosTouch extends LitElement {
     ion-list.lines ion-item { margin:.35rem 0; --background:var(--tile); --border-color:transparent;
       --border-radius:var(--ok-radius,12px); border:1px solid var(--line); border-radius:var(--ok-radius,12px); overflow:hidden; }
     ion-list.lines ion-item.sel { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 7%,var(--tile)); }
-    ion-list.lines ion-item h3 { display:flex; align-items:center; gap:.35rem; margin-bottom:.12rem; font-size:.85rem; }
+    /* sales#452: the amount, three actions and the stepper keep the right of the card, so at 320px
+       «Pending» left the name 36px and «Café con leche» broke in three lines. As on Square or Toast
+       the state of a line never takes its name's width: when both do not fit, the pill (first in
+       the markup) gets a row of its own above the name. */
+    ion-list.lines ion-item h3 { display:flex; flex-wrap:wrap; align-items:center; gap:.2rem .35rem; margin-bottom:.12rem; font-size:.85rem; }
     ion-list.lines ion-item p { font-size:.7rem; }
     ok-status-pill { vertical-align:middle; }
     .lineend .lt { font-size:.84rem; }
