@@ -1185,6 +1185,9 @@ export class ErpPosTouch extends LitElement {
     ion-segment.view-tabs ion-segment-button { min-height:2.85rem; --indicator-color:var(--tile-hi);
       --color:var(--mut); --color-checked:var(--tx); font-weight:700; text-transform:none; }
     .view-tab-label { display:inline-flex; align-items:center; justify-content:center; gap:.38rem; }
+    /* sales#460: what a screen reader hears on a tab; hidden from the eye only, never display:none. */
+    .view-tab-name { position:absolute; width:1px; height:1px; margin:-1px; padding:0; border:0;
+      overflow:hidden; white-space:nowrap; clip:rect(0 0 0 0); clip-path:inset(50%); }
     /* sales#433: only a low drawer trades the words of the tabs for these icons. */
     .view-tab-icon { display:none; font-size:1.25rem; }
     .pending-dot { display:inline-grid; place-items:center; min-width:1.18rem; height:1.18rem; padding:0 .25rem;
@@ -5527,22 +5530,23 @@ export class ErpPosTouch extends LitElement {
         ${this.hasKitchen ? html`
           <ion-segment data-testid="pos-view-tabs" class="view-tabs" .value=${this.orderView}
             @ionChange=${(e: CustomEvent) => { this.orderView = (e.detail as { value: 'account' | 'draft' }).value; }}>
-            <!-- sales#433: a low drawer shows the icons instead of the words (the name stays in
-                 aria-label), so the tabs fit on the row of the header icons. -->
-            <ion-segment-button data-testid="pos-view-tab-account" value="account" layout="icon-start" aria-label=${t('ui.accountTab')}>
+            <!-- sales#433: a low drawer shows the icons instead of the words, so the tabs fit on the
+                 row of the header icons. sales#460: no aria-label -- Ionic copies it onto its tab
+                 once, at load, and the name went stale (pending count, language). The tab is named
+                 by its content: the painted words are aria-hidden, .view-tab-name says it all. -->
+            <ion-segment-button data-testid="pos-view-tab-account" value="account" layout="icon-start">
               <ion-icon class="view-tab-icon" name="list-outline" aria-hidden="true"></ion-icon>
-              <ion-label><span class="view-tab-text">${t('ui.accountTab')}</span></ion-label>
+              <ion-label><span class="view-tab-text" aria-hidden="true">${t('ui.accountTab')}</span><span
+                class="view-tab-name">${t('ui.accountTab')}</span></ion-label>
             </ion-segment-button>
-            <!-- The aria-label wins over the words, so it carries the pending count they show. -->
-            <ion-segment-button data-testid="pos-view-tab-draft" value="draft" layout="icon-start"
-              aria-label=${!this.pendingCount ? t('ui.currentCommandTab')
-                : this.pendingCount === 1 ? t('ui.currentCommandTabPendingOne')
-                : t('ui.currentCommandTabPending', { count: this.pendingCount })}>
+            <ion-segment-button data-testid="pos-view-tab-draft" value="draft" layout="icon-start">
               <ion-icon class="view-tab-icon" name="restaurant-outline" aria-hidden="true"></ion-icon>
-              <ion-label><span class="view-tab-label">
+              <ion-label><span class="view-tab-label" aria-hidden="true">
                 <span class="view-tab-text">${t('ui.currentCommandTab')}</span>
                 ${this.pendingCount ? html`<span class="pending-dot">${this.pendingCount}</span>` : nothing}
-              </span></ion-label>
+              </span><span class="view-tab-name">${!this.pendingCount ? t('ui.currentCommandTab')
+                : this.pendingCount === 1 ? t('ui.currentCommandTabPendingOne')
+                : t('ui.currentCommandTabPending', { count: this.pendingCount })}</span></ion-label>
             </ion-segment-button>
           </ion-segment>` : nothing}
       </ion-header>

@@ -389,7 +389,7 @@ describe('a very low drawer shows the first line of the check without scrolling 
 // stepper) centred the product name under the foot.
 //
 // Square and Toast keep one bar on a phone: the check's name and its controls as icons. So in a
-// low drawer the tabs are an icon pair (their names in aria-label, the pending count still on
+// low drawer the tabs are an icon pair (their names in hidden text, the pending count still on
 // them) on the row of the check's name, and in any phone drawer a line shows its name at the top of
 // its card. Measured on hub:dev + kitchen in ios and md (the PR): the first line's name shows at
 // 390×667, 320×568, 667×375, 844×390 and 568×320, with and without the strip.
@@ -440,7 +440,9 @@ describe('with Kitchen, a phone drawer shows the first line of the check (sales#
     for (const [id, key, label] of [['pos-view-tab-account', 'ui.accountTab', 'ui.accountTab'],
       ['pos-view-tab-draft', 'ui.currentCommandTab', 'ui.currentCommandTabPendingOne']]) {
       const tab = root.querySelector(`[data-testid="${id}"]`)!;
-      expect(tab.getAttribute('aria-label'), `${id}: named when only its icon shows`).toBe(label);
+      // sales#460: named by its content (a host aria-label goes stale in Ionic), words aria-hidden.
+      expect(tab.hasAttribute('aria-label'), `${id}: no aria-label for Ionic to freeze`).toBe(false);
+      expect(tab.querySelector('.view-tab-name')?.textContent?.trim(), `${id}: named when only its icon shows`).toBe(label);
       expect(tab.querySelector('ion-icon.view-tab-icon')?.getAttribute('name'), `${id}: a literal icon`).toMatch(/-outline$/);
       expect(tab.querySelector('.view-tab-text')?.textContent?.trim(), `${id}: the visible name`).toBe(key);
     }
@@ -450,11 +452,11 @@ describe('with Kitchen, a phone drawer shows the first line of the check (sales#
     expect(dot!.closest('.view-tab-text'), 'the count stays when the name hides').toBeNull();
   });
 
-  // The aria-label wins over the words of the tab, so a fixed «Current order» dropped the pending
-  // count a screen reader read before (in the words, «Current order 1») -- on a tablet too.
+  // A fixed «Current order» name dropped the pending count a screen reader read before (in the
+  // words, «Current order 1») -- on a tablet too. The name says it (sales#460: in its content).
   it('the current-order tab says how many items are still to send, for screen readers too', async () => {
     const label = async (pending: number) => (await mountWithKitchenAt(390, 667, pending))
-      .querySelector('[data-testid="pos-view-tab-draft"]')!.getAttribute('aria-label');
+      .querySelector('[data-testid="pos-view-tab-draft"] .view-tab-name')?.textContent?.trim();
     expect(await label(0), 'nothing pending: just its name').toBe('ui.currentCommandTab');
     expect(await label(1)).toBe('ui.currentCommandTabPendingOne');
     expect(await label(2)).toBe('ui.currentCommandTabPending');
