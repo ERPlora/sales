@@ -12593,7 +12593,7 @@ var ErpPosTouch = class extends i3 {
       this.orderView = e8.detail.value;
     }}>
             <!-- sales#433: a low drawer shows the icons instead of the words (the name stays in
-                 aria-label), so the tabs fit on the row of the check's name. -->
+                 aria-label), so the tabs fit on the row of the header icons. -->
             <ion-segment-button data-testid="pos-view-tab-account" value="account" layout="icon-start" aria-label=${t5("ui.accountTab")}>
               <ion-icon class="view-tab-icon" name="list-outline" aria-hidden="true"></ion-icon>
               <ion-label><span class="view-tab-text">${t5("ui.accountTab")}</span></ion-label>
