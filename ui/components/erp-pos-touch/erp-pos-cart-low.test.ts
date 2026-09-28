@@ -487,7 +487,10 @@ describe('with Kitchen, a phone drawer shows the first line of the check (sales#
     expect(header).toMatch(/align-items:\s*center/);
     const toolbar = rules(low, '.cart ion-toolbar');
     expect(toolbar, 'the icons take what the tabs leave').toMatch(/flex:\s*1\s+1\s+0/);
-    expect(toolbar, 'and can shrink to it').toMatch(/min-width:\s*0/);
+    // Without Kitchen there are no tabs: a toolbar of basis 0 and min-width 0 fitted on the line of
+    // the whole-width name, 0 px wide, and park, open checks and close were gone. Half the row
+    // leaves the tabs (~6rem) their room and pushes the name to the next row, tabs or not.
+    expect(toolbar, 'never 0 px beside the name').toMatch(/min-width:\s*50%/);
     expect(rules(low, '.order-heading'), 'the name and the chips: the next row, whole').toMatch(/flex:\s*1\s+1\s+100%/);
     const tabs = rules(low, 'ion-segment.view-tabs');
     expect(tabs, 'before the icons (order -1, the toolbar is 0)').toMatch(/order:\s*-1/);
@@ -570,6 +573,7 @@ describe('with Kitchen, a phone drawer shows the first line of the check (sales#
     expect(tabs, 'beside the name (order -1, after it in the markup)').toMatch(/order:\s*-1/);
     expect(tabs).toMatch(/flex:\s*none/);
     expect(rules(veryLow, '.cart ion-toolbar'), 'the icons share the bar').toMatch(/flex:\s*none/);
+    expect(rules(veryLow, '.cart ion-toolbar'), 'as wide as its icons, not the half row of the 28rem block').toMatch(/min-width:\s*0/);
     expect(tabs, 'no air above and below them: the bar is as tall as its buttons').toMatch(/margin-top:\s*0;\s*margin-bottom:\s*0/);
   });
 

@@ -9442,7 +9442,9 @@ var ErpPosTouch = class extends i3 {
        five icons. Written before the low blocks, which compact the rest of the header. */
     @container pos-cart (max-height: 28rem) {
       .cart ion-header { display:flex; flex-wrap:wrap; align-items:center; }
-      .cart ion-toolbar { flex:1 1 0; min-width:0; }
+      /* Half the row, not 0: without Kitchen (no tabs) a basis-0 toolbar fitted 0px wide on the
+         line of the whole-width name, and park, open checks and close were gone. */
+      .cart ion-toolbar { flex:1 1 0; min-width:50%; }
       .order-heading { flex:1 1 100%; }
       /* md lays the columns out as minmax(auto, 360px): the pair was 722px wide. */
       ion-segment.view-tabs { order:-1; flex:none; grid-auto-columns:auto; margin-top:.2rem; margin-bottom:.2rem; margin-left:.35rem; margin-right:0; }
@@ -9523,7 +9525,7 @@ var ErpPosTouch = class extends i3 {
        tabs the two rows of the low block need 224px before the first line shows. */
     @container pos-cart (max-height: 14.5rem) {
       .cart ion-header { display:flex; flex-wrap:wrap; align-items:center; }
-      .cart ion-toolbar { flex:none; width:auto; --padding-top:0; --padding-bottom:0; }
+      .cart ion-toolbar { flex:none; width:auto; min-width:0; --padding-top:0; --padding-bottom:0; }
       .order-toolbar { padding-top:0; padding-bottom:0; }
       .order-heading { order:-1; flex:1 1 0; min-width:0; border-bottom:0; padding-top:0; padding-bottom:0; padding-right:.2rem; }
       /* sales#433: the tab icons stay in the one bar, after the name (order, then markup) and
