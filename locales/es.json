@@ -583,7 +583,10 @@
     "claimIdType": "Tu número es",
     "claimIdTypeTax": "Un NIF o número de IVA",
     "lineChangeFailed": "No se ha podido guardar ese cambio de la línea. La línea vuelve a estar como estaba.",
-    "deleteCheckFailed": "No se ha podido eliminar esa cuenta abierta. Sigue en la lista."
+    "deleteCheckFailed": "No se ha podido eliminar esa cuenta abierta. Sigue en la lista.",
+    "discardCheckFailed": "No se ha podido eliminar la cuenta. Sigue abierta, en pantalla.",
+    "parkCheckFailed": "No se ha podido aparcar la cuenta. Sigue en pantalla.",
+    "leaveOnTableFailed": "No se ha podido dejar la cuenta en su mesa. Sigue en pantalla."
   },
   "widgets": {
     "sales.today": {

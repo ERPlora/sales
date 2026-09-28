@@ -893,6 +893,8 @@ export class ErpPosTouch extends LitElement {
     dialog p { margin:0 0 .8rem; color:var(--mut); }
     dialog.park-dialog input { width:100%; box-sizing:border-box; font-size:1rem; padding:.6rem .7rem;
       border-radius:var(--ok-radius-sm,10px); border:1px solid var(--ion-border-color); background:var(--tile); color:var(--tx); }
+    /* sales#441 — a refused park is told under the name field, above the buttons it refers to. */
+    dialog.park-dialog .park-err { margin:.5rem 0 0; }
     /* The list of people: rows tall enough for a thumb, and the current one marked — with a BORDER
        as well as colour, so it is distinguishable without relying on seeing the hue. */
     .staff-list { display:flex; flex-direction:column; gap:.35rem; max-height:min(50vh,18rem); overflow-y:auto; }
@@ -1519,6 +1521,8 @@ export class ErpPosTouch extends LitElement {
   @state() private modifierCatalog = new Map<string, PrintedModifier>();
   /** Diálogo del NOMBRE al aparcar sin mesa (default: la hora, editable de un toque). */
   @state() private parkPromptOpen = false;
+  /** sales#441 — the park prompt is writing the name: a second tap does not park twice. */
+  @state() private parkSaving = false;
   @state() private parkName = '';
   /** Diálogo «¿aparcar o eliminar la cuenta actual?» (solo con carrito sucio SIN mesa). */
   @state() private dirtyOpen = false;
@@ -1673,10 +1677,11 @@ export class ErpPosTouch extends LitElement {
     // una acción explícita). `park-then-*` solo ocurre con carrito de BARRA (sin mesa): se
     // PREGUNTA qué hacer — aparcar con nombre o eliminar (decisión Ioan 2026-07-19). Aparcar
     // JAMÁS anula: el `sales.order.void` que vivía aquí hacía «desaparecer» los aparcados.
-    const aparcarOEliminar = async () => {
+    // sales#441: `false` = the hub refused; the check in front stays as it was and says why.
+    const aparcarOEliminar = async (): Promise<boolean> => {
       const eleccion = await this.resolveDirtyCart(false);
-      if (eleccion === 'discard') await this.discardCurrent();
-      else await this.parkWith(defaultParkLabel('', new Date()));
+      if (eleccion === 'discard') return this.discardCurrent();
+      return this.parkWith(defaultParkLabel('', new Date()));
     };
 
     if (accion === 'clear' || accion === 'park-then-clear') {
@@ -1686,9 +1691,7 @@ export class ErpPosTouch extends LitElement {
         if (habiaMesa) {
           // La X del chip = QUITAR la mesa (el filler ya aparcó SU sesión): la cuenta pasa a
           // aparcada CON NOMBRE — se pide, para no dejar cuentas «Mesa 4» cuya mesa quedó libre.
-          this.parkName = defaultParkLabel('', new Date());
-          this.parkedOpen = false;
-          this.parkPromptOpen = true;
+          this.openParkPrompt();
         } else {
           await aparcarOEliminar();
         }
@@ -1716,7 +1719,12 @@ export class ErpPosTouch extends LitElement {
       return;
     }
 
-    if (accion === 'park-then-load') await aparcarOEliminar();
+    if (accion === 'park-then-load' && !(await aparcarOEliminar())) {
+      // sales#441: the picker selected that table before asking us. The bar check is still in
+      // front, so the picker lets go of its selection (without touching the table's session).
+      this.notifyOrderDetached();
+      return;
+    }
 
     // Abrir la comanda de la mesa (o empezar en blanco si no tiene).
     this.tableId = nextTable; this.tableLabel = d.label ?? '';
@@ -2639,18 +2647,45 @@ export class ErpPosTouch extends LitElement {
     if (!this.cart.length) return;
     if (this.blockPendingAccountSwitch()) return;
     if (this.tableLabel.trim()) { await this.leaveOnTable(); return; }
+    this.openParkPrompt();
+  }
+
+  /** The park prompt, with the time as the default name and nothing refused yet (sales#441). */
+  private openParkPrompt(): void {
+    this.error = '';
     this.parkName = defaultParkLabel('', new Date());
     this.parkedOpen = false;
     this.parkPromptOpen = true;
   }
 
+  /** sales#441 — the prompt closes only once the check really parked; a refusal keeps it open with
+   *  the typed name and the reason inside it. */
+  private async confirmParkPrompt(): Promise<void> {
+    if (this.parkSaving) return;
+    this.parkSaving = true;
+    try {
+      if (await this.parkWith(this.parkName)) this.parkPromptOpen = false;
+    } finally {
+      this.parkSaving = false;
+    }
+  }
+
   /** «Dejar en la mesa»: etiqueta la cuenta con su mesa, suelta la PANTALLA y avisa a los
    *  fillers con `erp:order-detached` — que limpian su selección SIN tocar la sesión. La mesa
-   *  sigue ocupada; la cuenta se recupera tocándola o desde la lista. JAMÁS aparca ni anula. */
-  private async leaveOnTable(): Promise<void> {
+   *  sigue ocupada; la cuenta se recupera tocándola o desde la lista. JAMÁS aparca ni anula.
+   *  sales#441: `false` = the hub refused; the check stays on screen, at its table, and says why. */
+  private async leaveOnTable(): Promise<boolean> {
     const id = this.orderId;
     const donde = this.tableLabel.trim();
-    if (id && donde) await erplora().command('sales.order.set_label', { order_id: id, label: donde }).catch(() => undefined);
+    if (id && donde) {
+      try {
+        await erplora().command('sales.order.set_label', { order_id: id, label: donde });
+      } catch (e) {
+        this.error = domainErrorText(CATALOG, erplora().locale, e) || t('ui.leaveOnTableFailed');
+        return false;
+      }
+    }
+    this.error = '';
     forgetCurrentCheck(localStorage);
     this.orderId = undefined;
     this.orderLabel = '';
@@ -2662,6 +2697,7 @@ export class ErpPosTouch extends LitElement {
     this.notifyOrderDetached();
     erplora().notify?.({ type: 'success', message: t('ui.leftAtTable', { label: donde }) });
     this.parked = await listOpenChecks(erplora());
+    return true;
   }
 
   /** Avisa a los fillers de que la cuenta se suelta DE PANTALLA: limpian su selección local y
@@ -2674,27 +2710,48 @@ export class ErpPosTouch extends LitElement {
 
   /** Aparca la cuenta actual CON nombre: persiste la etiqueta y luego suelta la pantalla.
    *  Aparcar JAMÁS anula (`sales.order.void` solo sale de una decisión explícita de eliminar) —
-   *  el void que vivía aquí era la causa de «los tiquets aparcados desaparecen». */
-  private async parkWith(label: string): Promise<void> {
+   *  el void que vivía aquí era la causa de «los tiquets aparcados desaparecen».
+   *  sales#441: `false` = the hub refused the name; the check is NOT parked without it — it stays
+   *  on screen and says why. */
+  private async parkWith(label: string): Promise<boolean> {
     const id = this.orderId;
     const nombre = label.trim() || defaultParkLabel('', new Date());
-    this.orderLabel = nombre;
-    if (id) await erplora().command('sales.order.set_label', { order_id: id, label: nombre }).catch(() => undefined);
+    if (id) {
+      try {
+        await erplora().command('sales.order.set_label', { order_id: id, label: nombre });
+      } catch (e) {
+        this.error = domainErrorText(CATALOG, erplora().locale, e) || t('ui.parkCheckFailed');
+        return false;
+      }
+    }
+    this.error = '';
     await this.park();
     erplora().notify?.({ type: 'success', message: t('ui.parkedToast', { name: nombre }) });
+    return true;
   }
 
   /** ELIMINAR la cuenta actual (decisión explícita del diálogo de carrito sucio): anula el pedido
-   *  y limpia la pantalla. El rastro queda (`voided`), no se borra nada. */
-  private async discardCurrent(): Promise<void> {
+   *  y limpia la pantalla. El rastro queda (`voided`), no se borra nada.
+   *  sales#441: `false` = the hub refused the void; the check is still open, so it stays on screen
+   *  (clearing it would hide a check that comes back in the list later) and says why. */
+  private async discardCurrent(): Promise<boolean> {
     const id = this.orderId;
-    if (id) await erplora().command('sales.order.void', { order_id: id }).catch(() => undefined);
+    if (id) {
+      try {
+        await erplora().command('sales.order.void', { order_id: id });
+      } catch (e) {
+        this.error = domainErrorText(CATALOG, erplora().locale, e) || t('ui.discardCheckFailed');
+        return false;
+      }
+    }
+    this.error = '';
     forgetCurrentCheck(localStorage);
     this.orderId = undefined;
     this.orderLabel = '';
     this.cart = [];
     this.appointmentId = undefined; // appointments#154 — see `park()`
     this.resetSlotContexts();
+    return true;
   }
 
   /** Abre el diálogo «¿aparcar o eliminar?» y espera la decisión. `allowCancel` solo al recuperar
@@ -2747,13 +2804,15 @@ export class ErpPosTouch extends LitElement {
       if (this.cart.length && this.orderId !== c.id) {
         if (this.tableId) {
           // La cuenta de delante SE QUEDA EN SU MESA (los fillers sueltan solo la pantalla).
-          await this.leaveOnTable();
+          if (!(await this.leaveOnTable())) return; // sales#441: refused → stay on it
         } else {
           this.parkedOpen = false;
           const eleccion = await this.resolveDirtyCart(true);
           if (eleccion === 'cancel') return;
-          if (eleccion === 'discard') await this.discardCurrent();
-          else await this.parkWith(defaultParkLabel('', new Date()));
+          const released = eleccion === 'discard'
+            ? await this.discardCurrent()
+            : await this.parkWith(defaultParkLabel('', new Date()));
+          if (!released) return; // sales#441: refused → the check in front stays, with the reason
         }
       }
       this.orderId = c.id;
@@ -5419,7 +5478,7 @@ export class ErpPosTouch extends LitElement {
           <!-- sales#438: with the drawer open, the page's notice sits BEHIND it. The notice of the
                tap that just happened is told here, above the buttons, in the foot that never
                scrolls away; paying → the pay sheet keeps it alone (sales#185). -->
-          ${this.error && this.cartOpen && !this.paying && !this.parkedOpen
+          ${this.error && this.cartOpen && !this.paying && !this.parkedOpen && !this.parkPromptOpen
             ? html`<p class="err cart-err" role="alert" data-testid="pos-cart-error">${this.error}</p>${this.renderCheckSalesLink()}`
             : nothing}
           ${this.ticketDiscount > 0 || this.ticketDiscountAmount > 0 ? html`
@@ -5751,7 +5810,7 @@ export class ErpPosTouch extends LitElement {
                it to half a sentence: the cashier reads the same thing twice and neither of them
                whole. The sheet's copy is the one in front of them. Closing the sheet hands the
                error back here: it is not lost, it is moved. -->
-          ${this.error && !this.paying && !this.cartOpen && !this.parkedOpen ? html`<p class="err">${this.error}</p>${this.renderCheckSalesLink()}` : nothing}
+          ${this.error && !this.paying && !this.cartOpen && !this.parkedOpen && !this.parkPromptOpen ? html`<p class="err">${this.error}</p>${this.renderCheckSalesLink()}` : nothing}
           <!-- sales#185 — an app the checkout NEEDS is missing. The role is alert, not status:
                this is not ambient information, it is that this till cannot charge today. -->
           ${this.missingChargeApp
@@ -6345,11 +6404,12 @@ export class ErpPosTouch extends LitElement {
           <input data-testid="pos-park-name" type="text" .value=${this.parkName} placeholder=${t('ui.parkNamePlaceholder')}
                  aria-label=${t('ui.parkNameLabel')}
                  @input=${(e: Event) => { this.parkName = (e.target as HTMLInputElement).value; }}
-                 @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') { this.parkPromptOpen = false; void this.parkWith(this.parkName); } }} />
+                 @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') void this.confirmParkPrompt(); }} />
+          ${this.error ? html`<p class="err park-err" role="alert" data-testid="pos-park-error">${this.error}</p>` : nothing}
           <div class="dlg-actions">
             <ion-button data-testid="pos-park-cancel" fill="clear" @click=${() => { this.parkPromptOpen = false; }}>${t('ui.cancel')}</ion-button>
-            <ion-button data-testid="pos-park-confirm" class="park-confirm"
-                        @click=${() => { this.parkPromptOpen = false; void this.parkWith(this.parkName); }}>
+            <ion-button data-testid="pos-park-confirm" class="park-confirm" ?disabled=${this.parkSaving}
+                        @click=${() => void this.confirmParkPrompt()}>
               ${t('ui.parkCurrentSale')}
             </ion-button>
           </div>
