@@ -4869,7 +4869,10 @@ var en_default = {
     refundConfirm: "Refund {amount}",
     refundDone: "Refund recorded.",
     refundFailed: "The refund could not be recorded.",
-    refundUnknown: "We couldn't confirm whether the refund was recorded. Tapping Refund again on this screen won't record it twice; if you close it, check the sale before refunding again.",
+    refundUnknown: "We couldn't confirm whether the refund was recorded. Tapping Refund again won't record it twice, even if you close this screen and open it again on this device.",
+    refundChecking: "Checking whether the refund was recorded\u2026",
+    refundNotRecorded: "The refund was not recorded. You can refund again: it won't be recorded twice.",
+    refundRecoveredOnOpen: "The refund left unconfirmed was recorded. Below is what is still left to refund.",
     refundLineTenders: "Lines paid another way",
     refundLineTendersHint: "These lines cost no money, so they are not part of the split above. What goes back to them is decided here.",
     refundTenderPending: "The money is back, but what was paid another way could not be returned. Check it from its own module.",
@@ -5528,7 +5531,10 @@ var es_default = {
     refundConfirm: "Devolver {amount}",
     refundDone: "Devoluci\xF3n registrada.",
     refundFailed: "No se ha podido registrar la devoluci\xF3n.",
-    refundUnknown: "No hemos podido confirmar si la devoluci\xF3n se registr\xF3. Si vuelves a pulsar Devolver en esta pantalla no se duplicar\xE1; si la cierras, compru\xE9balo en la venta antes de volver a devolver.",
+    refundUnknown: "No hemos podido confirmar si la devoluci\xF3n se registr\xF3. Si vuelves a pulsar Devolver no se duplicar\xE1, aunque cierres esta pantalla y la vuelvas a abrir en este dispositivo.",
+    refundChecking: "Comprobando si la devoluci\xF3n se registr\xF3\u2026",
+    refundNotRecorded: "La devoluci\xF3n no se registr\xF3. Puedes volver a devolver: no se duplicar\xE1.",
+    refundRecoveredOnOpen: "La devoluci\xF3n que qued\xF3 sin confirmar s\xED se registr\xF3. Abajo est\xE1 lo que a\xFAn queda por devolver.",
     refundLineTenders: "L\xEDneas pagadas de otra forma",
     refundLineTendersHint: "Estas l\xEDneas no costaron dinero, as\xED que no entran en el reparto de arriba. Lo que vuelve a ellas se decide aqu\xED.",
     refundTenderPending: "El dinero ha vuelto, pero lo que se pag\xF3 de otra forma no se ha podido devolver. Rev\xEDsalo desde su m\xF3dulo.",
@@ -9239,6 +9245,11 @@ var ErpPosTouch = class extends i3 {
          label, so under the «You can't invoice yet» strip the product name sat under the foot. */
       ion-list.lines ion-item { align-items:flex-start; }
       .cart-close { display:inline-flex; }
+      /* sales#454: its icon and «Cerrar» shared one row of 52px, and md's capitals left «CER…». As in
+         the low drawers (sales#433) and on Square or Toast, close is an icon in every drawer; its name
+         stays in aria-label and title. As specific as the base rules it overrides. */
+      ion-button.header-action.cart-close { width:2.4rem; height:2.4rem; min-height:2.4rem; margin:auto 0; }
+      ion-button.header-action.cart-close small { display:none; }
       .cart-backdrop[data-open] { display:block; position:absolute; inset:0; background:var(--ok-scrim, rgba(0,0,0,.5)); z-index:55; }
       /* sales#418: the shell floors a module screen at 480px and scrolls it below that, so with the
          «You can't invoice yet» strip up a low phone lays the till out taller than what it shows.
@@ -9331,10 +9342,16 @@ var ErpPosTouch = class extends i3 {
       color:var(--ion-color-warning-shade, #e0ac08); background:var(--tile); }
     .ctx-chip.needs-customer:hover { color:var(--ion-color-warning-shade, #e0ac08); }
 
+    /* sales#454: two equal halves (1fr in ios, minmax(auto,360px) in md), md padding each 16px a
+       side and spacing the letters: «Current order» and its count needed 161px where md gave 110 at
+       360px (143 on a desktop). Each tab takes the width of its words, spaced and padded as in ios,
+       and the room left over is shared out: Ionic centres the columns, which bunched them in the
+       middle of an empty box on a tablet or a desktop. */
     ion-segment.view-tabs { margin:.62rem .72rem .28rem; width:auto; border:1px solid var(--line);
-      border-radius:var(--ok-radius-sm,11px); background:var(--tile); }
+      border-radius:var(--ok-radius-sm,11px); background:var(--tile); grid-auto-columns:auto; justify-content:stretch; }
     ion-segment.view-tabs ion-segment-button { min-height:2.85rem; --indicator-color:var(--tile-hi);
-      --color:var(--mut); --color-checked:var(--tx); font-weight:700; text-transform:none; }
+      --color:var(--mut); --color-checked:var(--tx); font-weight:700; text-transform:none;
+      letter-spacing:0; --padding-start:.6rem; --padding-end:.6rem; }
     .view-tab-label { display:inline-flex; align-items:center; justify-content:center; gap:.38rem; }
     /* sales#460: what a screen reader hears on a tab; hidden from the eye only, never display:none. */
     .view-tab-name { position:absolute; width:1px; height:1px; margin:-1px; padding:0; border:0;
@@ -9349,7 +9366,11 @@ var ErpPosTouch = class extends i3 {
     ion-list.lines ion-item { margin:.35rem 0; --background:var(--tile); --border-color:transparent;
       --border-radius:var(--ok-radius,12px); border:1px solid var(--line); border-radius:var(--ok-radius,12px); overflow:hidden; }
     ion-list.lines ion-item.sel { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 7%,var(--tile)); }
-    ion-list.lines ion-item h3 { display:flex; align-items:center; gap:.35rem; margin-bottom:.12rem; font-size:.85rem; }
+    /* sales#452: the amount, three actions and the stepper keep the right of the card, so at 320px
+       «Pending» left the name 36px and «Café con leche» broke in three lines. As on Square or Toast
+       the state of a line never takes its name's width: when both do not fit, the pill (first in
+       the markup) gets a row of its own above the name. */
+    ion-list.lines ion-item h3 { display:flex; flex-wrap:wrap; align-items:center; gap:.2rem .35rem; margin-bottom:.12rem; font-size:.85rem; }
     ion-list.lines ion-item p { font-size:.7rem; }
     ok-status-pill { vertical-align:middle; }
     .lineend .lt { font-size:.84rem; }
@@ -16710,6 +16731,39 @@ function serviceOrdinals(covered) {
   return out;
 }
 
+// ui/lib/refund-pending-key.ts
+var PREFIX = "erplora.sales.refundPendingKey.";
+var memory = /* @__PURE__ */ new Map();
+function storage() {
+  try {
+    return globalThis.localStorage ?? void 0;
+  } catch {
+    return void 0;
+  }
+}
+function pendingRefundKey(saleId) {
+  try {
+    const stored = storage()?.getItem(PREFIX + saleId);
+    if (stored) return stored;
+  } catch {
+  }
+  return memory.get(saleId);
+}
+function rememberPendingRefundKey(saleId, key) {
+  memory.set(saleId, key);
+  try {
+    storage()?.setItem(PREFIX + saleId, key);
+  } catch {
+  }
+}
+function forgetPendingRefundKey(saleId) {
+  memory.delete(saleId);
+  try {
+    storage()?.removeItem(PREFIX + saleId);
+  } catch {
+  }
+}
+
 // ui/components/erp-sale-refund/erp-sale-refund.ts
 var CATALOG5 = { es: es_default, en: en_default };
 var REFUND_MESSAGES = {
@@ -16750,6 +16804,12 @@ var ErpSaleRefund = class extends i3 {
     this.error = "";
     this.busy = false;
     this.outcomeUnknown = false;
+    this.checking = false;
+    this.notRecorded = false;
+    this.recoveredOnOpen = false;
+    /** sales#456 - the pause between two questions to a hub that did not answer: an OOM-killed hub
+     *  is back in seconds. A property so a test does not wait in real time. */
+    this.recoveryDelayMs = 1500;
     this.covered = [];
     this.tenderFillers = [];
     this.tenderNotices = /* @__PURE__ */ new Map();
@@ -16784,6 +16844,7 @@ var ErpSaleRefund = class extends i3 {
        los tres viewports. (Y no metas acentos graves en un comentario dentro de una plantilla css:
        cierran el literal.) */
     .refund-body, .refund-loading { padding:1rem; }
+    .refund-checking { display:flex; align-items:center; gap:.6rem; color:var(--ion-color-medium,#8b897f); }
     /* A 1440 px la ficha se estiraba a 1.404 px de ancho: un formulario de importes con el nombre
        del medio a la izquierda y el campo a un metro a la derecha no se lee de un vistazo. Se
        centra con un ancho de lectura, y por debajo de eso ocupa lo que haya. */
@@ -16874,7 +16935,7 @@ var ErpSaleRefund = class extends i3 {
       this.sale = sales?.[0];
       this.legs = (legs ?? []).filter((l3) => Number(l3.remaining) > 0 || Number(l3.charged) > 0);
       this.methods = methods ?? [];
-      this.key = newKey(saleId);
+      await this.resumePendingAttempt(saleId);
       const split = proportionalSplit(refundableTotal(this.legs), this.legs);
       this.draft = Object.fromEntries(Object.entries(split).map(([id, amount]) => [id, { amount }]));
       await this.loadTenderLines(saleId);
@@ -16885,6 +16946,45 @@ var ErpSaleRefund = class extends i3 {
     } finally {
       this.loading = false;
     }
+  }
+  /**
+   * sales#456 - the screen opens over an attempt whose outcome nobody learnt (closed after «we
+   * can't tell», or the tablet died mid-request). Before anything else the hub is asked about THAT
+   * key:
+   *   recorded      → said on screen; the attempt is closed and a new refund gets a NEW key;
+   *   not recorded  → said on screen; the SAME key is kept, so a late write and this retry
+   *                   collapse into one document;
+   *   cannot ask    → the sales#451 doubt, and the same key kept for the same reason.
+   * Without this, refunding a part again from a fresh screen was a second document.
+   */
+  async resumePendingAttempt(saleId) {
+    this.outcomeUnknown = false;
+    this.notRecorded = false;
+    this.recoveredOnOpen = false;
+    const pending = pendingRefundKey(saleId);
+    if (!pending) {
+      this.key = newKey(saleId);
+      return;
+    }
+    const recovery = await this.recover(pending);
+    if (recovery.outcome === "charged") {
+      forgetPendingRefundKey(saleId);
+      this.key = newKey(saleId);
+      this.recoveredOnOpen = true;
+      return;
+    }
+    this.key = pending;
+    this.notRecorded = recovery.outcome === "not_charged";
+    this.outcomeUnknown = recovery.outcome === "unknown";
+  }
+  /** Asks the hub for the refund written under `key` - the same three answers as the till's
+   *  checkout recovery (sales#91), where «charged» means the refund document exists. */
+  recover(key) {
+    return recoverCheckout(
+      async (k2) => await erplora5().query("sales.refund_by_idempotency_key", { idempotency_key: k2 }) ?? [],
+      key,
+      { attempts: 2, delayMs: this.recoveryDelayMs }
+    );
   }
   /**
    * The ACCESSORY side of the screen: the lines another tender paid for, and the hole where its
@@ -17006,6 +17106,9 @@ var ErpSaleRefund = class extends i3 {
     if (this.busy) return;
     this.busy = true;
     this.outcomeUnknown = false;
+    this.notRecorded = false;
+    const saleId = this.saleId ?? "";
+    rememberPendingRefundKey(saleId, this.key);
     try {
       const out = await erplora5().command("sales.refund", {
         sale_id: this.saleId,
@@ -17015,19 +17118,46 @@ var ErpSaleRefund = class extends i3 {
         idempotency_key: this.key,
         allocations: buildAllocations(this.draft, this.legs)
       });
-      const committed = await this.commitTenderRefunds(out);
-      erplora5().notify?.({ type: "success", message: t7("ui.refundDone") });
-      if (!committed) erplora5().notify?.({ type: "error", message: t7("ui.refundTenderPending") });
-      this.dispatchEvent(new CustomEvent("refunded", { bubbles: true, composed: true, detail: { saleId: this.saleId } }));
+      forgetPendingRefundKey(saleId);
+      await this.finishRecorded(out);
     } catch (e8) {
       if (isUnknownOutcome(e8)) {
-        this.outcomeUnknown = true;
+        await this.resolveDoubt(saleId);
         return;
       }
+      forgetPendingRefundKey(saleId);
       erplora5().notify?.({ type: "error", message: t7(refundErrorKey(errorCode(e8))) });
     } finally {
       this.busy = false;
     }
+  }
+  /**
+   * sales#456 - after «we can't tell», the screen asks the hub itself, by the SAME key, like the
+   * till after a checkout without an answer (sales#91). The button stays busy meanwhile: a second
+   * tap now would be exactly the double refund this exists to prevent.
+   */
+  async resolveDoubt(saleId) {
+    this.checking = true;
+    try {
+      const recovery = await this.recover(this.key);
+      if (recovery.outcome === "charged") {
+        forgetPendingRefundKey(saleId);
+        await this.finishRecorded({ refund_id: recovery.saleId, refund_ref: recovery.saleId });
+        return;
+      }
+      this.notRecorded = recovery.outcome === "not_charged";
+      this.outcomeUnknown = recovery.outcome === "unknown";
+    } finally {
+      this.checking = false;
+    }
+  }
+  /** The refund document exists: hand its reference to the tender fillers, say so, and close. */
+  async finishRecorded(out) {
+    const t7 = (k2, p4) => erplora5().t(CATALOG5, k2, p4);
+    const committed = await this.commitTenderRefunds(out);
+    erplora5().notify?.({ type: "success", message: t7("ui.refundDone") });
+    if (!committed) erplora5().notify?.({ type: "error", message: t7("ui.refundTenderPending") });
+    this.dispatchEvent(new CustomEvent("refunded", { bubbles: true, composed: true, detail: { saleId: this.saleId } }));
   }
   /**
    * Hands every filler the document reference and WAITS for whatever it commits to do.
@@ -17142,6 +17272,11 @@ var ErpSaleRefund = class extends i3 {
                 </ion-select>` : A}`}
     </div>`;
   }
+  /** sales#456 - the attempt left in doubt WAS recorded: read first, above what is left. */
+  renderRecoveredOnOpen() {
+    if (!this.recoveredOnOpen) return A;
+    return b2`<ok-inline-feedback data-testid="refund-recovered" tone="success" icon="checkmark-circle-outline">${erplora5().t(CATALOG5, "ui.refundRecoveredOnOpen")}</ok-inline-feedback>`;
+  }
   render() {
     const t7 = (k2, p4) => erplora5().t(CATALOG5, k2, p4);
     if (this.loading) {
@@ -17154,12 +17289,13 @@ var ErpSaleRefund = class extends i3 {
       return b2`<ok-inline-feedback data-testid="refund-error" tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>`;
     }
     if (!this.legs.length) {
-      return b2`<ok-inline-feedback data-testid="refund-nothing" tone="warning" icon="information-circle-outline">${t7("ui.refundNothing")}</ok-inline-feedback>`;
+      return b2`${this.renderRecoveredOnOpen()}<ok-inline-feedback data-testid="refund-nothing" tone="warning" icon="information-circle-outline">${t7("ui.refundNothing")}</ok-inline-feedback>`;
     }
     const total = draftTotal(this.draft);
     const block = this.blockText;
     return b2`<div class="refund-body" data-testid="refund-form">
       <h3>${t7("ui.refundTitle", { number: this.sale?.sale_number ?? "" })}</h3>
+      ${this.renderRecoveredOnOpen()}
       <p class="hint">${t7("ui.refundExplain")}</p>
       <div class="legs">${this.legs.map((l3) => this.renderLeg(l3))}</div>
       ${this.renderTenderLines()}
@@ -17189,7 +17325,11 @@ var ErpSaleRefund = class extends i3 {
       <!-- And the external tenders' warnings, next to the button: the line's hole can be
            off-screen when the thumb is already on the refund button (sales#166). -->
       ${this.renderTenderNotices()}
+      ${this.checking ? b2`<div class="refund-checking" data-testid="refund-checking" role="status">
+            <ion-spinner name="crescent"></ion-spinner><span>${t7("ui.refundChecking")}</span>
+          </div>` : A}
       ${this.outcomeUnknown ? b2`<ok-inline-feedback data-testid="refund-unknown" tone="warning" icon="help-circle-outline">${t7("ui.refundUnknown")}</ok-inline-feedback>` : A}
+      ${this.notRecorded ? b2`<ok-inline-feedback data-testid="refund-not-recorded" tone="info" icon="information-circle-outline">${t7("ui.refundNotRecorded")}</ok-inline-feedback>` : A}
       <!-- 🔴 aria-disabled, JAMÁS el disabled de Ionic: en modo ios es pointer-events:none y en
            una tablet de mostrador el toque muere en silencio (sales#58). El estado ocupado sí es
            disabled de verdad: ahí no hay nada que contestar y un segundo toque devolvería dos
@@ -17239,6 +17379,15 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpSaleRefund.prototype, "outcomeUnknown", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "checking", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "notRecorded", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "recoveredOnOpen", 2);
 __decorateClass([
   r5()
 ], ErpSaleRefund.prototype, "covered", 2);
@@ -17723,9 +17872,16 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
     }, t: t7 })}
       <!-- sales#160 — la devolución vive en su propio modal: el reparto por tender no cabe en un
            ion-alert, y el operador tiene que poder leer los topes mientras teclea. -->
+      <!-- sales#456: closing reloads the rows. After «we can't tell» the operator is sent to check
+           the sale, and the row must not show the totals from BEFORE a refund that went through.
+           A refund that did go through has already cleared the id and reloaded on refunded, so
+           its own dismiss finds nothing open and does not load twice. -->
       <ion-modal class="refund-modal" .isOpen=${!!this.refundSaleId}
         @ionModalDidDismiss=${() => {
+      if (!this.refundSaleId) return;
       this.refundSaleId = void 0;
+      void this.ctrl.load();
+      void this.loadStats();
     }}>
         <ion-content>
           ${this.refundSaleId ? b2`<erp-sale-refund data-testid="sales-refund-modal" .saleId=${this.refundSaleId} @refunded=${() => {

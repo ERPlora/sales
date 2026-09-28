@@ -38,6 +38,12 @@ import { hubDecimals } from '../../lib/hub-currency.js';
 import { errorCode } from '../../lib/checkout-key.js';
 import { domainErrorText } from '../../lib/domain-error-text.js';
 import { transportErrorKey } from '../../lib/transport-error.js';
+import { recoverCheckout, type CheckoutRecovery } from '../../lib/checkout-recovery.js';
+import {
+  forgetPendingRefundKey,
+  pendingRefundKey,
+  rememberPendingRefundKey,
+} from '../../lib/refund-pending-key.js';
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
 
@@ -102,9 +108,9 @@ function erplora(): ErploraClientLike {
   return c;
 }
 
-/** Clave de idempotencia del INTENTO. Estable mientras la pantalla siga abierta sobre la misma
- *  venta: es lo que hace que un reintento recupere el MISMO documento en vez de escribir una
- *  segunda devolución, y lo que `services` necesita como `refund_ref`. */
+/** The idempotency key of the ATTEMPT. Stable while the attempt is open - and, since sales#456,
+ *  across closing the screen while its outcome is in doubt: it is what makes a retry recover the
+ *  SAME document instead of writing a second refund. */
 function newKey(saleId: string): string {
   const rnd = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return `refund-${saleId}-${rnd}`;
@@ -119,6 +125,7 @@ export class ErpSaleRefund extends LitElement {
        los tres viewports. (Y no metas acentos graves en un comentario dentro de una plantilla css:
        cierran el literal.) */
     .refund-body, .refund-loading { padding:1rem; }
+    .refund-checking { display:flex; align-items:center; gap:.6rem; color:var(--ion-color-medium,#8b897f); }
     /* A 1440 px la ficha se estiraba a 1.404 px de ancho: un formulario de importes con el nombre
        del medio a la izquierda y el campo a un metro a la derecha no se lee de un vistazo. Se
        centra con un ancho de lectura, y por debajo de eso ocupa lo que haya. */
@@ -192,6 +199,16 @@ export class ErpSaleRefund extends LitElement {
   @state() private busy = false;
   /** sales#451 - the last attempt got no answer from the hub: it may have been recorded. */
   @state() private outcomeUnknown = false;
+  /** sales#456 - asking the hub, by the attempt's key, whether that refund was recorded. */
+  @state() private checking = false;
+  /** sales#456 - the hub answered: no refund under that key. Refunding again is safe. */
+  @state() private notRecorded = false;
+  /** sales#456 - opened over an attempt left in doubt, and the hub says it WAS recorded. */
+  @state() private recoveredOnOpen = false;
+
+  /** sales#456 - the pause between two questions to a hub that did not answer: an OOM-killed hub
+   *  is back in seconds. A property so a test does not wait in real time. */
+  recoveryDelayMs = 1500;
 
   /** sales#166 - the lines an EXTERNAL TENDER paid for (`is_covered`), in read order. */
   @state() private covered: SaleLine[] = [];
@@ -263,7 +280,7 @@ export class ErpSaleRefund extends LitElement {
       this.sale = sales?.[0];
       this.legs = (legs ?? []).filter((l) => Number(l.remaining) > 0 || Number(l.charged) > 0);
       this.methods = methods ?? [];
-      this.key = newKey(saleId);
+      await this.resumePendingAttempt(saleId);
       // La PROPUESTA: la devolución entera, a prorrata. Es lo que el operador quiere el 90 % de
       // las veces; el 10 % restante lo edita, que es justo lo que Shopify no deja.
       const split = proportionalSplit(refundableTotal(this.legs), this.legs);
@@ -281,6 +298,44 @@ export class ErpSaleRefund extends LitElement {
     } finally {
       this.loading = false;
     }
+  }
+
+  /**
+   * sales#456 - the screen opens over an attempt whose outcome nobody learnt (closed after «we
+   * can't tell», or the tablet died mid-request). Before anything else the hub is asked about THAT
+   * key:
+   *   recorded      → said on screen; the attempt is closed and a new refund gets a NEW key;
+   *   not recorded  → said on screen; the SAME key is kept, so a late write and this retry
+   *                   collapse into one document;
+   *   cannot ask    → the sales#451 doubt, and the same key kept for the same reason.
+   * Without this, refunding a part again from a fresh screen was a second document.
+   */
+  private async resumePendingAttempt(saleId: string): Promise<void> {
+    this.outcomeUnknown = false;
+    this.notRecorded = false;
+    this.recoveredOnOpen = false;
+    const pending = pendingRefundKey(saleId);
+    if (!pending) { this.key = newKey(saleId); return; }
+    const recovery = await this.recover(pending);
+    if (recovery.outcome === 'charged') {
+      forgetPendingRefundKey(saleId);
+      this.key = newKey(saleId);
+      this.recoveredOnOpen = true;
+      return;
+    }
+    this.key = pending;
+    this.notRecorded = recovery.outcome === 'not_charged';
+    this.outcomeUnknown = recovery.outcome === 'unknown';
+  }
+
+  /** Asks the hub for the refund written under `key` - the same three answers as the till's
+   *  checkout recovery (sales#91), where «charged» means the refund document exists. */
+  private recover(key: string): Promise<CheckoutRecovery> {
+    return recoverCheckout(
+      async (k) => (await erplora().query<Array<{ id?: string }>>('sales.refund_by_idempotency_key', { idempotency_key: k })) ?? [],
+      key,
+      { attempts: 2, delayMs: this.recoveryDelayMs },
+    );
   }
 
   /**
@@ -413,6 +468,13 @@ export class ErpSaleRefund extends LitElement {
     if (this.busy) return;
     this.busy = true;
     this.outcomeUnknown = false;
+    // «Not recorded» answered the LAST attempt; this one gets its own answer. «The earlier refund
+    // was recorded» stays: it is still true, and it is why the figures above are what they are.
+    this.notRecorded = false;
+    const saleId = this.saleId ?? '';
+    // sales#456 - written down BEFORE the command leaves: if the answer is lost, or the screen is
+    // closed, or the tablet dies, the next screen on this sale starts from this key.
+    rememberPendingRefundKey(saleId, this.key);
     try {
       const out = await erplora().command<RefundResult>('sales.refund', {
         sale_id: this.saleId,
@@ -422,29 +484,62 @@ export class ErpSaleRefund extends LitElement {
         idempotency_key: this.key,
         allocations: buildAllocations(this.draft, this.legs),
       });
-      // sales#166 - the document EXISTS now: its reference goes to whoever has to give back what
-      // was not money, and it is waited for. Closing earlier would unmount the filler mid-command
-      // and leave the session spent with nobody at the counter able to give it back.
-      const committed = await this.commitTenderRefunds(out);
-      erplora().notify?.({ type: 'success', message: t('ui.refundDone') });
-      // The money CAME BACK: that is neither undone nor hidden. What failed is named separately,
-      // because a failure nobody sees is the one nobody fixes.
-      if (!committed) erplora().notify?.({ type: 'error', message: t('ui.refundTenderPending') });
-      this.dispatchEvent(new CustomEvent('refunded', { bubbles: true, composed: true, detail: { saleId: this.saleId } }));
+      forgetPendingRefundKey(saleId);
+      await this.finishRecorded(out);
     } catch (e) {
       // sales#451 - the hub never answered (hub died, proxy 502, network cut): the refund may have
       // been written before the answer was lost, so «could not be recorded» would be a lie. The
       // shell's SDK has already toasted its generic «we can't tell» verdict (hub#906); a second
-      // toast here would be a second notice. The screen says instead, on itself, what holds for
-      // THIS refund: retrying from here reuses the key and cannot record it twice.
+      // toast here would be a second notice.
       if (isUnknownOutcome(e)) {
-        this.outcomeUnknown = true;
+        await this.resolveDoubt(saleId);
         return;
       }
+      // A refusal is an answer: nothing was written, so nothing is pending.
+      forgetPendingRefundKey(saleId);
       erplora().notify?.({ type: 'error', message: t(refundErrorKey(errorCode(e))) });
     } finally {
       this.busy = false;
     }
+  }
+
+  /**
+   * sales#456 - after «we can't tell», the screen asks the hub itself, by the SAME key, like the
+   * till after a checkout without an answer (sales#91). The button stays busy meanwhile: a second
+   * tap now would be exactly the double refund this exists to prevent.
+   */
+  private async resolveDoubt(saleId: string): Promise<void> {
+    this.checking = true;
+    try {
+      const recovery = await this.recover(this.key);
+      if (recovery.outcome === 'charged') {
+        forgetPendingRefundKey(saleId);
+        // The handler answers a retry with `refund_ref` = the document id; the recovered row IS
+        // that document, so whoever gives back what was not money gets the same reference.
+        await this.finishRecorded({ refund_id: recovery.saleId, refund_ref: recovery.saleId });
+        return;
+      }
+      // Not recorded: the key is KEPT (still pending), so a write that lands late and this retry
+      // collapse into one document. Unknown: the sales#451 doubt, with the key kept too.
+      this.notRecorded = recovery.outcome === 'not_charged';
+      this.outcomeUnknown = recovery.outcome === 'unknown';
+    } finally {
+      this.checking = false;
+    }
+  }
+
+  /** The refund document exists: hand its reference to the tender fillers, say so, and close. */
+  private async finishRecorded(out: RefundResult | undefined): Promise<void> {
+    const t = (k: string, p?: Record<string, unknown>): string => erplora().t(CATALOG, k, p);
+    // sales#166 - the document EXISTS now: its reference goes to whoever has to give back what
+    // was not money, and it is waited for. Closing earlier would unmount the filler mid-command
+    // and leave the session spent with nobody at the counter able to give it back.
+    const committed = await this.commitTenderRefunds(out);
+    erplora().notify?.({ type: 'success', message: t('ui.refundDone') });
+    // The money CAME BACK: that is neither undone nor hidden. What failed is named separately,
+    // because a failure nobody sees is the one nobody fixes.
+    if (!committed) erplora().notify?.({ type: 'error', message: t('ui.refundTenderPending') });
+    this.dispatchEvent(new CustomEvent('refunded', { bubbles: true, composed: true, detail: { saleId: this.saleId } }));
   }
 
   /**
@@ -572,6 +667,12 @@ export class ErpSaleRefund extends LitElement {
     </div>`;
   }
 
+  /** sales#456 - the attempt left in doubt WAS recorded: read first, above what is left. */
+  private renderRecoveredOnOpen(): unknown {
+    if (!this.recoveredOnOpen) return nothing;
+    return html`<ok-inline-feedback data-testid="refund-recovered" tone="success" icon="checkmark-circle-outline">${erplora().t(CATALOG, 'ui.refundRecoveredOnOpen')}</ok-inline-feedback>`;
+  }
+
   render(): unknown {
     const t = (k: string, p?: Record<string, unknown>): string => erplora().t(CATALOG, k, p);
     if (this.loading) {
@@ -584,13 +685,14 @@ export class ErpSaleRefund extends LitElement {
       return html`<ok-inline-feedback data-testid="refund-error" tone="danger" icon="alert-circle-outline">${this.error}</ok-inline-feedback>`;
     }
     if (!this.legs.length) {
-      return html`<ok-inline-feedback data-testid="refund-nothing" tone="warning" icon="information-circle-outline">${t('ui.refundNothing')}</ok-inline-feedback>`;
+      return html`${this.renderRecoveredOnOpen()}<ok-inline-feedback data-testid="refund-nothing" tone="warning" icon="information-circle-outline">${t('ui.refundNothing')}</ok-inline-feedback>`;
     }
 
     const total = draftTotal(this.draft);
     const block = this.blockText;
     return html`<div class="refund-body" data-testid="refund-form">
       <h3>${t('ui.refundTitle', { number: this.sale?.sale_number ?? '' })}</h3>
+      ${this.renderRecoveredOnOpen()}
       <p class="hint">${t('ui.refundExplain')}</p>
       <div class="legs">${this.legs.map((l) => this.renderLeg(l))}</div>
       ${this.renderTenderLines()}
@@ -618,8 +720,16 @@ export class ErpSaleRefund extends LitElement {
       <!-- And the external tenders' warnings, next to the button: the line's hole can be
            off-screen when the thumb is already on the refund button (sales#166). -->
       ${this.renderTenderNotices()}
+      ${this.checking
+        ? html`<div class="refund-checking" data-testid="refund-checking" role="status">
+            <ion-spinner name="crescent"></ion-spinner><span>${t('ui.refundChecking')}</span>
+          </div>`
+        : nothing}
       ${this.outcomeUnknown
         ? html`<ok-inline-feedback data-testid="refund-unknown" tone="warning" icon="help-circle-outline">${t('ui.refundUnknown')}</ok-inline-feedback>`
+        : nothing}
+      ${this.notRecorded
+        ? html`<ok-inline-feedback data-testid="refund-not-recorded" tone="info" icon="information-circle-outline">${t('ui.refundNotRecorded')}</ok-inline-feedback>`
         : nothing}
       <!-- 🔴 aria-disabled, JAMÁS el disabled de Ionic: en modo ios es pointer-events:none y en
            una tablet de mostrador el toque muere en silencio (sales#58). El estado ocupado sí es

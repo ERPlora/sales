@@ -29,10 +29,27 @@ fact, and the credit note is its document, issued from `invoice`.
 When the last cent goes back, the sale's status becomes **Devuelta**.
 
 If the hub does not answer when you confirm (sales#451), nobody can tell yet whether the refund was
-recorded, so the screen never says it failed. It stays open with a notice: pressing **Devolver**
-again *on this screen* cannot record the refund twice (the attempt keeps its idempotency key), and
-if you close it, check the sale in the list before refunding again. The hub's own «we can't tell»
-toast is the only toast; the screen adds none.
+recorded, so the screen never says it failed. The hub's own «we can't tell» toast is the only toast;
+the screen adds none. Instead it **finds out by itself** (sales#456): it shows «Checking whether the
+refund was recorded…», keeps the button busy, and asks the hub — twice, a restarting hub is back in
+seconds — whether a refund exists under the attempt's idempotency key
+(`sales.refund_by_idempotency_key`):
+
+- **recorded** → it closes exactly as a refund that answered: «Refund recorded», the reference goes
+  to whoever gives back what was not money, and the sales list reloads;
+- **not recorded** → «The refund was not recorded. You can refund again: it won't be recorded
+  twice.» The retry reuses the same key, so a write that lands late and the retry are one document;
+- **cannot ask** → the doubt stays on screen: pressing **Devolver** again won't record it twice.
+
+The attempt's key **survives closing the screen** on that device (and a reload): it is written down
+before the refund is sent and dropped only once the hub has answered. Opening the refund of that
+sale again asks the hub about that key first — if it was recorded, the screen says so above what
+is still left to refund and a new refund gets a new key; if not, or if the hub still does not
+answer, the new attempt reuses the old key, so repeating a partial refund cannot send the money
+twice. Another till does not know the key: there, check the sale before refunding again.
+
+Closing the refund screen, for whatever reason, reloads the sales list, so the row shows the
+refund if it went through.
 
 ### What was not paid in money goes back too (sales#166 / ADR-0386)
 

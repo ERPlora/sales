@@ -18,6 +18,7 @@
       "sales.payment_methods",
       "sales.pos_settings.get",
       "sales.quick_notes.list",
+      "sales.refund_by_idempotency_key",
       "sales.refund_options",
       "sales.stats",
       "taxes.categories.list",
