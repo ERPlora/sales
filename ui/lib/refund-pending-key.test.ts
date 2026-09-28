@@ -14,6 +14,7 @@ import {
 afterEach(() => {
   forgetPendingRefundKey('sale-1');
   forgetPendingRefundKey('sale-2');
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
@@ -56,9 +57,19 @@ describe('the pending refund key (sales#456)', () => {
   });
 
   it('a device storage that refuses (private mode, sandbox) still keeps it for this page', () => {
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('QuotaExceededError'); });
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('SecurityError'); });
+    // The storage object itself is swapped: spying on `Storage.prototype` does not reach the
+    // environment's `localStorage`, and the test then passed with the storage working.
+    const refusing = {
+      getItem: vi.fn(() => { throw new Error('SecurityError'); }),
+      setItem: vi.fn(() => { throw new Error('QuotaExceededError'); }),
+      removeItem: vi.fn(() => { throw new Error('SecurityError'); }),
+    };
+    vi.stubGlobal('localStorage', refusing);
     expect(() => rememberPendingRefundKey('sale-1', 'refund-sale-1-a')).not.toThrow();
+    expect(refusing.setItem).toHaveBeenCalled();
     expect(pendingRefundKey('sale-1')).toBe('refund-sale-1-a');
+    expect(refusing.getItem).toHaveBeenCalled();
+    expect(() => forgetPendingRefundKey('sale-1')).not.toThrow();
+    expect(pendingRefundKey('sale-1')).toBeUndefined();
   });
 });

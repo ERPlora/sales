@@ -468,8 +468,9 @@ export class ErpSaleRefund extends LitElement {
     if (this.busy) return;
     this.busy = true;
     this.outcomeUnknown = false;
+    // «Not recorded» answered the LAST attempt; this one gets its own answer. «The earlier refund
+    // was recorded» stays: it is still true, and it is why the figures above are what they are.
     this.notRecorded = false;
-    this.recoveredOnOpen = false;
     const saleId = this.saleId ?? '';
     // sales#456 - written down BEFORE the command leaves: if the answer is lost, or the screen is
     // closed, or the tablet dies, the next screen on this sale starts from this key.

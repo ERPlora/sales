@@ -631,6 +631,28 @@ describe('sales#456: after the doubt, the screen finds out by itself', () => {
       expect(keyOf(1)).not.toBe(first);
     });
 
+    it('recorded → the notice stays while another part is refunded and refused', async () => {
+      await doubtThenClose();
+      hub = 'recorded';
+      const el = await mount();
+      el.reason = 'otra parte';
+      sdk.command.mockRejectedValueOnce(Object.assign(new Error('over'), { code: 'sales.refund_exceeds_tender' }));
+      await el.confirm();
+      await el.updateComplete;
+      expect(byTestId(el, 'refund-recovered')?.textContent).toContain(esCatalog.ui.refundRecoveredOnOpen);
+    });
+
+    it('not recorded → the next attempt clears that answer: the hub gives a new one', async () => {
+      await doubtThenClose();
+      hub = 'not-recorded';
+      const el = await mount();
+      el.reason = 'devolución';
+      sdk.command.mockRejectedValueOnce(Object.assign(new Error('over'), { code: 'sales.refund_exceeds_tender' }));
+      await el.confirm();
+      await el.updateComplete;
+      expect(byTestId(el, 'refund-not-recorded')).toBeNull();
+    });
+
     it('recorded and nothing left to refund → the notice is still read', async () => {
       await doubtThenClose();
       hub = 'recorded';
