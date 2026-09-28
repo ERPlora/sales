@@ -4868,6 +4868,7 @@ var en_default = {
     refundConfirm: "Refund {amount}",
     refundDone: "Refund recorded.",
     refundFailed: "The refund could not be recorded.",
+    refundUnknown: "We couldn't confirm whether the refund was recorded. Tapping Refund again on this screen won't record it twice; if you close it, check the sale before refunding again.",
     refundLineTenders: "Lines paid another way",
     refundLineTendersHint: "These lines cost no money, so they are not part of the split above. What goes back to them is decided here.",
     refundTenderPending: "The money is back, but what was paid another way could not be returned. Check it from its own module.",
@@ -5525,6 +5526,7 @@ var es_default = {
     refundConfirm: "Devolver {amount}",
     refundDone: "Devoluci\xF3n registrada.",
     refundFailed: "No se ha podido registrar la devoluci\xF3n.",
+    refundUnknown: "No hemos podido confirmar si la devoluci\xF3n se registr\xF3. Si vuelves a pulsar Devolver en esta pantalla no se duplicar\xE1; si la cierras, compru\xE9balo en la venta antes de volver a devolver.",
     refundLineTenders: "L\xEDneas pagadas de otra forma",
     refundLineTendersHint: "Estas l\xEDneas no costaron dinero, as\xED que no entran en el reparto de arriba. Lo que vuelve a ellas se decide aqu\xED.",
     refundTenderPending: "El dinero ha vuelto, pero lo que se pag\xF3 de otra forma no se ha podido devolver. Rev\xEDsalo desde su m\xF3dulo.",
@@ -16719,6 +16721,10 @@ function refundErrorKey(code) {
   if (!key) return "ui.refundFailed";
   return key === "ui.refundNeedsDestinationShort" ? "ui.refundReasonNotEligible" : key;
 }
+function isUnknownOutcome(e8) {
+  if (e8?.outcomeUnknown === true) return true;
+  return transportErrorKey(e8) !== null;
+}
 function erplora5() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
@@ -16738,6 +16744,7 @@ var ErpSaleRefund = class extends i3 {
     this.loading = false;
     this.error = "";
     this.busy = false;
+    this.outcomeUnknown = false;
     this.covered = [];
     this.tenderFillers = [];
     this.tenderNotices = /* @__PURE__ */ new Map();
@@ -16993,6 +17000,7 @@ var ErpSaleRefund = class extends i3 {
     }
     if (this.busy) return;
     this.busy = true;
+    this.outcomeUnknown = false;
     try {
       const out = await erplora5().command("sales.refund", {
         sale_id: this.saleId,
@@ -17007,6 +17015,10 @@ var ErpSaleRefund = class extends i3 {
       if (!committed) erplora5().notify?.({ type: "error", message: t7("ui.refundTenderPending") });
       this.dispatchEvent(new CustomEvent("refunded", { bubbles: true, composed: true, detail: { saleId: this.saleId } }));
     } catch (e8) {
+      if (isUnknownOutcome(e8)) {
+        this.outcomeUnknown = true;
+        return;
+      }
       erplora5().notify?.({ type: "error", message: t7(refundErrorKey(errorCode(e8))) });
     } finally {
       this.busy = false;
@@ -17172,6 +17184,7 @@ var ErpSaleRefund = class extends i3 {
       <!-- And the external tenders' warnings, next to the button: the line's hole can be
            off-screen when the thumb is already on the refund button (sales#166). -->
       ${this.renderTenderNotices()}
+      ${this.outcomeUnknown ? b2`<ok-inline-feedback data-testid="refund-unknown" tone="warning" icon="help-circle-outline">${t7("ui.refundUnknown")}</ok-inline-feedback>` : A}
       <!-- 🔴 aria-disabled, JAMÁS el disabled de Ionic: en modo ios es pointer-events:none y en
            una tablet de mostrador el toque muere en silencio (sales#58). El estado ocupado sí es
            disabled de verdad: ahí no hay nada que contestar y un segundo toque devolvería dos
@@ -17218,6 +17231,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpSaleRefund.prototype, "busy", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "outcomeUnknown", 2);
 __decorateClass([
   r5()
 ], ErpSaleRefund.prototype, "covered", 2);

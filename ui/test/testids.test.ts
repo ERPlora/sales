@@ -115,6 +115,7 @@ const COVERED: Record<string, { prefix: string; contract: string[]; tables?: str
       'refund-propose-all',
       'refund-reason',
       'refund-total',
+      'refund-unknown',
     ],
   },
   // The till itself (`/m/sales/pos`): the screen a cashier spends the day on, and the one the QA
