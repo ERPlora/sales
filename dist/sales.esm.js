@@ -15822,6 +15822,7 @@ var ErpPosDepartments = class extends i3 {
     this.newSortOrder = "";
     this.saving = false;
     this.formError = "";
+    this.pageError = "";
     this.editingId = null;
     this.deleteTarget = null;
     this.taxChoices = [];
@@ -15925,6 +15926,7 @@ var ErpPosDepartments = class extends i3 {
     }
     this.saving = true;
     this.formError = "";
+    this.pageError = "";
     try {
       const fields = { name, tax_category_key: taxCategoryKey, sort_order: Number(this.newSortOrder) || 0 };
       if (this.editingId) {
@@ -15945,12 +15947,13 @@ var ErpPosDepartments = class extends i3 {
     const target = this.deleteTarget;
     if (!target || !can("sales.manage_settings")) return;
     this.saving = true;
+    this.pageError = "";
     try {
       await erplora3().command("sales.departments.delete", { department_id: target.id });
       this.deleteTarget = null;
       await this.ctrl.load();
     } catch (e8) {
-      this.formError = domainErrorText(CATALOG3, erplora3().locale, e8) || erplora3().t(CATALOG3, "ui.departmentDeleteFailed");
+      this.pageError = domainErrorText(CATALOG3, erplora3().locale, e8) || erplora3().t(CATALOG3, "ui.departmentDeleteFailed");
       this.deleteTarget = null;
     } finally {
       this.saving = false;
@@ -15983,13 +15986,25 @@ var ErpPosDepartments = class extends i3 {
       </ion-content>
     </ion-modal>`;
   }
+  /** pm#513: the refusal appears above the button that was pressed — on a phone that can leave it
+   *  off the sheet. Bring it into view when it appears, not again on every keystroke. */
+  updated(changed) {
+    super.updated(changed);
+    if (changed.has("formError") && this.formError) void this.revealRefusal();
+  }
+  /** ok-inline-feedback lays itself out in its own update: scrolled to before it, the box is empty. */
+  async revealRefusal() {
+    const banner = this.renderRoot.querySelector('[data-testid="pos-departments-form-error"]');
+    await banner?.updateComplete;
+    banner?.scrollIntoView?.({ block: "center" });
+  }
   render() {
     const t7 = (k2) => erplora3().t(CATALOG3, k2);
     const editable = can("sales.manage_settings");
     const noTaxCategories = this.taxChoices.length === 0;
     return b2`<div class="page">
       <p class="intro">${t7("ui.departmentsIntro")}</p>
-      ${this.formError ? b2`<ok-inline-feedback data-testid="pos-departments-form-error" tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>` : A}
+      ${this.pageError ? b2`<ok-inline-feedback data-testid="pos-departments-error" tone="danger" icon="alert-circle-outline">${this.pageError}</ok-inline-feedback>` : A}
       ${this.ctrl?.error ? b2`<ok-inline-feedback data-testid="pos-departments-load-error" tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : A}
       <ok-data-table
         data-testid="pos-departments-table"
@@ -16049,6 +16064,9 @@ var ErpPosDepartments = class extends i3 {
             @ionInput=${(e8) => {
       this.newSortOrder = e8.target.value;
     }}></ion-input>
+          <!-- pm#513: the refusal travels WITH the form — under 834 px the panel is a full-screen
+               sheet and a notice on the page underneath it is never seen. -->
+          ${this.formError ? b2`<ok-inline-feedback data-testid="pos-departments-form-error" tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>` : A}
           <ion-button type="submit" data-testid="pos-departments-submit" ?disabled=${this.saving || !this.newName.trim() || noTaxCategories}>
             ${this.saving ? t7("ui.departmentSaving") : this.editingId ? t7("ui.departmentSave") : t7("ui.departmentAdd")}
           </ion-button>
@@ -16073,6 +16091,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosDepartments.prototype, "formError", 2);
+__decorateClass([
+  r5()
+], ErpPosDepartments.prototype, "pageError", 2);
 __decorateClass([
   r5()
 ], ErpPosDepartments.prototype, "editingId", 2);
@@ -16102,6 +16123,7 @@ var ErpPosQuickNotes = class extends i3 {
     this.newSortOrder = "";
     this.saving = false;
     this.formError = "";
+    this.pageError = "";
     this.editingId = null;
     this.deleteTarget = null;
     this.onLocaleChange = () => this.requestUpdate();
@@ -16180,6 +16202,7 @@ var ErpPosQuickNotes = class extends i3 {
     if (!text) return;
     this.saving = true;
     this.formError = "";
+    this.pageError = "";
     try {
       const fields = { text, sort_order: Number(this.newSortOrder) || 0 };
       if (this.editingId) {
@@ -16200,12 +16223,13 @@ var ErpPosQuickNotes = class extends i3 {
     const target = this.deleteTarget;
     if (!target || !can2("sales.manage_settings")) return;
     this.saving = true;
+    this.pageError = "";
     try {
       await erplora4().command("sales.quick_notes.delete", { quick_note_id: target.id });
       this.deleteTarget = null;
       await this.ctrl.load();
     } catch (e8) {
-      this.formError = domainErrorText(CATALOG4, erplora4().locale, e8) || erplora4().t(CATALOG4, "ui.quickNoteDeleteFailed");
+      this.pageError = domainErrorText(CATALOG4, erplora4().locale, e8) || erplora4().t(CATALOG4, "ui.quickNoteDeleteFailed");
       this.deleteTarget = null;
     } finally {
       this.saving = false;
@@ -16238,12 +16262,24 @@ var ErpPosQuickNotes = class extends i3 {
       </ion-content>
     </ion-modal>`;
   }
+  /** pm#513: the refusal appears above the button that was pressed — on a phone that can leave it
+   *  off the sheet. Bring it into view when it appears, not again on every keystroke. */
+  updated(changed) {
+    super.updated(changed);
+    if (changed.has("formError") && this.formError) void this.revealRefusal();
+  }
+  /** ok-inline-feedback lays itself out in its own update: scrolled to before it, the box is empty. */
+  async revealRefusal() {
+    const banner = this.renderRoot.querySelector('[data-testid="pos-quick-notes-form-error"]');
+    await banner?.updateComplete;
+    banner?.scrollIntoView?.({ block: "center" });
+  }
   render() {
     const t7 = (k2) => erplora4().t(CATALOG4, k2);
     const editable = can2("sales.manage_settings");
     return b2`<div class="page">
       <p class="intro">${t7("ui.quickNotesIntro")}</p>
-      ${this.formError ? b2`<ok-inline-feedback data-testid="pos-quick-notes-form-error" tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>` : A}
+      ${this.pageError ? b2`<ok-inline-feedback data-testid="pos-quick-notes-error" tone="danger" icon="alert-circle-outline">${this.pageError}</ok-inline-feedback>` : A}
       ${this.ctrl?.error ? b2`<ok-inline-feedback data-testid="pos-quick-notes-load-error" tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : A}
       <ok-data-table
         data-testid="pos-quick-notes-table"
@@ -16292,6 +16328,9 @@ var ErpPosQuickNotes = class extends i3 {
             @ionInput=${(e8) => {
       this.newSortOrder = e8.target.value;
     }}></ion-input>
+          <!-- pm#513: the refusal travels WITH the form — under 834 px the panel is a full-screen
+               sheet and a notice on the page underneath it is never seen. -->
+          ${this.formError ? b2`<ok-inline-feedback data-testid="pos-quick-notes-form-error" tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>` : A}
           <ion-button type="submit" data-testid="pos-quick-notes-submit" ?disabled=${this.saving || !this.newText.trim()}>
             ${this.saving ? t7("ui.quickNoteSaving") : this.editingId ? t7("ui.quickNoteSave") : t7("ui.quickNoteAdd")}
           </ion-button>
@@ -16313,6 +16352,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosQuickNotes.prototype, "formError", 2);
+__decorateClass([
+  r5()
+], ErpPosQuickNotes.prototype, "pageError", 2);
 __decorateClass([
   r5()
 ], ErpPosQuickNotes.prototype, "editingId", 2);
