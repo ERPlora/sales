@@ -311,6 +311,18 @@ describe('3 · the park prompt (a bar check, a name typed by the cashier)', () =
     expect(fillerEvents, 'not parked').toEqual([]);
   });
 
+  it('on a wide screen (no drawer) the refusal is not ALSO on the page behind the prompt', async () => {
+    const el = await barCheck();
+    $(el, '[data-testid="pos-cart-close"]')!.click();
+    await settle(el);
+    expect(el.cartOpen).toBe(false);
+    refused.set('sales.order.set_label', 'sales.refused_here');
+    await typeAndConfirm(el, 'Ana');
+
+    expect($(el, '[data-testid="pos-park-error"]')?.textContent?.trim()).toBe('ui.parkCheckFailed');
+    expect(shownNotice(el), 'one place at a time').toEqual([]);
+  });
+
   it('a second tap while the name is being written does not park twice', async () => {
     const el = await barCheck();
     let release!: () => void;

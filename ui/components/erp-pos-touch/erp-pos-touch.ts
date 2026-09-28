@@ -2725,7 +2725,6 @@ export class ErpPosTouch extends LitElement {
       }
     }
     this.error = '';
-    this.orderLabel = nombre;
     await this.park();
     erplora().notify?.({ type: 'success', message: t('ui.parkedToast', { name: nombre }) });
     return true;
