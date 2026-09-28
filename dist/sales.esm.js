@@ -4978,7 +4978,8 @@ var en_default = {
     claimCountry: "Country",
     claimIdType: "Your number is",
     claimIdTypeTax: "A tax or VAT number",
-    lineChangeFailed: "That change to the line could not be saved. The line is back as it was."
+    lineChangeFailed: "That change to the line could not be saved. The line is back as it was.",
+    deleteCheckFailed: "That open check could not be deleted. It is still in the list."
   },
   commands: {
     "sales.complete_sale": {
@@ -5626,7 +5627,8 @@ var es_default = {
     claimCountry: "Pa\xEDs",
     claimIdType: "Tu n\xFAmero es",
     claimIdTypeTax: "Un NIF o n\xFAmero de IVA",
-    lineChangeFailed: "No se ha podido guardar ese cambio de la l\xEDnea. La l\xEDnea vuelve a estar como estaba."
+    lineChangeFailed: "No se ha podido guardar ese cambio de la l\xEDnea. La l\xEDnea vuelve a estar como estaba.",
+    deleteCheckFailed: "No se ha podido eliminar esa cuenta abierta. Sigue en la lista."
   },
   widgets: {
     "sales.today": {
@@ -10276,7 +10278,12 @@ var ErpPosTouch = class extends i3 {
       this.armedTimer = void 0;
     }
     this.armedDelete = void 0;
-    await erplora2().command("sales.order.void", { order_id: oc.id }).catch(() => void 0);
+    this.error = "";
+    try {
+      await erplora2().command("sales.order.void", { order_id: oc.id });
+    } catch (e8) {
+      this.error = domainErrorText(CATALOG2, erplora2().locale, e8) || t5("ui.deleteCheckFailed");
+    }
     this.parked = await listOpenChecks(erplora2(), this.orderId);
   }
   /** Recuperar una cuenta abierta = CAMBIAR de cuenta, igual que tocar otra mesa. Qué pasa con lo

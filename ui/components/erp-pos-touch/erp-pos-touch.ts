@@ -2715,7 +2715,14 @@ export class ErpPosTouch extends LitElement {
     }
     if (this.armedTimer) { clearTimeout(this.armedTimer); this.armedTimer = undefined; }
     this.armedDelete = undefined;
-    await erplora().command('sales.order.void', { order_id: oc.id }).catch(() => undefined);
+    this.error = '';
+    try {
+      await erplora().command('sales.order.void', { order_id: oc.id });
+    } catch (e) {
+      // sales#438: two taps and nothing happening is not an answer — the check stays in the list
+      // (reloaded below) and the cashier is told why.
+      this.error = domainErrorText(CATALOG, erplora().locale, e) || t('ui.deleteCheckFailed');
+    }
     this.parked = await listOpenChecks(erplora(), this.orderId);
   }
 

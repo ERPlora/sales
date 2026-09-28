@@ -44,11 +44,14 @@ class FakeErploraError extends Error {
 let refused = new Set<string>();
 let commands: { name: string; payload: Record<string, unknown> }[] = [];
 let orderLines: Record<string, unknown>[] = [];
+/** Another open check waiting in the list, until somebody really deletes it. */
+let openOrders: Record<string, unknown>[] = [];
 
 function installSdk() {
   refused = new Set();
   commands = [];
   orderLines = [];
+  openOrders = [{ id: 'ord-9', status: 'open', label: 'Mesa 9', provisional_total: 300, created_at: '2026-09-28T08:00:00Z' }];
   installPosDouble({
     paymentMethods: METHODS,
     byIdempotencyKey: [{ id: 'sale-1' }],
@@ -56,6 +59,7 @@ function installSdk() {
     rules: RULES,
     users: USERS,
     orderLines: () => orderLines,
+    orders: () => openOrders,
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
       if (refused.has(name)) throw new FakeErploraError('sales.refused_here', `REFUSED ${name}`);
@@ -67,6 +71,7 @@ function installSdk() {
         return { ok: true, new_ids: ['ord-1', 'line-1'] };
       }
       if (name === 'sales.order.add_line') return { ok: true, new_ids: ['line-2'] };
+      if (name === 'sales.order.void') openOrders = openOrders.filter((o) => o.id !== payload.order_id);
       return { ok: true, new_ids: ['sale-1'] };
     },
   });
@@ -90,6 +95,7 @@ interface Pos extends HTMLElement {
   moveLineStaff(lineId: string, staffId?: string): Promise<void>;
   toggleGift(id: string): Promise<void>;
   retrieve(c: { id: string; label?: string }): Promise<void>;
+  parked: { id: string }[];
   setQtyAbs(id: string, v: number): Promise<void>;
 }
 
@@ -273,6 +279,42 @@ describe('2b · the notice belongs to the check it was said on', () => {
   });
 });
 
+describe('2c · deleting an open check from the list of checks', () => {
+  /** The list of open checks, and the two taps that delete one (arm, then confirm). */
+  async function deleteFromList(el: Pos, id: string): Promise<void> {
+    $(el, '[data-testid="pos-parked-toggle"]')!.click();
+    await settle(el);
+    $(el, `[data-testid="pos-parked-${id}-delete"]`)!.click();
+    await settle(el);
+    $(el, `[data-testid="pos-parked-${id}-delete"]`)!.click();
+    await settle(el);
+  }
+
+  it('a refused delete is told in the cart, and the check is still in the list', async () => {
+    const el = await openCartWithLine();
+    refused.add('sales.order.void');
+    await deleteFromList(el, 'ord-9');
+
+    expect(commands.some((c) => c.name === 'sales.order.void'), 'the delete was really asked for').toBe(true);
+    expect(el.parked.map((c) => c.id), 'the hub kept it: the list says so').toContain('ord-9');
+    expect(cartNotice(el)?.textContent?.trim(), 'two taps and nothing would happen: say why').toBe('ui.deleteCheckFailed');
+  });
+
+  it('a delete that goes through clears a previous refusal', async () => {
+    const el = await openCartWithLine();
+    refused.add('sales.order.void');
+    await deleteFromList(el, 'ord-9');
+    refused.clear();
+    $(el, '[data-testid="pos-parked-ord-9-delete"]')!.click();
+    await settle(el);
+    $(el, '[data-testid="pos-parked-ord-9-delete"]')!.click();
+    await settle(el);
+
+    expect(el.parked.map((c) => c.id)).not.toContain('ord-9');
+    expect(el.error).toBe('');
+  });
+});
+
 describe('3 · a refused gift, quantity or note puts the line BACK and says so', () => {
   it('gift: the line is not left «on the house» on screen when the order kept it at full price', async () => {
     const el = await openCartWithLine();
@@ -343,5 +385,8 @@ describe('3 · a refused gift, quantity or note puts the line BACK and says so',
     expect(en.lineChangeFailed, 'en').toBeTruthy();
     expect(es.lineChangeFailed, 'es').toBeTruthy();
     expect(es.lineChangeFailed, 'es is a translation, not a copy').not.toBe(en.lineChangeFailed);
+    expect(en.deleteCheckFailed, 'en').toBeTruthy();
+    expect(es.deleteCheckFailed, 'es').toBeTruthy();
+    expect(es.deleteCheckFailed, 'es is a translation, not a copy').not.toBe(en.deleteCheckFailed);
   });
 });
