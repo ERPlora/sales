@@ -294,18 +294,21 @@ describe('Charge fits a low drawer whatever the amount (sales#423)', () => {
 // spends ~105 px on the header (toolbar, then the name and chips) and ~67 px on the foot, so the
 // first line of the check sat under the foot: the cashier did not see what was being charged
 // without scrolling. Square and Toast leave ONE bar on a phone: the name of the check and its
-// icons. So a VERY low drawer (no taller than 13rem) lays the header in one row — the name first,
+// icons. So a VERY low drawer (no taller than 13rem, 14.5rem since sales#433) lays the header in one row — the name first,
 // the icons after it, the close button icon-only — trims the foot to Charge's height and the air
 // above the first line. Measured on hub:stable in ios and md (the PR): the name of the first line
 // shows whole at 667×375 and 568×320, with and without the strip.
-const VERY_LOW = /pos-cart\s*\(\s*max-height:\s*13rem\s*\)\s*$/;
+// sales#433 raised it from 13rem: a phone of 360 px on its side (640/740/800×360, the usual Android)
+// leaves a 208-217 px drawer, and with the kitchen tabs the two-row header of the low block (113 px)
+// and its foot (67 px) need 224 px before the name of the first line shows.
+const VERY_LOW = /pos-cart\s*\(\s*max-height:\s*14\.5rem\s*\)\s*$/;
 
 describe('a very low drawer shows the first line of the check without scrolling (sales#432)', () => {
   const veryLow = () => blocks(posCss(), VERY_LOW).join('\n');
 
   it('declares the very-low block once, AFTER the low ones, so it wins where they tie', () => {
     const css = posCss();
-    expect(blocks(css, VERY_LOW), '@container pos-cart (max-height: 13rem)').toHaveLength(1);
+    expect(blocks(css, VERY_LOW), '@container pos-cart (max-height: 14.5rem)').toHaveLength(1);
     const at = (re: RegExp) => [...css.matchAll(/@container\s*([^{]*)\{/g)].findIndex((m) => re.test(m[1]));
     const order = [...css.matchAll(/@container\s*([^{]*)\{/g)].map((m) => m[1].trim());
     expect(at(VERY_LOW), `order: ${order.join(' | ')}`).toBeGreaterThan(at(LOW));

@@ -1352,8 +1352,10 @@ export class ErpPosTouch extends LitElement {
        the first line of the check sat under the foot. As on Square and Toast, the header is ONE bar,
        the name of the check first and its icons after it (the kitchen tabs as icons, sales#433),
        the close button is icon-only (its name stays in aria-label), and the foot is as tall as
-       Charge. Written after the low blocks so it wins where they tie. */
-    @container pos-cart (max-height: 13rem) {
+       Charge. Written after the low blocks so it wins where they tie. sales#433 raised it from
+       13rem: a 360px phone on its side (640/740/800x360) leaves 208-217px, and with the kitchen
+       tabs the two rows of the low block need 224px before the first line shows. */
+    @container pos-cart (max-height: 14.5rem) {
       .cart ion-header { display:flex; flex-wrap:wrap; align-items:center; }
       .cart ion-toolbar { flex:none; width:auto; --padding-top:0; --padding-bottom:0; }
       .order-toolbar { padding-top:0; padding-bottom:0; }
