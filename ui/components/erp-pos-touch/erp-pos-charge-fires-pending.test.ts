@@ -46,6 +46,11 @@ function install(opts: { kitchen: boolean }) {
     return { ok: true };
   };
   const double = installPosDouble({
+    // The words the cashier READS (es), with their params: a key alone cannot show the count.
+    t: (_c: Record<string, unknown>, k: string, params?: Record<string, unknown>) => {
+      const raw = (es as { ui: Record<string, string> }).ui[k.replace(/^ui\./, '')] ?? k;
+      return Object.entries(params ?? {}).reduce((acc, [pk, pv]) => acc.split(`{${pk}}`).join(String(pv)), raw);
+    },
     settings: null,
     products: PRODUCTS,
     rules: RULES,
@@ -129,7 +134,7 @@ describe('charging with an unsent kitchen order (sales#439)', () => {
     await openCharge(el);
 
     expect(notice(el), 'the charge sheet tells the cashier the order goes to the kitchen').toBeTruthy();
-    expect(notice(el)!.textContent!.trim()).toBe('ui.chargeFiresPendingOne');
+    expect(notice(el)!.textContent!.trim()).toBe('El producto pendiente de la comanda se enviará a cocina al cobrar.');
   });
 
   it('the sheet says it before the tap: several items, with the count', async () => {
@@ -139,7 +144,7 @@ describe('charging with an unsent kitchen order (sales#439)', () => {
     await add(el, 'Tostada');
     await openCharge(el);
 
-    expect(notice(el)!.textContent!.trim()).toBe('ui.chargeFiresPending');
+    expect(notice(el)!.textContent!.trim()).toBe('Los 2 productos pendientes de la comanda se enviarán a cocina al cobrar.');
   });
 
   it('the words: «se enviará a cocina al cobrar», in es and en, singular and plural', () => {
@@ -166,8 +171,9 @@ describe('charging with an unsent kitchen order (sales#439)', () => {
     expect(names(), 'no sale while the kitchen did not get the order').not.toContain('sales.complete_sale');
     expect(el.paying, 'the sheet stays open to try again').toBe(true);
     expect(el.busy, 'and the button is alive again').toBe(false);
-    expect(el.error).toBe('ui.chargeFireFailed');
-    expect(el.shadowRoot.querySelector('.sheet-foot .pay-err')?.textContent).toContain('ui.chargeFireFailed');
+    const why = 'No se ha podido enviar la comanda a cocina, así que no se ha cobrado. Vuelve a intentarlo.';
+    expect(el.error).toBe(why);
+    expect(el.shadowRoot.querySelector('.sheet-foot .pay-err')?.textContent?.trim()).toBe(why);
   });
 
   it('«nothing to fire» (another till already sent it) is not a failure: the charge goes on', async () => {
@@ -206,6 +212,33 @@ describe('charging with an unsent kitchen order (sales#439)', () => {
 
     expect(names().filter((n) => n === 'sales.order.fire'), 'one fire, not two').toHaveLength(1);
     expect(names()).toContain('sales.complete_sale');
+  });
+
+  it('a round added AFTER an earlier fire is fired again at Charge (the earlier fire is over)', async () => {
+    install({ kitchen: true });
+    const el = await mount();
+    await add(el, 'Café');
+    el.dispatchEvent(new CustomEvent('erp:order-fire', { detail: {}, bubbles: true, composed: true }));
+    for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 0));
+    await add(el, 'Tostada');
+    commands.length = 0;
+    await openCharge(el);
+    await charge(el);
+
+    const fire = commands.find((c) => c.name === 'sales.order.fire');
+    expect(fire, 'the dessert round reaches the kitchen too').toBeTruthy();
+    expect((fire!.payload.items as { order_item_id: string }[]).map((i) => i.order_item_id)).toEqual(['l2']);
+    expect(names().indexOf('sales.order.fire')).toBeLessThan(names().indexOf('sales.complete_sale'));
+  });
+
+  it('the kitchen button on an EMPTY check opens no order and fires nothing', async () => {
+    install({ kitchen: true });
+    const el = await mount();
+    el.dispatchEvent(new CustomEvent('erp:order-fire', { detail: {}, bubbles: true, composed: true }));
+    for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 0));
+
+    expect(names()).not.toContain('sales.order.open');
+    expect(names()).not.toContain('sales.order.fire');
   });
 
   it('with nothing pending there is no fire and no notice', async () => {
