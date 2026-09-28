@@ -327,14 +327,18 @@ describe('confirmar', () => {
 
   it('un fallo que no es de negocio NO se disfraza de uno que sí', async () => {
     // Un corte de red no es «te has pasado del tope». Traducir todo al mensaje más concreto que
-    // haya a mano manda al operador a arreglar un problema que no tiene.
+    // haya a mano manda al operador a arreglar un problema que no tiene. (Until sales#451 this case
+    // asserted «could not be recorded»: a cut network is NOT a refusal either — the request may have
+    // landed — so it is the unknown-outcome notice now, never a business reason.)
     const el = await mount();
     el.reason = 'devolución';
     sdk.command.mockRejectedValueOnce(new Error('NetworkError: failed to fetch'));
     await el.confirm();
-    expect(sdk.notify).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'error', message: esCatalog.ui.refundFailed }),
+    await el.updateComplete;
+    expect(sdk.notify).not.toHaveBeenCalledWith(
+      expect.objectContaining({ message: esCatalog.ui.refundExceedsTender }),
     );
+    expect(el.shadowRoot?.querySelector('[data-testid="refund-unknown"]')).toBeTruthy();
   });
 
   it('un rechazo del servidor se traduce por CÓDIGO, no por la frase', async () => {
@@ -351,6 +355,108 @@ describe('confirmar', () => {
   });
 });
 
+// sales#451 (out of hub#2342) — the hub did not answer the refund. The request may have committed
+// before the answer was lost, so «could not be recorded» is a lie that sends the cashier to hand the
+// money back by hand or to refund again from scratch. The shell's SDK already toasts its generic
+// «we can't tell» verdict (hub#906): the screen adds no contradicting toast, and says on itself what
+// is true for THIS refund — a retry from here reuses the key and cannot record it twice.
+describe('sales#451: the hub never answered the refund (unknown outcome)', () => {
+  /** What the shell's SDK throws since hub#906 (`UnknownOutcomeError`, read by field). */
+  const unknownOutcome = (): Error =>
+    Object.assign(new Error('No sabemos si la operación se completó. Comprueba el resultado antes de reintentar.'), {
+      code: 'server_unavailable',
+      outcomeUnknown: true,
+    });
+  const panel = (el: Refund): HTMLElement | null =>
+    el.shadowRoot?.querySelector('[data-testid="refund-unknown"]') as HTMLElement | null;
+
+  async function failOnce(thrown: unknown): Promise<Refund> {
+    const el = await mount();
+    el.reason = 'devolución';
+    sdk.command.mockRejectedValueOnce(thrown);
+    await el.confirm();
+    await el.updateComplete;
+    return el;
+  }
+
+  it('says it cannot tell, and never «could not be recorded»', async () => {
+    const el = await failOnce(unknownOutcome());
+    expect(sdk.notify).not.toHaveBeenCalledWith(expect.objectContaining({ message: esCatalog.ui.refundFailed }));
+    expect(panel(el)?.textContent).toContain(esCatalog.ui.refundUnknown);
+  });
+
+  it('adds no toast of its own: the shell already raised the one verdict', async () => {
+    await failOnce(unknownOutcome());
+    expect(sdk.notify).not.toHaveBeenCalled();
+  });
+
+  it('keeps the form on screen, so the retry happens HERE with the same key', async () => {
+    const el = await failOnce(unknownOutcome());
+    expect(confirmButton(el)).toBeTruthy();
+    await el.confirm();
+    const first = (sdk.command.mock.calls[0][1] as Record<string, unknown>).idempotency_key;
+    const second = (sdk.command.mock.calls[1][1] as Record<string, unknown>).idempotency_key;
+    expect(first).toBeTruthy();
+    expect(second).toBe(first);
+  });
+
+  it('a retry that goes through clears the doubt and says it was recorded', async () => {
+    const el = await failOnce(unknownOutcome());
+    await el.confirm();
+    await el.updateComplete;
+    expect(panel(el)).toBeNull();
+    expect(sdk.notify).toHaveBeenCalledWith(expect.objectContaining({ type: 'success', message: esCatalog.ui.refundDone }));
+  });
+
+  it('a retry the hub refuses clears the doubt: the refusal is the known answer', async () => {
+    const el = await failOnce(unknownOutcome());
+    sdk.command.mockRejectedValueOnce(
+      Object.assign(new Error('over'), { code: 'sales.refund_exceeds_tender' }),
+    );
+    await el.confirm();
+    await el.updateComplete;
+    expect(panel(el)).toBeNull();
+    expect(sdk.notify).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', message: esCatalog.ui.refundExceedsTender }));
+  });
+
+  it('an older shell (typed server_unavailable, no outcomeUnknown field) gets the same notice', async () => {
+    const el = await failOnce(Object.assign(new Error('request to /api/command failed'), { code: 'server_unavailable' }));
+    expect(panel(el)?.textContent).toContain(esCatalog.ui.refundUnknown);
+    expect(sdk.notify).not.toHaveBeenCalledWith(expect.objectContaining({ message: esCatalog.ui.refundFailed }));
+  });
+
+  it('the verdict is read from the outcomeUnknown FIELD, whatever code or sentence rides with it', async () => {
+    // hub#906: bundles may carry their own copy of the SDK class, so the field is the contract.
+    const el = await failOnce(Object.assign(new Error('the hub did not answer'), { outcomeUnknown: true }));
+    expect(panel(el)?.textContent).toContain(esCatalog.ui.refundUnknown);
+    expect(sdk.notify).not.toHaveBeenCalled();
+  });
+
+  it('the proxy 502 page (HTML where JSON was due) is an unknown outcome too', async () => {
+    const el = await failOnce(new SyntaxError('Unexpected token \'<\', "<!DOCTYPE "... is not valid JSON'));
+    expect(panel(el)?.textContent).toContain(esCatalog.ui.refundUnknown);
+  });
+
+  it('an error that is neither the hub refusing nor the transport keeps «could not be recorded»', async () => {
+    const el = await failOnce(new Error('boom'));
+    expect(panel(el)).toBeNull();
+    expect(sdk.notify).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', message: esCatalog.ui.refundFailed }));
+  });
+
+  it('the words: doubt + retry here is safe + check the sale if closed, in es and en (never «could not»)', () => {
+    const es = esCatalog.ui.refundUnknown;
+    const en = enCatalog.ui.refundUnknown;
+    expect(es).toMatch(/no hemos podido confirmar si la devolución se registró/i);
+    expect(es).toMatch(/no se duplicará/i);
+    expect(es).toMatch(/compruébalo en la venta antes de volver a devolver/i);
+    expect(es).not.toMatch(/no se ha podido registrar/i);
+    expect(en).toMatch(/couldn't confirm whether the refund was recorded/i);
+    expect(en).toMatch(/won't record it twice/i);
+    expect(en).toMatch(/check the sale before refunding again/i);
+    expect(en).not.toMatch(/could not be recorded/i);
+  });
+});
+
 describe('la cadena i18n está COMPLETA (ADR-0055/0199)', () => {
   it('cada clave nueva existe en inglés Y en español', () => {
     const keys = [
@@ -360,7 +466,7 @@ describe('la cadena i18n está COMPLETA (ADR-0055/0199)', () => {
       'refundExceedsTender', 'refundOverCap', 'refundNothingToReturn', 'refundDestination',
       'refundNeedsDestination', 'refundReasonAlreadyRefunded', 'refundReasonMethodUnavailable',
       'refundReasonNotEligible', 'refundProposeAll', 'refundTotalLabel', 'refundLegAmount', 'actionRefund',
-      'statusRefunded', 'refundSaleNotFound', 'refundRequiresCompleted', 'refundMethodUnavailable',
+      'statusRefunded', 'refundSaleNotFound', 'refundRequiresCompleted', 'refundMethodUnavailable', 'refundUnknown',
     ];
     for (const k of keys) {
       expect((enCatalog.ui as Record<string, string>)[k], `en.${k}`).toBeTruthy();

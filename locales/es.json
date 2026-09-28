@@ -469,6 +469,7 @@
     "refundConfirm": "Devolver {amount}",
     "refundDone": "Devolución registrada.",
     "refundFailed": "No se ha podido registrar la devolución.",
+    "refundUnknown": "No hemos podido confirmar si la devolución se registró. Si vuelves a pulsar Devolver en esta pantalla no se duplicará; si la cierras, compruébalo en la venta antes de volver a devolver.",
     "refundLineTenders": "Líneas pagadas de otra forma",
     "refundLineTendersHint": "Estas líneas no costaron dinero, así que no entran en el reparto de arriba. Lo que vuelve a ellas se decide aquí.",
     "refundTenderPending": "El dinero ha vuelto, pero lo que se pagó de otra forma no se ha podido devolver. Revísalo desde su módulo.",
