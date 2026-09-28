@@ -4758,7 +4758,8 @@ var en_default = {
     serverUnavailable: "The server isn't responding (it may be restarting). Try again in a few seconds and, if it keeps happening, call the manager.",
     checkoutUnknown: "We couldn't confirm whether this charge went through. Check it in Sales before charging again.",
     checkSales: "Check in Sales",
-    payingPart: "Paying {n} of {total}",
+    payingPart: "Paying {n} lines of {total}",
+    payingPartOne: "Paying 1 line of {total}",
     qtyOffGrid: "Quantity doesn't fit the product's step",
     scaleUnitMismatch: "The scale weighs in {scale} and this line is priced in {line}",
     payExact: "Exact amount",
@@ -5415,7 +5416,8 @@ var es_default = {
     serverUnavailable: "El servidor no responde (puede estar reinici\xE1ndose). Int\xE9ntalo de nuevo en unos segundos y, si persiste, avisa al encargado.",
     checkoutUnknown: "No hemos podido confirmar si el cobro se complet\xF3. Compru\xE9balo en Ventas antes de volver a cobrar.",
     checkSales: "Comprobar en Ventas",
-    payingPart: "Cobrando {n} l\xEDnea(s) de {total}",
+    payingPart: "Cobrando {n} l\xEDneas de {total}",
+    payingPartOne: "Cobrando 1 l\xEDnea de {total}",
     payExact: "Importe exacto",
     payCardHint: "Cobra {amount} en el dat\xE1fono y confirma.",
     chargeWithCard: "Cobrar {amount} con tarjeta",
@@ -13060,7 +13062,7 @@ var ErpPosTouch = class extends i3 {
                    scroll). Antes vivía en letra pequeña del título y el ojo no lo encontraba. -->
               <div class="sheet-top">
                 <div class="pay-total">${this.money(this.payable)}</div>
-                ${this.splitSel.size ? b2`<div class="pay-split">${t5("ui.payingPart", { n: String(this.splitSel.size), total: this.money(this.total) })}</div>` : A}
+                ${this.splitSel.size ? b2`<div class="pay-split">${this.splitSel.size === 1 ? t5("ui.payingPartOne", { total: this.money(this.total) }) : t5("ui.payingPart", { n: String(this.splitSel.size), total: this.money(this.total) })}</div>` : A}
                 <!-- sales#159 — EL RESTANTE. Vive en la cabecera del sheet, FUERA del scroll: es el
                      número que el cajero mira en cada pata y esconderlo bajo el teclado es lo que
                      convierte un reparto en un «¿cuánto falta ya?» a mano. -->
