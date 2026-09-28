@@ -118,7 +118,9 @@ describe('a phone on its side gets the phone till (sales#423)', () => {
     expect(want.columns.trim().split(/\s+/), 'a single track').toHaveLength(1);
   });
 
-  it('844×390: the drawer is as wide as on a phone held upright', () => {
+  // sales#433: a low screen then widens it (see «a low screen … wide enough for the one bar»);
+  // the 821px+ block still declares the phone width, not the tablet column's.
+  it('844×390: the drawer is declared as wide as on a phone held upright', () => {
     // happy-dom does not compute min(): the declared width is compared, block against block.
     const widthIn = (prelude: RegExp) => {
       const all = [...rules(blocks(posCss(), prelude).join('\n'), '.cart').matchAll(/(?:^|[;{\s])width:\s*([^;}]+)/g)];
@@ -475,19 +477,21 @@ describe('with Kitchen, a phone drawer shows the first line of the check (sales#
     expect(order.findIndex((p) => KITCHEN_ROW.test(p)), order.join(' | ')).toBeLessThan(order.findIndex((p) => LOW.test(p)));
   });
 
-  it('a drawer up to 28rem puts the tabs on the row of the check\'s name, as icons a finger wide', () => {
+  // On the row of the check's name they left «Cuenta nu» of «Cuenta nueva» at 320 px; the row of
+  // the header icons has a gap in the middle (between the table/customer icons and open checks).
+  it('a drawer up to 28rem puts the tabs first on the row of the header icons, as icons a finger wide', () => {
     const low = blocks(posCss(), KITCHEN_ROW).join('\n');
     const header = rules(low, '.cart ion-header');
     expect(header).toMatch(/display:\s*flex/);
-    expect(header, 'the toolbar keeps its own row above').toMatch(/flex-wrap:\s*wrap/);
+    expect(header, 'the name and the chips keep a row of their own').toMatch(/flex-wrap:\s*wrap/);
     expect(header).toMatch(/align-items:\s*center/);
-    expect(rules(low, '.cart ion-toolbar'), 'the toolbar row is whole').toMatch(/flex:\s*1\s+1\s+100%/);
-    const heading = rules(low, '.order-heading');
-    expect(heading, 'the name takes what the tabs leave').toMatch(/flex:\s*1\s+1\s+0/);
-    expect(heading).toMatch(/min-width:\s*0/);
-    expect(heading, 'no rule between the name and the tabs of the same row').toMatch(/border-bottom:\s*0/);
+    const toolbar = rules(low, '.cart ion-toolbar');
+    expect(toolbar, 'the icons take what the tabs leave').toMatch(/flex:\s*1\s+1\s+0/);
+    expect(toolbar, 'and can shrink to it').toMatch(/min-width:\s*0/);
+    expect(rules(low, '.order-heading'), 'the name and the chips: the next row, whole').toMatch(/flex:\s*1\s+1\s+100%/);
     const tabs = rules(low, 'ion-segment.view-tabs');
-    expect(tabs, 'the tabs keep their size next to the name').toMatch(/flex:\s*none/);
+    expect(tabs, 'before the icons (order -1, the toolbar is 0)').toMatch(/order:\s*-1/);
+    expect(tabs, 'the tabs keep their size next to the icons').toMatch(/flex:\s*none/);
     // md lays the segment's columns out as minmax(auto, 360px): at its own width the pair took
     // 722 px and pushed the header icons to another row.
     expect(tabs, 'each column as wide as its icon, in md too').toMatch(/grid-auto-columns:\s*auto/);
@@ -498,6 +502,35 @@ describe('with Kitchen, a phone drawer shows the first line of the check (sales#
     const button = rules(low, 'ion-segment.view-tabs ion-segment-button');
     expect(rem(button, 'min-width'), 'a 44 px touch target').toBeGreaterThanOrEqual(2.75);
     expect(rem(button, 'min-height'), 'as tall as the icons of the header').toBeGreaterThanOrEqual(2.4);
+  });
+
+  it('a drawer up to 28rem closes with an icon (its name in aria-label), so a 320 px row fits the tabs and five icons', async () => {
+    const low = blocks(posCss(), KITCHEN_ROW).join('\n');
+    expect(rules(low, 'ion-button.header-action.cart-close small')).toMatch(/display:\s*none/);
+    const close = rules(low, 'ion-button.header-action.cart-close');
+    expect(rem(close, 'width'), 'as wide as the icons next to it, not 3.25rem').toBeLessThanOrEqual(2.4);
+    expect(rem(close, 'min-height'), 'ios gives a labelled button min-height 3.1em').toBe(rem(close, 'height'));
+    const root = await mountWithKitchenAt(390, 667);
+    expect(root.querySelector('[data-testid="pos-cart-close"]')?.getAttribute('aria-label')).toBe('ui.closeAction');
+  });
+
+  // With Tables and Customers installed (a real restaurant) the one bar of a very low drawer holds
+  // five icons, the tabs and the check's name: in 27rem the name and «Served by» slid UNDER the tabs.
+  it('a low screen (a phone on its side) gets a drawer wide enough for the one bar', () => {
+    const widthIn = (prelude: RegExp) => {
+      const all = [...rules(blocks(posCss(), prelude).join('\n'), '.cart').matchAll(/(?:^|[;{\s])width:\s*([^;}]+)/g)];
+      return all.length ? all[all.length - 1][1].trim() : '';
+    };
+    const upright = widthIn(/^\(max-width:\s*820px\)\s*$/);
+    const onItsSide = widthIn(/^\(max-height:\s*500px\)\s*$/);
+    expect(onItsSide, 'the low-screen block declares the drawer width').toMatch(/^min\(100%,\s*[\d.]+rem\)$/);
+    const rems = (w: string) => Number(w.match(/([\d.]+)rem/)![1]);
+    expect(rems(onItsSide), `wider than upright (${upright})`).toBeGreaterThan(rems(upright));
+    expect(rems(onItsSide), 'room for the name, the tabs and five icons').toBeGreaterThanOrEqual(34);
+    const css = posCss();
+    const at = (re: RegExp) => [...css.matchAll(/@media\s*([^{]*)\{/g)].findIndex((m) => re.test(m[1]));
+    expect(at(/^\(max-height:\s*500px\)\s*$/), 'after the blocks that set 27rem, so it wins')
+      .toBeGreaterThan(at(/^\(min-width:\s*821px\) and \(max-height:\s*500px\)/));
   });
 
   it('a very low drawer keeps the tabs in its one bar, after the name and before the icons', () => {
