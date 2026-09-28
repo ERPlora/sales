@@ -4977,7 +4977,9 @@ var en_default = {
     appCustomers: "Customers",
     claimCountry: "Country",
     claimIdType: "Your number is",
-    claimIdTypeTax: "A tax or VAT number"
+    claimIdTypeTax: "A tax or VAT number",
+    lineChangeFailed: "That change to the line could not be saved. The line is back as it was.",
+    deleteCheckFailed: "That open check could not be deleted. It is still in the list."
   },
   commands: {
     "sales.complete_sale": {
@@ -5624,7 +5626,9 @@ var es_default = {
     appCustomers: "Clientes",
     claimCountry: "Pa\xEDs",
     claimIdType: "Tu n\xFAmero es",
-    claimIdTypeTax: "Un NIF o n\xFAmero de IVA"
+    claimIdTypeTax: "Un NIF o n\xFAmero de IVA",
+    lineChangeFailed: "No se ha podido guardar ese cambio de la l\xEDnea. La l\xEDnea vuelve a estar como estaba.",
+    deleteCheckFailed: "No se ha podido eliminar esa cuenta abierta. Sigue en la lista."
   },
   widgets: {
     "sales.today": {
@@ -8940,6 +8944,9 @@ var ErpPosTouch = class extends i3 {
     .limit-capture ion-input, .limit-capture ion-select { --background:var(--ion-background-color,#fff);
       --padding-start:.6rem; --padding-end:.6rem; border-radius:.5rem; margin-top:.4rem; }
     .err { color:var(--ion-color-danger,#d9480f); }
+    /* sales#438: a bare <p> would bring 1em above and below into the fixed foot; in the one-row foot
+       of a phone on its side it takes a row of its own. */
+    .cart-err { margin:0 0 .5rem; flex-basis:100%; }
     .pay-actions { display:flex; gap:.5rem; }
     .pay-actions .charge { flex:1; }
     .pay-actions .charge-print { flex:none; width:64px; }
@@ -8977,6 +8984,8 @@ var ErpPosTouch = class extends i3 {
       border:1px solid var(--ion-border-color); border-radius:var(--ok-radius,12px); box-shadow:var(--ok-shadow-pop, 0 12px 32px rgba(0,0,0,.5)); padding:.5rem; max-height:60%; overflow:auto; }
     .pdrop .hint { color:var(--mut); font-size:.82rem; margin:.3rem .2rem .5rem; }
     .pdrop .hint.hint--center { text-align:center; }
+    /* sales#438: pinned to the top of the list, on its colour, while the rows scroll under it. */
+    .pdrop .parked-err { position:sticky; top:0; z-index:1; margin:0 0 .5rem; padding:.3rem .2rem; background:var(--tile); }
     .pdrop .hint strong { color:var(--tx); }
     .pitem { display:flex; justify-content:space-between; align-items:center; gap:.3rem; border:1px solid var(--ion-border-color); border-radius:var(--ok-radius-sm,10px); padding:.2rem .3rem .2rem .6rem; margin-bottom:.35rem; }
     /* La FILA entera recupera: botón de verdad (accesible), sin pintas de botón. */
@@ -10093,6 +10102,7 @@ var ErpPosTouch = class extends i3 {
   async saveOrderLabel(value) {
     const label = value.trim();
     this.orderLabel = label;
+    this.error = "";
     if (!this.orderId) return;
     try {
       await erplora2().command("sales.order.set_label", { order_id: this.orderId, label });
@@ -10270,7 +10280,12 @@ var ErpPosTouch = class extends i3 {
       this.armedTimer = void 0;
     }
     this.armedDelete = void 0;
-    await erplora2().command("sales.order.void", { order_id: oc.id }).catch(() => void 0);
+    this.error = "";
+    try {
+      await erplora2().command("sales.order.void", { order_id: oc.id });
+    } catch (e8) {
+      this.error = domainErrorText(CATALOG2, erplora2().locale, e8) || t5("ui.deleteCheckFailed");
+    }
     this.parked = await listOpenChecks(erplora2(), this.orderId);
   }
   /** Recuperar una cuenta abierta = CAMBIAR de cuenta, igual que tocar otra mesa. Qué pasa con lo
@@ -10278,6 +10293,7 @@ var ErpPosTouch = class extends i3 {
    *  se suelta la sesión, recuperable tocándola (patrón Toast/Lightspeed) — y se avisa con toast;
    *  sin mesa, se PREGUNTA: aparcar (con la hora de nombre) o eliminar. */
   async retrieve(c5) {
+    this.error = "";
     try {
       if (this.orderId !== c5.id && this.blockPendingAccountSwitch()) return;
       if (this.cart.length && this.orderId !== c5.id) {
@@ -10609,6 +10625,7 @@ var ErpPosTouch = class extends i3 {
     const before = line.staff_id;
     const aim = (l3, to) => l3.line_id === lineId ? { ...l3, staff_id: to } : l3;
     this.cart = this.cart.map((l3) => aim(l3, staffId));
+    this.error = "";
     if (!this.orderId) return;
     try {
       await updateOrderLineStaff(erplora2(), this.orderId, line, staffId ?? null);
@@ -11063,8 +11080,14 @@ var ErpPosTouch = class extends i3 {
     const is_gift = !ex.is_gift;
     const gift_reason = is_gift ? ex.gift_reason || "Invitaci\xF3n" : void 0;
     this.cart = this.cart.map((l3) => l3 === ex ? { ...l3, is_gift, gift_reason } : l3);
+    this.error = "";
     if (this.orderId && ex.line_id) {
-      await updateOrderLineQty(erplora2(), this.orderId, ex.line_id, ex.qty, ex.price, is_gift, gift_reason ?? "", ex.discount ?? 0);
+      try {
+        await updateOrderLineQty(erplora2(), this.orderId, ex.line_id, ex.qty, ex.price, is_gift, gift_reason ?? "", ex.discount ?? 0);
+      } catch (e8) {
+        this.cart = this.cart.map((l3) => l3.line_id === ex.line_id ? { ...l3, is_gift: ex.is_gift, gift_reason: ex.gift_reason } : l3);
+        this.error = domainErrorText(CATALOG2, erplora2().locale, e8) || t5("ui.lineChangeFailed");
+      }
     }
   }
   /** Contexto de unidades CONGELADO desde el maestro (ADR-0147 §2.4): unidad de la línea, su
@@ -11100,10 +11123,17 @@ var ErpPosTouch = class extends i3 {
       return;
     }
     const qty = fromMicro2(qtyMicro);
+    const at = this.cart.indexOf(ex);
     this.cart = qty > 0 ? this.cart.map((l3) => l3 === ex ? { ...l3, qty } : l3) : this.cart.filter((l3) => l3 !== ex);
+    this.error = "";
     if (!this.orderId || !ex.line_id) return;
-    if (qty > 0) await updateOrderLineQty(erplora2(), this.orderId, ex.line_id, qty, ex.price, ex.is_gift, void 0, ex.discount ?? 0);
-    else await removeOrderLine(erplora2(), this.orderId, ex.line_id);
+    try {
+      if (qty > 0) await updateOrderLineQty(erplora2(), this.orderId, ex.line_id, qty, ex.price, ex.is_gift, void 0, ex.discount ?? 0);
+      else await removeOrderLine(erplora2(), this.orderId, ex.line_id);
+    } catch (e8) {
+      this.cart = this.cart.some((l3) => l3.line_id === ex.line_id) ? this.cart.map((l3) => l3.line_id === ex.line_id ? { ...l3, qty: ex.qty } : l3) : [...this.cart.slice(0, at), ex, ...this.cart.slice(at)];
+      this.error = domainErrorText(CATALOG2, erplora2().locale, e8) || t5("ui.lineChangeFailed");
+    }
   }
   /** Imprime la CUENTA que se lleva a la mesa (no fiscal, ADR-0141).
    *
@@ -11489,11 +11519,13 @@ var ErpPosTouch = class extends i3 {
     if (!line) return;
     const clean = note.trim();
     this.cart = this.cart.map((l3) => l3 === line ? { ...l3, note: clean || void 0 } : l3);
+    this.error = "";
     if (this.orderId) {
       try {
         await updateOrderLineNote(erplora2(), this.orderId, line, clean);
       } catch (e8) {
-        this.error = e8 instanceof Error ? e8.message : String(e8);
+        this.cart = this.cart.map((l3) => l3.line_id === line.line_id ? { ...l3, note: line.note } : l3);
+        this.error = domainErrorText(CATALOG2, erplora2().locale, e8) || t5("ui.lineChangeFailed");
       }
     }
   }
@@ -11529,6 +11561,7 @@ var ErpPosTouch = class extends i3 {
    *  own doors: `.erplora/contracts.json` is extracted STATICALLY, so a command reached through a
    *  variable vanishes from it. */
   async persistTicketDiscount(percent2, amountCents) {
+    this.error = "";
     const payload = { order_id: this.orderId, discount_percent: percent2, discount_amount: amountCents };
     const overCap = needsManagerApproval(discountCap(this.settings), {
       ticketPercent: percent2,
@@ -11584,6 +11617,7 @@ var ErpPosTouch = class extends i3 {
       return;
     }
     const overCap = value > discountCap(this.settings);
+    this.error = "";
     try {
       await updateOrderLineDiscount(erplora2(), this.orderId, { ...line, discount }, value, overCap);
       this.cart = this.cart.map((l3) => l3 === line ? { ...l3, discount, discountApproved: overCap ? true : void 0 } : l3);
@@ -12055,6 +12089,12 @@ var ErpPosTouch = class extends i3 {
    *  Solo aparece cuando NO se pudo averiguar. Un Web Component no recibe el router, así que el
    *  canal módulo→shell es empujar la URL y avisar con `popstate` (mismo patrón que `appointments`
    *  al mandar una cita al TPV). */
+  /** Closing the drawer closes the list of checks that hangs from it (sales#438): left open, it
+   *  would wait hidden inside the closed drawer and keep the notice of what was tapped in it. */
+  closeCart() {
+    this.cartOpen = false;
+    this.parkedOpen = false;
+  }
   renderCheckSalesLink() {
     if (!this.checkoutUnknown) return A;
     return b2`<ion-button size="small" fill="outline" class="check-sales" data-testid="pos-check-sales"
@@ -12349,9 +12389,7 @@ var ErpPosTouch = class extends i3 {
               ${this.parked.length ? b2`<span class="badge-num">${this.parked.length}</span>` : A}
             </ion-button>
             <ion-button data-testid="pos-cart-close" class="header-action cart-close" fill="clear" title=${t5("ui.closeAction")}
-                        aria-label=${t5("ui.closeAction")} @click=${() => {
-      this.cartOpen = false;
-    }}>
+                        aria-label=${t5("ui.closeAction")} @click=${() => this.closeCart()}>
               <ion-icon name="chevron-forward-outline"></ion-icon><small>${t5("ui.closeAction")}</small>
             </ion-button>
           </div>
@@ -12416,6 +12454,9 @@ var ErpPosTouch = class extends i3 {
       this.parkedOpen = false;
     }}></div>
           <div class="pdrop">
+            <!-- sales#438: the list's own backdrop covers the cart's footer — while it is open, the
+                 notice of what was tapped in it (delete, pick up) is told here, above the rows. -->
+            ${this.error && !this.paying ? b2`<p class="err parked-err" role="alert" data-testid="pos-parked-error">${this.error}</p>` : A}
             <ion-button data-testid="pos-park-current" size="small" expand="block" fill="outline" ?disabled=${!this.cart.length} @click=${() => void this.requestPark()}>${this.tableLabel.trim() ? t5("ui.leaveAtTable") : t5("ui.parkCurrentSale")}</ion-button>
             <p class="hint">${this.tableLabel.trim() ? t5("ui.leaveAtTableHint", { label: this.tableLabel }) : t5("ui.parkForLaterHint")}</p>
             <p class="hint"><strong>${t5("ui.parkedTickets")}</strong><br>${t5("ui.openChecksHint")}</p>
@@ -12447,6 +12488,10 @@ var ErpPosTouch = class extends i3 {
       <!-- El PIE. ion-footer es un pie de verdad: se queda abajo pase lo que pase. -->
       <ion-footer class="ion-no-border">
         <div class="cart-foot">
+          <!-- sales#438: with the drawer open, the page's notice sits BEHIND it. The notice of the
+               tap that just happened is told here, above the buttons, in the foot that never
+               scrolls away; paying → the pay sheet keeps it alone (sales#185). -->
+          ${this.error && this.cartOpen && !this.paying && !this.parkedOpen ? b2`<p class="err cart-err" role="alert" data-testid="pos-cart-error">${this.error}</p>${this.renderCheckSalesLink()}` : A}
           ${this.ticketDiscount > 0 || this.ticketDiscountAmount > 0 ? b2`
           <div class="ticket-discount-row"><span>${t5("ui.discountTicket")}${this.ticketDiscount > 0 ? ` \u2212${this.ticketDiscount}%` : ""}</span><span>−${this.money(this.ticketDiscountTotal)}</span></div>` : A}
           <div class="total"><span>${t5("ui.colTotal")}</span><b>${this.money(this.total)}</b></div>
@@ -12726,7 +12771,7 @@ var ErpPosTouch = class extends i3 {
                it to half a sentence: the cashier reads the same thing twice and neither of them
                whole. The sheet's copy is the one in front of them. Closing the sheet hands the
                error back here: it is not lost, it is moved. -->
-          ${this.error && !this.paying ? b2`<p class="err">${this.error}</p>${this.renderCheckSalesLink()}` : A}
+          ${this.error && !this.paying && !this.cartOpen && !this.parkedOpen ? b2`<p class="err">${this.error}</p>${this.renderCheckSalesLink()}` : A}
           <!-- sales#185 — an app the checkout NEEDS is missing. The role is alert, not status:
                this is not ambient information, it is that this till cannot charge today. -->
           ${this.missingChargeApp ? b2`<div class="blocked-notice missing-app-notice" role="alert">
@@ -12815,9 +12860,7 @@ var ErpPosTouch = class extends i3 {
           </div>
         </div>
 
-        <div data-testid="pos-cart-backdrop" class="cart-backdrop" ?data-open=${this.cartOpen} @click=${() => {
-      this.cartOpen = false;
-    }}></div>
+        <div data-testid="pos-cart-backdrop" class="cart-backdrop" ?data-open=${this.cartOpen} @click=${() => this.closeCart()}></div>
         <aside class="cart" id="pos-cart-drawer" ?data-open=${this.cartOpen}>${this.renderCart()}</aside>
 
         <!-- Cart FAB (mobile only). sales#84: accessible name with the count (nobody reads the

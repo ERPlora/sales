@@ -134,7 +134,7 @@ const COVERED: Record<string, { prefix: string; contract: string[]; tables?: str
   'erp-pos-touch/erp-pos-touch.ts': {
     prefix: 'pos-',
     contract: [
-      'pos-cart-backdrop', 'pos-cart-close', 'pos-cart-fab', 'pos-cart-fab-total',
+      'pos-cart-backdrop', 'pos-cart-close', 'pos-cart-error', 'pos-cart-fab', 'pos-cart-fab-total',
       'pos-catalog-app-absent', 'pos-catalog-blocked-fix', 'pos-catalog-blocked-summary',
       'pos-category-filter', 'pos-charge', 'pos-check-sales',
       'pos-combo-close', 'pos-combo-confirm', 'pos-combo-scrim',
@@ -155,7 +155,7 @@ const COVERED: Record<string, { prefix: string; contract: string[]; tables?: str
       'pos-open-price-add', 'pos-open-price-close', 'pos-open-price-scrim', 'pos-open-price-tile',
       'pos-order-title', 'pos-order-title-edit',
       'pos-park', 'pos-park-cancel', 'pos-park-confirm', 'pos-park-current', 'pos-park-name',
-      'pos-parked-backdrop', 'pos-parked-toggle',
+      'pos-parked-backdrop', 'pos-parked-error', 'pos-parked-toggle',
       'pos-pay-add-tender', 'pos-pay-close', 'pos-pay-confirm', 'pos-pay-scrim', 'pos-pay-side-summary', 'pos-pay-split',
       'pos-prebill', 'pos-prebill-close', 'pos-prebill-print', 'pos-print-on-charge',
       'pos-search', 'pos-services-hidden', 'pos-services-hidden-show', 'pos-simplified-limit-capture',

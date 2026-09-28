@@ -801,6 +801,9 @@ export class ErpPosTouch extends LitElement {
     .limit-capture ion-input, .limit-capture ion-select { --background:var(--ion-background-color,#fff);
       --padding-start:.6rem; --padding-end:.6rem; border-radius:.5rem; margin-top:.4rem; }
     .err { color:var(--ion-color-danger,#d9480f); }
+    /* sales#438: a bare <p> would bring 1em above and below into the fixed foot; in the one-row foot
+       of a phone on its side it takes a row of its own. */
+    .cart-err { margin:0 0 .5rem; flex-basis:100%; }
     .pay-actions { display:flex; gap:.5rem; }
     .pay-actions .charge { flex:1; }
     .pay-actions .charge-print { flex:none; width:64px; }
@@ -838,6 +841,8 @@ export class ErpPosTouch extends LitElement {
       border:1px solid var(--ion-border-color); border-radius:var(--ok-radius,12px); box-shadow:var(--ok-shadow-pop, 0 12px 32px rgba(0,0,0,.5)); padding:.5rem; max-height:60%; overflow:auto; }
     .pdrop .hint { color:var(--mut); font-size:.82rem; margin:.3rem .2rem .5rem; }
     .pdrop .hint.hint--center { text-align:center; }
+    /* sales#438: pinned to the top of the list, on its colour, while the rows scroll under it. */
+    .pdrop .parked-err { position:sticky; top:0; z-index:1; margin:0 0 .5rem; padding:.3rem .2rem; background:var(--tile); }
     .pdrop .hint strong { color:var(--tx); }
     .pitem { display:flex; justify-content:space-between; align-items:center; gap:.3rem; border:1px solid var(--ion-border-color); border-radius:var(--ok-radius-sm,10px); padding:.2rem .3rem .2rem .6rem; margin-bottom:.35rem; }
     /* La FILA entera recupera: botón de verdad (accesible), sin pintas de botón. */
@@ -2524,6 +2529,7 @@ export class ErpPosTouch extends LitElement {
   private async saveOrderLabel(value: string): Promise<void> {
     const label = value.trim();
     this.orderLabel = label;
+    this.error = '';
     if (!this.orderId) return;
     try {
       await erplora().command('sales.order.set_label', { order_id: this.orderId, label });
@@ -2711,7 +2717,14 @@ export class ErpPosTouch extends LitElement {
     }
     if (this.armedTimer) { clearTimeout(this.armedTimer); this.armedTimer = undefined; }
     this.armedDelete = undefined;
-    await erplora().command('sales.order.void', { order_id: oc.id }).catch(() => undefined);
+    this.error = '';
+    try {
+      await erplora().command('sales.order.void', { order_id: oc.id });
+    } catch (e) {
+      // sales#438: two taps and nothing happening is not an answer — the check stays in the list
+      // (reloaded below) and the cashier is told why.
+      this.error = domainErrorText(CATALOG, erplora().locale, e) || t('ui.deleteCheckFailed');
+    }
     this.parked = await listOpenChecks(erplora(), this.orderId);
   }
 
@@ -2720,6 +2733,8 @@ export class ErpPosTouch extends LitElement {
    *  se suelta la sesión, recuperable tocándola (patrón Toast/Lightspeed) — y se avisa con toast;
    *  sin mesa, se PREGUNTA: aparcar (con la hora de nombre) o eliminar. */
   private async retrieve(c: OpenCheck) {
+    // sales#438: the notice on screen was about the check being left; it is not carried over.
+    this.error = '';
     try {
       if (this.orderId !== c.id && this.blockPendingAccountSwitch()) return;
       if (this.cart.length && this.orderId !== c.id) {
@@ -3123,6 +3138,7 @@ export class ErpPosTouch extends LitElement {
     const before = line.staff_id;
     const aim = (l: CartLine, to?: string) => (l.line_id === lineId ? { ...l, staff_id: to } : l);
     this.cart = this.cart.map((l) => aim(l, staffId));
+    this.error = '';
     if (!this.orderId) return;
     try {
       await updateOrderLineStaff(erplora(), this.orderId, line, staffId ?? null);
@@ -3658,9 +3674,16 @@ export class ErpPosTouch extends LitElement {
     const is_gift = !ex.is_gift;
     const gift_reason = is_gift ? (ex.gift_reason || 'Invitación') : undefined;
     this.cart = this.cart.map((l) => (l === ex ? { ...l, is_gift, gift_reason } : l));
-    // Cambia el importe de la línea → se persiste YA (ADR-0141).
+    this.error = '';
+    // The line's amount changes → it is persisted NOW (ADR-0141).
     if (this.orderId && ex.line_id) {
-      await updateOrderLineQty(erplora(), this.orderId, ex.line_id, ex.qty, ex.price, is_gift, gift_reason ?? '', ex.discount ?? 0);
+      try {
+        await updateOrderLineQty(erplora(), this.orderId, ex.line_id, ex.qty, ex.price, is_gift, gift_reason ?? '', ex.discount ?? 0);
+      } catch (e) {
+        // sales#438: refused → the line is back as the order has it, and the cashier is told.
+        this.cart = this.cart.map((l) => (l.line_id === ex.line_id ? { ...l, is_gift: ex.is_gift, gift_reason: ex.gift_reason } : l));
+        this.error = domainErrorText(CATALOG, erplora().locale, e) || t('ui.lineChangeFailed');
+      }
     }
   }
   /** Contexto de unidades CONGELADO desde el maestro (ADR-0147 §2.4): unidad de la línea, su
@@ -3706,13 +3729,25 @@ export class ErpPosTouch extends LitElement {
       return;
     }
     const qty = fromMicro(qtyMicro);
+    const at = this.cart.indexOf(ex);
     this.cart = qty > 0
       ? this.cart.map((l) => (l === ex ? { ...l, qty } : l))
       : this.cart.filter((l) => l !== ex);
-    // Persistencia INMEDIATA de la fila (0 → se elimina del pedido).
+    this.error = '';
+    // The row is persisted AT ONCE (0 → it is removed from the order).
     if (!this.orderId || !ex.line_id) return;
-    if (qty > 0) await updateOrderLineQty(erplora(), this.orderId, ex.line_id, qty, ex.price, ex.is_gift, undefined, ex.discount ?? 0);
-    else await removeOrderLine(erplora(), this.orderId, ex.line_id);
+    try {
+      if (qty > 0) await updateOrderLineQty(erplora(), this.orderId, ex.line_id, qty, ex.price, ex.is_gift, undefined, ex.discount ?? 0);
+      else await removeOrderLine(erplora(), this.orderId, ex.line_id);
+    } catch (e) {
+      // sales#438: refused → the line is back as the order has it (a refused removal puts it back
+      // in its place), and the cashier is told.
+      // By ROW, not by product: the same product can be on the check twice (sales#273, pm#93).
+      this.cart = this.cart.some((l) => l.line_id === ex.line_id)
+        ? this.cart.map((l) => (l.line_id === ex.line_id ? { ...l, qty: ex.qty } : l))
+        : [...this.cart.slice(0, at), ex, ...this.cart.slice(at)];
+      this.error = domainErrorText(CATALOG, erplora().locale, e) || t('ui.lineChangeFailed');
+    }
   }
 
   /** Imprime la CUENTA que se lleva a la mesa (no fiscal, ADR-0141).
@@ -4177,9 +4212,14 @@ export class ErpPosTouch extends LitElement {
     if (!line) return;
     const clean = note.trim();
     this.cart = this.cart.map((l) => (l === line ? { ...l, note: clean || undefined } : l));
+    this.error = '';
     if (this.orderId) {
       try { await updateOrderLineNote(erplora(), this.orderId, line, clean); }
-      catch (e) { this.error = e instanceof Error ? e.message : String(e); }
+      catch (e) {
+        // sales#438: the order kept the old note — the screen (and the kitchen ticket) must too.
+        this.cart = this.cart.map((l) => (l.line_id === line.line_id ? { ...l, note: line.note } : l));
+        this.error = domainErrorText(CATALOG, erplora().locale, e) || t('ui.lineChangeFailed');
+      }
     }
   }
 
@@ -4219,6 +4259,7 @@ export class ErpPosTouch extends LitElement {
    *  own doors: `.erplora/contracts.json` is extracted STATICALLY, so a command reached through a
    *  variable vanishes from it. */
   private async persistTicketDiscount(percent: number, amountCents: number): Promise<boolean> {
+    this.error = '';
     const payload = { order_id: this.orderId, discount_percent: percent, discount_amount: amountCents };
     // Only the ticket-wide levers matter here: line discounts go through their own door
     // (`updateOrderLineDiscount`, sales#385), so `linePercents` is empty on purpose.
@@ -4278,6 +4319,7 @@ export class ErpPosTouch extends LitElement {
     // needs nobody's permission), and 100 = no cap never routes over it. Keep the line's old
     // discount/approval until the server says yes.
     const overCap = value > discountCap(this.settings);
+    this.error = '';
     try {
       await updateOrderLineDiscount(erplora(), this.orderId, { ...line, discount }, value, overCap);
       this.cart = this.cart.map((l) => (l === line ? { ...l, discount, discountApproved: overCap ? true : undefined } : l));
@@ -4912,6 +4954,13 @@ export class ErpPosTouch extends LitElement {
    *  Solo aparece cuando NO se pudo averiguar. Un Web Component no recibe el router, así que el
    *  canal módulo→shell es empujar la URL y avisar con `popstate` (mismo patrón que `appointments`
    *  al mandar una cita al TPV). */
+  /** Closing the drawer closes the list of checks that hangs from it (sales#438): left open, it
+   *  would wait hidden inside the closed drawer and keep the notice of what was tapped in it. */
+  private closeCart(): void {
+    this.cartOpen = false;
+    this.parkedOpen = false;
+  }
+
   private renderCheckSalesLink() {
     if (!this.checkoutUnknown) return nothing;
     return html`<ion-button size="small" fill="outline" class="check-sales" data-testid="pos-check-sales"
@@ -5234,7 +5283,7 @@ export class ErpPosTouch extends LitElement {
               ${this.parked.length ? html`<span class="badge-num">${this.parked.length}</span>` : nothing}
             </ion-button>
             <ion-button data-testid="pos-cart-close" class="header-action cart-close" fill="clear" title=${t('ui.closeAction')}
-                        aria-label=${t('ui.closeAction')} @click=${() => { this.cartOpen = false; }}>
+                        aria-label=${t('ui.closeAction')} @click=${() => this.closeCart()}>
               <ion-icon name="chevron-forward-outline"></ion-icon><small>${t('ui.closeAction')}</small>
             </ion-button>
           </div>
@@ -5301,6 +5350,11 @@ export class ErpPosTouch extends LitElement {
         ? html`
           <div data-testid="pos-parked-backdrop" class="pdrop-back" @click=${() => { this.parkedOpen = false; }}></div>
           <div class="pdrop">
+            <!-- sales#438: the list's own backdrop covers the cart's footer — while it is open, the
+                 notice of what was tapped in it (delete, pick up) is told here, above the rows. -->
+            ${this.error && !this.paying
+              ? html`<p class="err parked-err" role="alert" data-testid="pos-parked-error">${this.error}</p>`
+              : nothing}
             <ion-button data-testid="pos-park-current" size="small" expand="block" fill="outline" ?disabled=${!this.cart.length} @click=${() => void this.requestPark()}>${this.tableLabel.trim() ? t('ui.leaveAtTable') : t('ui.parkCurrentSale')}</ion-button>
             <p class="hint">${this.tableLabel.trim()
               ? t('ui.leaveAtTableHint', { label: this.tableLabel })
@@ -5337,6 +5391,12 @@ export class ErpPosTouch extends LitElement {
       <!-- El PIE. ion-footer es un pie de verdad: se queda abajo pase lo que pase. -->
       <ion-footer class="ion-no-border">
         <div class="cart-foot">
+          <!-- sales#438: with the drawer open, the page's notice sits BEHIND it. The notice of the
+               tap that just happened is told here, above the buttons, in the foot that never
+               scrolls away; paying → the pay sheet keeps it alone (sales#185). -->
+          ${this.error && this.cartOpen && !this.paying && !this.parkedOpen
+            ? html`<p class="err cart-err" role="alert" data-testid="pos-cart-error">${this.error}</p>${this.renderCheckSalesLink()}`
+            : nothing}
           ${this.ticketDiscount > 0 || this.ticketDiscountAmount > 0 ? html`
           <div class="ticket-discount-row"><span>${t('ui.discountTicket')}${this.ticketDiscount > 0 ? ` −${this.ticketDiscount}%` : ''}</span><span>−${this.money(this.ticketDiscountTotal)}</span></div>` : nothing}
           <div class="total"><span>${t('ui.colTotal')}</span><b>${this.money(this.total)}</b></div>
@@ -5666,7 +5726,7 @@ export class ErpPosTouch extends LitElement {
                it to half a sentence: the cashier reads the same thing twice and neither of them
                whole. The sheet's copy is the one in front of them. Closing the sheet hands the
                error back here: it is not lost, it is moved. -->
-          ${this.error && !this.paying ? html`<p class="err">${this.error}</p>${this.renderCheckSalesLink()}` : nothing}
+          ${this.error && !this.paying && !this.cartOpen && !this.parkedOpen ? html`<p class="err">${this.error}</p>${this.renderCheckSalesLink()}` : nothing}
           <!-- sales#185 — an app the checkout NEEDS is missing. The role is alert, not status:
                this is not ambient information, it is that this till cannot charge today. -->
           ${this.missingChargeApp
@@ -5776,7 +5836,7 @@ export class ErpPosTouch extends LitElement {
           </div>
         </div>
 
-        <div data-testid="pos-cart-backdrop" class="cart-backdrop" ?data-open=${this.cartOpen} @click=${() => { this.cartOpen = false; }}></div>
+        <div data-testid="pos-cart-backdrop" class="cart-backdrop" ?data-open=${this.cartOpen} @click=${() => this.closeCart()}></div>
         <aside class="cart" id="pos-cart-drawer" ?data-open=${this.cartOpen}>${this.renderCart()}</aside>
 
         <!-- Cart FAB (mobile only). sales#84: accessible name with the count (nobody reads the

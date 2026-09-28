@@ -578,7 +578,9 @@
     "appCustomers": "Clientes",
     "claimCountry": "País",
     "claimIdType": "Tu número es",
-    "claimIdTypeTax": "Un NIF o número de IVA"
+    "claimIdTypeTax": "Un NIF o número de IVA",
+    "lineChangeFailed": "No se ha podido guardar ese cambio de la línea. La línea vuelve a estar como estaba.",
+    "deleteCheckFailed": "No se ha podido eliminar esa cuenta abierta. Sigue en la lista."
   },
   "widgets": {
     "sales.today": {

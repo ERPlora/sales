@@ -577,7 +577,9 @@
     "appCustomers": "Customers",
     "claimCountry": "Country",
     "claimIdType": "Your number is",
-    "claimIdTypeTax": "A tax or VAT number"
+    "claimIdTypeTax": "A tax or VAT number",
+    "lineChangeFailed": "That change to the line could not be saved. The line is back as it was.",
+    "deleteCheckFailed": "That open check could not be deleted. It is still in the list."
   },
   "commands": {
     "sales.complete_sale": {
