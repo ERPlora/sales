@@ -469,6 +469,7 @@
     "refundConfirm": "Refund {amount}",
     "refundDone": "Refund recorded.",
     "refundFailed": "The refund could not be recorded.",
+    "refundUnknown": "We couldn't confirm whether the refund was recorded. Tapping Refund again on this screen won't record it twice; if you close it, check the sale before refunding again.",
     "refundLineTenders": "Lines paid another way",
     "refundLineTendersHint": "These lines cost no money, so they are not part of the split above. What goes back to them is decided here.",
     "refundTenderPending": "The money is back, but what was paid another way could not be returned. Check it from its own module.",
