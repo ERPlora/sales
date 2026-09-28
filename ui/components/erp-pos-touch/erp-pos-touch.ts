@@ -6078,7 +6078,9 @@ export class ErpPosTouch extends LitElement {
               <div class="sheet-top">
                 <div class="pay-total">${this.money(this.payable)}</div>
                 ${this.splitSel.size
-                  ? html`<div class="pay-split">${t('ui.payingPart', { n: String(this.splitSel.size), total: this.money(this.total) })}</div>`
+                  ? html`<div class="pay-split">${this.splitSel.size === 1
+                      ? t('ui.payingPartOne', { total: this.money(this.total) })
+                      : t('ui.payingPart', { n: String(this.splitSel.size), total: this.money(this.total) })}</div>`
                   : nothing}
                 <!-- sales#159 — EL RESTANTE. Vive en la cabecera del sheet, FUERA del scroll: es el
                      número que el cajero mira en cada pata y esconderlo bajo el teclado es lo que
