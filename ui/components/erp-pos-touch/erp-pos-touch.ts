@@ -4103,6 +4103,20 @@ export class ErpPosTouch extends LitElement {
     this.splitSel = s;
   }
 
+  /** sales#449 — the tap on a line marks it for splitting; a tap on a CONTROL inside the line
+   *  (comp, note, discount, quantity stepper, professional) does only its own job. Their clicks
+   *  bubble up to the line, and raising a coffee by one used to mark it, so «Charge» billed that
+   *  line alone and left the rest of the table pending. One guard on the line instead of a
+   *  stopPropagation per button, so a control added tomorrow cannot bring it back. Only the
+   *  line's light DOM counts: `ion-item button` paints a native button of its own in its shadow
+   *  root, and that one IS the line. */
+  private onLineTap(e: Event, l: CartLine) {
+    const item = e.currentTarget as HTMLElement;
+    const fromControl = e.composedPath().some((n) => n instanceof Element && item.contains(n)
+      && n.matches('ion-button, button, ok-qty-stepper'));
+    if (!fromControl) this.toggleSplit(l);
+  }
+
   private openPay() {
     if (!this.cart.length) return;
     // sales#185 — the ENTRY door to the checkout. The button is `aria-disabled` (never `disabled`,
@@ -4297,6 +4311,14 @@ export class ErpPosTouch extends LitElement {
     // `ensureStaffOptions`, which answers a second caller without a second read.
     if (changed.has('cart') && this.cart.some((l) => l.staff_id && !this.staffNames.has(l.staff_id))) {
       void this.ensureStaffOptions();
+    }
+    // sales#449 — the split selection only holds lines that ARE on the check. A marked line taken
+    // off it (the stepper down to 0) left its id selected, and «Charge» went out with no items or
+    // with the wrong lines while closing the order. With one line left there is nothing to split.
+    if (changed.has('cart') && this.splitSel.size) {
+      const onCheck = new Set(this.cart.length > 1 ? this.cart.map((l) => l.line_id) : []);
+      const kept = [...this.splitSel].filter((id) => onCheck.has(id));
+      if (kept.length !== this.splitSel.size) this.splitSel = new Set(kept);
     }
   }
   /** El teclado. Tras traer una pata a editar el importe queda CEBADO: la siguiente tecla lo
@@ -5798,7 +5820,7 @@ export class ErpPosTouch extends LitElement {
     // and is named by its product; the product stays on the row as `data-product-id`.
     const key = l.line_id || l.id;
     return html`<ion-item data-testid=${`pos-line-${key}`} data-product-id=${l.id} class=${classMap({ sel: !!l.line_id && this.splitSel.has(l.line_id) })}
-        button ?detail=${false} @click=${() => this.toggleSplit(l)}>
+        button ?detail=${false} @click=${(e: Event) => this.onLineTap(e, l)}>
       ${this.cart.length > 1 && l.line_id
         ? html`<ion-icon slot="start"
                   name=${this.splitSel.has(l.line_id) ? 'checkmark-circle' : 'ellipse-outline'}
@@ -5837,7 +5859,7 @@ export class ErpPosTouch extends LitElement {
               ?disabled=${locked || !l.line_id}
               title=${t('ui.lineStaffPickerTitle')}
               aria-label=${t('ui.lineStaffPickerTitle')}
-              @click=${(e: Event) => { e.stopPropagation(); void this.openStaffPicker(l.line_id); }}>
+              @click=${() => void this.openStaffPicker(l.line_id)}>
             <ion-icon name="person-circle-outline"></ion-icon>${this.lineStaffLabel(l)}</button>` : nothing}
       </ion-label>
       <div slot="end" class="lineend">

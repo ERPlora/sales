@@ -508,7 +508,7 @@ var WindowShim = class Window extends NodeShim {
     });
   }
 };
-var ElementShim = class Element extends NodeShim {
+var ElementShim = class Element2 extends NodeShim {
   constructor() {
     super(...arguments);
     this.__shadowRootMode = null;
@@ -11468,6 +11468,18 @@ var ErpPosTouch = class extends i3 {
     else s5.add(l3.line_id);
     this.splitSel = s5;
   }
+  /** sales#449 — the tap on a line marks it for splitting; a tap on a CONTROL inside the line
+   *  (comp, note, discount, quantity stepper, professional) does only its own job. Their clicks
+   *  bubble up to the line, and raising a coffee by one used to mark it, so «Charge» billed that
+   *  line alone and left the rest of the table pending. One guard on the line instead of a
+   *  stopPropagation per button, so a control added tomorrow cannot bring it back. Only the
+   *  line's light DOM counts: `ion-item button` paints a native button of its own in its shadow
+   *  root, and that one IS the line. */
+  onLineTap(e8, l3) {
+    const item = e8.currentTarget;
+    const fromControl = e8.composedPath().some((n6) => n6 instanceof Element && item.contains(n6) && n6.matches("ion-button, button, ok-qty-stepper"));
+    if (!fromControl) this.toggleSplit(l3);
+  }
   openPay() {
     if (!this.cart.length) return;
     if (this.missingChargeApp) {
@@ -11618,6 +11630,11 @@ var ErpPosTouch = class extends i3 {
     }
     if (changed.has("cart") && this.cart.some((l3) => l3.staff_id && !this.staffNames.has(l3.staff_id))) {
       void this.ensureStaffOptions();
+    }
+    if (changed.has("cart") && this.splitSel.size) {
+      const onCheck = new Set(this.cart.length > 1 ? this.cart.map((l3) => l3.line_id) : []);
+      const kept = [...this.splitSel].filter((id) => onCheck.has(id));
+      if (kept.length !== this.splitSel.size) this.splitSel = new Set(kept);
     }
   }
   /** El teclado. Tras traer una pata a editar el importe queda CEBADO: la siguiente tecla lo
@@ -12842,7 +12859,7 @@ var ErpPosTouch = class extends i3 {
     const locked = isLineLocked(l3);
     const key = l3.line_id || l3.id;
     return b2`<ion-item data-testid=${`pos-line-${key}`} data-product-id=${l3.id} class=${e6({ sel: !!l3.line_id && this.splitSel.has(l3.line_id) })}
-        button ?detail=${false} @click=${() => this.toggleSplit(l3)}>
+        button ?detail=${false} @click=${(e8) => this.onLineTap(e8, l3)}>
       ${this.cart.length > 1 && l3.line_id ? b2`<ion-icon slot="start"
                   name=${this.splitSel.has(l3.line_id) ? "checkmark-circle" : "ellipse-outline"}
                   class="selmark ${this.toneOf(this.splitSel.has(l3.line_id), "primary")}"></ion-icon>` : A}
@@ -12873,10 +12890,7 @@ var ErpPosTouch = class extends i3 {
               ?disabled=${locked || !l3.line_id}
               title=${t5("ui.lineStaffPickerTitle")}
               aria-label=${t5("ui.lineStaffPickerTitle")}
-              @click=${(e8) => {
-      e8.stopPropagation();
-      void this.openStaffPicker(l3.line_id);
-    }}>
+              @click=${() => void this.openStaffPicker(l3.line_id)}>
             <ion-icon name="person-circle-outline"></ion-icon>${this.lineStaffLabel(l3)}</button>` : A}
       </ion-label>
       <div slot="end" class="lineend">
