@@ -4686,7 +4686,12 @@ export class ErpPosTouch extends LitElement {
     // Toast do (the sheet says so). If that fire fails the charge STOPS: once the check is closed
     // there is no order left to fire it from, so charging anyway would lose the order for good.
     if (this.hasKitchen && this.pendingCount > 0) {
-      const fired = await this.fireToKitchen().catch((): FireOutcome => 'failed');
+      let fired = await this.fireToKitchen().catch((): FireOutcome => 'failed');
+      // A JOINED fire only carried what was pending when it started: a line added while it was on
+      // its way is still pending now, and it goes in its own round before the check closes.
+      if (fired !== 'failed' && this.pendingCount > 0) {
+        fired = await this.fireToKitchen().catch((): FireOutcome => 'failed');
+      }
       if (fired === 'failed') {
         this.error = t('ui.chargeFireFailed');
         this.busy = false;

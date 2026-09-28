@@ -267,7 +267,8 @@ Square and Toast do. If that send fails, **nothing is charged**: the sheet stays
 podido enviar la comanda a cocina, así que no se ha cobrado» so the cashier can try again. Once the
 check is closed there is no order left to send it from, so charging anyway would lose the order.
 If the round was already on its way (the **Enviar comanda** button or the table picker a moment
-before), Charge waits for it instead of sending it twice.
+before), Charge waits for it instead of sending it twice — and anything added while it was on its
+way goes in its own round before the check closes.
 
 ### Split a check
 

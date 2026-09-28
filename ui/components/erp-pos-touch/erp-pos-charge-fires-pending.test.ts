@@ -169,6 +169,7 @@ describe('charging with an unsent kitchen order (sales#439)', () => {
     await charge(el);
 
     expect(names(), 'no sale while the kitchen did not get the order').not.toContain('sales.complete_sale');
+    expect(names().filter((n) => n === 'sales.order.fire'), 'a failed fire is not retried behind the cashier').toHaveLength(1);
     expect(el.paying, 'the sheet stays open to try again').toBe(true);
     expect(el.busy, 'and the button is alive again').toBe(false);
     const why = 'No se ha podido enviar la comanda a cocina, así que no se ha cobrado. Vuelve a intentarlo.';
@@ -212,6 +213,69 @@ describe('charging with an unsent kitchen order (sales#439)', () => {
 
     expect(names().filter((n) => n === 'sales.order.fire'), 'one fire, not two').toHaveLength(1);
     expect(names()).toContain('sales.complete_sale');
+  });
+
+  it('a line added WHILE the joined fire is on its way reaches the kitchen too, before the check closes', async () => {
+    install({ kitchen: true });
+    const el = await mount();
+    await add(el, 'Café');
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    const later = fireAnswer;
+    // The fire in flight only carries what was pending when IT started: the coffee.
+    fireAnswer = async () => {
+      fireAnswer = later;
+      await held;
+      const coffee = lines.find((l) => l.id === 'l1')!;
+      coffee.fired_at = '2026-09-28T10:00:00Z'; coffee.round_no = 1;
+      return { ok: true };
+    };
+    el.dispatchEvent(new CustomEvent('erp:order-fire', { detail: {}, bubbles: true, composed: true }));
+    await add(el, 'Tostada');
+    await openCharge(el);
+    const done = charge(el);
+    await new Promise((r) => setTimeout(r, 0));
+    release();
+    await done;
+    for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
+
+    const fires = commands.filter((c) => c.name === 'sales.order.fire')
+      .map((c) => (c.payload.items as { order_item_id: string }[]).map((i) => i.order_item_id));
+    expect(fires, 'the toast added meanwhile is sent in its own round, the coffee is not sent twice').toEqual([['l1'], ['l2']]);
+    expect(names()).toContain('sales.complete_sale');
+    expect(names().lastIndexOf('sales.order.fire')).toBeLessThan(names().indexOf('sales.complete_sale'));
+  });
+
+  it('when the round for a line added meanwhile fails, nothing is charged either', async () => {
+    install({ kitchen: true });
+    const el = await mount();
+    await add(el, 'Café');
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    fireAnswer = async () => {
+      fireAnswer = async () => {
+        const e = new Error('the kitchen queue is unreachable') as Error & { code: string };
+        e.code = 'sales.order_id_required';
+        throw e;
+      };
+      await held;
+      const coffee = lines.find((l) => l.id === 'l1')!;
+      coffee.fired_at = '2026-09-28T10:00:00Z'; coffee.round_no = 1;
+      return { ok: true };
+    };
+    el.dispatchEvent(new CustomEvent('erp:order-fire', { detail: {}, bubbles: true, composed: true }));
+    await add(el, 'Tostada');
+    await openCharge(el);
+    const done = charge(el);
+    await new Promise((r) => setTimeout(r, 0));
+    release();
+    await done;
+    for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
+
+    expect(names().filter((n) => n === 'sales.order.fire')).toHaveLength(2);
+    expect(names(), 'the toast never reached the kitchen, so the check stays open').not.toContain('sales.complete_sale');
+    expect(el.error).toBe('No se ha podido enviar la comanda a cocina, así que no se ha cobrado. Vuelve a intentarlo.');
+    expect(el.busy).toBe(false);
   });
 
   it('a round added AFTER an earlier fire is fired again at Charge (the earlier fire is over)', async () => {

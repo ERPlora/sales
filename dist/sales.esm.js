@@ -11914,7 +11914,10 @@ var ErpPosTouch = class extends i3 {
     this.error = "";
     this.checkoutUnknown = false;
     if (this.hasKitchen && this.pendingCount > 0) {
-      const fired = await this.fireToKitchen().catch(() => "failed");
+      let fired = await this.fireToKitchen().catch(() => "failed");
+      if (fired !== "failed" && this.pendingCount > 0) {
+        fired = await this.fireToKitchen().catch(() => "failed");
+      }
       if (fired === "failed") {
         this.error = t5("ui.chargeFireFailed");
         this.busy = false;
