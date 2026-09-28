@@ -4668,6 +4668,8 @@ var en_default = {
     noCheckContext: "Check without table or customer",
     accountTab: "Account",
     currentCommandTab: "Current order",
+    currentCommandTabPendingOne: "Current order, 1 item to send",
+    currentCommandTabPending: "Current order, {count} items to send",
     currentCommandHint: "Review quantities and assignments. Sending groups these lines into a recoverable production order.",
     noPendingCommand: "Everything has been sent",
     noPendingCommandHint: "Add products to prepare another production order.",
@@ -5323,6 +5325,8 @@ var es_default = {
     noCheckContext: "Cuenta sin mesa ni cliente",
     accountTab: "Cuenta",
     currentCommandTab: "Comanda actual",
+    currentCommandTabPendingOne: "Comanda actual, 1 art\xEDculo por enviar",
+    currentCommandTabPending: "Comanda actual, {count} art\xEDculos por enviar",
     currentCommandHint: "Revisa cantidades y asignaciones. Al enviar, estas l\xEDneas quedar\xE1n agrupadas como una comanda recuperable.",
     noPendingCommand: "Todo est\xE1 enviado",
     noPendingCommandHint: "A\xF1ade productos para preparar una nueva comanda.",
@@ -9227,6 +9231,9 @@ var ErpPosTouch = class extends i3 {
          is also the size container the compact rules below measure (@container pos-cart). */
       .cart { container:pos-cart / size; }
       .cart ion-footer { position:sticky; bottom:0; z-index:1; }
+      /* sales#433: the card of a line (~177 px upright: amount, three actions, stepper) centred its
+         label, so under the «You can't invoice yet» strip the product name sat under the foot. */
+      ion-list.lines ion-item { align-items:flex-start; }
       .cart-close { display:inline-flex; }
       .cart-backdrop[data-open] { display:block; position:absolute; inset:0; background:var(--ok-scrim, rgba(0,0,0,.5)); z-index:55; }
       /* sales#418: the shell floors a module screen at 480px and scrolls it below that, so with the
@@ -9325,6 +9332,8 @@ var ErpPosTouch = class extends i3 {
     ion-segment.view-tabs ion-segment-button { min-height:2.85rem; --indicator-color:var(--tile-hi);
       --color:var(--mut); --color-checked:var(--tx); font-weight:700; text-transform:none; }
     .view-tab-label { display:inline-flex; align-items:center; justify-content:center; gap:.38rem; }
+    /* sales#433: only a low drawer trades the words of the tabs for these icons. */
+    .view-tab-icon { display:none; font-size:1.25rem; }
     .pending-dot { display:inline-grid; place-items:center; min-width:1.18rem; height:1.18rem; padding:0 .25rem;
       border-radius:var(--ok-radius-pill,999px); background:var(--ion-color-warning,#f5a623); color:var(--ion-color-warning-contrast,#241700); font-size:.65rem; font-weight:850; }
 
@@ -9428,6 +9437,48 @@ var ErpPosTouch = class extends i3 {
       .cart { width:min(100%,27rem); }
       .grid { padding-bottom:5.2rem; }
     }
+    /* sales#433: with Kitchen, the «Account / Current order» tabs were a row of their own (~50 px)
+       that alone hid the first line of the check in every phone drawer but the tallest -- 390x667
+       under the strip (385-391px) included, just over the low block below. As on Square and Toast,
+       they are icons (their names in aria-label, the pending count on them) first on the row of
+       the header icons, which has a gap in the middle -- on the row of the check's name they left
+       «Cuenta nu» of «Cuenta nueva» at 320px. Close is an icon too, so a 320px row fits the tabs and
+       five icons. Written before the low blocks, which compact the rest of the header. */
+    @container pos-cart (max-height: 28rem) {
+      .cart ion-header { display:flex; flex-wrap:wrap; align-items:center; }
+      /* Half the row, not 0: without Kitchen (no tabs) a basis-0 toolbar fitted 0px wide on the
+         line of the whole-width name, and park, open checks and close were gone. */
+      .cart ion-toolbar { flex:1 1 0; min-width:50%; }
+      .order-heading { flex:1 1 100%; }
+      /* md lays the columns out as minmax(auto, 360px): the pair was 722px wide. */
+      ion-segment.view-tabs { order:-1; flex:none; grid-auto-columns:auto; margin-top:.2rem; margin-bottom:.2rem; margin-left:.35rem; margin-right:0; }
+      ion-segment.view-tabs ion-segment-button { min-height:2.4rem; min-width:2.75rem;
+        --padding-start:.45rem; --padding-end:.45rem; --padding-top:0; --padding-bottom:0; }
+      ion-segment.view-tabs ion-label, ion-segment.view-tabs .view-tab-icon { margin-top:0; margin-bottom:0; }
+      ion-segment.view-tabs .view-tab-text { display:none; }
+      ion-segment.view-tabs .view-tab-icon { display:block; }
+      /* ios gives a button with a label min-height:3.1em, so height alone left it 52px tall. */
+      ion-button.header-action.cart-close { width:2.4rem; height:2.4rem; min-height:2.4rem; margin:auto 0; }
+      ion-button.header-action.cart-close small { display:none; }
+      /* md gives an icon-only toolbar button min-width:48px: at 360px the icons of Tables and
+         Customers were squeezed into each other. */
+      ion-button.header-action.icon-action { min-width:2.4rem; }
+    }
+    /* A 320px phone leaves the header row ~280px: the tabs and five icons did not fit, and the
+       icons of Tables and Customers overlapped. Only there they are a little smaller. */
+    @container pos-cart (max-height: 28rem) and (max-width: 20rem) {
+      ion-toolbar, .cart-actions-slot { --pos-hdr-icon-size: 1.5rem; }
+      .order-toolbar { gap:0; }
+      ion-button.header-action.icon-action, ion-button.header-action.cart-close { width:2.15rem; min-width:2.15rem; }
+      ion-segment.view-tabs ion-segment-button { min-width:2.2rem; --padding-start:.2rem; --padding-end:.2rem; }
+    }
+    /* sales#433: with Tables and Customers (a real restaurant) the one bar of a very low drawer
+       holds the check's name, the tabs and five icons: in 27rem the name and «Served by» slid under
+       the tabs. A low screen is a phone on its side, wide enough for a wider drawer. Written after
+       the blocks that set 27rem, so it wins. */
+    @media (max-height:500px) {
+      .cart { width:min(100%,34rem); }
+    }
     /* sales#423: a LOW drawer (320x568 under the «You can't invoice yet» strip, any phone on its
        side) is 170-300px tall, and the header (~145px) and the foot (~125-139px) alone took it:
        Charge sat below its edge. Here the header is one toolbar and one row -- the name, then the
@@ -9444,7 +9495,7 @@ var ErpPosTouch = class extends i3 {
       /* A line's card (~105px: amount, three actions, stepper) centred its label, so the ~80px left
          here showed the amount and not the product name. */
       ion-list.lines ion-item { align-items:flex-start; }
-      ion-segment.view-tabs { margin-top:.3rem; margin-bottom:.2rem; }
+      ion-segment.view-tabs { margin-top:.2rem; margin-bottom:.2rem; }
       ion-segment.view-tabs ion-segment-button { min-height:2.4rem; }
       .cart-foot { padding-top:.4rem; padding-bottom:.45rem; }
       .total { margin-bottom:.3rem; }
@@ -9471,22 +9522,30 @@ var ErpPosTouch = class extends i3 {
     /* sales#432: a VERY low drawer -- a phone on its side under the «You can't invoice yet» strip
        (131-193px) or a 568x320 (170px) -- still spent ~105px on the header and ~67px on the foot:
        the first line of the check sat under the foot. As on Square and Toast, the header is ONE bar,
-       the name of the check first and its icons after it (the kitchen tabs wrap to their own row),
+       the name of the check first and its icons after it (the kitchen tabs as icons, sales#433),
        the close button is icon-only (its name stays in aria-label), and the foot is as tall as
-       Charge. Written after the low blocks so it wins where they tie. */
-    @container pos-cart (max-height: 13rem) {
+       Charge. Written after the low blocks so it wins where they tie. sales#433 raised it from
+       13rem: a 360px phone on its side (640/740/800x360) leaves 208-217px, and with the kitchen
+       tabs the two rows of the low block need 224px before the first line shows. */
+    @container pos-cart (max-height: 14.5rem) {
       .cart ion-header { display:flex; flex-wrap:wrap; align-items:center; }
-      .cart ion-toolbar { flex:none; width:auto; --padding-top:0; --padding-bottom:0; }
+      .cart ion-toolbar { flex:none; width:auto; min-width:0; --padding-top:0; --padding-bottom:0; }
       .order-toolbar { padding-top:0; padding-bottom:0; }
       .order-heading { order:-1; flex:1 1 0; min-width:0; border-bottom:0; padding-top:0; padding-bottom:0; padding-right:.2rem; }
-      ion-segment.view-tabs { flex:1 1 100%; }
+      /* sales#433: the tab icons stay in the one bar, after the name (order, then markup) and
+         before the header icons. */
+      ion-segment.view-tabs { order:-1; flex:none; margin-top:0; margin-bottom:0; }
+      /* With Tables and Customers the name got 74px: «Cuenta nu» of «Cuenta nueva» (107px). The
+         chips beside it scroll sideways; the name is what says which check this is. */
+      .order-title-row { flex:1 0 9.5rem; }
       /* ios gives a button with a label min-height:3.1em, so height alone left it 52px tall. */
       ion-button.header-action.cart-close { width:2.4rem; height:2.4rem; min-height:2.4rem; margin:auto 0; }
       ion-button.header-action.cart-close small { display:none; }
       .cart ion-content.cart-body { --padding-top:0; }
       ion-list.lines { padding-top:0; }
-      ion-list.lines ion-item:first-child { margin-top:.15rem; }
-      ion-list.lines ion-item ion-label { margin-top:.3rem; }
+      /* sales#433: 568x320 under the strip leaves 129-131px, and these few px showed the name. */
+      ion-list.lines ion-item:first-child { margin-top:0; }
+      ion-list.lines ion-item ion-label { margin-top:.05rem; }
       .cart-foot { padding-top:.2rem; padding-bottom:.2rem; }
       .total { flex-direction:row; align-items:baseline; gap:.35rem; }
       .foot-actions ion-button { margin-top:0; margin-bottom:0; }
@@ -12549,11 +12608,21 @@ var ErpPosTouch = class extends i3 {
             @ionChange=${(e8) => {
       this.orderView = e8.detail.value;
     }}>
-            <ion-segment-button data-testid="pos-view-tab-account" value="account"><ion-label>${t5("ui.accountTab")}</ion-label></ion-segment-button>
-            <ion-segment-button data-testid="pos-view-tab-draft" value="draft"><ion-label><span class="view-tab-label">
-              ${t5("ui.currentCommandTab")}
-              ${this.pendingCount ? b2`<span class="pending-dot">${this.pendingCount}</span>` : A}
-            </span></ion-label></ion-segment-button>
+            <!-- sales#433: a low drawer shows the icons instead of the words (the name stays in
+                 aria-label), so the tabs fit on the row of the header icons. -->
+            <ion-segment-button data-testid="pos-view-tab-account" value="account" layout="icon-start" aria-label=${t5("ui.accountTab")}>
+              <ion-icon class="view-tab-icon" name="list-outline" aria-hidden="true"></ion-icon>
+              <ion-label><span class="view-tab-text">${t5("ui.accountTab")}</span></ion-label>
+            </ion-segment-button>
+            <!-- The aria-label wins over the words, so it carries the pending count they show. -->
+            <ion-segment-button data-testid="pos-view-tab-draft" value="draft" layout="icon-start"
+              aria-label=${!this.pendingCount ? t5("ui.currentCommandTab") : this.pendingCount === 1 ? t5("ui.currentCommandTabPendingOne") : t5("ui.currentCommandTabPending", { count: this.pendingCount })}>
+              <ion-icon class="view-tab-icon" name="restaurant-outline" aria-hidden="true"></ion-icon>
+              <ion-label><span class="view-tab-label">
+                <span class="view-tab-text">${t5("ui.currentCommandTab")}</span>
+                ${this.pendingCount ? b2`<span class="pending-dot">${this.pendingCount}</span>` : A}
+              </span></ion-label>
+            </ion-segment-button>
           </ion-segment>` : A}
       </ion-header>
 
