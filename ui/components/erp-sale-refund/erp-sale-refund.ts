@@ -205,6 +205,16 @@ export class ErpSaleRefund extends LitElement {
   @state() private notRecorded = false;
   /** sales#456 - opened over an attempt left in doubt, and the hub says it WAS recorded. */
   @state() private recoveredOnOpen = false;
+  /** sales#462 - that recovered document, until what was not paid in money has been handed it.
+   *  The fillers of the closed screen died before learning it; the ones on this screen decide again. */
+  @state() private recoveredRef = '';
+  /** sales#462 - handing the recovered document to the fillers: a second tap waits. */
+  @state() private tenderBusy = false;
+  /** sales#462 - what was not paid in money did not go back (or cannot even be read): check it in
+   *  its own module. Painted on the screen, which stays open here. */
+  @state() private tenderPending = false;
+  /** sales#462 - the slot or the covered lines could not be read. */
+  private tenderReadFailed = false;
 
   /** sales#456 - the pause between two questions to a hub that did not answer: an OOM-killed hub
    *  is back in seconds. A property so a test does not wait in real time. */
@@ -286,6 +296,9 @@ export class ErpSaleRefund extends LitElement {
       const split = proportionalSplit(refundableTotal(this.legs), this.legs);
       this.draft = Object.fromEntries(Object.entries(split).map(([id, amount]) => [id, { amount }]));
       await this.loadTenderLines(saleId);
+      // sales#462 - the document exists but nobody here can say whether the voucher session went
+      // back with it: say where to check, rather than let the session be lost in silence.
+      this.tenderPending = !!this.recoveredRef && this.tenderReadFailed;
     } catch (e) {
       // sales#207 (ADR-0398/0055): the CODE decides the sentence, never the server's detail.
       // `e.message` is written for whoever reads a log, in the language the handler was written
@@ -314,6 +327,7 @@ export class ErpSaleRefund extends LitElement {
     this.outcomeUnknown = false;
     this.notRecorded = false;
     this.recoveredOnOpen = false;
+    this.recoveredRef = '';
     const pending = pendingRefundKey(saleId);
     if (!pending) { this.key = newKey(saleId); return; }
     const recovery = await this.recover(pending);
@@ -321,6 +335,8 @@ export class ErpSaleRefund extends LitElement {
       forgetPendingRefundKey(saleId);
       this.key = newKey(saleId);
       this.recoveredOnOpen = true;
+      // The recovered row IS the document (as in `resolveDoubt`): its id is the reference.
+      this.recoveredRef = recovery.saleId;
       return;
     }
     this.key = pending;
@@ -352,6 +368,7 @@ export class ErpSaleRefund extends LitElement {
   private async loadTenderLines(saleId: string): Promise<void> {
     this.covered = [];
     this.tenderNotices = new Map();
+    this.tenderReadFailed = false;
     const sdk = erplora();
     if (typeof sdk.loadSlot !== 'function') { this.tenderFillers = []; return; }
     try {
@@ -359,6 +376,7 @@ export class ErpSaleRefund extends LitElement {
       this.tenderFillers = rows.map((f) => String(f.component));
     } catch {
       this.tenderFillers = [];
+      this.tenderReadFailed = true;
     }
     if (!this.tenderFillers.length) return;
     try {
@@ -366,6 +384,7 @@ export class ErpSaleRefund extends LitElement {
       this.covered = coveredLines(lines ?? []);
     } catch {
       this.covered = [];
+      this.tenderReadFailed = true;
     }
   }
 
@@ -528,6 +547,29 @@ export class ErpSaleRefund extends LitElement {
     }
   }
 
+  /**
+   * sales#462 - the screen opened over a doubt the hub had recorded: the money half is settled, but
+   * the fillers that would have given back what was not money died with the closed screen. The
+   * operator decides again on the holes of THIS screen, and this hands them the recovered document -
+   * the same reference `resolveDoubt` hands them when the check happens without closing. Nothing is
+   * refunded in money here, and the screen stays open: what is left of the sale is still below.
+   */
+  async giveBackRecovered(): Promise<void> {
+    const t = (k: string): string => erplora().t(CATALOG, k);
+    const ref = this.recoveredRef;
+    if (!ref || this.tenderBusy) return;
+    this.tenderBusy = true;
+    try {
+      const committed = await this.commitTenderRefunds({ refund_id: ref, refund_ref: ref });
+      // Handed once: a filler commits once per document, so a second offer would do nothing.
+      this.recoveredRef = '';
+      this.tenderPending = !committed;
+      if (committed) erplora().notify?.({ type: 'success', message: t('ui.refundTenderGivenBack') });
+    } finally {
+      this.tenderBusy = false;
+    }
+  }
+
   /** The refund document exists: hand its reference to the tender fillers, say so, and close. */
   private async finishRecorded(out: RefundResult | undefined): Promise<void> {
     const t = (k: string, p?: Record<string, unknown>): string => erplora().t(CATALOG, k, p);
@@ -608,7 +650,30 @@ export class ErpSaleRefund extends LitElement {
               <div class="rt-slot"></div>
             </li>`)}
         </ul>
+        ${this.renderGiveBackRecovered()}
       </div>`;
+  }
+
+  /**
+   * sales#462 - offered only over a recovered document and while some hole says its line goes back
+   * (an armed filler): with nothing armed there is nothing to hand, and a button that does nothing
+   * would claim the opposite.
+   */
+  private renderGiveBackRecovered(): unknown {
+    if (!this.recoveredRef || !this.tenderNotices.size) return nothing;
+    return html`<ion-button
+      class="refund-tender-commit"
+      data-testid="refund-tender-commit"
+      expand="block"
+      ?disabled=${this.tenderBusy}
+      @click=${() => { void this.giveBackRecovered(); }}
+    >${erplora().t(CATALOG, 'ui.refundTenderGiveBack')}</ion-button>`;
+  }
+
+  /** sales#462 - what was not paid in money did not go back: read on the screen, not in a toast. */
+  private renderTenderPending(): unknown {
+    if (!this.tenderPending) return nothing;
+    return html`<ok-inline-feedback data-testid="refund-tender-pending" tone="warning" icon="alert-circle-outline">${erplora().t(CATALOG, 'ui.refundTenderPending')}</ok-inline-feedback>`;
   }
 
   /** The warnings the fillers want read BEFORE confirming. They warn; they never block. */
@@ -693,6 +758,7 @@ export class ErpSaleRefund extends LitElement {
     return html`<div class="refund-body" data-testid="refund-form">
       <h3>${t('ui.refundTitle', { number: this.sale?.sale_number ?? '' })}</h3>
       ${this.renderRecoveredOnOpen()}
+      ${this.renderTenderPending()}
       <p class="hint">${t('ui.refundExplain')}</p>
       <div class="legs">${this.legs.map((l) => this.renderLeg(l))}</div>
       ${this.renderTenderLines()}

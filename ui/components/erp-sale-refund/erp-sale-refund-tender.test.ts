@@ -22,7 +22,7 @@
 // against today would lose the customer the session AND the money path with it.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { installErploraDouble } from '../../test/erplora-double';
-import { forgetPendingRefundKey } from '../../lib/refund-pending-key';
+import { forgetPendingRefundKey, rememberPendingRefundKey } from '../../lib/refund-pending-key';
 import './erp-sale-refund';
 
 const SALE = [{ id: 'sale-1', sale_number: '20260825-0007', status: 'completed', total: 1800 }];
@@ -91,17 +91,21 @@ interface Options {
   fillers?: boolean; lines?: unknown[]; linesFail?: boolean;
   /** sales#456: the first `sales.refund` loses its answer; the hub has the document `ref-7`. */
   lostAnswer?: boolean;
+  /** The money legs; the default has the whole 18,00 € still to give back. */
+  legs?: unknown[];
+  /** The slot registry itself fails. */
+  slotFail?: boolean;
 }
 
 function install(opts: Options = {}): void {
-  const { fillers = true, lines = LINES, linesFail = false, lostAnswer = false } = opts;
+  const { fillers = true, lines = LINES, linesFail = false, lostAnswer = false, legs = LEGS, slotFail = false } = opts;
   let answerLost = false;
   slotsAsked = [];
   commands = [];
   commitBehaviour = 'silent';
   commitResolved = undefined;
   const table: Record<string, unknown[]> = {
-    'sales.get': SALE, 'sales.refund_options': LEGS, 'sales.payment_methods': METHODS,
+    'sales.get': SALE, 'sales.refund_options': legs, 'sales.payment_methods': METHODS,
     'sales.lines': lines,
     'sales.refund_by_idempotency_key': [{ id: 'ref-7', sale_id: 'sale-1', total: 1800 }],
   };
@@ -120,6 +124,7 @@ function install(opts: Options = {}): void {
     },
     loadSlot: (slot: string) => {
       slotsAsked.push(slot);
+      if (slotFail) throw new Error('boom');
       if (!fillers) return [];
       return slot === 'sales.refund.tender' ? [{ component: 'erp-fake-tender-refund' }] : [];
     },
@@ -336,5 +341,155 @@ describe('a hub WITHOUT the owning module', () => {
     const sent = commands.find((c) => c.name === 'sales.refund');
     expect(Object.keys(sent?.payload ?? {}).sort())
       .toEqual(['allocations', 'idempotency_key', 'reason', 'sale_id']);
+  });
+});
+
+// sales#462 — the screen is closed while a refund is in doubt and opened again; the check by key
+// finds the document. The money half is settled (the legs say so), but the voucher session is not:
+// the fillers that would have given it back died with the closed screen. The recovered document
+// has to reach the NEW fillers, and the operator decides again what goes back, as on the first
+// screen — or, when that side cannot even be read, the screen says it must be checked elsewhere.
+describe('sales#462: reopened over a doubt that WAS recorded', () => {
+  /** Every money leg already given back: the main button is blocked, «nothing to return». */
+  const ALL_BACK = [{ ...LEGS[0], refunded: 1800, remaining: 0 }];
+
+  const giveBackButton = (el: Refund): HTMLElement | null =>
+    el.shadowRoot?.querySelector('[data-testid="refund-tender-commit"]') as HTMLElement | null;
+  const tenderPending = (el: Refund): Element | null =>
+    el.shadowRoot?.querySelector('[data-testid="refund-tender-pending"]') ?? null;
+
+  /** The filler says its line goes back — what the services hole does by default. */
+  async function arm(el: Refund): Promise<void> {
+    fillersOf(el)[0].dispatchEvent(new CustomEvent('erp:tender-refund-armed', {
+      detail: { lineRef: 'item-1' }, bubbles: true, composed: true,
+    }));
+    await settle(el);
+  }
+
+  /** The earlier screen wrote its key down before `sales.refund` left, and never heard back. */
+  function openOverDoubt(opts: Options = {}): void {
+    install({ legs: ALL_BACK, ...opts });
+    rememberPendingRefundKey('sale-1', 'refund-sale-1-closed');
+  }
+
+  it('offers to give back what was paid another way, even with no money left to refund', async () => {
+    openOverDoubt();
+    const el = await mount();
+    expect(el.shadowRoot?.querySelector('[data-testid="refund-recovered"]')).toBeTruthy();
+    expect(confirmButton(el)?.getAttribute('data-blocked')).toBe('true');
+    await arm(el);
+    expect(giveBackButton(el)).toBeTruthy();
+  });
+
+  it('hands the filler the RECOVERED document when the operator gives it back, and writes no refund', async () => {
+    openOverDoubt();
+    const el = await mount();
+    await arm(el);
+    giveBackButton(el)?.click();
+    await settle(el);
+    const commit = fillersOf(el)[0].commits[0];
+    expect(commit?.refundRef).toBe('ref-7');
+    expect(commit?.refundId).toBe('ref-7');
+    expect(commit?.saleId).toBe('sale-1');
+    expect((fillersOf(el)[0] as unknown as { refundRef?: string }).refundRef).toBe('ref-7');
+    expect(commands.filter((c) => c.name === 'sales.refund')).toHaveLength(0);
+    expect(refundSdk.notices.some((n) => n.type === 'success' && n.message === 'ui.refundTenderGivenBack')).toBe(true);
+    expect(giveBackButton(el), 'done: offering it again would be a second give-back').toBeNull();
+  });
+
+  it('offers nothing while no line goes back: the operator un-ticked it, or it already came back', async () => {
+    openOverDoubt();
+    const el = await mount();
+    expect(giveBackButton(el)).toBeNull();
+    await arm(el);
+    fillersOf(el)[0].dispatchEvent(new CustomEvent('erp:tender-refund-disarmed', {
+      detail: { lineRef: 'item-1' }, bubbles: true, composed: true,
+    }));
+    await settle(el);
+    expect(giveBackButton(el)).toBeNull();
+  });
+
+  it('offers nothing on a screen that did NOT recover a document: there the refund button commits', async () => {
+    install({ legs: ALL_BACK });
+    const el = await mount();
+    await arm(el);
+    expect(giveBackButton(el)).toBeNull();
+  });
+
+  it('a second tap while the filler is still working gives nothing back twice', async () => {
+    openOverDoubt();
+    commitBehaviour = 'ok';
+    const el = await mount();
+    await arm(el);
+    giveBackButton(el)?.click();
+    await new Promise((r) => setTimeout(r, 0));
+    giveBackButton(el)?.click();
+    commitResolved?.();
+    await settle(el);
+    expect(fillersOf(el)[0].commits).toHaveLength(1);
+  });
+
+  it('SAYS SO, on the screen, when the filler could not give it back', async () => {
+    openOverDoubt();
+    commitBehaviour = 'fail';
+    const el = await mount();
+    await arm(el);
+    giveBackButton(el)?.click();
+    await new Promise((r) => setTimeout(r, 0));
+    commitResolved?.();
+    await settle(el);
+    expect(tenderPending(el)?.textContent).toContain('ui.refundTenderPending');
+    expect(refundSdk.notices.some((n) => n.message === 'ui.refundTenderGivenBack')).toBe(false);
+    expect(commands.filter((c) => c.name === 'sales.refund')).toHaveLength(0);
+  });
+
+  it('when the lines paid another way cannot be read, says they must be checked in their module', async () => {
+    openOverDoubt({ linesFail: true });
+    const el = await mount();
+    expect(tenderPending(el)?.textContent).toContain('ui.refundTenderPending');
+  });
+
+  it('says the same when the slot registry itself cannot be read', async () => {
+    openOverDoubt({ slotFail: true });
+    const el = await mount();
+    expect(tenderPending(el)?.textContent).toContain('ui.refundTenderPending');
+  });
+
+  it('the same screen moved to ANOTHER sale does not offer the first sale\'s document', async () => {
+    openOverDoubt();
+    const el = await mount();
+    install({ legs: ALL_BACK });
+    el.saleId = 'sale-2';
+    await settle(el);
+    await arm(el);
+    expect(giveBackButton(el)).toBeNull();
+  });
+
+  it('the same screen moved to another recovered sale whose lines DO read carries no stale warning', async () => {
+    openOverDoubt({ linesFail: true });
+    const el = await mount();
+    expect(tenderPending(el)).toBeTruthy();
+    install({ legs: ALL_BACK });
+    rememberPendingRefundKey('sale-2', 'refund-sale-2-closed');
+    try {
+      el.saleId = 'sale-2';
+      await settle(el);
+      expect(tenderPending(el)).toBeNull();
+    } finally {
+      forgetPendingRefundKey('sale-2');
+    }
+  });
+
+  it('no such warning when the lines cannot be read on a screen that recovered nothing', async () => {
+    install({ legs: ALL_BACK, linesFail: true });
+    const el = await mount();
+    expect(tenderPending(el)).toBeNull();
+  });
+
+  it('no such warning when nobody fills the hole: there is nothing to give back', async () => {
+    openOverDoubt({ fillers: false });
+    const el = await mount();
+    expect(tenderPending(el)).toBeNull();
+    expect(giveBackButton(el)).toBeNull();
   });
 });

@@ -120,6 +120,9 @@ const COVERED: Record<string, { prefix: string; contract: string[]; tables?: str
       'refund-checking',
       'refund-not-recorded',
       'refund-recovered',
+      // sales#462: reopened over a recovered document, what was not paid in money.
+      'refund-tender-commit',
+      'refund-tender-pending',
     ],
   },
   // The till itself (`/m/sales/pos`): the screen a cashier spends the day on, and the one the QA
