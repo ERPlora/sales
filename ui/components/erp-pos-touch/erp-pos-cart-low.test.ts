@@ -28,6 +28,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
 import './erp-pos-touch';
+import enCatalog from '../../../locales/en.json';
+import esCatalog from '../../../locales/es.json';
 
 type HappyWindow = Window & { happyDOM?: { setViewport(v: { width: number; height: number }): void } };
 
@@ -396,8 +398,9 @@ const KITCHEN_PRODUCTS = [{ id: 'p-1', name: 'Café', sku: 'CAF', price: 180, is
 
 type Pos = HTMLElement & { updateComplete: Promise<unknown>; queue<T>(t: () => Promise<T>): Promise<T> };
 
-/** The till with Kitchen installed (it fills sales.pos.actions) and one line still to fire. */
-async function mountWithKitchenAt(width: number, height: number): Promise<ShadowRoot> {
+/** The till with Kitchen installed (it fills sales.pos.actions) and `pending` lines still to fire
+ *  (one by default; with 0, the one line of the check has gone to the kitchen). */
+async function mountWithKitchenAt(width: number, height: number, pending = 1): Promise<ShadowRoot> {
   (window as HappyWindow).happyDOM?.setViewport({ width, height });
   const lines: Record<string, unknown>[] = [];
   installPosDouble({
@@ -408,8 +411,11 @@ async function mountWithKitchenAt(width: number, height: number): Promise<Shadow
     loadSlot: (slot: string) => (slot === 'sales.pos.actions' ? [{ component: 'erp-fake-fire-433' }] : []),
     command: async (name: string) => {
       if (name === 'sales.order.open') {
-        lines.push({ id: 'l1', product_id: 'p-1', product_name: 'Café', unit_price: 180, quantity: 1_000_000, tax_category_key: 'product.generic', fired_at: null, round_no: 0 });
-        return { ok: true, new_ids: ['o1', 'l1'] };
+        for (let i = 1; i <= Math.max(pending, 1); i++) {
+          lines.push({ id: `l${i}`, product_id: 'p-1', product_name: 'Café', unit_price: 180, quantity: 1_000_000, tax_category_key: 'product.generic',
+            fired_at: pending ? null : '2026-09-28T10:00:00Z', round_no: pending ? 0 : 1 });
+        }
+        return { ok: true, new_ids: ['o1', ...lines.map((l) => String(l.id))] };
       }
       return { ok: true };
     },
@@ -431,9 +437,10 @@ describe('with Kitchen, a phone drawer shows the first line of the check (sales#
     const root = await mountWithKitchenAt(390, 667);
     const tabs = root.querySelector('[data-testid="pos-view-tabs"]');
     expect(tabs, 'the kitchen tabs are there').toBeTruthy();
-    for (const [id, key] of [['pos-view-tab-account', 'ui.accountTab'], ['pos-view-tab-draft', 'ui.currentCommandTab']]) {
+    for (const [id, key, label] of [['pos-view-tab-account', 'ui.accountTab', 'ui.accountTab'],
+      ['pos-view-tab-draft', 'ui.currentCommandTab', 'ui.currentCommandTabPendingOne']]) {
       const tab = root.querySelector(`[data-testid="${id}"]`)!;
-      expect(tab.getAttribute('aria-label'), `${id}: named when only its icon shows`).toBe(key);
+      expect(tab.getAttribute('aria-label'), `${id}: named when only its icon shows`).toBe(label);
       expect(tab.querySelector('ion-icon.view-tab-icon')?.getAttribute('name'), `${id}: a literal icon`).toMatch(/-outline$/);
       expect(tab.querySelector('.view-tab-text')?.textContent?.trim(), `${id}: the visible name`).toBe(key);
     }
@@ -441,6 +448,25 @@ describe('with Kitchen, a phone drawer shows the first line of the check (sales#
     const dot = draft.querySelector('.pending-dot');
     expect(dot?.textContent?.trim(), 'the pending count').toBe('1');
     expect(dot!.closest('.view-tab-text'), 'the count stays when the name hides').toBeNull();
+  });
+
+  // The aria-label wins over the words of the tab, so a fixed «Current order» dropped the pending
+  // count a screen reader read before (in the words, «Current order 1») -- on a tablet too.
+  it('the current-order tab says how many items are still to send, for screen readers too', async () => {
+    const label = async (pending: number) => (await mountWithKitchenAt(390, 667, pending))
+      .querySelector('[data-testid="pos-view-tab-draft"]')!.getAttribute('aria-label');
+    expect(await label(0), 'nothing pending: just its name').toBe('ui.currentCommandTab');
+    expect(await label(1)).toBe('ui.currentCommandTabPendingOne');
+    expect(await label(2)).toBe('ui.currentCommandTabPending');
+  });
+
+  it('the words of that name, in en and es', () => {
+    const en = (enCatalog as { ui: Record<string, string> }).ui;
+    const es = (esCatalog as { ui: Record<string, string> }).ui;
+    expect(en.currentCommandTabPendingOne).toBe('Current order, 1 item to send');
+    expect(en.currentCommandTabPending).toBe('Current order, {count} items to send');
+    expect(es.currentCommandTabPendingOne).toBe('Comanda actual, 1 artículo por enviar');
+    expect(es.currentCommandTabPending).toBe('Comanda actual, {count} artículos por enviar');
   });
 
   it('the two tabs show different icons', async () => {

@@ -5511,7 +5511,11 @@ export class ErpPosTouch extends LitElement {
               <ion-icon class="view-tab-icon" name="list-outline" aria-hidden="true"></ion-icon>
               <ion-label><span class="view-tab-text">${t('ui.accountTab')}</span></ion-label>
             </ion-segment-button>
-            <ion-segment-button data-testid="pos-view-tab-draft" value="draft" layout="icon-start" aria-label=${t('ui.currentCommandTab')}>
+            <!-- The aria-label wins over the words, so it carries the pending count they show. -->
+            <ion-segment-button data-testid="pos-view-tab-draft" value="draft" layout="icon-start"
+              aria-label=${!this.pendingCount ? t('ui.currentCommandTab')
+                : this.pendingCount === 1 ? t('ui.currentCommandTabPendingOne')
+                : t('ui.currentCommandTabPending', { count: this.pendingCount })}>
               <ion-icon class="view-tab-icon" name="restaurant-outline" aria-hidden="true"></ion-icon>
               <ion-label><span class="view-tab-label">
                 <span class="view-tab-text">${t('ui.currentCommandTab')}</span>

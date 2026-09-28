@@ -269,6 +269,8 @@
     "noCheckContext": "Cuenta sin mesa ni cliente",
     "accountTab": "Cuenta",
     "currentCommandTab": "Comanda actual",
+    "currentCommandTabPendingOne": "Comanda actual, 1 artículo por enviar",
+    "currentCommandTabPending": "Comanda actual, {count} artículos por enviar",
     "currentCommandHint": "Revisa cantidades y asignaciones. Al enviar, estas líneas quedarán agrupadas como una comanda recuperable.",
     "noPendingCommand": "Todo está enviado",
     "noPendingCommandHint": "Añade productos para preparar una nueva comanda.",

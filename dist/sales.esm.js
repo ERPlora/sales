@@ -4668,6 +4668,8 @@ var en_default = {
     noCheckContext: "Check without table or customer",
     accountTab: "Account",
     currentCommandTab: "Current order",
+    currentCommandTabPendingOne: "Current order, 1 item to send",
+    currentCommandTabPending: "Current order, {count} items to send",
     currentCommandHint: "Review quantities and assignments. Sending groups these lines into a recoverable production order.",
     noPendingCommand: "Everything has been sent",
     noPendingCommandHint: "Add products to prepare another production order.",
@@ -5323,6 +5325,8 @@ var es_default = {
     noCheckContext: "Cuenta sin mesa ni cliente",
     accountTab: "Cuenta",
     currentCommandTab: "Comanda actual",
+    currentCommandTabPendingOne: "Comanda actual, 1 art\xEDculo por enviar",
+    currentCommandTabPending: "Comanda actual, {count} art\xEDculos por enviar",
     currentCommandHint: "Revisa cantidades y asignaciones. Al enviar, estas l\xEDneas quedar\xE1n agrupadas como una comanda recuperable.",
     noPendingCommand: "Todo est\xE1 enviado",
     noPendingCommandHint: "A\xF1ade productos para preparar una nueva comanda.",
@@ -12598,7 +12602,9 @@ var ErpPosTouch = class extends i3 {
               <ion-icon class="view-tab-icon" name="list-outline" aria-hidden="true"></ion-icon>
               <ion-label><span class="view-tab-text">${t5("ui.accountTab")}</span></ion-label>
             </ion-segment-button>
-            <ion-segment-button data-testid="pos-view-tab-draft" value="draft" layout="icon-start" aria-label=${t5("ui.currentCommandTab")}>
+            <!-- The aria-label wins over the words, so it carries the pending count they show. -->
+            <ion-segment-button data-testid="pos-view-tab-draft" value="draft" layout="icon-start"
+              aria-label=${!this.pendingCount ? t5("ui.currentCommandTab") : this.pendingCount === 1 ? t5("ui.currentCommandTabPendingOne") : t5("ui.currentCommandTabPending", { count: this.pendingCount })}>
               <ion-icon class="view-tab-icon" name="restaurant-outline" aria-hidden="true"></ion-icon>
               <ion-label><span class="view-tab-label">
                 <span class="view-tab-text">${t5("ui.currentCommandTab")}</span>
