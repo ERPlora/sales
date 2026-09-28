@@ -1,4 +1,5 @@
 import { LitElement, html, css, nothing } from 'lit';
+import type { PropertyValues } from 'lit';
 import { state } from 'lit/decorators.js';
 import { define } from '@erplora/outfitkit/define';
 import '@erplora/outfitkit/ok-inline-feedback';
@@ -73,7 +74,10 @@ export class ErpPosQuickNotes extends LitElement {
   @state() newText = '';
   @state() newSortOrder = '';
   @state() saving = false;
+  /** What «Save» in the panel was refused: painted inside that form, never on the page (pm#513). */
   @state() formError = '';
+  /** What a delete was refused: the confirmation is closed and no panel is open then, so it goes on the page. */
+  @state() pageError = '';
   /** Note being edited; `null` = create mode. The submit decides create vs update. */
   @state() editingId: string | null = null;
   /** Note waiting for the delete confirmation. */
@@ -160,6 +164,7 @@ export class ErpPosQuickNotes extends LitElement {
     if (!text) return;
     this.saving = true;
     this.formError = '';
+    this.pageError = ''; // a save is the next thing the person did: an older delete refusal is stale (staff#75)
     try {
       const fields = { text, sort_order: Number(this.newSortOrder) || 0 };
       if (this.editingId) {
@@ -181,12 +186,13 @@ export class ErpPosQuickNotes extends LitElement {
     const target = this.deleteTarget;
     if (!target || !can('sales.manage_settings')) return;
     this.saving = true;
+    this.pageError = '';
     try {
       await erplora().command('sales.quick_notes.delete', { quick_note_id: target.id });
       this.deleteTarget = null;
       await this.ctrl.load();
     } catch (e) {
-      this.formError = domainErrorText(CATALOG, erplora().locale, e) || erplora().t(CATALOG, 'ui.quickNoteDeleteFailed');
+      this.pageError = domainErrorText(CATALOG, erplora().locale, e) || erplora().t(CATALOG, 'ui.quickNoteDeleteFailed');
       this.deleteTarget = null;
     } finally {
       this.saving = false;
@@ -217,13 +223,28 @@ export class ErpPosQuickNotes extends LitElement {
     </ion-modal>`;
   }
 
+  /** pm#513: the refusal appears above the button that was pressed — on a phone that can leave it
+   *  off the sheet. Bring it into view when it appears, not again on every keystroke. */
+  updated(changed: PropertyValues): void {
+    super.updated(changed);
+    if (changed.has('formError') && this.formError) void this.revealRefusal();
+  }
+
+  /** ok-inline-feedback lays itself out in its own update: scrolled to before it, the box is empty. */
+  private async revealRefusal(): Promise<void> {
+    const banner = this.renderRoot.querySelector('[data-testid="pos-quick-notes-form-error"]') as
+      (HTMLElement & { updateComplete?: Promise<unknown> }) | null;
+    await banner?.updateComplete;
+    banner?.scrollIntoView?.({ block: 'center' });
+  }
+
   render() {
     const t = (k: string): string => erplora().t(CATALOG, k);
     const editable = can('sales.manage_settings');
     return html`<div class="page">
       <p class="intro">${t('ui.quickNotesIntro')}</p>
-      ${this.formError
-        ? html`<ok-inline-feedback data-testid="pos-quick-notes-form-error" tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>`
+      ${this.pageError
+        ? html`<ok-inline-feedback data-testid="pos-quick-notes-error" tone="danger" icon="alert-circle-outline">${this.pageError}</ok-inline-feedback>`
         : nothing}
       ${this.ctrl?.error
         ? html`<ok-inline-feedback data-testid="pos-quick-notes-load-error" tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>`
@@ -274,6 +295,11 @@ export class ErpPosQuickNotes extends LitElement {
             data-testid="pos-quick-notes-order"
             label=${t('ui.quickNoteOrder')} .value=${this.newSortOrder}
             @ionInput=${(e: Event) => { this.newSortOrder = (e.target as HTMLInputElement).value; }}></ion-input>
+          <!-- pm#513: the refusal travels WITH the form — under 834 px the panel is a full-screen
+               sheet and a notice on the page underneath it is never seen. -->
+          ${this.formError
+            ? html`<ok-inline-feedback data-testid="pos-quick-notes-form-error" tone="danger" icon="alert-circle-outline">${this.formError}</ok-inline-feedback>`
+            : nothing}
           <ion-button type="submit" data-testid="pos-quick-notes-submit" ?disabled=${this.saving || !this.newText.trim()}>
             ${this.saving ? t('ui.quickNoteSaving') : this.editingId ? t('ui.quickNoteSave') : t('ui.quickNoteAdd')}
           </ion-button>
