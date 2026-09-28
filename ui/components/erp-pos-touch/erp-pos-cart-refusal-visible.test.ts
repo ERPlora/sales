@@ -94,10 +94,10 @@ interface Pos extends HTMLElement {
   applyDiscount(pct: number): Promise<void>;
   saveOrderLabel(value: string): Promise<void>;
   moveLineStaff(lineId: string, staffId?: string): Promise<void>;
-  toggleGift(id: string): Promise<void>;
+  toggleGift(line: Line): Promise<void>;
   retrieve(c: { id: string; label?: string }): Promise<void>;
   parked: { id: string }[];
-  setQtyAbs(id: string, v: number): Promise<void>;
+  setQtyAbs(line: Line, v: number): Promise<void>;
 }
 
 async function mount(): Promise<Pos> {
@@ -263,7 +263,7 @@ describe('2 · the notice follows the surface: never lost, never twice', () => {
 
   const retried: [string, string, (el: Pos) => Promise<void>][] = [
     ...CART_ACTIONS,
-    ['the quantity', 'sales.order.update_line', (el) => el.setQtyAbs(el.cart[0].id, 2)],
+    ['the quantity', 'sales.order.update_line', (el) => el.setQtyAbs(el.cart[0], 2)],
   ];
   for (const [what, command, act] of retried) {
     it(`${what}: retrying and getting through clears the old notice`, async () => {
@@ -389,7 +389,7 @@ describe('3 · a refused gift, quantity or note puts the line BACK and says so',
   it('gift: the line is not left «on the house» on screen when the order kept it at full price', async () => {
     const el = await openCartWithLine();
     refused.add('sales.order.update_line');
-    await el.toggleGift(el.cart[0].id);
+    await el.toggleGift(el.cart[0]);
     await settle(el);
 
     expect(el.cart[0].is_gift ?? false, 'the screen agrees with the order again').toBe(false);
@@ -399,7 +399,7 @@ describe('3 · a refused gift, quantity or note puts the line BACK and says so',
   it('quantity: the line goes back to the quantity the order has', async () => {
     const el = await openCartWithLine();
     refused.add('sales.order.update_line');
-    await el.setQtyAbs(el.cart[0].id, 2);
+    await el.setQtyAbs(el.cart[0], 2);
     await settle(el);
 
     expect(el.cart[0].qty, 'the order still has one').toBe(1);
@@ -416,7 +416,7 @@ describe('3 · a refused gift, quantity or note puts the line BACK and says so',
     expect(el.cart.map((l) => l.line_id), 'two saved lines').toEqual(['line-1', 'line-2']);
     el.cartOpen = true;
     refused.add('sales.order.remove_line');
-    await el.setQtyAbs(el.cart[0].id, 0);
+    await el.setQtyAbs(el.cart[0], 0);
     await settle(el);
 
     expect(el.cart.map((l) => l.line_id), 'the line the order still has is still on screen, first').toEqual(['line-1', 'line-2']);
@@ -452,7 +452,7 @@ describe('3 · a refused gift, quantity or note puts the line BACK and says so',
     it('gift', async () => {
       const el = await twoLinesOfOneProduct();
       refused.add('sales.order.update_line');
-      await el.toggleGift(el.cart[0].id);
+      await el.toggleGift(el.cart[0]);
       await settle(el);
 
       expect(el.cart[0].is_gift ?? false, 'the refused line is back').toBe(false);
@@ -462,7 +462,7 @@ describe('3 · a refused gift, quantity or note puts the line BACK and says so',
     it('quantity', async () => {
       const el = await twoLinesOfOneProduct();
       refused.add('sales.order.update_line');
-      await el.setQtyAbs(el.cart[0].id, 2);
+      await el.setQtyAbs(el.cart[0], 2);
       await settle(el);
 
       expect(el.cart[0].qty, 'the refused line is back').toBe(1);
@@ -472,7 +472,7 @@ describe('3 · a refused gift, quantity or note puts the line BACK and says so',
     it('quantity to zero', async () => {
       const el = await twoLinesOfOneProduct();
       refused.add('sales.order.remove_line');
-      await el.setQtyAbs(el.cart[0].id, 0);
+      await el.setQtyAbs(el.cart[0], 0);
       await settle(el);
 
       expect(el.cart.map((l) => [l.line_id, l.qty]), 'the refused removal is put back, in its place').toEqual([['line-1', 1], ['line-2', 3]]);
@@ -494,10 +494,10 @@ describe('3 · a refused gift, quantity or note puts the line BACK and says so',
   it('a gift that goes through clears a previous refusal', async () => {
     const el = await openCartWithLine();
     refused.add('sales.order.update_line');
-    await el.toggleGift(el.cart[0].id);
+    await el.toggleGift(el.cart[0]);
     await settle(el);
     refused.clear();
-    await el.toggleGift(el.cart[0].id);
+    await el.toggleGift(el.cart[0]);
     await settle(el);
 
     expect(el.cart[0].is_gift).toBe(true);

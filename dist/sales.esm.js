@@ -9586,7 +9586,7 @@ var ErpPosTouch = class extends i3 {
       }
       return;
     }
-    await this.queue(() => this.setQtyAbs(target.id, verdict.qty));
+    await this.queue(() => this.setQtyAbs(target, verdict.qty));
   }
   async connectedCallback() {
     const connectionEpoch = ++this.connectionEpoch;
@@ -11049,12 +11049,7 @@ var ErpPosTouch = class extends i3 {
     const tax_rate = resolveLineTax(this.taxCatalog.rates, p4.tax_category_key);
     try {
       if (ex) {
-        const qty = ex.qty + 1;
-        this.cart = this.cart.map((l3) => l3 === ex ? { ...l3, qty } : l3);
-        if (this.orderId && !await persistLineQty(erplora2(), this.orderId, ex, qty)) {
-          this.cart = this.cart.map((l3) => l3.id === ex.id && !l3.is_gift ? { ...l3, qty: ex.qty } : l3);
-          this.error = t5("ui.lineNotSaved");
-        }
+        await this.raiseMergedLine(ex);
         return;
       }
       const line = {
@@ -11088,6 +11083,31 @@ var ErpPosTouch = class extends i3 {
       erplora2().notify?.({ type: "error", message: msg });
     }
   }
+  /** One more of a line a tap merges into (`addNow`, `addComboLine`), written to the order AT ONCE.
+   *
+   *  sales#443 — if the write does not land, THAT row is put back and nothing else: the same
+   *  product (or menu) can be on the check twice — another professional, other supplements, one on
+   *  the house — and the order still has the sibling exactly as it is on screen. A refusal from
+   *  the hub puts it back too before it is told (the caller's catch says why): leaving the raised
+   *  quantity up would show a line the order does not have. */
+  async raiseMergedLine(ex) {
+    const raised = { ...ex, qty: ex.qty + 1 };
+    this.cart = this.cart.map((l3) => l3 === ex ? raised : l3);
+    const putBack = () => {
+      this.cart = this.cart.map((l3) => l3 === raised ? { ...l3, qty: ex.qty } : l3);
+    };
+    let saved2 = true;
+    try {
+      if (this.orderId) saved2 = await persistLineQty(erplora2(), this.orderId, raised, raised.qty);
+    } catch (e8) {
+      putBack();
+      throw e8;
+    }
+    if (!saved2) {
+      putBack();
+      this.error = t5("ui.lineNotSaved");
+    }
+  }
   /** Añade la línea del MENÚ. Hermana de `addNow`, con su propia fusión: dos menús con segundo
    *  distinto NO son la misma línea (la composición entra en la identidad, igual que los
    *  suplementos en pm#93), o cocina recibiría «2 × Menú del día» y uno de los dos mal.
@@ -11101,11 +11121,7 @@ var ErpPosTouch = class extends i3 {
     const tax_rate = resolveLineTax(this.taxCatalog.rates, combo.tax_category_key);
     try {
       if (ex) {
-        const qty = ex.qty + 1;
-        this.cart = this.cart.map((l3) => l3 === ex ? { ...l3, qty } : l3);
-        if (this.orderId && !await persistLineQty(erplora2(), this.orderId, ex, qty)) {
-          this.cart = this.cart.map((l3) => l3 === ex ? { ...l3, qty: ex.qty } : l3);
-        }
+        await this.raiseMergedLine(ex);
         return;
       }
       await this.pushNewLine({
@@ -11130,8 +11146,8 @@ var ErpPosTouch = class extends i3 {
   }
   /** Invitar/quitar invitación a una línea (comp, ADR-comp): toggle is_gift con un motivo por defecto.
    *  La línea regalo no se cobra (el servidor pone net/tax/total=0) pero descuenta stock. */
-  async toggleGift(id) {
-    const ex = this.cart.find((l3) => l3.id === id);
+  async toggleGift(line) {
+    const ex = this.rowOf(line);
     if (!ex) return;
     const is_gift = !ex.is_gift;
     const gift_reason = is_gift ? ex.gift_reason || "Invitaci\xF3n" : void 0;
@@ -11165,9 +11181,16 @@ var ErpPosTouch = class extends i3 {
   stepOf(l3) {
     return l3.increment_value ? fromMicro2(l3.increment_value) : 1;
   }
+  /** sales#443 — the cart row a line control refers to. By ROW (`line_id`), never by product:
+   *  the same product is on the check twice as often as not (two professionals, sales#273; other
+   *  supplements, pm#93; one of them on the house), and looking it up by `id` — the product —
+   *  always landed on the FIRST of them. A line not saved yet has no row id: it is itself. */
+  rowOf(line) {
+    return this.cart.find((l3) => line.line_id ? l3.line_id === line.line_id : l3 === line);
+  }
   /** Fija la cantidad de una línea (desde ok-qty-stepper); al llegar a 0 la línea se elimina. */
-  async setQtyAbs(id, v3, stepper) {
-    const ex = this.cart.find((l3) => l3.id === id);
+  async setQtyAbs(line, v3, stepper) {
+    const ex = this.rowOf(line);
     if (!ex) return;
     const qtyMicro = toMicro2(Math.max(0, v3));
     if (!onGrid2(qtyMicro, ex.increment_value ?? 0)) {
@@ -12774,12 +12797,12 @@ var ErpPosTouch = class extends i3 {
               <ion-icon name=${l3.note ? "chatbox-ellipses" : "chatbox-ellipses-outline"} slot="icon-only"
                         class=${this.toneOf(!!l3.note, "primary")}></ion-icon>
             </ion-button>
-            <ion-button data-testid=${`pos-line-${l3.id}-gift`} fill="clear" size="small" title=${t5("ui.giftAction")} @click=${() => this.toggleGift(l3.id)}>
+            <ion-button data-testid=${`pos-line-${l3.id}-gift`} fill="clear" size="small" title=${t5("ui.giftAction")} @click=${() => this.toggleGift(l3)}>
               <ion-icon name=${l3.is_gift ? "gift" : "gift-outline"} slot="icon-only" class=${this.toneOf(!!l3.is_gift, "success")}></ion-icon>
             </ion-button>
             <ok-qty-stepper .value=${l3.qty} .min=${0} .step=${this.stepOf(l3)}
               @ok-change=${(e8) => this.setQtyAbs(
-      l3.id,
+      l3,
       e8.detail.value,
       e8.currentTarget
     )}></ok-qty-stepper>`}

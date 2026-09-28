@@ -1980,7 +1980,7 @@ export class ErpPosTouch extends LitElement {
       }
       return;
     }
-    await this.queue(() => this.setQtyAbs(target!.id, verdict.qty));
+    await this.queue(() => this.setQtyAbs(target!, verdict.qty));
   }
 
   async connectedCallback() {
@@ -3639,15 +3639,10 @@ export class ErpPosTouch extends LitElement {
     try {
       if (ex) {
         // Ya está en la comanda: sube la cantidad y PERSISTE YA (una fila, no todo el carrito).
-        const qty = ex.qty + 1;
-        this.cart = this.cart.map((l) => (l === ex ? { ...l, qty } : l));
         // Antes esto solo escribía si YA se conocía el `line_id`; si no, la cantidad subía en
         // pantalla y no llegaba a la comanda (5 tortillas a la vista, 1 en la BD). `persistLineQty`
         // recupera el id releyendo el pedido, y si aun así no puede escribir, lo DECIMOS.
-        if (this.orderId && !(await persistLineQty(erplora(), this.orderId, ex, qty))) {
-          this.cart = this.cart.map((l) => (l.id === ex.id && !l.is_gift ? { ...l, qty: ex.qty } : l));
-          this.error = t('ui.lineNotSaved');
-        }
+        await this.raiseMergedLine(ex);
         return;
       }
       const line: CartLine = {
@@ -3684,6 +3679,30 @@ export class ErpPosTouch extends LitElement {
     }
   }
 
+  /** One more of a line a tap merges into (`addNow`, `addComboLine`), written to the order AT ONCE.
+   *
+   *  sales#443 — if the write does not land, THAT row is put back and nothing else: the same
+   *  product (or menu) can be on the check twice — another professional, other supplements, one on
+   *  the house — and the order still has the sibling exactly as it is on screen. A refusal from
+   *  the hub puts it back too before it is told (the caller's catch says why): leaving the raised
+   *  quantity up would show a line the order does not have. */
+  private async raiseMergedLine(ex: CartLine): Promise<void> {
+    const raised: CartLine = { ...ex, qty: ex.qty + 1 };
+    this.cart = this.cart.map((l) => (l === ex ? raised : l));
+    const putBack = () => { this.cart = this.cart.map((l) => (l === raised ? { ...l, qty: ex.qty } : l)); };
+    let saved = true;
+    try {
+      if (this.orderId) saved = await persistLineQty(erplora(), this.orderId, raised, raised.qty);
+    } catch (e) {
+      putBack();
+      throw e;
+    }
+    if (!saved) {
+      putBack();
+      this.error = t('ui.lineNotSaved');
+    }
+  }
+
   /** Añade la línea del MENÚ. Hermana de `addNow`, con su propia fusión: dos menús con segundo
    *  distinto NO son la misma línea (la composición entra en la identidad, igual que los
    *  suplementos en pm#93), o cocina recibiría «2 × Menú del día» y uno de los dos mal.
@@ -3705,11 +3724,7 @@ export class ErpPosTouch extends LitElement {
     const tax_rate = resolveLineTax(this.taxCatalog.rates, combo.tax_category_key);
     try {
       if (ex) {
-        const qty = ex.qty + 1;
-        this.cart = this.cart.map((l) => (l === ex ? { ...l, qty } : l));
-        if (this.orderId && !(await persistLineQty(erplora(), this.orderId, ex, qty))) {
-          this.cart = this.cart.map((l) => (l === ex ? { ...l, qty: ex.qty } : l));
-        }
+        await this.raiseMergedLine(ex);
         return;
       }
       await this.pushNewLine({
@@ -3735,8 +3750,8 @@ export class ErpPosTouch extends LitElement {
 
   /** Invitar/quitar invitación a una línea (comp, ADR-comp): toggle is_gift con un motivo por defecto.
    *  La línea regalo no se cobra (el servidor pone net/tax/total=0) pero descuenta stock. */
-  private async toggleGift(id: string) {
-    const ex = this.cart.find((l) => l.id === id);
+  private async toggleGift(line: CartLine) {
+    const ex = this.rowOf(line);
     if (!ex) return;
     const is_gift = !ex.is_gift;
     const gift_reason = is_gift ? (ex.gift_reason || 'Invitación') : undefined;
@@ -3774,9 +3789,17 @@ export class ErpPosTouch extends LitElement {
     return l.increment_value ? fromMicro(l.increment_value) : 1;
   }
 
+  /** sales#443 — the cart row a line control refers to. By ROW (`line_id`), never by product:
+   *  the same product is on the check twice as often as not (two professionals, sales#273; other
+   *  supplements, pm#93; one of them on the house), and looking it up by `id` — the product —
+   *  always landed on the FIRST of them. A line not saved yet has no row id: it is itself. */
+  private rowOf(line: CartLine): CartLine | undefined {
+    return this.cart.find((l) => (line.line_id ? l.line_id === line.line_id : l === line));
+  }
+
   /** Fija la cantidad de una línea (desde ok-qty-stepper); al llegar a 0 la línea se elimina. */
-  private async setQtyAbs(id: string, v: number, stepper?: HTMLElement & { value: number; updateComplete?: Promise<unknown> }) {
-    const ex = this.cart.find((l) => l.id === id);
+  private async setQtyAbs(line: CartLine, v: number, stepper?: HTMLElement & { value: number; updateComplete?: Promise<unknown> }) {
+    const ex = this.rowOf(line);
     if (!ex) return;
     // ADR-0147 §2.2: el incremento VALIDA, no redondea. Fuera de rejilla → se RECHAZA y el
     // pedido no se altera.
@@ -5740,11 +5763,11 @@ export class ErpPosTouch extends LitElement {
               <ion-icon name=${l.note ? 'chatbox-ellipses' : 'chatbox-ellipses-outline'} slot="icon-only"
                         class=${this.toneOf(!!l.note, 'primary')}></ion-icon>
             </ion-button>
-            <ion-button data-testid=${`pos-line-${l.id}-gift`} fill="clear" size="small" title=${t('ui.giftAction')} @click=${() => this.toggleGift(l.id)}>
+            <ion-button data-testid=${`pos-line-${l.id}-gift`} fill="clear" size="small" title=${t('ui.giftAction')} @click=${() => this.toggleGift(l)}>
               <ion-icon name=${l.is_gift ? 'gift' : 'gift-outline'} slot="icon-only" class=${this.toneOf(!!l.is_gift, 'success')}></ion-icon>
             </ion-button>
             <ok-qty-stepper .value=${l.qty} .min=${0} .step=${this.stepOf(l)}
-              @ok-change=${(e: CustomEvent) => this.setQtyAbs(l.id, (e.detail as { value: number }).value,
+              @ok-change=${(e: CustomEvent) => this.setQtyAbs(l, (e.detail as { value: number }).value,
                 e.currentTarget as HTMLElement & { value: number; updateComplete?: Promise<unknown> })}></ok-qty-stepper>`}
       </div>
     </ion-item>`;
