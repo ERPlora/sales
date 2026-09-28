@@ -246,6 +246,12 @@ is not marked broken — the handler is the net, and charging comes first.
   can be resumed from the table or from that drawer.
 - Give a check an editable title to recognise it later ("Mesa 4", "Ana — terraza", "15:07"). It is
   just a label; nothing interprets it.
+- Switching to another check (from the drawer or by touching a table) with a check without a table
+  in front asks **Park** or **Delete**; a check with a table is left at its table. If the hub
+  refuses any of the three, nothing happens: the check stays on screen as it was, the switch does
+  not take place, and the reason is shown where you are looking (the cart, the open checks drawer
+  or the page). A refused name in the park prompt keeps the prompt open with what you typed and the
+  reason inside it.
 
 ### Fire an order to the kitchen
 
