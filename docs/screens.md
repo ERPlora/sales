@@ -291,6 +291,10 @@ Select the lines this person is paying for and charge them. Those lines are mark
 to the sale that charged them; the check **stays open** with the rest. One order can produce several
 sales this way. Selection is **per whole line** today.
 
+A line is selected by tapping **the line itself**. The buttons inside it — comp, note, discount, the
+quantity stepper and the professional — only do their own job and never select or unselect the line
+(sales#449): with nothing selected, **Charge** charges the whole check.
+
 ### A line somebody already paid for (sales#162 / ADR-0386)
 
 The checkout hosts one more slot, `sales.pos.tender`, mounted **per line** rather than per ticket.
