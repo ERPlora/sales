@@ -69,6 +69,16 @@ export function refundErrorKey(code: string): string {
   return key === 'ui.refundNeedsDestinationShort' ? 'ui.refundReasonNotEligible' : key;
 }
 
+/**
+ * sales#451 - a refund the hub never answered: the SDK's `outcomeUnknown` verdict (hub#906, read as
+ * a field, never `instanceof`), or - from a shell older than that net - any transport failure
+ * (`server_unavailable`, the proxy's HTML page, a cut network). Its outcome is unknown, not refused.
+ */
+function isUnknownOutcome(e: unknown): boolean {
+  if ((e as { outcomeUnknown?: unknown } | null | undefined)?.outcomeUnknown === true) return true;
+  return transportErrorKey(e) !== null;
+}
+
 interface Sale { id: string; sale_number: string; status: string; total: number }
 interface Method { id: string; name: string; type: string }
 
@@ -180,6 +190,8 @@ export class ErpSaleRefund extends LitElement {
   @state() private loading = false;
   @state() private error = '';
   @state() private busy = false;
+  /** sales#451 - the last attempt got no answer from the hub: it may have been recorded. */
+  @state() private outcomeUnknown = false;
 
   /** sales#166 - the lines an EXTERNAL TENDER paid for (`is_covered`), in read order. */
   @state() private covered: SaleLine[] = [];
@@ -400,6 +412,7 @@ export class ErpSaleRefund extends LitElement {
     if (why) { erplora().notify?.({ type: 'error', message: why }); return; }
     if (this.busy) return;
     this.busy = true;
+    this.outcomeUnknown = false;
     try {
       const out = await erplora().command<RefundResult>('sales.refund', {
         sale_id: this.saleId,
@@ -419,6 +432,15 @@ export class ErpSaleRefund extends LitElement {
       if (!committed) erplora().notify?.({ type: 'error', message: t('ui.refundTenderPending') });
       this.dispatchEvent(new CustomEvent('refunded', { bubbles: true, composed: true, detail: { saleId: this.saleId } }));
     } catch (e) {
+      // sales#451 - the hub never answered (hub died, proxy 502, network cut): the refund may have
+      // been written before the answer was lost, so «could not be recorded» would be a lie. The
+      // shell's SDK has already toasted its generic «we can't tell» verdict (hub#906); a second
+      // toast here would be a second notice. The screen says instead, on itself, what holds for
+      // THIS refund: retrying from here reuses the key and cannot record it twice.
+      if (isUnknownOutcome(e)) {
+        this.outcomeUnknown = true;
+        return;
+      }
       erplora().notify?.({ type: 'error', message: t(refundErrorKey(errorCode(e))) });
     } finally {
       this.busy = false;
@@ -596,6 +618,9 @@ export class ErpSaleRefund extends LitElement {
       <!-- And the external tenders' warnings, next to the button: the line's hole can be
            off-screen when the thumb is already on the refund button (sales#166). -->
       ${this.renderTenderNotices()}
+      ${this.outcomeUnknown
+        ? html`<ok-inline-feedback data-testid="refund-unknown" tone="warning" icon="help-circle-outline">${t('ui.refundUnknown')}</ok-inline-feedback>`
+        : nothing}
       <!-- 🔴 aria-disabled, JAMÁS el disabled de Ionic: en modo ios es pointer-events:none y en
            una tablet de mostrador el toque muere en silencio (sales#58). El estado ocupado sí es
            disabled de verdad: ahí no hay nada que contestar y un segundo toque devolvería dos
