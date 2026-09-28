@@ -4297,6 +4297,14 @@ export class ErpPosTouch extends LitElement {
     if (changed.has('cart') && this.cart.some((l) => l.staff_id && !this.staffNames.has(l.staff_id))) {
       void this.ensureStaffOptions();
     }
+    // sales#449 — the split selection only holds lines that ARE on the check. A marked line taken
+    // off it (the stepper down to 0) left its id selected, and «Charge» went out with no items or
+    // with the wrong lines while closing the order. With one line left there is nothing to split.
+    if (changed.has('cart') && this.splitSel.size) {
+      const onCheck = new Set(this.cart.length > 1 ? this.cart.map((l) => l.line_id) : []);
+      const kept = [...this.splitSel].filter((id) => onCheck.has(id));
+      if (kept.length !== this.splitSel.size) this.splitSel = new Set(kept);
+    }
   }
   /** El teclado. Tras traer una pata a editar el importe queda CEBADO: la siguiente tecla lo
    *  sustituye en vez de encadenarse a él (50,00 + «6» daría 50,006, que no es un importe). Es como

@@ -11612,6 +11612,11 @@ var ErpPosTouch = class extends i3 {
     if (changed.has("cart") && this.cart.some((l3) => l3.staff_id && !this.staffNames.has(l3.staff_id))) {
       void this.ensureStaffOptions();
     }
+    if (changed.has("cart") && this.splitSel.size) {
+      const onCheck = new Set(this.cart.length > 1 ? this.cart.map((l3) => l3.line_id) : []);
+      const kept = [...this.splitSel].filter((id) => onCheck.has(id));
+      if (kept.length !== this.splitSel.size) this.splitSel = new Set(kept);
+    }
   }
   /** El teclado. Tras traer una pata a editar el importe queda CEBADO: la siguiente tecla lo
    *  sustituye en vez de encadenarse a él (50,00 + «6» daría 50,006, que no es un importe). Es como

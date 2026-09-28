@@ -187,3 +187,64 @@ describe('sales#449 · after using a line control, «Charge» charges the WHOLE 
     });
   }
 });
+
+describe('sales#449 · a MARKED line taken off the check leaves no mark behind', () => {
+  // With the stepper no longer toggling the mark, «−» down to 0 on a marked line removes the row
+  // while its id stays selected. «Charge» then billed the lines of a selection that no longer
+  // matched anything: `complete_sale` went out with NO items and closed the order, so the coffee
+  // left on the check was never charged.
+  const removeWithStepper = (el: Pos, lineId: string) => {
+    const stepper = lineItem(el, lineId).querySelector<HTMLElement>('ok-qty-stepper')!;
+    stepper.click();
+    stepper.dispatchEvent(new CustomEvent('ok-change', { detail: { value: 0 } }));
+  };
+
+  it('marking the toast and stepping it down to 0 → «Charge» bills the coffee that is left, whole', async () => {
+    const el = await twoLineCheck();
+    lineItem(el, 'line-2').click();
+    await settle(el);
+    removeWithStepper(el, 'line-2');
+    await el.queue(async () => undefined);
+    await settle(el);
+    expect(el.cart.map((l) => l.line_id), 'the toast is off the check').toEqual(['line-1']);
+
+    const sale = await chargeWithCard(el);
+    expect((sale.items as { product_id: string }[]).map((i) => i.product_id), 'the coffee is charged').toEqual(['p-coffee']);
+    expect(sale.line_ids ?? null).toBeNull();
+    expect(sale.keep_order_open, 'the table is settled').toBe(false);
+    expect(sale.partialNotice, 'no «Charging 1 line» for a line that is gone').toBe(false);
+  });
+
+  it('marking the coffee and removing the toast → one line left, nothing to split: the whole check', async () => {
+    const el = await twoLineCheck();
+    lineItem(el, 'line-1').click();
+    await settle(el);
+    removeWithStepper(el, 'line-2');
+    await el.queue(async () => undefined);
+    await settle(el);
+    expect(el.cart.map((l) => l.line_id)).toEqual(['line-1']);
+
+    const sale = await chargeWithCard(el);
+    expect((sale.items as { product_id: string }[]).map((i) => i.product_id)).toEqual(['p-coffee']);
+    expect(sale.keep_order_open).toBe(false);
+    expect(sale.partialNotice, 'a single line is the whole check, not «Charging 1 line»').toBe(false);
+  });
+
+  it('with three lines, removing one marked line keeps the OTHER mark and charges just that one', async () => {
+    const el = await twoLineCheck();
+    el.cart = [...el.cart, { ...el.cart[0], id: 'p-toast', line_id: 'line-3', name: 'Tostada', price: 250 }];
+    await settle(el);
+    lineItem(el, 'line-2').click();
+    lineItem(el, 'line-3').click();
+    await settle(el);
+    removeWithStepper(el, 'line-3');
+    await el.queue(async () => undefined);
+    await settle(el);
+    expect(el.cart.map((l) => l.line_id)).toEqual(['line-1', 'line-2']);
+    expect(mark(el, 'line-2'), 'the toast the cashier marked is still marked').toBe('checkmark-circle');
+
+    const sale = await chargeWithCard(el);
+    expect(sale.line_ids).toEqual(['line-2']);
+    expect(sale.keep_order_open, 'the coffee stays on the check').toBe(true);
+  });
+});
