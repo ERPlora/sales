@@ -433,7 +433,62 @@ describe('3 · a refused gift, quantity or note puts the line BACK and says so',
     await settle(el);
 
     expect(el.cart[0].note, 'the kitchen would never see it: the screen must not show it').toBeUndefined();
-    expect(cartNotice(el)?.textContent?.trim()).toBe(el.error);
+    expect(cartNotice(el)?.textContent?.trim(), 'told in words, not the raw server sentence').toBe('ui.lineChangeFailed');
+  });
+
+  // The same product can be on the check twice (two professionals, sales#273; other modifiers,
+  // pm#93; one of them on the house): `id` is the PRODUCT, `line_id` is the row. Putting a
+  // refused line back must touch that row only — never its sibling, which the order still has as
+  // it is on screen.
+  describe('putting a refused line back leaves the other line of the same product alone', () => {
+    async function twoLinesOfOneProduct(): Promise<Pos> {
+      const el = await openCartWithLine();
+      el.cart = [...el.cart, { ...el.cart[0], line_id: 'line-2', qty: 3, is_gift: true, note: 'poco hecho' }];
+      await el.updateComplete;
+      return el;
+    }
+    const sibling = (el: Pos) => el.cart.find((l) => l.line_id === 'line-2');
+
+    it('gift', async () => {
+      const el = await twoLinesOfOneProduct();
+      refused.add('sales.order.update_line');
+      await el.toggleGift(el.cart[0].id);
+      await settle(el);
+
+      expect(el.cart[0].is_gift ?? false, 'the refused line is back').toBe(false);
+      expect(sibling(el)?.is_gift, 'the other one is still on the house').toBe(true);
+    });
+
+    it('quantity', async () => {
+      const el = await twoLinesOfOneProduct();
+      refused.add('sales.order.update_line');
+      await el.setQtyAbs(el.cart[0].id, 2);
+      await settle(el);
+
+      expect(el.cart[0].qty, 'the refused line is back').toBe(1);
+      expect(sibling(el)?.qty, 'the other one keeps its quantity').toBe(3);
+    });
+
+    it('quantity to zero', async () => {
+      const el = await twoLinesOfOneProduct();
+      refused.add('sales.order.remove_line');
+      await el.setQtyAbs(el.cart[0].id, 0);
+      await settle(el);
+
+      expect(el.cart.map((l) => [l.line_id, l.qty]), 'the refused removal is put back, in its place').toEqual([['line-1', 1], ['line-2', 3]]);
+    });
+
+    it('note', async () => {
+      const el = await twoLinesOfOneProduct();
+      refused.add('sales.order.update_line');
+      el.shadowRoot.querySelector<HTMLElement>(`[data-testid="pos-line-${el.cart[0].id}-note"]`)!.click();
+      await el.updateComplete;
+      await el.applyLineNote('sin azúcar');
+      await settle(el);
+
+      expect(el.cart[0].note, 'the refused note is taken off').toBeUndefined();
+      expect(sibling(el)?.note, 'the other one keeps the note the kitchen has').toBe('poco hecho');
+    });
   });
 
   it('a gift that goes through clears a previous refusal', async () => {

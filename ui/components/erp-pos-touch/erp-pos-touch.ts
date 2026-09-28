@@ -3681,7 +3681,7 @@ export class ErpPosTouch extends LitElement {
         await updateOrderLineQty(erplora(), this.orderId, ex.line_id, ex.qty, ex.price, is_gift, gift_reason ?? '', ex.discount ?? 0);
       } catch (e) {
         // sales#438: refused → the line is back as the order has it, and the cashier is told.
-        this.cart = this.cart.map((l) => (l.id === id ? { ...l, is_gift: ex.is_gift, gift_reason: ex.gift_reason } : l));
+        this.cart = this.cart.map((l) => (l.line_id === ex.line_id ? { ...l, is_gift: ex.is_gift, gift_reason: ex.gift_reason } : l));
         this.error = domainErrorText(CATALOG, erplora().locale, e) || t('ui.lineChangeFailed');
       }
     }
@@ -3742,8 +3742,9 @@ export class ErpPosTouch extends LitElement {
     } catch (e) {
       // sales#438: refused → the line is back as the order has it (a refused removal puts it back
       // in its place), and the cashier is told.
-      this.cart = this.cart.some((l) => l.id === id)
-        ? this.cart.map((l) => (l.id === id ? { ...l, qty: ex.qty } : l))
+      // By ROW, not by product: the same product can be on the check twice (sales#273, pm#93).
+      this.cart = this.cart.some((l) => l.line_id === ex.line_id)
+        ? this.cart.map((l) => (l.line_id === ex.line_id ? { ...l, qty: ex.qty } : l))
         : [...this.cart.slice(0, at), ex, ...this.cart.slice(at)];
       this.error = domainErrorText(CATALOG, erplora().locale, e) || t('ui.lineChangeFailed');
     }
@@ -4216,8 +4217,8 @@ export class ErpPosTouch extends LitElement {
       try { await updateOrderLineNote(erplora(), this.orderId, line, clean); }
       catch (e) {
         // sales#438: the order kept the old note — the screen (and the kitchen ticket) must too.
-        this.cart = this.cart.map((l) => (l.id === line.id ? { ...l, note: line.note } : l));
-        this.error = e instanceof Error ? e.message : String(e);
+        this.cart = this.cart.map((l) => (l.line_id === line.line_id ? { ...l, note: line.note } : l));
+        this.error = domainErrorText(CATALOG, erplora().locale, e) || t('ui.lineChangeFailed');
       }
     }
   }

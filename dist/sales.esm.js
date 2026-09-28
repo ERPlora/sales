@@ -11085,7 +11085,7 @@ var ErpPosTouch = class extends i3 {
       try {
         await updateOrderLineQty(erplora2(), this.orderId, ex.line_id, ex.qty, ex.price, is_gift, gift_reason ?? "", ex.discount ?? 0);
       } catch (e8) {
-        this.cart = this.cart.map((l3) => l3.id === id ? { ...l3, is_gift: ex.is_gift, gift_reason: ex.gift_reason } : l3);
+        this.cart = this.cart.map((l3) => l3.line_id === ex.line_id ? { ...l3, is_gift: ex.is_gift, gift_reason: ex.gift_reason } : l3);
         this.error = domainErrorText(CATALOG2, erplora2().locale, e8) || t5("ui.lineChangeFailed");
       }
     }
@@ -11131,7 +11131,7 @@ var ErpPosTouch = class extends i3 {
       if (qty > 0) await updateOrderLineQty(erplora2(), this.orderId, ex.line_id, qty, ex.price, ex.is_gift, void 0, ex.discount ?? 0);
       else await removeOrderLine(erplora2(), this.orderId, ex.line_id);
     } catch (e8) {
-      this.cart = this.cart.some((l3) => l3.id === id) ? this.cart.map((l3) => l3.id === id ? { ...l3, qty: ex.qty } : l3) : [...this.cart.slice(0, at), ex, ...this.cart.slice(at)];
+      this.cart = this.cart.some((l3) => l3.line_id === ex.line_id) ? this.cart.map((l3) => l3.line_id === ex.line_id ? { ...l3, qty: ex.qty } : l3) : [...this.cart.slice(0, at), ex, ...this.cart.slice(at)];
       this.error = domainErrorText(CATALOG2, erplora2().locale, e8) || t5("ui.lineChangeFailed");
     }
   }
@@ -11524,8 +11524,8 @@ var ErpPosTouch = class extends i3 {
       try {
         await updateOrderLineNote(erplora2(), this.orderId, line, clean);
       } catch (e8) {
-        this.cart = this.cart.map((l3) => l3.id === line.id ? { ...l3, note: line.note } : l3);
-        this.error = e8 instanceof Error ? e8.message : String(e8);
+        this.cart = this.cart.map((l3) => l3.line_id === line.line_id ? { ...l3, note: line.note } : l3);
+        this.error = domainErrorText(CATALOG2, erplora2().locale, e8) || t5("ui.lineChangeFailed");
       }
     }
   }
