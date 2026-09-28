@@ -157,6 +157,21 @@ describe('POS · a weight that arrives from a scale', () => {
     expect(el.error).toContain('ui.scaleUnitMismatch');
   });
 
+  // sales#443: the same product can be on the check twice (two professionals, other supplements).
+  // The weight belongs to the LAST weighable line — that row, not the first line of its product.
+  it('with the same product on two lines, lands on the last one and leaves the first as it was', async () => {
+    const el = await mount();
+    await tap(el, 'Tomato');
+    el.cart = [el.cart[0], { ...el.cart[0], line_id: 'line-9', qty: 0.25 }];
+    await el.updateComplete;
+
+    await weigh(el, { value: 0.532 });
+
+    expect(el.cart.map((l) => [l.line_id, l.qty])).toEqual([['line-1', 1], ['line-9', 0.532]]);
+    const written = commands.filter((c) => c.name === 'sales.order.update_line').at(-1);
+    expect(written?.payload.line_id).toBe('line-9');
+  });
+
   it('ignores a detail that is not a weight — the event is a public door', async () => {
     const el = await mount();
     await tap(el, 'Tomato');
