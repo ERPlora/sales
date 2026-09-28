@@ -28,6 +28,12 @@ fact, and the credit note is its document, issued from `invoice`.
 
 When the last cent goes back, the sale's status becomes **Devuelta**.
 
+If the hub does not answer when you confirm (sales#451), nobody can tell yet whether the refund was
+recorded, so the screen never says it failed. It stays open with a notice: pressing **Devolver**
+again *on this screen* cannot record the refund twice (the attempt keeps its idempotency key), and
+if you close it, check the sale in the list before refunding again. The hub's own «we can't tell»
+toast is the only toast; the screen adds none.
+
 ### What was not paid in money goes back too (sales#166 / ADR-0386)
 
 The refund screen hosts a second slot, `sales.refund.tender` — the mirror of the till's
