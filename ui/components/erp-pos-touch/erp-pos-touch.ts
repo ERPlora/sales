@@ -1293,19 +1293,31 @@ export class ErpPosTouch extends LitElement {
     /* sales#433: with Kitchen, the «Account / Current order» tabs were a row of their own (~50 px)
        that alone hid the first line of the check in every phone drawer but the tallest -- 390x667
        under the strip (385-391px) included, just over the low block below. As on Square and Toast,
-       they are icons (their names in aria-label, the pending count on them) on the row of the
-       check's name. Written before the low blocks, which compact the rest of the header. */
+       they are icons (their names in aria-label, the pending count on them) first on the row of
+       the header icons, which has a gap in the middle -- on the row of the check's name they left
+       «Cuenta nu» of «Cuenta nueva» at 320px. Close is an icon too, so a 320px row fits the tabs and
+       five icons. Written before the low blocks, which compact the rest of the header. */
     @container pos-cart (max-height: 28rem) {
       .cart ion-header { display:flex; flex-wrap:wrap; align-items:center; }
-      .cart ion-toolbar { flex:1 1 100%; }
-      .order-heading { flex:1 1 0; min-width:0; border-bottom:0; }
+      .cart ion-toolbar { flex:1 1 0; min-width:0; }
+      .order-heading { flex:1 1 100%; }
       /* md lays the columns out as minmax(auto, 360px): the pair was 722px wide. */
-      ion-segment.view-tabs { flex:none; grid-auto-columns:auto; margin-top:.2rem; margin-bottom:.2rem; margin-left:0; margin-right:.6rem; }
+      ion-segment.view-tabs { order:-1; flex:none; grid-auto-columns:auto; margin-top:.2rem; margin-bottom:.2rem; margin-left:.35rem; margin-right:0; }
       ion-segment.view-tabs ion-segment-button { min-height:2.4rem; min-width:2.75rem;
         --padding-start:.45rem; --padding-end:.45rem; --padding-top:0; --padding-bottom:0; }
       ion-segment.view-tabs ion-label, ion-segment.view-tabs .view-tab-icon { margin-top:0; margin-bottom:0; }
       ion-segment.view-tabs .view-tab-text { display:none; }
       ion-segment.view-tabs .view-tab-icon { display:block; }
+      /* ios gives a button with a label min-height:3.1em, so height alone left it 52px tall. */
+      ion-button.header-action.cart-close { width:2.4rem; height:2.4rem; min-height:2.4rem; margin:auto 0; }
+      ion-button.header-action.cart-close small { display:none; }
+    }
+    /* sales#433: with Tables and Customers (a real restaurant) the one bar of a very low drawer
+       holds the check's name, the tabs and five icons: in 27rem the name and «Served by» slid under
+       the tabs. A low screen is a phone on its side, wide enough for a wider drawer. Written after
+       the blocks that set 27rem, so it wins. */
+    @media (max-height:500px) {
+      .cart { width:min(100%,34rem); }
     }
     /* sales#423: a LOW drawer (320x568 under the «You can't invoice yet» strip, any phone on its
        side) is 170-300px tall, and the header (~145px) and the foot (~125-139px) alone took it:
