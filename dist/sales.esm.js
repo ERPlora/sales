@@ -9539,7 +9539,7 @@ var ErpPosTouch = class extends i3 {
       ion-list.lines { padding-top:0; }
       /* sales#433: 568x320 under the strip leaves 129-131px, and these few px showed the name. */
       ion-list.lines ion-item:first-child { margin-top:0; }
-      ion-list.lines ion-item ion-label { margin-top:.15rem; }
+      ion-list.lines ion-item ion-label { margin-top:.05rem; }
       .cart-foot { padding-top:.2rem; padding-bottom:.2rem; }
       .total { flex-direction:row; align-items:baseline; gap:.35rem; }
       .foot-actions ion-button { margin-top:0; margin-bottom:0; }

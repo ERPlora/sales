@@ -583,10 +583,10 @@ describe('with Kitchen, a phone drawer shows the first line of the check (sales#
     expect(Number(basis![1]), 'the name (107 px) and its edit icon').toBeGreaterThanOrEqual(9.5);
   });
 
-  it('a very low drawer leaves no air above the first line (568×320 under the strip is 129-131 px)', () => {
+  it('a very low drawer leaves no air above the first line (568×320 under the strip is 129-131 px; md left the name 1 px under the foot at .15rem)', () => {
     const veryLow = blocks(posCss(), VERY_LOW).join('\n');
     expect(rules(veryLow, 'ion-list.lines ion-item:first-child')).toMatch(/margin-top:\s*0/);
     expect(rem(rules(veryLow, 'ion-list.lines ion-item ion-label'), 'margin-top'), 'less than the .3rem of sales#432')
-      .toBeLessThan(0.3);
+      .toBeLessThanOrEqual(0.1);
   });
 });
