@@ -2724,6 +2724,8 @@ export class ErpPosTouch extends LitElement {
    *  se suelta la sesión, recuperable tocándola (patrón Toast/Lightspeed) — y se avisa con toast;
    *  sin mesa, se PREGUNTA: aparcar (con la hora de nombre) o eliminar. */
   private async retrieve(c: OpenCheck) {
+    // sales#438: the notice on screen was about the check being left; it is not carried over.
+    this.error = '';
     try {
       if (this.orderId !== c.id && this.blockPendingAccountSwitch()) return;
       if (this.cart.length && this.orderId !== c.id) {

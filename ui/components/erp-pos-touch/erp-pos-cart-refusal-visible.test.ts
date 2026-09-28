@@ -89,6 +89,7 @@ interface Pos extends HTMLElement {
   saveOrderLabel(value: string): Promise<void>;
   moveLineStaff(lineId: string, staffId?: string): Promise<void>;
   toggleGift(id: string): Promise<void>;
+  retrieve(c: { id: string; label?: string }): Promise<void>;
   setQtyAbs(id: string, v: number): Promise<void>;
 }
 
@@ -176,6 +177,9 @@ describe('1 · with the cart drawer open, a refused cart action is told IN the c
     expect(notice.getAttribute('role'), 'announced when it appears').toBe('alert');
     // Its own margin: a bare <p> in the footer brings the browser's 1em above and below.
     expect(getComputedStyle(notice).marginTop).toBe('0px');
+    // A phone on its side lays the foot out as ONE flex row: the notice takes a row of its own
+    // instead of squeezing the total and the buttons.
+    expect(getComputedStyle(notice).flexBasis).toBe('100%');
   });
 
   it('the notice of a refused split (the table button in the cart) is told in the cart too', async () => {
@@ -253,6 +257,20 @@ describe('2 · the notice follows the surface: never lost, never twice', () => {
       expect(cartNotice(el)).toBeNull();
     });
   }
+});
+
+describe('2b · the notice belongs to the check it was said on', () => {
+  it('picking up another open check does not carry the old check\'s refusal onto it', async () => {
+    const el = await mount();
+    // An empty till whose last tap was refused: whatever it said was about THAT check.
+    el.error = 'REFUSED sales.order.set_label';
+    el.cartOpen = true;
+    await el.retrieve({ id: 'ord-2', label: 'Mesa 2' });
+    await settle(el);
+
+    expect(el.error, 'the check now on screen has nothing refused').toBe('');
+    expect(cartNotice(el)).toBeNull();
+  });
 });
 
 describe('3 · a refused gift, quantity or note puts the line BACK and says so', () => {
