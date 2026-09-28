@@ -514,6 +514,37 @@ describe('with Kitchen, a phone drawer shows the first line of the check (sales#
     expect(root.querySelector('[data-testid="pos-cart-close"]')?.getAttribute('aria-label')).toBe('ui.closeAction');
   });
 
+  // md gives an icon-only toolbar button min-width 48px: at 360×640 the park and open-checks
+  // buttons took 48 px each and squeezed the icons of Tables and Customers into each other.
+  it('a drawer up to 28rem keeps the header icons as wide as declared, in md too', () => {
+    const low = blocks(posCss(), KITCHEN_ROW).join('\n');
+    const icon = rules(low, 'ion-button.header-action.icon-action');
+    expect(rem(icon, 'min-width'), 'no wider than the 2.4rem of ios').toBeLessThanOrEqual(2.4);
+    expect(rem(icon, 'min-width')).toBeGreaterThan(0);
+  });
+
+  // A 320 px phone leaves the header row ~280 px: the tabs (~95) and five icons (~200) did not fit,
+  // and the icons of Tables and Customers overlapped. Only there they are a little smaller.
+  it('a drawer narrower than 20rem (a 320 px phone) packs the tabs and five icons tighter', () => {
+    const css = posCss();
+    const NARROW = /pos-cart\s*\(\s*max-height:\s*28rem\s*\)\s*and\s*\(\s*max-width:\s*20rem\s*\)\s*$/;
+    const narrow = blocks(css, NARROW);
+    expect(narrow, 'declared once').toHaveLength(1);
+    const at = (re: RegExp) => [...css.matchAll(/@container\s*([^{]*)\{/g)].findIndex((m) => re.test(m[1]));
+    expect(at(NARROW), 'after the 28rem block, so it wins').toBeGreaterThan(at(KITCHEN_ROW));
+    const body = narrow[0];
+    expect(rem(rules(body, 'ion-toolbar, .cart-actions-slot'), '--pos-hdr-icon-size'), 'smaller icons, Tables and Customers too')
+      .toBeLessThanOrEqual(1.5);
+    const icons = rules(body, 'ion-button.header-action.icon-action, ion-button.header-action.cart-close');
+    expect(rem(icons, 'width')).toBeLessThan(2.4);
+    expect(rem(icons, 'min-width'), 'md does not widen them back').toBe(rem(icons, 'width'));
+    expect(rem(icons, 'width'), 'still a finger wide').toBeGreaterThanOrEqual(2.1);
+    expect(rules(body, '.order-toolbar')).toMatch(/gap:\s*0/);
+    const tab = rules(body, 'ion-segment.view-tabs ion-segment-button');
+    expect(rem(tab, 'min-width')).toBeLessThan(2.75);
+    expect(rem(tab, 'min-width')).toBeGreaterThanOrEqual(2.1);
+  });
+
   // With Tables and Customers installed (a real restaurant) the one bar of a very low drawer holds
   // five icons, the tabs and the check's name: in 27rem the name and «Served by» slid UNDER the tabs.
   it('a low screen (a phone on its side) gets a drawer wide enough for the one bar', () => {
@@ -540,6 +571,16 @@ describe('with Kitchen, a phone drawer shows the first line of the check (sales#
     expect(tabs).toMatch(/flex:\s*none/);
     expect(rules(veryLow, '.cart ion-toolbar'), 'the icons share the bar').toMatch(/flex:\s*none/);
     expect(tabs, 'no air above and below them: the bar is as tall as its buttons').toMatch(/margin-top:\s*0;\s*margin-bottom:\s*0/);
+  });
+
+  // In the one bar of a very low drawer with Tables and Customers the name got 74 px: «Cuenta nu»
+  // of «Cuenta nueva» (107 px). The chips beside it scroll sideways; the name is what says which check.
+  it('a very low drawer keeps room for the whole default name of the check', () => {
+    const veryLow = blocks(posCss(), VERY_LOW).join('\n');
+    const row = rules(veryLow, '.order-title-row');
+    const basis = row.match(/flex:\s*1\s+0\s+([\d.]+)rem/);
+    expect(basis, row).toBeTruthy();
+    expect(Number(basis![1]), 'the name (107 px) and its edit icon').toBeGreaterThanOrEqual(9.5);
   });
 
   it('a very low drawer leaves no air above the first line (568×320 under the strip is 129-131 px)', () => {

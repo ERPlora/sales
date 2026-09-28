@@ -9454,6 +9454,17 @@ var ErpPosTouch = class extends i3 {
       /* ios gives a button with a label min-height:3.1em, so height alone left it 52px tall. */
       ion-button.header-action.cart-close { width:2.4rem; height:2.4rem; min-height:2.4rem; margin:auto 0; }
       ion-button.header-action.cart-close small { display:none; }
+      /* md gives an icon-only toolbar button min-width:48px: at 360px the icons of Tables and
+         Customers were squeezed into each other. */
+      ion-button.header-action.icon-action { min-width:2.4rem; }
+    }
+    /* A 320px phone leaves the header row ~280px: the tabs and five icons did not fit, and the
+       icons of Tables and Customers overlapped. Only there they are a little smaller. */
+    @container pos-cart (max-height: 28rem) and (max-width: 20rem) {
+      ion-toolbar, .cart-actions-slot { --pos-hdr-icon-size: 1.5rem; }
+      .order-toolbar { gap:0; }
+      ion-button.header-action.icon-action, ion-button.header-action.cart-close { width:2.15rem; min-width:2.15rem; }
+      ion-segment.view-tabs ion-segment-button { min-width:2.2rem; --padding-start:.2rem; --padding-end:.2rem; }
     }
     /* sales#433: with Tables and Customers (a real restaurant) the one bar of a very low drawer
        holds the check's name, the tabs and five icons: in 27rem the name and «Served by» slid under
@@ -9518,6 +9529,9 @@ var ErpPosTouch = class extends i3 {
       /* sales#433: the tab icons stay in the one bar, after the name (order, then markup) and
          before the header icons. */
       ion-segment.view-tabs { order:-1; flex:none; margin-top:0; margin-bottom:0; }
+      /* With Tables and Customers the name got 74px: «Cuenta nu» of «Cuenta nueva» (107px). The
+         chips beside it scroll sideways; the name is what says which check this is. */
+      .order-title-row { flex:1 0 9.5rem; }
       /* ios gives a button with a label min-height:3.1em, so height alone left it 52px tall. */
       ion-button.header-action.cart-close { width:2.4rem; height:2.4rem; min-height:2.4rem; margin:auto 0; }
       ion-button.header-action.cart-close small { display:none; }
