@@ -260,6 +260,15 @@ The kitchen ticket is born when the waiter **takes** the order, not when the cus
 there are pending lines you cannot park the check or switch to another one, and the table cannot be
 changed.
 
+**Charging a check with pending lines sends them first** (sales#439). The **Cobrar** sheet says so
+before the tap — «El producto pendiente de la comanda se enviará a cocina al cobrar» (or «Los N
+productos pendientes…») — and **Cobrar** fires that last round before closing the sale, as Odoo,
+Square and Toast do. If that send fails, **nothing is charged**: the sheet stays open with «No se ha
+podido enviar la comanda a cocina, así que no se ha cobrado» so the cashier can try again. Once the
+check is closed there is no order left to send it from, so charging anyway would lose the order.
+If the round was already on its way (the **Enviar comanda** button or the table picker a moment
+before), Charge waits for it instead of sending it twice.
+
 ### Split a check
 
 1. On the floor, open a second check on the table (this is driven by `tables`).

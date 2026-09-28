@@ -64,6 +64,11 @@ they carry the round number and the moment they were sent. This is why a line th
 never returns to "pending" when checks are split or merged — otherwise the same food would be cooked
 twice.
 
+Paying does not replace firing — but it does not skip it either. `order.completed` only takes rounds
+off the kitchen line; a kitchen ticket is born only from `order.fired`. So a check charged with lines
+still pending **fires them first** and is closed only once that fire landed (sales#439): a sold dish
+that nobody was told to cook is the one outcome the till must never produce.
+
 ## An open check is charged at the price it was OPENED at
 
 A table is charged what the menu said **when it ordered**, not what the catalogue says when it pays.

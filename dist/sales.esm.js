@@ -4741,6 +4741,9 @@ var en_default = {
     fireToKitchen: "Send to kitchen",
     firedToKitchen: "Sent to kitchen",
     fireFailed: "Couldn't send to kitchen",
+    chargeFiresPendingOne: "The pending item of the current order goes to the kitchen when you charge.",
+    chargeFiresPending: "The {count} pending items of the current order go to the kitchen when you charge.",
+    chargeFireFailed: "Couldn't send the order to the kitchen, so nothing was charged. Try again.",
     splitFailed: "Couldn't split the check",
     lineNotSaved: "Couldn't save that item \u2014 tap again",
     linePaidElsewhere: "Prepaid",
@@ -5390,6 +5393,9 @@ var es_default = {
     fireToKitchen: "Enviar a cocina",
     firedToKitchen: "Enviado a cocina",
     fireFailed: "No se pudo enviar a cocina",
+    chargeFiresPendingOne: "El producto pendiente de la comanda se enviar\xE1 a cocina al cobrar.",
+    chargeFiresPending: "Los {count} productos pendientes de la comanda se enviar\xE1n a cocina al cobrar.",
+    chargeFireFailed: "No se ha podido enviar la comanda a cocina, as\xED que no se ha cobrado. Vuelve a intentarlo.",
     splitFailed: "No se pudo dividir la cuenta",
     lineNotSaved: "No se pudo guardar ese art\xEDculo \u2014 vuelve a tocarlo",
     linePaidElsewhere: "Ya pagado",
@@ -8615,20 +8621,6 @@ var ErpPosTouch = class extends i3 {
     this.onScaleWeight = (e8) => {
       void this.applyScaleWeight(e8.detail);
     };
-    /** Asegura que existe un pedido abierto que respalde el carrito; devuelve su id ('' si falla).
-     *  Si hay una MESA seleccionada, avisa a los fillers (`tables`) para que escriban la junction
-     *  mesa↔pedido — `sales` no toca `tables`: es un contrato por evento (ADR-0043/0141). */
-    /** Manda a cocina lo pedido hasta ahora (ADR-0141). La comanda nace del PEDIDO, no del cobro: el
-     *  camarero dispara al tomar nota y el pedido sigue abierto hasta que el cliente pague. Cada
-     *  disparo es una RONDA (bebidas primero, comida después), y `kitchen` las numera.
-     *
-     *  La etiqueta que verá el cocinero es la de la mesa asignada, y viaja OPACA: `sales` no depende
-     *  de `tables`, solo reenvía el texto que el slot de mesas le dejó en `tableLabel`. */
-    /** sales#80 — un disparo en vuelo. El filler de kitchen puede emitir dos `erp:order-fire` con un
-     *  doble toque; el segundo llega antes de que el primero haya releído las líneas y vería las
-     *  mismas pendientes. Mientras haya uno en vuelo, los demás se ignoran (defensa en la UI); el
-     *  handler además rechaza `sales.nothing_to_fire` si el pedido ya no tiene nada pendiente. */
-    this.firing = false;
     /** Una sola vía para el trabajo del carrito. Sin esto, cinco toques seguidos abrían cinco
      *  pedidos: cada uno veía «aún no hay pedido» porque el anterior seguía en vuelo (ADR-0144). */
     this.queue = createSerialQueue();
@@ -8927,6 +8919,10 @@ var ErpPosTouch = class extends i3 {
     ion-button.charge[aria-disabled='true'] { opacity:.75; }
     .print-row { --background:transparent; --padding-start:0; --inner-padding-end:0; margin:.5rem 0 .2rem; }
     .pay-err { color:var(--ion-color-danger,#d9480f); margin:.4rem 0 0; }
+    /* sales#439 — information, not a block: the unsent order goes to the kitchen with the charge. */
+    .pay-kitchen-note { margin:0 0 .45rem; padding:.45rem .65rem; border-radius:.6rem;
+      border:1px solid color-mix(in srgb,var(--accent) 45%,var(--line));
+      background:color-mix(in srgb,var(--accent) 10%,transparent); color:var(--tx); font-size:.9rem; }
     /* hub#297 — la captura de NIF+domicilio por encima del techo de la simplificada. Va ARRIBA del
        todo en el sheet porque es lo primero que hay que resolver, y cambia de ámbar a neutro en
        cuanto está completa: el color deja de pedir algo cuando ya no hay nada que pedir. */
@@ -10378,14 +10374,15 @@ var ErpPosTouch = class extends i3 {
     }
     this.pendingSplitSession = void 0;
   }
-  async fireToKitchen(priority) {
-    if (!this.cart.length || this.firing) return;
-    this.firing = true;
-    try {
-      await this.fireToKitchenNow(priority);
-    } finally {
-      this.firing = false;
-    }
+  /** sales#439 — also awaited by the charge, which must know how the fire ended: a second caller
+   *  (the other emitter of `erp:order-fire`, or Charge) JOINS the fire in flight instead of
+   *  starting another one or going on as if it had landed. */
+  fireToKitchen(priority) {
+    if (!this.cart.length) return Promise.resolve("nothing");
+    this.fireInFlight ??= this.fireToKitchenNow(priority).finally(() => {
+      this.fireInFlight = void 0;
+    });
+    return this.fireInFlight;
   }
   async fireToKitchenNow(priority) {
     const orderId = await this.ensureOrder(this.cart[0]);
@@ -10398,17 +10395,19 @@ var ErpPosTouch = class extends i3 {
       this.waiterId,
       priority
     );
-    if (!payload) return;
+    if (!payload) return "nothing";
     try {
       await erplora2().command("sales.order.fire", payload);
       erplora2().notify?.({ type: "success", message: t5("ui.firedToKitchen") });
       if (this.orderId) this.cart = await loadOrderLines(erplora2(), this.orderId);
+      return "fired";
     } catch (e8) {
       if (errorCode(e8) === "sales.nothing_to_fire") {
         if (this.orderId) this.cart = await loadOrderLines(erplora2(), this.orderId).catch(() => this.cart);
-        return;
+        return "nothing";
       }
       this.error = t5("ui.fireFailed");
+      return "failed";
     }
   }
   /** Abre el pedido, opcionalmente ya con su primera línea.
@@ -11914,6 +11913,14 @@ var ErpPosTouch = class extends i3 {
     this.busy = true;
     this.error = "";
     this.checkoutUnknown = false;
+    if (this.hasKitchen && this.pendingCount > 0) {
+      const fired = await this.fireToKitchen().catch(() => "failed");
+      if (fired === "failed") {
+        this.error = t5("ui.chargeFireFailed");
+        this.busy = false;
+        return;
+      }
+    }
     if (!this.checkoutKey) this.checkoutKey = newIdempotencyKey();
     const checkoutKey = this.checkoutKey;
     const split = splitPayload(this.cart, this.splitSel);
@@ -13039,6 +13046,8 @@ var ErpPosTouch = class extends i3 {
                 <!-- sales#159 — EL MOTIVO, ESCRITO EN LA PANTALLA. No dentro del botón y no en un
                      title: el motivo tiene que poder leerse sin tocar nada y sin un ratón. -->
                 ${blockedWhy?.reason ? b2`<p class="pay-block-reason">${blockedWhy.reason}</p>` : A}
+                <!-- sales#439 — what Charge does to the unsent order, said before the tap. -->
+                ${this.hasKitchen && this.pendingCount ? b2`<p class="pay-kitchen-note" data-testid="pos-pay-kitchen-pending">${this.pendingCount === 1 ? t5("ui.chargeFiresPendingOne") : t5("ui.chargeFiresPending", { count: String(this.pendingCount) })}</p>` : A}
                 <!-- UNA acción, dice lo que hace y por cuánto, y no exige scroll para alcanzarla.
                      El importe es el PAYABLE: con split decía «Cobrar 3,60 €» para cobrar 1,80 €.
                      🔴 aria-disabled, JAMAS disabled: en Ionic disabled es pointer-events:none
