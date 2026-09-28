@@ -85,6 +85,7 @@ interface Pos extends HTMLElement {
   cart: Line[];
   error: string;
   cartOpen: boolean;
+  parkedOpen: boolean;
   paying: boolean;
   openPay(): void;
   confirm(print?: boolean): Promise<void>;
@@ -117,6 +118,7 @@ async function settle(el: Pos): Promise<void> {
 const $ = (el: Pos, sel: string) => el.shadowRoot.querySelector<HTMLElement>(sel);
 const cartNotice = (el: Pos) => $(el, '[data-testid="pos-cart-error"]');
 const pageNotice = (el: Pos) => $(el, '.catalog > .err');
+const listNotice = (el: Pos) => $(el, '[data-testid="pos-parked-error"]');
 
 /** A check with one saved line, and the cart drawer open — the phone at the counter. */
 async function openCartWithLine(): Promise<Pos> {
@@ -243,6 +245,22 @@ describe('2 · the notice follows the surface: never lost, never twice', () => {
     expect(pageNotice(el), 'not again on the page').toBeNull();
   });
 
+  it('while paying the pay sheet keeps it alone even with the list of checks left open', async () => {
+    const el = await openCartWithLine();
+    $(el, '[data-testid="pos-parked-toggle"]')!.click();
+    await settle(el);
+    el.openPay();
+    await settle(el);
+    el.parkedOpen = true;
+    refused.add('sales.complete_sale');
+    await tenderExactCash(el);
+    await el.confirm();
+    await settle(el);
+
+    expect($(el, '.sheet .pay-err')?.textContent, 'the pay sheet says it').toContain('ui.errorCharge');
+    expect(listNotice(el), 'not again in the list under the sheet').toBeNull();
+  });
+
   const retried: [string, string, (el: Pos) => Promise<void>][] = [
     ...CART_ACTIONS,
     ['the quantity', 'sales.order.update_line', (el) => el.setQtyAbs(el.cart[0].id, 2)],
@@ -290,14 +308,60 @@ describe('2c · deleting an open check from the list of checks', () => {
     await settle(el);
   }
 
-  it('a refused delete is told in the cart, and the check is still in the list', async () => {
+  // The list of checks is a dropdown over the cart with its own backdrop: on hub:stable at 390 and
+  // 820 px the backdrop covered the cart's footer, so the notice is told IN the list while it is open.
+  it('a refused delete is told IN the list, at its top, and the check is still in it', async () => {
     const el = await openCartWithLine();
     refused.add('sales.order.void');
     await deleteFromList(el, 'ord-9');
 
     expect(commands.some((c) => c.name === 'sales.order.void'), 'the delete was really asked for').toBe(true);
     expect(el.parked.map((c) => c.id), 'the hub kept it: the list says so').toContain('ord-9');
-    expect(cartNotice(el)?.textContent?.trim(), 'two taps and nothing would happen: say why').toBe('ui.deleteCheckFailed');
+    const notice = listNotice(el);
+    expect(notice?.textContent?.trim(), 'two taps and nothing would happen: say why').toBe('ui.deleteCheckFailed');
+    expect(notice!.closest('.pdrop'), 'inside the list, above its backdrop').not.toBeNull();
+    const firstRow = $(el, '.pdrop .pitem')!;
+    expect(notice!.compareDocumentPosition(firstRow) & Node.DOCUMENT_POSITION_FOLLOWING, 'above the rows: no scroll to find it')
+      .toBeTruthy();
+    expect(notice!.getAttribute('role')).toBe('alert');
+    expect(getComputedStyle(notice!).marginTop, 'its own margin, not the browser 1em of a bare <p>').toBe('0px');
+    expect(cartNotice(el), 'not a second copy under the backdrop').toBeNull();
+    expect(pageNotice(el), 'nor on the page').toBeNull();
+  });
+
+  it('on a wide screen (the cart is a column, no drawer) the list keeps it alone too', async () => {
+    const el = await mount();
+    $(el, 'ion-card.tile')!.click();
+    await el.queue(async () => undefined);
+    await settle(el);
+    expect(el.cartOpen).toBe(false);
+    refused.add('sales.order.void');
+    await deleteFromList(el, 'ord-9');
+
+    expect(listNotice(el)?.textContent?.trim()).toBe('ui.deleteCheckFailed');
+    expect(pageNotice(el), 'one place at a time: not again on the page').toBeNull();
+  });
+
+  it('closing the drawer closes its list too, and the notice goes back to the page', async () => {
+    const el = await openCartWithLine();
+    refused.add('sales.order.void');
+    await deleteFromList(el, 'ord-9');
+
+    $(el, '[data-testid="pos-cart-close"]')!.click();
+    await settle(el);
+
+    expect(listNotice(el), 'no list left open inside a closed drawer').toBeNull();
+    expect(pageNotice(el)?.textContent?.trim()).toBe('ui.deleteCheckFailed');
+  });
+
+  it('a tap on the drawer backdrop closes its list too', async () => {
+    const el = await openCartWithLine();
+    $(el, '[data-testid="pos-parked-toggle"]')!.click();
+    await settle(el);
+    $(el, '[data-testid="pos-cart-backdrop"]')!.click();
+    await settle(el);
+
+    expect($(el, '.pdrop'), 'the list does not wait, hidden, for the drawer to open again').toBeNull();
   });
 
   it('a delete that goes through clears a previous refusal', async () => {

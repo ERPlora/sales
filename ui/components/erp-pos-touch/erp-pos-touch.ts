@@ -841,6 +841,7 @@ export class ErpPosTouch extends LitElement {
       border:1px solid var(--ion-border-color); border-radius:var(--ok-radius,12px); box-shadow:var(--ok-shadow-pop, 0 12px 32px rgba(0,0,0,.5)); padding:.5rem; max-height:60%; overflow:auto; }
     .pdrop .hint { color:var(--mut); font-size:.82rem; margin:.3rem .2rem .5rem; }
     .pdrop .hint.hint--center { text-align:center; }
+    .pdrop .parked-err { margin:0 .2rem .5rem; }
     .pdrop .hint strong { color:var(--tx); }
     .pitem { display:flex; justify-content:space-between; align-items:center; gap:.3rem; border:1px solid var(--ion-border-color); border-radius:var(--ok-radius-sm,10px); padding:.2rem .3rem .2rem .6rem; margin-bottom:.35rem; }
     /* La FILA entera recupera: botón de verdad (accesible), sin pintas de botón. */
@@ -4951,6 +4952,13 @@ export class ErpPosTouch extends LitElement {
    *  Solo aparece cuando NO se pudo averiguar. Un Web Component no recibe el router, así que el
    *  canal módulo→shell es empujar la URL y avisar con `popstate` (mismo patrón que `appointments`
    *  al mandar una cita al TPV). */
+  /** Closing the drawer closes the list of checks that hangs from it (sales#438): left open, it
+   *  would wait hidden inside the closed drawer and keep the notice of what was tapped in it. */
+  private closeCart(): void {
+    this.cartOpen = false;
+    this.parkedOpen = false;
+  }
+
   private renderCheckSalesLink() {
     if (!this.checkoutUnknown) return nothing;
     return html`<ion-button size="small" fill="outline" class="check-sales" data-testid="pos-check-sales"
@@ -5273,7 +5281,7 @@ export class ErpPosTouch extends LitElement {
               ${this.parked.length ? html`<span class="badge-num">${this.parked.length}</span>` : nothing}
             </ion-button>
             <ion-button data-testid="pos-cart-close" class="header-action cart-close" fill="clear" title=${t('ui.closeAction')}
-                        aria-label=${t('ui.closeAction')} @click=${() => { this.cartOpen = false; }}>
+                        aria-label=${t('ui.closeAction')} @click=${() => this.closeCart()}>
               <ion-icon name="chevron-forward-outline"></ion-icon><small>${t('ui.closeAction')}</small>
             </ion-button>
           </div>
@@ -5340,6 +5348,11 @@ export class ErpPosTouch extends LitElement {
         ? html`
           <div data-testid="pos-parked-backdrop" class="pdrop-back" @click=${() => { this.parkedOpen = false; }}></div>
           <div class="pdrop">
+            <!-- sales#438: the list's own backdrop covers the cart's footer — while it is open, the
+                 notice of what was tapped in it (delete, pick up) is told here, above the rows. -->
+            ${this.error && !this.paying
+              ? html`<p class="err parked-err" role="alert" data-testid="pos-parked-error">${this.error}</p>`
+              : nothing}
             <ion-button data-testid="pos-park-current" size="small" expand="block" fill="outline" ?disabled=${!this.cart.length} @click=${() => void this.requestPark()}>${this.tableLabel.trim() ? t('ui.leaveAtTable') : t('ui.parkCurrentSale')}</ion-button>
             <p class="hint">${this.tableLabel.trim()
               ? t('ui.leaveAtTableHint', { label: this.tableLabel })
@@ -5379,7 +5392,7 @@ export class ErpPosTouch extends LitElement {
           <!-- sales#438: with the drawer open, the page's notice sits BEHIND it. The notice of the
                tap that just happened is told here, above the buttons, in the foot that never
                scrolls away; paying → the pay sheet keeps it alone (sales#185). -->
-          ${this.error && this.cartOpen && !this.paying
+          ${this.error && this.cartOpen && !this.paying && !this.parkedOpen
             ? html`<p class="err cart-err" role="alert" data-testid="pos-cart-error">${this.error}</p>${this.renderCheckSalesLink()}`
             : nothing}
           ${this.ticketDiscount > 0 || this.ticketDiscountAmount > 0 ? html`
@@ -5711,7 +5724,7 @@ export class ErpPosTouch extends LitElement {
                it to half a sentence: the cashier reads the same thing twice and neither of them
                whole. The sheet's copy is the one in front of them. Closing the sheet hands the
                error back here: it is not lost, it is moved. -->
-          ${this.error && !this.paying && !this.cartOpen ? html`<p class="err">${this.error}</p>${this.renderCheckSalesLink()}` : nothing}
+          ${this.error && !this.paying && !this.cartOpen && !this.parkedOpen ? html`<p class="err">${this.error}</p>${this.renderCheckSalesLink()}` : nothing}
           <!-- sales#185 — an app the checkout NEEDS is missing. The role is alert, not status:
                this is not ambient information, it is that this till cannot charge today. -->
           ${this.missingChargeApp
@@ -5821,7 +5834,7 @@ export class ErpPosTouch extends LitElement {
           </div>
         </div>
 
-        <div data-testid="pos-cart-backdrop" class="cart-backdrop" ?data-open=${this.cartOpen} @click=${() => { this.cartOpen = false; }}></div>
+        <div data-testid="pos-cart-backdrop" class="cart-backdrop" ?data-open=${this.cartOpen} @click=${() => this.closeCart()}></div>
         <aside class="cart" id="pos-cart-drawer" ?data-open=${this.cartOpen}>${this.renderCart()}</aside>
 
         <!-- Cart FAB (mobile only). sales#84: accessible name with the count (nobody reads the
