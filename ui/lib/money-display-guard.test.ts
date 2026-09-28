@@ -1,30 +1,73 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { checkMoneyDisplay, moduleRootFrom, stripComments } from '@erplora/module-toolkit/money-display-guard';
 
-// GUARD (pm#289): money on screen is never formatted by hand in this module.
+// GUARD (pm#289, shared since pm#505/pm#508): money on screen is never formatted by hand in this
+// module, and OutfitKit comes in by entry point, never as a value from the barrel.
 //
-// Money travels as an integer in the currency's minor unit (ADR-0123). The screen gets it through
-// the shell's single formatter — `erplora().formatMoney(minor)` (currency and scale of the hub,
-// JPY 0 decimals, KWD 3) — or `<ok-money>` / `formatMinor` from OutfitKit (by string, no float).
-// A `(cents / 100).toFixed(2)` — or `.toFixed(scale)`, same float path — or a hand-built
-// `Intl.NumberFormat({ currency })` / `.toLocaleString(…, { currency })` brings back what that
-// contract removed: its own separators, its own rounding, and a hard `/100` that is wrong the day
-// the hub is not in euros.
+// The rules live in `@erplora/module-toolkit/money-display-guard` (one piece for every module,
+// tested there against its own positives); this test only says what is specific to Ventas:
 //
-// The only hand formatting left is NOT display, and each one is listed below with the reason.
-// A new occurrence (or an allowed one that moves to another file) turns this test red.
+// * witnesses — every amount this module paints goes through a formatter, and each witness counts
+//   the CALL, not the name (the screens also declare `formatMoney(…)` in their `erplora()`
+//   interface; a scan over empty or over-stripped content must not stay green on it, rv-combos-22):
+//   - the sales list: its six direct `erplora().formatMoney(` (total and outstanding columns, the
+//     four KPIs);
+//   - the till: every `this.money(` call site of its `money()` helper — the helper itself is pinned
+//     by the till's own tests, its call sites were not (split remaining, open check totals…);
+//   - the refund: its five `erplora().formatMoney(` (the `money` helper of the legs, the block
+//     amounts, the total and the confirm button);
+//   - the paper (`lib/receipt-html.ts`, `lib/invoice-html.ts`): the `money(` helper and its call
+//     sites; the menu supplement of `lib/paper-combos.ts`: its `formatMinor(`.
+// * notDisplay — the two triaged in pm#289 (a tax RATE in `taxLabel`, the currency SYMBOL in
+//   `currencySymbol`). They are also the witnesses on the detector's OUTPUT: if the scan were fed
+//   empty or cut content, or lost `lib/`, they would come back as `stale_exception` (rv-taxes-78).
+//   The `Intl` key is the call collapsed to one line (rv-mt-377). Add an entry
+//   (`'file: exact code line'` → why) only with the reason it is not a screen amount.
+// * outfitkitImporters — every file that imports OutfitKit (entry points + types), so the barrel
+//   scan provably read each of them (rv-pricing-53).
+it('money on screen goes through the shared formatter and OutfitKit by entry point (pm#289)', () => {
+  expect(
+    checkMoneyDisplay({
+      from: import.meta.url,
+      witnesses: {
+        'components/erp-sales-list/erp-sales-list.ts': { text: 'erplora().formatMoney(', atLeast: 6 },
+        'components/erp-pos-touch/erp-pos-touch.ts': { text: 'this.money(', atLeast: 37 },
+        'components/erp-sale-refund/erp-sale-refund.ts': { text: 'erplora().formatMoney(', atLeast: 5 },
+        'lib/receipt-html.ts': { text: 'money(', atLeast: 8 },
+        'lib/invoice-html.ts': { text: 'money(', atLeast: 7 },
+        'lib/paper-combos.ts': 'formatMinor(',
+      },
+      notDisplay: {
+        'lib/document-mappers.ts: const pct = Number.isFinite(r) ? String(Number(r.toFixed(2))) : rate;':
+          'a tax RATE (21.00 → "21"), not an amount',
+        // sales#380: reads only the currency SYMBOL of the hub's ISO code for a label (the amount
+        // mode of the discount sheet); no amount goes through it.
+        "lib/currency-symbol.ts: NumberFormat(locale, { style: 'currency', currency: iso })":
+          'currency symbol for a label, not an amount',
+      },
+      outfitkitImporters: [
+        'components/erp-pos/erp-pos.ts',
+        'components/erp-pos-departments/erp-pos-departments.ts',
+        'components/erp-pos-quick-notes/erp-pos-quick-notes.ts',
+        'components/erp-pos-touch/erp-pos-touch.ts',
+        'components/erp-sale-refund/erp-sale-refund.ts',
+        'components/erp-sales-document/erp-sales-document.ts',
+        'components/erp-sales-list/erp-sales-list.ts',
+        'lib/document-mappers.ts',
+        'lib/invoice-html.ts',
+        'lib/paper-combos.ts',
+        'lib/receipt-html.ts',
+      ],
+    }),
+  ).toEqual([]);
+});
 
-function moduleRoot(): string {
-  let dir = dirname(fileURLToPath(import.meta.url));
-  while (!existsSync(join(dir, 'module.json'))) {
-    const up = dirname(dir);
-    if (up === dir) throw new Error('module.json not found walking up from the test');
-    dir = up;
-  }
-  return dir;
-}
+// sales#379 — a rule of this module the shared piece does not carry: the SDK's
+// `eurosToCents`/`centsToEuros` pin TWO decimals (the SDK keeps them for what is EUR by contract:
+// VeriFactu). In this module every typed amount is the hub currency, so they are a hard `/ 100` in
+// disguise — in yen the till took 1000 ¥ handed over as 100000.
 
 /** Production sources of the UI: tests and the test doubles in `ui/test/` do not reach a screen. */
 function uiSources(dir: string): string[] {
@@ -35,45 +78,6 @@ function uiSources(dir: string): string[] {
   });
 }
 
-/** Comments may talk about `toFixed(2)`; only code counts. Crude but enough: strings never
- *  contain these patterns in this module, and a false positive fails loud, not silent. */
-function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\])\/\/.*$/gm, '$1');
-}
-
-/** Every `NumberFormat(…)` or `.toLocaleString(…)` call whose arguments (up to the balancing paren,
- *  across lines) name a `currency`: the options object usually sits on its own lines, so a per-line
- *  match misses it. `toLocaleString` is the same Intl path without spelling `NumberFormat`. */
-function currencyNumberFormatCalls(code: string): string[] {
-  const calls: string[] = [];
-  const open = /(?:NumberFormat|\.toLocaleString)\s*\(/g;
-  let m: RegExpExecArray | null;
-  while ((m = open.exec(code))) {
-    let depth = 1;
-    let i = open.lastIndex;
-    while (i < code.length && depth > 0) {
-      if (code[i] === '(') depth++;
-      else if (code[i] === ')') depth--;
-      i++;
-    }
-    const call = code.slice(m.index, i);
-    if (/\bcurrency\b/.test(call)) calls.push(call.replace(/\s+/g, ' ').trim());
-  }
-  return calls;
-}
-
-/** Each hand-formatted number in the code: any `.toFixed(…)` (per line — `toFixed(scale)` is the
- *  same float path as `toFixed(2)`) or a `NumberFormat(…currency…)` / `.toLocaleString(…currency…)`
- *  call (collapsed to one line, however many it spans). */
-export function handFormattedMoney(src: string): string[] {
-  const code = stripComments(src);
-  const hits: string[] = [];
-  for (const line of code.split('\n')) {
-    if (/\.toFixed\s*\(/.test(line)) hits.push(line.trim());
-  }
-  return hits.concat(currencyNumberFormatCalls(code));
-}
-
 /** Each code line naming the SDK's two-decimal conversions (`eurosToCents`/`centsToEuros`). */
 export function fixedTwoDecimalConversions(src: string): string[] {
   return stripComments(src)
@@ -82,66 +86,21 @@ export function fixedTwoDecimalConversions(src: string): string[] {
     .map((line) => line.trim());
 }
 
-/** Triaged pm#289: formatting that is not a screen amount. `file: exact code line → why`. */
-const NOT_DISPLAY: Record<string, string> = {
-  // sales#377: the menu supplement (paper-combos) and the refund input (refund-allocation) left
-  // this list — both now follow the hub currency's scale instead of a hard `/ 100`.
-  // A tax RATE (21.00 → "21"), not an amount.
-  'lib/document-mappers.ts: const pct = Number.isFinite(r) ? String(Number(r.toFixed(2))) : rate;':
-    'percentage, not money',
-  // sales#380: reads only the currency SYMBOL of the hub's ISO code for a label (the amount mode of
-  // the discount sheet); no amount goes through it.
-  "lib/currency-symbol.ts: NumberFormat(locale, { style: 'currency', currency: iso })":
-    'currency symbol for a label, not an amount',
-};
-
-describe('money display goes through the shared formatter (pm#289)', () => {
-  it('no hand-formatted amount in ui/ outside the triaged non-display cases', () => {
-    const uiRoot = join(moduleRoot(), 'ui');
-    const found: string[] = [];
-    const sources = uiSources(uiRoot);
-    // The control that keeps this from passing vacuously: the screens that paint amounts (the sales
-    // list, the till with its cart/checkout, the refund) and the paper documents are always scanned.
-    expect(sources.map((f) => f.slice(uiRoot.length + 1))).toEqual(
-      expect.arrayContaining([
-        'components/erp-sales-list/erp-sales-list.ts',
-        'components/erp-pos-touch/erp-pos-touch.ts',
-        'components/erp-sale-refund/erp-sale-refund.ts',
-        'lib/receipt-html.ts',
-        'lib/invoice-html.ts',
-      ]),
-    );
-    for (const f of sources) {
-      const rel = f.slice(uiRoot.length + 1);
-      for (const h of handFormattedMoney(readFileSync(f, 'utf8'))) found.push(`${rel}: ${h}`);
-    }
-    const unexpected = found.filter((k) => !(k in NOT_DISPLAY));
-    expect(
-      unexpected,
-      'amount formatted by hand: use erplora().formatMoney(minor) or <ok-money>/formatMinor',
-    ).toEqual([]);
-  });
-
-  it('every triaged exception still exists (a stale entry would hide the next one)', () => {
-    const uiRoot = join(moduleRoot(), 'ui');
-    const found = new Set<string>();
-    for (const f of uiSources(uiRoot)) {
-      const rel = f.slice(uiRoot.length + 1);
-      for (const h of handFormattedMoney(readFileSync(f, 'utf8'))) found.add(`${rel}: ${h}`);
-    }
-    expect(Object.keys(NOT_DISPLAY).filter((k) => !found.has(k))).toEqual([]);
-  });
-
-  // sales#379: the SDK's `eurosToCents`/`centsToEuros` pin TWO decimals (the SDK keeps them for
-  // what is EUR by contract: VeriFactu). In this module every typed amount is the hub currency, so
-  // they are a hard `/ 100` in disguise — in yen the till took 1000 ¥ handed over as 100000.
-  it('no two-decimal SDK conversion in ui/: typed amounts go through the hub scale', () => {
-    const uiRoot = join(moduleRoot(), 'ui');
+describe('typed amounts go through the hub scale, not the two-decimal SDK conversions (sales#379)', () => {
+  it('no two-decimal SDK conversion in ui/', () => {
+    const uiRoot = join(moduleRootFrom(import.meta.url), 'ui');
+    const read = new Map<string, string>();
     const found: string[] = [];
     for (const f of uiSources(uiRoot)) {
       const rel = f.slice(uiRoot.length + 1);
-      for (const h of fixedTwoDecimalConversions(readFileSync(f, 'utf8'))) found.push(`${rel}: ${h}`);
+      const code = stripComments(readFileSync(f, 'utf8'));
+      read.set(rel, code);
+      for (const h of fixedTwoDecimalConversions(code)) found.push(`${rel}: ${h}`);
     }
+    // The control that keeps this from passing vacuously: the scan read the code that does convert
+    // typed amounts — the till's `typedToMinor(` calls and their definition in `lib/`.
+    expect((read.get('components/erp-pos-touch/erp-pos-touch.ts') ?? '').split('typedToMinor(').length - 1).toBeGreaterThanOrEqual(3);
+    expect(read.get('lib/hub-currency.ts') ?? '').toContain('export function typedToMinor(');
     expect(found, 'use typedToMinor/minorToTyped from lib/hub-currency').toEqual([]);
   });
 
@@ -150,62 +109,5 @@ describe('money display goes through the shared formatter (pm#289)', () => {
     expect(fixedTwoDecimalConversions('const c = erplora().eurosToCents(x);')).toHaveLength(1);
     expect(fixedTwoDecimalConversions('const s = sdk.centsToEuros(\n  c,\n);')).toHaveLength(1);
     expect(fixedTwoDecimalConversions('// was eurosToCents(x)\nconst c = typedToMinor(x);')).toHaveLength(0);
-  });
-
-  it('the detector catches the positive (otherwise this guard is decorative)', () => {
-    expect(handFormattedMoney('const s = `${(total / 100).toFixed(2)} €`;')).toHaveLength(1);
-    expect(handFormattedMoney("const f = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });")).toHaveLength(1);
-    expect(handFormattedMoney('const s = erplora().formatMoney(total);')).toHaveLength(0);
-    expect(handFormattedMoney('// was (x / 100).toFixed(2)\nconst s = erplora().formatMoney(x);')).toHaveLength(0);
-    expect(handFormattedMoney("new Intl.NumberFormat(locale, { maximumFractionDigits: 3 })")).toHaveLength(0);
-    // The shape prettier produces: the options object on its own lines (this is how it comes back).
-    expect(handFormattedMoney("new Intl.NumberFormat('es-ES', {\n  style: 'currency',\n  currency: 'EUR',\n});")).toHaveLength(1);
-    expect(handFormattedMoney('const s = (total / 10 ** scale).toFixed(scale) + " €";')).toHaveLength(1);
-    // Same Intl path without spelling `NumberFormat` (gap noted in the review of verifactu#136).
-    expect(handFormattedMoney("const s = (total / 100).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' });")).toHaveLength(1);
-    expect(handFormattedMoney("const s = (total / 100).toLocaleString(locale, {\n  style: 'currency',\n  currency,\n});")).toHaveLength(1);
-    expect(handFormattedMoney("const s = new Date(x).toLocaleString(locale, { hour: '2-digit' });")).toHaveLength(0);
-  });
-});
-
-// GUARD (rv-payment_gateways-36, copied to every module of pm#289): OutfitKit is imported by ENTRY POINT (`@erplora/outfitkit/ok-money`),
-// never as a value from the barrel (`@erplora/outfitkit`). The barrel re-exports every `ok-*`
-// component, so a single `import { formatMinor } from '@erplora/outfitkit'` made esbuild inline the
-// whole library into this module's bundle: `dist/` went from 216 KB to 1.1 MB and registered 90
-// components the screen never paints. Type-only imports/exports are erased and stay allowed; a
-// side-effect, dynamic or re-export of the barrel drags it in just the same.
-export function barrelValueImports(src: string): string[] {
-  const code = stripComments(src);
-  const re =
-    /(?:import|export)\s+(?!type\b)[^;]*?\bfrom\s+['"]@erplora\/outfitkit['"]|\bimport\s*\(?\s*['"]@erplora\/outfitkit['"]/g;
-  return (code.match(re) ?? []).map((m) => m.replace(/\s+/g, ' ').trim());
-}
-
-describe('OutfitKit comes in by entry point, not by the barrel (bundle size)', () => {
-  it('no value import from `@erplora/outfitkit` in ui/', () => {
-    const uiRoot = join(moduleRoot(), 'ui');
-    const found: string[] = [];
-    for (const f of uiSources(uiRoot)) {
-      const rel = f.slice(uiRoot.length + 1);
-      for (const h of barrelValueImports(readFileSync(f, 'utf8'))) found.push(`${rel}: ${h}`);
-    }
-    expect(found, 'import it from @erplora/outfitkit/<component> (the barrel drags every ok-* into dist/)').toEqual([]);
-  });
-
-  it('the detector catches the positive and lets type-only imports through', () => {
-    expect(barrelValueImports("import { formatMinor } from '@erplora/outfitkit';")).toHaveLength(1);
-    expect(barrelValueImports("import {\n  formatMinor,\n} from '@erplora/outfitkit';")).toHaveLength(1);
-    expect(barrelValueImports("import type { DataTableColumn } from '@erplora/outfitkit';")).toHaveLength(0);
-    expect(barrelValueImports("import { formatMinor } from '@erplora/outfitkit/ok-money';")).toHaveLength(0);
-    expect(barrelValueImports("// import { formatMinor } from '@erplora/outfitkit';")).toHaveLength(0);
-    // The other doors to the same barrel: a side-effect import (the shape of this module's own
-    // `import '@erplora/outfitkit/ok-data-table'` with the entry point dropped), a dynamic import
-    // and a re-export all evaluate every `ok-*` just the same.
-    expect(barrelValueImports("import '@erplora/outfitkit';")).toHaveLength(1);
-    expect(barrelValueImports("const ok = await import('@erplora/outfitkit');")).toHaveLength(1);
-    expect(barrelValueImports("export { formatMinor } from '@erplora/outfitkit';")).toHaveLength(1);
-    expect(barrelValueImports("export * from '@erplora/outfitkit';")).toHaveLength(1);
-    expect(barrelValueImports("import '@erplora/outfitkit/ok-data-table';")).toHaveLength(0);
-    expect(barrelValueImports("export type { OkDetailItem } from '@erplora/outfitkit';")).toHaveLength(0);
   });
 });
