@@ -8984,7 +8984,8 @@ var ErpPosTouch = class extends i3 {
       border:1px solid var(--ion-border-color); border-radius:var(--ok-radius,12px); box-shadow:var(--ok-shadow-pop, 0 12px 32px rgba(0,0,0,.5)); padding:.5rem; max-height:60%; overflow:auto; }
     .pdrop .hint { color:var(--mut); font-size:.82rem; margin:.3rem .2rem .5rem; }
     .pdrop .hint.hint--center { text-align:center; }
-    .pdrop .parked-err { margin:0 .2rem .5rem; }
+    /* sales#438: pinned to the top of the list, on its colour, while the rows scroll under it. */
+    .pdrop .parked-err { position:sticky; top:0; z-index:1; margin:0 0 .5rem; padding:.3rem .2rem; background:var(--tile); }
     .pdrop .hint strong { color:var(--tx); }
     .pitem { display:flex; justify-content:space-between; align-items:center; gap:.3rem; border:1px solid var(--ion-border-color); border-radius:var(--ok-radius-sm,10px); padding:.2rem .3rem .2rem .6rem; margin-bottom:.35rem; }
     /* La FILA entera recupera: botón de verdad (accesible), sin pintas de botón. */

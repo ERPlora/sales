@@ -325,6 +325,12 @@ describe('2c · deleting an open check from the list of checks', () => {
       .toBeTruthy();
     expect(notice!.getAttribute('role')).toBe('alert');
     expect(getComputedStyle(notice!).marginTop, 'its own margin, not the browser 1em of a bare <p>').toBe('0px');
+    // The list scrolls (a busy bar has dozens of open checks, and a phone on its side leaves it
+    // ~100 px): deleting a row further down scrolled the top of the list — and the notice — out of
+    // sight on hub:stable at 844x390. It stays pinned to the top of the list, on the list's colour.
+    expect(getComputedStyle(notice!).position, 'pinned while the rows scroll under it').toBe('sticky');
+    expect(getComputedStyle(notice!).top).toBe('0px');
+    expect(getComputedStyle(notice!).backgroundColor, 'opaque: the rows do not show through it').not.toMatch(/^(transparent|rgba\(0, 0, 0, 0\))?$/);
     expect(cartNotice(el), 'not a second copy under the backdrop').toBeNull();
     expect(pageNotice(el), 'nor on the page').toBeNull();
   });
