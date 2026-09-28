@@ -26,6 +26,7 @@ import './erp-pos-touch';
 
 const PRODUCTS = [
   { id: 'p-cafe', name: 'Café', sku: 'CAF', price: 150, is_active: 1, tax_category_key: 'product.generic' },
+  { id: 'p-te', name: 'Té', sku: 'TE', price: 120, is_active: 1, tax_category_key: 'product.generic' },
 ];
 const RULES = [{ id: 'r-21', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, is_active: 1 }];
 const METHODS = [{ id: 'pm-cash', name: 'Efectivo', type: 'cash', requires_change: 1, sort_order: 10 }];
@@ -65,6 +66,7 @@ function installSdk() {
         }];
         return { ok: true, new_ids: ['ord-1', 'line-1'] };
       }
+      if (name === 'sales.order.add_line') return { ok: true, new_ids: ['line-2'] };
       return { ok: true, new_ids: ['sale-1'] };
     },
   });
@@ -124,24 +126,27 @@ async function openCartWithLine(): Promise<Pos> {
 
 beforeEach(() => { localStorage.clear(); installSdk(); });
 
+/** Every action of the cart that writes the order row: [what, the command it sends, the tap]. */
+const CART_ACTIONS: [string, string, (el: Pos) => Promise<void>][] = [
+  ['naming the check', 'sales.order.set_label', (el) => el.saveOrderLabel('Terraza')],
+  ['a line note', 'sales.order.update_line', async (el) => {
+    el.shadowRoot.querySelector<HTMLElement>(`[data-testid="pos-line-${el.cart[0].id}-note"]`)!.click();
+    await el.updateComplete;
+    await el.applyLineNote('sin azúcar');
+  }],
+  ['a line discount', 'sales.order.set_line_discount', async (el) => {
+    el.openDiscount('line', el.cart[0].line_id);
+    await el.applyDiscount(10);
+  }],
+  ['a ticket discount', 'sales.order.set_discount', async (el) => {
+    el.openDiscount('ticket');
+    await el.applyDiscount(10);
+  }],
+  ['moving a line to another professional', 'sales.order.set_line_staff', (el) => el.moveLineStaff(el.cart[0].line_id!, 'u-ana')],
+];
+
 describe('1 · with the cart drawer open, a refused cart action is told IN the cart', () => {
-  const cases: [string, string, (el: Pos) => Promise<void>][] = [
-    ['naming the check', 'sales.order.set_label', (el) => el.saveOrderLabel('Terraza')],
-    ['a line note', 'sales.order.update_line', async (el) => {
-      el.shadowRoot.querySelector<HTMLElement>(`[data-testid="pos-line-${el.cart[0].id}-note"]`)!.click();
-      await el.updateComplete;
-      await el.applyLineNote('sin azúcar');
-    }],
-    ['a line discount', 'sales.order.set_line_discount', async (el) => {
-      el.openDiscount('line', el.cart[0].line_id);
-      await el.applyDiscount(10);
-    }],
-    ['a ticket discount', 'sales.order.set_discount', async (el) => {
-      el.openDiscount('ticket');
-      await el.applyDiscount(10);
-    }],
-    ['moving a line to another professional', 'sales.order.set_line_staff', (el) => el.moveLineStaff(el.cart[0].line_id!, 'u-ana')],
-  ];
+  const cases = CART_ACTIONS;
 
   for (const [what, command, act] of cases) {
     it(`${what}: the refusal is in the cart's footer and NOT on the page behind the drawer`, async () => {
@@ -177,7 +182,6 @@ describe('1 · with the cart drawer open, a refused cart action is told IN the c
     const el = await openCartWithLine();
     refused.add('sales.order.split');
     el.dispatchEvent(new CustomEvent('erp:order-split', { detail: { from_order_id: 'ord-1', label: 'Juan' }, bubbles: true, composed: true }));
-    window.dispatchEvent(new CustomEvent('erp:order-split', { detail: { from_order_id: 'ord-1', label: 'Juan' } }));
     await settle(el);
 
     expect(commands.some((c) => c.name === 'sales.order.split'), 'the split was really asked for').toBe(true);
@@ -229,23 +233,29 @@ describe('2 · the notice follows the surface: never lost, never twice', () => {
     expect(pageNotice(el), 'not again on the page').toBeNull();
   });
 
-  it('retrying the same cart action and getting through clears the old notice', async () => {
-    const el = await openCartWithLine();
-    refused.add('sales.order.set_label');
-    await el.saveOrderLabel('Terraza');
-    await settle(el);
-    expect(cartNotice(el)).not.toBeNull();
+  const retried: [string, string, (el: Pos) => Promise<void>][] = [
+    ...CART_ACTIONS,
+    ['the quantity', 'sales.order.update_line', (el) => el.setQtyAbs(el.cart[0].id, 2)],
+  ];
+  for (const [what, command, act] of retried) {
+    it(`${what}: retrying and getting through clears the old notice`, async () => {
+      const el = await openCartWithLine();
+      refused.add(command);
+      await act(el);
+      await settle(el);
+      expect(cartNotice(el), 'refused first').not.toBeNull();
 
-    refused.clear();
-    await el.saveOrderLabel('Terraza');
-    await settle(el);
+      refused.clear();
+      await act(el);
+      await settle(el);
 
-    expect(el.error, 'the check title is saved now: «could not be saved» would be a lie').toBe('');
-    expect(cartNotice(el)).toBeNull();
-  });
+      expect(el.error, 'it went through now: «could not be saved» would be a lie').toBe('');
+      expect(cartNotice(el)).toBeNull();
+    });
+  }
 });
 
-describe('3 · a refused gift or quantity puts the line BACK and says so', () => {
+describe('3 · a refused gift, quantity or note puts the line BACK and says so', () => {
   it('gift: the line is not left «on the house» on screen when the order kept it at full price', async () => {
     const el = await openCartWithLine();
     refused.add('sales.order.update_line');
@@ -268,13 +278,32 @@ describe('3 · a refused gift or quantity puts the line BACK and says so', () =>
 
   it('quantity to zero: a refused removal leaves the line on the check, in its place', async () => {
     const el = await openCartWithLine();
+    $(el, '[data-testid="pos-cart-close"]')!.click();
+    await settle(el);
+    el.shadowRoot.querySelectorAll<HTMLElement>('ion-card.tile')[1]!.click();
+    await el.queue(async () => undefined);
+    await settle(el);
+    expect(el.cart.map((l) => l.line_id), 'two saved lines').toEqual(['line-1', 'line-2']);
+    el.cartOpen = true;
     refused.add('sales.order.remove_line');
     await el.setQtyAbs(el.cart[0].id, 0);
     await settle(el);
 
-    expect(el.cart.map((l) => l.line_id), 'the line the order still has is still on screen').toEqual(['line-1']);
+    expect(el.cart.map((l) => l.line_id), 'the line the order still has is still on screen, first').toEqual(['line-1', 'line-2']);
     expect(el.cart[0].qty).toBe(1);
     expect(cartNotice(el)?.textContent?.trim()).toBe('ui.lineChangeFailed');
+  });
+
+  it('note: a refused note is taken off the line, the order does not have it', async () => {
+    const el = await openCartWithLine();
+    refused.add('sales.order.update_line');
+    el.shadowRoot.querySelector<HTMLElement>(`[data-testid="pos-line-${el.cart[0].id}-note"]`)!.click();
+    await el.updateComplete;
+    await el.applyLineNote('sin azúcar');
+    await settle(el);
+
+    expect(el.cart[0].note, 'the kitchen would never see it: the screen must not show it').toBeUndefined();
+    expect(cartNotice(el)?.textContent?.trim()).toBe(el.error);
   });
 
   it('a gift that goes through clears a previous refusal', async () => {
