@@ -122,10 +122,13 @@ const COVERED: Record<string, { prefix: string; contract: string[]; tables?: str
   // it back, discount a line, split the payment, charge. Everything it can be asked to do is a tap,
   // so what is named here is mostly actions, not fields.
   //
-  // The rows carry identity, never position: `pos-product-${p.id}`, `pos-line-${l.id}`,
+  // The rows carry identity, never position: `pos-product-${p.id}`, `pos-line-${row}`,
   // `pos-parked-${oc.id}`, `pos-tender-${leg.id}-edit`. A spec that pressed «the second parked
   // check» would be retrieving somebody else's the next morning, and the grid reorders itself
-  // every time the catalogue changes.
+  // every time the catalogue changes. A cart line is named by its ORDER ROW (`line_id`), not by
+  // its product: the same product is on the check twice (two professionals, other supplements),
+  // and a product-named comp/note/discount always pressed the first one (sales#448). A line not
+  // saved yet has no row and keeps the product; the product is on every row as `data-product-id`.
   //
   // The three numpads answer to `pos-keypad-`, `pos-open-price-key-` and `pos-discount-key-`: the
   // same twelve keys live in three different sheets at once, and one shared name would have

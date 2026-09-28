@@ -189,6 +189,30 @@ describe('persistLineQty — la pantalla no puede mentir (ADR-0144)', () => {
     expect((calls[0].payload as Record<string, unknown>).line_id).toBe('l-9');
   });
 
+  // sales#448 — the same product can be on the check twice (two professionals, other supplements).
+  // Recovering the row by product used to take the FIRST row of that product, which may be the
+  // one another line on screen already holds: the write landed on the sibling.
+  it('recovering the row id skips the rows other lines on screen already hold', async () => {
+    const { client, calls } = clientSpy([
+      { id: 'l-sibling', product_id: 'p1', product_name: 'Tortilla', quantity: 2_000_000, unit_price: 750, line_total: 1500 },
+      { id: 'l-mine', product_id: 'p1', product_name: 'Tortilla', quantity: 1_000_000, unit_price: 750, line_total: 750 },
+    ]);
+    const mine: CartLine = { id: 'p1', name: 'Tortilla', price: 750, qty: 2 };
+    const ok = await persistLineQty(client, 'ord-1', mine, 2, ['l-sibling']);
+    expect(ok).toBe(true);
+    expect(calls.map((c) => (c.payload as Record<string, unknown>).line_id)).toEqual(['l-mine']);
+    expect(mine.line_id).toBe('l-mine');
+  });
+
+  it('when every row of the product is held by another line, nothing is written', async () => {
+    const { client, calls } = clientSpy([
+      { id: 'l-sibling', product_id: 'p1', product_name: 'Tortilla', quantity: 2_000_000, unit_price: 750, line_total: 1500 },
+    ]);
+    const ok = await persistLineQty(client, 'ord-1', { id: 'p1', name: 'Tortilla', price: 750, qty: 2 }, 2, ['l-sibling']);
+    expect(ok).toBe(false);
+    expect(calls).toHaveLength(0);
+  });
+
   it('si no hay forma de identificar la fila, AVISA en vez de fingir', async () => {
     const { client, calls } = clientSpy([]);
     const ok = await persistLineQty(client, 'ord-1', { id: 'p1', name: 'Tortilla', price: 750, qty: 5 }, 5);
