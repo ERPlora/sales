@@ -9334,9 +9334,11 @@ var ErpPosTouch = class extends i3 {
 
     /* sales#454: two equal halves (1fr in ios, minmax(auto,360px) in md), md padding each 16px a
        side and spacing the letters: «Current order» and its count needed 161px where md gave 110 at
-       360px (143 on a desktop). Each tab takes the width of its words, spaced and padded as in ios. */
+       360px (143 on a desktop). Each tab takes the width of its words, spaced and padded as in ios,
+       and the room left over is shared out: Ionic centres the columns, which bunched them in the
+       middle of an empty box on a tablet or a desktop. */
     ion-segment.view-tabs { margin:.62rem .72rem .28rem; width:auto; border:1px solid var(--line);
-      border-radius:var(--ok-radius-sm,11px); background:var(--tile); grid-auto-columns:auto; }
+      border-radius:var(--ok-radius-sm,11px); background:var(--tile); grid-auto-columns:auto; justify-content:stretch; }
     ion-segment.view-tabs ion-segment-button { min-height:2.85rem; --indicator-color:var(--tile-hi);
       --color:var(--mut); --color-checked:var(--tx); font-weight:700; text-transform:none;
       letter-spacing:0; --padding-start:.6rem; --padding-end:.6rem; }

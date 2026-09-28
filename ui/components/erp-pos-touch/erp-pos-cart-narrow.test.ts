@@ -135,6 +135,13 @@ describe('the «Account / Current order» tabs read whole on a narrow phone (sal
     expect(rules(outside, 'ion-segment.view-tabs')).toMatch(/grid-auto-columns:\s*auto/);
   });
 
+  it('the tabs still fill their box: the room left over is shared, not left empty on both sides', () => {
+    const { outside } = split(posCss());
+    // Ionic centres the columns of a segment: with columns as wide as their words, on a tablet or a
+    // desktop «Account» and «Current order» sat bunched in the middle of an empty bordered box.
+    expect(rules(outside, 'ion-segment.view-tabs')).toMatch(/justify-content:\s*stretch/);
+  });
+
   it('md pads and spaces them as ios does', () => {
     const { outside } = split(posCss());
     const button = rules(outside, 'ion-segment.view-tabs ion-segment-button');
