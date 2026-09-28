@@ -493,6 +493,9 @@ function followShellView(host: HTMLElement, onChange: (shown: DOMRect) => void):
   };
 }
 
+/** How a fire to the kitchen ended (sales#439): Charge goes on after `fired`/`nothing` only. */
+type FireOutcome = 'fired' | 'nothing' | 'failed';
+
 export class ErpPosTouch extends LitElement {
   static styles = css`
     /* El COLOR lo pone el tema de Ionic (claro/oscuro según el hub); el POS solo aporta el LAYOUT.
@@ -784,6 +787,10 @@ export class ErpPosTouch extends LitElement {
     ion-button.charge[aria-disabled='true'] { opacity:.75; }
     .print-row { --background:transparent; --padding-start:0; --inner-padding-end:0; margin:.5rem 0 .2rem; }
     .pay-err { color:var(--ion-color-danger,#d9480f); margin:.4rem 0 0; }
+    /* sales#439 — information, not a block: the unsent order goes to the kitchen with the charge. */
+    .pay-kitchen-note { margin:0 0 .45rem; padding:.45rem .65rem; border-radius:.6rem;
+      border:1px solid color-mix(in srgb,var(--accent) 45%,var(--line));
+      background:color-mix(in srgb,var(--accent) 10%,transparent); color:var(--tx); font-size:.9rem; }
     /* hub#297 — la captura de NIF+domicilio por encima del techo de la simplificada. Va ARRIBA del
        todo en el sheet porque es lo primero que hay que resolver, y cambia de ámbar a neutro en
        cuanto está completa: el color deja de pedir algo cuando ya no hay nada que pedir. */
@@ -2844,19 +2851,18 @@ export class ErpPosTouch extends LitElement {
    *  doble toque; el segundo llega antes de que el primero haya releído las líneas y vería las
    *  mismas pendientes. Mientras haya uno en vuelo, los demás se ignoran (defensa en la UI); el
    *  handler además rechaza `sales.nothing_to_fire` si el pedido ya no tiene nada pendiente. */
-  private firing = false;
+  private fireInFlight?: Promise<FireOutcome>;
 
-  private async fireToKitchen(priority?: string): Promise<void> {
-    if (!this.cart.length || this.firing) return;
-    this.firing = true;
-    try {
-      await this.fireToKitchenNow(priority);
-    } finally {
-      this.firing = false;
-    }
+  /** sales#439 — also awaited by the charge, which must know how the fire ended: a second caller
+   *  (the other emitter of `erp:order-fire`, or Charge) JOINS the fire in flight instead of
+   *  starting another one or going on as if it had landed. */
+  private fireToKitchen(priority?: string): Promise<FireOutcome> {
+    if (!this.cart.length) return Promise.resolve('nothing');
+    this.fireInFlight ??= this.fireToKitchenNow(priority).finally(() => { this.fireInFlight = undefined; });
+    return this.fireInFlight;
   }
 
-  private async fireToKitchenNow(priority?: string): Promise<void> {
+  private async fireToKitchenNow(priority?: string): Promise<FireOutcome> {
     const orderId = await this.ensureOrder(this.cart[0]);
     // TANDAS (decisión Ioan 2026-07-19): se dispara SOLO lo pendiente, con su ronda local, y el
     // handler lo marca (`fired_at`). Antes cada fire reenviaba el carrito ENTERO: dos disparos =
@@ -2866,7 +2872,7 @@ export class ErpPosTouch extends LitElement {
     const payload = buildFirePayload(
       orderId, this.tableLabel, pendientes, nextRoundNo(this.cart), this.waiterId, priority,
     );
-    if (!payload) return;
+    if (!payload) return 'nothing';
     try {
       await erplora().command('sales.order.fire', payload as unknown as Record<string, unknown>);
       // Éxito → canal de AVISO del shell (toast verde). El hueco rojo es SOLO para fallos: decía
@@ -2875,6 +2881,7 @@ export class ErpPosTouch extends LitElement {
       // Las líneas recién marcadas (round_no/fired_at) se releen de la BD: es lo que bloquea su
       // edición y lo que pinta la ronda como «enviada» en la pestaña Tandas.
       if (this.orderId) this.cart = await loadOrderLines(erplora(), this.orderId);
+      return 'fired';
     } catch (e) {
       // sales#80: «no había nada pendiente» significa que la tanda YA se envió (doble toque que
       // se coló, u otra caja): no es un fallo para el cajero — se relee el pedido y ya.
@@ -2884,11 +2891,12 @@ export class ErpPosTouch extends LitElement {
       // ahora el rechazo viaja por `Output.error` y el mensaje es el detalle solo.
       if (errorCode(e) === 'sales.nothing_to_fire') {
         if (this.orderId) this.cart = await loadOrderLines(erplora(), this.orderId).catch(() => this.cart);
-        return;
+        return 'nothing';
       }
       // Sin `kitchen` instalado el evento no lo escucha nadie: el comando de `sales` igual pasa.
       // Un fallo aquí NO debe bloquear la venta — la comanda se puede repetir.
       this.error = t('ui.fireFailed');
+      return 'failed';
     }
   }
 
@@ -4673,6 +4681,18 @@ export class ErpPosTouch extends LitElement {
     // El aviso de duda muere al reintentar: si este intento vuelve a fallar, se decide de nuevo con
     // la evidencia de AHORA (hub#923).
     this.busy = true; this.error = ''; this.checkoutUnknown = false;
+    // sales#439 — the kitchen ticket is only born from `sales.order.fire`: a line still pending
+    // when the check closes is sold and never cooked. Paying sends it first, as Odoo, Square and
+    // Toast do (the sheet says so). If that fire fails the charge STOPS: once the check is closed
+    // there is no order left to fire it from, so charging anyway would lose the order for good.
+    if (this.hasKitchen && this.pendingCount > 0) {
+      const fired = await this.fireToKitchen().catch((): FireOutcome => 'failed');
+      if (fired === 'failed') {
+        this.error = t('ui.chargeFireFailed');
+        this.busy = false;
+        return;
+      }
+    }
     // Declarados FUERA del try: el `catch` los necesita para preguntar por la venta (hub#923). La
     // clave se fija aquí — si el intento viene por atajo, sin pasar por `openPay`, se estrena una.
     if (!this.checkoutKey) this.checkoutKey = newIdempotencyKey();
@@ -6027,6 +6047,12 @@ export class ErpPosTouch extends LitElement {
                 <!-- sales#159 — EL MOTIVO, ESCRITO EN LA PANTALLA. No dentro del botón y no en un
                      title: el motivo tiene que poder leerse sin tocar nada y sin un ratón. -->
                 ${blockedWhy?.reason ? html`<p class="pay-block-reason">${blockedWhy.reason}</p>` : nothing}
+                <!-- sales#439 — what Charge does to the unsent order, said before the tap. -->
+                ${this.hasKitchen && this.pendingCount
+                  ? html`<p class="pay-kitchen-note" data-testid="pos-pay-kitchen-pending">${this.pendingCount === 1
+                      ? t('ui.chargeFiresPendingOne')
+                      : t('ui.chargeFiresPending', { count: String(this.pendingCount) })}</p>`
+                  : nothing}
                 <!-- UNA acción, dice lo que hace y por cuánto, y no exige scroll para alcanzarla.
                      El importe es el PAYABLE: con split decía «Cobrar 3,60 €» para cobrar 1,80 €.
                      🔴 aria-disabled, JAMAS disabled: en Ionic disabled es pointer-events:none
