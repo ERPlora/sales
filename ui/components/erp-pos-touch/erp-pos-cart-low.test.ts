@@ -28,6 +28,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { installPosDouble } from '../../test/pos-double';
 import './erp-pos-touch';
+import enCatalog from '../../../locales/en.json';
+import esCatalog from '../../../locales/es.json';
 
 type HappyWindow = Window & { happyDOM?: { setViewport(v: { width: number; height: number }): void } };
 
@@ -80,10 +82,10 @@ function rules(css: string, selector: string): string {
   return (css.match(new RegExp(`(?:^|[\\s},])${escaped}\\s*\\{[^}]*\\}`, 'g')) ?? []).join('\n');
 }
 
-/** The value (in rem) of the last `prop:` declared in `css`, or NaN. */
+/** The value (in rem) of the last `prop:` declared in `css`, or NaN. A bare `0` is 0rem. */
 function rem(css: string, prop: string): number {
-  const all = [...css.matchAll(new RegExp(`(?:^|[;{\\s])${prop}\\s*:\\s*([\\d.]+)rem`, 'g'))];
-  return all.length ? Number(all[all.length - 1][1]) : Number.NaN;
+  const all = [...css.matchAll(new RegExp(`(?:^|[;{\\s])${prop}\\s*:\\s*(?:([\\d.]+)rem|0(?=\\s*(?:;|}|$)))`, 'g'))];
+  return all.length ? Number(all[all.length - 1][1] ?? 0) : Number.NaN;
 }
 
 const LOW = /pos-cart\s*\(\s*max-height:\s*24rem\s*\)\s*$/;
@@ -118,7 +120,9 @@ describe('a phone on its side gets the phone till (sales#423)', () => {
     expect(want.columns.trim().split(/\s+/), 'a single track').toHaveLength(1);
   });
 
-  it('844×390: the drawer is as wide as on a phone held upright', () => {
+  // sales#433: a low screen then widens it (see «a low screen … wide enough for the one bar»);
+  // the 821px+ block still declares the phone width, not the tablet column's.
+  it('844×390: the drawer is declared as wide as on a phone held upright', () => {
     // happy-dom does not compute min(): the declared width is compared, block against block.
     const widthIn = (prelude: RegExp) => {
       const all = [...rules(blocks(posCss(), prelude).join('\n'), '.cart').matchAll(/(?:^|[;{\s])width:\s*([^;}]+)/g)];
@@ -294,18 +298,21 @@ describe('Charge fits a low drawer whatever the amount (sales#423)', () => {
 // spends ~105 px on the header (toolbar, then the name and chips) and ~67 px on the foot, so the
 // first line of the check sat under the foot: the cashier did not see what was being charged
 // without scrolling. Square and Toast leave ONE bar on a phone: the name of the check and its
-// icons. So a VERY low drawer (no taller than 13rem) lays the header in one row — the name first,
+// icons. So a VERY low drawer (no taller than 13rem, 14.5rem since sales#433) lays the header in one row — the name first,
 // the icons after it, the close button icon-only — trims the foot to Charge's height and the air
 // above the first line. Measured on hub:stable in ios and md (the PR): the name of the first line
 // shows whole at 667×375 and 568×320, with and without the strip.
-const VERY_LOW = /pos-cart\s*\(\s*max-height:\s*13rem\s*\)\s*$/;
+// sales#433 raised it from 13rem: a phone of 360 px on its side (640/740/800×360, the usual Android)
+// leaves a 208-217 px drawer, and with the kitchen tabs the two-row header of the low block (113 px)
+// and its foot (67 px) need 224 px before the name of the first line shows.
+const VERY_LOW = /pos-cart\s*\(\s*max-height:\s*14\.5rem\s*\)\s*$/;
 
 describe('a very low drawer shows the first line of the check without scrolling (sales#432)', () => {
   const veryLow = () => blocks(posCss(), VERY_LOW).join('\n');
 
   it('declares the very-low block once, AFTER the low ones, so it wins where they tie', () => {
     const css = posCss();
-    expect(blocks(css, VERY_LOW), '@container pos-cart (max-height: 13rem)').toHaveLength(1);
+    expect(blocks(css, VERY_LOW), '@container pos-cart (max-height: 14.5rem)').toHaveLength(1);
     const at = (re: RegExp) => [...css.matchAll(/@container\s*([^{]*)\{/g)].findIndex((m) => re.test(m[1]));
     const order = [...css.matchAll(/@container\s*([^{]*)\{/g)].map((m) => m[1].trim());
     expect(at(VERY_LOW), `order: ${order.join(' | ')}`).toBeGreaterThan(at(LOW));
@@ -331,7 +338,9 @@ describe('a very low drawer shows the first line of the check without scrolling 
     // ios pads a toolbar 4px above and below: the bar was 49 px for 38 px buttons.
     expect(toolbar).toMatch(/--padding-top:\s*0/);
     expect(toolbar).toMatch(/--padding-bottom:\s*0/);
-    expect(rules(css, 'ion-segment.view-tabs'), 'the kitchen tabs wrap to the next row').toMatch(/flex:\s*1\s+1\s+100%/);
+    // sales#433 superseded «the kitchen tabs wrap to the next row»: that second row (~50 px) was
+    // what still hid the first line with Kitchen installed. They sit in the bar now (see below).
+    expect(rules(css, 'ion-segment.view-tabs'), 'the kitchen tabs no longer take a row of their own').not.toMatch(/flex:\s*1\s+1\s+100%/);
   });
 
   it('the close button is icon-only (its name stays in aria-label) and no taller than the bar', async () => {
@@ -369,5 +378,245 @@ describe('a very low drawer shows the first line of the check without scrolling 
     const buttons = rules(css, '.foot-actions ion-button');
     expect(buttons).toMatch(/margin-top:\s*0/);
     expect(buttons).toMatch(/margin-bottom:\s*0/);
+  });
+});
+
+// sales#433 — with Kitchen installed the check has two tabs, «Account / Current order», on a row of
+// their own (~50 px) under the name. That row alone hid the first line of the check in every phone
+// drawer measured but the tallest: 390×667 under the «You can't invoice yet» strip, 320×568 with
+// it, and a phone on its side (667×375, 844×390, 568×320). The cashier saw the total and Charge
+// but not WHAT was being charged. And upright, the card of a line (~177 px: amount, three actions,
+// stepper) centred the product name under the foot.
+//
+// Square and Toast keep one bar on a phone: the check's name and its controls as icons. So in a
+// low drawer the tabs are an icon pair (their names in aria-label, the pending count still on
+// them) on the row of the check's name, and in any phone drawer a line shows its name at the top of
+// its card. Measured on hub:dev + kitchen in ios and md (the PR): the first line's name shows at
+// 390×667, 320×568, 667×375, 844×390 and 568×320, with and without the strip.
+const KITCHEN_ROW = /pos-cart\s*\(\s*max-height:\s*28rem\s*\)\s*$/;
+const KITCHEN_PRODUCTS = [{ id: 'p-1', name: 'Café', sku: 'CAF', price: 180, is_active: 1, tax_category_key: 'product.generic' }];
+
+type Pos = HTMLElement & { updateComplete: Promise<unknown>; queue<T>(t: () => Promise<T>): Promise<T> };
+
+/** The till with Kitchen installed (it fills sales.pos.actions) and `pending` lines still to fire
+ *  (one by default; with 0, the one line of the check has gone to the kitchen). */
+async function mountWithKitchenAt(width: number, height: number, pending = 1): Promise<ShadowRoot> {
+  (window as HappyWindow).happyDOM?.setViewport({ width, height });
+  const lines: Record<string, unknown>[] = [];
+  installPosDouble({
+    settings: null,
+    products: KITCHEN_PRODUCTS,
+    rules: [{ id: 'r-21', tax_category_key: 'product.generic', rate_pct: 21, parent_id: null, is_active: 1 }],
+    orderLines: () => lines.map((l) => ({ ...l })),
+    loadSlot: (slot: string) => (slot === 'sales.pos.actions' ? [{ component: 'erp-fake-fire-433' }] : []),
+    command: async (name: string) => {
+      if (name === 'sales.order.open') {
+        for (let i = 1; i <= Math.max(pending, 1); i++) {
+          lines.push({ id: `l${i}`, product_id: 'p-1', product_name: 'Café', unit_price: 180, quantity: 1_000_000, tax_category_key: 'product.generic',
+            fired_at: pending ? null : '2026-09-28T10:00:00Z', round_no: pending ? 0 : 1 });
+        }
+        return { ok: true, new_ids: ['o1', ...lines.map((l) => String(l.id))] };
+      }
+      return { ok: true };
+    },
+  });
+  document.body.innerHTML = '';
+  const el = document.createElement('erp-pos-touch') as Pos;
+  document.body.appendChild(el);
+  await el.updateComplete;
+  await new Promise((r) => setTimeout(r, 0));
+  await el.updateComplete;
+  el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+  await el.queue(async () => undefined);
+  await el.updateComplete;
+  return el.shadowRoot!;
+}
+
+describe('with Kitchen, a phone drawer shows the first line of the check (sales#433)', () => {
+  it('each tab carries its icon, its name for screen readers, and the name as a text that can hide', async () => {
+    const root = await mountWithKitchenAt(390, 667);
+    const tabs = root.querySelector('[data-testid="pos-view-tabs"]');
+    expect(tabs, 'the kitchen tabs are there').toBeTruthy();
+    for (const [id, key, label] of [['pos-view-tab-account', 'ui.accountTab', 'ui.accountTab'],
+      ['pos-view-tab-draft', 'ui.currentCommandTab', 'ui.currentCommandTabPendingOne']]) {
+      const tab = root.querySelector(`[data-testid="${id}"]`)!;
+      expect(tab.getAttribute('aria-label'), `${id}: named when only its icon shows`).toBe(label);
+      expect(tab.querySelector('ion-icon.view-tab-icon')?.getAttribute('name'), `${id}: a literal icon`).toMatch(/-outline$/);
+      expect(tab.querySelector('.view-tab-text')?.textContent?.trim(), `${id}: the visible name`).toBe(key);
+    }
+    const draft = root.querySelector('[data-testid="pos-view-tab-draft"]')!;
+    const dot = draft.querySelector('.pending-dot');
+    expect(dot?.textContent?.trim(), 'the pending count').toBe('1');
+    expect(dot!.closest('.view-tab-text'), 'the count stays when the name hides').toBeNull();
+  });
+
+  // The aria-label wins over the words of the tab, so a fixed «Current order» dropped the pending
+  // count a screen reader read before (in the words, «Current order 1») -- on a tablet too.
+  it('the current-order tab says how many items are still to send, for screen readers too', async () => {
+    const label = async (pending: number) => (await mountWithKitchenAt(390, 667, pending))
+      .querySelector('[data-testid="pos-view-tab-draft"]')!.getAttribute('aria-label');
+    expect(await label(0), 'nothing pending: just its name').toBe('ui.currentCommandTab');
+    expect(await label(1)).toBe('ui.currentCommandTabPendingOne');
+    expect(await label(2)).toBe('ui.currentCommandTabPending');
+  });
+
+  it('the words of that name, in en and es', () => {
+    const en = (enCatalog as { ui: Record<string, string> }).ui;
+    const es = (esCatalog as { ui: Record<string, string> }).ui;
+    expect(en.currentCommandTabPendingOne).toBe('Current order, 1 item to send');
+    expect(en.currentCommandTabPending).toBe('Current order, {count} items to send');
+    expect(es.currentCommandTabPendingOne).toBe('Comanda actual, 1 artículo por enviar');
+    expect(es.currentCommandTabPending).toBe('Comanda actual, {count} artículos por enviar');
+  });
+
+  it('the two tabs show different icons', async () => {
+    const root = await mountWithKitchenAt(390, 667);
+    const icon = (id: string) => root.querySelector(`[data-testid="${id}"] ion-icon.view-tab-icon`)?.getAttribute('name');
+    expect(icon('pos-view-tab-account')).not.toBe(icon('pos-view-tab-draft'));
+  });
+
+  it('a tablet column keeps the tabs as words: the icons do not show outside a low drawer', () => {
+    expect(rules(posCss(), '.view-tab-icon')).toMatch(/display:\s*none/);
+  });
+
+  it('upright, a line shows its NAME at the top of its card in the drawer (390×667 under the strip)', async () => {
+    const root = await mountWithKitchenAt(390, 667);
+    const item = root.querySelector('.cart ion-list.lines ion-item');
+    expect(item, 'the line is in the check').toBeTruthy();
+    expect(getComputedStyle(item as Element).alignItems, 'not centred under the foot').toBe('flex-start');
+  });
+
+  it('a tablet column keeps a line centred in its card', async () => {
+    const root = await mountWithKitchenAt(1280, 800);
+    const item = root.querySelector('.cart ion-list.lines ion-item');
+    expect(item).toBeTruthy();
+    expect(getComputedStyle(item as Element).alignItems).not.toBe('flex-start');
+  });
+
+  // 390×667 under the strip leaves a 385-391 px drawer: just over the 24rem of the low block, and
+  // its full header (215 px) and foot (123 px) left the name of the line cut in two. So the tabs go
+  // beside the name from 28rem down, before the rest of the header compacts.
+  it('declares the kitchen-tabs block once, BEFORE the low ones, so they refine it', () => {
+    const css = posCss();
+    expect(blocks(css, KITCHEN_ROW), '@container pos-cart (max-height: 28rem)').toHaveLength(1);
+    const order = [...css.matchAll(/@container\s*([^{]*)\{/g)].map((m) => m[1]);
+    expect(order.findIndex((p) => KITCHEN_ROW.test(p)), order.join(' | ')).toBeLessThan(order.findIndex((p) => LOW.test(p)));
+  });
+
+  // On the row of the check's name they left «Cuenta nu» of «Cuenta nueva» at 320 px; the row of
+  // the header icons has a gap in the middle (between the table/customer icons and open checks).
+  it('a drawer up to 28rem puts the tabs first on the row of the header icons, as icons a finger wide', () => {
+    const low = blocks(posCss(), KITCHEN_ROW).join('\n');
+    const header = rules(low, '.cart ion-header');
+    expect(header).toMatch(/display:\s*flex/);
+    expect(header, 'the name and the chips keep a row of their own').toMatch(/flex-wrap:\s*wrap/);
+    expect(header).toMatch(/align-items:\s*center/);
+    const toolbar = rules(low, '.cart ion-toolbar');
+    expect(toolbar, 'the icons take what the tabs leave').toMatch(/flex:\s*1\s+1\s+0/);
+    // Without Kitchen there are no tabs: a toolbar of basis 0 and min-width 0 fitted on the line of
+    // the whole-width name, 0 px wide, and park, open checks and close were gone. Half the row
+    // leaves the tabs (~6rem) their room and pushes the name to the next row, tabs or not.
+    expect(toolbar, 'never 0 px beside the name').toMatch(/min-width:\s*50%/);
+    expect(rules(low, '.order-heading'), 'the name and the chips: the next row, whole').toMatch(/flex:\s*1\s+1\s+100%/);
+    const tabs = rules(low, 'ion-segment.view-tabs');
+    expect(tabs, 'before the icons (order -1, the toolbar is 0)').toMatch(/order:\s*-1/);
+    expect(tabs, 'the tabs keep their size next to the icons').toMatch(/flex:\s*none/);
+    // md lays the segment's columns out as minmax(auto, 360px): at its own width the pair took
+    // 722 px and pushed the header icons to another row.
+    expect(tabs, 'each column as wide as its icon, in md too').toMatch(/grid-auto-columns:\s*auto/);
+    expect(rules(low, 'ion-segment.view-tabs ion-label, ion-segment.view-tabs .view-tab-icon'), 'no air around the icon')
+      .toMatch(/margin-top:\s*0;\s*margin-bottom:\s*0/);
+    expect(rules(low, 'ion-segment.view-tabs .view-tab-text'), 'the words hide').toMatch(/display:\s*none/);
+    expect(rules(low, 'ion-segment.view-tabs .view-tab-icon'), 'the icons show').toMatch(/display:\s*(inline-)?block/);
+    const button = rules(low, 'ion-segment.view-tabs ion-segment-button');
+    expect(rem(button, 'min-width'), 'a 44 px touch target').toBeGreaterThanOrEqual(2.75);
+    expect(rem(button, 'min-height'), 'as tall as the icons of the header').toBeGreaterThanOrEqual(2.4);
+  });
+
+  it('a drawer up to 28rem closes with an icon (its name in aria-label), so a 320 px row fits the tabs and five icons', async () => {
+    const low = blocks(posCss(), KITCHEN_ROW).join('\n');
+    expect(rules(low, 'ion-button.header-action.cart-close small')).toMatch(/display:\s*none/);
+    const close = rules(low, 'ion-button.header-action.cart-close');
+    expect(rem(close, 'width'), 'as wide as the icons next to it, not 3.25rem').toBeLessThanOrEqual(2.4);
+    expect(rem(close, 'min-height'), 'ios gives a labelled button min-height 3.1em').toBe(rem(close, 'height'));
+    const root = await mountWithKitchenAt(390, 667);
+    expect(root.querySelector('[data-testid="pos-cart-close"]')?.getAttribute('aria-label')).toBe('ui.closeAction');
+  });
+
+  // md gives an icon-only toolbar button min-width 48px: at 360×640 the park and open-checks
+  // buttons took 48 px each and squeezed the icons of Tables and Customers into each other.
+  it('a drawer up to 28rem keeps the header icons as wide as declared, in md too', () => {
+    const low = blocks(posCss(), KITCHEN_ROW).join('\n');
+    const icon = rules(low, 'ion-button.header-action.icon-action');
+    expect(rem(icon, 'min-width'), 'no wider than the 2.4rem of ios').toBeLessThanOrEqual(2.4);
+    expect(rem(icon, 'min-width')).toBeGreaterThan(0);
+  });
+
+  // A 320 px phone leaves the header row ~280 px: the tabs (~95) and five icons (~200) did not fit,
+  // and the icons of Tables and Customers overlapped. Only there they are a little smaller.
+  it('a drawer narrower than 20rem (a 320 px phone) packs the tabs and five icons tighter', () => {
+    const css = posCss();
+    const NARROW = /pos-cart\s*\(\s*max-height:\s*28rem\s*\)\s*and\s*\(\s*max-width:\s*20rem\s*\)\s*$/;
+    const narrow = blocks(css, NARROW);
+    expect(narrow, 'declared once').toHaveLength(1);
+    const at = (re: RegExp) => [...css.matchAll(/@container\s*([^{]*)\{/g)].findIndex((m) => re.test(m[1]));
+    expect(at(NARROW), 'after the 28rem block, so it wins').toBeGreaterThan(at(KITCHEN_ROW));
+    const body = narrow[0];
+    expect(rem(rules(body, 'ion-toolbar, .cart-actions-slot'), '--pos-hdr-icon-size'), 'smaller icons, Tables and Customers too')
+      .toBeLessThanOrEqual(1.5);
+    const icons = rules(body, 'ion-button.header-action.icon-action, ion-button.header-action.cart-close');
+    expect(rem(icons, 'width')).toBeLessThan(2.4);
+    expect(rem(icons, 'min-width'), 'md does not widen them back').toBe(rem(icons, 'width'));
+    expect(rem(icons, 'width'), 'still a finger wide').toBeGreaterThanOrEqual(2.1);
+    expect(rules(body, '.order-toolbar')).toMatch(/gap:\s*0/);
+    const tab = rules(body, 'ion-segment.view-tabs ion-segment-button');
+    expect(rem(tab, 'min-width')).toBeLessThan(2.75);
+    expect(rem(tab, 'min-width')).toBeGreaterThanOrEqual(2.1);
+  });
+
+  // With Tables and Customers installed (a real restaurant) the one bar of a very low drawer holds
+  // five icons, the tabs and the check's name: in 27rem the name and «Served by» slid UNDER the tabs.
+  it('a low screen (a phone on its side) gets a drawer wide enough for the one bar', () => {
+    const widthIn = (prelude: RegExp) => {
+      const all = [...rules(blocks(posCss(), prelude).join('\n'), '.cart').matchAll(/(?:^|[;{\s])width:\s*([^;}]+)/g)];
+      return all.length ? all[all.length - 1][1].trim() : '';
+    };
+    const upright = widthIn(/^\(max-width:\s*820px\)\s*$/);
+    const onItsSide = widthIn(/^\(max-height:\s*500px\)\s*$/);
+    expect(onItsSide, 'the low-screen block declares the drawer width').toMatch(/^min\(100%,\s*[\d.]+rem\)$/);
+    const rems = (w: string) => Number(w.match(/([\d.]+)rem/)![1]);
+    expect(rems(onItsSide), `wider than upright (${upright})`).toBeGreaterThan(rems(upright));
+    expect(rems(onItsSide), 'room for the name, the tabs and five icons').toBeGreaterThanOrEqual(34);
+    const css = posCss();
+    const at = (re: RegExp) => [...css.matchAll(/@media\s*([^{]*)\{/g)].findIndex((m) => re.test(m[1]));
+    expect(at(/^\(max-height:\s*500px\)\s*$/), 'after the blocks that set 27rem, so it wins')
+      .toBeGreaterThan(at(/^\(min-width:\s*821px\) and \(max-height:\s*500px\)/));
+  });
+
+  it('a very low drawer keeps the tabs in its one bar, after the name and before the icons', () => {
+    const veryLow = blocks(posCss(), VERY_LOW).join('\n');
+    const tabs = rules(veryLow, 'ion-segment.view-tabs');
+    expect(tabs, 'beside the name (order -1, after it in the markup)').toMatch(/order:\s*-1/);
+    expect(tabs).toMatch(/flex:\s*none/);
+    expect(rules(veryLow, '.cart ion-toolbar'), 'the icons share the bar').toMatch(/flex:\s*none/);
+    expect(rules(veryLow, '.cart ion-toolbar'), 'as wide as its icons, not the half row of the 28rem block').toMatch(/min-width:\s*0/);
+    expect(tabs, 'no air above and below them: the bar is as tall as its buttons').toMatch(/margin-top:\s*0;\s*margin-bottom:\s*0/);
+  });
+
+  // In the one bar of a very low drawer with Tables and Customers the name got 74 px: «Cuenta nu»
+  // of «Cuenta nueva» (107 px). The chips beside it scroll sideways; the name is what says which check.
+  it('a very low drawer keeps room for the whole default name of the check', () => {
+    const veryLow = blocks(posCss(), VERY_LOW).join('\n');
+    const row = rules(veryLow, '.order-title-row');
+    const basis = row.match(/flex:\s*1\s+0\s+([\d.]+)rem/);
+    expect(basis, row).toBeTruthy();
+    expect(Number(basis![1]), 'the name (107 px) and its edit icon').toBeGreaterThanOrEqual(9.5);
+  });
+
+  it('a very low drawer leaves no air above the first line (568×320 under the strip is 129-131 px; md left the name 1 px under the foot at .15rem)', () => {
+    const veryLow = blocks(posCss(), VERY_LOW).join('\n');
+    expect(rules(veryLow, 'ion-list.lines ion-item:first-child')).toMatch(/margin-top:\s*0/);
+    expect(rem(rules(veryLow, 'ion-list.lines ion-item ion-label'), 'margin-top'), 'less than the .3rem of sales#432')
+      .toBeLessThanOrEqual(0.1);
   });
 });
