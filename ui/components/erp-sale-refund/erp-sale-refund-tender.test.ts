@@ -395,6 +395,7 @@ describe('sales#462: reopened over a doubt that WAS recorded', () => {
     expect(commands.filter((c) => c.name === 'sales.refund')).toHaveLength(0);
     expect(refundSdk.notices.some((n) => n.type === 'success' && n.message === 'ui.refundTenderGivenBack')).toBe(true);
     expect(giveBackButton(el), 'done: offering it again would be a second give-back').toBeNull();
+    expect(tenderPending(el), 'it went back: no «check it in its module»').toBeNull();
   });
 
   it('offers nothing while no line goes back: the operator un-ticked it, or it already came back', async () => {
@@ -441,6 +442,9 @@ describe('sales#462: reopened over a doubt that WAS recorded', () => {
     expect(tenderPending(el)?.textContent).toContain('ui.refundTenderPending');
     expect(refundSdk.notices.some((n) => n.message === 'ui.refundTenderGivenBack')).toBe(false);
     expect(commands.filter((c) => c.name === 'sales.refund')).toHaveLength(0);
+    // A filler commits once per screen: a second offer could only announce a give-back that never
+    // happens, and wipe the warning that says to check it.
+    expect(giveBackButton(el), 'failed: offering it again would claim a give-back').toBeNull();
   });
 
   it('when the lines paid another way cannot be read, says they must be checked in their module', async () => {
