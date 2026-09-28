@@ -80,10 +80,10 @@ function rules(css: string, selector: string): string {
   return (css.match(new RegExp(`(?:^|[\\s},])${escaped}\\s*\\{[^}]*\\}`, 'g')) ?? []).join('\n');
 }
 
-/** The value (in rem) of the last `prop:` declared in `css`, or NaN. */
+/** The value (in rem) of the last `prop:` declared in `css`, or NaN. A bare `0` is 0rem. */
 function rem(css: string, prop: string): number {
-  const all = [...css.matchAll(new RegExp(`(?:^|[;{\\s])${prop}\\s*:\\s*([\\d.]+)rem`, 'g'))];
-  return all.length ? Number(all[all.length - 1][1]) : Number.NaN;
+  const all = [...css.matchAll(new RegExp(`(?:^|[;{\\s])${prop}\\s*:\\s*(?:([\\d.]+)rem|0(?=\\s*(?:;|}|$)))`, 'g'))];
+  return all.length ? Number(all[all.length - 1][1] ?? 0) : Number.NaN;
 }
 
 const LOW = /pos-cart\s*\(\s*max-height:\s*24rem\s*\)\s*$/;
@@ -386,6 +386,7 @@ describe('a very low drawer shows the first line of the check without scrolling 
 // them) on the row of the check's name, and in any phone drawer a line shows its name at the top of
 // its card. Measured on hub:dev + kitchen in ios and md (the PR): the first line's name shows at
 // 390×667, 320×568, 667×375, 844×390 and 568×320, with and without the strip.
+const KITCHEN_ROW = /pos-cart\s*\(\s*max-height:\s*28rem\s*\)\s*$/;
 const KITCHEN_PRODUCTS = [{ id: 'p-1', name: 'Café', sku: 'CAF', price: 180, is_active: 1, tax_category_key: 'product.generic' }];
 
 type Pos = HTMLElement & { updateComplete: Promise<unknown>; queue<T>(t: () => Promise<T>): Promise<T> };
@@ -461,8 +462,18 @@ describe('with Kitchen, a phone drawer shows the first line of the check (sales#
     expect(getComputedStyle(item as Element).alignItems).not.toBe('flex-start');
   });
 
-  it('a low drawer puts the tabs on the row of the check\'s name, as icons a finger wide', () => {
-    const low = blocks(posCss(), LOW).join('\n');
+  // 390×667 under the strip leaves a 385-391 px drawer: just over the 24rem of the low block, and
+  // its full header (215 px) and foot (123 px) left the name of the line cut in two. So the tabs go
+  // beside the name from 28rem down, before the rest of the header compacts.
+  it('declares the kitchen-tabs block once, BEFORE the low ones, so they refine it', () => {
+    const css = posCss();
+    expect(blocks(css, KITCHEN_ROW), '@container pos-cart (max-height: 28rem)').toHaveLength(1);
+    const order = [...css.matchAll(/@container\s*([^{]*)\{/g)].map((m) => m[1]);
+    expect(order.findIndex((p) => KITCHEN_ROW.test(p)), order.join(' | ')).toBeLessThan(order.findIndex((p) => LOW.test(p)));
+  });
+
+  it('a drawer up to 28rem puts the tabs on the row of the check\'s name, as icons a finger wide', () => {
+    const low = blocks(posCss(), KITCHEN_ROW).join('\n');
     const header = rules(low, '.cart ion-header');
     expect(header).toMatch(/display:\s*flex/);
     expect(header, 'the toolbar keeps its own row above').toMatch(/flex-wrap:\s*wrap/);
@@ -474,6 +485,11 @@ describe('with Kitchen, a phone drawer shows the first line of the check (sales#
     expect(heading, 'no rule between the name and the tabs of the same row').toMatch(/border-bottom:\s*0/);
     const tabs = rules(low, 'ion-segment.view-tabs');
     expect(tabs, 'the tabs keep their size next to the name').toMatch(/flex:\s*none/);
+    // md lays the segment's columns out as minmax(auto, 360px): at its own width the pair took
+    // 722 px and pushed the header icons to another row.
+    expect(tabs, 'each column as wide as its icon, in md too').toMatch(/grid-auto-columns:\s*auto/);
+    expect(rules(low, 'ion-segment.view-tabs ion-label, ion-segment.view-tabs .view-tab-icon'), 'no air around the icon')
+      .toMatch(/margin-top:\s*0;\s*margin-bottom:\s*0/);
     expect(rules(low, 'ion-segment.view-tabs .view-tab-text'), 'the words hide').toMatch(/display:\s*none/);
     expect(rules(low, 'ion-segment.view-tabs .view-tab-icon'), 'the icons show').toMatch(/display:\s*(inline-)?block/);
     const button = rules(low, 'ion-segment.view-tabs ion-segment-button');
@@ -487,5 +503,13 @@ describe('with Kitchen, a phone drawer shows the first line of the check (sales#
     expect(tabs, 'beside the name (order -1, after it in the markup)').toMatch(/order:\s*-1/);
     expect(tabs).toMatch(/flex:\s*none/);
     expect(rules(veryLow, '.cart ion-toolbar'), 'the icons share the bar').toMatch(/flex:\s*none/);
+    expect(tabs, 'no air above and below them: the bar is as tall as its buttons').toMatch(/margin-top:\s*0;\s*margin-bottom:\s*0/);
+  });
+
+  it('a very low drawer leaves no air above the first line (568×320 under the strip is 129-131 px)', () => {
+    const veryLow = blocks(posCss(), VERY_LOW).join('\n');
+    expect(rules(veryLow, 'ion-list.lines ion-item:first-child')).toMatch(/margin-top:\s*0/);
+    expect(rem(rules(veryLow, 'ion-list.lines ion-item ion-label'), 'margin-top'), 'less than the .3rem of sales#432')
+      .toBeLessThan(0.3);
   });
 });
