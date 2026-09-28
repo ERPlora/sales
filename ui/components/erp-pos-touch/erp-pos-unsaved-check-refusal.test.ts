@@ -271,6 +271,21 @@ describe('2 · a check that lives at a table is left there — unless the hub re
     expect(el.error, 'it went through: «could not be left» would be a lie').toBe('');
   });
 
+  it('removing its table after a refusal: the park prompt opens fresh, with the time as the name', async () => {
+    const el = await tableCheck();
+    refused.set('sales.order.set_label', 'sales.refused_here');
+    await el.requestPark();
+    await settle(el);
+    expect(el.error).toBe('ui.leaveOnTableFailed');
+    el.parkName = 'stale';
+    el.dispatchEvent(new CustomEvent('erp:order-context', { detail: { table_id: null }, bubbles: true, composed: true }));
+    await settle(el);
+
+    expect(el.parkPromptOpen, 'the table is gone: the check is parked with a name').toBe(true);
+    expect(el.parkName, 'the default name is the time, not what was left in the field').toMatch(/^\d\d:\d\d$/);
+    expect($(el, '[data-testid="pos-park-error"]'), 'the old refusal is not carried into the prompt').toBeNull();
+  });
+
   it('the Park button at a table: when it goes through, the screen is let go as before', async () => {
     const el = await tableCheck();
     await el.requestPark();
