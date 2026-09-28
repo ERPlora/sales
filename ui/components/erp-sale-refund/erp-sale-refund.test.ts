@@ -674,6 +674,21 @@ describe('sales#456: after the doubt, the screen finds out by itself', () => {
       expect(keyOf(1)).toBe(first);
     });
 
+    it('«not recorded» after the doubt, then closed → the reopened screen keeps THAT key (a late write collapses)', async () => {
+      // The probe's empty answer does not prove the first write will never land (a slow commit
+      // is invisible to it), so the key stays pending across closing the screen too.
+      hub = 'not-recorded';
+      await lostAnswer();
+      const first = keyOf(0);
+      document.body.innerHTML = '';
+      probes = [];
+      const el = await mount();
+      expect(probes[0]?.idempotency_key).toBe(first);
+      el.reason = 'devolución';
+      await el.confirm();
+      expect(keyOf(1)).toBe(first);
+    });
+
     it('still unreachable → the doubt is on screen from the start, and the retry reuses the key', async () => {
       const first = await doubtThenClose();
       hub = 'unreachable';
