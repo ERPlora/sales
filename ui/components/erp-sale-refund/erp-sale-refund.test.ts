@@ -142,6 +142,47 @@ describe('el campo del importe va en la moneda del hub (sales#377)', () => {
   });
 });
 
+describe('each payment shows charged / refunded / refundable in the hub currency (sales#436)', () => {
+  // A partly refunded card and an untouched cash payment: three distinct figures on the card, so a
+  // figure painted raw («3150») or swapped with its neighbour can't pass for the right one.
+  const PARTLY_REFUNDED = [
+    { ...LEGS[0], charged: 3150, refunded: 1000, remaining: 2150 },
+    { ...LEGS[1], charged: 2000, refunded: 0, remaining: 2000 },
+  ];
+  const figures = (el: Refund, paymentId: string): string[] =>
+    [...(el.shadowRoot?.querySelectorAll(`[data-testid="refund-leg-${paymentId}"] .leg-figures span`) ?? [])]
+      .map((s) => (s.textContent ?? '').replace(/\s+/g, ' ').trim());
+
+  it('two-decimal currency (EUR): the three figures go through formatMoney', async () => {
+    install({ 'sales.refund_options': PARTLY_REFUNDED });
+    const el = await mount();
+    expect(figures(el, 'pay-card')).toEqual([
+      `${esCatalog.ui.refundLegCharged}: 31,50 €`,
+      `${esCatalog.ui.refundLegRefunded}: 10,00 €`,
+      `${esCatalog.ui.refundLegRemaining}: 21,50 €`,
+    ]);
+    // Nothing refunded yet: no «0,00 €» line, only what was charged and what can still go back.
+    expect(figures(el, 'pay-cash')).toEqual([
+      `${esCatalog.ui.refundLegCharged}: 20,00 €`,
+      `${esCatalog.ui.refundLegRemaining}: 20,00 €`,
+    ]);
+  });
+
+  it('three-decimal currency (KWD): the figures carry the hub decimals, not a fixed /100', async () => {
+    install({ 'sales.refund_options': PARTLY_REFUNDED }, undefined, undefined, {
+      currency: 'KWD',
+      currencyDecimals: 3,
+      formatMoney: (c: number) => `${((c || 0) / 1000).toFixed(3).replace('.', ',')} KWD`,
+    });
+    const el = await mount();
+    expect(figures(el, 'pay-card')).toEqual([
+      `${esCatalog.ui.refundLegCharged}: 3,150 KWD`,
+      `${esCatalog.ui.refundLegRefunded}: 1,000 KWD`,
+      `${esCatalog.ui.refundLegRemaining}: 2,150 KWD`,
+    ]);
+  });
+});
+
 describe('el reparto: propuesta por defecto, jaula nunca', () => {
   it('abre proponiendo la devolución ENTERA, repartida a prorrata', async () => {
     const el = await mount();
