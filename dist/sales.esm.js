@@ -6656,11 +6656,14 @@ async function addOrderLine(client, orderId, l3) {
   const res = await client.command("sales.order.add_line", orderLinePayload(orderId, l3));
   return firstNewId(res);
 }
-async function persistLineQty(client, orderId, line, qty) {
+async function persistLineQty(client, orderId, line, qty, heldByOthers = []) {
   let lineId = line.line_id;
   if (!lineId) {
+    const taken = new Set(heldByOthers);
     const persisted = await loadOrderLines(client, orderId);
-    lineId = persisted.find((p4) => p4.id === line.id && !p4.is_gift === !line.is_gift)?.line_id;
+    lineId = persisted.find(
+      (p4) => p4.id === line.id && !p4.is_gift === !line.is_gift && !taken.has(p4.line_id ?? "")
+    )?.line_id;
   }
   if (!lineId) return false;
   line.line_id = lineId;
@@ -9433,19 +9436,31 @@ var ErpPosTouch = class extends i3 {
     /* sales#433: with Kitchen, the «Account / Current order» tabs were a row of their own (~50 px)
        that alone hid the first line of the check in every phone drawer but the tallest -- 390x667
        under the strip (385-391px) included, just over the low block below. As on Square and Toast,
-       they are icons (their names in aria-label, the pending count on them) on the row of the
-       check's name. Written before the low blocks, which compact the rest of the header. */
+       they are icons (their names in aria-label, the pending count on them) first on the row of
+       the header icons, which has a gap in the middle -- on the row of the check's name they left
+       «Cuenta nu» of «Cuenta nueva» at 320px. Close is an icon too, so a 320px row fits the tabs and
+       five icons. Written before the low blocks, which compact the rest of the header. */
     @container pos-cart (max-height: 28rem) {
       .cart ion-header { display:flex; flex-wrap:wrap; align-items:center; }
-      .cart ion-toolbar { flex:1 1 100%; }
-      .order-heading { flex:1 1 0; min-width:0; border-bottom:0; }
+      .cart ion-toolbar { flex:1 1 0; min-width:0; }
+      .order-heading { flex:1 1 100%; }
       /* md lays the columns out as minmax(auto, 360px): the pair was 722px wide. */
-      ion-segment.view-tabs { flex:none; grid-auto-columns:auto; margin-top:.2rem; margin-bottom:.2rem; margin-left:0; margin-right:.6rem; }
+      ion-segment.view-tabs { order:-1; flex:none; grid-auto-columns:auto; margin-top:.2rem; margin-bottom:.2rem; margin-left:.35rem; margin-right:0; }
       ion-segment.view-tabs ion-segment-button { min-height:2.4rem; min-width:2.75rem;
         --padding-start:.45rem; --padding-end:.45rem; --padding-top:0; --padding-bottom:0; }
       ion-segment.view-tabs ion-label, ion-segment.view-tabs .view-tab-icon { margin-top:0; margin-bottom:0; }
       ion-segment.view-tabs .view-tab-text { display:none; }
       ion-segment.view-tabs .view-tab-icon { display:block; }
+      /* ios gives a button with a label min-height:3.1em, so height alone left it 52px tall. */
+      ion-button.header-action.cart-close { width:2.4rem; height:2.4rem; min-height:2.4rem; margin:auto 0; }
+      ion-button.header-action.cart-close small { display:none; }
+    }
+    /* sales#433: with Tables and Customers (a real restaurant) the one bar of a very low drawer
+       holds the check's name, the tabs and five icons: in 27rem the name and «Served by» slid under
+       the tabs. A low screen is a phone on its side, wide enough for a wider drawer. Written after
+       the blocks that set 27rem, so it wins. */
+    @media (max-height:500px) {
+      .cart { width:min(100%,34rem); }
     }
     /* sales#423: a LOW drawer (320x568 under the «You can't invoice yet» strip, any phone on its
        side) is 170-300px tall, and the header (~145px) and the foot (~125-139px) alone took it:
@@ -11125,7 +11140,10 @@ var ErpPosTouch = class extends i3 {
     };
     let saved2 = true;
     try {
-      if (this.orderId) saved2 = await persistLineQty(erplora2(), this.orderId, raised, raised.qty);
+      if (this.orderId) {
+        const heldByOthers = this.cart.flatMap((l3) => l3.line_id ? [l3.line_id] : []);
+        saved2 = await persistLineQty(erplora2(), this.orderId, raised, raised.qty, heldByOthers);
+      }
     } catch (e8) {
       putBack();
       throw e8;
@@ -12781,7 +12799,8 @@ var ErpPosTouch = class extends i3 {
    *  `ion-activatable`/`ion-focusable` Ionic stamps once, and the line stops answering the tap. */
   renderLine(l3) {
     const locked = isLineLocked(l3);
-    return b2`<ion-item data-testid=${`pos-line-${l3.id}`} class=${e6({ sel: !!l3.line_id && this.splitSel.has(l3.line_id) })}
+    const key = l3.line_id || l3.id;
+    return b2`<ion-item data-testid=${`pos-line-${key}`} data-product-id=${l3.id} class=${e6({ sel: !!l3.line_id && this.splitSel.has(l3.line_id) })}
         button ?detail=${false} @click=${() => this.toggleSplit(l3)}>
       ${this.cart.length > 1 && l3.line_id ? b2`<ion-icon slot="start"
                   name=${this.splitSel.has(l3.line_id) ? "checkmark-circle" : "ellipse-outline"}
@@ -12823,16 +12842,16 @@ var ErpPosTouch = class extends i3 {
         <span class="lt ${l3.is_gift ? "is-gift" : ""}">${this.money(lineAmount(l3))}</span>
         ${locked ? b2`<span class="lqty">×${formatQuantity2(toMicro2(l3.qty))}</span>` : b2`
             ${this.discountsAllowed ? b2`
-            <ion-button data-testid=${`pos-line-${l3.id}-discount`} class="line-discount" fill="clear" size="small" title=${t5("ui.discountLine")} aria-label=${t5("ui.discountLine")}
+            <ion-button data-testid=${`pos-line-${key}-discount`} class="line-discount" fill="clear" size="small" title=${t5("ui.discountLine")} aria-label=${t5("ui.discountLine")}
                         @click=${() => this.openDiscount("line", l3.line_id)}>
               <ion-icon name=${l3.discount ? "pricetag" : "pricetag-outline"} slot="icon-only" class=${this.toneOf(!!l3.discount, "warning")}></ion-icon>
             </ion-button>` : A}
-            <ion-button data-testid=${`pos-line-${l3.id}-note`} class="line-note" fill="clear" size="small" title=${t5("ui.lineNote")} aria-label=${t5("ui.lineNote")}
+            <ion-button data-testid=${`pos-line-${key}-note`} class="line-note" fill="clear" size="small" title=${t5("ui.lineNote")} aria-label=${t5("ui.lineNote")}
                         @click=${() => this.openLineNote(l3.line_id)}>
               <ion-icon name=${l3.note ? "chatbox-ellipses" : "chatbox-ellipses-outline"} slot="icon-only"
                         class=${this.toneOf(!!l3.note, "primary")}></ion-icon>
             </ion-button>
-            <ion-button data-testid=${`pos-line-${l3.id}-gift`} fill="clear" size="small" title=${t5("ui.giftAction")} @click=${() => this.toggleGift(l3)}>
+            <ion-button data-testid=${`pos-line-${key}-gift`} fill="clear" size="small" title=${t5("ui.giftAction")} @click=${() => this.toggleGift(l3)}>
               <ion-icon name=${l3.is_gift ? "gift" : "gift-outline"} slot="icon-only" class=${this.toneOf(!!l3.is_gift, "success")}></ion-icon>
             </ion-button>
             <ok-qty-stepper .value=${l3.qty} .min=${0} .step=${this.stepOf(l3)}

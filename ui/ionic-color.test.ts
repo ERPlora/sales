@@ -208,9 +208,9 @@ describe('pm#392: the till paints its tones from classes of its own shadow root'
     const root = el.shadowRoot;
     expectTone(el, root.querySelector('ion-badge.line-discount-badge'), 'warning');
     expectTone(el, [...root.querySelectorAll('ion-badge')].find((b) => b.textContent?.includes('ui.giftBadge')), 'success');
-    expectTone(el, byTestId(root, 'pos-line-p-cafe-discount')?.querySelector('ion-icon'), 'warning');
-    expectTone(el, byTestId(root, 'pos-line-p-cafe-note')?.querySelector('ion-icon'), 'primary');
-    expectTone(el, byTestId(root, 'pos-line-p-cafe-gift')?.querySelector('ion-icon'), 'success');
+    expectTone(el, byTestId(root, 'pos-line-l-1-discount')?.querySelector('ion-icon'), 'warning');
+    expectTone(el, byTestId(root, 'pos-line-l-1-note')?.querySelector('ion-icon'), 'primary');
+    expectTone(el, byTestId(root, 'pos-line-l-1-gift')?.querySelector('ion-icon'), 'success');
   });
 
   it('a plain line: its discount, note and gift icons are medium; the split mark follows the selection', async () => {
@@ -218,9 +218,9 @@ describe('pm#392: the till paints its tones from classes of its own shadow root'
     el.cart = [{ ...LINE }, { ...LINE, id: 'p-2', line_id: 'l-2', name: 'Té' }];
     await settle(el);
     const root = el.shadowRoot;
-    expectTone(el, byTestId(root, 'pos-line-p-cafe-discount')?.querySelector('ion-icon'), 'medium');
-    expectTone(el, byTestId(root, 'pos-line-p-cafe-note')?.querySelector('ion-icon'), 'medium');
-    expectTone(el, byTestId(root, 'pos-line-p-cafe-gift')?.querySelector('ion-icon'), 'medium');
+    expectTone(el, byTestId(root, 'pos-line-l-1-discount')?.querySelector('ion-icon'), 'medium');
+    expectTone(el, byTestId(root, 'pos-line-l-1-note')?.querySelector('ion-icon'), 'medium');
+    expectTone(el, byTestId(root, 'pos-line-l-1-gift')?.querySelector('ion-icon'), 'medium');
     expectTone(el, root.querySelector('ion-icon.selmark'), 'medium');
     el.splitSel = new Set(['l-1']);
     await settle(el);
@@ -259,9 +259,9 @@ describe('pm#392: the till paints its tones from classes of its own shadow root'
     const root = el.shadowRoot;
     const nodes = () => [
       byTestId(root, 'pos-ticket-discount'),
-      byTestId(root, 'pos-line-p-cafe-discount')?.querySelector('ion-icon'),
-      byTestId(root, 'pos-line-p-cafe-note')?.querySelector('ion-icon'),
-      byTestId(root, 'pos-line-p-cafe-gift')?.querySelector('ion-icon'),
+      byTestId(root, 'pos-line-l-1-discount')?.querySelector('ion-icon'),
+      byTestId(root, 'pos-line-l-1-note')?.querySelector('ion-icon'),
+      byTestId(root, 'pos-line-l-1-gift')?.querySelector('ion-icon'),
       root.querySelector('ion-icon.selmark'),
     ];
     for (const n of nodes()) n!.classList.add('hydrated', 'ios');
@@ -287,7 +287,7 @@ describe('pm#392: the till paints its tones from classes of its own shadow root'
     const el = await till();
     el.cart = [{ ...LINE }, { ...LINE, id: 'p-2', line_id: 'l-2', name: 'Té' }];
     await settle(el);
-    const item = () => byTestId(el.shadowRoot, 'pos-line-p-cafe')!;
+    const item = () => byTestId(el.shadowRoot, 'pos-line-l-1')!;
     const ionic = ['item', 'ios', 'hydrated', 'ion-activatable', 'ion-focusable'];
     item().classList.add(...ionic);
 
