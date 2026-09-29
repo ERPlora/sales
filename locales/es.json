@@ -477,6 +477,7 @@
     "refundLineTenders": "Líneas pagadas de otra forma",
     "refundLineTendersHint": "Estas líneas no costaron dinero, así que no entran en el reparto de arriba. Lo que vuelve a ellas se decide aquí.",
     "refundTenderPending": "El dinero ha vuelto, pero lo que se pagó de otra forma no se ha podido devolver. Revísalo desde su módulo.",
+    "refundTenderReopen": "La devolución está registrada, pero lo que se pagó de otra forma aún no se ha devuelto. Vuelve a abrir la devolución de esta venta en este dispositivo para devolverlo.",
     "refundTenderGiveBack": "Devolver lo pagado de otra forma",
     "refundTenderGivenBack": "Lo pagado de otra forma se ha devuelto.",
     "refundExceedsTender": "A un medio de pago se le está devolviendo más de lo que cobró.",
