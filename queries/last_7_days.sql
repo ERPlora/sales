@@ -15,27 +15,24 @@
 -- local midnight and 02:00 (summer in Spain) under the previous day. «Today» is `:now` on that same
 -- clock. Same idiom as invoice#78 and `appointments`; the COALESCE degrades to UTC like the runtime
 -- does (`timezone_name()`), because `AT TIME ZONE NULL` would silently drop every row.
--- Each day is computed once in its own SELECT and grouped by name: repeating the expression in the
+-- Each day is computed once in its own derived table and grouped by name: repeating the expression in the
 -- GROUP BY would bind `:timezone` twice, and Postgres cannot match two parameters as one expression.
-WITH today AS (
-    SELECT CAST(CAST(CAST(:now AS TEXT) AS timestamptz) AT TIME ZONE COALESCE(NULLIF(TRIM(CAST(:timezone AS TEXT)), ''), 'UTC') AS date) AS day
-),
-days AS (
-    SELECT erp_date(erp_dateadd(today.day, o.n, 'days')) AS day
-    FROM today
+SELECT
+    days.day,
+    COALESCE(SUM(sold.total), 0) AS total
+FROM (
+    SELECT erp_date(erp_dateadd(t.day, o.n, 'days')) AS day
+    FROM (
+        SELECT CAST(CAST(CAST(:now AS TEXT) AS timestamptz) AT TIME ZONE COALESCE(NULLIF(TRIM(CAST(:timezone AS TEXT)), ''), 'UTC') AS date) AS day
+    ) t
     CROSS JOIN (VALUES (-6), (-5), (-4), (-3), (-2), (-1), (0)) AS o(n)
-),
-sold AS (
+) days
+LEFT JOIN (
     SELECT CAST(CAST(CAST(created_at AS TEXT) AS timestamptz) AT TIME ZONE COALESCE(NULLIF(TRIM(CAST(:timezone AS TEXT)), ''), 'UTC') AS date) AS day, total
     FROM sales_sale
     WHERE hub_id = :hub_id
       AND is_deleted = 0
       AND status = 'completed'
-)
-SELECT
-    days.day,
-    COALESCE(SUM(sold.total), 0) AS total
-FROM days
-LEFT JOIN sold ON sold.day = days.day
+) sold ON sold.day = days.day
 GROUP BY days.day
 ORDER BY days.day ASC;
