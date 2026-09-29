@@ -56,6 +56,15 @@ no money moves and the screen stays open. It shows only while some line says it 
 fails, or if those lines cannot even be read, the screen says «The money is back, but what was paid
 another way could not be returned. Check it from its own module.»
 
+That offer is **not lost by closing** (sales#465). If the screen is closed while the hub is still
+answering and some line was set to go back at that moment, the refund still goes through but its
+holes are gone with the screen, so the attempt stays pending: the till says «The refund is
+recorded, but what was paid another way has not been given back yet. Open this sale's refund again
+on this device to give it back.», and the next refund screen of that sale recovers the document and
+offers the button. The same happens if the reopened screen is closed without pressing it, or if the
+give-back failed. It stops being offered once it went back, once the operator un-ticks the line and
+closes, or when there is no line paid another way.
+
 Closing the refund screen, for whatever reason, reloads the sales list, so the row shows the
 refund if it went through.
 

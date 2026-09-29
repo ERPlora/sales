@@ -476,6 +476,7 @@
     "refundLineTenders": "Lines paid another way",
     "refundLineTendersHint": "These lines cost no money, so they are not part of the split above. What goes back to them is decided here.",
     "refundTenderPending": "The money is back, but what was paid another way could not be returned. Check it from its own module.",
+    "refundTenderReopen": "The refund is recorded, but what was paid another way has not been given back yet. Open this sale's refund again on this device to give it back.",
     "refundTenderGiveBack": "Give back what was paid another way",
     "refundTenderGivenBack": "What was paid another way has been given back.",
     "refundExceedsTender": "One tender is being given back more than it was charged.",

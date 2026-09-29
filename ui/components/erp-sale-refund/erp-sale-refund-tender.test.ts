@@ -22,7 +22,9 @@
 // against today would lose the customer the session AND the money path with it.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { installErploraDouble } from '../../test/erplora-double';
-import { forgetPendingRefundKey, rememberPendingRefundKey } from '../../lib/refund-pending-key';
+import { forgetPendingRefundKey, pendingRefundKey, rememberPendingRefundKey } from '../../lib/refund-pending-key';
+import esCatalog from '../../../locales/es.json';
+import enCatalog from '../../../locales/en.json';
 import './erp-sale-refund';
 
 const SALE = [{ id: 'sale-1', sale_number: '20260825-0007', status: 'completed', total: 1800 }];
@@ -95,11 +97,19 @@ interface Options {
   legs?: unknown[];
   /** The slot registry itself fails. */
   slotFail?: boolean;
+  /** sales#465: `sales.refund` does not answer until `releaseRefund()` - the hub is still busy. */
+  hold?: boolean;
+  /** `sales.refund` answers with a refusal: nothing was written. */
+  refuse?: boolean;
 }
 
+/** Lets a held `sales.refund` go on (and answer, or lose its answer with `lostAnswer`). */
+let releaseRefund: (() => void) | undefined;
+
 function install(opts: Options = {}): void {
-  const { fillers = true, lines = LINES, linesFail = false, lostAnswer = false, legs = LEGS, slotFail = false } = opts;
+  const { fillers = true, lines = LINES, linesFail = false, lostAnswer = false, legs = LEGS, slotFail = false, hold = false, refuse = false } = opts;
   let answerLost = false;
+  const gate = hold ? new Promise<void>((resolve) => { releaseRefund = resolve; }) : Promise.resolve();
   slotsAsked = [];
   commands = [];
   commitBehaviour = 'silent';
@@ -116,6 +126,8 @@ function install(opts: Options = {}): void {
     }])),
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
+      await gate;
+      if (refuse) throw Object.assign(new Error('nothing to return'), { code: 'sales.refund_nothing_to_return' });
       if (lostAnswer && !answerLost) {
         answerLost = true;
         throw Object.assign(new Error('the hub did not answer'), { code: 'server_unavailable', outcomeUnknown: true });
@@ -495,5 +507,245 @@ describe('sales#462: reopened over a doubt that WAS recorded', () => {
     const el = await mount();
     expect(tenderPending(el)).toBeNull();
     expect(giveBackButton(el)).toBeNull();
+  });
+});
+
+// sales#465 — the screen is CLOSED while the hub is still answering `sales.refund`. The money goes
+// back, but the holes that would have given the voucher session back were unmounted with the
+// screen: handing them the document is handing it to nobody. What the screen showed as going back
+// at the moment it closed is still owed, so the attempt stays pending and the next screen on that
+// sale recovers the document and offers it again (the sales#462 button). And the same holds when
+// that offer is closed without being taken.
+describe('sales#465: closed while the hub was still answering', () => {
+  const ALL_BACK = [{ ...LEGS[0], refunded: 1800, remaining: 0 }];
+  const giveBackButton = (el: Refund): HTMLElement | null =>
+    el.shadowRoot?.querySelector('[data-testid="refund-tender-commit"]') as HTMLElement | null;
+  const recoveredBanner = (el: Refund): Element | null =>
+    el.shadowRoot?.querySelector('[data-testid="refund-recovered"]') ?? null;
+
+  async function arm(el: Refund): Promise<void> {
+    fillersOf(el)[0].dispatchEvent(new CustomEvent('erp:tender-refund-armed', {
+      detail: { lineRef: 'item-1' }, bubbles: true, composed: true,
+    }));
+    await settle(el);
+  }
+  async function disarm(el: Refund): Promise<void> {
+    fillersOf(el)[0].dispatchEvent(new CustomEvent('erp:tender-refund-disarmed', {
+      detail: { lineRef: 'item-1' }, bubbles: true, composed: true,
+    }));
+    await settle(el);
+  }
+
+  /** Confirms, closes the screen while `sales.refund` is in flight, then lets the hub answer. */
+  async function confirmAndClose(el: Refund): Promise<FakeFiller> {
+    const filler = fillersOf(el)[0];
+    const done = el.confirm();
+    await new Promise((r) => setTimeout(r, 0));
+    el.remove();
+    releaseRefund?.();
+    await done;
+    return filler;
+  }
+
+  /** The next screen on the same sale: the money is already back. */
+  async function reopen(opts: Options = {}): Promise<Refund> {
+    install({ legs: ALL_BACK, ...opts });
+    return mount();
+  }
+
+  it('the next screen on that sale recovers the document and offers to give the session back', async () => {
+    install({ hold: true });
+    const first = await mount();
+    ready(first);
+    await arm(first);
+    await confirmAndClose(first);
+
+    const el = await reopen();
+    expect(recoveredBanner(el)).toBeTruthy();
+    await arm(el);
+    giveBackButton(el)?.click();
+    await settle(el);
+    expect(fillersOf(el)[0].commits[0]?.refundRef).toBe('ref-7');
+  });
+
+  it('does not hand the document to the holes of the closed screen', async () => {
+    install({ hold: true });
+    const first = await mount();
+    ready(first);
+    await arm(first);
+    const deadFiller = await confirmAndClose(first);
+    expect(deadFiller.commits).toHaveLength(0);
+    expect((deadFiller as unknown as { refundRef?: string }).refundRef).toBeUndefined();
+  });
+
+  it('SAYS SO when the answer arrives: the money is back, the session waits for the refund to be reopened', async () => {
+    install({ hold: true });
+    const first = await mount();
+    ready(first);
+    await arm(first);
+    let refunded = false;
+    first.addEventListener('refunded', () => { refunded = true; });
+    await confirmAndClose(first);
+    expect(refunded, 'whoever listens to the screen still learns the sale was refunded').toBe(true);
+    expect(refundSdk.notices.some((n) => n.type === 'success' && n.message === 'ui.refundDone')).toBe(true);
+    expect(refundSdk.notices.some((n) => n.type === 'error' && n.message === 'ui.refundTenderReopen')).toBe(true);
+  });
+
+  it('the notice tells the operator to REOPEN the refund, in both languages', () => {
+    // The double answers with the key; this anchors the words the till actually shows.
+    const es = (esCatalog as { ui: Record<string, string> }).ui.refundTenderReopen;
+    const en = (enCatalog as { ui: Record<string, string> }).ui.refundTenderReopen;
+    expect(es).toMatch(/vuelve a abrir la devolución/i);
+    expect(en).toMatch(/open this sale's refund again/i);
+  });
+
+  it('the same when the answer was lost and the check by key finds the document after closing', async () => {
+    install({ hold: true, lostAnswer: true });
+    const first = await mount();
+    ready(first);
+    await arm(first);
+    await confirmAndClose(first);
+    expect(pendingRefundKey('sale-1')).toBeTruthy();
+    expect(refundSdk.notices.some((n) => n.message === 'ui.refundTenderReopen')).toBe(true);
+
+    const el = await reopen();
+    await arm(el);
+    expect(giveBackButton(el)).toBeTruthy();
+  });
+
+  it('nothing is kept owed when no line was set to go back at the moment of closing', async () => {
+    install({ hold: true });
+    const first = await mount();
+    ready(first);
+    await confirmAndClose(first);
+    expect(pendingRefundKey('sale-1')).toBeUndefined();
+    expect(refundSdk.notices.some((n) => n.message === 'ui.refundTenderReopen')).toBe(false);
+
+    const el = await reopen();
+    expect(recoveredBanner(el)).toBeNull();
+  });
+
+  it('a screen still open when the hub answers hands the document over itself and keeps nothing owed', async () => {
+    install({ hold: true });
+    const el = await mount();
+    ready(el);
+    await arm(el);
+    const done = el.confirm();
+    await new Promise((r) => setTimeout(r, 0));
+    releaseRefund?.();
+    await done;
+    expect(fillersOf(el)[0].commits[0]?.refundRef).toBe('ref-9');
+    expect(pendingRefundKey('sale-1')).toBeUndefined();
+    expect(refundSdk.notices.some((n) => n.message === 'ui.refundTenderReopen')).toBe(false);
+  });
+
+  it('a refused refund keeps nothing owed even if the screen was closed with a line armed', async () => {
+    install({ hold: true, refuse: true });
+    const first = await mount();
+    ready(first);
+    await arm(first);
+    await confirmAndClose(first);
+    expect(pendingRefundKey('sale-1')).toBeUndefined();
+  });
+
+  describe('reopened over the recovered document', () => {
+    /** The earlier screen closed with the voucher line armed: its key is still pending. */
+    async function reopenOverOwed(opts: Options = {}): Promise<Refund> {
+      install({ legs: ALL_BACK, ...opts });
+      rememberPendingRefundKey('sale-1', 'refund-sale-1-closed');
+      return mount();
+    }
+
+    it('closed WITHOUT taking the offer: the next screen offers it again', async () => {
+      const el = await reopenOverOwed();
+      await arm(el);
+      expect(giveBackButton(el)).toBeTruthy();
+      el.remove();
+
+      const again = await reopen();
+      expect(recoveredBanner(again)).toBeTruthy();
+      await arm(again);
+      expect(giveBackButton(again)).toBeTruthy();
+    });
+
+    it('the operator un-ticked the line and closed: nothing is offered again', async () => {
+      const el = await reopenOverOwed();
+      await arm(el);
+      await disarm(el);
+      el.remove();
+      expect(pendingRefundKey('sale-1')).toBeUndefined();
+
+      const again = await reopen();
+      expect(recoveredBanner(again)).toBeNull();
+    });
+
+    it('given back: the next screen offers nothing', async () => {
+      commitBehaviour = 'ok';
+      const el = await reopenOverOwed();
+      commitBehaviour = 'ok';
+      await arm(el);
+      giveBackButton(el)?.click();
+      await new Promise((r) => setTimeout(r, 0));
+      commitResolved?.();
+      await settle(el);
+      expect(pendingRefundKey('sale-1')).toBeUndefined();
+      el.remove();
+      const again = await reopen();
+      expect(recoveredBanner(again)).toBeNull();
+    });
+
+    it('the give-back failed: the next screen offers it again, with a hole that can try once more', async () => {
+      const el = await reopenOverOwed();
+      commitBehaviour = 'fail';
+      await arm(el);
+      giveBackButton(el)?.click();
+      await new Promise((r) => setTimeout(r, 0));
+      commitResolved?.();
+      await settle(el);
+      el.remove();
+      expect(pendingRefundKey('sale-1')).toBe('refund-sale-1-closed');
+    });
+
+    it('nobody fills the hole: nothing can be given back here, so nothing stays owed', async () => {
+      await reopenOverOwed({ fillers: false });
+      expect(pendingRefundKey('sale-1')).toBeUndefined();
+    });
+
+    it('no line was paid another way: nothing stays owed', async () => {
+      await reopenOverOwed({ lines: [LINES[1]] });
+      expect(pendingRefundKey('sale-1')).toBeUndefined();
+    });
+
+    it('the lines paid another way cannot be read: kept, so the next screen tries again', async () => {
+      const el = await reopenOverOwed({ linesFail: true });
+      el.remove();
+      expect(pendingRefundKey('sale-1')).toBe('refund-sale-1-closed');
+    });
+
+    it('closing it with a NEW refund in flight keeps THAT attempt pending, not the recovered one', async () => {
+      install({ legs: LEGS, hold: true });
+      rememberPendingRefundKey('sale-1', 'refund-sale-1-closed');
+      const el = await mount();
+      ready(el);
+      const done = el.confirm();
+      await new Promise((r) => setTimeout(r, 0));
+      el.remove();
+      const sent = String(commands.find((c) => c.name === 'sales.refund')?.payload.idempotency_key);
+      expect(sent).not.toBe('refund-sale-1-closed');
+      expect(pendingRefundKey('sale-1'), 'the hub has not answered the new attempt yet').toBe(sent);
+      releaseRefund?.();
+      await done;
+    });
+
+    it('a new refund from this screen settles it: its own document goes to the holes', async () => {
+      install({ legs: LEGS });
+      rememberPendingRefundKey('sale-1', 'refund-sale-1-closed');
+      const el = await mount();
+      ready(el);
+      await arm(el);
+      await el.confirm();
+      expect(fillersOf(el)[0].commits[0]?.refundRef).toBe('ref-9');
+      expect(pendingRefundKey('sale-1')).toBeUndefined();
+    });
   });
 });

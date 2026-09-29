@@ -215,6 +215,9 @@ export class ErpSaleRefund extends LitElement {
   @state() private tenderPending = false;
   /** sales#462 - the slot or the covered lines could not be read. */
   private tenderReadFailed = false;
+  /** sales#465 - the sale and pending key the recovered document was found under. The key stays
+   *  pending until what was not paid in money has been handed that document, or nothing is owed. */
+  private recoveredFor?: { saleId: string; key: string };
 
   /** sales#456 - the pause between two questions to a hub that did not answer: an OOM-killed hub
    *  is back in seconds. A property so a test does not wait in real time. */
@@ -249,6 +252,19 @@ export class ErpSaleRefund extends LitElement {
     super.disconnectedCallback();
     this.removeEventListener('erp:tender-refund-armed', this.onTenderRefundArmed);
     this.removeEventListener('erp:tender-refund-disarmed', this.onTenderRefundDisarmed);
+    // sales#465 - closed over a recovered document nobody was handed. What the holes showed as
+    // going back at this moment is still owed, and the next screen offers it again; with nothing
+    // armed (the operator un-ticked it, or it already came back) nothing is owed. A read that
+    // failed is not «nothing»: kept, so the next screen reads again.
+    if (!this.tenderNotices.size && !this.tenderReadFailed) this.settleRecovered();
+  }
+
+  /** sales#465 - the recovered document needs nothing more: its attempt stops being pending. Only
+   *  if it is still THAT attempt - a new refund from this screen has written down its own key. */
+  private settleRecovered(): void {
+    const r = this.recoveredFor;
+    this.recoveredFor = undefined;
+    if (r && pendingRefundKey(r.saleId) === r.key) forgetPendingRefundKey(r.saleId);
   }
 
   updated(changed: Map<string, unknown>): void {
@@ -296,6 +312,9 @@ export class ErpSaleRefund extends LitElement {
       const split = proportionalSplit(refundableTotal(this.legs), this.legs);
       this.draft = Object.fromEntries(Object.entries(split).map(([id, amount]) => [id, { amount }]));
       await this.loadTenderLines(saleId);
+      // sales#465 - no line here was paid another way (or nobody fills the hole): nothing can be
+      // handed the recovered document, so nothing is owed.
+      if (this.recoveredRef && !this.tenderReadFailed && !this.covered.length) this.settleRecovered();
       // sales#462 - the document exists but nobody here can say whether the voucher session went
       // back with it: say where to check, rather than let the session be lost in silence.
       this.tenderPending = !!this.recoveredRef && this.tenderReadFailed;
@@ -328,15 +347,19 @@ export class ErpSaleRefund extends LitElement {
     this.notRecorded = false;
     this.recoveredOnOpen = false;
     this.recoveredRef = '';
+    this.recoveredFor = undefined;
     const pending = pendingRefundKey(saleId);
     if (!pending) { this.key = newKey(saleId); return; }
     const recovery = await this.recover(pending);
     if (recovery.outcome === 'charged') {
-      forgetPendingRefundKey(saleId);
+      // A new refund gets a new key. The old one is NOT forgotten yet (sales#465): the holes of the
+      // screen that wrote it may have died owing a voucher session, and only the holes of this one
+      // can say so - `settleRecovered` drops it once they have.
       this.key = newKey(saleId);
       this.recoveredOnOpen = true;
       // The recovered row IS the document (as in `resolveDoubt`): its id is the reference.
       this.recoveredRef = recovery.saleId;
+      this.recoveredFor = { saleId, key: pending };
       return;
     }
     this.key = pending;
@@ -503,8 +526,7 @@ export class ErpSaleRefund extends LitElement {
         idempotency_key: this.key,
         allocations: buildAllocations(this.draft, this.legs),
       });
-      forgetPendingRefundKey(saleId);
-      await this.finishRecorded(out);
+      await this.finishRecorded(out, saleId);
     } catch (e) {
       // sales#451 - the hub never answered (hub died, proxy 502, network cut): the refund may have
       // been written before the answer was lost, so «could not be recorded» would be a lie. The
@@ -532,10 +554,9 @@ export class ErpSaleRefund extends LitElement {
     try {
       const recovery = await this.recover(this.key);
       if (recovery.outcome === 'charged') {
-        forgetPendingRefundKey(saleId);
         // The handler answers a retry with `refund_ref` = the document id; the recovered row IS
         // that document, so whoever gives back what was not money gets the same reference.
-        await this.finishRecorded({ refund_id: recovery.saleId, refund_ref: recovery.saleId });
+        await this.finishRecorded({ refund_id: recovery.saleId, refund_ref: recovery.saleId }, saleId);
         return;
       }
       // Not recorded: the key is KEPT (still pending), so a write that lands late and this retry
@@ -564,6 +585,9 @@ export class ErpSaleRefund extends LitElement {
       // Handed once: a filler commits once per document, so a second offer would do nothing.
       this.recoveredRef = '';
       this.tenderPending = !committed;
+      // sales#465 - handed and done: nothing owed. A failure keeps it, so the next screen - with a
+      // hole that has not tried yet - offers it again.
+      if (committed) this.settleRecovered();
       if (committed) erplora().notify?.({ type: 'success', message: t('ui.refundTenderGivenBack') });
     } finally {
       this.tenderBusy = false;
@@ -571,8 +595,19 @@ export class ErpSaleRefund extends LitElement {
   }
 
   /** The refund document exists: hand its reference to the tender fillers, say so, and close. */
-  private async finishRecorded(out: RefundResult | undefined): Promise<void> {
+  private async finishRecorded(out: RefundResult | undefined, saleId: string): Promise<void> {
     const t = (k: string, p?: Record<string, unknown>): string => erplora().t(CATALOG, k, p);
+    // sales#465 - the screen was closed while the hub answered, with some line set to go back to
+    // its tender. Its holes were unmounted with it: handing them the document would be handing it
+    // to nobody, and dropping the key would lose the session in silence. The attempt stays pending,
+    // so the next screen on this sale recovers the document and offers it again - and that is said.
+    if (!this.isConnected && this.tenderNotices.size) {
+      erplora().notify?.({ type: 'success', message: t('ui.refundDone') });
+      erplora().notify?.({ type: 'error', message: t('ui.refundTenderReopen') });
+      this.dispatchEvent(new CustomEvent('refunded', { bubbles: true, composed: true, detail: { saleId: this.saleId } }));
+      return;
+    }
+    forgetPendingRefundKey(saleId);
     // sales#166 - the document EXISTS now: its reference goes to whoever has to give back what
     // was not money, and it is waited for. Closing earlier would unmount the filler mid-command
     // and leave the session spent with nobody at the counter able to give it back.

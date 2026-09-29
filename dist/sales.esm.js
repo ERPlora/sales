@@ -4876,6 +4876,7 @@ var en_default = {
     refundLineTenders: "Lines paid another way",
     refundLineTendersHint: "These lines cost no money, so they are not part of the split above. What goes back to them is decided here.",
     refundTenderPending: "The money is back, but what was paid another way could not be returned. Check it from its own module.",
+    refundTenderReopen: "The refund is recorded, but what was paid another way has not been given back yet. Open this sale's refund again on this device to give it back.",
     refundTenderGiveBack: "Give back what was paid another way",
     refundTenderGivenBack: "What was paid another way has been given back.",
     refundExceedsTender: "One tender is being given back more than it was charged.",
@@ -5540,6 +5541,7 @@ var es_default = {
     refundLineTenders: "L\xEDneas pagadas de otra forma",
     refundLineTendersHint: "Estas l\xEDneas no costaron dinero, as\xED que no entran en el reparto de arriba. Lo que vuelve a ellas se decide aqu\xED.",
     refundTenderPending: "El dinero ha vuelto, pero lo que se pag\xF3 de otra forma no se ha podido devolver. Rev\xEDsalo desde su m\xF3dulo.",
+    refundTenderReopen: "La devoluci\xF3n est\xE1 registrada, pero lo que se pag\xF3 de otra forma a\xFAn no se ha devuelto. Vuelve a abrir la devoluci\xF3n de esta venta en este dispositivo para devolverlo.",
     refundTenderGiveBack: "Devolver lo pagado de otra forma",
     refundTenderGivenBack: "Lo pagado de otra forma se ha devuelto.",
     refundExceedsTender: "A un medio de pago se le est\xE1 devolviendo m\xE1s de lo que cobr\xF3.",
@@ -16924,6 +16926,14 @@ var ErpSaleRefund = class extends i3 {
     super.disconnectedCallback();
     this.removeEventListener("erp:tender-refund-armed", this.onTenderRefundArmed);
     this.removeEventListener("erp:tender-refund-disarmed", this.onTenderRefundDisarmed);
+    if (!this.tenderNotices.size && !this.tenderReadFailed) this.settleRecovered();
+  }
+  /** sales#465 - the recovered document needs nothing more: its attempt stops being pending. Only
+   *  if it is still THAT attempt - a new refund from this screen has written down its own key. */
+  settleRecovered() {
+    const r6 = this.recoveredFor;
+    this.recoveredFor = void 0;
+    if (r6 && pendingRefundKey(r6.saleId) === r6.key) forgetPendingRefundKey(r6.saleId);
   }
   updated(changed) {
     if (changed.has("saleId")) void this.load();
@@ -16948,6 +16958,7 @@ var ErpSaleRefund = class extends i3 {
       const split = proportionalSplit(refundableTotal(this.legs), this.legs);
       this.draft = Object.fromEntries(Object.entries(split).map(([id, amount]) => [id, { amount }]));
       await this.loadTenderLines(saleId);
+      if (this.recoveredRef && !this.tenderReadFailed && !this.covered.length) this.settleRecovered();
       this.tenderPending = !!this.recoveredRef && this.tenderReadFailed;
     } catch (e8) {
       const t7 = (k2) => erplora5().t(CATALOG5, k2);
@@ -16972,6 +16983,7 @@ var ErpSaleRefund = class extends i3 {
     this.notRecorded = false;
     this.recoveredOnOpen = false;
     this.recoveredRef = "";
+    this.recoveredFor = void 0;
     const pending = pendingRefundKey(saleId);
     if (!pending) {
       this.key = newKey(saleId);
@@ -16979,10 +16991,10 @@ var ErpSaleRefund = class extends i3 {
     }
     const recovery = await this.recover(pending);
     if (recovery.outcome === "charged") {
-      forgetPendingRefundKey(saleId);
       this.key = newKey(saleId);
       this.recoveredOnOpen = true;
       this.recoveredRef = recovery.saleId;
+      this.recoveredFor = { saleId, key: pending };
       return;
     }
     this.key = pending;
@@ -17133,8 +17145,7 @@ var ErpSaleRefund = class extends i3 {
         idempotency_key: this.key,
         allocations: buildAllocations(this.draft, this.legs)
       });
-      forgetPendingRefundKey(saleId);
-      await this.finishRecorded(out);
+      await this.finishRecorded(out, saleId);
     } catch (e8) {
       if (isUnknownOutcome(e8)) {
         await this.resolveDoubt(saleId);
@@ -17156,8 +17167,7 @@ var ErpSaleRefund = class extends i3 {
     try {
       const recovery = await this.recover(this.key);
       if (recovery.outcome === "charged") {
-        forgetPendingRefundKey(saleId);
-        await this.finishRecorded({ refund_id: recovery.saleId, refund_ref: recovery.saleId });
+        await this.finishRecorded({ refund_id: recovery.saleId, refund_ref: recovery.saleId }, saleId);
         return;
       }
       this.notRecorded = recovery.outcome === "not_charged";
@@ -17182,14 +17192,22 @@ var ErpSaleRefund = class extends i3 {
       const committed = await this.commitTenderRefunds({ refund_id: ref2, refund_ref: ref2 });
       this.recoveredRef = "";
       this.tenderPending = !committed;
+      if (committed) this.settleRecovered();
       if (committed) erplora5().notify?.({ type: "success", message: t7("ui.refundTenderGivenBack") });
     } finally {
       this.tenderBusy = false;
     }
   }
   /** The refund document exists: hand its reference to the tender fillers, say so, and close. */
-  async finishRecorded(out) {
+  async finishRecorded(out, saleId) {
     const t7 = (k2, p4) => erplora5().t(CATALOG5, k2, p4);
+    if (!this.isConnected && this.tenderNotices.size) {
+      erplora5().notify?.({ type: "success", message: t7("ui.refundDone") });
+      erplora5().notify?.({ type: "error", message: t7("ui.refundTenderReopen") });
+      this.dispatchEvent(new CustomEvent("refunded", { bubbles: true, composed: true, detail: { saleId: this.saleId } }));
+      return;
+    }
+    forgetPendingRefundKey(saleId);
     const committed = await this.commitTenderRefunds(out);
     erplora5().notify?.({ type: "success", message: t7("ui.refundDone") });
     if (!committed) erplora5().notify?.({ type: "error", message: t7("ui.refundTenderPending") });
