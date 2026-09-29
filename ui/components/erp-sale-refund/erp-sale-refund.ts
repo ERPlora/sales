@@ -230,6 +230,9 @@ export class ErpSaleRefund extends LitElement {
   /** The warning each filler wants read BEFORE confirming, per line. The text is THEIRS (their
    *  module, their catalogue): the host only forwards it, as it already does with the table label. */
   @state() private tenderNotices = new Map<string, string>();
+  /** sales#465 - the covered lines whose hole has said, at least once, whether they go back. A hole
+   *  arms only once its own read answers, so silence is «not known yet», never «nothing owed». */
+  private tenderHeard = new Set<string>();
   /** One instance per covered line, kept so it is not recreated on every render. */
   private readonly tenderEls = new Map<string, HTMLElement>();
 
@@ -254,9 +257,11 @@ export class ErpSaleRefund extends LitElement {
     this.removeEventListener('erp:tender-refund-disarmed', this.onTenderRefundDisarmed);
     // sales#465 - closed over a recovered document nobody was handed. What the holes showed as
     // going back at this moment is still owed, and the next screen offers it again; with nothing
-    // armed (the operator un-ticked it, or it already came back) nothing is owed. A read that
-    // failed is not «nothing»: kept, so the next screen reads again.
-    if (!this.tenderNotices.size && !this.tenderReadFailed) this.settleRecovered();
+    // armed (the operator un-ticked it, or it already came back) nothing is owed. A hole that has
+    // not answered yet (closed right after opening) is not «nothing», nor are lines that could not
+    // be read (none are covered then): kept, so the next screen asks again.
+    const allHeard = this.covered.length > 0 && this.covered.every((l) => this.tenderHeard.has(l.id));
+    if (allHeard && !this.tenderNotices.size) this.settleRecovered();
   }
 
   /** sales#465 - the recovered document needs nothing more: its attempt stops being pending. Only
@@ -277,6 +282,7 @@ export class ErpSaleRefund extends LitElement {
   private readonly onTenderRefundArmed = (e: Event): void => {
     const d = (e as CustomEvent<{ lineRef?: string; warning?: string }>).detail;
     if (!d?.lineRef) return;
+    this.tenderHeard.add(d.lineRef);
     const next = new Map(this.tenderNotices);
     next.set(d.lineRef, String(d.warning ?? ''));
     this.tenderNotices = next;
@@ -286,6 +292,7 @@ export class ErpSaleRefund extends LitElement {
   private readonly onTenderRefundDisarmed = (e: Event): void => {
     const d = (e as CustomEvent<{ lineRef?: string }>).detail;
     if (!d?.lineRef) return;
+    this.tenderHeard.add(d.lineRef);
     const next = new Map(this.tenderNotices);
     next.delete(d.lineRef);
     this.tenderNotices = next;
@@ -391,6 +398,7 @@ export class ErpSaleRefund extends LitElement {
   private async loadTenderLines(saleId: string): Promise<void> {
     this.covered = [];
     this.tenderNotices = new Map();
+    this.tenderHeard = new Set();
     this.tenderReadFailed = false;
     const sdk = erplora();
     if (typeof sdk.loadSlot !== 'function') { this.tenderFillers = []; return; }

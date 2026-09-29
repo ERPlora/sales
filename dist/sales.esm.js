@@ -16824,6 +16824,9 @@ var ErpSaleRefund = class extends i3 {
     this.covered = [];
     this.tenderFillers = [];
     this.tenderNotices = /* @__PURE__ */ new Map();
+    /** sales#465 - the covered lines whose hole has said, at least once, whether they go back. A hole
+     *  arms only once its own read answers, so silence is «not known yet», never «nothing owed». */
+    this.tenderHeard = /* @__PURE__ */ new Set();
     /** One instance per covered line, kept so it is not recreated on every render. */
     this.tenderEls = /* @__PURE__ */ new Map();
     /** La clave del intento, congelada: un reintento NO la renueva. */
@@ -16833,6 +16836,7 @@ var ErpSaleRefund = class extends i3 {
     this.onTenderRefundArmed = (e8) => {
       const d3 = e8.detail;
       if (!d3?.lineRef) return;
+      this.tenderHeard.add(d3.lineRef);
       const next = new Map(this.tenderNotices);
       next.set(d3.lineRef, String(d3.warning ?? ""));
       this.tenderNotices = next;
@@ -16841,6 +16845,7 @@ var ErpSaleRefund = class extends i3 {
     this.onTenderRefundDisarmed = (e8) => {
       const d3 = e8.detail;
       if (!d3?.lineRef) return;
+      this.tenderHeard.add(d3.lineRef);
       const next = new Map(this.tenderNotices);
       next.delete(d3.lineRef);
       this.tenderNotices = next;
@@ -16926,7 +16931,8 @@ var ErpSaleRefund = class extends i3 {
     super.disconnectedCallback();
     this.removeEventListener("erp:tender-refund-armed", this.onTenderRefundArmed);
     this.removeEventListener("erp:tender-refund-disarmed", this.onTenderRefundDisarmed);
-    if (!this.tenderNotices.size && !this.tenderReadFailed) this.settleRecovered();
+    const allHeard = this.covered.length > 0 && this.covered.every((l3) => this.tenderHeard.has(l3.id));
+    if (allHeard && !this.tenderNotices.size) this.settleRecovered();
   }
   /** sales#465 - the recovered document needs nothing more: its attempt stops being pending. Only
    *  if it is still THAT attempt - a new refund from this screen has written down its own key. */
@@ -17024,6 +17030,7 @@ var ErpSaleRefund = class extends i3 {
   async loadTenderLines(saleId) {
     this.covered = [];
     this.tenderNotices = /* @__PURE__ */ new Map();
+    this.tenderHeard = /* @__PURE__ */ new Set();
     this.tenderReadFailed = false;
     const sdk = erplora5();
     if (typeof sdk.loadSlot !== "function") {

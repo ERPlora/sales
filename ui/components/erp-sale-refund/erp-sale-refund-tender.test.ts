@@ -101,13 +101,15 @@ interface Options {
   hold?: boolean;
   /** `sales.refund` answers with a refusal: nothing was written. */
   refuse?: boolean;
+  /** Runs when the screen asks for the slot - after the recovery, before the lines are read. */
+  onLoadSlot?: () => void;
 }
 
 /** Lets a held `sales.refund` go on (and answer, or lose its answer with `lostAnswer`). */
 let releaseRefund: (() => void) | undefined;
 
 function install(opts: Options = {}): void {
-  const { fillers = true, lines = LINES, linesFail = false, lostAnswer = false, legs = LEGS, slotFail = false, hold = false, refuse = false } = opts;
+  const { fillers = true, lines = LINES, linesFail = false, lostAnswer = false, legs = LEGS, slotFail = false, hold = false, refuse = false, onLoadSlot } = opts;
   let answerLost = false;
   const gate = hold ? new Promise<void>((resolve) => { releaseRefund = resolve; }) : Promise.resolve();
   slotsAsked = [];
@@ -136,6 +138,7 @@ function install(opts: Options = {}): void {
     },
     loadSlot: (slot: string) => {
       slotsAsked.push(slot);
+      onLoadSlot?.();
       if (slotFail) throw new Error('boom');
       if (!fillers) return [];
       return slot === 'sales.refund.tender' ? [{ component: 'erp-fake-tender-refund' }] : [];
@@ -668,6 +671,41 @@ describe('sales#465: closed while the hub was still answering', () => {
       expect(giveBackButton(again)).toBeTruthy();
     });
 
+    // The real hole arms only once ITS read answers: closing before that is «not heard yet», never
+    // «nothing goes back», or a quick open-and-close loses the session for good.
+    it('closed before the hole said whether the session goes back: the next screen offers it again', async () => {
+      const el = await reopenOverOwed();
+      el.remove();
+      expect(pendingRefundKey('sale-1')).toBe('refund-sale-1-closed');
+    });
+
+    it('closed while the screen was still reading its lines: the next screen offers it again', async () => {
+      const el = document.createElement('erp-sale-refund') as Refund;
+      install({ legs: ALL_BACK, onLoadSlot: () => el.remove() });
+      rememberPendingRefundKey('sale-1', 'refund-sale-1-closed');
+      el.saleId = 'sale-1';
+      document.body.appendChild(el);
+      await settle(el);
+      expect(el.isConnected).toBe(false);
+      expect(pendingRefundKey('sale-1')).toBe('refund-sale-1-closed');
+    });
+
+    it('two sessions on the ticket and only one hole has answered: the next screen offers it again', async () => {
+      const el = await reopenOverOwed({
+        lines: [...LINES, { id: 'item-3', product_id: 's-tinte', product_name: 'Tinte', is_covered: 1 }],
+      });
+      await disarm(el);
+      el.remove();
+      expect(pendingRefundKey('sale-1')).toBe('refund-sale-1-closed');
+    });
+
+    it('the hole says the session already came back: nothing is offered again', async () => {
+      const el = await reopenOverOwed();
+      await disarm(el);
+      el.remove();
+      expect(pendingRefundKey('sale-1')).toBeUndefined();
+    });
+
     it('the operator un-ticked the line and closed: nothing is offered again', async () => {
       const el = await reopenOverOwed();
       await arm(el);
@@ -727,6 +765,9 @@ describe('sales#465: closed while the hub was still answering', () => {
       rememberPendingRefundKey('sale-1', 'refund-sale-1-closed');
       const el = await mount();
       ready(el);
+      // The hole has answered «nothing goes back», so closing does settle the recovered attempt -
+      // and must leave the NEW one alone.
+      await disarm(el);
       const done = el.confirm();
       await new Promise((r) => setTimeout(r, 0));
       el.remove();
