@@ -1329,9 +1329,7 @@
       "options": {
         "label": "Today",
         "icon": "cash-outline",
-        "format": "currency",
-        "currency": "EUR",
-        "locale": "es-ES"
+        "format": "currency"
       }
     },
     "sales.tickets_today": {
@@ -1358,8 +1356,7 @@
       "options": {
         "label": "Tickets",
         "icon": "receipt-outline",
-        "format": "number",
-        "locale": "es-ES"
+        "format": "number"
       }
     },
     "sales.last_7_days": {
