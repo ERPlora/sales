@@ -601,17 +601,22 @@
   "widgets": {
     "sales.today": {
       "title": "Ventas hoy",
-      "label": "Hoy"
+      "label": "Hoy",
+      "category": "Ventas"
     },
     "sales.tickets_today": {
       "title": "Tickets hoy",
-      "label": "Tickets"
+      "label": "Tickets",
+      "category": "Ventas"
     },
     "sales.last_7_days": {
-      "title": "Ventas últimos 7 días"
+      "title": "Ventas últimos 7 días",
+      "category": "Ventas",
+      "seriesName": "Ventas"
     },
     "sales.recent_activity": {
-      "title": "Actividad reciente"
+      "title": "Actividad reciente",
+      "category": "Ventas"
     }
   },
   "commands": {
