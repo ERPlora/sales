@@ -21,7 +21,7 @@ import json
 import os
 import sys
 
-from pg_harness import MANIFEST, MODULE_DIR, Session, bind
+from pg_harness import MANIFEST, MODULE_DIR, Session, bind, lower
 
 NOW = "2026-09-18T22:30:00+00:00"  # 00:30 on 19/09 in Madrid
 TZ = "Europe/Madrid"
@@ -46,66 +46,6 @@ def insert_sale(
     )
 
 
-# ── The runtime's translator, for the bridge functions these doors use (crates/db/src/lib.rs) ──
-#
-# `Session.query` leaves `erp_date`/`erp_dateadd` to SQL functions the harness installs, and those
-# cannot type a bare literal (`erp_date('2026-09-19')` → «could not determine polymorphic type»).
-# The runtime never runs them as functions: it REWRITES them textually per dialect. This mirrors
-# that rewrite for the three shims involved, so the SQL Postgres sees is the SQL production sees.
-# Spelled `CAST(x AS t)` instead of the runtime's `(x)::t` — the same cast — because the harness's
-# `bind` would read the `:t` of `::t` as a placeholder.
-
-
-def _expand(sql: str, token: str, render) -> str:
-    out, i = [], 0
-    while True:
-        j = sql.find(token, i)
-        if j < 0:
-            out.append(sql[i:])
-            return "".join(out)
-        line_start = sql.rfind("\n", 0, j) + 1
-        if sql[line_start:j].lstrip().startswith("--"):
-            out.append(sql[i : j + len(token)])
-            i = j + len(token)
-            continue
-        depth, k = 1, j + len(token)
-        while k < len(sql) and depth:
-            depth += {"(": 1, ")": -1}.get(sql[k], 0)
-            k += 1
-        out.append(sql[i:j])
-        out.append(render(_expand(sql[j + len(token) : k - 1], token, render)))
-        i = k
-
-
-def _split_args(args: str) -> list:
-    parts, depth, cur = [], 0, ""
-    for ch in args:
-        if ch == "," and depth == 0:
-            parts.append(cur.strip())
-            cur = ""
-            continue
-        depth += {"(": 1, ")": -1}.get(ch, 0)
-        cur += ch
-    parts.append(cur.strip())
-    return parts
-
-
-def _dateadd(args: str) -> str:
-    x, n, unit = _split_args(args)
-    return f"(CAST(({x}) AS timestamptz) + CAST((({n}) || ' ' || {unit}) AS interval))"
-
-
-def _pad(args: str) -> str:
-    value, width = _split_args(args)
-    return f"lpad(CAST(({value}) AS text), greatest({width}, length(CAST(({value}) AS text))), '0')"
-
-
-def lower(sql: str) -> str:
-    sql = _expand(sql, "erp_dateadd(", _dateadd)
-    sql = _expand(sql, "erp_date(", lambda a: f"(CAST(({a}) AS date))")
-    return _expand(sql, "erp_pad(", _pad)
-
-
 def query(name: str, params: dict) -> list:
     sql = (
         (MODULE_DIR / MANIFEST["queries"][name]["sql"]).read_text().strip().rstrip(";")
@@ -122,10 +62,9 @@ def query(name: str, params: dict) -> list:
 def main() -> int:
     s.create()
     try:
-        # The first day of the 7-day window (19 − 7 = the 12th) — 00:30 local, still the 11th in
-        # UTC: the chart's window edge is inclusive AND measured on the business clock.
+        # 00:30 local on the 12th, still the 11th in UTC: each door files it on the business day.
         insert_sale("s-0030-12", "2026-09-11T22:30:00+00:00", 50)
-        # …and noon on the 11th, one day OUTSIDE it — unless «today» were read as the UTC 18th.
+        # …and noon on the 11th, the day before on both clocks.
         insert_sale("s-noon-11", "2026-09-11T10:00:00+00:00", 5)
         # Yesterday on the business clock: noon and 23:50 local.
         insert_sale("s-noon-18", "2026-09-18T10:00:00+00:00", 1000)
@@ -217,9 +156,11 @@ def main() -> int:
         print("sales.last_7_days (dashboard chart)")
         rows = query("sales.last_7_days", {"now": NOW, "timezone": TZ})
         s.check(
-            "one bar per business day",
+            # The seven days end on the BUSINESS today (the 19th); their edges and the days at 0
+            # are pinned in last_7_days.postgres.test.py (sales#472).
+            "one bar per business day, yesterday's and today's on their local day",
             [(str(r["day"]), r["total"]) for r in rows],
-            [("2026-09-12", 50), (YESTERDAY, 3000), (TODAY, 700)],
+            [(f"2026-09-{d}", 0) for d in range(13, 18)] + [(YESTERDAY, 3000), (TODAY, 700)],
         )
 
         print("sales.by_staff (per-person close)")

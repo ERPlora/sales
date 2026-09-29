@@ -365,7 +365,7 @@
       "permission": "sales.view_reports",
       "sql": "queries/last_7_days.sql",
       "ai": {
-        "description": "Returns the sales amount per day for the last 7 days (one row per day with sales)"
+        "description": "Returns the sales amount per business day for the last 7 days, today included (one row per day, 0 on a day without sales)"
       }
     },
     "sales.by_idempotency_key": {
