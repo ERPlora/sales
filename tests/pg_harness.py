@@ -110,6 +110,66 @@ def bind(sql: str, params: dict) -> str:
     )
 
 
+# ── The runtime's translator, for the bridge functions these doors use (crates/db/src/lib.rs) ──
+#
+# `Session.query` leaves `erp_date`/`erp_dateadd` to SQL functions the harness installs, and those
+# cannot type a bare literal (`erp_date('2026-09-19')` → «could not determine polymorphic type»).
+# The runtime never runs them as functions: it REWRITES them textually per dialect. This mirrors
+# that rewrite for the three shims involved, so the SQL Postgres sees is the SQL production sees.
+# Spelled `CAST(x AS t)` instead of the runtime's `(x)::t` — the same cast — because the harness's
+# `bind` would read the `:t` of `::t` as a placeholder.
+
+
+def _expand(sql: str, token: str, render) -> str:
+    out, i = [], 0
+    while True:
+        j = sql.find(token, i)
+        if j < 0:
+            out.append(sql[i:])
+            return "".join(out)
+        line_start = sql.rfind("\n", 0, j) + 1
+        if sql[line_start:j].lstrip().startswith("--"):
+            out.append(sql[i : j + len(token)])
+            i = j + len(token)
+            continue
+        depth, k = 1, j + len(token)
+        while k < len(sql) and depth:
+            depth += {"(": 1, ")": -1}.get(sql[k], 0)
+            k += 1
+        out.append(sql[i:j])
+        out.append(render(_expand(sql[j + len(token) : k - 1], token, render)))
+        i = k
+
+
+def _split_args(args: str) -> list:
+    parts, depth, cur = [], 0, ""
+    for ch in args:
+        if ch == "," and depth == 0:
+            parts.append(cur.strip())
+            cur = ""
+            continue
+        depth += {"(": 1, ")": -1}.get(ch, 0)
+        cur += ch
+    parts.append(cur.strip())
+    return parts
+
+
+def _dateadd(args: str) -> str:
+    x, n, unit = _split_args(args)
+    return f"(CAST(({x}) AS timestamptz) + CAST((({n}) || ' ' || {unit}) AS interval))"
+
+
+def _pad(args: str) -> str:
+    value, width = _split_args(args)
+    return f"lpad(CAST(({value}) AS text), greatest({width}, length(CAST(({value}) AS text))), '0')"
+
+
+def lower(sql: str) -> str:
+    sql = _expand(sql, "erp_dateadd(", _dateadd)
+    sql = _expand(sql, "erp_date(", lambda a: f"(CAST(({a}) AS date))")
+    return _expand(sql, "erp_pad(", _pad)
+
+
 class Session:
     """One scratch database, its migrations, and the doors of the manifest."""
 
