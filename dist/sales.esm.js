@@ -4876,6 +4876,8 @@ var en_default = {
     refundLineTenders: "Lines paid another way",
     refundLineTendersHint: "These lines cost no money, so they are not part of the split above. What goes back to them is decided here.",
     refundTenderPending: "The money is back, but what was paid another way could not be returned. Check it from its own module.",
+    refundTenderGiveBack: "Give back what was paid another way",
+    refundTenderGivenBack: "What was paid another way has been given back.",
     refundExceedsTender: "One tender is being given back more than it was charged.",
     refundSaleNotFound: "That sale is not in this business.",
     refundRequiresCompleted: "Only a completed sale can be refunded.",
@@ -5538,6 +5540,8 @@ var es_default = {
     refundLineTenders: "L\xEDneas pagadas de otra forma",
     refundLineTendersHint: "Estas l\xEDneas no costaron dinero, as\xED que no entran en el reparto de arriba. Lo que vuelve a ellas se decide aqu\xED.",
     refundTenderPending: "El dinero ha vuelto, pero lo que se pag\xF3 de otra forma no se ha podido devolver. Rev\xEDsalo desde su m\xF3dulo.",
+    refundTenderGiveBack: "Devolver lo pagado de otra forma",
+    refundTenderGivenBack: "Lo pagado de otra forma se ha devuelto.",
     refundExceedsTender: "A un medio de pago se le est\xE1 devolviendo m\xE1s de lo que cobr\xF3.",
     refundSaleNotFound: "Esa venta no es de este negocio.",
     refundRequiresCompleted: "Solo se puede devolver una venta cerrada.",
@@ -16807,6 +16811,11 @@ var ErpSaleRefund = class extends i3 {
     this.checking = false;
     this.notRecorded = false;
     this.recoveredOnOpen = false;
+    this.recoveredRef = "";
+    this.tenderBusy = false;
+    this.tenderPending = false;
+    /** sales#462 - the slot or the covered lines could not be read. */
+    this.tenderReadFailed = false;
     /** sales#456 - the pause between two questions to a hub that did not answer: an OOM-killed hub
      *  is back in seconds. A property so a test does not wait in real time. */
     this.recoveryDelayMs = 1500;
@@ -16939,6 +16948,7 @@ var ErpSaleRefund = class extends i3 {
       const split = proportionalSplit(refundableTotal(this.legs), this.legs);
       this.draft = Object.fromEntries(Object.entries(split).map(([id, amount]) => [id, { amount }]));
       await this.loadTenderLines(saleId);
+      this.tenderPending = !!this.recoveredRef && this.tenderReadFailed;
     } catch (e8) {
       const t7 = (k2) => erplora5().t(CATALOG5, k2);
       const transport = transportErrorKey(e8);
@@ -16961,6 +16971,7 @@ var ErpSaleRefund = class extends i3 {
     this.outcomeUnknown = false;
     this.notRecorded = false;
     this.recoveredOnOpen = false;
+    this.recoveredRef = "";
     const pending = pendingRefundKey(saleId);
     if (!pending) {
       this.key = newKey(saleId);
@@ -16971,6 +16982,7 @@ var ErpSaleRefund = class extends i3 {
       forgetPendingRefundKey(saleId);
       this.key = newKey(saleId);
       this.recoveredOnOpen = true;
+      this.recoveredRef = recovery.saleId;
       return;
     }
     this.key = pending;
@@ -17000,6 +17012,7 @@ var ErpSaleRefund = class extends i3 {
   async loadTenderLines(saleId) {
     this.covered = [];
     this.tenderNotices = /* @__PURE__ */ new Map();
+    this.tenderReadFailed = false;
     const sdk = erplora5();
     if (typeof sdk.loadSlot !== "function") {
       this.tenderFillers = [];
@@ -17010,6 +17023,7 @@ var ErpSaleRefund = class extends i3 {
       this.tenderFillers = rows4.map((f3) => String(f3.component));
     } catch {
       this.tenderFillers = [];
+      this.tenderReadFailed = true;
     }
     if (!this.tenderFillers.length) return;
     try {
@@ -17017,6 +17031,7 @@ var ErpSaleRefund = class extends i3 {
       this.covered = coveredLines(lines ?? []);
     } catch {
       this.covered = [];
+      this.tenderReadFailed = true;
     }
   }
   /**
@@ -17151,6 +17166,27 @@ var ErpSaleRefund = class extends i3 {
       this.checking = false;
     }
   }
+  /**
+   * sales#462 - the screen opened over a doubt the hub had recorded: the money half is settled, but
+   * the fillers that would have given back what was not money died with the closed screen. The
+   * operator decides again on the holes of THIS screen, and this hands them the recovered document -
+   * the same reference `resolveDoubt` hands them when the check happens without closing. Nothing is
+   * refunded in money here, and the screen stays open: what is left of the sale is still below.
+   */
+  async giveBackRecovered() {
+    const t7 = (k2) => erplora5().t(CATALOG5, k2);
+    const ref2 = this.recoveredRef;
+    if (!ref2 || this.tenderBusy) return;
+    this.tenderBusy = true;
+    try {
+      const committed = await this.commitTenderRefunds({ refund_id: ref2, refund_ref: ref2 });
+      this.recoveredRef = "";
+      this.tenderPending = !committed;
+      if (committed) erplora5().notify?.({ type: "success", message: t7("ui.refundTenderGivenBack") });
+    } finally {
+      this.tenderBusy = false;
+    }
+  }
   /** The refund document exists: hand its reference to the tender fillers, say so, and close. */
   async finishRecorded(out) {
     const t7 = (k2, p4) => erplora5().t(CATALOG5, k2, p4);
@@ -17222,7 +17258,30 @@ var ErpSaleRefund = class extends i3 {
               <div class="rt-slot"></div>
             </li>`)}
         </ul>
+        ${this.renderGiveBackRecovered()}
       </div>`;
+  }
+  /**
+   * sales#462 - offered only over a recovered document and while some hole says its line goes back
+   * (an armed filler): with nothing armed there is nothing to hand, and a button that does nothing
+   * would claim the opposite.
+   */
+  renderGiveBackRecovered() {
+    if (!this.recoveredRef || !this.tenderNotices.size) return A;
+    return b2`<ion-button
+      class="refund-tender-commit"
+      data-testid="refund-tender-commit"
+      expand="block"
+      ?disabled=${this.tenderBusy}
+      @click=${() => {
+      void this.giveBackRecovered();
+    }}
+    >${erplora5().t(CATALOG5, "ui.refundTenderGiveBack")}</ion-button>`;
+  }
+  /** sales#462 - what was not paid in money did not go back: read on the screen, not in a toast. */
+  renderTenderPending() {
+    if (!this.tenderPending) return A;
+    return b2`<ok-inline-feedback data-testid="refund-tender-pending" tone="warning" icon="alert-circle-outline">${erplora5().t(CATALOG5, "ui.refundTenderPending")}</ok-inline-feedback>`;
   }
   /** The warnings the fillers want read BEFORE confirming. They warn; they never block. */
   renderTenderNotices() {
@@ -17296,6 +17355,7 @@ var ErpSaleRefund = class extends i3 {
     return b2`<div class="refund-body" data-testid="refund-form">
       <h3>${t7("ui.refundTitle", { number: this.sale?.sale_number ?? "" })}</h3>
       ${this.renderRecoveredOnOpen()}
+      ${this.renderTenderPending()}
       <p class="hint">${t7("ui.refundExplain")}</p>
       <div class="legs">${this.legs.map((l3) => this.renderLeg(l3))}</div>
       ${this.renderTenderLines()}
@@ -17388,6 +17448,15 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpSaleRefund.prototype, "recoveredOnOpen", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "recoveredRef", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "tenderBusy", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "tenderPending", 2);
 __decorateClass([
   r5()
 ], ErpSaleRefund.prototype, "covered", 2);

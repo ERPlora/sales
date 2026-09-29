@@ -48,6 +48,14 @@ is still left to refund and a new refund gets a new key; if not, or if the hub s
 answer, the new attempt reuses the old key, so repeating a partial refund cannot send the money
 twice. Another till does not know the key: there, check the sale before refunding again.
 
+When that recovered refund covered lines paid another way (a voucher session), the screen that
+would have given them back was closed before the hub answered (sales#462). The reopened screen
+paints those lines again with their hole, the operator decides again what goes back, and a
+**Give back what was paid another way** button hands the **recovered** refund document to them —
+no money moves and the screen stays open. It shows only while some line says it goes back. If it
+fails, or if those lines cannot even be read, the screen says «The money is back, but what was paid
+another way could not be returned. Check it from its own module.»
+
 Closing the refund screen, for whatever reason, reloads the sales list, so the row shows the
 refund if it went through.
 
