@@ -1308,7 +1308,7 @@
     "sales.today": {
       "title": "Today's sales",
       "icon": "trending-up-outline",
-      "category": "Ventas",
+      "category": "Sales",
       "size": "sm",
       "permission": "sales.view_reports",
       "sectors": [
@@ -1335,7 +1335,7 @@
     "sales.tickets_today": {
       "title": "Today's tickets",
       "icon": "receipt-outline",
-      "category": "Ventas",
+      "category": "Sales",
       "size": "sm",
       "permission": "sales.view_reports",
       "sectors": [
@@ -1362,7 +1362,7 @@
     "sales.last_7_days": {
       "title": "Sales, last 7 days",
       "icon": "bar-chart-outline",
-      "category": "Ventas",
+      "category": "Sales",
       "size": "lg",
       "permission": "sales.view_reports",
       "sectors": [
@@ -1383,7 +1383,7 @@
       },
       "options": {
         "chartType": "bar",
-        "seriesName": "Ventas",
+        "seriesName": "Sales",
         "gridlines": true,
         "format": "currency",
         "height": 220
@@ -1392,7 +1392,7 @@
     "sales.recent_activity": {
       "title": "Recent activity",
       "icon": "time-outline",
-      "category": "Ventas",
+      "category": "Sales",
       "size": "md",
       "permission": "sales.view_sale",
       "sectors": [
