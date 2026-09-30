@@ -5,7 +5,7 @@ import { define } from '@erplora/outfitkit/define';
 import '@erplora/outfitkit/ok-inline-feedback';
 import '@erplora/outfitkit/ok-data-table';
 import type { DataTableColumn, DataTableAction } from '@erplora/outfitkit';
-import { createListController } from '@erplora/module-sdk';
+import { createListController, dataTableShowsLoadError } from '@erplora/module-sdk';
 import type { ListController, ListClient, ListParams, ListPage } from '@erplora/module-sdk';
 // Module i18n (ADR-0055/0199): esbuild inlines these catalogues into the module's `dist`. English
 // is the SOURCE language and Spanish its translation — no visible string is hardcoded.
@@ -351,12 +351,14 @@ export class ErpPosDepartments extends LitElement {
       ${this.pageError
         ? html`<ok-inline-feedback data-testid="pos-departments-error" tone="danger" icon="alert-circle-outline">${this.pageError}</ok-inline-feedback>`
         : nothing}
-      ${this.ctrl?.error
+      ${this.ctrl?.error && !dataTableShowsLoadError()
         ? html`<ok-inline-feedback data-testid="pos-departments-load-error" tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>`
         : nothing}
       <ok-data-table
         data-testid="pos-departments-table"
         testid="pos-departments-table"
+        .error=${this.ctrl?.error ?? ''}
+        @retry=${() => Promise.all([this.ctrl?.load(), this.loadTaxChoices()])}
         .serverSide=${true}
         .fill=${true}
         .views=${true}

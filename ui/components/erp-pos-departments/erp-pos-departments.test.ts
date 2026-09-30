@@ -11,6 +11,7 @@
 // only finds out at checkout, with the customer already holding the card. The business picks from
 // what its own hub has.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { dataTableShowsLoadError } from '@erplora/module-sdk';
 import { installErploraDouble } from '../../test/erplora-double';
 import './erp-pos-departments';
 
@@ -111,7 +112,15 @@ describe('the list', () => {
     pageFails = true;
     const el = await mount();
     await settle(el);
-    expect(el.shadowRoot.querySelector('ok-inline-feedback')).toBeTruthy();
+    // pm#533: a shell table that paints the failure itself (OutfitKit ≥ 0.1.113) gets the reason and
+    // the screen says nothing more; on an older one the screen's own notice is where it is said.
+    // Both branches are covered either way by ui/test/list-load-error.test.ts.
+    if (dataTableShowsLoadError()) {
+      expect((table(el) as unknown as { error?: unknown }).error).toBe('boom');
+      expect(el.shadowRoot.querySelector('ok-inline-feedback')).toBeNull();
+    } else {
+      expect(el.shadowRoot.querySelector('ok-inline-feedback')).toBeTruthy();
+    }
   });
 });
 
