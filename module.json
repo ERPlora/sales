@@ -78,7 +78,7 @@
   "navigation": [
     {
       "id": "pos",
-      "label": "Vender",
+      "label": "Sell",
       "icon": "storefront",
       "component": "erp-pos",
       "chrome": [
