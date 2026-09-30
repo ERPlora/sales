@@ -157,6 +157,13 @@ export class ErpPosDepartments extends LitElement {
   @state() deleteTarget: Department | null = null;
   /** The hub's own tax categories, which is what the VAT picker offers. */
   @state() private taxChoices: TaxChoice[] = [];
+  /** Where the read of that catalogue stands (sales#478): only an `ok` read that came back empty
+   *  may say «there are no tax categories» — a failed or pending one does not know that. */
+  @state() private taxRead: 'loading' | 'ok' | 'failed' = 'loading';
+  /** Why the last read of the catalogue failed, as the SDK worded it. */
+  @state() private taxReadError = '';
+  /** The form's Retry is reading: the button says so and takes no second tap. */
+  @state() private taxRetrying = false;
 
   private ctrl!: ListController<Department>;
 
@@ -204,17 +211,38 @@ export class ErpPosDepartments extends LitElement {
     super.disconnectedCallback();
   }
 
-  /** Fills the VAT picker from the hub's own tax catalogue.
+  /** Fills the VAT picker from the hub's own tax catalogue. It only READS: the form's Retry and the
+   *  table's Retry both call it, and neither may save anything.
    *
    *  The rates are best-effort — without them the options keep their names and lose the «· 4%», so
    *  the screen still works. The CATEGORIES are not: with none of them there is nothing to pick,
-   *  and the form says so instead of showing an empty picker that looks broken. */
+   *  and the form says so instead of showing an empty picker that looks broken. And a read that
+   *  FAILED is not an empty catalogue (sales#478): it used to be swallowed into `[]`, and the form
+   *  told a business whose VAT was fine to go and set it up. */
   private async loadTaxChoices(): Promise<void> {
     const [cats, ruleRows] = await Promise.all([
-      erplora().queryAll<TaxCategory>('taxes.categories.list').catch(() => [] as TaxCategory[]),
+      erplora().queryAll<TaxCategory>('taxes.categories.list').catch((e: unknown) => e as Error),
       erplora().queryAll<TaxRuleRow>('taxes.rules.list').catch(() => [] as TaxRuleRow[]),
     ]);
+    if (cats instanceof Error) {
+      // The choices already on screen (if an earlier read worked) stay: they are still the hub's.
+      this.taxReadError = cats.message.trim();
+      this.taxRead = 'failed';
+      return;
+    }
     this.taxChoices = toTaxChoices(rows<TaxCategory>(cats), ratesByCategory(rows<TaxRuleRow>(ruleRows)));
+    this.taxRead = 'ok';
+  }
+
+  /** The form's Retry: the same read, with the button busy until it answers — worked or not. */
+  private async retryTaxChoices(): Promise<void> {
+    if (this.taxRetrying) return;
+    this.taxRetrying = true;
+    try {
+      await this.loadTaxChoices();
+    } finally {
+      this.taxRetrying = false;
+    }
   }
 
   private dataTable(): { open(p?: 'filters' | 'create'): void; close(): void } | null {
@@ -391,7 +419,15 @@ export class ErpPosDepartments extends LitElement {
                 <ion-button data-testid="pos-departments-edit-cancel" size="small" fill="clear" @click=${() => this.cancelEdit()}>${t('ui.departmentEditCancel')}</ion-button>
               </ok-inline-feedback>`
             : nothing}
-          ${noTaxCategories
+          ${this.taxRead === 'failed'
+            ? html`<ok-inline-feedback data-testid="pos-departments-tax-load-error" tone="danger" icon="alert-circle-outline">
+                <b>${t('ui.departmentsTaxLoadFailed')}</b> ${this.taxReadError}
+                <ion-button data-testid="pos-departments-tax-retry" type="button" size="small" fill="clear"
+                  ?disabled=${this.taxRetrying} @click=${() => void this.retryTaxChoices()}
+                  >${t(this.taxRetrying ? 'ui.departmentsTaxRetrying' : 'ui.departmentsTaxRetry')}</ion-button>
+              </ok-inline-feedback>`
+            : nothing}
+          ${noTaxCategories && this.taxRead === 'ok'
             ? html`<ok-inline-feedback data-testid="pos-departments-no-tax-categories" tone="warning" icon="alert-circle-outline">
                 ${t('ui.departmentsNoTaxCategories')}
               </ok-inline-feedback>`

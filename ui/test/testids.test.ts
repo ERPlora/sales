@@ -76,6 +76,8 @@ const COVERED: Record<string, { prefix: string; contract: string[]; tables?: str
       'pos-departments-submit',
       'pos-departments-table',
       'pos-departments-tax-category',
+      'pos-departments-tax-load-error',
+      'pos-departments-tax-retry',
     ],
     tables: ['pos-departments-table'],
   },

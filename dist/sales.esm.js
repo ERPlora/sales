@@ -5065,6 +5065,9 @@ var en_default = {
     departmentsLoadFailed: "The departments could not be loaded.",
     departmentTaxCategoryMissing: "Choose the VAT this department charges.",
     departmentsNoTaxCategories: "There are no tax categories to choose from. Set up your VAT first, in Taxes.",
+    departmentsTaxLoadFailed: "The tax categories could not be read.",
+    departmentsTaxRetry: "Retry",
+    departmentsTaxRetrying: "Retrying\u2026",
     quickNotesTitle: "Quick notes",
     quickNotesIntro: "The notes the till offers with one tap on the line-note sheet. The waiter can still type anything by hand.",
     quickNoteText: "Note",
@@ -5730,6 +5733,9 @@ var es_default = {
     departmentsLoadFailed: "No se han podido cargar los departamentos.",
     departmentTaxCategoryMissing: "Elige el IVA que cobra este departamento.",
     departmentsNoTaxCategories: "No hay categor\xEDas de IVA que elegir. Configura antes tus tipos de IVA, en Impuestos.",
+    departmentsTaxLoadFailed: "No se han podido leer las categor\xEDas de IVA.",
+    departmentsTaxRetry: "Reintentar",
+    departmentsTaxRetrying: "Reintentando\u2026",
     quickNotesTitle: "Notas r\xE1pidas",
     quickNotesIntro: "Las notas que el TPV ofrece de un toque en la hoja de nota de la l\xEDnea. Escribir a mano sigue funcionando.",
     quickNoteText: "Nota",
@@ -16596,6 +16602,9 @@ var ErpPosDepartments = class extends i3 {
     this.editingId = null;
     this.deleteTarget = null;
     this.taxChoices = [];
+    this.taxRead = "loading";
+    this.taxReadError = "";
+    this.taxRetrying = false;
     this.onLocaleChange = () => this.requestUpdate();
   }
   static {
@@ -16645,17 +16654,36 @@ var ErpPosDepartments = class extends i3 {
     window.removeEventListener("erplora:locale-changed", this.onLocaleChange);
     super.disconnectedCallback();
   }
-  /** Fills the VAT picker from the hub's own tax catalogue.
+  /** Fills the VAT picker from the hub's own tax catalogue. It only READS: the form's Retry and the
+   *  table's Retry both call it, and neither may save anything.
    *
    *  The rates are best-effort — without them the options keep their names and lose the «· 4%», so
    *  the screen still works. The CATEGORIES are not: with none of them there is nothing to pick,
-   *  and the form says so instead of showing an empty picker that looks broken. */
+   *  and the form says so instead of showing an empty picker that looks broken. And a read that
+   *  FAILED is not an empty catalogue (sales#478): it used to be swallowed into `[]`, and the form
+   *  told a business whose VAT was fine to go and set it up. */
   async loadTaxChoices() {
     const [cats, ruleRows] = await Promise.all([
-      erplora3().queryAll("taxes.categories.list").catch(() => []),
+      erplora3().queryAll("taxes.categories.list").catch((e8) => e8),
       erplora3().queryAll("taxes.rules.list").catch(() => [])
     ]);
+    if (cats instanceof Error) {
+      this.taxReadError = cats.message.trim();
+      this.taxRead = "failed";
+      return;
+    }
     this.taxChoices = toTaxChoices(rows3(cats), ratesByCategory(rows3(ruleRows)));
+    this.taxRead = "ok";
+  }
+  /** The form's Retry: the same read, with the button busy until it answers — worked or not. */
+  async retryTaxChoices() {
+    if (this.taxRetrying) return;
+    this.taxRetrying = true;
+    try {
+      await this.loadTaxChoices();
+    } finally {
+      this.taxRetrying = false;
+    }
   }
   dataTable() {
     return this.renderRoot.querySelector("ok-data-table");
@@ -16810,7 +16838,13 @@ var ErpPosDepartments = class extends i3 {
                 <b>${t7("ui.departmentEditing")}</b> — ${this.newName}
                 <ion-button data-testid="pos-departments-edit-cancel" size="small" fill="clear" @click=${() => this.cancelEdit()}>${t7("ui.departmentEditCancel")}</ion-button>
               </ok-inline-feedback>` : A}
-          ${noTaxCategories ? b2`<ok-inline-feedback data-testid="pos-departments-no-tax-categories" tone="warning" icon="alert-circle-outline">
+          ${this.taxRead === "failed" ? b2`<ok-inline-feedback data-testid="pos-departments-tax-load-error" tone="danger" icon="alert-circle-outline">
+                <b>${t7("ui.departmentsTaxLoadFailed")}</b> ${this.taxReadError}
+                <ion-button data-testid="pos-departments-tax-retry" type="button" size="small" fill="clear"
+                  ?disabled=${this.taxRetrying} @click=${() => void this.retryTaxChoices()}
+                  >${t7(this.taxRetrying ? "ui.departmentsTaxRetrying" : "ui.departmentsTaxRetry")}</ion-button>
+              </ok-inline-feedback>` : A}
+          ${noTaxCategories && this.taxRead === "ok" ? b2`<ok-inline-feedback data-testid="pos-departments-no-tax-categories" tone="warning" icon="alert-circle-outline">
                 ${t7("ui.departmentsNoTaxCategories")}
               </ok-inline-feedback>` : A}
           <!-- mode="md" is not decoration: the shell pins Ionic's ios mode (ADR-0143) and fill
@@ -16875,6 +16909,15 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosDepartments.prototype, "taxChoices", 2);
+__decorateClass([
+  r5()
+], ErpPosDepartments.prototype, "taxRead", 2);
+__decorateClass([
+  r5()
+], ErpPosDepartments.prototype, "taxReadError", 2);
+__decorateClass([
+  r5()
+], ErpPosDepartments.prototype, "taxRetrying", 2);
 define("erp-pos-departments", ErpPosDepartments);
 
 // ui/components/erp-pos-quick-notes/erp-pos-quick-notes.ts
