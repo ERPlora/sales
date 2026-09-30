@@ -563,6 +563,8 @@
     "departmentsLoadFailed": "No se han podido cargar los departamentos.",
     "departmentTaxCategoryMissing": "Elige el IVA que cobra este departamento.",
     "departmentsNoTaxCategories": "No hay categorías de IVA que elegir. Configura antes tus tipos de IVA, en Impuestos.",
+    "departmentsTaxLoadFailed": "No se han podido leer las categorías de IVA.",
+    "departmentsTaxRetry": "Reintentar",
     "quickNotesTitle": "Notas rápidas",
     "quickNotesIntro": "Las notas que el TPV ofrece de un toque en la hoja de nota de la línea. Escribir a mano sigue funcionando.",
     "quickNoteText": "Nota",
