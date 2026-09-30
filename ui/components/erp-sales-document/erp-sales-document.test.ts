@@ -1300,7 +1300,7 @@ describe('an invoice reaches the thermal printer as a full invoice (sales#350)',
     expect(doc.customer_name).toBe('Talleres Gómez SA');
     expect(doc.customer_tax_id).toBe('A87654321');
     expect(doc.customer_address).toBe('Calle Mayor 3, Madrid');
-    expect(doc.tax_breakdown).toEqual([{ rate: 10, base: 3.27, tax: 0.33, label: 'IVA 10%' }]);
+    expect(doc.tax_breakdown).toEqual([{ rate: 10, base: 3.27, tax: 0.33, label: 'IVA 10\u00a0%' }]);
   });
 
   it('a reprinted invoice is still a full invoice, marked duplicate (hub#1931)', async () => {

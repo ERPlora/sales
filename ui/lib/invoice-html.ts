@@ -8,7 +8,7 @@
 // print — the same reason `receipt-html.ts` exists.
 
 import type { InvoiceData, OkInvoiceLabels } from '@erplora/outfitkit';
-import { documentLocale, formatMinor } from '@erplora/outfitkit/ok-money';
+import { documentLocale, formatMinor, formatPercent } from '@erplora/outfitkit/ok-money';
 import { qrSvgMarkup } from '@erplora/outfitkit/ok-qr';
 
 /** Side of the fiscal QR on the sheet, in CSS px: 132 px = 35 mm, the middle of the 30-40 mm the
@@ -39,10 +39,11 @@ function money(v: unknown, currency: string, decimals: number): string {
   return formatMinor(v, { decimals, locale: documentLocale(), currency });
 }
 
-/** A rate or a percentage as the document's language writes it: «21 %», «10,5 %». */
+/** A rate or a percentage as the document's language writes it: «21 %», «10,5 %» in es, «21%» in
+ *  en — the same helper as the tax summary rows (sales#477), so the sheet writes a rate one way. */
 function percent(v: number | undefined): string {
   if (v == null || !Number.isFinite(v)) return '';
-  return `${new Intl.NumberFormat(documentLocale(), { maximumFractionDigits: 2 }).format(v)} %`;
+  return formatPercent(v, documentLocale());
 }
 
 /** A quantity, never rounded to an integer: «1,5». */

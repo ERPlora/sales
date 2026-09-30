@@ -513,7 +513,7 @@ describe('the bill carries its provisional VAT to the thermal paper (sales#180)'
     const doc = prebillToPrintDocument([{ name: 'Menú', price: 1100, qty: 1, tax_rate: 10 }], SETTINGS);
     expect(doc.subtotal, '10,00 of base').toBe(10);
     expect(doc.tax_amount, '1,00 of quota').toBe(1);
-    expect(doc.tax_label, 'with a single rate the paper can name it').toBe('IVA 10%');
+    expect(doc.tax_label, 'with a single rate the paper can name it').toBe('IVA 10\u00a0%');
     expect(doc.total).toBe(11);
   });
 
@@ -647,8 +647,8 @@ describe('saleToInvoicePrintDocument — the full invoice, for the thermal print
     const doc = saleToInvoicePrintDocument(SALE, LINES, SETTINGS, FISCAL);
 
     expect(doc.tax_breakdown).toEqual([
-      { rate: 21, base: 6, tax: 1.26, label: 'IVA 21%' },
-      { rate: 5.2, base: 4, tax: 0.21, label: 'RE 5.2%' },
+      { rate: 21, base: 6, tax: 1.26, label: 'IVA 21\u00a0%' },
+      { rate: 5.2, base: 4, tax: 0.21, label: 'RE 5,2\u00a0%' },
     ]);
   });
 
