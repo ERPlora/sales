@@ -3138,14 +3138,13 @@ function splitHeader(raw) {
   };
 }
 var RAW_TAX_TYPES = /* @__PURE__ */ new Set(["vat", "surcharge", "sales_tax", "withholding", "excise", "import_duty"]);
-function taxLabel(rate, v3, t7) {
+function taxLabel(rate, v3, locale, t7) {
   const r6 = Number(rate);
   const custom = v3?.label && !RAW_TAX_TYPES.has(v3.label) ? v3.label : void 0;
   const name = custom ?? (v3?.kind === "surcharge" ? t7 ? t7("ui.taxSurcharge") : "RE" : "IVA");
-  const pct = Number.isFinite(r6) ? String(Number(r6.toFixed(2))) : rate;
-  return `${name} ${pct}%`;
+  return `${name} ${Number.isFinite(r6) ? formatPercent(r6, locale) : `${rate}%`}`;
 }
-function parseTaxes(tax_breakdown, t7) {
+function parseTaxes(tax_breakdown, locale, t7) {
   if (!tax_breakdown) return [];
   let obj;
   try {
@@ -3156,7 +3155,7 @@ function parseTaxes(tax_breakdown, t7) {
   return Object.entries(obj).map(([rate, v3]) => {
     const r6 = Number(rate);
     return {
-      label: taxLabel(rate, v3, t7),
+      label: taxLabel(rate, v3, locale, t7),
       rate: Number.isFinite(r6) ? r6 : void 0,
       base: minor(v3?.base),
       amount: minor(v3?.tax)
@@ -3241,7 +3240,7 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", f
       // sales#28: la unidad congelada, para el papel
     }),
     subtotal: sale.subtotal != null ? minor(sale.subtotal) : void 0,
-    taxes: parseTaxes(sale.tax_breakdown, t7).map((x2) => ({ label: x2.label, base: x2.base, amount: x2.amount })),
+    taxes: parseTaxes(sale.tax_breakdown, locale, t7).map((x2) => ({ label: x2.label, base: x2.base, amount: x2.amount })),
     total: minor(sale.total),
     payment: sale.payment_method_name ? { method: payLabel(sale.payment_method_name, t7), paid: sale.amount_tendered != null ? minor(sale.amount_tendered) : void 0, change: sale.change_due != null ? minor(sale.change_due) : void 0 } : void 0,
     currency: settings.currency || "\u20AC",
@@ -3269,7 +3268,7 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", f
     tax_rate: l3.tax_rate != null ? Number(l3.tax_rate) : void 0,
     total: minor(l3.line_total)
   }));
-  const taxes = parseTaxes(sale.tax_breakdown, t7);
+  const taxes = parseTaxes(sale.tax_breakdown, locale, t7);
   return {
     issuer: { name: fiscal.issuer_name || header.name || settings.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || settings.issuer_tax_id || void 0 },
     customer: {
@@ -3346,7 +3345,7 @@ function orderToPrebill(lines, settings = {}, opts = {}, valuation) {
     // The subtotal only exists when there is something to break down: with no tax catalogue the
     // bill comes out as it did, with its total and nothing else.
     ...taxes.length ? { subtotal: base } : {},
-    taxes: taxes.map((x2) => ({ label: taxLabel(String(x2.rate), void 0), base: x2.base, amount: x2.amount })),
+    taxes: taxes.map((x2) => ({ label: taxLabel(String(x2.rate), void 0, opts.locale ?? "es"), base: x2.base, amount: x2.amount })),
     total: minor(total),
     currency: settings.currency || "\u20AC",
     decimals: hubDecimals(),
@@ -4071,7 +4070,7 @@ function money2(v3, currency, decimals) {
 }
 function percent(v3) {
   if (v3 == null || !Number.isFinite(v3)) return "";
-  return `${new Intl.NumberFormat(documentLocale(), { maximumFractionDigits: 2 }).format(v3)} %`;
+  return formatPercent(v3, documentLocale());
 }
 function quantity(v3) {
   return new Intl.NumberFormat(documentLocale(), { maximumFractionDigits: 3 }).format(v3);
@@ -11534,7 +11533,9 @@ var ErpPosTouch = class extends i3 {
       customerName: this.customerName || void 0,
       title: t5("ui.prebillTitle"),
       notice: t5("ui.prebillNotice"),
-      fallbackName: t5("ui.docDefaultBusiness")
+      fallbackName: t5("ui.docDefaultBusiness"),
+      // sales#477 — the bill writes its date and its VAT rates in the hub's language.
+      locale: erplora2().locale
     };
   }
   /** The BILL on screen. It is composed once -- not twice in the template -- because both the

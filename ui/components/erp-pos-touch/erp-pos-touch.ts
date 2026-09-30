@@ -4033,6 +4033,8 @@ export class ErpPosTouch extends LitElement {
       title: t('ui.prebillTitle'),
       notice: t('ui.prebillNotice'),
       fallbackName: t('ui.docDefaultBusiness'),
+      // sales#477 — the bill writes its date and its VAT rates in the hub's language.
+      locale: erplora().locale,
     };
   }
 

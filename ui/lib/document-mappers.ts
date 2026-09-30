@@ -17,6 +17,7 @@ import { modifierLabel, modifierNote, type PrintedModifier } from './paper-modif
 // sales#154 — the menu on the paper lives in ONE place too (`paper-combos.ts`), for the same reason.
 import { comboNote, componentLabel, groupComboLines, type PrintedCombo } from './paper-combos.js';
 import { hubDecimals } from './hub-currency.js';
+import { formatPercent } from '@erplora/outfitkit/ok-money';
 // sales#180 — the bill's PROVISIONAL tax breakdown comes through the same door as the cart's tax
 // preview, not through a second arithmetic that would end up disagreeing with it.
 import { previewTaxBreakdown, type TaxBreakdownEntry } from './pos-tax.js';
@@ -408,16 +409,22 @@ const RAW_TAX_TYPES = new Set(['vat', 'surcharge', 'sales_tax', 'withholding', '
 /** sales#54 — the label of one breakdown entry. `kind` marks the equivalence surcharge (`surcharge`)
  *  so the paper stops calling it «IVA 5%»; a `label` set by the owner on the rule (`component_label`)
  *  wins verbatim; a raw `tax_type` word is not printable. Entries older than the marker → IVA. */
-function taxLabel(rate: string, v: { kind?: string; label?: string } | undefined, t?: Translate): string {
+function taxLabel(
+  rate: string,
+  v: { kind?: string; label?: string } | undefined,
+  locale: string,
+  t?: Translate,
+): string {
   const r = Number(rate);
   const custom = v?.label && !RAW_TAX_TYPES.has(v.label) ? v.label : undefined;
   const name = custom ?? (v?.kind === 'surcharge' ? (t ? t('ui.taxSurcharge') : 'RE') : 'IVA');
-  // 21 → «21%», 5.2 → «5.2%», 10.00 → «10%»: the exact rate, without trailing zeros.
-  const pct = Number.isFinite(r) ? String(Number(r.toFixed(2))) : rate;
-  return `${name} ${pct}%`;
+  // sales#477 — the exact rate as the paper's language writes a percentage, with the helper that
+  // writes the rate of each line: «21 %», «5,2 %» in es; «21%», «5.2%» in en. A key that is not a
+  // number is printed as it came.
+  return `${name} ${Number.isFinite(r) ? formatPercent(r, locale) : `${rate}%`}`;
 }
 
-function parseTaxes(tax_breakdown?: string, t?: Translate): TaxLine[] {
+function parseTaxes(tax_breakdown: string | undefined, locale: string, t?: Translate): TaxLine[] {
   if (!tax_breakdown) return [];
   let obj: Record<string, { base?: number; tax?: number; kind?: string; label?: string }>;
   try {
@@ -429,7 +436,7 @@ function parseTaxes(tax_breakdown?: string, t?: Translate): TaxLine[] {
     .map(([rate, v]) => {
       const r = Number(rate);
       return {
-        label: taxLabel(rate, v, t),
+        label: taxLabel(rate, v, locale, t),
         rate: Number.isFinite(r) ? r : undefined,
         base: minor(v?.base),
         amount: minor(v?.tax),
@@ -606,7 +613,7 @@ export function saleToReceipt(
       ...paperUnit(g.head), // sales#28: la unidad congelada, para el papel
     }),
     subtotal: sale.subtotal != null ? minor(sale.subtotal) : undefined,
-    taxes: parseTaxes(sale.tax_breakdown, t).map((x) => ({ label: x.label, base: x.base, amount: x.amount })),
+    taxes: parseTaxes(sale.tax_breakdown, locale, t).map((x) => ({ label: x.label, base: x.base, amount: x.amount })),
     total: minor(sale.total),
     payment: sale.payment_method_name
       ? { method: payLabel(sale.payment_method_name, t)!, paid: sale.amount_tendered != null ? minor(sale.amount_tendered) : undefined, change: sale.change_due != null ? minor(sale.change_due) : undefined }
@@ -647,7 +654,7 @@ export function saleToInvoice(
     tax_rate: l.tax_rate != null ? Number(l.tax_rate) : undefined,
     total: minor(l.line_total),
   }));
-  const taxes = parseTaxes(sale.tax_breakdown, t);
+  const taxes = parseTaxes(sale.tax_breakdown, locale, t);
   return {
     issuer: { name: fiscal.issuer_name || header.name || settings.issuer_name || fallbackName, address: header.address, tax_id: fiscal.issuer_nif || settings.issuer_tax_id || undefined },
     customer: {
@@ -815,7 +822,7 @@ export function orderToPrebill(
     // The subtotal only exists when there is something to break down: with no tax catalogue the
     // bill comes out as it did, with its total and nothing else.
     ...(taxes.length ? { subtotal: base } : {}),
-    taxes: taxes.map((x) => ({ label: taxLabel(String(x.rate), undefined), base: x.base, amount: x.amount })),
+    taxes: taxes.map((x) => ({ label: taxLabel(String(x.rate), undefined, opts.locale ?? 'es'), base: x.base, amount: x.amount })),
     total: minor(total),
     currency: settings.currency || '€',
     decimals: hubDecimals(),

@@ -64,7 +64,7 @@ describe('saleToReceipt — dinero en céntimos, tal cual (ADR-0400)', () => {
     expect(r.lines[0].unit_price).toBe(180);
     expect(r.lines[0].total).toBe(360);
     expect(r.subtotal).toBe(327);
-    expect(r.taxes?.[0]).toEqual({ label: 'IVA 10%', base: 327, amount: 33 });
+    expect(r.taxes?.[0]).toEqual({ label: 'IVA 10\u00a0%', base: 327, amount: 33 });
     expect(r.total).toBe(360);
     expect(r.payment?.paid).toBe(500);
     expect(r.payment?.change).toBe(140);
@@ -126,22 +126,23 @@ describe('el desglose del tique distingue el recargo de equivalencia (sales#54)'
   const t = (k: string) => (k === 'ui.taxSurcharge' ? 'RE' : k);
   const BD = '{"21.00":{"base":10000,"tax":2100,"kind":"tax","label":"vat"},"5.20":{"base":10000,"tax":520,"kind":"surcharge","label":"surcharge"}}';
 
+  // sales#477: the rate in the paper's language — «5,2 %» in es, like the amounts beside it.
   it('el recargo se etiqueta RE con su tasa exacta, no «IVA 5%»', () => {
     const r = saleToReceipt({ ...SALE, tax_breakdown: BD }, LINES, {}, {}, 'es', undefined, t);
     const labels = r.taxes!.map((x) => x.label);
-    expect(labels).toContain('IVA 21%');
-    expect(labels).toContain('RE 5.2%');
+    expect(labels).toContain('IVA 21\u00a0%');
+    expect(labels).toContain('RE 5,2\u00a0%');
   });
 
   it('una etiqueta puesta por el dueño en la regla (component_label) manda tal cual', () => {
     const custom = BD.replace('"label":"surcharge"', '"label":"Rec. equiv."');
     const r = saleToReceipt({ ...SALE, tax_breakdown: custom }, LINES, {}, {}, 'es', undefined, t);
-    expect(r.taxes!.map((x) => x.label)).toContain('Rec. equiv. 5.2%');
+    expect(r.taxes!.map((x) => x.label)).toContain('Rec. equiv. 5,2\u00a0%');
   });
 
   it('una venta anterior a la marca sigue pintando IVA (compat)', () => {
     const r = saleToReceipt(SALE, LINES, {}, {}, 'es', undefined, t);
-    expect(r.taxes![0].label).toBe('IVA 10%');
+    expect(r.taxes![0].label).toBe('IVA 10\u00a0%');
   });
 });
 
@@ -700,7 +701,7 @@ describe('the menu reaches the document (sales#154)', () => {
   it('the tax footer is NOT rewritten by the grouping: it is the sale row, the real breakdown', () => {
     const sale: SaleRow = { ...SALE, tax_breakdown: '{"10.00": {"base": 736, "tax": 74}, "21.00": {"base": 446, "tax": 94}}' };
     const r = saleToReceipt(sale, PACK);
-    expect(r.taxes.map((t) => t.label)).toEqual(['IVA 10%', 'IVA 21%']);
+    expect(r.taxes.map((t) => t.label)).toEqual(['IVA 10\u00a0%', 'IVA 21\u00a0%']);
   });
 
   it('a line that is not a combo does not grow a `combo` field: the ticket of always is byte-identical', () => {
@@ -812,8 +813,8 @@ describe('the bill breaks the VAT down (sales#180)', () => {
   it('with VAT-INCLUSIVE prices (the default setting) it works out base and quota per rate', () => {
     const doc = orderToPrebill(lineas, {});
     expect(doc.taxes).toEqual([
-      { label: 'IVA 10%', base: 1000, amount: 100 },
-      { label: 'IVA 21%', base: 400, amount: 84 },
+      { label: 'IVA 10\u00a0%', base: 1000, amount: 100 },
+      { label: 'IVA 21\u00a0%', base: 400, amount: 84 },
     ]);
     expect(doc.subtotal, 'the total taxable base').toBe(1400);
     expect(doc.total, 'and the total is still what gets charged').toBe(1584);
@@ -821,7 +822,7 @@ describe('the bill breaks the VAT down (sales#180)', () => {
 
   it('with VAT-EXCLUSIVE prices the line is composed of base + quota, as the server does', () => {
     const doc = orderToPrebill([{ name: 'Menú', price: 1000, qty: 1, tax_rate: 10 }], { default_tax_included: 0 });
-    expect(doc.taxes).toEqual([{ label: 'IVA 10%', base: 1000, amount: 100 }]);
+    expect(doc.taxes).toEqual([{ label: 'IVA 10\u00a0%', base: 1000, amount: 100 }]);
     expect(doc.subtotal).toBe(1000);
     expect(doc.total).toBe(1100);
   });
@@ -861,20 +862,20 @@ describe('sales#164 — the bill on the authoritative valuation', () => {
     const doc = orderToPrebill(lines, { default_tax_included: 0 }, {}, valuation);
     expect(doc.total, 'what the drawer is going to take').toBe(12_100);
     expect(doc.subtotal).toBe(10_000);
-    expect(doc.taxes).toEqual([{ label: 'IVA 21%', base: 10_000, amount: 2_100 }]);
+    expect(doc.taxes).toEqual([{ label: 'IVA 21\u00a0%', base: 10_000, amount: 2_100 }]);
   });
 
   it('a valuation that differs by ONE CENT still rules: it is the one that charges', () => {
     const doc = orderToPrebill(lines, {}, {}, { ...valuation, total: 9_999, subtotal: 8_264,
       tax_breakdown: { '21.00': { base: 8_264, tax: 1_735 } } });
     expect(doc.total).toBe(9_999);
-    expect(doc.taxes).toEqual([{ label: 'IVA 21%', base: 8_264, amount: 1_735 }]);
+    expect(doc.taxes).toEqual([{ label: 'IVA 21\u00a0%', base: 8_264, amount: 1_735 }]);
   });
 
   it('WITHOUT a valuation the bill comes out exactly as before', () => {
     const composedOnScreen = orderToPrebill(lines, { default_tax_included: 0 }, {});
     expect(composedOnScreen.total, 'base + quota composed on screen (sales#180)').toBe(12_100);
-    expect(composedOnScreen.taxes).toEqual([{ label: 'IVA 21%', base: 10_000, amount: 2_100 }]);
+    expect(composedOnScreen.taxes).toEqual([{ label: 'IVA 21\u00a0%', base: 10_000, amount: 2_100 }]);
   });
 });
 
