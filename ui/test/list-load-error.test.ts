@@ -112,8 +112,18 @@ function pageNotices(el: Mounted): Element[] {
   return [...el.shadowRoot.querySelectorAll('ok-inline-feedback')].filter((n) => !n.closest('[slot="create"]'));
 }
 
+/** What a person has already typed in the «new» form when they press Retry. A Retry that went
+ *  through the screen's own save would send it; with the form EMPTY the save's own validation stops
+ *  it before any command, and `commands == []` would pass anyway (rv-verifactu-159). */
+const ARMED: Record<string, Record<string, unknown>> = {
+  'erp-pos-departments': { newName: 'Bebidas', newTaxCategoryKey: 'general' },
+  'erp-pos-quick-notes': { newText: 'Sin hielo' },
+};
+
 /** Presses the table's Retry with the hub back, and waits for the list to be read and painted. */
 async function retry(screen: Screen, el: Mounted, table: HTMLElement): Promise<void> {
+  Object.assign(el, ARMED[screen.tag] ?? {});
+  await el.updateComplete;
   const before = readsOf(screen.list);
   double.setQuery(screen.list, [screen.row]);
   for (const [q, rows] of Object.entries(screen.alongside)) double.setQuery(q, rows);
