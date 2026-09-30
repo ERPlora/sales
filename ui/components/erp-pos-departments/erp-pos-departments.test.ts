@@ -32,20 +32,33 @@ const RULES = [
 const commands: { name: string; payload: Record<string, unknown> }[] = [];
 let pageFails = false;
 let taxCats: unknown[] = TAX_CATS;
+/** sales#478: what the tax catalogue read throws, or a promise it hangs on; `null` = it answers. */
+let taxCatsFail: Error | null = null;
+let taxCatsPending: Promise<unknown[]> | null = null;
+let rulesFail: Error | null = null;
 let double: ReturnType<typeof installErploraDouble>;
 
 beforeEach(() => {
   commands.length = 0;
   pageFails = false;
   taxCats = TAX_CATS;
+  taxCatsFail = null;
+  taxCatsPending = null;
+  rulesFail = null;
   double = installErploraDouble({
     queries: {
       'sales.departments.list': () => {
         if (pageFails) throw new Error('boom');
         return ROWS;
       },
-      'taxes.categories.list': () => taxCats,
-      'taxes.rules.list': RULES,
+      'taxes.categories.list': () => {
+        if (taxCatsFail) throw taxCatsFail;
+        return taxCatsPending ?? taxCats;
+      },
+      'taxes.rules.list': () => {
+        if (rulesFail) throw rulesFail;
+        return RULES;
+      },
     },
     pageSize: ROWS.length,
     command: async (name: string, payload: Record<string, unknown>) => {
@@ -150,6 +163,132 @@ describe('the VAT field is a SELECT of the hub\'s own tax categories', () => {
     await settle(el);
     const txt = el.shadowRoot.textContent ?? '';
     expect(txt).toContain('ui.departmentsNoTaxCategories');
+  });
+});
+
+// sales#478 (from pm#533): the form used to turn a FAILED read of the tax catalogue into an empty
+// one (`.catch(() => [])`) and told the business «there are no tax categories, set up your VAT» —
+// a false instruction over a hub that simply did not answer. «Could not read» and «there are none»
+// are different things and the form says which one happened.
+describe('a VAT catalogue that could not be READ is not an empty one (sales#478)', () => {
+  /** What the SDK throws when the hub did not answer the read (`SERVER_UNAVAILABLE`, hub#782). */
+  const unreachable = () => Object.assign(new Error('El hub no responde ahora mismo.'), { code: 'server_unavailable' });
+  const text = (el: Mounted) => (el.shadowRoot.textContent ?? '').replace(/\s+/g, ' ');
+  const $ = (el: Mounted, testid: string) => el.shadowRoot.querySelector(`[data-testid="${testid}"]`) as HTMLElement | null;
+
+  it('says the read FAILED, with its reason — never «there are no tax categories»', async () => {
+    taxCatsFail = unreachable();
+    const el = await mount();
+    await settle(el);
+
+    expect($(el, 'pos-departments-no-tax-categories'), 'a failed read is not an empty catalogue').toBeNull();
+    const notice = $(el, 'pos-departments-tax-load-error');
+    expect(notice, 'the form says the taxes could not be read').toBeTruthy();
+    expect(notice?.textContent).toContain('ui.departmentsTaxLoadFailed');
+    expect(notice?.textContent, 'with the reason the read failed').toContain('El hub no responde ahora mismo.');
+    expect(notice?.closest('[slot="create"]'), 'inside the form, where the picker is').toBeTruthy();
+    // Still nothing to pick, so still nothing to save — even with a name written.
+    el.newName = 'Frutas';
+    await el.updateComplete;
+    expect(($(el, 'pos-departments-submit') as HTMLElement & { disabled?: boolean })?.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('its Retry reads the catalogue again — and only READS', async () => {
+    taxCatsFail = unreachable();
+    const el = await mount();
+    await settle(el);
+    // Armed form (HALLAZGO rv-pm533-f): a Retry that went through save() would be stopped by an
+    // empty form's validation and `commands == []` would pass anyway.
+    el.newName = 'Frutas';
+    el.newTaxCategoryKey = 'product.generic';
+    await el.updateComplete;
+
+    taxCatsFail = null;
+    const retry = $(el, 'pos-departments-tax-retry');
+    expect(retry, 'the notice carries a Retry').toBeTruthy();
+    expect(retry?.textContent).toContain('ui.departmentsTaxRetry');
+    retry?.click();
+    await settle(el);
+    await settle(el);
+
+    expect(commands, 'Retry sent a command').toEqual([]);
+    expect($(el, 'pos-departments-tax-load-error'), 'the notice goes once the read works').toBeNull();
+    expect($(el, 'pos-departments-no-tax-categories'), 'and a catalogue WITH categories asks for nothing').toBeNull();
+    expect(options(el)).toHaveLength(2);
+  });
+
+  it('while its Retry is reading the button says so and takes no second tap', async () => {
+    taxCatsFail = unreachable();
+    const el = await mount();
+    await settle(el);
+
+    taxCatsFail = null;
+    let answer!: (rows: unknown[]) => void;
+    taxCatsPending = new Promise((r) => { answer = r; });
+    $(el, 'pos-departments-tax-retry')?.click();
+    await settle(el);
+
+    const retry = $(el, 'pos-departments-tax-retry');
+    expect(retry?.hasAttribute('disabled'), 'a Retry in flight is not tapped twice').toBe(true);
+    expect(retry?.textContent).toContain('ui.departmentsTaxRetrying');
+
+    taxCatsPending = null;
+    answer(TAX_CATS);
+    await settle(el);
+    await settle(el);
+    expect($(el, 'pos-departments-tax-load-error')).toBeNull();
+    expect(options(el)).toHaveLength(2);
+
+    // A later failed read (the table's Retry reads the catalogue too) finds the button free again.
+    taxCatsFail = unreachable();
+    table(el)?.dispatchEvent(new CustomEvent('retry'));
+    await settle(el);
+    await settle(el);
+    expect($(el, 'pos-departments-tax-retry')?.hasAttribute('disabled'), 'not left busy by the retry that worked').toBe(false);
+  });
+
+  it('a Retry that fails AGAIN gives the button back, with its label and the new reason', async () => {
+    taxCatsFail = unreachable();
+    const el = await mount();
+    await settle(el);
+
+    taxCatsFail = new Error('Sin conexión con el hub.');
+    $(el, 'pos-departments-tax-retry')?.click();
+    await settle(el);
+    await settle(el);
+
+    const notice = $(el, 'pos-departments-tax-load-error');
+    expect(notice?.textContent, 'the reason of the LAST read').toContain('Sin conexión con el hub.');
+    const retry = $(el, 'pos-departments-tax-retry');
+    expect(retry?.hasAttribute('disabled'), 'never stuck disabled after a failed retry').toBe(false);
+    expect(retry?.textContent).toContain('ui.departmentsTaxRetry');
+    expect(retry?.textContent).not.toContain('ui.departmentsTaxRetrying');
+    expect(commands).toEqual([]);
+  });
+
+  it('a read that WORKS and comes back empty is the one that asks to set up the VAT', async () => {
+    taxCats = [];
+    const el = await mount();
+    await settle(el);
+    expect($(el, 'pos-departments-no-tax-categories')).toBeTruthy();
+    expect($(el, 'pos-departments-tax-load-error')).toBeNull();
+  });
+
+  it('while the catalogue is still being read it claims neither', async () => {
+    taxCatsPending = new Promise(() => {});
+    const el = await mount();
+    await settle(el);
+    expect($(el, 'pos-departments-no-tax-categories'), 'no «set up your VAT» before the answer').toBeNull();
+    expect($(el, 'pos-departments-tax-load-error')).toBeNull();
+  });
+
+  it('the RATES stay best-effort: a failed rules read keeps the names and says nothing', async () => {
+    rulesFail = unreachable();
+    const el = await mount();
+    await settle(el);
+    expect(options(el)).toHaveLength(2);
+    expect(text(el)).not.toContain('ui.departmentsTaxLoadFailed');
+    expect($(el, 'pos-departments-tax-load-error')).toBeNull();
   });
 });
 

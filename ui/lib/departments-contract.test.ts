@@ -169,6 +169,10 @@ describe('departments · every visible string is translated on both sides', () =
     'departmentsLoadFailed',
     'departmentTaxCategoryMissing',
     'departmentsNoTaxCategories',
+    // sales#478: the form's own notice when the tax catalogue could not be READ, and its Retry.
+    'departmentsTaxLoadFailed',
+    'departmentsTaxRetry',
+    'departmentsTaxRetrying',
   ];
 
   for (const lang of ['en', 'es']) {
@@ -186,7 +190,7 @@ describe('departments · every visible string is translated on both sides', () =
     // ships an English screen to a Spanish till, which is the failure ADR-0055 exists to stop.
     const enUi = catalogs.en.ui ?? {};
     const esUi = catalogs.es.ui ?? {};
-    for (const key of ['departmentsIntro', 'departmentsEmpty', 'departmentDeleteHint', 'departmentTaxCategoryMissing']) {
+    for (const key of ['departmentsIntro', 'departmentsEmpty', 'departmentDeleteHint', 'departmentTaxCategoryMissing', 'departmentsTaxLoadFailed', 'departmentsTaxRetry', 'departmentsTaxRetrying']) {
       expect(esUi[key], `ui.${key} is still the English text`).not.toBe(enUi[key]);
     }
   });
