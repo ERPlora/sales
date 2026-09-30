@@ -162,6 +162,8 @@ export class ErpPosDepartments extends LitElement {
   @state() private taxRead: 'loading' | 'ok' | 'failed' = 'loading';
   /** Why the last read of the catalogue failed, as the SDK worded it. */
   @state() private taxReadError = '';
+  /** The form's Retry is reading: the button says so and takes no second tap. */
+  @state() private taxRetrying = false;
 
   private ctrl!: ListController<Department>;
 
@@ -230,6 +232,17 @@ export class ErpPosDepartments extends LitElement {
     }
     this.taxChoices = toTaxChoices(rows<TaxCategory>(cats), ratesByCategory(rows<TaxRuleRow>(ruleRows)));
     this.taxRead = 'ok';
+  }
+
+  /** The form's Retry: the same read, with the button busy until it answers — worked or not. */
+  private async retryTaxChoices(): Promise<void> {
+    if (this.taxRetrying) return;
+    this.taxRetrying = true;
+    try {
+      await this.loadTaxChoices();
+    } finally {
+      this.taxRetrying = false;
+    }
   }
 
   private dataTable(): { open(p?: 'filters' | 'create'): void; close(): void } | null {
@@ -410,7 +423,8 @@ export class ErpPosDepartments extends LitElement {
             ? html`<ok-inline-feedback data-testid="pos-departments-tax-load-error" tone="danger" icon="alert-circle-outline">
                 <b>${t('ui.departmentsTaxLoadFailed')}</b> ${this.taxReadError}
                 <ion-button data-testid="pos-departments-tax-retry" type="button" size="small" fill="clear"
-                  @click=${() => void this.loadTaxChoices()}>${t('ui.departmentsTaxRetry')}</ion-button>
+                  ?disabled=${this.taxRetrying} @click=${() => void this.retryTaxChoices()}
+                  >${t(this.taxRetrying ? 'ui.departmentsTaxRetrying' : 'ui.departmentsTaxRetry')}</ion-button>
               </ok-inline-feedback>`
             : nothing}
           ${noTaxCategories && this.taxRead === 'ok'

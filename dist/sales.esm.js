@@ -5067,6 +5067,7 @@ var en_default = {
     departmentsNoTaxCategories: "There are no tax categories to choose from. Set up your VAT first, in Taxes.",
     departmentsTaxLoadFailed: "The tax categories could not be read.",
     departmentsTaxRetry: "Retry",
+    departmentsTaxRetrying: "Retrying\u2026",
     quickNotesTitle: "Quick notes",
     quickNotesIntro: "The notes the till offers with one tap on the line-note sheet. The waiter can still type anything by hand.",
     quickNoteText: "Note",
@@ -5734,6 +5735,7 @@ var es_default = {
     departmentsNoTaxCategories: "No hay categor\xEDas de IVA que elegir. Configura antes tus tipos de IVA, en Impuestos.",
     departmentsTaxLoadFailed: "No se han podido leer las categor\xEDas de IVA.",
     departmentsTaxRetry: "Reintentar",
+    departmentsTaxRetrying: "Reintentando\u2026",
     quickNotesTitle: "Notas r\xE1pidas",
     quickNotesIntro: "Las notas que el TPV ofrece de un toque en la hoja de nota de la l\xEDnea. Escribir a mano sigue funcionando.",
     quickNoteText: "Nota",
@@ -16602,6 +16604,7 @@ var ErpPosDepartments = class extends i3 {
     this.taxChoices = [];
     this.taxRead = "loading";
     this.taxReadError = "";
+    this.taxRetrying = false;
     this.onLocaleChange = () => this.requestUpdate();
   }
   static {
@@ -16671,6 +16674,16 @@ var ErpPosDepartments = class extends i3 {
     }
     this.taxChoices = toTaxChoices(rows3(cats), ratesByCategory(rows3(ruleRows)));
     this.taxRead = "ok";
+  }
+  /** The form's Retry: the same read, with the button busy until it answers — worked or not. */
+  async retryTaxChoices() {
+    if (this.taxRetrying) return;
+    this.taxRetrying = true;
+    try {
+      await this.loadTaxChoices();
+    } finally {
+      this.taxRetrying = false;
+    }
   }
   dataTable() {
     return this.renderRoot.querySelector("ok-data-table");
@@ -16828,7 +16841,8 @@ var ErpPosDepartments = class extends i3 {
           ${this.taxRead === "failed" ? b2`<ok-inline-feedback data-testid="pos-departments-tax-load-error" tone="danger" icon="alert-circle-outline">
                 <b>${t7("ui.departmentsTaxLoadFailed")}</b> ${this.taxReadError}
                 <ion-button data-testid="pos-departments-tax-retry" type="button" size="small" fill="clear"
-                  @click=${() => void this.loadTaxChoices()}>${t7("ui.departmentsTaxRetry")}</ion-button>
+                  ?disabled=${this.taxRetrying} @click=${() => void this.retryTaxChoices()}
+                  >${t7(this.taxRetrying ? "ui.departmentsTaxRetrying" : "ui.departmentsTaxRetry")}</ion-button>
               </ok-inline-feedback>` : A}
           ${noTaxCategories && this.taxRead === "ok" ? b2`<ok-inline-feedback data-testid="pos-departments-no-tax-categories" tone="warning" icon="alert-circle-outline">
                 ${t7("ui.departmentsNoTaxCategories")}
@@ -16901,6 +16915,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosDepartments.prototype, "taxReadError", 2);
+__decorateClass([
+  r5()
+], ErpPosDepartments.prototype, "taxRetrying", 2);
 define("erp-pos-departments", ErpPosDepartments);
 
 // ui/components/erp-pos-quick-notes/erp-pos-quick-notes.ts

@@ -187,7 +187,9 @@ describe('a VAT catalogue that could not be READ is not an empty one (sales#478)
     expect(notice?.textContent).toContain('ui.departmentsTaxLoadFailed');
     expect(notice?.textContent, 'with the reason the read failed').toContain('El hub no responde ahora mismo.');
     expect(notice?.closest('[slot="create"]'), 'inside the form, where the picker is').toBeTruthy();
-    // Still nothing to pick, so still nothing to save.
+    // Still nothing to pick, so still nothing to save — even with a name written.
+    el.newName = 'Frutas';
+    await el.updateComplete;
     expect(($(el, 'pos-departments-submit') as HTMLElement & { disabled?: boolean })?.hasAttribute('disabled')).toBe(true);
   });
 
@@ -213,6 +215,55 @@ describe('a VAT catalogue that could not be READ is not an empty one (sales#478)
     expect($(el, 'pos-departments-tax-load-error'), 'the notice goes once the read works').toBeNull();
     expect($(el, 'pos-departments-no-tax-categories'), 'and a catalogue WITH categories asks for nothing').toBeNull();
     expect(options(el)).toHaveLength(2);
+  });
+
+  it('while its Retry is reading the button says so and takes no second tap', async () => {
+    taxCatsFail = unreachable();
+    const el = await mount();
+    await settle(el);
+
+    taxCatsFail = null;
+    let answer!: (rows: unknown[]) => void;
+    taxCatsPending = new Promise((r) => { answer = r; });
+    $(el, 'pos-departments-tax-retry')?.click();
+    await settle(el);
+
+    const retry = $(el, 'pos-departments-tax-retry');
+    expect(retry?.hasAttribute('disabled'), 'a Retry in flight is not tapped twice').toBe(true);
+    expect(retry?.textContent).toContain('ui.departmentsTaxRetrying');
+
+    taxCatsPending = null;
+    answer(TAX_CATS);
+    await settle(el);
+    await settle(el);
+    expect($(el, 'pos-departments-tax-load-error')).toBeNull();
+    expect(options(el)).toHaveLength(2);
+
+    // A later failed read (the table's Retry reads the catalogue too) finds the button free again.
+    taxCatsFail = unreachable();
+    table(el)?.dispatchEvent(new CustomEvent('retry'));
+    await settle(el);
+    await settle(el);
+    expect($(el, 'pos-departments-tax-retry')?.hasAttribute('disabled'), 'not left busy by the retry that worked').toBe(false);
+  });
+
+  it('a Retry that fails AGAIN gives the button back, with its label and the new reason', async () => {
+    taxCatsFail = unreachable();
+    const el = await mount();
+    await settle(el);
+
+    taxCatsFail = new Error('Sin conexión con el hub.');
+    $(el, 'pos-departments-tax-retry')?.click();
+    await settle(el);
+    await settle(el);
+
+    const notice = $(el, 'pos-departments-tax-load-error');
+    expect(notice?.textContent, 'the reason of the LAST read').toContain('Sin conexión con el hub.');
+    const retry = $(el, 'pos-departments-tax-retry');
+    expect(retry?.hasAttribute('disabled'), 'never stuck disabled after a failed retry').toBe(false);
+    expect(retry?.textContent).toContain('ui.departmentsTaxRetry');
+    expect(retry?.textContent).not.toContain('ui.departmentsTaxRetrying');
+    expect(commands).toEqual([]);
   });
 
   it('a read that WORKS and comes back empty is the one that asks to set up the VAT', async () => {
