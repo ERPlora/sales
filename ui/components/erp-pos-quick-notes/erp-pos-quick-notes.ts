@@ -5,7 +5,7 @@ import { define } from '@erplora/outfitkit/define';
 import '@erplora/outfitkit/ok-inline-feedback';
 import '@erplora/outfitkit/ok-data-table';
 import type { DataTableColumn, DataTableAction } from '@erplora/outfitkit';
-import { createListController } from '@erplora/module-sdk';
+import { createListController, dataTableShowsLoadError } from '@erplora/module-sdk';
 import type { ListController, ListClient, ListParams, ListPage } from '@erplora/module-sdk';
 // Module i18n (ADR-0055/0199): esbuild inlines these catalogues into the module's `dist`. English
 // is the SOURCE language and Spanish its translation — no visible string is hardcoded.
@@ -246,12 +246,14 @@ export class ErpPosQuickNotes extends LitElement {
       ${this.pageError
         ? html`<ok-inline-feedback data-testid="pos-quick-notes-error" tone="danger" icon="alert-circle-outline">${this.pageError}</ok-inline-feedback>`
         : nothing}
-      ${this.ctrl?.error
+      ${this.ctrl?.error && !dataTableShowsLoadError()
         ? html`<ok-inline-feedback data-testid="pos-quick-notes-load-error" tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>`
         : nothing}
       <ok-data-table
         data-testid="pos-quick-notes-table"
         testid="pos-quick-notes-table"
+        .error=${this.ctrl?.error ?? ''}
+        @retry=${() => this.ctrl?.load()}
         .serverSide=${true}
         .fill=${true}
         .views=${true}

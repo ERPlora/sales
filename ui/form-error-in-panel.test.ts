@@ -15,6 +15,7 @@
 //     list that does not load (rv-appointments-227, rv-taxes-81). A notice inside a closed panel is
 //     just as invisible as one under an open panel.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { dataTableShowsLoadError } from '@erplora/module-sdk';
 import { installErploraDouble } from './test/erplora-double';
 import './components/erp-pos-quick-notes/erp-pos-quick-notes';
 import './components/erp-pos-departments/erp-pos-departments';
@@ -316,7 +317,15 @@ for (const s of SCREENS) {
     it('a list that does not load is shown on the page, not in the form', async () => {
       loadFails = true;
       const el = await mount(s);
-      expect(inside(el, '.page', `${s.prefix}-load-error`)).not.toBeNull();
+      // pm#533: a shell table that paints the failure (OutfitKit ≥ 0.1.113) says it on the page with
+      // the reason, and the screen adds no notice; on an older shell the screen's notice does, and
+      // ui/test/list-load-error.test.ts forces that shell to check it stays out of the panel.
+      if (dataTableShowsLoadError()) {
+        expect((el.shadowRoot.querySelector('ok-data-table') as unknown as { error?: unknown }).error).toBe('boom');
+        expect(inside(el, '.page', `${s.prefix}-load-error`)).toBeNull();
+      } else {
+        expect(inside(el, '.page', `${s.prefix}-load-error`)).not.toBeNull();
+      }
       expect(inside(el, CREATE, FORM_ERROR)).toBeNull();
       expect(revealed).toEqual([]);
     });

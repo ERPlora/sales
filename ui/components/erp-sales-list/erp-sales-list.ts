@@ -12,7 +12,7 @@ import { formatDateTime } from '../../lib/document-mappers.js';
 import { errorCode } from '../../lib/checkout-key.js';
 import { domainErrorText } from '../../lib/domain-error-text.js';
 import { transportErrorKey } from '../../lib/transport-error.js';
-import { createListController } from '@erplora/module-sdk';
+import { createListController, dataTableShowsLoadError } from '@erplora/module-sdk';
 import type { ListController, ListClient, ListParams, ListPage } from '@erplora/module-sdk';
 // Catálogo i18n del módulo (ADR-0055): esbuild inlinea estos JSON en el `dist` del WC.
 import esLocale from '../../../locales/es.json';
@@ -535,6 +535,8 @@ export class ErpSalesList extends LitElement {
   }
 
   private async loadStats() {
+    // A new read: the notice of an older failure goes, or it stays up after a Retry that worked.
+    this.statsError = '';
     try {
       const b = rangeBounds(this.range, this.businessDay);
       const rows = await erplora().query<Stats[]>('sales.stats', { date_from: b.from ?? null, date_to: b.to ?? null });
@@ -552,6 +554,12 @@ export class ErpSalesList extends LitElement {
 
   render() {
     const t = (k: string): string => erplora().t(CATALOG, k);
+    // pm#533: figures that could not be read are not zero. «0 tickets» under a failed read is the
+    // same lie as «No sales» under a list that did not load.
+    const kpi = (value: unknown): unknown => (this.statsError ? '—' : value);
+    // pm#533: when the list failed, the table says why and its Retry reads the figures and the payment
+    // filter again, so their own notices would only repeat the same failure.
+    const listFailed = !!this.ctrl?.error;
     // sales#126 — todo dentro de `.scroll`: lo que no quepa en el outlet se alcanza scrollando
     // la propia vista (antes desbordaba en `overflow: visible` y el body `hidden` lo recortaba).
     return html`<div class="scroll">
@@ -563,35 +571,35 @@ export class ErpSalesList extends LitElement {
         <div class=${this.kpiRow ? 'cards kpi-row' : 'cards'}>
           <div class="card">
             <div class="k">${t('ui.tickets')}</div>
-            <div class="v" data-testid="sales-kpi-tickets">${this.stats.count}</div>
+            <div class="v" data-testid="sales-kpi-tickets">${kpi(this.stats.count)}</div>
           </div>
           <div class="card">
             <div class="k">${t('ui.revenue')}</div>
-            <div class="v" data-testid="sales-kpi-revenue">${erplora().formatMoney(Number(this.stats.total_revenue || 0))}</div>
+            <div class="v" data-testid="sales-kpi-revenue">${kpi(erplora().formatMoney(Number(this.stats.total_revenue || 0)))}</div>
           </div>
           <div class="card">
             <div class="k">${t('ui.avgTicket')}</div>
-            <div class="v" data-testid="sales-kpi-avg-ticket">${erplora().formatMoney(Number(this.stats.avg_ticket || 0))}</div>
+            <div class="v" data-testid="sales-kpi-avg-ticket">${kpi(erplora().formatMoney(Number(this.stats.avg_ticket || 0)))}</div>
           </div>
           <div class="card">
             <div class="k">${t('ui.kpiTax')}</div>
-            <div class="v" data-testid="sales-kpi-tax">${erplora().formatMoney(Number(this.stats.tax_total || 0))}</div>
+            <div class="v" data-testid="sales-kpi-tax">${kpi(erplora().formatMoney(Number(this.stats.tax_total || 0)))}</div>
           </div>
           <div class="card">
             <div class="k">${t('ui.kpiDiscounts')}</div>
-            <div class="v" data-testid="sales-kpi-discounts">${erplora().formatMoney(Number(this.stats.discount_total || 0))}</div>
+            <div class="v" data-testid="sales-kpi-discounts">${kpi(erplora().formatMoney(Number(this.stats.discount_total || 0)))}</div>
           </div>
           <div class="card">
             <div class="k">${t('ui.kpiVoided')}</div>
-            <div class="v" data-testid="sales-kpi-voided">${Number(this.stats.voided_count || 0)}</div>
+            <div class="v" data-testid="sales-kpi-voided">${kpi(Number(this.stats.voided_count || 0))}</div>
           </div>
         </div>
-        ${this.statsError ? html`<ok-inline-feedback data-testid="sales-stats-error" tone="danger" icon="alert-circle-outline">${this.statsError}</ok-inline-feedback>` : nothing}
-        ${this.payMethodsError ? html`<ok-inline-feedback data-testid="sales-pay-methods-error" tone="warning" icon="alert-circle-outline">${this.payMethodsError}</ok-inline-feedback>` : nothing}
-        ${this.ctrl?.error ? html`<ok-inline-feedback data-testid="sales-list-error" tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : nothing}
+        ${this.statsError && !listFailed ? html`<ok-inline-feedback data-testid="sales-stats-error" tone="danger" icon="alert-circle-outline">${this.statsError}</ok-inline-feedback>` : nothing}
+        ${this.payMethodsError && !listFailed ? html`<ok-inline-feedback data-testid="sales-pay-methods-error" tone="warning" icon="alert-circle-outline">${this.payMethodsError}</ok-inline-feedback>` : nothing}
+        ${listFailed && !dataTableShowsLoadError() ? html`<ok-inline-feedback data-testid="sales-list-error" tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : nothing}
         <!-- The «document» button is not the only door: rowClickable makes the whole row open the
              same document (outfitkit#67 — the actions column can be off-screen at 1440 px). -->
-        <ok-data-table data-testid="sales-table" testid="sales-table" .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r: Record<string, unknown>) => String(r.sale_number ?? '—')} .cardIcon=${() => 'receipt-outline'} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.paintedSort} .sortDir=${this.ctrl?.state.dir ?? 'desc'} .searchable=${true} .searchPlaceholder=${t('ui.searchSalePlaceholder')} .emptyMessage=${this.ctrl?.loading ? t('ui.loading') : t('ui.noSales')} .actions=${this.documentActions} .rowClickable=${true} @rowAction=${(e: CustomEvent<{ actionId: string; row: Sale }>) => { if (e.detail.actionId === 'document') this.docSaleId = e.detail.row.id; else if (e.detail.actionId === 'reprint') void this.reprint(e.detail.row); else if (e.detail.actionId === 'void') void this.confirmVoid(e.detail.row); else if (e.detail.actionId === 'refund') this.refundSaleId = e.detail.row.id; }} @rowClick=${(e: CustomEvent<{ row: Sale }>) => { this.docSaleId = e.detail.row.id; }} @pageChange=${(e: CustomEvent<number>) => this.ctrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.onSortChange(e)} @searchChange=${(e: CustomEvent<string>) => this.ctrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.onFilterChange(e)}></ok-data-table>
+        <ok-data-table data-testid="sales-table" testid="sales-table" .error=${this.ctrl?.error ?? ''} @retry=${() => Promise.all([this.ctrl?.load(), this.loadStats(), this.loadPayMethods()])} .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r: Record<string, unknown>) => String(r.sale_number ?? '—')} .cardIcon=${() => 'receipt-outline'} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.paintedSort} .sortDir=${this.ctrl?.state.dir ?? 'desc'} .searchable=${true} .searchPlaceholder=${t('ui.searchSalePlaceholder')} .emptyMessage=${this.ctrl?.loading ? t('ui.loading') : t('ui.noSales')} .actions=${this.documentActions} .rowClickable=${true} @rowAction=${(e: CustomEvent<{ actionId: string; row: Sale }>) => { if (e.detail.actionId === 'document') this.docSaleId = e.detail.row.id; else if (e.detail.actionId === 'reprint') void this.reprint(e.detail.row); else if (e.detail.actionId === 'void') void this.confirmVoid(e.detail.row); else if (e.detail.actionId === 'refund') this.refundSaleId = e.detail.row.id; }} @rowClick=${(e: CustomEvent<{ row: Sale }>) => { this.docSaleId = e.detail.row.id; }} @pageChange=${(e: CustomEvent<number>) => this.ctrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.onSortChange(e)} @searchChange=${(e: CustomEvent<string>) => this.ctrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.onFilterChange(e)}></ok-data-table>
       </div>
       <!-- sales#126 — el modal FUERA del contenedor con scroll: Ionic lo reparenta al light-DOM
            igual, pero así la vista no arrastra overlays al scrollear. -->
