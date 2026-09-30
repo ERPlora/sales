@@ -54,6 +54,11 @@ describe('the tax rows of the paper write the rate in the paper language (sales#
     expect(r.taxes!.map((x) => x.label)).toEqual([`IVA 21${NBSP}%`, `RE 5,2${NBSP}%`]);
   });
 
+  it('en: the ticket reads «21%» and «5.2%»', () => {
+    const r = saleToReceipt(SALE, LINES, {}, {}, 'en', undefined, tEn);
+    expect(r.taxes!.map((x) => x.label)).toEqual(['IVA 21%', 'Surcharge 5.2%']);
+  });
+
   it('a label the owner set on the rule keeps its words and gets the rate in the language', () => {
     const custom = SALE.tax_breakdown!.replace('"label":"surcharge"', '"label":"Rec. equiv."');
     const r = saleToReceipt({ ...SALE, tax_breakdown: custom }, LINES, {}, {}, 'es', undefined, tEs);
