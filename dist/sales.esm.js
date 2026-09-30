@@ -4505,7 +4505,7 @@ var en_default = {
   name: "Sales & POS",
   navigation: {
     pos: {
-      label: "Vender"
+      label: "Sell"
     },
     sales: {
       label: "Sales"

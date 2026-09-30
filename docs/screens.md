@@ -1,6 +1,6 @@
 # Sales & POS — Screens
 
-The module contributes three tabs to the hub navigation — **Vender** (the till), **Sales** (the
+The module contributes three tabs to the hub navigation — **Sell** (the till), **Sales** (the
 history) and **Notas rápidas** (the quick-note catalogue, only for who can configure the till) —
 plus a **TPV** settings tab the shell generates from the declarative settings block.
 
@@ -112,7 +112,7 @@ never blocks — an expired voucher does not veto undoing a past act.
 With nobody filling the slot there is no section, no header, no empty hole, and no extra call: the
 refund travels field for field as it did before.
 
-## Vender — the till
+## Sell — the till
 
 The touch point of sale. It opens **full screen**: the shell hides its own chrome and gives a
 fullscreen control to the view.
