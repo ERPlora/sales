@@ -3266,7 +3266,11 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", f
     unit_price: minor(l3.unit_price),
     discount_percent: l3.discount_percent ? Number(l3.discount_percent) : void 0,
     tax_rate: l3.tax_rate != null ? Number(l3.tax_rate) : void 0,
-    total: minor(l3.line_total)
+    // sales#485 — an invoice line's amount is its BASE (net after discount, without tax): that is
+    // `InvoiceLine.total` in `<ok-invoice>`, and the lines then add up to the «Base imponible»
+    // under them. `net_amount` is the handler's share of the declared base, never recomputed here.
+    // (A row without it can only be a hand-built caller: the column is NOT NULL.)
+    total: minor(l3.net_amount ?? l3.line_total)
   }));
   const taxes = parseTaxes(sale.tax_breakdown, locale, t7);
   return {
