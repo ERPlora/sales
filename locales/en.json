@@ -427,6 +427,7 @@
     "voidReasonRequired": "A reason is required to void a sale",
     "voidSaleNotFound": "That sale is not in this business",
     "taxSurcharge": "Surcharge",
+    "taxVat": "VAT",
     "screenMenu": "Screen",
     "exitFullscreen": "Exit full screen",
     "modifiers": "Options",

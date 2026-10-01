@@ -111,6 +111,9 @@ function printNotes(
  */
 export interface PrintDocument extends Record<string, unknown> {
   business_name: string;
+  /** sales#483 — the hub's language: the renderer writes its own words (the tax row, «TOTAL»…) in
+   *  it (`Locale::from_document`, hub#1159). Without it they come out in Spanish whatever the hub. */
+  locale?: string;
   /** hub#1931 — `true` on a REPRINT: the renderer prints «DUPLICADO» on it (RD 1619/2012 art. 14).
    *  Never set on the first print — there is only one original. */
   duplicate?: boolean;
@@ -185,13 +188,14 @@ export interface PrintTaxRow {
 export function prebillToPrintDocument(
   lines: PrebillLine[],
   settings: SaleSettings = {},
-  opts: { tableLabel?: string; customerName?: string; datetime?: string; locale?: string; notice?: string; fallbackName?: string } = {},
+  opts: { tableLabel?: string; customerName?: string; datetime?: string; locale?: string; notice?: string; fallbackName?: string; t?: (key: string) => string } = {},
   /** sales#164 — the hub's authoritative valuation, so paper and screen say the same number. */
   valuation?: PrebillValuation,
 ): PrintDocument {
   const screen = orderToPrebill(lines, settings, opts, valuation);
   return {
     business_name: screen.business.name,
+    ...(opts.locale ? { locale: opts.locale } : {}),
     business_address: screen.business.address,
     // The renderer prints this as «Mesa/Cliente»: on a bill it is the table, which is what the
     // waiter needs to know which paper goes where.
@@ -235,6 +239,7 @@ export function saleToPrintDocument(
   const screen = saleToReceipt(sale, lines, settings, { ...fiscal, pending: false }, locale, fallbackName, t);
   return {
     business_name: screen.business.name,
+    locale,
     business_address: screen.business.address,
     vat_number: screen.business.tax_id,
     receipt_id: screen.number,

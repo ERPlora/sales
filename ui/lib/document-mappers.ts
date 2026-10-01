@@ -408,7 +408,8 @@ const RAW_TAX_TYPES = new Set(['vat', 'surcharge', 'sales_tax', 'withholding', '
 
 /** sales#54 — the label of one breakdown entry. `kind` marks the equivalence surcharge (`surcharge`)
  *  so the paper stops calling it «IVA 5%»; a `label` set by the owner on the rule (`component_label`)
- *  wins verbatim; a raw `tax_type` word is not printable. Entries older than the marker → IVA. */
+ *  wins verbatim; a raw `tax_type` word is not printable. Entries older than the marker → VAT.
+ *  sales#483 — both names are catalog words in the paper's language (`ui.taxVat`: «VAT» / «IVA»). */
 function taxLabel(
   rate: string,
   v: { kind?: string; label?: string } | undefined,
@@ -417,7 +418,7 @@ function taxLabel(
 ): string {
   const r = Number(rate);
   const custom = v?.label && !RAW_TAX_TYPES.has(v.label) ? v.label : undefined;
-  const name = custom ?? (v?.kind === 'surcharge' ? (t ? t('ui.taxSurcharge') : 'RE') : 'IVA');
+  const name = custom ?? (v?.kind === 'surcharge' ? (t ? t('ui.taxSurcharge') : 'RE') : t ? t('ui.taxVat') : 'IVA');
   // sales#477 — the exact rate as the paper's language writes a percentage, with the helper that
   // writes the rate of each line: «21 %», «5,2 %» in es; «21%», «5.2%» in en. A key that is not a
   // number is printed as it came.
@@ -771,6 +772,8 @@ export function orderToPrebill(
     title?: string;
     notice?: string;
     fallbackName?: string;
+    /** sales#483 — the module catalog, so the breakdown names the tax in the bill's language. */
+    t?: Translate;
   } = {},
   /** sales#164 — the hub's AUTHORITATIVE valuation of this same ticket, when it has answered. */
   valuation?: PrebillValuation,
@@ -840,7 +843,7 @@ export function orderToPrebill(
     // The subtotal only exists when there is something to break down: with no tax catalogue the
     // bill comes out as it did, with its total and nothing else.
     ...(taxes.length ? { subtotal: base } : {}),
-    taxes: taxes.map((x) => ({ label: taxLabel(String(x.rate), undefined, opts.locale ?? 'es'), base: x.base, amount: x.amount })),
+    taxes: taxes.map((x) => ({ label: taxLabel(String(x.rate), undefined, opts.locale ?? 'es', opts.t), base: x.base, amount: x.amount })),
     total: minor(total),
     currency: settings.currency || '€',
     decimals: hubDecimals(),
