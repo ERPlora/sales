@@ -532,9 +532,9 @@ describe('sales#465: closed while the hub was still answering', () => {
     }));
     await settle(el);
   }
-  async function disarm(el: Refund): Promise<void> {
+  async function disarm(el: Refund, extra: { unknown?: boolean } = {}): Promise<void> {
     fillersOf(el)[0].dispatchEvent(new CustomEvent('erp:tender-refund-disarmed', {
-      detail: { lineRef: 'item-1' }, bubbles: true, composed: true,
+      detail: { lineRef: 'item-1', ...extra }, bubbles: true, composed: true,
     }));
     await settle(el);
   }
@@ -715,6 +715,78 @@ describe('sales#465: closed while the hub was still answering', () => {
 
       const again = await reopen();
       expect(recoveredBanner(again)).toBeNull();
+    });
+
+    // sales#470 - since services#139 the hole can take back an `armed` it can no longer stand by
+    // (it lost the voucher's read) with `unknown: true`: «I can't tell», not «it does not go back».
+    // The warning goes, but the line is NOT answered: closing keeps the session owed.
+    describe('the hole takes back its promise because it cannot tell any more (`unknown`)', () => {
+      it('the warning next to the button goes', async () => {
+        const el = await reopenOverOwed();
+        await arm(el);
+        expect(giveBackButton(el)).toBeTruthy();
+        await disarm(el, { unknown: true });
+        expect(giveBackButton(el)).toBeNull();
+      });
+
+      it('closed then: the next screen offers it again', async () => {
+        const el = await reopenOverOwed();
+        await arm(el);
+        await disarm(el, { unknown: true });
+        el.remove();
+        expect(pendingRefundKey('sale-1')).toBe('refund-sale-1-closed');
+
+        const again = await reopen();
+        expect(recoveredBanner(again)).toBeTruthy();
+        await arm(again);
+        expect(giveBackButton(again)).toBeTruthy();
+      });
+
+      it('a later plain answer counts again: «it does not go back» settles it', async () => {
+        const el = await reopenOverOwed();
+        await arm(el);
+        await disarm(el, { unknown: true });
+        await disarm(el);
+        el.remove();
+        expect(pendingRefundKey('sale-1')).toBeUndefined();
+      });
+
+      it('a later `armed` counts again: the session is shown as going back, so it stays owed', async () => {
+        const el = await reopenOverOwed();
+        await arm(el);
+        await disarm(el, { unknown: true });
+        await arm(el);
+        expect(giveBackButton(el)).toBeTruthy();
+        el.remove();
+        expect(pendingRefundKey('sale-1')).toBe('refund-sale-1-closed');
+      });
+
+      it('only `true` is a doubt: `unknown: false` is a plain answer', async () => {
+        const el = await reopenOverOwed();
+        await arm(el);
+        await disarm(el, { unknown: false });
+        el.remove();
+        expect(pendingRefundKey('sale-1')).toBeUndefined();
+      });
+
+      it('two sessions, one answered «no» and the other «I can\'t tell»: the next screen offers it again', async () => {
+        const el = await reopenOverOwed({
+          lines: [...LINES, { id: 'item-3', product_id: 's-tinte', product_name: 'Tinte', is_covered: 1 }],
+        });
+        const [first, second] = fillersOf(el);
+        first.dispatchEvent(new CustomEvent('erp:tender-refund-disarmed', {
+          detail: { lineRef: 'item-1' }, bubbles: true, composed: true,
+        }));
+        second.dispatchEvent(new CustomEvent('erp:tender-refund-armed', {
+          detail: { lineRef: 'item-3' }, bubbles: true, composed: true,
+        }));
+        second.dispatchEvent(new CustomEvent('erp:tender-refund-disarmed', {
+          detail: { lineRef: 'item-3', unknown: true }, bubbles: true, composed: true,
+        }));
+        await settle(el);
+        el.remove();
+        expect(pendingRefundKey('sale-1')).toBe('refund-sale-1-closed');
+      });
     });
 
     it('given back: the next screen offers nothing', async () => {
