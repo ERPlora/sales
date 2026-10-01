@@ -2622,6 +2622,21 @@ fn value_checkout(
         let quota = *profile_gross - base;
         subtotal += base;
         tax_total += quota;
+        // sales#485 — the lines of the profile get their share of the base ALREADY DECLARED, by
+        // largest remainder over what each one charges (ADR-0210), the mirror of what the
+        // VAT-on-top close below does with the quota. Left with its own per-line rounding, three
+        // 1,00 € items at 21 % printed 0,83 × 3 = 2,49 € on an invoice declaring a 2,48 € base.
+        // What the line charges does not move: its quota is what is left. (`parts` is not read
+        // after this close when the tax rides inside the price.)
+        let members: Vec<usize> = (0..pending_lines.len())
+            .filter(|&i| !pending_lines[i].parts.is_empty() && same_profile(&pending_lines[i].resolved.components, comps))
+            .collect();
+        let weights: Vec<i64> = members.iter().map(|&i| pending_lines[i].t.line).collect();
+        for (&i, share) in members.iter().zip(share_by_weight(base, &weights)) {
+            let t = &mut pending_lines[i].t;
+            t.net = share;
+            t.tax = t.line - share;
+        }
         // Merge inside the profile first: two components with the SAME key are one base taxed
         // twice, not two bases (parity with `calc_line_components`).
         let mut merged: Vec<(String, i64)> = Vec::new();
@@ -6016,6 +6031,72 @@ mod tests {
         assert_eq!((bd["21.00"]["base"].as_i64(), bd["21.00"]["tax"].as_i64()), (Some(50), Some(11)), "round(0,50 € × 21 %) = 0,11 €");
         assert_eq!((bd["5.20"]["base"].as_i64(), bd["5.20"]["tax"].as_i64()), (Some(50), Some(3)), "round(0,50 € × 5,2 %) = 0,03 €");
         assert_eq!((subtotal, tax_total, total), (50, 14, 64), "el total se compone de lo declarado");
+    }
+
+    #[test]
+    fn tax_included_line_bases_add_up_to_the_declared_base_of_each_rate() {
+        // sales#485 — the full invoice prints each line's BASE and, under it, the declared «Base
+        // imponible»: the lines have to add up to it. With the VAT inside the price the declared
+        // base is closed ONCE per tax profile over the aggregate gross (sales#292), and each line
+        // was left with its own per-line rounding, so three 1,00 € items at 21 % printed
+        // 0,83 + 0,83 + 0,83 = 2,49 € over a declared base of round(3,00 / 1,21) = 2,48 €.
+        //
+        // 🔴 Every amount is chosen so that per-line rounding and the declared close DIVERGE, in
+        // three profiles at once (21 %, 10 %, and 21 % + 5,2 % of equivalence surcharge): an
+        // amount that divides cleanly would keep this guard green with the bug in place.
+        //   21 %       3 × 1,00 €  per line 83 × 3 = 249 · declared round(300 / 1,21)  = 248
+        //   10 %       2 × 1,05 €  per line 95 × 2 = 190 · declared round(210 / 1,10)  = 191
+        //   21 + 5,2 % 0,50 + 1,50  per line 40 + 119 = 159 · declared round(200 / 1,262) = 158
+        // The last profile also has lines of DIFFERENT amounts, so the base is split by what each
+        // line charges, not evenly: an even split would hand the 0,50 € line a 0,79 € base.
+        let items = json!([
+            { "product_name": "Agua A",  "price": 100, "quantity": 1_000_000, "tax_category_key": "product.std" },
+            { "product_name": "Agua B",  "price": 100, "quantity": 1_000_000, "tax_category_key": "product.std" },
+            { "product_name": "Agua C",  "price": 100, "quantity": 1_000_000, "tax_category_key": "product.std" },
+            { "product_name": "Tapa A",  "price": 105, "quantity": 1_000_000, "tax_category_key": "restaurant.food" },
+            { "product_name": "Tapa B",  "price": 105, "quantity": 1_000_000, "tax_category_key": "restaurant.food" },
+            { "product_name": "Chicle A", "price": 50, "quantity": 1_000_000, "tax_category_key": "product.generic" },
+            { "product_name": "Chicle B", "price": 150, "quantity": 1_000_000, "tax_category_key": "product.generic" }
+        ]);
+        let rules = json!([
+            { "id": "r-std",  "country_code": "ES", "region_code": null, "tax_category_key": "product.std", "rate_pct": 21.0, "tax_type": "vat", "parent_id": null, "is_active": 1 },
+            { "id": "r-food", "country_code": "ES", "region_code": null, "tax_category_key": "restaurant.food", "rate_pct": 10.0, "tax_type": "vat", "parent_id": null, "is_active": 1 },
+            { "id": "r-iva",  "country_code": "ES", "region_code": null, "tax_category_key": "product.generic", "rate_pct": 21.0, "tax_type": "vat", "parent_id": null, "is_active": 1 },
+            { "id": "c-re",   "country_code": "ES", "region_code": null, "tax_category_key": "product.generic", "rate_pct": 5.2, "tax_type": "surcharge", "parent_id": "r-iva", "is_active": 1 }
+        ]);
+        let mut inp = input_with_rules(items, 12, rules, "array", "ES", "");
+        inp["payload"]["tax_included"] = json!(true);
+        let out = sale(inp);
+        let (subtotal, tax_total, total, bd) = declared(&out);
+        let lines = sale_lines(&out);
+        let sum = |prefix: &str, field: &str| -> i64 {
+            lines.iter()
+                .filter(|l| l["product_name"].as_str().unwrap_or("").starts_with(prefix))
+                .map(|l| l[field].as_i64().expect(field))
+                .sum()
+        };
+
+        // What the customer pays does not move a cent: the gross of every line stays its price.
+        assert_eq!(line_totals(&out), vec![100, 100, 100, 105, 105, 50, 150], "the charged gross of each line");
+        assert_eq!(total, 710, "the total charged");
+        // The declared close itself is unchanged (sales#292)…
+        assert_eq!(bd["10.00"]["base"].as_i64(), Some(191), "declared base at 10 %");
+        assert_eq!(bd["5.20"]["base"].as_i64(), Some(158), "declared base of the surcharge profile");
+        assert_eq!(bd["21.00"]["base"].as_i64(), Some(248 + 158), "declared base at 21 % (both profiles)");
+        // …and now the lines add up to it, profile by profile and as a whole.
+        assert_eq!(sum("Agua", "net_amount"), 248, "the 21 % lines add up to their declared base");
+        assert_eq!(sum("Tapa", "net_amount"), 191, "the 10 % lines add up to their declared base");
+        assert_eq!(sum("Chicle", "net_amount"), 158, "the 21 % + 5,2 % lines add up to their declared base");
+        // Each line's share, by largest remainder over what it charges (ties → the earlier line).
+        let nets: Vec<i64> = lines.iter().map(|l| l["net_amount"].as_i64().unwrap()).collect();
+        assert_eq!(nets, vec![83, 83, 82, 96, 95, 40, 118], "the base of each line");
+        assert_eq!(sum("", "net_amount"), subtotal, "Σ line bases = the invoice's «Base imponible»");
+        assert_eq!(sum("", "tax_amount"), tax_total, "Σ line quotas = the declared tax");
+        for l in &lines {
+            let (net, tax, gross) = (l["net_amount"].as_i64().unwrap(), l["tax_amount"].as_i64().unwrap(), l["line_total"].as_i64().unwrap());
+            assert_eq!(net + tax, gross, "{}: base + quota = what the line charges", l["product_name"]);
+            assert!(net > 0 && tax > 0, "{}: every taxed line keeps a base and a quota", l["product_name"]);
+        }
     }
 
     // ── sales#293 · CON EL IVA POR ENCIMA, EL TOTAL SE DERIVA DE LO DECLARADO ─────────────────
