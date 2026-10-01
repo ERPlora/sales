@@ -17547,11 +17547,14 @@ var ErpSaleRefund = class extends i3 {
       next.set(d3.lineRef, String(d3.warning ?? ""));
       this.tenderNotices = next;
     };
-    /** The filler undid it, or said that line does not go back: its warning stops being announced. */
+    /** The filler undid it, or said that line does not go back: its warning stops being announced.
+     *  sales#470 - with `unknown: true` it takes back an `armed` it can no longer stand by (services#139):
+     *  «I can't tell», not an answer, so the line goes back to unheard and closing keeps it owed. */
     this.onTenderRefundDisarmed = (e8) => {
       const d3 = e8.detail;
       if (!d3?.lineRef) return;
-      this.tenderHeard.add(d3.lineRef);
+      if (d3.unknown === true) this.tenderHeard.delete(d3.lineRef);
+      else this.tenderHeard.add(d3.lineRef);
       const next = new Map(this.tenderNotices);
       next.delete(d3.lineRef);
       this.tenderNotices = next;

@@ -288,11 +288,14 @@ export class ErpSaleRefund extends LitElement {
     this.tenderNotices = next;
   };
 
-  /** The filler undid it, or said that line does not go back: its warning stops being announced. */
+  /** The filler undid it, or said that line does not go back: its warning stops being announced.
+   *  sales#470 - with `unknown: true` it takes back an `armed` it can no longer stand by (services#139):
+   *  «I can't tell», not an answer, so the line goes back to unheard and closing keeps it owed. */
   private readonly onTenderRefundDisarmed = (e: Event): void => {
-    const d = (e as CustomEvent<{ lineRef?: string }>).detail;
+    const d = (e as CustomEvent<{ lineRef?: string; unknown?: boolean }>).detail;
     if (!d?.lineRef) return;
-    this.tenderHeard.add(d.lineRef);
+    if (d.unknown === true) this.tenderHeard.delete(d.lineRef);
+    else this.tenderHeard.add(d.lineRef);
     const next = new Map(this.tenderNotices);
     next.delete(d.lineRef);
     this.tenderNotices = next;
