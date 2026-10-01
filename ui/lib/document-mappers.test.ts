@@ -153,7 +153,9 @@ describe('saleToInvoice — mismos contratos', () => {
     expect(inv.lines[0].unit_price).toBe(180);
     expect(inv.lines[0].total).toBe(360);
     expect(inv.subtotal).toBe(327);
-    expect(inv.discount_total).toBe(50);
+    // sales#486 — the discount is already inside the base: a note, never a row of the sum.
+    expect(inv.discount_total).toBeUndefined();
+    expect(inv.notes).toMatch(/0[.,]50/);
     expect(inv.taxes[0].base).toBe(327);
     expect(inv.taxes[0].amount).toBe(33);
     expect(inv.tax_total).toBe(33);

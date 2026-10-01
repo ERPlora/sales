@@ -197,6 +197,7 @@
     "docTax": "Tax",
     "docTaxBase": "Tax base",
     "docDiscountTotal": "Discount",
+    "docDiscountApplied": "Ticket discount of {amount}, already applied to the amounts above.",
     "docPaymentMethod": "Payment method",
     "loadingDocument": "Loading document…",
     "issuingReceipt": "Issuing the receipt…",

@@ -17,7 +17,7 @@ import { modifierLabel, modifierNote, type PrintedModifier } from './paper-modif
 // sales#154 — the menu on the paper lives in ONE place too (`paper-combos.ts`), for the same reason.
 import { comboNote, componentLabel, groupComboLines, type PrintedCombo } from './paper-combos.js';
 import { hubDecimals } from './hub-currency.js';
-import { formatPercent } from '@erplora/outfitkit/ok-money';
+import { documentLocale, formatMinor, formatPercent } from '@erplora/outfitkit/ok-money';
 // sales#180 — the bill's PROVISIONAL tax breakdown comes through the same door as the cart's tax
 // preview, not through a second arithmetic that would end up disagreeing with it.
 import { previewTaxBreakdown, type TaxBreakdownEntry } from './pos-tax.js';
@@ -630,6 +630,17 @@ export function saleToReceipt(
   };
 }
 
+/** sales#486 — «Ticket discount of 2,00 € already applied…»: the discount the cashier gave, as it
+ *  was asked for (sales#295), outside the column that adds up. Nothing without a discount. */
+function discountNote(amount: number | undefined, currency: string, t?: Translate): string | undefined {
+  if (!amount) return undefined;
+  const text = formatMinor(minor(amount), { decimals: hubDecimals(), locale: documentLocale(), currency });
+  return (t ? t('ui.docDiscountApplied') : DISCOUNT_APPLIED_EN).replace('{amount}', text);
+}
+
+/** English source of `ui.docDiscountApplied`, for the legacy callers that pass no translator. */
+const DISCOUNT_APPLIED_EN = 'Ticket discount of {amount}, already applied to the amounts above.';
+
 /** Sale → A4 invoice (`<ok-invoice>`). Formal fiscal document: the issuer is the legal name
  *  snapshotted on the invoice (#32); `receipt_header` only fills the gaps (name fallback +
  *  address, the invoice row carries no issuer address). */
@@ -674,7 +685,10 @@ export function saleToInvoice(
     issue_date: formatDateTime(sale.created_at, locale) || '',
     lines: invLines,
     subtotal: minor(sale.subtotal),
-    discount_total: sale.discount_amount ? minor(sale.discount_amount) : undefined,
+    // sales#486 — the ticket discount is ALREADY prorated into the lines and the base (sales#33):
+    // as `discount_total`, `<ok-invoice>` and the A4 paint it «−2,00 €» under a base that already
+    // lacks it, and the summary stops adding up. It travels as an informative note instead.
+    notes: discountNote(sale.discount_amount, settings.currency || '€', t),
     taxes: taxes.map((t) => ({ label: t.label, rate: t.rate, base: t.base, amount: t.amount })),
     tax_total: minor(sale.tax_amount),
     total: minor(sale.total),

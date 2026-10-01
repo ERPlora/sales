@@ -198,6 +198,7 @@
     "docTax": "Impuesto",
     "docTaxBase": "Base imponible",
     "docDiscountTotal": "Descuento",
+    "docDiscountApplied": "Descuento en el ticket de {amount}, ya aplicado en los importes de arriba.",
     "docPaymentMethod": "Forma de pago",
     "loadingDocument": "Cargando documento…",
     "issuingReceipt": "Emitiendo el tique…",
