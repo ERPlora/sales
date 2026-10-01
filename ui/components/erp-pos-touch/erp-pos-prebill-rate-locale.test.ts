@@ -2,10 +2,18 @@
 // «IVA 10 %» in a Spanish hub, «IVA 10%» in an English one, on screen and on the printed paper.
 // The bill was composed without the hub's locale, so it fell back to Spanish whatever the hub
 // spoke — once the rate follows the language, an English hub would have read «10 %».
+//
+// sales#483 — and the tax is NAMED in that language too: «VAT 10%» in English, not «IVA 10%». The
+// words come from the module's REAL catalogs, so the test proves what the customer reads.
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { ReceiptData } from '@erplora/outfitkit';
 import { installPosDouble } from '../../test/pos-double';
+import en from '../../../locales/en.json';
+import es from '../../../locales/es.json';
 import './erp-pos-touch';
+
+const CATALOGS = { en, es } as const;
+type Locale = keyof typeof CATALOGS;
 
 const NBSP = ' ';
 
@@ -15,10 +23,19 @@ interface PrintRequest {
 
 let printed: PrintRequest[];
 
-function install(locale: string) {
+/** The real catalog of `locale`, with {params} filled as the shell does. */
+function translator(locale: Locale) {
+  return (_catalog: unknown, key: string, params?: Record<string, unknown>): string => {
+    const word = key.split('.').reduce<unknown>((node, part) => (node as Record<string, unknown> | undefined)?.[part], CATALOGS[locale]);
+    return typeof word === 'string' ? word.replace(/\{(\w+)\}/g, (_m, p: string) => String(params?.[p] ?? `{${p}}`)) : key;
+  };
+}
+
+function install(locale: Locale) {
   printed = [];
   installPosDouble({
     locale,
+    t: translator(locale),
     extra: {
       print: async (req: PrintRequest) => {
         printed.push(req);
@@ -53,26 +70,26 @@ function screenTaxLabels(el: HTMLElement): string[] {
   return (doc!.receipt?.taxes ?? []).map((x) => x.label);
 }
 
-async function printedTaxLabel(el: HTMLElement): Promise<string | undefined> {
+async function printedTaxLabel(el: HTMLElement, locale: Locale): Promise<string | undefined> {
   const modal = [...el.shadowRoot!.querySelectorAll('ion-modal.doc-modal')].find((m) => m.querySelector('#prebill-doc'))!;
-  modal.querySelector<HTMLElement>('ion-button[aria-label="ui.print"]')!.click();
+  modal.querySelector<HTMLElement>(`ion-button[aria-label="${CATALOGS[locale].ui.print}"]`)!.click();
   await new Promise((r) => setTimeout(r, 0));
   expect(printed, 'the bill reached the print gate').toHaveLength(1);
   return printed[0].data?.tax_label;
 }
 
-describe('the bill writes its VAT rate in the hub language (sales#477)', () => {
-  it('en hub: «IVA 10%» on screen and on paper', async () => {
+describe('the bill writes its VAT rate in the hub language (sales#477, sales#483)', () => {
+  it('en hub: «VAT 10%» on screen and on paper', async () => {
     install('en');
     const el = await openBill();
-    expect(screenTaxLabels(el)).toEqual(['IVA 10%']);
-    expect(await printedTaxLabel(el)).toBe('IVA 10%');
+    expect(screenTaxLabels(el)).toEqual(['VAT 10%']);
+    expect(await printedTaxLabel(el, 'en')).toBe('VAT 10%');
   });
 
   it('es hub: «IVA 10 %» on screen and on paper', async () => {
     install('es');
     const el = await openBill();
     expect(screenTaxLabels(el)).toEqual([`IVA 10${NBSP}%`]);
-    expect(await printedTaxLabel(el)).toBe(`IVA 10${NBSP}%`);
+    expect(await printedTaxLabel(el, 'es')).toBe(`IVA 10${NBSP}%`);
   });
 });

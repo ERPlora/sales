@@ -4035,6 +4035,8 @@ export class ErpPosTouch extends LitElement {
       fallbackName: t('ui.docDefaultBusiness'),
       // sales#477 — the bill writes its date and its VAT rates in the hub's language.
       locale: erplora().locale,
+      // sales#483 — and names the tax in it: «VAT 10%», not «IVA 10%», in an English hub.
+      t: (key: string) => t(key),
     };
   }
 

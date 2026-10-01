@@ -123,7 +123,7 @@ describe('the payment method on the document is translated at render time (sales
 // tasa) y el tique lo llamaba «IVA 5%». Desde sales#54 la entrada viene MARCADA (`kind`, `label`) y
 // el tique lo pinta como lo que es. Compat: una venta vieja sin marca sigue saliendo como IVA.
 describe('el desglose del tique distingue el recargo de equivalencia (sales#54)', () => {
-  const t = (k: string) => (k === 'ui.taxSurcharge' ? 'RE' : k);
+  const t = (k: string) => ({ 'ui.taxSurcharge': 'RE', 'ui.taxVat': 'IVA' })[k] ?? k;
   const BD = '{"21.00":{"base":10000,"tax":2100,"kind":"tax","label":"vat"},"5.20":{"base":10000,"tax":520,"kind":"surcharge","label":"surcharge"}}';
 
   // sales#477: the rate in the paper's language — «5,2 %» in es, like the amounts beside it.

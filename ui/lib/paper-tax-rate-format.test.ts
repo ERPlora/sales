@@ -14,9 +14,9 @@ import { invoiceToPrintableHtml } from './invoice-html.js';
 
 const NBSP = ' ';
 
-/** Spanish catalog stub for the one word the label translates. */
-const tEs = (k: string) => (k === 'ui.taxSurcharge' ? 'RE' : k);
-const tEn = (k: string) => (k === 'ui.taxSurcharge' ? 'Surcharge' : k);
+/** Catalog stubs for the two words the label translates (sales#483 named the general tax too). */
+const tEs = (k: string) => ({ 'ui.taxSurcharge': 'RE', 'ui.taxVat': 'IVA' })[k] ?? k;
+const tEn = (k: string) => ({ 'ui.taxSurcharge': 'Surcharge', 'ui.taxVat': 'VAT' })[k] ?? k;
 
 /** A sale with VAT 21 % plus the 5,2 % equivalence surcharge, marked as sales#54 stores it. */
 const SALE: SaleRow = {
@@ -46,7 +46,7 @@ describe('the tax rows of the paper write the rate in the paper language (sales#
 
   it('en: the A4 invoice summary reads «21%» and «5.2%»', () => {
     const doc = saleToInvoice(SALE, LINES, {}, {}, 'en', undefined, tEn);
-    expect(doc.taxes!.map((x) => x.label)).toEqual(['IVA 21%', 'Surcharge 5.2%']);
+    expect(doc.taxes!.map((x) => x.label)).toEqual(['VAT 21%', 'Surcharge 5.2%']);
   });
 
   it('es: the ticket (screen and thermal) carries the same label', () => {
@@ -56,7 +56,7 @@ describe('the tax rows of the paper write the rate in the paper language (sales#
 
   it('en: the ticket reads «21%» and «5.2%»', () => {
     const r = saleToReceipt(SALE, LINES, {}, {}, 'en', undefined, tEn);
-    expect(r.taxes!.map((x) => x.label)).toEqual(['IVA 21%', 'Surcharge 5.2%']);
+    expect(r.taxes!.map((x) => x.label)).toEqual(['VAT 21%', 'Surcharge 5.2%']);
   });
 
   it('a label the owner set on the rule keeps its words and gets the rate in the language', () => {
@@ -70,8 +70,8 @@ describe('the tax rows of the paper write the rate in the paper language (sales#
     expect(orderToPrebill(lines, {}, { locale: 'es' }).taxes).toEqual([
       { label: `IVA 10${NBSP}%`, base: 1000, amount: 100 },
     ]);
-    expect(orderToPrebill(lines, {}, { locale: 'en' }).taxes).toEqual([
-      { label: 'IVA 10%', base: 1000, amount: 100 },
+    expect(orderToPrebill(lines, {}, { locale: 'en', t: tEn }).taxes).toEqual([
+      { label: 'VAT 10%', base: 1000, amount: 100 },
     ]);
   });
 });
@@ -97,7 +97,7 @@ describe('the printed A4 writes every rate on the sheet one way (sales#477)', ()
   it('en: lines and summary both read «21%» / «5.2%», with no space before «%»', () => {
     const html = paper('en');
     expect(html).toContain('<td class="a">21%</td>');
-    expect(html).toContain('IVA 21%');
+    expect(html).toContain('VAT 21%');
     expect(html).toContain('Surcharge 5.2%');
     expect(html, 'no space between a rate and «%»').not.toMatch(/\d[\s ]%/);
   });

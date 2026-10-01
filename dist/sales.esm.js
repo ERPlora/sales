@@ -3141,7 +3141,7 @@ var RAW_TAX_TYPES = /* @__PURE__ */ new Set(["vat", "surcharge", "sales_tax", "w
 function taxLabel(rate, v3, locale, t7) {
   const r6 = Number(rate);
   const custom = v3?.label && !RAW_TAX_TYPES.has(v3.label) ? v3.label : void 0;
-  const name = custom ?? (v3?.kind === "surcharge" ? t7 ? t7("ui.taxSurcharge") : "RE" : "IVA");
+  const name = custom ?? (v3?.kind === "surcharge" ? t7 ? t7("ui.taxSurcharge") : "RE" : t7 ? t7("ui.taxVat") : "IVA");
   return `${name} ${Number.isFinite(r6) ? formatPercent(r6, locale) : `${rate}%`}`;
 }
 function parseTaxes(tax_breakdown, locale, t7) {
@@ -3358,7 +3358,7 @@ function orderToPrebill(lines, settings = {}, opts = {}, valuation) {
     // The subtotal only exists when there is something to break down: with no tax catalogue the
     // bill comes out as it did, with its total and nothing else.
     ...taxes.length ? { subtotal: base } : {},
-    taxes: taxes.map((x2) => ({ label: taxLabel(String(x2.rate), void 0, opts.locale ?? "es"), base: x2.base, amount: x2.amount })),
+    taxes: taxes.map((x2) => ({ label: taxLabel(String(x2.rate), void 0, opts.locale ?? "es", opts.t), base: x2.base, amount: x2.amount })),
     total: minor(total),
     currency: settings.currency || "\u20AC",
     decimals: hubDecimals(),
@@ -3389,6 +3389,7 @@ function prebillToPrintDocument(lines, settings = {}, opts = {}, valuation) {
   const screen = orderToPrebill(lines, settings, opts, valuation);
   return {
     business_name: screen.business.name,
+    ...opts.locale ? { locale: opts.locale } : {},
     business_address: screen.business.address,
     // The renderer prints this as «Mesa/Cliente»: on a bill it is the table, which is what the
     // waiter needs to know which paper goes where.
@@ -3410,6 +3411,7 @@ function saleToPrintDocument(sale, lines, settings = {}, fiscal = {}, locale = "
   const screen = saleToReceipt(sale, lines, settings, { ...fiscal, pending: false }, locale, fallbackName, t7);
   return {
     business_name: screen.business.name,
+    locale,
     business_address: screen.business.address,
     vat_number: screen.business.tax_id,
     receipt_id: screen.number,
@@ -4975,6 +4977,7 @@ var en_default = {
     voidReasonRequired: "A reason is required to void a sale",
     voidSaleNotFound: "That sale is not in this business",
     taxSurcharge: "Surcharge",
+    taxVat: "VAT",
     screenMenu: "Screen",
     exitFullscreen: "Exit full screen",
     modifiers: "Options",
@@ -5644,6 +5647,7 @@ var es_default = {
     voidReasonRequired: "Hace falta un motivo para anular una venta",
     voidSaleNotFound: "Esa venta no est\xE1 en este negocio",
     taxSurcharge: "RE",
+    taxVat: "IVA",
     screenMenu: "Pantalla",
     exitFullscreen: "Salir de pantalla completa",
     modifiers: "Opciones",
@@ -11583,7 +11587,9 @@ var ErpPosTouch = class extends i3 {
       notice: t5("ui.prebillNotice"),
       fallbackName: t5("ui.docDefaultBusiness"),
       // sales#477 — the bill writes its date and its VAT rates in the hub's language.
-      locale: erplora2().locale
+      locale: erplora2().locale,
+      // sales#483 — and names the tax in it: «VAT 10%», not «IVA 10%», in an English hub.
+      t: (key) => t5(key)
     };
   }
   /** The BILL on screen. It is composed once -- not twice in the template -- because both the
