@@ -53,7 +53,8 @@ describe('the document carries integers in minor units and its scale (sales#188)
     const inv = saleToInvoice({ ...SALE, discount_amount: 50 }, LINES);
     expect(inv.decimals).toBe(2);
     expect(inv.lines[0]).toMatchObject({ unit_price: 180, total: 360 });
-    expect(inv).toMatchObject({ subtotal: 327, discount_total: 50, tax_total: 33, total: 360 });
+    expect(inv).toMatchObject({ subtotal: 327, tax_total: 33, total: 360 });
+    expect(inv.discount_total, 'sales#486: the discount is a note, not a row of the sum').toBeUndefined();
     expect(inv.taxes[0]).toMatchObject({ base: 327, amount: 33 });
   });
 
