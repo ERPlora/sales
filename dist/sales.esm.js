@@ -3254,6 +3254,12 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", f
     promo_note: settings.receipt_marketing_url ? settings.receipt_marketing_text || void 0 : void 0
   };
 }
+function discountNote(amount, currency, t7) {
+  if (!amount) return void 0;
+  const text = formatMinor(minor(amount), { decimals: hubDecimals(), locale: documentLocale(), currency });
+  return (t7 ? t7("ui.docDiscountApplied") : DISCOUNT_APPLIED_EN).replace("{amount}", text);
+}
+var DISCOUNT_APPLIED_EN = "Ticket discount of {amount}, already applied to the amounts above.";
 function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName = DEFAULT_BUSINESS_NAME, t7) {
   const header = splitHeader(settings.receipt_header);
   const invLines = orderChildLines(lines).map((l3) => ({
@@ -3288,7 +3294,10 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", f
     issue_date: formatDateTime(sale.created_at, locale) || "",
     lines: invLines,
     subtotal: minor(sale.subtotal),
-    discount_total: sale.discount_amount ? minor(sale.discount_amount) : void 0,
+    // sales#486 — the ticket discount is ALREADY prorated into the lines and the base (sales#33):
+    // as `discount_total`, `<ok-invoice>` and the A4 paint it «−2,00 €» under a base that already
+    // lacks it, and the summary stops adding up. It travels as an informative note instead.
+    notes: discountNote(sale.discount_amount, settings.currency || "\u20AC", t7),
     taxes: taxes.map((t8) => ({ label: t8.label, rate: t8.rate, base: t8.base, amount: t8.amount })),
     tax_total: minor(sale.tax_amount),
     total: minor(sale.total),
@@ -4736,6 +4745,7 @@ var en_default = {
     docTax: "Tax",
     docTaxBase: "Tax base",
     docDiscountTotal: "Discount",
+    docDiscountApplied: "Ticket discount of {amount}, already applied to the amounts above.",
     docPaymentMethod: "Payment method",
     loadingDocument: "Loading document\u2026",
     issuingReceipt: "Issuing the receipt\u2026",
@@ -5404,6 +5414,7 @@ var es_default = {
     docTax: "Impuesto",
     docTaxBase: "Base imponible",
     docDiscountTotal: "Descuento",
+    docDiscountApplied: "Descuento en el ticket de {amount}, ya aplicado en los importes de arriba.",
     docPaymentMethod: "Forma de pago",
     loadingDocument: "Cargando documento\u2026",
     issuingReceipt: "Emitiendo el tique\u2026",
