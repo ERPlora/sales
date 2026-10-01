@@ -104,8 +104,16 @@ describe('sales#486 — the full invoice summary adds up from top to bottom', ()
     expect(inv.notes).toBe(en.ui.docDiscountApplied.replace('{amount}', money(200)));
   });
 
-  it('the note uses the currency and scale of the document', () => {
-    const inv = saleToInvoice({ ...INCL_SALE, discount_amount: 1500 }, INCL_LINES, { currency: 'KWD' }, {}, 'es', 'Mi negocio', tEs);
-    expect(inv.notes).toContain(formatMinor(1500, { decimals: inv.decimals ?? 2, locale: documentLocale(), currency: 'KWD' }));
+  it('the note uses the currency and scale of the document (KWD, 3 decimals)', () => {
+    const g = globalThis as { erplora?: unknown };
+    const before = g.erplora;
+    g.erplora = { currencyDecimals: 3 }; // what the shell injects for a KWD hub (ADR-0123 §7)
+    try {
+      const inv = saleToInvoice({ ...INCL_SALE, discount_amount: 1500 }, INCL_LINES, { currency: 'KWD' }, {}, 'es', 'Mi negocio', tEs);
+      expect(inv.decimals).toBe(3);
+      expect(inv.notes).toContain(formatMinor(1500, { decimals: 3, locale: documentLocale(), currency: 'KWD' }));
+    } finally {
+      g.erplora = before;
+    }
   });
 });
