@@ -3252,7 +3252,10 @@ function saleToReceipt(sale, lines, settings = {}, fiscal = {}, locale = "es", f
     payment: sale.payment_method_name ? { method: payLabel(sale.payment_method_name, t7), paid: sale.amount_tendered != null ? minor(sale.amount_tendered) : void 0, change: sale.change_due != null ? minor(sale.change_due) : void 0 } : void 0,
     currency: settings.currency || "\u20AC",
     decimals: hubDecimals(),
-    footer: settings.receipt_footer || void 0,
+    // sales#489 — the ticket discount is already inside the lines, the subtotal and the tax, so it
+    // is not a row of the sum: the ticket says it as the invoice's note, above the business footer.
+    // Screen, browser paper and the thermal roll (`saleToPrintDocument`) all read it from here.
+    footer: [discountNote(sale.discount_amount, settings.currency || "\u20AC", t7), settings.receipt_footer].filter(Boolean).join("\n") || void 0,
     qr: fiscal.qr || void 0,
     ...qrLegalTexts(fiscal),
     qr_note: fiscal.qr_note || void 0,
@@ -3449,7 +3452,7 @@ function saleToPrintDocument(sale, lines, settings = {}, fiscal = {}, locale = "
     // hub#2009: the same promotional QR the screen and the browser paper carry (sales#345). The
     // keys only exist when the business configured the URL, so its ticket is unchanged otherwise.
     ...screen.promo_qr ? { promo_qr: screen.promo_qr, ...screen.promo_note ? { promo_note: screen.promo_note } : {} } : {},
-    receipt_footer: [discountNote(sale.discount_amount, screen.currency, t7), screen.footer].filter(Boolean).join("\n") || void 0
+    receipt_footer: screen.footer
   };
 }
 function saleToInvoicePrintDocument(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName, t7) {
