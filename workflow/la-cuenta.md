@@ -17,8 +17,7 @@ Pasos:
 Entra: los departamentos del negocio (SALES-F35) o, si no hay, las categorías de IVA activas de Impuestos.
 Sale: una línea sin artículo de catálogo, con su importe y su categoría de IVA, que se cobra como cualquier otra.
 Si falla: «Añadir» no se puede pulsar sin importe y departamento; sin departamentos ni categorías, «Sin departamentos configurados.». Desde esta hoja, un empleado o cajero sin el permiso de precio libre recibe la petición de PIN del responsable; por otras puertas no (ver Estado).
-Implicados: pendiente
-Pendiente de enlazar: taxes — el tipo de IVA de cada categoría
+Implicados: TAXES-F01
 Pendiente de enlazar: services — un servicio de precio abierto pide su importe al venderse
 QA: qa-hub-restaurant §7.10
 
@@ -115,8 +114,7 @@ Pasos:
 Entra: nada de otros componentes.
 Sale: la línea invitada: no suma dinero ni IVA, pero descuenta stock; la venta guarda el coste de lo invitado para el arqueo.
 Si falla: «No se ha podido guardar ese cambio de la línea. La línea vuelve a estar como estaba.». Una línea ya enviada a cocina no se puede invitar.
-Implicados: pendiente
-Pendiente de enlazar: cash_register — el coste de lo invitado entra en el arqueo
+Implicados: CASH_REGISTER-F13
 Pendiente de enlazar: inventory — lo invitado descuenta stock
 QA: R-11, qa-hub-restaurant §7.10 (discrepa)
 

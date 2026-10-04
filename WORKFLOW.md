@@ -53,7 +53,7 @@ adopta esto, no más:
 - Venta por peso: hoy solo tecleando la cantidad; no hay lector de báscula (SALES-F10).
 - Los artículos tienen que tener categoría de IVA con tipo; si no, salen marcados «Falta el IVA» y no se venden.
 - Si se factura de verdad con VeriFactu, la vía hasta la AEAT tiene que estar lista o el TPV no cobra (SALES-F07).
-- Antes de abrir al público, abre la caja en **Caja**: el TPV no lo comprueba (SALES-F08).
+- Antes de abrir al público, abre la caja en **Caja**. El TPV solo lo exige si el administrador ha guardado los ajustes de Caja con «Activar caja» (entonces sale «Abrir sesión de caja» en lugar del TPV); sin ellos se cobra sin caja y Caja no apunta nada (SALES-F08, CASH_REGISTER-F04).
 
 Configuración inicial, paso a paso:
 
@@ -64,7 +64,8 @@ Configuración inicial, paso a paso:
 4. Haz una venta de prueba con cada medio y comprueba el tique, el QR y la caja (SALES-F01, SALES-F02, SALES-F29).
 
 El día completo de cada negocio, de punta a punta, está en los recorridos `REC_RESTAURANTE` y
-`REC_PELUQUERIA`, y el camino fiscal en `REC_FISCAL` (oleadas 1 y 2).
+`REC_PELUQUERIA` (oleada 2), y el camino fiscal, del cobro a la AEAT, en `REC_FISCAL`
+(`architecture/workflows/cadena-fiscal.md`).
 
 ## Pantallas
 
@@ -216,12 +217,12 @@ flujos de su fila en la misma entrega.
 | Pago mixto que cuadra al céntimo | hecho | F03 |
 | Efectivo prohibido desde 1.000 € (también en un mixto) | parcial: se salta repartiendo la cuenta en varios cobros (sales#502); sin tope de 10.000 € para no residentes (sales#501) | F03 |
 | Tique o factura completa | hecho | F04 |
-| Sin tique por encima del límite de la simplificada | parcial: solo en pantalla; por asistente o API se graba y lo rechaza después VeriFactu | F04 |
+| Sin tique por encima del límite de la simplificada | parcial: solo en pantalla; por asistente o API se graba, Facturación lo emite y VeriFactu lo sella y lo rechaza antes de enviarlo | F04 |
 | Cliente extranjero (país y tipo de documento) | hecho | F04 |
 | Cliente obligatorio pedido al cobrar | hecho | F05 |
 | Doble toque o reintento: una sola venta | hecho | F06 |
 | No cobrar sin vía hasta la AEAT | hecho | F07 |
-| Cobrar solo con caja abierta | no hecho: el TPV no lo comprueba | F08 |
+| Cobrar solo con caja abierta | parcial: lo impone Caja (CASH_REGISTER-F04) solo tras guardar sus ajustes; el rechazo fuera de la pantalla de apertura no menciona la caja | F08 |
 | Precio libre por departamento con su IVA | hecho | F09 |
 | Precio libre solo con permiso o PIN del responsable | parcial: solo por la pantalla; por otras puertas entra con permiso de empleado | F09 |
 | Precio de un servicio decidido por el catálogo | parcial: la pantalla toma el de Servicios (o el pactado en la cita), pero el servidor cobra el que se le manda | F09, F26 |
@@ -252,15 +253,15 @@ flujos de su fila en la misma entrega.
 | Informe por profesional / por camarero | parcial: solo por el asistente o la API | F28 |
 | Reimpresión marcada como duplicado | hecho | F29 |
 | Anular antes de que se mueva el dinero, con motivo | hecho | F30 |
-| Anular deja registro de anulación fiscal | no hecho: la factura simplificada (o la completa que la sustituyó) y su registro siguen vivos | F30 |
+| Anular deja registro de anulación fiscal | no hecho: la factura simplificada (o la completa que la sustituyó) y su registro siguen vivos (INVOICE-F07, REC_FISCAL-F13) | F30 |
 | Anular revierte todo lo que la venta movió | parcial: caja, stock, cliente y mesa sí; bono y cita no; la mesa se libera aunque la cuenta siga abierta | F30 |
 | Devolución total o parcial por el medio original o por otro | hecho | F31 |
 | Devolución que ajusta la caja y el historial del cliente | parcial: caja solo con caja abierta; el cliente no se ajusta | F31 |
 | Devolución por artículos con vuelta de stock | no hecho | F31 |
-| Devolución → rectificativa | hecho (en Facturación) | F31 |
+| Devolución → rectificativa | hecho (en Facturación, INVOICE-F09 e INVOICE-F10; VeriFactu la registra, VERIFACTU-F14); parcial si la venta aún no tenía factura | F31 |
 | Devolver la sesión del bono | parcial (sales#512; imposible tras devolver todo el dinero) | F32 |
 | Reabrir una cuenta cobrada | no hecho, a propósito: se devuelve o se anula | — |
-| Abrir el cajón al cobrar | hecho fuera de este módulo: el hub lo abre en el dispositivo que cobró si Impresión lo tiene activado (también con tarjeta) | F01 |
+| Abrir el cajón al cobrar | hecho fuera de este módulo: el hub lo abre en el dispositivo que cobró si Impresión lo tiene activado, con cualquier forma de pago (PRINTING-F13) | F01, F02 |
 | Abrir el cajón «sin venta» | fuera de este módulo (Caja / Impresión) | — |
 | Dar de alta, editar y desactivar medios de pago en pantalla | parcial: alta solo por el asistente (sin tipo nace como efectivo); editar, desactivar y borrar no existen | F37 |
 | Ajustes del TPV | parcial: en la pestaña solo guarda el administrador; el responsable solo por el asistente | F34 |
@@ -278,7 +279,10 @@ flujos de su fila en la misma entrega.
   reglas de IVA (Impuestos); servicios (Servicios); suplementos (Suplementos); menús (Combos); la cita
   (Citas); el equipo (Personal) y las personas del hub; la factura (Facturación) y el registro fiscal
   (VeriFactu); el ajuste de impresión automática (Impresión); límites y estado fiscal del hub. El
-  precio de una línea se congela al añadirla a la cuenta; el IVA se resuelve al cobrar.
+  precio de una línea se congela al añadirla a la cuenta; el IVA se resuelve al cobrar y la línea de
+  venta guarda categoría, tipo, país, región y regla. La calificación (exenta, no sujeta…) y la
+  familia del impuesto no se guardan: Facturación las resuelve al emitir con las reglas de ese día, y
+  si el tipo cambió entre el cobro y la emisión la factura se rechaza (TAXES-F07, INVOICE-F06).
 - **Mesa y cliente no viven aquí**: Mesas guarda qué cuenta tiene cada mesa y Clientes qué cuenta
   tiene cada cliente. Ventas guarda en la venta el nombre del cliente y su ficha como referencia;
   el NIF, la dirección y el país solo viajan en el aviso de venta cobrada.
@@ -343,7 +347,8 @@ impide la pantalla está como hueco en su flujo.
 - No emite facturas ni habla con la AEAT: eso es de Facturación y VeriFactu.
 - No mueve stock ni cuadra la caja: lo hacen Inventario y Caja al oír la venta.
 - No imprime ni abre el cajón por sí mismo: el hub imprime el tique al oír la venta, según «Imprimir
-  tiquet», y abre el cajón si Impresión lo tiene activado.
+  tiquet», y abre el cajón si Impresión lo tiene activado, con cualquier forma de pago (PRINTING-F07,
+  PRINTING-F13).
 - No habla con el datáfono: la tarjeta se cobra fuera y se confirma aquí.
 - No tiene propinas (pm#100), ni comensal por línea, ni cursos con retención (kitchen#71).
 - No reabre una venta cobrada ni cambia su tipo de documento.
@@ -353,7 +358,7 @@ impide la pantalla está como hueco en su flujo.
 
 Se resuelven con `market-decision`; no las decide el worker.
 
-1. ¿Cobrar con la caja cerrada se bloquea, se avisa o se deja? Hoy se cobra y Caja no lo apunta (F08).
+1. ¿El bloqueo de cobrar con la caja cerrada debe venir armado sin esperar a que se guarden los ajustes de Caja, y el rechazo debe decir que la caja está cerrada? Hoy, sin ajustes guardados se cobra y Caja no lo apunta (F08, CASH_REGISTER-F04).
 2. Anular un tique: ¿debe anular su factura simplificada (o la completa que la sustituyó) y dejar
    registro de anulación en VeriFactu, o la anulación de un tique ya remitido tiene que ser una
    devolución con rectificativa? (F30, L-04)

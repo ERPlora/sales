@@ -17,9 +17,8 @@ Pasos:
 Entra: nada de otros componentes.
 Sale: la fila de ajustes del negocio (una por hub). La leen el TPV, la hoja de cobro, la cuenta impresa y el documento de venta; el servidor aplica al cobrar «Exigir cliente», «Permitir descuentos», el descuento máximo y los precios con IVA incluido.
 Si falla: sin ser administrador los campos salen de solo lectura con «Solo un administrador puede cambiar estos ajustes.» (un responsable sí puede cambiarlos pidiéndoselo al asistente). Un fallo al guardar dice «No se pudieron guardar los ajustes.». Si se apagan a la vez efectivo y tarjeta y no hay otro medio, el TPV vuelve a ofrecer todos los medios activos.
-Implicados: pendiente
+Implicados: PRINTING-F05, PRINTING-F15
 Pendiente de enlazar: hub — la pestaña Ajustes que el shell genera desde el bloque de ajustes del módulo
-Pendiente de enlazar: printing — la cabecera y el pie del tique que el negocio escribió en Impresión y que se copian aquí
 QA: ninguno
 
 ### SALES-F35 Dar de alta y ordenar los departamentos del precio libre
@@ -35,8 +34,7 @@ Pasos:
 Entra: las categorías de IVA de Impuestos.
 Sale: el departamento (nombre, categoría de IVA, posición). Lo ya vendido conserva el nombre y el IVA con que se cobró.
 Si falla: sin categorías de IVA, «No hay categorías de IVA que elegir. Configura antes tus tipos de IVA, en Impuestos.» y no deja añadir. Si no se pueden leer, «No se han podido leer las categorías de IVA.» con «Reintentar». Un departamento que otro ya borró: «Ese departamento ya no está en este negocio. Recarga la lista y vuelve a intentarlo.».
-Implicados: pendiente
-Pendiente de enlazar: taxes — la lista de categorías de IVA activas con su tipo
+Implicados: TAXES-F01
 QA: ninguno
 
 ### SALES-F36 Preparar las notas rápidas

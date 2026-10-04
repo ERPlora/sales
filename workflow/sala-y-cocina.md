@@ -60,8 +60,7 @@ Pasos:
 Entra: la cuenta abierta; el total que calcula el servidor (si hay líneas marcadas o un bono, el de la pantalla).
 Sale: un papel sin número fiscal ni QR; no consume numeración ni crea venta.
 Si falla: «No se pudo imprimir la cuenta» (con el motivo si lo hay); queda en la cola del hub si no hay impresora conectada.
-Implicados: pendiente
-Pendiente de enlazar: printing — imprimir el documento «cuenta» por la impresora de tiques
+Implicados: PRINTING-F09
 QA: R-08, qa-hub-restaurant §7.10
 
 ### SALES-F22 Cobrar solo una parte de la cuenta
