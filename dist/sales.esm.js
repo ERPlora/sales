@@ -13402,13 +13402,13 @@ var ErpPosTouch = class extends i3 {
                     ${this.payMethods.map((m4) => {
       const marca = brandSvgFor(m4.type, m4.name);
       const nombre = payMethodDisplayName(m4, t5);
-      const sinEfectivo = cashMethodUnavailable(this.authoritative?.cash_limit, this.payable, m4);
+      const cashUnavailable = cashMethodUnavailable(this.authoritative?.cash_limit, this.payable, m4);
       return b2`
                       <button data-testid=${`pos-pay-method-${m4.id}`} class="pm-btn" aria-pressed=${this.payMethod?.id === m4.id ? "true" : "false"}
-                              aria-disabled=${sinEfectivo ? "true" : A}
-                              title=${sinEfectivo ? t5("ui.cashLimitUnavailable") : nombre}
+                              aria-disabled=${cashUnavailable ? "true" : A}
+                              title=${cashUnavailable ? t5("ui.cashLimitUnavailable") : nombre}
                               @click=${() => {
-        if (sinEfectivo) {
+        if (cashUnavailable) {
           this.notifyShell(t5("ui.cashLimitReason", { amount: this.money(this.authoritative?.cash_limit ?? 0) }));
           return;
         }

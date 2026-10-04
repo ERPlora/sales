@@ -6201,13 +6201,13 @@ export class ErpPosTouch extends LitElement {
                       const nombre = payMethodDisplayName(m, t);
                       // sales#498 — cash over the legal limit stays visible but unavailable:
                       // aria-disabled (never `disabled`, sales#58), and the tap says why.
-                      const sinEfectivo = cashMethodUnavailable(this.authoritative?.cash_limit, this.payable, m);
+                      const cashUnavailable = cashMethodUnavailable(this.authoritative?.cash_limit, this.payable, m);
                       return html`
                       <button data-testid=${`pos-pay-method-${m.id}`} class="pm-btn" aria-pressed=${this.payMethod?.id === m.id ? 'true' : 'false'}
-                              aria-disabled=${sinEfectivo ? 'true' : nothing}
-                              title=${sinEfectivo ? t('ui.cashLimitUnavailable') : nombre}
+                              aria-disabled=${cashUnavailable ? 'true' : nothing}
+                              title=${cashUnavailable ? t('ui.cashLimitUnavailable') : nombre}
                               @click=${() => {
-                                if (sinEfectivo) {
+                                if (cashUnavailable) {
                                   this.notifyShell(t('ui.cashLimitReason', { amount: this.money(this.authoritative?.cash_limit ?? 0) }));
                                   return;
                                 }
