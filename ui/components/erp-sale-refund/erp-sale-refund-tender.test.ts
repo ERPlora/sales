@@ -546,6 +546,20 @@ describe('sales#462: reopened over a doubt that WAS recorded', () => {
       expect(noMoneyLeft(el)).toBeTruthy();
     });
 
+    it('still shows the warning a filler wants read before giving back, and asks no destination of a spent leg', async () => {
+      openOverDoubt();
+      const el = await mount();
+      fillersOf(el)[0].dispatchEvent(new CustomEvent('erp:tender-refund-armed', {
+        detail: { lineRef: 'item-1', warning: 'El bono caducó el 31/07' }, bubbles: true, composed: true,
+      }));
+      await settle(el);
+      // The give-back is the only button left here, so this is where its warning has to be read.
+      expect(el.shadowRoot?.querySelector('[data-testid="refund-tender-notice-item-1"]')?.textContent)
+        .toContain('El bono caducó el 31/07');
+      // A leg with nothing left sends no money anywhere: there is no destination to choose.
+      expect(el.shadowRoot?.querySelector('ion-select.refund-destination')).toBeNull();
+    });
+
     it('one cent still refundable keeps the whole money form, button included', async () => {
       install({ legs: [{ ...LEGS[0], refunded: 1799, remaining: 1 }] });
       const el = await mount();
