@@ -19,9 +19,8 @@ Pasos:
 Entra: los artículos y precios de Inventario y Servicios; los tipos de IVA de Impuestos; los ajustes del TPV.
 Sale: la venta cobrada e inmutable, con número `AAAAMMDD-NNNN` del día del negocio, sus líneas, su pago y su desglose de IVA (avisa: sale.completed). Si venía de una cuenta, la cuenta se cierra (avisa: order.completed). Caja apunta el cobro en la caja abierta, Inventario descuenta stock, Clientes suma la compra, Facturación emite la factura simplificada (y de ahí VeriFactu), Mesas apunta lo cobrado, cierra la sesión y libera la mesa, y Servicios gasta las sesiones de bono retenidas. Cocina retira del KDS todas las rondas de la cuenta: las listas pasan a servidas y las pendientes o en preparación, a canceladas (SALES-F20). El hub, en el dispositivo que cobró, imprime el tique según «Imprimir tiquet» y abre el cajón si Impresión lo tiene activado, con cualquier forma de pago (PRINTING-F07, PRINTING-F13). Cada línea de la venta guarda la categoría, el tipo, el país, la región y la regla de Impuestos con que se cobró; la calificación (exenta, no sujeta…) y la familia del impuesto no: las vuelve a resolver Facturación al emitir, con las reglas vigentes ese día (TAXES-F07).
 Si falla: sin importe entregado el botón no cobra y se lee «Marca en el teclado el importe entregado»; corto, «Lo entregado no cubre el total». Un artículo sin IVA configurado sale con la marca «Falta el IVA» y al tocarlo dice «No se puede vender: sin categoría fiscal. Falta configurar el IVA.» (o «…su categoría fiscal no tiene tipo…»). Un rechazo al cobrar se pinta en la hoja con su frase (p. ej. «Un producto del tique ya no está en el catálogo. Quita la línea y vuelve a añadirla.») y la cuenta sigue intacta. Un empleado sin permiso de cobro recibe la petición de PIN de un responsable. Con la caja cerrada y el bloqueo de Caja armado, el cobro se rechaza (SALES-F08). Si Facturación no puede emitir el tique, la venta queda cobrada igual: el hub reintenta su factura y, si sigue fallando, la deja en «Eventos caídos» (INVOICE-F06); mientras tanto el documento sale sin número de factura ni QR. Si la impresora de red del dispositivo está apagada o sin papel, el tique se pierde sin ningún aviso (PRINTING-F07): se reimprime desde **Ventas** (SALES-F29).
-Implicados: CASH_REGISTER-F11, CASH_REGISTER-F13, INVOICE-F01, INVOICE-F06, PRINTING-F06, PRINTING-F07, PRINTING-F13, TAXES-F04, TAXES-F06, TAXES-F07, TAXES-F08, TAXES-F11, TAXES-F18, TAXES-F19, REC_FISCAL-F02, REC_FISCAL-F07
+Implicados: CASH_REGISTER-F11, CASH_REGISTER-F13, CUSTOMERS-F20, INVOICE-F01, INVOICE-F06, PRINTING-F06, PRINTING-F07, PRINTING-F13, TAXES-F04, TAXES-F06, TAXES-F07, TAXES-F08, TAXES-F11, TAXES-F18, TAXES-F19, REC_FISCAL-F02, REC_FISCAL-F07
 Pendiente de enlazar: inventory — descontar stock de lo vendido
-Pendiente de enlazar: customers — sumar la compra al historial del cliente
 Pendiente de enlazar: hub — el shell imprime el tique y abre el cajón al oír la venta, solo en el dispositivo que cobró
 Pendiente de enlazar: tables — apuntar lo cobrado y liberar la mesa al cobrar la cuenta entera
 Pendiente de enlazar: kitchen — al cobrar la cuenta entera, cerrar sus rondas (listas a servidas, pendientes y en preparación a canceladas)
@@ -72,8 +71,7 @@ Pasos:
 Entra: el cliente asignado (Clientes) y el límite de la simplificada que da el hub.
 Sale: la venta con su tipo de documento fijado al cobrar, que no se puede cambiar después; el nombre, NIF, dirección, país y tipo de documento del cliente viajan con el aviso de venta cobrada para la factura.
 Si falla: sin los tres datos el botón dice «Faltan los datos del cliente» y no cobra; una factura sin esos datos la rechaza también el servidor por cualquier vía: «Una factura necesita el nombre, el NIF y la dirección del cliente. Rellénalos o cóbrala como tique.». El tique por encima del límite, en cambio, solo lo impide la pantalla.
-Implicados: INVOICE-F01, INVOICE-F02, REC_FISCAL-F03
-Pendiente de enlazar: customers — el cliente asignado trae su nombre, NIF, dirección y país
+Implicados: CUSTOMERS-F17, INVOICE-F01, INVOICE-F02, REC_FISCAL-F03
 QA: L-01 (discrepa), L-02, R-09, B-06
 
 ### SALES-F05 Cobrar cuando el negocio exige cliente
@@ -88,8 +86,7 @@ Pasos:
 Entra: el cliente que elige el buscador de Clientes.
 Sale: nada propio hasta cobrar; la venta lleva el cliente.
 Si falla: sin la app Clientes, «Este negocio exige un cliente en cada venta y la aplicación Clientes no está instalada: esta venta no se puede cerrar desde aquí.». El servidor rechaza cualquier cobro sin cliente: «Este negocio exige un cliente en cada venta.».
-Implicados: pendiente
-Pendiente de enlazar: customers — buscar, elegir o dar de alta el cliente desde el TPV
+Implicados: CUSTOMERS-F17, CUSTOMERS-F18
 QA: ninguno
 
 ### SALES-F06 Recuperar un cobro que se quedó sin respuesta

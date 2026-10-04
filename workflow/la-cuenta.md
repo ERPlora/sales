@@ -129,10 +129,9 @@ Pasos:
 3. Las líneas que se añadan a partir de ahí quedan selladas con esa persona. Para corregir una línea ya puesta, toca el nombre que sale debajo de ella («De quién es esta línea») y elige otra persona o «El profesional de la cuenta».
 4. Al cobrar, el chip vuelve a «yo».
 Entra: las personas del hub y el equipo de Personal.
-Sale: la venta y cada línea atribuidas a esa persona (para el cierre por profesional y la comisión); la comanda de cocina lleva su usuario.
+Sale: la venta y cada línea atribuidas a esa persona (para el cierre por profesional y la comisión, que hoy no compone nadie: STAFF-F21); la comanda de cocina lleva su usuario. Una profesional con cuenta del hub vinculada sale una sola vez, bajo el identificador de su ficha (STAFF-F03); una ficha Inactivo o dada de baja no se ofrece (su cuenta del hub, si la tiene, sigue saliendo como cualquier persona que entra en la app).
 Si falla: «No se ha podido cargar el equipo. La venta se sigue atribuyendo a quien tenga la sesión.»; «No se ha podido mover la línea a otro profesional. Se queda con el que tenía.». Una línea enviada a cocina no se reasigna.
-Implicados: pendiente
-Pendiente de enlazar: staff — el equipo que se ofrece y la comisión por profesional
+Implicados: STAFF-F03, STAFF-F09, STAFF-F21
 QA: B-04, B-07, R-10
 
 ### SALES-F17 Aparcar una cuenta y recuperarla
@@ -149,7 +148,7 @@ Pasos:
 Entra: nada de otros componentes.
 Sale: la cuenta sigue abierta con su título; aparcar nunca la anula. Con un cliente asignado, Clientes mantiene el vínculo.
 Si falla: si el hub rechaza el título, el diálogo sigue abierto con el motivo y «No se ha podido aparcar la cuenta. Sigue en pantalla.». Con líneas sin enviar a cocina no se cambia de cuenta: «Hay productos en la comanda actual sin enviar (N). Envíalos o elimínalos antes de cambiar de cuenta.».
-Implicados: pendiente
+Implicados: CUSTOMERS-F19
 Pendiente de enlazar: tables — soltar la mesa al aparcar una cuenta que la tenía
 QA: qa-hub-restaurant §7.06
 
