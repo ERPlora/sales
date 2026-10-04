@@ -604,6 +604,58 @@ def test_the_cap_written_at_refund_time_counts_only_live_rows_of_this_hub() -> N
         f"SELECT status FROM sales_sale WHERE id='sale-tenant' AND hub_id='{HUB}'"), "refunded")
 
 
+def test_the_write_time_guards_refuse_dead_rows() -> None:
+    print("\n5c · the write-time guards (sales#506) never refund a dead sale or a dead leg")
+    for sale_id, number, total, deleted in (
+        ("sale-gone", "20260824-0507", 500, 1),
+        ("sale-dead-leg", "20260824-0508", 500, 0),
+        ("sale-free", "20260824-0509", 0, 0),
+    ):
+        psql(["-c", bind(
+            "INSERT INTO sales_sale (id, hub_id, sale_number, status, total, is_deleted,"
+            " created_at, updated_at) VALUES (:id, :hub_id, :number, 'completed', :total,"
+            " :deleted, :now, :now)",
+            {"id": sale_id, "hub_id": HUB, "number": number, "total": total,
+             "deleted": deleted, "now": NOW},
+        )], db=DB)
+
+    # A sale deleted while the refund was being confirmed takes no refund head.
+    run_command("sales._insert_refund", {
+        "refund_id": "ref-gone", "sale_id": "sale-gone", "total": 500,
+        "reason": "el cliente devuelve el producto", "note": "", "idempotency_key": "",
+    })
+    check("no refund head on a deleted sale", qi(
+        "SELECT COUNT(*) FROM sales_sale_refund WHERE id='ref-gone'"), 0)
+
+    # A charge leg voided (soft-deleted) is no longer money that can come back.
+    ok, err = run_command("sales._insert_payment", {
+        "payment_id": "pay-dead-leg", "sale_id": "sale-dead-leg", "sort_order": 0,
+        "payment_method_id": "pm-card", "payment_method_name": "Tarjeta",
+        "payment_method_type": "card", "amount": 500, "amount_tendered": 500,
+        "change_due": 0, "reference": "",
+    })
+    check("seed leg `pay-dead-leg`", (ok, err), (True, ""))
+    psql(["-c", "UPDATE sales_sale_payment SET is_deleted = 1 WHERE id = 'pay-dead-leg'"], db=DB)
+    ok, err = run_command("sales._insert_refund", {
+        "refund_id": "ref-dead-leg", "sale_id": "sale-dead-leg", "total": 500,
+        "reason": "el cliente devuelve el producto", "note": "", "idempotency_key": "",
+    })
+    check("the head of a live sale runs", (ok, err), (True, ""))
+    run_command("sales._insert_refund_payment", {
+        "refund_payment_id": "ref-dead-leg-leg", "refund_id": "ref-dead-leg",
+        "sale_id": "sale-dead-leg", "payment_id": "pay-dead-leg", "payment_method_id": "pm-card",
+        "payment_method_name": "Tarjeta", "payment_method_type": "card",
+        "amount": 500, "sort_order": 0,
+    })
+    check("no refund leg out of a deleted charge leg", qi(
+        "SELECT COUNT(*) FROM sales_sale_refund_payment WHERE id='ref-dead-leg-leg'"), 0)
+
+    # A 0,00 € sale has no last cent: «nothing refunded >= nothing charged» must not close it.
+    run_command("sales._mark_refunded", {"sale_id": "sale-free"})
+    check("a 0,00 € sale is never marked refunded", q(
+        f"SELECT status FROM sales_sale WHERE id='sale-free' AND hub_id='{HUB}'"), "completed")
+
+
 # ── 6 · idempotencia: `refund_ref` es ESTABLE ────────────────────────────────────────────
 
 
@@ -728,6 +780,7 @@ def main() -> int:
         test_a_dead_payment_method_is_not_eligible_but_the_money_is_still_refundable()
         test_a_neighbour_hub_never_shows_up()
         test_the_cap_written_at_refund_time_counts_only_live_rows_of_this_hub()
+        test_the_write_time_guards_refuse_dead_rows()
         test_the_same_key_can_never_write_a_second_refund()
         test_the_probe_answers_only_for_this_hub()
         test_a_partial_refund_retried_under_its_key_is_found_not_rewritten()
