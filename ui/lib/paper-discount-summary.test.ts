@@ -9,7 +9,8 @@
 // carries (`ui.docDiscountApplied`), at the foot, above the business's own footer.
 import { describe, expect, it } from 'vitest';
 import { saleToInvoicePrintDocument, saleToPrintDocument, type PrintDocument } from './print-document.js';
-import type { SaleLineRow, SaleRow } from './document-mappers.js';
+import { saleToReceipt, type SaleLineRow, type SaleRow } from './document-mappers.js';
+import { receiptToPrintableHtml } from './receipt-html.js';
 import { documentLocale, formatMinor } from '@erplora/outfitkit/ok-money';
 import es from '../../locales/es.json';
 
@@ -64,6 +65,12 @@ describe('sales#489 — the thermal paper summary adds up from top to bottom', (
       });
     }
   }
+
+  it('the ticket on screen and its browser paper carry the same note as the roll', () => {
+    const screen = saleToReceipt(INCL_SALE, INCL_LINES, SETTINGS, {}, 'es', 'Mi negocio', tEs);
+    expect(screen.footer).toBe(`${NOTE}\n${SETTINGS.receipt_footer}`);
+    expect(receiptToPrintableHtml(screen)).toContain(NOTE);
+  });
 
   it('a sale without a discount keeps its footer byte for byte, with no note', () => {
     const sale = { ...INCL_SALE, discount_amount: 0 };

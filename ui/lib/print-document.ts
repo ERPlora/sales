@@ -20,7 +20,7 @@
 //
 // The field names are the wire contract of `escpos::render_receipt` / `render_prebill`. Changing
 // one here without changing it there prints a document with a missing field, silently.
-import { orderToPrebill, saleToReceipt, saleToInvoice, claimPrintFields, paperNote, discountNote } from './document-mappers.js';
+import { orderToPrebill, saleToReceipt, saleToInvoice, claimPrintFields, paperNote } from './document-mappers.js';
 import { modifierIdentity, modifierLabel } from './paper-modifiers.js';
 import { comboIdentity, componentLabel, type PrintedCombo } from './paper-combos.js';
 import type { PrebillLine, PrebillValuation, SaleRow, SaleLineRow, SaleSettings, FiscalData } from './document-mappers.js';
@@ -265,7 +265,7 @@ export function saleToPrintDocument(
     // hub#2009: the same promotional QR the screen and the browser paper carry (sales#345). The
     // keys only exist when the business configured the URL, so its ticket is unchanged otherwise.
     ...(screen.promo_qr ? { promo_qr: screen.promo_qr, ...(screen.promo_note ? { promo_note: screen.promo_note } : {}) } : {}),
-    receipt_footer: [discountNote(sale.discount_amount, screen.currency, t), screen.footer].filter(Boolean).join('\n') || undefined,
+    receipt_footer: screen.footer,
   };
 }
 

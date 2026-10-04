@@ -621,7 +621,11 @@ export function saleToReceipt(
       : undefined,
     currency: settings.currency || '€',
     decimals: hubDecimals(),
-    footer: settings.receipt_footer || undefined,
+    // sales#489 — the ticket discount is already inside the lines, the subtotal and the tax, so it
+    // is not a row of the sum: the ticket says it as the invoice's note, above the business footer.
+    // Screen, browser paper and the thermal roll (`saleToPrintDocument`) all read it from here.
+    footer: [discountNote(sale.discount_amount, settings.currency || '€', t), settings.receipt_footer]
+      .filter(Boolean).join('\n') || undefined,
     qr: fiscal.qr || undefined,
     ...qrLegalTexts(fiscal),
     qr_note: fiscal.qr_note || undefined,
@@ -633,7 +637,7 @@ export function saleToReceipt(
 
 /** sales#486 — «Ticket discount of 2,00 € already applied…»: the discount the cashier gave, as it
  *  was asked for (sales#295), outside the column that adds up. Nothing without a discount. */
-export function discountNote(amount: number | undefined, currency: string, t?: Translate): string | undefined {
+function discountNote(amount: number | undefined, currency: string, t?: Translate): string | undefined {
   if (!amount) return undefined;
   const text = formatMinor(minor(amount), { decimals: hubDecimals(), locale: documentLocale(), currency });
   return (t ? t('ui.docDiscountApplied') : DISCOUNT_APPLIED_EN).replace('{amount}', text);
