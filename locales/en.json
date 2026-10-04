@@ -467,6 +467,7 @@
     "refundNeedsDestination": "{method}: choose where this money goes back.",
     "refundOverCap": "{method}: {amount} is more than the {remaining} still refundable.",
     "refundNothingToReturn": "Type how much goes back.",
+    "refundNoMoneyLeft": "There is no money left to refund on this sale.",
     "refundReasonLabel": "Reason",
     "refundReasonRequired": "A refund needs a reason.",
     "refundReasonPlaceholder": "Why the money goes back",

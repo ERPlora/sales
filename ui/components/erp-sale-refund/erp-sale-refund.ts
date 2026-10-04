@@ -732,7 +732,7 @@ export class ErpSaleRefund extends LitElement {
       <ok-inline-feedback class="rt-notice" data-testid=${`refund-tender-notice-${ref}`} tone="warning" icon="alert-circle-outline">${n}</ok-inline-feedback>`);
   }
 
-  private renderLeg(leg: RefundLeg): unknown {
+  private renderLeg(leg: RefundLeg, moneyLeft: boolean): unknown {
     const t = (k: string, p?: Record<string, unknown>): string => erplora().t(CATALOG, k, p);
     const money = (c: number): string => erplora().formatMoney(c);
     const entry = this.draft[leg.payment_id];
@@ -740,7 +740,7 @@ export class ErpSaleRefund extends LitElement {
     return html`<div class="leg" data-testid=${`refund-leg-${leg.payment_id}`} data-leg=${leg.payment_id}>
       <div class="leg-head">
         <span class="leg-name">${this.legName(leg)}</span>
-        <ion-input
+        ${moneyLeft ? html`<ion-input
           class="refund-amount"
           data-testid=${`refund-amount-${leg.payment_id}`}
           type="text"
@@ -751,7 +751,7 @@ export class ErpSaleRefund extends LitElement {
           label-placement="stacked"
           .value=${formatAmountInput(entry?.amount ?? 0, erplora().locale, hubDecimals())}
           @ionInput=${(e: CustomEvent<{ value?: string }>) => this.setAmount(leg.payment_id, e.detail?.value ?? '')}
-        ></ion-input>
+        ></ion-input>` : nothing}
       </div>
       <div class="leg-figures">
         <span>${t('ui.refundLegCharged')}: ${money(leg.charged)}</span>
@@ -799,6 +799,22 @@ export class ErpSaleRefund extends LitElement {
       return html`${this.renderRecoveredOnOpen()}<ok-inline-feedback data-testid="refund-nothing" tone="warning" icon="information-circle-outline">${t('ui.refundNothing')}</ok-inline-feedback>`;
     }
 
+    // sales#492 - every leg is at its cap: the money already went back entirely (what is left, if
+    // anything, was paid another way). The money half then asks for nothing - no amount, no reason,
+    // no «Refund 0,00 €» and no red «type how much goes back» - and says so in a neutral tone; the
+    // give-back below, when offered, is the only action. As in Square or Shopify.
+    if (refundableTotal(this.legs) <= 0) {
+      return html`<div class="refund-body" data-testid="refund-form">
+        <h3>${t('ui.refundTitle', { number: this.sale?.sale_number ?? '' })}</h3>
+        ${this.renderRecoveredOnOpen()}
+        ${this.renderTenderPending()}
+        <div class="legs">${this.legs.map((l) => this.renderLeg(l, false))}</div>
+        <ok-inline-feedback data-testid="refund-no-money-left" tone="info" icon="information-circle-outline">${t('ui.refundNoMoneyLeft')}</ok-inline-feedback>
+        ${this.renderTenderLines()}
+        ${this.renderTenderNotices()}
+      </div>`;
+    }
+
     const total = draftTotal(this.draft);
     const block = this.blockText;
     return html`<div class="refund-body" data-testid="refund-form">
@@ -806,7 +822,7 @@ export class ErpSaleRefund extends LitElement {
       ${this.renderRecoveredOnOpen()}
       ${this.renderTenderPending()}
       <p class="hint">${t('ui.refundExplain')}</p>
-      <div class="legs">${this.legs.map((l) => this.renderLeg(l))}</div>
+      <div class="legs">${this.legs.map((l) => this.renderLeg(l, true))}</div>
       ${this.renderTenderLines()}
       <ion-button class="refund-propose" data-testid="refund-propose-all" size="small" fill="clear" @click=${() => this.proposeAll()}>
         ${t('ui.refundProposeAll')}

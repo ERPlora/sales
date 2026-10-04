@@ -125,6 +125,8 @@ const COVERED: Record<string, { prefix: string; contract: string[]; tables?: str
       // sales#462: reopened over a recovered document, what was not paid in money.
       'refund-tender-commit',
       'refund-tender-pending',
+      // sales#492: the money already went back entirely - said instead of asking for an amount.
+      'refund-no-money-left',
     ],
   },
   // The till itself (`/m/sales/pos`): the screen a cashier spends the day on, and the one the QA

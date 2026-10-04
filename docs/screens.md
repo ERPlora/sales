@@ -66,6 +66,12 @@ give-back failed, or if the screen is closed before it has learnt whether the se
 It stops being offered once it went back, once the operator un-ticks the line and closes, once the
 line says its session already came back, or when there is no line paid another way.
 
+When the money of the sale has **already gone back entirely** (sales#492), the money half asks for
+nothing: no amount boxes, no reason, no «Refund 0,00 €» button and no «Type how much goes back.»
+warning. Each payment still shows «Already given back in full.» and the screen says «There is no money
+left to refund on this sale.»; the only action left, when there is one, is **Give back what was
+paid another way**.
+
 Closing the refund screen, for whatever reason, reloads the sales list, so the row shows the
 refund if it went through.
 
