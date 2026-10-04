@@ -4676,6 +4676,7 @@ var en_default = {
     "sales.payment_method_not_available": "That payment method is not available in this business.",
     "sales.payment_method_required": "Pick a payment method before charging.",
     "sales.payments_do_not_match_total": "The split payments do not add up to the total of the sale. Check the amounts and charge again.",
+    "sales.cash_limit_exceeded": "The law does not allow cash payments for sales of 1,000 \u20AC or more. Charge it by card, Bizum or bank transfer.",
     "sales.product_not_available": "A product on the ticket is no longer in the catalogue. Remove the line and add it again.",
     "sales.quantity_not_positive": "A line has no quantity: set at least one before charging.",
     "sales.quantity_off_grid": "The quantity does not fit the product's step.",
@@ -5002,6 +5003,10 @@ var en_default = {
     editTender: "Edit {name}, {amount}",
     removeTender: "Remove {name}, {amount}",
     errorPaymentsMismatch: "The total changed while the payment was being split. Check the amounts and charge again.",
+    cashLimitReason: "The law does not allow cash for sales of {amount} or more. Charge it by card or Bizum.",
+    cashLimitShort: "Cash not allowed",
+    cashLimitUnavailable: "Not allowed for this amount",
+    errorCashLimit: "The law does not allow cash for a sale this large. Choose card or Bizum and charge again.",
     errorQuantityNotPositive: "A line has no quantity: set at least one before charging",
     actionRefund: "Refund",
     statusRefunded: "Refunded",
@@ -5347,6 +5352,7 @@ var es_default = {
     "sales.payment_method_not_available": "Ese medio de pago no est\xE1 disponible en este negocio.",
     "sales.payment_method_required": "Elige un medio de pago antes de cobrar.",
     "sales.payments_do_not_match_total": "Los pagos repartidos no suman el total de la venta. Revisa los importes y vuelve a cobrar.",
+    "sales.cash_limit_exceeded": "La ley no permite cobrar en efectivo ventas de 1.000 \u20AC o m\xE1s. C\xF3brala con tarjeta, Bizum o transferencia.",
     "sales.product_not_available": "Un producto del tique ya no est\xE1 en el cat\xE1logo. Quita la l\xEDnea y vuelve a a\xF1adirla.",
     "sales.quantity_not_positive": "Una l\xEDnea no tiene cantidad: pon al menos una antes de cobrar.",
     "sales.quantity_off_grid": "La cantidad no encaja con el escal\xF3n del producto.",
@@ -5673,6 +5679,10 @@ var es_default = {
     editTender: "Editar {name}, {amount}",
     removeTender: "Quitar {name}, {amount}",
     errorPaymentsMismatch: "El total ha cambiado mientras se repart\xEDa el cobro. Revisa los importes y vuelve a cobrar.",
+    cashLimitReason: "La ley no permite cobrar en efectivo ventas de {amount} o m\xE1s. C\xF3brala con tarjeta o Bizum.",
+    cashLimitShort: "Efectivo no permitido",
+    cashLimitUnavailable: "No permitido para este importe",
+    errorCashLimit: "La ley no permite cobrar en efectivo una venta de este importe. Elige tarjeta o Bizum y vuelve a cobrar.",
     errorQuantityNotPositive: "Una l\xEDnea no tiene cantidad: pon al menos una antes de cobrar",
     actionRefund: "Devolver",
     statusRefunded: "Devuelta",
@@ -8055,6 +8065,20 @@ function previewSignature(shape) {
   ]);
 }
 
+// ui/lib/cash-limit.ts
+var isCash = (method) => (method?.type ?? "").trim().toLowerCase() === "cash";
+function cashOverLimit(limit, payable) {
+  return typeof limit === "number" && payable >= limit;
+}
+function cashBlocksCharge(state) {
+  if (!cashOverLimit(state.limit, state.payable)) return false;
+  if (state.tenders.some((leg) => isCash(leg.method))) return true;
+  return !state.splitting && !state.tenders.length && isCash(state.method);
+}
+function cashMethodUnavailable(limit, payable, method) {
+  return isCash(method) && cashOverLimit(limit, payable);
+}
+
 // ui/lib/pos-open-price.ts
 function buildOpenPriceLine(input) {
   const name = input.name.trim();
@@ -8106,6 +8130,9 @@ var MESSAGES = {
   // server). The sale is refused, never absorbed, so the cashier has to be told what happened and
   // that the legs are still on screen to be fixed — not shown a raw domain code.
   "sales.payments_do_not_match_total": "ui.errorPaymentsMismatch",
+  // sales#498 — cash over the legal limit (Ley 7/2012 art. 7). The till blocks it before the tap
+  // from the preview's `cash_limit`; this is the net for a hub that does not publish it yet.
+  "sales.cash_limit_exceeded": "ui.errorCashLimit",
   // sales#21 — no tax rule / no tax catalogue: the sale is refused, never priced by the browser.
   "sales.no_tax_rule": "ui.errorNoTaxRule",
   "sales.tax_catalog_unavailable": "ui.errorTaxCatalogUnavailable",
@@ -9054,6 +9081,8 @@ var ErpPosTouch = class extends i3 {
     .pm-btn ion-icon { font-size:1.3rem; }
     .pm-btn[aria-pressed=true] { border-color:var(--accent); color:var(--accent);
       box-shadow:var(--ok-ring-accent, inset 0 0 0 1px var(--accent)); }
+    /* sales#498 — cash over the legal limit: still there, visibly not on offer. */
+    .pm-btn[aria-disabled=true] { opacity:.45; cursor:not-allowed; }
     .pm-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     /* Logo de marca (Bizum): es un wordmark ANCHO, no un glifo cuadrado como los Ionicons, así que
        se acota a la altura del icono y se deja crecer a lo ancho sin romper el botón. */
@@ -12107,6 +12136,16 @@ var ErpPosTouch = class extends i3 {
     if (this.chargeBlocked) {
       return { short: t5("ui.limitChargeBlocked"), reason: "" };
     }
+    const cashLimit = this.authoritative?.cash_limit;
+    if (cashBlocksCharge({
+      limit: cashLimit,
+      payable: this.payable,
+      method: this.payMethod,
+      tenders: this.tenders,
+      splitting: this.splitting
+    })) {
+      return { short: t5("ui.cashLimitShort"), reason: t5("ui.cashLimitReason", { amount: this.money(cashLimit ?? 0) }) };
+    }
     const split = chargeBlock(this.payable, this.tenders);
     if (split) {
       const amount = this.money(split.remaining);
@@ -13365,10 +13404,16 @@ var ErpPosTouch = class extends i3 {
                     ${this.payMethods.map((m4) => {
       const marca = brandSvgFor(m4.type, m4.name);
       const nombre = payMethodDisplayName(m4, t5);
+      const cashUnavailable = cashMethodUnavailable(this.authoritative?.cash_limit, this.payable, m4);
       return b2`
                       <button data-testid=${`pos-pay-method-${m4.id}`} class="pm-btn" aria-pressed=${this.payMethod?.id === m4.id ? "true" : "false"}
-                              title=${nombre}
+                              aria-disabled=${cashUnavailable ? "true" : A}
+                              title=${cashUnavailable ? t5("ui.cashLimitUnavailable") : nombre}
                               @click=${() => {
+        if (cashUnavailable) {
+          this.notifyShell(t5("ui.cashLimitReason", { amount: this.money(this.authoritative?.cash_limit ?? 0) }));
+          return;
+        }
         this.payMethod = m4;
         if (!needsTendered(m4) && !this.splitting) this.tendered = "";
       }}>

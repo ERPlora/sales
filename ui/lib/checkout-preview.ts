@@ -50,6 +50,9 @@ export interface CheckoutPreview {
   lines: CheckoutPreviewLine[];
   /** By rate key: `{ "21.00": { base, tax, kind, label? } }`. */
   tax_breakdown: Record<string, { base: number; tax: number; kind?: string; label?: string }>;
+  /** sales#498 — the legal cash limit the charge enforces, in cents. `null`/absent = none known:
+   *  the hub's country sets none, or the hub predates the field (the server still refuses). */
+  cash_limit?: number | null;
 }
 
 /** What the preview (and the charge) needs to know about the ticket on screen. */

@@ -57,6 +57,9 @@ const MESSAGES: Record<string, string> = {
   // server). The sale is refused, never absorbed, so the cashier has to be told what happened and
   // that the legs are still on screen to be fixed — not shown a raw domain code.
   'sales.payments_do_not_match_total': 'ui.errorPaymentsMismatch',
+  // sales#498 — cash over the legal limit (Ley 7/2012 art. 7). The till blocks it before the tap
+  // from the preview's `cash_limit`; this is the net for a hub that does not publish it yet.
+  'sales.cash_limit_exceeded': 'ui.errorCashLimit',
   // sales#21 — no tax rule / no tax catalogue: the sale is refused, never priced by the browser.
   'sales.no_tax_rule': 'ui.errorNoTaxRule',
   'sales.tax_catalog_unavailable': 'ui.errorTaxCatalogUnavailable',
