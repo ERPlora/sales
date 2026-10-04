@@ -352,11 +352,60 @@ def test_the_commands_run_the_way_the_runtime_runs_them() -> None:
     check("y la auditoría llega escrita", q(
         f"SELECT created_by FROM sales_sale_refund WHERE id='ref-1'"), USER)
 
-    # `sales._mark_refunded` solo lo emite el handler cuando vuelve el último céntimo.
+    # sales#506: the handler emits `sales._mark_refunded` after EVERY refund, and the statement
+    # decides against the legs written. 20,00 € of 70,00 € back: the sale stays live.
     ok, err = run_command("sales._mark_refunded", {"sale_id": SALE})
     check("`sales._mark_refunded` corre", (ok, err), (True, ""))
+    check("a partial refund leaves the sale `completed`", q(
+        f"SELECT status FROM sales_sale WHERE id='{SALE}' AND hub_id='{HUB}'"), "completed")
+
+    # The last cent, on a sale of its own so the cap of the next points stays as it was.
+    psql(["-c", bind(
+        "INSERT INTO sales_sale (id, hub_id, sale_number, status, total, is_deleted, created_at,"
+        " updated_at) VALUES ('sale-whole', :hub_id, '20260824-0008', 'completed', 500, 0, :now, :now)",
+        {"hub_id": HUB, "now": NOW},
+    )], db=DB)
+    ok, err = run_command("sales._insert_payment", {
+        "payment_id": "pay-whole", "sale_id": "sale-whole", "sort_order": 0,
+        "payment_method_id": "pm-cash", "payment_method_name": "Efectivo",
+        "payment_method_type": "cash", "amount": 500, "amount_tendered": 500,
+        "change_due": 0, "reference": "",
+    })
+    check("seed leg `pay-whole`", (ok, err), (True, ""))
+    ok, err = run_command("sales._insert_refund", {
+        "refund_id": "ref-whole", "sale_id": "sale-whole", "total": 500,
+        "reason": "whole", "note": "", "idempotency_key": "idem-whole",
+    })
+    check("the whole refund's head", (ok, err), (True, ""))
+    ok, err = run_command("sales._insert_refund_payment", {
+        "refund_payment_id": "ref-leg-whole", "refund_id": "ref-whole", "sale_id": "sale-whole",
+        "payment_id": "pay-whole", "payment_method_id": "pm-cash",
+        "payment_method_name": "Efectivo", "payment_method_type": "cash",
+        "amount": 500, "sort_order": 0,
+    })
+    check("the whole refund's leg", (ok, err), (True, ""))
+    ok, err = run_command("sales._mark_refunded", {"sale_id": "sale-whole"})
+    check("`sales._mark_refunded` on the last cent", (ok, err), (True, ""))
     check("y deja la venta en `refunded`", q(
-        f"SELECT status FROM sales_sale WHERE id='{SALE}' AND hub_id='{HUB}'"), "refunded")
+        f"SELECT status FROM sales_sale WHERE id='sale-whole' AND hub_id='{HUB}'"), "refunded")
+
+    # sales#506: the doors re-check when they WRITE, not only the handler's read before the
+    # transaction. No refund head on a sale that is no longer `completed`…
+    run_command("sales._insert_refund", {
+        "refund_id": "ref-late", "sale_id": "sale-whole", "total": 1,
+        "reason": "late", "note": "", "idempotency_key": "idem-late",
+    })
+    check("no refund head on a sale already refunded", qi(
+        "SELECT COUNT(*) FROM sales_sale_refund WHERE id='ref-late'"), 0)
+    # …and no leg over what is left on it, counted over the legs already written.
+    run_command("sales._insert_refund_payment", {
+        "refund_payment_id": "ref-leg-over", "refund_id": "ref-1", "sale_id": SALE,
+        "payment_id": "pay-cash", "payment_method_id": "pm-cash",
+        "payment_method_name": "Efectivo", "payment_method_type": "cash",
+        "amount": 1, "sort_order": 1,
+    })
+    check("no leg over what is left (pay-cash: 20,00 € charged, 20,00 € back)", qi(
+        "SELECT COUNT(*) FROM sales_sale_refund_payment WHERE id='ref-leg-over'"), 0)
 
     # Y solo desde `completed`. Dos devoluciones concurrentes llegan las dos a esta línea: la
     # segunda tiene que actualizar CERO filas, no reescribir un estado que ya cambió. Se prueba
@@ -453,16 +502,27 @@ def test_a_neighbour_hub_never_shows_up() -> None:
     }, hub=OTHER_HUB)
     check("el vecino devuelve lo suyo", (ok, err), (True, ""))
 
-    # 🔴 LA FILA ADVERSARIA: la devolución del vecino apunta a NUESTRO `sale_id` y a NUESTRA pata.
-    # Es lo que hace un bug de tenancy antes de que nadie lo llame así. Si la subconsulta del tope
-    # no filtrara por `hub_id`, estos 20,00 € se restarían de nuestra tarjeta.
+    # 🔴 THE ADVERSARIAL ROW: the neighbour's refund points at OUR `sale_id` and OUR leg. It is
+    # what a tenancy bug does before anyone calls it that. If the cap's subquery did not filter by
+    # `hub_id`, these 20,00 € would come off our card.
+    #
+    # sales#506: the leg door itself no longer writes it — it only takes a leg of a charge of ITS
+    # hub — so the refusal is asserted first and the row is planted by hand for the read below.
     ok, err = run_command("sales._insert_refund_payment", {
         "refund_payment_id": "ref-leg-vecino", "refund_id": "ref-vecino", "sale_id": SALE,
         "payment_id": "pay-card", "payment_method_id": "pm-cash-v",
         "payment_method_name": "Efectivo", "payment_method_type": "cash",
         "amount": 2000, "sort_order": 0,
     }, hub=OTHER_HUB)
-    check("y su pata cita nuestra venta y nuestra pata", (ok, err), (True, ""))
+    check("the neighbour's leg door writes nothing on our leg", qi(
+        "SELECT COUNT(*) FROM sales_sale_refund_payment WHERE id='ref-leg-vecino'"), 0)
+    psql(["-c", bind(
+        "INSERT INTO sales_sale_refund_payment (id, hub_id, refund_id, sale_id, payment_id,"
+        " payment_method_id, payment_method_name, payment_method_type, amount, sort_order,"
+        " is_deleted, created_at, updated_at) VALUES ('ref-leg-vecino', :hub_id, 'ref-vecino',"
+        " :sale_id, 'pay-card', 'pm-cash-v', 'Efectivo', 'cash', 2000, 0, 0, :now, :now)",
+        {"hub_id": OTHER_HUB, "sale_id": SALE, "now": NOW},
+    )], db=DB)
 
     # Control positivo: el vecino existe y tiene datos. Sin esto, este test pasaría con el scope
     # roto, porque «no hay nada del vecino» sería literalmente cierto.

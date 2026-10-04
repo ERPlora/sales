@@ -1,21 +1,41 @@
--- sales#160 -- inserta UNA pata de la devolucion: de que pata del cobro sale el dinero
--- (:payment_id) y por que metodo vuelve (:payment_method_*). Interno, uno por pata.
+-- sales#160 -- inserts ONE leg of the refund: which leg of the charge the money comes out of
+-- (:payment_id) and which method it goes back through (:payment_method_*). Internal, one per leg.
 --
--- Los dos ejes van en la misma fila a proposito. El de origen manda sobre el TOPE (no se devuelve
--- por una pata mas de lo que cobro), el de destino manda sobre la CAJA (solo `cash` toca el cajon).
--- Guardar solo uno de los dos obligaria a adivinar el otro: es el bug de Odoo, que al devolver por
--- un metodo distinto acaba con el metodo al debe y al haber en el mismo asiento.
+-- Both axes live in the same row on purpose. The origin rules the CAP (a leg never gives back more
+-- than it charged), the destination rules the DRAWER (only `cash` touches it). Keeping only one
+-- would force guessing the other: that is Odoo's bug, where refunding through a different method
+-- ends with the method on both sides of the same entry.
 --
--- Aqui no se decide nada: el nombre y el tipo salen del catalogo del hub resueltos por el handler,
--- no de la etiqueta que mando el navegador (mismo criterio que el cobro, sales#20).
+-- Nothing is decided about the destination here: name and type come from the hub's catalogue,
+-- resolved by the handler, never from the browser's label (same rule as the charge, sales#20).
+--
+-- sales#506: the CAP is re-checked HERE, against the legs already written, and not only by the
+-- handler against `sales.refund_options` — a read taken before the transaction that two refunds
+-- fired at once share. `_refund_lock.sql` queued this refund behind any other of the same sale, so
+-- this statement sees what the earlier one wrote. A leg that no longer fits writes 0 rows and the
+-- command's `expect_rows` rolls the whole refund back with `sales.refund_exceeds_tender`, the same
+-- refusal an over-the-cap refund always got. A voided refund (soft-delete) does not count, as in
+-- `refund_options.sql`.
 INSERT INTO sales_sale_refund_payment (
     id, hub_id, refund_id, sale_id, payment_id,
     payment_method_id, payment_method_name, payment_method_type,
     amount, sort_order,
     is_deleted, created_by, updated_by, created_at, updated_at
-) VALUES (
-    :refund_payment_id, :hub_id, :refund_id, :sale_id, :payment_id,
-    :payment_method_id, :payment_method_name, :payment_method_type,
-    :amount, :sort_order,
-    0, :current_user_id, :current_user_id, :now, :now
-);
+)
+SELECT :refund_payment_id, :hub_id, :refund_id, p.sale_id, p.id,
+       :payment_method_id, :payment_method_name, :payment_method_type,
+       :amount, :sort_order,
+       0, :current_user_id, :current_user_id, :now, :now
+  FROM sales_sale_payment p
+ WHERE p.id = :payment_id
+   AND p.sale_id = :sale_id
+   AND p.hub_id = :hub_id
+   AND p.is_deleted = 0
+   AND p.amount - COALESCE((
+           SELECT SUM(r.amount)
+             FROM sales_sale_refund_payment r
+            WHERE r.payment_id = p.id
+              AND r.sale_id = p.sale_id
+              AND r.hub_id = p.hub_id
+              AND r.is_deleted = 0
+       ), 0) >= :amount;
