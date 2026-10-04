@@ -28,7 +28,7 @@ Pendiente de enlazar: REC_RESTAURANTE — sentar, pedir, servir y cobrar en el d
 QA: R-03, R-06, qa-hub-restaurant §7.06
 
 ### SALES-F20 Enviar la comanda a cocina
-Estado: parcial — una línea ya enviada no se puede anular ni cambiar desde el TPV, así que no hay anulación con aviso a cocina
+Estado: parcial — GRAVE (leído en el código, sin ejecutar): al cobrar la cuenta entera, Cocina cancela todas sus rondas pendientes o en preparación, incluida la que el TPV acaba de enviar al cobrar, así que en «pide y paga» (barra, mostrador) la comida no llega a hacerse; además, una línea ya enviada no se puede anular ni cambiar desde el TPV, así que no hay anulación con aviso a cocina
 Vertical: restaurante
 Actor: empleado, responsable
 Pantalla: Vender
@@ -38,11 +38,13 @@ Pasos:
 3. Púlsalo: sale «Enviado a cocina». Las líneas pasan a «Comanda N», quedan bloqueadas (ni cantidad, ni nota, ni descuento, ni invitación) y la cuenta se parte en «Pendiente de enviar» y «Enviado», donde Cocina pone su chip con el estado de cada comanda.
 4. Cada envío es una ronda nueva con solo lo que faltaba; un doble toque no envía dos veces.
 5. Al cobrar una cuenta con líneas pendientes, la hoja avisa «Los N productos pendientes de la comanda se enviarán a cocina al cobrar.» y se envían antes de cerrar la venta.
+6. Pero al cobrar la cuenta entera, Cocina retira del KDS todas sus rondas: las que estaban listas pasan a servidas y las pendientes o en preparación (incluida la que se acaba de enviar al cobrar) pasan a canceladas. Cobrar antes de servir deja la comida sin hacer. Un cobro parcial (SALES-F22) no las toca.
 Entra: las líneas pendientes de la cuenta, su mesa (como texto), quién atiende y la prioridad que marque Cocina.
-Sale: las líneas marcadas con su ronda y la hora de envío (avisa: order.fired, con las líneas, la nota, los suplementos y el camarero); Cocina crea la comanda en su pantalla.
-Si falla: «No se pudo enviar a cocina» y las líneas siguen pendientes. Al cobrar, si el envío falla no se cobra: «No se ha podido enviar la comanda a cocina, así que no se ha cobrado. Vuelve a intentarlo.».
+Sale: las líneas marcadas con su ronda y la hora de envío (avisa: order.fired, con las líneas, la nota, los suplementos y el camarero); Cocina crea la comanda en su pantalla, pendiente. Al cobrar la cuenta entera (avisa: order.completed, que sale después del envío) Cocina cierra sus rondas: listas a servidas, pendientes y en preparación a canceladas.
+Si falla: «No se pudo enviar a cocina» y las líneas siguen pendientes. Al cobrar, si el envío falla no se cobra: «No se ha podido enviar la comanda a cocina, así que no se ha cobrado. Vuelve a intentarlo.». Que Cocina cancele las rondas al cobrar no se avisa en el TPV.
 Implicados: pendiente
 Pendiente de enlazar: kitchen — crear la comanda de cada ronda y enseñar su estado en el TPV
+Pendiente de enlazar: kitchen — al cobrar la cuenta entera, cancelar las rondas pendientes o en preparación y servir las listas
 Pendiente de enlazar: tables — el aviso «Enviar comanda» del plano también envía la ronda
 QA: R-04, R-05, R-06, BD-08, qa-hub-restaurant §7.08, qa-hub-restaurant §7.13 (discrepa)
 
@@ -72,7 +74,7 @@ Pasos:
 2. Pulsa «Cobrar»: la hoja dice «Cobrando N líneas de <total>» y cobra solo esas.
 3. Tras cobrar, la cuenta sigue abierta con lo que falta; lo cobrado ya no vuelve a salir.
 Entra: las líneas marcadas.
-Sale: una venta con esas líneas (avisa: sale.completed); las líneas quedan atadas a su venta y la cuenta sigue abierta (no se avisa de cuenta cerrada, así que la mesa no se libera).
+Sale: una venta con esas líneas (avisa: sale.completed); las líneas quedan atadas a su venta y la cuenta sigue abierta (no se avisa de cuenta cerrada, así que la mesa no se libera ni Cocina cierra sus rondas). Si después se anula una de esas ventas, Mesas cierra la sesión y libera la mesa aunque la cuenta siga abierta (SALES-F30).
 Si falla: los mismos rechazos que un cobro normal; con una sola línea no hay nada que marcar.
 Implicados: pendiente
 Pendiente de enlazar: tables — la mesa sigue ocupada mientras queden líneas por cobrar
@@ -89,13 +91,13 @@ Pasos:
 3. Las líneas marcadas pasan a la cuenta nueva con su importe, su IVA y su ronda de cocina; la pantalla se queda en la cuenta nueva para cobrarla. Sin nada marcado, la cuenta nueva nace vacía.
 Entra: la segunda cuenta de la mesa que abre Mesas.
 Sale: dos cuentas abiertas que suman lo mismo que la original al céntimo; Mesas enlaza la nueva a su segunda cuenta.
-Si falla: «No se pudo dividir la cuenta» y la cuenta queda como estaba.
+Si falla: «No se pudo dividir la cuenta» y las líneas no se mueven; si el fallo fue de Ventas, Mesas ya abrió la segunda cuenta y la mesa se queda con una cuenta vacía de más.
 Implicados: pendiente
 Pendiente de enlazar: tables — abrir una segunda cuenta en la mesa
 QA: R-07, qa-hub-restaurant §7.09 (discrepa)
 
 ### SALES-F24 Juntar las cuentas de dos mesas
-Estado: hecho
+Estado: parcial — si la unión de cuentas falla no se ve nada (las mesas quedan fusionadas en Mesas y las cuentas siguen separadas); las rondas enviadas desde la cuenta absorbida no se cierran al cobrar y se quedan en la pantalla de Cocina
 Vertical: restaurante
 Actor: empleado, responsable
 Pantalla: Vender
@@ -104,10 +106,11 @@ Pasos:
 2. Si las dos tenían cuenta, las líneas sin cobrar de una pasan a la otra y la vacía queda anulada; si solo una tenía, esa pasa a ser la de la mesa que queda.
 3. La pantalla sigue a la mesa que queda, con todas las líneas.
 Entra: las dos mesas y sus cuentas, de Mesas.
-Sale: una sola cuenta; las líneas se mueven sin volver a crearlas, así que lo ya enviado a cocina no se envía otra vez. Repetirlo no cambia nada.
-Si falla: sin confirmar qué ve la persona si la unión de cuentas falla (no hay aviso propio).
+Sale: una sola cuenta; las líneas se mueven sin volver a crearlas, así que lo ya enviado a cocina no se envía otra vez. Repetirlo no cambia nada. La cuenta absorbida se anula sin aviso a nadie: las rondas que se enviaron desde ella siguen colgadas de ella en Cocina y no se cierran al cobrar la que queda.
+Si falla: la persona no ve ningún aviso: Mesas ya fusionó las mesas, pero las dos cuentas siguen separadas en Ventas.
 Implicados: pendiente
 Pendiente de enlazar: tables — juntar dos mesas ocupadas
+Pendiente de enlazar: kitchen — las rondas de la cuenta absorbida no se cierran al cobrar la cuenta que queda
 QA: R-07, qa-hub-restaurant §7.09
 
 ### SALES-F25 Pasar la cuenta a otra mesa

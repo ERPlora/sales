@@ -14,10 +14,10 @@ Pasos:
 2. Las cifras del periodo: «Tickets», «Ingresos», «Ticket medio», «IVA», «Descuentos» y «Anuladas».
 3. La tabla: Fecha, Número, Cliente, Pago, Estado (Completada, Anulada, Devuelta; con «Por devolver <importe>» si se devolvió una parte) y Total. Busca con «Buscar número o cliente…», filtra por columna (el pago y el estado, con su nombre en español) u ordena.
 4. Toca una fila para ver su documento (SALES-F29). La tabla se recarga sola cuando se cobra una venta.
-5. En el panel de inicio, quien ve informes tiene los paneles «Ventas hoy», «Tickets hoy», «Ventas últimos 7 días» y «Actividad reciente».
+5. En el panel de inicio, los paneles «Ventas hoy», «Tickets hoy» y «Ventas últimos 7 días» piden permiso de informes; «Actividad reciente» lo ve cualquiera que vea ventas.
 Entra: nada de otros componentes.
 Sale: nada.
-Si falla: «Error cargando métricas» (las cifras salen como «—»); si no cargan las formas de pago, el filtro de pago desaparece con «No se han podido cargar las formas de pago, así que el filtro por pago no está disponible…». Vacía: «Aún no hay ventas.». Las cifras y los paneles necesitan permiso de informes: un empleado ve la tabla y las cifras sin datos, con el aviso de error (texto exacto sin confirmar).
+Si falla: «Error cargando métricas» (las cifras salen como «—»); si no cargan las formas de pago, el filtro de pago desaparece con «No se han podido cargar las formas de pago, así que el filtro por pago no está disponible…». Vacía: «Aún no hay ventas.». Las cifras necesitan permiso de informes: un empleado ve la tabla y las cifras sin datos, con el aviso de error (texto exacto sin confirmar).
 Implicados: pendiente
 Pendiente de enlazar: staff — el cierre por profesional cruza las ventas por profesional con la comisión
 QA: R-10, B-07
@@ -30,7 +30,7 @@ Pantalla: Documento de venta
 Pasos:
 1. En **Ventas**, toca la fila o la acción «Documento»; también se abre solo tras cobrar.
 2. Se ve el tique (o la factura A4) con sus líneas, IVA, total, forma de pago y, si hay VeriFactu, el QR con «Escanea para comprobar este tique en la AEAT» (o su CSV cuando la AEAT contesta). Un tique simplificado lleva además el QR «Pide tu factura».
-3. Pulsa la impresora del pie para imprimirlo. Para una copia sin abrirlo, usa «Reimprimir» en la fila: sale con «DUPLICADO».
+3. Pulsa la impresora del pie para imprimirlo, o «Reimprimir» en la fila para una copia sin abrirlo. Toda impresión desde **Ventas** sale con «DUPLICADO»; solo el primer papel justo tras cobrar es el original.
 Entra: la factura de Facturación y el registro de VeriFactu de esa venta.
 Sale: el papel; reimprimir no crea venta ni documento fiscal.
 Si falla: «Cargando documento…» y «Error cargando el documento». Sin impresora: «El tique está en espera: aún no hay ninguna impresora dada de alta. Da una de alta y saldrá solo.»; si falla: «No se pudo imprimir». Una factura sin NIF del cliente avisa «Esta factura no tiene el NIF del cliente: la impresora de tiques no puede sacarla como factura completa.».
@@ -41,7 +41,7 @@ Pendiente de enlazar: printing — imprimir el tique o la factura y marcar las c
 QA: R-11, L-02, L-04, L-05
 
 ### SALES-F30 Anular una venta cobrada
-Estado: parcial — anular un tique no toca su factura simplificada ni su registro de VeriFactu (Facturación no escucha la anulación: el tique sigue declarado y sin registro de anulación); sin caja abierta la venta queda anulada pero Caja rechaza el apunte de vuelta del efectivo
+Estado: parcial — anular un tique no toca su factura simplificada ni su registro de VeriFactu (Facturación no escucha la anulación: el tique sigue declarado y sin registro de anulación); un tique que el cliente canjeó después por factura completa («Pide tu factura») se anula igual y su factura completa sigue viva; la sesión de bono gastada no vuelve al bono y la cita cobrada sigue como cobrada; anular un cobro parcial cierra la mesa con la cuenta todavía abierta; sin caja abierta la venta queda anulada pero Caja rechaza el apunte de vuelta del efectivo
 Vertical: comun
 Actor: responsable
 Pantalla: Ventas
@@ -50,18 +50,21 @@ Pasos:
 2. En «Anular la venta <número>» escribe el «Motivo (obligatorio)» y pulsa «Anular».
 3. Sale «Venta anulada»; la fila pasa a Anulada y la cifra «Anuladas» sube.
 Entra: la venta elegida.
-Sale: la venta queda marcada como anulada con hora, quién y motivo; no se borra (avisa: sale.voided). Caja devuelve el efectivo, Inventario repone el stock, Clientes resta la compra y Mesas descuenta lo cobrado.
-Si falla: sin motivo, «Hace falta un motivo para anular una venta»; con factura completa, «Esta venta lleva factura completa: emite una factura rectificativa en vez de anularla»; con devoluciones, «Esta venta ya tiene devoluciones: devuelve el importe que queda en vez de anularla»; anulada desde otro dispositivo a la vez, «Esta venta ya está anulada». Sin permiso no aparece «Anular».
+Sale: la venta queda marcada como anulada con hora, quién y motivo, y el motivo se copia en sus notas; no se borra (avisa: sale.voided). Caja devuelve el efectivo que la venta tenía vivo en la caja abierta, Inventario repone el stock, Clientes marca la compra como anulada y Mesas deja de contar lo cobrado y además cierra la sesión de la mesa enlazada a esa cuenta y la libera, también si era un cobro parcial y la cuenta sigue abierta. Nadie más reacciona: Facturación y VeriFactu no anulan nada, Servicios no devuelve la sesión de bono gastada y Citas deja la cita marcada como cobrada, con su «Cobrar» en gris, así que no se puede volver a cobrar desde la agenda.
+Si falla: sin motivo, «Hace falta un motivo para anular una venta»; si se cobró como factura completa, «Esta venta lleva factura completa: emite una factura rectificativa en vez de anularla» (un tique canjeado después por factura completa no se rechaza); con devoluciones, «Esta venta ya tiene devoluciones: devuelve el importe que queda en vez de anularla»; anulada desde otro dispositivo a la vez, «Esta venta ya está anulada». Sin permiso no aparece «Anular». Sin caja abierta y con efectivo, Caja rechaza el apunte y, tras los reintentos, queda en la cola de avisos fallidos sin aviso en pantalla.
 Implicados: pendiente
 Pendiente de enlazar: cash_register — revertir el efectivo de la venta anulada
 Pendiente de enlazar: inventory — reponer el stock de la venta anulada
 Pendiente de enlazar: customers — quitar la compra anulada del historial del cliente
-Pendiente de enlazar: invoice — anular la factura simplificada de un tique anulado (hoy no escucha la anulación)
+Pendiente de enlazar: tables — dejar de contar lo cobrado, cerrar la sesión y liberar la mesa de la cuenta de la venta anulada
+Pendiente de enlazar: services — la sesión de bono gastada en la venta anulada no vuelve al bono (no escucha la anulación)
+Pendiente de enlazar: appointments — la cita de una venta anulada sigue marcada como cobrada (no escucha la anulación)
+Pendiente de enlazar: invoice — anular la factura simplificada (o la completa que la sustituyó) de un tique anulado (hoy no escucha la anulación)
 Pendiente de enlazar: REC_FISCAL — el registro de anulación que debería llegar a la AEAT al anular un tique
 QA: R-11, B-08, L-04 (discrepa), L-06, qa-hub-restaurant §7.13
 
 ### SALES-F31 Devolver una venta (toda, una parte o por otro medio)
-Estado: parcial — se devuelve dinero, no artículos: no se eligen líneas ni cantidades y no vuelve stock; la ventana no se actualiza si otra tablet devuelve a la vez (sales#514)
+Estado: parcial — se devuelve dinero, no artículos: no se eligen líneas ni cantidades y no vuelve stock; Clientes no resta la devolución del historial del cliente; sin caja abierta la parte en efectivo no se apunta en Caja (queda en la cola de avisos fallidos); la ventana no se actualiza si otra tablet devuelve a la vez (sales#514)
 Vertical: comun
 Actor: responsable
 Pantalla: Devolver
@@ -72,26 +75,27 @@ Pasos:
 4. Escribe el «Motivo» y pulsa «Devolver <importe>».
 5. Sale «Devolución registrada.»; la lista se recarga y, si ya no queda nada por devolver, la venta pasa a Devuelta; si queda, la fila dice «Por devolver <importe>».
 Entra: lo cobrado y lo ya devuelto por cada forma de pago.
-Sale: el documento de devolución con una fila por forma de pago (avisa: sale.refunded); Caja apunta la salida por cada forma, Facturación emite la rectificativa (o anula la factura si es total).
+Sale: el documento de devolución con una fila por forma de pago, su motivo y quién la hizo (avisa: sale.refunded). Caja apunta la salida por cada forma en la caja abierta; sin caja abierta, la parte en efectivo se rechaza y, tras los reintentos, queda en la cola de avisos fallidos (la de tarjeta no se apunta). Facturación emite una rectificativa por lo devuelto; si con ella se devuelve todo, la rectificativa anula el total y la original pasa a anulada. Inventario y Clientes no reaccionan: no vuelve stock y el historial del cliente conserva el importe.
 Si falla: el botón explica qué falta antes de devolver («<medio>: <importe> es más que los <importe> que quedan por devolver.», «<medio>: elige por dónde vuelve este dinero.», «Una devolución necesita un motivo.»). Si el hub no contesta, comprueba solo si se grabó y repetir no duplica («No hemos podido confirmar si la devolución se registró…»). Si no queda dinero: «No queda dinero por devolver en esta venta.».
 Implicados: pendiente
 Pendiente de enlazar: cash_register — apuntar la salida de dinero de la devolución por forma de pago
-Pendiente de enlazar: invoice — emitir la rectificativa o anular la factura de la venta devuelta
+Pendiente de enlazar: invoice — emitir la rectificativa por lo devuelto y, si se devuelve todo, anular la original
+Pendiente de enlazar: customers — la devolución no se resta del historial del cliente (no escucha la devolución)
 Pendiente de enlazar: REC_FISCAL — la rectificativa llega a la AEAT
 QA: R-11, B-08, L-03, L-06, qa-hub-restaurant §7.13
 
 ### SALES-F32 Devolver la sesión de un bono
-Estado: parcial — en un tique con bono y dinero no se puede devolver solo la sesión mientras quede dinero (sales#512)
+Estado: parcial — en un tique con bono y dinero no se puede devolver solo la sesión mientras quede dinero (sales#512), y una vez devuelto todo el dinero la venta pasa a Devuelta y «Devolver» queda desactivado, así que la sesión ya no se puede devolver desde Ventas; anular la venta tampoco la devuelve
 Vertical: peluqueria
 Actor: responsable
 Pantalla: Devolver
 Pasos:
 1. En la ventana **Devolver** de una venta con líneas pagadas por bono, aparece «Líneas pagadas de otra forma» con el hueco de Servicios en cada una.
 2. Marca en el hueco si la sesión vuelve al bono. El aviso que dé Servicios sale junto al botón.
-3. Al pulsar «Devolver <importe>», la ventana espera a que Servicios devuelva la sesión. Si el dinero ya volvió entero, el botón es «Devolver lo pagado de otra forma».
+3. Al pulsar «Devolver <importe>», la ventana espera a que Servicios devuelva la sesión. Si la venta se pagó entera con bono (no hay dinero que devolver), el botón es «Devolver lo pagado de otra forma».
 Entra: las líneas de la venta que pagó un bono.
 Sale: la sesión vuelve al bono, con el documento de devolución como referencia; no mueve dinero.
-Si falla: «El dinero ha vuelto, pero lo que se pagó de otra forma no se ha podido devolver. Revísalo desde su módulo.»; si la ventana se cerró antes, «La devolución está registrada, pero lo que se pagó de otra forma aún no se ha devuelto. Vuelve a abrir la devolución de esta venta en este dispositivo para devolverlo.».
+Si falla: «El dinero ha vuelto, pero lo que se pagó de otra forma no se ha podido devolver. Revísalo desde su módulo.»; si la ventana se cerró antes, «La devolución está registrada, pero lo que se pagó de otra forma aún no se ha devuelto. Vuelve a abrir la devolución de esta venta en este dispositivo para devolverlo.»; pero si esa devolución ya devolvió todo el dinero, la venta está Devuelta y la ventana ya no se puede volver a abrir.
 Implicados: pendiente
 Pendiente de enlazar: services — devolver al bono la sesión de una línea devuelta
 QA: B-08

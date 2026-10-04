@@ -5,7 +5,7 @@ Prefijo: SALES
 ## Flujos
 
 ### SALES-F34 Ajustar el TPV
-Estado: parcial — un responsable tiene el permiso pero la pestaña solo deja guardar al administrador; «Permitir efectivo/tarjeta/transferencia» y «Permitir tiques aparcados» solo los aplica la pantalla (el servidor no los comprueba y aparcar sigue disponible desde Cuentas abiertas); «Documento por defecto» enseña «ticket» e «invoice» en inglés
+Estado: parcial — en la pestaña solo guarda el administrador, aunque el servidor deja guardarlos a quien tenga el permiso de ajustes (el responsable lo tiene y lo hace por el asistente); «Permitir efectivo/tarjeta/transferencia» y «Permitir tiques aparcados» solo los aplica la pantalla (el servidor no los comprueba y aparcar sigue disponible desde Cuentas abiertas); «Documento por defecto» enseña «ticket» e «invoice» en inglés
 Vertical: comun
 Actor: administrador
 Pantalla: Ajustes
@@ -16,7 +16,7 @@ Pasos:
 4. Vuelve a **Vender**: el TPV lee los ajustes al abrirse, también para el cajero y el empleado. Si no puede leerlos, avisa con «El TPV no ha podido leer sus propios ajustes, así que muestra los valores por defecto. Vuelve a cargar para reintentarlo.».
 Entra: nada de otros componentes.
 Sale: la fila de ajustes del negocio (una por hub). La leen el TPV, la hoja de cobro, la cuenta impresa y el documento de venta; el servidor aplica al cobrar «Exigir cliente», «Permitir descuentos», el descuento máximo y los precios con IVA incluido.
-Si falla: sin ser administrador los campos salen de solo lectura con «Solo un administrador puede cambiar estos ajustes.». Un fallo al guardar dice «No se pudieron guardar los ajustes.». Si se apagan a la vez efectivo y tarjeta y no hay otro medio, el TPV vuelve a ofrecer todos los medios activos.
+Si falla: sin ser administrador los campos salen de solo lectura con «Solo un administrador puede cambiar estos ajustes.» (un responsable sí puede cambiarlos pidiéndoselo al asistente). Un fallo al guardar dice «No se pudieron guardar los ajustes.». Si se apagan a la vez efectivo y tarjeta y no hay otro medio, el TPV vuelve a ofrecer todos los medios activos.
 Implicados: pendiente
 Pendiente de enlazar: hub — la pestaña Ajustes que el shell genera desde el bloque de ajustes del módulo
 Pendiente de enlazar: printing — la cabecera y el pie del tique que el negocio escribió en Impresión y que se copian aquí
@@ -56,15 +56,15 @@ Implicados: ninguno
 QA: ninguno
 
 ### SALES-F37 Añadir un medio de pago (Bizum, transferencia…)
-Estado: parcial — no hay pantalla: solo se crea con el asistente o por la API, y no se puede editar, desactivar ni borrar un medio desde ninguna pantalla
+Estado: parcial — no hay pantalla: solo se crea con el asistente o por la API; si no se dice el tipo, nace como efectivo (cuenta en la caja y se bloquea desde 1.000 €); no hay forma de editar, desactivar ni borrar un medio, ni en pantalla ni por orden (tampoco por el asistente)
 Vertical: comun
 Actor: responsable, asistente
 Pantalla: asistente
 Pasos:
-1. Pide al asistente que añada el medio («añade Bizum como forma de pago»).
+1. Pide al asistente que añada el medio y di de qué tipo es («añade Bizum como forma de pago, de tipo otro»): sin tipo se crea como efectivo.
 2. El medio aparece en la hoja de cobro con su icono y su nombre la próxima vez que se abre **Vender**.
-Entra: nombre y tipo del medio.
-Sale: el medio de pago, activo. De fábrica el negocio tiene solo Efectivo y Tarjeta; «Permitir transferencia» no ofrece nada mientras no exista un medio de tipo transferencia.
+Entra: el nombre del medio y, si se dice, su tipo (efectivo, tarjeta, transferencia u otro).
+Sale: el medio de pago, activo; sin tipo, cuenta como efectivo. De fábrica el negocio tiene solo Efectivo y Tarjeta; «Permitir transferencia» no ofrece nada mientras no exista un medio de tipo transferencia.
 Si falla: lo que conteste el asistente (sin confirmar).
 Implicados: ninguno
 QA: ninguno

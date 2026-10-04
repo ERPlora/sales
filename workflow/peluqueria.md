@@ -5,7 +5,7 @@ Prefijo: SALES
 ## Flujos
 
 ### SALES-F26 Cobrar una cita desde la agenda
-Estado: hecho
+Estado: parcial — si el servicio de la cita no está en el catálogo que cargó el TPV, la línea entra sin categoría de IVA y se cobra al 0 % sin rechazo (leído en el código, sin ejecutar); anular después la venta deja la cita marcada como cobrada y su «Cobrar» en gris (SALES-F30)
 Vertical: peluqueria
 Actor: empleado, responsable
 Pantalla: Vender
@@ -16,7 +16,7 @@ Pasos:
 4. Al cobrar, la agenda deja el **Cobrar** de esa cita en gris.
 Entra: la cita (servicio, precio, clienta, profesional) que lee de Citas; el IVA del servicio, del catálogo de Servicios.
 Sale: la cuenta enlazada a la cita y, al cobrar, la venta con la cita y la profesional (avisa: sale.completed y sales.sale.created_from_appointment); Citas anota que la cita se cobró. La cita no cambia de estado.
-Si falla: «No se pudo enlazar la cita con esta cuenta. Cóbrala sin salir de esta pantalla o la agenda podría seguir enseñándola como pendiente.». Sin la app Citas, o si la cita no se encuentra, el TPV se abre vacío y sin aviso. Si el servicio de la cita no está en el catálogo cargado (p. ej. «Mostrar servicios en el TPV» apagado), la línea entra sin IVA (comportamiento al cobrar sin confirmar).
+Si falla: «No se pudo enlazar la cita con esta cuenta. Cóbrala sin salir de esta pantalla o la agenda podría seguir enseñándola como pendiente.». Sin la app Citas, o si la cita no se encuentra, el TPV se abre vacío y sin aviso. Si el servicio de la cita no está en el catálogo cargado (p. ej. «Mostrar servicios en el TPV» apagado), la línea entra sin categoría de IVA, sin la marca «Falta el IVA», y el servidor la cobra al 0 % sin decir nada.
 Implicados: pendiente
 Pendiente de enlazar: appointments — APPOINTMENTS-F17: abrir el TPV con la cita y marcarla cobrada al cerrar la venta
 Pendiente de enlazar: REC_WA_CITA — REC_WA_CITA-F10: el día de la cita, llegada, servicio y cobro
@@ -24,7 +24,7 @@ Pendiente de enlazar: REC_PELUQUERIA — el día completo del salón
 QA: B-05, B-06, BD-09
 
 ### SALES-F27 Pagar una línea con un bono
-Estado: hecho
+Estado: parcial — el servidor da por pagada con bono la línea que el cobro diga, sin preguntar a Servicios: por el asistente o la API una línea se cobra a 0 sin bono detrás; y pedir (por el asistente o la API) que se quite una línea ya enviada a cocina no la quita, pero avisa igual y Servicios suelta la sesión que la cubría
 Vertical: peluqueria
 Actor: empleado, responsable
 Pantalla: Cobro
@@ -34,7 +34,7 @@ Pasos:
 3. Acepta el bono en el hueco: la línea deja de cobrarse, el importe del botón baja y el resumen dice «Bono aplicado». Lo que no cubre el bono se cobra con su medio.
 4. Cobra: la línea sale en el tique a 0,00 € con «Ya pagado».
 Entra: los bonos de la clienta y sus sesiones, de Servicios.
-Sale: la venta con la línea marcada como pagada por otro medio (avisa: sale.completed); Servicios gasta la sesión. Quitar la línea o eliminar la cuenta lo anuncia (avisa: sales.order.line_removed o sales.order.voided) y Servicios suelta la sesión retenida.
+Sale: la venta con la línea marcada como pagada por otro medio (avisa: sale.completed); Servicios gasta la sesión. Si después se anula la venta, la sesión no vuelve al bono (SALES-F30). Quitar la línea o eliminar la cuenta lo anuncia (avisa: sales.order.line_removed o sales.order.voided) y Servicios suelta la sesión retenida.
 Si falla: «No se ha podido separar la línea. La cuenta no ha cambiado.». Sin Servicios, sin clienta o sin cuenta abierta, no aparece la sección.
 Implicados: pendiente
 Pendiente de enlazar: services — ofrecer el bono por línea, retener la sesión y gastarla al cobrar

@@ -17,7 +17,7 @@ Pasos:
 5. Deja o quita «Imprimir tiquet» (arranca como lo diga Impresión) y pulsa «Cobrar <total>».
 6. La hoja se cierra, la cuenta queda vacía y se abre el **Documento de venta** con el tique («Emitiendo el tique…» mientras llega el número fiscal).
 Entra: los artículos y precios de Inventario y Servicios; los tipos de IVA de Impuestos; los ajustes del TPV.
-Sale: la venta cobrada e inmutable, con número `AAAAMMDD-NNNN` del día del negocio, sus líneas, su pago y su desglose de IVA (avisa: sale.completed). Si venía de una cuenta, la cuenta se cierra (avisa: order.completed). Caja apunta el cobro, Inventario descuenta stock, Clientes suma la compra, Facturación emite la factura simplificada, Mesas apunta lo cobrado y libera la mesa, Cocina retira las rondas; el hub imprime el tique según el interruptor.
+Sale: la venta cobrada e inmutable, con número `AAAAMMDD-NNNN` del día del negocio, sus líneas, su pago y su desglose de IVA (avisa: sale.completed). Si venía de una cuenta, la cuenta se cierra (avisa: order.completed). Caja apunta el cobro en la caja abierta, Inventario descuenta stock, Clientes suma la compra, Facturación emite la factura simplificada (y de ahí VeriFactu), Mesas apunta lo cobrado, cierra la sesión y libera la mesa, y Servicios gasta las sesiones de bono retenidas. Cocina retira del KDS todas las rondas de la cuenta: las listas pasan a servidas y las pendientes o en preparación, a canceladas (SALES-F20). El hub, en el dispositivo que cobró, imprime el tique según «Imprimir tiquet» y abre el cajón si Impresión lo tiene activado.
 Si falla: sin importe entregado el botón no cobra y se lee «Marca en el teclado el importe entregado»; corto, «Lo entregado no cubre el total». Un artículo sin IVA configurado sale con la marca «Falta el IVA» y al tocarlo dice «No se puede vender: sin categoría fiscal. Falta configurar el IVA.» (o «…su categoría fiscal no tiene tipo…»). Un rechazo al cobrar se pinta en la hoja con su frase (p. ej. «Un producto del tique ya no está en el catálogo. Quita la línea y vuelve a añadirla.») y la cuenta sigue intacta. Un empleado sin permiso de cobro recibe la petición de PIN de un responsable.
 Implicados: pendiente
 Pendiente de enlazar: cash_register — apuntar el cobro en la sesión de caja abierta
@@ -25,7 +25,10 @@ Pendiente de enlazar: inventory — descontar stock de lo vendido
 Pendiente de enlazar: invoice — emitir la factura simplificada o completa de la venta
 Pendiente de enlazar: verifactu — registrar y remitir el tique a la AEAT y devolver el QR
 Pendiente de enlazar: customers — sumar la compra al historial del cliente
-Pendiente de enlazar: printing — imprimir el tique al cobrar según «Imprimir tiquet»
+Pendiente de enlazar: printing — los ajustes con los que el hub imprime el tique y abre el cajón al cobrar
+Pendiente de enlazar: hub — el shell imprime el tique y abre el cajón al oír la venta, solo en el dispositivo que cobró
+Pendiente de enlazar: tables — apuntar lo cobrado y liberar la mesa al cobrar la cuenta entera
+Pendiente de enlazar: kitchen — al cobrar la cuenta entera, cerrar sus rondas (listas a servidas, pendientes y en preparación a canceladas)
 Pendiente de enlazar: REC_FISCAL — del cobro al registro remitido a la AEAT
 QA: R-09, B-06, BD-09, L-01, L-08, qa-hub-restaurant §7.10
 
@@ -40,8 +43,8 @@ Pasos:
 3. Se lee «Importe exacto» y «Cobra <importe> en el datáfono y confirma.»: cobra en el datáfono aparte.
 4. Pulsa «Cobrar <importe> con tarjeta». El resultado es el de SALES-F01.
 Entra: los medios de pago del negocio.
-Sale: la venta con un pago por el importe exacto y sin cambio (avisa: sale.completed, con el tipo de medio para que Caja no lo sume al efectivo).
-Si falla: el TPV no habla con el datáfono: si la tarjeta se rechaza, cierra la hoja sin confirmar. «Cobrar … con tarjeta» es el rótulo de cualquier medio sin cambio, también de Bizum o transferencia.
+Sale: la venta con un pago por el importe exacto y sin cambio (avisa: sale.completed, con el tipo de medio para que Caja no lo sume al efectivo). Si Impresión tiene activado abrir el cajón al vender, el cajón se abre también con tarjeta.
+Si falla: el TPV no habla con el datáfono: si la tarjeta se rechaza, cierra la hoja sin confirmar. «Cobrar … con tarjeta» es el rótulo de cualquier medio sin cambio, también de Bizum o transferencia. Un medio creado sin decir su tipo cuenta como efectivo (SALES-F37).
 Implicados: pendiente
 Pendiente de enlazar: cash_register — un cobro con tarjeta no entra en el efectivo esperado
 QA: R-09, B-06, BD-11
@@ -64,7 +67,7 @@ Pendiente de enlazar: cash_register — sumar solo los cobros en efectivo, netos
 QA: L-07, qa-hub-restaurant §7.10
 
 ### SALES-F04 Elegir tique o factura y los datos del cliente
-Estado: hecho
+Estado: parcial — el límite de la factura simplificada solo lo aplica la pantalla: por el asistente o la API se graba un tique por encima del límite (con su número gastado) y lo rechaza después VeriFactu al enviarlo
 Vertical: comun
 Actor: empleado, responsable
 Pantalla: Cobro
@@ -75,11 +78,12 @@ Pasos:
 4. Con los tres datos puestos se lee «Esta venta sale como factura completa» y se cobra como siempre.
 Entra: el cliente asignado (Clientes) y el límite de la simplificada que da el hub.
 Sale: la venta con su tipo de documento fijado al cobrar, que no se puede cambiar después; el nombre, NIF, dirección, país y tipo de documento del cliente viajan con el aviso de venta cobrada para la factura.
-Si falla: sin los tres datos el botón dice «Faltan los datos del cliente» y no cobra; el servidor rechaza igual otra vía: «Una factura necesita el nombre, el NIF y la dirección del cliente. Rellénalos o cóbrala como tique.».
+Si falla: sin los tres datos el botón dice «Faltan los datos del cliente» y no cobra; una factura sin esos datos la rechaza también el servidor por cualquier vía: «Una factura necesita el nombre, el NIF y la dirección del cliente. Rellénalos o cóbrala como tique.». El tique por encima del límite, en cambio, solo lo impide la pantalla.
 Implicados: pendiente
 Pendiente de enlazar: invoice — factura completa (F1) o simplificada (F2) según el documento elegido
 Pendiente de enlazar: customers — el cliente asignado trae su nombre, NIF, dirección y país
-QA: L-01, L-02, R-09, B-06
+Pendiente de enlazar: verifactu — rechazar al enviar un tique por encima del límite de la simplificada
+QA: L-01 (discrepa), L-02, R-09, B-06
 
 ### SALES-F05 Cobrar cuando el negocio exige cliente
 Estado: hecho
@@ -104,7 +108,7 @@ Actor: empleado, responsable
 Pantalla: Cobro
 Pasos:
 1. Pulsa «Cobrar…» y el hub no contesta (se reinicia, se cae la red).
-2. El TPV pregunta él solo, dos veces, si ese intento de cobro llegó a grabarse.
+2. El TPV pregunta él solo (hasta dos veces) si ese intento de cobro llegó a grabarse.
 3. Si se grabó, se cierra como un cobro normal. Si no, sale «El servidor no responde (puede estar reiniciándose). Inténtalo de nuevo en unos segundos y, si persiste, avisa al encargado.» y volver a pulsar no duplica la venta.
 4. Si no se pudo saber, sale «No hemos podido confirmar si el cobro se completó. Compruébalo en Ventas antes de volver a cobrar.» con el botón «Comprobar en Ventas».
 Entra: nada de otros componentes.
@@ -132,7 +136,7 @@ Pendiente de enlazar: REC_FISCAL — un negocio en real sin vía hasta la AEAT n
 QA: L-04
 
 ### SALES-F08 Cobrar sin la caja abierta
-Estado: parcial — el TPV no comprueba la caja ni avisa: la venta se graba y Caja no la apunta, sin decir nada; anular o devolver en efectivo sin caja abierta graba la venta anulada o devuelta pero Caja rechaza el apunte
+Estado: parcial — el TPV no comprueba la caja ni avisa: la venta se graba y Caja no la apunta, sin decir nada; anular o devolver en efectivo sin caja abierta graba la venta anulada o devuelta, pero Caja rechaza el apunte y, tras los reintentos, queda en la cola de avisos fallidos sin que nadie en pantalla se entere
 Vertical: comun
 Actor: empleado, responsable
 Pantalla: Vender
@@ -140,7 +144,7 @@ Pasos:
 1. Sin ninguna sesión de caja abierta, se vende y se cobra exactamente igual que en SALES-F01.
 2. La venta aparece en **Ventas**; en Caja no hay ningún movimiento suyo.
 Entra: nada de Caja (el TPV no la lee).
-Sale: la venta y el aviso de venta cobrada; el apunte de caja no se escribe.
+Sale: la venta y el aviso de venta cobrada; Caja contesta bien y no escribe ningún apunte.
 Si falla: nada en pantalla avisa; el descuadre aparece al cerrar la caja.
 Implicados: pendiente
 Pendiente de enlazar: cash_register — apuntar (o no) el cobro cuando no hay sesión abierta

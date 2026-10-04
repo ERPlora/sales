@@ -5,7 +5,7 @@ Prefijo: SALES
 ## Flujos
 
 ### SALES-F09 Vender a precio libre por departamento
-Estado: hecho
+Estado: parcial — el permiso de precio libre solo lo exige la puerta que usa la pantalla: una línea sin artículo de catálogo (o marcada como servicio) entra con el importe que se mande al añadir una línea, al abrir la cuenta o al cobrar directamente, con el permiso de empleado o de cajero (asistente o API)
 Vertical: comun
 Actor: empleado, responsable
 Pantalla: Vender
@@ -13,31 +13,31 @@ Pasos:
 1. Toca la baldosa «Precio libre», al final de la rejilla.
 2. Marca el importe en el teclado y elige el departamento en «Departamento (IVA)»; cada botón enseña su tipo de IVA.
 3. Pulsa «Añadir <importe>»: entra una línea con el nombre del departamento y ese importe. Nunca se suma a otra línea.
-4. Un servicio sin precio cerrado («desde», por horas o variable) abre esta misma hoja con su nombre, su precio como sugerencia y su IVA ya elegido.
+4. Un servicio sin precio cerrado («desde», por horas o variable) abre esta misma hoja con su nombre y su precio como sugerencia; su IVA viene elegido solo si hay un departamento con esa categoría (si no, hay que elegirlo). La línea entra como precio libre, no como el servicio.
 Entra: los departamentos del negocio (SALES-F35) o, si no hay, las categorías de IVA activas de Impuestos.
 Sale: una línea sin artículo de catálogo, con su importe y su categoría de IVA, que se cobra como cualquier otra.
-Si falla: «Añadir» no se puede pulsar sin importe y departamento; sin departamentos ni categorías, «Sin departamentos configurados.». Un empleado o cajero sin el permiso de precio libre recibe la petición de PIN del responsable.
+Si falla: «Añadir» no se puede pulsar sin importe y departamento; sin departamentos ni categorías, «Sin departamentos configurados.». Desde esta hoja, un empleado o cajero sin el permiso de precio libre recibe la petición de PIN del responsable; por otras puertas no (ver Estado).
 Implicados: pendiente
 Pendiente de enlazar: taxes — el tipo de IVA de cada categoría
 Pendiente de enlazar: services — un servicio de precio abierto pide su importe al venderse
 QA: qa-hub-restaurant §7.10
 
 ### SALES-F10 Vender por peso, con o sin báscula
-Estado: hecho
+Estado: parcial — con báscula no funciona: el TPV está preparado para recibir el peso, pero ni la aplicación instalada ni el hub tienen lector de báscula, así que nada se lo manda
 Vertical: comun
 Actor: empleado, responsable
 Pantalla: Vender
 Pasos:
 1. Toca un artículo cuya unidad es de masa (kg, g): entra como línea con su unidad.
-2. Sin báscula, escribe la cantidad en el selector de la línea (p. ej. 0,532).
-3. Con báscula conectada a la aplicación instalada, pon el género en el plato: al estabilizarse, el peso pasa a la última línea por peso que no se haya enviado a cocina.
-4. El importe se recalcula y la línea muestra la unidad («0,532 kg»).
-Entra: la unidad y su escalón, de Inventario; el peso que manda la aplicación instalada.
+2. Escribe la cantidad en el selector de la línea (p. ej. 0,532).
+3. El importe se recalcula y la línea muestra la unidad («0,532 kg»).
+4. Con báscula (no disponible hoy): el peso, al estabilizarse, pasaría a la última línea por peso que no se haya enviado a cocina.
+Entra: la unidad y su escalón, de Inventario.
 Sale: la línea con su cantidad y su unidad congeladas.
-Si falla: una cantidad que no encaja con el escalón del artículo se rechaza con «La cantidad no encaja con el escalón del producto» y la línea queda como estaba. Una báscula que pesa en otra unidad: «La báscula pesa en g y esta línea va en kg». Una lectura sin línea por peso, o inestable, se ignora sin aviso.
+Si falla: una cantidad que no encaja con el escalón del artículo se rechaza con «La cantidad no encaja con el escalón del producto» y la línea queda como estaba. El aviso de báscula en otra unidad («La báscula pesa en g y esta línea va en kg») existe pero hoy no puede salir.
 Implicados: pendiente
 Pendiente de enlazar: inventory — unidades de medida y su escalón
-Pendiente de enlazar: hub — la aplicación instalada lee la báscula y avisa del peso
+Pendiente de enlazar: hub — leer la báscula en la aplicación instalada y mandar el peso al TPV (no existe)
 QA: qa-hub-restaurant §7.07
 
 ### SALES-F11 Elegir los suplementos de un artículo
@@ -99,13 +99,13 @@ Pasos:
 3. Pulsa «Aplicar −N %» (o «Aplicar −<importe>»). «Quitar» lo borra. La línea enseña «−N %» y el pie la fila «Descuento del ticket».
 4. Si el descuento pasa del máximo que el negocio deja dar sin autorización, el hub pide el PIN de un responsable antes de aplicarlo; la cuenta guarda quién lo autorizó y no lo vuelve a pedir al cobrar.
 Entra: «Permitir descuentos» y el descuento máximo de los ajustes.
-Sale: el descuento en la cuenta o en la línea; al cobrar se reparte por línea antes del IVA y la venta guarda el importe descontado.
+Sale: el descuento en la cuenta o en la línea; al cobrar se reparte entre las líneas, la base y el IVA declarados ya lo llevan descontado, y la venta guarda el importe descontado.
 Si falla: con «Permitir descuentos» apagado no hay botones y el servidor rechaza «Este negocio no permite descuentos.». Por encima del máximo sin PIN: «Ese descuento supera lo que este negocio permite sin que lo autorice el encargado.» y la cuenta sigue como estaba. Un importe mayor que la cuenta no se puede aplicar.
 Implicados: ninguno
 QA: R-11, B-05, qa-hub-restaurant §7.10
 
 ### SALES-F15 Invitar una línea
-Estado: parcial — no pide motivo (guarda siempre «Invitación») ni permiso propio: cualquiera que monte la cuenta puede invitar
+Estado: parcial — no pide motivo (guarda siempre «Invitación») ni permiso propio: cualquiera que monte la cuenta puede invitar; y al cobrar el servidor da por invitada la línea que el cobro diga, sin mirar la cuenta, así que por el asistente o la API se cobra una línea a 0 sin rastro de quién lo decidió
 Vertical: comun
 Actor: empleado, responsable
 Pantalla: Vender
@@ -156,7 +156,7 @@ Pendiente de enlazar: tables — soltar la mesa al aparcar una cuenta que la ten
 QA: qa-hub-restaurant §7.06
 
 ### SALES-F18 Eliminar una cuenta abierta
-Estado: parcial — no pide motivo
+Estado: parcial — no pide motivo; las rondas ya enviadas a cocina siguen en la pantalla de Cocina y Mesas no recibe ningún aviso del servidor; anular una cuenta que ya no está abierta contesta bien y avisa igual
 Vertical: comun
 Actor: responsable, empleado
 Pantalla: Cuentas abiertas
@@ -165,9 +165,10 @@ Pasos:
 2. Toca otra vez: la cuenta desaparece de la lista. También se elimina con «Eliminarla y abrir» al cambiar de cuenta.
 3. A un empleado o cajero el hub le pide el PIN de un responsable (anular es permiso de responsable).
 Entra: la cuenta elegida.
-Sale: la cuenta queda anulada, no borrada (avisa: sales.order.voided); Servicios suelta los bonos que tuviera retenidos.
-Si falla: «No se ha podido eliminar esa cuenta abierta. Sigue en la lista.» o «No se ha podido eliminar la cuenta. Sigue abierta, en pantalla.».
+Sale: la cuenta queda anulada, no borrada, sin motivo (avisa: sales.order.voided); Servicios suelta los bonos que tuviera retenidos. Cocina no escucha ese aviso: lo ya enviado sigue en su pantalla. Mesas tampoco lo escucha: por el servidor la mesa no se suelta (lo que haga su control en pantalla, sin confirmar).
+Si falla: «No se ha podido eliminar esa cuenta abierta. Sigue en la lista.» o «No se ha podido eliminar la cuenta. Sigue abierta, en pantalla.». Una cuenta ya cobrada o anulada desde otro dispositivo no cambia, pero la orden contesta bien y el aviso sale igual.
 Implicados: pendiente
 Pendiente de enlazar: services — soltar las sesiones de bono retenidas en esa cuenta
-Pendiente de enlazar: tables — qué pasa con la mesa de una cuenta eliminada (sin confirmar)
+Pendiente de enlazar: tables — Mesas no se entera por el servidor de que la cuenta de una mesa se eliminó
+Pendiente de enlazar: kitchen — las rondas enviadas de una cuenta eliminada siguen en la pantalla de Cocina
 QA: qa-hub-restaurant §7.13 (discrepa)
