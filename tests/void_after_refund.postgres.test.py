@@ -314,7 +314,35 @@ def step_4_the_neighbours_refund_does_not_close_my_door(s: Session) -> None:
         0,
     )
 
-    refund(s, "ref-vecino", mine, FIRST_REFUND, hub=OTHER_HUB)
+    # sales#506: the refund door itself no longer writes that row — its head only lands on a sale
+    # of ITS hub that is still `completed` — so the adversarial row is planted by hand, and the
+    # door's refusal is asserted first.
+    s.command(
+        "sales._insert_refund",
+        {
+            "refund_id": "ref-vecino-door",
+            "sale_id": mine,
+            "total": FIRST_REFUND,
+            "reason": "neighbour",
+            "note": "",
+            "idempotency_key": "ref-vecino-door",
+        },
+        hub=OTHER_HUB,
+    )
+    s.check(
+        "the neighbour's refund door writes nothing on a sale of this hub",
+        s.qi(f"SELECT count(*) FROM sales_sale_refund WHERE id = 'ref-vecino-door'"),
+        0,
+    )
+    s.psql(
+        [
+            "-c",
+            "INSERT INTO sales_sale_refund (id, hub_id, sale_id, total, reason, note,"
+            " idempotency_key, is_deleted, created_at, updated_at) VALUES"
+            f" ('ref-vecino', '{OTHER_HUB}', '{mine}', {FIRST_REFUND}, 'neighbour', '',"
+            f" 'ref-vecino', 0, '{NOW}', '{NOW}')",
+        ]
+    )
     s.check(
         "el vecino SÍ ha escrito una devolución contra ese id",
         s.qi(

@@ -5109,13 +5109,13 @@ fn refund_sale_inner(input: Value) -> Result<Output, Refusal> {
     for leg in legs {
         operations.push(Operation::sql("sales._insert_refund_payment", leg));
     }
-    if fully_refunded {
-        // Sin esta marca la lista de ventas sigue diciendo `completed` sobre una venta que ya no
-        // tiene dinero detrás, y el histórico miente en la única pantalla que el dueño mira.
-        let mut m = Map::new();
-        m.insert("sale_id".into(), json!(sale_id));
-        operations.push(Operation::sql("sales._mark_refunded", m));
-    }
+    // Without this mark the sales list keeps saying `completed` over a sale with no money behind
+    // it. It goes out on EVERY refund (sales#506): the statement compares the legs already
+    // written against the sale total inside the transaction, so it is the database — not the read
+    // above, which two simultaneous refunds share — that decides whether this was the last cent.
+    let mut m = Map::new();
+    m.insert("sale_id".into(), json!(sale_id));
+    operations.push(Operation::sql("sales._mark_refunded", m));
 
     let refunded_by = as_str(context.get("current_user_id").unwrap_or(&Value::Null));
     let event = Event::new(
@@ -10352,15 +10352,26 @@ mod tests {
     }
 
     #[test]
-    fn una_devolucion_PARCIAL_no_marca_la_venta_como_devuelta() {
+    fn a_partial_refund_still_hands_the_refunded_mark_to_the_database() {
+        // sales#506: whether the sale is fully refunded NOW is decided by `_mark_refunded` against
+        // the rows already written, not by this read. Two partial refunds fired at once both read
+        // «nothing refunded yet»; if the handler decided, neither would mark a sale whose money
+        // had all gone back. The statement only matches when the legs add up to the total, so a
+        // partial one writes nothing there.
         let out = refund_sale_pure(refund_input(json!([
             { "payment_id": "pay-cash", "amount": 1000 }
         ])))
-        .accepted("parcial");
-        let ev = out.events.iter().find(|e| e.name == "sale.refunded").expect("evento");
+        .accepted("partial");
+        let ev = out.events.iter().find(|e| e.name == "sale.refunded").expect("event");
         assert_eq!(ev.payload["fully_refunded"], json!(false));
-        assert!(!out.operations.iter().any(|o| o.command == "sales._mark_refunded"),
-                "la venta sigue viva: quedan 60,00 € cobrados");
+        let mark = out
+            .operations
+            .iter()
+            .find(|o| o.command == "sales._mark_refunded")
+            .expect("the mark is always handed to the database");
+        assert_eq!(mark.params["sale_id"], json!("sale-1"));
+        let last = out.operations.last().expect("operations");
+        assert_eq!(last.command, "sales._mark_refunded", "after the legs it adds up");
     }
 
     #[test]

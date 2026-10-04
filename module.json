@@ -1205,14 +1205,28 @@
     "sales._insert_refund": {
       "permission": "sales.refund_sale",
       "sql": [
+        "commands/_refund_lock.sql",
         "commands/_insert_refund.sql"
-      ]
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "statement": "commands/_insert_refund.sql",
+        "error": "sales.refund_requires_completed",
+        "message": "That sale can no longer be refunded: another refund has just given back all its money."
+      }
     },
     "sales._insert_refund_payment": {
       "permission": "sales.refund_sale",
       "sql": [
         "commands/_insert_refund_payment.sql"
-      ]
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "sales.refund_exceeds_tender",
+        "message": "That is more than is still refundable on this payment: another refund has just taken part of it."
+      }
     },
     "sales._mark_refunded": {
       "permission": "sales.refund_sale",
