@@ -48,7 +48,7 @@ SELECT :refund_payment_id, :hub_id, :refund_id, p.sale_id, p.id,
              FROM sales_sale_refund h
             WHERE h.id = :refund_id
               AND h.hub_id = :hub_id
-              AND h.sale_id = p.sale_id
+              AND h.sale_id = :sale_id
        )
    AND p.amount - COALESCE((
            SELECT SUM(r.amount)
