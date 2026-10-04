@@ -633,10 +633,24 @@ export function saleToReceipt(
 
 /** sales#486 — «Ticket discount of 2,00 € already applied…»: the discount the cashier gave, as it
  *  was asked for (sales#295), outside the column that adds up. Nothing without a discount. */
-function discountNote(amount: number | undefined, currency: string, t?: Translate): string | undefined {
+export function discountNote(amount: number | undefined, currency: string, t?: Translate): string | undefined {
   if (!amount) return undefined;
   const text = formatMinor(minor(amount), { decimals: hubDecimals(), locale: documentLocale(), currency });
   return (t ? t('ui.docDiscountApplied') : DISCOUNT_APPLIED_EN).replace('{amount}', text);
+}
+
+/** sales#491 — an invoice line's unit price WITHOUT tax (RD 1619/2012 art. 6.1.f), so that
+ *  «quantity × price − its discount» reads as the line's amount, which is its base (sales#485).
+ *  The row's `unit_price` is the price as charged — with the VAT inside when the business sells
+ *  tax-included — and the sale does not freeze which it was, so the price comes from the base:
+ *  per unit, before the line's own discount (printed beside it) and after the ticket's prorated
+ *  one (which the invoice's note says is already applied, sales#486). */
+function netUnitPrice(l: SaleLineRow): number {
+  // A row without a base is a hand-built caller (the column is NOT NULL): its amount falls back to
+  // `line_total` below, and its price stays the one it brought, so the pair keeps one convention.
+  if (l.net_amount == null) return minor(l.unit_price);
+  const units = fromMicro(Number(l.quantity)) * (1 - Number(l.discount_percent ?? 0) / 100);
+  return units > 0 ? Math.round(minor(l.net_amount) / units) : 0;
 }
 
 /** English source of `ui.docDiscountApplied`, for the legacy callers that pass no translator. */
@@ -661,7 +675,7 @@ export function saleToInvoice(
     // «Tomate rosa (kg)». Sin unidad o con la suelta, la descripción queda como estaba.
     description: unitTag(l.unit_code) ? `${lineLabel(l, t)} (${unitTag(l.unit_code)})` : lineLabel(l, t),
     qty: fromMicro(Number(l.quantity)), // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
-    unit_price: minor(l.unit_price),
+    unit_price: netUnitPrice(l),
     discount_percent: l.discount_percent ? Number(l.discount_percent) : undefined,
     tax_rate: l.tax_rate != null ? Number(l.tax_rate) : undefined,
     // sales#485 — an invoice line's amount is its BASE (net after discount, without tax): that is

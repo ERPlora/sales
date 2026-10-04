@@ -20,7 +20,7 @@
 //
 // The field names are the wire contract of `escpos::render_receipt` / `render_prebill`. Changing
 // one here without changing it there prints a document with a missing field, silently.
-import { orderToPrebill, saleToReceipt, saleToInvoice, claimPrintFields, paperNote } from './document-mappers.js';
+import { orderToPrebill, saleToReceipt, saleToInvoice, claimPrintFields, paperNote, discountNote } from './document-mappers.js';
 import { modifierIdentity, modifierLabel } from './paper-modifiers.js';
 import { comboIdentity, componentLabel, type PrintedCombo } from './paper-combos.js';
 import type { PrebillLine, PrebillValuation, SaleRow, SaleLineRow, SaleSettings, FiscalData } from './document-mappers.js';
@@ -249,7 +249,9 @@ export function saleToPrintDocument(
     // The tax total comes from the sale row, not from the breakdown: a sale without
     // `tax_breakdown` still has `tax_amount`, and the paper must not lose it.
     tax_amount: euros(sale.tax_amount, screen.decimals),
-    discount: euros(sale.discount_amount, screen.decimals),
+    // sales#489 — no `discount` row: the renderer prints it «−2,00» under the subtotal and the tax,
+    // and both already carry it (prorated into the lines and the base, sales#33), so the foot read
+    // «8,26 + 1,74 − 2,00 = 10,00». The discount travels as the invoice's informative note.
     total: euros(screen.total, screen.decimals)!,
     payment_method: screen.payment?.method,
     paid: euros(screen.payment?.paid, screen.decimals),
@@ -263,7 +265,7 @@ export function saleToPrintDocument(
     // hub#2009: the same promotional QR the screen and the browser paper carry (sales#345). The
     // keys only exist when the business configured the URL, so its ticket is unchanged otherwise.
     ...(screen.promo_qr ? { promo_qr: screen.promo_qr, ...(screen.promo_note ? { promo_note: screen.promo_note } : {}) } : {}),
-    receipt_footer: screen.footer,
+    receipt_footer: [discountNote(sale.discount_amount, screen.currency, t), screen.footer].filter(Boolean).join('\n') || undefined,
   };
 }
 
