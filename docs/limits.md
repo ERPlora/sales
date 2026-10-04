@@ -42,6 +42,7 @@ sentence each code shows the user lives in `locales/en.json` / `locales/es.json`
 | `sales.refund_tender_not_eligible` | The leg cannot take its own money back (its payment method is gone) and no other destination was named | Pick another destination for that leg — the money is still refundable, just not through that door |
 | `sales.refund_method_unavailable` | The named destination is not an active payment method in this hub | Pick an active one, or re-enable it in settings |
 | `sales.insufficient_tendered` | A positive `amount_tendered` is below the total (short cash payment, sales#24) | Enter an amount that covers the total, or leave it empty for the exact amount |
+| `sales.cash_limit_exceeded` | The sale is 1.000,00 € or more and some of it is paid in cash, in a hub whose country is Spain (Ley 7/2012 art. 7, sales#498). A **mixed** payment counts too: 999 € in cash plus 1 € by card on a 1.000 € sale is refused, because the law looks at the whole operation, not at each leg. The manager's approval does not lift it — it is the law, not a discount cap | Charge it by card, Bizum or bank transfer. The till already shows the cash button as unavailable and says why before the tap |
 
 ## Caps and sizes
 
@@ -50,6 +51,7 @@ sentence each code shows the user lives in `locales/en.json` / `locales/es.json`
 | Rows per page in the sales list | 50 |
 | Maximum rows a paginated request may ask for | 500 |
 | Discount percentage | 0–100 |
+| Cash in a single sale (hubs in Spain) | below 1.000,00 € — from 1.000,00 € on, no cash at all, mixed payments included. Hubs in other countries have no limit |
 
 A sale's number comes from a per-day counter, so it resets to `0001` every day; the date is part of
 the number.
