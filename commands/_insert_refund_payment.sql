@@ -17,6 +17,14 @@
 -- refusal an over-the-cap refund always got. A voided refund (soft-delete) does not count, as in
 -- `refund_options.sql`.
 --
+-- sales#511: and it only lands under ITS OWN head — this refund's id, of this hub and this sale.
+-- When the head wrote nothing (a void committed while this refund waited in `_refund_lock.sql`, or
+-- another refund closed the sale), the leg used to still fit the cap and crash on the foreign key
+-- to the missing head: a SQL error, which the kernel answers with the generic `db`, before the
+-- head's `expect_rows` (judged at the END of the transaction) could say why. Now the leg writes 0
+-- rows too and the refusal is the head's own: `sales.refund_requires_completed` — the kernel reports
+-- the first gate that missed, and the head's comes first.
+--
 -- `:amount` is used twice — written into a BIGINT column and compared against a NUMERIC sum — so
 -- the comparison says its type out loud: left bare, Postgres deduces two different types for the
 -- one parameter and cannot PREPARE the statement unless the caller happens to send the type.
@@ -35,6 +43,13 @@ SELECT :refund_payment_id, :hub_id, :refund_id, p.sale_id, p.id,
    AND p.sale_id = :sale_id
    AND p.hub_id = :hub_id
    AND p.is_deleted = 0
+   AND EXISTS (
+           SELECT 1
+             FROM sales_sale_refund h
+            WHERE h.id = :refund_id
+              AND h.hub_id = :hub_id
+              AND h.sale_id = :sale_id
+       )
    AND p.amount - COALESCE((
            SELECT SUM(r.amount)
              FROM sales_sale_refund_payment r

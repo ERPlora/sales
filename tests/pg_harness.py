@@ -170,6 +170,19 @@ def lower(sql: str) -> str:
     return _expand(sql, "erp_pad(", _pad)
 
 
+class Held:
+    """An open transaction started by `Session.hold`. `commit()` ends it and returns
+    `(ok, output, rows_per_statement)`, like `Session.chain`."""
+
+    def __init__(self, proc) -> None:
+        self.proc = proc
+
+    def commit(self):
+        out, _ = self.proc.communicate("COMMIT;\n", timeout=30)
+        ok = self.proc.returncode == 0
+        return ok, out.strip(), Session._rows_per_statement(out) if ok else []
+
+
 class Session:
     """One scratch database, its migrations, and the doors of the manifest."""
 
@@ -295,6 +308,105 @@ class Session:
             return True, ""
         except RuntimeError as exc:
             return False, str(exc)
+
+    # ── Several operations in ONE transaction, the way a handler's output runs ─────────────
+    #
+    # A WASM handler returns N operations and the kernel plays all their statements in a single
+    # transaction, then judges each command's `expect_rows` by the rows ITS statement touched
+    # (hub `execute_tx_gated`). `command()` above plays one command per transaction and cannot say
+    # how many rows a statement matched, which is exactly what a race between two of those
+    # transactions is decided by. These two doors play the chain as the kernel does and hand back,
+    # per statement, the rows it touched — so a battery reads the gate the kernel would read.
+
+    def _chain_script(self, calls: list, hub=None, now=None) -> list:
+        """`calls` is `[(command, payload), …]`, in the order the handler emits them."""
+        script = []
+        for name, payload in calls:
+            cmd = MANIFEST["commands"].get(name)
+            if cmd is None or not cmd.get("sql"):
+                raise RuntimeError(f"command `{name}` declares no sql[] in module.json")
+            params = dict(payload)
+            params["hub_id"] = hub or self.hub
+            params["current_user_id"] = self.user
+            params["now"] = now or self.now
+            for rel in cmd["sql"]:
+                sql = bind((MODULE_DIR / rel).read_text(), params).rstrip().rstrip(";")
+                script.append(f"\\echo '@@ {name} {rel}'")
+                script.append(sql + ";")
+        return script
+
+    def _chain_cmd(self) -> list:
+        # `-tA`: a SELECT prints its rows bare, a write prints its tag (`UPDATE 0`, `INSERT 0 1`).
+        return [
+            "docker",
+            "exec",
+            "-i",
+            self.container,
+            "psql",
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-U",
+            "postgres",
+            "-d",
+            self.db,
+            "-tA",
+        ]
+
+    @staticmethod
+    def _rows_per_statement(out: str) -> list:
+        """`[(command, file, rows), …]` from a chain's output, in statement order."""
+        counts, current, lines = [], None, []
+
+        def close() -> None:
+            if current is None:
+                return
+            tags = [
+                l for l in lines if re.fullmatch(r"(INSERT \d+|UPDATE|DELETE) \d+", l)
+            ]
+            rows = int(tags[-1].split()[-1]) if tags else len(lines)
+            counts.append((*current, rows))
+
+        for line in out.splitlines():
+            if line.startswith("@@ "):
+                close()
+                current, lines = tuple(line[3:].split(" ", 1)), []
+            elif (
+                current is not None
+                and line.strip()
+                and line.strip() not in ("COMMIT", "BEGIN")
+            ):
+                lines.append(line.strip())
+        close()
+        return counts
+
+    def chain(self, calls: list, hub=None, now=None):
+        """Play `calls` in ONE transaction and commit. Returns `(ok, error, rows_per_statement)`."""
+        try:
+            script = ["BEGIN;", *self._chain_script(calls, hub, now), "COMMIT;"]
+        except RuntimeError as exc:
+            return False, str(exc), []
+        res = subprocess.run(
+            self._chain_cmd(), input="\n".join(script), capture_output=True, text=True
+        )
+        if res.returncode != 0:
+            return False, (res.stderr.strip() or res.stdout.strip()), []
+        return True, "", self._rows_per_statement(res.stdout)
+
+    def hold(self, calls: list, hub=None, now=None) -> "Held":
+        """Play `calls` in a transaction that stays OPEN — its row locks held — until `.commit()`.
+        It is how a battery puts a request «in flight» without racing for it."""
+        proc = subprocess.Popen(
+            self._chain_cmd(),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        proc.stdin.write(
+            "\n".join(["BEGIN;", *self._chain_script(calls, hub, now)]) + "\n"
+        )
+        proc.stdin.flush()
+        return Held(proc)
 
     def query(self, name: str, params: dict, hub=None) -> list:
         """Play a manifest query the way the runtime does — `hub_id` injected, never bound from the

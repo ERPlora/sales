@@ -1,6 +1,11 @@
 -- sales#506 -- queues every refund of the same sale. Internal: first statement of
 -- `sales._insert_refund`, which the `sales.refund` handler emits before the legs.
 --
+-- sales#511: and every VOID of it — first statement of `sales._void_lock`, which the `sales.void`
+-- handler emits before `sales._void_sale`. A void and a refund of the same ticket fired at once
+-- now wait in the same queue: the later one re-checks with what the earlier one committed (the
+-- void's «no refunds» is a subquery too) and is refused by its own gate.
+--
 -- The cap of a refund is read BEFORE the transaction (`sales.refund_options` in `reads`), so two
 -- refunds of the same ticket fired at once both saw «nothing refunded yet» and both wrote: a
 -- 15,00 € ticket ended with 30,00 € handed back. Locking the sale row here makes the second refund

@@ -20,6 +20,14 @@
 -- Ojo con la parcial: `_mark_refunded` solo marca `refunded` cuando vuelve el ÚLTIMO céntimo, así
 -- que una venta devuelta EN PARTE sigue `completed` y el cinturón de arriba la dejaba pasar entera.
 --
+-- sales#511: the WHERE alone did not close it. When a partial refund is in flight it holds the sale
+-- row (`_refund_lock.sql`); an UPDATE that waits on a row re-checks the row's own conditions after
+-- the wait but NOT its subqueries, which keep the snapshot taken before — and a partial refund does
+-- not touch the sale row. So the void now queues FIRST, in its own statement (`sales._void_lock`),
+-- and this UPDATE runs with a fresh snapshot that sees the committed refund. Matching 0 rows here
+-- makes the command's `expect_rows` answer `sales.sale_already_refunded`; a voided sale never gets
+-- this far (`_void_open.sql` is the earlier gate), so 0 rows here always means money went back.
+--
 -- `hub_id` va en el subselect SIEMPRE: la FK de `sales_sale_refund` apunta a `sales_sale(id)` a
 -- secas, sin el hub, de modo que un vecino puede tener filas contra un id que no es suyo. Sin el
 -- `hub_id` aquí, la devolución del hub de al lado bloquearía una anulación legítima de este.
