@@ -1263,6 +1263,7 @@
     "sales.payment_method_not_available": {},
     "sales.payment_method_required": {},
     "sales.payments_do_not_match_total": {},
+    "sales.cash_limit_exceeded": {},
     "sales.product_not_available": {},
     "sales.quantity_not_positive": {},
     "sales.quantity_off_grid": {},
