@@ -72,6 +72,15 @@ warning. Each payment still shows «Already given back in full.» and the screen
 left to refund on this sale.»; the only action left, when there is one, is **Give back what was
 paid another way**.
 
+That button is offered there even when **no refund was recovered** (sales#507): the money went back
+from another device or through the assistant, the operator un-ticked the session and the customer
+claims it later, or its give-back failed the first time. While some line says its session goes
+back, the button hands the **newest refund document of the sale** to it — no money moves and no new
+refund is written. If the sale's refund documents cannot be read (or there is none), nothing is
+handed and the screen says «The money is back, but what was paid another way could not be
+returned. Check it from its own module.»; the button stays, so it can be tried again. With money
+still left to refund, the session goes back with that refund's own **Refund** button instead.
+
 Closing the refund screen, for whatever reason, reloads the sales list, so the row shows the
 refund if it went through.
 

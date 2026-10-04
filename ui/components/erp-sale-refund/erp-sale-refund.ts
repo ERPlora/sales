@@ -210,6 +210,9 @@ export class ErpSaleRefund extends LitElement {
   @state() private recoveredRef = '';
   /** sales#462 - handing the recovered document to the fillers: a second tap waits. */
   @state() private tenderBusy = false;
+  /** sales#507 - the fillers of this screen have been handed a document: a filler commits once per
+   *  screen, so offering the give-back again would announce one that never happens. */
+  @state() private tenderHanded = false;
   /** sales#462 - what was not paid in money did not go back (or cannot even be read): check it in
    *  its own module. Painted on the screen, which stays open here. */
   @state() private tenderPending = false;
@@ -400,6 +403,7 @@ export class ErpSaleRefund extends LitElement {
    */
   private async loadTenderLines(saleId: string): Promise<void> {
     this.covered = [];
+    this.tenderHanded = false;
     this.tenderNotices = new Map();
     this.tenderHeard = new Set();
     this.tenderReadFailed = false;
@@ -585,15 +589,29 @@ export class ErpSaleRefund extends LitElement {
    * operator decides again on the holes of THIS screen, and this hands them the recovered document -
    * the same reference `resolveDoubt` hands them when the check happens without closing. Nothing is
    * refunded in money here, and the screen stays open: what is left of the sale is still below.
+   *
+   * sales#507 - with no money left and nothing recovered (refunded from another device or by the
+   * assistant, the session un-ticked and claimed later, a give-back that failed the first time),
+   * there is no refund button to commit through either. The holes are handed the NEWEST refund
+   * document of the sale: `sales.refund` demands money, so no new document can be written, and the
+   * session's return has to point at one (its owner ties one session to one document). It is read
+   * here, on the tap, not on every open: most returns never get this far.
    */
   async giveBackRecovered(): Promise<void> {
     const t = (k: string): string => erplora().t(CATALOG, k);
-    const ref = this.recoveredRef;
-    if (!ref || this.tenderBusy) return;
+    if (this.tenderBusy || this.tenderHanded) return;
     this.tenderBusy = true;
     try {
+      const ref = this.recoveredRef || await this.latestRefundRef();
+      if (!ref) {
+        // Nothing to point the session at: it did not go back, and that is said on the screen. The
+        // holes were handed nothing, so the button stays for another try.
+        this.tenderPending = true;
+        return;
+      }
       const committed = await this.commitTenderRefunds({ refund_id: ref, refund_ref: ref });
       // Handed once: a filler commits once per document, so a second offer would do nothing.
+      this.tenderHanded = true;
       this.recoveredRef = '';
       this.tenderPending = !committed;
       // sales#465 - handed and done: nothing owed. A failure keeps it, so the next screen - with a
@@ -602,6 +620,17 @@ export class ErpSaleRefund extends LitElement {
       if (committed) erplora().notify?.({ type: 'success', message: t('ui.refundTenderGivenBack') });
     } finally {
       this.tenderBusy = false;
+    }
+  }
+
+  /** sales#507 - the newest refund document of this sale (`sales.refunds` is newest first), or ''
+   *  when there is none or it cannot be read. */
+  private async latestRefundRef(): Promise<string> {
+    try {
+      const rows = await erplora().query<Array<{ id?: string }>>('sales.refunds', { sale_id: this.saleId });
+      return String(rows?.[0]?.id ?? '');
+    } catch {
+      return '';
     }
   }
 
@@ -701,12 +730,14 @@ export class ErpSaleRefund extends LitElement {
   }
 
   /**
-   * sales#462 - offered only over a recovered document and while some hole says its line goes back
-   * (an armed filler): with nothing armed there is nothing to hand, and a button that does nothing
-   * would claim the opposite.
+   * sales#462 - offered only while some hole says its line goes back (an armed filler): with nothing
+   * armed there is nothing to hand, and a button that does nothing would claim the opposite. Over a
+   * recovered document, or - sales#507 - with no money left, where there is no refund button to
+   * commit through. With money left and nothing recovered, the refund button is what commits.
    */
   private renderGiveBackRecovered(): unknown {
-    if (!this.recoveredRef || !this.tenderNotices.size) return nothing;
+    if (!this.tenderNotices.size || this.tenderHanded) return nothing;
+    if (!this.recoveredRef && refundableTotal(this.legs) > 0) return nothing;
     return html`<ion-button
       class="refund-tender-commit"
       data-testid="refund-tender-commit"
