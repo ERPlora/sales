@@ -4768,14 +4768,16 @@ fn update_order_line_inner(input: Value) -> Result<Output, Refusal> {
 /// El handler lee la venta que dice el payload (`sales.get`, read `required` filtrada por
 /// `payload.sale_id`) y decide con código propio:
 ///   * no está en este hub / read ausente → `sales.sale_not_found`
-///   * ya anulada / reembolsada / no cerrada → `sales.already_voided` (segunda llamada = rechazo,
+///   * ya anulada / no cerrada → `sales.already_voided` (segunda llamada = rechazo,
 ///     sin evento: los consumidores no ven un segundo `sale.voided`)
+///   * fully refunded (`refunded`) → `sales.sale_already_refunded` (sales#511)
 ///   * `document_type = invoice` → `sales.void_requires_credit_note`
 ///   * con devoluciones ya emitidas → `sales.sale_already_refunded` (sales#247: se ha movido
 ///     dinero, así que lo que queda es devolver el resto, no anular)
 ///   * motivo vacío → `sales.void_reason_required`
-/// Si aplica: `sales._void_sale` (status + `voided_at/voided_by/void_reason`, el resto de la
-/// fila intacto) y `sale.voided` con la identidad de la operación.
+/// Si aplica: `sales._void_lock` (queues on the sale and checks it is still not voided, sales#511),
+/// `sales._void_sale` (status + `voided_at/voided_by/void_reason`, el resto de la fila intacto) y
+/// `sale.voided` con la identidad de la operación.
 pub fn void_sale_pure(input: Value) -> Result<Output, String> {
     finish(void_sale_inner(input))
 }
@@ -4799,6 +4801,14 @@ fn void_sale_inner(input: Value) -> Result<Output, Refusal> {
         .iter()
         .find(|r| field(r, "id") == sale_id)
         .ok_or_else(|| reject("sales.sale_not_found", format!("sale {sale_id} is not in this hub")))?;
+    // sales#511: a sale a full refund closed is `refunded`, not voided — the money went back
+    // through a refund, and that is the refusal the cashier has to read (same code as a partial).
+    if field(sale, "status") == "refunded" {
+        return Err(reject(
+            "sales.sale_already_refunded",
+            format!("sale {sale_id} was refunded in full: there is nothing left to void"),
+        ));
+    }
     if field(sale, "status") != "completed" {
         return Err(reject(
             "sales.already_voided",
@@ -4847,7 +4857,15 @@ fn void_sale_inner(input: Value) -> Result<Output, Refusal> {
         "order_id": sale.get("order_id").cloned().unwrap_or(Value::Null),
         "document_type": sale.get("document_type").cloned().unwrap_or(Value::Null),
     }));
-    Ok(Output { operations: vec![Operation::sql("sales._void_sale", p)], events: vec![event], ..Default::default() })
+    // sales#511: queue on the sale FIRST — the same queue every refund of it waits in — so the
+    // writes below re-check «no refunds, not voided yet» with what the other one committed.
+    let mut lock = Map::new();
+    lock.insert("sale_id".into(), json!(sale_id));
+    Ok(Output {
+        operations: vec![Operation::sql("sales._void_lock", lock), Operation::sql("sales._void_sale", p)],
+        events: vec![event],
+        ..Default::default()
+    })
 }
 
 /// sales#160 / ADR-0386 decisión 3 — **devolver una venta cobrada con VARIOS medios**.
@@ -5557,6 +5575,35 @@ mod tests {
         assert!(out.operations.iter().any(|o| o.command == "sales._void_sale"), "the void still writes");
         assert_eq!(out.events.len(), 1);
         assert_eq!(out.events[0].name, "sale.voided");
+    }
+
+    // ── sales#511 · a void and a refund of the same ticket at once ───────────────────────────
+    //
+    // The handler reads before the transaction, so it cannot see a refund that commits while the
+    // void is on its way. The void therefore queues on the sale FIRST (`sales._void_lock`, which
+    // plays `_refund_lock.sql` — the same queue every refund of the sale waits in, sales#506) and
+    // only then writes; the writes re-check the rules with a fresh snapshot. The order IS the fix:
+    // the lock after the write would be no lock at all.
+
+    #[test]
+    fn the_void_queues_on_the_sale_before_it_writes() {
+        let out = void_sale_pure(void_input_with_refunds("mistake", completed_ticket(), json!([])))
+            .accepted("clean void");
+        let commands: Vec<&str> = out.operations.iter().map(|o| o.command.as_str()).collect();
+        assert_eq!(commands, vec!["sales._void_lock", "sales._void_sale"]);
+        assert_eq!(out.operations[0].params["sale_id"], json!("sale-1"));
+    }
+
+    #[test]
+    fn a_fully_refunded_sale_is_refused_as_refunded_not_as_already_voided() {
+        // A full refund turns the sale `refunded`. «This sale is already voided» would be false:
+        // money went back through a refund, and what the cashier needs to read is that.
+        let mut refunded = completed_ticket();
+        refunded[0]["status"] = json!("refunded");
+        let refunds = json!([{ "id": "ref-1", "sale_id": "sale-1", "total": 1210 }]);
+        let err = void_sale_pure(void_input_with_refunds("mistake", refunded, refunds))
+            .refused("void over a fully refunded sale");
+        assert_eq!(err.code, "sales.sale_already_refunded", "{err:?}");
     }
 
     // That the refusal reaches `_void_sale` with nothing and emits no `sale.voided` — the event
