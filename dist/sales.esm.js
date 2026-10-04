@@ -17613,6 +17613,7 @@ var ErpSaleRefund = class extends i3 {
     this.recoveredOnOpen = false;
     this.recoveredRef = "";
     this.tenderBusy = false;
+    this.tenderHanded = /* @__PURE__ */ new Set();
     this.tenderPending = false;
     /** sales#462 - the slot or the covered lines could not be read. */
     this.tenderReadFailed = false;
@@ -17830,6 +17831,7 @@ var ErpSaleRefund = class extends i3 {
    */
   async loadTenderLines(saleId) {
     this.covered = [];
+    this.tenderHanded = /* @__PURE__ */ new Set();
     this.tenderNotices = /* @__PURE__ */ new Map();
     this.tenderHeard = /* @__PURE__ */ new Set();
     this.tenderReadFailed = false;
@@ -17990,20 +17992,47 @@ var ErpSaleRefund = class extends i3 {
    * operator decides again on the holes of THIS screen, and this hands them the recovered document -
    * the same reference `resolveDoubt` hands them when the check happens without closing. Nothing is
    * refunded in money here, and the screen stays open: what is left of the sale is still below.
+   *
+   * sales#507 - with no money left and nothing recovered (refunded from another device or by the
+   * assistant, the session un-ticked and claimed later, a give-back that failed the first time),
+   * there is no refund button to commit through either. The holes are handed the NEWEST refund
+   * document of the sale: `sales.refund` demands money, so no new document can be written, and the
+   * session's return has to point at one (its owner ties one session to one document). It is read
+   * here, on the tap, not on every open: most returns never get this far.
    */
   async giveBackRecovered() {
     const t7 = (k2) => erplora5().t(CATALOG5, k2);
-    const ref2 = this.recoveredRef;
-    if (!ref2 || this.tenderBusy) return;
+    if (this.tenderBusy || !this.tenderToHand) return;
     this.tenderBusy = true;
     try {
+      const ref2 = this.recoveredRef || await this.latestRefundRef();
+      if (!ref2) {
+        this.tenderPending = true;
+        return;
+      }
+      const ticked = [...this.tenderNotices.keys()];
       const committed = await this.commitTenderRefunds({ refund_id: ref2, refund_ref: ref2 });
+      this.tenderHanded = /* @__PURE__ */ new Set([...this.tenderHanded, ...ticked]);
       this.recoveredRef = "";
       this.tenderPending = !committed;
       if (committed) this.settleRecovered();
       if (committed) erplora5().notify?.({ type: "success", message: t7("ui.refundTenderGivenBack") });
     } finally {
       this.tenderBusy = false;
+    }
+  }
+  /** sales#507 - some line says it goes back and its hole has been handed no document yet. */
+  get tenderToHand() {
+    return [...this.tenderNotices.keys()].some((line) => !this.tenderHanded.has(line));
+  }
+  /** sales#507 - the newest refund document of this sale (`sales.refunds` is newest first), or ''
+   *  when there is none or it cannot be read. */
+  async latestRefundRef() {
+    try {
+      const rows4 = await erplora5().query("sales.refunds", { sale_id: this.saleId });
+      return String(rows4?.[0]?.id ?? "");
+    } catch {
+      return "";
     }
   }
   /** The refund document exists: hand its reference to the tender fillers, say so, and close. */
@@ -18088,12 +18117,15 @@ var ErpSaleRefund = class extends i3 {
       </div>`;
   }
   /**
-   * sales#462 - offered only over a recovered document and while some hole says its line goes back
-   * (an armed filler): with nothing armed there is nothing to hand, and a button that does nothing
-   * would claim the opposite.
+   * sales#462 - offered only while some hole says its line goes back (an armed filler) and has not
+   * been handed a document yet: with nothing to hand, a button that does nothing would claim the
+   * opposite. Over a recovered document, or - sales#507 - with no money left, where there is no
+   * refund button to commit through. With money left and nothing recovered, the refund button is
+   * what commits.
    */
   renderGiveBackRecovered() {
-    if (!this.recoveredRef || !this.tenderNotices.size) return A;
+    if (!this.tenderToHand) return A;
+    if (!this.recoveredRef && refundableTotal(this.legs) > 0) return A;
     return b2`<ion-button
       class="refund-tender-commit"
       data-testid="refund-tender-commit"
@@ -18291,6 +18323,9 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpSaleRefund.prototype, "tenderBusy", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "tenderHanded", 2);
 __decorateClass([
   r5()
 ], ErpSaleRefund.prototype, "tenderPending", 2);

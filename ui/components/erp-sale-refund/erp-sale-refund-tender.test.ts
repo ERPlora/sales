@@ -103,13 +103,26 @@ interface Options {
   refuse?: boolean;
   /** Runs when the screen asks for the slot - after the recovery, before the lines are read. */
   onLoadSlot?: () => void;
+  /** sales#507: the refund documents already on record, by sale, newest first (`sales.refunds`). */
+  refunds?: Record<string, unknown[]>;
+  /** sales#507: `sales.refunds` fails. */
+  refundsFail?: boolean;
 }
+
+/** Two refund documents on sale-1, newest first - as `sales.refunds` orders them. */
+const REFUNDS: Record<string, unknown[]> = {
+  'sale-1': [
+    { id: 'ref-5', sale_id: 'sale-1', total: 800 },
+    { id: 'ref-3', sale_id: 'sale-1', total: 1000 },
+  ],
+  'sale-2': [{ id: 'ref-22', sale_id: 'sale-2', total: 1800 }],
+};
 
 /** Lets a held `sales.refund` go on (and answer, or lose its answer with `lostAnswer`). */
 let releaseRefund: (() => void) | undefined;
 
 function install(opts: Options = {}): void {
-  const { fillers = true, lines = LINES, linesFail = false, lostAnswer = false, legs = LEGS, slotFail = false, hold = false, refuse = false, onLoadSlot } = opts;
+  const { fillers = true, lines = LINES, linesFail = false, lostAnswer = false, legs = LEGS, slotFail = false, hold = false, refuse = false, onLoadSlot, refunds = REFUNDS, refundsFail = false } = opts;
   let answerLost = false;
   const gate = hold ? new Promise<void>((resolve) => { releaseRefund = resolve; }) : Promise.resolve();
   slotsAsked = [];
@@ -122,10 +135,16 @@ function install(opts: Options = {}): void {
     'sales.refund_by_idempotency_key': [{ id: 'ref-7', sale_id: 'sale-1', total: 1800 }],
   };
   refundSdk = installErploraDouble({
-    queries: Object.fromEntries(Object.entries(table).map(([name, rows]) => [name, () => {
-      if (linesFail && name === 'sales.lines') throw new Error('boom');
-      return rows;
-    }])),
+    queries: {
+      ...Object.fromEntries(Object.entries(table).map(([name, rows]) => [name, () => {
+        if (linesFail && name === 'sales.lines') throw new Error('boom');
+        return rows;
+      }])),
+      'sales.refunds': (params) => {
+        if (refundsFail) throw new Error('boom');
+        return refunds[String(params?.sale_id ?? '')] ?? [];
+      },
+    },
     command: async (name: string, payload: Record<string, unknown>) => {
       commands.push({ name, payload });
       await gate;
@@ -414,6 +433,21 @@ describe('sales#462: reopened over a doubt that WAS recorded', () => {
     expect(tenderPending(el), 'it went back: no «check it in its module»').toBeNull();
   });
 
+  it('with money left, a line ticked after the hand-over goes back with the refund button, not a second give-back', async () => {
+    openOverDoubt({ legs: LEGS, lines: [...LINES, { id: 'item-3', product_id: 's-tinte', product_name: 'Tinte', is_covered: 1 }] });
+    const el = await mount();
+    await arm(el);
+    giveBackButton(el)?.click();
+    await settle(el);
+    expect(fillersOf(el)[0].commits.map((c) => c.refundRef)).toEqual(['ref-7']);
+    fillersOf(el)[1].dispatchEvent(new CustomEvent('erp:tender-refund-armed', {
+      detail: { lineRef: 'item-3' }, bubbles: true, composed: true,
+    }));
+    await settle(el);
+    expect(giveBackButton(el), 'the recovered document was handed once').toBeNull();
+    expect(confirmButton(el)).toBeTruthy();
+  });
+
   it('offers nothing while no line goes back: the operator un-ticked it, or it already came back', async () => {
     openOverDoubt();
     const el = await mount();
@@ -426,10 +460,12 @@ describe('sales#462: reopened over a doubt that WAS recorded', () => {
     expect(giveBackButton(el)).toBeNull();
   });
 
-  it('offers nothing on a screen that did NOT recover a document: there the refund button commits', async () => {
-    install({ legs: ALL_BACK });
+  it('offers nothing on a screen with money left and no recovered document: there the refund button commits', async () => {
+    install();
     const el = await mount();
+    ready(el);
     await arm(el);
+    expect(confirmButton(el)).toBeTruthy();
     expect(giveBackButton(el)).toBeNull();
   });
 
@@ -475,14 +511,18 @@ describe('sales#462: reopened over a doubt that WAS recorded', () => {
     expect(tenderPending(el)?.textContent).toContain('ui.refundTenderPending');
   });
 
-  it('the same screen moved to ANOTHER sale does not offer the first sale\'s document', async () => {
+  it('the same screen moved to ANOTHER sale does not hand the first sale\'s document', async () => {
     openOverDoubt();
     const el = await mount();
     install({ legs: ALL_BACK });
     el.saleId = 'sale-2';
     await settle(el);
+    expect(el.shadowRoot?.querySelector('[data-testid="refund-recovered"]')).toBeNull();
     await arm(el);
-    expect(giveBackButton(el)).toBeNull();
+    giveBackButton(el)?.click();
+    await settle(el);
+    // sales#507: sale-2 has no money left either, so its own give-back is offered - with ITS document.
+    expect(fillersOf(el)[0].commits.map((c) => c.refundRef)).toEqual(['ref-22']);
   });
 
   it('the same screen moved to another recovered sale whose lines DO read carries no stale warning', async () => {
@@ -574,6 +614,244 @@ describe('sales#462: reopened over a doubt that WAS recorded', () => {
       expect(ui(esCatalog).refundNoMoneyLeft).toBeTruthy();
       expect(ui(esCatalog).refundNoMoneyLeft).not.toBe(ui(enCatalog).refundNoMoneyLeft);
     });
+  });
+});
+
+// sales#507 — the money went back WITHOUT the session, and no attempt is left in doubt on this
+// device: refunded from another device or by the assistant, the session un-ticked and claimed
+// later, or its give-back failed the first time. With no money left there is no refund button to
+// commit through, so the hole's ticked box did nothing. The give-back is offered here too, handing
+// the hole the newest refund document of the sale - `sales.refund` demands money, so it cannot
+// write a new one, and the session's return needs a document to point at (services ties one
+// session to one document). As in Square or Shopify: what is left of a ticket goes back from it.
+describe('sales#507: the money went back without the session', () => {
+  const ALL_BACK = [{ ...LEGS[0], refunded: 1800, remaining: 0, refundable: 0, reason: 'already_refunded' }];
+  const giveBackButton = (el: Refund): HTMLElement | null =>
+    el.shadowRoot?.querySelector('[data-testid="refund-tender-commit"]') as HTMLElement | null;
+  const tenderPending = (el: Refund): Element | null =>
+    el.shadowRoot?.querySelector('[data-testid="refund-tender-pending"]') ?? null;
+  const refundsReads = (): Array<Record<string, unknown> | undefined> =>
+    refundSdk.reads.filter((r) => r.name === 'sales.refunds').map((r) => r.params);
+  async function arm(el: Refund): Promise<void> {
+    fillersOf(el)[0].dispatchEvent(new CustomEvent('erp:tender-refund-armed', {
+      detail: { lineRef: 'item-1' }, bubbles: true, composed: true,
+    }));
+    await settle(el);
+  }
+  async function giveBack(el: Refund): Promise<void> {
+    giveBackButton(el)?.click();
+    await new Promise((r) => setTimeout(r, 0));
+    await settle(el);
+    commitResolved?.();
+    await settle(el);
+  }
+
+  it('offers the give-back while the hole says the session goes back', async () => {
+    install({ legs: ALL_BACK });
+    const el = await mount();
+    expect(giveBackButton(el), 'nothing armed yet: nothing to hand').toBeNull();
+    await arm(el);
+    expect(giveBackButton(el)).toBeTruthy();
+    expect(el.shadowRoot?.querySelector('[data-testid="refund-no-money-left"]')).toBeTruthy();
+    expect(confirmButton(el)).toBeNull();
+  });
+
+  it('hands the hole the NEWEST refund document of THIS sale, and writes no refund', async () => {
+    install({ legs: ALL_BACK });
+    commitBehaviour = 'ok';
+    const el = await mount();
+    await arm(el);
+    await giveBack(el);
+    expect(refundsReads()).toEqual([{ sale_id: 'sale-1' }]);
+    const commit = fillersOf(el)[0].commits[0];
+    expect(commit?.refundRef).toBe('ref-5');
+    expect(commit?.refundId).toBe('ref-5');
+    expect(commit?.saleId).toBe('sale-1');
+    expect(commands.filter((c) => c.name === 'sales.refund')).toHaveLength(0);
+    expect(refundSdk.notices.some((n) => n.type === 'success' && n.message === 'ui.refundTenderGivenBack')).toBe(true);
+    expect(tenderPending(el)).toBeNull();
+    expect(giveBackButton(el), 'done: offering it again would be a second give-back').toBeNull();
+  });
+
+  it('reads the documents only when the operator gives it back, not on every open', async () => {
+    install({ legs: ALL_BACK });
+    const el = await mount();
+    await arm(el);
+    expect(refundsReads()).toEqual([]);
+  });
+
+  it('SAYS SO, on the screen, when the hole could not give it back - and offers nothing twice', async () => {
+    install({ legs: ALL_BACK });
+    commitBehaviour = 'fail';
+    const el = await mount();
+    await arm(el);
+    await giveBack(el);
+    expect(fillersOf(el)[0].commits).toHaveLength(1);
+    expect(tenderPending(el)?.textContent).toContain('ui.refundTenderPending');
+    expect(refundSdk.notices.some((n) => n.message === 'ui.refundTenderGivenBack')).toBe(false);
+    expect(giveBackButton(el)).toBeNull();
+  });
+
+  it('the documents cannot be read: hands nothing, says so on the screen, and lets the operator try again', async () => {
+    install({ legs: ALL_BACK, refundsFail: true });
+    commitBehaviour = 'ok';
+    const el = await mount();
+    await arm(el);
+    await giveBack(el);
+    expect(fillersOf(el)[0].commits).toHaveLength(0);
+    expect(tenderPending(el)?.textContent).toContain('ui.refundTenderPending');
+    expect(refundSdk.notices.some((n) => n.message === 'ui.refundTenderGivenBack')).toBe(false);
+    expect(giveBackButton(el), 'the hole has not been handed anything: it can still try').toBeTruthy();
+    install({ legs: ALL_BACK });
+    commitBehaviour = 'ok';
+    await giveBack(el);
+    expect(fillersOf(el)[0].commits.map((c) => c.refundRef)).toEqual(['ref-5']);
+    expect(tenderPending(el)).toBeNull();
+  });
+
+  it('no refund document on record: hands nothing and never claims it went back', async () => {
+    install({ legs: ALL_BACK, refunds: {} });
+    commitBehaviour = 'ok';
+    const el = await mount();
+    await arm(el);
+    await giveBack(el);
+    expect(fillersOf(el)[0].commits).toHaveLength(0);
+    expect(tenderPending(el)?.textContent).toContain('ui.refundTenderPending');
+    expect(refundSdk.notices.some((n) => n.message === 'ui.refundTenderGivenBack')).toBe(false);
+  });
+
+  it('the same screen moved to another sale after giving back offers that sale its own give-back', async () => {
+    install({ legs: ALL_BACK });
+    commitBehaviour = 'ok';
+    const el = await mount();
+    await arm(el);
+    await giveBack(el);
+    expect(giveBackButton(el)).toBeNull();
+    install({ legs: ALL_BACK, lines: [{ id: 'item-9', product_id: 's-corte', product_name: 'Corte', is_covered: 1 }] });
+    commitBehaviour = 'ok';
+    el.saleId = 'sale-2';
+    await settle(el);
+    fillersOf(el)[0].dispatchEvent(new CustomEvent('erp:tender-refund-armed', {
+      detail: { lineRef: 'item-9' }, bubbles: true, composed: true,
+    }));
+    await settle(el);
+    await giveBack(el);
+    expect(fillersOf(el)[0].commits.map((c) => c.refundRef)).toEqual(['ref-22']);
+  });
+
+  it('the same screen moved away and back to the sale offers its new holes the give-back again', async () => {
+    install({ legs: ALL_BACK });
+    commitBehaviour = 'fail';
+    const el = await mount();
+    await arm(el);
+    await giveBack(el);
+    expect(giveBackButton(el)).toBeNull();
+    install({ legs: ALL_BACK, lines: [{ id: 'item-9', product_id: 's-corte', product_name: 'Corte', is_covered: 1 }] });
+    el.saleId = 'sale-2';
+    await settle(el);
+    install({ legs: ALL_BACK });
+    commitBehaviour = 'ok';
+    el.saleId = 'sale-1';
+    await settle(el);
+    // The holes of the first visit are gone: these are new ones, and they have been handed nothing.
+    expect(fillersOf(el)[0].commits).toHaveLength(0);
+    await arm(el);
+    expect(giveBackButton(el)).toBeTruthy();
+    await giveBack(el);
+    expect(fillersOf(el)[0].commits.map((c) => c.refundRef)).toEqual(['ref-5']);
+  });
+
+  it('once handed, asking again (the method is public) announces no second give-back', async () => {
+    install({ legs: ALL_BACK });
+    commitBehaviour = 'ok';
+    const el = await mount();
+    await arm(el);
+    await giveBack(el);
+    const given = (): number => refundSdk.notices.filter((n) => n.message === 'ui.refundTenderGivenBack').length;
+    expect(given()).toBe(1);
+    await (el as unknown as { giveBackRecovered(): Promise<void> }).giveBackRecovered();
+    await settle(el);
+    expect(given()).toBe(1);
+    expect(refundsReads()).toHaveLength(1);
+  });
+
+  // Two sessions on one ticket (a mother and her daughter). The operator un-ticks one, gives the
+  // other back, and the customer then claims the first one too: that line has been handed nothing,
+  // so it is offered - a ticked box with no button is the very dead end this issue is about.
+  describe('two lines paid another way', () => {
+    const TWO_COVERED = [...LINES, { id: 'item-3', product_id: 's-tinte', product_name: 'Tinte', is_covered: 1 }];
+    async function armLine(el: Refund, lineRef: string, at: number): Promise<void> {
+      fillersOf(el)[at].dispatchEvent(new CustomEvent('erp:tender-refund-armed', {
+        detail: { lineRef }, bubbles: true, composed: true,
+      }));
+      await settle(el);
+    }
+    const given = (): number => refundSdk.notices.filter((n) => n.message === 'ui.refundTenderGivenBack').length;
+
+    it('a line ticked AFTER the give-back is offered again, and is handed the document too', async () => {
+      install({ legs: ALL_BACK, lines: TWO_COVERED });
+      const el = await mount();
+      await armLine(el, 'item-1', 0);
+      await giveBack(el);
+      expect(given()).toBe(1);
+      expect(giveBackButton(el), 'everything ticked has been handed').toBeNull();
+      await armLine(el, 'item-3', 1);
+      expect(giveBackButton(el), 'ticked, and handed nothing yet').toBeTruthy();
+      await giveBack(el);
+      expect(fillersOf(el)[1].commits.at(-1)?.refundRef).toBe('ref-5');
+      expect(fillersOf(el)[1].commits).toHaveLength(2);
+      expect(given()).toBe(2);
+      expect(giveBackButton(el), 'both handed: nothing left to offer').toBeNull();
+    });
+
+    it('both ticked: one give-back hands both, and nothing is offered after it', async () => {
+      install({ legs: ALL_BACK, lines: TWO_COVERED });
+      const el = await mount();
+      await armLine(el, 'item-1', 0);
+      await armLine(el, 'item-3', 1);
+      await giveBack(el);
+      expect(fillersOf(el).map((f) => f.commits.map((c) => c.refundRef))).toEqual([['ref-5'], ['ref-5']]);
+      expect(giveBackButton(el)).toBeNull();
+      await (el as unknown as { giveBackRecovered(): Promise<void> }).giveBackRecovered();
+      await settle(el);
+      expect(given()).toBe(1);
+    });
+
+    it('a line un-ticked and ticked again after it was handed is not offered twice', async () => {
+      install({ legs: ALL_BACK, lines: TWO_COVERED });
+      const el = await mount();
+      await armLine(el, 'item-1', 0);
+      await giveBack(el);
+      fillersOf(el)[0].dispatchEvent(new CustomEvent('erp:tender-refund-disarmed', {
+        detail: { lineRef: 'item-1' }, bubbles: true, composed: true,
+      }));
+      await settle(el);
+      await armLine(el, 'item-1', 0);
+      expect(giveBackButton(el), 'its hole commits once per screen').toBeNull();
+      // Nor after the OTHER line has been handed its own: the first hand-over is not forgotten.
+      fillersOf(el)[0].dispatchEvent(new CustomEvent('erp:tender-refund-disarmed', {
+        detail: { lineRef: 'item-1' }, bubbles: true, composed: true,
+      }));
+      await armLine(el, 'item-3', 1);
+      await giveBack(el);
+      await armLine(el, 'item-1', 0);
+      expect(giveBackButton(el), 'both holes have committed').toBeNull();
+    });
+  });
+
+  it('a second tap while the documents are being read hands nothing twice', async () => {
+    install({ legs: ALL_BACK });
+    commitBehaviour = 'ok';
+    const el = await mount();
+    await arm(el);
+    giveBackButton(el)?.click();
+    giveBackButton(el)?.click();
+    await new Promise((r) => setTimeout(r, 0));
+    await settle(el);
+    commitResolved?.();
+    await settle(el);
+    expect(refundsReads()).toHaveLength(1);
+    expect(fillersOf(el)[0].commits).toHaveLength(1);
   });
 });
 
