@@ -5024,6 +5024,7 @@ var en_default = {
     refundNeedsDestination: "{method}: choose where this money goes back.",
     refundOverCap: "{method}: {amount} is more than the {remaining} still refundable.",
     refundNothingToReturn: "Type how much goes back.",
+    refundNoMoneyLeft: "There is no money left to refund on this sale.",
     refundReasonLabel: "Reason",
     refundReasonRequired: "A refund needs a reason.",
     refundReasonPlaceholder: "Why the money goes back",
@@ -5699,6 +5700,7 @@ var es_default = {
     refundNeedsDestination: "{method}: elige por d\xF3nde vuelve este dinero.",
     refundOverCap: "{method}: {amount} es m\xE1s que los {remaining} que quedan por devolver.",
     refundNothingToReturn: "Escribe cu\xE1nto vuelve.",
+    refundNoMoneyLeft: "No queda dinero por devolver en esta venta.",
     refundReasonLabel: "Motivo",
     refundReasonRequired: "Una devoluci\xF3n necesita un motivo.",
     refundReasonPlaceholder: "Por qu\xE9 vuelve el dinero",
@@ -18104,7 +18106,7 @@ var ErpSaleRefund = class extends i3 {
     return notices.map(([ref2, n6]) => b2`
       <ok-inline-feedback class="rt-notice" data-testid=${`refund-tender-notice-${ref2}`} tone="warning" icon="alert-circle-outline">${n6}</ok-inline-feedback>`);
   }
-  renderLeg(leg) {
+  renderLeg(leg, moneyLeft) {
     const t7 = (k2, p4) => erplora5().t(CATALOG5, k2, p4);
     const money3 = (c5) => erplora5().formatMoney(c5);
     const entry = this.draft[leg.payment_id];
@@ -18112,7 +18114,7 @@ var ErpSaleRefund = class extends i3 {
     return b2`<div class="leg" data-testid=${`refund-leg-${leg.payment_id}`} data-leg=${leg.payment_id}>
       <div class="leg-head">
         <span class="leg-name">${this.legName(leg)}</span>
-        <ion-input
+        ${moneyLeft ? b2`<ion-input
           class="refund-amount"
           data-testid=${`refund-amount-${leg.payment_id}`}
           type="text"
@@ -18123,7 +18125,7 @@ var ErpSaleRefund = class extends i3 {
           label-placement="stacked"
           .value=${formatAmountInput(entry?.amount ?? 0, erplora5().locale, hubDecimals())}
           @ionInput=${(e8) => this.setAmount(leg.payment_id, e8.detail?.value ?? "")}
-        ></ion-input>
+        ></ion-input>` : A}
       </div>
       <div class="leg-figures">
         <span>${t7("ui.refundLegCharged")}: ${money3(leg.charged)}</span>
@@ -18164,6 +18166,17 @@ var ErpSaleRefund = class extends i3 {
     if (!this.legs.length) {
       return b2`${this.renderRecoveredOnOpen()}<ok-inline-feedback data-testid="refund-nothing" tone="warning" icon="information-circle-outline">${t7("ui.refundNothing")}</ok-inline-feedback>`;
     }
+    if (refundableTotal(this.legs) <= 0) {
+      return b2`<div class="refund-body" data-testid="refund-form">
+        <h3>${t7("ui.refundTitle", { number: this.sale?.sale_number ?? "" })}</h3>
+        ${this.renderRecoveredOnOpen()}
+        ${this.renderTenderPending()}
+        <div class="legs">${this.legs.map((l3) => this.renderLeg(l3, false))}</div>
+        <ok-inline-feedback data-testid="refund-no-money-left" tone="info" icon="information-circle-outline">${t7("ui.refundNoMoneyLeft")}</ok-inline-feedback>
+        ${this.renderTenderLines()}
+        ${this.renderTenderNotices()}
+      </div>`;
+    }
     const total = draftTotal(this.draft);
     const block = this.blockText;
     return b2`<div class="refund-body" data-testid="refund-form">
@@ -18171,7 +18184,7 @@ var ErpSaleRefund = class extends i3 {
       ${this.renderRecoveredOnOpen()}
       ${this.renderTenderPending()}
       <p class="hint">${t7("ui.refundExplain")}</p>
-      <div class="legs">${this.legs.map((l3) => this.renderLeg(l3))}</div>
+      <div class="legs">${this.legs.map((l3) => this.renderLeg(l3, true))}</div>
       ${this.renderTenderLines()}
       <ion-button class="refund-propose" data-testid="refund-propose-all" size="small" fill="clear" @click=${() => this.proposeAll()}>
         ${t7("ui.refundProposeAll")}

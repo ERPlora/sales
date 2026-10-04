@@ -365,8 +365,8 @@ describe('a hub WITHOUT the owning module', () => {
 // has to reach the NEW fillers, and the operator decides again what goes back, as on the first
 // screen — or, when that side cannot even be read, the screen says it must be checked elsewhere.
 describe('sales#462: reopened over a doubt that WAS recorded', () => {
-  /** Every money leg already given back: the main button is blocked, «nothing to return». */
-  const ALL_BACK = [{ ...LEGS[0], refunded: 1800, remaining: 0 }];
+  /** Every money leg already given back - as `sales.refund_options` answers it (refundable 0). */
+  const ALL_BACK = [{ ...LEGS[0], refunded: 1800, remaining: 0, refundable: 0, reason: 'already_refunded' }];
 
   const giveBackButton = (el: Refund): HTMLElement | null =>
     el.shadowRoot?.querySelector('[data-testid="refund-tender-commit"]') as HTMLElement | null;
@@ -391,7 +391,8 @@ describe('sales#462: reopened over a doubt that WAS recorded', () => {
     openOverDoubt();
     const el = await mount();
     expect(el.shadowRoot?.querySelector('[data-testid="refund-recovered"]')).toBeTruthy();
-    expect(confirmButton(el)?.getAttribute('data-blocked')).toBe('true');
+    // sales#492: no money left, so no money button at all (it used to be a blocked «Refund 0,00 €»).
+    expect(confirmButton(el)).toBeNull();
     await arm(el);
     expect(giveBackButton(el)).toBeTruthy();
   });
@@ -511,6 +512,69 @@ describe('sales#462: reopened over a doubt that WAS recorded', () => {
     expect(tenderPending(el)).toBeNull();
     expect(giveBackButton(el)).toBeNull();
   });
+
+  // sales#492 — the money already went back entirely. The screen used to keep asking for it: a red
+  // «type how much goes back» the cashier had nothing to type for, and a «Refund 0,00 €» button
+  // that did nothing (painted red, as if live, in `md`). With no money left, the money half says
+  // so in a neutral tone and the only action left is the give-back.
+  describe('sales#492: no money left to refund', () => {
+    const noMoneyLeft = (el: Refund): Element | null =>
+      el.shadowRoot?.querySelector('[data-testid="refund-no-money-left"]') ?? null;
+    const moneyAsk = (el: Refund): Element[] => [
+      ...(el.shadowRoot?.querySelectorAll(
+        '[data-testid="refund-blocked"], ion-button.refund-confirm, ion-input.refund-amount, ion-textarea.refund-reason, [data-testid="refund-propose-all"], [data-testid="refund-total"]',
+      ) ?? []),
+    ];
+
+    it('reopened over the recovered document: no money prompt, no 0,00 button, the give-back is the action', async () => {
+      openOverDoubt();
+      const el = await mount();
+      await arm(el);
+      expect(moneyAsk(el).map((n) => n.getAttribute('data-testid') ?? n.className)).toEqual([]);
+      expect(noMoneyLeft(el)?.textContent).toContain('ui.refundNoMoneyLeft');
+      expect(noMoneyLeft(el)?.getAttribute('tone'), 'neutral, never an error').toBe('info');
+      expect(giveBackButton(el)).toBeTruthy();
+      // The split still says WHY: the leg reads «already refunded», which is what the cashier checks.
+      expect(el.shadowRoot?.querySelector('[data-testid="refund-leg-pay-cash"]')?.textContent)
+        .toContain('ui.refundReasonAlreadyRefunded');
+    });
+
+    it('a sale whose money all went back, with nothing to give back either, asks for nothing', async () => {
+      install({ legs: ALL_BACK, fillers: false });
+      const el = await mount();
+      expect(moneyAsk(el)).toHaveLength(0);
+      expect(noMoneyLeft(el)).toBeTruthy();
+    });
+
+    it('still shows the warning a filler wants read before giving back, and asks no destination of a spent leg', async () => {
+      openOverDoubt();
+      const el = await mount();
+      fillersOf(el)[0].dispatchEvent(new CustomEvent('erp:tender-refund-armed', {
+        detail: { lineRef: 'item-1', warning: 'El bono caducó el 31/07' }, bubbles: true, composed: true,
+      }));
+      await settle(el);
+      // The give-back is the only button left here, so this is where its warning has to be read.
+      expect(el.shadowRoot?.querySelector('[data-testid="refund-tender-notice-item-1"]')?.textContent)
+        .toContain('El bono caducó el 31/07');
+      // A leg with nothing left sends no money anywhere: there is no destination to choose.
+      expect(el.shadowRoot?.querySelector('ion-select.refund-destination')).toBeNull();
+    });
+
+    it('one cent still refundable keeps the whole money form, button included', async () => {
+      install({ legs: [{ ...LEGS[0], refunded: 1799, remaining: 1 }] });
+      const el = await mount();
+      expect(noMoneyLeft(el)).toBeNull();
+      expect(confirmButton(el)).toBeTruthy();
+      expect(el.shadowRoot?.querySelector('ion-input.refund-amount')).toBeTruthy();
+    });
+
+    it('the notice exists in both languages', () => {
+      const ui = (c: unknown): Record<string, string> => (c as { ui: Record<string, string> }).ui;
+      expect(ui(enCatalog).refundNoMoneyLeft).toBeTruthy();
+      expect(ui(esCatalog).refundNoMoneyLeft).toBeTruthy();
+      expect(ui(esCatalog).refundNoMoneyLeft).not.toBe(ui(enCatalog).refundNoMoneyLeft);
+    });
+  });
 });
 
 // sales#465 — the screen is CLOSED while the hub is still answering `sales.refund`. The money goes
@@ -520,7 +584,7 @@ describe('sales#462: reopened over a doubt that WAS recorded', () => {
 // sale recovers the document and offers it again (the sales#462 button). And the same holds when
 // that offer is closed without being taken.
 describe('sales#465: closed while the hub was still answering', () => {
-  const ALL_BACK = [{ ...LEGS[0], refunded: 1800, remaining: 0 }];
+  const ALL_BACK = [{ ...LEGS[0], refunded: 1800, remaining: 0, refundable: 0, reason: 'already_refunded' }];
   const giveBackButton = (el: Refund): HTMLElement | null =>
     el.shadowRoot?.querySelector('[data-testid="refund-tender-commit"]') as HTMLElement | null;
   const recoveredBanner = (el: Refund): Element | null =>
