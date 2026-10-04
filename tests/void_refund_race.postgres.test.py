@@ -31,7 +31,10 @@ Points:
   5. A sale a full refund just closed: the void is refused as REFUNDED, not as «already voided».
   6. The void's still-open check is scoped: a deleted sale, and the neighbour hub, never pass it.
   7. A refund leg only lands under ITS OWN head: the same refund id in the neighbour hub, on
-     another sale of this hub, or another head of the same sale does not let it through.
+     another sale of this hub, another head of the same sale, or a neighbour-hub head that
+     carries this very sale's id does not let it through — nor does a neighbour-hub CHARGE leg that
+     carries it (the leg's origin is scoped by hub, not only by sale).
+  8. A refund that was itself voided (soft-deleted) does not block the void.
 
 Usage: tests/void_refund_race.postgres.test.py — container `erplora-test-pg-5433` by default
 (override: SALES_TEST_PG_CONTAINER). Scratch database, dropped at the end. Never skips itself.
@@ -445,6 +448,75 @@ def step_7_a_leg_only_lands_under_its_own_head(s: Session) -> None:
         "7c: only the earlier 7,50 € were handed back", refunds_of(s, "sale-7c"), HALF
     )
 
+    # 7d — a head of the NEIGHBOUR hub carries this refund's id AND this sale's id (no door
+    # writes that, but ids are global and the leg must not trust it): the hub alone tells it
+    # apart, so this is the case that proves `h.hub_id` — in 7a the sale id already differs.
+    seed_sale(s, "sale-7d")
+    s.psql(
+        [
+            "-c",
+            "INSERT INTO sales_sale_refund (id, hub_id, sale_id, total, reason, is_deleted) "
+            f"VALUES ('ref-7d', '{OTHER_HUB}', 'sale-7d', {HALF}, 'forged', 0)",
+        ]
+    )
+    s.check("7d: my sale is voided", s.chain(void_ops("sale-7d"))[0], True)
+    ok, err, counts = s.chain(refund_ops("sale-7d", "ref-7d", HALF))
+    s.check(
+        "7d: my refund runs without a SQL error", (ok, first_error(err)), (True, "")
+    )
+    s.check(
+        "7d: my leg writes no row under the neighbour's head",
+        rows_of(counts, "_insert_refund_payment.sql"),
+        0,
+    )
+    s.check("7d: nothing handed back on my sale", refunds_of(s, "sale-7d"), 0)
+
+    # 7e — the same on the ORIGIN side: a charge leg of the neighbour hub that carries this
+    # sale's id. My refund names it; only `p.hub_id` keeps the money from coming out of it (the
+    # sale id matches, so `p.sale_id` cannot tell them apart). The head lands, the leg does not.
+    seed_sale(s, "sale-7e")
+    s.psql(
+        [
+            "-c",
+            "INSERT INTO sales_sale_payment (id, hub_id, sale_id, payment_method_type, amount, "
+            f"is_deleted) VALUES ('pay-7e-their', '{OTHER_HUB}', 'sale-7e', 'card', {HALF}, 0)",
+        ]
+    )
+    ops = refund_ops("sale-7e", "ref-7e", HALF)
+    ops[1][1]["payment_id"] = "pay-7e-their"
+    ok, err, counts = s.chain(ops)
+    s.check(
+        "7e: my refund runs without a SQL error", (ok, first_error(err)), (True, "")
+    )
+    s.check(
+        "7e: my leg writes no row out of the neighbour's charge leg",
+        rows_of(counts, "_insert_refund_payment.sql"),
+        0,
+    )
+    s.check("7e: nothing handed back on my sale", refunds_of(s, "sale-7e"), 0)
+
+
+# ── 8 · a voided refund does not block the void ────────────────────────────────────────────
+
+
+def step_8_a_voided_refund_does_not_block_the_void(s: Session) -> None:
+    print(
+        "\n8 · a refund that was itself voided (soft-deleted) does not block the void"
+    )
+    seed_sale(s, "sale-8")
+    ok, err, _ = s.chain(refund_ops("sale-8", "ref-8", HALF))
+    s.check("the partial refund lands", (ok, first_error(err)), (True, ""))
+    s.psql(
+        [
+            "-c",
+            f"UPDATE sales_sale_refund SET is_deleted = 1 WHERE id = 'ref-8' AND hub_id = '{HUB}'",
+        ]
+    )
+    ok, err, counts = s.chain(void_ops("sale-8"))
+    s.check("the void runs without a SQL error", (ok, first_error(err)), (True, ""))
+    s.check("the void writes its row", rows_of(counts, "_void_sale.sql"), 1)
+    s.check("the sale is voided", status_of(s, "sale-8"), "voided")
+
 
 # ── Runner ─────────────────────────────────────────────────────────────────────────────────
 
@@ -471,6 +543,7 @@ def main() -> int:
         step_5_a_fully_refunded_sale_is_refused_as_refunded(s)
         step_6_the_still_open_check_is_scoped(s)
         step_7_a_leg_only_lands_under_its_own_head(s)
+        step_8_a_voided_refund_does_not_block_the_void(s)
     finally:
         s.drop()
 
