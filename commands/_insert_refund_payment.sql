@@ -16,6 +16,10 @@
 -- command's `expect_rows` rolls the whole refund back with `sales.refund_exceeds_tender`, the same
 -- refusal an over-the-cap refund always got. A voided refund (soft-delete) does not count, as in
 -- `refund_options.sql`.
+--
+-- `:amount` is used twice — written into a BIGINT column and compared against a NUMERIC sum — so
+-- the comparison says its type out loud: left bare, Postgres deduces two different types for the
+-- one parameter and cannot PREPARE the statement unless the caller happens to send the type.
 INSERT INTO sales_sale_refund_payment (
     id, hub_id, refund_id, sale_id, payment_id,
     payment_method_id, payment_method_name, payment_method_type,
@@ -38,4 +42,4 @@ SELECT :refund_payment_id, :hub_id, :refund_id, p.sale_id, p.id,
               AND r.sale_id = p.sale_id
               AND r.hub_id = p.hub_id
               AND r.is_deleted = 0
-       ), 0) >= :amount;
+       ), 0) >= CAST(:amount AS BIGINT);

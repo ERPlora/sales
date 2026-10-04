@@ -415,6 +415,25 @@ def test_the_commands_run_the_way_the_runtime_runs_them() -> None:
         " updated_at) VALUES ('sale-anulada', :hub_id, '20260824-0009', 'voided', 500, 0, :now, :now)",
         {"hub_id": HUB, "now": NOW},
     )], db=DB)
+    # sales#506: the mark now also asks «do the legs add up to the total?», so a voided sale with
+    # NO refund behind it would stay `voided` whatever the status filter said. Its whole 5,00 € is
+    # planted as refunded (by hand: the doors write nothing on a voided sale), so the ONLY thing
+    # between this sale and `refunded` is `status = 'completed'`.
+    psql(["-c", bind(
+        "INSERT INTO sales_sale_refund (id, hub_id, sale_id, total, reason, note,"
+        " idempotency_key, is_deleted, created_at, updated_at) VALUES ('ref-anulada', :hub_id,"
+        " 'sale-anulada', 500, 'planted', '', 'idem-anulada', 0, :now, :now)",
+        {"hub_id": HUB, "now": NOW},
+    )], db=DB)
+    psql(["-c", bind(
+        "INSERT INTO sales_sale_refund_payment (id, hub_id, refund_id, sale_id, payment_id,"
+        " payment_method_id, payment_method_name, payment_method_type, amount, sort_order,"
+        " is_deleted, created_at, updated_at) VALUES ('ref-anulada-leg', :hub_id, 'ref-anulada',"
+        " 'sale-anulada', 'pay-anulada', 'pm-cash', 'Efectivo', 'cash', 500, 0, 0, :now, :now)",
+        {"hub_id": HUB, "now": NOW},
+    )], db=DB)
+    check("positive control: the voided sale's legs DO add up to its total", qi(
+        "SELECT SUM(amount) FROM sales_sale_refund_payment WHERE sale_id='sale-anulada'"), 500)
     run_command("sales._mark_refunded", {"sale_id": "sale-anulada"})
     check("una venta que no está `completed` no se reescribe", q(
         f"SELECT status FROM sales_sale WHERE id='sale-anulada' AND hub_id='{HUB}'"), "voided")
@@ -599,6 +618,12 @@ def test_the_cap_written_at_refund_time_counts_only_live_rows_of_this_hub() -> N
     check("our full 5,00 € leg IS written: foreign rows do not eat the cap", qi(
         "SELECT COUNT(*) FROM sales_sale_refund_payment WHERE id='ref-t-ours-leg'"), 1)
 
+    # The sale is now one mark away from `refunded`, and that mark is OURS to give: the same door
+    # opened from the neighbour's hub, citing our sale id, must not close it.
+    run_command("sales._mark_refunded", {"sale_id": "sale-tenant"}, hub=OTHER_HUB)
+    check("the neighbour's mark door does not close our sale", q(
+        f"SELECT status FROM sales_sale WHERE id='sale-tenant' AND hub_id='{HUB}'"), "completed")
+
     run_command("sales._mark_refunded", {"sale_id": "sale-tenant"})
     check("and our own last cent does close it", q(
         f"SELECT status FROM sales_sale WHERE id='sale-tenant' AND hub_id='{HUB}'"), "refunded")
@@ -610,6 +635,7 @@ def test_the_write_time_guards_refuse_dead_rows() -> None:
         ("sale-gone", "20260824-0507", 500, 1),
         ("sale-dead-leg", "20260824-0508", 500, 0),
         ("sale-free", "20260824-0509", 0, 0),
+        ("sale-other", "20260824-0510", 500, 0),
     ):
         psql(["-c", bind(
             "INSERT INTO sales_sale (id, hub_id, sale_number, status, total, is_deleted,"
@@ -626,6 +652,25 @@ def test_the_write_time_guards_refuse_dead_rows() -> None:
     })
     check("no refund head on a deleted sale", qi(
         "SELECT COUNT(*) FROM sales_sale_refund WHERE id='ref-gone'"), 0)
+    # …and it is never marked either. Its whole 5,00 € is planted as refunded (by hand: the head
+    # door has just refused it), so the ONLY thing between it and `refunded` is `is_deleted = 0`.
+    psql(["-c", bind(
+        "INSERT INTO sales_sale_refund (id, hub_id, sale_id, total, reason, note,"
+        " idempotency_key, is_deleted, created_at, updated_at) VALUES ('ref-gone-planted', :hub_id,"
+        " 'sale-gone', 500, 'planted', '', 'idem-gone-planted', 0, :now, :now)",
+        {"hub_id": HUB, "now": NOW},
+    )], db=DB)
+    psql(["-c", bind(
+        "INSERT INTO sales_sale_refund_payment (id, hub_id, refund_id, sale_id, payment_id,"
+        " payment_method_id, payment_method_name, payment_method_type, amount, sort_order,"
+        " is_deleted, created_at, updated_at) VALUES ('ref-gone-planted-leg', :hub_id,"
+        " 'ref-gone-planted', 'sale-gone', 'pay-gone', 'pm-card', 'Tarjeta', 'card', 500, 0, 0,"
+        " :now, :now)",
+        {"hub_id": HUB, "now": NOW},
+    )], db=DB)
+    run_command("sales._mark_refunded", {"sale_id": "sale-gone"})
+    check("a deleted sale is never marked refunded", q(
+        f"SELECT status FROM sales_sale WHERE id='sale-gone' AND hub_id='{HUB}'"), "completed")
 
     # A charge leg voided (soft-deleted) is no longer money that can come back.
     ok, err = run_command("sales._insert_payment", {
@@ -649,6 +694,24 @@ def test_the_write_time_guards_refuse_dead_rows() -> None:
     })
     check("no refund leg out of a deleted charge leg", qi(
         "SELECT COUNT(*) FROM sales_sale_refund_payment WHERE id='ref-dead-leg-leg'"), 0)
+
+    # A charge leg of ANOTHER sale is not this refund's money, even with all of it still left:
+    # the door only takes a leg of the sale the refund is on.
+    ok, err = run_command("sales._insert_payment", {
+        "payment_id": "pay-other", "sale_id": "sale-other", "sort_order": 0,
+        "payment_method_id": "pm-card", "payment_method_name": "Tarjeta",
+        "payment_method_type": "card", "amount": 500, "amount_tendered": 500,
+        "change_due": 0, "reference": "",
+    })
+    check("seed leg `pay-other`", (ok, err), (True, ""))
+    run_command("sales._insert_refund_payment", {
+        "refund_payment_id": "ref-cross-leg", "refund_id": "ref-dead-leg",
+        "sale_id": "sale-dead-leg", "payment_id": "pay-other", "payment_method_id": "pm-card",
+        "payment_method_name": "Tarjeta", "payment_method_type": "card",
+        "amount": 500, "sort_order": 1,
+    })
+    check("no refund leg out of another sale's charge leg", qi(
+        "SELECT COUNT(*) FROM sales_sale_refund_payment WHERE id='ref-cross-leg'"), 0)
 
     # A 0,00 € sale has no last cent: «nothing refunded >= nothing charged» must not close it.
     run_command("sales._mark_refunded", {"sale_id": "sale-free"})
