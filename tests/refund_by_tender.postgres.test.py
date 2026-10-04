@@ -539,6 +539,71 @@ def test_a_neighbour_hub_never_shows_up() -> None:
     check("y el vecino ve SOLO sus patas", sorted(theirs), ["pay-v-card", "pay-v-cash"])
 
 
+def test_the_cap_written_at_refund_time_counts_only_live_rows_of_this_hub() -> None:
+    print("\n5b · the cap re-checked at write time (sales#506) counts only OUR live refunds")
+    # sales#506 moved the cap into the write itself: the leg door subtracts the legs already
+    # written and the mark adds them up. Both sums must count only rows of THIS hub that are not
+    # voided — otherwise a neighbour's refund citing our ids, or a refund we voided, would eat
+    # money that is still ours and block (or wrongly close) a legitimate refund.
+    psql(["-c", bind(
+        "INSERT INTO sales_sale (id, hub_id, sale_number, status, total, is_deleted, created_at,"
+        " updated_at) VALUES ('sale-tenant', :hub_id, '20260824-0506', 'completed', 500, 0,"
+        " :now, :now)",
+        {"hub_id": HUB, "now": NOW},
+    )], db=DB)
+    ok, err = run_command("sales._insert_payment", {
+        "payment_id": "pay-tenant", "sale_id": "sale-tenant", "sort_order": 0,
+        "payment_method_id": "pm-card", "payment_method_name": "Tarjeta",
+        "payment_method_type": "card", "amount": 500, "amount_tendered": 500,
+        "change_due": 0, "reference": "",
+    })
+    check("seed leg `pay-tenant`", (ok, err), (True, ""))
+
+    # Planted by hand: neither row can be written through the doors (the neighbour's leg door
+    # refuses our leg, and a voided refund is a later soft-delete).
+    for ref_id, hub, deleted in (("ref-t-neighbour", OTHER_HUB, 0), ("ref-t-voided", HUB, 1)):
+        psql(["-c", bind(
+            "INSERT INTO sales_sale_refund (id, hub_id, sale_id, total, reason, note,"
+            " idempotency_key, is_deleted, created_at, updated_at) VALUES (:id, :hub_id,"
+            " 'sale-tenant', 500, 'planted', '', '', :deleted, :now, :now)",
+            {"id": ref_id, "hub_id": hub, "deleted": deleted, "now": NOW},
+        )], db=DB)
+        psql(["-c", bind(
+            "INSERT INTO sales_sale_refund_payment (id, hub_id, refund_id, sale_id, payment_id,"
+            " payment_method_id, payment_method_name, payment_method_type, amount, sort_order,"
+            " is_deleted, created_at, updated_at) VALUES (:leg, :hub_id, :id, 'sale-tenant',"
+            " 'pay-tenant', 'pm-card', 'Tarjeta', 'card', 500, 0, :deleted, :now, :now)",
+            {"leg": ref_id + "-leg", "id": ref_id, "hub_id": hub, "deleted": deleted,
+             "now": NOW},
+        )], db=DB)
+    check("positive control: both foreign rows ARE on our sale and leg", qi(
+        "SELECT COUNT(*) FROM sales_sale_refund_payment"
+        " WHERE sale_id='sale-tenant' AND payment_id='pay-tenant'"), 2)
+
+    run_command("sales._mark_refunded", {"sale_id": "sale-tenant"})
+    check("the neighbour's and the voided refund do not close our sale", q(
+        f"SELECT status FROM sales_sale WHERE id='sale-tenant' AND hub_id='{HUB}'"), "completed")
+
+    ok, err = run_command("sales._insert_refund", {
+        "refund_id": "ref-t-ours", "sale_id": "sale-tenant", "total": 500,
+        "reason": "el cliente devuelve el producto", "note": "", "idempotency_key": "",
+    })
+    check("our head runs", (ok, err), (True, ""))
+    ok, err = run_command("sales._insert_refund_payment", {
+        "refund_payment_id": "ref-t-ours-leg", "refund_id": "ref-t-ours",
+        "sale_id": "sale-tenant", "payment_id": "pay-tenant", "payment_method_id": "pm-card",
+        "payment_method_name": "Tarjeta", "payment_method_type": "card",
+        "amount": 500, "sort_order": 0,
+    })
+    check("our leg runs", (ok, err), (True, ""))
+    check("our full 5,00 € leg IS written: foreign rows do not eat the cap", qi(
+        "SELECT COUNT(*) FROM sales_sale_refund_payment WHERE id='ref-t-ours-leg'"), 1)
+
+    run_command("sales._mark_refunded", {"sale_id": "sale-tenant"})
+    check("and our own last cent does close it", q(
+        f"SELECT status FROM sales_sale WHERE id='sale-tenant' AND hub_id='{HUB}'"), "refunded")
+
+
 # ── 6 · idempotencia: `refund_ref` es ESTABLE ────────────────────────────────────────────
 
 
@@ -662,6 +727,7 @@ def main() -> int:
         test_the_cap_is_what_is_left_not_what_was_charged()
         test_a_dead_payment_method_is_not_eligible_but_the_money_is_still_refundable()
         test_a_neighbour_hub_never_shows_up()
+        test_the_cap_written_at_refund_time_counts_only_live_rows_of_this_hub()
         test_the_same_key_can_never_write_a_second_refund()
         test_the_probe_answers_only_for_this_hub()
         test_a_partial_refund_retried_under_its_key_is_found_not_rewritten()
