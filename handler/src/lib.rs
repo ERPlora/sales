@@ -1638,6 +1638,23 @@ enum Refusal {
     Broken(String),
 }
 
+/// sales#498 — the cash limit of the hub's country, in cents, or `None` when its law sets none.
+///
+/// Spain: Ley 7/2012 art. 7 (wording of Ley 11/2021) forbids paying in cash an operation of
+/// 1.000,00 € or more when one party is a business — and a till is always one. The 10.000 €
+/// threshold for non-resident private payers needs a customer flag that does not exist yet, so it
+/// is not offered: the stricter limit is the one that never exposes the shop to the fine.
+/// The country is the hub's fiscal identity (`hub_settings`, injected by the runtime), never the
+/// payload's. A country without a rule has no limit: inventing one would block legitimate sales.
+fn cash_payment_limit(context: &Value) -> Option<i64> {
+    let country = context.get("country_code").map(as_str).unwrap_or_default();
+    if country.trim().eq_ignore_ascii_case("ES") {
+        Some(100_000)
+    } else {
+        None
+    }
+}
+
 /// A business rejection with its ADR-0205 code (`sales.<snake_case>`). The runtime validates the
 /// namespace (`valid_domain_code`, hub#139), so a foreign code is caught at the door.
 ///
@@ -2840,6 +2857,9 @@ fn preview_checkout_inner(input: Value) -> Result<Output, Refusal> {
         "tax_included": valuation.tax_included,
         "lines": lines,
         "tax_breakdown": valuation.tax_breakdown,
+        // sales#498 — the cash limit the CHARGE enforces (cents, `null` = none), so the till
+        // disables cash from the same answer that gives it the total instead of keeping a copy.
+        "cash_limit": cash_payment_limit(&context),
     })))
 }
 
@@ -3108,6 +3128,18 @@ fn complete_sale_inner(input: Value, rule: CapRule) -> Result<Output, Refusal> {
         } else {
             t.tendered = t.amount;
             t.change = 0;
+        }
+    }
+
+    // sales#498 — the law caps CASH, not the sale: in a Spanish hub an operation of 1.000,00 € or
+    // more cannot carry a single cent in cash, whichever leg it travels in. The manager's door
+    // (`complete_sale_over_limit`) runs through here too: it lifts the discount cap, not the law.
+    if let Some(limit) = cash_payment_limit(&context) {
+        if total >= limit && tenders.iter().any(|t| t.kind == "cash") {
+            return Err(reject(
+                "sales.cash_limit_exceeded",
+                format!("a sale of {total} cannot take cash: the legal limit is {limit}"),
+            ));
         }
     }
 
@@ -13217,6 +13249,153 @@ mod tests {
             let inp = update_line(json!({ "order_id": "ord-1", "line_id": "line-1", "notes": "decaf" }), row);
             let out = update_order_line_pure(inp).accepted("only the note of a legacy row");
             assert_eq!(write(&out).params["quantity"], json!(1_500_000));
+        }
+    }
+
+    // ── sales#498 · cash payments of 1.000 € or more are forbidden in Spain ─────────────────────
+    //
+    // Ley 7/2012 art. 7 (as worded by Ley 11/2021): an operation where one party is a business
+    // cannot be paid in cash when its amount is 1.000,00 € or more. A till is always a business,
+    // so every sale of a Spanish hub is in scope. The AEAT takes as the base of the 25 % fine «the
+    // amount paid in cash in operations of 1.000 € or more», so a MIXED payment does not escape:
+    // the cash part counts against the TOTAL of the operation, not against its own leg.
+    mod cash_limit {
+        use super::*;
+
+        /// A Spanish hub (the country comes from `hub_settings`, injected by the runtime).
+        fn spanish(mut inp: Value) -> Value {
+            inp["context"]["country_code"] = json!("ES");
+            inp
+        }
+
+        fn ticket(cents: i64) -> Value {
+            json!([{ "product_name": "Reloj", "price": cents, "quantity": 1_000_000, "tax_rate": 21.0 }])
+        }
+
+        /// One-tender sale paid with the hub's cash method.
+        fn cash_sale(cents: i64) -> Value {
+            spanish(input_with_catalogs(ticket(cents), 8, mixed_catalog(), Value::Null, Value::Null))
+        }
+
+        fn with_method(mut inp: Value, method_id: &str) -> Value {
+            inp["payload"]["payment_method_id"] = json!(method_id);
+            inp
+        }
+
+        #[test]
+        fn cash_just_below_the_limit_still_closes() {
+            let mut inp = with_method(cash_sale(99_999), "pm-cash");
+            inp["payload"]["amount_tendered"] = json!(100_000);
+            let out = sale(inp);
+            let pays = payment_ops(&out);
+            assert_eq!(pays[0].params["payment_method_type"], json!("cash"));
+            assert_eq!(pays[0].params["change_due"], json!(1), "999,99 € paid with 1.000,00 €");
+        }
+
+        #[test]
+        fn cash_of_exactly_one_thousand_euros_is_refused() {
+            let err = complete_sale_pure(with_method(cash_sale(100_000), "pm-cash"))
+                .refused("1.000,00 € in cash");
+            assert_eq!(err.code, "sales.cash_limit_exceeded", "{err:?}");
+        }
+
+        #[test]
+        fn a_cash_sale_well_over_the_limit_is_refused() {
+            let err = complete_sale_pure(with_method(cash_sale(250_000), "pm-cash"))
+                .refused("2.500,00 € in cash");
+            assert_eq!(err.code, "sales.cash_limit_exceeded", "{err:?}");
+        }
+
+        #[test]
+        fn a_mixed_payment_counts_its_cash_part_against_the_whole_operation() {
+            // 999 € in notes + 1 € on card over a 1.000 € sale: the cash leg alone is under the
+            // limit, the operation is not. Splitting is exactly what the law closes.
+            let inp = spanish(input_with_payments(
+                ticket(100_000),
+                8,
+                json!([
+                    { "payment_method_id": "pm-cash", "amount": 99_900, "amount_tendered": 99_900 },
+                    { "payment_method_id": "pm-card", "amount": 100 }
+                ]),
+            ));
+            let err = complete_sale_pure(inp).refused("mixed 999 cash + 1 card");
+            assert_eq!(err.code, "sales.cash_limit_exceeded", "{err:?}");
+        }
+
+        #[test]
+        fn a_cash_leg_that_is_not_the_principal_one_is_still_caught() {
+            // The principal tender (the largest leg) is the CARD here: a check on the header
+            // scalars alone would let 300 € in cash through on a 1.500 € operation.
+            let inp = spanish(input_with_payments(
+                ticket(150_000),
+                8,
+                json!([
+                    { "payment_method_id": "pm-card", "amount": 120_000 },
+                    { "payment_method_id": "pm-cash", "amount": 30_000, "amount_tendered": 30_000 }
+                ]),
+            ));
+            let err = complete_sale_pure(inp).refused("300 cash inside a 1.500 € sale");
+            assert_eq!(err.code, "sales.cash_limit_exceeded", "{err:?}");
+        }
+
+        #[test]
+        fn the_limit_is_about_cash_so_card_and_transfer_close_any_amount() {
+            let out = sale(with_method(cash_sale(500_000), "pm-card"));
+            assert_eq!(payment_ops(&out)[0].params["payment_method_type"], json!("card"));
+
+            let out = sale(spanish(input_with_payments(
+                ticket(500_000),
+                8,
+                json!([
+                    { "payment_method_id": "pm-card", "amount": 200_000 },
+                    { "payment_method_id": "pm-wire", "amount": 300_000, "reference": "TRF-1" }
+                ]),
+            )));
+            assert_eq!(payment_ops(&out).len(), 2);
+        }
+
+        #[test]
+        fn a_mixed_payment_under_the_limit_keeps_its_cash_leg() {
+            // 999,99 € in total: nothing to refuse, cash part included.
+            let out = sale(spanish(input_with_payments(
+                ticket(99_999),
+                8,
+                json!([
+                    { "payment_method_id": "pm-cash", "amount": 50_000, "amount_tendered": 50_000 },
+                    { "payment_method_id": "pm-card", "amount": 49_999 }
+                ]),
+            )));
+            assert_eq!(payment_ops(&out).len(), 2);
+        }
+
+        #[test]
+        fn the_managers_door_does_not_lift_the_legal_limit() {
+            // `complete_sale_over_limit` lifts the DISCOUNT cap; the law is not a discount.
+            let err = complete_sale_over_limit_pure(with_method(cash_sale(100_000), "pm-cash"))
+                .refused("1.000,00 € in cash through the manager's door");
+            assert_eq!(err.code, "sales.cash_limit_exceeded", "{err:?}");
+        }
+
+        #[test]
+        fn a_hub_outside_spain_has_no_spanish_cash_limit() {
+            // The absence of a rule is an answer (same principle as `hub.fiscal.limits`, hub#297):
+            // inventing a Spanish limit for a Portuguese hub would block legitimate sales.
+            let mut inp = with_method(cash_sale(100_000), "pm-cash");
+            inp["context"]["country_code"] = json!("PT");
+            let out = sale(inp);
+            assert_eq!(payment_ops(&out)[0].params["payment_method_type"], json!("cash"));
+        }
+
+        #[test]
+        fn the_preview_publishes_the_limit_so_the_till_can_disable_cash() {
+            // The till must not hold its own copy of the figure: it reads the one the charge
+            // enforces, from the same answer that gives it the authoritative total.
+            let es = preview(as_preview_input(cash_sale(100_000)));
+            assert_eq!(es["cash_limit"], json!(100_000), "{es}");
+
+            let mut pt = as_preview_input(cash_sale(100_000));
+            pt["context"]["country_code"] = json!("PT");
+            assert_eq!(preview(pt)["cash_limit"], Value::Null);
         }
     }
 }

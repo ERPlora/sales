@@ -80,6 +80,8 @@ import {
   type CheckoutPreview, type CheckoutShape,
 } from '../../lib/checkout-preview.js';
 import { capabilityRead, dependencyRead, type DependencyRead } from '../../lib/dependency-read.js';
+// sales#498 — the legal cash limit, as the preview publishes it (the server enforces it).
+import { cashBlocksCharge, cashMethodUnavailable } from '../../lib/cash-limit.js';
 import { buildOpenPriceLine } from '../../lib/pos-open-price.js';
 // La frontera de la ESCALA de cantidades (ADR-0147): la UI trabaja en lógico (0,5), el cable en 10⁶.
 import { toMicro, fromMicro, onGrid, formatQuantity } from '../../lib/quantity.js';
@@ -717,6 +719,8 @@ export class ErpPosTouch extends LitElement {
     .pm-btn ion-icon { font-size:1.3rem; }
     .pm-btn[aria-pressed=true] { border-color:var(--accent); color:var(--accent);
       box-shadow:var(--ok-ring-accent, inset 0 0 0 1px var(--accent)); }
+    /* sales#498 — cash over the legal limit: still there, visibly not on offer. */
+    .pm-btn[aria-disabled=true] { opacity:.45; cursor:not-allowed; }
     .pm-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     /* Logo de marca (Bizum): es un wordmark ANCHO, no un glifo cuadrado como los Ionicons, así que
        se acota a la altura del icono y se deja crecer a lo ancho sin romper el botón. */
@@ -4649,6 +4653,15 @@ export class ErpPosTouch extends LitElement {
       // El motivo largo ya está escrito arriba, en el panel de captura del cliente.
       return { short: t('ui.limitChargeBlocked'), reason: '' };
     }
+    // sales#498 — cash over the legal limit: the server would refuse it (`sales.cash_limit_exceeded`),
+    // so the cashier is told before the tap, with the limit, and sent to card or Bizum.
+    const cashLimit = this.authoritative?.cash_limit;
+    if (cashBlocksCharge({
+      limit: cashLimit, payable: this.payable, method: this.payMethod,
+      tenders: this.tenders, splitting: this.splitting,
+    })) {
+      return { short: t('ui.cashLimitShort'), reason: t('ui.cashLimitReason', { amount: this.money(cashLimit ?? 0) }) };
+    }
     const split = chargeBlock(this.payable, this.tenders);
     if (split) {
       const amount = this.money(split.remaining);
@@ -6186,10 +6199,20 @@ export class ErpPosTouch extends LitElement {
                       // resto, su Ionicon. currentColor tiñe igual el SVG al seleccionar.
                       const marca = brandSvgFor(m.type, m.name);
                       const nombre = payMethodDisplayName(m, t);
+                      // sales#498 — cash over the legal limit stays visible but unavailable:
+                      // aria-disabled (never `disabled`, sales#58), and the tap says why.
+                      const cashUnavailable = cashMethodUnavailable(this.authoritative?.cash_limit, this.payable, m);
                       return html`
                       <button data-testid=${`pos-pay-method-${m.id}`} class="pm-btn" aria-pressed=${this.payMethod?.id === m.id ? 'true' : 'false'}
-                              title=${nombre}
-                              @click=${() => { this.payMethod = m; if (!needsTendered(m) && !this.splitting) this.tendered = ''; }}>
+                              aria-disabled=${cashUnavailable ? 'true' : nothing}
+                              title=${cashUnavailable ? t('ui.cashLimitUnavailable') : nombre}
+                              @click=${() => {
+                                if (cashUnavailable) {
+                                  this.notifyShell(t('ui.cashLimitReason', { amount: this.money(this.authoritative?.cash_limit ?? 0) }));
+                                  return;
+                                }
+                                this.payMethod = m; if (!needsTendered(m) && !this.splitting) this.tendered = '';
+                              }}>
                         ${marca
                           ? html`<span class="brand">${unsafeSVG(marca)}</span>`
                           : html`<ion-icon name=${payMethodIcon(m.type, m.name)}></ion-icon>`}
