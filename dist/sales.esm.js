@@ -3266,6 +3266,11 @@ function discountNote(amount, currency, t7) {
   const text = formatMinor(minor(amount), { decimals: hubDecimals(), locale: documentLocale(), currency });
   return (t7 ? t7("ui.docDiscountApplied") : DISCOUNT_APPLIED_EN).replace("{amount}", text);
 }
+function netUnitPrice(l3) {
+  if (l3.net_amount == null) return minor(l3.unit_price);
+  const units = fromMicro2(Number(l3.quantity)) * (1 - Number(l3.discount_percent ?? 0) / 100);
+  return units > 0 ? Math.round(minor(l3.net_amount) / units) : 0;
+}
 var DISCOUNT_APPLIED_EN = "Ticket discount of {amount}, already applied to the amounts above.";
 function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName = DEFAULT_BUSINESS_NAME, t7) {
   const header = splitHeader(settings.receipt_header);
@@ -3276,7 +3281,7 @@ function saleToInvoice(sale, lines, settings = {}, fiscal = {}, locale = "es", f
     description: unitTag(l3.unit_code) ? `${lineLabel(l3, t7)} (${unitTag(l3.unit_code)})` : lineLabel(l3, t7),
     qty: fromMicro2(Number(l3.quantity)),
     // fila en punto fijo 10⁶ (ADR-0147) → lógico para pintar
-    unit_price: minor(l3.unit_price),
+    unit_price: netUnitPrice(l3),
     discount_percent: l3.discount_percent ? Number(l3.discount_percent) : void 0,
     tax_rate: l3.tax_rate != null ? Number(l3.tax_rate) : void 0,
     // sales#485 — an invoice line's amount is its BASE (net after discount, without tax): that is
@@ -3428,7 +3433,9 @@ function saleToPrintDocument(sale, lines, settings = {}, fiscal = {}, locale = "
     // The tax total comes from the sale row, not from the breakdown: a sale without
     // `tax_breakdown` still has `tax_amount`, and the paper must not lose it.
     tax_amount: euros(sale.tax_amount, screen.decimals),
-    discount: euros(sale.discount_amount, screen.decimals),
+    // sales#489 — no `discount` row: the renderer prints it «−2,00» under the subtotal and the tax,
+    // and both already carry it (prorated into the lines and the base, sales#33), so the foot read
+    // «8,26 + 1,74 − 2,00 = 10,00». The discount travels as the invoice's informative note.
     total: euros(screen.total, screen.decimals),
     payment_method: screen.payment?.method,
     paid: euros(screen.payment?.paid, screen.decimals),
@@ -3442,7 +3449,7 @@ function saleToPrintDocument(sale, lines, settings = {}, fiscal = {}, locale = "
     // hub#2009: the same promotional QR the screen and the browser paper carry (sales#345). The
     // keys only exist when the business configured the URL, so its ticket is unchanged otherwise.
     ...screen.promo_qr ? { promo_qr: screen.promo_qr, ...screen.promo_note ? { promo_note: screen.promo_note } : {} } : {},
-    receipt_footer: screen.footer
+    receipt_footer: [discountNote(sale.discount_amount, screen.currency, t7), screen.footer].filter(Boolean).join("\n") || void 0
   };
 }
 function saleToInvoicePrintDocument(sale, lines, settings = {}, fiscal = {}, locale = "es", fallbackName, t7) {
