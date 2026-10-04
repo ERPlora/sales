@@ -48,6 +48,11 @@ describe('refundErrorKey', () => {
     expect(refundErrorKey('sales.sale_not_found')).toBe('ui.refundSaleNotFound');
   });
 
+  it('tells the operator to confirm again when another refund of the sale went through at once', () => {
+    // sales#508: nothing was written; the same key confirmed again reads fresh and closes the sale.
+    expect(refundErrorKey('sales.refund_sale_changed')).toBe('ui.refundSaleChanged');
+  });
+
   it('keeps the LONG sentence for a leg that does not take its own method', () => {
     // The screen has room here, so the operator is told which leg and why, not just "not eligible".
     expect(refundErrorKey('sales.refund_tender_not_eligible')).toBe('ui.refundReasonNotEligible');
@@ -70,7 +75,7 @@ describe('i18n (ADR-0055/0199)', () => {
     ].map(voidErrorKey).concat([
       'sales.refund_exceeds_tender', 'sales.refund_tender_not_eligible', 'sales.refund_method_unavailable',
       'sales.refund_reason_required', 'sales.refund_nothing_to_return', 'sales.refund_requires_completed',
-      'sales.sale_not_found',
+      'sales.refund_sale_changed', 'sales.sale_not_found',
     ].map(refundErrorKey), ['ui.voidFailed', 'ui.refundFailed']);
     for (const key of new Set(keys)) {
       const bare = key.replace(/^ui\./, '');
