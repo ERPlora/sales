@@ -1,17 +1,23 @@
--- sales#160 -- la venta pasa a `refunded` cuando vuelve el ULTIMO centimo. Interno: el handler solo
--- lo emite cuando lo ya devuelto mas esta devolucion alcanzan el total de la venta.
+-- sales#160 -- the sale turns `refunded` when its LAST cent goes back. Internal: the handler emits
+-- it after the legs of every refund.
 --
--- Sin esta marca la lista de ventas seguiria diciendo `completed` sobre una venta que ya no tiene
--- dinero detras, y el historico mentiria en la unica pantalla que el dueno mira a diario. El estado
--- `refunded` ya estaba previsto en la migracion 001 y `erp-sales-list` ya sabe pintarlo.
+-- Without this mark the sales list would keep saying `completed` over a sale with no money behind
+-- it, and the history would lie on the one screen the owner looks at every day. The `refunded`
+-- status was already foreseen by migration 001 and `erp-sales-list` already knows how to paint it.
 --
--- El original NO se toca por lo demas: la venta es inmutable (`records.sale`), asi que ni importes
--- ni lineas se reescriben. Solo cambia el estado, y con el la puerta: `refund_sale_pure` exige
--- `completed`, de modo que una venta ya devuelta entera no admite una segunda devolucion.
+-- The original is NOT touched otherwise: the sale is immutable (`records.sale`), so neither amounts
+-- nor lines are rewritten. Only the status changes, and with it the door: `sales.refund` demands
+-- `completed`, so a sale already refunded in full takes no second refund.
 --
--- Filtra `status = 'completed'` ademas del id: si dos devoluciones concurrentes llegaran a esta
--- linea, la segunda actualiza 0 filas en vez de reescribir el estado -- y `hub_id` va SIEMPRE, para
--- que un id compartido con otro hub no pise la venta del vecino.
+-- sales#506: «is this the last cent?» is answered HERE, by the legs already written in this
+-- transaction and the ones committed before it (`_refund_lock.sql` queued them), not by the
+-- handler's read. Two partial refunds of 7,50 € fired at once on a 15,00 € ticket both read
+-- «nothing refunded yet», both fit, and neither one alone reached the total: decided by the read,
+-- the sale stayed `completed` with all its money handed back. A partial refund matches 0 rows here,
+-- which is the expected answer, so this statement carries no `expect_rows`.
+--
+-- Filters `status = 'completed'` as well as the id, so the status is never rewritten, and `hub_id`
+-- ALWAYS, so an id shared with another hub never touches the neighbour's sale or reads its legs.
 UPDATE sales_sale
 SET status = 'refunded',
     updated_by = :current_user_id,
@@ -19,4 +25,12 @@ SET status = 'refunded',
 WHERE id = :sale_id
   AND hub_id = :hub_id
   AND status = 'completed'
-  AND is_deleted = 0;
+  AND is_deleted = 0
+  AND total > 0
+  AND total <= (
+      SELECT COALESCE(SUM(r.amount), 0)
+        FROM sales_sale_refund_payment r
+       WHERE r.sale_id = sales_sale.id
+         AND r.hub_id = sales_sale.hub_id
+         AND r.is_deleted = 0
+  );
