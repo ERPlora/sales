@@ -107,6 +107,12 @@ async function mount(screen: Screen): Promise<{ el: Mounted; table: HTMLElement 
 
 const tableError = (table: HTMLElement): unknown => (table as unknown as { error?: unknown }).error;
 
+/** The reason the screen's list controller holds. Its WORDING is the SDK's (ADR-0055): under a
+ *  table that paints its own heading, a hub that did not answer reads a short sentence that does
+ *  not repeat the heading (hub#2443) and names no query, so the test pins where the reason goes,
+ *  not what it says (sales#497). */
+const controllerError = (el: Mounted): unknown => (el as unknown as { ctrl?: { error?: unknown } }).ctrl?.error;
+
 /** Every notice on the PAGE — a notice inside the closed «new» panel is not seen (rv-appointments-227). */
 function pageNotices(el: Mounted): Element[] {
   return [...el.shadowRoot.querySelectorAll('ok-inline-feedback')].filter((n) => !n.closest('[slot="create"]'));
@@ -146,7 +152,8 @@ describe.each(SCREENS)('$tag — a list that could not load (pm#533)', (screen) 
     hubDown(screen);
     const { el, table } = await mount(screen);
     const reason = tableError(table);
-    expect(typeof reason === 'string' && reason.includes(screen.list), 'the table got the reason').toBe(true);
+    expect(typeof reason === 'string' && reason !== '', 'the table got a reason').toBe(true);
+    expect(reason, 'the table got the list controller’s reason').toBe(controllerError(el));
     // ANY notice counts, not only the one with the list's testid (rv-schedules-61).
     expect(pageNotices(el).map((n) => n.getAttribute('data-testid')), 'the failure is said twice').toEqual([]);
     expect(el.shadowRoot.textContent, 'another notice repeats the reason').not.toContain(String(reason));
