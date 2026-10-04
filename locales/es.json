@@ -463,6 +463,7 @@
     "refundNeedsDestination": "{method}: elige por dónde vuelve este dinero.",
     "refundOverCap": "{method}: {amount} es más que los {remaining} que quedan por devolver.",
     "refundNothingToReturn": "Escribe cuánto vuelve.",
+    "refundNoMoneyLeft": "No queda dinero por devolver en esta venta.",
     "refundReasonLabel": "Motivo",
     "refundReasonRequired": "Una devolución necesita un motivo.",
     "refundReasonPlaceholder": "Por qué vuelve el dinero",
