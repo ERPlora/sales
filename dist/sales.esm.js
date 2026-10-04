@@ -17613,7 +17613,7 @@ var ErpSaleRefund = class extends i3 {
     this.recoveredOnOpen = false;
     this.recoveredRef = "";
     this.tenderBusy = false;
-    this.tenderHanded = false;
+    this.tenderHanded = /* @__PURE__ */ new Set();
     this.tenderPending = false;
     /** sales#462 - the slot or the covered lines could not be read. */
     this.tenderReadFailed = false;
@@ -17831,7 +17831,7 @@ var ErpSaleRefund = class extends i3 {
    */
   async loadTenderLines(saleId) {
     this.covered = [];
-    this.tenderHanded = false;
+    this.tenderHanded = /* @__PURE__ */ new Set();
     this.tenderNotices = /* @__PURE__ */ new Map();
     this.tenderHeard = /* @__PURE__ */ new Set();
     this.tenderReadFailed = false;
@@ -18002,7 +18002,7 @@ var ErpSaleRefund = class extends i3 {
    */
   async giveBackRecovered() {
     const t7 = (k2) => erplora5().t(CATALOG5, k2);
-    if (this.tenderBusy || this.tenderHanded) return;
+    if (this.tenderBusy || !this.tenderToHand) return;
     this.tenderBusy = true;
     try {
       const ref2 = this.recoveredRef || await this.latestRefundRef();
@@ -18010,8 +18010,9 @@ var ErpSaleRefund = class extends i3 {
         this.tenderPending = true;
         return;
       }
+      const ticked = [...this.tenderNotices.keys()];
       const committed = await this.commitTenderRefunds({ refund_id: ref2, refund_ref: ref2 });
-      this.tenderHanded = true;
+      this.tenderHanded = /* @__PURE__ */ new Set([...this.tenderHanded, ...ticked]);
       this.recoveredRef = "";
       this.tenderPending = !committed;
       if (committed) this.settleRecovered();
@@ -18019,6 +18020,10 @@ var ErpSaleRefund = class extends i3 {
     } finally {
       this.tenderBusy = false;
     }
+  }
+  /** sales#507 - some line says it goes back and its hole has been handed no document yet. */
+  get tenderToHand() {
+    return [...this.tenderNotices.keys()].some((line) => !this.tenderHanded.has(line));
   }
   /** sales#507 - the newest refund document of this sale (`sales.refunds` is newest first), or ''
    *  when there is none or it cannot be read. */
@@ -18112,13 +18117,14 @@ var ErpSaleRefund = class extends i3 {
       </div>`;
   }
   /**
-   * sales#462 - offered only while some hole says its line goes back (an armed filler): with nothing
-   * armed there is nothing to hand, and a button that does nothing would claim the opposite. Over a
-   * recovered document, or - sales#507 - with no money left, where there is no refund button to
-   * commit through. With money left and nothing recovered, the refund button is what commits.
+   * sales#462 - offered only while some hole says its line goes back (an armed filler) and has not
+   * been handed a document yet: with nothing to hand, a button that does nothing would claim the
+   * opposite. Over a recovered document, or - sales#507 - with no money left, where there is no
+   * refund button to commit through. With money left and nothing recovered, the refund button is
+   * what commits.
    */
   renderGiveBackRecovered() {
-    if (!this.tenderNotices.size || this.tenderHanded) return A;
+    if (!this.tenderToHand) return A;
     if (!this.recoveredRef && refundableTotal(this.legs) > 0) return A;
     return b2`<ion-button
       class="refund-tender-commit"

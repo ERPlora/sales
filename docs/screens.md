@@ -78,8 +78,10 @@ claims it later, or its give-back failed the first time. While some line says it
 back, the button hands the **newest refund document of the sale** to it — no money moves and no new
 refund is written. If the sale's refund documents cannot be read (or there is none), nothing is
 handed and the screen says «The money is back, but what was paid another way could not be
-returned. Check it from its own module.»; the button stays, so it can be tried again. With money
-still left to refund, the session goes back with that refund's own **Refund** button instead.
+returned. Check it from its own module.»; the button stays, so it can be tried again. Once handed,
+the button goes; if another line is ticked afterwards (two sessions on one ticket, one un-ticked at
+first), it comes back for that line. With money still left to refund, the session goes back with
+that refund's own **Refund** button instead.
 
 Closing the refund screen, for whatever reason, reloads the sales list, so the row shows the
 refund if it went through.

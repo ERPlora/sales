@@ -210,9 +210,10 @@ export class ErpSaleRefund extends LitElement {
   @state() private recoveredRef = '';
   /** sales#462 - handing the recovered document to the fillers: a second tap waits. */
   @state() private tenderBusy = false;
-  /** sales#507 - the fillers of this screen have been handed a document: a filler commits once per
-   *  screen, so offering the give-back again would announce one that never happens. */
-  @state() private tenderHanded = false;
+  /** sales#507 - the lines whose hole was ticked when a document was handed over on this screen. A
+   *  filler commits once per screen, so offering the give-back again for those would announce one
+   *  that never happens; a line ticked AFTER the hand-over was handed nothing, and is still offered. */
+  @state() private tenderHanded = new Set<string>();
   /** sales#462 - what was not paid in money did not go back (or cannot even be read): check it in
    *  its own module. Painted on the screen, which stays open here. */
   @state() private tenderPending = false;
@@ -403,7 +404,7 @@ export class ErpSaleRefund extends LitElement {
    */
   private async loadTenderLines(saleId: string): Promise<void> {
     this.covered = [];
-    this.tenderHanded = false;
+    this.tenderHanded = new Set();
     this.tenderNotices = new Map();
     this.tenderHeard = new Set();
     this.tenderReadFailed = false;
@@ -599,7 +600,7 @@ export class ErpSaleRefund extends LitElement {
    */
   async giveBackRecovered(): Promise<void> {
     const t = (k: string): string => erplora().t(CATALOG, k);
-    if (this.tenderBusy || this.tenderHanded) return;
+    if (this.tenderBusy || !this.tenderToHand) return;
     this.tenderBusy = true;
     try {
       const ref = this.recoveredRef || await this.latestRefundRef();
@@ -609,9 +610,12 @@ export class ErpSaleRefund extends LitElement {
         this.tenderPending = true;
         return;
       }
+      // The lines ticked NOW are the ones this hand-over is for: a hole that is not ticked ignores
+      // the document, and may still be ticked - and handed it - afterwards.
+      const ticked = [...this.tenderNotices.keys()];
       const committed = await this.commitTenderRefunds({ refund_id: ref, refund_ref: ref });
-      // Handed once: a filler commits once per document, so a second offer would do nothing.
-      this.tenderHanded = true;
+      // Handed once: a filler commits once per screen, so a second offer to it would do nothing.
+      this.tenderHanded = new Set([...this.tenderHanded, ...ticked]);
       this.recoveredRef = '';
       this.tenderPending = !committed;
       // sales#465 - handed and done: nothing owed. A failure keeps it, so the next screen - with a
@@ -621,6 +625,11 @@ export class ErpSaleRefund extends LitElement {
     } finally {
       this.tenderBusy = false;
     }
+  }
+
+  /** sales#507 - some line says it goes back and its hole has been handed no document yet. */
+  private get tenderToHand(): boolean {
+    return [...this.tenderNotices.keys()].some((line) => !this.tenderHanded.has(line));
   }
 
   /** sales#507 - the newest refund document of this sale (`sales.refunds` is newest first), or ''
@@ -730,13 +739,14 @@ export class ErpSaleRefund extends LitElement {
   }
 
   /**
-   * sales#462 - offered only while some hole says its line goes back (an armed filler): with nothing
-   * armed there is nothing to hand, and a button that does nothing would claim the opposite. Over a
-   * recovered document, or - sales#507 - with no money left, where there is no refund button to
-   * commit through. With money left and nothing recovered, the refund button is what commits.
+   * sales#462 - offered only while some hole says its line goes back (an armed filler) and has not
+   * been handed a document yet: with nothing to hand, a button that does nothing would claim the
+   * opposite. Over a recovered document, or - sales#507 - with no money left, where there is no
+   * refund button to commit through. With money left and nothing recovered, the refund button is
+   * what commits.
    */
   private renderGiveBackRecovered(): unknown {
-    if (!this.tenderNotices.size || this.tenderHanded) return nothing;
+    if (!this.tenderToHand) return nothing;
     if (!this.recoveredRef && refundableTotal(this.legs) > 0) return nothing;
     return html`<ion-button
       class="refund-tender-commit"
