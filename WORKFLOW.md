@@ -16,7 +16,8 @@ su mesa, se manda a cocina por rondas, se imprime la cuenta para la mesa y se di
 la peluquería, se cobra la cita desde la agenda, cada servicio lleva a su profesional y una sesión de
 bono puede pagar una línea. Lo usan el **empleado** (camarero, recepcionista; con el rol «Cajero»
 además cobra), el **responsable** (cobra, anula, devuelve, autoriza descuentos y precio libre con su
-PIN, ve las cifras) y el **administrador** (todo, y es el único que guarda los ajustes). Las mesas,
+PIN, ve las cifras) y el **administrador** (todo, y es el único que guarda los ajustes desde la pestaña; el responsable puede
+hacerlo por el asistente). Las mesas,
 la cocina, los clientes, la caja, la factura y el envío a la AEAT son de otros módulos que reaccionan
 a lo que pasa aquí.
 
