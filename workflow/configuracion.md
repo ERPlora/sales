@@ -17,8 +17,7 @@ Pasos:
 Entra: nada de otros componentes.
 Sale: la fila de ajustes del negocio (una por hub). La leen el TPV, la hoja de cobro, la cuenta impresa y el documento de venta; el servidor aplica al cobrar «Exigir cliente», «Permitir descuentos», el descuento máximo y los precios con IVA incluido.
 Si falla: sin ser administrador los campos salen de solo lectura con «Solo un administrador puede cambiar estos ajustes.» (un responsable sí puede cambiarlos pidiéndoselo al asistente). Un empleado, que no tiene el permiso de ajustes, no puede leerlos: la pestaña le enseña, sin avisar, los valores de fábrica como si fueran los del negocio. Un fallo al guardar dice «No se pudieron guardar los ajustes.». Si se apagan a la vez efectivo y tarjeta y no hay otro medio, el TPV vuelve a ofrecer todos los medios activos.
-Implicados: PRINTING-F05, PRINTING-F15
-Pendiente de enlazar: hub — la pestaña Ajustes que el shell genera desde el bloque de ajustes del módulo
+Implicados: PRINTING-F05, PRINTING-F15, HUB-F33, HUB_SHELL-F43, HUB_SHELL-F44, HUB_SHELL-F76
 QA: ninguno
 
 ### SALES-F35 Dar de alta y ordenar los departamentos del precio libre

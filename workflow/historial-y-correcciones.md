@@ -18,7 +18,7 @@ Pasos:
 Entra: nada de otros componentes.
 Sale: nada.
 Si falla: «Error cargando métricas» (las cifras salen como «—»); si no cargan las formas de pago, el filtro de pago desaparece con «No se han podido cargar las formas de pago, así que el filtro por pago no está disponible…». Vacía: «Aún no hay ventas.». Las cifras necesitan permiso de informes: un empleado ve la tabla y las cifras sin datos, con el aviso de error (texto exacto sin confirmar).
-Implicados: INVENTORY-F16, STAFF-F21, REC_PELUQUERIA-F15
+Implicados: INVENTORY-F16, STAFF-F21, REC_PELUQUERIA-F15, HUB_SHELL-F36
 QA: R-10, B-07
 
 ### SALES-F29 Ver y reimprimir el documento de una venta
@@ -33,7 +33,7 @@ Pasos:
 Entra: la factura de Facturación y el registro de VeriFactu de esa venta.
 Sale: el papel; reimprimir no crea venta ni documento fiscal.
 Si falla: «Cargando documento…» y «Error cargando el documento». Si la venta aún no tiene factura (se emite un instante después del cobro, o quedó en reintentos o en «Eventos caídos»: INVOICE-F06), tras la espera el documento sale sin número de factura (lleva el número de la venta) y sin QR. Sin impresora: «El tique está en espera: aún no hay ninguna impresora dada de alta. Da una de alta y saldrá solo.»; si falla: «No se pudo imprimir». Con la impresora de red del dispositivo apagada o sin papel no hay ningún aviso y el papel se pierde (PRINTING-F07). Una factura sin NIF del cliente avisa «Esta factura no tiene el NIF del cliente: la impresora de tiques no puede sacarla como factura completa.».
-Implicados: INVOICE-F04, INVOICE-F06, INVOICE-F20, PRINTING-F08, VERIFACTU-F19, REC_FISCAL-F07, REC_FISCAL-F09, REC_FISCAL-F10
+Implicados: INVOICE-F04, INVOICE-F06, INVOICE-F20, PRINTING-F08, VERIFACTU-F19, REC_FISCAL-F07, REC_FISCAL-F09, REC_FISCAL-F10, HUB-F16, HUB_SHELL-F76
 QA: R-11, L-02, L-04, L-05
 
 ### SALES-F30 Anular una venta cobrada
