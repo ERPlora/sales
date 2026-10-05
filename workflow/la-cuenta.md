@@ -95,7 +95,7 @@ Pasos:
 Entra: «Permitir descuentos» y el descuento máximo de los ajustes.
 Sale: el descuento en la cuenta o en la línea; al cobrar se reparte entre las líneas, la base y el IVA declarados ya lo llevan descontado, y la venta guarda el importe descontado.
 Si falla: con «Permitir descuentos» apagado no hay botones y el servidor rechaza «Este negocio no permite descuentos.». Por encima del máximo sin PIN: «Ese descuento supera lo que este negocio permite sin que lo autorice el encargado.» y la cuenta sigue como estaba. Un importe mayor que la cuenta no se puede aplicar.
-Implicados: REC_PELUQUERIA-F09
+Implicados: REC_PELUQUERIA-F09, HUB-F05, HUB-F152, HUB_SHELL-F51
 QA: R-11, B-05, qa-hub-restaurant §7.10
 
 ### SALES-F15 Invitar una línea
@@ -142,7 +142,7 @@ Pasos:
 Entra: nada de otros componentes.
 Sale: la cuenta sigue abierta con su título; aparcar nunca la anula. Con un cliente asignado, Clientes mantiene el vínculo.
 Si falla: si el hub rechaza el título, el diálogo sigue abierto con el motivo y «No se ha podido aparcar la cuenta. Sigue en pantalla.». Con líneas sin enviar a cocina no se cambia de cuenta: «Hay productos en la comanda actual sin enviar (N). Envíalos o elimínalos antes de cambiar de cuenta.».
-Implicados: CUSTOMERS-F19, SERVICES-F22, SERVICES-F25, TABLES-F11, TABLES-F13, REC_PELUQUERIA-F10
+Implicados: CUSTOMERS-F19, SERVICES-F22, SERVICES-F25, TABLES-F11, TABLES-F13, REC_PELUQUERIA-F10, HUB_SHELL-F08
 QA: qa-hub-restaurant §7.06
 
 ### SALES-F18 Eliminar una cuenta abierta
@@ -157,5 +157,5 @@ Pasos:
 Entra: la cuenta elegida.
 Sale: la cuenta queda anulada, no borrada, sin motivo (avisa: sales.order.voided); Servicios suelta los bonos que tuviera retenidos. Cocina no escucha ese aviso: lo ya enviado sigue en su pantalla. Mesas tampoco lo escucha: por el servidor la mesa no se suelta (lo que haga su control en pantalla, sin confirmar).
 Si falla: «No se ha podido eliminar esa cuenta abierta. Sigue en la lista.» o «No se ha podido eliminar la cuenta. Sigue abierta, en pantalla.». Una cuenta ya cobrada o anulada desde otro dispositivo no cambia, pero la orden contesta bien y el aviso sale igual.
-Implicados: KITCHEN-F28, SERVICES-F23, TABLES-F20, REC_RESTAURANTE-F14
+Implicados: KITCHEN-F28, SERVICES-F23, TABLES-F20, REC_RESTAURANTE-F14, HUB-F152
 QA: qa-hub-restaurant §7.13 (discrepa)
