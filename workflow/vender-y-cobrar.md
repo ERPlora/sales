@@ -17,13 +17,10 @@ Pasos:
 5. Deja o quita «Imprimir tiquet» (arranca como lo diga Impresión) y pulsa «Cobrar <total>».
 6. La hoja se cierra, la cuenta queda vacía y se abre el **Documento de venta** con el tique («Emitiendo el tique…» mientras llega el número fiscal).
 Entra: los artículos y precios de Inventario y Servicios; los tipos de IVA de Impuestos; los ajustes del TPV.
-Sale: la venta cobrada e inmutable, con número `AAAAMMDD-NNNN` del día del negocio, sus líneas, su pago y su desglose de IVA (avisa: sale.completed). Si venía de una cuenta, la cuenta se cierra (avisa: order.completed). Caja apunta el cobro en la caja abierta, Inventario descuenta stock, Clientes suma la compra, Facturación emite la factura simplificada (y de ahí VeriFactu), Mesas apunta lo cobrado, cierra la sesión y libera la mesa, y Servicios gasta las sesiones de bono retenidas. Cocina retira del KDS todas las rondas de la cuenta: las listas pasan a servidas y las pendientes o en preparación, a canceladas (SALES-F20). El hub, en el dispositivo que cobró, imprime el tique según «Imprimir tiquet» y abre el cajón si Impresión lo tiene activado, con cualquier forma de pago (PRINTING-F07, PRINTING-F13). Cada línea de la venta guarda la categoría, el tipo, el país, la región y la regla de Impuestos con que se cobró; la calificación (exenta, no sujeta…) y la familia del impuesto no: las vuelve a resolver Facturación al emitir, con las reglas vigentes ese día (TAXES-F07).
+Sale: la venta cobrada e inmutable, con número `AAAAMMDD-NNNN` del día del negocio, sus líneas, su pago y su desglose de IVA (avisa: sale.completed). Si venía de una cuenta, la cuenta se cierra (avisa: order.completed). Caja apunta el cobro en la caja abierta, Inventario descuenta stock (con «Permitir vender sin stock» apagado, el de fábrica, un artículo vendido por encima de su saldo no baja nada y no deja rastro: INVENTORY-F21), Clientes suma la compra, Facturación emite la factura simplificada (y de ahí VeriFactu), Mesas apunta lo cobrado, cierra la sesión y libera la mesa (además, el TPV pide a Mesas cerrar la cuenta de mesa que tenía delante: tras dividir puede ser otra, y esa mesa se libera con su cuenta abierta, TABLES-F17, TABLES-F18), y Servicios gasta las sesiones de bono retenidas. Cocina retira del KDS todas las rondas de la cuenta: las listas pasan a servidas y las pendientes o en preparación, a canceladas, también la que el TPV acaba de enviar al cobrar (SALES-F20, KITCHEN-F27). El hub, en el dispositivo que cobró, imprime el tique según «Imprimir tiquet» y abre el cajón si Impresión lo tiene activado, con cualquier forma de pago (PRINTING-F07, PRINTING-F13). Cada línea de la venta guarda la categoría, el tipo, el país, la región y la regla de Impuestos con que se cobró; la calificación (exenta, no sujeta…) y la familia del impuesto no: las vuelve a resolver Facturación al emitir, con las reglas vigentes ese día (TAXES-F07).
 Si falla: sin importe entregado el botón no cobra y se lee «Marca en el teclado el importe entregado»; corto, «Lo entregado no cubre el total». Un artículo sin IVA configurado sale con la marca «Falta el IVA» y al tocarlo dice «No se puede vender: sin categoría fiscal. Falta configurar el IVA.» (o «…su categoría fiscal no tiene tipo…»). Un rechazo al cobrar se pinta en la hoja con su frase (p. ej. «Un producto del tique ya no está en el catálogo. Quita la línea y vuelve a añadirla.») y la cuenta sigue intacta. Un empleado sin permiso de cobro recibe la petición de PIN de un responsable. Con la caja cerrada y el bloqueo de Caja armado, el cobro se rechaza (SALES-F08). Si Facturación no puede emitir el tique, la venta queda cobrada igual: el hub reintenta su factura y, si sigue fallando, la deja en «Eventos caídos» (INVOICE-F06); mientras tanto el documento sale sin número de factura ni QR. Si la impresora de red del dispositivo está apagada o sin papel, el tique se pierde sin ningún aviso (PRINTING-F07): se reimprime desde **Ventas** (SALES-F29).
-Implicados: CASH_REGISTER-F11, CASH_REGISTER-F13, CUSTOMERS-F20, INVOICE-F01, INVOICE-F06, PRINTING-F06, PRINTING-F07, PRINTING-F13, TAXES-F04, TAXES-F06, TAXES-F07, TAXES-F08, TAXES-F11, TAXES-F18, TAXES-F19, REC_FISCAL-F02, REC_FISCAL-F07
-Pendiente de enlazar: inventory — descontar stock de lo vendido
+Implicados: CASH_REGISTER-F11, CASH_REGISTER-F13, CUSTOMERS-F20, INVENTORY-F01, INVENTORY-F02, INVENTORY-F03, INVENTORY-F04, INVENTORY-F05, INVENTORY-F06, INVENTORY-F07, INVENTORY-F08, INVENTORY-F19, INVENTORY-F20, INVENTORY-F21, INVENTORY-F27, INVOICE-F01, INVOICE-F06, KITCHEN-F27, PRINTING-F06, PRINTING-F07, PRINTING-F13, TABLES-F18, TAXES-F04, TAXES-F06, TAXES-F07, TAXES-F08, TAXES-F11, TAXES-F18, TAXES-F19, REC_FISCAL-F02, REC_FISCAL-F07, REC_RESTAURANTE-F11, REC_RESTAURANTE-F17
 Pendiente de enlazar: hub — el shell imprime el tique y abre el cajón al oír la venta, solo en el dispositivo que cobró
-Pendiente de enlazar: tables — apuntar lo cobrado y liberar la mesa al cobrar la cuenta entera
-Pendiente de enlazar: kitchen — al cobrar la cuenta entera, cerrar sus rondas (listas a servidas, pendientes y en preparación a canceladas)
 QA: R-09, B-06, BD-09, L-01, L-08, qa-hub-restaurant §7.10
 
 ### SALES-F02 Cobrar con tarjeta u otro medio sin cambio
@@ -39,7 +36,7 @@ Pasos:
 Entra: los medios de pago del negocio.
 Sale: la venta con un pago por el importe exacto y sin cambio (avisa: sale.completed, con el tipo de medio para que Caja no lo sume al efectivo). Si Impresión tiene activado abrir el cajón al vender, el cajón se abre también con tarjeta.
 Si falla: el TPV no habla con el datáfono: si la tarjeta se rechaza, cierra la hoja sin confirmar. «Cobrar … con tarjeta» es el rótulo de cualquier medio sin cambio, también de Bizum o transferencia. Un medio creado sin decir su tipo cuenta como efectivo (SALES-F37).
-Implicados: CASH_REGISTER-F13, PRINTING-F13
+Implicados: CASH_REGISTER-F13, PRINTING-F13, REC_RESTAURANTE-F11
 QA: R-09, B-06, BD-11
 
 ### SALES-F03 Repartir el cobro entre varios medios de pago
@@ -55,7 +52,7 @@ Pasos:
 Entra: los medios de pago y lo que entrega el cliente.
 Sale: una venta con una fila por medio; el cambio sale siempre del efectivo y nunca se reparte (avisa: sale.completed con la lista de pagos).
 Si falla: mientras falte dinero, el botón dice «Faltan <importe>» y debajo «Faltan <importe> por cubrir para poder cobrar la venta.». Si el total cambió mientras se repartía: «El total ha cambiado mientras se repartía el cobro. Revisa los importes y vuelve a cobrar.».
-Implicados: CASH_REGISTER-F13
+Implicados: CASH_REGISTER-F13, REC_RESTAURANTE-F11
 QA: L-07, qa-hub-restaurant §7.10
 
 ### SALES-F04 Elegir tique o factura y los datos del cliente
@@ -71,7 +68,7 @@ Pasos:
 Entra: el cliente asignado (Clientes) y el límite de la simplificada que da el hub.
 Sale: la venta con su tipo de documento fijado al cobrar, que no se puede cambiar después; el nombre, NIF, dirección, país y tipo de documento del cliente viajan con el aviso de venta cobrada para la factura.
 Si falla: sin los tres datos el botón dice «Faltan los datos del cliente» y no cobra; una factura sin esos datos la rechaza también el servidor por cualquier vía: «Una factura necesita el nombre, el NIF y la dirección del cliente. Rellénalos o cóbrala como tique.». El tique por encima del límite, en cambio, solo lo impide la pantalla.
-Implicados: CUSTOMERS-F17, INVOICE-F01, INVOICE-F02, REC_FISCAL-F03
+Implicados: CUSTOMERS-F17, INVOICE-F01, INVOICE-F02, REC_FISCAL-F03, REC_RESTAURANTE-F12
 QA: L-01 (discrepa), L-02, R-09, B-06
 
 ### SALES-F05 Cobrar cuando el negocio exige cliente
@@ -133,5 +130,5 @@ Pasos:
 Entra: nada de Caja: el TPV no la lee; el bloqueo lo aplica el hub con los ajustes y la sesión abierta de Caja.
 Sale: con el bloqueo armado, nada (la orden no entra). Sin él, la venta y el aviso de venta cobrada; Caja contesta bien y no escribe ningún apunte (CASH_REGISTER-F13).
 Si falla: con el bloqueo armado, el rechazo no dice que la caja está cerrada. Sin él, nada en pantalla avisa y el descuadre aparece al cerrar la caja; y anular o devolver en efectivo graba la venta anulada o devuelta mientras Caja rechaza el apunte (CASH_REGISTER-F14, CASH_REGISTER-F15).
-Implicados: CASH_REGISTER-F04, CASH_REGISTER-F13
+Implicados: CASH_REGISTER-F04, CASH_REGISTER-F13, REC_RESTAURANTE-F01
 QA: R-01, B-01, BD-04, BD-11

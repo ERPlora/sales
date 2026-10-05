@@ -160,21 +160,21 @@ gramática y el mismo prefijo. Huecos (`parcial`, `no hecho`): el porqué está 
 | SALES-F08 | Cobrar sin la caja abierta | comun | parcial | [workflow/vender-y-cobrar.md](workflow/vender-y-cobrar.md) |
 | SALES-F09 | Vender a precio libre por departamento | comun | parcial | [workflow/la-cuenta.md](workflow/la-cuenta.md) |
 | SALES-F10 | Vender por peso, con o sin báscula | comun | parcial | [workflow/la-cuenta.md](workflow/la-cuenta.md) |
-| SALES-F11 | Elegir los suplementos de un artículo | comun | hecho | [workflow/la-cuenta.md](workflow/la-cuenta.md) |
-| SALES-F12 | Componer un menú | restaurante | hecho | [workflow/la-cuenta.md](workflow/la-cuenta.md) |
+| SALES-F11 | Elegir los suplementos de un artículo | comun | parcial | [workflow/la-cuenta.md](workflow/la-cuenta.md) |
+| SALES-F12 | Componer un menú | restaurante | parcial | [workflow/la-cuenta.md](workflow/la-cuenta.md) |
 | SALES-F13 | Poner una nota en una línea | comun | hecho | [workflow/la-cuenta.md](workflow/la-cuenta.md) |
 | SALES-F14 | Aplicar un descuento a una línea o a la cuenta | comun | hecho | [workflow/la-cuenta.md](workflow/la-cuenta.md) |
 | SALES-F15 | Invitar una línea | comun | parcial | [workflow/la-cuenta.md](workflow/la-cuenta.md) |
 | SALES-F16 | Atribuir la cuenta o una línea a quien atiende | comun | hecho | [workflow/la-cuenta.md](workflow/la-cuenta.md) |
 | SALES-F17 | Aparcar una cuenta y recuperarla | comun | parcial | [workflow/la-cuenta.md](workflow/la-cuenta.md) |
 | SALES-F18 | Eliminar una cuenta abierta | comun | parcial | [workflow/la-cuenta.md](workflow/la-cuenta.md) |
-| SALES-F19 | Abrir la cuenta de una mesa y dejarla en la mesa | restaurante | hecho | [workflow/sala-y-cocina.md](workflow/sala-y-cocina.md) |
+| SALES-F19 | Abrir la cuenta de una mesa y dejarla en la mesa | restaurante | parcial | [workflow/sala-y-cocina.md](workflow/sala-y-cocina.md) |
 | SALES-F20 | Enviar la comanda a cocina | restaurante | parcial | [workflow/sala-y-cocina.md](workflow/sala-y-cocina.md) |
 | SALES-F21 | Imprimir la cuenta para la mesa (precuenta) | restaurante | hecho | [workflow/sala-y-cocina.md](workflow/sala-y-cocina.md) |
 | SALES-F22 | Cobrar solo una parte de la cuenta | restaurante | parcial | [workflow/sala-y-cocina.md](workflow/sala-y-cocina.md) |
 | SALES-F23 | Dividir la cuenta de una mesa | restaurante | parcial | [workflow/sala-y-cocina.md](workflow/sala-y-cocina.md) |
 | SALES-F24 | Juntar las cuentas de dos mesas | restaurante | parcial | [workflow/sala-y-cocina.md](workflow/sala-y-cocina.md) |
-| SALES-F25 | Pasar la cuenta a otra mesa | restaurante | hecho | [workflow/sala-y-cocina.md](workflow/sala-y-cocina.md) |
+| SALES-F25 | Pasar la cuenta a otra mesa | restaurante | parcial | [workflow/sala-y-cocina.md](workflow/sala-y-cocina.md) |
 | SALES-F26 | Cobrar una cita desde la agenda | peluqueria | parcial | [workflow/peluqueria.md](workflow/peluqueria.md) |
 | SALES-F27 | Pagar una línea con un bono | peluqueria | parcial | [workflow/peluqueria.md](workflow/peluqueria.md) |
 | SALES-F28 | Consultar el historial y las cifras de ventas | comun | parcial | [workflow/historial-y-correcciones.md](workflow/historial-y-correcciones.md) |
@@ -228,15 +228,16 @@ flujos de su fila en la misma entrega.
 | Precio de un servicio decidido por el catálogo | parcial: la pantalla toma el de Servicios (o el pactado en la cita), pero el servidor cobra el que se le manda | F09, F26 |
 | Venta por peso tecleando la cantidad | hecho | F10 |
 | Venta por peso con báscula | no hecho: nada lee la báscula ni manda el peso | F10 |
-| Suplementos con mínimo y máximo | hecho | F11 |
+| Suplementos con mínimo y máximo | parcial: solo la hoja del TPV los hace cumplir (MODIFIERS-F06) | F11 |
 | Menú con elecciones y reparto de IVA | hecho | F12 |
+| Cada plato del menú a su estación de cocina | no hecho: el menú viaja a Cocina como una línea (KITCHEN-F06, COMBOS-F11) | F12, F20 |
 | Nota de línea y notas rápidas | hecho | F13, F36 |
 | Descuento de línea, de cuenta, en % o importe, con PIN por encima del tope | hecho | F14 |
 | Invitación con motivo, permiso y auditoría | parcial: sin motivo ni permiso propio, y el servidor acepta la marca que venga | F15 |
 | Camarero o profesional por cuenta y por línea, transferible | hecho | F16 |
 | Aparcar y recuperar con título | hecho | F17 |
 | Anular una cuenta abierta con motivo y permiso | parcial: permiso sí, motivo no | F18 |
-| Cuenta por mesa, dejarla en la mesa | hecho (con Mesas) | F19 |
+| Cuenta por mesa, dejarla en la mesa | parcial: con una cuenta de barra delante, tocar una mesa con pedido la deja libre (TABLES-F11) | F19 |
 | Enviar a cocina por rondas, sin duplicar | hecho (con Cocina) | F20 |
 | Cobrar sin cancelar lo que se está cocinando («pide y paga») | no hecho: al cobrar la cuenta entera Cocina cancela las rondas pendientes (leído en el código, sin ejecutar) | F20 |
 | Anular una línea ya enviada con aviso a cocina | no hecho | F20 |
@@ -245,7 +246,7 @@ flujos de su fila en la misma entrega.
 | Dividir a partes iguales o por fracción de una línea | no hecho | F22, F23 |
 | Dividir moviendo líneas; deshacer el split | parcial: mover sí, deshacer no | F23 |
 | Juntar mesas sin perder ni duplicar líneas | parcial: las líneas sí; un fallo no se ve y las rondas de la cuenta absorbida no se cierran | F24 |
-| Transferir mesa | hecho (con Mesas) | F25 |
+| Transferir mesa | parcial: desde una mesa dividida la deja libre con la otra cuenta (TABLES-F15) | F25 |
 | Cobrar la cita sin volver a teclear | hecho (al 0 % si el servicio no está en el catálogo cargado) | F26 |
 | Bono que paga una línea de servicio | hecho (con Servicios); el servidor no comprueba que el bono exista | F27 |
 | Propina | fuera del MVP (pm#100) | — |
@@ -411,3 +412,4 @@ Contra `origin/main` v2.16.154 (05/10/2026). Una línea por discrepancia; manda 
 - **`ai.description` de `sales.create_payment_method`**: no dice que el tipo, si falta, es efectivo (F37).
 - **QA L-01** espera que por encima del límite se exija factura completa: la pantalla lo hace, pero por asistente o API se graba un tique por encima del límite (F04).
 - **QA `qa-hub-restaurant` §7.08 y §7.13** esperan que cocina reciba los cambios y anulaciones: eliminar una cuenta o juntarla deja sus rondas en la pantalla de Cocina, y cobrarla cancela las que se están haciendo (F18, F20, F24).
+- **Oleada 2 (Mesas, Cocina, Inventario, Modificadores y Combos, 05/10/2026)**: SALES-F11 y SALES-F12 decían `hecho`; el servidor no comprueba mínimo ni máximo de un grupo de modificadores (`handler/src/lib.rs`, `catalog_modifier` solo mira que la opción exista; sí los de un menú) y `kitchen_items_from_lines` no manda los platos de un menú a Cocina: pasan a `parcial`. SALES-F19 y SALES-F25 decían `hecho`; con la cuenta de barra delante o con la mesa dividida, Mesas deja libre una mesa con su pedido abierto (`erp-tables-pos-zones.ts`, `_session_transfer_free.sql` sin la comprobación de otra cuenta abierta): pasan a `parcial`. SALES-F01 y SALES-F15 decían que Inventario descuenta el stock: con «Permitir vender sin stock» apagado, lo vendido por encima del saldo no baja (`stock_decrease.sql`).

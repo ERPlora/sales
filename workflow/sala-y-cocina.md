@@ -9,7 +9,7 @@ pone las cuentas, las líneas y los importes; la mesa es de Mesas y la comanda e
 ## Flujos
 
 ### SALES-F19 Abrir la cuenta de una mesa y dejarla en la mesa
-Estado: hecho
+Estado: parcial — con una cuenta de barra delante, tocar una mesa ocupada que ya tiene pedido y elegir «Aparcarla y abrir» o «Eliminarla y abrir» deja esa mesa Disponible con su pedido abierto, porque Mesas ya había apuntado como cuenta de delante la de la mesa tocada (TABLES-F11, leído en el código, sin ejecutar); en una mesa con dos cuentas (dividida), tocarla abre una sin elegir
 Vertical: restaurante
 Actor: empleado, responsable
 Pantalla: Vender
@@ -22,9 +22,7 @@ Pasos:
 Entra: la mesa elegida y su cuenta, de Mesas.
 Sale: la cuenta abierta con el título de la mesa; Mesas guarda qué cuenta tiene cada mesa (avisa: sales.order.opened al crearla, que hoy no escucha nadie).
 Si falla: «No se ha podido dejar la cuenta en su mesa. Sigue en pantalla.»; con líneas sin enviar a cocina no se cambia de mesa ni de cuenta («Productos sin enviar»).
-Implicados: pendiente
-Pendiente de enlazar: tables — elegir mesa en el TPV, abrir su sesión y enlazarla con la cuenta
-Pendiente de enlazar: REC_RESTAURANTE — sentar, pedir, servir y cobrar en el día del restaurante
+Implicados: TABLES-F10, TABLES-F11, TABLES-F12, TABLES-F21, REC_RESTAURANTE-F05, REC_RESTAURANTE-F08
 QA: R-03, R-06, qa-hub-restaurant §7.06
 
 ### SALES-F20 Enviar la comanda a cocina
@@ -39,13 +37,12 @@ Pasos:
 4. Cada envío es una ronda nueva con solo lo que faltaba; un doble toque no envía dos veces.
 5. Al cobrar una cuenta con líneas pendientes, la hoja avisa «Los N productos pendientes de la comanda se enviarán a cocina al cobrar.» y se envían antes de cerrar la venta.
 6. Pero al cobrar la cuenta entera, Cocina retira del KDS todas sus rondas: las que estaban listas pasan a servidas y las pendientes o en preparación (incluida la que se acaba de enviar al cobrar) pasan a canceladas. Cobrar antes de servir deja la comida sin hacer. Un cobro parcial (SALES-F22) no las toca.
-Entra: las líneas pendientes de la cuenta, su mesa (como texto), quién atiende y la prioridad que marque Cocina.
+7. El orden entre los dos avisos no está garantizado: lo normal es que Cocina reciba antes la ronda y después el cierre, que la cancela (su papel sale igual, porque se imprime al nacer); si la entrega de la ronda se retrasa (reintento, o dos instancias del hub durante una actualización), el cierre no encuentra nada y la ronda se queda viva para siempre en la pantalla de cocina (KITCHEN-F27, kitchen#145, leído en el código, sin ejecutar).
+8. Un menú viaja como una sola línea con su nombre, sin sus platos elegidos (SALES-F12): Cocina sabría repartirlos por estación si se los mandaran (KITCHEN-F06, COMBOS-F11).
+Entra: las líneas pendientes de la cuenta, su mesa (como texto que pone Mesas), quién atiende y la prioridad que marque Cocina.
 Sale: las líneas marcadas con su ronda y la hora de envío (avisa: order.fired, con las líneas, la nota, los suplementos y el camarero); Cocina crea la comanda en su pantalla, pendiente. Al cobrar la cuenta entera (avisa: order.completed, que sale después del envío) Cocina cierra sus rondas: listas a servidas, pendientes y en preparación a canceladas.
-Si falla: «No se pudo enviar a cocina» y las líneas siguen pendientes. Al cobrar, si el envío falla no se cobra: «No se ha podido enviar la comanda a cocina, así que no se ha cobrado. Vuelve a intentarlo.». Que Cocina cancele las rondas al cobrar no se avisa en el TPV.
-Implicados: pendiente
-Pendiente de enlazar: kitchen — crear la comanda de cada ronda y enseñar su estado en el TPV
-Pendiente de enlazar: kitchen — al cobrar la cuenta entera, cancelar las rondas pendientes o en preparación y servir las listas
-Pendiente de enlazar: tables — el aviso «Enviar comanda» del plano también envía la ronda
+Si falla: «No se pudo enviar a cocina» y las líneas siguen pendientes. Al cobrar, si el envío falla no se cobra: «No se ha podido enviar la comanda a cocina, así que no se ha cobrado. Vuelve a intentarlo.». Que Cocina cancele las rondas al cobrar no se avisa en el TPV. Por el asistente o la API, pedir que se quite una línea ya enviada contesta bien sin quitar nada y avisa igual (sales.order.line_removed), y Cocina no escucha ese aviso (KITCHEN-F29).
+Implicados: COMBOS-F11, KITCHEN-F04, KITCHEN-F05, KITCHEN-F06, KITCHEN-F18, KITCHEN-F19, KITCHEN-F27, KITCHEN-F29, MODIFIERS-F08, TABLES-F10, REC_RESTAURANTE-F07, REC_RESTAURANTE-F08, REC_RESTAURANTE-F17
 QA: R-04, R-05, R-06, BD-08, qa-hub-restaurant §7.08, qa-hub-restaurant §7.13 (discrepa)
 
 ### SALES-F21 Imprimir la cuenta para la mesa (precuenta)
@@ -60,7 +57,7 @@ Pasos:
 Entra: la cuenta abierta; el total que calcula el servidor (si hay líneas marcadas o un bono, el de la pantalla).
 Sale: un papel sin número fiscal ni QR; no consume numeración ni crea venta.
 Si falla: «No se pudo imprimir la cuenta» (con el motivo si lo hay); queda en la cola del hub si no hay impresora conectada.
-Implicados: PRINTING-F09
+Implicados: PRINTING-F09, REC_RESTAURANTE-F09
 QA: R-08, qa-hub-restaurant §7.10
 
 ### SALES-F22 Cobrar solo una parte de la cuenta
@@ -75,12 +72,11 @@ Pasos:
 Entra: las líneas marcadas.
 Sale: una venta con esas líneas (avisa: sale.completed); las líneas quedan atadas a su venta y la cuenta sigue abierta (no se avisa de cuenta cerrada, así que la mesa no se libera ni Cocina cierra sus rondas). Si después se anula una de esas ventas, Mesas cierra la sesión y libera la mesa aunque la cuenta siga abierta (SALES-F30).
 Si falla: los mismos rechazos que un cobro normal; con una sola línea no hay nada que marcar.
-Implicados: pendiente
-Pendiente de enlazar: tables — la mesa sigue ocupada mientras queden líneas por cobrar
+Implicados: KITCHEN-F27, TABLES-F18, REC_RESTAURANTE-F10
 QA: R-07, qa-hub-restaurant §7.09
 
 ### SALES-F23 Dividir la cuenta de una mesa
-Estado: parcial — solo moviendo líneas enteras: ni partes iguales ni fracción de una línea, y no se deshace un split
+Estado: parcial — solo moviendo líneas enteras: ni partes iguales ni fracción de una línea, y no se deshace un split; al cobrar entera la cuenta nueva, el TPV pide a Mesas cerrar también la cuenta de mesa que tenía delante (la original, o la de otra mesa si había otra elegida) y esa mesa queda Disponible con su pedido todavía abierto (TABLES-F17, leído en el código, sin ejecutar); en cocina, cobrar la original cierra sus rondas aunque parte de sus platos pasaran a la nueva (KITCHEN-F27)
 Vertical: restaurante
 Actor: empleado, responsable
 Pantalla: Vender
@@ -91,12 +87,11 @@ Pasos:
 Entra: la segunda cuenta de la mesa que abre Mesas.
 Sale: dos cuentas abiertas que suman lo mismo que la original al céntimo; Mesas enlaza la nueva a su segunda cuenta.
 Si falla: «No se pudo dividir la cuenta» y las líneas no se mueven; si el fallo fue de Ventas, Mesas ya abrió la segunda cuenta y la mesa se queda con una cuenta vacía de más.
-Implicados: pendiente
-Pendiente de enlazar: tables — abrir una segunda cuenta en la mesa
+Implicados: KITCHEN-F27, TABLES-F17, REC_RESTAURANTE-F10
 QA: R-07, qa-hub-restaurant §7.09 (discrepa)
 
 ### SALES-F24 Juntar las cuentas de dos mesas
-Estado: parcial — si la unión de cuentas falla no se ve nada (las mesas quedan fusionadas en Mesas y las cuentas siguen separadas); las rondas enviadas desde la cuenta absorbida no se cierran al cobrar y se quedan en la pantalla de Cocina
+Estado: parcial — si la unión de cuentas falla no se ve nada (las mesas quedan fusionadas en Mesas y las cuentas siguen separadas); las rondas enviadas desde la cuenta absorbida no se cierran al cobrar y se quedan en la pantalla de Cocina; si la mesa de origen estaba dividida, se junta una de sus dos cuentas sin elegir y la mesa queda Disponible con la otra sentada (TABLES-F16)
 Vertical: restaurante
 Actor: empleado, responsable
 Pantalla: Vender
@@ -107,13 +102,11 @@ Pasos:
 Entra: las dos mesas y sus cuentas, de Mesas.
 Sale: una sola cuenta; las líneas se mueven sin volver a crearlas, así que lo ya enviado a cocina no se envía otra vez. Repetirlo no cambia nada. La cuenta absorbida se anula sin aviso a nadie: las rondas que se enviaron desde ella siguen colgadas de ella en Cocina y no se cierran al cobrar la que queda.
 Si falla: la persona no ve ningún aviso: Mesas ya fusionó las mesas, pero las dos cuentas siguen separadas en Ventas.
-Implicados: pendiente
-Pendiente de enlazar: tables — juntar dos mesas ocupadas
-Pendiente de enlazar: kitchen — las rondas de la cuenta absorbida no se cierran al cobrar la cuenta que queda
+Implicados: KITCHEN-F28, TABLES-F16, REC_RESTAURANTE-F10
 QA: R-07, qa-hub-restaurant §7.09
 
 ### SALES-F25 Pasar la cuenta a otra mesa
-Estado: hecho
+Estado: parcial — si la mesa de origen estaba dividida (dos cuentas), se pasa una de ellas sin elegir cuál y la mesa de origen queda Disponible con la otra cuenta todavía sentada (TABLES-F15, leído en el código, sin ejecutar)
 Vertical: restaurante
 Actor: empleado, responsable
 Pantalla: Vender
@@ -123,6 +116,5 @@ Pasos:
 Entra: la mesa de destino, de Mesas.
 Sale: nada en Ventas (la cuenta no cambia); Mesas libera la de origen.
 Si falla: lo dice Mesas.
-Implicados: pendiente
-Pendiente de enlazar: tables — transferir la sesión de una mesa a otra
+Implicados: TABLES-F15, REC_RESTAURANTE-F10
 QA: R-07, qa-hub-restaurant §7.09

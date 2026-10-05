@@ -18,7 +18,7 @@ Pasos:
 Entra: nada de otros componentes.
 Sale: nada.
 Si falla: «Error cargando métricas» (las cifras salen como «—»); si no cargan las formas de pago, el filtro de pago desaparece con «No se han podido cargar las formas de pago, así que el filtro por pago no está disponible…». Vacía: «Aún no hay ventas.». Las cifras necesitan permiso de informes: un empleado ve la tabla y las cifras sin datos, con el aviso de error (texto exacto sin confirmar).
-Implicados: STAFF-F21
+Implicados: INVENTORY-F16, STAFF-F21
 QA: R-10, B-07
 
 ### SALES-F29 Ver y reimprimir el documento de una venta
@@ -48,9 +48,7 @@ Pasos:
 Entra: la venta elegida.
 Sale: la venta queda marcada como anulada con hora, quién y motivo, y el motivo se copia en sus notas; no se borra (avisa: sale.voided). Caja devuelve el efectivo que la venta tenía vivo en la caja abierta, Inventario repone el stock, Clientes marca la compra como anulada y Mesas deja de contar lo cobrado y además cierra la sesión de la mesa enlazada a esa cuenta y la libera, también si era un cobro parcial y la cuenta sigue abierta. Nadie más reacciona: Facturación no escucha la anulación (INVOICE-F07), así que el tique sigue «Emitida» y su registro sigue declarado en VeriFactu, sin registro de anulación; si el tique se había canjeado por factura completa (INVOICE-F04), esa factura completa también sigue viva. Servicios no devuelve la sesión de bono gastada y Citas deja la cita marcada como cobrada, con su «Cobrar» en gris, así que no se puede volver a cobrar desde la agenda.
 Si falla: sin motivo, «Hace falta un motivo para anular una venta»; si se cobró como factura completa, «Esta venta lleva factura completa: emite una factura rectificativa en vez de anularla» (un tique canjeado después por factura completa no se rechaza); con devoluciones, «Esta venta ya tiene devoluciones: devuelve el importe que queda en vez de anularla»; anulada desde otro dispositivo a la vez, «Esta venta ya está anulada». Sin permiso no aparece «Anular». Con la caja cerrada y el bloqueo de Caja armado, «No se ha podido anular la venta» (SALES-F08). Sin bloqueo, sin caja abierta y con efectivo, la venta queda anulada pero Caja rechaza el apunte y, tras los reintentos, queda en la cola de avisos fallidos sin aviso en pantalla (CASH_REGISTER-F14).
-Implicados: APPOINTMENTS-F17, CASH_REGISTER-F14, CUSTOMERS-F21, INVOICE-F07, REC_FISCAL-F13
-Pendiente de enlazar: inventory — reponer el stock de la venta anulada
-Pendiente de enlazar: tables — dejar de contar lo cobrado, cerrar la sesión y liberar la mesa de la cuenta de la venta anulada
+Implicados: APPOINTMENTS-F17, CASH_REGISTER-F14, CUSTOMERS-F21, INVENTORY-F23, INVOICE-F07, TABLES-F19, REC_FISCAL-F13, REC_RESTAURANTE-F15
 Pendiente de enlazar: services — la sesión de bono gastada en la venta anulada no vuelve al bono (no escucha la anulación)
 QA: R-11, B-08, L-04 (discrepa), L-06, qa-hub-restaurant §7.13
 
@@ -68,7 +66,7 @@ Pasos:
 Entra: lo cobrado y lo ya devuelto por cada forma de pago.
 Sale: el documento de devolución con una fila por forma de pago, su motivo y quién la hizo (avisa: sale.refunded). Caja apunta la salida por cada forma en la caja abierta; sin caja abierta, la parte en efectivo se rechaza y, tras los reintentos, queda en la cola de avisos fallidos (la de tarjeta no se apunta) (CASH_REGISTER-F15). Facturación emite una rectificativa R1 por lo devuelto, en negativo y en la serie RECT; si con ella se devuelve todo, la original pasa a «Cancelada» (INVOICE-F09, INVOICE-F10). VeriFactu la registra como alta rectificativa por diferencias, y como R5 si es de un tique sin NIF del cliente (VERIFACTU-F14). Inventario y Clientes no reaccionan: no vuelve stock y el historial del cliente conserva el importe.
 Si falla: el botón explica qué falta antes de devolver («<medio>: <importe> es más que los <importe> que quedan por devolver.», «<medio>: elige por dónde vuelve este dinero.», «Una devolución necesita un motivo.»). Si el hub no contesta, comprueba solo si se grabó y repetir no duplica («No hemos podido confirmar si la devolución se registró…»). Si no queda dinero: «No queda dinero por devolver en esta venta.». Con la caja cerrada y el bloqueo de Caja armado, «No se ha podido registrar la devolución.» (SALES-F08). Si la venta todavía no tiene factura (cobro en reintentos o en «Eventos caídos»), la devolución se registra pero Facturación no rectifica nada ni lo reintenta: cuando la factura nace después, queda sin rectificar y hay que rectificarla a mano (INVOICE-F06, INVOICE-F08).
-Implicados: CASH_REGISTER-F15, CUSTOMERS-F22, INVOICE-F09, INVOICE-F10, REC_FISCAL-F11
+Implicados: CASH_REGISTER-F15, CUSTOMERS-F22, INVENTORY-F24, INVOICE-F09, INVOICE-F10, REC_FISCAL-F11, REC_RESTAURANTE-F15
 QA: R-11, B-08, L-03, L-06, qa-hub-restaurant §7.13
 
 ### SALES-F32 Devolver la sesión de un bono
