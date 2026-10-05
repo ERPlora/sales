@@ -17,8 +17,7 @@ Pasos:
 Entra: los departamentos del negocio (SALES-F35) o, si no hay, las categorías de IVA activas de Impuestos.
 Sale: una línea sin artículo de catálogo, con su importe y su categoría de IVA, que se cobra como cualquier otra.
 Si falla: «Añadir» no se puede pulsar sin importe y departamento; sin departamentos ni categorías, «Sin departamentos configurados.». Desde esta hoja, un empleado o cajero sin el permiso de precio libre recibe la petición de PIN del responsable; por otras puertas no (ver Estado).
-Implicados: TAXES-F01
-Pendiente de enlazar: services — un servicio de precio abierto pide su importe al venderse
+Implicados: SERVICES-F03, SERVICES-F09, TAXES-F01, REC_PELUQUERIA-F09
 QA: qa-hub-restaurant §7.10
 
 ### SALES-F10 Vender por peso, con o sin báscula
@@ -96,7 +95,7 @@ Pasos:
 Entra: «Permitir descuentos» y el descuento máximo de los ajustes.
 Sale: el descuento en la cuenta o en la línea; al cobrar se reparte entre las líneas, la base y el IVA declarados ya lo llevan descontado, y la venta guarda el importe descontado.
 Si falla: con «Permitir descuentos» apagado no hay botones y el servidor rechaza «Este negocio no permite descuentos.». Por encima del máximo sin PIN: «Ese descuento supera lo que este negocio permite sin que lo autorice el encargado.» y la cuenta sigue como estaba. Un importe mayor que la cuenta no se puede aplicar.
-Implicados: ninguno
+Implicados: REC_PELUQUERIA-F09
 QA: R-11, B-05, qa-hub-restaurant §7.10
 
 ### SALES-F15 Invitar una línea
@@ -126,11 +125,11 @@ Pasos:
 Entra: las personas del hub y el equipo de Personal.
 Sale: la venta y cada línea atribuidas a esa persona (para el cierre por profesional y la comisión, que hoy no compone nadie: STAFF-F21); la comanda de cocina lleva su usuario. Una profesional con cuenta del hub vinculada sale una sola vez, bajo el identificador de su ficha (STAFF-F03); una ficha Inactivo o dada de baja no se ofrece (su cuenta del hub, si la tiene, sigue saliendo como cualquier persona que entra en la app).
 Si falla: «No se ha podido cargar el equipo. La venta se sigue atribuyendo a quien tenga la sesión.»; «No se ha podido mover la línea a otro profesional. Se queda con el que tenía.». Una línea enviada a cocina no se reasigna.
-Implicados: STAFF-F03, STAFF-F09, STAFF-F21
+Implicados: STAFF-F03, STAFF-F09, STAFF-F21, REC_PELUQUERIA-F09, REC_PELUQUERIA-F15
 QA: B-04, B-07, R-10
 
 ### SALES-F17 Aparcar una cuenta y recuperarla
-Estado: parcial — «Permitir tiques aparcados» apagado solo quita el botón de la cabecera: desde «Cuentas abiertas» se sigue aparcando; con una cuenta de barra delante, tocar una mesa ocupada que ya tiene pedido y elegir «Aparcarla y abrir» o «Eliminarla y abrir» aparca o cierra en Mesas la cuenta de la mesa tocada, que queda Disponible con su pedido abierto (TABLES-F11); y una cuenta de mesa aparcada no vuelve a su mesa: queda «Aparcada» en Mesas para siempre, también tras cobrarla (TABLES-F13)
+Estado: parcial — «Permitir tiques aparcados» apagado solo quita el botón de la cabecera: desde «Cuentas abiertas» se sigue aparcando; con una cuenta de barra delante, tocar una mesa ocupada que ya tiene pedido y elegir «Aparcarla y abrir» o «Eliminarla y abrir» aparca o cierra en Mesas la cuenta de la mesa tocada, que queda Disponible con su pedido abierto (TABLES-F11); y una cuenta de mesa aparcada no vuelve a su mesa: queda «Aparcada» en Mesas para siempre, también tras cobrarla (TABLES-F13); con una línea pagada con bono, volver a la cuenta aparcada la cobra a su precio aunque el hueco del bono la enseñe gastada, y al cobrar la sesión también se gasta; si nadie la cobra en un día, la sesión retenida vuelve sola al bono (SERVICES-F22, SERVICES-F25, leído en el código, sin ejecutar)
 Vertical: comun
 Actor: empleado, responsable
 Pantalla: Cuentas abiertas
@@ -143,7 +142,7 @@ Pasos:
 Entra: nada de otros componentes.
 Sale: la cuenta sigue abierta con su título; aparcar nunca la anula. Con un cliente asignado, Clientes mantiene el vínculo.
 Si falla: si el hub rechaza el título, el diálogo sigue abierto con el motivo y «No se ha podido aparcar la cuenta. Sigue en pantalla.». Con líneas sin enviar a cocina no se cambia de cuenta: «Hay productos en la comanda actual sin enviar (N). Envíalos o elimínalos antes de cambiar de cuenta.».
-Implicados: CUSTOMERS-F19, TABLES-F11, TABLES-F13
+Implicados: CUSTOMERS-F19, SERVICES-F22, SERVICES-F25, TABLES-F11, TABLES-F13, REC_PELUQUERIA-F10
 QA: qa-hub-restaurant §7.06
 
 ### SALES-F18 Eliminar una cuenta abierta
@@ -158,6 +157,5 @@ Pasos:
 Entra: la cuenta elegida.
 Sale: la cuenta queda anulada, no borrada, sin motivo (avisa: sales.order.voided); Servicios suelta los bonos que tuviera retenidos. Cocina no escucha ese aviso: lo ya enviado sigue en su pantalla. Mesas tampoco lo escucha: por el servidor la mesa no se suelta (lo que haga su control en pantalla, sin confirmar).
 Si falla: «No se ha podido eliminar esa cuenta abierta. Sigue en la lista.» o «No se ha podido eliminar la cuenta. Sigue abierta, en pantalla.». Una cuenta ya cobrada o anulada desde otro dispositivo no cambia, pero la orden contesta bien y el aviso sale igual.
-Implicados: KITCHEN-F28, TABLES-F20, REC_RESTAURANTE-F14
-Pendiente de enlazar: services — soltar las sesiones de bono retenidas en esa cuenta
+Implicados: KITCHEN-F28, SERVICES-F23, TABLES-F20, REC_RESTAURANTE-F14
 QA: qa-hub-restaurant §7.13 (discrepa)
