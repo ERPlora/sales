@@ -17,7 +17,7 @@ Pasos:
 Entra: los departamentos del negocio (SALES-F35) o, si no hay, las categorías de IVA activas de Impuestos.
 Sale: una línea sin artículo de catálogo, con su importe y su categoría de IVA, que se cobra como cualquier otra.
 Si falla: «Añadir» no se puede pulsar sin importe y departamento; sin departamentos ni categorías, «Sin departamentos configurados.». Desde esta hoja, un empleado o cajero sin el permiso de precio libre recibe la petición de PIN del responsable; por otras puertas no (ver Estado).
-Implicados: SERVICES-F03, SERVICES-F09, TAXES-F01, REC_PELUQUERIA-F09
+Implicados: SERVICES-F03, SERVICES-F09, TAXES-F01, REC_PELUQUERIA-F09, PRICING-F07
 QA: qa-hub-restaurant §7.10
 
 ### SALES-F10 Vender por peso, con o sin báscula
@@ -95,7 +95,7 @@ Pasos:
 Entra: «Permitir descuentos» y el descuento máximo de los ajustes.
 Sale: el descuento en la cuenta o en la línea; al cobrar se reparte entre las líneas, la base y el IVA declarados ya lo llevan descontado, y la venta guarda el importe descontado.
 Si falla: con «Permitir descuentos» apagado no hay botones y el servidor rechaza «Este negocio no permite descuentos.». Por encima del máximo sin PIN: «Ese descuento supera lo que este negocio permite sin que lo autorice el encargado.» y la cuenta sigue como estaba. Un importe mayor que la cuenta no se puede aplicar.
-Implicados: REC_PELUQUERIA-F09, HUB-F05, HUB-F152, HUB_SHELL-F51
+Implicados: REC_PELUQUERIA-F09, HUB-F05, HUB-F152, HUB_SHELL-F51, PRICING-F05, PRICING-F08
 QA: R-11, B-05, qa-hub-restaurant §7.10
 
 ### SALES-F15 Invitar una línea
