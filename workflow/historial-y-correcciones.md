@@ -69,18 +69,18 @@ Implicados: CASH_REGISTER-F15, CUSTOMERS-F22, INVENTORY-F24, INVOICE-F09, INVOIC
 QA: R-11, B-08, L-03, L-06, qa-hub-restaurant §7.13
 
 ### SALES-F32 Devolver la sesión de un bono
-Estado: parcial — en un tique con bono y dinero no se puede devolver solo la sesión mientras quede dinero (sales#512), y una vez devuelto todo el dinero la venta pasa a Devuelta y «Devolver» queda desactivado, así que la sesión ya no se puede devolver desde Ventas; anular la venta tampoco la devuelve
+Estado: parcial — la sesión solo vuelve junto con una devolución de dinero: en un tique pagado entero con bono (0,00 €), «Devolver» dice «No queda nada por devolver en esta venta.» y no enseña el hueco de Servicios, y el servidor rechaza además una devolución sin dinero, así que la sesión solo se repone en Servicios, **Bonos vendidos → Ajustar → Añadir sesiones**, y solo un responsable (SERVICES-F18); en un tique con bono y dinero la sesión sola no se puede devolver mientras quede dinero (hay que devolver algo de dinero a la vez, sales#512) y, devuelto todo el dinero, la venta pasa a Devuelta y «Devolver» queda desactivado; anular la venta tampoco la devuelve
 Vertical: peluqueria
 Actor: responsable
 Pantalla: Devolver
 Pasos:
 1. En la ventana **Devolver** de una venta con líneas pagadas por bono, aparece «Líneas pagadas de otra forma» con el hueco de Servicios en cada una.
 2. Marca en el hueco si la sesión vuelve al bono. El aviso que dé Servicios sale junto al botón.
-3. Al pulsar «Devolver <importe>», la ventana espera a que Servicios devuelva la sesión. Si la venta se pagó entera con bono (no hay dinero que devolver), el botón es «Devolver lo pagado de otra forma».
+3. Al pulsar «Devolver <importe>» (con algún importe de dinero), la ventana espera a que Servicios devuelva la sesión. Si la venta se pagó entera con bono, la ventana no llega a enseñar el hueco: dice «No queda nada por devolver en esta venta.» (ver Estado). El botón «Devolver lo pagado de otra forma» solo sale al volver a abrir, en el mismo dispositivo, una devolución ya registrada cuya sesión no volvió.
 Entra: las líneas de la venta que pagó un bono.
-Sale: la sesión vuelve al bono, con el documento de devolución como referencia; no mueve dinero.
+Sale: la sesión vuelve al bono, con el documento de devolución como referencia; la sesión en sí no mueve dinero, pero solo viaja con una devolución que sí lo devuelve.
 Si falla: «El dinero ha vuelto, pero lo que se pagó de otra forma no se ha podido devolver. Revísalo desde su módulo.»; si la ventana se cerró antes, «La devolución está registrada, pero lo que se pagó de otra forma aún no se ha devuelto. Vuelve a abrir la devolución de esta venta en este dispositivo para devolverlo.»; pero si esa devolución ya devolvió todo el dinero, la venta está Devuelta y la ventana ya no se puede volver a abrir.
-Implicados: SERVICES-F26, REC_PELUQUERIA-F14
+Implicados: SERVICES-F18, SERVICES-F26, REC_PELUQUERIA-F14
 QA: B-08
 
 ### SALES-F33 Unir las ventas de dos fichas de cliente

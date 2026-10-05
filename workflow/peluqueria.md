@@ -17,7 +17,7 @@ Pasos:
 Entra: la cita (servicio, precio, clienta, profesional) que lee de Citas; el IVA del servicio, del catálogo de Servicios.
 Sale: la cuenta enlazada a la cita y, al cobrar, la venta con la cita y la profesional (avisa: sale.completed y sales.sale.created_from_appointment); Citas anota que la cita se cobró. La cita no cambia de estado.
 Si falla: «No se pudo enlazar la cita con esta cuenta. Cóbrala sin salir de esta pantalla o la agenda podría seguir enseñándola como pendiente.». Sin la app Citas, o si la cita no se encuentra, el TPV se abre vacío y sin aviso. Si el servicio de la cita no está en el catálogo cargado (p. ej. «Mostrar servicios en el TPV» apagado), la línea entra sin categoría de IVA, sin la marca «Falta el IVA», y el servidor la cobra al 0 % sin decir nada.
-Implicados: APPOINTMENTS-F17, SERVICES-F09, REC_PELUQUERIA-F09, REC_WA_CITA-F10
+Implicados: APPOINTMENTS-F17, SERVICES-F09, REC_FISCAL-F02, REC_PELUQUERIA-F09, REC_WA_CITA-F10
 QA: B-05, B-06, BD-09
 
 ### SALES-F27 Pagar una línea con un bono

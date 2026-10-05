@@ -46,7 +46,7 @@ Implicados: COMBOS-F11, KITCHEN-F04, KITCHEN-F05, KITCHEN-F06, KITCHEN-F18, KITC
 QA: R-04, R-05, R-06, BD-08, qa-hub-restaurant §7.08, qa-hub-restaurant §7.13 (discrepa)
 
 ### SALES-F21 Imprimir la cuenta para la mesa (precuenta)
-Estado: hecho
+Estado: parcial — si la cuenta queda en la cola sin ninguna impresora dada de alta, o la impresora de red está apagada o sin papel, el TPV no avisa: da por buena la cuenta encolada (PRINTING-F09, leído en el código, sin ejecutar)
 Vertical: restaurante
 Actor: empleado, responsable
 Pantalla: Cuenta (precuenta)
@@ -56,7 +56,7 @@ Pasos:
 3. Pulsa la impresora de arriba: sale por la impresora de tiques. Reimprimir después de otra ronda saca la cuenta actualizada.
 Entra: la cuenta abierta; el total que calcula el servidor (si hay líneas marcadas o un bono, el de la pantalla).
 Sale: un papel sin número fiscal ni QR; no consume numeración ni crea venta.
-Si falla: «No se pudo imprimir la cuenta» (con el motivo si lo hay); queda en la cola del hub si no hay impresora conectada.
+Si falla: «No se pudo imprimir la cuenta» (con el motivo si lo hay) solo cuando falla el envío; si queda en la cola del hub sin impresora conectada, o la impresora de red no la saca, no se avisa (PRINTING-F09).
 Implicados: PRINTING-F09, REC_RESTAURANTE-F09
 QA: R-08, qa-hub-restaurant §7.10
 

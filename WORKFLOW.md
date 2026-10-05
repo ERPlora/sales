@@ -170,7 +170,7 @@ gramática y el mismo prefijo. Huecos (`parcial`, `no hecho`): el porqué está 
 | SALES-F18 | Eliminar una cuenta abierta | comun | parcial | [workflow/la-cuenta.md](workflow/la-cuenta.md) |
 | SALES-F19 | Abrir la cuenta de una mesa y dejarla en la mesa | restaurante | parcial | [workflow/sala-y-cocina.md](workflow/sala-y-cocina.md) |
 | SALES-F20 | Enviar la comanda a cocina | restaurante | parcial | [workflow/sala-y-cocina.md](workflow/sala-y-cocina.md) |
-| SALES-F21 | Imprimir la cuenta para la mesa (precuenta) | restaurante | hecho | [workflow/sala-y-cocina.md](workflow/sala-y-cocina.md) |
+| SALES-F21 | Imprimir la cuenta para la mesa (precuenta) | restaurante | parcial | [workflow/sala-y-cocina.md](workflow/sala-y-cocina.md) |
 | SALES-F22 | Cobrar solo una parte de la cuenta | restaurante | parcial | [workflow/sala-y-cocina.md](workflow/sala-y-cocina.md) |
 | SALES-F23 | Dividir la cuenta de una mesa | restaurante | parcial | [workflow/sala-y-cocina.md](workflow/sala-y-cocina.md) |
 | SALES-F24 | Juntar las cuentas de dos mesas | restaurante | parcial | [workflow/sala-y-cocina.md](workflow/sala-y-cocina.md) |
@@ -241,7 +241,7 @@ flujos de su fila en la misma entrega.
 | Enviar a cocina por rondas, sin duplicar | hecho (con Cocina) | F20 |
 | Cobrar sin cancelar lo que se está cocinando («pide y paga») | no hecho: al cobrar la cuenta entera Cocina cancela las rondas pendientes (leído en el código, sin ejecutar) | F20 |
 | Anular una línea ya enviada con aviso a cocina | no hecho | F20 |
-| Precuenta no fiscal | hecho | F21 |
+| Precuenta no fiscal | parcial: sin aviso si el papel no sale | F21 |
 | Cobrar por artículos | hecho | F22 |
 | Dividir a partes iguales o por fracción de una línea | no hecho | F22, F23 |
 | Dividir moviendo líneas; deshacer el split | parcial: mover sí, deshacer no | F23 |

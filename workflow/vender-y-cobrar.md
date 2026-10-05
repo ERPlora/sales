@@ -36,7 +36,7 @@ Pasos:
 Entra: los medios de pago del negocio.
 Sale: la venta con un pago por el importe exacto y sin cambio (avisa: sale.completed, con el tipo de medio para que Caja no lo sume al efectivo). Si Impresión tiene activado abrir el cajón al vender, el cajón se abre también con tarjeta.
 Si falla: el TPV no habla con el datáfono: si la tarjeta se rechaza, cierra la hoja sin confirmar. «Cobrar … con tarjeta» es el rótulo de cualquier medio sin cambio, también de Bizum o transferencia. Un medio creado sin decir su tipo cuenta como efectivo (SALES-F37).
-Implicados: CASH_REGISTER-F13, PRINTING-F13, REC_PELUQUERIA-F09, REC_RESTAURANTE-F11
+Implicados: CASH_REGISTER-F13, PRINTING-F13, REC_FISCAL-F02, REC_PELUQUERIA-F09, REC_RESTAURANTE-F11, REC_RESTAURANTE-F17
 QA: R-09, B-06, BD-11
 
 ### SALES-F03 Repartir el cobro entre varios medios de pago
@@ -52,7 +52,7 @@ Pasos:
 Entra: los medios de pago y lo que entrega el cliente.
 Sale: una venta con una fila por medio; el cambio sale siempre del efectivo y nunca se reparte (avisa: sale.completed con la lista de pagos).
 Si falla: mientras falte dinero, el botón dice «Faltan <importe>» y debajo «Faltan <importe> por cubrir para poder cobrar la venta.». Si el total cambió mientras se repartía: «El total ha cambiado mientras se repartía el cobro. Revisa los importes y vuelve a cobrar.».
-Implicados: CASH_REGISTER-F13, REC_PELUQUERIA-F09, REC_RESTAURANTE-F11
+Implicados: CASH_REGISTER-F13, REC_FISCAL-F02, REC_PELUQUERIA-F09, REC_RESTAURANTE-F11
 QA: L-07, qa-hub-restaurant §7.10
 
 ### SALES-F04 Elegir tique o factura y los datos del cliente
