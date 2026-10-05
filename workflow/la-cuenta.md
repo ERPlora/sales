@@ -17,8 +17,7 @@ Pasos:
 Entra: los departamentos del negocio (SALES-F35) o, si no hay, las categorías de IVA activas de Impuestos.
 Sale: una línea sin artículo de catálogo, con su importe y su categoría de IVA, que se cobra como cualquier otra.
 Si falla: «Añadir» no se puede pulsar sin importe y departamento; sin departamentos ni categorías, «Sin departamentos configurados.». Desde esta hoja, un empleado o cajero sin el permiso de precio libre recibe la petición de PIN del responsable; por otras puertas no (ver Estado).
-Implicados: TAXES-F01
-Pendiente de enlazar: services — un servicio de precio abierto pide su importe al venderse
+Implicados: SERVICES-F03, SERVICES-F09, TAXES-F01, REC_PELUQUERIA-F09
 QA: qa-hub-restaurant §7.10
 
 ### SALES-F10 Vender por peso, con o sin báscula
@@ -34,13 +33,12 @@ Pasos:
 Entra: la unidad y su escalón, de Inventario.
 Sale: la línea con su cantidad y su unidad congeladas.
 Si falla: una cantidad que no encaja con el escalón del artículo se rechaza con «La cantidad no encaja con el escalón del producto» y la línea queda como estaba. El aviso de báscula en otra unidad («La báscula pesa en g y esta línea va en kg») existe pero hoy no puede salir.
-Implicados: pendiente
-Pendiente de enlazar: inventory — unidades de medida y su escalón
+Implicados: INVENTORY-F26
 Pendiente de enlazar: hub — leer la báscula en la aplicación instalada y mandar el peso al TPV (no existe)
 QA: qa-hub-restaurant §7.07
 
 ### SALES-F11 Elegir los suplementos de un artículo
-Estado: hecho
+Estado: parcial — el mínimo y el máximo de cada grupo solo los hace cumplir la hoja del TPV: el servidor solo comprueba que la opción exista, así que por el asistente o la API entra una línea sin las opciones obligatorias o con de más (MODIFIERS-F06); un grupo enganchado a la vez al artículo y a su categoría sale dos veces en la hoja y cuenta doble cada elección; «se puede repetir» no se aplica
 Vertical: comun
 Actor: empleado, responsable
 Pantalla: Vender
@@ -49,14 +47,13 @@ Pasos:
 2. En cada grupo se lee la regla («Elige 1», «Hasta 3», «Opcional»); toca las opciones, cada una con su precio extra.
 3. Pulsa «Añadir»: la línea entra con sus suplementos y su precio ya sumado. Si falta algo obligatorio, el botón dice «Elige una opción para continuar».
 Entra: los grupos y opciones de Suplementos.
-Sale: la línea con los suplementos elegidos y su precio congelado al pedir; un suplemento con otro tipo de IVA sale al cobrar como línea propia.
-Si falla: sin la app Suplementos el artículo entra directo. «Uno de los suplementos de la línea ya no está en el catálogo. Vuelve a elegirlo.» si desaparece antes de cobrar.
-Implicados: pendiente
-Pendiente de enlazar: modifiers — grupos de suplementos por artículo y su precio
+Sale: la línea con los suplementos elegidos y su precio congelado al pedir; un suplemento con otro tipo de IVA sale al cobrar como línea propia. Ningún suplemento mueve stock (INVENTORY-F21).
+Si falla: sin la app Suplementos, o si no se pueden leer sus grupos, el artículo entra directo, aunque tenga un grupo obligatorio. El mínimo y el máximo no se vuelven a comprobar al cobrar (sí los de un menú, SALES-F12). «Uno de los suplementos de la línea ya no está en el catálogo. Vuelve a elegirlo.» si desaparece antes de cobrar.
+Implicados: INVENTORY-F21, MODIFIERS-F03, MODIFIERS-F06, MODIFIERS-F07, REC_RESTAURANTE-F06
 QA: R-04, qa-hub-restaurant §7.07
 
 ### SALES-F12 Componer un menú
-Estado: hecho
+Estado: parcial — al enviar la ronda, Venta no manda a Cocina los platos elegidos del menú: la comanda lleva una línea con el nombre del menú, sin sus platos y sin estación (KITCHEN-F06, COMBOS-F11); un plato del menú sin elecciones no sale en la hoja y nadie lo exige; un plato no puede llevar sus propios suplementos
 Vertical: restaurante
 Actor: empleado, responsable
 Pantalla: Vender
@@ -65,10 +62,9 @@ Pasos:
 2. En la hoja, cada grupo (primero, segundo…) dice cuántas elecciones lleva; toca los platos. En un grupo de una sola elección, tocar otro plato cambia la elección.
 3. Pulsa «Añadir · <total>»; mientras falte algo, el botón dice qué («Elige 1 en Segundo»).
 Entra: los menús de Combos con sus grupos y platos.
-Sale: una línea de menú con lo elegido en su orden; al cobrar se reparte en tantas líneas como tipos de IVA tenga.
+Sale: una línea de menú con lo elegido en su orden; al cobrar se reparte en tantas líneas como tipos de IVA tenga (COMBOS-F09) y el aviso de venta lleva sus componentes para que Inventario baje cada plato (INVENTORY-F22). A cocina viaja como una sola línea con el nombre del menú (SALES-F20). El mínimo, el máximo y la repetición de cada plato los vuelve a comprobar el servidor al cobrar, no al añadir ni al enviar a cocina.
 Si falla: si el catálogo de menús no carga, «No se han podido cargar los menús, así que no se ofrece ninguno. Revisa el módulo Combos e inténtalo de nuevo». Al cobrar, un menú retirado o mal configurado se rechaza con su frase (p. ej. «Ese menú no tiene categoría fiscal, así que no se puede cobrar. Configúrala en Combos.»).
-Implicados: pendiente
-Pendiente de enlazar: combos — menús, grupos, platos y precio cerrado
+Implicados: COMBOS-F03, COMBOS-F04, COMBOS-F07, COMBOS-F08, COMBOS-F09, COMBOS-F10, INVENTORY-F22, KITCHEN-F06, REC_RESTAURANTE-F06
 QA: qa-hub-restaurant §7.07
 
 ### SALES-F13 Poner una nota en una línea
@@ -83,8 +79,7 @@ Pasos:
 Entra: las notas rápidas del negocio (SALES-F36).
 Sale: la nota en la línea; viaja a la comanda de cocina, a la cuenta impresa y queda congelada en la venta.
 Si falla: si las notas rápidas no cargan, «No se han podido cargar las notas rápidas: escribe la nota a mano.». Si no se guarda, la línea vuelve a la nota anterior con «No se ha podido guardar ese cambio de la línea. La línea vuelve a estar como estaba.». Una línea ya enviada a cocina no tiene botón de nota.
-Implicados: pendiente
-Pendiente de enlazar: kitchen — la nota sale en la comanda
+Implicados: KITCHEN-F07, REC_RESTAURANTE-F06
 QA: R-04, qa-hub-restaurant §7.07
 
 ### SALES-F14 Aplicar un descuento a una línea o a la cuenta
@@ -100,7 +95,7 @@ Pasos:
 Entra: «Permitir descuentos» y el descuento máximo de los ajustes.
 Sale: el descuento en la cuenta o en la línea; al cobrar se reparte entre las líneas, la base y el IVA declarados ya lo llevan descontado, y la venta guarda el importe descontado.
 Si falla: con «Permitir descuentos» apagado no hay botones y el servidor rechaza «Este negocio no permite descuentos.». Por encima del máximo sin PIN: «Ese descuento supera lo que este negocio permite sin que lo autorice el encargado.» y la cuenta sigue como estaba. Un importe mayor que la cuenta no se puede aplicar.
-Implicados: ninguno
+Implicados: REC_PELUQUERIA-F09
 QA: R-11, B-05, qa-hub-restaurant §7.10
 
 ### SALES-F15 Invitar una línea
@@ -112,10 +107,9 @@ Pasos:
 1. En la línea, toca el regalo («Invitar / quitar invitación»).
 2. La línea queda a 0 con la marca «Invitación»; tocarlo otra vez la vuelve a cobrar.
 Entra: nada de otros componentes.
-Sale: la línea invitada: no suma dinero ni IVA, pero descuenta stock; la venta guarda el coste de lo invitado para el arqueo.
+Sale: la línea invitada: no suma dinero ni IVA, pero descuenta stock como cualquier venta (con «Permitir vender sin stock» apagado, solo si hay saldo: INVENTORY-F21); la venta guarda el coste de lo invitado para el arqueo.
 Si falla: «No se ha podido guardar ese cambio de la línea. La línea vuelve a estar como estaba.». Una línea ya enviada a cocina no se puede invitar.
-Implicados: CASH_REGISTER-F13
-Pendiente de enlazar: inventory — lo invitado descuenta stock
+Implicados: CASH_REGISTER-F13, INVENTORY-F21, REC_RESTAURANTE-F14
 QA: R-11, qa-hub-restaurant §7.10 (discrepa)
 
 ### SALES-F16 Atribuir la cuenta o una línea a quien atiende
@@ -131,11 +125,11 @@ Pasos:
 Entra: las personas del hub y el equipo de Personal.
 Sale: la venta y cada línea atribuidas a esa persona (para el cierre por profesional y la comisión, que hoy no compone nadie: STAFF-F21); la comanda de cocina lleva su usuario. Una profesional con cuenta del hub vinculada sale una sola vez, bajo el identificador de su ficha (STAFF-F03); una ficha Inactivo o dada de baja no se ofrece (su cuenta del hub, si la tiene, sigue saliendo como cualquier persona que entra en la app).
 Si falla: «No se ha podido cargar el equipo. La venta se sigue atribuyendo a quien tenga la sesión.»; «No se ha podido mover la línea a otro profesional. Se queda con el que tenía.». Una línea enviada a cocina no se reasigna.
-Implicados: STAFF-F03, STAFF-F09, STAFF-F21
+Implicados: STAFF-F03, STAFF-F09, STAFF-F21, REC_PELUQUERIA-F09, REC_PELUQUERIA-F15
 QA: B-04, B-07, R-10
 
 ### SALES-F17 Aparcar una cuenta y recuperarla
-Estado: parcial — «Permitir tiques aparcados» apagado solo quita el botón de la cabecera: desde «Cuentas abiertas» se sigue aparcando
+Estado: parcial — «Permitir tiques aparcados» apagado solo quita el botón de la cabecera: desde «Cuentas abiertas» se sigue aparcando; con una cuenta de barra delante, tocar una mesa ocupada que ya tiene pedido y elegir «Aparcarla y abrir» o «Eliminarla y abrir» aparca o cierra en Mesas la cuenta de la mesa tocada, que queda Disponible con su pedido abierto (TABLES-F11); y una cuenta de mesa aparcada no vuelve a su mesa: queda «Aparcada» en Mesas para siempre, también tras cobrarla (TABLES-F13); con una línea pagada con bono, volver a la cuenta aparcada la cobra a su precio aunque el hueco del bono la enseñe gastada, y al cobrar la sesión también se gasta; si nadie la cobra en un día, la sesión retenida vuelve sola al bono (SERVICES-F22, SERVICES-F25, leído en el código, sin ejecutar)
 Vertical: comun
 Actor: empleado, responsable
 Pantalla: Cuentas abiertas
@@ -148,8 +142,7 @@ Pasos:
 Entra: nada de otros componentes.
 Sale: la cuenta sigue abierta con su título; aparcar nunca la anula. Con un cliente asignado, Clientes mantiene el vínculo.
 Si falla: si el hub rechaza el título, el diálogo sigue abierto con el motivo y «No se ha podido aparcar la cuenta. Sigue en pantalla.». Con líneas sin enviar a cocina no se cambia de cuenta: «Hay productos en la comanda actual sin enviar (N). Envíalos o elimínalos antes de cambiar de cuenta.».
-Implicados: CUSTOMERS-F19
-Pendiente de enlazar: tables — soltar la mesa al aparcar una cuenta que la tenía
+Implicados: CUSTOMERS-F19, SERVICES-F22, SERVICES-F25, TABLES-F11, TABLES-F13, REC_PELUQUERIA-F10
 QA: qa-hub-restaurant §7.06
 
 ### SALES-F18 Eliminar una cuenta abierta
@@ -164,8 +157,5 @@ Pasos:
 Entra: la cuenta elegida.
 Sale: la cuenta queda anulada, no borrada, sin motivo (avisa: sales.order.voided); Servicios suelta los bonos que tuviera retenidos. Cocina no escucha ese aviso: lo ya enviado sigue en su pantalla. Mesas tampoco lo escucha: por el servidor la mesa no se suelta (lo que haga su control en pantalla, sin confirmar).
 Si falla: «No se ha podido eliminar esa cuenta abierta. Sigue en la lista.» o «No se ha podido eliminar la cuenta. Sigue abierta, en pantalla.». Una cuenta ya cobrada o anulada desde otro dispositivo no cambia, pero la orden contesta bien y el aviso sale igual.
-Implicados: pendiente
-Pendiente de enlazar: services — soltar las sesiones de bono retenidas en esa cuenta
-Pendiente de enlazar: tables — Mesas no se entera por el servidor de que la cuenta de una mesa se eliminó
-Pendiente de enlazar: kitchen — las rondas enviadas de una cuenta eliminada siguen en la pantalla de Cocina
+Implicados: KITCHEN-F28, SERVICES-F23, TABLES-F20, REC_RESTAURANTE-F14
 QA: qa-hub-restaurant §7.13 (discrepa)
