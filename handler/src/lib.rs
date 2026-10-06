@@ -4444,7 +4444,7 @@ fn add_combo_components(item: &mut Value, line: &Value) {
         _ => Value::Null,
     };
     let picks = match combo.get("combo_choices").and_then(Value::as_array) {
-        Some(p) if !field(&combo, "combo_id").is_empty() && !p.is_empty() => p,
+        Some(p) if !p.is_empty() => p,
         _ => return,
     };
     let notes = item.get("notes").cloned().unwrap_or_else(|| json!(""));
@@ -4454,7 +4454,7 @@ fn add_combo_components(item: &mut Value, line: &Value) {
         .map(|p| {
             let product = field(p, "source_ref");
             json!({
-                "product_id": if field(p, "source") == "product" && !product.is_empty() { json!(product) } else { Value::Null },
+                "product_id": if product.is_empty() { Value::Null } else { json!(product) },
                 "product_name": field(p, "product_name"),
                 "category_id": category_snapshot(p),
                 "quantity": QUANTITY_SCALE,
@@ -10206,13 +10206,15 @@ mod tests {
     fn a_set_menu_row_frozen_before_its_sources_routes_its_dishes_by_category() {
         // Rows written before sales#522 froze only the name and the category of each pick. They
         // still expand: with no product the dish routes by its category, which is what was frozen.
-        let row = menu_row("li-1", json!([
-            { "option_id": "o-salad", "product_name": "Ensalada", "category_id": "cat-cold" },
-        ]));
+        let mut row = menu_row("li-1", json!([]));
+        row["combo"] = json!(r#"{"combo_id":"c-menu","combo_choices":[{"option_id":"o-salad","product_name":"Ensalada","category_id":"cat-cold"}]}"#);
         let out = fire_order_pure(fire_from_server(json!([row]), None)).accepted("fire ok");
-        let dishes = fired_items(&out)[0]["combo_components"].as_array().expect("dishes").clone();
+        let menu = &fired_items(&out)[0];
+        let dishes = menu["combo_components"].as_array().expect("dishes").clone();
         assert_eq!(dishes[0]["product_id"], Value::Null);
         assert_eq!(dishes[0]["category_id"], json!("cat-cold"));
+        // …and with no menu name frozen, the line's own name groups the dishes on the pass.
+        assert_eq!(menu["combo_name"], json!("Menú del día"), "{menu:?}");
     }
 
     #[test]
@@ -10226,6 +10228,7 @@ mod tests {
         let out = fire_order_pure(fire_from_server(json!([empty, plain]), None)).accepted("fire ok");
         let items = fired_items(&out);
         assert!(items[0].get("combo_components").is_none(), "{:?}", items[0]);
+        assert_eq!(items[0]["is_service"], json!(false), "an empty menu still reaches the pass: {:?}", items[0]);
         assert!(items[1].get("combo_components").is_none(), "{:?}", items[1]);
         assert!(items[1].get("combo_group_ref").is_none(), "{:?}", items[1]);
     }
@@ -11165,6 +11168,13 @@ mod tests {
         );
         // The name the cook reads comes from the product catalogue when it has one (sales#288).
         inp["context"]["reads"]["inventory.products.for_sale"][0]["name"] = json!("Bocadillo de jamón");
+        // Another menu listed FIRST in the catalogue: its names are not this menu's.
+        let mut other = combo_option("o-other", "g-other", 1, "p-other", 0, "goods", 900, "");
+        other["combo_id"] = json!("c-other");
+        other["combo_name"] = json!("Otro menú");
+        other["combo_kitchen_name"] = json!("OTRO");
+        let options = inp["context"]["reads"]["combos.options.all"].as_array_mut().expect("options");
+        options.insert(0, other);
         let l = &order_lines(&orden(inp))[0];
         let combo: Value = serde_json::from_str(l["combo"].as_str().expect("TEXT")).expect("JSON");
         assert_eq!(combo["name"], json!("Pack merienda"), "{combo}");

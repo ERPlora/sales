@@ -53,7 +53,7 @@ Implicados: INVENTORY-F21, MODIFIERS-F03, MODIFIERS-F06, MODIFIERS-F07, REC_REST
 QA: R-04, qa-hub-restaurant §7.07
 
 ### SALES-F12 Componer un menú
-Estado: parcial — al enviar la ronda, Venta no manda a Cocina los platos elegidos del menú: la comanda lleva una línea con el nombre del menú, sin sus platos y sin estación (KITCHEN-F06, COMBOS-F11); un plato del menú sin elecciones no sale en la hoja y nadie lo exige; un plato no puede llevar sus propios suplementos
+Estado: parcial — un plato del menú sin elecciones no sale en la hoja y nadie lo exige, y un menú sin nada elegido llega a cocina como una sola línea con su nombre (sales#522, COMBOS-F11); un plato no puede llevar sus propios suplementos
 Vertical: restaurante
 Actor: empleado, responsable
 Pantalla: Vender
@@ -62,7 +62,7 @@ Pasos:
 2. En la hoja, cada grupo (primero, segundo…) dice cuántas elecciones lleva; toca los platos. En un grupo de una sola elección, tocar otro plato cambia la elección.
 3. Pulsa «Añadir · <total>»; mientras falte algo, el botón dice qué («Elige 1 en Segundo»).
 Entra: los menús de Combos con sus grupos y platos.
-Sale: una línea de menú con lo elegido en su orden; al cobrar se reparte en tantas líneas como tipos de IVA tenga (COMBOS-F09) y el aviso de venta lleva sus componentes para que Inventario baje cada plato (INVENTORY-F22). A cocina viaja como una sola línea con el nombre del menú (SALES-F20). El mínimo, el máximo y la repetición de cada plato los vuelve a comprobar el servidor al cobrar, no al añadir ni al enviar a cocina.
+Sale: una línea de menú con lo elegido en su orden; al cobrar se reparte en tantas líneas como tipos de IVA tenga (COMBOS-F09) y el aviso de venta lleva sus componentes para que Inventario baje cada plato (INVENTORY-F22). A cocina viaja con los platos elegidos, cada uno a la estación de su artículo y agrupados bajo el nombre de cocina del menú; qué artículo es cada plato lo dice Combos al añadir el menú, no el TPV (SALES-F20, KITCHEN-F06). El mínimo, el máximo y la repetición de cada plato los vuelve a comprobar el servidor al cobrar, no al añadir ni al enviar a cocina.
 Si falla: si el catálogo de menús no carga, «No se han podido cargar los menús, así que no se ofrece ninguno. Revisa el módulo Combos e inténtalo de nuevo». Al cobrar, un menú retirado o mal configurado se rechaza con su frase (p. ej. «Ese menú no tiene categoría fiscal, así que no se puede cobrar. Configúrala en Combos.»).
 Implicados: COMBOS-F03, COMBOS-F04, COMBOS-F07, COMBOS-F08, COMBOS-F09, COMBOS-F10, INVENTORY-F22, KITCHEN-F06, REC_RESTAURANTE-F06
 QA: qa-hub-restaurant §7.07
