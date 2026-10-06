@@ -323,6 +323,29 @@ def appointment_service_vat(hub: Hub, service_id: str, service_name: str) -> Non
     )["new_ids"][0]
     expect_service_vat(hub, "archived service", sale_id)
 
+    # 4h · a VOUCHER is sold as a service line naming the voucher (SERVICES-F14), with the VAT the
+    # sale declares: the voucher catalogue has no category. It is not a service, and that must not
+    # refuse the sale.
+    voucher_id = hub.run(
+        "services.packages.create",
+        {
+            "name": f"Bono 5 cortes {uuid.uuid4().hex[:6]}",
+            "fixed_price": PRICE,
+            "items": [{"service_id": service_id, "quantity": 5 * ONE}],
+        },
+    )["new_ids"][0]
+    voucher_line = {
+        **bare,
+        "product_id": voucher_id,
+        "product_name": "Bono 5 cortes",
+        "tax_category_key": TAX_CATEGORY,
+        "tax_rate": 21.0,
+    }
+    sale_id = hub.run(
+        "sales.complete_sale", charge("appt-vat-voucher", [voucher_line])
+    )["new_ids"][0]
+    expect_service_vat(hub, "voucher", sale_id)
+
 
 def hub_sql(hub: Hub, sql: str) -> str:
     """One statement on the database the hub under test writes to (`ERPLORA_HUB_PSQL`)."""

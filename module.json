@@ -455,6 +455,10 @@
           "required": false
         },
         {
+          "query": "services.packages.list",
+          "required": false
+        },
+        {
           "query": "sales.order.lines",
           "params": {
             "order_id": "payload.order_id"
@@ -515,6 +519,10 @@
           "required": false
         },
         {
+          "query": "services.packages.list",
+          "required": false
+        },
+        {
           "query": "sales.order.lines",
           "params": {
             "order_id": "payload.order_id"
@@ -564,6 +572,10 @@
           "params": {
             "include_archived": "1"
           },
+          "required": false
+        },
+        {
+          "query": "services.packages.list",
           "required": false
         },
         {

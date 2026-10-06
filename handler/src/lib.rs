@@ -803,12 +803,23 @@ fn catalog_row<'a>(
 /// a service and which one. The row's own category is NOT trusted for a service — it was frozen
 /// from whatever the till sent, and that was empty for an appointment off the loaded catalogue.
 ///
-/// 🔴 Fails CLOSED, like the product catalogue: no catalogue, an unknown id or a service that does
-/// not know how it taxes is a refusal, never a guess at 0 %.
+/// A VOUCHER is sold the same way, as a service line naming the voucher (SERVICES-F14), and the
+/// voucher catalogue has no tax category: such a line keeps the VAT the sale declares, which case
+/// 4 of [`resolve_line_tax`] still refuses to leave empty.
+///
+/// 🔴 Fails CLOSED, like the product catalogue: no catalogue, an id that is neither a service nor a
+/// voucher, or a service that does not know how it taxes is a refusal, never a guess at 0 %.
+/// sales#519 — what the runtime pre-loads from `services` (optional, ADR-0127): the services and
+/// the vouchers. `None` = not installed or not delivered.
+struct ServiceCatalogs<'a> {
+    services: Option<Vec<&'a Value>>,
+    vouchers: Option<Vec<&'a Value>>,
+}
+
 fn service_category(
     item: &Value,
     frozen: Option<&Value>,
-    services: Option<&Vec<&Value>>,
+    catalogs: &ServiceCatalogs,
 ) -> Result<Option<String>, Refusal> {
     let is_service = item.get("is_service").map(as_bool).unwrap_or(false)
         || frozen.and_then(|r| r.get("is_service")).map(as_bool).unwrap_or(false);
@@ -819,14 +830,16 @@ fn service_category(
     if !is_service || id.is_empty() {
         return Ok(None);
     }
-    let rows = services.ok_or_else(|| {
+    let rows = catalogs.services.as_ref().ok_or_else(|| {
         reject("sales.service_catalog_unavailable", "the services catalogue was not available to tax this sale")
     })?;
-    let row = rows
-        .iter()
-        .copied()
-        .find(|r| field(r, "id") == id)
-        .ok_or_else(|| reject("sales.service_not_available", &id))?;
+    let Some(row) = rows.iter().copied().find(|r| field(r, "id") == id) else {
+        let is_voucher = catalogs
+            .vouchers
+            .as_ref()
+            .is_some_and(|v| v.iter().any(|r| field(r, "id") == id));
+        return if is_voucher { Ok(None) } else { Err(reject("sales.service_not_available", &id)) };
+    };
     let category = field(row, "tax_category_key");
     if category.trim().is_empty() {
         return Err(reject("sales.service_tax_category_missing", &id));
@@ -1629,7 +1642,7 @@ fn expand_lines<'a>(
     product_catalog: Option<&Vec<&Value>>,
     modifier_catalog: Option<&Vec<&Value>>,
     order_lines: Option<&'a Vec<&'a Value>>,
-    service_catalog: Option<&Vec<&Value>>,
+    service_catalogs: &ServiceCatalogs,
 ) -> Result<Vec<ExpandedLine>, Refusal> {
     let mut out: Vec<ExpandedLine> = Vec::with_capacity(items.len());
     for (item, combo) in expand_combos(items, sale_id, combo_catalog, product_catalog, order_lines)? {
@@ -1642,7 +1655,7 @@ fn expand_lines<'a>(
         // so it has to be resolved BEFORE the supplements.
         let line_category = match &combo {
             Some(c) => Some(c.tax_category_key.clone()),
-            None => match service_category(&item, frozen, service_catalog)? {
+            None => match service_category(&item, frozen, service_catalogs)? {
                 Some(cat) => Some(cat),
                 None => line_price(&item, frozen, product_catalog)?.map(|(_, _, cat)| cat),
             },
@@ -2420,9 +2433,13 @@ fn value_checkout(
     // there the catalogue still rules, which is right: there is no earlier "when it was ordered".
     let order_lines = tax::read_rows(context, "sales.order.lines");
     // sales#519 — the services catalogue, the authority for the VAT of a line that names a
-    // service. OPTIONAL like the supplements' (`services` is not in `depends_on`, ADR-0127): `None`
-    // = not installed or not delivered, and then a line naming a service is refused.
-    let service_catalog = tax::read_rows(context, "services.services.list");
+    // service, and the vouchers, which are sold as service lines too. OPTIONAL like the
+    // supplements' (`services` is not in `depends_on`, ADR-0127): `None` = not installed or not
+    // delivered, and then a line naming a service is refused.
+    let service_catalogs = ServiceCatalogs {
+        services: tax::read_rows(context, "services.services.list"),
+        vouchers: tax::read_rows(context, "services.packages.list"),
+    };
 
     // 🔴 EL COMBO SE ARMA UNA SOLA VEZ, aquí, y de esto beben las DOS rutas: las filas que se
     // persisten y el evento `sale.completed` del que salen la factura y el registro de la AEAT. Si
@@ -2430,7 +2447,7 @@ fn value_checkout(
     // 🔴 Y con ellas SALE LA HIJA de todo suplemento que tribute distinto (sales#147): también una
     // sola vez, también del lado del servidor, por la MISMA puerta. Una segunda ruta del dinero es
     // una segunda ruta que mantener y auditar.
-    let lines_in = expand_lines(items, sale_id, combo_catalog.as_ref(), product_catalog.as_ref(), modifier_catalog.as_ref(), order_lines.as_ref(), service_catalog.as_ref())?;
+    let lines_in = expand_lines(items, sale_id, combo_catalog.as_ref(), product_catalog.as_ref(), modifier_catalog.as_ref(), order_lines.as_ref(), &service_catalogs)?;
     // La tanda de ids del host es finita (256, ARQUITECTURA.md §5.3) y un combo —o un suplemento
     // con tipo fiscal propio— MULTIPLICA líneas. Sin este guard la línea 256 saldría con id vacío,
     // y el fallo aparecería como una colisión de clave primaria en la BD, lejos de su causa.
@@ -2508,7 +2525,7 @@ fn value_checkout(
         // over the payload and over the open check's frozen row (empty for an appointment's).
         let service_cat = match combo {
             Some(_) => None,
-            None => service_category(item, frozen, service_catalog.as_ref())?,
+            None => service_category(item, frozen, &service_catalogs)?,
         };
         let catalog_cat = match combo {
             Some(c) => Some(c.tax_category_key.as_str()),
@@ -7963,6 +7980,23 @@ mod tests {
             services_catalog(),
         )));
         assert_eq!(preview.refused("the preview refuses it too").code, "sales.tax_category_missing");
+    }
+
+    #[test]
+    fn a_voucher_line_keeps_the_vat_the_sale_declares() {
+        // SERVICES-F14: a voucher is sold as a SERVICE line naming the voucher's id, with the VAT
+        // the caller sends — the voucher catalogue has no tax category. It is not a service, so the
+        // services catalogue does not know it, and that must not refuse the sale.
+        let item = json!({ "product_id": "pkg-10", "product_name": "Bono 10 cortes", "price": 20000,
+                           "quantity": 1_000_000, "is_service": true,
+                           "tax_category_key": "service.generic", "tax_rate": 21.0 });
+        let mut inp = salon_input(json!([item.clone()]), services_catalog());
+        inp["context"]["reads"]["services.packages.list"] = json!([{ "id": "pkg-10" }]);
+        let out = sale(inp.clone());
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("line");
+        assert_eq!(line.params["tax_category_key"], json!("service.generic"));
+        assert_eq!(line.params["tax_rate"], json!(21.0));
+        assert!(preview_checkout_pure(as_preview_input(inp)).is_ok(), "the preview agrees");
     }
 
     #[test]
