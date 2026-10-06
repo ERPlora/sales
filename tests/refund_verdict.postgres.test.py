@@ -264,6 +264,15 @@ def waiting_on_a_lock(s: Session) -> int:
     )
 
 
+def holding_open(s: Session) -> int:
+    # A held transaction that has run all its statements — and so owns its row locks — sits
+    # «idle in transaction» until `.commit()`.
+    return s.qi(
+        "SELECT count(*) FROM pg_stat_activity "
+        f"WHERE datname = '{s.db}' AND state = 'idle in transaction'"
+    )
+
+
 def step_3_at_once_the_second_is_judged_on_what_the_first_committed(s: Session) -> None:
     print(
         "\n3 · two halves at once: the second waits on the lock and is judged on fresh rows"
@@ -275,6 +284,12 @@ def step_3_at_once_the_second_is_judged_on_what_the_first_committed(s: Session) 
     )  # read before the first committed
 
     first = s.hold(first_calls, hub=HUB)
+    # `docker exec psql` starts late: without this wait the second one can take the lock first
+    # and the battery measures the wrong order (1 run in 3 on 06/10).
+    deadline = time.time() + 10
+    while holding_open(s) < 1 and time.time() < deadline:
+        time.sleep(0.05)
+    s.check("the first refund holds its lock", holding_open(s), 1)
     second = subprocess.Popen(
         s._chain_cmd(),
         stdin=subprocess.PIPE,
@@ -318,9 +333,17 @@ def step_4_a_neighbours_sale_never_vouches(s: Session) -> None:
         play(s, refund_calls("r4-n", "sale-4n", CHARGED, 1, OTHER_HUB), hub=OTHER_HUB),
         "ok",
     )
-    s.check("the neighbour's sale is refunded", status_of(s, "sale-4n", OTHER_HUB), "refunded")
+    s.check(
+        "the neighbour's sale is refunded",
+        status_of(s, "sale-4n", OTHER_HUB),
+        "refunded",
+    )
     calls = [("sales._mark_refunded", {"sale_id": "sale-4n", "fully_refunded": 1})]
-    s.check("this hub's mark «closes» on that id is refused", play(s, calls), "sales.refund_sale_changed")
+    s.check(
+        "this hub's mark «closes» on that id is refused",
+        play(s, calls),
+        "sales.refund_sale_changed",
+    )
 
 
 def main() -> int:
