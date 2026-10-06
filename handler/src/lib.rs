@@ -4438,11 +4438,11 @@ fn kitchen_items_from_lines(rows: &[&Value], round_no: i64) -> Vec<Value> {
 /// The menu line's note goes on every dish: kitchen prints each expanded dish with its own note,
 /// and «shellfish allergy» typed on the menu has to reach every station that cooks part of it.
 fn add_combo_components(item: &mut Value, line: &Value) {
-    let combo = match line.get("combo") {
-        Some(Value::String(s)) => serde_json::from_str::<Value>(s).unwrap_or(Value::Null),
-        Some(v @ Value::Object(_)) => v.clone(),
-        _ => Value::Null,
-    };
+    let combo = line
+        .get("combo")
+        .and_then(Value::as_str)
+        .and_then(|s| serde_json::from_str::<Value>(s).ok())
+        .unwrap_or(Value::Null);
     let picks = match combo.get("combo_choices").and_then(Value::as_array) {
         Some(p) if !p.is_empty() => p,
         _ => return,
