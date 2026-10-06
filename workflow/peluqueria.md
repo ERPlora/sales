@@ -5,7 +5,7 @@ Prefijo: SALES
 ## Flujos
 
 ### SALES-F26 Cobrar una cita desde la agenda
-Estado: parcial — si el servicio de la cita no está en el catálogo que cargó el TPV, la línea entra sin categoría de IVA y se cobra al 0 % sin rechazo (leído en el código, sin ejecutar); anular después la venta deja la cita marcada como cobrada y su «Cobrar» en gris (SALES-F30)
+Estado: parcial — anular después la venta deja la cita marcada como cobrada y su «Cobrar» en gris (SALES-F30)
 Vertical: peluqueria
 Actor: empleado, responsable
 Pantalla: Vender
@@ -14,9 +14,9 @@ Pasos:
 2. La cuenta ya trae el servicio de la cita con el precio pactado, la clienta y la profesional en el chip «Atiende …». Pulsar «Cobrar» dos veces sobre la misma cita no pone el servicio dos veces.
 3. Añade productos, descuentos o lo que haga falta y cobra como en SALES-F01. Si se aparca y se recupera, la cuenta sigue atada a la cita.
 4. Al cobrar, la agenda deja el **Cobrar** de esa cita en gris.
-Entra: la cita (servicio, precio, clienta, profesional) que lee de Citas; el IVA del servicio, del catálogo de Servicios.
+Entra: la cita (servicio, precio, clienta, profesional) que lee de Citas; el IVA del servicio, que el servidor saca del catálogo de Servicios al cobrar (también si el TPV no lo había cargado, p. ej. con «Mostrar servicios en el TPV» apagado, y también si el servicio está archivado); el precio es el pactado en la cita.
 Sale: la cuenta enlazada a la cita y, al cobrar, la venta con la cita y la profesional (avisa: sale.completed y sales.sale.created_from_appointment); Citas anota que la cita se cobró. La cita no cambia de estado.
-Si falla: «No se pudo enlazar la cita con esta cuenta. Cóbrala sin salir de esta pantalla o la agenda podría seguir enseñándola como pendiente.». Sin la app Citas, o si la cita no se encuentra, el TPV se abre vacío y sin aviso. Si el servicio de la cita no está en el catálogo cargado (p. ej. «Mostrar servicios en el TPV» apagado), la línea entra sin categoría de IVA, sin la marca «Falta el IVA», y el servidor la cobra al 0 % sin decir nada.
+Si falla: «No se pudo enlazar la cita con esta cuenta. Cóbrala sin salir de esta pantalla o la agenda podría seguir enseñándola como pendiente.». Sin la app Citas, o si la cita no se encuentra, el TPV se abre vacío y sin aviso. El cobro se rechaza, sin cobrar nada, si el servicio ya no existe en Servicios («Un servicio del tique ya no está en el catálogo. Quita la línea y vuelve a añadir el servicio»), si no tiene categoría fiscal («Un servicio del tique no tiene categoría fiscal, así que no se ha cobrado nada. Configúrala en el servicio, en Servicios») o si no se pueden leer los servicios («No se han podido cargar los servicios, así que no se ha cobrado nada. Comprueba que la app Servicios está instalada y vuelve a intentarlo»).
 Implicados: APPOINTMENTS-F17, SERVICES-F09, REC_FISCAL-F02, REC_PELUQUERIA-F09, REC_WA_CITA-F10
 QA: B-05, B-06, BD-09
 
