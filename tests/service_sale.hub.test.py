@@ -276,6 +276,12 @@ def appointment_service_vat(hub: Hub, service_id: str, service_name: str) -> Non
         )["new_ids"][0]
         expect_service_vat(hub, "open check", sale_id)
 
+    # 4b' · the manager's twin door (a discount over the cap) reads the same catalogue.
+    sale_id = hub.run(
+        "sales.complete_sale_over_limit", charge("appt-vat-over-limit", [bare])
+    )["new_ids"][0]
+    expect_service_vat(hub, "manager's door", sale_id)
+
     # 4c · the preview says what the checkout will charge.
     preview = hub.run(
         "sales.checkout.preview",
