@@ -4698,6 +4698,7 @@ var en_default = {
     "sales.refund_nothing_to_return": "There is nothing left to refund on this sale.",
     "sales.refund_reason_required": "A refund needs a reason.",
     "sales.refund_requires_completed": "Only a completed sale can be refunded.",
+    "sales.refund_sale_changed": "Another refund of this sale went through at the same time. Nothing was recorded for this one: confirm again to finish it.",
     "sales.refund_tender_duplicated": "The same tender appears twice in the refund. Put it on a single leg.",
     "sales.refund_tender_not_eligible": "That tender cannot take its own money back. Choose another destination.",
     "sales.refund_tender_unknown": "That tender is not one of the ways this sale was paid.",
@@ -5057,6 +5058,7 @@ var en_default = {
     refundExceedsTender: "One tender is being given back more than it was charged.",
     refundSaleNotFound: "That sale is not in this business.",
     refundRequiresCompleted: "Only a completed sale can be refunded.",
+    refundSaleChanged: "Another refund of this sale went through at the same time. Nothing was recorded for this one: confirm again to finish it.",
     refundMethodUnavailable: "That payment method is not available in this business.",
     refundLegAmount: "Refund amount",
     errorComboCatalogUnavailable: "The menus could not be loaded, so nothing was charged. Check that the Combos module is installed and try again",
@@ -5374,6 +5376,7 @@ var es_default = {
     "sales.refund_nothing_to_return": "No queda nada por devolver en esta venta.",
     "sales.refund_reason_required": "Una devoluci\xF3n necesita un motivo.",
     "sales.refund_requires_completed": "Solo se puede devolver una venta cerrada.",
+    "sales.refund_sale_changed": "Se ha hecho otra devoluci\xF3n de esta venta a la vez. Esta no se ha registrado: confirma de nuevo para terminarla.",
     "sales.refund_tender_duplicated": "El mismo medio de pago aparece dos veces en la devoluci\xF3n. Ponlo en una sola pata.",
     "sales.refund_tender_not_eligible": "Ese medio de pago no puede recuperar su propio dinero. Elige otro destino.",
     "sales.refund_tender_unknown": "Ese medio de pago no es una de las formas en que se cobr\xF3 esta venta.",
@@ -5733,6 +5736,7 @@ var es_default = {
     refundExceedsTender: "A un medio de pago se le est\xE1 devolviendo m\xE1s de lo que cobr\xF3.",
     refundSaleNotFound: "Esa venta no es de este negocio.",
     refundRequiresCompleted: "Solo se puede devolver una venta cerrada.",
+    refundSaleChanged: "Se ha hecho otra devoluci\xF3n de esta venta a la vez. Esta no se ha registrado: confirma de nuevo para terminarla.",
     refundMethodUnavailable: "Ese medio de pago no est\xE1 disponible en este negocio.",
     refundLegAmount: "Importe a devolver",
     errorComboCatalogUnavailable: "No se han podido cargar los men\xFAs, as\xED que no se ha cobrado nada. Comprueba que el m\xF3dulo Combos est\xE1 instalado y vuelve a intentarlo",
@@ -17577,6 +17581,7 @@ var REFUND_MESSAGES = {
   "sales.refund_reason_required": "ui.refundReasonRequired",
   "sales.refund_nothing_to_return": "ui.refundNothingToReturn",
   "sales.refund_requires_completed": "ui.refundRequiresCompleted",
+  "sales.refund_sale_changed": "ui.refundSaleChanged",
   "sales.sale_not_found": "ui.refundSaleNotFound"
 };
 function refundErrorKey(code) {

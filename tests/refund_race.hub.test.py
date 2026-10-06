@@ -18,8 +18,12 @@ afterwards, read through its own queries:
      already-refunded ticket gets (`sales.refund_requires_completed`); 15,00 € came back, not 30.
   2. Five partial refunds of 10,00 € at once on 15,00 €: exactly one goes through, the other four
      are refused with `sales.refund_exceeds_tender`; 10,00 € came back and the sale is still live.
-  3. Two partial refunds of 7,50 € at once on 15,00 €: BOTH fit, both go through, and the sale
-     ends `refunded` — the «is it fully refunded now?» decision cannot ride on the stale read either.
+  3. Two partial refunds of 7,50 € at once on 15,00 €: BOTH fit and the sale ends `refunded` — the
+     «is it fully refunded now?» decision cannot ride on the stale read either. And neither can the
+     ANNOUNCEMENT (sales#508): exactly one of the two says `fully_refunded` (in its answer, the same
+     value its `sale.refunded` carries). The one that read «nothing refunded yet» and yet closed the
+     sale is refused with `sales.refund_sale_changed`, writes nothing, and confirmed again with the
+     same key it goes through announcing that it closes.
 
 And a VOID of the same ticket fired with them (sales#511) — before, both went through (a 15,00 €
 ticket ended voided with 7,50 € or 15,00 € handed back on top), and once refunds queued on the sale
@@ -197,16 +201,63 @@ def test_five_partials_at_once(hub: Hub, card: str) -> None:
         hub.check(f"round {r}: sale status", status(hub, sale_id), "completed")
 
 
+def refund_answer(hub: Hub, sale_id: str, payment_id: str, amount: int, idem: str) -> tuple:
+    """`(answer, fully_refunded)` of one `sales.refund`: `"ok"` or the refusal's domain code."""
+    payload = {
+        "sale_id": sale_id,
+        "reason": "race",
+        "idempotency_key": idem,
+        "allocations": [{"payment_id": payment_id, "amount": amount}],
+    }
+    status, body = hub.command("sales.refund", payload)
+    if status == 200 and (body or {}).get("ok"):
+        result = ((body or {}).get("data") or {}).get("result") or {}
+        return "ok", result.get("fully_refunded")
+    code = ((body or {}).get("error") or {}).get("code") if isinstance(body, dict) else None
+    return code or f"HTTP {status}", None
+
+
 def test_two_partials_that_fit_close_the_sale(hub: Hub, card: str) -> None:
     print(f"\n3 · two partial refunds of 7,50 € at once on 15,00 €, {ROUNDS} rounds")
+    refused_in_race = 0
     for r in range(ROUNDS):
         sale_id = charge(hub, card, f"halves-{r}")
-        out = fire_at_once(
-            hub, sale_id, leg_of(hub, sale_id), [750, 750], f"halves-{r}"
+        payment_id = leg_of(hub, sale_id)
+        idems = [key(f"halves-{r}-{i}") for i in range(2)]
+        barrier = threading.Barrier(2)
+        answers: list = [None, None]
+
+        def one(i: int) -> None:
+            barrier.wait()
+            answers[i] = refund_answer(hub, sale_id, payment_id, 750, idems[i])
+
+        threads = [threading.Thread(target=one, args=(i,)) for i in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        codes = sorted(a for a, _ in answers)
+        hub.check_true(
+            f"round {r}: each one goes through or is told to confirm again",
+            all(a in ("ok", "sales.refund_sale_changed") for a in codes) and "ok" in codes,
+            codes,
         )
-        hub.check(f"round {r}: answers", out, ["ok", "ok"])
+        # The operator confirms the refused one again, with the SAME key, as the screen does.
+        final = []
+        for i, (answer, fully) in enumerate(answers):
+            if answer == "sales.refund_sale_changed":
+                refused_in_race += 1
+                answer, fully = refund_answer(hub, sale_id, payment_id, 750, idems[i])
+                hub.check(f"round {r}: confirmed again, it goes through", answer, "ok")
+            final.append(fully)
+        hub.check(
+            f"round {r}: exactly one announces that it closes the sale",
+            sorted(final, key=str),
+            [False, True],
+        )
         hub.check(f"round {r}: refund documents total", refunded(hub, sale_id), CHARGED)
         hub.check(f"round {r}: sale status", status(hub, sale_id), "refunded")
+    print(f"  · {refused_in_race} of {ROUNDS} rounds overlapped and were told to confirm again")
 
 
 def void_against_refund(hub: Hub, card: str, amount: int, tag: str) -> None:

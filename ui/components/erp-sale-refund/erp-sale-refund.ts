@@ -57,6 +57,7 @@ const REFUND_MESSAGES: Record<string, string> = {
   'sales.refund_reason_required': 'ui.refundReasonRequired',
   'sales.refund_nothing_to_return': 'ui.refundNothingToReturn',
   'sales.refund_requires_completed': 'ui.refundRequiresCompleted',
+  'sales.refund_sale_changed': 'ui.refundSaleChanged',
   'sales.sale_not_found': 'ui.refundSaleNotFound',
 };
 

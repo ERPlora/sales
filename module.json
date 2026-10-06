@@ -1251,8 +1251,16 @@
     "sales._mark_refunded": {
       "permission": "sales.refund_sale",
       "sql": [
-        "commands/_mark_refunded.sql"
-      ]
+        "commands/_mark_refunded.sql",
+        "commands/_refund_verdict.sql"
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "statement": "commands/_refund_verdict.sql",
+        "error": "sales.refund_sale_changed",
+        "message": "Another refund of this sale went through at the same time: confirm again to finish this one."
+      }
     },
     "sales._on_customer_merged": {
       "permission": "sales.change_sale",
@@ -1309,6 +1317,7 @@
     "sales.refund_nothing_to_return": {},
     "sales.refund_reason_required": {},
     "sales.refund_requires_completed": {},
+    "sales.refund_sale_changed": {},
     "sales.refund_tender_duplicated": {},
     "sales.refund_tender_not_eligible": {},
     "sales.refund_tender_unknown": {},

@@ -5131,8 +5131,11 @@ fn refund_sale_inner(input: Value) -> Result<Output, Refusal> {
     // it. It goes out on EVERY refund (sales#506): the statement compares the legs already
     // written against the sale total inside the transaction, so it is the database — not the read
     // above, which two simultaneous refunds share — that decides whether this was the last cent.
+    // It also carries what the event below announces (sales#508): `_refund_verdict.sql` refuses
+    // the refund when the mark disagrees, so the announcement is never the stale read.
     let mut m = Map::new();
     m.insert("sale_id".into(), json!(sale_id));
+    m.insert("fully_refunded".into(), json!(i64::from(fully_refunded)));
     operations.push(Operation::sql("sales._mark_refunded", m));
 
     let refunded_by = as_str(context.get("current_user_id").unwrap_or(&Value::Null));
@@ -10419,6 +10422,32 @@ mod tests {
         assert_eq!(mark.params["sale_id"], json!("sale-1"));
         let last = out.operations.last().expect("operations");
         assert_eq!(last.command, "sales._mark_refunded", "after the legs it adds up");
+    }
+
+    #[test]
+    fn the_mark_carries_the_verdict_the_event_announces_so_the_database_can_check_it() {
+        // sales#508: `fully_refunded` rides on the event and on the answer, but it is computed from
+        // a read taken BEFORE the transaction. The mark hands that verdict to the database, which
+        // refuses the refund when the rows written say otherwise (`_refund_verdict.sql`): a refund
+        // that closes the sale never goes out announcing that it does not.
+        for (legs, verdict) in [
+            (json!([{ "payment_id": "pay-cash", "amount": 1000 }]), 0),
+            (json!([
+                { "payment_id": "pay-card", "amount": 5000 },
+                { "payment_id": "pay-cash", "amount": 2000 }
+            ]), 1),
+        ] {
+            let out = refund_sale_pure(refund_input(legs)).accepted("refund");
+            let ev = out.events.iter().find(|e| e.name == "sale.refunded").expect("event");
+            let mark = out
+                .operations
+                .iter()
+                .find(|o| o.command == "sales._mark_refunded")
+                .expect("the mark");
+            assert_eq!(mark.params["fully_refunded"], json!(verdict));
+            assert_eq!(ev.payload["fully_refunded"], json!(verdict == 1));
+            assert_eq!(out.result.expect("answer")["fully_refunded"], json!(verdict == 1));
+        }
     }
 
     #[test]
