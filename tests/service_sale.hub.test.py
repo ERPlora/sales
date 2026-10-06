@@ -38,6 +38,8 @@ from hub_harness import ONE, Hub, card_method_id, cents, ensure_business_identit
 
 PRICE = 2500  # 25,00 € — a ladies' cut
 TAX_CATEGORY = "service.generic"
+# 25,00 € with 21 % VAT included: base 20,66 €, VAT 4,34 € (HALF_UP on the cent).
+PRICE_VAT = 434
 
 
 def whole_list(hub: Hub, name: str, params: dict | None = None) -> list:
@@ -212,9 +214,115 @@ def main() -> int:
         hub.check("sold line total (cents)", cents(lines[0].get("line_total")), PRICE)
         hub.check("sold line quantity", int(lines[0].get("quantity")), ONE)
 
+    appointment_service_vat(hub, service_id, service_name)
+
     return hub.finish(
         "a salon's service is listed by the till's reads, goes on a check and is charged"
+        " with the VAT its catalogue gives it"
     )
+
+
+def appointment_service_vat(hub: Hub, service_id: str, service_name: str) -> None:
+    """sales#519 — the appointment's service is charged with the VAT of ITS catalogue entry.
+
+    «Cobrar» on a booking builds the line from the appointment. When the service is not among the
+    ones the till loaded («Show services on the till» off), the line arrives with the service's id
+    and NO tax category, and the till's preview rate is 0: the server charged and declared it at
+    0 %. The services catalogue is what decides the category of a line that names a service, the
+    same way inventory's does for a product.
+    """
+    print(
+        "4 · an appointment's service off the till's catalogue keeps its VAT (sales#519)"
+    )
+    method = card_method_id(hub)
+    # The line `seedFromAppointment` sends when the service is not in the loaded catalogue.
+    bare = {
+        "product_id": service_id,
+        "product_name": service_name,
+        "price": PRICE,
+        "quantity": ONE,
+        "is_service": True,
+        "tax_rate": 0,
+    }
+
+    def charge(tag: str, items: list, extra: dict | None = None) -> dict:
+        return {
+            "items": items,
+            "idempotency_key": key(tag),
+            "tax_included": True,
+            "payment_method_id": method,
+            "document_type": "ticket",
+            **(extra or {}),
+        }
+
+    # 4a · counter sale.
+    sale_id = hub.run("sales.complete_sale", charge("appt-vat-counter", [bare]))[
+        "new_ids"
+    ][0]
+    expect_service_vat(hub, "counter sale", sale_id)
+
+    # 4b · the same line through an open check, which is how «Cobrar» really charges it.
+    order_id = hub.run("sales.order.open", {"items": [bare]})["new_ids"][0]
+    rows = hub.query("sales.order.lines", {"order_id": order_id})
+    hub.check("the appointment's check holds one line", len(rows), 1)
+    if rows:
+        line = {**bare, "order_item_id": rows[0]["id"]}
+        sale_id = hub.run(
+            "sales.complete_sale",
+            charge("appt-vat-check", [line], {"order_id": order_id}),
+        )["new_ids"][0]
+        expect_service_vat(hub, "open check", sale_id)
+
+    # 4c · the preview says what the checkout will charge.
+    preview = hub.run(
+        "sales.checkout.preview",
+        {"items": [bare], "discount_percent": 0, "tax_included": True},
+    )
+    result = preview.get("result") or {}
+    hub.check("preview total", cents(result.get("total")), PRICE)
+    hub.check("preview VAT (cents)", cents(result.get("tax_total")), PRICE_VAT)
+
+    # 4d · a service the catalogue does not know is refused, never charged at 0 %.
+    hub.refused(
+        "a service id that is not in this hub's catalogue",
+        "sales.complete_sale",
+        charge("appt-vat-unknown", [{**bare, "product_id": f"svc-{uuid.uuid4().hex}"}]),
+        "sales.service_not_available",
+    )
+    # 4e · and a line that names no category and asks for no rate is refused too.
+    hub.refused(
+        "a line with no tax category and no declared rate",
+        "sales.complete_sale",
+        charge(
+            "appt-vat-bare",
+            [{"product_name": "Sin IVA", "price": PRICE, "quantity": ONE}],
+        ),
+        "sales.tax_category_missing",
+    )
+
+
+def expect_service_vat(hub: Hub, label: str, sale_id: str) -> None:
+    header = hub.query("sales.get", {"sale_id": sale_id})
+    lines = hub.query("sales.lines", {"sale_id": sale_id})
+    hub.check(f"{label}: one sale", len(header), 1)
+    hub.check(f"{label}: one line", len(lines), 1)
+    if header:
+        hub.check(f"{label}: sale total (cents)", cents(header[0].get("total")), PRICE)
+        hub.check(
+            f"{label}: sale VAT (cents)", cents(header[0].get("tax_amount")), PRICE_VAT
+        )
+    if lines:
+        hub.check(
+            f"{label}: line tax category",
+            lines[0].get("tax_category_key"),
+            TAX_CATEGORY,
+        )
+        hub.check(f"{label}: line tax rate", float(lines[0].get("tax_rate")), 21.0)
+        hub.check_true(
+            f"{label}: line tax rule is the hub's",
+            bool(lines[0].get("tax_rule_id")),
+            f"tax_rule_id={lines[0].get('tax_rule_id')!r}",
+        )
 
 
 if __name__ == "__main__":
