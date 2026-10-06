@@ -31,6 +31,9 @@ Usage: `erplora test <dir> --against-hub [dev|stable|sha256:…]` (module-toolki
 its own: without a runtime it fails, it does not skip.
 """
 
+import os
+import shlex
+import subprocess
 import sys
 import uuid
 
@@ -299,6 +302,63 @@ def appointment_service_vat(hub: Hub, service_id: str, service_name: str) -> Non
         ),
         "sales.tax_category_missing",
     )
+
+    # 4f · the catalogue that decides the VAT is THIS hub's: the same service filed under another
+    # hub is a service this till cannot sell (the read goes through the dispatcher, which applies
+    # the hub — this proves it is that read).
+    foreign_id = clone_service(hub, service_id, hub_id=f"hub-{uuid.uuid4().hex[:8]}-other")
+    hub.refused(
+        "a service of ANOTHER hub, by its id",
+        "sales.complete_sale",
+        charge("appt-vat-foreign", [{**bare, "product_id": foreign_id}]),
+        "sales.service_not_available",
+    )
+    # 4g · archiving a service in `services` IS its soft delete (and it can be restored). A booking
+    # made before the salon archived it is still charged — with the VAT its catalogue row gives it,
+    # never at 0 %.
+    archived_id = clone_service(hub, service_id, deleted=True)
+    sale_id = hub.run(
+        "sales.complete_sale",
+        charge("appt-vat-archived", [{**bare, "product_id": archived_id}]),
+    )["new_ids"][0]
+    expect_service_vat(hub, "archived service", sale_id)
+
+
+def hub_sql(hub: Hub, sql: str) -> str:
+    """One statement on the database the hub under test writes to (`ERPLORA_HUB_PSQL`)."""
+    session = os.environ.get("ERPLORA_HUB_PSQL", "")
+    if not session:
+        hub.check_true("a psql session on the hub's database", False, "ERPLORA_HUB_PSQL is empty")
+        return ""
+    out = subprocess.run(
+        [*shlex.split(session), "-tAc", sql], capture_output=True, text=True, check=False
+    )
+    hub.check_true(
+        "the seed statement ran", out.returncode == 0, out.stderr.strip()[:300]
+    )
+    return out.stdout.strip()
+
+
+def clone_service(
+    hub: Hub, service_id: str, hub_id: str | None = None, deleted: bool = False
+) -> str:
+    """A copy of the service row with a new id, under `hub_id` and/or soft-deleted."""
+    new_id = f"svc-{uuid.uuid4().hex}"
+    hub_set = f", hub_id = '{hub_id}'" if hub_id else ""
+    deleted_set = ", is_deleted = 1, deleted_at = now()::text" if deleted else ""
+    hub_sql(
+        hub,
+        "CREATE TEMP TABLE c AS SELECT * FROM services_service "
+        f"WHERE id = '{service_id}'; "
+        f"UPDATE c SET id = '{new_id}', slug = '{new_id}'{hub_set}{deleted_set}; "
+        "INSERT INTO services_service SELECT * FROM c;",
+    )
+    hub.check(
+        f"the copy {new_id[:12]}… is in the table",
+        hub_sql(hub, f"SELECT count(*) FROM services_service WHERE id = '{new_id}'"),
+        "1",
+    )
+    return new_id
 
 
 def expect_service_vat(hub: Hub, label: str, sale_id: str) -> None:
