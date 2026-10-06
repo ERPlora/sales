@@ -69,6 +69,13 @@ off the kitchen line; a kitchen ticket is born only from `order.fired`. So a che
 still pending **fires them first** and is closed only once that fire landed (sales#439): a sold dish
 that nobody was told to cook is the one outcome the till must never produce.
 
+A set menu is fired as **the dishes the table picked**, not as one line with the menu's name
+(sales#522): each dish goes to the station of its own product (or its category), grouped under the
+menu's kitchen name, with the menu's note on every dish. Which product each dish is was frozen from
+Combos when the menu was added to the check, and the supplements reach the kitchen with the name
+they were **ordered** with, not today's. A dish that is a service is not sent to cook. A menu with
+nothing picked still goes as one line, and a half-picked one sends only what was picked (sales#535).
+
 ## An open check is charged at the price it was OPENED at
 
 A table is charged what the menu said **when it ordered**, not what the catalogue says when it pays.

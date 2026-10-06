@@ -231,7 +231,7 @@ flujos de su fila en la misma entrega.
 | Venta por peso con báscula | no hecho: nada lee la báscula ni manda el peso | F10 |
 | Suplementos con mínimo y máximo | parcial: solo la hoja del TPV los hace cumplir (MODIFIERS-F06) | F11 |
 | Menú con elecciones y reparto de IVA | hecho | F12 |
-| Cada plato del menú a su estación de cocina | hecho (con Cocina); un menú sin nada elegido sale como una línea (KITCHEN-F06, COMBOS-F11) | F12, F20 |
+| Cada plato del menú a su estación de cocina | hecho (con Cocina); un menú sin nada elegido sale como una línea y uno a medias no avisa de lo que falta (sales#535, KITCHEN-F06, COMBOS-F11) | F12, F20 |
 | Nota de línea y notas rápidas | hecho | F13, F36 |
 | Descuento de línea, de cuenta, en % o importe, con PIN por encima del tope | hecho | F14 |
 | Invitación con motivo, permiso y auditoría | parcial: sin motivo ni permiso propio, y el servidor acepta la marca que venga | F15 |

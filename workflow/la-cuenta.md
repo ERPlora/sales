@@ -53,7 +53,7 @@ Implicados: INVENTORY-F21, MODIFIERS-F03, MODIFIERS-F06, MODIFIERS-F07, REC_REST
 QA: R-04, qa-hub-restaurant §7.07
 
 ### SALES-F12 Componer un menú
-Estado: parcial — un plato del menú sin elecciones no sale en la hoja y nadie lo exige, y un menú sin nada elegido llega a cocina como una sola línea con su nombre (sales#522, COMBOS-F11); un plato no puede llevar sus propios suplementos
+Estado: parcial — un plato del menú sin elecciones no sale en la hoja y nadie lo exige, y un menú sin nada elegido llega a cocina como una sola línea con su nombre, y uno a medias manda solo lo elegido sin avisar de lo que falta (sales#535, COMBOS-F11); un plato no puede llevar sus propios suplementos
 Vertical: restaurante
 Actor: empleado, responsable
 Pantalla: Vender
