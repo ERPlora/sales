@@ -7980,6 +7980,38 @@ mod tests {
             services_catalog(),
         )));
         assert_eq!(preview.refused("the preview refuses it too").code, "sales.tax_category_missing");
+        // A `null` rate declares nothing either: it is not «0 %».
+        let items = json!([{ "product_name": "Sin IVA", "price": 2500, "quantity": 1_000_000,
+                             "tax_rate": null }]);
+        let err = complete_sale_pure(salon_input(items, services_catalog()))
+            .refused("a null rate is not a declared rate");
+        assert_eq!(err.code, "sales.tax_category_missing", "{err:?}");
+    }
+
+    #[test]
+    fn a_supplement_on_the_appointment_service_folds_into_it_when_both_tax_the_same() {
+        // The service's category also decides what its supplements are checked against (sales#147):
+        // a «wash» that taxes like the cut is part of the cut's price, not a line of its own. Taken
+        // from the open check's EMPTY row, the cut would have no category and the wash would be
+        // split off as if it taxed differently.
+        let row = json!({ "id": "line-s", "order_id": "ord-1", "product_id": "svc-cut",
+                          "product_name": "Corte de señora", "quantity": 1_000_000,
+                          "unit_price": 2500, "cost": 0, "tax_category_key": "", "is_gift": 0,
+                          "is_service": 1, "line_total": 2500, "discount_percent": 0,
+                          "modifiers": "[{\"option_id\":\"o-wash\",\"group_id\":\"g\",\"name\":\"Lavado\",\"kitchen_name\":\"+LAVADO\",\"price_delta\":300,\"tax_category_key\":\"service.generic\"}]",
+                          "combo": "{}", "combo_group_ref": null });
+        let items = json!([{ "product_name": "Corte de señora", "price": 2500, "quantity": 1_000_000,
+                             "order_item_id": "line-s", "tax_rate": 0, "modifiers": [] }]);
+        let mut inp = salon_input(items, services_catalog());
+        inp["payload"]["order_id"] = json!("ord-1");
+        inp["context"]["reads"]["sales.order.lines"] = json!([row]);
+        inp["context"]["reads"]["modifiers.options.all"] = json!([{ "option_id": "o-wash",
+            "group_id": "g", "name": "Lavado", "kitchen_name": "+LAVADO", "price_delta": 300,
+            "tax_category_key": "service.generic" }]);
+        let lines = sale_lines(&sale(inp));
+        assert_eq!(lines.len(), 1, "the wash taxes like the cut, so it is part of it: {lines:?}");
+        assert_eq!(lines[0]["unit_price"], json!(2800));
+        assert_eq!(lines[0]["tax_rate"], json!(21.0));
     }
 
     #[test]
