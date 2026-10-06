@@ -4677,6 +4677,10 @@ var en_default = {
     "sales.modifier_child_price_invalid": "A supplement bills on a line of its own because it taxes at a different VAT rate, and that line cannot be worth zero or less. Give it a price in Modifiers, or take its tax category off.",
     "sales.modifier_not_available": "One of the supplements on the line is no longer in the catalogue. Pick it again.",
     "sales.no_tax_rule": "A line has a tax category with no VAT rule in this business. Set it up in Taxes before charging.",
+    "sales.service_catalog_unavailable": "The services could not be loaded, so nothing was charged. Check that the Services app is installed and try again.",
+    "sales.service_not_available": "A service on the ticket is not in this business's catalogue any more. Remove the line and add the service again.",
+    "sales.service_tax_category_missing": "A service on the ticket has no tax category, so its VAT is unknown and nothing was charged. Set it on the service in Services.",
+    "sales.tax_category_missing": "A line has no tax category and no VAT rate, so nothing was charged. Give it a department or a VAT rate.",
     "sales.nothing_to_fire": "There is nothing to send to the kitchen: the check is empty, this round was already fired, or the order is not in this business.",
     "sales.order_id_required": "Sending to the kitchen needs the order it fires.",
     "sales.order_line_modifiers_unreadable": "The supplements frozen on a line of the open check could not be read, so the check was not priced.",
@@ -4866,6 +4870,10 @@ var en_default = {
     errorAmountNegative: "The sale cannot carry negative amounts",
     errorInsufficientTendered: "The amount tendered does not cover the total",
     errorNoTaxRule: "A line has a tax category with no VAT rule in this business \u2014 set it up in Taxes before charging",
+    errorServiceCatalogUnavailable: "The services could not be loaded, so nothing was charged. Check that the Services app is installed and try again",
+    errorServiceNotAvailable: "A service on the ticket is no longer in the catalogue. Remove the line and add the service again",
+    errorServiceTaxCategoryMissing: "A service on the ticket has no tax category, so nothing was charged. Set it on the service in Services",
+    errorTaxCategoryMissing: "A line has no tax category, so nothing was charged. Remove it and add it again from the catalogue or with a department",
     errorModifierChildPrice: "A supplement on that line bills on a line of its own because it taxes at a different VAT rate, and a line of its own cannot be worth zero or less. Give it a price in Modifiers, or take its tax category off",
     errorTaxCatalogUnavailable: "The VAT rules could not be loaded, so nothing was charged. Try again; if it keeps happening, call the manager",
     all: "All",
@@ -5355,6 +5363,10 @@ var es_default = {
     "sales.modifier_child_price_invalid": "Un suplemento se factura en l\xEDnea propia porque tributa a otro IVA, y esa l\xEDnea no puede valer cero o menos. Ponle precio en Suplementos, o qu\xEDtale la categor\xEDa fiscal.",
     "sales.modifier_not_available": "Uno de los suplementos de la l\xEDnea ya no est\xE1 en el cat\xE1logo. Vuelve a elegirlo.",
     "sales.no_tax_rule": "Una l\xEDnea tiene una categor\xEDa fiscal sin regla de IVA en este negocio. Config\xFArala en Impuestos antes de cobrar.",
+    "sales.service_catalog_unavailable": "No se han podido cargar los servicios, as\xED que no se ha cobrado nada. Comprueba que la app Servicios est\xE1 instalada y vuelve a intentarlo.",
+    "sales.service_not_available": "Un servicio del tique ya no est\xE1 en el cat\xE1logo de este negocio. Quita la l\xEDnea y vuelve a a\xF1adir el servicio.",
+    "sales.service_tax_category_missing": "Un servicio del tique no tiene categor\xEDa fiscal, as\xED que no se sabe su IVA y no se ha cobrado nada. Config\xFArala en el servicio, en Servicios.",
+    "sales.tax_category_missing": "Una l\xEDnea no tiene categor\xEDa fiscal ni tipo de IVA, as\xED que no se ha cobrado nada. Ponle un departamento o un tipo de IVA.",
     "sales.nothing_to_fire": "No hay nada que mandar a cocina: la comanda est\xE1 vac\xEDa, esta tanda ya se lanz\xF3, o el pedido no es de este negocio.",
     "sales.order_id_required": "Para mandar a cocina hace falta el pedido que se lanza.",
     "sales.order_line_modifiers_unreadable": "No se han podido leer los suplementos congelados en una l\xEDnea de la cuenta abierta, as\xED que no se ha valorado.",
@@ -5544,6 +5556,10 @@ var es_default = {
     errorAmountNegative: "La venta no puede llevar importes negativos",
     errorInsufficientTendered: "El importe entregado no cubre el total",
     errorNoTaxRule: "Una l\xEDnea tiene una categor\xEDa fiscal sin regla de IVA en este negocio: config\xFArala en Impuestos antes de cobrar",
+    errorServiceCatalogUnavailable: "No se han podido cargar los servicios, as\xED que no se ha cobrado nada. Comprueba que la app Servicios est\xE1 instalada y vuelve a intentarlo",
+    errorServiceNotAvailable: "Un servicio del tique ya no est\xE1 en el cat\xE1logo. Quita la l\xEDnea y vuelve a a\xF1adir el servicio",
+    errorServiceTaxCategoryMissing: "Un servicio del tique no tiene categor\xEDa fiscal, as\xED que no se ha cobrado nada. Config\xFArala en el servicio, en Servicios",
+    errorTaxCategoryMissing: "Una l\xEDnea no tiene categor\xEDa fiscal, as\xED que no se ha cobrado nada. Qu\xEDtala y vuelve a a\xF1adirla desde el cat\xE1logo o con un departamento",
     errorModifierChildPrice: "Un suplemento de esa l\xEDnea se factura aparte porque tributa a otro IVA, y una l\xEDnea propia no puede valer cero o menos. Ponle precio en Suplementos, o qu\xEDtale la categor\xEDa fiscal",
     errorTaxCatalogUnavailable: "No se han podido cargar las reglas de IVA, as\xED que no se ha cobrado nada. Vuelve a intentarlo y, si persiste, avisa al encargado",
     all: "Todos",
@@ -8150,6 +8166,12 @@ var MESSAGES = {
   // sales#21 — no tax rule / no tax catalogue: the sale is refused, never priced by the browser.
   "sales.no_tax_rule": "ui.errorNoTaxRule",
   "sales.tax_catalog_unavailable": "ui.errorTaxCatalogUnavailable",
+  // sales#519 — the VAT of a service comes from the services catalogue and a line nobody
+  // classified is refused instead of going out at 0 %. Each one is fixed somewhere different.
+  "sales.service_catalog_unavailable": "ui.errorServiceCatalogUnavailable",
+  "sales.service_not_available": "ui.errorServiceNotAvailable",
+  "sales.service_tax_category_missing": "ui.errorServiceTaxCategoryMissing",
+  "sales.tax_category_missing": "ui.errorTaxCategoryMissing",
   "sales.idempotency_key_required": "ui.errorCharge",
   // sales#152 (ADR-0381) — el servidor arma el combo contra `combos.options.all` y falla CERRADO.
   // Cada uno manda al cajero a un sitio distinto, y por eso no comparten mensaje: «el menú se
@@ -10846,9 +10868,10 @@ var ErpPosTouch = class extends i3 {
    *  (`appointment_id`, `staff_id`) que reenvía al cobrar. No hay `depends_on`, ni JOIN, ni
    *  conocimiento del dominio de citas — un hub sin el módulo abre el TPV vacío y en paz.
    *
-   *  La cita guarda `service_price` pero NO la categoría fiscal, así que el IVA quedaría colgando.
-   *  Se resuelve contra el catálogo de servicios que el TPV ya carga para el walk-in: una sola
-   *  fuente de verdad fiscal para las dos puertas. */
+   *  The appointment stores `service_price` but NOT the tax category. The till paints it from the
+   *  services catalogue it already loads for walk-ins, and the line keeps the service id so the
+   *  server resolves the VAT from that same catalogue at checkout (sales#519): one source of fiscal
+   *  truth for both doors, even when the service is hidden from the till. */
   async seedFromAppointment(appointmentId, services) {
     if (this.appointmentId && this.appointmentId === appointmentId) return;
     const rowsIn = await optionalRead((c5) => c5.queryOptional("appointments.appointments.get", { appointment_id: appointmentId }));
@@ -10867,7 +10890,7 @@ var ErpPosTouch = class extends i3 {
     if (ap.customer_name) this.customerName = ap.customer_name;
     const tax_category_key = svc?.tax_category_key;
     await this.queue(() => this.addNow({
-      id: svc?.id ?? "",
+      id: svc?.id ?? ap.service_id ?? "",
       name,
       price,
       tax_category_key,
