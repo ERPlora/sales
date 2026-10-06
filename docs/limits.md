@@ -26,6 +26,10 @@ sentence each code shows the user lives in `locales/en.json` / `locales/es.json`
 | `sales.no_tax_rule` | No tax rule matches the line's category for this hub's country and region | Fix the rule in `taxes`, or the product's tax category in `inventory` |
 | `sales.tax_rate_out_of_range` | The resolved rate is not a sane percentage | Fix the rule in `taxes` |
 | `sales.tax_catalog_unavailable` | The tax catalogue (`taxes.rules.list`, a **required** read since sales#21) was not delivered to the handler — the sale is refused rather than priced with the browser's VAT | Retry; if it persists, `taxes` is down or the runtime is too old to honour `required` reads |
+| `sales.service_catalog_unavailable` | A line names a service, but the services catalogue was not delivered (Services not installed, or it failed) — its VAT would be a guess (sales#519) | Check that `services` is installed and retry |
+| `sales.service_not_available` | A line names a service that is neither in this hub's services catalogue (archived ones included) nor a voucher | Remove the line and add the service again |
+| `sales.service_tax_category_missing` | The service exists but has no tax category, so its VAT is unknown (an old service, from before the category was mandatory) | Set the tax category on the service in `services` |
+| `sales.tax_category_missing` | A line names no product, no service and no department, and declares no VAT rate — it used to go out at 0 % (sales#519) | Sell it from the catalogue or with a department, or send its `tax_rate` |
 | `sales.nothing_to_fire` | `sales.order.fire` with `round_no` found no pending line on the order — the round was already fired (double tap, sales#80); nothing is emitted | Nothing to do: the kitchen already has it |
 | `sales.void_reason_required` | `sales.void` without a reason (sales#26) | Type why the sale is voided |
 | `sales.already_voided` | The sale is already voided (or not closed yet): a void is one-shot and never emits twice — also when two devices void the same ticket at once, the second one waits and gets this (sales#511) | Nothing to do — it is already reversed |
@@ -122,6 +126,7 @@ Everything else is optional and degrades by disappearing:
 | `cash_register` | Sales are recorded but nothing reconciles the till |
 | `invoice` / `verifactu` | Sales are recorded but no fiscal document is issued or reported |
 | `printing` | Nothing prints |
+| `services` | No services in the grid. A line that still names a service (an old open check, an integration) is refused with `sales.service_catalog_unavailable`: without the catalogue its VAT is unknown |
 
 After installing or removing one of these, **leave the till screen and come back** — the POS resolves
 its slots when it mounts.
@@ -133,7 +138,8 @@ of a catalogue line; the till's figure is a proposal. Change the price in `inven
 
 **"The VAT is not what the cart showed."** The percentage in the cart is a preview. The server
 resolves the real rate from the hub's country and region and the line's tax category, and freezes it
-on the line.
+on the line. A service takes its category from `services`, also when it was charged from an
+appointment and the till had not loaded it: change it on the service.
 
 **"I pressed charge twice and I am afraid there are two sales."** There is one. The attempt key makes
 a retry resolve to the sale it already created. Search the sales list by number to confirm.

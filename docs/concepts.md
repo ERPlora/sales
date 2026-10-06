@@ -179,9 +179,18 @@ rejected. If the catalogue cannot be read at all, a catalogue sale is **refused*
 whatever price was proposed. The same rule now runs one step earlier for an open check — at the door
 that writes the row — which is what makes the frozen price trustworthy.
 
-Two doors stay open deliberately: a **free line** with no product (selling by department, typing an
-amount) and a **service line**, which Sales cannot verify because it does not read the services
-module.
+A **service line** follows the same rule for its VAT (sales#519): the line names its service, and
+the tax category comes from the services catalogue — archived services included, so an appointment
+booked before a service was archived still charges with its VAT. A service the catalogue does not
+know, a service with no tax category, or a till without the services catalogue is **refused**,
+never charged at 0 %. On an open check it is the row that says whether a line is a service and
+which one, not the request that pays it. A voucher is sold as a service line naming the voucher, and keeps the VAT the
+sale declares. The service's **price** stays the one sent: an appointment is charged at the price
+agreed when it was booked.
+
+One door stays open deliberately: a **free line** with no product (selling by department, typing an
+amount). With a department it takes the department's tax category; a line with no category at all
+must declare its VAT rate, or it is refused (`sales.tax_category_missing`).
 
 ## Every line freezes its own tax
 

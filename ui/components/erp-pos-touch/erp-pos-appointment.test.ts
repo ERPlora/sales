@@ -35,7 +35,7 @@ const RULES = [
 
 let commands: { name: string; params?: Record<string, unknown> }[] = [];
 
-function installSdk(opts: { appointmentsInstalled?: boolean } = {}) {
+function installSdk(opts: { appointmentsInstalled?: boolean; services?: typeof SERVICES } = {}) {
   const hasAppointments = opts.appointmentsInstalled !== false;
   commands = [];
   // Flat rows, the way the real SDK hands them over: the document painted after charging maps
@@ -44,7 +44,7 @@ function installSdk(opts: { appointmentsInstalled?: boolean } = {}) {
     byIdempotencyKey: [{ id: 'sale-1' }],
     sale: [{ id: 'sale-1', created_at: '2026-08-14T10:00:00Z' }],
     rules: RULES,
-    services: SERVICES,
+    services: opts.services ?? SERVICES,
     serviceCategories: [],
     // `appointments.appointments.get` is a POINT read and stays on `queryOptional` (sales#186).
     ...(hasAppointments ? { appointment: [APPOINTMENT] } : { absentModules: ['appointments'] }),
@@ -129,6 +129,27 @@ describe('the till opened from an appointment (ADR-0077)', () => {
   it('clears the id from the URL, so a reload does not re-seed the same booking', async () => {
     await mount('?appointment_id=ap-1');
     expect(window.location.search).not.toContain('appointment_id');
+  });
+});
+
+// sales#519 — the till only knows the services it LOADED (none with «Show services in the till»
+// off). The booked service still has to reach the server by its id: that is how the server finds
+// its VAT category in the services catalogue. Sent without it, the line used to be charged at 0 %.
+describe('a booked service the till did not load', () => {
+  beforeEach(() => installSdk({ services: [] }));
+
+  it('still names the service by its id on the open check and at checkout', async () => {
+    const el = await mount('?appointment_id=ap-1');
+    expect(el.cart[0]).toMatchObject({ id: 's-corte', is_service: true });
+
+    const opened = commands.find((c) => c.name === 'sales.order.open')?.params?.items as
+      { product_id?: string | null; is_service?: boolean }[] | undefined;
+    expect(opened?.[0]).toMatchObject({ product_id: 's-corte', is_service: true });
+
+    await el.confirm();
+    const items = commands.find((c) => c.name === 'sales.complete_sale')?.params?.items as
+      { product_id?: string | null; is_service?: boolean }[] | undefined;
+    expect(items?.[0]).toMatchObject({ product_id: 's-corte', is_service: true });
   });
 });
 

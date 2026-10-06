@@ -56,6 +56,26 @@ describe('checkoutErrorKey', () => {
     expect(checkoutErrorKey('sales.tax_catalog_unavailable')).toBe('ui.errorTaxCatalogUnavailable');
   });
 
+  it('sales#519 — a service or a line the server cannot tax says WHERE to fix it, in en and es', () => {
+    // The appointment's service used to be charged at 0 %; now the server refuses instead. Each
+    // refusal is fixed somewhere else (the Services app, the service's own card, the line), so a
+    // generic «could not charge» would leave the receptionist with the customer at the desk.
+    const cases: Array<[string, string]> = [
+      ['sales.service_catalog_unavailable', 'ui.errorServiceCatalogUnavailable'],
+      ['sales.service_not_available', 'ui.errorServiceNotAvailable'],
+      ['sales.service_tax_category_missing', 'ui.errorServiceTaxCategoryMissing'],
+      ['sales.tax_category_missing', 'ui.errorTaxCategoryMissing'],
+    ];
+    for (const [code, key] of cases) expect(checkoutErrorKey(code)).toBe(key);
+    for (const catalogue of [en, es]) {
+      for (const [code, key] of cases) {
+        expect(catalogue.ui[key.replace('ui.', '')], `${key}`).toBeTruthy();
+        // The code is declared and has its sentence for the assistant and the API as well.
+        expect((catalogue as { errors: Record<string, string> }).errors[code], code).toBeTruthy();
+      }
+    }
+  });
+
   it('sales#152 — every way a combo can be refused sends the cashier somewhere DIFFERENT', () => {
     // Nine codes, nine screens to fix it on. Collapsing them into one «could not charge» is what
     // turns a two-second fix («the menu was withdrawn») into a call to the manager.

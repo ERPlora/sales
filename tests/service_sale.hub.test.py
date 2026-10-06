@@ -31,6 +31,9 @@ Usage: `erplora test <dir> --against-hub [dev|stable|sha256:…]` (module-toolki
 its own: without a runtime it fails, it does not skip.
 """
 
+import os
+import shlex
+import subprocess
 import sys
 import uuid
 
@@ -38,6 +41,8 @@ from hub_harness import ONE, Hub, card_method_id, cents, ensure_business_identit
 
 PRICE = 2500  # 25,00 € — a ladies' cut
 TAX_CATEGORY = "service.generic"
+# 25,00 € with 21 % VAT included: base 20,66 €, VAT 4,34 € (HALF_UP on the cent).
+PRICE_VAT = 434
 
 
 def whole_list(hub: Hub, name: str, params: dict | None = None) -> list:
@@ -212,9 +217,201 @@ def main() -> int:
         hub.check("sold line total (cents)", cents(lines[0].get("line_total")), PRICE)
         hub.check("sold line quantity", int(lines[0].get("quantity")), ONE)
 
+    appointment_service_vat(hub, service_id, service_name)
+
     return hub.finish(
         "a salon's service is listed by the till's reads, goes on a check and is charged"
+        " with the VAT its catalogue gives it"
     )
+
+
+def appointment_service_vat(hub: Hub, service_id: str, service_name: str) -> None:
+    """sales#519 — the appointment's service is charged with the VAT of ITS catalogue entry.
+
+    «Cobrar» on a booking builds the line from the appointment. When the service is not among the
+    ones the till loaded («Show services on the till» off), the line arrives with the service's id
+    and NO tax category, and the till's preview rate is 0: the server charged and declared it at
+    0 %. The services catalogue is what decides the category of a line that names a service, the
+    same way inventory's does for a product.
+    """
+    print(
+        "4 · an appointment's service off the till's catalogue keeps its VAT (sales#519)"
+    )
+    method = card_method_id(hub)
+    # The line `seedFromAppointment` sends when the service is not in the loaded catalogue.
+    bare = {
+        "product_id": service_id,
+        "product_name": service_name,
+        "price": PRICE,
+        "quantity": ONE,
+        "is_service": True,
+        "tax_rate": 0,
+    }
+
+    def charge(tag: str, items: list, extra: dict | None = None) -> dict:
+        return {
+            "items": items,
+            "idempotency_key": key(tag),
+            "tax_included": True,
+            "payment_method_id": method,
+            "document_type": "ticket",
+            **(extra or {}),
+        }
+
+    # 4a · counter sale.
+    sale_id = hub.run("sales.complete_sale", charge("appt-vat-counter", [bare]))[
+        "new_ids"
+    ][0]
+    expect_service_vat(hub, "counter sale", sale_id)
+
+    # 4b · the same line through an open check, which is how «Cobrar» really charges it.
+    order_id = hub.run("sales.order.open", {"items": [bare]})["new_ids"][0]
+    rows = hub.query("sales.order.lines", {"order_id": order_id})
+    hub.check("the appointment's check holds one line", len(rows), 1)
+    if rows:
+        line = {**bare, "order_item_id": rows[0]["id"]}
+        sale_id = hub.run(
+            "sales.complete_sale",
+            charge("appt-vat-check", [line], {"order_id": order_id}),
+        )["new_ids"][0]
+        expect_service_vat(hub, "open check", sale_id)
+
+    # 4b' · the manager's twin door (a discount over the cap) reads the same catalogue.
+    sale_id = hub.run(
+        "sales.complete_sale_over_limit", charge("appt-vat-over-limit", [bare])
+    )["new_ids"][0]
+    expect_service_vat(hub, "manager's door", sale_id)
+
+    # 4c · the preview says what the checkout will charge.
+    preview = hub.run(
+        "sales.checkout.preview",
+        {"items": [bare], "discount_percent": 0, "tax_included": True},
+    )
+    result = preview.get("result") or {}
+    hub.check("preview total", cents(result.get("total")), PRICE)
+    hub.check("preview VAT (cents)", cents(result.get("tax_total")), PRICE_VAT)
+
+    # 4d · a service the catalogue does not know is refused, never charged at 0 %.
+    hub.refused(
+        "a service id that is not in this hub's catalogue",
+        "sales.complete_sale",
+        charge("appt-vat-unknown", [{**bare, "product_id": f"svc-{uuid.uuid4().hex}"}]),
+        "sales.service_not_available",
+    )
+    # 4e · and a line that names no category and asks for no rate is refused too.
+    hub.refused(
+        "a line with no tax category and no declared rate",
+        "sales.complete_sale",
+        charge(
+            "appt-vat-bare",
+            [{"product_name": "Sin IVA", "price": PRICE, "quantity": ONE}],
+        ),
+        "sales.tax_category_missing",
+    )
+
+    # 4f · the catalogue that decides the VAT is THIS hub's: the same service filed under another
+    # hub is a service this till cannot sell (the read goes through the dispatcher, which applies
+    # the hub — this proves it is that read).
+    foreign_id = clone_service(hub, service_id, hub_id=f"hub-{uuid.uuid4().hex[:8]}-other")
+    hub.refused(
+        "a service of ANOTHER hub, by its id",
+        "sales.complete_sale",
+        charge("appt-vat-foreign", [{**bare, "product_id": foreign_id}]),
+        "sales.service_not_available",
+    )
+    # 4g · archiving a service in `services` IS its soft delete (and it can be restored). A booking
+    # made before the salon archived it is still charged — with the VAT its catalogue row gives it,
+    # never at 0 %.
+    archived_id = clone_service(hub, service_id, deleted=True)
+    sale_id = hub.run(
+        "sales.complete_sale",
+        charge("appt-vat-archived", [{**bare, "product_id": archived_id}]),
+    )["new_ids"][0]
+    expect_service_vat(hub, "archived service", sale_id)
+
+    # 4h · a VOUCHER is sold as a service line naming the voucher (SERVICES-F14), with the VAT the
+    # sale declares: the voucher catalogue has no category. It is not a service, and that must not
+    # refuse the sale.
+    voucher_id = hub.run(
+        "services.packages.create",
+        {
+            "name": f"Bono 5 cortes {uuid.uuid4().hex[:6]}",
+            "fixed_price": PRICE,
+            "items": [{"service_id": service_id, "quantity": 5 * ONE}],
+        },
+    )["new_ids"][0]
+    voucher_line = {
+        **bare,
+        "product_id": voucher_id,
+        "product_name": "Bono 5 cortes",
+        "tax_category_key": TAX_CATEGORY,
+        "tax_rate": 21.0,
+    }
+    sale_id = hub.run(
+        "sales.complete_sale", charge("appt-vat-voucher", [voucher_line])
+    )["new_ids"][0]
+    expect_service_vat(hub, "voucher", sale_id)
+
+
+def hub_sql(hub: Hub, sql: str) -> str:
+    """One statement on the database the hub under test writes to (`ERPLORA_HUB_PSQL`)."""
+    session = os.environ.get("ERPLORA_HUB_PSQL", "")
+    if not session:
+        hub.check_true("a psql session on the hub's database", False, "ERPLORA_HUB_PSQL is empty")
+        return ""
+    out = subprocess.run(
+        [*shlex.split(session), "-tAc", sql], capture_output=True, text=True, check=False
+    )
+    hub.check_true(
+        "the seed statement ran", out.returncode == 0, out.stderr.strip()[:300]
+    )
+    return out.stdout.strip()
+
+
+def clone_service(
+    hub: Hub, service_id: str, hub_id: str | None = None, deleted: bool = False
+) -> str:
+    """A copy of the service row with a new id, under `hub_id` and/or soft-deleted."""
+    new_id = f"svc-{uuid.uuid4().hex}"
+    hub_set = f", hub_id = '{hub_id}'" if hub_id else ""
+    deleted_set = ", is_deleted = 1, deleted_at = now()::text" if deleted else ""
+    hub_sql(
+        hub,
+        "CREATE TEMP TABLE c AS SELECT * FROM services_service "
+        f"WHERE id = '{service_id}'; "
+        f"UPDATE c SET id = '{new_id}', slug = '{new_id}'{hub_set}{deleted_set}; "
+        "INSERT INTO services_service SELECT * FROM c;",
+    )
+    hub.check(
+        f"the copy {new_id[:12]}… is in the table",
+        hub_sql(hub, f"SELECT count(*) FROM services_service WHERE id = '{new_id}'"),
+        "1",
+    )
+    return new_id
+
+
+def expect_service_vat(hub: Hub, label: str, sale_id: str) -> None:
+    header = hub.query("sales.get", {"sale_id": sale_id})
+    lines = hub.query("sales.lines", {"sale_id": sale_id})
+    hub.check(f"{label}: one sale", len(header), 1)
+    hub.check(f"{label}: one line", len(lines), 1)
+    if header:
+        hub.check(f"{label}: sale total (cents)", cents(header[0].get("total")), PRICE)
+        hub.check(
+            f"{label}: sale VAT (cents)", cents(header[0].get("tax_amount")), PRICE_VAT
+        )
+    if lines:
+        hub.check(
+            f"{label}: line tax category",
+            lines[0].get("tax_category_key"),
+            TAX_CATEGORY,
+        )
+        hub.check(f"{label}: line tax rate", float(lines[0].get("tax_rate")), 21.0)
+        hub.check_true(
+            f"{label}: line tax rule is the hub's",
+            bool(lines[0].get("tax_rule_id")),
+            f"tax_rule_id={lines[0].get('tax_rule_id')!r}",
+        )
 
 
 if __name__ == "__main__":

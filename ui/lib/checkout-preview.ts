@@ -93,7 +93,11 @@ export function checkoutItems(
     price: l.price,
     quantity: toMicro(l.qty),
     tax_category_key: l.tax_category_key ?? null,
-    tax_rate: l.tax_rate ?? 0,
+    // sales#519 — every till line takes its `tax_rate` from its category (`resolveLineTax`), so
+    // without a category that rate is the preview's fallback 0, not a rate anybody declared. It is
+    // left out, and the server refuses the line (`sales.tax_category_missing`) instead of taking
+    // the 0 as declared and charging the line at 0 % VAT.
+    ...(l.tax_category_key ? { tax_rate: l.tax_rate ?? 0 } : {}),
     category_id: l.category_id ?? opts.primaryCategory?.(l.id) ?? null,
     is_gift: l.is_gift ?? false,
     gift_reason: l.gift_reason ?? '',

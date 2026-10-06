@@ -26,6 +26,25 @@ describe('checkoutItems', () => {
     });
   });
 
+  it('a line with NO tax category declares no rate, so the server refuses it instead of charging 0 % (sales#519)', () => {
+    // An appointment whose service is gone seeds a line with no id and no category. Its `tax_rate`
+    // is the 0 the preview fell back to, not a rate anybody declared: sent as 0, the server took it
+    // as declared and the ticket went out at 0 % VAT. The key is left OUT (the schema types it as a
+    // number), which is what the server reads as "declares no rate": `sales.tax_category_missing`.
+    const items = checkoutItems([line({ id: '', name: 'Peinado', tax_category_key: undefined, tax_rate: 0 })], {
+      covered: new Set<string>(),
+    });
+    expect(items[0]).not.toHaveProperty('tax_rate');
+    expect(items[0].tax_category_key).toBeNull();
+  });
+
+  it('a line WITH a tax category keeps sending its preview rate', () => {
+    const items = checkoutItems([line({ tax_category_key: 'service.generic', tax_rate: 21 })], {
+      covered: new Set<string>(),
+    });
+    expect(items[0].tax_rate).toBe(21);
+  });
+
   it('marks a line an external tender already covered', () => {
     const items = checkoutItems([line()], { covered: new Set(['l-1']) });
     expect(items[0].covered).toBe(true);

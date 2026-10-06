@@ -248,7 +248,7 @@ flujos de su fila en la misma entrega.
 | Dividir moviendo líneas; deshacer el split | parcial: mover sí, deshacer no | F23 |
 | Juntar mesas sin perder ni duplicar líneas | parcial: las líneas sí; un fallo no se ve y las rondas de la cuenta absorbida no se cierran | F24 |
 | Transferir mesa | parcial: desde una mesa dividida la deja libre con la otra cuenta (TABLES-F15) | F25 |
-| Cobrar la cita sin volver a teclear | hecho (al 0 % si el servicio no está en el catálogo cargado) | F26 |
+| Cobrar la cita sin volver a teclear | hecho (el IVA del servicio lo pone Servicios aunque el TPV no lo haya cargado) | F26 |
 | Bono que paga una línea de servicio | hecho (con Servicios); el servidor no comprueba que el bono exista | F27 |
 | Propina | fuera del MVP (pm#100) | — |
 | Historial con cifras del día | parcial: las devoluciones parciales no restan | F28 |
@@ -322,8 +322,16 @@ impide la pantalla está como hueco en su flujo.
   cuenta abierta, de la fila congelada al pedir; un artículo que no está en el catálogo se rechaza.
   El IVA de una línea con categoría lo resuelve Impuestos con el país del negocio, y una categoría sin
   regla se rechaza. El nombre y el tipo del medio de pago salen del catálogo del hub. Céntimos
-  enteros. (El precio de un servicio o de una línea libre, el IVA de una línea sin categoría y las
-  marcas de invitación y de «pagada por bono» son los que se mandan: F09, F15, F26, F27.)
+  enteros. (El precio de un servicio o de una línea libre y las marcas de invitación y de «pagada
+  por bono» son los que se mandan: F09, F15, F26, F27.)
+- **El IVA de un servicio lo decide Servicios**: una línea que nombra un servicio toma su categoría
+  fiscal del catálogo de Servicios (también de un servicio archivado), por encima de la que mande el
+  cobro o la que quedó congelada en la cuenta; en una cuenta abierta, qué servicio es (y si la línea
+  es un servicio) lo dice la fila de la cuenta, no el cobro; un servicio que no existe, sin categoría
+  o sin el catálogo de Servicios se rechaza. Un bono se vende como línea de servicio con el id del
+  bono y conserva el IVA que manda el cobro. Una línea que no nombra artículo, servicio ni
+  departamento tiene que traer su tipo de IVA o se rechaza: ninguna sale al 0 % porque nadie la
+  clasificó.
 - **Los pagos suman el total al céntimo**; el cambio sale del efectivo; un efectivo corto se rechaza.
 - **Nada en efectivo desde 1.000 € en un negocio de España** dentro de la misma venta, aunque lo
   autorice un responsable (repartiendo la cuenta en varios cobros se salta: F03).
@@ -404,7 +412,7 @@ Contra `origin/main` v2.16.154 (05/10/2026). Una línea por discrepancia; manda 
 - **`qa-hub-restaurant.md` §3** dice que ningún manifest usa roles que extienden otros; Ventas declara el rol «Cajero» (que cobra).
 - **`hand-book/modulos/sales.md`**: «Los ajustes del TPV aparecen en la configuración de aplicaciones del Hub»; es la pestaña «Ajustes» del propio módulo.
 - **`docs/screens.md` y `architecture/modules/sales.md`** (la báscula): dicen que con báscula el peso llega solo a la línea y que leerla es trabajo de la app instalada; ni la app instalada ni el hub tienen lector de báscula ni emiten el aviso de peso que el TPV escucha (F10).
-- **`docs/concepts.md`** («if a line claims to come from the catalogue, the catalogue wins»; «Two doors stay open deliberately»): cierto, pero el permiso de precio libre solo protege una de las puertas por las que entra una línea libre o de servicio (F09).
+- **`docs/concepts.md`** («if a line claims to come from the catalogue, the catalogue wins»; «One door stays open deliberately»): cierto, pero el permiso de precio libre solo protege una de las puertas por las que entra una línea libre o el precio de un servicio (F09).
 - **`architecture/modules/sales.md`** (el techo de la simplificada, hub#297): lo hace cumplir solo la pantalla; el servidor de Ventas acepta un tique por encima del límite por asistente o API (F04).
 - **`docs/screens.md`** («Charging a check with pending lines sends them first … as Odoo, Square and Toast do»): se envían, pero Cocina las cancela en cuanto el cobro cierra la cuenta (leído en el código de `kitchen`, sin ejecutar) (F20).
 - **`docs/concepts.md`** («`sale.voided` is emitted so stock comes back and the till is corrected») y **QA §9 de `qa-hub.md`** («anular revierte»): caja, stock, cliente y mesa sí; la sesión de bono, la cita, la factura y VeriFactu no; y la mesa se libera aunque la cuenta siga abierta tras un cobro parcial (F30).
