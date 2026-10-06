@@ -71,7 +71,8 @@ that nobody was told to cook is the one outcome the till must never produce.
 
 A set menu is fired as **the dishes the table picked**, not as one line with the menu's name
 (sales#522): each dish goes to the station of its own product (or its category), grouped under the
-menu's kitchen name, with the menu's note on every dish. Which product each dish is was frozen from
+menu's kitchen name, with the menu's note — and any supplement set on the menu line itself — on
+every dish. Which product each dish is was frozen from
 Combos when the menu was added to the check, and the supplements reach the kitchen with the name
 they were **ordered** with, not today's. A dish that is a service is not sent to cook. A menu with
 nothing picked still goes as one line, and a half-picked one sends only what was picked (sales#535).

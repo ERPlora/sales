@@ -13,6 +13,9 @@ in «No station» unless the menu itself had a route. `kitchen` already knew how
      note on both, and the closed price counted once.
   2. A supplement renamed in the catalogue between ordering and firing reaches the ticket with the
      name it was ORDERED with — the row froze it (sales#200), the kitchen used to reread today's.
+  3. A supplement charged on the MENU line itself is printed on every dish the menu expands into:
+     kitchen prints each dish's own supplements, so on the menu line alone it would be paid for
+     and never read by the cook.
 
 Usage: `erplora test <dir> --against-hub [dev|stable|sha256:…]` (module-toolkit#110). Never on its
 own: without a runtime it fails, it does not skip.
@@ -243,6 +246,61 @@ def test_a_renamed_supplement_reaches_the_kitchen_as_it_was_ordered(hub: Hub) ->
     hub.check_true("and not today's name", "VEGANO" not in printed, printed)
 
 
+def test_a_supplement_on_the_menu_line_reaches_every_dish(hub: Hub) -> None:
+    print(
+        "\n3 · a supplement charged on the MENU line is printed on every dish of the menu"
+    )
+    t = tag()
+    salad = create_product(hub, f"Ensalada {t}", 600)
+    steak = create_product(hub, f"Entrecot {t}", 1500)
+    combo_id, (o_salad, o_steak) = create_menu(
+        hub, f"Menú del día {t}", f"MENÚ {t}", [("Primero", salad), ("Segundo", steak)]
+    )
+    group_id = hub.run("modifiers.groups.create", {"name": f"Extras {t}"})["new_ids"][0]
+    option_id = hub.run(
+        "modifiers.options.create",
+        {
+            "group_id": group_id,
+            "name": "Guarnición extra",
+            "kitchen_name": "EXTRA GUARN",
+            "price_delta": 200,
+        },
+    )["new_ids"][0]
+    # The till's sheet offers no supplement on a menu, but the door takes one (the assistant, the
+    # API) and the check charges it: the cook has to read it.
+    order_id = open_order(
+        hub,
+        [
+            {
+                "combo_id": combo_id,
+                "product_id": combo_id,
+                "product_name": f"Menú del día {t}",
+                "price": 1350,
+                "quantity": ONE,
+                "modifiers": [{"option_id": option_id}],
+                "combo_choices": [
+                    {"option_id": o_salad, "product_name": "Ensalada"},
+                    {"option_id": o_steak, "product_name": "Entrecot"},
+                ],
+            }
+        ],
+    )
+    row = (hub.query("sales.order.lines", {"order_id": order_id}) or [{}])[0]
+    hub.check("the check charges the supplement", row.get("line_total"), 1550)
+    hub.run(
+        "sales.order.fire",
+        {"order_id": order_id, "round_no": 1, "label": "Mesa 9", "channel": "dine_in"},
+    )
+
+    ticket = ticket_of(hub, order_id)
+    lines = hub.query("kitchen.orders.items", {"order_id": ticket.get("id")})
+    hub.check(
+        "every dish of the menu prints the supplement",
+        [l.get("modifiers") for l in lines],
+        ["EXTRA GUARN", "EXTRA GUARN"],
+    )
+
+
 def main() -> int:
     hub = Hub("combo_fire.hub", needs=NEEDS)
     print(
@@ -250,6 +308,7 @@ def main() -> int:
     )
     test_a_fired_menu_sends_each_dish_to_its_station(hub)
     test_a_renamed_supplement_reaches_the_kitchen_as_it_was_ordered(hub)
+    test_a_supplement_on_the_menu_line_reaches_every_dish(hub)
     return hub.finish("a fired menu reaches each station as the dishes the table chose")
 
 

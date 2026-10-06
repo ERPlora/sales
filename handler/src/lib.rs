@@ -4336,8 +4336,10 @@ fn name_modifiers_for_kitchen(
     items
         .iter()
         .map(|item| {
-            let picks = match item.get("modifiers").and_then(|v| v.as_array()) {
-                Some(a) if !a.is_empty() => a,
+            let picks = match item.get("modifiers") {
+                Some(Value::Array(a)) if !a.is_empty() => a,
+                // A snapshot that could not be read back travels verbatim (`stored_modifiers`).
+                Some(text @ Value::String(_)) => return with_kitchen_modifiers(item, text.clone()),
                 _ => return item.clone(),
             };
             let named: Vec<Value> = picks
@@ -4366,13 +4368,27 @@ fn name_modifiers_for_kitchen(
                     json!({ "option_id": id, "name": name, "kitchen_name": kitchen })
                 })
                 .collect();
-            let mut out = item.clone();
-            if let Some(obj) = out.as_object_mut() {
-                obj.insert("modifiers".into(), Value::Array(named));
-            }
-            out
+            with_kitchen_modifiers(item, Value::Array(named))
         })
         .collect()
+}
+
+/// The item as the kitchen receives it, with the supplements it prints.
+///
+/// sales#522 — `kitchen` prints the supplements of each expanded DISH and never reads the menu
+/// line's once it carries `combo_components`. So a supplement on the menu line itself goes on every
+/// dish, exactly like the menu's note: before the menu was expanded the one line «Menú del día»
+/// carried it, and a supplement the check charges cannot vanish from the ticket.
+fn with_kitchen_modifiers(item: &Value, modifiers: Value) -> Value {
+    let mut out = item.clone();
+    let Some(obj) = out.as_object_mut() else { return out };
+    if let Some(dishes) = obj.get_mut("combo_components").and_then(Value::as_array_mut) {
+        for dish in dishes.iter_mut().filter_map(Value::as_object_mut) {
+            dish.insert("modifiers".into(), modifiers.clone());
+        }
+    }
+    obj.insert("modifiers".into(), modifiers);
+    out
 }
 
 /// kitchen#54 — **las líneas que se cocinan las pone el SERVIDOR, no el navegador.**
@@ -10176,6 +10192,45 @@ mod tests {
 
         let dishes = fired_items(&out)[0]["combo_components"].as_array().expect("dishes").clone();
         assert!(dishes.iter().all(|d| d["notes"] == json!("alergia al marisco")), "{dishes:?}");
+    }
+
+    #[test]
+    fn a_supplement_on_the_set_menu_line_reaches_every_dish_it_expands_into() {
+        // Kitchen prints the supplements of each expanded DISH, never the menu line's. A supplement
+        // the check charged on the menu itself (the API and the assistant can add one; the till's
+        // sheet does not) used to be printed on the one line «Menú del día», and would vanish from
+        // the ticket the moment the menu is expanded: paid for, and never cooked.
+        let two_dishes = json!([
+            { "option_id": "o-salad", "product_name": "Ensalada", "source": "product", "source_ref": "p-salad" },
+            { "option_id": "o-steak", "product_name": "Entrecot", "source": "product", "source_ref": "p-steak" },
+        ]);
+        let mut row = menu_row("li-1", two_dishes.clone());
+        row["modifiers"] = json!(
+            r#"[{"option_id":"o-side","group_id":"g","name":"Guarnición extra","kitchen_name":"EXTRA GUARN","price_delta":200,"tax_category_key":""}]"#
+        );
+        // Renamed since it was ordered: every dish reads the ORDERED name, like any other line.
+        let renamed = json!([{ "option_id": "o-side", "group_id": "g", "name": "Otra", "kitchen_name": "OTRA",
+                               "price_delta": 200, "tax_category_key": null }]);
+        let out = fire_order_pure(fire_from_server(json!([row.clone()]), Some(renamed))).accepted("fire ok");
+        let dishes = fired_items(&out)[0]["combo_components"].as_array().expect("dishes").clone();
+        assert_eq!(dishes.len(), 2, "{dishes:?}");
+        for dish in &dishes {
+            assert_eq!(dish["modifiers"][0]["kitchen_name"], json!("EXTRA GUARN"), "{dish:?}");
+            assert_eq!(dish["modifiers"][0]["name"], json!("Guarnición extra"), "{dish:?}");
+        }
+
+        // A snapshot the server cannot read back travels verbatim, as on a plain line
+        // (`stored_modifiers`): on the ticket rather than silently gone.
+        row["modifiers"] = json!("sin sal");
+        let out = fire_order_pure(fire_from_server(json!([row]), None)).accepted("fire ok");
+        let dishes = fired_items(&out)[0]["combo_components"].as_array().expect("dishes").clone();
+        assert!(dishes.iter().all(|d| d["modifiers"] == json!("sin sal")), "{dishes:?}");
+
+        // The control: a menu with no supplement puts nothing on its dishes.
+        let plain = menu_row("li-2", two_dishes);
+        let out = fire_order_pure(fire_from_server(json!([plain]), None)).accepted("fire ok");
+        let dishes = fired_items(&out)[0]["combo_components"].as_array().expect("dishes").clone();
+        assert!(dishes.iter().all(|d| d.get("modifiers").is_none()), "{dishes:?}");
     }
 
     #[test]
