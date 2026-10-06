@@ -799,9 +799,10 @@ fn catalog_row<'a>(
 /// A service's PRICE is not taken from here on purpose: an appointment is charged at the price
 /// agreed when it was booked (SALES-F26). Only the VAT is the catalogue's.
 ///
-/// On an open check the line may only name its row (`order_item_id`): the row says whether it is
-/// a service and which one. The row's own category is NOT trusted for a service — it was frozen
-/// from whatever the till sent, and that was empty for an appointment off the loaded catalogue.
+/// On an open check the line names its row (`order_item_id`) and the ROW says whether it is a
+/// service and which one — never the payload. The row's own category is NOT trusted for a service:
+/// it was frozen from whatever the till sent, and that was empty for an appointment off the loaded
+/// catalogue.
 ///
 /// A VOUCHER is sold the same way, as a service line naming the voucher (SERVICES-F14), and the
 /// voucher catalogue has no tax category: such a line keeps the VAT the sale declares, which case
@@ -821,12 +822,11 @@ fn service_category(
     frozen: Option<&Value>,
     catalogs: &ServiceCatalogs,
 ) -> Result<Option<String>, Refusal> {
-    let is_service = item.get("is_service").map(as_bool).unwrap_or(false)
-        || frozen.and_then(|r| r.get("is_service")).map(as_bool).unwrap_or(false);
-    let mut id = field(item, "product_id");
-    if id.is_empty() {
-        id = frozen.map(|r| field(r, "product_id")).unwrap_or_default();
-    }
+    // The row wins over the payload, like its price does (sales#175): the server wrote it when the
+    // line was ordered, so a payload cannot re-label it as another, cheaper-taxed service.
+    let said_by = frozen.unwrap_or(item);
+    let is_service = said_by.get("is_service").map(as_bool).unwrap_or(false);
+    let id = field(said_by, "product_id");
     if !is_service || id.is_empty() {
         return Ok(None);
     }
@@ -7937,6 +7937,49 @@ mod tests {
         assert_eq!(line.params["tax_category_key"], json!("service.generic"));
         assert_eq!(line.params["tax_rate"], json!(21.0));
         assert_eq!(line.params["unit_price"], json!(2500), "the frozen price is still the one charged");
+    }
+
+    /// An open check's row, as `sales.order.lines` hands it over.
+    fn check_row(product_id: &str, is_service: i64, tax_category_key: &str) -> Value {
+        json!({ "id": "line-s", "order_id": "ord-1", "product_id": product_id,
+                "product_name": "Corte de señora", "quantity": 1_000_000, "unit_price": 2500,
+                "cost": 0, "tax_category_key": tax_category_key, "is_gift": 0,
+                "is_service": is_service, "line_total": 2500, "discount_percent": 0,
+                "modifiers": "[]", "combo": "{}", "combo_group_ref": null })
+    }
+
+    /// Pays `row` with a payload that claims the line is the service `svc-facial` (10 % VAT).
+    fn pay_row_claiming_a_cheaper_service(row: Value) -> Output {
+        let items = json!([{ "product_id": "svc-facial", "product_name": "Corte de señora",
+                             "price": 2500, "quantity": 1_000_000, "is_service": true,
+                             "order_item_id": "line-s", "tax_rate": 10.0 }]);
+        let services = json!([{ "id": "svc-cut", "tax_category_key": "service.generic" },
+                              { "id": "svc-facial", "tax_category_key": "service.reduced" }]);
+        let mut inp = salon_input(items, services);
+        inp["payload"]["order_id"] = json!("ord-1");
+        inp["context"]["reads"]["sales.order.lines"] = json!([row]);
+        sale(inp)
+    }
+
+    #[test]
+    fn on_an_open_check_the_row_says_which_service_it_is_not_the_payload() {
+        // The server wrote the row when the cut was ordered. Paying it with a payload that names
+        // another service must not move its VAT to that service's: the row is the fact, the
+        // payload a proposal — the rule the frozen price already follows (sales#175).
+        let out = pay_row_claiming_a_cheaper_service(check_row("svc-cut", 1, ""));
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("line");
+        assert_eq!(line.params["tax_category_key"], json!("service.generic"));
+        assert_eq!(line.params["tax_rate"], json!(21.0));
+    }
+
+    #[test]
+    fn on_an_open_check_a_product_row_cannot_be_relabelled_as_a_service() {
+        // A row that is NOT a service keeps the category it froze: a payload flagging it
+        // `is_service` and naming a cheaper-taxed service does not get that service's VAT.
+        let out = pay_row_claiming_a_cheaper_service(check_row("p-1", 0, "service.generic"));
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("line");
+        assert_eq!(line.params["tax_category_key"], json!("service.generic"));
+        assert_eq!(line.params["tax_rate"], json!(21.0));
     }
 
     #[test]

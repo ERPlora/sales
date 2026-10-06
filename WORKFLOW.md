@@ -326,10 +326,12 @@ impide la pantalla está como hueco en su flujo.
   por bono» son los que se mandan: F09, F15, F26, F27.)
 - **El IVA de un servicio lo decide Servicios**: una línea que nombra un servicio toma su categoría
   fiscal del catálogo de Servicios (también de un servicio archivado), por encima de la que mande el
-  cobro o la que quedó congelada en la cuenta; un servicio que no existe, sin categoría o sin el
-  catálogo de Servicios se rechaza. Un bono se vende como línea de servicio con el id del bono y
-  conserva el IVA que manda el cobro. Una línea que no nombra artículo, servicio ni departamento
-  tiene que traer su tipo de IVA o se rechaza: ninguna sale al 0 % porque nadie la clasificó.
+  cobro o la que quedó congelada en la cuenta; en una cuenta abierta, qué servicio es (y si la línea
+  es un servicio) lo dice la fila de la cuenta, no el cobro; un servicio que no existe, sin categoría
+  o sin el catálogo de Servicios se rechaza. Un bono se vende como línea de servicio con el id del
+  bono y conserva el IVA que manda el cobro. Una línea que no nombra artículo, servicio ni
+  departamento tiene que traer su tipo de IVA o se rechaza: ninguna sale al 0 % porque nadie la
+  clasificó.
 - **Los pagos suman el total al céntimo**; el cambio sale del efectivo; un efectivo corto se rechaza.
 - **Nada en efectivo desde 1.000 € en un negocio de España** dentro de la misma venta, aunque lo
   autorice un responsable (repartiendo la cuenta en varios cobros se salta: F03).

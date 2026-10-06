@@ -183,7 +183,8 @@ A **service line** follows the same rule for its VAT (sales#519): the line names
 the tax category comes from the services catalogue — archived services included, so an appointment
 booked before a service was archived still charges with its VAT. A service the catalogue does not
 know, a service with no tax category, or a till without the services catalogue is **refused**,
-never charged at 0 %. A voucher is sold as a service line naming the voucher, and keeps the VAT the
+never charged at 0 %. On an open check it is the row that says whether a line is a service and
+which one, not the request that pays it. A voucher is sold as a service line naming the voucher, and keeps the VAT the
 sale declares. The service's **price** stays the one sent: an appointment is charged at the price
 agreed when it was booked.
 
