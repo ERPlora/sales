@@ -3579,28 +3579,57 @@ fn complete_sale_inner(input: Value, rule: CapRule) -> Result<Output, Refusal> {
 /// (el fallo de TouchBistro que nombra ADR-0381).
 ///
 /// `Ok(None)` = la línea no es un combo, que es el 100 % de las líneas de casi todas las cuentas.
-fn order_combo_snapshot(item: &Value) -> Result<Option<String>, Refusal> {
+///
+/// sales#522 — and WHERE each dish comes from (`source`/`source_ref`) plus the menu's own names,
+/// all read off `combos.options.all`, never the browser: `sales.order.fire` expands the menu into
+/// one kitchen row per dish, routed by the dish's product, and a till that claimed another product
+/// would send it to another station. The dish's name follows sales#288: the product catalogue's if
+/// it has one, the till's text otherwise.
+fn order_combo_snapshot(
+    item: &Value,
+    combo_catalog: Option<&Vec<&Value>>,
+    product_catalog: Option<&Vec<&Value>>,
+) -> Result<Option<String>, Refusal> {
     let combo_id = field(item, "combo_id");
     if combo_id.is_empty() {
         return Ok(None);
     }
+    let options: Vec<&Value> = combo_catalog
+        .map(|rows| rows.iter().copied().filter(|r| field(r, "combo_id") == combo_id).collect())
+        .unwrap_or_default();
     let empty: Vec<Value> = Vec::new();
     let picks = item.get("combo_choices").and_then(|v| v.as_array()).unwrap_or(&empty);
     let choices: Vec<Value> = picks
         .iter()
         .filter(|p| !field(p, "option_id").is_empty())
         .map(|p| {
+            let option_id = field(p, "option_id");
+            let option = options.iter().find(|r| field(r, "option_id") == option_id);
+            let source = option.map(|r| field(r, "source")).unwrap_or_default();
+            let source_ref = option.map(|r| field(r, "source_ref")).unwrap_or_default();
+            let payload_name = str_or(p, "product_name", "");
+            let product = (source == "product")
+                .then(|| product_catalog?.iter().find(|r| field(r, "id") == source_ref))
+                .flatten();
             json!({
-                "option_id": field(p, "option_id"),
-                "product_name": str_or(p, "product_name", ""),
+                "option_id": option_id,
+                "product_name": product.map_or_else(|| payload_name.clone(), |row| str_or(row, "name", &payload_name)),
                 "category_id": category_snapshot(p),
+                "source": source,
+                "source_ref": source_ref,
             })
         })
         .collect();
+    let head = options.first();
     // Un menú SIN elegir no se rechaza aquí: la cuenta abierta es mutable y la puerta que decide es
     // el cobro, que ya lo rechaza con `sales.combo_group_unresolved`. Duplicar la regla aquí sería
     // una segunda cerradura que mantener, con su propio riesgo de decir algo distinto.
-    serde_json::to_string(&json!({ "combo_id": combo_id, "combo_choices": choices }))
+    serde_json::to_string(&json!({
+        "combo_id": combo_id,
+        "name": head.map(|r| field(r, "combo_name")).unwrap_or_default(),
+        "kitchen_name": head.map(|r| field(r, "combo_kitchen_name")).unwrap_or_default(),
+        "combo_choices": choices,
+    }))
         .map(Some)
         .map_err(|e| broken(format!("order_combo_snapshot_encode: {e}")))
 }
@@ -3858,7 +3887,7 @@ fn order_line_row(
     // the "no onion" burger that opened the table lost them when it was resumed.
     p.insert("modifiers".into(), json!(modifier_snapshot));
     // sales#169: and the composition of the SET MENU, for the same reason and with the same rule.
-    match order_combo_snapshot(item)? {
+    match order_combo_snapshot(item, combo_catalog, product_catalog)? {
         Some(text) => {
             p.insert("combo".into(), json!(text));
             // 🔴 What marks the row as a combo is MINTED BY THE SERVER, just like the price
@@ -4293,18 +4322,37 @@ fn split_clone_row(
 /// agujero de dinero y la venta se rechaza. Aquí lo que está en juego es que la comida SALGA:
 /// negarse a imprimir porque falta un catálogo dejaría la cocina parada por una integración
 /// accesoria. Sin catálogo se manda lo que se sabe —el id—, que es mejor que un silencio.
-fn name_modifiers_for_kitchen(items: &[Value], catalog: Option<&Vec<&Value>>) -> Vec<Value> {
+///
+/// sales#522 / MODIFIERS-F08 — with `from_rows`, the items come from the open check's rows, which
+/// froze the name at the moment of ordering (sales#200): that name is the one printed, so renaming
+/// or deleting the option before the round is fired no longer reprints it. The catalogue only
+/// names a row written before the freeze. Items that came in the PAYLOAD (an old runtime) are never
+/// trusted for their names: the browser does not write on the kitchen ticket.
+fn name_modifiers_for_kitchen(
+    items: &[Value],
+    catalog: Option<&Vec<&Value>>,
+    from_rows: bool,
+) -> Vec<Value> {
     items
         .iter()
         .map(|item| {
-            let picks = match item.get("modifiers").and_then(|v| v.as_array()) {
-                Some(a) if !a.is_empty() => a,
+            let picks = match item.get("modifiers") {
+                Some(Value::Array(a)) if !a.is_empty() => a,
+                // A snapshot that could not be read back travels verbatim (`stored_modifiers`).
+                Some(text @ Value::String(_)) => return with_kitchen_modifiers(item, text.clone()),
                 _ => return item.clone(),
             };
             let named: Vec<Value> = picks
                 .iter()
                 .map(|pick| {
                     let id = field(pick, "option_id");
+                    if let Some(frozen) = from_rows.then(|| frozen_modifier(pick)).flatten() {
+                        return json!({
+                            "option_id": id,
+                            "name": frozen["name"].clone(),
+                            "kitchen_name": frozen["kitchen_name"].clone(),
+                        });
+                    }
                     let row = catalog.and_then(|rows| rows.iter().find(|r| field(r, "option_id") == id));
                     let Some(row) = row else {
                         // Sin catálogo o id desconocido: el id viaja igual. La comanda sale.
@@ -4320,13 +4368,27 @@ fn name_modifiers_for_kitchen(items: &[Value], catalog: Option<&Vec<&Value>>) ->
                     json!({ "option_id": id, "name": name, "kitchen_name": kitchen })
                 })
                 .collect();
-            let mut out = item.clone();
-            if let Some(obj) = out.as_object_mut() {
-                obj.insert("modifiers".into(), Value::Array(named));
-            }
-            out
+            with_kitchen_modifiers(item, Value::Array(named))
         })
         .collect()
+}
+
+/// The item as the kitchen receives it, with the supplements it prints.
+///
+/// sales#522 — `kitchen` prints the supplements of each expanded DISH and never reads the menu
+/// line's once it carries `combo_components`. So a supplement on the menu line itself goes on every
+/// dish, exactly like the menu's note: before the menu was expanded the one line «Menú del día»
+/// carried it, and a supplement the check charges cannot vanish from the ticket.
+fn with_kitchen_modifiers(item: &Value, modifiers: Value) -> Value {
+    let mut out = item.clone();
+    let Some(obj) = out.as_object_mut() else { return out };
+    if let Some(dishes) = obj.get_mut("combo_components").and_then(Value::as_array_mut) {
+        for dish in dishes.iter_mut().filter_map(Value::as_object_mut) {
+            dish.insert("modifiers".into(), modifiers.clone());
+        }
+    }
+    obj.insert("modifiers".into(), modifiers);
+    out
 }
 
 /// kitchen#54 — **las líneas que se cocinan las pone el SERVIDOR, no el navegador.**
@@ -4358,7 +4420,7 @@ fn kitchen_items_from_lines(rows: &[&Value], round_no: i64) -> Vec<Value> {
                 as_bool(l.get("is_gift").unwrap_or(&Value::Null)),
                 &field(l, "gift_reason"),
             );
-            json!({
+            let mut item = json!({
                 "product_id": l.get("product_id").cloned().unwrap_or(Value::Null),
                 "product_name": field(l, "product_name"),
                 "quantity": l.get("quantity").map(|v| as_qty(v, QUANTITY_SCALE)).unwrap_or(QUANTITY_SCALE),
@@ -4370,9 +4432,63 @@ fn kitchen_items_from_lines(rows: &[&Value], round_no: i64) -> Vec<Value> {
                 // inventory al descontar stock. Aquí solo se transporta el hecho.
                 "is_service": as_bool(l.get("is_service").unwrap_or(&Value::Null)),
                 "modifiers": stored_modifiers(l),
-            })
+            });
+            add_combo_components(&mut item, l);
+            item
         })
         .collect()
+}
+
+/// sales#522 — **a set menu reaches the kitchen as the dishes the table chose.** The row's `combo`
+/// column (frozen by [`order_combo_snapshot`]) says what was picked; `kitchen` expands
+/// `combo_components` into one row per dish, routed by the dish's product (then its category) and
+/// grouped under `combo_group_ref`. Without it the pass got ONE line «Menú del día», in «No
+/// station», with no starter and no main.
+///
+/// 🔴 `kitchen` reads the key being PRESENT as «expanded», and refuses an empty list for the whole
+/// round (`kitchen.combo_without_components`). So the key is only added when there is a dish to
+/// cook: a plain line, a menu with nothing chosen yet (the checkout is the gate that refuses it,
+/// SALES-F12) and an unreadable snapshot go on as the one line they always were. A pick that comes
+/// from `services` is not food and is left out; a menu made only of services is a service line.
+///
+/// The menu line's note goes on every dish: kitchen prints each expanded dish with its own note,
+/// and «shellfish allergy» typed on the menu has to reach every station that cooks part of it.
+fn add_combo_components(item: &mut Value, line: &Value) {
+    let combo = line
+        .get("combo")
+        .and_then(Value::as_str)
+        .and_then(|s| serde_json::from_str::<Value>(s).ok())
+        .unwrap_or(Value::Null);
+    let picks = match combo.get("combo_choices").and_then(Value::as_array) {
+        Some(p) if !p.is_empty() => p,
+        _ => return,
+    };
+    let notes = item.get("notes").cloned().unwrap_or_else(|| json!(""));
+    let dishes: Vec<Value> = picks
+        .iter()
+        .filter(|p| field(p, "source") != "service")
+        .map(|p| {
+            let product = field(p, "source_ref");
+            json!({
+                "product_id": if product.is_empty() { Value::Null } else { json!(product) },
+                "product_name": field(p, "product_name"),
+                "category_id": category_snapshot(p),
+                "quantity": QUANTITY_SCALE,
+                "notes": notes,
+            })
+        })
+        .collect();
+    let Some(obj) = item.as_object_mut() else { return };
+    if dishes.is_empty() {
+        obj.insert("is_service".into(), json!(true));
+        return;
+    }
+    obj.insert("combo_group_ref".into(), line.get("combo_group_ref").cloned().unwrap_or(Value::Null));
+    // Rows frozen before sales#522 carry no menu name: the line's own name is the menu's.
+    let name = field(&combo, "name");
+    obj.insert("combo_name".into(), json!(if name.is_empty() { field(line, "product_name") } else { name }));
+    obj.insert("combo_kitchen_name".into(), json!(field(&combo, "kitchen_name")));
+    obj.insert("combo_components".into(), Value::Array(dishes));
 }
 
 /// 🔴 `sales_order_item.modifiers` es una columna **TEXT** con un JSON dentro (migración 023): la
@@ -4429,13 +4545,16 @@ fn fire_order_inner(input: Value) -> Result<Output, Refusal> {
     // kitchen#54 — las líneas salen de la READ (autoridad del servidor). Sin la read (runtime
     // viejo, integración fuera del dispatcher) no hay de dónde sacarlas: se cae al payload, que es
     // el comportamiento de siempre y lo único disponible.
-    let items = match tax::read_rows(&context, "sales.order.lines") {
-        Some(rows) => kitchen_items_from_lines(&rows, round_no),
-        None => payload
-            .get("items")
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default(),
+    let (items, from_rows) = match tax::read_rows(&context, "sales.order.lines") {
+        Some(rows) => (kitchen_items_from_lines(&rows, round_no), true),
+        None => (
+            payload
+                .get("items")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default(),
+            false,
+        ),
     };
     // Una comanda sin líneas no es una comanda: es una tarjeta en blanco en el KDS que nadie puede
     // cocinar y que nadie sabe que está mal. Aquí caen los tres casos que la producían — el pedido
@@ -4478,6 +4597,7 @@ fn fire_order_inner(input: Value) -> Result<Output, Refusal> {
         "items": name_modifiers_for_kitchen(
             &items,
             tax::read_rows(&context, "modifiers.options.all").as_ref(),
+            from_rows,
         ),
     });
     if round_no >= 1 {
@@ -10009,6 +10129,201 @@ mod tests {
         assert_eq!(ms[1]["kitchen_name"], json!("SIN CEBOLLA"));
     }
 
+    /// sales#522 — the row of a set menu as `sales.order.lines` hands it back: the `combo` column is
+    /// TEXT with the composition frozen by `order_combo_snapshot`.
+    fn menu_row(id: &str, choices: Value) -> Value {
+        let mut row = line_row(id, "Menú del día", 1_000_000, 1350);
+        row["product_id"] = json!("c-menu");
+        row["category_id"] = Value::Null;
+        row["combo_group_ref"] = json!("grp-1");
+        row["combo"] = json!(serde_json::to_string(&json!({
+            "combo_id": "c-menu", "name": "Menú del día", "kitchen_name": "MENÚ",
+            "combo_choices": choices
+        }))
+        .expect("encode"));
+        row
+    }
+
+    fn fired_items(out: &Output) -> Vec<Value> {
+        out.events[0].payload["items"].as_array().expect("items").clone()
+    }
+
+    #[test]
+    fn a_fired_set_menu_carries_the_dishes_the_table_chose_each_with_its_own_route() {
+        // sales#522: the cook used to get ONE line «Menú del día», with no starter and no main and
+        // in «No station». Kitchen expands `combo_components` into one row per dish, routed by
+        // the dish's own product (then its category) and grouped under the menu.
+        let mut row = menu_row("li-1", json!([
+            { "option_id": "o-salad", "product_name": "Ensalada", "category_id": "cat-cold",
+              "source": "product", "source_ref": "p-salad" },
+            { "option_id": "o-steak", "product_name": "Entrecot", "category_id": "cat-grill",
+              "source": "product", "source_ref": "p-steak" },
+        ]));
+        row["quantity"] = json!(2_000_000);
+        let out = fire_order_pure(fire_from_server(json!([row]), None)).accepted("fire ok");
+
+        let items = fired_items(&out);
+        assert_eq!(items.len(), 1, "the menu is still ONE order line: {items:?}");
+        let menu = &items[0];
+        assert_eq!(menu["combo_group_ref"], json!("grp-1"), "what groups the dishes on the pass");
+        assert_eq!(menu["combo_name"], json!("Menú del día"));
+        assert_eq!(menu["combo_kitchen_name"], json!("MENÚ"), "the kitchen name wins on the pass");
+        assert_eq!(menu["quantity"], json!(2_000_000), "kitchen multiplies each dish by the menus");
+        let dishes = menu["combo_components"].as_array().expect("the dishes travel");
+        assert_eq!(dishes.len(), 2, "{dishes:?}");
+        assert_eq!(dishes[0]["product_id"], json!("p-salad"), "routes by the DISH, never by the menu");
+        assert_eq!(dishes[0]["product_name"], json!("Ensalada"));
+        assert_eq!(dishes[0]["category_id"], json!("cat-cold"));
+        assert_eq!(dishes[0]["quantity"], json!(1_000_000), "one dish per menu");
+        assert_eq!(dishes[1]["product_id"], json!("p-steak"), "in the order they were chosen");
+        assert_eq!(dishes[1]["category_id"], json!("cat-grill"));
+    }
+
+    #[test]
+    fn the_note_on_a_set_menu_reaches_every_dish_it_expands_into() {
+        // Kitchen prints each expanded dish with ITS row's note, not the menu's: «shellfish
+        // allergy» typed on the menu would vanish from the ticket the moment it is expanded.
+        let mut row = menu_row("li-1", json!([
+            { "option_id": "o-salad", "product_name": "Ensalada", "source": "product", "source_ref": "p-salad" },
+            { "option_id": "o-steak", "product_name": "Entrecot", "source": "product", "source_ref": "p-steak" },
+        ]));
+        row["notes"] = json!("alergia al marisco");
+        let out = fire_order_pure(fire_from_server(json!([row]), None)).accepted("fire ok");
+
+        let dishes = fired_items(&out)[0]["combo_components"].as_array().expect("dishes").clone();
+        assert!(dishes.iter().all(|d| d["notes"] == json!("alergia al marisco")), "{dishes:?}");
+    }
+
+    #[test]
+    fn a_supplement_on_the_set_menu_line_reaches_every_dish_it_expands_into() {
+        // Kitchen prints the supplements of each expanded DISH, never the menu line's. A supplement
+        // the check charged on the menu itself (the API and the assistant can add one; the till's
+        // sheet does not) used to be printed on the one line «Menú del día», and would vanish from
+        // the ticket the moment the menu is expanded: paid for, and never cooked.
+        let two_dishes = json!([
+            { "option_id": "o-salad", "product_name": "Ensalada", "source": "product", "source_ref": "p-salad" },
+            { "option_id": "o-steak", "product_name": "Entrecot", "source": "product", "source_ref": "p-steak" },
+        ]);
+        let mut row = menu_row("li-1", two_dishes.clone());
+        row["modifiers"] = json!(
+            r#"[{"option_id":"o-side","group_id":"g","name":"Guarnición extra","kitchen_name":"EXTRA GUARN","price_delta":200,"tax_category_key":""}]"#
+        );
+        // Renamed since it was ordered: every dish reads the ORDERED name, like any other line.
+        let renamed = json!([{ "option_id": "o-side", "group_id": "g", "name": "Otra", "kitchen_name": "OTRA",
+                               "price_delta": 200, "tax_category_key": null }]);
+        let out = fire_order_pure(fire_from_server(json!([row.clone()]), Some(renamed))).accepted("fire ok");
+        let dishes = fired_items(&out)[0]["combo_components"].as_array().expect("dishes").clone();
+        assert_eq!(dishes.len(), 2, "{dishes:?}");
+        for dish in &dishes {
+            assert_eq!(dish["modifiers"][0]["kitchen_name"], json!("EXTRA GUARN"), "{dish:?}");
+            assert_eq!(dish["modifiers"][0]["name"], json!("Guarnición extra"), "{dish:?}");
+        }
+
+        // A snapshot the server cannot read back travels verbatim, as on a plain line
+        // (`stored_modifiers`): on the ticket rather than silently gone.
+        row["modifiers"] = json!("sin sal");
+        let out = fire_order_pure(fire_from_server(json!([row]), None)).accepted("fire ok");
+        let dishes = fired_items(&out)[0]["combo_components"].as_array().expect("dishes").clone();
+        assert!(dishes.iter().all(|d| d["modifiers"] == json!("sin sal")), "{dishes:?}");
+
+        // The control: a menu with no supplement puts nothing on its dishes.
+        let plain = menu_row("li-2", two_dishes);
+        let out = fire_order_pure(fire_from_server(json!([plain]), None)).accepted("fire ok");
+        let dishes = fired_items(&out)[0]["combo_components"].as_array().expect("dishes").clone();
+        assert!(dishes.iter().all(|d| d.get("modifiers").is_none()), "{dishes:?}");
+    }
+
+    #[test]
+    fn a_service_inside_a_set_menu_is_not_sent_to_cook() {
+        // A component that comes from `services` (the «coffee and a massage» pack) is not food:
+        // kitchen drops service lines, and it cannot drop a component on its own.
+        let row = menu_row("li-1", json!([
+            { "option_id": "o-salad", "product_name": "Ensalada", "source": "product", "source_ref": "p-salad" },
+            { "option_id": "o-spa", "product_name": "Masaje", "source": "service", "source_ref": "s-spa" },
+        ]));
+        let out = fire_order_pure(fire_from_server(json!([row]), None)).accepted("fire ok");
+        let dishes = fired_items(&out)[0]["combo_components"].as_array().expect("dishes").clone();
+        assert_eq!(dishes.len(), 1, "{dishes:?}");
+        assert_eq!(dishes[0]["product_name"], json!("Ensalada"));
+
+        // …and a menu made only of services is a service line: nothing reaches the pass, instead of
+        // an empty `combo_components` that kitchen refuses for the WHOLE round.
+        let only = menu_row("li-2", json!([
+            { "option_id": "o-spa", "product_name": "Masaje", "source": "service", "source_ref": "s-spa" },
+        ]));
+        let out = fire_order_pure(fire_from_server(json!([only]), None)).accepted("fire ok");
+        let item = &fired_items(&out)[0];
+        assert_eq!(item["is_service"], json!(true), "{item:?}");
+        assert!(item.get("combo_components").is_none(), "{item:?}");
+    }
+
+    #[test]
+    fn a_set_menu_row_frozen_before_its_sources_routes_its_dishes_by_category() {
+        // Rows written before sales#522 froze only the name and the category of each pick. They
+        // still expand: with no product the dish routes by its category, which is what was frozen.
+        let mut row = menu_row("li-1", json!([]));
+        row["combo"] = json!(r#"{"combo_id":"c-menu","combo_choices":[{"option_id":"o-salad","product_name":"Ensalada","category_id":"cat-cold"}]}"#);
+        let out = fire_order_pure(fire_from_server(json!([row]), None)).accepted("fire ok");
+        let menu = &fired_items(&out)[0];
+        let dishes = menu["combo_components"].as_array().expect("dishes").clone();
+        assert_eq!(dishes[0]["product_id"], Value::Null);
+        assert_eq!(dishes[0]["category_id"], json!("cat-cold"));
+        // …and with no menu name frozen, the line's own name groups the dishes on the pass.
+        assert_eq!(menu["combo_name"], json!("Menú del día"), "{menu:?}");
+    }
+
+    #[test]
+    fn a_set_menu_with_nothing_chosen_and_a_plain_line_carry_no_components_key() {
+        // 🔴 Kitchen reads `combo_components` being PRESENT as «expanded»; an empty list makes it
+        // refuse the whole round (`kitchen.combo_without_components`). So a plain line must not
+        // carry the key at all, and neither does a menu with nothing chosen yet: it keeps going as
+        // the one line it always was.
+        let empty = menu_row("li-1", json!([]));
+        let plain = line_row("li-2", "Vermut", 1_000_000, 300);
+        let out = fire_order_pure(fire_from_server(json!([empty, plain]), None)).accepted("fire ok");
+        let items = fired_items(&out);
+        assert!(items[0].get("combo_components").is_none(), "{:?}", items[0]);
+        assert_eq!(items[0]["is_service"], json!(false), "an empty menu still reaches the pass: {:?}", items[0]);
+        assert!(items[1].get("combo_components").is_none(), "{:?}", items[1]);
+        assert!(items[1].get("combo_group_ref").is_none(), "{:?}", items[1]);
+    }
+
+    #[test]
+    fn the_kitchen_reads_the_supplement_name_that_was_ORDERED_not_todays() {
+        // sales#522 / MODIFIERS-F08: the row froze the name at the moment of ordering (sales#200).
+        // Renaming the option in the catalogue before the round is fired used to reprint it with
+        // TODAY's name — or with its raw id once deleted.
+        let mut row = line_row("li-1", "Hamburguesa", 1_000_000, 900);
+        row["modifiers"] = json!(
+            r#"[{"option_id":"o-cheese","group_id":"g","name":"Queso","kitchen_name":"QUESO","price_delta":100,"tax_category_key":""}]"#
+        );
+        let renamed = json!([{ "option_id": "o-cheese", "group_id": "g", "name": "Queso vegano",
+                               "kitchen_name": "VEGANO", "price_delta": 150, "tax_category_key": null }]);
+        let out = fire_order_pure(fire_from_server(json!([row.clone()]), Some(renamed))).accepted("fire ok");
+        let m = &fired_items(&out)[0]["modifiers"][0];
+        assert_eq!(m["kitchen_name"], json!("QUESO"), "{m:?}");
+        assert_eq!(m["name"], json!("Queso"));
+
+        // Deleted from the catalogue: still the ordered name, never the bare id.
+        let out = fire_order_pure(fire_from_server(json!([row]), Some(json!([])))).accepted("fire ok");
+        assert_eq!(fired_items(&out)[0]["modifiers"][0]["kitchen_name"], json!("QUESO"));
+    }
+
+    #[test]
+    fn a_supplement_name_sent_in_the_payload_is_never_printed() {
+        // The control of the test above: only the ROW is a frozen authority. An old runtime that
+        // sends the lines in the payload cannot write its own text on the kitchen ticket, even
+        // dressed up as a frozen pick.
+        let out = fire_order_pure(fire_con_suplementos(
+            json!([{ "option_id": "o-cheese", "name": "LO QUE YO DIGA", "kitchen_name": "LO QUE YO DIGA",
+                     "price_delta": 0 }]),
+            Some(catalogo_cocina()),
+        ))
+        .accepted("fire ok");
+        let m = &out.events[0].payload["items"][0]["modifiers"][0];
+        assert_eq!(m["kitchen_name"], json!("Extra de queso"), "{m:?}");
+    }
+
     #[test]
     fn a_gifted_line_carries_its_reason_as_the_note_for_the_cook() {
         // El motivo de una invitación es información de SALA que el cocinero necesita ver, y es
@@ -10893,6 +11208,40 @@ mod tests {
         assert_eq!(combo["combo_choices"][0]["product_name"], json!("Bocadillo"));
         assert_eq!(combo["combo_choices"][1]["category_id"], json!("cat-drink"));
         assert!(!as_str(&l["combo_group_ref"]).is_empty(), "la fila dice que ES un combo");
+    }
+
+    #[test]
+    fn a_parked_set_menu_freezes_where_each_dish_comes_from_as_the_catalogue_says() {
+        // sales#522: the kitchen routes each dish by ITS product. Which product a pick is belongs to
+        // `combos` (`source`/`source_ref`), never to the browser — a till that claimed another
+        // product would send the dish to another station.
+        let mut inp = combo_order_input(
+            json!([{ "option_id": "o-sandwich", "product_name": "Bocata", "category_id": "cat-food",
+                     "source": "service", "source_ref": "p-invented" },
+                   { "option_id": "o-beer", "product_name": "Cerveza", "category_id": "cat-drink" }]),
+            3,
+        );
+        // The name the cook reads comes from the product catalogue when it has one (sales#288).
+        inp["context"]["reads"]["inventory.products.for_sale"][0]["name"] = json!("Bocadillo de jamón");
+        // Another menu listed FIRST in the catalogue: its names are not this menu's.
+        let mut other = combo_option("o-other", "g-other", 1, "p-other", 0, "goods", 900, "");
+        other["combo_id"] = json!("c-other");
+        other["combo_name"] = json!("Otro menú");
+        other["combo_kitchen_name"] = json!("OTRO");
+        let options = inp["context"]["reads"]["combos.options.all"].as_array_mut().expect("options");
+        options.insert(0, other);
+        let l = &order_lines(&orden(inp))[0];
+        let combo: Value = serde_json::from_str(l["combo"].as_str().expect("TEXT")).expect("JSON");
+        assert_eq!(combo["name"], json!("Pack merienda"), "{combo}");
+        assert_eq!(combo["kitchen_name"], json!("PACK"), "{combo}");
+        let picks = combo["combo_choices"].as_array().expect("choices");
+        assert_eq!(picks[0]["source"], json!("product"), "{combo}");
+        assert_eq!(picks[0]["source_ref"], json!("p-sandwich"), "{combo}");
+        assert_eq!(picks[0]["product_name"], json!("Bocadillo de jamón"), "{combo}");
+        assert_eq!(picks[1]["source_ref"], json!("p-beer"), "{combo}");
+        // No name in the catalogue row: the till's text stands, as for any line (sales#288).
+        assert_eq!(picks[1]["product_name"], json!("Cerveza"), "{combo}");
+        assert_eq!(picks[1]["category_id"], json!("cat-drink"), "{combo}");
     }
 
     #[test]
