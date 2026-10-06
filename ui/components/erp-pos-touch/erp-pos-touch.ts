@@ -3111,9 +3111,10 @@ export class ErpPosTouch extends LitElement {
    *  (`appointment_id`, `staff_id`) que reenvía al cobrar. No hay `depends_on`, ni JOIN, ni
    *  conocimiento del dominio de citas — un hub sin el módulo abre el TPV vacío y en paz.
    *
-   *  La cita guarda `service_price` pero NO la categoría fiscal, así que el IVA quedaría colgando.
-   *  Se resuelve contra el catálogo de servicios que el TPV ya carga para el walk-in: una sola
-   *  fuente de verdad fiscal para las dos puertas. */
+   *  The appointment stores `service_price` but NOT the tax category. The till paints it from the
+   *  services catalogue it already loads for walk-ins, and the line keeps the service id so the
+   *  server resolves the VAT from that same catalogue at checkout (sales#519): one source of fiscal
+   *  truth for both doors, even when the service is hidden from the till. */
   private async seedFromAppointment(appointmentId: string, services: Product[]): Promise<void> {
     // Served ONCE per open check. Now that the link is read on every navigation, tapping «Cobrar»
     // twice on the same booking would otherwise put the haircut on the ticket twice. The id is
@@ -3145,8 +3146,10 @@ export class ErpPosTouch extends LitElement {
     if (ap.customer_name) this.customerName = ap.customer_name;
 
     const tax_category_key = svc?.tax_category_key;
+    // sales#519 — the booked service keeps its id even when the till did not load it (services
+    // hidden from the till): the server resolves its VAT from the services catalogue by that id.
     await this.queue(() => this.addNow({
-      id: svc?.id ?? '', name, price, tax_category_key,
+      id: svc?.id ?? ap.service_id ?? '', name, price, tax_category_key,
       is_service: true, pricing_type: 'fixed', is_active: 1,
     }));
     // sales#280 — y el enlace se queda en la CUENTA. `addNow` acaba de abrir el pedido (o de
