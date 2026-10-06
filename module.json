@@ -448,6 +448,13 @@
           "required": false
         },
         {
+          "query": "services.services.list",
+          "params": {
+            "include_archived": "1"
+          },
+          "required": false
+        },
+        {
           "query": "sales.order.lines",
           "params": {
             "order_id": "payload.order_id"
@@ -501,6 +508,13 @@
           "required": false
         },
         {
+          "query": "services.services.list",
+          "params": {
+            "include_archived": "1"
+          },
+          "required": false
+        },
+        {
           "query": "sales.order.lines",
           "params": {
             "order_id": "payload.order_id"
@@ -543,6 +557,13 @@
         },
         {
           "query": "combos.options.all",
+          "required": false
+        },
+        {
+          "query": "services.services.list",
+          "params": {
+            "include_archived": "1"
+          },
           "required": false
         },
         {
@@ -1296,6 +1317,10 @@
     "sales.modifier_child_price_invalid": {},
     "sales.modifier_not_available": {},
     "sales.no_tax_rule": {},
+    "sales.service_catalog_unavailable": {},
+    "sales.service_not_available": {},
+    "sales.service_tax_category_missing": {},
+    "sales.tax_category_missing": {},
     "sales.nothing_to_fire": {},
     "sales.order_id_required": {},
     "sales.order_line_modifiers_unreadable": {},

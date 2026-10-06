@@ -469,13 +469,14 @@ struct ResolvedTax {
 ///    (runtime viejo), el handler cierra la puerta él mismo en vez de adivinar el IVA. Antes aquí
 ///    se degradaba al `tax_rate` del navegador — un catálogo vacío era indistinguible de «la read
 ///    falló» porque el runtime la omitía en silencio (hub#650). Ya no.
-/// 4. Sin categoría que resolver (línea libre de integración, sin departamento) → fallback al
-///    `tax_rate` del payload si viene; si no, 0 %. Es la ÚNICA puerta que queda abierta y se deja
-///    explícita: el TPV nunca manda una línea así (ADR-0289 — sin categoría fiscal no entra al
-///    catálogo; el precio libre lleva la del departamento).
+/// 4. No category to resolve (an integration line naming no product and no service, with no
+///    department) → the payload's `tax_rate` if it declares one; if it declares none, it is
+///    **refused** (`sales.tax_category_missing`, sales#519) — it used to go out at 0 %. It is the
+///    ONLY door left open and it stays explicit: the till never sends such a line (ADR-0289 — no
+///    tax category, no catalogue entry; an open price carries its department's).
 ///
-/// `catalog_cat` es la categoría que dice el CATÁLOGO cuando la línea es de catálogo (sales#68):
-/// manda sobre la del payload.
+/// `catalog_cat` is the category the CATALOGUE gives a catalogue line (sales#68) — products from
+/// `inventory`, services from `services` (sales#519): it wins over the payload's.
 fn resolve_line_tax(
     item: &Value,
     catalog_cat: Option<&str>,
@@ -515,8 +516,18 @@ fn resolve_line_tax(
         // la read es `required`, así que vacío significa «este hub no tiene reglas» (sales#21).
         return Err(reject("sales.no_tax_rule", format!("no tax rule for category `{cat}`")));
     }
-    // Sin categoría que resolver: preview del cliente. La única puerta que queda (ver doc).
-    let pct = item.get("tax_rate").map(|v| as_f64(v, 0.0)).unwrap_or(0.0);
+    // No category to resolve: the caller's declared rate. The only door left (see doc) — and only
+    // when the caller DOES declare one: a line nobody classified is refused, not charged at 0 %
+    // in silence (sales#519).
+    let pct = match item.get("tax_rate") {
+        Some(v) if !v.is_null() => as_f64(v, 0.0),
+        _ => {
+            return Err(reject(
+                "sales.tax_category_missing",
+                "the line has no tax category and declares no rate; refusing to charge it at 0 %",
+            ))
+        }
+    };
     Ok(ResolvedTax { rule_id: String::new(), category_key: cat, components: vec![TaxComponent { rate_pct: pct, rate_key: rate_key(pct), kind: "tax".to_string(), label: String::new() }] })
 }
 
@@ -738,9 +749,9 @@ fn calc_line_components(
 //   * línea SIN `product_id` → venta por departamento / precio libre. No dice ser de catálogo, así
 //     que el catálogo no tiene nada que decir de ella. Es la única puerta que queda abierta y es
 //     su propia issue (sales#63): cerrarla pide un permiso que el handler hoy no recibe.
-//   * línea con `is_service` → `sales` no puede leer `services.*` (no está en su `depends_on`), así
-//     que no hay catálogo contra el que contrastarla. Rechazarla dejaría a la peluquería sin
-//     cobrar. Fuera de alcance, dicho en voz alta.
+//   * line with `is_service` → it is not an `inventory` product, so this catalogue says nothing
+//     about it. Its VAT is resolved against the SERVICES catalogue instead (`service_category`,
+//     sales#519); its price stays the one sent — an appointment's agreed price (SALES-F26).
 //
 // Y **sin catálogo no se cierra una venta de catálogo**. La degradación graceful que vale para el
 // método de pago —«cobrar es lo último que puede romperse»— aquí ES el agujero: sería aceptar el
@@ -778,6 +789,49 @@ fn catalog_row<'a>(
         .find(|r| field(r, "id") == id)
         .map(Some)
         .ok_or_else(|| reject("sales.product_not_available", &id))
+}
+
+/// sales#519 — the tax category of a line that NAMES A SERVICE, read off the services catalogue
+/// the runtime pre-loads (`services.services.list`, archived services included). `Ok(None)` when
+/// the line names no service: a product, a set menu, or a service line with no id (the
+/// integration door of [`resolve_line_tax`], case 4).
+///
+/// A service's PRICE is not taken from here on purpose: an appointment is charged at the price
+/// agreed when it was booked (SALES-F26). Only the VAT is the catalogue's.
+///
+/// On an open check the line may only name its row (`order_item_id`): the row says whether it is
+/// a service and which one. The row's own category is NOT trusted for a service — it was frozen
+/// from whatever the till sent, and that was empty for an appointment off the loaded catalogue.
+///
+/// 🔴 Fails CLOSED, like the product catalogue: no catalogue, an unknown id or a service that does
+/// not know how it taxes is a refusal, never a guess at 0 %.
+fn service_category(
+    item: &Value,
+    frozen: Option<&Value>,
+    services: Option<&Vec<&Value>>,
+) -> Result<Option<String>, Refusal> {
+    let is_service = item.get("is_service").map(as_bool).unwrap_or(false)
+        || frozen.and_then(|r| r.get("is_service")).map(as_bool).unwrap_or(false);
+    let mut id = field(item, "product_id");
+    if id.is_empty() {
+        id = frozen.map(|r| field(r, "product_id")).unwrap_or_default();
+    }
+    if !is_service || id.is_empty() {
+        return Ok(None);
+    }
+    let rows = services.ok_or_else(|| {
+        reject("sales.service_catalog_unavailable", "the services catalogue was not available to tax this sale")
+    })?;
+    let row = rows
+        .iter()
+        .copied()
+        .find(|r| field(r, "id") == id)
+        .ok_or_else(|| reject("sales.service_not_available", &id))?;
+    let category = field(row, "tax_category_key");
+    if category.trim().is_empty() {
+        return Err(reject("sales.service_tax_category_missing", &id));
+    }
+    Ok(Some(category))
 }
 
 /// Precio, coste y categoría fiscal AUTORITATIVOS de una línea de catálogo.
@@ -1575,6 +1629,7 @@ fn expand_lines<'a>(
     product_catalog: Option<&Vec<&Value>>,
     modifier_catalog: Option<&Vec<&Value>>,
     order_lines: Option<&'a Vec<&'a Value>>,
+    service_catalog: Option<&Vec<&Value>>,
 ) -> Result<Vec<ExpandedLine>, Refusal> {
     let mut out: Vec<ExpandedLine> = Vec::with_capacity(items.len());
     for (item, combo) in expand_combos(items, sale_id, combo_catalog, product_catalog, order_lines)? {
@@ -1587,7 +1642,10 @@ fn expand_lines<'a>(
         // so it has to be resolved BEFORE the supplements.
         let line_category = match &combo {
             Some(c) => Some(c.tax_category_key.clone()),
-            None => line_price(&item, frozen, product_catalog)?.map(|(_, _, cat)| cat),
+            None => match service_category(&item, frozen, service_catalog)? {
+                Some(cat) => Some(cat),
+                None => line_price(&item, frozen, product_catalog)?.map(|(_, _, cat)| cat),
+            },
         };
         let (folded, promoted) =
             split_modifiers(&item, frozen, modifier_catalog, line_category.as_deref())?;
@@ -2361,6 +2419,10 @@ fn value_checkout(
     // delivered parameterised by `payload.order_id`, so a counter sale gets nothing here — and
     // there the catalogue still rules, which is right: there is no earlier "when it was ordered".
     let order_lines = tax::read_rows(context, "sales.order.lines");
+    // sales#519 — the services catalogue, the authority for the VAT of a line that names a
+    // service. OPTIONAL like the supplements' (`services` is not in `depends_on`, ADR-0127): `None`
+    // = not installed or not delivered, and then a line naming a service is refused.
+    let service_catalog = tax::read_rows(context, "services.services.list");
 
     // 🔴 EL COMBO SE ARMA UNA SOLA VEZ, aquí, y de esto beben las DOS rutas: las filas que se
     // persisten y el evento `sale.completed` del que salen la factura y el registro de la AEAT. Si
@@ -2368,7 +2430,7 @@ fn value_checkout(
     // 🔴 Y con ellas SALE LA HIJA de todo suplemento que tribute distinto (sales#147): también una
     // sola vez, también del lado del servidor, por la MISMA puerta. Una segunda ruta del dinero es
     // una segunda ruta que mantener y auditar.
-    let lines_in = expand_lines(items, sale_id, combo_catalog.as_ref(), product_catalog.as_ref(), modifier_catalog.as_ref(), order_lines.as_ref())?;
+    let lines_in = expand_lines(items, sale_id, combo_catalog.as_ref(), product_catalog.as_ref(), modifier_catalog.as_ref(), order_lines.as_ref(), service_catalog.as_ref())?;
     // La tanda de ids del host es finita (256, ARQUITECTURA.md §5.3) y un combo —o un suplemento
     // con tipo fiscal propio— MULTIPLICA líneas. Sin este guard la línea 256 saldría con id vacío,
     // y el fallo aparecería como una colisión de clave primaria en la BD, lejos de su causa.
@@ -2442,9 +2504,17 @@ fn value_checkout(
         // Resolved BEFORE the supplements because it is what an option's own category is checked
         // against (sales#147): a supplement that taxes differently cannot be folded into this
         // line's price without inheriting its rate.
+        // sales#519: a line that names a service is taxed by the SERVICES catalogue, which wins
+        // over the payload and over the open check's frozen row (empty for an appointment's).
+        let service_cat = match combo {
+            Some(_) => None,
+            None => service_category(item, frozen, service_catalog.as_ref())?,
+        };
         let catalog_cat = match combo {
             Some(c) => Some(c.tax_category_key.as_str()),
-            None => from_catalog.as_ref().map(|(_, _, cat)| cat.as_str()),
+            None => service_cat
+                .as_deref()
+                .or_else(|| from_catalog.as_ref().map(|(_, _, cat)| cat.as_str())),
         };
         // sales#147: la promoción a línea hija ya la decidió `expand_lines`. En una línea normal
         // aquí solo quedan los suplementos que SÍ se pliegan en su precio unitario; en una hija no
@@ -7754,15 +7824,156 @@ mod tests {
 
     #[test]
     fn a_service_line_is_not_measured_against_the_product_catalogue() {
-        // `sales` no puede leer `services.*` (no está en su `depends_on`), así que una línea de
-        // servicio no tiene catálogo contra el que contrastarse. Rechazarla dejaría a la peluquería
-        // sin poder cobrar. Queda fuera del alcance de esta issue, dicho a propósito.
+        // A service is not an `inventory` product: its id is looked up in the SERVICES catalogue
+        // (sales#519), never in the product one, so it is not refused as `product_not_available`.
+        // Its price stays the one the till sends — the appointment's agreed price (SALES-F26).
         let items = json!([{ "product_id": "svc-1", "product_name": "Tinte", "price": 4500,
                              "quantity": 1_000_000, "tax_rate": 21.0, "is_service": true }]);
-        let out = complete_sale_pure(input_with_products(items, 4, product_catalog()))
+        let mut inp = input_fiscal(items, product_catalog(), service_tax_catalog());
+        inp["context"]["reads"]["services.services.list"] =
+            json!([{ "id": "svc-1", "tax_category_key": "service.generic" }]);
+        let out = complete_sale_pure(inp)
             .accepted("un servicio se cobra aunque no esté en el catálogo de productos");
         let line = out.operations.iter().find(|o| o.command == "sales._insert_line").unwrap();
         assert_eq!(line.params["unit_price"], json!(4500));
+    }
+
+    // ── sales#519 · the VAT of a SERVICE comes from the services catalogue ────────────────────
+    //
+    // «Cobrar» on an appointment builds the line from the booking. When the service was not among
+    // the ones the till loaded («Show services on the till» off), the line arrived with the
+    // service's id, NO tax category and a 0 % preview rate — and the server charged and declared it
+    // at 0 %. A line that names a service is now resolved against `services.services.list` (the
+    // runtime pre-loads it, archived services included), the same way a product line is resolved
+    // against `inventory.products.for_sale` since sales#68.
+
+    /// The fiscal catalogue of a salon: services at 21 %, and a cheaper rate the payload could try.
+    fn service_tax_catalog() -> Value {
+        json!([{ "id": "r-svc-21", "country_code": "ES", "region_code": null,
+                 "tax_category_key": "service.generic", "rate_pct": 21.0, "tax_type": "vat" },
+               { "id": "r-svc-10", "country_code": "ES", "region_code": null,
+                 "tax_category_key": "service.reduced", "rate_pct": 10.0, "tax_type": "vat" }])
+    }
+
+    /// `services.services.list` as the runtime pre-loads it: the cut, and an old service created
+    /// before the tax category was mandatory (services#44 marks it `unconfigured`).
+    fn services_catalog() -> Value {
+        json!([{ "id": "svc-cut", "tax_category_key": "service.generic" },
+               { "id": "svc-old", "tax_category_key": "" }])
+    }
+
+    /// The line `seedFromAppointment` sends for a service off the loaded catalogue.
+    fn appointment_line(service_id: &str) -> Value {
+        json!({ "product_id": service_id, "product_name": "Corte de señora", "price": 2500,
+                "quantity": 1_000_000, "is_service": true, "tax_rate": 0 })
+    }
+
+    fn salon_input(items: Value, services: Value) -> Value {
+        let mut inp = input_fiscal(items, Value::Null, service_tax_catalog());
+        if !services.is_null() {
+            inp["context"]["reads"]["services.services.list"] = services;
+        }
+        inp
+    }
+
+    #[test]
+    fn an_appointment_service_is_charged_with_the_vat_of_its_catalogue_entry() {
+        let out = sale(salon_input(json!([appointment_line("svc-cut")]), services_catalog()));
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("line");
+        assert_eq!(line.params["tax_rate"], json!(21.0), "the service went out at the payload's 0 %");
+        assert_eq!(line.params["tax_category_key"], json!("service.generic"));
+        assert_eq!(line.params["tax_rule_id"], json!("r-svc-21"));
+        let header = out.operations.iter().find(|o| o.command == "sales._insert_sale").expect("sale");
+        assert_eq!(header.params["total"], json!(2500), "the agreed price is still what is charged");
+        assert_eq!(header.params["tax_amount"], json!(434), "21 % VAT included in 25,00 €");
+        assert_eq!(out.events[0].payload["items"][0]["tax_category_key"], json!("service.generic"),
+                   "invoice and VeriFactu read the category off the event");
+    }
+
+    #[test]
+    fn the_services_catalogue_wins_over_the_category_the_payload_claims() {
+        let mut item = appointment_line("svc-cut");
+        item["tax_category_key"] = json!("service.reduced");
+        item["tax_rate"] = json!(10.0);
+        let out = sale(salon_input(json!([item]), services_catalog()));
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("line");
+        assert_eq!(line.params["tax_category_key"], json!("service.generic"));
+        assert_eq!(line.params["tax_rate"], json!(21.0));
+    }
+
+    #[test]
+    fn on_an_open_check_the_services_catalogue_wins_over_the_rows_empty_category() {
+        // How «Cobrar» really charges: the appointment opens a check, and the row was frozen with
+        // no category. The till pays it naming the row; the row says it is a service.
+        let row = json!({ "id": "line-s", "order_id": "ord-1", "product_id": "svc-cut",
+                          "product_name": "Corte de señora", "quantity": 1_000_000,
+                          "unit_price": 2500, "cost": 0, "tax_category_key": "", "is_gift": 0,
+                          "is_service": 1, "line_total": 2500, "discount_percent": 0,
+                          "modifiers": "[]", "combo": "{}", "combo_group_ref": null });
+        let items = json!([{ "product_name": "Corte de señora", "price": 2500,
+                             "quantity": 1_000_000, "order_item_id": "line-s", "tax_rate": 0 }]);
+        let mut inp = salon_input(items, services_catalog());
+        inp["payload"]["order_id"] = json!("ord-1");
+        inp["context"]["reads"]["sales.order.lines"] = json!([row]);
+        let out = sale(inp);
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("line");
+        assert_eq!(line.params["tax_category_key"], json!("service.generic"));
+        assert_eq!(line.params["tax_rate"], json!(21.0));
+        assert_eq!(line.params["unit_price"], json!(2500), "the frozen price is still the one charged");
+    }
+
+    #[test]
+    fn the_preview_shows_the_vat_of_the_service() {
+        let previewed = preview_agrees_with_the_sale(
+            salon_input(json!([appointment_line("svc-cut")]), services_catalog()),
+        );
+        assert_eq!(previewed["tax_total"], json!(434));
+    }
+
+    #[test]
+    fn a_service_line_without_the_services_catalogue_is_refused() {
+        let err = complete_sale_pure(salon_input(json!([appointment_line("svc-cut")]), Value::Null))
+            .refused("without the catalogue the service's VAT would be a guess");
+        assert_eq!(err.code, "sales.service_catalog_unavailable", "{err:?}");
+    }
+
+    #[test]
+    fn a_service_the_catalogue_does_not_know_is_refused() {
+        let err = complete_sale_pure(salon_input(json!([appointment_line("svc-other-hub")]), services_catalog()))
+            .refused("an unknown service is never charged at 0 %");
+        assert_eq!(err.code, "sales.service_not_available", "{err:?}");
+    }
+
+    #[test]
+    fn a_service_with_no_tax_category_is_refused() {
+        let err = complete_sale_pure(salon_input(json!([appointment_line("svc-old")]), services_catalog()))
+            .refused("a service that does not know how it taxes cannot be charged");
+        assert_eq!(err.code, "sales.service_tax_category_missing", "{err:?}");
+    }
+
+    #[test]
+    fn a_line_with_no_tax_category_and_no_declared_rate_is_refused() {
+        // Neither a catalogue nor the caller says how it taxes: it used to go out at 0 % in silence.
+        let items = json!([{ "product_name": "Sin IVA", "price": 2500, "quantity": 1_000_000 }]);
+        let err = complete_sale_pure(salon_input(items, services_catalog()))
+            .refused("a line nobody classified is not charged at 0 %");
+        assert_eq!(err.code, "sales.tax_category_missing", "{err:?}");
+        let preview = preview_checkout_pure(as_preview_input(salon_input(
+            json!([{ "product_name": "Sin IVA", "price": 2500, "quantity": 1_000_000 }]),
+            services_catalog(),
+        )));
+        assert_eq!(preview.refused("the preview refuses it too").code, "sales.tax_category_missing");
+    }
+
+    #[test]
+    fn a_service_line_with_no_id_keeps_the_declared_rate_door() {
+        // The integration door (ADR-0085 case 4) stays as it was: a line naming no service and
+        // declaring its rate is what other modules' batteries charge with (`staff`, `sales`).
+        let items = json!([{ "product_name": "Servicio", "price": 2000, "quantity": 1_000_000,
+                             "tax_rate": 21.0, "is_service": true }]);
+        let out = sale(salon_input(items, Value::Null));
+        let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("line");
+        assert_eq!(line.params["tax_rate"], json!(21.0));
     }
 
     fn one_line() -> Value {
@@ -12422,6 +12633,15 @@ mod tests {
             input_fiscal(items, Value::Null, rules())
         }
 
+        /// The salon of sales#30: `services` + `taxes`, no stock app. `services` being installed
+        /// means the runtime delivers its catalogue, which taxes the service lines (sales#519).
+        fn salon_without_stock(items: Value) -> Value {
+            let mut inp = without_catalogue(items);
+            inp["context"]["reads"]["services.services.list"] =
+                json!([{ "id": "s-cut", "tax_category_key": "service.generic" }]);
+            inp
+        }
+
         /// The same hub WITH the catalogue app.
         fn with_catalogue(items: Value) -> Value {
             input_fiscal(items, product_catalog(), rules())
@@ -12492,7 +12712,7 @@ mod tests {
         #[test]
         fn a_service_is_charged_with_no_product_catalogue_at_all() {
             // The salon that made sales#30 exist: `services` + `taxes`, no stock app anywhere.
-            let out = complete_sale_pure(without_catalogue(service_line()))
+            let out = complete_sale_pure(salon_without_stock(service_line()))
                 .accepted("a salon must be able to charge a haircut");
             let line = out.operations.iter().find(|o| o.command == "sales._insert_line").unwrap();
             assert_eq!(line.params["unit_price"], json!(2000));
@@ -12503,7 +12723,7 @@ mod tests {
         fn a_service_and_a_free_line_ride_the_same_ticket_through_the_same_fiscal_door() {
             let mut items = service_line().as_array().cloned().unwrap();
             items.extend(open_price_line().as_array().cloned().unwrap());
-            let out = complete_sale_pure(without_catalogue(Value::Array(items)))
+            let out = complete_sale_pure(salon_without_stock(Value::Array(items)))
                 .accepted("mixing the two things a hub without a catalogue sells");
             assert_eq!(sale_lines(&out).len(), 2, "both lines are persisted");
             let header = out.operations.iter().find(|o| o.command == "sales._insert_sale").unwrap();
@@ -12516,7 +12736,7 @@ mod tests {
             // ADR-0132: the customer's fiscal identity travels in `sale.completed` so `invoice`
             // can issue with NIF. It rides the payload, not a read, so it does not depend on the
             // catalogue app either — which is what a salon invoicing a company needs.
-            let mut inp = without_catalogue(service_line());
+            let mut inp = salon_without_stock(service_line());
             inp["payload"]["customer_id"] = json!("cus-1");
             inp["payload"]["customer_name"] = json!("Ana García");
             inp["payload"]["customer_tax_id"] = json!("12345678Z");

@@ -63,6 +63,12 @@ const MESSAGES: Record<string, string> = {
   // sales#21 — no tax rule / no tax catalogue: the sale is refused, never priced by the browser.
   'sales.no_tax_rule': 'ui.errorNoTaxRule',
   'sales.tax_catalog_unavailable': 'ui.errorTaxCatalogUnavailable',
+  // sales#519 — the VAT of a service comes from the services catalogue and a line nobody
+  // classified is refused instead of going out at 0 %. Each one is fixed somewhere different.
+  'sales.service_catalog_unavailable': 'ui.errorServiceCatalogUnavailable',
+  'sales.service_not_available': 'ui.errorServiceNotAvailable',
+  'sales.service_tax_category_missing': 'ui.errorServiceTaxCategoryMissing',
+  'sales.tax_category_missing': 'ui.errorTaxCategoryMissing',
   'sales.idempotency_key_required': 'ui.errorCharge',
   // sales#152 (ADR-0381) — el servidor arma el combo contra `combos.options.all` y falla CERRADO.
   // Cada uno manda al cajero a un sitio distinto, y por eso no comparten mensaje: «el menú se
