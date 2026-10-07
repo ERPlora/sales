@@ -101,6 +101,14 @@ import { MediaPhotoCache } from '../../lib/media-photo-cache.js';
 import esLocale from '../../../locales/es.json';
 import enLocale from '../../../locales/en.json';
 const CATALOG: Record<string, unknown> = { es: esLocale, en: enLocale };
+/** sales#521 — the usual reasons to void a sent plate (Toast/Square/TouchBistro ship a short
+ *  list like this one), as chips over the free text: `[testid suffix, i18n key]`. */
+const VOID_REASONS: readonly (readonly [string, string])[] = [
+  ['mistake', 'ui.voidReasonMistake'],
+  ['changed', 'ui.voidReasonChanged'],
+  ['soldout', 'ui.voidReasonSoldOut'],
+  ['duplicate', 'ui.voidReasonDuplicate'],
+];
 
 // erp-pos-touch — pantalla de venta TÁCTIL. A la izquierda conserva el catálogo del Hub con un
 // segmento horizontal de categorías y tarjetas de producto; a la derecha, la cuenta. Los módulos
@@ -840,6 +848,9 @@ export class ErpPosTouch extends LitElement {
     ion-icon.tone-medium { color: var(--ion-color-medium, #636469); }
     ion-icon.tone-warning { color: var(--ion-color-warning, #ffc409); }
     ion-icon.tone-success { color: var(--ion-color-success, #2dd55b); }
+    ion-icon.tone-danger { color: var(--ion-color-danger, #c5000f); }
+    /* sales#521 — voiding a sent plate is the destructive action of its sheet. */
+    ion-button.void-confirm { --background: var(--ion-color-danger, #c5000f); --color: var(--ion-color-danger-contrast, #fff); }
     ion-button.tone-danger[fill] { --color: var(--ion-color-danger, #c5000f); --border-color: var(--ion-color-danger, #c5000f); }
     ion-button.tone-medium[fill] { --color: var(--ion-color-medium, #636469); --border-color: var(--ion-color-medium, #636469); }
     ion-button.tone-warning[fill] { --color: var(--ion-color-warning, #ffc409); --border-color: var(--ion-color-warning, #ffc409); }
@@ -1497,6 +1508,10 @@ export class ErpPosTouch extends LitElement {
   /** What has been typed in the sheet, not applied yet: closing it without saving touches
    *  nothing. */
   @state() noteInput = '';
+  /** sales#521 — the sheet that VOIDS a line already sent to the kitchen. `lineId` is its order
+   *  row; `voidReason` is what was picked or typed, not sent yet (closing voids nothing). */
+  @state() voidSheet?: { lineId: string };
+  @state() voidReason = '';
   /** sales#206 — the notes the business preconfigured, in the order it gave them. */
   @state() quickNotes: QuickNote[] = [];
   /** Where that read stands. `idle` = never asked; it is asked the FIRST time the sheet opens and
@@ -1998,6 +2013,7 @@ export class ErpPosTouch extends LitElement {
     if (this.parkPromptOpen) { this.parkPromptOpen = false; return true; }
     if (this.discountSheet) { this.discountSheet = undefined; return true; }
     if (this.noteSheet) { this.noteSheet = undefined; return true; }
+    if (this.voidSheet) { this.voidSheet = undefined; return true; }
     if (this.openPriceOpen) { this.openPriceOpen = false; return true; }
     if (this.comboSheet) { this.comboSheet = undefined; return true; }
     if (this.modifierSheet) { this.modifierSheet = undefined; return true; }
@@ -4424,6 +4440,41 @@ export class ErpPosTouch extends LitElement {
     }
   }
 
+  // ── sales#521 · voiding a line already sent to the kitchen ──────────────────────────────────
+  //
+  // Market shape (8 references, table in the PR): Toast, Square, TouchBistro, Lightspeed K-Series,
+  // LS Central, Aloha and Clover void a SENT item with a mandatory reason — a few preset reasons
+  // plus free text — and a manager's permission. Here that permission is `sales.void_sale`, the
+  // one that voids a whole check: an employee who taps it gets the manager's PIN from the hub.
+  // A line not sent yet is not voided: its stepper removes it, as before.
+
+  /** Opens the void sheet for an order row, with no reason picked. */
+  openVoidLine(lineId: string): void {
+    this.voidReason = '';
+    this.voidSheet = { lineId };
+  }
+
+  /** Voids the line on the server and reloads the check from it, so what is left on screen is
+   *  what the order holds. A refusal (or a PIN not given) leaves the line where it was and says
+   *  why. */
+  async applyVoidLine(): Promise<void> {
+    const sheet = this.voidSheet;
+    const reason = this.voidReason.trim();
+    if (!sheet || !reason || !this.orderId) return;
+    this.voidSheet = undefined;
+    this.error = '';
+    const orderId = this.orderId;
+    await this.queue(async () => {
+      try {
+        await erplora().command('sales.order.void_line', { order_id: orderId, line_id: sheet.lineId, reason });
+      } catch (e) {
+        this.error = domainErrorText(CATALOG, erplora().locale, e) || t('ui.voidLineFailed');
+        return;
+      }
+      if (this.orderId === orderId) this.cart = await loadOrderLines(erplora(), orderId);
+    });
+  }
+
   // ── sales#71 · descuentos manuales ─────────────────────────────────────────────────────────
   openDiscount(target: 'line' | 'ticket', lineId?: string): void {
     // sales#113: si la cuenta ya lleva importe fijo, el sheet abre en € con él; si no, en %.
@@ -5889,7 +5940,13 @@ export class ErpPosTouch extends LitElement {
       <div slot="end" class="lineend">
         <span class="lt ${l.is_gift ? 'is-gift' : ''}">${this.money(lineAmount(l))}</span>
         ${locked
-          ? html`<span class="lqty">×${formatQuantity(toMicro(l.qty))}</span>`
+          ? html`${l.line_id ? html`
+            <ion-button data-testid=${`pos-line-${key}-void`} class="line-void" fill="clear" size="small"
+                        title=${t('ui.voidLine')} aria-label=${t('ui.voidLine')}
+                        @click=${() => this.openVoidLine(l.line_id!)}>
+              <ion-icon name="close-circle-outline" slot="icon-only" class="tone-danger"></ion-icon>
+            </ion-button>` : nothing}
+            <span class="lqty">×${formatQuantity(toMicro(l.qty))}</span>`
           : html`
             ${this.discountsAllowed ? html`
             <ion-button data-testid=${`pos-line-${key}-discount`} class="line-discount" fill="clear" size="small" title=${t('ui.discountLine')} aria-label=${t('ui.discountLine')}
@@ -6518,6 +6575,37 @@ export class ErpPosTouch extends LitElement {
                   @click=${() => this.applyLineNote('')}>${t('ui.lineNoteRemove')}</ion-button>
                 <ion-button data-testid="pos-note-save" class="charge note-save" expand="block"
                   @click=${() => this.applyLineNote(this.noteInput)}>${t('ui.lineNoteSave')}</ion-button>
+              </div>
+            </div>
+          </div>`
+        : nothing}
+
+      <!-- VOID A SENT LINE (sales#521): the same scrim/sheet as the note. The usual reasons are
+           chips (one tap fills the box) and the box takes any other; «Void» waits for a reason. -->
+      ${this.voidSheet
+        ? html`<div data-testid="pos-void-scrim" class="scrim" @click=${(e: Event) => { if ((e.target as HTMLElement).classList.contains('scrim')) this.voidSheet = undefined; }}>
+            <div class="sheet note-sheet void-sheet">
+              <div class="sheet-h">
+                <span class="t">${t('ui.voidLineOf', { name: this.cart.find((l) => l.line_id === this.voidSheet?.lineId)?.name ?? '' })}</span>
+                <button data-testid="pos-void-close" class="x" aria-label=${t('ui.closeAction')} @click=${() => { this.voidSheet = undefined; }}>✕</button>
+              </div>
+              <div class="sheet-top">
+                <p class="note-hint void-hint">${t('ui.voidLineHint')}</p>
+                <div class="note-chips">
+                  ${VOID_REASONS.map(([id, key]) => html`
+                    <button data-testid=${`pos-void-reason-${id}`} type="button" class="note-chip"
+                            aria-pressed=${this.voidReason.trim() === t(key) ? 'true' : 'false'}
+                            @click=${() => { this.voidReason = t(key); }}>${t(key)}</button>`)}
+                </div>
+                <textarea data-testid="pos-void-input" class="note-input" rows="2" maxlength="255"
+                          aria-label=${t('ui.voidLineReasonPlaceholder')} placeholder=${t('ui.voidLineReasonPlaceholder')}
+                          .value=${this.voidReason}
+                          @input=${(e: Event) => { this.voidReason = (e.target as HTMLTextAreaElement).value; }}></textarea>
+              </div>
+              <div class="sheet-foot discount-foot">
+                <ion-button data-testid="pos-void-confirm" class="charge void-confirm" expand="block"
+                  ?disabled=${!this.voidReason.trim()}
+                  @click=${() => void this.applyVoidLine()}>${t('ui.voidLineConfirm')}</ion-button>
               </div>
             </div>
           </div>`

@@ -146,7 +146,9 @@
     "sales.too_many_lines": "The ticket has too many lines to be charged in one go. Split it into two.",
     "sales.too_many_rows": "The sale needs more rows than the server can write in one go. Split it into two.",
     "sales.void_reason_required": "A reason is required to void a sale.",
-    "sales.void_requires_credit_note": "This sale carries a full invoice: issue a credit note instead of voiding it."
+    "sales.void_requires_credit_note": "This sale carries a full invoice: issue a credit note instead of voiding it.",
+    "sales.order_line_not_removable": "That line can no longer be removed: it was already sent to the kitchen (void it with a reason) or it is no longer on the check.",
+    "sales.order_line_not_voidable": "That line cannot be voided: it is not on an open check as a sent, unpaid line, or the reason is missing. Load the check again."
   },
   "ui": {
     "sales": "Sales",
@@ -616,7 +618,17 @@
     "deleteCheckFailed": "That open check could not be deleted. It is still in the list.",
     "discardCheckFailed": "The check could not be deleted. It is still open, on screen.",
     "parkCheckFailed": "The check could not be parked. It is still on screen.",
-    "leaveOnTableFailed": "The check could not be left at its table. It is still on screen."
+    "leaveOnTableFailed": "The check could not be left at its table. It is still on screen.",
+    "voidLine": "Void this item",
+    "voidLineOf": "Void «{name}»",
+    "voidLineHint": "It was already sent to the kitchen. It comes off the check and the reason is kept. A manager has to approve it.",
+    "voidLineReasonPlaceholder": "Or write the reason…",
+    "voidLineConfirm": "Void item",
+    "voidLineFailed": "The item could not be voided. It is still on the check.",
+    "voidReasonMistake": "Ordered by mistake",
+    "voidReasonChanged": "Customer changed their mind",
+    "voidReasonSoldOut": "Sold out",
+    "voidReasonDuplicate": "Entered twice"
   },
   "commands": {
     "sales.complete_sale": {
@@ -657,6 +669,9 @@
     },
     "sales.order.void": {
       "label": "Cancel an open ticket"
+    },
+    "sales.order.void_line": {
+      "label": "Void an item already sent to the kitchen"
     },
     "sales.quick_notes.create": {
       "label": "Add a quick note"

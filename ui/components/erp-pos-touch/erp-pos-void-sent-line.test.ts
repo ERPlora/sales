@@ -101,6 +101,7 @@ describe('voiding a line already sent to the kitchen (sales#521)', () => {
     q(el, 'pos-line-l1-void')!.click();
     await el.updateComplete;
     expect(q(el, 'pos-void-scrim'), 'the sheet is open').toBeTruthy();
+    expect(q(el, 'pos-line-l1')!.classList.contains('sel'), 'the tap on Void does not mark the line to charge').toBe(false);
     const chips = [...el.shadowRoot.querySelectorAll<HTMLElement>('[data-testid^="pos-void-reason-"]')];
     expect(chips.map((c) => c.textContent?.trim())).toEqual([
       'ui.voidReasonMistake', 'ui.voidReasonChanged', 'ui.voidReasonSoldOut', 'ui.voidReasonDuplicate',
@@ -184,6 +185,16 @@ describe('the words of the void sheet, in en and es (sales#521)', () => {
       for (const k of KEYS) expect(ui[k], `${lang} ui.${k}`).toBeTruthy();
     });
   }
+  it('the manager\'s PIN prompt names what is being approved, in en and es', () => {
+    // The hub's elevation sheet reads `commands.<name>.label`: without it the manager is asked
+    // for a PIN without being told it is to void a plate.
+    const label = (cat: unknown) =>
+      (cat as { commands: Record<string, { label?: string }> }).commands['sales.order.void_line']?.label;
+    expect(label(enCatalog)).toBeTruthy();
+    expect(label(esCatalog)).toBeTruthy();
+    expect(label(esCatalog)).not.toBe(label(enCatalog));
+  });
+
   it('Spanish is not a copy of English', () => {
     const en = (enCatalog as { ui: Record<string, string> }).ui;
     const es = (esCatalog as { ui: Record<string, string> }).ui;

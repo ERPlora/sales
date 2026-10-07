@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sales.order.void_line — payload",
+  "description": "Voids a line of an open check that was already sent to the kitchen (sales#521). The reason is mandatory (market rule: Toast, TouchBistro, Lightspeed K-Series and LS Central ask for one to void a sent item). A line not sent yet is removed with sales.order.remove_line; a line already paid or voided, or on a closed check, is refused with sales.order_line_not_voidable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["order_id", "line_id", "reason"],
+  "properties": {
+    "order_id": { "type": "string", "minLength": 1 },
+    "line_id": { "type": "string", "minLength": 1 },
+    "reason": { "type": "string", "minLength": 1, "maxLength": 255, "pattern": "\\S", "description": "Why the plate comes off the check: kept on the line and carried in sales.order.line_voided for the kitchen." }
+  }
+}
