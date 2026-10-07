@@ -32,8 +32,9 @@ their ids and wraps their transaction, so they are proven here, through HTTP, an
      section FAILS, it does not skip.
   9. (sales#546) A quantity raised, or a line added, WHILE the check is being charged: the
      checkout waits for it and is refused (`sales.order_changed`) instead of charging one steak
-     on a row marked paid at two, or closing the check over a line it never charged. Same psql
-     session as 8.
+     on a row marked paid at two, or closing the check over a line it never charged; and the
+     other way round, `sales.order.update_line` waits for a checkout in flight and is refused.
+     Same psql session as 8.
   3c. (sales#401) Adding a line refuses a quantity that is not a fixed-point integer
      (`invalid_payload`) instead of silently storing one unit.
 
@@ -741,6 +742,59 @@ def test_a_check_changed_while_charging_is_not_charged(hub: Hub, cash: str) -> N
         "the added water is still due",
         hub_sql(psql, f"SELECT count(*) FROM sales_order_item WHERE id = '{added}' AND sale_id IS NULL"),
         "1",
+    )
+
+    # 9c — the other way round, through the real door: a checkout is in flight (the check locked,
+    # its lines charged and the check closed, held open) while another till raises the steak to
+    # two with `sales.order.update_line`. The change has to wait and then be refused: a charged
+    # line that changes its quantity afterwards says one thing on the ticket and another on the
+    # check.
+    oid, _ = open_order(
+        hub,
+        [{"product_name": "Entrecot", "price": 1800, "quantity": ONE, "tax_rate": 21.0}],
+    )
+    steak = lines(hub, oid)[0]
+    holder = held_on_the_hub(
+        hub,
+        psql,
+        f"SELECT id FROM sales_order WHERE id = '{oid}' FOR UPDATE;\n"
+        f"UPDATE sales_order_item SET sale_id = 'sale-in-flight' WHERE order_id = '{oid}';\n"
+        f"UPDATE sales_order SET status = 'completed' WHERE id = '{oid}';\n",
+    )
+    if holder is None:
+        return
+    answer: dict = {}
+    t = threading.Thread(
+        target=lambda: answer.update(
+            r=hub.command(
+                "sales.order.update_line",
+                {"order_id": oid, "line_id": steak["id"], "quantity": 2 * ONE},
+            )
+        )
+    )
+    t.start()
+    deadline = time.monotonic() + 15
+    waiting = "0"
+    while time.monotonic() < deadline and waiting == "0" and t.is_alive():
+        waiting = hub_sql(
+            psql,
+            "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'"
+            " AND datname = current_database()",
+        )
+        time.sleep(0.05)
+    hub.check("the change waits behind the checkout", waiting != "0", True)
+    holder.communicate("COMMIT;\n", timeout=30)
+    hub.check("the checkout commits", holder.returncode, 0)
+    t.join(timeout=60)
+    hub.check(
+        "the change is refused: the check was charged meanwhile",
+        refused_as_changed(answer.get("r", (None, None))),
+        (True, "sales.order_changed"),
+    )
+    hub.check(
+        "the charged steak keeps the quantity it was charged at",
+        hub_sql(psql, f"SELECT quantity FROM sales_order_item WHERE id = '{steak['id']}'"),
+        str(ONE),
     )
 
 
