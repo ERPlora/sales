@@ -25,6 +25,11 @@ their ids and wraps their transaction, so they are proven here, through HTTP, an
   7. Voiding an open order cancels the ticket before any money moves.
   3b. (sales#399) Changing a line's quantity applies the step the line declares, like adding it:
      off-step on a declared unit is refused, a line without a unit still takes half a portion.
+  8. (sales#545) A line taken off the check WHILE the check is being charged: the checkout waits
+     for it and is refused (`sales.order_changed`) instead of charging the plate the house just
+     took off; the cashier charges again what is left, at the right total. Needs a psql session
+     on the hub's database (`ERPLORA_HUB_PSQL`) to hold the removal in flight; without it the
+     section FAILS, it does not skip.
   3c. (sales#401) Adding a line refuses a quantity that is not a fixed-point integer
      (`invalid_payload`) instead of silently storing one unit.
 
@@ -32,7 +37,12 @@ Usage: `erplora test <dir> --against-hub [dev|stable|sha256:…]` (module-toolki
 its own: without a runtime it fails, it does not skip.
 """
 
+import os
+import shlex
+import subprocess
 import sys
+import threading
+import time
 
 import hub_harness
 from hub_harness import ONE, Hub, cash_method_id, cents, key, sale_by_key
@@ -428,6 +438,130 @@ def test_each_diner_pays_their_own_lines(hub: Hub, cash: str) -> None:
     )
 
 
+def hub_psql(hub: Hub) -> list[str]:
+    """The psql session on the database this hub writes to (`ERPLORA_HUB_PSQL`), or `[]`."""
+    session = os.environ.get("ERPLORA_HUB_PSQL", "")
+    if not session:
+        hub.check_true("a psql session on the hub's database", False, "ERPLORA_HUB_PSQL is empty")
+        return []
+    return shlex.split(session)
+
+
+def hub_sql(psql: list[str], sql: str) -> str:
+    out = subprocess.run([*psql, "-tAc", sql], capture_output=True, text=True, check=False)
+    return out.stdout.strip()
+
+
+def test_a_line_taken_off_while_charging_is_not_charged(hub: Hub, cash: str) -> None:
+    print(
+        "\n8 · a line taken off the check WHILE it is being charged is not charged (sales#545)"
+    )
+    psql = hub_psql(hub)
+    if not psql:
+        return
+    oid, _ = open_order(
+        hub,
+        [
+            {"product_name": "Entrecot", "price": 1800, "quantity": ONE, "tax_rate": 21.0},
+            {"product_name": "Agua", "price": 200, "quantity": ONE, "tax_rate": 21.0},
+        ],
+    )
+    rows = lines(hub, oid)
+    steak = next(l for l in rows if l["product_name"] == "Entrecot")
+
+    def item(line: dict) -> dict:
+        return {
+            "product_name": line["product_name"],
+            "price": cents(line["unit_price"]),
+            "quantity": ONE,
+            "tax_rate": 21.0,
+            "order_item_id": line["id"],
+        }
+
+    # The removal in flight: what `sales.order.remove_line` writes (the line soft-deleted and the
+    # provisional total recomputed), in a transaction held OPEN while the till charges what its
+    # screen still shows. The hub's own transaction is then seen WAITING on a lock (if it does
+    # not wait, nothing queued it) and only then the removal commits.
+    holder = subprocess.Popen(
+        [*psql, "-v", "ON_ERROR_STOP=1", "-tA"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    holder.stdin.write(
+        "BEGIN;\n"
+        f"SELECT id FROM sales_order WHERE id = '{oid}' FOR UPDATE;\n"
+        "UPDATE sales_order_item SET is_deleted = 1, deleted_at = now()::text"
+        f" WHERE id = '{steak['id']}' AND is_deleted = 0;\n"
+        f"UPDATE sales_order SET provisional_total = 200 WHERE id = '{oid}';\n"
+        "\\echo HELD\n"
+    )
+    holder.stdin.flush()
+    held = holder.stdout.readline().strip()
+    while held and held != "HELD":
+        held = holder.stdout.readline().strip()
+    hub.check("the removal is in flight", held, "HELD")
+
+    answer: dict = {}
+    charge_key = key("charge-race")
+
+    def charge() -> None:
+        answer["r"] = hub.command(
+            "sales.complete_sale",
+            {
+                "idempotency_key": charge_key,
+                "payment_method_id": cash,
+                "order_id": oid,
+                "amount_tendered": 2000,
+                "items": [item(l) for l in rows],
+            },
+        )
+
+    t = threading.Thread(target=charge)
+    t.start()
+    deadline = time.monotonic() + 15
+    waiting = "0"
+    while time.monotonic() < deadline and waiting == "0" and t.is_alive():
+        waiting = hub_sql(
+            psql,
+            "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'"
+            " AND datname = current_database()",
+        )
+        time.sleep(0.05)
+    out, _ = holder.communicate("COMMIT;\n", timeout=30)
+    hub.check("the removal commits", holder.returncode, 0)
+    t.join(timeout=60)
+    status, body = answer.get("r", (None, None))
+    code = ((body or {}).get("error") or {}).get("code") if isinstance(body, dict) else None
+    hub.check(
+        "the charge is refused: the check changed while it was being charged",
+        (status != 200, code),
+        (True, "sales.order_changed"),
+    )
+    hub.check("no sale was written", len(sale_by_key(hub, charge_key)), 0)
+    hub.check("the check is still open", order(hub, oid).get("status"), "open")
+
+    retry_key = key("charge-retry")
+    hub.run(
+        "sales.complete_sale",
+        {
+            "idempotency_key": retry_key,
+            "payment_method_id": cash,
+            "order_id": oid,
+            "amount_tendered": 200,
+            "items": [item(l) for l in lines(hub, oid)],
+        },
+    )
+    sale = sale_by_key(hub, retry_key)
+    hub.check(
+        "charging again what is left charges only the water",
+        cents(sale[0].get("total")) if sale else None,
+        200,
+    )
+    hub.check("and completes the check", order(hub, oid).get("status"), "completed")
+
+
 def main() -> int:
     hub = Hub("orders.hub")
     print(
@@ -442,6 +576,7 @@ def main() -> int:
     test_checkout_completes_the_order_and_links_the_sale(hub, cash)
     test_split_bill_one_order_two_sales(hub, cash)
     test_each_diner_pays_their_own_lines(hub, cash)
+    test_a_line_taken_off_while_charging_is_not_charged(hub, cash)
     return hub.finish(
         "open checks behave as ADR-0141/0146 promise, against the real kernel"
     )

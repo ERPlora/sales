@@ -354,7 +354,9 @@ impide la pantalla está como hueco en su flujo.
   cobrar y al aplicar el descuento.
 - **Una línea enviada a cocina no se cambia ni se quita: se anula**, con motivo y permiso de
   responsable, y solo si la cuenta está abierta y la línea sin cobrar (`sales.order_line_not_voidable`);
-  pedir que se quite la rechaza (`sales.order_line_not_removable`). Dividir y juntar mueven líneas
+  pedir que se quite la rechaza (`sales.order_line_not_removable`). Cobrar la cuenta y anular o
+  quitar una de sus líneas a la vez: gana uno y el otro se rechaza; una línea anulada o quitada nunca
+  entra en la venta (`sales.order_changed`). Dividir y juntar mueven líneas
   enteras y lo ya cobrado no viaja.
 - **Permisos** (si el permiso es de responsable, el hub pide su PIN): montar la cuenta, enviar a
   cocina, dividir, juntar y descuento hasta el tope: empleado; cobrar: cajero y responsable;

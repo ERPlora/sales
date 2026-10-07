@@ -49,7 +49,7 @@ use erplora_guest_sdk::tax;
 use erplora_guest_sdk::units::{calculate_line_amount, QuantityValue, QUANTITY_SCALE};
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use erplora_guest_sdk::{DomainError, Event, Operation, Output};
 use serde_json::{json, Map, Value};
@@ -2969,6 +2969,40 @@ pub fn complete_sale_over_limit_pure(input: Value) -> Result<Output, String> {
     finish(complete_sale_inner(input, CapRule::Approved))
 }
 
+/// What a checkout of an OPEN CHECK emits before it writes anything (sales#545).
+///
+/// The lines of the check are read BEFORE the transaction (`sales.order.lines` in `reads`): a void
+/// or a removal committed after that read was charged anyway. So the checkout first queues on the
+/// check (`sales._order_lock`: the row lock, then «still open?») and then re-checks, once per row
+/// it charges, that the row is still live and unpaid (`sales._order_line_live`). The line doors
+/// (`void_line`, `remove_line`) queue on the same row, so whoever comes second sees what the first
+/// one committed and is refused by its gate (`sales.order_changed` here).
+///
+/// The rows charged are the ones the items name (`order_item_id`) and the ones a partial charge
+/// marks as paid (`line_ids`), each once, in order. A counter sale has no check: nothing.
+fn check_queue_ops(payload: &Value, items: &[Value]) -> Vec<Operation> {
+    let order_id = payload.get("order_id").map(as_str).unwrap_or_default();
+    if order_id.is_empty() {
+        return Vec::new();
+    }
+    let mut lock = Map::new();
+    lock.insert("order_id".into(), json!(order_id));
+    let mut ops = vec![Operation::sql("sales._order_lock", lock)];
+    let marked = payload.get("line_ids").and_then(|v| v.as_array()).map(|v| v.as_slice()).unwrap_or(&[]);
+    let named = items.iter().map(|it| field(it, "order_item_id")).chain(marked.iter().map(as_str));
+    let mut seen = HashSet::new();
+    for line_id in named {
+        if line_id.is_empty() || !seen.insert(line_id.clone()) {
+            continue;
+        }
+        let mut p = Map::new();
+        p.insert("order_id".into(), json!(order_id));
+        p.insert("line_id".into(), json!(line_id));
+        ops.push(Operation::sql("sales._order_line_live", p));
+    }
+    ops
+}
+
 /// The decision itself (sales#201). A business rejection comes back as `Refusal::Domain`
 /// and [`finish`] hands it to the caller inside `Output.error`, which is the only channel
 /// that reaches the browser as a translatable `code`.
@@ -3050,6 +3084,7 @@ fn complete_sale_inner(input: Value, rule: CapRule) -> Result<Output, Refusal> {
     let gift_total = valuation.gift_total;
 
     let mut ops: Vec<Operation> = Vec::new();
+    ops.extend(check_queue_ops(&payload, items));
     let mut bump = Map::new();
     bump.insert("day".into(), json!(day));
     ops.push(Operation::sql("sales._bump_counter", bump));
@@ -14195,5 +14230,112 @@ mod tests {
             pt["context"]["country_code"] = json!("PT");
             assert_eq!(preview(pt)["cash_limit"], Value::Null);
         }
+    }
+
+    // ── sales#545: charging a check while one of its lines is voided or removed ──────────────
+    //
+    // The lines of an open check are READ before the checkout's transaction (`sales.order.lines`
+    // in `reads`), so a void or a removal committed between that read and the writes was charged
+    // anyway: the sale took the plate the house had just voided. The checkout now queues on the
+    // check FIRST (`sales._order_lock`: `_refund_lock.sql`'s recipe on `sales_order`, which also
+    // re-checks the check is still open) and re-checks, line by line, that every row it is about
+    // to charge is still live and unpaid (`sales._order_line_live`) — both BEFORE anything is
+    // written, both gated by `expect_rows` → `sales.order_changed`.
+
+    /// Two burgers of the open check `ord-1`, charged through their rows.
+    fn two_line_check_input() -> Value {
+        let row = |id: &str| {
+            let mut r = noted_row("");
+            r["id"] = json!(id);
+            r
+        };
+        let item = |id: &str| json!({ "product_id": "p-burger", "product_name": "Hamburguesa",
+                                      "price": 900, "quantity": 1_000_000, "order_item_id": id });
+        let mut inp = input_fiscal(json!([item("line-a"), item("line-b")]), burger_catalog(900), tax_catalog());
+        inp["payload"]["order_id"] = json!("ord-1");
+        inp["payload"]["amount_tendered"] = json!(1800);
+        inp["context"]["reads"]["sales.order.lines"] = json!([row("line-a"), row("line-b")]);
+        inp
+    }
+
+    fn commands_of(out: &Output) -> Vec<&str> {
+        out.operations.iter().map(|o| o.command.as_str()).collect()
+    }
+
+    #[test]
+    fn charging_a_check_queues_on_it_and_rechecks_each_line_before_writing_anything() {
+        let out = sale(two_line_check_input());
+        let commands = commands_of(&out);
+        assert_eq!(
+            &commands[..4],
+            &["sales._order_lock", "sales._order_line_live", "sales._order_line_live", "sales._bump_counter"],
+            "the queue and the re-check go first: once the sale is written it is too late"
+        );
+        assert_eq!(out.operations[0].params["order_id"], json!("ord-1"));
+        let rechecked: Vec<(Value, Value)> = out.operations[1..3]
+            .iter()
+            .map(|o| (o.params["order_id"].clone(), o.params["line_id"].clone()))
+            .collect();
+        assert_eq!(
+            rechecked,
+            vec![(json!("ord-1"), json!("line-a")), (json!("ord-1"), json!("line-b"))],
+            "every row the sale charges is re-checked, scoped to its check"
+        );
+    }
+
+    #[test]
+    fn a_partial_charge_of_a_check_queues_and_rechecks_too() {
+        // «Each pays their own» (ADR-0146) writes the same sale out of the same stale read.
+        // The rows it marks as paid are named only by `line_ids` here (the items carry no row), so
+        // those are the ones re-checked.
+        let mut inp = two_line_check_input();
+        for it in inp["payload"]["items"].as_array_mut().into_iter().flatten() {
+            it.as_object_mut().map(|o| o.remove("order_item_id"));
+        }
+        inp["payload"]["keep_order_open"] = json!(true);
+        inp["payload"]["line_ids"] = json!(["line-a", "line-b"]);
+        let out = sale(inp);
+        let commands = commands_of(&out).into_iter().take(3).collect::<Vec<_>>();
+        assert_eq!(commands, vec!["sales._order_lock", "sales._order_line_live", "sales._order_line_live"]);
+        let rechecked: Vec<Value> = out.operations[1..3].iter().map(|o| o.params["line_id"].clone()).collect();
+        assert_eq!(rechecked, vec![json!("line-a"), json!("line-b")]);
+    }
+
+    #[test]
+    fn an_item_that_names_no_row_is_not_rechecked_as_one() {
+        // A check sale may carry an item that is not a row of the check (and a blank mark): only
+        // the rows it names are re-checked, never an empty id that would refuse every such sale.
+        let mut inp = two_line_check_input();
+        inp["payload"]["items"][1].as_object_mut().map(|o| o.remove("order_item_id"));
+        inp["payload"]["line_ids"] = json!([""]);
+        inp["payload"]["keep_order_open"] = json!(true);
+        let out = sale(inp);
+        let lives: Vec<Value> = out
+            .operations
+            .iter()
+            .filter(|o| o.command == "sales._order_line_live")
+            .map(|o| o.params["line_id"].clone())
+            .collect();
+        assert_eq!(lives, vec![json!("line-a")]);
+    }
+
+    #[test]
+    fn a_line_charged_twice_in_one_payload_is_rechecked_once() {
+        let mut inp = two_line_check_input();
+        inp["payload"]["items"][1]["order_item_id"] = json!("line-a");
+        inp["context"]["reads"]["sales.order.lines"] = json!([inp["context"]["reads"]["sales.order.lines"][0].clone()]);
+        let out = sale(inp);
+        let lives = commands_of(&out).iter().filter(|c| **c == "sales._order_line_live").count();
+        assert_eq!(lives, 1);
+    }
+
+    #[test]
+    fn a_counter_sale_has_no_check_to_queue_on() {
+        let items = json!([{ "product_id": "p-burger", "product_name": "Hamburguesa",
+                             "price": 900, "quantity": 1_000_000 }]);
+        let out = sale(input_fiscal(items, burger_catalog(900), tax_catalog()));
+        let commands = commands_of(&out);
+        assert!(!commands.contains(&"sales._order_lock"), "{commands:?}");
+        assert!(!commands.contains(&"sales._order_line_live"), "{commands:?}");
     }
 }

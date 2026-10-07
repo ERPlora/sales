@@ -481,7 +481,7 @@
       },
       "schema": "schemas/complete_sale.json",
       "ai": {
-        "description": "Completes and records a sale with its line items and payment. Optional staff_id attributes the sale to the professional who performed it; optional appointment_id traces a sale created from an appointment (emits sales.sale.created_from_appointment). document_type 'invoice' (a complete invoice) needs customer_name, customer_tax_id and customer_address; ask the user for them, or charge it as 'ticket'."
+        "description": "Completes and records a sale with its line items and payment. Optional staff_id attributes the sale to the professional who performed it; optional appointment_id traces a sale created from an appointment (emits sales.sale.created_from_appointment). document_type 'invoice' (a complete invoice) needs customer_name, customer_tax_id and customer_address; ask the user for them, or charge it as 'ticket'. Charging an open order (order_id) waits for any void or removal of its lines in flight; if a line it charges was voided, removed or charged meanwhile, or the order was closed, nothing is charged and it is refused with sales.order_changed: read the order again and charge what is left (sales#545)."
       }
     },
     "sales.complete_sale_over_limit": {
@@ -837,6 +837,33 @@
         "commands/_complete_order.sql"
       ]
     },
+    "sales._order_lock": {
+      "permission": "sales.add_sale",
+      "sql": [
+        "commands/_order_lock.sql",
+        "commands/_order_open.sql"
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "statement": "commands/_order_open.sql",
+        "error": "sales.order_changed",
+        "message": "The check changed while it was being charged: a line was voided, removed or charged, or the check was closed. Nothing was charged; load the check again."
+      }
+    },
+    "sales._order_line_live": {
+      "permission": "sales.add_sale",
+      "sql": [
+        "commands/_order_line_live.sql"
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "statement": "commands/_order_line_live.sql",
+        "error": "sales.order_changed",
+        "message": "The check changed while it was being charged: a line was voided, removed or charged, or the check was closed. Nothing was charged; load the check again."
+      }
+    },
     "sales.order.add_line": {
       "permission": "sales.add_sale",
       "reads": [
@@ -979,6 +1006,7 @@
       "permission": "sales.add_sale",
       "transaction": true,
       "sql": [
+        "commands/_order_lock.sql",
         "commands/order_remove_line.sql",
         "commands/order_recompute_total.sql"
       ],
@@ -986,20 +1014,21 @@
         "sales.order.line_removed"
       ],
       "ai": {
-        "description": "Removes (soft-deletes) a line that has NOT been sent to the kitchen yet from an open order and recomputes its provisional total (ADR-0141). It announces the removal with sales.order.line_removed so a module that had covered that line with a tender of its own can let it go at once. A line already sent to the kitchen is refused with sales.order_line_not_removable and nothing is announced: void it with sales.order.void_line, which asks for a reason (sales#521)."
+        "description": "Removes (soft-deletes) a line that has NOT been sent to the kitchen yet from an open order and recomputes its provisional total (ADR-0141). It announces the removal with sales.order.line_removed so a module that had covered that line with a tender of its own can let it go at once. A line already sent to the kitchen, already charged, or no longer on an open order is refused with sales.order_line_not_removable and nothing is announced: void a sent line with sales.order.void_line, which asks for a reason (sales#521). It queues behind a checkout of the same order, so it never removes a line that sale is charging (sales#545)."
       },
       "expect_rows": {
         "op": "min",
         "n": 1,
         "statement": "commands/order_remove_line.sql",
         "error": "sales.order_line_not_removable",
-        "message": "That line was already sent to the kitchen: void it with a reason instead."
+        "message": "That line can no longer be removed: it was already sent to the kitchen (void it with a reason), it was already charged, or it is no longer on an open check."
       }
     },
     "sales.order.void_line": {
       "permission": "sales.void_sale",
       "transaction": true,
       "sql": [
+        "commands/_order_lock.sql",
         "commands/order_void_line.sql",
         "commands/order_recompute_total.sql"
       ],
@@ -1401,7 +1430,8 @@
     "sales.too_many_lines": {},
     "sales.too_many_rows": {},
     "sales.void_reason_required": {},
-    "sales.void_requires_credit_note": {}
+    "sales.void_requires_credit_note": {},
+    "sales.order_changed": {}
   },
   "events": {
     "listen": {

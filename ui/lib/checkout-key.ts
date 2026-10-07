@@ -85,6 +85,11 @@ const MESSAGES: Record<string, string> = {
   'sales.combo_component_price_unknown': 'ui.errorComboComponentPriceUnknown',
   'sales.combo_tax_category_missing': 'ui.errorComboTaxCategoryMissing',
   'sales.too_many_lines': 'ui.errorTooManyLines',
+  // sales#545 — the check changed while it was being charged (a line voided, removed or charged
+  // on another device, or the check closed), or the screen charged a line that is no longer on
+  // it. Nothing was charged: the till reads the check again and says so.
+  'sales.order_changed': 'ui.errorOrderChanged',
+  'sales.order_line_not_available': 'ui.errorOrderChanged',
   // sales#147 (the amendment to ADR-0376) — a supplement that taxes differently now gets a LINE OF
   // ITS OWN, so it is charged instead of refused. What is still refused is a supplement that bills
   // apart and is worth NOTHING: a 0 € — or negative — row at another rate is a rebate wearing a tax
@@ -125,6 +130,11 @@ const MESSAGES: Record<string, string> = {
  */
 export function checkoutErrorKey(code: string): string {
   return MESSAGES[code] ?? 'ui.errorCharge';
+}
+
+/** Codes that mean «the screen is not the check any more»: the cart is read again (sales#545). */
+export function isCheckChanged(code: string): boolean {
+  return MESSAGES[code] === 'ui.errorOrderChanged';
 }
 
 /** The `code` of a runtime error, or `''` when what arrived carries none (it is not the hub's). */

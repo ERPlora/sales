@@ -148,8 +148,9 @@
     "sales.too_many_rows": "La venta necesita más filas de las que el servidor puede escribir de una vez. Divídela en dos.",
     "sales.void_reason_required": "Hace falta un motivo para anular una venta.",
     "sales.void_requires_credit_note": "Esta venta lleva factura completa: emite una factura rectificativa en vez de anularla.",
-    "sales.order_line_not_removable": "Esa línea ya no se puede quitar: ya se envió a cocina (anúlala con un motivo) o ya no está en la cuenta.",
-    "sales.order_line_not_voidable": "Esa línea no se puede anular: no está enviada y sin cobrar en una cuenta abierta, o falta el motivo. Vuelve a cargar la cuenta."
+    "sales.order_line_not_removable": "Esa línea ya no se puede quitar: ya se envió a cocina (anúlala con un motivo), ya está cobrada o ya no está en una cuenta abierta.",
+    "sales.order_line_not_voidable": "Esa línea no se puede anular: no está enviada y sin cobrar en una cuenta abierta, o falta el motivo. Vuelve a cargar la cuenta.",
+    "sales.order_changed": "La cuenta ha cambiado mientras se cobraba (se anuló, quitó o cobró una línea, o se cerró la cuenta). No se ha cobrado nada: revisa las líneas y vuelve a cobrar."
   },
   "ui": {
     "sales": "Ventas",
@@ -629,7 +630,8 @@
     "voidReasonMistake": "Error al pedir",
     "voidReasonChanged": "El cliente lo cambia",
     "voidReasonSoldOut": "Agotado",
-    "voidReasonDuplicate": "Pedido dos veces"
+    "voidReasonDuplicate": "Pedido dos veces",
+    "errorOrderChanged": "La cuenta ha cambiado mientras se cobraba: se anuló, quitó o cobró una línea desde otro dispositivo. No se ha cobrado nada; la cuenta se ha vuelto a cargar, revísala y vuelve a cobrar."
   },
   "widgets": {
     "sales.today": {
