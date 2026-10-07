@@ -126,9 +126,17 @@ fiscal: «Emitiendo el tique…» o «Emitiendo la factura…»; error: «Error 
 ### Devolver
 Ventana «Devolver la venta <número>» desde **Ventas**: explicación, una tarjeta por forma de pago
 («Cobrado», «Ya devuelto», «Devolvible», «Importe a devolver» y, si hace falta, «Devolver por»),
-«Devolver todo», «Motivo», «Se devuelve», las líneas pagadas por bono con su hueco y «Devolver
-<importe>». Cargando: «Cargando lo que se puede devolver…»; nada que devolver: «No queda nada por
-devolver en esta venta.».
+«Devolver todo», «Motivo», «Se devuelve», las líneas pagadas por bono con su hueco, encima del botón
+el hueco `sales.reversal.notice` (lo que la devolución entera deshace en otros módulos: el aviso del
+bono vendido en la venta, SERVICES-F14) y «Devolver <importe>». Cargando: «Cargando lo que se puede
+devolver…»; nada que devolver: «No queda nada por devolver en esta venta.».
+
+### Anular venta
+Ventana «Anular la venta <número>» desde **Ventas** (antes un aviso emergente): la explicación, el
+«Motivo (obligatorio)», el hueco `sales.reversal.notice` encima del botón (lo que la anulación deshace
+en otros módulos: el aviso del bono vendido en la venta, SERVICES-F27) y «Anular» / «Cancelar».
+Sin motivo, el aviso sale en la ventana; mientras anula, «Anular» queda desactivado; un rechazo se
+lee dentro de la ventana, que sigue abierta. Sin nadie que rellene el hueco, no ocupa sitio.
 
 ### Notas rápidas
 Menú **Ventas / TPV → Notas rápidas** (solo con permiso de ajustes). Explicación, tabla (Nota,
@@ -394,7 +402,7 @@ Contra `origin/main` v2.16.154 (05/10/2026). Una línea por discrepancia; manda 
 - **`docs/screens.md`** («Search by sale number, payment method or customer name»): el buscador del historial busca por número y cliente; la forma de pago se filtra, no se busca (F28).
 - **`docs/screens.md`** (sección del TPV): cita «Requires `sales.add_sale` … `sales.take_payment`», pero no dice que un empleado sin `take_payment` recibe la petición de PIN; tampoco que precio libre y eliminar cuenta piden PIN a empleado y cajero (F09, F18).
 - **`docs/screens.md`** («Notas rápidas … plus a TPV settings tab»): la pestaña se llama «Ajustes» (la nombra el hub) y solo el administrador puede guardar (F34).
-- **`docs/screens.md` y `docs/overview.md`**: «three tabs»/«four slots»; hay cuatro pestañas propias (Vender, Ventas, Notas rápidas, Departamentos) y cinco huecos (cuatro en Vender y uno en Devolver).
+- **`docs/screens.md` y `docs/overview.md`**: «three tabs»/«four slots»; hay cuatro pestañas propias (Vender, Ventas, Notas rápidas, Departamentos) y seis huecos (cuatro en Vender, uno en Devolver y `sales.reversal.notice`, que montan Anular venta y Devolver).
 - **`docs/overview.md`** (quién reacciona a la venta): nombra a Cocina y VeriFactu y omite a Mesas y Servicios; Cocina escucha el envío y el cierre de la cuenta, VeriFactu escucha a Facturación.
 - **`docs/concepts.md`** («To correct a completed sale, void it … `sale.voided` is emitted so stock comes back»): cierto para stock y caja, pero la factura simplificada y su registro VeriFactu no se anulan (F30).
 - **`architecture/modules/sales.md`** (tabla de permisos): no lista `take_payment`, `sell_open_price`, `discount.over_limit` ni `refund_sale`, y dice que el empleado «crea ventas»; sin `take_payment` no cobra.
