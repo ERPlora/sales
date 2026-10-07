@@ -176,10 +176,12 @@ def test_a_sent_line_is_voided_not_removed(hub: Hub) -> None:
         "sales.order_line_not_removable",
     )
     hub.refused(
+        # The door's schema already refuses a blank reason (`pattern: \S`); the statement's own
+        # TRIM guard is the second wall, pinned by void_sent_line.postgres.
         "voiding it without a reason",
         "sales.order.void_line",
         {**line, "reason": "   "},
-        "sales.order_line_not_voidable",
+        "invalid_payload",
     )
     hub.check(
         "both refusals left the check as it was", provisional_total(hub, order_id), 2000
