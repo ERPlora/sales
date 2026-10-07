@@ -1,7 +1,7 @@
 {
   "name": "@erplora/module-sales",
   "private": true,
-  "version": "2.16.157",
+  "version": "2.16.158",
   "type": "module",
   "description": "Módulo sales (manifest declarativo + Web Component Lit).",
   "dependencies": {
