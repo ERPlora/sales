@@ -42,6 +42,7 @@ Usage: tests/check_charge_race.postgres.test.py — container `erplora-test-pg-5
 import json
 import os
 import pathlib
+import subprocess
 import sys
 import threading
 import time
@@ -191,8 +192,48 @@ def verdict(calls: list, counts: list) -> str:
     return "ok"
 
 
+def kernel_chain(s: Session, calls: list, hub=None):
+    """`s.chain`, but ended the way the kernel ends it (hub `execute_tx_gated`): every statement
+    runs, then the gates are judged and the transaction is COMMITTED only if all of them hold —
+    a refused chain is ROLLED BACK. `s.chain` always commits, which would leave a refused
+    checkout's `_complete_order` written. Same `(ok, error, rows_per_statement)` answer."""
+    try:
+        body = s._chain_script(calls, hub)
+    except RuntimeError as exc:
+        return False, str(exc), []
+    gated = []
+    for name, _payload in calls:
+        gate = MANIFEST["commands"][name].get("expect_rows")
+        for rel in MANIFEST["commands"][name]["sql"]:
+            gated.append(gate["n"] if gate and gate["statement"] == rel else None)
+    script, k = ["BEGIN;"], 0
+    for line in body:
+        script.append(line)
+        if not line.startswith("\\echo"):
+            script.append(f"\\set rc_{k} :ROW_COUNT")
+            k += 1
+    holds = [f":rc_{i} >= {n}" for i, n in enumerate(gated) if n is not None] or [
+        "true"
+    ]
+    script += [
+        "\\echo '@@ <kernel> <end>'",
+        f"SELECT ({' AND '.join(holds)}) AS kernel_commits \\gset",
+        "\\if :kernel_commits",
+        "COMMIT;",
+        "\\else",
+        "ROLLBACK;",
+        "\\endif",
+    ]
+    res = subprocess.run(
+        s._chain_cmd(), input="\n".join(script), capture_output=True, text=True
+    )
+    if res.returncode != 0:
+        return False, (res.stderr.strip() or res.stdout.strip()), []
+    return True, "", s._rows_per_statement(res.stdout)
+
+
 def play(s: Session, calls: list, hub=None) -> str:
-    ok, err, counts = s.chain(calls, hub=hub)
+    ok, err, counts = kernel_chain(s, calls, hub=hub)
     if not ok:
         return f"<sql error: {err.splitlines()[-1] if err else ''}>"
     return verdict(calls, counts)
@@ -211,11 +252,11 @@ def hold(s: Session, calls: list):
 
 
 def in_background(s: Session, calls: list, hub=None):
-    """Starts `s.chain(calls)` in a thread. Returns `(thread, result_box)`."""
+    """Starts `kernel_chain(s, calls)` in a thread. Returns `(thread, result_box)`."""
     box: dict = {}
 
     def run() -> None:
-        box["result"] = s.chain(calls, hub=hub)
+        box["result"] = kernel_chain(s, calls, hub=hub)
 
     t = threading.Thread(target=run)
     t.start()

@@ -837,6 +837,33 @@
         "commands/_complete_order.sql"
       ]
     },
+    "sales._order_lock": {
+      "permission": "sales.add_sale",
+      "sql": [
+        "commands/_order_lock.sql",
+        "commands/_order_open.sql"
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "statement": "commands/_order_open.sql",
+        "error": "sales.order_changed",
+        "message": "The check changed while it was being charged: a line was voided, removed or charged, or the check was closed. Nothing was charged; load the check again."
+      }
+    },
+    "sales._order_line_live": {
+      "permission": "sales.add_sale",
+      "sql": [
+        "commands/_order_line_live.sql"
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "statement": "commands/_order_line_live.sql",
+        "error": "sales.order_changed",
+        "message": "The check changed while it was being charged: a line was voided, removed or charged, or the check was closed. Nothing was charged; load the check again."
+      }
+    },
     "sales.order.add_line": {
       "permission": "sales.add_sale",
       "reads": [
@@ -979,6 +1006,7 @@
       "permission": "sales.add_sale",
       "transaction": true,
       "sql": [
+        "commands/_order_lock.sql",
         "commands/order_remove_line.sql",
         "commands/order_recompute_total.sql"
       ],
@@ -993,13 +1021,14 @@
         "n": 1,
         "statement": "commands/order_remove_line.sql",
         "error": "sales.order_line_not_removable",
-        "message": "That line was already sent to the kitchen: void it with a reason instead."
+        "message": "That line can no longer be removed: it was already sent to the kitchen (void it with a reason), it was already charged, or it is no longer on an open check."
       }
     },
     "sales.order.void_line": {
       "permission": "sales.void_sale",
       "transaction": true,
       "sql": [
+        "commands/_order_lock.sql",
         "commands/order_void_line.sql",
         "commands/order_recompute_total.sql"
       ],
@@ -1398,7 +1427,8 @@
     "sales.too_many_lines": {},
     "sales.too_many_rows": {},
     "sales.void_reason_required": {},
-    "sales.void_requires_credit_note": {}
+    "sales.void_requires_credit_note": {},
+    "sales.order_changed": {}
   },
   "events": {
     "listen": {

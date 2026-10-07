@@ -147,8 +147,9 @@
     "sales.too_many_rows": "The sale needs more rows than the server can write in one go. Split it into two.",
     "sales.void_reason_required": "A reason is required to void a sale.",
     "sales.void_requires_credit_note": "This sale carries a full invoice: issue a credit note instead of voiding it.",
-    "sales.order_line_not_removable": "That line can no longer be removed: it was already sent to the kitchen (void it with a reason) or it is no longer on the check.",
-    "sales.order_line_not_voidable": "That line cannot be voided: it is not on an open check as a sent, unpaid line, or the reason is missing. Load the check again."
+    "sales.order_line_not_removable": "That line can no longer be removed: it was already sent to the kitchen (void it with a reason), it was already charged, or it is no longer on an open check.",
+    "sales.order_line_not_voidable": "That line cannot be voided: it is not on an open check as a sent, unpaid line, or the reason is missing. Load the check again.",
+    "sales.order_changed": "The check changed while it was being charged (a line was voided, removed or charged, or the check was closed). Nothing was charged: check the lines and charge again."
   },
   "ui": {
     "sales": "Sales",

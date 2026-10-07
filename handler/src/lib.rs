@@ -49,7 +49,7 @@ use erplora_guest_sdk::tax;
 use erplora_guest_sdk::units::{calculate_line_amount, QuantityValue, QUANTITY_SCALE};
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use erplora_guest_sdk::{DomainError, Event, Operation, Output};
 use serde_json::{json, Map, Value};
@@ -2969,6 +2969,40 @@ pub fn complete_sale_over_limit_pure(input: Value) -> Result<Output, String> {
     finish(complete_sale_inner(input, CapRule::Approved))
 }
 
+/// What a checkout of an OPEN CHECK emits before it writes anything (sales#545).
+///
+/// The lines of the check are read BEFORE the transaction (`sales.order.lines` in `reads`): a void
+/// or a removal committed after that read was charged anyway. So the checkout first queues on the
+/// check (`sales._order_lock`: the row lock, then «still open?») and then re-checks, once per row
+/// it charges, that the row is still live and unpaid (`sales._order_line_live`). The line doors
+/// (`void_line`, `remove_line`) queue on the same row, so whoever comes second sees what the first
+/// one committed and is refused by its gate (`sales.order_changed` here).
+///
+/// The rows charged are the ones the items name (`order_item_id`) and the ones a partial charge
+/// marks as paid (`line_ids`), each once, in order. A counter sale has no check: nothing.
+fn check_queue_ops(payload: &Value, items: &[Value]) -> Vec<Operation> {
+    let order_id = payload.get("order_id").map(as_str).unwrap_or_default();
+    if order_id.is_empty() {
+        return Vec::new();
+    }
+    let mut lock = Map::new();
+    lock.insert("order_id".into(), json!(order_id));
+    let mut ops = vec![Operation::sql("sales._order_lock", lock)];
+    let marked = payload.get("line_ids").and_then(|v| v.as_array()).map(|v| v.as_slice()).unwrap_or(&[]);
+    let named = items.iter().map(|it| field(it, "order_item_id")).chain(marked.iter().map(as_str));
+    let mut seen = HashSet::new();
+    for line_id in named {
+        if line_id.is_empty() || !seen.insert(line_id.clone()) {
+            continue;
+        }
+        let mut p = Map::new();
+        p.insert("order_id".into(), json!(order_id));
+        p.insert("line_id".into(), json!(line_id));
+        ops.push(Operation::sql("sales._order_line_live", p));
+    }
+    ops
+}
+
 /// The decision itself (sales#201). A business rejection comes back as `Refusal::Domain`
 /// and [`finish`] hands it to the caller inside `Output.error`, which is the only channel
 /// that reaches the browser as a translatable `code`.
@@ -3050,6 +3084,7 @@ fn complete_sale_inner(input: Value, rule: CapRule) -> Result<Output, Refusal> {
     let gift_total = valuation.gift_total;
 
     let mut ops: Vec<Operation> = Vec::new();
+    ops.extend(check_queue_ops(&payload, items));
     let mut bump = Map::new();
     bump.insert("day".into(), json!(day));
     ops.push(Operation::sql("sales._bump_counter", bump));
