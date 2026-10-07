@@ -14338,4 +14338,140 @@ mod tests {
         assert!(!commands.contains(&"sales._order_lock"), "{commands:?}");
         assert!(!commands.contains(&"sales._order_line_live"), "{commands:?}");
     }
+
+    // ── sales#546: changing, adding, splitting or joining while the check is being charged ─────
+    //
+    // sales#545 queued the checkout and the doors that take a line OFF the check on the check's
+    // row. The doors that change a line's quantity or comp flag (`update_line`), add one
+    // (`add_line`) or turn one into several (`split_line`) did not: a quantity raised from 2 to 3
+    // while the check was charged left the sale charging 2 and the row marked paid at 3. Those
+    // doors now queue on the same row first (`sales._order_lock`, which also refuses a check that
+    // is no longer open), and the checkout re-checks what it charges against the LIVE row — the
+    // quantity and the comp flag it takes from the payload — and, when it closes the check, that
+    // no live unpaid line is left that it did not charge (`sales._order_lines_seen`).
+
+    #[test]
+    fn changing_a_line_queues_on_the_check_before_writing_it() {
+        let row = json!({
+            "id": "line-1", "order_id": "ord-1", "product_id": "p-cafe", "product_name": "Café",
+            "quantity": 2_000_000, "unit_price": 150, "is_gift": 0, "line_total": 300,
+            "discount_percent": 0, "modifiers": "[]", "price_quantity_value": 1_000_000,
+            "fired_at": null, "combo": "{}", "combo_group_ref": null, "notes": "",
+        });
+        let inp = json!({
+            "payload": { "order_id": "ord-1", "line_id": "line-1", "quantity": 3_000_000 },
+            "context": { "reads": {
+                "sales.order.get": [{ "id": "ord-1", "status": "open" }],
+                "sales.order.lines": [row],
+            } },
+        });
+        let out = update_order_line_pure(inp).accepted("two coffees raised to three");
+        assert_eq!(
+            &commands_of(&out)[..2],
+            &["sales._order_lock", "sales._update_order_line"],
+            "the change waits behind a checkout of the same check before it writes"
+        );
+        assert_eq!(out.operations[0].params["order_id"], json!("ord-1"));
+    }
+
+    #[test]
+    fn adding_a_line_queues_on_the_check_before_writing_it() {
+        let out = add_order_line_pure(add_line_input(burger_catalog(900), open_order_row()))
+            .accepted("a burger added to the check");
+        assert_eq!(&commands_of(&out)[..2], &["sales._order_lock", "sales._insert_order_line"]);
+        assert_eq!(out.operations[0].params["order_id"], json!("ord-1"));
+    }
+
+    #[test]
+    fn splitting_a_line_queues_on_the_check_before_writing_it() {
+        let out = split_order_line_pure(split_input(split_line_row(), open_order_row()))
+            .accepted("a haircut rung up twice can be split");
+        assert_eq!(&commands_of(&out)[..2], &["sales._order_lock", "sales._update_order_line"]);
+        assert_eq!(out.operations[0].params["order_id"], json!("ord-1"));
+    }
+
+    fn live_checks(out: &Output) -> Vec<&Map<String, Value>> {
+        out.operations.iter().filter(|o| o.command == "sales._order_line_live").map(|o| &o.params).collect()
+    }
+
+    #[test]
+    fn the_checkout_rechecks_the_quantity_and_the_comp_flag_it_charges() {
+        // The checkout prices a row from the row, but takes HOW MANY and «is it a comp» from the
+        // payload: those are what the live row has to still say.
+        let mut inp = two_line_check_input();
+        inp["payload"]["items"][0]["quantity"] = json!(2_000_000);
+        inp["payload"]["items"][1]["is_gift"] = json!(true);
+        inp["payload"]["amount_tendered"] = json!(1800);
+        let out = sale(inp);
+        let lives = live_checks(&out);
+        assert_eq!(lives.len(), 2);
+        assert_eq!((&lives[0]["quantity"], &lives[0]["is_gift"]), (&json!(2_000_000), &json!(0)));
+        assert_eq!((&lives[1]["quantity"], &lives[1]["is_gift"]), (&json!(1_000_000), &json!(1)));
+    }
+
+    #[test]
+    fn a_row_only_marked_as_paid_is_rechecked_without_a_quantity() {
+        // A partial charge may name a row only through `line_ids`: no item says how many of it
+        // are charged, so nothing is compared but «still live and unpaid».
+        let mut inp = two_line_check_input();
+        for it in inp["payload"]["items"].as_array_mut().into_iter().flatten() {
+            it.as_object_mut().map(|o| o.remove("order_item_id"));
+        }
+        inp["payload"]["keep_order_open"] = json!(true);
+        inp["payload"]["line_ids"] = json!(["line-a"]);
+        let out = sale(inp);
+        let lives = live_checks(&out);
+        assert_eq!(lives.len(), 1);
+        assert_eq!((&lives[0]["quantity"], &lives[0]["is_gift"]), (&Value::Null, &Value::Null));
+    }
+
+    fn seen_by(out: &Output) -> Vec<&Map<String, Value>> {
+        out.operations.iter().filter(|o| o.command == "sales._order_lines_seen").map(|o| &o.params).collect()
+    }
+
+    #[test]
+    fn closing_the_check_proves_no_line_was_left_uncharged() {
+        // A line added (or moved in by a join, or born from a split) after the checkout read the
+        // check is not in the sale: closing the check would leave it unpaid for ever.
+        let out = sale(two_line_check_input());
+        let commands = commands_of(&out);
+        assert_eq!(
+            &commands[..5],
+            &["sales._order_lock", "sales._order_line_live", "sales._order_line_live",
+              "sales._order_lines_seen", "sales._bump_counter"],
+            "proved before anything is written"
+        );
+        let seen = seen_by(&out);
+        assert_eq!(seen[0]["order_id"], json!("ord-1"));
+        assert_eq!(seen[0]["line_ids"], json!(["line-a", "line-b"]), "the rows this sale charges");
+    }
+
+    #[test]
+    fn a_checkout_that_names_no_row_proves_it_against_the_lines_it_read() {
+        // The API and the assistant may charge a check without naming its rows: the lines the
+        // checkout read are then the ones it charges.
+        let mut inp = two_line_check_input();
+        for it in inp["payload"]["items"].as_array_mut().into_iter().flatten() {
+            it.as_object_mut().map(|o| o.remove("order_item_id"));
+        }
+        let out = sale(inp);
+        let seen = seen_by(&out);
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0]["line_ids"], json!(["line-a", "line-b"]));
+    }
+
+    #[test]
+    fn a_partial_charge_leaves_the_rest_of_the_check_open_and_proves_nothing_about_it() {
+        let mut inp = two_line_check_input();
+        inp["payload"]["keep_order_open"] = json!(true);
+        inp["payload"]["line_ids"] = json!(["line-a"]);
+        let out = sale(inp);
+        assert!(seen_by(&out).is_empty(), "{:?}", commands_of(&out));
+        let counter = sale(input_fiscal(
+            json!([{ "product_id": "p-burger", "product_name": "Hamburguesa", "price": 900, "quantity": 1_000_000 }]),
+            burger_catalog(900),
+            tax_catalog(),
+        ));
+        assert!(seen_by(&counter).is_empty(), "a counter sale has no check");
+    }
 }
