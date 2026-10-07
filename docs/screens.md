@@ -437,7 +437,10 @@ tapping them are the `cashier` and the `employee`, and neither has `sales.manage
 ### Merge two checks
 
 When two tables that both ordered are merged, every unpaid line of one check moves into the other and
-the empty one is voided. Lines are moved, never re-created. Doing it twice changes nothing.
+the empty one is voided. Lines are moved, never re-created. Doing it twice changes nothing. The merge
+is announced with `sales.order.merged` (`from_order_id`, `to_order_id`): the kitchen hands the rounds
+fired from the absorbed check to the one that stays, so they close when that check is charged
+(kitchen#162).
 
 ## Sales — the history
 

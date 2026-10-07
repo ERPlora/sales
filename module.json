@@ -1,7 +1,7 @@
 {
   "id": "sales",
   "name": "Sales & POS",
-  "version": "2.16.160",
+  "version": "2.16.161",
   "description": "Point of sale: complete and void sales, and review sales history and metrics.",
   "agent": {
     "description": "Manages sales and point-of-sale operations: list and inspect sales, complete new sales transactions, void sales, configure payment methods, and retrieve sales statistics.",
@@ -1070,8 +1070,11 @@
         "commands/order_merge_void_source.sql",
         "commands/order_merge_recompute_totals.sql"
       ],
+      "emit": [
+        "sales.order.merged"
+      ],
       "ai": {
-        "description": "Joins two open orders into one (sales#61): every unpaid line of from_order_id moves to to_order_id and the source is voided. Called when two tables that BOTH ordered are merged (tables.sessions.merged) — tables cannot resolve that case because it does not know the lines. Lines are MOVED, not re-created, so what was already fired to the kitchen is not sent twice; both totals are recomputed from their live lines. Replaying it is a no-op."
+        "description": "Joins two open orders into one (sales#61): every unpaid line of from_order_id moves to to_order_id and the source is voided. Called when two tables that BOTH ordered are merged (tables.sessions.merged) — tables cannot resolve that case because it does not know the lines. Lines are MOVED, not re-created, so what was already fired to the kitchen is not sent twice; both totals are recomputed from their live lines. It announces the join with sales.order.merged (from_order_id, to_order_id) so the kitchen hands the rounds of the absorbed order to the one that stays (kitchen#162). Replaying it changes no data; the event is raised again and listeners must check the source order is voided."
       }
     },
     "sales.order.void": {
@@ -1444,6 +1447,7 @@
       "sale.voided",
       "sales.order.line_removed",
       "sales.order.line_voided",
+      "sales.order.merged",
       "sales.order.opened",
       "sales.order.voided",
       "sales.sale.created_from_appointment"
