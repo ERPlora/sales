@@ -14196,4 +14196,86 @@ mod tests {
             assert_eq!(preview(pt)["cash_limit"], Value::Null);
         }
     }
+
+    // ── sales#545: charging a check while one of its lines is voided or removed ──────────────
+    //
+    // The lines of an open check are READ before the checkout's transaction (`sales.order.lines`
+    // in `reads`), so a void or a removal committed between that read and the writes was charged
+    // anyway: the sale took the plate the house had just voided. The checkout now queues on the
+    // check FIRST (`sales._order_lock`: `_refund_lock.sql`'s recipe on `sales_order`, which also
+    // re-checks the check is still open) and re-checks, line by line, that every row it is about
+    // to charge is still live and unpaid (`sales._order_line_live`) — both BEFORE anything is
+    // written, both gated by `expect_rows` → `sales.order_changed`.
+
+    /// Two burgers of the open check `ord-1`, charged through their rows.
+    fn two_line_check_input() -> Value {
+        let row = |id: &str| {
+            let mut r = noted_row("");
+            r["id"] = json!(id);
+            r
+        };
+        let item = |id: &str| json!({ "product_id": "p-burger", "product_name": "Hamburguesa",
+                                      "price": 900, "quantity": 1_000_000, "order_item_id": id });
+        let mut inp = input_fiscal(json!([item("line-a"), item("line-b")]), burger_catalog(900), tax_catalog());
+        inp["payload"]["order_id"] = json!("ord-1");
+        inp["payload"]["amount_tendered"] = json!(1800);
+        inp["context"]["reads"]["sales.order.lines"] = json!([row("line-a"), row("line-b")]);
+        inp
+    }
+
+    fn commands_of(out: &Output) -> Vec<&str> {
+        out.operations.iter().map(|o| o.command.as_str()).collect()
+    }
+
+    #[test]
+    fn charging_a_check_queues_on_it_and_rechecks_each_line_before_writing_anything() {
+        let out = sale(two_line_check_input());
+        let commands = commands_of(&out);
+        assert_eq!(
+            &commands[..4],
+            &["sales._order_lock", "sales._order_line_live", "sales._order_line_live", "sales._bump_counter"],
+            "the queue and the re-check go first: once the sale is written it is too late"
+        );
+        assert_eq!(out.operations[0].params["order_id"], json!("ord-1"));
+        let rechecked: Vec<(Value, Value)> = out.operations[1..3]
+            .iter()
+            .map(|o| (o.params["order_id"].clone(), o.params["line_id"].clone()))
+            .collect();
+        assert_eq!(
+            rechecked,
+            vec![(json!("ord-1"), json!("line-a")), (json!("ord-1"), json!("line-b"))],
+            "every row the sale charges is re-checked, scoped to its check"
+        );
+    }
+
+    #[test]
+    fn a_partial_charge_of_a_check_queues_and_rechecks_too() {
+        // «Each pays their own» (ADR-0146) writes the same sale out of the same stale read.
+        let mut inp = two_line_check_input();
+        inp["payload"]["keep_order_open"] = json!(true);
+        inp["payload"]["line_ids"] = json!(["line-a", "line-b"]);
+        let out = sale(inp);
+        let commands = commands_of(&out).into_iter().take(3).collect::<Vec<_>>();
+        assert_eq!(commands, vec!["sales._order_lock", "sales._order_line_live", "sales._order_line_live"]);
+    }
+
+    #[test]
+    fn a_line_charged_twice_in_one_payload_is_rechecked_once() {
+        let mut inp = two_line_check_input();
+        inp["payload"]["items"][1]["order_item_id"] = json!("line-a");
+        inp["context"]["reads"]["sales.order.lines"] = json!([inp["context"]["reads"]["sales.order.lines"][0].clone()]);
+        let out = sale(inp);
+        let lives = commands_of(&out).iter().filter(|c| **c == "sales._order_line_live").count();
+        assert_eq!(lives, 1);
+    }
+
+    #[test]
+    fn a_counter_sale_has_no_check_to_queue_on() {
+        let items = json!([{ "product_id": "p-burger", "product_name": "Hamburguesa",
+                             "price": 900, "quantity": 1_000_000 }]);
+        let out = sale(input_fiscal(items, burger_catalog(900), tax_catalog()));
+        let commands = commands_of(&out);
+        assert!(!commands.contains(&"sales._order_lock"), "{commands:?}");
+        assert!(!commands.contains(&"sales._order_line_live"), "{commands:?}");
+    }
 }
