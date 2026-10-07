@@ -19,7 +19,9 @@ interface SlotSdk {
 /** The tags of the components filling the hole. An older shell or a failed read = none. */
 export async function loadReversalFillers(sdk: SlotSdk): Promise<string[]> {
   try {
-    const rows = (await sdk.loadSlot?.(REVERSAL_NOTICE_SLOT)) ?? [];
+    // A literal, not REVERSAL_NOTICE_SLOT: the contract extractor reads the slot name from the
+    // call itself (ADR-0127), and the test pins both to the same string.
+    const rows = (await sdk.loadSlot?.('sales.reversal.notice')) ?? [];
     return rows.map((f) => String(f.component));
   } catch {
     return [];

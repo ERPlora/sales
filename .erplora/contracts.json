@@ -82,7 +82,8 @@
       "sales.pos.assign",
       "sales.pos.order_info",
       "sales.pos.tender",
-      "sales.refund.tender"
+      "sales.refund.tender",
+      "sales.reversal.notice"
     ]
   }
 }

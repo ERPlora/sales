@@ -17567,10 +17567,9 @@ function serviceOrdinals(covered) {
 }
 
 // ui/lib/reversal-notice.ts
-var REVERSAL_NOTICE_SLOT = "sales.reversal.notice";
 async function loadReversalFillers(sdk) {
   try {
-    const rows4 = await sdk.loadSlot?.(REVERSAL_NOTICE_SLOT) ?? [];
+    const rows4 = await sdk.loadSlot?.("sales.reversal.notice") ?? [];
     return rows4.map((f3) => String(f3.component));
   } catch {
     return [];
