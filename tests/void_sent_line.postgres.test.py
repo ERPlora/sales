@@ -297,6 +297,14 @@ def scenario(s: Session) -> None:
         NOT_VOIDABLE,
     )
     s.check("and our line is untouched", deleted(s, "l-shared"), 0)
+    # And from his side: his check is open and the line names it, but the LINE is ours — only the
+    # line's own `hub_id` keeps him out.
+    s.check(
+        "the neighbour voiding our line through his open check is refused",
+        verdict(s, VOID, void("l-shared", order_id="ord-theirs"), hub=OTHER_HUB),
+        NOT_VOIDABLE,
+    )
+    s.check("and our line is still untouched", deleted(s, "l-shared"), 0)
 
     print("\n3 · removing a fired line is an error, not a silent «ok»")
     open_check(s, "ord-rm")

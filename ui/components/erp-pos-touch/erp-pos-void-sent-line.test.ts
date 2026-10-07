@@ -32,6 +32,9 @@ interface Pos {
   cart: { line_id?: string; name: string; fired_at?: string | null }[];
   error: string;
   queue<T>(t: () => Promise<T>): Promise<T>;
+  openVoidLine(lineId: string): void;
+  applyVoidLine(): Promise<void>;
+  voidReason: string;
 }
 
 /** The till with Kitchen installed and a check of two Steaks: `l1` already sent (round 1), `l2`
@@ -146,6 +149,18 @@ describe('voiding a line already sent to the kitchen (sales#521)', () => {
     expect(commands.find((c) => c.name === 'sales.order.void_line')?.payload.reason).toBe('Burnt');
   });
 
+  it('without a reason nothing is sent, whichever way the confirm is reached', async () => {
+    // The disabled button is the screen's half; the method refuses on its own too (Enter, a
+    // second tap racing the render), because the server's refusal would cost a PIN for nothing.
+    const el = await mount();
+    el.openVoidLine('l1');
+    el.voidReason = '  ';
+    await el.applyVoidLine();
+    await settle(el);
+    expect(commands.some((c) => c.name === 'sales.order.void_line')).toBe(false);
+    expect(el.cart.map((l) => l.line_id)).toEqual(['l1', 'l2']);
+  });
+
   it('closing the sheet voids nothing', async () => {
     const el = await mount();
     q(el, 'pos-line-l1-void')!.click();
@@ -155,6 +170,20 @@ describe('voiding a line already sent to the kitchen (sales#521)', () => {
     expect(q(el, 'pos-void-scrim')).toBeNull();
     expect(commands.some((c) => c.name === 'sales.order.void_line')).toBe(false);
     expect(el.cart.map((l) => l.line_id)).toEqual(['l1', 'l2']);
+  });
+
+  it('the system Back closes the sheet and keeps the screen, voiding nothing', async () => {
+    // The shell cannot see a sheet inside this shadow DOM: on Back it dispatches a cancelable
+    // `erplora:back` and the till closes its topmost layer (erp-pos-system-back.test.ts).
+    const el = await mount();
+    q(el, 'pos-line-l1-void')!.click();
+    await el.updateComplete;
+    const back = new Event('erplora:back', { cancelable: true });
+    window.dispatchEvent(back);
+    await el.updateComplete;
+    expect(back.defaultPrevented, 'the screen is kept').toBe(true);
+    expect(q(el, 'pos-void-scrim')).toBeNull();
+    expect(commands.some((c) => c.name === 'sales.order.void_line')).toBe(false);
   });
 
   it('a refusal is said with its declared sentence and the line stays', async () => {
