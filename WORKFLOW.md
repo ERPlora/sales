@@ -247,7 +247,7 @@ flujos de su fila en la misma entrega.
 | Dividir a partes iguales o por fracción de una línea | no hecho | F22, F23 |
 | Dividir moviendo líneas; deshacer el split | parcial: mover sí, deshacer no | F23 |
 | Juntar mesas sin perder ni duplicar líneas | parcial: las líneas sí; un fallo no se ve y las rondas de la cuenta absorbida no se cierran | F24 |
-| Transferir mesa | parcial: desde una mesa dividida la deja libre con la otra cuenta (TABLES-F15) | F25 |
+| Transferir mesa | parcial: desde una mesa dividida se pasa una de sus dos cuentas sin elegir cuál (TABLES-F15) | F25 |
 | Cobrar la cita sin volver a teclear | hecho (el IVA del servicio lo pone Servicios aunque el TPV no lo haya cargado) | F26 |
 | Bono que paga una línea de servicio | hecho (con Servicios); el servidor no comprueba que el bono exista | F27 |
 | Propina | fuera del MVP (pm#100) | — |

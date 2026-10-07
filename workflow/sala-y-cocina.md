@@ -9,7 +9,7 @@ pone las cuentas, las líneas y los importes; la mesa es de Mesas y la comanda e
 ## Flujos
 
 ### SALES-F19 Abrir la cuenta de una mesa y dejarla en la mesa
-Estado: parcial — con una cuenta de barra delante, tocar una mesa ocupada que ya tiene pedido y elegir «Aparcarla y abrir» o «Eliminarla y abrir» deja esa mesa Disponible con su pedido abierto, porque Mesas ya había apuntado como cuenta de delante la de la mesa tocada (TABLES-F11, leído en el código, sin ejecutar); en una mesa con dos cuentas (dividida), tocarla abre una sin elegir
+Estado: parcial — en una mesa con dos cuentas (dividida), tocarla abre una sin elegir
 Vertical: restaurante
 Actor: empleado, responsable
 Pantalla: Vender
@@ -18,7 +18,7 @@ Pasos:
 2. Si la mesa ya tenía cuenta, sus líneas aparecen en pantalla; si no, la cuenta empieza vacía con el nombre de la mesa como título y el chip de la mesa.
 3. Añade lo que pidan. El primer artículo crea la cuenta y Mesas la enlaza a la mesa.
 4. Para soltarla sin cobrar, pulsa el botón de pausa, que con mesa es «Dejar en la mesa»: sale «La cuenta se queda en <mesa>» y la pantalla queda libre. Se retoma tocando la mesa o desde **Cuentas abiertas**.
-5. Si al tocar otra mesa hay delante una cuenta de barra (sin mesa), pregunta «Tienes una cuenta a medias» sin «Cancelar»: «Aparcarla y abrir» o «Eliminarla y abrir». Una cuenta que ya tenía mesa se queda en su mesa.
+5. Si al tocar otra mesa hay delante una cuenta de barra (sin mesa), pregunta «Tienes una cuenta a medias» sin «Cancelar»: «Aparcarla y abrir» o «Eliminarla y abrir». Lo que se aparca o se elimina es la cuenta de barra; la mesa tocada sigue Ocupada con su cuenta (TABLES-F11). Una cuenta que ya tenía mesa se queda en su mesa.
 Entra: la mesa elegida y su cuenta, de Mesas.
 Sale: la cuenta abierta con el título de la mesa; Mesas guarda qué cuenta tiene cada mesa (avisa: sales.order.opened al crearla, que hoy no escucha nadie).
 Si falla: «No se ha podido dejar la cuenta en su mesa. Sigue en pantalla.»; con líneas sin enviar a cocina no se cambia de mesa ni de cuenta («Productos sin enviar»).
@@ -76,7 +76,7 @@ Implicados: KITCHEN-F27, SERVICES-F24, TABLES-F18, REC_PELUQUERIA-F10, REC_RESTA
 QA: R-07, qa-hub-restaurant §7.09
 
 ### SALES-F23 Dividir la cuenta de una mesa
-Estado: parcial — solo moviendo líneas enteras: ni partes iguales ni fracción de una línea, y no se deshace un split; al cobrar entera la cuenta nueva, el TPV pide a Mesas cerrar también la cuenta de mesa que tenía delante (la original, o la de otra mesa si había otra elegida) y esa mesa queda Disponible con su pedido todavía abierto (TABLES-F17, leído en el código, sin ejecutar); en cocina, cobrar la original cierra sus rondas aunque parte de sus platos pasaran a la nueva (KITCHEN-F27); Servicios no se entera de la división: la sesión de bono retenida para una línea que pasa a la cuenta nueva se queda en la original, y cobrar la original la gasta aunque la línea se cobre en la nueva (SERVICES-F22, SERVICES-F24, leído en el código, sin ejecutar)
+Estado: parcial — solo moviendo líneas enteras: ni partes iguales ni fracción de una línea, y no se deshace un split; en cocina, cobrar la original cierra sus rondas aunque parte de sus platos pasaran a la nueva (KITCHEN-F27); Servicios no se entera de la división: la sesión de bono retenida para una línea que pasa a la cuenta nueva se queda en la original, y cobrar la original la gasta aunque la línea se cobre en la nueva (SERVICES-F22, SERVICES-F24, leído en el código, sin ejecutar)
 Vertical: restaurante
 Actor: empleado, responsable
 Pantalla: Vender
@@ -84,6 +84,7 @@ Pasos:
 1. Marca en la cuenta las líneas que se van a la cuenta nueva (como en SALES-F22).
 2. En el control de mesa (de Mesas), pulsa «Dividir cuenta»: abre una segunda cuenta en la mesa.
 3. Las líneas marcadas pasan a la cuenta nueva con su importe, su IVA y su ronda de cocina; la pantalla se queda en la cuenta nueva para cobrarla. Sin nada marcado, la cuenta nueva nace vacía.
+4. Cobrar entera la cuenta nueva cierra solo su cuenta de mesa: la mesa sigue Ocupada con la original, y cualquier otra mesa sigue como estaba (TABLES-F17).
 Entra: la segunda cuenta de la mesa que abre Mesas.
 Sale: dos cuentas abiertas que suman lo mismo que la original al céntimo; Mesas enlaza la nueva a su segunda cuenta.
 Si falla: «No se pudo dividir la cuenta» y las líneas no se mueven; si el fallo fue de Ventas, Mesas ya abrió la segunda cuenta y la mesa se queda con una cuenta vacía de más.
@@ -91,7 +92,7 @@ Implicados: KITCHEN-F27, SERVICES-F22, SERVICES-F24, TABLES-F17, REC_PELUQUERIA-
 QA: R-07, qa-hub-restaurant §7.09 (discrepa)
 
 ### SALES-F24 Juntar las cuentas de dos mesas
-Estado: parcial — si la unión de cuentas falla no se ve nada (las mesas quedan fusionadas en Mesas y las cuentas siguen separadas); las rondas enviadas desde la cuenta absorbida no se cierran al cobrar y se quedan en la pantalla de Cocina; si la mesa de origen estaba dividida, se junta una de sus dos cuentas sin elegir y la mesa queda Disponible con la otra sentada (TABLES-F16); la sesión de bono retenida en la cuenta absorbida no se gasta al cobrar la que queda: vuelve sola al bono al cabo de un día y el hueco de la que queda ofrece gastar otra (SERVICES-F22, leído en el código, sin ejecutar)
+Estado: parcial — si la unión de cuentas falla no se ve nada (las mesas quedan fusionadas en Mesas y las cuentas siguen separadas); las rondas enviadas desde la cuenta absorbida no se cierran al cobrar y se quedan en la pantalla de Cocina; si la mesa de origen estaba dividida, se junta una de sus dos cuentas sin elegir (la mesa sigue Ocupada con la otra, TABLES-F16); la sesión de bono retenida en la cuenta absorbida no se gasta al cobrar la que queda: vuelve sola al bono al cabo de un día y el hueco de la que queda ofrece gastar otra (SERVICES-F22, leído en el código, sin ejecutar)
 Vertical: restaurante
 Actor: empleado, responsable
 Pantalla: Vender
@@ -106,7 +107,7 @@ Implicados: KITCHEN-F28, SERVICES-F22, TABLES-F16, REC_PELUQUERIA-F10, REC_RESTA
 QA: R-07, qa-hub-restaurant §7.09
 
 ### SALES-F25 Pasar la cuenta a otra mesa
-Estado: parcial — si la mesa de origen estaba dividida (dos cuentas), se pasa una de ellas sin elegir cuál y la mesa de origen queda Disponible con la otra cuenta todavía sentada (TABLES-F15, leído en el código, sin ejecutar)
+Estado: parcial — si la mesa de origen estaba dividida (dos cuentas), se pasa una de ellas sin elegir cuál (la mesa de origen sigue Ocupada con la otra, TABLES-F15)
 Vertical: restaurante
 Actor: empleado, responsable
 Pantalla: Vender
@@ -114,7 +115,7 @@ Pasos:
 1. En el control de mesa (de Mesas), pulsa «Transferir» y elige una mesa libre.
 2. La cuenta es la misma: la pantalla cambia el chip y, si el título era el de la mesa, el título.
 Entra: la mesa de destino, de Mesas.
-Sale: nada en Ventas (la cuenta no cambia); Mesas libera la de origen.
+Sale: nada en Ventas (la cuenta no cambia); Mesas libera la de origen si no le queda otra cuenta.
 Si falla: lo dice Mesas.
 Implicados: TABLES-F15, REC_RESTAURANTE-F10
 QA: R-07, qa-hub-restaurant §7.09
