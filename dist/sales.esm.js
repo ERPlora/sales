@@ -17566,6 +17566,35 @@ function serviceOrdinals(covered) {
   return out;
 }
 
+// ui/lib/reversal-notice.ts
+async function loadReversalFillers(sdk) {
+  try {
+    const rows4 = await sdk.loadSlot?.("sales.reversal.notice") ?? [];
+    return rows4.map((f3) => String(f3.component));
+  } catch {
+    return [];
+  }
+}
+function mountReversalNotice(host, fillers, saleId, action, mounted) {
+  if (!host) return;
+  for (const component of fillers) {
+    let el = mounted.get(component);
+    if (!el) {
+      el = document.createElement(component);
+      mounted.set(component, el);
+    }
+    const props = el;
+    props.saleId = saleId;
+    props.action = action;
+    if (el.parentElement !== host) host.appendChild(el);
+  }
+  for (const [component, el] of [...mounted]) {
+    if (fillers.includes(component)) continue;
+    el.remove();
+    mounted.delete(component);
+  }
+}
+
 // ui/lib/refund-pending-key.ts
 var PREFIX = "erplora.sales.refundPendingKey.";
 var memory = /* @__PURE__ */ new Map();
@@ -17660,6 +17689,9 @@ var ErpSaleRefund = class extends i3 {
     this.tenderHeard = /* @__PURE__ */ new Set();
     /** One instance per covered line, kept so it is not recreated on every render. */
     this.tenderEls = /* @__PURE__ */ new Map();
+    this.reversalFillers = [];
+    /** One instance per filler, kept so it is not recreated on every render. */
+    this.reversalEls = /* @__PURE__ */ new Map();
     /** La clave del intento, congelada: un reintento NO la renueva. */
     this.key = "";
     /** That line goes back to its external tender. The warning travels with the event because the
@@ -17778,6 +17810,13 @@ var ErpSaleRefund = class extends i3 {
   updated(changed) {
     if (changed.has("saleId")) void this.load();
     this.ensureTenderSlotsMounted();
+    mountReversalNotice(
+      this.renderRoot.querySelector('[data-testid="refund-reversal-notice"]'),
+      this.reversalFillers,
+      this.saleId ?? "",
+      "refund",
+      this.reversalEls
+    );
   }
   async load() {
     const saleId = this.saleId;
@@ -17798,6 +17837,7 @@ var ErpSaleRefund = class extends i3 {
       const split = proportionalSplit(refundableTotal(this.legs), this.legs);
       this.draft = Object.fromEntries(Object.entries(split).map(([id, amount]) => [id, { amount }]));
       await this.loadTenderLines(saleId);
+      this.reversalFillers = await loadReversalFillers(erplora5());
       if (this.recoveredRef && !this.tenderReadFailed && !this.covered.length) this.settleRecovered();
       this.tenderPending = !!this.recoveredRef && this.tenderReadFailed;
     } catch (e8) {
@@ -18286,6 +18326,10 @@ var ErpSaleRefund = class extends i3 {
       <!-- And the external tenders' warnings, next to the button: the line's hole can be
            off-screen when the thumb is already on the refund button (sales#166). -->
       ${this.renderTenderNotices()}
+      <!-- services#157: what refunding the WHOLE sale also undoes elsewhere (the voucher sold on
+           it), read before confirming. Only in the branch with money to give back: with none
+           left the sale is already refunded in full and nothing more is undone. -->
+      ${this.reversalFillers.length ? b2`<div class="reversal-notice" data-testid="refund-reversal-notice"></div>` : A}
       ${this.checking ? b2`<div class="refund-checking" data-testid="refund-checking" role="status">
             <ion-spinner name="crescent"></ion-spinner><span>${t7("ui.refundChecking")}</span>
           </div>` : A}
@@ -18370,10 +18414,129 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpSaleRefund.prototype, "tenderNotices", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "reversalFillers", 2);
 define("erp-sale-refund", ErpSaleRefund);
 
-// ui/components/erp-sales-list/erp-sales-list.ts
+// ui/components/erp-sale-void/erp-sale-void.ts
 var CATALOG6 = { es: es_default, en: en_default };
+function erplora6() {
+  const c5 = globalThis.erplora;
+  if (!c5) throw new Error("erplora SDK not initialised by the shell");
+  return c5;
+}
+var ErpSaleVoid = class extends i3 {
+  constructor() {
+    super(...arguments);
+    this.saleId = "";
+    this.saleNumber = "";
+    this.busy = false;
+    this.errorText = "";
+    this.reason = "";
+    this.reasonMissing = false;
+    this.reversalFillers = [];
+    this.reversalEls = /* @__PURE__ */ new Map();
+  }
+  static {
+    this.styles = i`
+    :host { display:block; }
+    /* Own padding: the global ion-padding class does not cross the shadow DOM. */
+    .void-body { display:flex; flex-direction:column; gap:.85rem; max-width:40rem; margin:0 auto; padding:1rem; }
+    h3 { margin:0; font-size:1.1rem; overflow-wrap:anywhere; }
+    .hint { margin:0; color:var(--ion-color-medium,#8b897f); font-size:.85rem; }
+    .reversal-notice { display:flex; flex-direction:column; gap:.5rem; }
+    .actions { display:flex; justify-content:flex-end; gap:.5rem; flex-wrap:wrap; }
+    /* color="danger" paints nothing inside a module shadow root (pm#392): the danger tone goes by
+       the button's own custom properties. */
+    ion-button.void-confirm { --background:var(--ion-color-danger,#eb445a);
+      --background-activated:var(--ion-color-danger-shade,#cf3c4f);
+      --color:var(--ion-color-danger-contrast,#fff); }
+  `;
+  }
+  connectedCallback() {
+    super.connectedCallback();
+    void loadReversalFillers(erplora6()).then((tags) => {
+      this.reversalFillers = tags;
+    });
+  }
+  updated() {
+    mountReversalNotice(
+      this.renderRoot.querySelector('[data-testid="void-reversal-notice"]'),
+      this.reversalFillers,
+      this.saleId,
+      "void",
+      this.reversalEls
+    );
+  }
+  confirm() {
+    if (this.busy) return;
+    const reason = this.reason.trim();
+    if (!reason) {
+      this.reasonMissing = true;
+      return;
+    }
+    this.reasonMissing = false;
+    this.dispatchEvent(new CustomEvent("void-confirm", { detail: { reason }, bubbles: true, composed: true }));
+  }
+  cancel() {
+    this.dispatchEvent(new CustomEvent("void-cancel", { bubbles: true, composed: true }));
+  }
+  render() {
+    const t7 = (k2, p4) => erplora6().t(CATALOG6, k2, p4);
+    const error = this.reasonMissing ? t7("ui.voidReasonRequired") : this.errorText;
+    return b2`<div class="void-body" data-testid="void-form">
+      <h3 data-testid="void-title">${t7("ui.voidTitle", { number: this.saleNumber })}</h3>
+      <p class="hint" data-testid="void-explain">${t7("ui.voidExplain")}</p>
+      <ion-textarea
+        data-testid="void-reason"
+        label=${t7("ui.voidReasonPlaceholder")}
+        fill="outline"
+        mode="md"
+        label-placement="stacked"
+        maxlength="500"
+        auto-grow
+        .value=${this.reason}
+        @ionInput=${(e8) => {
+      this.reason = e8.detail?.value ?? "";
+      this.reasonMissing = false;
+    }}
+      ></ion-textarea>
+      ${this.reversalFillers.length ? b2`<div class="reversal-notice" data-testid="void-reversal-notice"></div>` : A}
+      ${error ? b2`<ok-inline-feedback data-testid="void-error" tone="danger" icon="alert-circle-outline">${error}</ok-inline-feedback>` : A}
+      <div class="actions">
+        <ion-button data-testid="void-cancel" fill="clear" @click=${() => this.cancel()}>${t7("ui.cancel")}</ion-button>
+        <ion-button class="void-confirm" data-testid="void-confirm" ?disabled=${this.busy} @click=${() => this.confirm()}
+          >${t7("ui.actionVoid")}</ion-button>
+      </div>
+    </div>`;
+  }
+};
+__decorateClass([
+  n4({ type: String })
+], ErpSaleVoid.prototype, "saleId", 2);
+__decorateClass([
+  n4({ type: String })
+], ErpSaleVoid.prototype, "saleNumber", 2);
+__decorateClass([
+  n4({ type: Boolean })
+], ErpSaleVoid.prototype, "busy", 2);
+__decorateClass([
+  n4({ type: String })
+], ErpSaleVoid.prototype, "errorText", 2);
+__decorateClass([
+  r5()
+], ErpSaleVoid.prototype, "reason", 2);
+__decorateClass([
+  r5()
+], ErpSaleVoid.prototype, "reasonMissing", 2);
+__decorateClass([
+  r5()
+], ErpSaleVoid.prototype, "reversalFillers", 2);
+define("erp-sale-void", ErpSaleVoid);
+
+// ui/components/erp-sales-list/erp-sales-list.ts
+var CATALOG7 = { es: es_default, en: en_default };
 var STATUS_KEYS = {
   completed: "ui.statusCompleted",
   voided: "ui.statusVoided",
@@ -18406,7 +18569,7 @@ function rangeBounds(range, today) {
   const from = new Date(Date.UTC(y3, m4 - 1, d3 - days)).toISOString().slice(0, 10);
   return { from, to: today };
 }
-function erplora6() {
+function erplora7() {
   const c5 = globalThis.erplora;
   if (!c5) throw new Error("erplora SDK no inicializado por el shell");
   return c5;
@@ -18426,6 +18589,8 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
       if (this.kpiRow !== e8.matches) this.kpiRow = e8.matches;
     };
     this.payMethods = [];
+    this.voidBusy = false;
+    this.voidError = "";
     this.reprinting = /* @__PURE__ */ new Set();
     this.onLocaleChange = () => this.requestUpdate();
   }
@@ -18462,7 +18627,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
   // Getter (no campo): se re-evalúa en cada render, así los textos cambian con el idioma activo
   // (ADR-0055). El listener `erplora:locale-changed` re-renderiza.
   get documentActions() {
-    const t7 = (k2, p4) => erplora6().t(CATALOG6, k2, p4);
+    const t7 = (k2, p4) => erplora7().t(CATALOG7, k2, p4);
     const actions = [
       { id: "document", label: t7("ui.actionDocument"), icon: "receipt-outline" },
       // sales#347 — one tap reprints the ticket without opening it, like the sales history of
@@ -18475,7 +18640,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
         loading: (r6) => this.reprinting.has(String(r6.id))
       }
     ];
-    if (erplora6().hasPermission?.("sales.void_sale")) {
+    if (erplora7().hasPermission?.("sales.void_sale")) {
       actions.push({
         id: "void",
         label: t7("ui.actionVoid"),
@@ -18484,7 +18649,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
         disabled: (r6) => r6.status !== "completed" || Number(r6.refunded_total ?? 0) > 0
       });
     }
-    if (erplora6().hasPermission?.("sales.refund_sale")) {
+    if (erplora7().hasPermission?.("sales.refund_sale")) {
       actions.push({
         id: "refund",
         // TEXTO, no función (sales#259). `DataTableAction.label` acepta `(row) => string` solo
@@ -18512,55 +18677,41 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
     if (this.reprinting.has(id)) return;
     this.reprinting = /* @__PURE__ */ new Set([...this.reprinting, id]);
     try {
-      await reprintSale(id, (k2) => erplora6().t(CATALOG6, k2));
+      await reprintSale(id, (k2) => erplora7().t(CATALOG7, k2));
     } finally {
       const rest = new Set(this.reprinting);
       rest.delete(id);
       this.reprinting = rest;
     }
   }
-  /** sales#26 — pide el MOTIVO (obligatorio: Toast, Lightspeed y el software fiscal español lo
-   *  exigen; es lo que luego se lee en el historial) y anula. Overlay global de Ionic, como el TPV. */
-  async confirmVoid(sale) {
-    const t7 = (k2, p4) => erplora6().t(CATALOG6, k2, p4);
-    const alert = document.createElement("ion-alert");
-    alert.header = t7("ui.voidTitle", { number: sale.sale_number });
-    alert.message = t7("ui.voidExplain");
-    alert.inputs = [{ name: "reason", type: "textarea", placeholder: t7("ui.voidReasonPlaceholder"), attributes: { maxlength: 500 } }];
-    alert.buttons = [
-      { text: t7("ui.cancel"), role: "cancel" },
-      { text: t7("ui.actionVoid"), role: "destructive", handler: (data) => {
-        const reason = (data?.reason ?? "").trim();
-        if (!reason) {
-          erplora6().notify?.({ type: "error", message: t7("ui.voidReasonRequired") });
-          return false;
-        }
-        void this.voidSale(sale.id, reason);
-        return true;
-      } }
-    ];
-    alert.addEventListener("ionAlertDidDismiss", () => setTimeout(() => alert.remove(), 0), { once: true });
-    document.body.appendChild(alert);
-    try {
-      if (typeof alert.present === "function") await alert.present();
-      else alert.isOpen = true;
-    } catch {
-      alert.remove();
-    }
+  /** sales#26 — the void asks for a REASON (required: Toast, Lightspeed and the Spanish fiscal
+   *  software ask for it; it is what the history reads later). services#157 — in a window, not an
+   *  ion-alert: an alert cannot host what other modules say the void also undoes (the voucher sold
+   *  on this sale), and the operator has to read that before confirming. */
+  confirmVoid(sale) {
+    this.voidError = "";
+    this.voidBusy = false;
+    this.voidTarget = sale;
   }
-  /** Ejecuta `sales.void`; el servidor decide (motivo, estado, factura) y aquí solo se cuenta. */
+  /** Runs `sales.void`; the server decides (reason, status, invoice) and here it is only told.
+   *  A refusal stays in the open window, next to the reason and the button. */
   async voidSale(saleId, reason) {
-    const t7 = (k2) => erplora6().t(CATALOG6, k2);
+    const t7 = (k2) => erplora7().t(CATALOG7, k2);
+    this.voidBusy = true;
+    this.voidError = "";
     try {
-      await erplora6().command("sales.void", { sale_id: saleId, reason });
-      erplora6().notify?.({ type: "success", message: t7("ui.voidDone") });
+      await erplora7().command("sales.void", { sale_id: saleId, reason });
+      erplora7().notify?.({ type: "success", message: t7("ui.voidDone") });
+      this.voidTarget = void 0;
       await Promise.all([this.ctrl.load(), this.loadStats()]);
     } catch (e8) {
-      erplora6().notify?.({ type: "error", message: t7(voidErrorKey(errorCode(e8))) });
+      this.voidError = t7(voidErrorKey(errorCode(e8)));
+    } finally {
+      this.voidBusy = false;
     }
   }
   get columns() {
-    const t7 = (k2, p4) => erplora6().t(CATALOG6, k2, p4);
+    const t7 = (k2, p4) => erplora7().t(CATALOG7, k2, p4);
     return [
       // sales#27: la hora de cada venta a la vista (antes se ordenaba por ella y no se pintaba).
       {
@@ -18569,7 +18720,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
         sortable: true,
         filterable: true,
         filterType: "daterange",
-        format: (r6) => formatDateTime(String(r6.created_at ?? ""), erplora6().locale)
+        format: (r6) => formatDateTime(String(r6.created_at ?? ""), erplora7().locale)
       },
       { key: "sale_number", header: t7("ui.colNumber"), sortable: true, filterable: true, filterType: "text" },
       { key: "customer_name", header: t7("ui.colCustomer"), sortable: true, filterable: true, filterType: "text", format: (r6) => r6.customer_name || "\u2014" },
@@ -18642,7 +18793,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
           const refunded = Number(r6.refunded_total ?? 0);
           const remaining = Number(r6.total || 0) - refunded;
           if (!(refunded > 0 && remaining > 0)) return b2`<span>${status}</span>`;
-          const amount = erplora6().formatMoney(remaining).replace(/\s/g, "\xA0");
+          const amount = erplora7().formatMoney(remaining).replace(/\s/g, "\xA0");
           return b2`<span style="display:flex;flex-direction:column;min-width:0;line-height:1.25;">
           <span>${status}</span>
           <span style="font-size:0.78em;color:var(--color-muted, var(--ion-color-medium, #6b7280));white-space:normal;overflow-wrap:anywhere;"
@@ -18651,7 +18802,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
         </span>`;
         }
       },
-      { key: "total", header: t7("ui.colTotal"), align: "right", sortable: true, filterable: true, filterType: "range", format: (r6) => erplora6().formatMoney(Number(r6.total || 0)) }
+      { key: "total", header: t7("ui.colTotal"), align: "right", sortable: true, filterable: true, filterType: "range", format: (r6) => erplora7().formatMoney(Number(r6.total || 0)) }
     ];
   }
   // TODO-LIT: componentWillLoad → connectedCallback. Recuerda: connectedCallback se dispara
@@ -18667,7 +18818,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
     }
     await this.loadBusinessDay();
     const b3 = rangeBounds(this.range, this.businessDay);
-    this.ctrl = createListController(erplora6(), "sales.list", () => this.requestUpdate(), {
+    this.ctrl = createListController(erplora7(), "sales.list", () => this.requestUpdate(), {
       pageSize: 50,
       sort: "created_at",
       dir: "desc",
@@ -18684,7 +18835,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
     });
     await Promise.all([this.ctrl.load(), this.loadStats(), this.loadPayMethods()]);
     try {
-      this.unsub = erplora6().on("sale.completed", () => {
+      this.unsub = erplora7().on("sale.completed", () => {
         this.ctrl.load();
         this.loadStats();
       });
@@ -18708,14 +18859,14 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
    *  otherwise, the server's message never. An EMPTY answer is not a failure and says nothing. */
   async loadPayMethods() {
     try {
-      const rows4 = await erplora6().query("sales.payment_methods");
+      const rows4 = await erplora7().query("sales.payment_methods");
       this.payMethods = Array.isArray(rows4) ? rows4 : [];
       this.payMethodsError = "";
     } catch (e8) {
       this.payMethods = [];
-      const t7 = (k2) => erplora6().t(CATALOG6, k2);
+      const t7 = (k2) => erplora7().t(CATALOG7, k2);
       const transport = transportErrorKey(e8);
-      this.payMethodsError = transport ? t7(transport) : domainErrorText(CATALOG6, erplora6().locale, e8) || t7("ui.errorPayMethods");
+      this.payMethodsError = transport ? t7(transport) : domainErrorText(CATALOG7, erplora7().locale, e8) || t7("ui.errorPayMethods");
     }
   }
   /** The table's own date picker («Date» column) also filters by DAY: the column paints
@@ -18770,7 +18921,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
    *  always did. */
   async loadBusinessDay() {
     try {
-      const rows4 = await erplora6().query("sales.business_day");
+      const rows4 = await erplora7().query("sales.business_day");
       const day = Array.isArray(rows4) ? rows4[0]?.today : void 0;
       this.businessDay = typeof day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : deviceDay();
     } catch {
@@ -18781,16 +18932,16 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
     this.statsError = "";
     try {
       const b3 = rangeBounds(this.range, this.businessDay);
-      const rows4 = await erplora6().query("sales.stats", { date_from: b3.from ?? null, date_to: b3.to ?? null });
+      const rows4 = await erplora7().query("sales.stats", { date_from: b3.from ?? null, date_to: b3.to ?? null });
       this.stats = rows4 && rows4[0] || { count: 0, total_revenue: 0, avg_ticket: 0 };
     } catch (e8) {
-      const t7 = (k2) => erplora6().t(CATALOG6, k2);
+      const t7 = (k2) => erplora7().t(CATALOG7, k2);
       const transport = transportErrorKey(e8);
-      this.statsError = transport ? t7(transport) : domainErrorText(CATALOG6, erplora6().locale, e8) || t7("ui.errorStats");
+      this.statsError = transport ? t7(transport) : domainErrorText(CATALOG7, erplora7().locale, e8) || t7("ui.errorStats");
     }
   }
   render() {
-    const t7 = (k2) => erplora6().t(CATALOG6, k2);
+    const t7 = (k2) => erplora7().t(CATALOG7, k2);
     const kpi = (value) => this.statsError ? "\u2014" : value;
     const listFailed = !!this.ctrl?.error;
     return b2`<div class="scroll">
@@ -18808,19 +18959,19 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
           </div>
           <div class="card">
             <div class="k">${t7("ui.revenue")}</div>
-            <div class="v" data-testid="sales-kpi-revenue">${kpi(erplora6().formatMoney(Number(this.stats.total_revenue || 0)))}</div>
+            <div class="v" data-testid="sales-kpi-revenue">${kpi(erplora7().formatMoney(Number(this.stats.total_revenue || 0)))}</div>
           </div>
           <div class="card">
             <div class="k">${t7("ui.avgTicket")}</div>
-            <div class="v" data-testid="sales-kpi-avg-ticket">${kpi(erplora6().formatMoney(Number(this.stats.avg_ticket || 0)))}</div>
+            <div class="v" data-testid="sales-kpi-avg-ticket">${kpi(erplora7().formatMoney(Number(this.stats.avg_ticket || 0)))}</div>
           </div>
           <div class="card">
             <div class="k">${t7("ui.kpiTax")}</div>
-            <div class="v" data-testid="sales-kpi-tax">${kpi(erplora6().formatMoney(Number(this.stats.tax_total || 0)))}</div>
+            <div class="v" data-testid="sales-kpi-tax">${kpi(erplora7().formatMoney(Number(this.stats.tax_total || 0)))}</div>
           </div>
           <div class="card">
             <div class="k">${t7("ui.kpiDiscounts")}</div>
-            <div class="v" data-testid="sales-kpi-discounts">${kpi(erplora6().formatMoney(Number(this.stats.discount_total || 0)))}</div>
+            <div class="v" data-testid="sales-kpi-discounts">${kpi(erplora7().formatMoney(Number(this.stats.discount_total || 0)))}</div>
           </div>
           <div class="card">
             <div class="k">${t7("ui.kpiVoided")}</div>
@@ -18835,7 +18986,7 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
         <ok-data-table data-testid="sales-table" testid="sales-table" .error=${this.ctrl?.error ?? ""} @retry=${() => Promise.all([this.ctrl?.load(), this.loadStats(), this.loadPayMethods()])} .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r6) => String(r6.sale_number ?? "\u2014")} .cardIcon=${() => "receipt-outline"} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.paintedSort} .sortDir=${this.ctrl?.state.dir ?? "desc"} .searchable=${true} .searchPlaceholder=${t7("ui.searchSalePlaceholder")} .emptyMessage=${this.ctrl?.loading ? t7("ui.loading") : t7("ui.noSales")} .actions=${this.documentActions} .rowClickable=${true} @rowAction=${(e8) => {
       if (e8.detail.actionId === "document") this.docSaleId = e8.detail.row.id;
       else if (e8.detail.actionId === "reprint") void this.reprint(e8.detail.row);
-      else if (e8.detail.actionId === "void") void this.confirmVoid(e8.detail.row);
+      else if (e8.detail.actionId === "void") this.confirmVoid(e8.detail.row);
       else if (e8.detail.actionId === "refund") this.refundSaleId = e8.detail.row.id;
     }} @rowClick=${(e8) => {
       this.docSaleId = e8.detail.row.id;
@@ -18865,6 +19016,28 @@ var _ErpSalesList = class _ErpSalesList extends i3 {
       void this.ctrl.load();
       void this.loadStats();
     }}></erp-sale-refund>` : A}
+        </ion-content>
+      </ion-modal>
+      <!-- services#157 — the void confirmation is a window too: it hosts sales.reversal.notice, what
+           the void also undoes in other modules (the voucher sold on the sale). Inline like the
+           refund: nothing is appended to document.body, so nothing lingers there (sales#406). -->
+      <ion-modal class="void-modal" .isOpen=${!!this.voidTarget}
+        @ionModalDidDismiss=${() => {
+      this.voidTarget = void 0;
+    }}>
+        <ion-content>
+          ${this.voidTarget ? b2`<erp-sale-void data-testid="sales-void-modal"
+                .saleId=${this.voidTarget.id}
+                .saleNumber=${this.voidTarget.sale_number}
+                .busy=${this.voidBusy}
+                .errorText=${this.voidError}
+                @void-cancel=${() => {
+      this.voidTarget = void 0;
+    }}
+                @void-confirm=${(e8) => {
+      if (this.voidTarget) void this.voidSale(this.voidTarget.id, e8.detail.reason);
+    }}
+              ></erp-sale-void>` : A}
         </ion-content>
       </ion-modal>`;
   }
@@ -18896,6 +19069,15 @@ __decorateClass([
 __decorateClass([
   r5()
 ], _ErpSalesList.prototype, "refundSaleId", 2);
+__decorateClass([
+  r5()
+], _ErpSalesList.prototype, "voidTarget", 2);
+__decorateClass([
+  r5()
+], _ErpSalesList.prototype, "voidBusy", 2);
+__decorateClass([
+  r5()
+], _ErpSalesList.prototype, "voidError", 2);
 __decorateClass([
   r5()
 ], _ErpSalesList.prototype, "reprinting", 2);

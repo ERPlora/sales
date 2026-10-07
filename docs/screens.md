@@ -129,6 +129,17 @@ never blocks — an expired voucher does not veto undoing a past act.
 With nobody filling the slot there is no section, no header, no empty hole, and no extra call: the
 refund travels field for field as it did before.
 
+### What else a void or a full refund undoes (services#157)
+
+Voiding a sale, or refunding it in full, can undo what another module sold on it: a voucher sold
+on the ticket is voided with it, sessions already used included. The operator has to read that
+**before** confirming. Both the **Void sale** window (`erp-sale-void`, an inline window that replaced
+the old global alert) and the **Refund** window host the slot `sales.reversal.notice` right above
+the confirm button. Each filler gets two JS properties, set before the insert: `saleId` and
+`action` (`'void'` or `'refund'`; a partial refund leaves what was sold alive, and the filler says
+so). It warns and never blocks or delays the window: with nobody filling it, or a registry that
+fails, there is no hole and the void or refund goes on as before.
+
 ## Sell — the till
 
 The touch point of sale. It opens **full screen**: the shell hides its own chrome and gives a
@@ -430,7 +441,8 @@ The list of recorded sales (`sales.list`, 50 rows per page). Requires `sales.vie
 
 Open a sale to see its full detail and its lines. From here you can **void** a sale — see
 [concepts.md](concepts.md) for what that means and why you cannot simply edit it. Voiding requires
-`sales.void_sale`.
+`sales.void_sale` and opens the **Void sale** window: a mandatory reason, what other modules undo
+with it (slot `sales.reversal.notice`), and **Void** / **Cancel**; a refusal is read in the window.
 
 **Reprint** (the printer icon on each row, also on the cards on a phone) sends that sale's receipt
 to the receipt printer without opening it (sales#347). It is a copy: the paper says «duplicado»,
