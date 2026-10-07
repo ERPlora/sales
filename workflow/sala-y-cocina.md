@@ -71,7 +71,7 @@ Pasos:
 2. Pulsa «Cobrar»: la hoja dice «Cobrando N líneas de <total>» y cobra solo esas.
 3. Tras cobrar, la cuenta sigue abierta con lo que falta; lo cobrado ya no vuelve a salir.
 Entra: las líneas marcadas.
-Sale: una venta con esas líneas (avisa: sale.completed); las líneas quedan atadas a su venta y la cuenta sigue abierta (no se avisa de cuenta cerrada, así que la mesa no se libera ni Cocina cierra sus rondas). Si después se anula una de esas ventas, Mesas cierra la sesión y libera la mesa aunque la cuenta siga abierta (SALES-F30).
+Sale: una venta con esas líneas (avisa: sale.completed); las líneas quedan atadas a su venta y la cuenta sigue abierta (no se avisa de cuenta cerrada, así que la mesa no se libera ni Cocina cierra sus rondas). Si después se anula una de esas ventas, la cuenta sigue abierta y la mesa Ocupada (SALES-F30, TABLES-F19), pero lo que se cobró en ella no vuelve a lo pendiente (sales#551).
 Si falla: los mismos rechazos que un cobro normal, también el de la cuenta que cambió mientras se cobraba: si otro dispositivo anula, quita o cobra una de las líneas marcadas, no se cobra nada, la cuenta se vuelve a leer y la marca de la línea que se fue desaparece (SALES-F01, sales#545); con una sola línea no hay nada que marcar.
 Implicados: KITCHEN-F27, SERVICES-F24, TABLES-F18, REC_PELUQUERIA-F10, REC_RESTAURANTE-F10
 QA: R-07, qa-hub-restaurant §7.09

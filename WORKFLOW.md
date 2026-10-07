@@ -212,7 +212,7 @@ flujos de su fila en la misma entrega.
 | El chip «Atiende» y el sello de la línea: camarero en el restaurante, profesional en la peluquería | F16, F19, F20, F26 |
 | El hueco «asignar» de la cabecera: mesa (Mesas) y cliente (Clientes) en el mismo sitio | F05, F17, F19, F23, F24, F25 |
 | La ventana **Devolver**: dinero por forma de pago y sesión de bono en la misma confirmación | F31, F32 |
-| La anulación de una venta: un solo aviso, y quién reacciona decide el efecto en cada negocio (Mesas cierra y libera la mesa, también tras un cobro parcial; Servicios devuelve la sesión de bono y anula el bono intacto que se vendió en esa venta; Citas no desmarca la cita) | F22, F26, F27, F30 |
+| La anulación de una venta: un solo aviso, y quién reacciona decide el efecto en cada negocio (Mesas solo deja de contar el cobro: la cuenta y la mesa siguen como estaban; Servicios devuelve la sesión de bono y anula el bono intacto que se vendió en esa venta; Citas no desmarca la cita) | F22, F26, F27, F30 |
 | El aviso de cuenta cerrada al cobrar la cuenta entera: Mesas libera la mesa y Cocina cierra sus rondas (cancela las pendientes) | F01, F20, F22 |
 | Las marcas de invitación y de «pagada por bono» de cada línea: el servidor las toma del cobro tal cual | F15, F27 |
 | Los ajustes del TPV: los mismos interruptores para los dos negocios (no hay ajuste por vertical) | F34 y todos los de cobro |
