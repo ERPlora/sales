@@ -31,8 +31,8 @@ versión instalada y cita la de TU versión, no la de la última publicada. En i
 | command | `sales.complete_sale` (WASM) | `sales.take_payment` |
 | command | `sales.order.open` / `.fire` (WASM) | `sales.add_sale` |
 | command | `sales.order.add_line` / `.update_line` / `.remove_line` / `.split` / `.merge` / `.set_label` | `sales.add_sale` |
-| command | `sales.void` / `sales.order.void` | `sales.void_sale` |
-| emite | `sale.completed`, `sale.voided`, `order.fired`, `sales.sale.created_from_appointment` | — |
+| command | `sales.void` / `sales.order.void` / `sales.order.void_line` (línea ya enviada a cocina, con motivo) | `sales.void_sale` |
+| emite | `sale.completed`, `sale.voided`, `order.fired`, `sales.sale.created_from_appointment`, `sales.order.line_removed`, `sales.order.line_voided` | — |
 | escucha | — (sales no reacciona a otros módulos) | — |
 
 Navegación: `erp-pos` (pantalla completa) y `erp-sales-list`; ajustes declarativos (ADR-0082).

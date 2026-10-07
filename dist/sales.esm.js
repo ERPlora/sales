@@ -4713,7 +4713,9 @@ var en_default = {
     "sales.too_many_lines": "The ticket has too many lines to be charged in one go. Split it into two.",
     "sales.too_many_rows": "The sale needs more rows than the server can write in one go. Split it into two.",
     "sales.void_reason_required": "A reason is required to void a sale.",
-    "sales.void_requires_credit_note": "This sale carries a full invoice: issue a credit note instead of voiding it."
+    "sales.void_requires_credit_note": "This sale carries a full invoice: issue a credit note instead of voiding it.",
+    "sales.order_line_not_removable": "That line can no longer be removed: it was already sent to the kitchen (void it with a reason) or it is no longer on the check.",
+    "sales.order_line_not_voidable": "That line cannot be voided: it is not on an open check as a sent, unpaid line, or the reason is missing. Load the check again."
   },
   ui: {
     sales: "Sales",
@@ -5183,7 +5185,17 @@ var en_default = {
     deleteCheckFailed: "That open check could not be deleted. It is still in the list.",
     discardCheckFailed: "The check could not be deleted. It is still open, on screen.",
     parkCheckFailed: "The check could not be parked. It is still on screen.",
-    leaveOnTableFailed: "The check could not be left at its table. It is still on screen."
+    leaveOnTableFailed: "The check could not be left at its table. It is still on screen.",
+    voidLine: "Void this item",
+    voidLineOf: "Void \xAB{name}\xBB",
+    voidLineHint: "It was already sent to the kitchen. It comes off the check and the reason is kept. A manager has to approve it.",
+    voidLineReasonPlaceholder: "Or write the reason\u2026",
+    voidLineConfirm: "Void item",
+    voidLineFailed: "The item could not be voided. It is still on the check.",
+    voidReasonMistake: "Ordered by mistake",
+    voidReasonChanged: "Customer changed their mind",
+    voidReasonSoldOut: "Sold out",
+    voidReasonDuplicate: "Entered twice"
   },
   commands: {
     "sales.complete_sale": {
@@ -5224,6 +5236,9 @@ var en_default = {
     },
     "sales.order.void": {
       label: "Cancel an open ticket"
+    },
+    "sales.order.void_line": {
+      label: "Void an item already sent to the kitchen"
     },
     "sales.quick_notes.create": {
       label: "Add a quick note"
@@ -5399,7 +5414,9 @@ var es_default = {
     "sales.too_many_lines": "El tique tiene demasiadas l\xEDneas para cobrarlo de una vez. Div\xEDdelo en dos.",
     "sales.too_many_rows": "La venta necesita m\xE1s filas de las que el servidor puede escribir de una vez. Div\xEDdela en dos.",
     "sales.void_reason_required": "Hace falta un motivo para anular una venta.",
-    "sales.void_requires_credit_note": "Esta venta lleva factura completa: emite una factura rectificativa en vez de anularla."
+    "sales.void_requires_credit_note": "Esta venta lleva factura completa: emite una factura rectificativa en vez de anularla.",
+    "sales.order_line_not_removable": "Esa l\xEDnea ya no se puede quitar: ya se envi\xF3 a cocina (an\xFAlala con un motivo) o ya no est\xE1 en la cuenta.",
+    "sales.order_line_not_voidable": "Esa l\xEDnea no se puede anular: no est\xE1 enviada y sin cobrar en una cuenta abierta, o falta el motivo. Vuelve a cargar la cuenta."
   },
   ui: {
     sales: "Ventas",
@@ -5869,7 +5886,17 @@ var es_default = {
     deleteCheckFailed: "No se ha podido eliminar esa cuenta abierta. Sigue en la lista.",
     discardCheckFailed: "No se ha podido eliminar la cuenta. Sigue abierta, en pantalla.",
     parkCheckFailed: "No se ha podido aparcar la cuenta. Sigue en pantalla.",
-    leaveOnTableFailed: "No se ha podido dejar la cuenta en su mesa. Sigue en pantalla."
+    leaveOnTableFailed: "No se ha podido dejar la cuenta en su mesa. Sigue en pantalla.",
+    voidLine: "Anular este art\xEDculo",
+    voidLineOf: "Anular \xAB{name}\xBB",
+    voidLineHint: "Ya se envi\xF3 a cocina. Sale de la cuenta y se guarda el motivo. Tiene que autorizarlo un responsable.",
+    voidLineReasonPlaceholder: "O escribe el motivo\u2026",
+    voidLineConfirm: "Anular art\xEDculo",
+    voidLineFailed: "No se ha podido anular el art\xEDculo. Sigue en la cuenta.",
+    voidReasonMistake: "Error al pedir",
+    voidReasonChanged: "El cliente lo cambia",
+    voidReasonSoldOut: "Agotado",
+    voidReasonDuplicate: "Pedido dos veces"
   },
   widgets: {
     "sales.today": {
@@ -5931,6 +5958,9 @@ var es_default = {
     },
     "sales.order.void": {
       label: "Anular una cuenta abierta"
+    },
+    "sales.order.void_line": {
+      label: "Anular un art\xEDculo ya enviado a cocina"
     },
     "sales.quick_notes.create": {
       label: "A\xF1adir una nota r\xE1pida"
@@ -8409,6 +8439,12 @@ var MediaPhotoCache = class {
 
 // ui/components/erp-pos-touch/erp-pos-touch.ts
 var CATALOG2 = { es: es_default, en: en_default };
+var VOID_REASONS = [
+  ["mistake", "ui.voidReasonMistake"],
+  ["changed", "ui.voidReasonChanged"],
+  ["soldout", "ui.voidReasonSoldOut"],
+  ["duplicate", "ui.voidReasonDuplicate"]
+];
 var TEAM_NOT_SERVING = /* @__PURE__ */ new Set(["terminated", "inactive"]);
 function teamMemberName(m4) {
   return (m4.full_name || `${m4.first_name ?? ""} ${m4.last_name ?? ""}`).trim();
@@ -8577,6 +8613,7 @@ var ErpPosTouch = class extends i3 {
     this.ticketDiscount = 0;
     this.ticketDiscountApproved = false;
     this.noteInput = "";
+    this.voidReason = "";
     this.quickNotes = [];
     this.quickNotesState = "idle";
     this.discountInput = "";
@@ -9242,6 +9279,9 @@ var ErpPosTouch = class extends i3 {
     ion-icon.tone-medium { color: var(--ion-color-medium, #636469); }
     ion-icon.tone-warning { color: var(--ion-color-warning, #ffc409); }
     ion-icon.tone-success { color: var(--ion-color-success, #2dd55b); }
+    ion-icon.tone-danger { color: var(--ion-color-danger, #c5000f); }
+    /* sales#521 — voiding a sent plate is the destructive action of its sheet. */
+    ion-button.void-confirm { --background: var(--ion-color-danger, #c5000f); --color: var(--ion-color-danger-contrast, #fff); }
     ion-button.tone-danger[fill] { --color: var(--ion-color-danger, #c5000f); --border-color: var(--ion-color-danger, #c5000f); }
     ion-button.tone-medium[fill] { --color: var(--ion-color-medium, #636469); --border-color: var(--ion-color-medium, #636469); }
     ion-button.tone-warning[fill] { --color: var(--ion-color-warning, #ffc409); --border-color: var(--ion-color-warning, #ffc409); }
@@ -9862,6 +9902,10 @@ var ErpPosTouch = class extends i3 {
     }
     if (this.noteSheet) {
       this.noteSheet = void 0;
+      return true;
+    }
+    if (this.voidSheet) {
+      this.voidSheet = void 0;
       return true;
     }
     if (this.openPriceOpen) {
@@ -11972,6 +12016,38 @@ var ErpPosTouch = class extends i3 {
       }
     }
   }
+  // ── sales#521 · voiding a line already sent to the kitchen ──────────────────────────────────
+  //
+  // Market shape (8 references, table in the PR): Toast, Square, TouchBistro, Lightspeed K-Series,
+  // LS Central, Aloha and Clover void a SENT item with a mandatory reason — a few preset reasons
+  // plus free text — and a manager's permission. Here that permission is `sales.void_sale`, the
+  // one that voids a whole check: an employee who taps it gets the manager's PIN from the hub.
+  // A line not sent yet is not voided: its stepper removes it, as before.
+  /** Opens the void sheet for an order row, with no reason picked. */
+  openVoidLine(lineId) {
+    this.voidReason = "";
+    this.voidSheet = { lineId };
+  }
+  /** Voids the line on the server and reloads the check from it, so what is left on screen is
+   *  what the order holds. A refusal (or a PIN not given) leaves the line where it was and says
+   *  why. */
+  async applyVoidLine() {
+    const sheet = this.voidSheet;
+    const reason = this.voidReason.trim();
+    if (!sheet || !reason || !this.orderId) return;
+    this.voidSheet = void 0;
+    this.error = "";
+    const orderId = this.orderId;
+    await this.queue(async () => {
+      try {
+        await erplora2().command("sales.order.void_line", { order_id: orderId, line_id: sheet.lineId, reason });
+      } catch (e8) {
+        this.error = domainErrorText(CATALOG2, erplora2().locale, e8) || t5("ui.voidLineFailed");
+        return;
+      }
+      if (this.orderId === orderId) this.cart = await loadOrderLines(erplora2(), orderId);
+    });
+  }
   // ── sales#71 · descuentos manuales ─────────────────────────────────────────────────────────
   openDiscount(target, lineId) {
     this.discountMode = target === "ticket" && this.ticketDiscountAmount > 0 && this.ticketDiscount === 0 ? "amount" : "percent";
@@ -13169,7 +13245,13 @@ var ErpPosTouch = class extends i3 {
       </ion-label>
       <div slot="end" class="lineend">
         <span class="lt ${l3.is_gift ? "is-gift" : ""}">${this.money(lineAmount(l3))}</span>
-        ${locked ? b2`<span class="lqty">×${formatQuantity2(toMicro2(l3.qty))}</span>` : b2`
+        ${locked ? b2`${l3.line_id ? b2`
+            <ion-button data-testid=${`pos-line-${key}-void`} class="line-void" fill="clear" size="small"
+                        title=${t5("ui.voidLine")} aria-label=${t5("ui.voidLine")}
+                        @click=${() => this.openVoidLine(l3.line_id)}>
+              <ion-icon name="close-circle-outline" slot="icon-only" class="tone-danger"></ion-icon>
+            </ion-button>` : A}
+            <span class="lqty">×${formatQuantity2(toMicro2(l3.qty))}</span>` : b2`
             ${this.discountsAllowed ? b2`
             <ion-button data-testid=${`pos-line-${key}-discount`} class="line-discount" fill="clear" size="small" title=${t5("ui.discountLine")} aria-label=${t5("ui.discountLine")}
                         @click=${() => this.openDiscount("line", l3.line_id)}>
@@ -13743,6 +13825,43 @@ var ErpPosTouch = class extends i3 {
             </div>
           </div>` : A}
 
+      <!-- VOID A SENT LINE (sales#521): the same scrim/sheet as the note. The usual reasons are
+           chips (one tap fills the box) and the box takes any other; «Void» waits for a reason. -->
+      ${this.voidSheet ? b2`<div data-testid="pos-void-scrim" class="scrim" @click=${(e8) => {
+      if (e8.target.classList.contains("scrim")) this.voidSheet = void 0;
+    }}>
+            <div class="sheet note-sheet void-sheet">
+              <div class="sheet-h">
+                <span class="t">${t5("ui.voidLineOf", { name: this.cart.find((l3) => l3.line_id === this.voidSheet?.lineId)?.name ?? "" })}</span>
+                <button data-testid="pos-void-close" class="x" aria-label=${t5("ui.closeAction")} @click=${() => {
+      this.voidSheet = void 0;
+    }}>✕</button>
+              </div>
+              <div class="sheet-top">
+                <p class="note-hint void-hint">${t5("ui.voidLineHint")}</p>
+                <div class="note-chips">
+                  ${VOID_REASONS.map(([id, key]) => b2`
+                    <button data-testid=${`pos-void-reason-${id}`} type="button" class="note-chip"
+                            aria-pressed=${this.voidReason.trim() === t5(key) ? "true" : "false"}
+                            @click=${() => {
+      this.voidReason = t5(key);
+    }}>${t5(key)}</button>`)}
+                </div>
+                <textarea data-testid="pos-void-input" class="note-input" rows="2" maxlength="255"
+                          aria-label=${t5("ui.voidLineReasonPlaceholder")} placeholder=${t5("ui.voidLineReasonPlaceholder")}
+                          .value=${this.voidReason}
+                          @input=${(e8) => {
+      this.voidReason = e8.target.value;
+    }}></textarea>
+              </div>
+              <div class="sheet-foot discount-foot">
+                <ion-button data-testid="pos-void-confirm" class="charge void-confirm" expand="block"
+                  ?disabled=${!this.voidReason.trim()}
+                  @click=${() => void this.applyVoidLine()}>${t5("ui.voidLineConfirm")}</ion-button>
+              </div>
+            </div>
+          </div>` : A}
+
       <!-- DESCUENTO (sales#71): mismo sheet/numpad del cobro. Se teclea el %, y Aplicar; 0 = quitar.
            Sobre la LÍNEA elegida o sobre el TICKET entero. El servidor prorratea y revalida
            allow_discounts; aquí solo se recoge la cifra. -->
@@ -13987,6 +14106,12 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "noteInput", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "voidSheet", 2);
+__decorateClass([
+  r5()
+], ErpPosTouch.prototype, "voidReason", 2);
 __decorateClass([
   r5()
 ], ErpPosTouch.prototype, "quickNotes", 2);

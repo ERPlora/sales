@@ -89,3 +89,18 @@ describe('the cashier role is declared by sales, not by the core (sales#100)', (
     for (const p of mr.role_permissions.cashier ?? []) expect(mr.permissions).toContain(p);
   });
 });
+
+// sales#521 — voiding a line already sent to the kitchen is a manager's call, like voiding the
+// whole check (Toast, TouchBistro, LS Central: «manager required» to void a sent item). It reuses
+// `sales.void_sale`, so an employee or a cashier who taps it gets the manager's PIN from the hub.
+describe('voiding a sent line needs the manager (sales#521)', () => {
+  it('gates sales.order.void_line with sales.void_sale', () => {
+    expect(m.commands['sales.order.void_line']?.permission).toBe('sales.void_sale');
+  });
+
+  it('neither the employee nor the cashier holds it, so the hub asks for the PIN', () => {
+    expect(m.role_permissions.employee).not.toContain('sales.void_sale');
+    expect(m.role_permissions.cashier ?? []).not.toContain('sales.void_sale');
+    expect(m.role_permissions.manager).toContain('sales.void_sale');
+  });
+});

@@ -147,7 +147,9 @@
     "sales.too_many_lines": "El tique tiene demasiadas líneas para cobrarlo de una vez. Divídelo en dos.",
     "sales.too_many_rows": "La venta necesita más filas de las que el servidor puede escribir de una vez. Divídela en dos.",
     "sales.void_reason_required": "Hace falta un motivo para anular una venta.",
-    "sales.void_requires_credit_note": "Esta venta lleva factura completa: emite una factura rectificativa en vez de anularla."
+    "sales.void_requires_credit_note": "Esta venta lleva factura completa: emite una factura rectificativa en vez de anularla.",
+    "sales.order_line_not_removable": "Esa línea ya no se puede quitar: ya se envió a cocina (anúlala con un motivo) o ya no está en la cuenta.",
+    "sales.order_line_not_voidable": "Esa línea no se puede anular: no está enviada y sin cobrar en una cuenta abierta, o falta el motivo. Vuelve a cargar la cuenta."
   },
   "ui": {
     "sales": "Ventas",
@@ -617,7 +619,17 @@
     "deleteCheckFailed": "No se ha podido eliminar esa cuenta abierta. Sigue en la lista.",
     "discardCheckFailed": "No se ha podido eliminar la cuenta. Sigue abierta, en pantalla.",
     "parkCheckFailed": "No se ha podido aparcar la cuenta. Sigue en pantalla.",
-    "leaveOnTableFailed": "No se ha podido dejar la cuenta en su mesa. Sigue en pantalla."
+    "leaveOnTableFailed": "No se ha podido dejar la cuenta en su mesa. Sigue en pantalla.",
+    "voidLine": "Anular este artículo",
+    "voidLineOf": "Anular «{name}»",
+    "voidLineHint": "Ya se envió a cocina. Sale de la cuenta y se guarda el motivo. Tiene que autorizarlo un responsable.",
+    "voidLineReasonPlaceholder": "O escribe el motivo…",
+    "voidLineConfirm": "Anular artículo",
+    "voidLineFailed": "No se ha podido anular el artículo. Sigue en la cuenta.",
+    "voidReasonMistake": "Error al pedir",
+    "voidReasonChanged": "El cliente lo cambia",
+    "voidReasonSoldOut": "Agotado",
+    "voidReasonDuplicate": "Pedido dos veces"
   },
   "widgets": {
     "sales.today": {
@@ -679,6 +691,9 @@
     },
     "sales.order.void": {
       "label": "Anular una cuenta abierta"
+    },
+    "sales.order.void_line": {
+      "label": "Anular un artículo ya enviado a cocina"
     },
     "sales.quick_notes.create": {
       "label": "Añadir una nota rápida"

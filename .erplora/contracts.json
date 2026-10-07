@@ -68,6 +68,7 @@
       "sales.order.split_line",
       "sales.order.update_line",
       "sales.order.void",
+      "sales.order.void_line",
       "sales.quick_notes.create",
       "sales.quick_notes.delete",
       "sales.quick_notes.update",

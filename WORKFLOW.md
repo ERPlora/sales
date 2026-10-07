@@ -82,9 +82,10 @@ número, y «Cerrar» en el móvil; el título editable («Cuenta nueva») y los
 «Atiende …» y «Falta el cliente»; con Cocina, las pestañas «Cuenta» y «Comanda actual». Cada línea:
 nombre, precio por unidad, marca de descuento o «Invitación», nota y profesional debajo; botones de
 descuento, nota, invitación y selector de cantidad (una línea enviada a cocina solo enseña su
-cantidad y «Comanda N»). Pie: fila «Descuento del ticket» si lo hay, «Total», botón de descuento,
+cantidad, «Comanda N» y el botón ⊗ «Anular este artículo»). Pie: fila «Descuento del ticket» si lo hay, «Total», botón de descuento,
 impresora («Imprimir cuenta») y «Cobrar · <importe>». Hojas que se abren encima: precio libre,
-suplementos, menú, nota, descuento, «Aparcar cuenta», «Quién atiende esta cuenta», «Tienes una cuenta
+suplementos, menú, nota, descuento, «Anular «<artículo>»» (motivo de un toque o escrito),
+«Aparcar cuenta», «Quién atiende esta cuenta», «Tienes una cuenta
 a medias». Vacía: «Toca un producto para añadirlo.» y, sin artículos, «Sin productos.» (o el motivo:
 Inventario no instalado, servicios ocultos por el ajuste). Avisos arriba de la rejilla: app que
 falta o no responde, sin envío a Hacienda, certificado que caduca, artículos sin IVA («N artículos no
@@ -249,7 +250,7 @@ flujos de su fila en la misma entrega.
 | Cuenta por mesa, dejarla en la mesa | parcial: con una cuenta de barra delante, tocar una mesa con pedido la deja libre (TABLES-F11) | F19 |
 | Enviar a cocina por rondas, sin duplicar | hecho (con Cocina) | F20 |
 | Cobrar sin cancelar lo que se está cocinando («pide y paga») | no hecho: al cobrar la cuenta entera Cocina cancela las rondas pendientes (leído en el código, sin ejecutar) | F20 |
-| Anular una línea ya enviada con aviso a cocina | no hecho | F20 |
+| Anular una línea ya enviada con aviso a cocina | parcial: el TPV la anula con motivo y PIN del responsable y la quita de la cuenta, y Ventas avisa (`sales.order.line_voided`); Cocina aún no tacha el plato (kitchen#161) | F20 |
 | Precuenta no fiscal | parcial: sin aviso si el papel no sale | F21 |
 | Cobrar por artículos | hecho | F22 |
 | Dividir a partes iguales o por fracción de una línea | no hecho | F22, F23 |
@@ -296,7 +297,7 @@ flujos de su fila en la misma entrega.
 - **Mesa y cliente no viven aquí**: Mesas guarda qué cuenta tiene cada mesa y Clientes qué cuenta
   tiene cada cliente. Ventas guarda en la venta el nombre del cliente y su ficha como referencia;
   el NIF, la dirección y el país solo viajan en el aviso de venta cobrada.
-- **Datos personales** (inventario RGPD, recorrido sobre las 39 migraciones):
+- **Datos personales** (inventario RGPD, recorrido sobre las 40 migraciones):
   - venta: ficha de cliente enlazada y nombre del cliente; notas libres de la venta (las que mande
     quien cobra por el asistente o la API; la pantalla no las pide); quién cobró, quién atendió
     (persona o profesional), quién anuló, el motivo de la anulación (también copiado en las notas) y
@@ -304,7 +305,8 @@ flujos de su fila en la misma entrega.
   - cobro: referencia libre de cada forma de pago (puede llevar un código de tarjeta o el concepto y
     el nombre de quien transfiere);
   - línea de venta y de cuenta: nota libre (puede llevar alergias: dato de salud), motivo de
-    invitación y profesional de la línea;
+    invitación y profesional de la línea; en la de cuenta, el motivo de anular una línea ya enviada
+    y quién la autorizó;
   - cuenta abierta: título libre (suele llevar el nombre del cliente, «Ana — terraza»), notas, cita
     de origen, quién autorizó un descuento (en la cuenta y en la línea);
   - devolución: motivo y nota libres; quién la hizo;
@@ -314,7 +316,7 @@ flujos de su fila en la misma entrega.
     de documento del cliente, quién atendió (el de la venta; el de cada línea no viaja) y la
     referencia de cada pago; el de venta nacida de una cita, la cita, quién atendió y el total; el de
     anulación, quién anuló y el motivo; el de devolución, quién devolvió y el motivo; el envío a
-    cocina, el nombre de la mesa, las notas de línea y el camarero.
+    cocina, el nombre de la mesa, las notas de línea y el camarero; el de línea anulada, el motivo.
   - No hay borrado RGPD propio: las ventas son registros fiscales que se conservan; ver Dudas.
 
 ## Reglas que no se rompen
@@ -350,11 +352,14 @@ impide la pantalla está como hueco en su flujo.
   menos lo ya devuelto. Anular y devolver a la vez la misma venta: gana una y la otra se rechaza.
 - **Cliente obligatorio, descuentos permitidos y descuento máximo** los comprueba el servidor al
   cobrar y al aplicar el descuento.
-- **Una línea enviada a cocina no se cambia ni se quita** (la orden contesta bien y no la toca);
-  dividir y juntar mueven líneas enteras y lo ya cobrado no viaja.
+- **Una línea enviada a cocina no se cambia ni se quita: se anula**, con motivo y permiso de
+  responsable, y solo si la cuenta está abierta y la línea sin cobrar (`sales.order_line_not_voidable`);
+  pedir que se quite la rechaza (`sales.order_line_not_removable`). Dividir y juntar mueven líneas
+  enteras y lo ya cobrado no viaja.
 - **Permisos** (si el permiso es de responsable, el hub pide su PIN): montar la cuenta, enviar a
   cocina, dividir, juntar y descuento hasta el tope: empleado; cobrar: cajero y responsable;
-  descuento por encima del tope, anular una cuenta abierta, anular y devolver una venta, ver cifras,
+  descuento por encima del tope, anular una cuenta abierta o una línea ya enviada, anular y devolver
+  una venta, ver cifras,
   departamentos, notas rápidas y ajustes: responsable. El permiso de precio libre solo lo exige la
   puerta que usa la pantalla (F09).
 - Sin vía hasta la AEAT en un negocio que factura de verdad no se cobra (lo decide el hub).
@@ -416,7 +421,7 @@ Contra `origin/main` v2.16.154 (05/10/2026). Una línea por discrepancia; manda 
 - **QA R-09 y B-06** piden «imprimir + abrir cajón» al cobrar: lo hace el hub (no Ventas) al oír la venta, en el dispositivo que cobró, si Impresión lo tiene activado; el cajón se abre con cualquier medio, también tarjeta, y `qa-hub-restaurant` §7.10 pide que se abra solo con efectivo (F01, F02).
 - **QA L-04 y `qa-hub-restaurant` §7.13**: esperan registro de anulación al anular; no existe (F30).
 - **QA `qa-hub-restaurant` §7.10 y matriz §6**: invitación «con permiso, motivo y auditoría»; no pide ninguno de los dos (F15).
-- **QA `qa-hub-restaurant` §7.13**: «anular línea después de enviar con aviso a cocina» y «anular pedido abierto con motivo»; ni lo uno ni el motivo (F18, F20).
+- **QA `qa-hub-restaurant` §7.13**: «anular línea después de enviar con aviso a cocina» y «anular pedido abierto con motivo»: la línea se anula con motivo desde sales#521, pero cocina aún no se entera (kitchen#161); la cuenta abierta se anula sin motivo (F18, F20).
 - **QA `qa-hub-restaurant` §7.09**: dividir a partes iguales y por fracción, y deshacer el split; solo existe mover líneas enteras (F23).
 - **`qa-hub-restaurant.md` §3** dice que ningún manifest usa roles que extienden otros; Ventas declara el rol «Cajero» (que cobra).
 - **`hand-book/modulos/sales.md`**: «Los ajustes del TPV aparecen en la configuración de aplicaciones del Hub»; es la pestaña «Ajustes» del propio módulo.
@@ -434,3 +439,4 @@ Contra `origin/main` v2.16.154 (05/10/2026). Una línea por discrepancia; manda 
 - **Oleada 2 (Servicios, 05/10/2026)**, leído en el código de `sales` y `services`, sin ejecutar: la línea cubierta por un bono solo vive en la memoria de la pantalla (`erp-pos-touch.ts`, `covered`); tras recargar o volver a una cuenta aparcada, el hueco de Servicios recupera la sesión retenida y la pinta gastada sin avisar al TPV, que cobra la línea a su precio y además Servicios gasta la sesión al cobrar (SALES-F17, SALES-F27). Servicios da por gastadas las sesiones por cuenta (`checkout_ref` = la cuenta), no por línea: cobrar una parte, o la original tras dividirla, gasta las de líneas no cobradas, y dividir o juntar cuentas no le avisa (SALES-F22, SALES-F23, SALES-F24). Vender un bono por la API solo funciona con la línea marcada como servicio (SALES-F01). SALES-F17, F22, F23, F24 y F27 añaden estos huecos a su `Estado:`; ninguno cambia de nivel.
 - **sales#520 (07/10/2026)**, comprobado contra el kernel real (`services/tests/sale_void.hub.test.py`, sección 4) y en el banco con el hub real: la línea «Oleada 2 (Servicios)» de arriba queda como historia en lo del bono. Al retomar una cuenta aparcada (o recargar y volver a asignar la clienta) el hueco de Servicios recupera la sesión y avisa al TPV, que vuelve a dar la línea por cubierta; y `sale.completed` nombra la fila de la cuenta de cada línea (`order_item_id`), así que Servicios gasta por línea: la sesión de una línea cobrada con dinero vuelve al bono y las de líneas que no entran en un cobro parcial siguen retenidas (F17, F22, F27). Dividir y juntar siguen sin avisar a Servicios (sales#540, F23, F24).
 - **sales#522 (06/10/2026)**, comprobado contra el kernel real (`tests/combo_fire.hub.test.py`): el envío a cocina ya manda los platos elegidos de cada menú (`kitchen_items_from_lines` → `combo_components`) y los suplementos con el nombre que la cuenta congeló al pedirlos; la línea «Oleada 2» de arriba que decía lo contrario queda como historia (F12, F20).
+- **sales#521 (07/10/2026)**, comprobado contra el kernel real (`tests/void.hub.test.py`, sección 5): una línea enviada ya no «se quita contestando bien»: `sales.order.remove_line` la rechaza y `sales.order.void_line` la anula con motivo y permiso de responsable, recalcula el total y avisa con `sales.order.line_voided`. Cocina no lo escucha todavía (kitchen#161), y eliminar o juntar una cuenta sigue sin avisarle (kitchen#162) (F18, F20, F24).

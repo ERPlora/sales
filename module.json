@@ -153,7 +153,8 @@
       "migrations/postgres/036_discount_cap.sql",
       "migrations/postgres/037_order_appointment.sql",
       "migrations/postgres/038_order_discount_approval.sql",
-      "migrations/postgres/039_order_line_discount_approval.sql"
+      "migrations/postgres/039_order_line_discount_approval.sql",
+      "migrations/postgres/040_order_line_void.sql"
     ]
   },
   "seed": {
@@ -985,7 +986,37 @@
         "sales.order.line_removed"
       ],
       "ai": {
-        "description": "Removes (soft-deletes) a line from an open order and recomputes its provisional total (ADR-0141). It announces the removal with sales.order.line_removed so a module that had covered that line with a tender of its own can let it go at once."
+        "description": "Removes (soft-deletes) a line that has NOT been sent to the kitchen yet from an open order and recomputes its provisional total (ADR-0141). It announces the removal with sales.order.line_removed so a module that had covered that line with a tender of its own can let it go at once. A line already sent to the kitchen is refused with sales.order_line_not_removable and nothing is announced: void it with sales.order.void_line, which asks for a reason (sales#521)."
+      },
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "statement": "commands/order_remove_line.sql",
+        "error": "sales.order_line_not_removable",
+        "message": "That line was already sent to the kitchen: void it with a reason instead."
+      }
+    },
+    "sales.order.void_line": {
+      "permission": "sales.void_sale",
+      "transaction": true,
+      "sql": [
+        "commands/order_void_line.sql",
+        "commands/order_recompute_total.sql"
+      ],
+      "schema": "schemas/void_order_line.json",
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "statement": "commands/order_void_line.sql",
+        "error": "sales.order_line_not_voidable",
+        "message": "That line cannot be voided: it has not been sent to the kitchen, it is already paid or voided, the check is closed, or there is no reason."
+      },
+      "emit": [
+        "sales.order.line_removed",
+        "sales.order.line_voided"
+      ],
+      "ai": {
+        "description": "Voids a line of an OPEN check that was ALREADY SENT to the kitchen, with a mandatory reason (sales#521): the line leaves the check, keeps void_reason, voided_by (the manager who approved it with their PIN, or the caller) and voided_at, and the provisional total is recomputed. Needs sales.void_sale, like voiding the whole check. It announces sales.order.line_removed (a module that covered the line lets it go) and sales.order.line_voided with order_id, line_id and reason (the fact the kitchen keys on). A line not sent yet is removed with sales.order.remove_line instead; a line already paid, already voided, on a closed check or without a reason is refused with sales.order_line_not_voidable and nothing is announced."
       }
     },
     "sales.order.split": {
@@ -1337,6 +1368,8 @@
     "sales.order_id_required": {},
     "sales.order_line_modifiers_unreadable": {},
     "sales.order_line_not_available": {},
+    "sales.order_line_not_removable": {},
+    "sales.order_line_not_voidable": {},
     "sales.order_lines_unavailable": {},
     "sales.order_unavailable": {},
     "sales.payment_method_not_available": {},
@@ -1380,6 +1413,7 @@
       "sale.refunded",
       "sale.voided",
       "sales.order.line_removed",
+      "sales.order.line_voided",
       "sales.order.opened",
       "sales.order.voided",
       "sales.sale.created_from_appointment"
