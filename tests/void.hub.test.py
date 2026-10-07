@@ -15,6 +15,9 @@ and that is what this battery pins (sales#26):
      listeners downstream key on.
   4. A second void of the same sale is refused with `sales.already_voided`; a sale this hub does
      not have, with `sales.sale_not_found`.
+  5. (sales#521) A line of an open check already sent to the kitchen is not removed but VOIDED
+     with a reason: `remove_line` refuses it, `void_line` takes it off the check, recomputes the
+     total and announces `sales.order.line_voided` with the line's id.
 
 Usage: `erplora test <dir> --against-hub [dev|stable|sha256:…]` (module-toolkit#110). Never on
 its own: without a runtime it fails, it does not skip.
@@ -132,6 +135,88 @@ def test_a_second_void_is_refused(hub: Hub, sale_id: str) -> None:
     hub.check("still exactly `voided`", sale(hub, sale_id).get("status"), "voided")
 
 
+def order_lines(hub: Hub, order_id: str) -> list[dict]:
+    return hub.query("sales.order.lines", {"order_id": order_id})
+
+
+def provisional_total(hub: Hub, order_id: str) -> int:
+    rows = hub.query("sales.order.get", {"order_id": order_id})
+    return cents((rows[0] if rows else {}).get("provisional_total"))
+
+
+def test_a_sent_line_is_voided_not_removed(hub: Hub) -> None:
+    print(
+        "\n5 · (sales#521) a line already sent to the kitchen is VOIDED with a reason, never removed"
+    )
+    out = hub.run(
+        "sales.order.open",
+        {
+            "items": [
+                {"product_name": "Entrecot", "price": 1800, "quantity": ONE},
+                {"product_name": "Agua", "price": 200, "quantity": ONE},
+            ]
+        },
+    )
+    order_id = out["new_ids"][0]
+    hub.run(
+        "sales.order.fire",
+        {"order_id": order_id, "round_no": 1, "label": "Mesa 4", "channel": "dine_in"},
+    )
+    steak = next(
+        (l for l in order_lines(hub, order_id) if l.get("product_name") == "Entrecot"),
+        {},
+    )
+    hub.check_true("the line was sent", bool(steak.get("fired_at")), str(steak))
+    line = {"order_id": order_id, "line_id": steak.get("id")}
+
+    hub.refused(
+        "removing a sent line (it used to answer ok and remove nothing)",
+        "sales.order.remove_line",
+        line,
+        "sales.order_line_not_removable",
+    )
+    hub.refused(
+        "voiding it without a reason",
+        "sales.order.void_line",
+        {**line, "reason": "   "},
+        "sales.order_line_not_voidable",
+    )
+    hub.check(
+        "both refusals left the check as it was", provisional_total(hub, order_id), 2000
+    )
+
+    hub.run("sales.order.void_line", {**line, "reason": "Wrong dish"})
+    hub.check(
+        "the voided line leaves the check",
+        [l.get("product_name") for l in order_lines(hub, order_id)],
+        ["Agua"],
+    )
+    hub.check(
+        "the provisional total no longer counts it",
+        provisional_total(hub, order_id),
+        200,
+    )
+
+    voided = hub.event_field("sales.order.line_voided", "line_id") or {}
+    hub.check(
+        "sales.order.line_voided names THIS line (what the kitchen keys on)",
+        voided.get("sample"),
+        steak.get("id"),
+    )
+    removed = hub.event_field("sales.order.line_removed", "line_id") or {}
+    hub.check(
+        "…and sales.order.line_removed too, so a module that covered it lets it go",
+        removed.get("sample"),
+        steak.get("id"),
+    )
+    hub.refused(
+        "voiding it twice",
+        "sales.order.void_line",
+        {**line, "reason": "again"},
+        "sales.order_line_not_voidable",
+    )
+
+
 def main() -> int:
     hub = Hub("void.hub")
     print(
@@ -143,6 +228,7 @@ def main() -> int:
     test_a_void_marks_not_deletes(hub, sale_id)
     test_sale_voided_is_emitted_with_id_and_total(hub, sale_id)
     test_a_second_void_is_refused(hub, sale_id)
+    test_a_sent_line_is_voided_not_removed(hub)
     return hub.finish(
         "a void marks, announces once and never deletes, against the real kernel"
     )
