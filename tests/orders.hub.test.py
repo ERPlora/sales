@@ -675,7 +675,7 @@ def test_a_check_changed_while_charging_is_not_charged(hub: Hub, cash: str) -> N
     hub.check("no sale was written", len(sale_by_key(hub, charge_key)), 0)
     hub.check("the check is still open", order(hub, oid).get("status"), "open")
     retry_key = key("qty-retry")
-    hub.run(
+    hub.command(
         "sales.complete_sale",
         {
             "idempotency_key": retry_key,
