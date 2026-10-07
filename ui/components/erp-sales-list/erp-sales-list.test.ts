@@ -133,6 +133,8 @@ describe('sales list — the void action (sales#26)', () => {
     return el as unknown as {
       documentActions: { id: string; disabled?: (r: Record<string, unknown>) => boolean }[];
       voidSale(saleId: string, reason: string): Promise<void>;
+      /** services#157: a refusal is read in the void window, not in a toast. */
+      voidError: string;
       updateComplete: Promise<unknown>;
     };
   }
@@ -157,6 +159,8 @@ describe('sales list — the void action (sales#26)', () => {
     expect(notes.some((n) => n.type === 'success')).toBe(true);
   });
 
+  // services#157: the confirmation is a window that stays open on a refusal, so the refusal is
+  // read there (next to the reason and the Void button), no longer in a toast after an alert closed.
   it('a refusal is explained in the user words, by its code', async () => {
     const el = await mountList(['sales.void_sale']);
     // sales#201 — el sobre del runtime: el código en su CAMPO, y una frase que nadie lee.
@@ -164,8 +168,8 @@ describe('sales list — the void action (sales#26)', () => {
       throw Object.assign(new Error('this sale carries a full invoice'), { code: 'sales.void_requires_credit_note' });
     };
     await el.voidSale('sale-1', 'x');
-    const err = notes.find((n) => n.type === 'error');
-    expect(err?.message).toBe('Esta venta lleva factura completa: emite una factura rectificativa en vez de anularla');
+    expect(el.voidError).toBe('Esta venta lleva factura completa: emite una factura rectificativa en vez de anularla');
+    expect(notes.some((n) => n.type === 'success')).toBe(false);
   });
 
   // ── sales#247 · con dinero ya devuelto, la puerta de anular se cierra ────────────────────
@@ -202,8 +206,7 @@ describe('sales list — the void action (sales#26)', () => {
       throw Object.assign(new Error('sale sale-1 already has 1 refund(s)'), { code: 'sales.sale_already_refunded' });
     };
     await el.voidSale('sale-1', 'x');
-    const err = notes.find((n) => n.type === 'error');
-    expect(err?.message).toBe('Esta venta ya tiene devoluciones: devuelve el importe que queda en vez de anularla');
+    expect(el.voidError).toBe('Esta venta ya tiene devoluciones: devuelve el importe que queda en vez de anularla');
   });
 });
 

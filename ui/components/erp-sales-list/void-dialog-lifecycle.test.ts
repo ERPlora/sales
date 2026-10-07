@@ -1,10 +1,11 @@
-// sales#406 — the «void sale» confirmation must leave the page once it is closed.
+// The «void sale» confirmation, opened from the history (sales#26, sales#406, services#157).
 //
-// The dialog is a GLOBAL Ionic overlay appended to document.body. Ionic's dismiss() emits
-// ionAlertDidDismiss and only THEN moves the teleported overlay back to its original parent
-// (framework-delegate removeViewFromDom). A synchronous remove() in the listener is undone by that
-// move, so every void left a hidden <ion-alert> behind for the rest of the day. Same fix and
-// same test shape as appointments#207 (erp-appointments-series).
+// It was a GLOBAL ion-alert appended to document.body, and sales#406 was that every void left a
+// hidden <ion-alert> behind (Ionic moves the overlay back after ionAlertDidDismiss). services#157
+// turned it into a window (`erp-sale-void` in an inline ion-modal, like the refund) because an
+// alert cannot host what other modules want read before the sale is undone. What sales#406 asked
+// still holds and is checked here: nothing is left in document.body, closing voids nothing, and
+// several voids in a row never pile anything up.
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import esCatalog from '../../../locales/es.json';
@@ -13,10 +14,13 @@ import './erp-sales-list';
 
 const ROW = { id: 'sale-1', sale_number: 'T-42', status: 'completed', total: 360 };
 
-type Button = { text: string; role?: string; handler?: (data?: Record<string, unknown>) => unknown };
-type AlertEl = HTMLElement & { isOpen?: boolean; header?: string; buttons: Button[] };
+type ModalEl = HTMLElement & { isOpen?: boolean };
+type VoidEl = HTMLElement & { saleId?: string; saleNumber?: string; busy?: boolean; errorText?: string };
+type ListEl = HTMLElement & { updateComplete: Promise<unknown> };
 
 const commands: { name: string; params?: Record<string, unknown> }[] = [];
+const notes: { type: string; message: string }[] = [];
+let commandAnswer: () => Promise<unknown> = async () => ({});
 
 function t(_catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>): string {
   const raw = key.split('.').reduce<unknown>((acc, part) => (acc as Record<string, unknown>)?.[part], esCatalog);
@@ -27,6 +31,8 @@ function t(_catalog: Record<string, unknown>, key: string, params?: Record<strin
 beforeEach(() => {
   document.body.innerHTML = '';
   commands.length = 0;
+  notes.length = 0;
+  commandAnswer = async () => ({});
   const double = installErploraDouble({
     queries: {
       'sales.list': [ROW], 'sales.stats': [], 'sales.payment_methods': [],
@@ -40,73 +46,97 @@ beforeEach(() => {
   });
   const sdk = double.sdk as Record<string, unknown>;
   sdk.hasPermission = (p: string) => p === 'sales.void_sale';
-  sdk.command = async (name: string, params?: Record<string, unknown>) => { commands.push({ name, params }); return {}; };
-  sdk.notify = () => undefined;
+  sdk.command = async (name: string, params?: Record<string, unknown>) => { commands.push({ name, params }); return commandAnswer(); };
+  sdk.notify = (n: { type: string; message: string }) => { notes.push(n); };
 });
 
-async function openVoidDialog(): Promise<AlertEl> {
-  const el = document.createElement('erp-sales-list') as HTMLElement & { updateComplete: Promise<unknown> };
-  document.body.appendChild(el);
+async function settle(el: ListEl): Promise<void> {
+  for (let i = 0; i < 3; i++) {
+    await el.updateComplete;
+    await new Promise((r) => setTimeout(r, 0));
+  }
   await el.updateComplete;
-  el.shadowRoot!.querySelector('ok-data-table')!
+}
+
+async function openVoidWindow(): Promise<{ list: ListEl; modal: ModalEl; win: VoidEl }> {
+  const list = document.createElement('erp-sales-list') as ListEl;
+  document.body.appendChild(list);
+  await list.updateComplete;
+  list.shadowRoot!.querySelector('ok-data-table')!
     .dispatchEvent(new CustomEvent('rowAction', { detail: { actionId: 'void', row: ROW } }));
-  for (let i = 0; i < 2; i++) await new Promise((r) => setTimeout(r, 0));
-  const alert = document.body.querySelector<AlertEl>('ion-alert');
-  expect(alert, 'the void confirmation is a global overlay in document.body').toBeTruthy();
-  return alert!;
+  await settle(list);
+  const modal = list.shadowRoot!.querySelector<ModalEl>('ion-modal.void-modal');
+  expect(modal, 'the void confirmation is a window of the list').toBeTruthy();
+  const win = modal!.querySelector<VoidEl>('erp-sale-void');
+  expect(win, 'with the void form inside').toBeTruthy();
+  return { list, modal: modal!, win: win! };
 }
 
-/** Dismisses the dialog the way Ionic does: the event first, then the overlay is moved back. */
-async function dismissLikeIonic(alert: AlertEl, role: string): Promise<void> {
-  alert.addEventListener('ionAlertDidDismiss', () => {
-    void Promise.resolve().then(() => document.body.appendChild(alert));
-  });
-  alert.dispatchEvent(new CustomEvent('ionAlertDidDismiss', { detail: { role } }));
-  for (let i = 0; i < 3; i++) await new Promise((r) => setTimeout(r, 0));
-}
-
-describe('sales list — the void dialog does not linger in the page once closed (sales#406)', () => {
-  it('stays in the page while it is open, with Cancel and Void buttons', async () => {
-    const alert = await openVoidDialog();
-    expect(alert.isOpen).toBe(true);
-    expect(alert.header).toBe('Anular la venta T-42');
-    expect(alert.buttons.map((b) => [b.role, b.text])).toEqual([
-      ['cancel', esCatalog.ui.cancel],
-      ['destructive', esCatalog.ui.actionVoid],
-    ]);
-    for (let i = 0; i < 3; i++) await new Promise((r) => setTimeout(r, 0));
-    expect(document.body.querySelector('ion-alert'), 'an open dialog is not removed').toBe(alert);
+describe('sales list — the void window (sales#26, sales#406, services#157)', () => {
+  it('opens on the sale it was asked for, and leaves nothing in document.body', async () => {
+    const { modal, win } = await openVoidWindow();
+    expect(modal.isOpen).toBe(true);
+    expect(win.saleId).toBe('sale-1');
+    expect(win.saleNumber).toBe('T-42');
+    expect(document.body.querySelector('ion-alert'), 'no global alert any more').toBeNull();
   });
 
-  it('«Cancel» removes it from the page, and nothing is voided', async () => {
-    const alert = await openVoidDialog();
-    await dismissLikeIonic(alert, 'cancel');
-    expect(document.body.querySelector('ion-alert')).toBeNull();
+  it('«Cancel» closes it and voids nothing', async () => {
+    const { list, modal, win } = await openVoidWindow();
+    win.dispatchEvent(new CustomEvent('void-cancel', { bubbles: true, composed: true }));
+    await settle(list);
+    expect(modal.isOpen).toBe(false);
     expect(commands.filter((c) => c.name === 'sales.void')).toEqual([]);
   });
 
-  it('confirming the void removes it from the page too', async () => {
-    const alert = await openVoidDialog();
-    const confirm = alert.buttons.find((b) => b.role === 'destructive')!;
-    expect(confirm.handler!({ reason: 'customer changed their mind' })).toBe(true);
-    await dismissLikeIonic(alert, 'destructive');
-    expect(document.body.querySelector('ion-alert')).toBeNull();
+  it('closing it from the backdrop voids nothing', async () => {
+    const { list, modal } = await openVoidWindow();
+    modal.dispatchEvent(new CustomEvent('ionModalDidDismiss', { detail: { role: 'backdrop' } }));
+    await settle(list);
+    expect(modal.isOpen).toBe(false);
+    expect(commands.filter((c) => c.name === 'sales.void')).toEqual([]);
+  });
+
+  it('confirming runs sales.void with the reason, says so and closes', async () => {
+    const { list, modal, win } = await openVoidWindow();
+    win.dispatchEvent(new CustomEvent('void-confirm', { detail: { reason: 'customer changed their mind' }, bubbles: true, composed: true }));
+    await settle(list);
     expect(commands.find((c) => c.name === 'sales.void')?.params)
       .toEqual({ sale_id: 'sale-1', reason: 'customer changed their mind' });
+    expect(notes).toContainEqual({ type: 'success', message: esCatalog.ui.voidDone });
+    expect(modal.isOpen).toBe(false);
   });
 
-  it('closing it from the backdrop removes it from the page', async () => {
-    const alert = await openVoidDialog();
-    await dismissLikeIonic(alert, 'backdrop');
-    expect(document.body.querySelector('ion-alert')).toBeNull();
+  it('while the void runs the window is busy, so a second tap cannot void twice', async () => {
+    let release!: () => void;
+    commandAnswer = () => new Promise((r) => { release = () => r({}); });
+    const { list, win } = await openVoidWindow();
+    win.dispatchEvent(new CustomEvent('void-confirm', { detail: { reason: 'x' }, bubbles: true, composed: true }));
+    await settle(list);
+    expect(win.busy).toBe(true);
+    release();
+    await settle(list);
   });
 
-  it('voiding several sales in a row never piles dialogs up', async () => {
+  it('a refusal stays in the window, in the user words, and the window stays open', async () => {
+    commandAnswer = async () => { throw Object.assign(new Error('already voided'), { code: 'sales.already_voided' }); };
+    const { list, modal, win } = await openVoidWindow();
+    win.dispatchEvent(new CustomEvent('void-confirm', { detail: { reason: 'x' }, bubbles: true, composed: true }));
+    await settle(list);
+    expect(modal.isOpen).toBe(true);
+    expect(win.errorText).toBe(esCatalog.ui.voidAlreadyVoided);
+    expect(win.busy).toBe(false);
+    expect(notes.filter((n) => n.type === 'success')).toEqual([]);
+  });
+
+  it('voiding several sales in a row never piles anything up', async () => {
     for (let i = 0; i < 3; i++) {
-      const alert = await openVoidDialog();
-      await dismissLikeIonic(alert, 'cancel');
-      document.querySelectorAll('erp-sales-list').forEach((n) => n.remove());
+      const { list, win } = await openVoidWindow();
+      win.dispatchEvent(new CustomEvent('void-cancel', { bubbles: true, composed: true }));
+      await settle(list);
+      list.remove();
     }
     expect(document.querySelectorAll('ion-alert').length).toBe(0);
+    expect(document.querySelectorAll('erp-sale-void').length).toBe(0);
   });
 });

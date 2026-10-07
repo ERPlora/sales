@@ -6,6 +6,7 @@ import '@erplora/outfitkit/ok-data-table';
 import type { DataTableColumn, DataTableAction } from '@erplora/outfitkit';
 import { renderDocumentModal, reprintSale } from '../../lib/document-modal.js';
 import '../erp-sale-refund/erp-sale-refund.js';
+import '../erp-sale-void/erp-sale-void.js';
 import { payMethodDisplayName } from '../../lib/pay-icons.js';
 import type { PayMethodLike } from '../../lib/pay-icons.js';
 import { formatDateTime } from '../../lib/document-mappers.js';
@@ -38,16 +39,6 @@ interface ErploraClientLike extends ListClient {
   /** i18n del módulo (ADR-0055): idioma activo + traducción del catálogo `ui`. */
   locale: string;
   t(catalog: Record<string, unknown>, key: string, params?: Record<string, unknown>): string;
-}
-
-/** Overlay global de Ionic (mismo patrón que el TPV): declarado en body para heredar el tema. */
-interface IonicAlertElement extends HTMLElement {
-  header: string;
-  message: string;
-  inputs: Array<{ name: string; type: string; placeholder?: string; attributes?: Record<string, unknown> }>;
-  buttons: Array<{ text: string; role?: string; handler?: (data: Record<string, string>) => boolean | void }>;
-  isOpen: boolean;
-  present?: () => Promise<void>;
 }
 
 /** sales#26 — códigos de `sales.void` → clave i18n. La UI se orienta por el CÓDIGO, no por la frase. */
@@ -172,6 +163,12 @@ export class ErpSalesList extends LitElement {
 
   /** sales#160 — venta que se está devolviendo. El modal está abierto mientras haya id. */
   @state() refundSaleId?: string;
+  /** services#157 - the sale whose void window is open (`erp-sale-void`). */
+  @state() voidTarget?: Sale;
+  /** The void is running: the window's Void button is really disabled. */
+  @state() voidBusy = false;
+  /** The last refusal of `sales.void`, in the user's words, read in the window. */
+  @state() voidError = '';
 
   /** sales#347 — sales whose reprint is on its way: their row action waits, so two taps never make
    *  two copies. A new Set on every change, so Lit sees it. */
@@ -259,44 +256,31 @@ export class ErpSalesList extends LitElement {
     }
   }
 
-  /** sales#26 — pide el MOTIVO (obligatorio: Toast, Lightspeed y el software fiscal español lo
-   *  exigen; es lo que luego se lee en el historial) y anula. Overlay global de Ionic, como el TPV. */
-  private async confirmVoid(sale: Sale): Promise<void> {
-    const t = (k: string, p?: Record<string, unknown>): string => erplora().t(CATALOG, k, p);
-    const alert = document.createElement('ion-alert') as IonicAlertElement;
-    alert.header = t('ui.voidTitle', { number: sale.sale_number });
-    alert.message = t('ui.voidExplain');
-    alert.inputs = [{ name: 'reason', type: 'textarea', placeholder: t('ui.voidReasonPlaceholder'), attributes: { maxlength: 500 } }];
-    alert.buttons = [
-      { text: t('ui.cancel'), role: 'cancel' },
-      { text: t('ui.actionVoid'), role: 'destructive', handler: (data) => {
-        const reason = (data?.reason ?? '').trim();
-        if (!reason) { erplora().notify?.({ type: 'error', message: t('ui.voidReasonRequired') }); return false; }
-        void this.voidSale(sale.id, reason);
-        return true;
-      } },
-    ];
-    // Ionic moves the teleported overlay back to its original parent right AFTER emitting
-    // ionAlertDidDismiss: remove it on the next task or a hidden alert is left on every void (sales#406).
-    alert.addEventListener('ionAlertDidDismiss', () => setTimeout(() => alert.remove(), 0), { once: true });
-    document.body.appendChild(alert);
-    try {
-      if (typeof alert.present === 'function') await alert.present();
-      else alert.isOpen = true;
-    } catch {
-      alert.remove();
-    }
+  /** sales#26 — the void asks for a REASON (required: Toast, Lightspeed and the Spanish fiscal
+   *  software ask for it; it is what the history reads later). services#157 — in a window, not an
+   *  ion-alert: an alert cannot host what other modules say the void also undoes (the voucher sold
+   *  on this sale), and the operator has to read that before confirming. */
+  private confirmVoid(sale: Sale): void {
+    this.voidError = '';
+    this.voidBusy = false;
+    this.voidTarget = sale;
   }
 
-  /** Ejecuta `sales.void`; el servidor decide (motivo, estado, factura) y aquí solo se cuenta. */
-  private async voidSale(saleId: string, reason: string): Promise<void> {
+  /** Runs `sales.void`; the server decides (reason, status, invoice) and here it is only told.
+   *  A refusal stays in the open window, next to the reason and the button. */
+  async voidSale(saleId: string, reason: string): Promise<void> {
     const t = (k: string): string => erplora().t(CATALOG, k);
+    this.voidBusy = true;
+    this.voidError = '';
     try {
       await erplora().command('sales.void', { sale_id: saleId, reason });
       erplora().notify?.({ type: 'success', message: t('ui.voidDone') });
+      this.voidTarget = undefined;
       await Promise.all([this.ctrl.load(), this.loadStats()]);
     } catch (e) {
-      erplora().notify?.({ type: 'error', message: t(voidErrorKey(errorCode(e))) });
+      this.voidError = t(voidErrorKey(errorCode(e)));
+    } finally {
+      this.voidBusy = false;
     }
   }
 
@@ -599,7 +583,7 @@ export class ErpSalesList extends LitElement {
         ${listFailed && !dataTableShowsLoadError() ? html`<ok-inline-feedback data-testid="sales-list-error" tone="danger" icon="alert-circle-outline">${this.ctrl.error}</ok-inline-feedback>` : nothing}
         <!-- The «document» button is not the only door: rowClickable makes the whole row open the
              same document (outfitkit#67 — the actions column can be off-screen at 1440 px). -->
-        <ok-data-table data-testid="sales-table" testid="sales-table" .error=${this.ctrl?.error ?? ''} @retry=${() => Promise.all([this.ctrl?.load(), this.loadStats(), this.loadPayMethods()])} .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r: Record<string, unknown>) => String(r.sale_number ?? '—')} .cardIcon=${() => 'receipt-outline'} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.paintedSort} .sortDir=${this.ctrl?.state.dir ?? 'desc'} .searchable=${true} .searchPlaceholder=${t('ui.searchSalePlaceholder')} .emptyMessage=${this.ctrl?.loading ? t('ui.loading') : t('ui.noSales')} .actions=${this.documentActions} .rowClickable=${true} @rowAction=${(e: CustomEvent<{ actionId: string; row: Sale }>) => { if (e.detail.actionId === 'document') this.docSaleId = e.detail.row.id; else if (e.detail.actionId === 'reprint') void this.reprint(e.detail.row); else if (e.detail.actionId === 'void') void this.confirmVoid(e.detail.row); else if (e.detail.actionId === 'refund') this.refundSaleId = e.detail.row.id; }} @rowClick=${(e: CustomEvent<{ row: Sale }>) => { this.docSaleId = e.detail.row.id; }} @pageChange=${(e: CustomEvent<number>) => this.ctrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.onSortChange(e)} @searchChange=${(e: CustomEvent<string>) => this.ctrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.onFilterChange(e)}></ok-data-table>
+        <ok-data-table data-testid="sales-table" testid="sales-table" .error=${this.ctrl?.error ?? ''} @retry=${() => Promise.all([this.ctrl?.load(), this.loadStats(), this.loadPayMethods()])} .serverSide=${true} .columns=${this.columns} .views=${true} .cardTitle=${(r: Record<string, unknown>) => String(r.sale_number ?? '—')} .cardIcon=${() => 'receipt-outline'} .rows=${this.ctrl?.rows ?? []} .total=${this.ctrl?.total ?? 0} .page=${this.ctrl?.state.page ?? 0} .pageSize=${this.ctrl?.state.pageSize ?? 50} .sort=${this.paintedSort} .sortDir=${this.ctrl?.state.dir ?? 'desc'} .searchable=${true} .searchPlaceholder=${t('ui.searchSalePlaceholder')} .emptyMessage=${this.ctrl?.loading ? t('ui.loading') : t('ui.noSales')} .actions=${this.documentActions} .rowClickable=${true} @rowAction=${(e: CustomEvent<{ actionId: string; row: Sale }>) => { if (e.detail.actionId === 'document') this.docSaleId = e.detail.row.id; else if (e.detail.actionId === 'reprint') void this.reprint(e.detail.row); else if (e.detail.actionId === 'void') this.confirmVoid(e.detail.row); else if (e.detail.actionId === 'refund') this.refundSaleId = e.detail.row.id; }} @rowClick=${(e: CustomEvent<{ row: Sale }>) => { this.docSaleId = e.detail.row.id; }} @pageChange=${(e: CustomEvent<number>) => this.ctrl.setPage(e.detail)} @sortChange=${(e: CustomEvent<{ sort: string; dir: 'asc' | 'desc' }>) => this.onSortChange(e)} @searchChange=${(e: CustomEvent<string>) => this.ctrl.setSearch(e.detail)} @filterChange=${(e: CustomEvent<{ col: string; value: unknown }>) => this.onFilterChange(e)}></ok-data-table>
       </div>
       <!-- sales#126 — el modal FUERA del contenedor con scroll: Ionic lo reparenta al light-DOM
            igual, pero así la vista no arrastra overlays al scrollear. -->
@@ -624,6 +608,24 @@ export class ErpSalesList extends LitElement {
                 void this.ctrl.load();
                 void this.loadStats();
               }}></erp-sale-refund>`
+            : nothing}
+        </ion-content>
+      </ion-modal>
+      <!-- services#157 — the void confirmation is a window too: it hosts sales.reversal.notice, what
+           the void also undoes in other modules (the voucher sold on the sale). Inline like the
+           refund: nothing is appended to document.body, so nothing lingers there (sales#406). -->
+      <ion-modal class="void-modal" .isOpen=${!!this.voidTarget}
+        @ionModalDidDismiss=${() => { this.voidTarget = undefined; }}>
+        <ion-content>
+          ${this.voidTarget
+            ? html`<erp-sale-void data-testid="sales-void-modal"
+                .saleId=${this.voidTarget.id}
+                .saleNumber=${this.voidTarget.sale_number}
+                .busy=${this.voidBusy}
+                .errorText=${this.voidError}
+                @void-cancel=${() => { this.voidTarget = undefined; }}
+                @void-confirm=${(e: CustomEvent<{ reason: string }>) => { if (this.voidTarget) void this.voidSale(this.voidTarget.id, e.detail.reason); }}
+              ></erp-sale-void>`
             : nothing}
         </ion-content>
       </ion-modal>`;
