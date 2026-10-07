@@ -175,7 +175,10 @@ def checkout_ops(
     ]
     if partial:
         return ops + [
-            ("sales._mark_order_line_paid", {"line_id": l, "sale_id": f"sale-{order_id}"})
+            (
+                "sales._mark_order_line_paid",
+                {"line_id": l, "sale_id": f"sale-{order_id}"},
+            )
             for l in line_ids
         ]
     return ops + [
@@ -603,7 +606,9 @@ def step_7_the_rechecks_are_scoped(s: Session) -> None:
     add_line(s, "ord-gone", "l-gone", 500)
 
     def charge(order_id: str, line_id: str, hub=None) -> str:
-        return play(s, checkout_ops(order_id, [line_id])[:-1], hub=hub)
+        # The queue and the per-line re-check only: `_order_lines_seen` (sales#546) would refuse
+        # most of these on its own (l-live is left out) and hide a hole in `_order_line_live`.
+        return play(s, checkout_ops(order_id, [line_id])[:-2], hub=hub)
 
     s.check(
         "a live line of this open check passes", charge("ord-scope", "l-live"), "ok"
@@ -746,7 +751,12 @@ def unsent_check(s: Session, order_id: str) -> None:
     """The issue's check before it goes to the kitchen: Entrecot 18,00 € + Agua 2,00 €, both
     still editable (a line sent to the kitchen no longer changes, SALES-F20)."""
     steak_and_water(s, order_id, water_fired=False)
-    s.psql(["-c", f"UPDATE sales_order_item SET fired_at = NULL WHERE id = '{order_id}-steak'"])
+    s.psql(
+        [
+            "-c",
+            f"UPDATE sales_order_item SET fired_at = NULL WHERE id = '{order_id}-steak'",
+        ]
+    )
 
 
 def a_second_table(s: Session, order_id: str) -> None:
@@ -823,12 +833,22 @@ def step_10_an_edit_in_flight(s: Session) -> None:
 def step_11_a_checkout_in_flight_refuses_the_edits(s: Session) -> None:
     print("\n11 · a checkout IN FLIGHT: every edit waits and is refused")
     for n, (label, seed, edit, qty) in enumerate(
-        EDITS + (("this check joined into another", lambda s, o: (unsent_check(s, o), a_second_table(s, f"{o}-z")), lambda o: merge_ops(o, f"{o}-z"), {}),)
+        EDITS
+        + (
+            (
+                "this check joined into another",
+                lambda s, o: (unsent_check(s, o), a_second_table(s, f"{o}-z")),
+                lambda o: merge_ops(o, f"{o}-z"),
+                {},
+            ),
+        )
     ):
         o = f"e11-{n}"
         seed(s, o)
         before = lines_of(s, o), qty_of(s, f"{o}-steak"), lines_of(s, f"{o}-z")
-        held = hold(s, checkout_ops(o, [f"{o}-steak", f"{o}-water"], qty=read_qty(o, qty)))
+        held = hold(
+            s, checkout_ops(o, [f"{o}-steak", f"{o}-water"], qty=read_qty(o, qty))
+        )
         calls = edit(o)
         thread, box = in_background(s, calls)
         s.check(
@@ -837,7 +857,11 @@ def step_11_a_checkout_in_flight_refuses_the_edits(s: Session) -> None:
             True,
         )
         s.check(f"{label}: the checkout commits", held.commit()[0], True)
-        s.check(f"{label}: the edit is refused by name", finish(s, calls, thread, box), CHANGED)
+        s.check(
+            f"{label}: the edit is refused by name",
+            finish(s, calls, thread, box),
+            CHANGED,
+        )
         s.check(
             f"{label}: the charged check keeps exactly what was charged",
             (lines_of(s, o), qty_of(s, f"{o}-steak"), lines_of(s, f"{o}-z")),
@@ -852,7 +876,9 @@ def step_11_a_checkout_in_flight_refuses_the_edits(s: Session) -> None:
 
 
 def step_12_a_partial_charge_in_flight(s: Session) -> None:
-    print("\n12 · a PARTIAL charge in flight: the charged line cannot change, the rest can")
+    print(
+        "\n12 · a PARTIAL charge in flight: the charged line cannot change, the rest can"
+    )
     o = "e12"
     unsent_check(s, o)
     held = hold(s, checkout_ops(o, [f"{o}-steak"], partial=True))
@@ -865,7 +891,9 @@ def step_12_a_partial_charge_in_flight(s: Session) -> None:
     )
     s.check("the partial charge commits", held.commit()[0], True)
     s.check("the change is refused by name", finish(s, calls, thread, box), CHANGED)
-    s.check("the charged line keeps the quantity charged", qty_of(s, f"{o}-steak"), str(ONE))
+    s.check(
+        "the charged line keeps the quantity charged", qty_of(s, f"{o}-steak"), str(ONE)
+    )
     s.check(
         "a line the charge left on the check still changes",
         play(s, update_ops(o, f"{o}-water", 2 * ONE, 400)),
@@ -875,7 +903,9 @@ def step_12_a_partial_charge_in_flight(s: Session) -> None:
 
 
 def step_13_an_edit_committed_before_the_checkout_queues(s: Session) -> None:
-    print("\n13 · the edit already committed and the till charges what it read: refused")
+    print(
+        "\n13 · the edit already committed and the till charges what it read: refused"
+    )
     gift = (
         "a line comped",
         lambda s, o: unsent_check(s, o),
@@ -896,16 +926,25 @@ def step_13_an_edit_committed_before_the_checkout_queues(s: Session) -> None:
         s.check(f"{label}: the edit goes through", play(s, edit(o)), "ok")
         s.check(
             f"{label}: the checkout of what it read is refused",
-            play(s, checkout_ops(o, [f"{o}-steak", f"{o}-water"], qty=read_qty(o, qty))),
+            play(
+                s, checkout_ops(o, [f"{o}-steak", f"{o}-water"], qty=read_qty(o, qty))
+            ),
             CHANGED,
         )
         extra, now_qty, now_gift = now_holds[label]
-        lines = [f"{o}-steak"] + ([] if extra is None else [f"{o}-water"]) + [
-            f"{o}-{x}" for x in (extra or [])
-        ]
+        lines = (
+            [f"{o}-steak"]
+            + ([] if extra is None else [f"{o}-water"])
+            + [f"{o}-{x}" for x in (extra or [])]
+        )
         s.check(
             f"{label}: the checkout of what the check now holds goes through",
-            play(s, checkout_ops(o, lines, qty=read_qty(o, now_qty), gift=read_qty(o, now_gift))),
+            play(
+                s,
+                checkout_ops(
+                    o, lines, qty=read_qty(o, now_qty), gift=read_qty(o, now_gift)
+                ),
+            ),
             "ok",
         )
 
@@ -921,7 +960,12 @@ def step_14_the_new_rechecks_are_scoped(s: Session) -> None:
             [
                 (
                     "sales._order_line_live",
-                    {"order_id": "g-live", "line_id": "g-l", "quantity": quantity, "is_gift": is_gift},
+                    {
+                        "order_id": "g-live",
+                        "line_id": "g-l",
+                        "quantity": quantity,
+                        "is_gift": is_gift,
+                    },
                 )
             ],
         )
@@ -940,7 +984,10 @@ def step_14_the_new_rechecks_are_scoped(s: Session) -> None:
     add_line(s, "g-seen-other", "g-seen-elsewhere", 500)
 
     def seen(line_ids, order_id="g-seen") -> str:
-        return play(s, [("sales._order_lines_seen", {"order_id": order_id, "line_ids": line_ids})])
+        return play(
+            s,
+            [("sales._order_lines_seen", {"order_id": order_id, "line_ids": line_ids})],
+        )
 
     s.check(
         "every live unpaid line charged: a paid, a removed, another check's and the neighbour's"
@@ -965,11 +1012,25 @@ def step_14_the_new_rechecks_are_scoped(s: Session) -> None:
         return play(s, update_ops("g-upd", line_id, 2 * ONE, 1000)[1:2], hub=hub)
 
     s.check("a line already charged does not change", update("g-upd-paid"), CHANGED)
-    s.check("a line sent to the kitchen does not change", update("g-upd-fired"), CHANGED)
+    s.check(
+        "a line sent to the kitchen does not change", update("g-upd-fired"), CHANGED
+    )
     s.check("a line taken off does not change", update("g-upd-gone"), CHANGED)
-    s.check("a line of another check does not change through this one", update("g-upd-elsewhere"), CHANGED)
-    s.check("the neighbour's line under our check does not change", update("g-upd-nb"), CHANGED)
-    s.check("nor does the neighbour change ours", update("g-upd-live", hub=OTHER_HUB), CHANGED)
+    s.check(
+        "a line of another check does not change through this one",
+        update("g-upd-elsewhere"),
+        CHANGED,
+    )
+    s.check(
+        "the neighbour's line under our check does not change",
+        update("g-upd-nb"),
+        CHANGED,
+    )
+    s.check(
+        "nor does the neighbour change ours",
+        update("g-upd-live", hub=OTHER_HUB),
+        CHANGED,
+    )
     s.check("a live, unsent, unpaid line changes", update("g-upd-live"), "ok")
     s.check(
         "and none of the others moved",
@@ -997,17 +1058,53 @@ def step_15_split_and_join_gates(s: Session) -> None:
         add_line(s, order_id, f"{order_id}-line", 500)
     open_neighbour_check(s, "j-nb")
 
-    s.check("joining into a charged check is refused", play(s, merge_ops("j-from", "j-done")), CHANGED)
-    s.check("joining into a voided check is refused", play(s, merge_ops("j-from", "j-voided")), CHANGED)
-    s.check("joining into a deleted check is refused", play(s, merge_ops("j-from", "j-gone")), CHANGED)
-    s.check("joining into the neighbour's check is refused", play(s, merge_ops("j-from", "j-nb")), CHANGED)
-    s.check("joining a charged check is refused", play(s, merge_ops("j-from-done", "j-to")), CHANGED)
-    s.check("joining a deleted check is refused", play(s, merge_ops("j-from-gone", "j-to")), CHANGED)
-    s.check("joining the neighbour's check is refused", play(s, merge_ops("j-nb", "j-to")), CHANGED)
-    s.check("the lines of the refused joins stayed home", lines_of(s, "j-from"), "j-from-line")
+    s.check(
+        "joining into a charged check is refused",
+        play(s, merge_ops("j-from", "j-done")),
+        CHANGED,
+    )
+    s.check(
+        "joining into a voided check is refused",
+        play(s, merge_ops("j-from", "j-voided")),
+        CHANGED,
+    )
+    s.check(
+        "joining into a deleted check is refused",
+        play(s, merge_ops("j-from", "j-gone")),
+        CHANGED,
+    )
+    s.check(
+        "joining into the neighbour's check is refused",
+        play(s, merge_ops("j-from", "j-nb")),
+        CHANGED,
+    )
+    s.check(
+        "joining a charged check is refused",
+        play(s, merge_ops("j-from-done", "j-to")),
+        CHANGED,
+    )
+    s.check(
+        "joining a deleted check is refused",
+        play(s, merge_ops("j-from-gone", "j-to")),
+        CHANGED,
+    )
+    s.check(
+        "joining the neighbour's check is refused",
+        play(s, merge_ops("j-nb", "j-to")),
+        CHANGED,
+    )
+    s.check(
+        "the lines of the refused joins stayed home",
+        lines_of(s, "j-from"),
+        "j-from-line",
+    )
     s.check("two open checks join", play(s, merge_ops("j-from", "j-to")), "ok")
     s.check("the lines moved", lines_of(s, "j-to"), "j-from-line,j-to-line")
-    s.check("replaying the join changes nothing and is not refused", play(s, merge_ops("j-from", "j-to")), "ok")
+    s.check(
+        "replaying the join changes nothing and is not refused",
+        play(s, merge_ops("j-from", "j-to")),
+        "ok",
+    )
 
     s.check(
         "splitting a charged check is refused",
@@ -1035,7 +1132,11 @@ def step_15_split_and_join_gates(s: Session) -> None:
         play(s, split_ops("j-open", [], "j-open-half")),
         "ok",
     )
-    s.check("and only that one", s.qi("SELECT count(*) FROM sales_order WHERE id LIKE 'j-%-half'"), 1)
+    s.check(
+        "and only that one",
+        s.qi("SELECT count(*) FROM sales_order WHERE id LIKE 'j-%-half'"),
+        1,
+    )
 
     steak_and_water(s, "j-q")
     held = hold(s, checkout_ops("j-q", ["j-q-steak", "j-q-water"]))
@@ -1048,7 +1149,6 @@ def step_15_split_and_join_gates(s: Session) -> None:
     )
     s.check("our checkout commits", held.commit()[0], True)
     s.check("and the neighbour was refused", finish(s, calls, thread, box), CHANGED)
-
 
 
 def open_neighbour_check(s: Session, order_id: str) -> bool:
