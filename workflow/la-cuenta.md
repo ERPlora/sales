@@ -129,7 +129,7 @@ Implicados: STAFF-F03, STAFF-F09, STAFF-F21, REC_PELUQUERIA-F09, REC_PELUQUERIA-
 QA: B-04, B-07, R-10
 
 ### SALES-F17 Aparcar una cuenta y recuperarla
-Estado: parcial — «Permitir tiques aparcados» apagado solo quita el botón de la cabecera: desde «Cuentas abiertas» se sigue aparcando; con una cuenta de barra delante, tocar una mesa ocupada que ya tiene pedido y elegir «Aparcarla y abrir» o «Eliminarla y abrir» aparca o cierra en Mesas la cuenta de la mesa tocada, que queda Disponible con su pedido abierto (TABLES-F11); y una cuenta de mesa aparcada no vuelve a su mesa: queda «Aparcada» en Mesas para siempre, también tras cobrarla (TABLES-F13); con una línea pagada con bono, volver a la cuenta aparcada la cobra a su precio aunque el hueco del bono la enseñe gastada, y al cobrar la sesión también se gasta; si nadie la cobra en un día, la sesión retenida vuelve sola al bono (SERVICES-F22, SERVICES-F25, leído en el código, sin ejecutar)
+Estado: parcial — «Permitir tiques aparcados» apagado solo quita el botón de la cabecera: desde «Cuentas abiertas» se sigue aparcando; una cuenta de mesa aparcada no vuelve a su mesa: queda «Aparcada» en Mesas para siempre, también tras cobrarla (TABLES-F13); con una línea pagada con bono, volver a la cuenta aparcada la cobra a su precio aunque el hueco del bono la enseñe gastada, y al cobrar la sesión también se gasta; si nadie la cobra en un día, la sesión retenida vuelve sola al bono (SERVICES-F22, SERVICES-F25, leído en el código, sin ejecutar)
 Vertical: comun
 Actor: empleado, responsable
 Pantalla: Cuentas abiertas
