@@ -93,7 +93,7 @@ Implicados: KITCHEN-F27, SERVICES-F22, SERVICES-F24, TABLES-F17, REC_PELUQUERIA-
 QA: R-07, qa-hub-restaurant §7.09 (discrepa)
 
 ### SALES-F24 Juntar las cuentas de dos mesas
-Estado: parcial — si la unión de cuentas falla no se ve nada (las mesas quedan fusionadas en Mesas y las cuentas siguen separadas); las rondas enviadas desde la cuenta absorbida no se cierran al cobrar y se quedan en la pantalla de Cocina; si la mesa de origen estaba dividida, se junta una de sus dos cuentas sin elegir (la mesa sigue Ocupada con la otra, TABLES-F16); la sesión de bono retenida en la cuenta absorbida no se gasta al cobrar la que queda: vuelve sola al bono al cabo de un día y el hueco de la que queda ofrece gastar otra (sales#540, SERVICES-F22, leído en el código, sin ejecutar)
+Estado: parcial — si la unión de cuentas falla no se ve nada (las mesas quedan fusionadas en Mesas y las cuentas siguen separadas); si la mesa de origen estaba dividida, se junta una de sus dos cuentas sin elegir (la mesa sigue Ocupada con la otra, TABLES-F16); la sesión de bono retenida en la cuenta absorbida no se gasta al cobrar la que queda: vuelve sola al bono al cabo de un día y el hueco de la que queda ofrece gastar otra (sales#540, SERVICES-F22, leído en el código, sin ejecutar)
 Vertical: restaurante
 Actor: empleado, responsable
 Pantalla: Vender
@@ -102,7 +102,7 @@ Pasos:
 2. Si las dos tenían cuenta, las líneas sin cobrar de una pasan a la otra y la vacía queda anulada; si solo una tenía, esa pasa a ser la de la mesa que queda.
 3. La pantalla sigue a la mesa que queda, con todas las líneas.
 Entra: las dos mesas y sus cuentas, de Mesas.
-Sale: una sola cuenta; las líneas se mueven sin volver a crearlas, así que lo ya enviado a cocina no se envía otra vez. Repetirlo no cambia nada. La cuenta absorbida se anula sin aviso a nadie: las rondas que se enviaron desde ella siguen colgadas de ella en Cocina y no se cierran al cobrar la que queda.
+Sale: una sola cuenta; las líneas se mueven sin volver a crearlas, así que lo ya enviado a cocina no se envía otra vez. Repetirlo no cambia nada. La cuenta absorbida se anula y Ventas avisa de la unión (sales.order.merged, con la cuenta absorbida y la que queda): Cocina pasa las rondas enviadas desde la absorbida a la que queda, numeradas detrás de las suyas, y se cierran al cobrarla (KITCHEN-F28). Un aviso repetido no mueve nada.
 Si falla: la persona no ve ningún aviso: Mesas ya fusionó las mesas, pero las dos cuentas siguen separadas en Ventas.
 Implicados: KITCHEN-F28, SERVICES-F22, TABLES-F16, REC_PELUQUERIA-F10, REC_RESTAURANTE-F10
 QA: R-07, qa-hub-restaurant §7.09

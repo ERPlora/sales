@@ -37,6 +37,7 @@ rate of every line.
 | `sale.completed` | a sale is completed | sale id, order id and number, totals, tax amount, the lines, customer, `staff_id` |
 | `sale.voided` | a sale is voided (sales#26: emitted exactly once; a second void of the same sale is refused) | sale id, sale number, reason, voided_by, voided_at, total, payment method, order id, document type |
 | `order.fired` | an open check is fired to production | order id, an opaque label, channel, the lines of that round |
+| `sales.order.merged` | two open checks are merged (kitchen#162); a replay raises it again, so a listener checks the absorbed check is voided | `from_order_id` (absorbed, now voided), `to_order_id` (the one that stays) |
 | `sales.sale.created_from_appointment` | a sale is completed carrying an `appointment_id` | sale id, appointment id, staff id, total |
 
 `sales.sale.created_from_appointment` is **additive** — a sale born from an appointment emits both it

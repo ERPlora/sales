@@ -146,7 +146,7 @@ Implicados: CUSTOMERS-F19, SERVICES-F22, SERVICES-F25, TABLES-F11, TABLES-F13, R
 QA: qa-hub-restaurant §7.06
 
 ### SALES-F18 Eliminar una cuenta abierta
-Estado: parcial — no pide motivo; las rondas ya enviadas a cocina siguen en la pantalla de Cocina y Mesas no recibe ningún aviso del servidor; anular una cuenta que ya no está abierta contesta bien y avisa igual
+Estado: parcial — no pide motivo; Mesas no recibe ningún aviso del servidor; anular una cuenta que ya no está abierta contesta bien y avisa igual
 Vertical: comun
 Actor: responsable, empleado
 Pantalla: Cuentas abiertas
@@ -155,7 +155,7 @@ Pasos:
 2. Toca otra vez: la cuenta desaparece de la lista. También se elimina con «Eliminarla y abrir» al cambiar de cuenta.
 3. A un empleado o cajero el hub le pide el PIN de un responsable (anular es permiso de responsable).
 Entra: la cuenta elegida.
-Sale: la cuenta queda anulada, no borrada, sin motivo (avisa: sales.order.voided); Servicios suelta los bonos que tuviera retenidos. Cocina no escucha ese aviso: lo ya enviado sigue en su pantalla. Mesas tampoco lo escucha: por el servidor la mesa no se suelta (lo que haga su control en pantalla, sin confirmar).
-Si falla: «No se ha podido eliminar esa cuenta abierta. Sigue en la lista.» o «No se ha podido eliminar la cuenta. Sigue abierta, en pantalla.». Una cuenta ya cobrada o anulada desde otro dispositivo no cambia, pero la orden contesta bien y el aviso sale igual.
+Sale: la cuenta queda anulada, no borrada, sin motivo (avisa: sales.order.voided); Servicios suelta los bonos que tuviera retenidos y Cocina cancela las rondas de esa cuenta que siguen en marcha, que salen de su pantalla (KITCHEN-F28). Mesas tampoco lo escucha: por el servidor la mesa no se suelta (lo que haga su control en pantalla, sin confirmar).
+Si falla: «No se ha podido eliminar esa cuenta abierta. Sigue en la lista.» o «No se ha podido eliminar la cuenta. Sigue abierta, en pantalla.». Una cuenta ya cobrada o anulada desde otro dispositivo no cambia, pero la orden contesta bien y el aviso sale igual; Cocina comprueba que la cuenta está anulada antes de cancelar nada, así que lo de una cuenta cobrada sigue su curso.
 Implicados: KITCHEN-F28, SERVICES-F23, TABLES-F20, REC_RESTAURANTE-F14, HUB-F152
 QA: qa-hub-restaurant §7.13 (discrepa)

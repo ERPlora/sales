@@ -56,6 +56,9 @@ CONTRACT = {
         ["sales.order.line_removed", "sales.order.line_voided"],
         {"order_id", "line_id", "reason"},
     ),
+    # kitchen#162: joining two checks takes the absorbed one away; the kitchen hands its rounds to
+    # the check that stays, so it needs both ids.
+    "sales.order.merge": (["sales.order.merged"], {"from_order_id", "to_order_id"}),
 }
 
 failures: list[str] = []
