@@ -14286,12 +14286,37 @@ mod tests {
     #[test]
     fn a_partial_charge_of_a_check_queues_and_rechecks_too() {
         // «Each pays their own» (ADR-0146) writes the same sale out of the same stale read.
+        // The rows it marks as paid are named only by `line_ids` here (the items carry no row), so
+        // those are the ones re-checked.
         let mut inp = two_line_check_input();
+        for it in inp["payload"]["items"].as_array_mut().into_iter().flatten() {
+            it.as_object_mut().map(|o| o.remove("order_item_id"));
+        }
         inp["payload"]["keep_order_open"] = json!(true);
         inp["payload"]["line_ids"] = json!(["line-a", "line-b"]);
         let out = sale(inp);
         let commands = commands_of(&out).into_iter().take(3).collect::<Vec<_>>();
         assert_eq!(commands, vec!["sales._order_lock", "sales._order_line_live", "sales._order_line_live"]);
+        let rechecked: Vec<Value> = out.operations[1..3].iter().map(|o| o.params["line_id"].clone()).collect();
+        assert_eq!(rechecked, vec![json!("line-a"), json!("line-b")]);
+    }
+
+    #[test]
+    fn an_item_that_names_no_row_is_not_rechecked_as_one() {
+        // A check sale may carry an item that is not a row of the check (and a blank mark): only
+        // the rows it names are re-checked, never an empty id that would refuse every such sale.
+        let mut inp = two_line_check_input();
+        inp["payload"]["items"][1].as_object_mut().map(|o| o.remove("order_item_id"));
+        inp["payload"]["line_ids"] = json!([""]);
+        inp["payload"]["keep_order_open"] = json!(true);
+        let out = sale(inp);
+        let lives: Vec<Value> = out
+            .operations
+            .iter()
+            .filter(|o| o.command == "sales._order_line_live")
+            .map(|o| o.params["line_id"].clone())
+            .collect();
+        assert_eq!(lives, vec![json!("line-a")]);
     }
 
     #[test]

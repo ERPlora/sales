@@ -34,6 +34,10 @@ Points:
   6. The screen is stale (the void already committed, nothing in flight): refused.
   7. The re-checks are scoped: a line of another check, a paid line, a deleted line, a deleted
      check, a check not open, and the neighbour hub naming our ids never pass them.
+  8. The removal is scoped the same way: a paid, already removed or foreign line, a line of a
+     check that is not open, and the neighbour hub reaching across, are all refused.
+  9. The queue is per hub: the neighbour naming our check is answered at once, never queued
+     behind our checkout.
 
 Usage: tests/check_charge_race.postgres.test.py — container `erplora-test-pg-5433` by default
 (override: SALES_TEST_PG_CONTAINER). Scratch database, dropped at the end. Never skips itself.
@@ -93,6 +97,7 @@ def add_line(
     fired: bool = True,
     sale_id=None,
     deleted: int = 0,
+    hub: str = HUB,
 ) -> None:
     s.psql(
         [
@@ -106,7 +111,7 @@ def add_line(
                 " :sale_id, :deleted, 'u-waiter', 'u-waiter', :now, :now)",
                 {
                     "id": line_id,
-                    "hub_id": HUB,
+                    "hub_id": hub,
                     "order_id": order_id,
                     "line_total": line_total,
                     "fired_at": NOW if fired else None,
@@ -117,7 +122,7 @@ def add_line(
             ),
         ]
     )
-    if not deleted and sale_id is None:
+    if not deleted and sale_id is None and hub == HUB:
         s.psql(
             [
                 "-c",
@@ -491,6 +496,100 @@ def step_7_the_rechecks_are_scoped(s: Session) -> None:
         else "<seed failed>",
         CHANGED,
     )
+    add_line(s, "ord-nb", "l-cross", 500)
+    s.check(
+        "nor does the neighbour hub pass a row of OUR hub filed under its check's id",
+        play(
+            s,
+            [("sales._order_line_live", {"order_id": "ord-nb", "line_id": "l-cross"})],
+            hub=OTHER_HUB,
+        ),
+        CHANGED,
+    )
+    s.check(
+        "nor does the neighbour hub find our check open by queuing on it alone",
+        play(s, [("sales._order_lock", {"order_id": "ord-scope"})], hub=OTHER_HUB),
+        CHANGED,
+    )
+
+
+# ── 8 · the removal is scoped ──────────────────────────────────────────────────────────────
+
+
+def step_8_the_removal_is_scoped(s: Session) -> None:
+    print(
+        "\n8 · the removal only takes an unsent, unpaid line of THIS open check of THIS hub"
+    )
+    open_check(s, "rm-open")
+    add_line(s, "rm-open", "rm-live", 500, fired=False)
+    add_line(s, "rm-open", "rm-paid", 500, fired=False, sale_id="sale-earlier")
+    add_line(s, "rm-open", "rm-deleted", 500, fired=False, deleted=1)
+    add_line(s, "rm-open", "rm-nb-line", 500, fired=False, hub=OTHER_HUB)
+    for order_id, status, deleted in (
+        ("rm-other", "open", 0),
+        ("rm-done", "completed", 0),
+        ("rm-voided", "voided", 0),
+        ("rm-gone", "open", 1),
+    ):
+        open_check(s, order_id, status=status, deleted=deleted)
+        add_line(s, order_id, f"{order_id}-line", 500, fired=False)
+
+    def remove(order_id: str, line_id: str, hub=None) -> str:
+        return play(s, remove_ops(order_id, line_id), hub=hub)
+
+    refused = "sales.order_line_not_removable"
+    s.check("a line already charged stays", remove("rm-open", "rm-paid"), refused)
+    s.check(
+        "a line already taken off is refused", remove("rm-open", "rm-deleted"), refused
+    )
+    s.check(
+        "a line of ANOTHER check is not taken through this one",
+        remove("rm-open", "rm-other-line"),
+        refused,
+    )
+    s.check(
+        "a line of a charged check stays (another check of the hub is open)",
+        remove("rm-done", "rm-done-line"),
+        refused,
+    )
+    s.check(
+        "a line of a voided check stays", remove("rm-voided", "rm-voided-line"), refused
+    )
+    s.check(
+        "a line of a deleted check stays", remove("rm-gone", "rm-gone-line"), refused
+    )
+    s.check(
+        "the neighbour's line is not removed by us",
+        remove("rm-open", "rm-nb-line"),
+        refused,
+    )
+    s.check(
+        "the neighbour does not remove its line through OUR open check",
+        remove("rm-open", "rm-nb-line", hub=OTHER_HUB),
+        refused,
+    )
+    s.check("a live, unsent, unpaid line goes", remove("rm-open", "rm-live"), "ok")
+    s.check("and only that one", line_state(s, "rm-live"), "1|-")
+
+
+# ── 9 · the queue is per hub ───────────────────────────────────────────────────────────────
+
+
+def step_9_the_neighbour_never_queues_on_our_check(s: Session) -> None:
+    print(
+        "\n9 · the neighbour hub naming our check is never queued behind our checkout"
+    )
+    steak_and_water(s, "ord-q")
+    held = hold(s, checkout_ops("ord-q", ["ord-q-steak", "ord-q-water"]))
+    calls = [("sales._order_lock", {"order_id": "ord-q"})]
+    thread, box = in_background(s, calls, hub=OTHER_HUB)
+    s.check(
+        "it is answered while our checkout is still in flight",
+        poll(lambda: not thread.is_alive()),
+        True,
+    )
+    s.check("our checkout commits", held.commit()[0], True)
+    s.check("and the neighbour was refused", finish(s, calls, thread, box), CHANGED)
 
 
 def open_neighbour_check(s: Session, order_id: str) -> bool:
@@ -525,6 +624,8 @@ def main() -> int:
             step_5_two_checkouts_charge_once,
             step_6_a_stale_screen,
             step_7_the_rechecks_are_scoped,
+            step_8_the_removal_is_scoped,
+            step_9_the_neighbour_never_queues_on_our_check,
         ):
             try:
                 step(s)

@@ -132,12 +132,12 @@ export function checkoutErrorKey(code: string): string {
   return MESSAGES[code] ?? 'ui.errorCharge';
 }
 
-/** The `code` of a runtime error, or `''` when what arrived carries none (it is not the hub's). */
 /** Codes that mean «the screen is not the check any more»: the cart is read again (sales#545). */
 export function isCheckChanged(code: string): boolean {
   return MESSAGES[code] === 'ui.errorOrderChanged';
 }
 
+/** The `code` of a runtime error, or `''` when what arrived carries none (it is not the hub's). */
 export function errorCode(e: unknown): string {
   const code = (e as { code?: unknown } | null | undefined)?.code;
   return typeof code === 'string' ? code : '';
