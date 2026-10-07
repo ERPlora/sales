@@ -129,6 +129,23 @@ describe('sales list — the void window (sales#26, sales#406, services#157)', (
     expect(notes.filter((n) => n.type === 'success')).toEqual([]);
   });
 
+  it('a refusal does not follow into the next void: reopening starts clean', async () => {
+    commandAnswer = async () => { throw Object.assign(new Error('already voided'), { code: 'sales.already_voided' }); };
+    const { list, win } = await openVoidWindow();
+    win.dispatchEvent(new CustomEvent('void-confirm', { detail: { reason: 'x' }, bubbles: true, composed: true }));
+    await settle(list);
+    expect(win.errorText).toBe(esCatalog.ui.voidAlreadyVoided);
+    win.dispatchEvent(new CustomEvent('void-cancel', { bubbles: true, composed: true }));
+    await settle(list);
+    list.shadowRoot!.querySelector('ok-data-table')!
+      .dispatchEvent(new CustomEvent('rowAction', { detail: { actionId: 'void', row: ROW } }));
+    await settle(list);
+    const again = list.shadowRoot!.querySelector<VoidEl>('ion-modal.void-modal erp-sale-void');
+    expect(again, 'the window opens again').toBeTruthy();
+    expect(again!.errorText ?? '').toBe('');
+    expect(again!.busy).toBe(false);
+  });
+
   it('voiding several sales in a row never piles anything up', async () => {
     for (let i = 0; i < 3; i++) {
       const { list, win } = await openVoidWindow();

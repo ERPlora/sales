@@ -18,9 +18,8 @@ interface SlotSdk {
 
 /** The tags of the components filling the hole. An older shell or a failed read = none. */
 export async function loadReversalFillers(sdk: SlotSdk): Promise<string[]> {
-  if (typeof sdk.loadSlot !== 'function') return [];
   try {
-    const rows = (await sdk.loadSlot(REVERSAL_NOTICE_SLOT)) ?? [];
+    const rows = (await sdk.loadSlot?.(REVERSAL_NOTICE_SLOT)) ?? [];
     return rows.map((f) => String(f.component));
   } catch {
     return [];
