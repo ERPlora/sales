@@ -12638,15 +12638,15 @@ var ErpPosTouch = class extends i3 {
     this.error = t5(this.checkoutUnknown ? "ui.checkoutUnknown" : SERVER_UNAVAILABLE_KEY);
   }
   /** Reads the open check again after a checkout refused because it changed (sales#545). A read
-   *  that fails keeps the cart on screen: the sentence already says to check it. */
+   *  that fails keeps the cart on screen: the sentence already says to check it. Marks of lines
+   *  that left are dropped by `updated()` (sales#449); the old valuation is dropped HERE, or the
+   *  sheet keeps showing the old total until the new one answers. */
   async reloadChangedCheck(orderId) {
     try {
       this.cart = await loadOrderLines(erplora2(), orderId);
     } catch {
       return;
     }
-    const live = new Set(this.cart.map((l3) => l3.line_id).filter(Boolean));
-    this.splitSel = new Set([...this.splitSel].filter((id) => live.has(id)));
     this.dropValuation();
   }
   /** La salida del cobro dudoso (hub#923): ir a Ventas a comprobar si aquello se cobró.
