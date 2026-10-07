@@ -196,6 +196,7 @@ const COVERED: Record<string, { prefix: string; contract: string[]; tables?: str
       'pos-staff-loading', 'pos-staff-option', 'pos-staff-option-me', 'pos-staff-team-error',
       'pos-ticket-discount',
       'pos-view-tab-account', 'pos-view-tab-draft', 'pos-view-tabs',
+      'pos-void-close', 'pos-void-confirm', 'pos-void-input', 'pos-void-scrim',
     ],
   },
   // The sales list (`/m/sales`): the date range, the six KPIs of the day and the table of tickets.
