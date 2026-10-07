@@ -39,6 +39,7 @@ import { errorCode } from '../../lib/checkout-key.js';
 import { domainErrorText } from '../../lib/domain-error-text.js';
 import { transportErrorKey } from '../../lib/transport-error.js';
 import { recoverCheckout, type CheckoutRecovery } from '../../lib/checkout-recovery.js';
+import { loadReversalFillers, mountReversalNotice } from '../../lib/reversal-notice.js';
 import {
   forgetPendingRefundKey,
   pendingRefundKey,
@@ -240,6 +241,11 @@ export class ErpSaleRefund extends LitElement {
   private tenderHeard = new Set<string>();
   /** One instance per covered line, kept so it is not recreated on every render. */
   private readonly tenderEls = new Map<string, HTMLElement>();
+  /** services#157 - the components filling `sales.reversal.notice`: what a FULL refund also undoes
+   *  in other modules (the voucher sold on this sale). Empty = nobody: no hole is painted. */
+  @state() private reversalFillers: string[] = [];
+  /** One instance per filler, kept so it is not recreated on every render. */
+  private readonly reversalEls = new Map<string, HTMLElement>();
 
   /** La clave del intento, congelada: un reintento NO la renueva. */
   private key = '';
@@ -280,6 +286,10 @@ export class ErpSaleRefund extends LitElement {
   updated(changed: Map<string, unknown>): void {
     if (changed.has('saleId')) void this.load();
     this.ensureTenderSlotsMounted();
+    mountReversalNotice(
+      this.renderRoot.querySelector('[data-testid="refund-reversal-notice"]'),
+      this.reversalFillers, this.saleId ?? '', 'refund', this.reversalEls,
+    );
   }
 
   /** That line goes back to its external tender. The warning travels with the event because the
@@ -327,6 +337,8 @@ export class ErpSaleRefund extends LitElement {
       const split = proportionalSplit(refundableTotal(this.legs), this.legs);
       this.draft = Object.fromEntries(Object.entries(split).map(([id, amount]) => [id, { amount }]));
       await this.loadTenderLines(saleId);
+      // services#157 - never fails: a filler that cannot be listed paints no hole.
+      this.reversalFillers = await loadReversalFillers(erplora());
       // sales#465 - no line here was paid another way (or nobody fills the hole): nothing can be
       // handed the recovered document, so nothing is owed.
       if (this.recoveredRef && !this.tenderReadFailed && !this.covered.length) this.settleRecovered();
@@ -890,6 +902,12 @@ export class ErpSaleRefund extends LitElement {
       <!-- And the external tenders' warnings, next to the button: the line's hole can be
            off-screen when the thumb is already on the refund button (sales#166). -->
       ${this.renderTenderNotices()}
+      <!-- services#157: what refunding the WHOLE sale also undoes elsewhere (the voucher sold on
+           it), read before confirming. Only in the branch with money to give back: with none
+           left the sale is already refunded in full and nothing more is undone. -->
+      ${this.reversalFillers.length
+        ? html`<div class="reversal-notice" data-testid="refund-reversal-notice"></div>`
+        : nothing}
       ${this.checking
         ? html`<div class="refund-checking" data-testid="refund-checking" role="status">
             <ion-spinner name="crescent"></ion-spinner><span>${t('ui.refundChecking')}</span>
