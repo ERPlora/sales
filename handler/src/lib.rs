@@ -3388,6 +3388,11 @@ fn complete_sale_inner(input: Value, rule: CapRule) -> Result<Output, Refusal> {
                 "tax_amount": t.tax,                // céntimos: IVA YA calculado (0 si invitación)
                 "is_gift": it_gift,                 // invitación/regalo (comp)
                 "covered": it_covered,              // la pagó un tender externo (sales#162)
+                // sales#520: the check row this line came from — the id a voucher session is held
+                // on — so `services` spends the session of a COVERED line only and hands back the
+                // one of a line charged with money. Null when the line names no row (a quick sale,
+                // a modifier child).
+                "order_item_id": Some(field(it, "order_item_id")).filter(|id| !id.is_empty()),
                 "is_service": it.get("is_service").map(as_bool).unwrap_or(false),
                 // category_id por línea (aditivo, QA 2026-06-25): el KDS enruta la comanda a su
                 // estación (station_id) por la categoría del producto. Sin esto, el KDS recibe
@@ -8100,6 +8105,34 @@ mod tests {
         let line = out.operations.iter().find(|o| o.command == "sales._insert_line").expect("line");
         assert_eq!(line.params["tax_category_key"], json!("service.generic"));
         assert_eq!(line.params["tax_rate"], json!(21.0));
+    }
+
+    /// sales#520 — `services` spends a held voucher session only for the line this sale marks
+    /// `covered`, and hands back the one of a line charged with money. It can only tell WHICH line
+    /// a session was held on if every `sale.completed` item names its check row (`order_item_id`,
+    /// the same id the voucher slot holds the session on). Without it a till that lost its
+    /// «covered» mark (a reload, a resumed check) charged the cut AND spent the session.
+    #[test]
+    fn sale_completed_names_the_check_row_of_each_line() {
+        let row = check_row("svc-cut", 1, "");
+        let items = json!([
+            { "product_name": "Corte de señora", "price": 2500, "quantity": 1_000_000,
+              "order_item_id": "line-s", "tax_rate": 0, "covered": true },
+            { "product_name": "Champú", "price": 900, "quantity": 1_000_000,
+              "tax_category_key": "service.generic" }
+        ]);
+        let mut inp = salon_input(items, services_catalog());
+        inp["payload"]["order_id"] = json!("ord-1");
+        inp["context"]["reads"]["sales.order.lines"] = json!([row]);
+        let out = sale(inp);
+        let ev = &out.events.iter().find(|e| e.name == "sale.completed").expect("event").payload;
+        assert_eq!(ev["items"][0]["order_item_id"], json!("line-s"), "the row the session was held on");
+        assert_eq!(ev["items"][0]["covered"], json!(true));
+        assert_eq!(
+            ev["items"][1]["order_item_id"],
+            Value::Null,
+            "a line that names no check row says so, it does not borrow another's"
+        );
     }
 
     #[test]

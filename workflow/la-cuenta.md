@@ -129,7 +129,7 @@ Implicados: STAFF-F03, STAFF-F09, STAFF-F21, REC_PELUQUERIA-F09, REC_PELUQUERIA-
 QA: B-04, B-07, R-10
 
 ### SALES-F17 Aparcar una cuenta y recuperarla
-Estado: parcial — «Permitir tiques aparcados» apagado solo quita el botón de la cabecera: desde «Cuentas abiertas» se sigue aparcando; una cuenta de mesa aparcada no vuelve a su mesa: queda «Aparcada» en Mesas para siempre, también tras cobrarla (TABLES-F13); con una línea pagada con bono, volver a la cuenta aparcada la cobra a su precio aunque el hueco del bono la enseñe gastada, y al cobrar la sesión también se gasta; si nadie la cobra en un día, la sesión retenida vuelve sola al bono (SERVICES-F22, SERVICES-F25, leído en el código, sin ejecutar)
+Estado: parcial — «Permitir tiques aparcados» apagado solo quita el botón de la cabecera: desde «Cuentas abiertas» se sigue aparcando; una cuenta de mesa aparcada no vuelve a su mesa: queda «Aparcada» en Mesas para siempre, también tras cobrarla (TABLES-F13); al recargar la pantalla la cuenta vuelve sin la clienta asignada (customers#135)
 Vertical: comun
 Actor: empleado, responsable
 Pantalla: Cuentas abiertas
@@ -138,7 +138,7 @@ Pasos:
 2. En «Aparcar cuenta» el título viene con la hora; cámbialo si quieres («p. ej. Ana — terraza») y confirma: sale «Aparcada como «…»» y la pantalla queda vacía.
 3. Para retomarla, abre **Cuentas abiertas** (icono de tique con el número de cuentas) y toca su fila.
 4. Si delante hay otra cuenta sin mesa, pregunta «Tienes una cuenta a medias»: «Aparcarla y abrir», «Eliminarla y abrir» o «Cancelar». Si tiene mesa, se queda en su mesa (SALES-F19).
-5. Al recargar la pantalla, cada dispositivo vuelve a la cuenta que tenía abierta.
+5. Al recargar la pantalla, cada dispositivo vuelve a la cuenta que tenía abierta. Una línea pagada con bono vuelve cubierta al retomar la cuenta (y, tras recargar, al volver a asignar la clienta); si nadie cobra la cuenta en un día, la sesión retenida vuelve sola al bono (SERVICES-F22, SERVICES-F25).
 Entra: nada de otros componentes.
 Sale: la cuenta sigue abierta con su título; aparcar nunca la anula. Con un cliente asignado, Clientes mantiene el vínculo.
 Si falla: si el hub rechaza el título, el diálogo sigue abierto con el motivo y «No se ha podido aparcar la cuenta. Sigue en pantalla.». Con líneas sin enviar a cocina no se cambia de cuenta: «Hay productos en la comanda actual sin enviar (N). Envíalos o elimínalos antes de cambiar de cuenta.».
