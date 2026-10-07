@@ -49,7 +49,7 @@ use erplora_guest_sdk::tax;
 use erplora_guest_sdk::units::{calculate_line_amount, QuantityValue, QUANTITY_SCALE};
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::str::FromStr;
 use erplora_guest_sdk::{DomainError, Event, Operation, Output};
 use serde_json::{json, Map, Value};
@@ -2980,27 +2980,67 @@ pub fn complete_sale_over_limit_pure(input: Value) -> Result<Output, String> {
 ///
 /// The rows charged are the ones the items name (`order_item_id`) and the ones a partial charge
 /// marks as paid (`line_ids`), each once, in order. A counter sale has no check: nothing.
-fn check_queue_ops(payload: &Value, items: &[Value]) -> Vec<Operation> {
+///
+/// sales#546 — the doors that CHANGE the check (`update_line`, `add_line`, `split_line`, `split`,
+/// `merge`) queue on the same row now, and two more things are proved:
+///
+/// * each row an item names still says the quantity and the comp flag the sale charges it at —
+///   the price comes from the row, but HOW MANY and «is it a comp» come from the payload. A row
+///   only marked as paid (`line_ids`, no item) says nothing about either: both go as `Null`.
+/// * a checkout that CLOSES the check charges every live unpaid row of it
+///   (`sales._order_lines_seen`): a line added, split off or joined in after the read would
+///   otherwise stay unpaid on a closed check. The rows it charges are the ones it names or, when
+///   it names none (the API, the assistant), the lines it read. A partial charge leaves the rest
+///   open on purpose and proves nothing about it.
+fn check_queue_ops(payload: &Value, items: &[Value], context: &Value) -> Vec<Operation> {
     let order_id = payload.get("order_id").map(as_str).unwrap_or_default();
     if order_id.is_empty() {
         return Vec::new();
     }
-    let mut lock = Map::new();
-    lock.insert("order_id".into(), json!(order_id));
-    let mut ops = vec![Operation::sql("sales._order_lock", lock)];
+    let mut ops = vec![order_lock_op(&order_id)];
     let marked = payload.get("line_ids").and_then(|v| v.as_array()).map(|v| v.as_slice()).unwrap_or(&[]);
-    let named = items.iter().map(|it| field(it, "order_item_id")).chain(marked.iter().map(as_str));
-    let mut seen = HashSet::new();
-    for line_id in named {
-        if line_id.is_empty() || !seen.insert(line_id.clone()) {
+    let by_item = items.iter().map(|it| {
+        let quantity = line_qty(it).map_or(Value::Null, |q| json!(q));
+        let is_gift = json!(it.get("is_gift").map(as_bool).unwrap_or(false) as i64);
+        (field(it, "order_item_id"), quantity, is_gift)
+    });
+    let by_mark = marked.iter().map(|id| (as_str(id), Value::Null, Value::Null));
+    let mut charged: Vec<String> = Vec::new();
+    for (line_id, quantity, is_gift) in by_item.chain(by_mark) {
+        if line_id.is_empty() || charged.contains(&line_id) {
             continue;
         }
         let mut p = Map::new();
         p.insert("order_id".into(), json!(order_id));
         p.insert("line_id".into(), json!(line_id));
+        p.insert("quantity".into(), quantity);
+        p.insert("is_gift".into(), is_gift);
         ops.push(Operation::sql("sales._order_line_live", p));
+        charged.push(line_id);
+    }
+    if !payload.get("keep_order_open").map(as_bool).unwrap_or(false) {
+        if charged.is_empty() {
+            charged = tax::read_rows(context, "sales.order.lines")
+                .unwrap_or_default()
+                .into_iter()
+                .map(|row| field(row, "id"))
+                .filter(|id| !id.is_empty())
+                .collect();
+        }
+        let mut p = Map::new();
+        p.insert("order_id".into(), json!(order_id));
+        p.insert("line_ids".into(), json!(charged));
+        ops.push(Operation::sql("sales._order_lines_seen", p));
     }
     ops
+}
+
+/// `sales._order_lock` for `order_id`: the row lock on the check, then «is it still open?»
+/// (sales#545). The first operation of every door that charges the check or changes its lines.
+fn order_lock_op(order_id: &str) -> Operation {
+    let mut lock = Map::new();
+    lock.insert("order_id".into(), json!(order_id));
+    Operation::sql("sales._order_lock", lock)
 }
 
 /// The decision itself (sales#201). A business rejection comes back as `Refusal::Domain`
@@ -3084,7 +3124,7 @@ fn complete_sale_inner(input: Value, rule: CapRule) -> Result<Output, Refusal> {
     let gift_total = valuation.gift_total;
 
     let mut ops: Vec<Operation> = Vec::new();
-    ops.extend(check_queue_ops(&payload, items));
+    ops.extend(check_queue_ops(&payload, items, &context));
     let mut bump = Map::new();
     bump.insert("day".into(), json!(day));
     ops.push(Operation::sql("sales._bump_counter", bump));
@@ -4123,6 +4163,9 @@ fn add_order_line_inner(input: Value) -> Result<Output, Refusal> {
     recompute.insert("order_id".into(), json!(order_id));
     Ok(Output {
         operations: vec![
+            // sales#546 — queue on the check first, like every door that changes it: a line added
+            // while the check was being charged stayed unpaid on a closed check.
+            order_lock_op(&order_id),
             Operation::sql("sales._insert_order_line", p),
             // The order's PROVISIONAL total is recomputed in the SAME transaction, just as the 2nd
             // statement of the declarative command did: otherwise the total drifts from its lines.
@@ -4219,7 +4262,10 @@ fn split_order_line_inner(input: Value) -> Result<Output, Refusal> {
         unit_price + modifier_delta, QUANTITY_SCALE, line_price_qty(row), false, line_disc,
     )?;
 
-    let mut ops: Vec<Operation> = Vec::with_capacity(parts as usize + 1);
+    // sales#546 — queue on the check first, like every door that changes it: a line split while
+    // the check was being charged left the clones unpaid on a closed check.
+    let mut ops: Vec<Operation> = Vec::with_capacity(parts as usize + 2);
+    ops.push(order_lock_op(&order_id));
     // The SOURCE row keeps its id — and with it its place in the check, its audit trail and
     // anything already pointing at it — and drops to one unit.
     let mut source = Map::new();
@@ -4996,7 +5042,11 @@ fn update_order_line_inner(input: Value) -> Result<Output, Refusal> {
     params.insert("gift_reason".into(), payload.get("gift_reason").cloned().unwrap_or(Value::Null));
     params.insert("notes".into(), payload.get("notes").cloned().unwrap_or(Value::Null));
 
-    let mut ops = vec![Operation::sql("sales._update_order_line", params)];
+    // sales#546 — queue on the check FIRST, like the checkout and the void (sales#545): a quantity
+    // raised while the check was being charged left the sale charging the old one and the row
+    // marked paid at the new one. Whoever takes the check second waits, and is refused by its own
+    // gate (`_order_open.sql` here, `_order_line_live.sql` in the checkout).
+    let mut ops = vec![order_lock_op(&order_id), Operation::sql("sales._update_order_line", params)];
     let mut recompute = Map::new();
     recompute.insert("order_id".into(), json!(order_id));
     ops.push(Operation::sql("sales._recompute_order_total", recompute));
@@ -14267,8 +14317,11 @@ mod tests {
         let out = sale(two_line_check_input());
         let commands = commands_of(&out);
         assert_eq!(
-            &commands[..4],
-            &["sales._order_lock", "sales._order_line_live", "sales._order_line_live", "sales._bump_counter"],
+            &commands[..5],
+            // sales#546: a checkout that closes the check also proves, before writing, that it
+            // charges every live line of it (`sales._order_lines_seen`).
+            &["sales._order_lock", "sales._order_line_live", "sales._order_line_live",
+              "sales._order_lines_seen", "sales._bump_counter"],
             "the queue and the re-check go first: once the sale is written it is too late"
         );
         assert_eq!(out.operations[0].params["order_id"], json!("ord-1"));

@@ -30,5 +30,11 @@ SET quantity    = :quantity,
 -- `fired_at IS NULL`: una línea YA ENVIADA a cocina no se edita desde el TPV (tandas,
 -- 2026-07-19) — la comida está en fuego; corregirla = ronda nueva o invitación. ⚠️ A CONFIRMAR
 -- EN REVIEW (recomendación aplicada).
+--
+-- sales#546: `sale_id IS NULL` — a line a partial charge already paid is bound to its sale and
+-- does not change any more. The door queues on the check first (`sales._order_lock`, which also
+-- refuses a check that is no longer open), and matching 0 rows here answers `sales.order_changed`
+-- (`expect_rows` of `sales._update_order_line`): the change is refused by name, never «ok».
 WHERE id = :line_id AND order_id = :order_id AND hub_id = :hub_id AND is_deleted = 0
-  AND fired_at IS NULL;
+  AND fired_at IS NULL
+  AND sale_id IS NULL;

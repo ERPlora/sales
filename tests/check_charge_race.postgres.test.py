@@ -250,14 +250,14 @@ def new_row(order_id: str, line_id: str, line_total: int, quantity: int = ONE) -
         "combo_group_ref": line_id,
         "combo": None,
         "staff_id": None,
-        "unit_code": None,
-        "unit_name": None,
+        "unit_code": "ud",
+        "unit_name": "",
         "factor_num": 1,
         "factor_den": 1,
-        "increment_value": 0,
+        "increment_value": ONE,
         "price_quantity_value": ONE,
-        "pricing_unit_code": None,
-        "pricing_unit_name": None,
+        "pricing_unit_code": "ud",
+        "pricing_unit_name": "",
         "pricing_factor_num": 1,
         "pricing_factor_den": 1,
     }
@@ -1035,7 +1035,7 @@ def step_15_split_and_join_gates(s: Session) -> None:
         play(s, split_ops("j-open", [], "j-open-half")),
         "ok",
     )
-    s.check("and only that one", s.qi("SELECT count(*) FROM sales_order WHERE id LIKE '%-half'"), 1)
+    s.check("and only that one", s.qi("SELECT count(*) FROM sales_order WHERE id LIKE 'j-%-half'"), 1)
 
     steak_and_water(s, "j-q")
     held = hold(s, checkout_ops("j-q", ["j-q-steak", "j-q-water"]))
