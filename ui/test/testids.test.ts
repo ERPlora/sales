@@ -127,6 +127,23 @@ const COVERED: Record<string, { prefix: string; contract: string[]; tables?: str
       'refund-tender-pending',
       // sales#492: the money already went back entirely - said instead of asking for an amount.
       'refund-no-money-left',
+      // services#157: where other modules say what the refund does to what the sale sold.
+      'refund-reversal-notice',
+    ],
+  },
+  // The «void sale» window (services#157; it was an ion-alert): the reason, the hole other modules
+  // fill (`sales.reversal.notice`) and Cancel / Void.
+  'erp-sale-void/erp-sale-void.ts': {
+    prefix: 'void-',
+    contract: [
+      'void-cancel',
+      'void-confirm',
+      'void-error',
+      'void-explain',
+      'void-form',
+      'void-reason',
+      'void-reversal-notice',
+      'void-title',
     ],
   },
   // The till itself (`/m/sales/pos`): the screen a cashier spends the day on, and the one the QA
@@ -199,6 +216,7 @@ const COVERED: Record<string, { prefix: string; contract: string[]; tables?: str
       'sales-refund-modal',
       'sales-stats-error',
       'sales-table',
+      'sales-void-modal',
     ],
     tables: ['sales-table'],
   },

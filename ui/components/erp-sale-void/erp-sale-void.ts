@@ -38,6 +38,11 @@ export class ErpSaleVoid extends LitElement {
     .hint { margin:0; color:var(--ion-color-medium,#8b897f); font-size:.85rem; }
     .reversal-notice { display:flex; flex-direction:column; gap:.5rem; }
     .actions { display:flex; justify-content:flex-end; gap:.5rem; flex-wrap:wrap; }
+    /* color="danger" paints nothing inside a module shadow root (pm#392): the danger tone goes by
+       the button's own custom properties. */
+    ion-button.void-confirm { --background:var(--ion-color-danger,#eb445a);
+      --background-activated:var(--ion-color-danger-shade,#cf3c4f);
+      --color:var(--ion-color-danger-contrast,#fff); }
   `;
 
   @property({ type: String }) saleId = '';
@@ -101,7 +106,7 @@ export class ErpSaleVoid extends LitElement {
         : nothing}
       <div class="actions">
         <ion-button data-testid="void-cancel" fill="clear" @click=${() => this.cancel()}>${t('ui.cancel')}</ion-button>
-        <ion-button data-testid="void-confirm" color="danger" ?disabled=${this.busy} @click=${() => this.confirm()}
+        <ion-button class="void-confirm" data-testid="void-confirm" ?disabled=${this.busy} @click=${() => this.confirm()}
           >${t('ui.actionVoid')}</ion-button>
       </div>
     </div>`;
