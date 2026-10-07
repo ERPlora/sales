@@ -85,7 +85,7 @@ import { cashBlocksCharge, cashMethodUnavailable } from '../../lib/cash-limit.js
 import { buildOpenPriceLine } from '../../lib/pos-open-price.js';
 // La frontera de la ESCALA de cantidades (ADR-0147): la UI trabaja en lógico (0,5), el cable en 10⁶.
 import { toMicro, fromMicro, onGrid, formatQuantity } from '../../lib/quantity.js';
-import { checkoutErrorKey, errorCode, newIdempotencyKey } from '../../lib/checkout-key.js';
+import { checkoutErrorKey, errorCode, isCheckChanged, newIdempotencyKey } from '../../lib/checkout-key.js';
 import { certificateExpiryDays, fiscalRoadKey, isFiscalRoadRefusal, readFiscalRoad, type FiscalRoad } from '../../lib/fiscal-road.js';
 import { printReceiptIntent, readAutoPrint } from '../../lib/print-intent.js';
 // sales#81: el transporte del SDK filtra el HTML del 502 del proxy como un SyntaxError crudo
@@ -5205,6 +5205,10 @@ export class ErpPosTouch extends LitElement {
       // hub#1935 — the road broke after the till opened. The refusal is the hub's authority, so the
       // block is taken from it and the next sale is not tried blind.
       if (isFiscalRoadRefusal(code)) this.fiscalRoad = { ...this.fiscalRoad, blocked: code };
+      // sales#545 — the check changed under the screen (another device voided, removed or charged
+      // a line, or closed the check) and nothing was charged. The screen reads the check again so
+      // the next «Charge» charges what is really on it; marks of lines that left are dropped.
+      if (isCheckChanged(code) && this.orderId) await this.reloadChangedCheck(this.orderId);
       return;
     }
 
@@ -5225,6 +5229,19 @@ export class ErpPosTouch extends LitElement {
     // `unknown`: no se pudo preguntar → la duda explícita, con la salida a Ventas al lado.
     this.checkoutUnknown = recovery.outcome === 'unknown';
     this.error = t(this.checkoutUnknown ? 'ui.checkoutUnknown' : SERVER_UNAVAILABLE_KEY);
+  }
+
+  /** Reads the open check again after a checkout refused because it changed (sales#545). A read
+   *  that fails keeps the cart on screen: the sentence already says to check it. */
+  private async reloadChangedCheck(orderId: string): Promise<void> {
+    try {
+      this.cart = await loadOrderLines(erplora(), orderId);
+    } catch {
+      return;
+    }
+    const live = new Set(this.cart.map((l) => l.line_id).filter(Boolean));
+    this.splitSel = new Set([...this.splitSel].filter((id) => live.has(id)));
+    this.dropValuation();
   }
 
   /** La salida del cobro dudoso (hub#923): ir a Ventas a comprobar si aquello se cobró.

@@ -629,7 +629,8 @@
     "voidReasonMistake": "Ordered by mistake",
     "voidReasonChanged": "Customer changed their mind",
     "voidReasonSoldOut": "Sold out",
-    "voidReasonDuplicate": "Entered twice"
+    "voidReasonDuplicate": "Entered twice",
+    "errorOrderChanged": "The check changed while it was being charged: a line was voided, removed or charged on another device. Nothing was charged; the check has been reloaded, check it and charge again."
   },
   "commands": {
     "sales.complete_sale": {

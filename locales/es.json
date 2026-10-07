@@ -630,7 +630,8 @@
     "voidReasonMistake": "Error al pedir",
     "voidReasonChanged": "El cliente lo cambia",
     "voidReasonSoldOut": "Agotado",
-    "voidReasonDuplicate": "Pedido dos veces"
+    "voidReasonDuplicate": "Pedido dos veces",
+    "errorOrderChanged": "La cuenta ha cambiado mientras se cobraba: se anuló, quitó o cobró una línea desde otro dispositivo. No se ha cobrado nada; la cuenta se ha vuelto a cargar, revísala y vuelve a cobrar."
   },
   "widgets": {
     "sales.today": {
