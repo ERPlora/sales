@@ -203,7 +203,7 @@ flujos de su fila en la misma entrega.
 | El chip «Atiende» y el sello de la línea: camarero en el restaurante, profesional en la peluquería | F16, F19, F20, F26 |
 | El hueco «asignar» de la cabecera: mesa (Mesas) y cliente (Clientes) en el mismo sitio | F05, F17, F19, F23, F24, F25 |
 | La ventana **Devolver**: dinero por forma de pago y sesión de bono en la misma confirmación | F31, F32 |
-| La anulación de una venta: un solo aviso, y quién reacciona decide el efecto en cada negocio (Mesas cierra y libera la mesa, también tras un cobro parcial; Servicios no devuelve el bono; Citas no desmarca la cita) | F22, F26, F27, F30 |
+| La anulación de una venta: un solo aviso, y quién reacciona decide el efecto en cada negocio (Mesas cierra y libera la mesa, también tras un cobro parcial; Servicios devuelve la sesión de bono y anula el bono intacto que se vendió en esa venta; Citas no desmarca la cita) | F22, F26, F27, F30 |
 | El aviso de cuenta cerrada al cobrar la cuenta entera: Mesas libera la mesa y Cocina cierra sus rondas (cancela las pendientes) | F01, F20, F22 |
 | Las marcas de invitación y de «pagada por bono» de cada línea: el servidor las toma del cobro tal cual | F15, F27 |
 | Los ajustes del TPV: los mismos interruptores para los dos negocios (no hay ajuste por vertical) | F34 y todos los de cobro |
@@ -256,7 +256,7 @@ flujos de su fila en la misma entrega.
 | Reimpresión marcada como duplicado | hecho | F29 |
 | Anular antes de que se mueva el dinero, con motivo | hecho | F30 |
 | Anular deja registro de anulación fiscal | no hecho: la factura simplificada (o la completa que la sustituyó) y su registro siguen vivos (INVOICE-F07, REC_FISCAL-F13) | F30 |
-| Anular revierte todo lo que la venta movió | parcial: caja, stock, cliente y mesa sí; bono y cita no; la mesa se libera aunque la cuenta siga abierta | F30 |
+| Anular revierte todo lo que la venta movió | parcial: caja, stock, cliente, mesa y bono sí; la cita no; la mesa se libera aunque la cuenta siga abierta | F30 |
 | Devolución total o parcial por el medio original o por otro | hecho | F31 |
 | Devolución que ajusta la caja y el historial del cliente | parcial: caja solo con caja abierta; el cliente no se ajusta | F31 |
 | Devolución por artículos con vuelta de stock | no hecho | F31 |
@@ -372,8 +372,9 @@ Se resuelven con `market-decision`; no las decide el worker.
 2. Anular un tique: ¿debe anular su factura simplificada (o la completa que la sustituyó) y dejar
    registro de anulación en VeriFactu, o la anulación de un tique ya remitido tiene que ser una
    devolución con rectificativa? (F30, L-04)
-3. Al anular una venta, ¿vuelve la sesión de bono y se desmarca la cita? ¿Y la mesa de un cobro
-   parcial debe seguir ocupada? (F30)
+3. Al anular una venta, ¿se desmarca la cita? (La sesión de bono ya vuelve y el bono intacto que
+   se vendió en ella se anula: SERVICES-F27.) ¿Y la mesa de un cobro parcial debe seguir ocupada?
+   (F30)
 4. Cobrar la cuenta entera con rondas en cocina: ¿qué tiene que pasar con lo que aún se está
    cocinando? Hoy se cancela (F20).
 5. ¿La invitación pide motivo y permiso propio (como Toast) o basta el de montar la cuenta? (F15)
@@ -415,7 +416,7 @@ Contra `origin/main` v2.16.154 (05/10/2026). Una línea por discrepancia; manda 
 - **`docs/concepts.md`** («if a line claims to come from the catalogue, the catalogue wins»; «One door stays open deliberately»): cierto, pero el permiso de precio libre solo protege una de las puertas por las que entra una línea libre o el precio de un servicio (F09).
 - **`architecture/modules/sales.md`** (el techo de la simplificada, hub#297): lo hace cumplir solo la pantalla; el servidor de Ventas acepta un tique por encima del límite por asistente o API (F04).
 - **`docs/screens.md`** («Charging a check with pending lines sends them first … as Odoo, Square and Toast do»): se envían, pero Cocina las cancela en cuanto el cobro cierra la cuenta (leído en el código de `kitchen`, sin ejecutar) (F20).
-- **`docs/concepts.md`** («`sale.voided` is emitted so stock comes back and the till is corrected») y **QA §9 de `qa-hub.md`** («anular revierte»): caja, stock, cliente y mesa sí; la sesión de bono, la cita, la factura y VeriFactu no; y la mesa se libera aunque la cuenta siga abierta tras un cobro parcial (F30).
+- **`docs/concepts.md`** («`sale.voided` is emitted so stock comes back and the till is corrected») y **QA §9 de `qa-hub.md`** («anular revierte»): caja, stock, cliente, mesa y la sesión de bono sí; la cita, la factura y VeriFactu no; y la mesa se libera aunque la cuenta siga abierta tras un cobro parcial (F30).
 - **`ai.description` de `sales.void`** («A sale that carries a full invoice cannot be voided»): solo si se cobró como factura; un tique canjeado después por factura completa sí se anula (F30).
 - **`docs/screens.md`** (devolver la sesión del bono incluso cuando el dinero ya volvió entero desde otro dispositivo): con dinero en el tique, al devolverse todo la venta pasa a Devuelta y la ventana ya no se abre (F32).
 - **`ai.description` de `sales.create_payment_method`**: no dice que el tipo, si falta, es efectivo (F37).
