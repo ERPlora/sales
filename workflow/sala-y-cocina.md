@@ -61,7 +61,7 @@ Implicados: PRINTING-F09, REC_RESTAURANTE-F09
 QA: R-08, qa-hub-restaurant §7.10
 
 ### SALES-F22 Cobrar solo una parte de la cuenta
-Estado: parcial — solo por líneas enteras: no se cobra una parte de una línea, a partes iguales ni por importe; el descuento de importe fijo de la cuenta no se aplica en un cobro parcial; con bonos, cobrar una parte da por gastadas también las sesiones retenidas en las líneas que se quedan sin cobrar, y esas líneas, al cobrarse después, ya no van cubiertas (SERVICES-F24, leído en el código, sin ejecutar)
+Estado: parcial — solo por líneas enteras: no se cobra una parte de una línea, a partes iguales ni por importe; el descuento de importe fijo de la cuenta no se aplica en un cobro parcial
 Vertical: restaurante
 Actor: empleado, responsable
 Pantalla: Vender
@@ -76,7 +76,7 @@ Implicados: KITCHEN-F27, SERVICES-F24, TABLES-F18, REC_PELUQUERIA-F10, REC_RESTA
 QA: R-07, qa-hub-restaurant §7.09
 
 ### SALES-F23 Dividir la cuenta de una mesa
-Estado: parcial — solo moviendo líneas enteras: ni partes iguales ni fracción de una línea, y no se deshace un split; en cocina, cobrar la original cierra sus rondas aunque parte de sus platos pasaran a la nueva (KITCHEN-F27); Servicios no se entera de la división: la sesión de bono retenida para una línea que pasa a la cuenta nueva se queda en la original, y cobrar la original la gasta aunque la línea se cobre en la nueva (SERVICES-F22, SERVICES-F24, leído en el código, sin ejecutar)
+Estado: parcial — solo moviendo líneas enteras: ni partes iguales ni fracción de una línea, y no se deshace un split; en cocina, cobrar la original cierra sus rondas aunque parte de sus platos pasaran a la nueva (KITCHEN-F27); Servicios no se entera de la división: la sesión de bono retenida para una línea que pasa a la cuenta nueva se queda en la original (cobrarla ya no la gasta) y el hueco de la nueva ofrece gastar otra; la retenida vuelve sola al bono al cabo de un día (sales#540, SERVICES-F22, SERVICES-F24, leído en el código, sin ejecutar)
 Vertical: restaurante
 Actor: empleado, responsable
 Pantalla: Vender
@@ -92,7 +92,7 @@ Implicados: KITCHEN-F27, SERVICES-F22, SERVICES-F24, TABLES-F17, REC_PELUQUERIA-
 QA: R-07, qa-hub-restaurant §7.09 (discrepa)
 
 ### SALES-F24 Juntar las cuentas de dos mesas
-Estado: parcial — si la unión de cuentas falla no se ve nada (las mesas quedan fusionadas en Mesas y las cuentas siguen separadas); las rondas enviadas desde la cuenta absorbida no se cierran al cobrar y se quedan en la pantalla de Cocina; si la mesa de origen estaba dividida, se junta una de sus dos cuentas sin elegir (la mesa sigue Ocupada con la otra, TABLES-F16); la sesión de bono retenida en la cuenta absorbida no se gasta al cobrar la que queda: vuelve sola al bono al cabo de un día y el hueco de la que queda ofrece gastar otra (SERVICES-F22, leído en el código, sin ejecutar)
+Estado: parcial — si la unión de cuentas falla no se ve nada (las mesas quedan fusionadas en Mesas y las cuentas siguen separadas); las rondas enviadas desde la cuenta absorbida no se cierran al cobrar y se quedan en la pantalla de Cocina; si la mesa de origen estaba dividida, se junta una de sus dos cuentas sin elegir (la mesa sigue Ocupada con la otra, TABLES-F16); la sesión de bono retenida en la cuenta absorbida no se gasta al cobrar la que queda: vuelve sola al bono al cabo de un día y el hueco de la que queda ofrece gastar otra (sales#540, SERVICES-F22, leído en el código, sin ejecutar)
 Vertical: restaurante
 Actor: empleado, responsable
 Pantalla: Vender
