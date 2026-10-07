@@ -4714,8 +4714,9 @@ var en_default = {
     "sales.too_many_rows": "The sale needs more rows than the server can write in one go. Split it into two.",
     "sales.void_reason_required": "A reason is required to void a sale.",
     "sales.void_requires_credit_note": "This sale carries a full invoice: issue a credit note instead of voiding it.",
-    "sales.order_line_not_removable": "That line can no longer be removed: it was already sent to the kitchen (void it with a reason) or it is no longer on the check.",
-    "sales.order_line_not_voidable": "That line cannot be voided: it is not on an open check as a sent, unpaid line, or the reason is missing. Load the check again."
+    "sales.order_line_not_removable": "That line can no longer be removed: it was already sent to the kitchen (void it with a reason), it was already charged, or it is no longer on an open check.",
+    "sales.order_line_not_voidable": "That line cannot be voided: it is not on an open check as a sent, unpaid line, or the reason is missing. Load the check again.",
+    "sales.order_changed": "The check changed while it was being charged (a line was voided, removed or charged, or the check was closed). Nothing was charged: check the lines and charge again."
   },
   ui: {
     sales: "Sales",
@@ -5195,7 +5196,8 @@ var en_default = {
     voidReasonMistake: "Ordered by mistake",
     voidReasonChanged: "Customer changed their mind",
     voidReasonSoldOut: "Sold out",
-    voidReasonDuplicate: "Entered twice"
+    voidReasonDuplicate: "Entered twice",
+    errorOrderChanged: "The check changed while it was being charged: a line was voided, removed or charged on another device. Nothing was charged; the check has been reloaded, check it and charge again."
   },
   commands: {
     "sales.complete_sale": {
@@ -5415,8 +5417,9 @@ var es_default = {
     "sales.too_many_rows": "La venta necesita m\xE1s filas de las que el servidor puede escribir de una vez. Div\xEDdela en dos.",
     "sales.void_reason_required": "Hace falta un motivo para anular una venta.",
     "sales.void_requires_credit_note": "Esta venta lleva factura completa: emite una factura rectificativa en vez de anularla.",
-    "sales.order_line_not_removable": "Esa l\xEDnea ya no se puede quitar: ya se envi\xF3 a cocina (an\xFAlala con un motivo) o ya no est\xE1 en la cuenta.",
-    "sales.order_line_not_voidable": "Esa l\xEDnea no se puede anular: no est\xE1 enviada y sin cobrar en una cuenta abierta, o falta el motivo. Vuelve a cargar la cuenta."
+    "sales.order_line_not_removable": "Esa l\xEDnea ya no se puede quitar: ya se envi\xF3 a cocina (an\xFAlala con un motivo), ya est\xE1 cobrada o ya no est\xE1 en una cuenta abierta.",
+    "sales.order_line_not_voidable": "Esa l\xEDnea no se puede anular: no est\xE1 enviada y sin cobrar en una cuenta abierta, o falta el motivo. Vuelve a cargar la cuenta.",
+    "sales.order_changed": "La cuenta ha cambiado mientras se cobraba (se anul\xF3, quit\xF3 o cobr\xF3 una l\xEDnea, o se cerr\xF3 la cuenta). No se ha cobrado nada: revisa las l\xEDneas y vuelve a cobrar."
   },
   ui: {
     sales: "Ventas",
@@ -5896,7 +5899,8 @@ var es_default = {
     voidReasonMistake: "Error al pedir",
     voidReasonChanged: "El cliente lo cambia",
     voidReasonSoldOut: "Agotado",
-    voidReasonDuplicate: "Pedido dos veces"
+    voidReasonDuplicate: "Pedido dos veces",
+    errorOrderChanged: "La cuenta ha cambiado mientras se cobraba: se anul\xF3, quit\xF3 o cobr\xF3 una l\xEDnea desde otro dispositivo. No se ha cobrado nada; la cuenta se ha vuelto a cargar, rev\xEDsala y vuelve a cobrar."
   },
   widgets: {
     "sales.today": {
@@ -8222,6 +8226,11 @@ var MESSAGES = {
   "sales.combo_component_price_unknown": "ui.errorComboComponentPriceUnknown",
   "sales.combo_tax_category_missing": "ui.errorComboTaxCategoryMissing",
   "sales.too_many_lines": "ui.errorTooManyLines",
+  // sales#545 — the check changed while it was being charged (a line voided, removed or charged
+  // on another device, or the check closed), or the screen charged a line that is no longer on
+  // it. Nothing was charged: the till reads the check again and says so.
+  "sales.order_changed": "ui.errorOrderChanged",
+  "sales.order_line_not_available": "ui.errorOrderChanged",
   // sales#147 (the amendment to ADR-0376) — a supplement that taxes differently now gets a LINE OF
   // ITS OWN, so it is charged instead of refused. What is still refused is a supplement that bills
   // apart and is worth NOTHING: a 0 € — or negative — row at another rate is a rebate wearing a tax
@@ -8253,6 +8262,9 @@ var MESSAGES = {
 };
 function checkoutErrorKey(code) {
   return MESSAGES[code] ?? "ui.errorCharge";
+}
+function isCheckChanged(code) {
+  return MESSAGES[code] === "ui.errorOrderChanged";
 }
 function errorCode(e8) {
   const code = e8?.code;
@@ -12608,6 +12620,7 @@ var ErpPosTouch = class extends i3 {
       const raw = e8 instanceof Error ? e8.message : String(e8 ?? "");
       this.error = key === "ui.errorCharge" && !code && raw ? raw : t5(key);
       if (isFiscalRoadRefusal(code)) this.fiscalRoad = { ...this.fiscalRoad, blocked: code };
+      if (isCheckChanged(code) && this.orderId) await this.reloadChangedCheck(this.orderId);
       return;
     }
     const recovery = await recoverCheckout(
@@ -12623,6 +12636,18 @@ var ErpPosTouch = class extends i3 {
     }
     this.checkoutUnknown = recovery.outcome === "unknown";
     this.error = t5(this.checkoutUnknown ? "ui.checkoutUnknown" : SERVER_UNAVAILABLE_KEY);
+  }
+  /** Reads the open check again after a checkout refused because it changed (sales#545). A read
+   *  that fails keeps the cart on screen: the sentence already says to check it. */
+  async reloadChangedCheck(orderId) {
+    try {
+      this.cart = await loadOrderLines(erplora2(), orderId);
+    } catch {
+      return;
+    }
+    const live = new Set(this.cart.map((l3) => l3.line_id).filter(Boolean));
+    this.splitSel = new Set([...this.splitSel].filter((id) => live.has(id)));
+    this.dropValuation();
   }
   /** La salida del cobro dudoso (hub#923): ir a Ventas a comprobar si aquello se cobró.
    *
