@@ -45,10 +45,17 @@ import sys
 MODULE_DIR = pathlib.Path(__file__).resolve().parent.parent
 MANIFEST = json.loads((MODULE_DIR / "module.json").read_text(encoding="utf-8"))
 
-# command → (event it must raise, params a listener keys on and therefore needs in the payload)
+# command → (events it must raise, params a listener keys on and therefore needs in the payload)
 CONTRACT = {
-    "sales.order.remove_line": ("sales.order.line_removed", {"order_id", "line_id"}),
-    "sales.order.void": ("sales.order.voided", {"order_id"}),
+    "sales.order.remove_line": (["sales.order.line_removed"], {"order_id", "line_id"}),
+    "sales.order.void": (["sales.order.voided"], {"order_id"}),
+    # sales#521: voiding a line already sent to the kitchen takes it off the check too, so the
+    # module that covered it lets it go on `line_removed` (same contract); `line_voided` is the
+    # fact the kitchen keys on, and it carries WHY.
+    "sales.order.void_line": (
+        ["sales.order.line_removed", "sales.order.line_voided"],
+        {"order_id", "line_id", "reason"},
+    ),
 }
 
 failures: list[str] = []
@@ -70,22 +77,24 @@ def binds_of(rel: str) -> set[str]:
     return set(re.findall(r"(?<!:):([a-z_][a-z0-9_]*)", (MODULE_DIR / rel).read_text()))
 
 
-print("1. the two gestures that take a line away announce it")
+print("1. the gestures that take a line away announce it")
 declared = set(MANIFEST.get("events", {}).get("emits", []))
-for command, (event, needed) in CONTRACT.items():
+for command, (events, needed) in CONTRACT.items():
     cmd = MANIFEST["commands"].get(command)
     if cmd is None:
         failures.append(f"{command}: not in the manifest")
         print(f"  FAIL: {command} is not in the manifest")
         continue
     checked += 1
-    check(f"{command} raises its event", [event], cmd.get("emit"))
-    # Strict mode: with `events.emits` declared, a name outside it is refused when the command runs.
-    check(f"`{event}` is declared in events.emits", True, event in declared)
+    check(f"{command} raises its events", events, cmd.get("emit"))
     bound: set[str] = set()
     for rel in cmd.get("sql", []):
         bound |= binds_of(rel)
-    check(f"`{event}` carries what a listener keys on", set(), needed - bound)
+    for event in events:
+        # Strict mode: with `events.emits` declared, a name outside it is refused when the command
+        # runs.
+        check(f"`{event}` is declared in events.emits", True, event in declared)
+        check(f"`{event}` carries what a listener keys on", set(), needed - bound)
 
 # 4. The positive control.
 check("commands inspected", len(CONTRACT), checked)
