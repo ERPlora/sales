@@ -34,6 +34,8 @@ let orderLines: Record<string, unknown>[] = [];
 /** Code the next checkout is refused with; '' = it is charged. */
 let refuseWith = '';
 let charges = 0;
+/** What `sales.checkout.preview` does: 'server' values the server's rows; 'hang' never answers. */
+let preview: 'server' | 'hang' = 'server';
 
 const row = (id: string, p: (typeof PRODUCTS)[number]) => ({
   id, product_id: p.id, product_name: p.name, quantity: 1_000_000,
@@ -44,6 +46,7 @@ function installSdk() {
   orderLines = [];
   refuseWith = '';
   charges = 0;
+  preview = 'server';
   installPosDouble({
     paymentMethods: METHODS,
     byIdempotencyKey: [{ id: 'sale-1' }],
@@ -51,6 +54,11 @@ function installSdk() {
     rules: RULES,
     orderLines: () => orderLines.map((l) => ({ ...l })),
     command: async (name: string) => {
+      if (name === 'sales.checkout.preview') {
+        if (preview === 'hang') return new Promise(() => undefined);
+        const total = orderLines.reduce((sum, l) => sum + Number(l.line_total), 0);
+        return { ok: true, operations: 0, result: { total, subtotal: total, tax_total: 0, discount_amount: 0, gift_total: 0, tax_included: true, lines: [], tax_breakdown: {} } };
+      }
       if (name === 'sales.order.open') {
         orderLines = [row('line-steak', PRODUCTS[0])];
         return { ok: true, new_ids: ['ord-1', 'line-steak'] };
@@ -78,6 +86,7 @@ interface Pos extends HTMLElement {
   queue<T>(t: () => Promise<T>): Promise<T>;
   cart: { line_id?: string }[];
   paying: boolean;
+  payable: number;
   openPay(): void;
   confirm(print?: boolean): Promise<void>;
 }
@@ -87,8 +96,9 @@ async function settle(el: Pos): Promise<void> {
   await el.updateComplete;
 }
 
-/** The issue's check: steak and water, both saved on the open check, the pay sheet open. */
-async function steakAndWaterAtThePaySheet(): Promise<Pos> {
+/** The issue's check: steak and water, both saved on the open check, the pay sheet open.
+ *  `mark` = the lines tapped for a partial charge before opening the sheet. */
+async function steakAndWaterAtThePaySheet(mark: string[] = []): Promise<Pos> {
   document.body.innerHTML = '';
   const el = document.createElement('erp-pos-touch') as unknown as Pos;
   document.body.appendChild(el);
@@ -101,6 +111,10 @@ async function steakAndWaterAtThePaySheet(): Promise<Pos> {
   await el.queue(async () => undefined);
   await settle(el);
   expect(el.cart.map((l) => l.line_id), 'both lines are rows of the check').toEqual(['line-steak', 'line-water']);
+  for (const id of mark) {
+    el.shadowRoot.querySelector<HTMLElement>(`[data-testid="pos-line-${id}"]`)!.click();
+    await settle(el);
+  }
   el.openPay();
   await settle(el);
   await tenderExactCash(el);
@@ -140,6 +154,30 @@ describe('sales#545 · the check changed while it was being charged', () => {
 
     expect(charges).toBe(2);
     expect(payErr(el)).toBe('');
+  });
+
+  it('a line marked for a partial charge that left the check is not «being charged» any more', async () => {
+    const el = await steakAndWaterAtThePaySheet(['line-steak']);
+    expect(el.shadowRoot.querySelector('.pay-sheet .pay-split'), 'the steak alone is being charged').toBeTruthy();
+    refuseWith = 'sales.order_changed';
+    await el.confirm();
+    await settle(el);
+
+    expect(el.shadowRoot.querySelector('.pay-sheet .pay-split'), 'no «Paying N lines» with a line that is gone').toBeNull();
+    expect(el.payable).toBe(200);
+  });
+
+  it('the amount on the sheet is never the old total while the check is valued again', async () => {
+    const el = await steakAndWaterAtThePaySheet();
+    expect(el.payable, 'the server valued steak + water').toBe(2000);
+    refuseWith = 'sales.order_changed';
+    preview = 'hang';
+    await el.confirm();
+    await settle(el);
+
+    // The new valuation has not answered: the sheet falls back to its own arithmetic of what is
+    // left (the water), never to the 20,00 the steak was part of.
+    expect(el.payable).toBe(200);
   });
 
   it('any other refusal keeps the cart as it is (nothing to read again)', async () => {
