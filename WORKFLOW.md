@@ -250,7 +250,7 @@ flujos de su fila en la misma entrega.
 | Cuenta por mesa, dejarla en la mesa | parcial: con una cuenta de barra delante, tocar una mesa con pedido la deja libre (TABLES-F11) | F19 |
 | Enviar a cocina por rondas, sin duplicar | hecho (con Cocina) | F20 |
 | Cobrar sin cancelar lo que se está cocinando («pide y paga») | no hecho: al cobrar la cuenta entera Cocina cancela las rondas pendientes (leído en el código, sin ejecutar) | F20 |
-| Anular una línea ya enviada con aviso a cocina | parcial: el TPV la anula con motivo y PIN del responsable y la quita de la cuenta, y Ventas avisa (`sales.order.line_voided`) y Cocina tacha el plato con su motivo (KITCHEN-F29); el vale en papel de un solo plato aún no sale (hub#2640) | F20 |
+| Anular una línea ya enviada con aviso a cocina | hecho: el TPV la anula con motivo y PIN del responsable y la quita de la cuenta, y Ventas avisa (`sales.order.line_voided`); Cocina tacha el plato con su motivo (KITCHEN-F29) y la impresora de cocina saca su vale «PLATO ANULADO» (HUB_SHELL-F78) | F20 |
 | Precuenta no fiscal | parcial: sin aviso si el papel no sale | F21 |
 | Cobrar por artículos | hecho | F22 |
 | Dividir a partes iguales o por fracción de una línea | no hecho | F22, F23 |
@@ -426,7 +426,7 @@ Contra `origin/main` v2.16.154 (05/10/2026). Una línea por discrepancia; manda 
 - **QA R-09 y B-06** piden «imprimir + abrir cajón» al cobrar: lo hace el hub (no Ventas) al oír la venta, en el dispositivo que cobró, si Impresión lo tiene activado; el cajón se abre con cualquier medio, también tarjeta, y `qa-hub-restaurant` §7.10 pide que se abra solo con efectivo (F01, F02).
 - **QA L-04 y `qa-hub-restaurant` §7.13**: esperan registro de anulación al anular; no existe (F30).
 - **QA `qa-hub-restaurant` §7.10 y matriz §6**: invitación «con permiso, motivo y auditoría»; no pide ninguno de los dos (F15).
-- **QA `qa-hub-restaurant` §7.13**: «anular línea después de enviar con aviso a cocina» y «anular pedido abierto con motivo»: la línea se anula con motivo desde sales#521 y cocina la tacha con su motivo (KITCHEN-F29; el vale en papel de un solo plato, hub#2640); la cuenta abierta se anula sin motivo (F18, F20).
+- **QA `qa-hub-restaurant` §7.13**: «anular línea después de enviar con aviso a cocina» y «anular pedido abierto con motivo»: la línea se anula con motivo desde sales#521 y cocina la tacha con su motivo (KITCHEN-F29) y su impresora saca el vale de ese plato (HUB_SHELL-F78); la cuenta abierta se anula sin motivo (F18, F20).
 - **QA `qa-hub-restaurant` §7.09**: dividir a partes iguales y por fracción, y deshacer el split; solo existe mover líneas enteras (F23).
 - **`qa-hub-restaurant.md` §3** dice que ningún manifest usa roles que extienden otros; Ventas declara el rol «Cajero» (que cobra).
 - **`hand-book/modulos/sales.md`**: «Los ajustes del TPV aparecen en la configuración de aplicaciones del Hub»; es la pestaña «Ajustes» del propio módulo.
