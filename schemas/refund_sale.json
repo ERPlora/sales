@@ -28,13 +28,14 @@
     "lines": {
       "type": "array",
       "maxItems": 200,
-      "description": "services#158 — the lines of the sale that go back with this money. Optional: omitted or empty, only money goes back. Each line is recorded once (sales.refund_lines) and announced in sale.refunded.lines, so the module that sold it reacts to THAT line (services voids the voucher sold on it). A line that is not of this sale, named twice, or already returned by an earlier refund is refused.",
+      "description": "services#158 — the lines of the sale that go back with this money. Optional: omitted or empty, only money goes back. Each line, or some of its units, is recorded (sales.refund_lines) and announced in sale.refunded.lines, so the module that sold it reacts to THAT line (services voids the voucher sold on it). A line that is not of this sale, named twice, already returned in full by earlier refunds, or asked for more units than are left is refused.",
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["line_id"],
         "properties": {
-          "line_id": { "type": "string", "minLength": 1, "description": "The sale line (sales.lines → id)." }
+          "line_id": { "type": "string", "minLength": 1, "description": "The sale line (sales.lines → id)." },
+          "quantity": { "type": "integer", "minimum": 1, "description": "sales#571 — how many units of the line go back, in millionths like the line's own quantity (1 unit = 1000000). Omitted, everything still left of the line goes back. Never more than what is left: the line's quantity minus what earlier refunds took (sales.refund_line_quantity_exceeded)." }
         }
       }
     }
