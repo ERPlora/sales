@@ -515,6 +515,24 @@ describe('snapshot fiscal del cliente (ADR-0132)', () => {
     expect(venta!.payload.customer_address).toBe('Calle Mayor 1, 28013 Madrid, ES');
   });
 
+  it('after charging the whole check, the customer picker is told to drop her', async () => {
+    const el = await montarCarrito();
+    const resets: string[] = [];
+    (el as unknown as { assignFillers: Array<{ component: string; el: HTMLElement }> }).assignFillers
+      .push({ component: 'erp-fake-customers', el: (() => { const d = document.createElement('div'); d.addEventListener('erp:customer-context-reset', () => { resets.push('customer'); }); return d; })() });
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    el.dispatchEvent(new CustomEvent('erp:customer-context', {
+      detail: { customer_id: 'cus-1', customer_name: 'Ana García' }, bubbles: true, composed: true,
+    }));
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    await (el as unknown as { confirm(): Promise<void> }).confirm();
+
+    expect(comandos.some((c) => c.name === 'sales.complete_sale'), 'the check is charged').toBe(true);
+    expect(resets).toEqual(['customer']);
+  });
+
   it('venta anónima: no arrastra el NIF de la venta anterior', async () => {
     const el = await montarCarrito();
     el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
@@ -1025,6 +1043,35 @@ describe('cuentas abiertas: aparcar con nombre, recuperar sin perder nada', () =
     expect(avisos.some((a) => a.type === 'success' && a.message.includes('ui.parkedToast')),
       'se avisa en VERDE, no por el hueco rojo').toBe(true);
     expect(comandos.some((c) => c.name === 'sales.order.void'), 'aparcar JAMÁS anula').toBe(false);
+  });
+
+  it('sales#557 — parking a check with a customer leaves the next check without her', async () => {
+    const el = await conCafe();
+    const resets: string[] = [];
+    (el as unknown as { assignFillers: Array<{ component: string; el: HTMLElement }> }).assignFillers
+      .push({ component: 'erp-fake-customers', el: (() => { const d = document.createElement('div'); d.addEventListener('erp:customer-context-reset', () => { resets.push('customer'); }); return d; })() });
+    el.dispatchEvent(new CustomEvent('erp:customer-context', {
+      detail: { customer_id: 'cus-ana', customer_name: 'Ana García', customer_tax_id: '12345678Z', customer_address: 'Rua Augusta 1, Lisboa', customer_country: 'PT' },
+      bubbles: true, composed: true,
+    }));
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    await (el as unknown as { parkWith(label: string): Promise<boolean> }).parkWith('Ana');
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    expect(resets, 'the customer picker is told to drop her, like after charging').toEqual(['customer']);
+    expect(el.shadowRoot!.textContent, 'no chip with her name over the empty screen').not.toContain('Ana García');
+
+    // The next person's check: one coffee, charged.
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    await (el as unknown as { queue: <T>(t: () => Promise<T>) => Promise<T> }).queue(async () => undefined);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    await (el as unknown as { confirm(): Promise<void> }).confirm();
+
+    const venta = comandos.find((c) => c.name === 'sales.complete_sale');
+    expect(venta, 'the next check is charged').toBeTruthy();
+    expect(venta!.payload).toMatchObject({ customer_id: null, customer_name: '', customer_tax_id: '', customer_address: '' });
+    expect(venta!.payload, 'her country does not travel either').toMatchObject({ customer_country: '', customer_id_type: '' });
   });
 
   it('con mesa: «Dejar en la mesa» — sin diálogo, la mesa NO se suelta (la cuenta vive allí)', async () => {
