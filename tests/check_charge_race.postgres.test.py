@@ -42,8 +42,8 @@ Points:
  16-20. sales#553: a line or ticket discount put on or taken off — in flight, behind a checkout
      in flight (also a partial one), committed before the checkout queues, and the re-checks
      scoped to the row, the check and the hub.
- 21. sales#554: a line split while another device changes its quantity (2 → 3, 3 → 2) or puts a
-     discount on it — in flight or committed before the split queues: the split is refused
+ 21. sales#554: a line split while another device changes its quantity (2 → 3, 3 → 2), comps it
+     or puts a discount on it — in flight or committed before the split queues: the split is refused
      (`sales.order_changed`) instead of losing or inventing a unit; the neighbour never gets in.
 
 Usage: tests/check_charge_race.postgres.test.py — container `erplora-test-pg-5433` by default
@@ -1513,7 +1513,7 @@ def step_20_the_discount_rechecks_are_scoped(s: Session) -> None:
     )
 
 
-# ── 21 · sales#554: splitting a line while its quantity or its discount changes ─────────────
+# ── 21 · sales#554: splitting a line while its quantity, its comp or its discount changes ───
 
 
 def haircuts(s: Session, order_id: str, quantity: int) -> None:
@@ -1617,6 +1617,25 @@ def step_21_a_line_split_while_it_changes(s: Session) -> None:
             " FROM sales_order_item WHERE id = 's21-disc-cut'"
         ),
         "2|10|3240",
+    )
+
+    # A comp is never split; comped while the split waited, the clones would be born charged.
+    haircuts(s, "s21-gift", 2 * ONE)
+    a_split_behind(
+        s,
+        "a line comped",
+        "s21-gift",
+        update_ops("s21-gift", "s21-gift-cut", 2 * ONE, 0, is_gift=1),
+        split_cut("s21-gift", 2 * ONE),
+    )
+    s.check(
+        "a line comped: it stays one comp of two haircuts, nothing charged",
+        s.q(
+            "SELECT count(*) || '|' || max(is_gift) || '|' || CAST(sum(quantity) AS BIGINT) / 1000000"
+            " || '|' || sum(line_total) FROM sales_order_item"
+            " WHERE id = 's21-gift-cut' OR id LIKE 's21-gift-part%'"
+        ),
+        "1|1|2|0",
     )
 
     # The screen read the line, the other device's change COMMITTED, and only then the split
