@@ -155,7 +155,8 @@
       "migrations/postgres/038_order_discount_approval.sql",
       "migrations/postgres/039_order_line_discount_approval.sql",
       "migrations/postgres/040_order_line_void.sql",
-      "migrations/postgres/041_sale_refund_line.sql"
+      "migrations/postgres/041_sale_refund_line.sql",
+      "migrations/postgres/042_sale_refund_line_units.sql"
     ]
   },
   "seed": {

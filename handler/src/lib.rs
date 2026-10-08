@@ -5559,15 +5559,21 @@ struct ReturnedLine {
     quantity: i64,
 }
 
-/// Resolves the `lines` a refund names against the sale's own lines (`sales.lines`) and the lines
-/// earlier refunds already took back (`sales.refund_lines`). Product and quantity come from the
-/// sale, never from the payload. `_insert_refund_line.sql` re-checks «not returned yet» inside the
-/// transaction, so two refunds racing on the same line still return it once.
+/// Resolves the `lines` a refund names against the sale's own lines (`sales.lines`) and the units
+/// earlier refunds already took back (`sales.refund_lines`). The product comes from the sale, never
+/// from the payload. How many units go back (sales#571) is the payload's `quantity`, or what is left
+/// of the line when it names none, and never more than what is left: a line can go back over
+/// several refunds until its units run out. `_insert_refund_line.sql` re-checks what is left inside
+/// the transaction, so two refunds racing on the same line never return more than it had.
 fn refund_returned_lines(payload: &Value, context: &Value, sale_id: &str) -> Result<Vec<ReturnedLine>, Refusal> {
-    let requested: Vec<String> = payload
+    let requested: Vec<(String, Option<i64>)> = payload
         .get("lines")
         .and_then(|v| v.as_array())
-        .map(|a| a.iter().map(|l| field(l, "line_id")).collect())
+        .map(|a| {
+            a.iter()
+                .map(|l| (field(l, "line_id"), l.get("quantity").map(|q| as_qty(q, 0))))
+                .collect()
+        })
         .unwrap_or_default();
     if requested.is_empty() {
         return Ok(Vec::new());
@@ -5575,7 +5581,7 @@ fn refund_returned_lines(payload: &Value, context: &Value, sale_id: &str) -> Res
     let sale_lines = tax::read_rows(context, "sales.lines").unwrap_or_default();
     let already = tax::read_rows(context, "sales.refund_lines").unwrap_or_default();
     let mut out: Vec<ReturnedLine> = Vec::with_capacity(requested.len());
-    for line_id in requested {
+    for (line_id, asked) in requested {
         let line = sale_lines
             .iter()
             .find(|l| !line_id.is_empty() && field(l, "id") == line_id)
@@ -5591,16 +5597,29 @@ fn refund_returned_lines(payload: &Value, context: &Value, sale_id: &str) -> Res
                 format!("line `{line_id}` appears twice in the same refund"),
             ));
         }
-        if already.iter().any(|r| field(r, "sale_item_id") == line_id) {
+        let returned: i64 = already
+            .iter()
+            .filter(|r| field(r, "sale_item_id") == line_id)
+            .map(|r| item_i64(r, "quantity", 0))
+            .sum();
+        let left = item_i64(line, "quantity", 0) - returned;
+        if left <= 0 {
             return Err(reject(
                 "sales.refund_line_already_returned",
                 format!("line `{line_id}` already went back with an earlier refund"),
             ));
         }
+        let quantity = asked.unwrap_or(left);
+        if quantity > left {
+            return Err(reject(
+                "sales.refund_line_quantity_exceeded",
+                format!("line `{line_id}` has {left} (10^6) left to go back, the refund asks for {quantity}"),
+            ));
+        }
         out.push(ReturnedLine {
             line_id: line_id.clone(),
             product_id: field(line, "product_id"),
-            quantity: item_i64(line, "quantity", 0),
+            quantity,
         });
     }
     Ok(out)
@@ -11462,7 +11481,8 @@ mod tests {
         // Otherwise `services` would void ANOTHER voucher of the same package on the second refund.
         let err = refund_sale_pure(refund_input_with_lines(
             json!([{ "line_id": "li-voucher" }]),
-            json!([{ "sale_item_id": "li-voucher" }]),
+            // `sales.refund_lines` always answers the quantity that went back (NOT NULL column).
+            json!([{ "sale_item_id": "li-voucher", "quantity": 1_000_000 }]),
         ))
         .refused("line already returned");
         assert_eq!(err.code, "sales.refund_line_already_returned", "{err:?}");
@@ -11474,6 +11494,118 @@ mod tests {
         inp["context"]["new_ids"] = json!(["ref-1", "ref-line-1"]); // head and leg, no line
         let err = refund_sale_pure(inp).refused("no id for the line");
         assert_eq!(err.code, "sales.too_many_rows", "{err:?}");
+    }
+
+    // ── sales#571 · a line with several units goes back PART by part ─────────────────────────
+    //
+    // Three identical shampoos on one line; the customer returns one. Until now the marked line
+    // went back whole (the three of them) and could never go back again, so «1 of 3» could not be
+    // said. The refund now names how many units of the line go back (fixed point 10^6, ADR-0147),
+    // capped at what is left of the line, and a line can go back over several refunds.
+
+    /// `sale-1` with a line of THREE shampoos (30,00 €) besides the haircut and the voucher.
+    fn refund_input_with_units(lines: Value, returned: Value) -> Value {
+        let mut inp = refund_input_with_lines(lines, returned);
+        inp["context"]["reads"]["sales.lines"] = json!([
+            { "id": "li-cut", "product_id": "svc-cut", "quantity": 1_000_000, "line_total": 2000 },
+            { "id": "li-shampoo", "product_id": "p-shampoo", "quantity": 3_000_000, "line_total": 3000 }
+        ]);
+        inp
+    }
+
+    fn refunded_line_quantities(out: &Output) -> (Value, Vec<Value>) {
+        let ev = out.events.iter().find(|e| e.name == "sale.refunded").expect("event");
+        let recorded = out
+            .operations
+            .iter()
+            .filter(|o| o.command == "sales._insert_refund_line")
+            .map(|o| o.params["quantity"].clone())
+            .collect();
+        (ev.payload["lines"].clone(), recorded)
+    }
+
+    #[test]
+    fn one_shampoo_of_three_goes_back_and_only_that_unit_is_announced() {
+        let out = refund_sale_pure(refund_input_with_units(
+            json!([{ "line_id": "li-shampoo", "quantity": 1_000_000 }]),
+            json!([]),
+        ))
+        .accepted("one unit of the line goes back");
+        let (announced, recorded) = refunded_line_quantities(&out);
+        assert_eq!(
+            announced,
+            json!([{ "line_id": "li-shampoo", "product_id": "p-shampoo", "quantity": 1_000_000 }]),
+            "the listeners hear ONE unit, not the whole line"
+        );
+        assert_eq!(recorded, vec![json!(1_000_000)], "and the refund records one unit");
+    }
+
+    #[test]
+    fn a_line_named_without_quantity_returns_what_is_left_of_it() {
+        // One shampoo already went back: naming the line alone returns the other two, never three.
+        let out = refund_sale_pure(refund_input_with_units(
+            json!([{ "line_id": "li-shampoo" }]),
+            json!([{ "sale_item_id": "li-shampoo", "quantity": 1_000_000 }]),
+        ))
+        .accepted("the rest of the line goes back");
+        let (announced, recorded) = refunded_line_quantities(&out);
+        assert_eq!(announced[0]["quantity"], json!(2_000_000), "{announced}");
+        assert_eq!(recorded, vec![json!(2_000_000)]);
+    }
+
+    #[test]
+    fn a_line_partly_returned_can_go_back_again_up_to_what_is_left() {
+        let out = refund_sale_pure(refund_input_with_units(
+            json!([{ "line_id": "li-shampoo", "quantity": 2_000_000 }]),
+            json!([{ "sale_item_id": "li-shampoo", "quantity": 1_000_000 }]),
+        ))
+        .accepted("two more shampoos go back");
+        let (_, recorded) = refunded_line_quantities(&out);
+        assert_eq!(recorded, vec![json!(2_000_000)]);
+    }
+
+    #[test]
+    fn more_units_than_are_left_of_the_line_are_refused() {
+        let err = refund_sale_pure(refund_input_with_units(
+            json!([{ "line_id": "li-shampoo", "quantity": 3_000_000 }]),
+            json!([{ "sale_item_id": "li-shampoo", "quantity": 1_000_000 }]),
+        ))
+        .refused("three shampoos when two are left");
+        assert_eq!(err.code, "sales.refund_line_quantity_exceeded", "{err:?}");
+    }
+
+    #[test]
+    fn more_units_than_the_line_ever_had_are_refused() {
+        let err = refund_sale_pure(refund_input_with_units(
+            json!([{ "line_id": "li-shampoo", "quantity": 4_000_000 }]),
+            json!([]),
+        ))
+        .refused("four shampoos from a line of three");
+        assert_eq!(err.code, "sales.refund_line_quantity_exceeded", "{err:?}");
+    }
+
+    #[test]
+    fn a_line_whose_units_all_went_back_over_several_refunds_is_refused_as_returned() {
+        let err = refund_sale_pure(refund_input_with_units(
+            json!([{ "line_id": "li-shampoo" }]),
+            json!([
+                { "sale_item_id": "li-shampoo", "quantity": 1_000_000 },
+                { "sale_item_id": "li-shampoo", "quantity": 2_000_000 }
+            ]),
+        ))
+        .refused("nothing left of the line");
+        assert_eq!(err.code, "sales.refund_line_already_returned", "{err:?}");
+    }
+
+    #[test]
+    fn what_another_line_returned_does_not_count_against_this_one() {
+        let out = refund_sale_pure(refund_input_with_units(
+            json!([{ "line_id": "li-shampoo", "quantity": 3_000_000 }]),
+            json!([{ "sale_item_id": "li-cut", "quantity": 1_000_000 }]),
+        ))
+        .accepted("the haircut went back, the three shampoos are still there");
+        let (_, recorded) = refunded_line_quantities(&out);
+        assert_eq!(recorded, vec![json!(3_000_000)]);
     }
 
     // ── sales#169 · el MENÚ sobrevive en una CUENTA ABIERTA ──────────────────────────────────
