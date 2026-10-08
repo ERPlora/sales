@@ -19,6 +19,7 @@
       "sales.pos_settings.get",
       "sales.quick_notes.list",
       "sales.refund_by_idempotency_key",
+      "sales.refund_lines",
       "sales.refund_options",
       "sales.refunds",
       "sales.stats",

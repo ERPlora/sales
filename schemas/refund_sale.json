@@ -24,6 +24,19 @@
           "to_payment_method_id": { "type": "string", "description": "Where the money physically goes. Omit to return it the way it was charged; name another method when the original one is no longer available." }
         }
       }
+    },
+    "lines": {
+      "type": "array",
+      "maxItems": 200,
+      "description": "services#158 — the lines of the sale that go back with this money. Optional: omitted or empty, only money goes back. Each line is recorded once (sales.refund_lines) and announced in sale.refunded.lines, so the module that sold it reacts to THAT line (services voids the voucher sold on it). A line that is not of this sale, named twice, or already returned by an earlier refund is refused.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["line_id"],
+        "properties": {
+          "line_id": { "type": "string", "minLength": 1, "description": "The sale line (sales.lines → id)." }
+        }
+      }
     }
   }
 }

@@ -154,7 +154,8 @@
       "migrations/postgres/037_order_appointment.sql",
       "migrations/postgres/038_order_discount_approval.sql",
       "migrations/postgres/039_order_line_discount_approval.sql",
-      "migrations/postgres/040_order_line_void.sql"
+      "migrations/postgres/040_order_line_void.sql",
+      "migrations/postgres/041_sale_refund_line.sql"
     ]
   },
   "seed": {
@@ -398,6 +399,14 @@
       "sql": "queries/refunds.sql",
       "ai": {
         "description": "Lists the refund documents already issued against a sale, newest first."
+      }
+    },
+    "sales.refund_lines": {
+      "permission": "sales.view_sale",
+      "expose_api": true,
+      "sql": "queries/refund_lines.sql",
+      "ai": {
+        "description": "Lists the lines of a sale that already went back with a refund (one row per line, with the refund that took it back). A line goes back once."
       }
     },
     "sales.refund_by_idempotency_key": {
@@ -693,6 +702,18 @@
           "required": true
         },
         {
+          "query": "sales.lines",
+          "params": {
+            "sale_id": "payload.sale_id"
+          }
+        },
+        {
+          "query": "sales.refund_lines",
+          "params": {
+            "sale_id": "payload.sale_id"
+          }
+        },
+        {
           "query": "sales.refund_by_idempotency_key",
           "params": {
             "idempotency_key": "payload.idempotency_key"
@@ -710,7 +731,7 @@
         "sale.refunded"
       ],
       "ai": {
-        "description": "Refunds a COMPLETED sale by ELIGIBLE TENDER with an EDITABLE split (ADR-0386): the operator decides how much goes back to each leg of the original payment. A leg can never give back more than it was charged minus what it already returned, and going over is refused naming WHICH leg (sales.refund_exceeds_tender). A leg whose payment method is no longer available is marked not eligible with its reason instead of failing at confirm — the money still comes out through another destination the operator names. Unlike sales.void, an invoiced sale CAN be refunded: the credit note is issued by invoice. Idempotent by idempotency_key: the same key answers with the same refund document instead of paying twice."
+        "description": "Refunds a COMPLETED sale by ELIGIBLE TENDER with an EDITABLE split (ADR-0386): the operator decides how much goes back to each leg of the original payment. A leg can never give back more than it was charged minus what it already returned, and going over is refused naming WHICH leg (sales.refund_exceeds_tender). A leg whose payment method is no longer available is marked not eligible with its reason instead of failing at confirm — the money still comes out through another destination the operator names. Unlike sales.void, an invoiced sale CAN be refunded: the credit note is issued by invoice. Idempotent by idempotency_key: the same key answers with the same refund document instead of paying twice. The operator can also name the LINES that go back (`lines`): each must be a line of this sale and not returned yet (sales.refund_line_unknown, sales.refund_line_duplicated, sales.refund_line_already_returned); they are recorded and announced on sale.refunded so the modules that sold something on that line undo it (services voids a voucher sold on it)."
       }
     },
     "sales._void_lock": {
@@ -1408,6 +1429,18 @@
         "message": "That is more than is still refundable on this payment: another refund has just taken part of it."
       }
     },
+    "sales._insert_refund_line": {
+      "permission": "sales.refund_sale",
+      "sql": [
+        "commands/_insert_refund_line.sql"
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "error": "sales.refund_line_already_returned",
+        "message": "That line already went back with another refund of this sale."
+      }
+    },
     "sales._mark_refunded": {
       "permission": "sales.refund_sale",
       "sql": [
@@ -1495,7 +1528,10 @@
     "sales.too_many_rows": {},
     "sales.void_reason_required": {},
     "sales.void_requires_credit_note": {},
-    "sales.order_changed": {}
+    "sales.order_changed": {},
+    "sales.refund_line_unknown": {},
+    "sales.refund_line_duplicated": {},
+    "sales.refund_line_already_returned": {}
   },
   "events": {
     "listen": {

@@ -30,6 +30,8 @@ beforeEach(() => {
       'sales.business_day': [{ today: '2031-01-15' }],
       'sales.get': [{ id: 'venta-1', sale_number: 'T-42', status: 'completed', total: 360 }],
       'sales.refund_options': [],
+      // services#158: the refund screen reads the sale's lines for «What goes back».
+      'sales.lines': [],
     } as never,
     locale: 'es',
     t: translator(esCatalog),
