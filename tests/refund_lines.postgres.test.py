@@ -395,6 +395,24 @@ def step_5_each_guard_on_its_own(s: Session) -> None:
         ),
         0,
     )
+    # A returned line in the NEIGHBOUR hub that names this hub's line id must not count as
+    # «already returned» here: only this hub's own refunds can take the line back.
+    s.q(
+        "INSERT INTO sales_sale_refund_line (id, hub_id, refund_id, sale_id, sale_item_id, "
+        "product_id, quantity, is_deleted) "
+        f"VALUES ('rl-forged', '{OTHER_HUB}', 'r-forged', 'sale-5', 'sale-5-voucher', "
+        "'pkg-5', 1000000, 0)"
+    )
+    s.check(
+        "a neighbour's returned line does not block this hub's own voucher line",
+        play(s, refund_calls("r8", "sale-5", VOUCHER, [("sale-5-voucher", "pkg-5")], HUB, verdict=1)),
+        "ok",
+    )
+    s.check(
+        "...which is now returned here",
+        returned(s, "sale-5"),
+        ["sale-5-cut", "sale-5-voucher"],
+    )
 
 
 def main() -> int:
