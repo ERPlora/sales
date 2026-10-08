@@ -63,6 +63,12 @@ describe('pickedLines', () => {
     expect(pickedLines([SHAMPOO], new Map([['li-shampoo', UNIT]]), NONE)).toEqual([{ line_id: 'li-shampoo', quantity: UNIT }]);
   });
 
+  it('never names more units than are left of the line', () => {
+    const returned = new Map([['li-shampoo', 2 * UNIT]]);
+    expect(pickedLines([SHAMPOO], new Map([['li-shampoo', 3 * UNIT]]), returned)).toEqual([{ line_id: 'li-shampoo', quantity: UNIT }]);
+    expect(pickedAmount([SHAMPOO], new Map([['li-shampoo', 3 * UNIT]]), returned)).toBe(1000);
+  });
+
   it('a line marked with 0 units is not named', () => {
     expect(pickedLines([SHAMPOO], new Map([['li-shampoo', 0]]), NONE)).toEqual([]);
   });
