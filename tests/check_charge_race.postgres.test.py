@@ -338,6 +338,19 @@ def merge_ops(from_order_id: str, to_order_id: str) -> list:
     ]
 
 
+def gate_statement(name: str) -> str:
+    """The statement a command's `expect_rows` counts. Unanchored, the kernel counts the whole
+    batch (hub#1091), which for a one-statement command (`sales._set_order_discount`) is that
+    statement; a longer unanchored batch is not modelled here and fails loudly."""
+    cmd = MANIFEST["commands"][name]
+    gate = cmd["expect_rows"]
+    if "statement" in gate:
+        return gate["statement"]
+    if len(cmd["sql"]) != 1:
+        raise RuntimeError(f"{name}: unanchored expect_rows over {len(cmd['sql'])} statements")
+    return cmd["sql"][0]
+
+
 def verdict(calls: list, counts: list) -> str:
     """What the kernel answers for a chain it played: the error of the FIRST command whose gated
     statement touched fewer rows than its `expect_rows` asks (the kernel rolls back there), or
@@ -347,7 +360,7 @@ def verdict(calls: list, counts: list) -> str:
         gate = MANIFEST["commands"][name].get("expect_rows")
         if not gate:
             continue
-        rel = gate["statement"]
+        rel = gate_statement(name)
         nth = seen.get(rel, 0)
         seen[rel] = nth + 1
         runs = [rows for (_cmd, r, rows) in counts if r == rel]
@@ -371,7 +384,7 @@ def kernel_chain(s: Session, calls: list, hub=None):
     for name, _payload in calls:
         gate = MANIFEST["commands"][name].get("expect_rows")
         for rel in MANIFEST["commands"][name]["sql"]:
-            gated.append(gate["n"] if gate and gate["statement"] == rel else None)
+            gated.append(gate["n"] if gate and gate_statement(name) == rel else None)
     script, k = ["BEGIN;"], 0
     for line in body:
         script.append(line)

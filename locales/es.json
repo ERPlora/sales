@@ -150,7 +150,7 @@
     "sales.void_requires_credit_note": "Esta venta lleva factura completa: emite una factura rectificativa en vez de anularla.",
     "sales.order_line_not_removable": "Esa línea ya no se puede quitar: ya se envió a cocina (anúlala con un motivo), ya está cobrada o ya no está en una cuenta abierta.",
     "sales.order_line_not_voidable": "Esa línea no se puede anular: no está enviada y sin cobrar en una cuenta abierta, o falta el motivo. Vuelve a cargar la cuenta.",
-    "sales.order_changed": "La cuenta ha cambiado mientras se cobraba (se cambió, añadió, anuló, quitó o cobró una línea, o la cuenta se dividió, se juntó o se cerró). No se ha cobrado ni cambiado nada: revisa las líneas y vuelve a intentarlo."
+    "sales.order_changed": "La cuenta ha cambiado mientras se cobraba (se cambió, añadió, anuló, quitó o cobró una línea, se puso o se quitó un descuento, o la cuenta se dividió, se juntó o se cerró). No se ha cobrado ni cambiado nada: revisa las líneas y vuelve a intentarlo."
   },
   "ui": {
     "sales": "Ventas",
@@ -631,7 +631,7 @@
     "voidReasonChanged": "El cliente lo cambia",
     "voidReasonSoldOut": "Agotado",
     "voidReasonDuplicate": "Pedido dos veces",
-    "errorOrderChanged": "La cuenta ha cambiado mientras se cobraba: se cambió, añadió, anuló, quitó o cobró una línea desde otro dispositivo, o la cuenta se dividió o se juntó. No se ha cobrado nada; la cuenta se ha vuelto a cargar, revísala y vuelve a cobrar."
+    "errorOrderChanged": "La cuenta ha cambiado mientras se cobraba: se cambió, añadió, anuló, quitó o cobró una línea o se puso o se quitó un descuento desde otro dispositivo, o la cuenta se dividió o se juntó. No se ha cobrado nada; la cuenta se ha vuelto a cargar, revísala y vuelve a cobrar."
   },
   "widgets": {
     "sales.today": {

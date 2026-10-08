@@ -801,7 +801,7 @@
         "n": 1,
         "statement": "commands/order_update_line.sql",
         "error": "sales.order_changed",
-        "message": "The check changed while it was being charged: a line was changed, added, voided, removed or charged, or the check was split, joined, closed or charged. Nothing was charged or changed; load the check again."
+        "message": "The check changed while it was being charged: a line was changed, added, voided, removed or charged, a discount was put on or taken off, or the check was split, joined, closed or charged. Nothing was charged or changed; load the check again."
       }
     },
     "sales._mark_lines_fired": {
@@ -834,8 +834,8 @@
         "op": "min",
         "n": 1,
         "statement": "commands/order_set_line_discount.sql",
-        "error": "sales.order_line_not_available",
-        "message": "That line is not live on an open check of this business."
+        "error": "sales.order_changed",
+        "message": "The check changed while it was being charged: a line was changed, added, voided, removed or charged, a discount was put on or taken off, or the check was split, joined, closed or charged. Nothing was charged or changed; load the check again."
       }
     },
     "sales._complete_order": {
@@ -855,7 +855,7 @@
         "n": 1,
         "statement": "commands/_order_open.sql",
         "error": "sales.order_changed",
-        "message": "The check changed while it was being charged: a line was changed, added, voided, removed or charged, or the check was split, joined, closed or charged. Nothing was charged or changed; load the check again."
+        "message": "The check changed while it was being charged: a line was changed, added, voided, removed or charged, a discount was put on or taken off, or the check was split, joined, closed or charged. Nothing was charged or changed; load the check again."
       }
     },
     "sales._order_line_live": {
@@ -868,7 +868,20 @@
         "n": 1,
         "statement": "commands/_order_line_live.sql",
         "error": "sales.order_changed",
-        "message": "The check changed while it was being charged: a line was changed, added, voided, removed or charged, or the check was split, joined, closed or charged. Nothing was charged or changed; load the check again."
+        "message": "The check changed while it was being charged: a line was changed, added, voided, removed or charged, a discount was put on or taken off, or the check was split, joined, closed or charged. Nothing was charged or changed; load the check again."
+      }
+    },
+    "sales._order_discount_live": {
+      "permission": "sales.add_sale",
+      "sql": [
+        "commands/_order_discount_live.sql"
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "statement": "commands/_order_discount_live.sql",
+        "error": "sales.order_changed",
+        "message": "The check changed while it was being charged: a line was changed, added, voided, removed or charged, a discount was put on or taken off, or the check was split, joined, closed or charged. Nothing was charged or changed; load the check again."
       }
     },
     "sales._order_lines_seen": {
@@ -881,7 +894,7 @@
         "n": 1,
         "statement": "commands/_order_lines_seen.sql",
         "error": "sales.order_changed",
-        "message": "The check changed while it was being charged: a line was changed, added, voided, removed or charged, or the check was split, joined, closed or charged. Nothing was charged or changed; load the check again."
+        "message": "The check changed while it was being charged: a line was changed, added, voided, removed or charged, a discount was put on or taken off, or the check was split, joined, closed or charged. Nothing was charged or changed; load the check again."
       }
     },
     "sales.order.add_line": {
@@ -1083,7 +1096,7 @@
         "n": 1,
         "statement": "commands/order_split_create.sql",
         "error": "sales.order_changed",
-        "message": "The check changed while it was being charged: a line was changed, added, voided, removed or charged, or the check was split, joined, closed or charged. Nothing was charged or changed; load the check again."
+        "message": "The check changed while it was being charged: a line was changed, added, voided, removed or charged, a discount was put on or taken off, or the check was split, joined, closed or charged. Nothing was charged or changed; load the check again."
       },
       "ai": {
         "description": "Splits an open order in two (sales#61): the listed lines move to a NEW order, whose id comes back as new_ids[0]. Called when the floor opens a second check on a table (tables.sessions.split): tables owns the seating, sales owns the lines and the amounts. With no line_ids the second check opens blank. Nothing is prorated here — whole rows travel with their line_total, tax_category_key, round_no and fired_at intact, and BOTH totals are recomputed from their live lines, so the two halves add up to the original to the cent. It queues behind a checkout of the same order: if that order was charged or closed meanwhile, nothing moves and it is refused with sales.order_changed (sales#546)."
@@ -1105,7 +1118,7 @@
         "n": 1,
         "statement": "commands/order_merge_open.sql",
         "error": "sales.order_changed",
-        "message": "The check changed while it was being charged: a line was changed, added, voided, removed or charged, or the check was split, joined, closed or charged. Nothing was charged or changed; load the check again."
+        "message": "The check changed while it was being charged: a line was changed, added, voided, removed or charged, a discount was put on or taken off, or the check was split, joined, closed or charged. Nothing was charged or changed; load the check again."
       },
       "emit": [
         "sales.order.merged"
@@ -1132,6 +1145,13 @@
       "reads": [
         "sales.settings.get",
         {
+          "query": "sales.order.get",
+          "params": {
+            "order_id": "payload.order_id"
+          },
+          "required": true
+        },
+        {
           "query": "sales.order.lines",
           "params": {
             "order_id": "payload.order_id"
@@ -1153,6 +1173,13 @@
       "expose_api": false,
       "reads": [
         "sales.settings.get",
+        {
+          "query": "sales.order.get",
+          "params": {
+            "order_id": "payload.order_id"
+          },
+          "required": true
+        },
         {
           "query": "sales.order.lines",
           "params": {
