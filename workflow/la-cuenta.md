@@ -146,16 +146,16 @@ Implicados: CUSTOMERS-F17, CUSTOMERS-F19, SERVICES-F22, SERVICES-F25, TABLES-F11
 QA: qa-hub-restaurant §7.06
 
 ### SALES-F18 Eliminar una cuenta abierta
-Estado: parcial — no pide motivo; Mesas no recibe ningún aviso del servidor; anular una cuenta que ya no está abierta contesta bien y avisa igual; si la cuenta llevaba cliente, el botón de Clientes se vacía pero la cuenta siguiente se cobra a su nombre (sales#567)
+Estado: parcial — no pide motivo; Mesas no recibe ningún aviso del servidor; anular una cuenta que ya no está abierta contesta bien y avisa igual
 Vertical: comun
 Actor: responsable, empleado
 Pantalla: Cuentas abiertas
 Pasos:
 1. En **Cuentas abiertas**, toca la papelera de la cuenta: cambia a «Toca otra vez para eliminar — anula la cuenta». Si no se toca en 3 segundos, se desarma.
-2. Toca otra vez: la cuenta desaparece de la lista. También se elimina con «Eliminarla y abrir» al cambiar de cuenta.
+2. Toca otra vez: la cuenta desaparece de la lista. También se elimina con «Eliminarla y abrir» al cambiar de cuenta; si llevaba cliente, se va con ella: el botón de Clientes vuelve a «Asignar cliente» y la cuenta siguiente no se cobra a su nombre ni le gasta su bono.
 3. A un empleado o cajero el hub le pide el PIN de un responsable (anular es permiso de responsable).
 Entra: la cuenta elegida.
 Sale: la cuenta queda anulada, no borrada, sin motivo (avisa: sales.order.voided); Servicios suelta los bonos que tuviera retenidos y Cocina cancela las rondas de esa cuenta que siguen en marcha, que salen de su pantalla (KITCHEN-F28). Mesas tampoco lo escucha: por el servidor la mesa no se suelta (lo que haga su control en pantalla, sin confirmar).
 Si falla: «No se ha podido eliminar esa cuenta abierta. Sigue en la lista.» o «No se ha podido eliminar la cuenta. Sigue abierta, en pantalla.». Una cuenta ya cobrada o anulada desde otro dispositivo no cambia, pero la orden contesta bien y el aviso sale igual; Cocina comprueba que la cuenta está anulada antes de cancelar nada, así que lo de una cuenta cobrada sigue su curso.
-Implicados: KITCHEN-F28, SERVICES-F23, TABLES-F20, REC_RESTAURANTE-F14, HUB-F152
+Implicados: CUSTOMERS-F17, KITCHEN-F28, SERVICES-F23, TABLES-F20, REC_RESTAURANTE-F14, HUB-F152
 QA: qa-hub-restaurant §7.13 (discrepa)
