@@ -9,7 +9,7 @@ pone las cuentas, las líneas y los importes; la mesa es de Mesas y la comanda e
 ## Flujos
 
 ### SALES-F19 Abrir la cuenta de una mesa y dejarla en la mesa
-Estado: parcial — en una mesa con dos cuentas (dividida), tocarla abre una sin elegir
+Estado: parcial — en una mesa con dos cuentas (dividida), tocarla abre una sin elegir; con un cliente en la cuenta de una mesa, tocar otra mesa libre sin dejarla antes hace que la cuenta de la mesa nueva salga a su nombre (sales#569)
 Vertical: restaurante
 Actor: empleado, responsable
 Pantalla: Vender
