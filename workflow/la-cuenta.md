@@ -146,7 +146,7 @@ Implicados: CUSTOMERS-F17, CUSTOMERS-F19, SERVICES-F22, SERVICES-F25, TABLES-F11
 QA: qa-hub-restaurant §7.06
 
 ### SALES-F18 Eliminar una cuenta abierta
-Estado: parcial — no pide motivo; Mesas no recibe ningún aviso del servidor; anular una cuenta que ya no está abierta contesta bien y avisa igual
+Estado: parcial — no pide motivo; Mesas no recibe ningún aviso del servidor; anular una cuenta que ya no está abierta contesta bien y avisa igual; si la cuenta llevaba cliente, el botón de Clientes se vacía pero la cuenta siguiente se cobra a su nombre (sales#567)
 Vertical: comun
 Actor: responsable, empleado
 Pantalla: Cuentas abiertas
