@@ -11,6 +11,12 @@
 -- charges; a row only marked as paid by a partial charge (`line_ids`, no item) binds NULL and
 -- compares nothing but «live and unpaid». Each parameter is used twice, so it is CAST to one type
 -- (a parameter Postgres deduces two types for cannot be prepared).
+--
+-- sales#553 -- «… and the discount it charges it at?». The sale also takes each line's percent
+-- from its payload: a line discount put on or taken off while the checkout waited left the sale
+-- charging the old percent. Bound NULL for a row only marked as paid, like the two above. CAST to
+-- DOUBLE PRECISION, what the portable REAL column is on Postgres (the runtime widens it in the
+-- migrations only): a CAST to REAL here would be float4 and 33.33 would never match its own row.
 SELECT id
   FROM sales_order_item
  WHERE id = :line_id
@@ -19,4 +25,5 @@ SELECT id
    AND is_deleted = 0
    AND sale_id IS NULL
    AND (CAST(:quantity AS BIGINT) IS NULL OR quantity = CAST(:quantity AS BIGINT))
-   AND (CAST(:is_gift AS INTEGER) IS NULL OR is_gift = CAST(:is_gift AS INTEGER));
+   AND (CAST(:is_gift AS INTEGER) IS NULL OR is_gift = CAST(:is_gift AS INTEGER))
+   AND (CAST(:discount_percent AS DOUBLE PRECISION) IS NULL OR discount_percent = CAST(:discount_percent AS DOUBLE PRECISION));

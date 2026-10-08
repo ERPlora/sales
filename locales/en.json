@@ -149,7 +149,7 @@
     "sales.void_requires_credit_note": "This sale carries a full invoice: issue a credit note instead of voiding it.",
     "sales.order_line_not_removable": "That line can no longer be removed: it was already sent to the kitchen (void it with a reason), it was already charged, or it is no longer on an open check.",
     "sales.order_line_not_voidable": "That line cannot be voided: it is not on an open check as a sent, unpaid line, or the reason is missing. Load the check again.",
-    "sales.order_changed": "The check changed while it was being charged (a line was changed, added, voided, removed or charged, or the check was split, joined or closed). Nothing was charged or changed: check the lines and try again."
+    "sales.order_changed": "The check changed while it was being charged (a line was changed, added, voided, removed or charged, a discount was put on or taken off, or the check was split, joined or closed). Nothing was charged or changed: check the lines and try again."
   },
   "ui": {
     "sales": "Sales",
@@ -428,6 +428,7 @@
     "discountTicket": "Ticket discount",
     "discountApply": "Apply",
     "discountRemove": "Remove",
+    "ticketDiscountFailed": "That discount could not be saved. The check keeps the discount it had.",
     "actionVoid": "Void",
     "voidTitle": "Void sale {number}",
     "voidExplain": "The sale stays on record as voided; cash and stock are reversed once. A reason is required.",
@@ -630,7 +631,7 @@
     "voidReasonChanged": "Customer changed their mind",
     "voidReasonSoldOut": "Sold out",
     "voidReasonDuplicate": "Entered twice",
-    "errorOrderChanged": "The check changed while it was being charged: a line was changed, added, voided, removed or charged on another device, or the check was split or joined. Nothing was charged; the check has been reloaded, check it and charge again."
+    "errorOrderChanged": "The check changed while it was being charged: a line was changed, added, voided, removed or charged or a discount was put on or taken off on another device, or the check was split or joined. Nothing was charged; the check has been reloaded, check it and charge again."
   },
   "commands": {
     "sales.complete_sale": {

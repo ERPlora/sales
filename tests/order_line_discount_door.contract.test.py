@@ -89,17 +89,25 @@ def main() -> int:
         "\n3 · the write keeps its gate: a line that is not live and unfired is refused, not ignored"
     )
     write = COMMANDS.get("sales._set_order_line_discount", {})
+    # sales#553: the handler refuses a line that is not live and unfired by name
+    # (`sales.order_line_not_available`) from the lines it read; the write only matches no row
+    # when the line changed AFTER that read — charged, voided or fired while the door waited
+    # behind a checkout of the same check (`sales._order_lock`) — which is «the check changed».
     check(
         "the write's gate code",
         (write.get("expect_rows") or {}).get("error"),
-        "sales.order_line_not_available",
+        "sales.order_changed",
     )
     check("the write and the total move together", write.get("transaction"), True)
     # hub#1091: `expect_rows` counts the WHOLE batch unless anchored. The recompute UPDATE always
     # touches the order row, so it would satisfy `min 1` by itself and a refused line write would
     # come back 200 with nothing written. The guard must count the line write alone.
-    write_sqls = write.get("sql") if isinstance(write.get("sql"), list) else [write.get("sql")]
-    guarded = (write.get("expect_rows") or {}).get("statement") == "commands/order_set_line_discount.sql"
+    write_sqls = (
+        write.get("sql") if isinstance(write.get("sql"), list) else [write.get("sql")]
+    )
+    guarded = (write.get("expect_rows") or {}).get(
+        "statement"
+    ) == "commands/order_set_line_discount.sql"
     check(
         "the gate counts the line write alone (single statement or anchored)",
         write_sqls == ["commands/order_set_line_discount.sql"] or guarded,

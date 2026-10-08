@@ -4716,7 +4716,7 @@ var en_default = {
     "sales.void_requires_credit_note": "This sale carries a full invoice: issue a credit note instead of voiding it.",
     "sales.order_line_not_removable": "That line can no longer be removed: it was already sent to the kitchen (void it with a reason), it was already charged, or it is no longer on an open check.",
     "sales.order_line_not_voidable": "That line cannot be voided: it is not on an open check as a sent, unpaid line, or the reason is missing. Load the check again.",
-    "sales.order_changed": "The check changed while it was being charged (a line was changed, added, voided, removed or charged, or the check was split, joined or closed). Nothing was charged or changed: check the lines and try again."
+    "sales.order_changed": "The check changed while it was being charged (a line was changed, added, voided, removed or charged, a discount was put on or taken off, or the check was split, joined or closed). Nothing was charged or changed: check the lines and try again."
   },
   ui: {
     sales: "Sales",
@@ -4995,6 +4995,7 @@ var en_default = {
     discountTicket: "Ticket discount",
     discountApply: "Apply",
     discountRemove: "Remove",
+    ticketDiscountFailed: "That discount could not be saved. The check keeps the discount it had.",
     actionVoid: "Void",
     voidTitle: "Void sale {number}",
     voidExplain: "The sale stays on record as voided; cash and stock are reversed once. A reason is required.",
@@ -5197,7 +5198,7 @@ var en_default = {
     voidReasonChanged: "Customer changed their mind",
     voidReasonSoldOut: "Sold out",
     voidReasonDuplicate: "Entered twice",
-    errorOrderChanged: "The check changed while it was being charged: a line was changed, added, voided, removed or charged on another device, or the check was split or joined. Nothing was charged; the check has been reloaded, check it and charge again."
+    errorOrderChanged: "The check changed while it was being charged: a line was changed, added, voided, removed or charged or a discount was put on or taken off on another device, or the check was split or joined. Nothing was charged; the check has been reloaded, check it and charge again."
   },
   commands: {
     "sales.complete_sale": {
@@ -5419,7 +5420,7 @@ var es_default = {
     "sales.void_requires_credit_note": "Esta venta lleva factura completa: emite una factura rectificativa en vez de anularla.",
     "sales.order_line_not_removable": "Esa l\xEDnea ya no se puede quitar: ya se envi\xF3 a cocina (an\xFAlala con un motivo), ya est\xE1 cobrada o ya no est\xE1 en una cuenta abierta.",
     "sales.order_line_not_voidable": "Esa l\xEDnea no se puede anular: no est\xE1 enviada y sin cobrar en una cuenta abierta, o falta el motivo. Vuelve a cargar la cuenta.",
-    "sales.order_changed": "La cuenta ha cambiado mientras se cobraba (se cambi\xF3, a\xF1adi\xF3, anul\xF3, quit\xF3 o cobr\xF3 una l\xEDnea, o la cuenta se dividi\xF3, se junt\xF3 o se cerr\xF3). No se ha cobrado ni cambiado nada: revisa las l\xEDneas y vuelve a intentarlo."
+    "sales.order_changed": "La cuenta ha cambiado mientras se cobraba (se cambi\xF3, a\xF1adi\xF3, anul\xF3, quit\xF3 o cobr\xF3 una l\xEDnea, se puso o se quit\xF3 un descuento, o la cuenta se dividi\xF3, se junt\xF3 o se cerr\xF3). No se ha cobrado ni cambiado nada: revisa las l\xEDneas y vuelve a intentarlo."
   },
   ui: {
     sales: "Ventas",
@@ -5698,6 +5699,7 @@ var es_default = {
     discountTicket: "Descuento del ticket",
     discountApply: "Aplicar",
     discountRemove: "Quitar",
+    ticketDiscountFailed: "No se ha podido guardar ese descuento. La cuenta sigue con el descuento que ten\xEDa.",
     actionVoid: "Anular",
     voidTitle: "Anular la venta {number}",
     voidExplain: "La venta queda registrada como anulada; caja y stock se revierten una sola vez. El motivo es obligatorio.",
@@ -5900,7 +5902,7 @@ var es_default = {
     voidReasonChanged: "El cliente lo cambia",
     voidReasonSoldOut: "Agotado",
     voidReasonDuplicate: "Pedido dos veces",
-    errorOrderChanged: "La cuenta ha cambiado mientras se cobraba: se cambi\xF3, a\xF1adi\xF3, anul\xF3, quit\xF3 o cobr\xF3 una l\xEDnea desde otro dispositivo, o la cuenta se dividi\xF3 o se junt\xF3. No se ha cobrado nada; la cuenta se ha vuelto a cargar, rev\xEDsala y vuelve a cobrar."
+    errorOrderChanged: "La cuenta ha cambiado mientras se cobraba: se cambi\xF3, a\xF1adi\xF3, anul\xF3, quit\xF3 o cobr\xF3 una l\xEDnea o se puso o se quit\xF3 un descuento desde otro dispositivo, o la cuenta se dividi\xF3 o se junt\xF3. No se ha cobrado nada; la cuenta se ha vuelto a cargar, rev\xEDsala y vuelve a cobrar."
   },
   widgets: {
     "sales.today": {
@@ -12107,7 +12109,7 @@ var ErpPosTouch = class extends i3 {
       this.ticketDiscountApproved = overCap;
       return true;
     } catch (e8) {
-      this.error = e8 instanceof Error ? e8.message : String(e8);
+      this.error = domainErrorText(CATALOG2, erplora2().locale, e8) || t5("ui.ticketDiscountFailed");
       return false;
     }
   }
@@ -12153,7 +12155,7 @@ var ErpPosTouch = class extends i3 {
       await updateOrderLineDiscount(erplora2(), this.orderId, { ...line, discount }, value, overCap);
       this.cart = this.cart.map((l3) => l3 === line ? { ...l3, discount, discountApproved: overCap ? true : void 0 } : l3);
     } catch (e8) {
-      this.error = e8 instanceof Error ? e8.message : String(e8);
+      this.error = domainErrorText(CATALOG2, erplora2().locale, e8) || t5("ui.lineChangeFailed");
     }
   }
   // The pinpad types the MAJOR unit («20» = 20 €); the sale contract is MINOR units (ADR-0007/0123),
@@ -12640,12 +12642,26 @@ var ErpPosTouch = class extends i3 {
   /** Reads the open check again after a checkout refused because it changed (sales#545). A read
    *  that fails keeps the cart on screen: the sentence already says to check it. Marks of lines
    *  that left are dropped by `updated()` (sales#449); the old valuation is dropped HERE, or the
-   *  sheet keeps showing the old total until the new one answers. */
+   *  sheet keeps showing the old total until the new one answers.
+   *
+   *  sales#553: the ticket discount is read again too (the line ones come back with the lines):
+   *  the checkout is refused when the discount it charges is not the check's, so keeping the old
+   *  one on screen would get the next «Charge» refused again. A check the list no longer has open
+   *  leaves the discount as it was: there is nothing to replace it with. */
   async reloadChangedCheck(orderId) {
+    let check;
     try {
-      this.cart = await loadOrderLines(erplora2(), orderId);
+      [this.cart, check] = await Promise.all([
+        loadOrderLines(erplora2(), orderId),
+        listOpenChecks(erplora2()).then((checks) => checks.find((c5) => c5.id === orderId))
+      ]);
     } catch {
       return;
+    }
+    if (check) {
+      this.ticketDiscount = check.discount ?? 0;
+      this.ticketDiscountAmount = check.discount_amount ?? 0;
+      this.ticketDiscountApproved = check.discountApproved ?? false;
     }
     this.dropValuation();
   }

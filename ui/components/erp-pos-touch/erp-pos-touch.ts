@@ -4530,7 +4530,9 @@ export class ErpPosTouch extends LitElement {
       this.ticketDiscountApproved = overCap;
       return true;
     } catch (e) {
-      this.error = e instanceof Error ? e.message : String(e);
+      // sales#553: by the refusal's CODE (`sales.order_changed` when a checkout of the check won the
+      // race), never the server's raw sentence.
+      this.error = domainErrorText(CATALOG, erplora().locale, e) || t('ui.ticketDiscountFailed');
       return false;
     }
   }
@@ -4576,7 +4578,8 @@ export class ErpPosTouch extends LitElement {
       await updateOrderLineDiscount(erplora(), this.orderId, { ...line, discount }, value, overCap);
       this.cart = this.cart.map((l) => (l === line ? { ...l, discount, discountApproved: overCap ? true : undefined } : l));
     } catch (e) {
-      this.error = e instanceof Error ? e.message : String(e);
+      // sales#553: same rule as every other refused line change (sales#438).
+      this.error = domainErrorText(CATALOG, erplora().locale, e) || t('ui.lineChangeFailed');
     }
   }
   // The pinpad types the MAJOR unit («20» = 20 €); the sale contract is MINOR units (ADR-0007/0123),
@@ -5234,12 +5237,26 @@ export class ErpPosTouch extends LitElement {
   /** Reads the open check again after a checkout refused because it changed (sales#545). A read
    *  that fails keeps the cart on screen: the sentence already says to check it. Marks of lines
    *  that left are dropped by `updated()` (sales#449); the old valuation is dropped HERE, or the
-   *  sheet keeps showing the old total until the new one answers. */
+   *  sheet keeps showing the old total until the new one answers.
+   *
+   *  sales#553: the ticket discount is read again too (the line ones come back with the lines):
+   *  the checkout is refused when the discount it charges is not the check's, so keeping the old
+   *  one on screen would get the next «Charge» refused again. A check the list no longer has open
+   *  leaves the discount as it was: there is nothing to replace it with. */
   private async reloadChangedCheck(orderId: string): Promise<void> {
+    let check: OpenCheck | undefined;
     try {
-      this.cart = await loadOrderLines(erplora(), orderId);
+      [this.cart, check] = await Promise.all([
+        loadOrderLines(erplora(), orderId),
+        listOpenChecks(erplora()).then((checks) => checks.find((c) => c.id === orderId)),
+      ]);
     } catch {
       return;
+    }
+    if (check) {
+      this.ticketDiscount = check.discount ?? 0;
+      this.ticketDiscountAmount = check.discount_amount ?? 0;
+      this.ticketDiscountApproved = check.discountApproved ?? false;
     }
     this.dropValuation();
   }

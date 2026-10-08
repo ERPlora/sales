@@ -2992,6 +2992,11 @@ pub fn complete_sale_over_limit_pure(input: Value) -> Result<Output, String> {
 ///   otherwise stay unpaid on a closed check. The rows it charges are the ones it names or, when
 ///   it names none (the API, the assistant), the lines it read. A partial charge leaves the rest
 ///   open on purpose and proves nothing about it.
+///
+/// sales#553 — the DISCOUNT doors (line and ticket) queue on the same row too, and the sale takes
+/// both discounts from the payload, so each row an item names also has to still carry the percent
+/// the sale charges it at (`Null` for a row only marked as paid), and the check the ticket percent
+/// and, when this charge closes it, the fixed amount (`sales._order_discount_live`).
 fn check_queue_ops(payload: &Value, items: &[Value], context: &Value) -> Vec<Operation> {
     let order_id = payload.get("order_id").map(as_str).unwrap_or_default();
     if order_id.is_empty() {
@@ -3002,11 +3007,12 @@ fn check_queue_ops(payload: &Value, items: &[Value], context: &Value) -> Vec<Ope
     let by_item = items.iter().map(|it| {
         let quantity = line_qty(it).map_or(Value::Null, |q| json!(q));
         let is_gift = json!(it.get("is_gift").map(as_bool).unwrap_or(false) as i64);
-        (field(it, "order_item_id"), quantity, is_gift)
+        let discount = json!(it.get("discount").map(|v| as_f64(v, 0.0)).unwrap_or(0.0));
+        (field(it, "order_item_id"), quantity, is_gift, discount)
     });
-    let by_mark = marked.iter().map(|id| (as_str(id), Value::Null, Value::Null));
+    let by_mark = marked.iter().map(|id| (as_str(id), Value::Null, Value::Null, Value::Null));
     let mut charged: Vec<String> = Vec::new();
-    for (line_id, quantity, is_gift) in by_item.chain(by_mark) {
+    for (line_id, quantity, is_gift, discount) in by_item.chain(by_mark) {
         if line_id.is_empty() || charged.contains(&line_id) {
             continue;
         }
@@ -3015,10 +3021,12 @@ fn check_queue_ops(payload: &Value, items: &[Value], context: &Value) -> Vec<Ope
         p.insert("line_id".into(), json!(line_id));
         p.insert("quantity".into(), quantity);
         p.insert("is_gift".into(), is_gift);
+        p.insert("discount_percent".into(), discount);
         ops.push(Operation::sql("sales._order_line_live", p));
         charged.push(line_id);
     }
-    if !payload.get("keep_order_open").map(as_bool).unwrap_or(false) {
+    let closes = !payload.get("keep_order_open").map(as_bool).unwrap_or(false);
+    if closes {
         if charged.is_empty() {
             charged = tax::read_rows(context, "sales.order.lines")
                 .unwrap_or_default()
@@ -3032,6 +3040,18 @@ fn check_queue_ops(payload: &Value, items: &[Value], context: &Value) -> Vec<Ope
         p.insert("line_ids".into(), json!(charged));
         ops.push(Operation::sql("sales._order_lines_seen", p));
     }
+    // sales#553 — the TICKET discount the sale charges is the payload's, not the check's: the
+    // check has to still hold it. The percent applies to every charge; the fixed amount only to
+    // the one that closes the check (a partial charge does not carry it), so a partial compares
+    // the percent alone.
+    let mut p = Map::new();
+    p.insert("order_id".into(), json!(order_id));
+    p.insert("discount_percent".into(), json!(payload.get("discount_percent").map(|v| as_f64(v, 0.0)).unwrap_or(0.0)));
+    p.insert(
+        "discount_amount".into(),
+        if closes { json!(as_cents(payload.get("discount_amount").unwrap_or(&Value::Null), 0)) } else { Value::Null },
+    );
+    ops.push(Operation::sql("sales._order_discount_live", p));
     ops
 }
 
@@ -4765,6 +4785,19 @@ fn set_order_discount_inner(input: Value, rule: CapRule) -> Result<Output, Refus
         }
     }
 
+    // sales#553 — the door queues on the check (`sales._order_lock`), whose «still open?» answers
+    // `sales.order_changed`: right for a check charged while this waited, wrong for one that was
+    // never open or is not ours. That one is refused by name here, from the check it read.
+    let open = tax::read_rows(&context, "sales.order.get")
+        .and_then(|rows| rows.first().copied())
+        .is_some_and(|row| field(row, "status") == "open");
+    if !open {
+        return Err(reject(
+            "sales.order_unavailable",
+            format!("`{order_id}` is not an open order of this business"),
+        ));
+    }
+
     let discounted = percent > 0.0 || amount.unwrap_or(0) > 0;
     enforce_discount_policy(&context, discounted)?;
 
@@ -4813,7 +4846,12 @@ fn set_order_discount_inner(input: Value, rule: CapRule) -> Result<Output, Refus
     // whatever it just set went through the everyday cap and needs no standing approval.
     params.insert("discount_approved".into(), if rule == CapRule::Approved { json!(1) } else { json!(0) });
 
-    Ok(Output::new().with_operation(Operation::sql("sales._set_order_discount", params)))
+    // sales#553 — first in the queue of the check: a checkout of it in flight is waited for, and
+    // this is then refused (`sales.order_changed`) instead of discounting a check already charged
+    // at the old amount.
+    Ok(Output::new()
+        .with_operation(order_lock_op(&order_id))
+        .with_operation(Operation::sql("sales._set_order_discount", params)))
 }
 
 pub fn set_order_line_discount_pure(input: Value) -> Result<Output, String> {
@@ -4916,7 +4954,11 @@ fn set_order_line_discount_inner(input: Value, rule: CapRule) -> Result<Output, 
 
     // The internal command recomputes the check's provisional total in the same transaction
     // (`order_recompute_total.sql`, second statement), with its row guard anchored to the line write.
-    Ok(Output::new().with_operation(Operation::sql("sales._set_order_line_discount", params)))
+    // sales#553 — queued on the check first, like every door that changes a line of it: a line
+    // charged while this waited is refused (`sales.order_changed`), never discounted after the sale.
+    Ok(Output::new()
+        .with_operation(order_lock_op(&order_id))
+        .with_operation(Operation::sql("sales._set_order_line_discount", params)))
 }
 
 /// sales#394 — see `update_order_line_inner`.
@@ -13452,6 +13494,7 @@ mod tests {
             if !settings.is_null() {
                 reads.insert("sales.settings.get".into(), settings);
             }
+            reads.insert("sales.order.get".into(), json!([{ "id": "ord-1", "status": "open" }]));
             reads.insert("sales.order.lines".into(), open_lines());
             json!({
                 "payload": payload,
@@ -13470,8 +13513,9 @@ mod tests {
             assert_eq!(err.code, "sales.discount_over_limit", "{err:?}");
 
             let out = set_order_discount_over_limit_pure(inp).accepted("the manager authorised it");
-            assert_eq!(out.operations.len(), 1, "{out:?}");
-            let op = &out.operations[0];
+            // sales#553: the queue on the check, then the write.
+            assert_eq!(out.operations.len(), 2, "{out:?}");
+            let op = &out.operations[1];
             assert_eq!(op.command, "sales._set_order_discount");
             assert_eq!(op.params["order_id"], json!("ord-1"));
             assert_eq!(op.params["discount_percent"], json!(90.0));
@@ -13482,7 +13526,7 @@ mod tests {
         fn a_percent_within_the_cap_goes_through_the_usual_door() {
             let inp = set_discount(json!({ "order_id": "ord-1", "discount_percent": 10, "discount_amount": 0 }), capped());
             let out = set_order_discount_pure(inp).accepted("10 % with the cap at 10 is the cashier's");
-            let op = &out.operations[0];
+            let op = &out.operations[1];
             assert_eq!(op.command, "sales._set_order_discount");
             assert_eq!(op.params["discount_percent"], json!(10.0));
             assert_eq!(op.params["discount_amount"], json!(0));
@@ -13658,17 +13702,19 @@ mod tests {
         fn only_the_managers_door_marks_the_discount_as_approved() {
             let inp = json!({
                 "payload": { "order_id": "ord-1", "discount_percent": 90, "discount_amount": 0 },
-                "context": { "reads": { "sales.settings.get": [{ "max_discount_percent": 10 }] } },
+                "context": { "reads": { "sales.settings.get": [{ "max_discount_percent": 10 }],
+                                        "sales.order.get": [{ "id": "ord-1", "status": "open" }] } },
             });
             let out = set_order_discount_over_limit_pure(inp).accepted("the manager's door");
-            assert_eq!(out.operations[0].params["discount_approved"], json!(1), "{out:?}");
+            assert_eq!(out.operations[1].params["discount_approved"], json!(1), "{out:?}");
 
             let inp = json!({
                 "payload": { "order_id": "ord-1", "discount_percent": 5, "discount_amount": 0 },
-                "context": { "reads": { "sales.settings.get": [{ "max_discount_percent": 10 }] } },
+                "context": { "reads": { "sales.settings.get": [{ "max_discount_percent": 10 }],
+                                        "sales.order.get": [{ "id": "ord-1", "status": "open" }] } },
             });
             let out = set_order_discount_pure(inp).accepted("the usual door");
-            assert_eq!(out.operations[0].params["discount_approved"], json!(0), "the usual door clears it: {out:?}");
+            assert_eq!(out.operations[1].params["discount_approved"], json!(0), "the usual door clears it: {out:?}");
         }
     }
 
@@ -14317,11 +14363,12 @@ mod tests {
         let out = sale(two_line_check_input());
         let commands = commands_of(&out);
         assert_eq!(
-            &commands[..5],
+            &commands[..6],
             // sales#546: a checkout that closes the check also proves, before writing, that it
-            // charges every live line of it (`sales._order_lines_seen`).
+            // charges every live line of it (`sales._order_lines_seen`); sales#553: and the
+            // ticket discount it charges (`sales._order_discount_live`).
             &["sales._order_lock", "sales._order_line_live", "sales._order_line_live",
-              "sales._order_lines_seen", "sales._bump_counter"],
+              "sales._order_lines_seen", "sales._order_discount_live", "sales._bump_counter"],
             "the queue and the re-check go first: once the sale is written it is too late"
         );
         assert_eq!(out.operations[0].params["order_id"], json!("ord-1"));
@@ -14489,9 +14536,9 @@ mod tests {
         let out = sale(two_line_check_input());
         let commands = commands_of(&out);
         assert_eq!(
-            &commands[..5],
+            &commands[..6],
             &["sales._order_lock", "sales._order_line_live", "sales._order_line_live",
-              "sales._order_lines_seen", "sales._bump_counter"],
+              "sales._order_lines_seen", "sales._order_discount_live", "sales._bump_counter"],
             "proved before anything is written"
         );
         let seen = seen_by(&out);
@@ -14526,5 +14573,162 @@ mod tests {
             tax_catalog(),
         ));
         assert!(seen_by(&counter).is_empty(), "a counter sale has no check");
+    }
+
+    // ── sales#553: a discount put on or taken off while the check is being charged ────────────
+    //
+    // sales#546 queued every door that changes a line on the check's row, but not the discount
+    // doors: a line or ticket discount committed between the checkout's read and its transaction
+    // left the sale charging the old amount and the check storing the new discount. The four
+    // discount doors now queue on the same row first, and the checkout re-checks the discount it
+    // charges against the live check: each row's own percent (`sales._order_line_live`) and the
+    // ticket's (`sales._order_discount_live`).
+
+    /// A live, unfired row of two coffees at 1,50 € on the open check `ord-1`.
+    fn coffee_line_input(percent: f64) -> Value {
+        json!({
+            "payload": { "order_id": "ord-1", "line_id": "line-1", "discount_percent": percent },
+            "context": { "reads": {
+                "sales.order.get": [{ "id": "ord-1", "status": "open" }],
+                "sales.order.lines": [{
+                    "id": "line-1", "order_id": "ord-1", "product_id": "p-cafe", "product_name": "Café",
+                    "quantity": 2_000_000, "unit_price": 150, "is_gift": 0, "line_total": 300,
+                    "discount_percent": 0, "modifiers": "[]", "price_quantity_value": 1_000_000,
+                    "fired_at": null, "combo": "{}", "combo_group_ref": null,
+                }],
+            } },
+        })
+    }
+
+    /// The ticket discount door on the open check `ord-1` of one 3,00 € line.
+    fn ticket_discount_input(percent: f64, check: Value) -> Value {
+        json!({
+            "payload": { "order_id": "ord-1", "discount_percent": percent },
+            "context": { "reads": {
+                "sales.order.get": check,
+                "sales.order.lines": [{ "id": "l1", "line_total": 300, "is_gift": 0 }],
+            } },
+        })
+    }
+
+    #[test]
+    fn a_line_discount_queues_on_the_check_before_writing_it() {
+        for (door, out) in [
+            ("usual", set_order_line_discount_pure(coffee_line_input(10.0))),
+            ("manager's", set_order_line_discount_over_limit_pure(coffee_line_input(10.0))),
+        ] {
+            let out = out.accepted("10 % on two coffees");
+            assert_eq!(
+                &commands_of(&out)[..2],
+                &["sales._order_lock", "sales._set_order_line_discount"],
+                "the {door} door waits behind a checkout of the same check before it writes"
+            );
+            assert_eq!(out.operations[0].params["order_id"], json!("ord-1"));
+        }
+    }
+
+    #[test]
+    fn a_ticket_discount_queues_on_the_check_before_writing_it() {
+        let open = json!([{ "id": "ord-1", "status": "open" }]);
+        for (door, out) in [
+            ("usual", set_order_discount_pure(ticket_discount_input(10.0, open.clone()))),
+            ("manager's", set_order_discount_over_limit_pure(ticket_discount_input(10.0, open.clone()))),
+        ] {
+            let out = out.accepted("10 % on the check");
+            assert_eq!(
+                &commands_of(&out)[..2],
+                &["sales._order_lock", "sales._set_order_discount"],
+                "the {door} door waits behind a checkout of the same check before it writes"
+            );
+            assert_eq!(out.operations[0].params["order_id"], json!("ord-1"));
+        }
+    }
+
+    #[test]
+    fn a_ticket_discount_on_a_check_that_is_not_open_is_refused_as_unavailable() {
+        // Queuing on a check that does not exist would answer «the check changed while it was
+        // being charged»: a check that is not open (or not ours) is refused by name before that.
+        for (label, check) in [
+            ("no such check", json!([])),
+            ("a charged check", json!([{ "id": "ord-1", "status": "completed" }])),
+        ] {
+            let err = set_order_discount_pure(ticket_discount_input(10.0, check)).refused(label);
+            assert_eq!(err.code, "sales.order_unavailable", "{label}: {err:?}");
+        }
+    }
+
+    #[test]
+    fn the_checkout_rechecks_the_line_discount_it_charges() {
+        // The sale takes each line's discount from the payload (`item.discount`, none = 0 %): that
+        // is what the live row has to still say.
+        let mut inp = two_line_check_input();
+        inp["payload"]["items"][0]["discount"] = json!(10);
+        let out = sale(inp);
+        let lives = live_checks(&out);
+        assert_eq!(lives.len(), 2);
+        assert_eq!(lives[0]["discount_percent"], json!(10.0));
+        assert_eq!(lives[1]["discount_percent"], json!(0.0), "no discount sent is 0 % charged");
+
+        // A row only marked as paid (`line_ids`, no item) says nothing about its discount.
+        let mut inp = two_line_check_input();
+        for it in inp["payload"]["items"].as_array_mut().into_iter().flatten() {
+            it.as_object_mut().map(|o| o.remove("order_item_id"));
+        }
+        inp["payload"]["keep_order_open"] = json!(true);
+        inp["payload"]["line_ids"] = json!(["line-a"]);
+        let lives_out = sale(inp);
+        let lives = live_checks(&lives_out);
+        assert_eq!(lives[0]["discount_percent"], Value::Null);
+    }
+
+    fn ticket_checks(out: &Output) -> Vec<&Map<String, Value>> {
+        out.operations.iter().filter(|o| o.command == "sales._order_discount_live").map(|o| &o.params).collect()
+    }
+
+    #[test]
+    fn closing_the_check_rechecks_the_ticket_discount_it_charges() {
+        let mut inp = two_line_check_input();
+        inp["payload"]["discount_percent"] = json!(5);
+        inp["payload"]["discount_amount"] = json!(30);
+        let out = sale(inp);
+        let commands = commands_of(&out);
+        assert_eq!(
+            &commands[..6],
+            &["sales._order_lock", "sales._order_line_live", "sales._order_line_live",
+              "sales._order_lines_seen", "sales._order_discount_live", "sales._bump_counter"],
+            "proved before anything is written"
+        );
+        let ticket = ticket_checks(&out);
+        assert_eq!(ticket[0]["order_id"], json!("ord-1"));
+        assert_eq!(ticket[0]["discount_percent"], json!(5.0));
+        assert_eq!(ticket[0]["discount_amount"], json!(30));
+
+        // No discount sent is none charged: the check has to hold none either.
+        let out = sale(two_line_check_input());
+        let ticket = ticket_checks(&out);
+        assert_eq!((&ticket[0]["discount_percent"], &ticket[0]["discount_amount"]), (&json!(0.0), &json!(0)));
+    }
+
+    #[test]
+    fn a_partial_charge_rechecks_the_ticket_percent_but_not_the_amount() {
+        // A partial charge applies the ticket percent to the lines it charges, but the fixed
+        // amount only when the check is closed (the till does not send it): only the percent is
+        // compared.
+        let mut inp = two_line_check_input();
+        inp["payload"]["keep_order_open"] = json!(true);
+        inp["payload"]["line_ids"] = json!(["line-a"]);
+        inp["payload"]["discount_percent"] = json!(5);
+        let out = sale(inp);
+        let ticket = ticket_checks(&out);
+        assert_eq!(ticket.len(), 1);
+        assert_eq!((&ticket[0]["discount_percent"], &ticket[0]["discount_amount"]), (&json!(5.0), &Value::Null));
+    }
+
+    #[test]
+    fn a_counter_sale_has_no_ticket_discount_to_recheck() {
+        let items = json!([{ "product_id": "p-burger", "product_name": "Hamburguesa",
+                             "price": 900, "quantity": 1_000_000 }]);
+        let out = sale(input_fiscal(items, burger_catalog(900), tax_catalog()));
+        assert!(ticket_checks(&out).is_empty(), "{:?}", commands_of(&out));
     }
 }

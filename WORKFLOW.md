@@ -356,11 +356,11 @@ impide la pantalla está como hueco en su flujo.
   responsable, y solo si la cuenta está abierta y la línea sin cobrar (`sales.order_line_not_voidable`);
   pedir que se quite la rechaza (`sales.order_line_not_removable`). Cobrar la cuenta y anular o
   quitar una de sus líneas a la vez: gana uno y el otro se rechaza; una línea anulada o quitada nunca
-  entra en la venta (`sales.order_changed`). Cambiar la cantidad o la invitación de una línea,
-  añadir una, partirla, dividir la cuenta o juntarla también esperan al cobro de esa cuenta: lo
-  que llega tarde se rechaza (`sales.order_changed`), y el cobro no cobra nada si lo que cobra ya
-  no coincide con la cuenta (otra cantidad, otra invitación o, al cerrarla, una línea sin cobrar
-  que no estaba en el cobro). Dividir y juntar mueven líneas enteras y lo ya cobrado no viaja.
+  entra en la venta (`sales.order_changed`). Cambiar la cantidad, la invitación o el descuento de una línea,
+  añadir una, partirla, poner o quitar el descuento de la cuenta, dividirla o juntarla también
+  esperan al cobro de esa cuenta: lo que llega tarde se rechaza (`sales.order_changed`), y el cobro
+  no cobra nada si lo que cobra ya no coincide con la cuenta (otra cantidad, otra invitación, otro
+  descuento de línea o de tique o, al cerrarla, una línea sin cobrar que no estaba en el cobro). Dividir y juntar mueven líneas enteras y lo ya cobrado no viaja.
 - **Permisos** (si el permiso es de responsable, el hub pide su PIN): montar la cuenta, enviar a
   cocina, dividir, juntar y descuento hasta el tope: empleado; cobrar: cajero y responsable;
   descuento por encima del tope, anular una cuenta abierta o una línea ya enviada, anular y devolver
