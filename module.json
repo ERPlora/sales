@@ -481,7 +481,7 @@
       },
       "schema": "schemas/complete_sale.json",
       "ai": {
-        "description": "Completes and records a sale with its line items and payment. Optional staff_id attributes the sale to the professional who performed it; optional appointment_id traces a sale created from an appointment (emits sales.sale.created_from_appointment). document_type 'invoice' (a complete invoice) needs customer_name, customer_tax_id and customer_address; ask the user for them, or charge it as 'ticket'. Charging an open order (order_id) waits for any void or removal of its lines in flight; if a line it charges was voided, removed or charged meanwhile, or the order was closed, nothing is charged and it is refused with sales.order_changed: read the order again and charge what is left (sales#545)."
+        "description": "Completes and records a sale with its line items and payment. Optional staff_id attributes the sale to the professional who performed it; optional appointment_id traces a sale created from an appointment (emits sales.sale.created_from_appointment). document_type 'invoice' (a complete invoice) needs customer_name, customer_tax_id and customer_address; ask the user for them, or charge it as 'ticket'. Charging an open order (order_id) waits for any change, addition, void, removal, split or join of its lines in flight; if a line it charges was voided, removed or charged meanwhile, its quantity or gift mark changed, a line was added or moved so the charge would leave it out, or the order was closed, nothing is charged and it is refused with sales.order_changed: read the order again and charge what is left (sales#545, sales#546)."
       }
     },
     "sales.complete_sale_over_limit": {
@@ -795,7 +795,14 @@
       "permission": "sales.add_sale",
       "sql": [
         "commands/order_update_line.sql"
-      ]
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "statement": "commands/order_update_line.sql",
+        "error": "sales.order_changed",
+        "message": "The check changed while it was being charged: a line was changed, added, voided, removed or charged, or the check was split, joined, closed or charged. Nothing was charged or changed; load the check again."
+      }
     },
     "sales._mark_lines_fired": {
       "permission": "sales.add_sale",
@@ -848,7 +855,7 @@
         "n": 1,
         "statement": "commands/_order_open.sql",
         "error": "sales.order_changed",
-        "message": "The check changed while it was being charged: a line was voided, removed or charged, or the check was closed. Nothing was charged; load the check again."
+        "message": "The check changed while it was being charged: a line was changed, added, voided, removed or charged, or the check was split, joined, closed or charged. Nothing was charged or changed; load the check again."
       }
     },
     "sales._order_line_live": {
@@ -861,7 +868,20 @@
         "n": 1,
         "statement": "commands/_order_line_live.sql",
         "error": "sales.order_changed",
-        "message": "The check changed while it was being charged: a line was voided, removed or charged, or the check was closed. Nothing was charged; load the check again."
+        "message": "The check changed while it was being charged: a line was changed, added, voided, removed or charged, or the check was split, joined, closed or charged. Nothing was charged or changed; load the check again."
+      }
+    },
+    "sales._order_lines_seen": {
+      "permission": "sales.add_sale",
+      "sql": [
+        "commands/_order_lines_seen.sql"
+      ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "statement": "commands/_order_lines_seen.sql",
+        "error": "sales.order_changed",
+        "message": "The check changed while it was being charged: a line was changed, added, voided, removed or charged, or the check was split, joined, closed or charged. Nothing was charged or changed; load the check again."
       }
     },
     "sales.order.add_line": {
@@ -894,7 +914,7 @@
       },
       "schema": "schemas/add_order_line.json",
       "ai": {
-        "description": "Adds a line item to an open order and recomputes its provisional total (ADR-0141). The unit price is resolved SERVER-SIDE from the product catalogue (and, for a set menu, from the combo catalogue), and each supplement's delta from the modifier catalogue (sales#200): the check is charged at the price the line had when it was ordered (sales#175), so the price on the row decides money and the caller does not set it."
+        "description": "Adds a line item to an open order and recomputes its provisional total (ADR-0141). The unit price is resolved SERVER-SIDE from the product catalogue (and, for a set menu, from the combo catalogue), and each supplement's delta from the modifier catalogue (sales#200): the check is charged at the price the line had when it was ordered (sales#175), so the price on the row decides money and the caller does not set it. It queues behind a checkout of the same order: if that order was charged or closed meanwhile, nothing is added and it is refused with sales.order_changed (sales#546)."
       }
     },
     "sales.order.add_open_line": {
@@ -927,7 +947,7 @@
       },
       "schema": "schemas/add_order_line.json",
       "ai": {
-        "description": "Adds an OPEN-PRICE line (free amount, no catalogue product) to an open order and recomputes its provisional total. Same effect as sales.order.add_line but gated by sales.sell_open_price: nothing contradicts a typed amount, so the cashier needs the permission or a manager's PIN approval (ADR-0238)."
+        "description": "Adds an OPEN-PRICE line (free amount, no catalogue product) to an open order and recomputes its provisional total. Same effect as sales.order.add_line but gated by sales.sell_open_price: nothing contradicts a typed amount, so the cashier needs the permission or a manager's PIN approval (ADR-0238). Like add_line, it queues behind a checkout of the same order (sales#546)."
       }
     },
     "sales.order.update_line": {
@@ -955,7 +975,7 @@
       },
       "schema": "schemas/update_order_line.json",
       "ai": {
-        "description": "Updates the quantity of a line in an open order and recomputes its provisional total (ADR-0141) — and, through it, whether the line is a gift (is_gift/gift_reason) and its free-text note (notes). The line amount is priced SERVER-SIDE from the line's own row (sales#394): frozen unit price plus frozen supplements, times the new quantity, with the discount the line already carries; the caller never sends an amount. Omit `quantity` to keep the line's own. The discount of a line does not go through here (sales#385): use sales.order.set_line_discount / sales.order.set_line_discount_over_limit."
+        "description": "Updates the quantity of a line in an open order and recomputes its provisional total (ADR-0141) — and, through it, whether the line is a gift (is_gift/gift_reason) and its free-text note (notes). The line amount is priced SERVER-SIDE from the line's own row (sales#394): frozen unit price plus frozen supplements, times the new quantity, with the discount the line already carries; the caller never sends an amount. Omit `quantity` to keep the line's own. The discount of a line does not go through here (sales#385): use sales.order.set_line_discount / sales.order.set_line_discount_over_limit. It queues behind a checkout of the same order: if that sale charges the line meanwhile, or the order was charged, split or joined, it changes nothing and is refused with sales.order_changed; read the order again (sales#546)."
       }
     },
     "sales.order.set_line_staff": {
@@ -999,7 +1019,7 @@
       },
       "schema": "schemas/split_order_line.json",
       "ai": {
-        "description": "Splits a line of N services of an open order into N lines of ONE unit each, keeping the check worth the same and recomputing its provisional total in the same transaction (sales#242 / ADR-0422). The line the payload names keeps its id and drops to one unit; the new ids come back in new_ids. It exists because the unit a voucher session buys is the LINE: services enforces one redemption per (checkout_ref, line_ref), so a line of «haircut x 2» would hand out two haircuts for one session. Refused with sales.line_not_splittable on a line already fired to production, a comp, a set menu, a fractional quantity, a line of one, or beyond the ceiling of units one split may write."
+        "description": "Splits a line of N services of an open order into N lines of ONE unit each, keeping the check worth the same and recomputing its provisional total in the same transaction (sales#242 / ADR-0422). The line the payload names keeps its id and drops to one unit; the new ids come back in new_ids. It exists because the unit a voucher session buys is the LINE: services enforces one redemption per (checkout_ref, line_ref), so a line of «haircut x 2» would hand out two haircuts for one session. Refused with sales.line_not_splittable on a line already fired to production, a comp, a set menu, a fractional quantity, a line of one, or beyond the ceiling of units one split may write. It queues behind a checkout of the same order: if that sale charges the line meanwhile, or the order was charged, split or joined, it changes nothing and is refused with sales.order_changed; read the order again (sales#546)."
       }
     },
     "sales.order.remove_line": {
@@ -1053,12 +1073,20 @@
       "transaction": true,
       "schema": "schemas/split_order.json",
       "sql": [
+        "commands/_order_lock.sql",
         "commands/order_split_create.sql",
         "commands/order_split_move_lines.sql",
         "commands/order_split_recompute_totals.sql"
       ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "statement": "commands/order_split_create.sql",
+        "error": "sales.order_changed",
+        "message": "The check changed while it was being charged: a line was changed, added, voided, removed or charged, or the check was split, joined, closed or charged. Nothing was charged or changed; load the check again."
+      },
       "ai": {
-        "description": "Splits an open order in two (sales#61): the listed lines move to a NEW order, whose id comes back as new_ids[0]. Called when the floor opens a second check on a table (tables.sessions.split): tables owns the seating, sales owns the lines and the amounts. With no line_ids the second check opens blank. Nothing is prorated here — whole rows travel with their line_total, tax_category_key, round_no and fired_at intact, and BOTH totals are recomputed from their live lines, so the two halves add up to the original to the cent."
+        "description": "Splits an open order in two (sales#61): the listed lines move to a NEW order, whose id comes back as new_ids[0]. Called when the floor opens a second check on a table (tables.sessions.split): tables owns the seating, sales owns the lines and the amounts. With no line_ids the second check opens blank. Nothing is prorated here — whole rows travel with their line_total, tax_category_key, round_no and fired_at intact, and BOTH totals are recomputed from their live lines, so the two halves add up to the original to the cent. It queues behind a checkout of the same order: if that order was charged or closed meanwhile, nothing moves and it is refused with sales.order_changed (sales#546)."
       }
     },
     "sales.order.merge": {
@@ -1066,15 +1094,24 @@
       "transaction": true,
       "schema": "schemas/merge_orders.json",
       "sql": [
+        "commands/order_merge_lock.sql",
+        "commands/order_merge_open.sql",
         "commands/order_merge_lines.sql",
         "commands/order_merge_void_source.sql",
         "commands/order_merge_recompute_totals.sql"
       ],
+      "expect_rows": {
+        "op": "min",
+        "n": 1,
+        "statement": "commands/order_merge_open.sql",
+        "error": "sales.order_changed",
+        "message": "The check changed while it was being charged: a line was changed, added, voided, removed or charged, or the check was split, joined, closed or charged. Nothing was charged or changed; load the check again."
+      },
       "emit": [
         "sales.order.merged"
       ],
       "ai": {
-        "description": "Joins two open orders into one (sales#61): every unpaid line of from_order_id moves to to_order_id and the source is voided. Called when two tables that BOTH ordered are merged (tables.sessions.merged) — tables cannot resolve that case because it does not know the lines. Lines are MOVED, not re-created, so what was already fired to the kitchen is not sent twice; both totals are recomputed from their live lines. It announces the join with sales.order.merged (from_order_id, to_order_id) so the kitchen hands the rounds of the absorbed order to the one that stays (kitchen#162). Replaying it changes no data; the event is raised again and listeners must check the source order is voided."
+        "description": "Joins two open orders into one (sales#61): every unpaid line of from_order_id moves to to_order_id and the source is voided. Called when two tables that BOTH ordered are merged (tables.sessions.merged) — tables cannot resolve that case because it does not know the lines. Lines are MOVED, not re-created, so what was already fired to the kitchen is not sent twice; both totals are recomputed from their live lines. It announces the join with sales.order.merged (from_order_id, to_order_id) so the kitchen hands the rounds of the absorbed order to the one that stays (kitchen#162). Replaying it changes no data; the event is raised again and listeners must check the source order is voided. It queues behind a checkout of either order: if the order that stays was charged or closed meanwhile, nothing moves and it is refused with sales.order_changed (sales#546)."
       }
     },
     "sales.order.void": {

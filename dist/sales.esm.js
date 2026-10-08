@@ -4716,7 +4716,7 @@ var en_default = {
     "sales.void_requires_credit_note": "This sale carries a full invoice: issue a credit note instead of voiding it.",
     "sales.order_line_not_removable": "That line can no longer be removed: it was already sent to the kitchen (void it with a reason), it was already charged, or it is no longer on an open check.",
     "sales.order_line_not_voidable": "That line cannot be voided: it is not on an open check as a sent, unpaid line, or the reason is missing. Load the check again.",
-    "sales.order_changed": "The check changed while it was being charged (a line was voided, removed or charged, or the check was closed). Nothing was charged: check the lines and charge again."
+    "sales.order_changed": "The check changed while it was being charged (a line was changed, added, voided, removed or charged, or the check was split, joined or closed). Nothing was charged or changed: check the lines and try again."
   },
   ui: {
     sales: "Sales",
@@ -5197,7 +5197,7 @@ var en_default = {
     voidReasonChanged: "Customer changed their mind",
     voidReasonSoldOut: "Sold out",
     voidReasonDuplicate: "Entered twice",
-    errorOrderChanged: "The check changed while it was being charged: a line was voided, removed or charged on another device. Nothing was charged; the check has been reloaded, check it and charge again."
+    errorOrderChanged: "The check changed while it was being charged: a line was changed, added, voided, removed or charged on another device, or the check was split or joined. Nothing was charged; the check has been reloaded, check it and charge again."
   },
   commands: {
     "sales.complete_sale": {
@@ -5419,7 +5419,7 @@ var es_default = {
     "sales.void_requires_credit_note": "Esta venta lleva factura completa: emite una factura rectificativa en vez de anularla.",
     "sales.order_line_not_removable": "Esa l\xEDnea ya no se puede quitar: ya se envi\xF3 a cocina (an\xFAlala con un motivo), ya est\xE1 cobrada o ya no est\xE1 en una cuenta abierta.",
     "sales.order_line_not_voidable": "Esa l\xEDnea no se puede anular: no est\xE1 enviada y sin cobrar en una cuenta abierta, o falta el motivo. Vuelve a cargar la cuenta.",
-    "sales.order_changed": "La cuenta ha cambiado mientras se cobraba (se anul\xF3, quit\xF3 o cobr\xF3 una l\xEDnea, o se cerr\xF3 la cuenta). No se ha cobrado nada: revisa las l\xEDneas y vuelve a cobrar."
+    "sales.order_changed": "La cuenta ha cambiado mientras se cobraba (se cambi\xF3, a\xF1adi\xF3, anul\xF3, quit\xF3 o cobr\xF3 una l\xEDnea, o la cuenta se dividi\xF3, se junt\xF3 o se cerr\xF3). No se ha cobrado ni cambiado nada: revisa las l\xEDneas y vuelve a intentarlo."
   },
   ui: {
     sales: "Ventas",
@@ -5900,7 +5900,7 @@ var es_default = {
     voidReasonChanged: "El cliente lo cambia",
     voidReasonSoldOut: "Agotado",
     voidReasonDuplicate: "Pedido dos veces",
-    errorOrderChanged: "La cuenta ha cambiado mientras se cobraba: se anul\xF3, quit\xF3 o cobr\xF3 una l\xEDnea desde otro dispositivo. No se ha cobrado nada; la cuenta se ha vuelto a cargar, rev\xEDsala y vuelve a cobrar."
+    errorOrderChanged: "La cuenta ha cambiado mientras se cobraba: se cambi\xF3, a\xF1adi\xF3, anul\xF3, quit\xF3 o cobr\xF3 una l\xEDnea desde otro dispositivo, o la cuenta se dividi\xF3 o se junt\xF3. No se ha cobrado nada; la cuenta se ha vuelto a cargar, rev\xEDsala y vuelve a cobrar."
   },
   widgets: {
     "sales.today": {

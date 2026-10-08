@@ -72,7 +72,7 @@ Pasos:
 3. Tras cobrar, la cuenta sigue abierta con lo que falta; lo cobrado ya no vuelve a salir.
 Entra: las líneas marcadas.
 Sale: una venta con esas líneas (avisa: sale.completed); las líneas quedan atadas a su venta y la cuenta sigue abierta (no se avisa de cuenta cerrada, así que la mesa no se libera ni Cocina cierra sus rondas). Si después se anula una de esas ventas, la cuenta sigue abierta y la mesa Ocupada (SALES-F30, TABLES-F19), pero lo que se cobró en ella no vuelve a lo pendiente (sales#551).
-Si falla: los mismos rechazos que un cobro normal, también el de la cuenta que cambió mientras se cobraba: si otro dispositivo anula, quita o cobra una de las líneas marcadas, no se cobra nada, la cuenta se vuelve a leer y la marca de la línea que se fue desaparece (SALES-F01, sales#545); con una sola línea no hay nada que marcar.
+Si falla: los mismos rechazos que un cobro normal, también el de la cuenta que cambió mientras se cobraba: si otro dispositivo anula, quita o cobra una de las líneas marcadas, o le cambia la cantidad o la invitación, no se cobra nada, la cuenta se vuelve a leer y la marca de la línea que se fue desaparece (SALES-F01, sales#545, sales#546); con una sola línea no hay nada que marcar.
 Implicados: KITCHEN-F27, SERVICES-F24, TABLES-F18, REC_PELUQUERIA-F10, REC_RESTAURANTE-F10
 QA: R-07, qa-hub-restaurant §7.09
 
@@ -88,7 +88,7 @@ Pasos:
 4. Cobrar entera la cuenta nueva cierra solo su cuenta de mesa: la mesa sigue Ocupada con la original, y cualquier otra mesa sigue como estaba (TABLES-F17).
 Entra: la segunda cuenta de la mesa que abre Mesas.
 Sale: dos cuentas abiertas que suman lo mismo que la original al céntimo; Mesas enlaza la nueva a su segunda cuenta.
-Si falla: «No se pudo dividir la cuenta» y las líneas no se mueven; si el fallo fue de Ventas, Mesas ya abrió la segunda cuenta y la mesa se queda con una cuenta vacía de más.
+Si falla: «No se pudo dividir la cuenta» y las líneas no se mueven; también si otro dispositivo está cobrando esa cuenta: la división espera a que termine y, si la cobró, se rechaza (`sales.order_changed`) y no se mueve nada (sales#546). Si el fallo fue de Ventas, Mesas ya abrió la segunda cuenta y la mesa se queda con una cuenta vacía de más.
 Implicados: KITCHEN-F27, SERVICES-F22, SERVICES-F24, TABLES-F17, REC_PELUQUERIA-F10, REC_RESTAURANTE-F10
 QA: R-07, qa-hub-restaurant §7.09 (discrepa)
 
@@ -103,7 +103,7 @@ Pasos:
 3. La pantalla sigue a la mesa que queda, con todas las líneas.
 Entra: las dos mesas y sus cuentas, de Mesas.
 Sale: una sola cuenta; las líneas se mueven sin volver a crearlas, así que lo ya enviado a cocina no se envía otra vez. Repetirlo no cambia nada. La cuenta absorbida se anula y Ventas avisa de la unión (sales.order.merged, con la cuenta absorbida y la que queda): Cocina pasa las rondas enviadas desde la absorbida a la que queda, numeradas detrás de las suyas, y se cierran al cobrarla (KITCHEN-F28). Un aviso repetido no mueve nada.
-Si falla: la persona no ve ningún aviso: Mesas ya fusionó las mesas, pero las dos cuentas siguen separadas en Ventas.
+Si falla: la persona no ve ningún aviso: Mesas ya fusionó las mesas, pero las dos cuentas siguen separadas en Ventas. Pasa también si otro dispositivo estaba cobrando una de las dos cuentas: la unión espera a que termine y, si una de las dos se cobró entera, se rechaza (`sales.order_changed`) sin mover nada; tras un cobro parcial, solo viaja lo que quedó sin cobrar (sales#546).
 Implicados: KITCHEN-F28, SERVICES-F22, TABLES-F16, REC_PELUQUERIA-F10, REC_RESTAURANTE-F10
 QA: R-07, qa-hub-restaurant §7.09
 

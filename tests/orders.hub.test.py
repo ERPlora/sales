@@ -30,6 +30,11 @@ their ids and wraps their transaction, so they are proven here, through HTTP, an
      took off; the cashier charges again what is left, at the right total. Needs a psql session
      on the hub's database (`ERPLORA_HUB_PSQL`) to hold the removal in flight; without it the
      section FAILS, it does not skip.
+  9. (sales#546) A quantity raised, or a line added, WHILE the check is being charged: the
+     checkout waits for it and is refused (`sales.order_changed`) instead of charging one steak
+     on a row marked paid at two, or closing the check over a line it never charged; and the
+     other way round, `sales.order.update_line` waits for a checkout in flight and is refused.
+     Same psql session as 8.
   3c. (sales#401) Adding a line refuses a quantity that is not a fixed-point integer
      (`invalid_payload`) instead of silently storing one unit.
 
@@ -562,6 +567,237 @@ def test_a_line_taken_off_while_charging_is_not_charged(hub: Hub, cash: str) -> 
     hub.check("and completes the check", order(hub, oid).get("status"), "completed")
 
 
+def held_on_the_hub(hub: Hub, psql: list[str], statements: str):
+    """`statements` run in a transaction that queues on the check first and is held OPEN: the
+    door in flight. Returns the psql session (commit it with `communicate`), or None if it did
+    not get that far."""
+    holder = subprocess.Popen(
+        [*psql, "-v", "ON_ERROR_STOP=1", "-tA"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    holder.stdin.write("BEGIN;\n" + statements + "\\echo HELD\n")
+    holder.stdin.flush()
+    held = holder.stdout.readline().strip()
+    while held and held != "HELD":
+        held = holder.stdout.readline().strip()
+    hub.check("the change is in flight", held, "HELD")
+    return holder if held == "HELD" else None
+
+
+def charge_behind(hub: Hub, psql: list[str], holder: subprocess.Popen, payload: dict) -> tuple:
+    """Charges `payload` while `holder` holds the check, waits until the hub's transaction is
+    seen WAITING on a lock (if it never waits, nothing queued it), commits the holder and returns
+    the hub's answer."""
+    answer: dict = {}
+    t = threading.Thread(target=lambda: answer.update(r=hub.command("sales.complete_sale", payload)))
+    t.start()
+    deadline = time.monotonic() + 15
+    waiting = "0"
+    while time.monotonic() < deadline and waiting == "0" and t.is_alive():
+        waiting = hub_sql(
+            psql,
+            "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'"
+            " AND datname = current_database()",
+        )
+        time.sleep(0.05)
+    holder.communicate("COMMIT;\n", timeout=30)
+    hub.check("the change commits", holder.returncode, 0)
+    t.join(timeout=60)
+    return answer.get("r", (None, None))
+
+
+def refused_as_changed(answer: tuple) -> tuple:
+    status, body = answer
+    code = ((body or {}).get("error") or {}).get("code") if isinstance(body, dict) else None
+    return (status != 200, code)
+
+
+def test_a_check_changed_while_charging_is_not_charged(hub: Hub, cash: str) -> None:
+    print(
+        "\n9 · a quantity raised, or a line added, WHILE the check is being charged leaves no"
+        " plate unpaid (sales#546)"
+    )
+    psql = hub_psql(hub)
+    if not psql:
+        return
+
+    def item(line: dict) -> dict:
+        return {
+            "product_name": line["product_name"],
+            "price": cents(line["unit_price"]),
+            "quantity": int(line["quantity"]),
+            "tax_rate": 21.0,
+            "order_item_id": line["id"],
+        }
+
+    # 9a — the quantity: what `sales.order.update_line` writes (one steak raised to two, the line
+    # and the provisional total recomputed) is in flight while the till charges the ONE steak its
+    # screen still shows. Charging it would mark the row paid at two with one in the sale.
+    oid, _ = open_order(
+        hub,
+        [
+            {"product_name": "Entrecot", "price": 1800, "quantity": ONE, "tax_rate": 21.0},
+            {"product_name": "Agua", "price": 200, "quantity": ONE, "tax_rate": 21.0},
+        ],
+    )
+    rows = lines(hub, oid)
+    steak = next(l for l in rows if l["product_name"] == "Entrecot")
+    holder = held_on_the_hub(
+        hub,
+        psql,
+        f"SELECT id FROM sales_order WHERE id = '{oid}' FOR UPDATE;\n"
+        f"UPDATE sales_order_item SET quantity = {2 * ONE}, line_total = 3600"
+        f" WHERE id = '{steak['id']}';\n"
+        f"UPDATE sales_order SET provisional_total = 3800 WHERE id = '{oid}';\n",
+    )
+    if holder is None:
+        return
+    charge_key = key("qty-race")
+    answer = charge_behind(
+        hub,
+        psql,
+        holder,
+        {
+            "idempotency_key": charge_key,
+            "payment_method_id": cash,
+            "order_id": oid,
+            "amount_tendered": 2000,
+            "items": [item(l) for l in rows],
+        },
+    )
+    hub.check(
+        "the charge is refused: the quantity changed while it was being charged",
+        refused_as_changed(answer),
+        (True, "sales.order_changed"),
+    )
+    hub.check("no sale was written", len(sale_by_key(hub, charge_key)), 0)
+    hub.check("the check is still open", order(hub, oid).get("status"), "open")
+    retry_key = key("qty-retry")
+    hub.command(
+        "sales.complete_sale",
+        {
+            "idempotency_key": retry_key,
+            "payment_method_id": cash,
+            "order_id": oid,
+            "amount_tendered": 3800,
+            "items": [item(l) for l in lines(hub, oid)],
+        },
+    )
+    sale = sale_by_key(hub, retry_key)
+    hub.check(
+        "charging the check again charges the two steaks",
+        cents(sale[0].get("total")) if sale else None,
+        3800,
+    )
+
+    # 9b — a line added: what `sales.order.add_line` writes (a second water, a copy of the first
+    # row under a new id) is in flight while the till charges the two lines it read. Closing the
+    # check would leave the new water on a closed check, never charged.
+    oid, _ = open_order(
+        hub,
+        [
+            {"product_name": "Entrecot", "price": 1800, "quantity": ONE, "tax_rate": 21.0},
+            {"product_name": "Agua", "price": 200, "quantity": ONE, "tax_rate": 21.0},
+        ],
+    )
+    rows = lines(hub, oid)
+    water = next(l for l in rows if l["product_name"] == "Agua")
+    added = f"{water['id']}-added"
+    holder = held_on_the_hub(
+        hub,
+        psql,
+        f"SELECT id FROM sales_order WHERE id = '{oid}' FOR UPDATE;\n"
+        "CREATE TEMP TABLE added_line ON COMMIT DROP AS"
+        f" SELECT * FROM sales_order_item WHERE id = '{water['id']}';\n"
+        f"UPDATE added_line SET id = '{added}';\n"
+        "INSERT INTO sales_order_item SELECT * FROM added_line;\n"
+        f"UPDATE sales_order SET provisional_total = 2200 WHERE id = '{oid}';\n",
+    )
+    if holder is None:
+        return
+    charge_key = key("add-race")
+    answer = charge_behind(
+        hub,
+        psql,
+        holder,
+        {
+            "idempotency_key": charge_key,
+            "payment_method_id": cash,
+            "order_id": oid,
+            "amount_tendered": 2000,
+            "items": [item(l) for l in rows],
+        },
+    )
+    hub.check(
+        "the charge is refused: a line was added while it was being charged",
+        refused_as_changed(answer),
+        (True, "sales.order_changed"),
+    )
+    hub.check("no sale was written", len(sale_by_key(hub, charge_key)), 0)
+    hub.check("the check is still open", order(hub, oid).get("status"), "open")
+    hub.check(
+        "the added water is still due",
+        hub_sql(psql, f"SELECT count(*) FROM sales_order_item WHERE id = '{added}' AND sale_id IS NULL"),
+        "1",
+    )
+
+    # 9c — the other way round, through the real door: a checkout is in flight (the check locked,
+    # its lines charged and the check closed, held open) while another till raises the steak to
+    # two with `sales.order.update_line`. The change has to wait and then be refused: a charged
+    # line that changes its quantity afterwards says one thing on the ticket and another on the
+    # check.
+    oid, _ = open_order(
+        hub,
+        [{"product_name": "Entrecot", "price": 1800, "quantity": ONE, "tax_rate": 21.0}],
+    )
+    steak = lines(hub, oid)[0]
+    holder = held_on_the_hub(
+        hub,
+        psql,
+        f"SELECT id FROM sales_order WHERE id = '{oid}' FOR UPDATE;\n"
+        f"UPDATE sales_order_item SET sale_id = 'sale-in-flight' WHERE order_id = '{oid}';\n"
+        f"UPDATE sales_order SET status = 'completed' WHERE id = '{oid}';\n",
+    )
+    if holder is None:
+        return
+    answer: dict = {}
+    t = threading.Thread(
+        target=lambda: answer.update(
+            r=hub.command(
+                "sales.order.update_line",
+                {"order_id": oid, "line_id": steak["id"], "quantity": 2 * ONE},
+            )
+        )
+    )
+    t.start()
+    deadline = time.monotonic() + 15
+    waiting = "0"
+    while time.monotonic() < deadline and waiting == "0" and t.is_alive():
+        waiting = hub_sql(
+            psql,
+            "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'"
+            " AND datname = current_database()",
+        )
+        time.sleep(0.05)
+    hub.check("the change waits behind the checkout", waiting != "0", True)
+    holder.communicate("COMMIT;\n", timeout=30)
+    hub.check("the checkout commits", holder.returncode, 0)
+    t.join(timeout=60)
+    hub.check(
+        "the change is refused: the check was charged meanwhile",
+        refused_as_changed(answer.get("r", (None, None))),
+        (True, "sales.order_changed"),
+    )
+    hub.check(
+        "the charged steak keeps the quantity it was charged at",
+        hub_sql(psql, f"SELECT quantity FROM sales_order_item WHERE id = '{steak['id']}'"),
+        str(ONE),
+    )
+
+
 def main() -> int:
     hub = Hub("orders.hub")
     print(
@@ -577,6 +813,7 @@ def main() -> int:
     test_split_bill_one_order_two_sales(hub, cash)
     test_each_diner_pays_their_own_lines(hub, cash)
     test_a_line_taken_off_while_charging_is_not_charged(hub, cash)
+    test_a_check_changed_while_charging_is_not_charged(hub, cash)
     return hub.finish(
         "open checks behave as ADR-0141/0146 promise, against the real kernel"
     )
