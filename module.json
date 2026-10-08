@@ -481,7 +481,7 @@
       },
       "schema": "schemas/complete_sale.json",
       "ai": {
-        "description": "Completes and records a sale with its line items and payment. Optional staff_id attributes the sale to the professional who performed it; optional appointment_id traces a sale created from an appointment (emits sales.sale.created_from_appointment). document_type 'invoice' (a complete invoice) needs customer_name, customer_tax_id and customer_address; ask the user for them, or charge it as 'ticket'. Charging an open order (order_id) waits for any change, addition, void, removal, split or join of its lines in flight; if a line it charges was voided, removed or charged meanwhile, its quantity or gift mark changed, a line was added or moved so the charge would leave it out, or the order was closed, nothing is charged and it is refused with sales.order_changed: read the order again and charge what is left (sales#545, sales#546)."
+        "description": "Completes and records a sale with its line items and payment. Optional staff_id attributes the sale to the professional who performed it; optional appointment_id traces a sale created from an appointment (emits sales.sale.created_from_appointment). document_type 'invoice' (a complete invoice) needs customer_name, customer_tax_id and customer_address; ask the user for them, or charge it as 'ticket'. Charging an open order (order_id) waits for any change, addition, void, removal, split or join of its lines in flight; if a line it charges was voided, removed or charged meanwhile, its quantity or gift mark changed, a line or ticket discount was put on, changed or taken off, a line was added or moved so the charge would leave it out, or the order was closed, nothing is charged and it is refused with sales.order_changed: read the order again (lines AND its ticket discount) and charge what is left (sales#545, sales#546, sales#553)."
       }
     },
     "sales.complete_sale_over_limit": {
@@ -1165,7 +1165,7 @@
         "function": "set_order_discount"
       },
       "ai": {
-        "description": "Sets the manual TICKET discount of an OPEN order: percent (0-100, sales#71) and/or a fixed amount in cents (discount_amount, sales#113). Enforced at APPLY time (sales#284) against the shop's max_discount_percent: above the cap it is refused with sales.discount_over_limit, and the manager's door for that same discount is sales.order.set_discount_over_limit. allow_discounts is enforced here too."
+        "description": "Sets the manual TICKET discount of an OPEN order: percent (0-100, sales#71) and/or a fixed amount in cents (discount_amount, sales#113). Enforced at APPLY time (sales#284) against the shop's max_discount_percent: above the cap it is refused with sales.discount_over_limit, and the manager's door for that same discount is sales.order.set_discount_over_limit. allow_discounts is enforced here too. It waits behind a checkout of the same order in flight; if that checkout charged the order, it is refused with sales.order_changed (sales#553). An order that is not open is refused with sales.order_unavailable."
       }
     },
     "sales.order.set_discount_over_limit": {
@@ -1222,7 +1222,7 @@
         "function": "set_order_line_discount"
       },
       "ai": {
-        "description": "Sets the manual LINE discount of a live, unfired line of an OPEN order: percent (0-100). Enforced at APPLY time (sales#385, same door pair as the ticket discount sales#284) against the shop's max_discount_percent: above the cap it is refused with sales.discount_over_limit, and the manager's door for that same line discount is sales.order.set_line_discount_over_limit. allow_discounts is enforced here too. The new line_total is priced by the server from the row, never taken from the payload."
+        "description": "Sets the manual LINE discount of a live, unfired line of an OPEN order: percent (0-100). Enforced at APPLY time (sales#385, same door pair as the ticket discount sales#284) against the shop's max_discount_percent: above the cap it is refused with sales.discount_over_limit, and the manager's door for that same line discount is sales.order.set_line_discount_over_limit. allow_discounts is enforced here too. The new line_total is priced by the server from the row, never taken from the payload. It waits behind a checkout of the same order in flight; if that checkout charged the line, it is refused with sales.order_changed (sales#553)."
       }
     },
     "sales.order.set_line_discount_over_limit": {

@@ -798,6 +798,215 @@ def test_a_check_changed_while_charging_is_not_charged(hub: Hub, cash: str) -> N
     )
 
 
+def door_behind_a_checkout(hub: Hub, psql: list[str], oid: str, door: str, payload: dict) -> tuple:
+    """A checkout of `oid` is in flight (the check locked, its lines charged and the check closed,
+    held open) while `door` is called: the door has to WAIT behind it (seen on a lock) and then
+    answer. Returns (waited, answer)."""
+    holder = held_on_the_hub(
+        hub,
+        psql,
+        f"SELECT id FROM sales_order WHERE id = '{oid}' FOR UPDATE;\n"
+        f"UPDATE sales_order_item SET sale_id = 'sale-in-flight' WHERE order_id = '{oid}';\n"
+        f"UPDATE sales_order SET status = 'completed' WHERE id = '{oid}';\n",
+    )
+    if holder is None:
+        return False, (None, None)
+    answer: dict = {}
+    t = threading.Thread(target=lambda: answer.update(r=hub.command(door, payload)))
+    t.start()
+    deadline = time.monotonic() + 15
+    waiting = "0"
+    while time.monotonic() < deadline and waiting == "0" and t.is_alive():
+        waiting = hub_sql(
+            psql,
+            "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'"
+            " AND datname = current_database()",
+        )
+        time.sleep(0.05)
+    holder.communicate("COMMIT;\n", timeout=30)
+    hub.check("the checkout commits", holder.returncode, 0)
+    t.join(timeout=60)
+    return waiting != "0", answer.get("r", (None, None))
+
+
+def test_a_discount_changed_while_charging_is_not_charged(hub: Hub, cash: str) -> None:
+    print(
+        "\n10 · a discount put on or taken off WHILE the check is being charged: the sale never"
+        " charges an amount the check does not keep (sales#553)"
+    )
+    psql = hub_psql(hub)
+    if not psql:
+        return
+
+    def item(line: dict, discount: float = 0) -> dict:
+        return {
+            "product_name": line["product_name"],
+            "price": cents(line["unit_price"]),
+            "quantity": int(line["quantity"]),
+            "tax_rate": 21.0,
+            "order_item_id": line["id"],
+            "discount": discount,
+        }
+
+    def steak_and_water() -> tuple[str, list[dict]]:
+        oid, _ = open_order(
+            hub,
+            [
+                {"product_name": "Entrecot", "price": 1800, "quantity": ONE, "tax_rate": 21.0},
+                {"product_name": "Agua", "price": 200, "quantity": ONE, "tax_rate": 21.0},
+            ],
+        )
+        return oid, lines(hub, oid)
+
+    # 10a — a LINE discount: what `sales.order.set_line_discount` writes (50 % off the steak, its
+    # line and the provisional total recomputed) is in flight while the till charges the steak at
+    # full price, as its screen still shows. Charging it would put 18,00 in the sale and 9,00 on
+    # the check.
+    oid, rows = steak_and_water()
+    steak = next(l for l in rows if l["product_name"] == "Entrecot")
+    holder = held_on_the_hub(
+        hub,
+        psql,
+        f"SELECT id FROM sales_order WHERE id = '{oid}' FOR UPDATE;\n"
+        f"UPDATE sales_order_item SET discount_percent = 50, line_total = 900"
+        f" WHERE id = '{steak['id']}';\n"
+        f"UPDATE sales_order SET provisional_total = 1100 WHERE id = '{oid}';\n",
+    )
+    if holder is None:
+        return
+    charge_key = key("line-discount-race")
+    answer = charge_behind(
+        hub,
+        psql,
+        holder,
+        {
+            "idempotency_key": charge_key,
+            "payment_method_id": cash,
+            "order_id": oid,
+            "amount_tendered": 2000,
+            "items": [item(l) for l in rows],
+        },
+    )
+    hub.check(
+        "the charge is refused: a line discount was put on while it was being charged",
+        refused_as_changed(answer),
+        (True, "sales.order_changed"),
+    )
+    hub.check("no sale was written", len(sale_by_key(hub, charge_key)), 0)
+    hub.check("the check is still open", order(hub, oid).get("status"), "open")
+    retry_key = key("line-discount-retry")
+    hub.command(
+        "sales.complete_sale",
+        {
+            "idempotency_key": retry_key,
+            "payment_method_id": cash,
+            "order_id": oid,
+            "amount_tendered": 1100,
+            "items": [item(l, float(l.get("discount_percent") or 0)) for l in lines(hub, oid)],
+        },
+    )
+    sale = sale_by_key(hub, retry_key)
+    hub.check(
+        "charging the check again charges the discounted steak",
+        cents(sale[0].get("total")) if sale else None,
+        1100,
+    )
+
+    # 10b — the TICKET discount: what `sales.order.set_discount` writes (10 % off the check) is in
+    # flight while the till charges the check without it.
+    oid, rows = steak_and_water()
+    holder = held_on_the_hub(
+        hub,
+        psql,
+        f"SELECT id FROM sales_order WHERE id = '{oid}' FOR UPDATE;\n"
+        f"UPDATE sales_order SET discount_percent = 10 WHERE id = '{oid}';\n",
+    )
+    if holder is None:
+        return
+    charge_key = key("ticket-discount-race")
+    answer = charge_behind(
+        hub,
+        psql,
+        holder,
+        {
+            "idempotency_key": charge_key,
+            "payment_method_id": cash,
+            "order_id": oid,
+            "amount_tendered": 2000,
+            "items": [item(l) for l in rows],
+        },
+    )
+    hub.check(
+        "the charge is refused: a ticket discount was put on while it was being charged",
+        refused_as_changed(answer),
+        (True, "sales.order_changed"),
+    )
+    hub.check("no sale was written", len(sale_by_key(hub, charge_key)), 0)
+    retry_key = key("ticket-discount-retry")
+    hub.command(
+        "sales.complete_sale",
+        {
+            "idempotency_key": retry_key,
+            "payment_method_id": cash,
+            "order_id": oid,
+            "amount_tendered": 1800,
+            "discount_percent": 10,
+            "items": [item(l) for l in lines(hub, oid)],
+        },
+    )
+    sale = sale_by_key(hub, retry_key)
+    hub.check(
+        "charging the check again charges it with the 10 % the check keeps",
+        cents(sale[0].get("total")) if sale else None,
+        1800,
+    )
+
+    # 10c — the other way round, through the REAL doors: a checkout is in flight while another
+    # till puts a discount on the steak (`sales.order.set_line_discount`) or on the check
+    # (`sales.order.set_discount`). Each door has to wait and then be refused: a discount written
+    # after the sale says one amount on the check and another on the ticket.
+    oid, rows = steak_and_water()
+    steak = next(l for l in rows if l["product_name"] == "Entrecot")
+    waited, answer = door_behind_a_checkout(
+        hub,
+        psql,
+        oid,
+        "sales.order.set_line_discount",
+        {"order_id": oid, "line_id": steak["id"], "discount_percent": 50},
+    )
+    hub.check("the line discount waits behind the checkout", waited, True)
+    hub.check(
+        "the line discount is refused: the check was charged meanwhile",
+        refused_as_changed(answer),
+        (True, "sales.order_changed"),
+    )
+    hub.check(
+        "the charged steak keeps the price it was charged at",
+        hub_sql(psql, f"SELECT discount_percent || '|' || line_total FROM sales_order_item WHERE id = '{steak['id']}'"),
+        "0|1800",
+    )
+
+    oid, _ = steak_and_water()
+    waited, answer = door_behind_a_checkout(
+        hub,
+        psql,
+        oid,
+        "sales.order.set_discount",
+        {"order_id": oid, "discount_percent": 10, "discount_amount": 0},
+    )
+    hub.check("the ticket discount waits behind the checkout", waited, True)
+    hub.check(
+        "the ticket discount is refused: the check was charged meanwhile",
+        refused_as_changed(answer),
+        (True, "sales.order_changed"),
+    )
+    hub.check(
+        "the charged check keeps the discount it was charged with",
+        hub_sql(psql, f"SELECT discount_percent FROM sales_order WHERE id = '{oid}'"),
+        "0",
+    )
+
+
 def main() -> int:
     hub = Hub("orders.hub")
     print(
@@ -814,6 +1023,7 @@ def main() -> int:
     test_each_diner_pays_their_own_lines(hub, cash)
     test_a_line_taken_off_while_charging_is_not_charged(hub, cash)
     test_a_check_changed_while_charging_is_not_charged(hub, cash)
+    test_a_discount_changed_while_charging_is_not_charged(hub, cash)
     return hub.finish(
         "open checks behave as ADR-0141/0146 promise, against the real kernel"
     )
