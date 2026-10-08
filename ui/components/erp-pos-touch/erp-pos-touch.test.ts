@@ -1074,6 +1074,133 @@ describe('cuentas abiertas: aparcar con nombre, recuperar sin perder nada', () =
     expect(venta!.payload, 'her country does not travel either').toMatchObject({ customer_country: '', customer_id_type: '' });
   });
 
+  /** Gives the check in front a customer (Ana, foreign fiscal snapshot) and counts the resets the
+   *  customer picker receives. */
+  async function withAna(el: HTMLElement, restored: string[] = []): Promise<string[]> {
+    const resets: string[] = [];
+    (el as unknown as { assignFillers: Array<{ component: string; el: HTMLElement }> }).assignFillers
+      .push({ component: 'erp-fake-customers', el: (() => {
+        const d = document.createElement('div');
+        d.addEventListener('erp:customer-context-reset', () => { resets.push('customer'); });
+        d.addEventListener('erp:order-restored', (e) => { restored.push(String((e as CustomEvent<{ order_id?: string }>).detail?.order_id)); });
+        return d;
+      })() });
+    el.dispatchEvent(new CustomEvent('erp:customer-context', {
+      detail: { customer_id: 'cus-ana', customer_name: 'Ana García', customer_tax_id: '12345678Z', customer_address: 'Rua Augusta 1, Lisboa', customer_country: 'PT' },
+      bubbles: true, composed: true,
+    }));
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    return resets;
+  }
+
+  /** The next person's check on the same screen: one coffee, charged. Returns the charge sent. */
+  async function chargeNextCoffee(el: HTMLElement) {
+    el.shadowRoot!.querySelector<HTMLElement>('ion-card.tile')!.click();
+    await (el as unknown as { queue: <T>(t: () => Promise<T>) => Promise<T> }).queue(async () => undefined);
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    await (el as unknown as { confirm(): Promise<void> }).confirm();
+    return comandos.find((c) => c.name === 'sales.complete_sale');
+  }
+
+  it('sales#566 — leaving a check with a customer at its table leaves the next check without her', async () => {
+    const el = await conCafe();
+    await asignarMesa(el);
+    const resets = await withAna(el);
+
+    await (el as unknown as { requestPark(): Promise<void> }).requestPark();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    expect(soltados, 'it really was «Dejar en la mesa»').toBeGreaterThan(0);
+    expect(parqueados, 'the table keeps its check').toBe(0);
+    expect(resets, 'the customer picker is told to drop her, like after parking').toEqual(['customer']);
+    expect(el.shadowRoot!.textContent, 'no chip with her name over the empty screen').not.toContain('Ana García');
+
+    const venta = await chargeNextCoffee(el);
+    expect(venta, 'the next check is charged').toBeTruthy();
+    expect(venta!.payload).toMatchObject({ customer_id: null, customer_name: '', customer_tax_id: '', customer_address: '' });
+    expect(venta!.payload, 'her country does not travel either').toMatchObject({ customer_country: '', customer_id_type: '' });
+  });
+
+  it('sales#566 — touching the table again resumes its check and asks Customers to give her back', async () => {
+    const el = await conCafe();
+    await asignarMesa(el);
+    const restored: string[] = [];
+    await withAna(el, restored);
+    await (el as unknown as { requestPark(): Promise<void> }).requestPark();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    expect((el as unknown as { customerId?: string }).customerId, 'she left with her check').toBeUndefined();
+    restored.length = 0; // mounting the fake picker already announced o1
+
+    el.dispatchEvent(new CustomEvent('erp:order-context', {
+      detail: { table_id: 'm2', label: 'Mesa 2', order_id: 'o1' }, bubbles: true, composed: true,
+    }));
+    await new Promise((r) => setTimeout(r, 0));
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    expect((el as unknown as { orderId?: string }).orderId, 'the table check is in front again').toBe('o1');
+    expect(restored, 'Customers is asked for the customer of THAT check (CUSTOMERS-F17)').toContain('o1');
+  });
+
+  it('sales#566 — a table check the hub refuses to leave keeps its customer on screen', async () => {
+    const el = await conCafe();
+    await asignarMesa(el);
+    const resets = await withAna(el);
+    posSdk.sdk.command = async (name: string, payload: Record<string, unknown>) => {
+      comandos.push({ name, payload });
+      if (name === 'sales.order.set_label') throw Object.assign(new Error('refused'), { code: 'sales.order_not_open' });
+      return { ok: true };
+    };
+
+    await (el as unknown as { requestPark(): Promise<void> }).requestPark();
+    await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+
+    expect((el as unknown as { cart: unknown[] }).cart, 'the check stays on screen').toHaveLength(1);
+    expect(resets, 'nobody drops the customer of a check still in front').toEqual([]);
+    expect((el as unknown as { customerId?: string }).customerId).toBe('cus-ana');
+  });
+
+  it('sales#567 — deleting a check with a customer («Eliminarla y abrir») leaves the next check without her', async () => {
+    const el = await conCafe();
+    const resets = await withAna(el);
+    const pos = el as unknown as {
+      retrieve(c: { id: string; total: number; created_at: string }): Promise<void>;
+      updateComplete: Promise<unknown>; orderId?: string;
+    };
+
+    const recuperando = pos.retrieve({ id: 'o2', total: 0, created_at: '2026-07-19T14:00:00+00:00' });
+    await new Promise((r) => setTimeout(r, 0));
+    await pos.updateComplete;
+    (el.shadowRoot!.querySelector('dialog.dirty-dialog')!.querySelector('ion-button.discard-opt') as HTMLElement).click();
+    await recuperando;
+    await pos.updateComplete;
+
+    expect(comandos.find((c) => c.name === 'sales.order.void')?.payload, 'her check is voided').toMatchObject({ order_id: 'o1' });
+    expect(pos.orderId, 'the chosen check is open').toBe('o2');
+    expect(resets, 'the customer picker is told once').toEqual(['customer']);
+    expect(el.shadowRoot!.textContent, 'no chip with her name').not.toContain('Ana García');
+
+    const venta = await chargeNextCoffee(el);
+    expect(venta, 'the next check is charged').toBeTruthy();
+    expect(venta!.payload).toMatchObject({ customer_id: null, customer_name: '', customer_tax_id: '', customer_address: '' });
+    expect(venta!.payload, 'her country does not travel either').toMatchObject({ customer_country: '', customer_id_type: '' });
+  });
+
+  it('sales#567 — a check the hub refuses to delete keeps its customer on screen', async () => {
+    const el = await conCafe();
+    const resets = await withAna(el);
+    posSdk.sdk.command = async (name: string, payload: Record<string, unknown>) => {
+      comandos.push({ name, payload });
+      if (name === 'sales.order.void') throw Object.assign(new Error('refused'), { code: 'sales.order_not_open' });
+      return { ok: true };
+    };
+
+    const released = await (el as unknown as { discardCurrent(): Promise<boolean> }).discardCurrent();
+
+    expect(released, 'refused').toBe(false);
+    expect(resets, 'nobody drops the customer of a check still in front').toEqual([]);
+    expect((el as unknown as { customerId?: string }).customerId).toBe('cus-ana');
+  });
+
   it('con mesa: «Dejar en la mesa» — sin diálogo, la mesa NO se suelta (la cuenta vive allí)', async () => {
     const el = await conCafe();
     await asignarMesa(el);
