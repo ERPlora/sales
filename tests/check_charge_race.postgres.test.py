@@ -38,6 +38,10 @@ Points:
      check that is not open, and the neighbour hub reaching across, are all refused.
   9. The queue is per hub: the neighbour naming our check is answered at once, never queued
      behind our checkout.
+ 10-15. sales#546: the doors that change the check (quantity, comp, add, split, join).
+ 16-20. sales#553: a line or ticket discount put on or taken off — in flight, behind a checkout
+     in flight (also a partial one), committed before the checkout queues, and the re-checks
+     scoped to the row, the check and the hub.
 
 Usage: tests/check_charge_race.postgres.test.py — container `erplora-test-pg-5433` by default
 (override: SALES_TEST_PG_CONTAINER). Scratch database, dropped at the end. Never skips itself.
@@ -149,15 +153,23 @@ def steak_and_water(s: Session, order_id: str, water_fired: bool = True) -> None
 
 
 def checkout_ops(
-    order_id: str, line_ids: list, qty=None, gift=None, partial: bool = False
+    order_id: str,
+    line_ids: list,
+    qty=None,
+    gift=None,
+    partial: bool = False,
+    disc=None,
+    ticket=(0.0, 0),
 ) -> list:
     """What `sales.complete_sale` emits around the sale for a charge of `order_id`: the queue and
-    the re-checks first — each row with the quantity and the comp flag the payload charges it at
-    (sales#546; one unit, not a comp, unless `qty`/`gift` say otherwise) and, when the charge
-    closes the check, the proof that no live line is left out of it —, the sale's own writes (not
-    replayed here: they do not decide the race) and last the check's completion, or the marks of
-    a partial charge."""
-    qty, gift = qty or {}, gift or {}
+    the re-checks first — each row with the quantity, the comp flag and the discount the payload
+    charges it at (sales#546, sales#553; one unit, not a comp, no discount unless `qty`/`gift`/
+    `disc` say otherwise), when the charge closes the check the proof that no live line is left
+    out of it, and the ticket discount it charges (`ticket` = percent, fixed amount; a partial
+    charge compares the percent alone) —, the sale's own writes (not replayed here: they do not
+    decide the race) and last the check's completion, or the marks of a partial charge."""
+    qty, gift, disc = qty or {}, gift or {}, disc or {}
+    percent, amount = ticket
     ops = [
         ("sales._order_lock", {"order_id": order_id}),
         *[
@@ -168,13 +180,22 @@ def checkout_ops(
                     "line_id": l,
                     "quantity": qty.get(l, ONE),
                     "is_gift": gift.get(l, 0),
+                    "discount_percent": disc.get(l, 0.0),
                 },
             )
             for l in line_ids
         ],
     ]
+    ticket_live = (
+        "sales._order_discount_live",
+        {
+            "order_id": order_id,
+            "discount_percent": percent,
+            "discount_amount": None if partial else amount,
+        },
+    )
     if partial:
-        return ops + [
+        return ops + [ticket_live] + [
             (
                 "sales._mark_order_line_paid",
                 {"line_id": l, "sale_id": f"sale-{order_id}"},
@@ -183,6 +204,7 @@ def checkout_ops(
         ]
     return ops + [
         ("sales._order_lines_seen", {"order_id": order_id, "line_ids": line_ids}),
+        ticket_live,
         ("sales._complete_order", {"order_id": order_id}),
     ]
 
@@ -607,8 +629,9 @@ def step_7_the_rechecks_are_scoped(s: Session) -> None:
 
     def charge(order_id: str, line_id: str, hub=None) -> str:
         # The queue and the per-line re-check only: `_order_lines_seen` (sales#546) would refuse
-        # most of these on its own (l-live is left out) and hide a hole in `_order_line_live`.
-        return play(s, checkout_ops(order_id, [line_id])[:-2], hub=hub)
+        # most of these on its own (l-live is left out) and hide a hole in `_order_line_live`;
+        # the ticket's re-check (sales#553) and the completion go too.
+        return play(s, checkout_ops(order_id, [line_id])[:-3], hub=hub)
 
     s.check(
         "a live line of this open check passes", charge("ord-scope", "l-live"), "ok"
@@ -1151,6 +1174,305 @@ def step_15_split_and_join_gates(s: Session) -> None:
     s.check("and the neighbour was refused", finish(s, calls, thread, box), CHANGED)
 
 
+# ── 16-20 · sales#553: a discount put on or taken off while the check is being charged ─────
+
+
+def line_discount_ops(order_id: str, line_id: str, percent: float, line_total: int) -> list:
+    """What `sales.order.set_line_discount` emits (handler `set_order_line_discount_inner`): the
+    queue on the check (sales#553), then the line and the check's total."""
+    return [
+        ("sales._order_lock", {"order_id": order_id}),
+        (
+            "sales._set_order_line_discount",
+            {
+                "order_id": order_id,
+                "line_id": line_id,
+                "discount_percent": percent,
+                "line_total": line_total,
+                "discount_approved": 0,
+                "approved_by": "",
+            },
+        ),
+    ]
+
+
+def ticket_discount_ops(order_id: str, percent: float, amount: int) -> list:
+    """What `sales.order.set_discount` emits (handler `set_order_discount_inner`): the queue on
+    the check (sales#553), then the header."""
+    return [
+        ("sales._order_lock", {"order_id": order_id}),
+        (
+            "sales._set_order_discount",
+            {
+                "order_id": order_id,
+                "discount_percent": percent,
+                "discount_amount": amount,
+                "discount_approved": 0,
+                "approved_by": "",
+            },
+        ),
+    ]
+
+
+def line_discounted(s: Session, line_id: str, percent: float, line_total: int) -> None:
+    s.psql(
+        [
+            "-c",
+            f"UPDATE sales_order_item SET discount_percent = {percent}, line_total = {line_total}"
+            f" WHERE id = '{line_id}'",
+        ]
+    )
+
+
+def ticket_discounted(s: Session, order_id: str, percent: float, amount: int) -> None:
+    s.psql(
+        [
+            "-c",
+            f"UPDATE sales_order SET discount_percent = {percent}, discount_amount = {amount}"
+            f" WHERE id = '{order_id}'",
+        ]
+    )
+
+
+def discounts_of(s: Session, order_id: str) -> str:
+    """The check's ticket discount and each line's, as one string to compare before and after."""
+    return s.q(
+        "SELECT o.discount_percent || '/' || o.discount_amount || '|' || COALESCE(string_agg("
+        "i.id || '=' || i.discount_percent || '@' || i.line_total, ',' ORDER BY i.id COLLATE \"C\"), '')"
+        " FROM sales_order o LEFT JOIN sales_order_item i ON i.order_id = o.id AND i.is_deleted = 0"
+        f" WHERE o.id = '{order_id}' GROUP BY o.discount_percent, o.discount_amount"
+    )
+
+
+# label, how the check is seeded, the discount door, what the checkout read before it (line
+# percents, ticket), and what the check holds after it (line percents, ticket)
+DISCOUNTS = (
+    (
+        "a line discount put on",
+        lambda s, o: unsent_check(s, o),
+        lambda o: line_discount_ops(o, f"{o}-steak", 10.0, 1620),
+        ({}, (0.0, 0)),
+        ({"steak": 10.0}, (0.0, 0)),
+    ),
+    (
+        "a line discount taken off",
+        lambda s, o: (unsent_check(s, o), line_discounted(s, f"{o}-steak", 12.5, 1575)),
+        lambda o: line_discount_ops(o, f"{o}-steak", 0.0, 1800),
+        ({"steak": 12.5}, (0.0, 0)),
+        ({}, (0.0, 0)),
+    ),
+    (
+        "a ticket percent put on",
+        lambda s, o: unsent_check(s, o),
+        lambda o: ticket_discount_ops(o, 10.0, 0),
+        ({}, (0.0, 0)),
+        ({}, (10.0, 0)),
+    ),
+    (
+        "a ticket amount put on",
+        lambda s, o: unsent_check(s, o),
+        lambda o: ticket_discount_ops(o, 0.0, 300),
+        ({}, (0.0, 0)),
+        ({}, (0.0, 300)),
+    ),
+    (
+        "the ticket discount taken off",
+        lambda s, o: (unsent_check(s, o), ticket_discounted(s, o, 12.5, 300)),
+        lambda o: ticket_discount_ops(o, 0.0, 0),
+        ({}, (12.5, 300)),
+        ({}, (0.0, 0)),
+    ),
+)
+
+
+def read_disc(o: str, disc: dict) -> dict:
+    return {f"{o}-{k}": v for k, v in disc.items()}
+
+
+def step_16_a_discount_in_flight(s: Session) -> None:
+    print("\n16 · a discount IN FLIGHT: the checkout of the old amount waits and is refused")
+    for n, (label, seed, door, (disc, ticket), _now) in enumerate(DISCOUNTS):
+        o = f"d16-{n}"
+        seed(s, o)
+        held = hold(s, door(o))
+        calls = checkout_ops(
+            o, [f"{o}-steak", f"{o}-water"], disc=read_disc(o, disc), ticket=ticket
+        )
+        thread, box = in_background(s, calls)
+        s.check(
+            f"{label}: the checkout is queued behind it",
+            poll(lambda: waiting_on_a_lock(s) >= 1) and thread.is_alive(),
+            True,
+        )
+        s.check(f"{label}: it commits", held.commit()[0], True)
+        s.check(
+            f"{label}: the checkout is refused — the check changed while it was being charged",
+            finish(s, calls, thread, box),
+            CHANGED,
+        )
+        s.check(f"{label}: the check is still open", check_status(s, o), "open")
+
+
+def step_17_a_checkout_in_flight_refuses_the_discount(s: Session) -> None:
+    print("\n17 · a checkout IN FLIGHT: the discount waits and is refused")
+    for n, (label, seed, door, (disc, ticket), _now) in enumerate(DISCOUNTS):
+        o = f"d17-{n}"
+        seed(s, o)
+        before = discounts_of(s, o)
+        held = hold(
+            s,
+            checkout_ops(
+                o, [f"{o}-steak", f"{o}-water"], disc=read_disc(o, disc), ticket=ticket
+            ),
+        )
+        calls = door(o)
+        thread, box = in_background(s, calls)
+        s.check(
+            f"{label}: the discount is queued behind the checkout",
+            poll(lambda: waiting_on_a_lock(s) >= 1) and thread.is_alive(),
+            True,
+        )
+        s.check(f"{label}: the checkout commits", held.commit()[0], True)
+        s.check(
+            f"{label}: the discount is refused by name",
+            finish(s, calls, thread, box),
+            CHANGED,
+        )
+        s.check(
+            f"{label}: the charged check keeps the discount it was charged with",
+            discounts_of(s, o),
+            before,
+        )
+        s.check(f"{label}: the check is completed", check_status(s, o), "completed")
+
+
+def step_18_a_partial_charge_in_flight_refuses_the_line_discount(s: Session) -> None:
+    print(
+        "\n18 · a PARTIAL charge in flight: the charged line keeps its discount, the rest changes"
+    )
+    o = "d18"
+    unsent_check(s, o)
+    held = hold(s, checkout_ops(o, [f"{o}-steak"], partial=True))
+    calls = line_discount_ops(o, f"{o}-steak", 10.0, 1620)
+    thread, box = in_background(s, calls)
+    s.check(
+        "the discount of the line being charged is queued behind the charge",
+        poll(lambda: waiting_on_a_lock(s) >= 1) and thread.is_alive(),
+        True,
+    )
+    s.check("the partial charge commits", held.commit()[0], True)
+    s.check(
+        "the discount of the charged line is refused by name",
+        finish(s, calls, thread, box),
+        CHANGED,
+    )
+    s.check(
+        "the charged line keeps the amount charged",
+        s.q(f"SELECT discount_percent || '@' || line_total FROM sales_order_item WHERE id = '{o}-steak'"),
+        "0@1800",
+    )
+    s.check(
+        "a line the charge left on the check still takes its discount",
+        play(s, line_discount_ops(o, f"{o}-water", 50.0, 100)),
+        "ok",
+    )
+    s.check(
+        "and so it did",
+        s.q(f"SELECT discount_percent || '@' || line_total FROM sales_order_item WHERE id = '{o}-water'"),
+        "50@100",
+    )
+
+
+def step_19_a_discount_committed_before_the_checkout_queues(s: Session) -> None:
+    print(
+        "\n19 · the discount already committed and the till charges what it read: refused"
+    )
+    for n, (label, seed, door, (disc, ticket), (now_disc, now_ticket)) in enumerate(
+        DISCOUNTS
+    ):
+        o = f"d19-{n}"
+        seed(s, o)
+        lines = [f"{o}-steak", f"{o}-water"]
+        s.check(f"{label}: the discount goes through", play(s, door(o)), "ok")
+        s.check(
+            f"{label}: the checkout of what it read is refused",
+            play(s, checkout_ops(o, lines, disc=read_disc(o, disc), ticket=ticket)),
+            CHANGED,
+        )
+        s.check(
+            f"{label}: the checkout of what the check now holds goes through",
+            play(
+                s, checkout_ops(o, lines, disc=read_disc(o, now_disc), ticket=now_ticket)
+            ),
+            "ok",
+        )
+
+
+def step_20_the_discount_rechecks_are_scoped(s: Session) -> None:
+    print("\n20 · the discount re-checks compare the right row, and only ours")
+    open_check(s, "dg-live")
+    add_line(s, "dg-live", "dg-l", 500)
+    line_discounted(s, "dg-l", 33.33, 334)
+
+    def line(percent) -> str:
+        return play(
+            s,
+            [
+                (
+                    "sales._order_line_live",
+                    {
+                        "order_id": "dg-live",
+                        "line_id": "dg-l",
+                        "quantity": ONE,
+                        "is_gift": 0,
+                        "discount_percent": percent,
+                    },
+                )
+            ],
+        )
+
+    s.check("the percent the row has passes", line(33.33), "ok")
+    s.check("another percent does not", line(30.0), CHANGED)
+    s.check("no discount charged on a discounted row does not", line(0.0), CHANGED)
+    s.check("a row only marked as paid compares none", line(None), "ok")
+
+    open_check(s, "dg-t")
+    ticket_discounted(s, "dg-t", 12.5, 300)
+    open_check(s, "dg-plain")
+
+    def ticket(percent, amount, order_id="dg-t", hub=None) -> str:
+        return play(
+            s,
+            [
+                (
+                    "sales._order_discount_live",
+                    {
+                        "order_id": order_id,
+                        "discount_percent": percent,
+                        "discount_amount": amount,
+                    },
+                )
+            ],
+            hub=hub,
+        )
+
+    s.check("the ticket discount the check has passes", ticket(12.5, 300), "ok")
+    s.check("another percent does not", ticket(10.0, 300), CHANGED)
+    s.check("another amount does not", ticket(12.5, 0), CHANGED)
+    s.check("a partial charge compares the percent alone", ticket(12.5, None), "ok")
+    s.check("and still the percent", ticket(0.0, None), CHANGED)
+    s.check(
+        "another check of the hub holding that discount does not stand in for ours",
+        ticket(12.5, 300, order_id="dg-plain"),
+        CHANGED,
+    )
+    s.check(
+        "the neighbour hub naming our check does not pass",
+        ticket(12.5, 300, hub=OTHER_HUB),
+        CHANGED,
+    )
+
+
 def open_neighbour_check(s: Session, order_id: str) -> bool:
     s.psql(
         [
@@ -1191,6 +1513,11 @@ def main() -> int:
             step_13_an_edit_committed_before_the_checkout_queues,
             step_14_the_new_rechecks_are_scoped,
             step_15_split_and_join_gates,
+            step_16_a_discount_in_flight,
+            step_17_a_checkout_in_flight_refuses_the_discount,
+            step_18_a_partial_charge_in_flight_refuses_the_line_discount,
+            step_19_a_discount_committed_before_the_checkout_queues,
+            step_20_the_discount_rechecks_are_scoped,
         ):
             try:
                 step(s)
