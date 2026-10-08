@@ -34,6 +34,14 @@ let orderLines: Record<string, unknown>[] = [];
 /** Code the next checkout is refused with; '' = it is charged. */
 let refuseWith = '';
 let charges = 0;
+/** The check row as the SERVER has it (`sales.orders.list`): its ticket discount (sales#553). */
+let orderRow: Record<string, unknown> = {};
+/** What another device does to the check while the checkout waits; runs before the refusal. */
+let meanwhile: () => void = () => undefined;
+/** Code the next discount door is refused with; '' = it is applied. */
+let refuseDiscountWith = '';
+/** The checkouts the till sent, as sent. */
+let sent: Record<string, unknown>[] = [];
 /** What `sales.checkout.preview` does: 'server' values the server's rows; 'hang' never answers. */
 let preview: 'server' | 'hang' = 'server';
 
@@ -47,13 +55,18 @@ function installSdk() {
   refuseWith = '';
   charges = 0;
   preview = 'server';
+  orderRow = { id: 'ord-1', status: 'open', provisional_total: 0, created_at: '2026-10-08T10:00:00Z', discount_percent: 0, discount_amount: 0 };
+  meanwhile = () => { orderLines = orderLines.filter((l) => l.id !== 'line-steak'); };
+  refuseDiscountWith = '';
+  sent = [];
   installPosDouble({
+    orders: () => [{ ...orderRow }],
     paymentMethods: METHODS,
     byIdempotencyKey: [{ id: 'sale-1' }],
     products: PRODUCTS,
     rules: RULES,
     orderLines: () => orderLines.map((l) => ({ ...l })),
-    command: async (name: string) => {
+    command: async (name: string, payload: Record<string, unknown>) => {
       if (name === 'sales.checkout.preview') {
         if (preview === 'hang') return new Promise(() => undefined);
         const total = orderLines.reduce((sum, l) => sum + Number(l.line_total), 0);
@@ -69,11 +82,15 @@ function installSdk() {
       }
       if (name === 'sales.complete_sale') {
         charges += 1;
+        sent.push(payload);
         if (refuseWith) {
           // Meanwhile, at the bar, the manager voided the steak: the server no longer has it.
-          orderLines = orderLines.filter((l) => l.id !== 'line-steak');
+          meanwhile();
           throw new FakeErploraError(refuseWith, 'the operation could not be completed');
         }
+      }
+      if (name.startsWith('sales.order.set_') && name.includes('discount') && refuseDiscountWith) {
+        throw new FakeErploraError(refuseDiscountWith, 'the operation could not be completed');
       }
       return { ok: true, new_ids: ['x'] };
     },
@@ -89,6 +106,13 @@ interface Pos extends HTMLElement {
   payable: number;
   openPay(): void;
   confirm(print?: boolean): Promise<void>;
+  error: string;
+  ticketDiscount: number;
+  ticketDiscountAmount: number;
+  ticketDiscountApproved: boolean;
+  openDiscount(target: 'line' | 'ticket', lineId?: string): void;
+  applyDiscount(pct: number): Promise<void>;
+  applyDiscountAmount(cents: number): Promise<void>;
 }
 
 async function settle(el: Pos): Promise<void> {
@@ -195,5 +219,120 @@ describe('sales#545 · the check changed while it was being charged', () => {
     expect(en).toBeTruthy();
     expect(es).toBeTruthy();
     expect(es).not.toBe(en);
+  });
+});
+
+// sales#553 — a DISCOUNT put on or taken off while the check is being charged. The server queues
+// the discount doors on the check like every other change (sales#546) and re-checks, at the
+// checkout, the line and ticket discounts it charges: a stale one is refused as
+// `sales.order_changed`. The screen has to read the discount again too — the line ones come back
+// with the lines, the ticket one with the check — or the next «Charge» sends the old one and is
+// refused again, forever.
+describe('sales#553 · a discount changed while the check was being charged', () => {
+  it('the ticket discount set on another device comes back with the check, and the retry charges it', async () => {
+    const el = await steakAndWaterAtThePaySheet();
+    expect(el.ticketDiscount).toBe(0);
+    refuseWith = 'sales.order_changed';
+    meanwhile = () => { orderRow = { ...orderRow, discount_percent: 10, discount_amount: 150, discount_approved_by: 'u-boss' }; };
+
+    await el.confirm();
+    await settle(el);
+
+    expect(payErr(el)).toContain('ui.errorOrderChanged');
+    expect(el.ticketDiscount, 'the percent the check holds now').toBe(10);
+    expect(el.ticketDiscountAmount, 'and its fixed amount').toBe(150);
+    expect(el.ticketDiscountApproved, 'and who approved it, so Charge does not ask for the PIN again').toBe(true);
+
+    refuseWith = '';
+    await tenderExactCash(el);
+    await el.confirm();
+    await settle(el);
+    expect(sent.at(-1), 'the retry charges the discount the check holds').toMatchObject({ discount_percent: 10, discount_amount: 150 });
+  });
+
+  it('the ticket discount taken off on another device leaves the screen too', async () => {
+    orderRow = { ...orderRow, discount_percent: 10 };
+    const el = await steakAndWaterAtThePaySheet();
+    el.ticketDiscount = 10;
+    el.ticketDiscountApproved = true;
+    await settle(el);
+    refuseWith = 'sales.order_changed';
+    meanwhile = () => { orderRow = { ...orderRow, discount_percent: 0, discount_amount: 0 }; };
+
+    await el.confirm();
+    await settle(el);
+
+    expect(el.ticketDiscount).toBe(0);
+    expect(el.ticketDiscountAmount).toBe(0);
+    expect(el.ticketDiscountApproved, 'no discount, nothing approved').toBe(false);
+  });
+
+  it('a line discount set on another device comes back with the line', async () => {
+    const el = await steakAndWaterAtThePaySheet();
+    refuseWith = 'sales.order_changed';
+    meanwhile = () => { orderLines = orderLines.map((l) => (l.id === 'line-water' ? { ...l, discount_percent: 50, line_total: 100 } : l)); };
+
+    await el.confirm();
+    await settle(el);
+
+    expect(el.cart.find((l) => l.line_id === 'line-water'), 'the water now carries the 50 %').toMatchObject({ discount: 50 });
+  });
+
+  it('a check the reload cannot find keeps the discount on screen (nothing to replace it with)', async () => {
+    orderRow = { ...orderRow, discount_percent: 10 };
+    const el = await steakAndWaterAtThePaySheet();
+    el.ticketDiscount = 10;
+    await settle(el);
+    refuseWith = 'sales.order_changed';
+    meanwhile = () => { orderRow = { ...orderRow, status: 'completed', discount_percent: 0 }; };
+
+    await el.confirm();
+    await settle(el);
+
+    expect(el.ticketDiscount).toBe(10);
+  });
+
+  for (const target of ['ticket', 'line'] as const) {
+    it(`the ${target} discount door refused because the check changed: its sentence, translated, and the old discount stays`, async () => {
+      const el = await steakAndWaterAtThePaySheet();
+      el.paying = false;
+      await settle(el);
+      refuseDiscountWith = 'sales.order_changed';
+
+      el.openDiscount(target, 'line-water');
+      await el.applyDiscount(10);
+      await settle(el);
+
+      expect(el.error).toBe((esLocale as { errors: Record<string, string> }).errors['sales.order_changed']);
+      expect(el.error, 'the raw sentence never reaches the cashier').not.toContain('could not be completed');
+      if (target === 'ticket') expect(el.ticketDiscount).toBe(0);
+      else expect(el.cart.find((l) => l.line_id === 'line-water')).not.toMatchObject({ discount: 10 });
+    });
+  }
+
+  it('the ticket door refused with no sentence of its own falls back to its own, never the raw one', async () => {
+    const el = await steakAndWaterAtThePaySheet();
+    el.paying = false;
+    await settle(el);
+    refuseDiscountWith = 'sales.something_new';
+
+    el.openDiscount('ticket');
+    await el.applyDiscountAmount(100);
+    await settle(el);
+
+    expect(el.error).toBe('ui.ticketDiscountFailed');
+    expect(el.ticketDiscountAmount).toBe(0);
+  });
+
+  it('the new sentences exist in en AND in es and name the discount', () => {
+    const en = enLocale as { ui: Record<string, string>; errors: Record<string, string> };
+    const es = esLocale as { ui: Record<string, string>; errors: Record<string, string> };
+    expect(en.ui.ticketDiscountFailed).toBeTruthy();
+    expect(es.ui.ticketDiscountFailed).toBeTruthy();
+    expect(es.ui.ticketDiscountFailed).not.toBe(en.ui.ticketDiscountFailed);
+    expect(en.errors['sales.order_changed']).toContain('discount');
+    expect(es.errors['sales.order_changed']).toContain('descuento');
+    expect(en.ui.errorOrderChanged).toContain('discount');
+    expect(es.ui.errorOrderChanged).toContain('descuento');
   });
 });

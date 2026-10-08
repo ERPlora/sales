@@ -429,6 +429,7 @@
     "discountTicket": "Descuento del ticket",
     "discountApply": "Aplicar",
     "discountRemove": "Quitar",
+    "ticketDiscountFailed": "No se ha podido guardar ese descuento. La cuenta sigue con el descuento que tenía.",
     "actionVoid": "Anular",
     "voidTitle": "Anular la venta {number}",
     "voidExplain": "La venta queda registrada como anulada; caja y stock se revierten una sola vez. El motivo es obligatorio.",

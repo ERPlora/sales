@@ -428,6 +428,7 @@
     "discountTicket": "Ticket discount",
     "discountApply": "Apply",
     "discountRemove": "Remove",
+    "ticketDiscountFailed": "That discount could not be saved. The check keeps the discount it had.",
     "actionVoid": "Void",
     "voidTitle": "Void sale {number}",
     "voidExplain": "The sale stays on record as voided; cash and stock are reversed once. A reason is required.",
