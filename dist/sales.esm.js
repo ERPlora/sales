@@ -10326,12 +10326,26 @@ var ErpPosTouch = class extends i3 {
       }));
     }
   }
-  /** Tras cobrar: avisa a cada filler para que limpie su selección (mesa/cliente). */
+  /** After charging: tells every filler to clear its selection (table/customer). */
   resetSlotContexts() {
     for (const f3 of this.assignFillers) {
       f3.el.dispatchEvent(new CustomEvent("erp:order-context-reset", { bubbles: false }));
+    }
+    this.notifyCustomerReset();
+  }
+  /** Tells the customer filler to drop its selection; it already honours this after charging. */
+  notifyCustomerReset() {
+    for (const f3 of this.assignFillers) {
       f3.el.dispatchEvent(new CustomEvent("erp:customer-context-reset", { bubbles: false }));
     }
+  }
+  /** Drops this screen's copy of the customer: id, name and fiscal snapshot. */
+  dropCustomer() {
+    this.customerId = void 0;
+    this.customerName = "";
+    this.customerTaxId = "";
+    this.customerAddress = "";
+    this.setCustomerCountry(HOME_COUNTRY);
   }
   /** sales#222 — asks the counter for the customer the sale cannot be closed without.
    *
@@ -10587,6 +10601,8 @@ var ErpPosTouch = class extends i3 {
     this.tableLabel = "";
     this.parkedOpen = false;
     this.appointmentId = void 0;
+    this.dropCustomer();
+    this.notifyCustomerReset();
     this.parked = await listOpenChecks(erplora2());
   }
   /** Punto de entrada del botón del desplegable. Con mesa es «DEJAR EN LA MESA» (la cuenta vive
@@ -12593,11 +12609,7 @@ var ErpPosTouch = class extends i3 {
     this.orderView = "account";
     this.tableId = void 0;
     this.tableLabel = "";
-    this.customerId = void 0;
-    this.customerName = "";
-    this.customerTaxId = "";
-    this.customerAddress = "";
-    this.setCustomerCountry(HOME_COUNTRY);
+    this.dropCustomer();
     this.staffId = void 0;
     this.staffName = "";
     this.appointmentId = void 0;

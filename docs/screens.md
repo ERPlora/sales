@@ -313,6 +313,8 @@ is not marked broken — the handler is the net, and charging comes first.
   a table is assigned.
 - A parked check waits in the **open checks** drawer. A table check stays attached to its table and
   can be resumed from the table or from that drawer.
+- Parking a check also clears its customer from the screen: the next check starts with no customer
+  (and offers none of her vouchers). Customers gives her back when the parked check is resumed.
 - Give a check an editable title to recognise it later ("Mesa 4", "Ana — terraza", "15:07"). It is
   just a label; nothing interprets it.
 - Switching to another check (from the drawer or by touching a table) with a check without a table

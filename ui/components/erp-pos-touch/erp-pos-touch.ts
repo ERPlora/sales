@@ -2460,12 +2460,26 @@ export class ErpPosTouch extends LitElement {
     }
   }
 
-  /** Tras cobrar: avisa a cada filler para que limpie su selección (mesa/cliente). */
+  /** After charging: tells every filler to clear its selection (table/customer). */
   private resetSlotContexts() {
     for (const f of this.assignFillers) {
       f.el.dispatchEvent(new CustomEvent('erp:order-context-reset', { bubbles: false }));
+    }
+    this.notifyCustomerReset();
+  }
+
+  /** Tells the customer filler to drop its selection; it already honours this after charging. */
+  private notifyCustomerReset(): void {
+    for (const f of this.assignFillers) {
       f.el.dispatchEvent(new CustomEvent('erp:customer-context-reset', { bubbles: false }));
     }
+  }
+
+  /** Drops this screen's copy of the customer: id, name and fiscal snapshot. */
+  private dropCustomer(): void {
+    this.customerId = undefined; this.customerName = '';
+    this.customerTaxId = ''; this.customerAddress = '';
+    this.setCustomerCountry(HOME_COUNTRY);
   }
 
   /** sales#222 — asks the counter for the customer the sale cannot be closed without.
@@ -2728,6 +2742,10 @@ export class ErpPosTouch extends LitElement {
     // the till the next time that same booking is charged (the blank check all over again),
     // and a leftover id would close somebody else's booking on the next ticket.
     this.appointmentId = undefined;
+    // sales#557 — so does the customer: left here, the next check went out in her name and its
+    // charge spent her voucher. Customers gives her back when the check is retrieved (customers#135).
+    this.dropCustomer();
+    this.notifyCustomerReset();
     // Ya no hay cuenta delante: la recién aparcada SÍ debe salir en la lista.
     this.parked = await listOpenChecks(erplora());
   }
@@ -5163,9 +5181,7 @@ export class ErpPosTouch extends LitElement {
       this.orderLabel = '';
       this.orderView = 'account';
       this.tableId = undefined; this.tableLabel = '';
-      this.customerId = undefined; this.customerName = '';
-      this.customerTaxId = ''; this.customerAddress = '';
-      this.setCustomerCountry(HOME_COUNTRY);
+      this.dropCustomer();
       // sales#179: the next check does not inherit the previous waiter — it goes back to the
       // default (whoever holds the session), which is what a till does when a check closes.
       this.staffId = undefined; this.staffName = '';
