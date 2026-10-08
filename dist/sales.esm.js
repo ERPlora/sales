@@ -4934,6 +4934,7 @@ var en_default = {
     tenderSplitLine: "Split into {n} lines",
     tenderSplitReason: "A voucher covers one line. Split it and redeem the ones it reaches.",
     tenderSplitFailed: "That line could not be split. Nothing changed on the check.",
+    tenderSplitChanged: "That line changed on another device while it was being split. Nothing was split; the check has been reloaded: check it and split the line again.",
     tenderLineNotSplittable: "This line cannot be split, so no voucher can cover it.",
     tenderLinePart: "{i} of {n}",
     serverUnavailable: "The server isn't responding (it may be restarting). Try again in a few seconds and, if it keeps happening, call the manager.",
@@ -5638,6 +5639,7 @@ var es_default = {
     tenderSplitLine: "Separar en {n} l\xEDneas",
     tenderSplitReason: "Un bono cubre una l\xEDnea. Sep\xE1rala y canjea las que alcance.",
     tenderSplitFailed: "No se ha podido separar la l\xEDnea. La cuenta no ha cambiado.",
+    tenderSplitChanged: "Esa l\xEDnea ha cambiado en otro dispositivo mientras se separaba. No se ha separado nada; la cuenta se ha vuelto a cargar: rev\xEDsala y vuelve a separar la l\xEDnea.",
     tenderLineNotSplittable: "Esta l\xEDnea no se puede separar, as\xED que ning\xFAn bono puede cubrirla.",
     tenderLinePart: "{i} de {n}",
     serverUnavailable: "El servidor no responde (puede estar reinici\xE1ndose). Int\xE9ntalo de nuevo en unos segundos y, si persiste, avisa al encargado.",
@@ -13233,6 +13235,11 @@ var ErpPosTouch = class extends i3 {
         }
       });
     } catch (e8) {
+      if (isCheckChanged(errorCode(e8))) {
+        this.error = t5("ui.tenderSplitChanged");
+        await this.reloadChangedCheck(orderId);
+        return;
+      }
       this.error = domainErrorText(CATALOG2, erplora2().locale, e8) || t5("ui.tenderSplitFailed");
     } finally {
       this.splittingLine = "";
