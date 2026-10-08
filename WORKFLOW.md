@@ -16,8 +16,8 @@ su mesa, se manda a cocina por rondas, se imprime la cuenta para la mesa y se di
 la peluquería, se cobra la cita desde la agenda, cada servicio lleva a su profesional y una sesión de
 bono puede pagar una línea. Lo usan el **empleado** (camarero, recepcionista; con el rol «Cajero»
 además cobra), el **responsable** (cobra, anula, devuelve, autoriza descuentos y precio libre con su
-PIN, ve las cifras) y el **administrador** (todo, y es el único que guarda los ajustes desde la pestaña; el responsable puede
-hacerlo por el asistente). Las mesas,
+PIN, ve las cifras) y el **administrador** (todo). Los ajustes del TPV los guardan el responsable y el administrador,
+desde la pestaña o por el asistente (F34). Las mesas,
 la cocina, los clientes, la caja, la factura y el envío a la AEAT son de otros módulos que reaccionan
 a lo que pasa aquí.
 
@@ -275,7 +275,7 @@ flujos de su fila en la misma entrega.
 | Abrir el cajón al cobrar | hecho fuera de este módulo: el hub lo abre en el dispositivo que cobró si Impresión lo tiene activado, con cualquier forma de pago (PRINTING-F13) | F01, F02 |
 | Abrir el cajón «sin venta» | fuera de este módulo (Caja / Impresión) | — |
 | Dar de alta, editar y desactivar medios de pago en pantalla | parcial: alta solo por el asistente (sin tipo nace como efectivo); editar, desactivar y borrar no existen | F37 |
-| Ajustes del TPV | parcial: en la pestaña solo guarda el administrador; el responsable solo por el asistente | F34 |
+| Ajustes del TPV | parcial: efectivo/tarjeta/transferencia y tiques aparcados solo los aplica la pantalla; «Documento por defecto» sin traducir | F34 |
 
 ## Datos: de quién es cada dato
 
@@ -411,7 +411,7 @@ Contra `origin/main` v2.16.154 (05/10/2026). Una línea por discrepancia; manda 
 - **`docs/limits.md` y `hand-book/modulos/sales.md`**: «Inventario e Impuestos son obligatorios y no se pueden desinstalar»; solo Impuestos lo es, Inventario es opcional desde sales#25 (`module.json` `depends_on`).
 - **`docs/screens.md`** («Search by sale number, payment method or customer name»): el buscador del historial busca por número y cliente; la forma de pago se filtra, no se busca (F28).
 - **`docs/screens.md`** (sección del TPV): cita «Requires `sales.add_sale` … `sales.take_payment`», pero no dice que un empleado sin `take_payment` recibe la petición de PIN; tampoco que precio libre y eliminar cuenta piden PIN a empleado y cajero (F09, F18).
-- **`docs/screens.md`** («Notas rápidas … plus a TPV settings tab»): la pestaña se llama «Ajustes» (la nombra el hub) y solo el administrador puede guardar (F34).
+- **`docs/screens.md`** («Notas rápidas … plus a TPV settings tab»): la pestaña se llama «Ajustes» (la nombra el hub) y guardan en ella el responsable y el administrador, los que tienen el permiso de ajustes (F34).
 - **`docs/screens.md` y `docs/overview.md`**: «three tabs»/«four slots»; hay cuatro pestañas propias (Vender, Ventas, Notas rápidas, Departamentos) y seis huecos (cuatro en Vender, uno en Devolver y `sales.reversal.notice`, que montan Anular venta y Devolver).
 - **`docs/overview.md`** (quién reacciona a la venta): nombra a Cocina y VeriFactu y omite a Mesas y Servicios; Cocina escucha el envío y el cierre de la cuenta, VeriFactu escucha a Facturación.
 - **`docs/concepts.md`** («To correct a completed sale, void it … `sale.voided` is emitted so stock comes back»): cierto para stock y caja, pero la factura simplificada y su registro VeriFactu no se anulan (F30).
