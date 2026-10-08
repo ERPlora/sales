@@ -361,8 +361,9 @@ impide la pantalla está como hueco en su flujo.
   esperan al cobro de esa cuenta: lo que llega tarde se rechaza (`sales.order_changed`), y el cobro
   no cobra nada si lo que cobra ya no coincide con la cuenta (otra cantidad, otra invitación, otro
   descuento de línea o de tique o, al cerrarla, una línea sin cobrar que no estaba en el cobro).
-  Partir una línea tampoco parte nada si, mientras esperaba, otro dispositivo le cambió la cantidad, la
-  invitación o el descuento (`sales.order_changed`): no se pierde ni se inventa ninguna unidad. Dividir y juntar mueven líneas enteras y lo ya cobrado no viaja.
+  Partir una línea tampoco parte nada si, mientras esperaba, otro dispositivo le cambió la
+  cantidad, la invitación o el descuento (`sales.order_changed`): no se pierde ni se inventa
+  ninguna unidad. Dividir y juntar mueven líneas enteras y lo ya cobrado no viaja.
 - **Permisos** (si el permiso es de responsable, el hub pide su PIN): montar la cuenta, enviar a
   cocina, dividir, juntar y descuento hasta el tope: empleado; cobrar: cajero y responsable;
   descuento por encima del tope, anular una cuenta abierta o una línea ya enviada, anular y devolver
