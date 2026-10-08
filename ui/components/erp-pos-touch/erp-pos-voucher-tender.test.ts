@@ -398,6 +398,19 @@ describe('sales#162 — the POS hosts `sales.pos.tender`', () => {
       expect(payable(el), 'three haircuts and a shampoo').toBe('63.00 €');
     });
 
+    it('splitting again once the check was read again goes through and takes the warning away', async () => {
+      const el = await twoHaircuts();
+      refuseSplitWith = 'sales.order_changed';
+      await tapSplit(el);
+      refuseSplitWith = '';
+      await tapSplit(el);
+      expect($$(el, '.tender-line'), 'the three haircuts, one line each').toHaveLength(3);
+      expect(
+        $(el, '.sheet .pay-err')?.textContent ?? '',
+        '«nothing was split» is no longer true',
+      ).not.toContain('ui.tenderSplitChanged');
+    });
+
     it('any other refusal keeps the generic sentence', async () => {
       const el = await twoHaircuts();
       refuseSplitWith = 'sales.line_not_splittable';

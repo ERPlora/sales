@@ -5901,6 +5901,8 @@ export class ErpPosTouch extends LitElement {
           this.splitSel = new Set([...this.splitSel, ...ids]);
         }
       });
+      // sales#554 — the split went through: «nothing was split» from the refused try is no longer true.
+      if (this.error === t('ui.tenderSplitChanged')) this.error = '';
     } catch (e) {
       // The transaction is all or nothing, so the check is exactly the one that was on screen. The
       // cashier is told, because a button that does nothing in silence is worse than no button —
