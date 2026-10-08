@@ -13234,6 +13234,7 @@ var ErpPosTouch = class extends i3 {
           this.splitSel = /* @__PURE__ */ new Set([...this.splitSel, ...ids]);
         }
       });
+      if (this.error === t5("ui.tenderSplitChanged")) this.error = "";
     } catch (e8) {
       if (isCheckChanged(errorCode(e8))) {
         this.error = t5("ui.tenderSplitChanged");
