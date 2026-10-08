@@ -132,6 +132,7 @@ function install(opts: Options = {}): void {
   const table: Record<string, unknown[]> = {
     'sales.get': SALE, 'sales.refund_options': legs, 'sales.payment_methods': METHODS,
     'sales.lines': lines,
+    'sales.refund_lines': [], // services#158: what earlier refunds took back
     'sales.refund_by_idempotency_key': [{ id: 'ref-7', sale_id: 'sale-1', total: 1800 }],
   };
   refundSdk = installErploraDouble({
@@ -359,12 +360,20 @@ describe('the document: the reference goes down to the filler, and the screen wa
 });
 
 describe('a hub WITHOUT the owning module', () => {
-  it('paints no section, asks for no lines and mounts nothing', async () => {
+  it('paints no section and mounts nothing', async () => {
     install({ fillers: false });
     const el = await mount();
     expect(holes(el)).toHaveLength(0);
     expect(el.shadowRoot?.querySelector('.rt-list')).toBeNull();
-    expect(queriesAsked()).not.toContain('sales.lines');
+    // services#158: the lines ARE read now - «Qué se devuelve» paints them, whoever fills the hole.
+    // Once: the tender holes reuse the same read.
+    expect(queriesAsked().filter((q) => q === 'sales.lines')).toHaveLength(1);
+  });
+
+  it('with a filler too, the lines are read once for both blocks (services#158)', async () => {
+    install();
+    await mount();
+    expect(queriesAsked().filter((q) => q === 'sales.lines')).toHaveLength(1);
   });
 
   it('sends the refund EXACTLY as it did before the slot existed', async () => {

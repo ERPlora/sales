@@ -46,7 +46,9 @@ function install(
   extra?: Record<string, unknown>,
 ): void {
   const table: Record<string, Answer> = {
-    'sales.get': SALE, 'sales.refund_options': LEGS, 'sales.payment_methods': METHODS, ...over,
+    'sales.get': SALE, 'sales.refund_options': LEGS, 'sales.payment_methods': METHODS,
+    // services#158: «Qué se devuelve» reads the lines; a sale with none paints no block.
+    'sales.lines': [], 'sales.refund_lines': [], ...over,
   } as Record<string, Answer>;
   sdk = {
     command: vi.fn(async () => ({ refund_id: 'ref-1', refund_ref: 'ref-1' })),

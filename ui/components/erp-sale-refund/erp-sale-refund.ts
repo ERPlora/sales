@@ -33,6 +33,7 @@ import {
   type RefundDraft,
 } from '../../lib/refund-allocation.js';
 import { coveredLines, serviceOrdinals, type SaleLine } from '../../lib/refund-tender.js';
+import { pickedAmount, pickedLineIds, returnableLines, type ReturnLine } from '../../lib/refund-lines.js';
 import { payMethodDisplayName } from '../../lib/pay-icons.js';
 import { hubDecimals } from '../../lib/hub-currency.js';
 import { errorCode } from '../../lib/checkout-key.js';
@@ -60,6 +61,10 @@ const REFUND_MESSAGES: Record<string, string> = {
   'sales.refund_requires_completed': 'ui.refundRequiresCompleted',
   'sales.refund_sale_changed': 'ui.refundSaleChanged',
   'sales.sale_not_found': 'ui.refundSaleNotFound',
+  // services#158 - the lines marked in «Qué se devuelve».
+  'sales.refund_line_already_returned': 'ui.refundLineAlreadyReturnedError',
+  'sales.refund_line_unknown': 'ui.refundLineUnknown',
+  'sales.refund_line_duplicated': 'ui.refundLineDuplicated',
 };
 
 /**
@@ -160,6 +165,16 @@ export class ErpSaleRefund extends LitElement {
     .rt-name { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .rt-slot { margin-top:.45rem; }
     .rt-slot:empty { display:none; }
+    /* services#158 - WHAT GOES BACK: one row per line paid in money, its box and its price. The
+       name may wrap (a long service name on a phone), the price never does. */
+    .rl-block { display:flex; flex-direction:column; gap:.4rem; }
+    .rl-list { list-style:none; margin:.2rem 0 0; padding:0; display:flex; flex-direction:column; gap:.35rem; }
+    .rl-line { display:flex; align-items:center; justify-content:space-between; gap:.75rem;
+      border:1px solid var(--ion-border-color,#e0ddd4); border-radius:var(--ok-radius,12px); padding:.45rem .7rem; }
+    .rl-line ion-checkbox { flex:1 1 auto; min-width:0; --size:22px; }
+    .rl-line ion-checkbox::part(label) { white-space:normal; overflow-wrap:anywhere; }
+    .rl-figure { flex:0 0 auto; white-space:nowrap; font-variant-numeric:tabular-nums; }
+    .rl-done { color:var(--ion-color-medium,#8b897f); font-size:.85rem; }
     .totals { display:flex; justify-content:space-between; align-items:baseline; font-size:1.05rem; }
     .totals .v { font-weight:800; }
     .block { margin:0; color:var(--ion-color-danger,#d9480f); font-size:.85rem; }
@@ -246,6 +261,15 @@ export class ErpSaleRefund extends LitElement {
   @state() private reversalFillers: string[] = [];
   /** One instance per filler, kept so it is not recreated on every render. */
   private readonly reversalEls = new Map<string, HTMLElement>();
+
+  /** services#158 - the sale's lines (`sales.lines`), read once for both blocks that need them. */
+  @state() private saleLines: Array<SaleLine & ReturnLine> = [];
+  /** services#158 - `sales.lines` could not be read: «Qué se devuelve» is not painted. */
+  private saleLinesFailed = false;
+  /** services#158 - the lines an earlier refund already took back (`sales.refund_lines`). */
+  @state() private returnedLines = new Set<string>();
+  /** services#158 - the lines the operator marked as going back. */
+  @state() private picked = new Set<string>();
 
   /** La clave del intento, congelada: un reintento NO la renueva. */
   private key = '';
@@ -336,7 +360,8 @@ export class ErpSaleRefund extends LitElement {
       // las veces; el 10 % restante lo edita, que es justo lo que Shopify no deja.
       const split = proportionalSplit(refundableTotal(this.legs), this.legs);
       this.draft = Object.fromEntries(Object.entries(split).map(([id, amount]) => [id, { amount }]));
-      await this.loadTenderLines(saleId);
+      await this.loadSaleLines(saleId);
+      await this.loadTenderLines();
       // services#157 - never fails: a filler that cannot be listed paints no hole.
       this.reversalFillers = await loadReversalFillers(erplora());
       // sales#465 - no line here was paid another way (or nobody fills the hole): nothing can be
@@ -415,7 +440,7 @@ export class ErpSaleRefund extends LitElement {
    * And the lines are not asked for when nobody fills the slot: with no tender owner there is
    * nothing to offer, so the read would be a call no pixel uses.
    */
-  private async loadTenderLines(saleId: string): Promise<void> {
+  private async loadTenderLines(): Promise<void> {
     this.covered = [];
     this.tenderHanded = new Set();
     this.tenderNotices = new Map();
@@ -431,13 +456,49 @@ export class ErpSaleRefund extends LitElement {
       this.tenderReadFailed = true;
     }
     if (!this.tenderFillers.length) return;
+    this.covered = coveredLines(this.saleLines);
+    if (this.saleLinesFailed) this.tenderReadFailed = true;
+  }
+
+  /**
+   * services#158 - the lines of the sale, for «Qué se devuelve» and for the tender holes, and the
+   * ones an earlier refund already took back. Accessory like the holes: a failed read paints no
+   * block and never brings down the money refund. If only what went back earlier cannot be read,
+   * the lines are still offered - the server refuses a line that goes back twice.
+   */
+  private async loadSaleLines(saleId: string): Promise<void> {
+    this.saleLines = [];
+    this.saleLinesFailed = false;
+    this.returnedLines = new Set();
+    this.picked = new Set();
     try {
-      const lines = await sdk.query<SaleLine[]>('sales.lines', { sale_id: saleId });
-      this.covered = coveredLines(lines ?? []);
+      this.saleLines = (await erplora().query<Array<SaleLine & ReturnLine>>('sales.lines', { sale_id: saleId })) ?? [];
     } catch {
-      this.covered = [];
-      this.tenderReadFailed = true;
+      this.saleLinesFailed = true;
+      return;
     }
+    try {
+      const rows = (await erplora().query<Array<{ sale_item_id?: string }>>('sales.refund_lines', { sale_id: saleId })) ?? [];
+      this.returnedLines = new Set(rows.map((r) => String(r.sale_item_id ?? '')).filter(Boolean));
+    } catch {
+      this.returnedLines = new Set();
+    }
+  }
+
+  /** services#158 - the operator marks (or un-marks) a line. The proposal follows the marked lines:
+   *  what they cost, capped at what is left and split by tender; with none marked, the whole refund
+   *  again. As before, it is a proposal - each amount can still be changed. */
+  private toggleLine(lineId: string, on: boolean): void {
+    if (this.returnedLines.has(lineId)) return;
+    const next = new Set(this.picked);
+    if (on) next.add(lineId); else next.delete(lineId);
+    this.picked = next;
+    const left = refundableTotal(this.legs);
+    const amount = next.size ? Math.min(pickedAmount(this.saleLines, next), left) : left;
+    const split = proportionalSplit(amount, this.legs);
+    this.draft = Object.fromEntries(
+      Object.entries(split).map(([id, cents]) => [id, { ...this.draft[id], amount: cents }]),
+    );
   }
 
   /**
@@ -554,6 +615,9 @@ export class ErpSaleRefund extends LitElement {
         // devolver el dinero por segunda vez (y `refund_ref` sigue siendo el mismo para services).
         idempotency_key: this.key,
         allocations: buildAllocations(this.draft, this.legs),
+        // services#158 - which lines go back with the money. Omitted when none is marked: then
+        // only money goes back, exactly as before.
+        ...this.pickedPayload(),
       });
       await this.finishRecorded(out, saleId);
     } catch (e) {
@@ -571,6 +635,12 @@ export class ErpSaleRefund extends LitElement {
     } finally {
       this.busy = false;
     }
+  }
+
+  /** services#158 - `lines` for `sales.refund`: each marked line and the supplements under it. */
+  private pickedPayload(): { lines?: Array<{ line_id: string }> } {
+    const ids = pickedLineIds(this.saleLines, this.picked).filter((id) => !this.returnedLines.has(id));
+    return ids.length ? { lines: ids.map((line_id) => ({ line_id })) } : {};
   }
 
   /**
@@ -832,6 +902,38 @@ export class ErpSaleRefund extends LitElement {
     </div>`;
   }
 
+  /**
+   * services#158 - «Qué se devuelve»: the lines paid in money, each with its box. Marking one says
+   * it goes back with the money (and proposes its price); a line an earlier refund took back is
+   * shown as such and cannot be marked. Not painted when the lines cannot be read.
+   */
+  private renderReturnLines(): unknown {
+    const t = (k: string): string => erplora().t(CATALOG, k);
+    const lines = returnableLines(this.saleLines);
+    if (this.saleLinesFailed || !lines.length) return nothing;
+    return html`<div class="rl-block" data-testid="refund-lines">
+      <div class="rt-lbl">${t('ui.refundLinesTitle')}</div>
+      <p class="hint">${t('ui.refundLinesHint')}</p>
+      <ul class="rl-list">
+        ${lines.map((l) => {
+          const done = this.returnedLines.has(l.id);
+          return html`<li class="rl-line" data-testid=${`refund-line-${l.id}`}>
+            <ion-checkbox
+              label-placement="end"
+              justify="start"
+              .checked=${this.picked.has(l.id)}
+              ?disabled=${done}
+              @ionChange=${(e: CustomEvent<{ checked?: boolean }>) => this.toggleLine(l.id, e.detail?.checked === true)}
+            >${l.product_name ?? ''}</ion-checkbox>
+            <span class="rl-figure">${done
+              ? html`<span class="rl-done">${t('ui.refundLineAlreadyReturned')}</span>`
+              : erplora().formatMoney(Math.round(Number(l.line_total ?? 0)) || 0)}</span>
+          </li>`;
+        })}
+      </ul>
+    </div>`;
+  }
+
   /** sales#456 - the attempt left in doubt WAS recorded: read first, above what is left. */
   private renderRecoveredOnOpen(): unknown {
     if (!this.recoveredOnOpen) return nothing;
@@ -876,6 +978,7 @@ export class ErpSaleRefund extends LitElement {
       ${this.renderRecoveredOnOpen()}
       ${this.renderTenderPending()}
       <p class="hint">${t('ui.refundExplain')}</p>
+      ${this.renderReturnLines()}
       <div class="legs">${this.legs.map((l) => this.renderLeg(l, true))}</div>
       ${this.renderTenderLines()}
       <ion-button class="refund-propose" data-testid="refund-propose-all" size="small" fill="clear" @click=${() => this.proposeAll()}>

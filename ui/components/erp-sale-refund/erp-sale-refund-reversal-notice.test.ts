@@ -32,6 +32,7 @@ async function mount(opts: { fillers?: string[]; slotFail?: boolean } = {}): Pro
   commands = [];
   const table: Record<string, unknown[]> = {
     'sales.get': SALE, 'sales.refund_options': LEGS, 'sales.payment_methods': METHODS,
+    'sales.lines': [], 'sales.refund_lines': [], // services#158: «Qué se devuelve»
   };
   installErploraDouble({
     queries: Object.fromEntries(Object.entries(table).map(([name, rows]) => [name, () => rows])),

@@ -33,6 +33,7 @@ type Refund = HTMLElement & { updateComplete: Promise<unknown>; saleId?: string 
 async function mount(): Promise<Refund> {
   const table: Record<string, unknown[]> = {
     'sales.get': SALE, 'sales.refund_options': LEGS, 'sales.payment_methods': METHODS,
+    'sales.lines': [], 'sales.refund_lines': [], // services#158: «Qué se devuelve»
   };
   installErploraDouble({
     queries: Object.fromEntries(Object.entries(table).map(([name, rows]) => [name, () => rows])),
