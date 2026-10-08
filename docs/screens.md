@@ -405,6 +405,12 @@ came out when the voucher was sold, so redeeming it issues no second document.
 A line of more than one is **not** offered: one redemption covers one line and spends one session,
 so «Corte × 3» would hand out three sessions for one. The screen says that instead of hiding.
 
+**Splitting that line splits what the check holds now, or nothing** (sales#554). «Split into N
+lines» waits for the check like every other change; if, meanwhile, another device changed that
+line's quantity, comp or discount, the split is refused (`sales.order_changed`) instead of cutting
+the stale row: no unit is lost or invented. The sheet says so, reloads the check, and a retry that
+goes through clears the warning.
+
 **And when the line leaves, the till says so** (services#84). Take a covered line out of the cart —
 or cancel the whole ticket — and the till stops charging it, but whoever covered it is still holding
 something nobody told it to let go of: in `services` that was a voucher session left spent until a

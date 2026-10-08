@@ -367,6 +367,7 @@
     "tenderSplitLine": "Split into {n} lines",
     "tenderSplitReason": "A voucher covers one line. Split it and redeem the ones it reaches.",
     "tenderSplitFailed": "That line could not be split. Nothing changed on the check.",
+    "tenderSplitChanged": "That line changed on another device while it was being split. Nothing was split; the check has been reloaded: check it and split the line again.",
     "tenderLineNotSplittable": "This line cannot be split, so no voucher can cover it.",
     "tenderLinePart": "{i} of {n}",
     "serverUnavailable": "The server isn't responding (it may be restarting). Try again in a few seconds and, if it keeps happening, call the manager.",
