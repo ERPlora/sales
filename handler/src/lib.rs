@@ -5311,20 +5311,28 @@ fn refund_sale_inner(input: Value) -> Result<Output, Refusal> {
         ));
     }
 
+    // services#158: the lines that go back with the money, if the operator marked any. Each one
+    // must be a line of THIS sale, named once, and not returned by an earlier refund — otherwise
+    // `services` would void another voucher of the same package on the second refund.
+    let returned_lines = refund_returned_lines(&payload, &context, &sale_id)?;
+
     let new_ids: Vec<String> = context
         .get("new_ids")
         .and_then(|v| v.as_array())
         .map(|a| a.iter().map(as_str).collect())
         .unwrap_or_default();
-    // Cabecera + una fila por pata. Quedarse corto y tirar de `unwrap_or_default()` escribiría
-    // filas con la clave primaria vacía, y la segunda chocaría contra la primera.
-    if 1 + allocations.len() > new_ids.len() {
+    // Cabecera + una fila por pata + una por línea devuelta. Quedarse corto y tirar de
+    // `unwrap_or_default()` escribiría filas con la clave primaria vacía, y la segunda chocaría
+    // contra la primera.
+    let rows_needed = 1 + allocations.len() + returned_lines.len();
+    if rows_needed > new_ids.len() {
         return Err(reject(
             "sales.too_many_rows",
             format!(
-                "{} refund legs need {} ids, the host gave {}",
+                "{} refund legs and {} returned lines need {} ids, the host gave {}",
                 allocations.len(),
-                1 + allocations.len(),
+                returned_lines.len(),
+                rows_needed,
                 new_ids.len()
             ),
         ));
@@ -5463,8 +5471,25 @@ fn refund_sale_inner(input: Value) -> Result<Output, Refusal> {
     head.insert("note".into(), json!(field(&payload, "note")));
     head.insert("idempotency_key".into(), json!(field(&payload, "idempotency_key")));
     operations.push(Operation::sql("sales._insert_refund", head));
+    let legs_count = legs.len();
     for leg in legs {
         operations.push(Operation::sql("sales._insert_refund_payment", leg));
+    }
+    let mut event_lines: Vec<Value> = Vec::with_capacity(returned_lines.len());
+    for (idx, line) in returned_lines.iter().enumerate() {
+        let mut p = Map::new();
+        p.insert("refund_line_id".into(), json!(new_ids[1 + legs_count + idx]));
+        p.insert("refund_id".into(), json!(refund_id));
+        p.insert("sale_id".into(), json!(sale_id));
+        p.insert("sale_item_id".into(), json!(line.line_id));
+        p.insert("product_id".into(), json!(line.product_id));
+        p.insert("quantity".into(), json!(line.quantity));
+        operations.push(Operation::sql("sales._insert_refund_line", p));
+        event_lines.push(json!({
+            "line_id": line.line_id,
+            "product_id": line.product_id,
+            "quantity": line.quantity,
+        }));
     }
     // Without this mark the sales list keeps saying `completed` over a sale with no money behind
     // it. It goes out on EVERY refund (sales#506): the statement compares the legs already
@@ -5495,6 +5520,9 @@ fn refund_sale_inner(input: Value) -> Result<Output, Refusal> {
             "document_type": sale.get("document_type").cloned().unwrap_or(Value::Null),
             "order_id": sale.get("order_id").cloned().unwrap_or(Value::Null),
             "payments": event_legs,
+            // services#158: which lines of the sale went back with this money (empty when the
+            // operator returned money only). `services` voids the voucher sold on such a line.
+            "lines": event_lines,
         }),
     );
 
@@ -5510,6 +5538,60 @@ fn refund_sale_inner(input: Value) -> Result<Output, Refusal> {
         })),
         ..Default::default()
     })
+}
+
+/// A sale line that goes back with a refund (services#158), as the sale stored it.
+struct ReturnedLine {
+    line_id: String,
+    product_id: String,
+    quantity: i64,
+}
+
+/// Resolves the `lines` a refund names against the sale's own lines (`sales.lines`) and the lines
+/// earlier refunds already took back (`sales.refund_lines`). Product and quantity come from the
+/// sale, never from the payload. `_insert_refund_line.sql` re-checks «not returned yet» inside the
+/// transaction, so two refunds racing on the same line still return it once.
+fn refund_returned_lines(payload: &Value, context: &Value, sale_id: &str) -> Result<Vec<ReturnedLine>, Refusal> {
+    let requested: Vec<String> = payload
+        .get("lines")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().map(|l| field(l, "line_id")).collect())
+        .unwrap_or_default();
+    if requested.is_empty() {
+        return Ok(Vec::new());
+    }
+    let sale_lines = tax::read_rows(context, "sales.lines").unwrap_or_default();
+    let already = tax::read_rows(context, "sales.refund_lines").unwrap_or_default();
+    let mut out: Vec<ReturnedLine> = Vec::with_capacity(requested.len());
+    for line_id in requested {
+        let line = sale_lines
+            .iter()
+            .find(|l| !line_id.is_empty() && field(l, "id") == line_id)
+            .ok_or_else(|| {
+                reject(
+                    "sales.refund_line_unknown",
+                    format!("`{line_id}` is not a line of sale {sale_id}"),
+                )
+            })?;
+        if out.iter().any(|r| r.line_id == line_id) {
+            return Err(reject(
+                "sales.refund_line_duplicated",
+                format!("line `{line_id}` appears twice in the same refund"),
+            ));
+        }
+        if already.iter().any(|r| field(r, "sale_item_id") == line_id) {
+            return Err(reject(
+                "sales.refund_line_already_returned",
+                format!("line `{line_id}` already went back with an earlier refund"),
+            ));
+        }
+        out.push(ReturnedLine {
+            line_id: line_id.clone(),
+            product_id: field(line, "product_id"),
+            quantity: item_i64(line, "quantity", 0),
+        });
+    }
+    Ok(out)
 }
 
 
@@ -11280,6 +11362,105 @@ mod tests {
         let mut inp = refund_input(json!([{ "payment_id": "pay-cash", "amount": 100 }]));
         inp["context"]["new_ids"] = json!(["ref-1"]); // cabecera sí, pata no
         let err = refund_sale_pure(inp).refused("sin ids");
+        assert_eq!(err.code, "sales.too_many_rows", "{err:?}");
+    }
+
+    // ── services#158 · the refund says WHICH lines go back ──────────────────────────────────
+    //
+    // A ticket with a haircut and a 5-session voucher; the customer returns only the voucher.
+    // Until now `sale.refunded` said how much money went back and nothing about lines, so
+    // `services` could only void the voucher when the WHOLE ticket went back and the customer
+    // kept a voucher she had been refunded. The operator now marks the lines that go back; the
+    // refund records them (a line goes back once) and the event names them.
+
+    /// The lines of `sale-1` as `sales.lines` returns them: a haircut and the voucher.
+    fn refund_sale_lines() -> Value {
+        json!([
+            { "id": "li-cut", "product_id": "svc-cut", "quantity": 1_000_000, "line_total": 2000 },
+            { "id": "li-voucher", "product_id": "pkg-5", "quantity": 1_000_000, "line_total": 5000 }
+        ])
+    }
+
+    fn refund_input_with_lines(lines: Value, returned: Value) -> Value {
+        let mut inp = refund_input(json!([{ "payment_id": "pay-card", "amount": 5000 }]));
+        inp["payload"]["lines"] = lines;
+        inp["context"]["reads"]["sales.lines"] = refund_sale_lines();
+        inp["context"]["reads"]["sales.refund_lines"] = returned;
+        inp
+    }
+
+    #[test]
+    fn returning_the_voucher_line_names_it_in_sale_refunded() {
+        let out = refund_sale_pure(refund_input_with_lines(json!([{ "line_id": "li-voucher" }]), json!([])))
+            .accepted("the voucher line goes back");
+        let ev = out.events.iter().find(|e| e.name == "sale.refunded").expect("event");
+        assert_eq!(
+            ev.payload["lines"],
+            json!([{ "line_id": "li-voucher", "product_id": "pkg-5", "quantity": 1_000_000 }]),
+            "services voids the voucher of the line that went back, and only that one"
+        );
+        let rec: Vec<&Operation> = out
+            .operations
+            .iter()
+            .filter(|o| o.command == "sales._insert_refund_line")
+            .collect();
+        assert_eq!(rec.len(), 1, "the returned line is recorded so it cannot go back twice");
+        assert_eq!(rec[0].params["refund_line_id"], json!("ref-line-2"), "next id after the one leg");
+        assert_eq!(rec[0].params["refund_id"], json!("ref-1"));
+        assert_eq!(rec[0].params["sale_id"], json!("sale-1"));
+        assert_eq!(rec[0].params["sale_item_id"], json!("li-voucher"));
+        assert_eq!(rec[0].params["product_id"], json!("pkg-5"));
+        assert_eq!(rec[0].params["quantity"], json!(1_000_000));
+        assert_eq!(
+            out.operations.last().expect("operations").command,
+            "sales._mark_refunded",
+            "the verdict stays the last statement"
+        );
+    }
+
+    #[test]
+    fn a_refund_that_names_no_line_announces_an_empty_list() {
+        // Money only, as before: the listeners read `lines` as «none of them», never as missing.
+        let out = refund_sale_pure(refund_input(json!([{ "payment_id": "pay-cash", "amount": 1000 }])))
+            .accepted("money only");
+        let ev = out.events.iter().find(|e| e.name == "sale.refunded").expect("event");
+        assert_eq!(ev.payload["lines"], json!([]));
+        assert!(!out.operations.iter().any(|o| o.command == "sales._insert_refund_line"));
+    }
+
+    #[test]
+    fn a_line_that_is_not_of_this_sale_is_refused() {
+        let err = refund_sale_pure(refund_input_with_lines(json!([{ "line_id": "li-other-sale" }]), json!([])))
+            .refused("foreign line");
+        assert_eq!(err.code, "sales.refund_line_unknown", "{err:?}");
+    }
+
+    #[test]
+    fn the_same_line_twice_in_one_refund_is_refused() {
+        let err = refund_sale_pure(refund_input_with_lines(
+            json!([{ "line_id": "li-voucher" }, { "line_id": "li-voucher" }]),
+            json!([]),
+        ))
+        .refused("repeated line");
+        assert_eq!(err.code, "sales.refund_line_duplicated", "{err:?}");
+    }
+
+    #[test]
+    fn a_line_already_returned_by_an_earlier_refund_is_refused() {
+        // Otherwise `services` would void ANOTHER voucher of the same package on the second refund.
+        let err = refund_sale_pure(refund_input_with_lines(
+            json!([{ "line_id": "li-voucher" }]),
+            json!([{ "sale_item_id": "li-voucher" }]),
+        ))
+        .refused("line already returned");
+        assert_eq!(err.code, "sales.refund_line_already_returned", "{err:?}");
+    }
+
+    #[test]
+    fn the_returned_lines_need_ids_from_the_host_too() {
+        let mut inp = refund_input_with_lines(json!([{ "line_id": "li-voucher" }]), json!([]));
+        inp["context"]["new_ids"] = json!(["ref-1", "ref-line-1"]); // head and leg, no line
+        let err = refund_sale_pure(inp).refused("no id for the line");
         assert_eq!(err.code, "sales.too_many_rows", "{err:?}");
     }
 
