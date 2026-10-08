@@ -127,9 +127,11 @@ fiscal: «Emitiendo el tique…» o «Emitiendo la factura…»; error: «Error 
 ### Devolver
 Ventana «Devolver la venta <número>» desde **Ventas**: explicación, una tarjeta por forma de pago
 («Cobrado», «Ya devuelto», «Devolvible», «Importe a devolver» y, si hace falta, «Devolver por»),
-«Devolver todo», «Motivo», «Se devuelve», las líneas pagadas por bono con su hueco, encima del botón
-el hueco `sales.reversal.notice` (lo que la devolución entera deshace en otros módulos: el aviso del
-bono vendido en la venta, SERVICES-F14) y «Devolver <importe>». Cargando: «Cargando lo que se puede
+«Devolver todo», «Qué se devuelve» (las líneas de la venta con una casilla cada una, «Marca lo que
+devuelve el cliente y el importe se propone solo. Si no marcas nada, solo se devuelve dinero.» y
+«Ya devuelta» en la que volvió antes), «Motivo», «Se devuelve», las líneas pagadas por bono con su
+hueco, encima del botón el hueco `sales.reversal.notice` (lo que la devolución deshace en otros
+módulos: el aviso del bono vendido en la venta, SERVICES-F14) y «Devolver <importe>». Cargando: «Cargando lo que se puede
 devolver…»; nada que devolver: «No queda nada por devolver en esta venta.».
 
 ### Anular venta
@@ -211,7 +213,7 @@ flujos de su fila en la misma entrega.
 | La marca de líneas: sirve para cobrar una parte y para dividir la cuenta | F22, F23 |
 | El chip «Atiende» y el sello de la línea: camarero en el restaurante, profesional en la peluquería | F16, F19, F20, F26 |
 | El hueco «asignar» de la cabecera: mesa (Mesas) y cliente (Clientes) en el mismo sitio | F05, F17, F19, F23, F24, F25 |
-| La ventana **Devolver**: dinero por forma de pago y sesión de bono en la misma confirmación | F31, F32 |
+| La ventana **Devolver**: dinero por forma de pago, líneas que vuelven y sesión de bono en la misma confirmación | F31, F32 |
 | La anulación de una venta: un solo aviso, y quién reacciona decide el efecto en cada negocio (Mesas solo deja de contar el cobro: la cuenta y la mesa siguen como estaban; Servicios devuelve la sesión de bono y anula el bono intacto que se vendió en esa venta; Citas no desmarca la cita) | F22, F26, F27, F30 |
 | El aviso de cuenta cerrada al cobrar la cuenta entera: Mesas libera la mesa y Cocina cierra sus rondas (cancela las pendientes) | F01, F20, F22 |
 | Las marcas de invitación y de «pagada por bono» de cada línea: el servidor las toma del cobro tal cual | F15, F27 |
@@ -268,7 +270,7 @@ flujos de su fila en la misma entrega.
 | Anular revierte todo lo que la venta movió | parcial: caja, stock, cliente, mesa y bono sí; la cita no; la mesa se libera aunque la cuenta siga abierta | F30 |
 | Devolución total o parcial por el medio original o por otro | hecho | F31 |
 | Devolución que ajusta la caja y el historial del cliente | parcial: caja solo con caja abierta; el cliente no se ajusta | F31 |
-| Devolución por artículos con vuelta de stock | no hecho | F31 |
+| Devolución por artículos con vuelta de stock | parcial: se marcan las líneas que vuelven y el importe se propone solo (Servicios anula el bono de esa línea), pero cada línea vuelve entera y el stock no vuelve (inventory#158, INVENTORY-F24) | F31 |
 | Devolución → rectificativa | hecho (en Facturación, INVOICE-F09 e INVOICE-F10; VeriFactu la registra, VERIFACTU-F14); parcial si la venta aún no tenía factura | F31 |
 | Devolver la sesión del bono | parcial (sales#512; imposible tras devolver todo el dinero) | F32 |
 | Reabrir una cuenta cobrada | no hecho, a propósito: se devuelve o se anula | — |
@@ -398,10 +400,9 @@ Se resuelven con `market-decision`; no las decide el worker.
 5. ¿La invitación pide motivo y permiso propio (como Toast) o basta el de montar la cuenta? (F15)
 6. ¿Eliminar una cuenta abierta pide motivo, y qué pasa con su mesa? (F18; sus rondas de cocina se cancelan desde kitchen#162, como en Toast)
 7. ¿El responsable debe poder guardar los ajustes del TPV en la pestaña, como ya puede por el asistente? (F34)
-8. Devolver por artículos (con vuelta de stock) frente a devolver dinero por forma de pago (F31).
-9. ¿«Ingresos» resta las devoluciones parciales? (F28)
-10. ¿Hace falta pantalla para el informe por profesional y para los medios de pago? (F28, F37)
-11. El nombre del cliente en ventas cobradas: ¿qué se borra en una petición RGPD, si las ventas se
+8. ¿«Ingresos» resta las devoluciones parciales? (F28)
+9. ¿Hace falta pantalla para el informe por profesional y para los medios de pago? (F28, F37)
+10. El nombre del cliente en ventas cobradas: ¿qué se borra en una petición RGPD, si las ventas se
    conservan como registro fiscal?
 
 ## Fuentes contrastadas
