@@ -21,7 +21,7 @@ Implicados: APPOINTMENTS-F17, SERVICES-F09, REC_FISCAL-F02, REC_PELUQUERIA-F09, 
 QA: B-05, B-06, BD-09
 
 ### SALES-F27 Pagar una línea con un bono
-Estado: parcial — el servidor da por pagada con bono la línea que el cobro diga, sin preguntar a Servicios: por el asistente o la API una línea se cobra a 0 sin bono detrás (sales#539); pedir (por el asistente o la API) que se quite una línea ya enviada a cocina no la quita, pero avisa igual y Servicios suelta la sesión que la cubría; al recargar la pantalla la cuenta pierde la clienta y el bono no sale hasta volver a asignarla (customers#135); y tras dividir o juntar la cuenta, la sesión retenida se queda un día en la cuenta de origen (sales#540, leído en el código, sin ejecutar)
+Estado: parcial — el servidor da por pagada con bono la línea que el cobro diga, sin preguntar a Servicios: por el asistente o la API una línea se cobra a 0 sin bono detrás (sales#539); pedir (por el asistente o la API) que se quite una línea ya enviada a cocina no la quita, pero avisa igual y Servicios suelta la sesión que la cubría; y tras dividir o juntar la cuenta, la sesión retenida se queda un día en la cuenta de origen (sales#540, leído en el código, sin ejecutar)
 Vertical: peluqueria
 Actor: empleado, responsable
 Pantalla: Cobro
@@ -30,7 +30,7 @@ Pasos:
 2. Si la línea es de más de una unidad («Corte × 2»), pulsa «Separar en N líneas»: un bono cubre una línea entera de una unidad. Una línea que no se puede separar dice «Esta línea no se puede separar, así que ningún bono puede cubrirla.».
 3. Acepta el bono en el hueco: la línea deja de cobrarse, el importe del botón baja y el resumen dice «Bono aplicado». Lo que no cubre el bono se cobra con su medio.
 4. Cobra: la línea sale en el tique a 0,00 € con «Ya pagado».
-5. Si se vuelve a una cuenta aparcada, el hueco enseña la sesión gastada con «Deshacer» y la línea sigue cubierta: no se cobra. Si se recarga la pantalla, vuelve a asignar a la clienta y pasa lo mismo; si se cobra sin asignarla, la línea se cobra a su precio y la sesión vuelve al bono, nunca las dos cosas.
+5. Si se vuelve a una cuenta aparcada, el hueco enseña la sesión gastada con «Deshacer» y la línea sigue cubierta: no se cobra. Si se recarga la pantalla, la clienta vuelve sola (CUSTOMERS-F17) y pasa lo mismo; si se cobra sin clienta (no se pudo leer o se quitó), la línea se cobra a su precio y la sesión vuelve al bono, nunca las dos cosas.
 Entra: los bonos de la clienta y sus sesiones, de Servicios.
 Sale: la venta con la línea marcada como pagada por otro medio y, en cada línea, la fila de la cuenta de la que sale (avisa: sale.completed); Servicios da por gastada la sesión de cada línea pagada con bono, devuelve al bono la de una línea cobrada con dinero y deja retenidas las de las líneas que no entran en este cobro (SERVICES-F24). Si después se anula la venta, la sesión no vuelve al bono (SALES-F30). Quitar la línea o eliminar la cuenta lo anuncia (avisa: sales.order.line_removed o sales.order.voided) y Servicios suelta la sesión retenida.
 Si falla: «No se ha podido separar la línea. La cuenta no ha cambiado.». Sin Servicios, sin clienta o sin cuenta abierta, no aparece la sección.
