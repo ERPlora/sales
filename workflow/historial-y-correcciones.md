@@ -55,7 +55,7 @@ Implicados: APPOINTMENTS-F17, CASH_REGISTER-F14, CUSTOMERS-F21, INVENTORY-F23, I
 QA: R-11, B-08, L-04 (discrepa), L-06, qa-hub-restaurant §7.13
 
 ### SALES-F31 Devolver una venta (toda, una parte o por otro medio)
-Estado: parcial — las líneas que se marcan vuelven enteras (no se elige cuántas unidades de una línea) y su stock no vuelve (inventory#158); Clientes no resta la devolución del historial del cliente; sin caja abierta y sin el bloqueo de Caja armado, la parte en efectivo no se apunta en Caja (queda en la cola de avisos fallidos); si la venta se devuelve antes de que exista su factura, no se rectifica nada (INVOICE-F06, INVOICE-F09); la ventana no se actualiza si otra tablet devuelve a la vez (sales#514)
+Estado: parcial — las líneas que se marcan vuelven enteras (no se elige cuántas unidades de una línea, sales#571) y su stock no vuelve (inventory#158); Clientes no resta la devolución del historial del cliente; sin caja abierta y sin el bloqueo de Caja armado, la parte en efectivo no se apunta en Caja (queda en la cola de avisos fallidos); si la venta se devuelve antes de que exista su factura, no se rectifica nada (INVOICE-F06, INVOICE-F09); la ventana no se actualiza si otra tablet devuelve a la vez (sales#514)
 Vertical: comun
 Actor: responsable
 Pantalla: Devolver
