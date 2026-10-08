@@ -18,6 +18,8 @@ transaction, the declared `expect_rows` judged on the rows of the statement it a
      and writes nothing — no head, no money, no line.
   3. A line of another sale is never recorded under this one.
   4. Tenancy: a neighbour hub reads none of this hub's returned lines and cannot record one.
+  5. Each guard of the statement holds on its own (a missing head, another sale's head, a
+     neighbour's forged head).
 
 Usage: tests/refund_lines.postgres.test.py
   `erplora-test-pg-5433` by default (override: SALES_TEST_PG_CONTAINER). Creates a scratch
@@ -121,7 +123,12 @@ def seed_sale(s: Session, sale_id: str, hub: str = HUB) -> None:
 
 
 def refund_calls(
-    refund_id: str, sale_id: str, amount: int, lines: list, hub: str
+    refund_id: str,
+    sale_id: str,
+    amount: int,
+    lines: list,
+    hub: str,
+    verdict: int = 0,
 ) -> list:
     """The operations `sales.refund` emits, in its order: head, leg, returned lines, mark."""
     calls = [
@@ -327,6 +334,69 @@ def step_4_tenancy(s: Session) -> None:
     )
 
 
+def one_line(refund_id: str, sale_id: str, line_id: str) -> list:
+    """`sales._insert_refund_line` ALONE: each of its guards judged without the rest of the chain
+    covering for it (the head would already refuse most of these cases)."""
+    return [
+        (
+            "sales._insert_refund_line",
+            {
+                "refund_line_id": f"{refund_id}-{line_id}",
+                "refund_id": refund_id,
+                "sale_id": sale_id,
+                "sale_item_id": line_id,
+                "product_id": "pkg-5",
+                "quantity": 1_000_000,
+            },
+        )
+    ]
+
+
+def step_5_each_guard_on_its_own(s: Session) -> None:
+    print("\n5 · each guard of the statement holds on its own")
+    seed_sale(s, "sale-5")
+    s.check(
+        "the haircut of sale-5 goes back (sale-5 has a real head now)",
+        play(s, refund_calls("r7", "sale-5", CUT, [("sale-5-cut", "svc-cut")], HUB)),
+        "ok",
+    )
+    s.check(
+        "a line under a head that does not exist is refused",
+        play(s, one_line("r-ghost", "sale-5", "sale-5-voucher")),
+        "sales.refund_line_already_returned",
+    )
+    s.check(
+        "a line under the head of ANOTHER sale is refused",
+        play(s, one_line("r1", "sale-5", "sale-5-voucher")),
+        "sales.refund_line_already_returned",
+    )
+    # A head in the neighbour hub that names THIS hub's sale.
+    s.q(
+        "INSERT INTO sales_sale_refund (id, hub_id, sale_id, total, reason, note, "
+        "idempotency_key, is_deleted) "
+        f"VALUES ('r-forged', '{OTHER_HUB}', 'sale-5', {VOUCHER}, 'forged', '', 'r-forged', 0)"
+    )
+    s.check(
+        "this hub naming the neighbour's head is refused",
+        play(s, one_line("r-forged", "sale-5", "sale-5-voucher")),
+        "sales.refund_line_already_returned",
+    )
+    s.check(
+        "the neighbour's head cannot record this hub's line",
+        play(s, one_line("r-forged", "sale-5", "sale-5-voucher"), hub=OTHER_HUB),
+        "sales.refund_line_already_returned",
+    )
+    s.check("...only the haircut is returned on sale-5", returned(s, "sale-5"), ["sale-5-cut"])
+    s.check(
+        "...and nothing under the neighbour",
+        s.qi(
+            "SELECT COUNT(*) FROM sales_sale_refund_line "
+            f"WHERE hub_id = '{OTHER_HUB}' AND sale_id = 'sale-5'"
+        ),
+        0,
+    )
+
+
 def main() -> int:
     print(
         f"→ services#158 · a refund records the lines that go back, once ({pg_harness.CONTAINER})"
@@ -342,6 +412,7 @@ def main() -> int:
         step_2_the_same_line_twice_is_refused(s)
         step_3_a_line_of_another_sale_is_not_recorded(s)
         step_4_tenancy(s)
+        step_5_each_guard_on_its_own(s)
     finally:
         s.drop()
     return s.report(
