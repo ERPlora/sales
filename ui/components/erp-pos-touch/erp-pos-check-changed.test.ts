@@ -36,6 +36,8 @@ let refuseWith = '';
 let charges = 0;
 /** The check row as the SERVER has it (`sales.orders.list`): its ticket discount (sales#553). */
 let orderRow: Record<string, unknown> = {};
+/** The list of open checks does not answer (the hub is busy, the network drops). */
+let ordersFail = false;
 /** What another device does to the check while the checkout waits; runs before the refusal. */
 let meanwhile: () => void = () => undefined;
 /** Code the next discount door is refused with; '' = it is applied. */
@@ -55,12 +57,13 @@ function installSdk() {
   refuseWith = '';
   charges = 0;
   preview = 'server';
+  ordersFail = false;
   orderRow = { id: 'ord-1', status: 'open', provisional_total: 0, created_at: '2026-10-08T10:00:00Z', discount_percent: 0, discount_amount: 0 };
   meanwhile = () => { orderLines = orderLines.filter((l) => l.id !== 'line-steak'); };
   refuseDiscountWith = '';
   sent = [];
   installPosDouble({
-    orders: () => [{ ...orderRow }],
+    orders: () => (ordersFail ? Promise.reject(new Error('offline')) : [{ ...orderRow }]),
     paymentMethods: METHODS,
     byIdempotencyKey: [{ id: 'sale-1' }],
     products: PRODUCTS,
@@ -289,6 +292,24 @@ describe('sales#553 · a discount changed while the check was being charged', ()
     await el.confirm();
     await settle(el);
 
+    expect(el.ticketDiscount).toBe(10);
+  });
+
+  it('a list of checks that does not answer still reloads the lines (the ticket discount stays as it was)', async () => {
+    orderRow = { ...orderRow, discount_percent: 10 };
+    const el = await steakAndWaterAtThePaySheet();
+    el.ticketDiscount = 10;
+    await settle(el);
+    refuseWith = 'sales.order_changed';
+    meanwhile = () => {
+      orderLines = orderLines.filter((l) => l.id !== 'line-steak');
+      ordersFail = true;
+    };
+
+    await el.confirm();
+    await settle(el);
+
+    expect(el.cart.map((l) => l.line_id), 'the voided steak left the screen').toEqual(['line-water']);
     expect(el.ticketDiscount).toBe(10);
   });
 
