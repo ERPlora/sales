@@ -5917,11 +5917,22 @@ export class ErpPosTouch extends LitElement {
           this.splitSel = new Set([...this.splitSel, ...ids]);
         }
       });
+      // sales#554 — the split went through: «nothing was split» from the refused try is no longer true.
+      if (this.error === t('ui.tenderSplitChanged')) this.error = '';
     } catch (e) {
       // The transaction is all or nothing, so the check is exactly the one that was on screen. The
       // cashier is told, because a button that does nothing in silence is worse than no button —
       // with the declared sentence of the code when the hub sent one (ADR-0398), and with this
       // screen's own when the failure was the browser's and carries no code.
+      //
+      // sales#554 — refused because the line changed on another device while the split waited
+      // (`sales.order_changed`): the screen is not the check any more, so it is read again and the
+      // next «Split» splits what is really there.
+      if (isCheckChanged(errorCode(e))) {
+        this.error = t('ui.tenderSplitChanged');
+        await this.reloadChangedCheck(orderId);
+        return;
+      }
       this.error = domainErrorText(CATALOG, erplora().locale, e) || t('ui.tenderSplitFailed');
     } finally {
       this.splittingLine = '';

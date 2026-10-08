@@ -371,6 +371,7 @@
     "tenderSplitLine": "Separar en {n} líneas",
     "tenderSplitReason": "Un bono cubre una línea. Sepárala y canjea las que alcance.",
     "tenderSplitFailed": "No se ha podido separar la línea. La cuenta no ha cambiado.",
+    "tenderSplitChanged": "Esa línea ha cambiado en otro dispositivo mientras se separaba. No se ha separado nada; la cuenta se ha vuelto a cargar: revísala y vuelve a separar la línea.",
     "tenderLineNotSplittable": "Esta línea no se puede separar, así que ningún bono puede cubrirla.",
     "tenderLinePart": "{i} de {n}",
     "serverUnavailable": "El servidor no responde (puede estar reiniciándose). Inténtalo de nuevo en unos segundos y, si persiste, avisa al encargado.",

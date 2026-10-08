@@ -5,18 +5,18 @@ Prefijo: SALES
 ## Flujos
 
 ### SALES-F34 Ajustar el TPV
-Estado: parcial — en la pestaña solo guarda el administrador, aunque el servidor deja guardarlos a quien tenga el permiso de ajustes (el responsable lo tiene y lo hace por el asistente); «Permitir efectivo/tarjeta/transferencia» y «Permitir tiques aparcados» solo los aplica la pantalla (el servidor no los comprueba y aparcar sigue disponible desde Cuentas abiertas); «Documento por defecto» enseña «ticket» e «invoice» en inglés, porque el módulo no publica su traducción
+Estado: parcial — «Permitir efectivo/tarjeta/transferencia» y «Permitir tiques aparcados» solo los aplica la pantalla (el servidor no los comprueba y aparcar sigue disponible desde Cuentas abiertas); «Documento por defecto» enseña «ticket» e «invoice» en inglés, porque el módulo no publica su traducción
 Vertical: comun
-Actor: administrador
+Actor: responsable, administrador
 Pantalla: Ajustes
 Pasos:
-1. En **Ventas / TPV**, abre la pestaña **Ajustes** (la añade el hub); arriba se lee «TPV».
+1. En **Ventas / TPV**, abre la pestaña **Ajustes** (la añade el hub); arriba se lee «TPV». La ve y la guarda quien tiene el permiso de ajustes del TPV: el administrador y el responsable de fábrica, igual desde la pestaña que por el asistente (HUB_SHELL-F44, ERPlora/hub#2621).
 2. Cambia lo que necesites: «Permitir efectivo», «Permitir tarjeta», «Permitir transferencia», «Mostrar productos en el TPV», «Mostrar servicios en el TPV», «Exigir cliente en cada venta», «Permitir descuentos», «Descuento máximo que puede aplicar solo quien cobra, por descuento (%)», «Permitir tiques aparcados», «Precios con IVA incluido por defecto», «Emitir factura si el cliente tiene NIF», «Documento por defecto», «Cabecera del recibo», «Pie del recibo», «Imagen de pie (URL/base64)», «URL del QR promocional» y «Texto del QR promocional».
 3. Pulsa **Guardar**: sale «Ajustes guardados.».
 4. Vuelve a **Vender**: el TPV lee los ajustes al abrirse, también para el cajero y el empleado. Si no puede leerlos, avisa con «El TPV no ha podido leer sus propios ajustes, así que muestra los valores por defecto. Vuelve a cargar para reintentarlo.».
 Entra: nada de otros componentes.
 Sale: la fila de ajustes del negocio (una por hub). La leen el TPV, la hoja de cobro, la cuenta impresa y el documento de venta; el servidor aplica al cobrar «Exigir cliente», «Permitir descuentos», el descuento máximo y los precios con IVA incluido.
-Si falla: sin ser administrador los campos salen de solo lectura con «Solo un administrador puede cambiar estos ajustes.» (un responsable sí puede cambiarlos pidiéndoselo al asistente). Un empleado o un cajero, que no tienen el permiso de ajustes, no ven la pestaña, y si teclean la dirección ven «Esta página no existe» (HUB_SHELL-F43, hub#2588); y si la lectura falla por un corte, «No se pudieron cargar los ajustes.» con «Reintentar», nunca los valores de fábrica (HUB_SHELL-F43, hub#2511). Un fallo al guardar dice «No se pudieron guardar los ajustes.». Si se apagan a la vez efectivo y tarjeta y no hay otro medio, el TPV vuelve a ofrecer todos los medios activos.
+Si falla: si con la pestaña abierta entra otra persona sin el permiso (relevo de turno), los campos se bloquean, desaparece «Guardar» y sale «No tienes permiso para cambiar estos ajustes. Pídeselo a un administrador si lo necesitas.» (HUB_SHELL-F44). Un empleado o un cajero, que no tienen el permiso de ajustes, no ven la pestaña, y si teclean la dirección ven «Esta página no existe» (HUB_SHELL-F43, hub#2588); y si la lectura falla por un corte, «No se pudieron cargar los ajustes.» con «Reintentar», nunca los valores de fábrica (HUB_SHELL-F43, hub#2511). Un fallo al guardar dice «No se pudieron guardar los ajustes.». Si se apagan a la vez efectivo y tarjeta y no hay otro medio, el TPV vuelve a ofrecer todos los medios activos.
 Implicados: PRINTING-F05, PRINTING-F15, HUB-F33, HUB_SHELL-F43, HUB_SHELL-F44, HUB_SHELL-F76
 QA: ninguno
 
