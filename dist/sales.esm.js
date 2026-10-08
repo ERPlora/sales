@@ -4704,6 +4704,9 @@ var en_default = {
     "sales.refund_requires_completed": "Only a completed sale can be refunded.",
     "sales.refund_sale_changed": "Another refund of this sale went through at the same time. Nothing was recorded for this one: confirm again to finish it.",
     "sales.refund_tender_duplicated": "The same tender appears twice in the refund. Put it on a single leg.",
+    "sales.refund_line_unknown": "One of the lines that would go back is not a line of this sale.",
+    "sales.refund_line_duplicated": "The same line appears twice in the refund.",
+    "sales.refund_line_already_returned": "That line already went back with an earlier refund.",
     "sales.refund_tender_not_eligible": "That tender cannot take its own money back. Choose another destination.",
     "sales.refund_tender_unknown": "That tender is not one of the ways this sale was paid.",
     "sales.sale_already_refunded": "This sale already has refunds, so it can no longer be voided. Refund what is left instead.",
@@ -5063,6 +5066,12 @@ var en_default = {
     refundRecoveredOnOpen: "The refund left unconfirmed was recorded. Below is what is still left to refund.",
     refundLineTenders: "Lines paid another way",
     refundLineTendersHint: "These lines cost no money, so they are not part of the split above. What goes back to them is decided here.",
+    refundLinesTitle: "What goes back",
+    refundLinesHint: "Mark what the customer returns and the amount is proposed for you. With nothing marked, only money goes back.",
+    refundLineAlreadyReturned: "Already returned",
+    refundLineAlreadyReturnedError: "One of the marked lines already went back with an earlier refund. Open the refund again to see what is left.",
+    refundLineUnknown: "One of the marked lines is not on this sale. Open the refund again.",
+    refundLineDuplicated: "The same line is marked twice. Open the refund again.",
     refundTenderPending: "The money is back, but what was paid another way could not be returned. Check it from its own module.",
     refundTenderReopen: "The refund is recorded, but what was paid another way has not been given back yet. Open this sale's refund again on this device to give it back.",
     refundTenderGiveBack: "Give back what was paid another way",
@@ -5408,6 +5417,9 @@ var es_default = {
     "sales.refund_requires_completed": "Solo se puede devolver una venta cerrada.",
     "sales.refund_sale_changed": "Se ha hecho otra devoluci\xF3n de esta venta a la vez. Esta no se ha registrado: confirma de nuevo para terminarla.",
     "sales.refund_tender_duplicated": "El mismo medio de pago aparece dos veces en la devoluci\xF3n. Ponlo en una sola pata.",
+    "sales.refund_line_unknown": "Una de las l\xEDneas que se devolver\xEDan no es de esta venta.",
+    "sales.refund_line_duplicated": "La misma l\xEDnea aparece dos veces en la devoluci\xF3n.",
+    "sales.refund_line_already_returned": "Esa l\xEDnea ya se devolvi\xF3 en otra devoluci\xF3n.",
     "sales.refund_tender_not_eligible": "Ese medio de pago no puede recuperar su propio dinero. Elige otro destino.",
     "sales.refund_tender_unknown": "Ese medio de pago no es una de las formas en que se cobr\xF3 esta venta.",
     "sales.sale_already_refunded": "Esta venta ya tiene devoluciones, as\xED que ya no se puede anular. Devuelve lo que queda.",
@@ -5767,6 +5779,12 @@ var es_default = {
     refundRecoveredOnOpen: "La devoluci\xF3n que qued\xF3 sin confirmar s\xED se registr\xF3. Abajo est\xE1 lo que a\xFAn queda por devolver.",
     refundLineTenders: "L\xEDneas pagadas de otra forma",
     refundLineTendersHint: "Estas l\xEDneas no costaron dinero, as\xED que no entran en el reparto de arriba. Lo que vuelve a ellas se decide aqu\xED.",
+    refundLinesTitle: "Qu\xE9 se devuelve",
+    refundLinesHint: "Marca lo que devuelve el cliente y el importe se propone solo. Si no marcas nada, solo se devuelve dinero.",
+    refundLineAlreadyReturned: "Ya devuelta",
+    refundLineAlreadyReturnedError: "Una de las l\xEDneas marcadas ya se devolvi\xF3 en otra devoluci\xF3n. Vuelve a abrir la devoluci\xF3n para ver lo que queda.",
+    refundLineUnknown: "Una de las l\xEDneas marcadas no es de esta venta. Vuelve a abrir la devoluci\xF3n.",
+    refundLineDuplicated: "La misma l\xEDnea est\xE1 marcada dos veces. Vuelve a abrir la devoluci\xF3n.",
     refundTenderPending: "El dinero ha vuelto, pero lo que se pag\xF3 de otra forma no se ha podido devolver. Rev\xEDsalo desde su m\xF3dulo.",
     refundTenderReopen: "La devoluci\xF3n est\xE1 registrada, pero lo que se pag\xF3 de otra forma a\xFAn no se ha devuelto. Vuelve a abrir la devoluci\xF3n de esta venta en este dispositivo para devolverlo.",
     refundTenderGiveBack: "Devolver lo pagado de otra forma",
@@ -13202,14 +13220,14 @@ var ErpPosTouch = class extends i3 {
       <div class="pay-lbl">${t5("ui.lineTenders")}</div>
       <ul class="tl-list">
         ${lines.map((l3) => {
-      const isCovered2 = !!l3.line_id && this.covered.has(l3.line_id);
+      const isCovered3 = !!l3.line_id && this.covered.has(l3.line_id);
       const part = linePart(lines, l3);
       const parts = splitCount(l3);
       return b2`<li class="tender-line" data-line=${l3.line_id ?? ""}>
             <div class="tl-h">
               <span class="tl-name">${l3.name}${part ? b2`<span class="tl-part" data-part=${part.part} data-of=${part.of}
                     >${t5("ui.tenderLinePart", { i: String(part.part), n: String(part.of) })}</span>` : A}</span>
-              <span class="tl-amount" ?data-covered=${isCovered2}>${this.money(lineAmount(l3))}</span>
+              <span class="tl-amount" ?data-covered=${isCovered3}>${this.money(lineAmount(l3))}</span>
             </div>
             ${coverableLine(l3) ? b2`<div class="tl-slot"></div>` : parts ? b2`
                   <ion-button data-testid=${`pos-tender-line-${l3.id}-split`} class="tl-split" expand="block" fill="outline" size="small"
@@ -17744,6 +17762,27 @@ function serviceOrdinals(covered) {
   return out;
 }
 
+// ui/lib/refund-lines.ts
+function isCovered2(l3) {
+  return l3.is_covered === true || Number(l3.is_covered ?? 0) > 0;
+}
+function returnableLines(lines) {
+  return lines.filter((l3) => !!l3.id && !isCovered2(l3) && !l3.parent_line_ref);
+}
+function pickedLineIds(lines, picked) {
+  const out = [];
+  for (const l3 of returnableLines(lines)) {
+    if (!picked.has(l3.id)) continue;
+    out.push(l3.id);
+    for (const child of lines) if (child.id && child.parent_line_ref === l3.id) out.push(child.id);
+  }
+  return out;
+}
+function pickedAmount(lines, picked) {
+  const ids = new Set(pickedLineIds(lines, picked));
+  return lines.reduce((sum, l3) => ids.has(l3.id) ? sum + Math.max(0, Math.round(Number(l3.line_total ?? 0)) || 0) : sum, 0);
+}
+
 // ui/lib/reversal-notice.ts
 async function loadReversalFillers(sdk) {
   try {
@@ -17816,7 +17855,11 @@ var REFUND_MESSAGES = {
   "sales.refund_nothing_to_return": "ui.refundNothingToReturn",
   "sales.refund_requires_completed": "ui.refundRequiresCompleted",
   "sales.refund_sale_changed": "ui.refundSaleChanged",
-  "sales.sale_not_found": "ui.refundSaleNotFound"
+  "sales.sale_not_found": "ui.refundSaleNotFound",
+  // services#158 - the lines marked in «Qué se devuelve».
+  "sales.refund_line_already_returned": "ui.refundLineAlreadyReturnedError",
+  "sales.refund_line_unknown": "ui.refundLineUnknown",
+  "sales.refund_line_duplicated": "ui.refundLineDuplicated"
 };
 function refundErrorKey(code) {
   const key = REFUND_MESSAGES[code];
@@ -17870,6 +17913,11 @@ var ErpSaleRefund = class extends i3 {
     this.reversalFillers = [];
     /** One instance per filler, kept so it is not recreated on every render. */
     this.reversalEls = /* @__PURE__ */ new Map();
+    this.saleLines = [];
+    /** services#158 - `sales.lines` could not be read: «Qué se devuelve» is not painted. */
+    this.saleLinesFailed = false;
+    this.returnedLines = /* @__PURE__ */ new Set();
+    this.picked = /* @__PURE__ */ new Set();
     /** La clave del intento, congelada: un reintento NO la renueva. */
     this.key = "";
     /** That line goes back to its external tender. The warning travels with the event because the
@@ -17937,6 +17985,16 @@ var ErpSaleRefund = class extends i3 {
     .rt-name { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .rt-slot { margin-top:.45rem; }
     .rt-slot:empty { display:none; }
+    /* services#158 - WHAT GOES BACK: one row per line paid in money, its box and its price. The
+       name may wrap (a long service name on a phone), the price never does. */
+    .rl-block { display:flex; flex-direction:column; gap:.4rem; }
+    .rl-list { list-style:none; margin:.2rem 0 0; padding:0; display:flex; flex-direction:column; gap:.35rem; }
+    .rl-line { display:flex; align-items:center; justify-content:space-between; gap:.75rem;
+      border:1px solid var(--ion-border-color,#e0ddd4); border-radius:var(--ok-radius,12px); padding:.45rem .7rem; }
+    .rl-line ion-checkbox { flex:1 1 auto; min-width:0; --size:22px; }
+    .rl-line ion-checkbox::part(label) { white-space:normal; overflow-wrap:anywhere; }
+    .rl-figure { flex:0 0 auto; white-space:nowrap; font-variant-numeric:tabular-nums; }
+    .rl-done { color:var(--ion-color-medium,#8b897f); font-size:.85rem; }
     .totals { display:flex; justify-content:space-between; align-items:baseline; font-size:1.05rem; }
     .totals .v { font-weight:800; }
     .block { margin:0; color:var(--ion-color-danger,#d9480f); font-size:.85rem; }
@@ -18014,7 +18072,8 @@ var ErpSaleRefund = class extends i3 {
       await this.resumePendingAttempt(saleId);
       const split = proportionalSplit(refundableTotal(this.legs), this.legs);
       this.draft = Object.fromEntries(Object.entries(split).map(([id, amount]) => [id, { amount }]));
-      await this.loadTenderLines(saleId);
+      await this.loadSaleLines(saleId);
+      await this.loadTenderLines();
       this.reversalFillers = await loadReversalFillers(erplora5());
       if (this.recoveredRef && !this.tenderReadFailed && !this.covered.length) this.settleRecovered();
       this.tenderPending = !!this.recoveredRef && this.tenderReadFailed;
@@ -18079,7 +18138,7 @@ var ErpSaleRefund = class extends i3 {
    * And the lines are not asked for when nobody fills the slot: with no tender owner there is
    * nothing to offer, so the read would be a call no pixel uses.
    */
-  async loadTenderLines(saleId) {
+  async loadTenderLines() {
     this.covered = [];
     this.tenderHanded = /* @__PURE__ */ new Set();
     this.tenderNotices = /* @__PURE__ */ new Map();
@@ -18098,13 +18157,48 @@ var ErpSaleRefund = class extends i3 {
       this.tenderReadFailed = true;
     }
     if (!this.tenderFillers.length) return;
+    this.covered = coveredLines(this.saleLines);
+    if (this.saleLinesFailed) this.tenderReadFailed = true;
+  }
+  /**
+   * services#158 - the lines of the sale, for «Qué se devuelve» and for the tender holes, and the
+   * ones an earlier refund already took back. Accessory like the holes: a failed read paints no
+   * block and never brings down the money refund. If only what went back earlier cannot be read,
+   * the lines are still offered - the server refuses a line that goes back twice.
+   */
+  async loadSaleLines(saleId) {
+    this.saleLines = [];
+    this.saleLinesFailed = false;
+    this.returnedLines = /* @__PURE__ */ new Set();
+    this.picked = /* @__PURE__ */ new Set();
     try {
-      const lines = await sdk.query("sales.lines", { sale_id: saleId });
-      this.covered = coveredLines(lines ?? []);
+      this.saleLines = await erplora5().query("sales.lines", { sale_id: saleId }) ?? [];
     } catch {
-      this.covered = [];
-      this.tenderReadFailed = true;
+      this.saleLinesFailed = true;
+      return;
     }
+    if (!returnableLines(this.saleLines).length) return;
+    try {
+      const rows4 = await erplora5().query("sales.refund_lines", { sale_id: saleId }) ?? [];
+      this.returnedLines = new Set(rows4.map((r6) => String(r6.sale_item_id ?? "")).filter(Boolean));
+    } catch {
+      this.returnedLines = /* @__PURE__ */ new Set();
+    }
+  }
+  /** services#158 - the operator marks (or un-marks) a line. The proposal follows the marked lines:
+   *  what they cost, capped at what is left and split by tender; with none marked, the whole refund
+   *  again. As before, it is a proposal - each amount can still be changed. */
+  toggleLine(lineId, on) {
+    if (this.returnedLines.has(lineId)) return;
+    const next = new Set(this.picked);
+    if (on) next.add(lineId);
+    else next.delete(lineId);
+    this.picked = next;
+    const amount = next.size ? pickedAmount(this.saleLines, next) : refundableTotal(this.legs);
+    const split = proportionalSplit(amount, this.legs);
+    this.draft = Object.fromEntries(
+      Object.entries(split).map(([id, cents2]) => [id, { ...this.draft[id], amount: cents2 }])
+    );
   }
   /**
    * One filler instance per covered line. Idempotent: the screen re-renders on every keystroke of
@@ -18203,7 +18297,10 @@ var ErpSaleRefund = class extends i3 {
         // La MISMA clave en cada intento: un reintento recupera el documento ya escrito en vez de
         // devolver el dinero por segunda vez (y `refund_ref` sigue siendo el mismo para services).
         idempotency_key: this.key,
-        allocations: buildAllocations(this.draft, this.legs)
+        allocations: buildAllocations(this.draft, this.legs),
+        // services#158 - which lines go back with the money. Omitted when none is marked: then
+        // only money goes back, exactly as before.
+        ...this.pickedPayload()
       });
       await this.finishRecorded(out, saleId);
     } catch (e8) {
@@ -18216,6 +18313,11 @@ var ErpSaleRefund = class extends i3 {
     } finally {
       this.busy = false;
     }
+  }
+  /** services#158 - `lines` for `sales.refund`: each marked line and the supplements under it. */
+  pickedPayload() {
+    const ids = pickedLineIds(this.saleLines, this.picked);
+    return ids.length ? { lines: ids.map((line_id) => ({ line_id })) } : {};
   }
   /**
    * sales#456 - after «we can't tell», the screen asks the hub itself, by the SAME key, like the
@@ -18439,6 +18541,36 @@ var ErpSaleRefund = class extends i3 {
                 </ion-select>` : A}`}
     </div>`;
   }
+  /**
+   * services#158 - «Qué se devuelve»: the lines paid in money, each with its box. Marking one says
+   * it goes back with the money (and proposes its price); a line an earlier refund took back is
+   * shown as such and cannot be marked. Not painted when the lines cannot be read.
+   */
+  renderReturnLines() {
+    const t7 = (k2) => erplora5().t(CATALOG5, k2);
+    const lines = returnableLines(this.saleLines);
+    if (this.saleLinesFailed || !lines.length) return A;
+    return b2`<div class="rl-block" data-testid="refund-lines">
+      <div class="rt-lbl">${t7("ui.refundLinesTitle")}</div>
+      <p class="hint">${t7("ui.refundLinesHint")}</p>
+      <ul class="rl-list">
+        ${lines.map((l3) => {
+      const done = this.returnedLines.has(l3.id);
+      return b2`<li class="rl-line" data-testid=${`refund-line-${l3.id}`}>
+            <ion-checkbox
+              data-testid=${`refund-line-check-${l3.id}`}
+              label-placement="end"
+              justify="start"
+              .checked=${this.picked.has(l3.id)}
+              ?disabled=${done}
+              @ionChange=${(e8) => this.toggleLine(l3.id, e8.detail?.checked === true)}
+            >${l3.product_name ?? ""}</ion-checkbox>
+            <span class="rl-figure">${done ? b2`<span class="rl-done">${t7("ui.refundLineAlreadyReturned")}</span>` : erplora5().formatMoney(Math.round(Number(l3.line_total ?? 0)) || 0)}</span>
+          </li>`;
+    })}
+      </ul>
+    </div>`;
+  }
   /** sales#456 - the attempt left in doubt WAS recorded: read first, above what is left. */
   renderRecoveredOnOpen() {
     if (!this.recoveredOnOpen) return A;
@@ -18476,6 +18608,7 @@ var ErpSaleRefund = class extends i3 {
       ${this.renderRecoveredOnOpen()}
       ${this.renderTenderPending()}
       <p class="hint">${t7("ui.refundExplain")}</p>
+      ${this.renderReturnLines()}
       <div class="legs">${this.legs.map((l3) => this.renderLeg(l3, true))}</div>
       ${this.renderTenderLines()}
       <ion-button class="refund-propose" data-testid="refund-propose-all" size="small" fill="clear" @click=${() => this.proposeAll()}>
@@ -18595,6 +18728,15 @@ __decorateClass([
 __decorateClass([
   r5()
 ], ErpSaleRefund.prototype, "reversalFillers", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "saleLines", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "returnedLines", 2);
+__decorateClass([
+  r5()
+], ErpSaleRefund.prototype, "picked", 2);
 define("erp-sale-refund", ErpSaleRefund);
 
 // ui/components/erp-sale-void/erp-sale-void.ts
