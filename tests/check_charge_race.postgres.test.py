@@ -42,6 +42,9 @@ Points:
  16-20. sales#553: a line or ticket discount put on or taken off — in flight, behind a checkout
      in flight (also a partial one), committed before the checkout queues, and the re-checks
      scoped to the row, the check and the hub.
+ 21. sales#554: a line split while another device changes its quantity (2 → 3, 3 → 2) or puts a
+     discount on it — in flight or committed before the split queues: the split is refused
+     (`sales.order_changed`) instead of losing or inventing a unit; the neighbour never gets in.
 
 Usage: tests/check_charge_race.postgres.test.py — container `erplora-test-pg-5433` by default
 (override: SALES_TEST_PG_CONTAINER). Scratch database, dropped at the end. Never skips itself.
@@ -297,11 +300,32 @@ def add_ops(order_id: str, line_id: str, line_total: int) -> list:
     ]
 
 
-def split_line_ops(order_id: str, line_id: str, unit_total: int, clone_id: str) -> list:
-    """What `sales.order.split_line` emits (handler `split_order_line_inner`) for a line of two:
-    the source drops to one unit and one clone of one is born."""
+def split_line_ops(
+    order_id: str,
+    line_id: str,
+    unit_total: int,
+    clone_id: str,
+    read_qty: int = 2 * ONE,
+    read_percent: float = 0.0,
+) -> list:
+    """What `sales.order.split_line` emits (handler `split_order_line_inner`): the source drops to
+    one unit and a clone of one is born per extra unit of the quantity it READ (`clone_id`,
+    `clone_id-2`, …)."""
+    parts = read_qty // ONE
+    clones = [clone_id] + [f"{clone_id}-{i}" for i in range(2, parts)]
     return [
         ("sales._order_lock", {"order_id": order_id}),
+        # sales#554: the row still says what the parts were counted and priced from.
+        (
+            "sales._order_line_live",
+            {
+                "order_id": order_id,
+                "line_id": line_id,
+                "quantity": read_qty,
+                "is_gift": 0,
+                "discount_percent": read_percent,
+            },
+        ),
         (
             "sales._update_order_line",
             {
@@ -315,7 +339,10 @@ def split_line_ops(order_id: str, line_id: str, unit_total: int, clone_id: str) 
                 "notes": None,
             },
         ),
-        ("sales._insert_order_line", new_row(order_id, clone_id, unit_total)),
+        *(
+            ("sales._insert_order_line", new_row(order_id, c, unit_total))
+            for c in clones
+        ),
         ("sales._recompute_order_total", {"order_id": order_id}),
     ]
 
@@ -1486,6 +1513,141 @@ def step_20_the_discount_rechecks_are_scoped(s: Session) -> None:
     )
 
 
+# ── 21 · sales#554: splitting a line while its quantity or its discount changes ─────────────
+
+
+def haircuts(s: Session, order_id: str, quantity: int) -> None:
+    """The issue's check: «Corte × N» at 18,00 € each, not sent, plus a 2,00 € product."""
+    open_check(s, order_id)
+    add_line(
+        s,
+        order_id,
+        f"{order_id}-cut",
+        1800 * (quantity // ONE),
+        fired=False,
+        quantity=quantity,
+    )
+    add_line(s, order_id, f"{order_id}-water", 200, fired=False)
+
+
+def cut_lines(s: Session, order_id: str) -> str:
+    """`<lines of the cut>|<units of the cut on the check>|<provisional total>`: a split that
+    loses or invents a unit moves the second number away from the cut's quantity."""
+    return s.q(
+        "SELECT count(*) || '|' || CAST(COALESCE(sum(i.quantity), 0) AS BIGINT) / 1000000 || '|'"
+        " || (SELECT provisional_total FROM sales_order WHERE id = i.order_id)"
+        f" FROM sales_order_item i WHERE i.order_id = '{order_id}' AND i.is_deleted = 0"
+        f" AND (i.id = '{order_id}-cut' OR i.id LIKE '{order_id}-part%') GROUP BY i.order_id"
+    )
+
+
+def split_cut(o: str, read_qty: int, read_percent: float = 0.0) -> list:
+    return split_line_ops(
+        o, f"{o}-cut", 1800, f"{o}-part", read_qty=read_qty, read_percent=read_percent
+    )
+
+
+def a_split_behind(s: Session, label: str, o: str, door: list, split: list) -> None:
+    """`door` held on the check, `split` (what the screen read before it) queued behind it."""
+    held = hold(s, door)
+    thread, box = in_background(s, split)
+    s.check(
+        f"{label}: the split is queued behind it",
+        poll(lambda: waiting_on_a_lock(s) >= 1) and thread.is_alive(),
+        True,
+    )
+    s.check(f"{label}: it commits", held.commit()[0], True)
+    s.check(
+        f"{label}: the split is refused — the line changed while it waited",
+        finish(s, split, thread, box),
+        CHANGED,
+    )
+
+
+def step_21_a_line_split_while_it_changes(s: Session) -> None:
+    print("\n21 · a line split while its quantity or its discount changes (sales#554)")
+    haircuts(s, "s21-clean", 2 * ONE)
+    s.check(
+        "CONTROL: a clean split is accepted",
+        play(s, split_cut("s21-clean", 2 * ONE)),
+        "ok",
+    )
+    s.check(
+        "CONTROL: two lines of one, the check worth the same",
+        cut_lines(s, "s21-clean"),
+        "2|2|3800",
+    )
+
+    haircuts(s, "s21-up", 2 * ONE)
+    a_split_behind(
+        s,
+        "2 → 3",
+        "s21-up",
+        update_ops("s21-up", "s21-up-cut", 3 * ONE, 5400),
+        split_cut("s21-up", 2 * ONE),
+    )
+    s.check(
+        "2 → 3: the third haircut is still on the check",
+        cut_lines(s, "s21-up"),
+        "1|3|5600",
+    )
+
+    haircuts(s, "s21-down", 3 * ONE)
+    a_split_behind(
+        s,
+        "3 → 2",
+        "s21-down",
+        update_ops("s21-down", "s21-down-cut", 2 * ONE, 3600),
+        split_cut("s21-down", 3 * ONE),
+    )
+    s.check("3 → 2: no haircut is invented", cut_lines(s, "s21-down"), "1|2|3800")
+
+    haircuts(s, "s21-disc", 2 * ONE)
+    a_split_behind(
+        s,
+        "a line discount put on",
+        "s21-disc",
+        line_discount_ops("s21-disc", "s21-disc-cut", 10.0, 3240),
+        split_cut("s21-disc", 2 * ONE),
+    )
+    s.check(
+        "a line discount put on: the line keeps its discount and its two units",
+        s.q(
+            "SELECT quantity / 1000000 || '|' || discount_percent || '|' || line_total"
+            " FROM sales_order_item WHERE id = 's21-disc-cut'"
+        ),
+        "2|10|3240",
+    )
+
+    # The screen read the line, the other device's change COMMITTED, and only then the split
+    # reached the check: nothing is in flight, the row is simply not what was read.
+    haircuts(s, "s21-stale", 2 * ONE)
+    s.check(
+        "a stale screen: the other device's change goes through",
+        play(s, update_ops("s21-stale", "s21-stale-cut", 3 * ONE, 5400)),
+        "ok",
+    )
+    s.check(
+        "a stale screen: the split of the old quantity is refused",
+        play(s, split_cut("s21-stale", 2 * ONE)),
+        CHANGED,
+    )
+    s.check(
+        "a stale screen: the three haircuts are still one line",
+        cut_lines(s, "s21-stale"),
+        "1|3|5600",
+    )
+
+    # The re-check is the hub's: the neighbour naming our check and our line is never let through.
+    haircuts(s, "s21-nb", 2 * ONE)
+    s.check(
+        "the neighbour hub splitting our line is refused",
+        play(s, split_cut("s21-nb", 2 * ONE), hub=OTHER_HUB),
+        CHANGED,
+    )
+    s.check("and our line is untouched", cut_lines(s, "s21-nb"), "1|2|3800")
+
+
 def open_neighbour_check(s: Session, order_id: str) -> bool:
     s.psql(
         [
@@ -1531,6 +1693,7 @@ def main() -> int:
             step_18_a_partial_charge_in_flight_refuses_the_line_discount,
             step_19_a_discount_committed_before_the_checkout_queues,
             step_20_the_discount_rechecks_are_scoped,
+            step_21_a_line_split_while_it_changes,
         ):
             try:
                 step(s)

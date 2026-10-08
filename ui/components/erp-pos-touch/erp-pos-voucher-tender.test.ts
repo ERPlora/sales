@@ -17,6 +17,8 @@
 // decision here. A hub without `services` gets zero calls and zero gaps on screen, which is the
 // last test of this file and the reason the other seven are allowed to exist.
 import { beforeEach, describe, expect, it } from 'vitest';
+import enLocale from '../../../locales/en.json';
+import esLocale from '../../../locales/es.json';
 import { installPosDouble } from '../../test/pos-double';
 
 import { tenderExactCash } from '../../test/cash-tender';
@@ -41,6 +43,16 @@ const METHODS = [
 
 /** Every slot the till asked the SDK for, in order. */
 let slotsAsked: string[] = [];
+/** sales#554 — the code the next split is refused with after another device raised the line to
+ *  three; '' = it splits. */
+let refuseSplitWith = '';
+
+class FakeErploraError extends Error {
+  constructor(readonly code: string, message: string) {
+    super(message);
+    this.name = 'ErploraError';
+  }
+}
 let commands: { name: string; payload: Record<string, unknown> }[] = [];
 
 /** A stand-in for `erp-services-voucher-tender`: it only records what the host handed it. */
@@ -58,6 +70,7 @@ if (!customElements.get('erp-fake-voucher')) {
 function installSdk(servicesInstalled = true) {
   slotsAsked = [];
   commands = [];
+  refuseSplitWith = '';
   const orderLines: Record<string, unknown>[] = [];
   let seq = 0;
   installPosDouble({
@@ -110,6 +123,12 @@ function installSdk(servicesInstalled = true) {
       if (name === 'sales.order.split_line') {
         const row = orderLines.find((l) => l.id === payload.line_id);
         if (!row) return { ok: true, new_ids: [] };
+        if (refuseSplitWith) {
+          // Another device raised the line to three while this one split the two it showed.
+          row.quantity = 3_000_000;
+          row.line_total = Number(row.unit_price) * 3;
+          throw new FakeErploraError(refuseSplitWith, 'The check changed while it was being charged');
+        }
         const parts = Number(row.quantity) / 1_000_000;
         row.quantity = 1_000_000;
         row.line_total = row.unit_price;
@@ -362,6 +381,36 @@ describe('sales#162 — the POS hosts `sales.pos.tender`', () => {
       await el.updateComplete;
       expect(payable(el), 'one haircut and the shampoo are still charged').toBe('27.00 €');
       expect($(el, '.sheet .pay-total'), 'no dialog interrupted the charge').toBeTruthy();
+    });
+
+    // sales#554 — the server refuses a split whose line changed on another device while it waited
+    // (`sales.order_changed`): nothing was split. The screen says so in its own sentence and reads
+    // the check again, so the next «Split» splits the three haircuts that are really there.
+    it('a line changed on another device: the sheet says so and the check is read again', async () => {
+      const el = await twoHaircuts();
+      refuseSplitWith = 'sales.order_changed';
+      await tapSplit(el);
+      const err = $(el, '.sheet .pay-err')?.textContent ?? '';
+      expect(err).toContain('ui.tenderSplitChanged');
+      expect(err, 'not the generic «could not be split»').not.toContain('ui.tenderSplitFailed');
+      expect($$(el, '.tender-line'), 'nothing was split').toHaveLength(1);
+      expect($(el, '.tender-line[data-line="line-1"] .tl-split')!.dataset.parts, 'the line as it is now').toBe('3');
+      expect(payable(el), 'three haircuts and a shampoo').toBe('63.00 €');
+    });
+
+    it('any other refusal keeps the generic sentence', async () => {
+      const el = await twoHaircuts();
+      refuseSplitWith = 'sales.line_not_splittable';
+      await tapSplit(el);
+      expect($(el, '.sheet .pay-err')?.textContent ?? '').not.toContain('ui.tenderSplitChanged');
+    });
+
+    it('its sentence exists in en AND in es', () => {
+      const en = (enLocale as { ui: Record<string, string> }).ui.tenderSplitChanged;
+      const es = (esLocale as { ui: Record<string, string> }).ui.tenderSplitChanged;
+      expect(en).toBeTruthy();
+      expect(es).toBeTruthy();
+      expect(es).not.toBe(en);
     });
 
     it('a line of one is untouched: no split action where there is nothing to split', async () => {
