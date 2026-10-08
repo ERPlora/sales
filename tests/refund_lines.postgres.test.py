@@ -20,6 +20,7 @@ transaction, the declared `expect_rows` judged on the rows of the statement it a
   4. Tenancy: a neighbour hub reads none of this hub's returned lines and cannot record one.
   5. Each guard of the statement holds on its own (a missing head, another sale's head, a
      neighbour's forged head).
+  6. A soft-deleted returned line is neither listed nor blocks the line from going back.
 
 Usage: tests/refund_lines.postgres.test.py
   `erplora-test-pg-5433` by default (override: SALES_TEST_PG_CONTAINER). Creates a scratch
@@ -172,7 +173,9 @@ def refund_calls(
                 },
             )
         )
-    calls.append(("sales._mark_refunded", {"sale_id": sale_id, "fully_refunded": verdict}))
+    calls.append(
+        ("sales._mark_refunded", {"sale_id": sale_id, "fully_refunded": verdict})
+    )
     return calls
 
 
@@ -267,7 +270,12 @@ def step_2_the_same_line_twice_is_refused(s: Session) -> None:
     )
     s.check(
         "the haircut can still go back (and closes the sale)",
-        play(s, refund_calls("r3", "sale-1", CUT, [("sale-1-cut", "svc-cut")], HUB, verdict=1)),
+        play(
+            s,
+            refund_calls(
+                "r3", "sale-1", CUT, [("sale-1-cut", "svc-cut")], HUB, verdict=1
+            ),
+        ),
         "ok",
     )
     s.check(
@@ -386,7 +394,11 @@ def step_5_each_guard_on_its_own(s: Session) -> None:
         play(s, one_line("r-forged", "sale-5", "sale-5-voucher"), hub=OTHER_HUB),
         "sales.refund_line_already_returned",
     )
-    s.check("...only the haircut is returned on sale-5", returned(s, "sale-5"), ["sale-5-cut"])
+    s.check(
+        "...only the haircut is returned on sale-5",
+        returned(s, "sale-5"),
+        ["sale-5-cut"],
+    )
     s.check(
         "...and nothing under the neighbour",
         s.qi(
@@ -405,7 +417,12 @@ def step_5_each_guard_on_its_own(s: Session) -> None:
     )
     s.check(
         "a neighbour's returned line does not block this hub's own voucher line",
-        play(s, refund_calls("r8", "sale-5", VOUCHER, [("sale-5-voucher", "pkg-5")], HUB, verdict=1)),
+        play(
+            s,
+            refund_calls(
+                "r8", "sale-5", VOUCHER, [("sale-5-voucher", "pkg-5")], HUB, verdict=1
+            ),
+        ),
         "ok",
     )
     s.check(
@@ -413,6 +430,30 @@ def step_5_each_guard_on_its_own(s: Session) -> None:
         returned(s, "sale-5"),
         ["sale-5-cut", "sale-5-voucher"],
     )
+
+
+def step_6_a_deleted_returned_line_does_not_count(s: Session) -> None:
+    print("\n6 · a soft-deleted returned line is neither listed nor blocks the line")
+    seed_sale(s, "sale-6")
+    s.q(
+        "INSERT INTO sales_sale_refund (id, hub_id, sale_id, total, reason, note, "
+        "idempotency_key, is_deleted) "
+        f"VALUES ('r-old', '{HUB}', 'sale-6', {VOUCHER}, 'old', '', 'r-old', 1)"
+    )
+    s.q(
+        "INSERT INTO sales_sale_refund_line (id, hub_id, refund_id, sale_id, sale_item_id, "
+        "product_id, quantity, is_deleted) "
+        f"VALUES ('rl-old', '{HUB}', 'r-old', 'sale-6', 'sale-6-voucher', 'pkg-5', 1000000, 1)"
+    )
+    s.check("a deleted returned line is not listed", returned(s, "sale-6"), [])
+    s.check(
+        "...and does not block the voucher line from going back",
+        play(
+            s, refund_calls("r9", "sale-6", VOUCHER, [("sale-6-voucher", "pkg-5")], HUB)
+        ),
+        "ok",
+    )
+    s.check("...which is now returned", returned(s, "sale-6"), ["sale-6-voucher"])
 
 
 def main() -> int:
@@ -431,6 +472,7 @@ def main() -> int:
         step_3_a_line_of_another_sale_is_not_recorded(s)
         step_4_tenancy(s)
         step_5_each_guard_on_its_own(s)
+        step_6_a_deleted_returned_line_does_not_count(s)
     finally:
         s.drop()
     return s.report(
