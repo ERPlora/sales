@@ -35,6 +35,10 @@ their ids and wraps their transaction, so they are proven here, through HTTP, an
      on a row marked paid at two, or closing the check over a line it never charged; and the
      other way round, `sales.order.update_line` waits for a checkout in flight and is refused.
      Same psql session as 8.
+  11. (sales#554) A line split WHILE another device raises (2 → 3) or lowers (3 → 2) its
+     quantity: the split waits for it and is refused (`sales.order_changed`) instead of leaving
+     two lines of one out of three haircuts, or three out of two; splitting again splits what is
+     really there. Same psql session as 8.
   3c. (sales#401) Adding a line refuses a quantity that is not a fixed-point integer
      (`invalid_payload`) instead of silently storing one unit.
 
@@ -591,8 +595,13 @@ def charge_behind(hub: Hub, psql: list[str], holder: subprocess.Popen, payload: 
     """Charges `payload` while `holder` holds the check, waits until the hub's transaction is
     seen WAITING on a lock (if it never waits, nothing queued it), commits the holder and returns
     the hub's answer."""
+    return call_behind(hub, psql, holder, "sales.complete_sale", payload)
+
+
+def call_behind(hub: Hub, psql: list[str], holder: subprocess.Popen, door: str, payload: dict) -> tuple:
+    """`charge_behind` for any door of the check (sales#554: the split)."""
     answer: dict = {}
-    t = threading.Thread(target=lambda: answer.update(r=hub.command("sales.complete_sale", payload)))
+    t = threading.Thread(target=lambda: answer.update(r=hub.command(door, payload)))
     t.start()
     deadline = time.monotonic() + 15
     waiting = "0"
@@ -1007,6 +1016,63 @@ def test_a_discount_changed_while_charging_is_not_charged(hub: Hub, cash: str) -
     )
 
 
+def cut_line(hub: Hub, oid: str) -> tuple:
+    """`(lines of the haircut on the check, units across them, provisional total)`."""
+    cuts = [l for l in lines(hub, oid) if l["product_name"] == "Corte"]
+    units = sum(int(l["quantity"]) for l in cuts) // ONE
+    return len(cuts), units, cents(order(hub, oid).get("provisional_total"))
+
+
+def test_a_line_split_while_its_quantity_changes_keeps_every_unit(hub: Hub) -> None:
+    print(
+        "\n11 · a line split WHILE another device changes its quantity loses or invents no unit"
+        " (sales#554)"
+    )
+    psql = hub_psql(hub)
+    if not psql:
+        return
+    for label, before, after in (("2 → 3", 2, 3), ("3 → 2", 3, 2)):
+        oid, _ = open_order(
+            hub,
+            [
+                {"product_name": "Corte", "price": 1800, "quantity": before * ONE, "tax_rate": 21.0},
+                {"product_name": "Champú", "price": 200, "quantity": ONE, "tax_rate": 21.0},
+            ],
+        )
+        cut = next(l for l in lines(hub, oid) if l["product_name"] == "Corte")
+        # What `sales.order.update_line` writes on the other device (the quantity, the line, the
+        # check's total) is in flight while this one splits the line it still shows at `before`.
+        holder = held_on_the_hub(
+            hub,
+            psql,
+            f"SELECT id FROM sales_order WHERE id = '{oid}' FOR UPDATE;\n"
+            f"UPDATE sales_order_item SET quantity = {after * ONE}, line_total = {after * 1800}"
+            f" WHERE id = '{cut['id']}';\n"
+            f"UPDATE sales_order SET provisional_total = {after * 1800 + 200} WHERE id = '{oid}';\n",
+        )
+        if holder is None:
+            return
+        answer = call_behind(
+            hub, psql, holder, "sales.order.split_line", {"order_id": oid, "line_id": cut["id"]}
+        )
+        hub.check(
+            f"{label}: the split is refused — the line changed while it waited",
+            refused_as_changed(answer),
+            (True, "sales.order_changed"),
+        )
+        hub.check(
+            f"{label}: every haircut is still on the check, in one line",
+            cut_line(hub, oid),
+            (1, after, after * 1800 + 200),
+        )
+        hub.run("sales.order.split_line", {"order_id": oid, "line_id": cut["id"]})
+        hub.check(
+            f"{label}: splitting it again makes a line of one per haircut, the check worth the same",
+            cut_line(hub, oid),
+            (after, after, after * 1800 + 200),
+        )
+
+
 def main() -> int:
     hub = Hub("orders.hub")
     print(
@@ -1024,6 +1090,7 @@ def main() -> int:
     test_a_line_taken_off_while_charging_is_not_charged(hub, cash)
     test_a_check_changed_while_charging_is_not_charged(hub, cash)
     test_a_discount_changed_while_charging_is_not_charged(hub, cash)
+    test_a_line_split_while_its_quantity_changes_keeps_every_unit(hub)
     return hub.finish(
         "open checks behave as ADR-0141/0146 promise, against the real kernel"
     )

@@ -16,8 +16,8 @@ su mesa, se manda a cocina por rondas, se imprime la cuenta para la mesa y se di
 la peluquería, se cobra la cita desde la agenda, cada servicio lleva a su profesional y una sesión de
 bono puede pagar una línea. Lo usan el **empleado** (camarero, recepcionista; con el rol «Cajero»
 además cobra), el **responsable** (cobra, anula, devuelve, autoriza descuentos y precio libre con su
-PIN, ve las cifras) y el **administrador** (todo, y es el único que guarda los ajustes desde la pestaña; el responsable puede
-hacerlo por el asistente). Las mesas,
+PIN, ve las cifras) y el **administrador** (todo). Los ajustes del TPV los guardan el responsable y el administrador,
+desde la pestaña o por el asistente (F34). Las mesas,
 la cocina, los clientes, la caja, la factura y el envío a la AEAT son de otros módulos que reaccionan
 a lo que pasa aquí.
 
@@ -250,7 +250,7 @@ flujos de su fila en la misma entrega.
 | Cuenta por mesa, dejarla en la mesa | parcial: con una cuenta de barra delante, tocar una mesa con pedido la deja libre (TABLES-F11) | F19 |
 | Enviar a cocina por rondas, sin duplicar | hecho (con Cocina) | F20 |
 | Cobrar sin cancelar lo que se está cocinando («pide y paga») | no hecho: al cobrar la cuenta entera Cocina cancela las rondas pendientes (leído en el código, sin ejecutar) | F20 |
-| Anular una línea ya enviada con aviso a cocina | parcial: el TPV la anula con motivo y PIN del responsable y la quita de la cuenta, y Ventas avisa (`sales.order.line_voided`) y Cocina tacha el plato con su motivo (KITCHEN-F29); el vale en papel de un solo plato aún no sale (hub#2640) | F20 |
+| Anular una línea ya enviada con aviso a cocina | hecho: el TPV la anula con motivo y PIN del responsable y la quita de la cuenta, y Ventas avisa (`sales.order.line_voided`); Cocina tacha el plato con su motivo (KITCHEN-F29) y la impresora de cocina saca su vale «PLATO ANULADO» (HUB_SHELL-F78) | F20 |
 | Precuenta no fiscal | parcial: sin aviso si el papel no sale | F21 |
 | Cobrar por artículos | hecho | F22 |
 | Dividir a partes iguales o por fracción de una línea | no hecho | F22, F23 |
@@ -275,7 +275,7 @@ flujos de su fila en la misma entrega.
 | Abrir el cajón al cobrar | hecho fuera de este módulo: el hub lo abre en el dispositivo que cobró si Impresión lo tiene activado, con cualquier forma de pago (PRINTING-F13) | F01, F02 |
 | Abrir el cajón «sin venta» | fuera de este módulo (Caja / Impresión) | — |
 | Dar de alta, editar y desactivar medios de pago en pantalla | parcial: alta solo por el asistente (sin tipo nace como efectivo); editar, desactivar y borrar no existen | F37 |
-| Ajustes del TPV | parcial: en la pestaña solo guarda el administrador; el responsable solo por el asistente | F34 |
+| Ajustes del TPV | parcial: efectivo/tarjeta/transferencia y tiques aparcados solo los aplica la pantalla; «Documento por defecto» sin traducir | F34 |
 
 ## Datos: de quién es cada dato
 
@@ -360,7 +360,10 @@ impide la pantalla está como hueco en su flujo.
   añadir una, partirla, poner o quitar el descuento de la cuenta, dividirla o juntarla también
   esperan al cobro de esa cuenta: lo que llega tarde se rechaza (`sales.order_changed`), y el cobro
   no cobra nada si lo que cobra ya no coincide con la cuenta (otra cantidad, otra invitación, otro
-  descuento de línea o de tique o, al cerrarla, una línea sin cobrar que no estaba en el cobro). Dividir y juntar mueven líneas enteras y lo ya cobrado no viaja.
+  descuento de línea o de tique o, al cerrarla, una línea sin cobrar que no estaba en el cobro).
+  Partir una línea tampoco parte nada si, mientras esperaba, otro dispositivo le cambió la
+  cantidad, la invitación o el descuento (`sales.order_changed`): no se pierde ni se inventa
+  ninguna unidad. Dividir y juntar mueven líneas enteras y lo ya cobrado no viaja.
 - **Permisos** (si el permiso es de responsable, el hub pide su PIN): montar la cuenta, enviar a
   cocina, dividir, juntar y descuento hasta el tope: empleado; cobrar: cajero y responsable;
   descuento por encima del tope, anular una cuenta abierta o una línea ya enviada, anular y devolver
@@ -411,7 +414,7 @@ Contra `origin/main` v2.16.154 (05/10/2026). Una línea por discrepancia; manda 
 - **`docs/limits.md` y `hand-book/modulos/sales.md`**: «Inventario e Impuestos son obligatorios y no se pueden desinstalar»; solo Impuestos lo es, Inventario es opcional desde sales#25 (`module.json` `depends_on`).
 - **`docs/screens.md`** («Search by sale number, payment method or customer name»): el buscador del historial busca por número y cliente; la forma de pago se filtra, no se busca (F28).
 - **`docs/screens.md`** (sección del TPV): cita «Requires `sales.add_sale` … `sales.take_payment`», pero no dice que un empleado sin `take_payment` recibe la petición de PIN; tampoco que precio libre y eliminar cuenta piden PIN a empleado y cajero (F09, F18).
-- **`docs/screens.md`** («Notas rápidas … plus a TPV settings tab»): la pestaña se llama «Ajustes» (la nombra el hub) y solo el administrador puede guardar (F34).
+- **`docs/screens.md`** («Notas rápidas … plus a TPV settings tab»): la pestaña se llama «Ajustes» (la nombra el hub) y guardan en ella el responsable y el administrador, los que tienen el permiso de ajustes (F34).
 - **`docs/screens.md` y `docs/overview.md`**: «three tabs»/«four slots»; hay cuatro pestañas propias (Vender, Ventas, Notas rápidas, Departamentos) y seis huecos (cuatro en Vender, uno en Devolver y `sales.reversal.notice`, que montan Anular venta y Devolver).
 - **`docs/overview.md`** (quién reacciona a la venta): nombra a Cocina y VeriFactu y omite a Mesas y Servicios; Cocina escucha el envío y el cierre de la cuenta, VeriFactu escucha a Facturación.
 - **`docs/concepts.md`** («To correct a completed sale, void it … `sale.voided` is emitted so stock comes back»): cierto para stock y caja, pero la factura simplificada y su registro VeriFactu no se anulan (F30).
@@ -426,7 +429,7 @@ Contra `origin/main` v2.16.154 (05/10/2026). Una línea por discrepancia; manda 
 - **QA R-09 y B-06** piden «imprimir + abrir cajón» al cobrar: lo hace el hub (no Ventas) al oír la venta, en el dispositivo que cobró, si Impresión lo tiene activado; el cajón se abre con cualquier medio, también tarjeta, y `qa-hub-restaurant` §7.10 pide que se abra solo con efectivo (F01, F02).
 - **QA L-04 y `qa-hub-restaurant` §7.13**: esperan registro de anulación al anular; no existe (F30).
 - **QA `qa-hub-restaurant` §7.10 y matriz §6**: invitación «con permiso, motivo y auditoría»; no pide ninguno de los dos (F15).
-- **QA `qa-hub-restaurant` §7.13**: «anular línea después de enviar con aviso a cocina» y «anular pedido abierto con motivo»: la línea se anula con motivo desde sales#521 y cocina la tacha con su motivo (KITCHEN-F29; el vale en papel de un solo plato, hub#2640); la cuenta abierta se anula sin motivo (F18, F20).
+- **QA `qa-hub-restaurant` §7.13**: «anular línea después de enviar con aviso a cocina» y «anular pedido abierto con motivo»: la línea se anula con motivo desde sales#521 y cocina la tacha con su motivo (KITCHEN-F29) y su impresora saca el vale de ese plato (HUB_SHELL-F78); la cuenta abierta se anula sin motivo (F18, F20).
 - **QA `qa-hub-restaurant` §7.09**: dividir a partes iguales y por fracción, y deshacer el split; solo existe mover líneas enteras (F23).
 - **`qa-hub-restaurant.md` §3** dice que ningún manifest usa roles que extienden otros; Ventas declara el rol «Cajero» (que cobra).
 - **`hand-book/modulos/sales.md`**: «Los ajustes del TPV aparecen en la configuración de aplicaciones del Hub»; es la pestaña «Ajustes» del propio módulo.

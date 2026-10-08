@@ -4284,8 +4284,20 @@ fn split_order_line_inner(input: Value) -> Result<Output, Refusal> {
 
     // sales#546 — queue on the check first, like every door that changes it: a line split while
     // the check was being charged left the clones unpaid on a closed check.
-    let mut ops: Vec<Operation> = Vec::with_capacity(parts as usize + 2);
+    let mut ops: Vec<Operation> = Vec::with_capacity(parts as usize + 3);
     ops.push(order_lock_op(&order_id));
+    // sales#554 — the parts were counted and priced from the row read BEFORE the transaction, and
+    // the writes below are absolute: a quantity changed while this waited on the check would lose
+    // a unit (2 → 3 leaves two lines of one) or invent one (3 → 2 leaves three). Under the lock the
+    // row has to still say what was read — the quantity, «not a comp» and the percent — or nothing
+    // is written and the split is refused with `sales.order_changed` (the checkout's re-check).
+    let mut live = Map::new();
+    live.insert("order_id".into(), json!(order_id));
+    live.insert("line_id".into(), json!(line_id));
+    live.insert("quantity".into(), json!(parts * QUANTITY_SCALE));
+    live.insert("is_gift".into(), json!(0));
+    live.insert("discount_percent".into(), json!(line_disc));
+    ops.push(Operation::sql("sales._order_line_live", live));
     // The SOURCE row keeps its id — and with it its place in the check, its audit trail and
     // anything already pointing at it — and drops to one unit.
     let mut source = Map::new();
@@ -14486,8 +14498,37 @@ mod tests {
     fn splitting_a_line_queues_on_the_check_before_writing_it() {
         let out = split_order_line_pure(split_input(split_line_row(), open_order_row()))
             .accepted("a haircut rung up twice can be split");
-        assert_eq!(&commands_of(&out)[..2], &["sales._order_lock", "sales._update_order_line"]);
+        // sales#554: between the queue and the first write, the re-check of the row it read.
+        assert_eq!(
+            &commands_of(&out)[..3],
+            &["sales._order_lock", "sales._order_line_live", "sales._update_order_line"]
+        );
         assert_eq!(out.operations[0].params["order_id"], json!("ord-1"));
+    }
+
+    #[test]
+    fn splitting_a_line_rechecks_under_the_lock_the_row_it_read() {
+        // sales#554 — the split counts its parts and prices them from the row read BEFORE its
+        // transaction, and writes absolute values: a quantity raised from 2 to 3 while it waited
+        // on the check left two lines of one (a haircut gone, never charged); lowered from 3 to 2,
+        // three (one charged twice). Under the lock, before writing, the row has to still say the
+        // quantity, the comp flag and the discount the parts were counted and priced from.
+        let mut row = split_line_row();
+        row["discount_percent"] = json!(10.0);
+        let out = split_order_line_pure(split_input(row, open_order_row()))
+            .accepted("a haircut rung up twice can be split");
+        assert_eq!(
+            &commands_of(&out)[..3],
+            &["sales._order_lock", "sales._order_line_live", "sales._update_order_line"],
+            "the re-check runs after the queue and before the first write"
+        );
+        let live = live_checks(&out);
+        assert_eq!(live.len(), 1, "one re-check, of the line being split");
+        assert_eq!(live[0]["order_id"], json!("ord-1"));
+        assert_eq!(live[0]["line_id"], json!("line-1"));
+        assert_eq!(live[0]["quantity"], json!(2_000_000), "the quantity the parts were counted from");
+        assert_eq!(live[0]["is_gift"], json!(0), "a comp is never split, so the row must still not be one");
+        assert_eq!(live[0]["discount_percent"], json!(10.0), "the percent the parts were priced at");
     }
 
     fn live_checks(out: &Output) -> Vec<&Map<String, Value>> {
