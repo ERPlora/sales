@@ -3013,8 +3013,8 @@ function previewTaxBreakdown(lines, taxIncluded = POS_SETTINGS_DEFAULTS.default_
 }
 
 // ui/lib/document-mappers.ts
-function minor(cents2) {
-  return Number(cents2 ?? 0);
+function minor(cents3) {
+  return Number(cents3 ?? 0);
 }
 function formatDateTime(iso, locale = "es") {
   if (!iso) return void 0;
@@ -4707,6 +4707,7 @@ var en_default = {
     "sales.refund_line_unknown": "One of the lines that would go back is not a line of this sale.",
     "sales.refund_line_duplicated": "The same line appears twice in the refund.",
     "sales.refund_line_already_returned": "That line already went back with an earlier refund.",
+    "sales.refund_line_quantity_exceeded": "That is more units of the line than are still left to give back.",
     "sales.refund_tender_not_eligible": "That tender cannot take its own money back. Choose another destination.",
     "sales.refund_tender_unknown": "That tender is not one of the ways this sale was paid.",
     "sales.sale_already_refunded": "This sale already has refunds, so it can no longer be voided. Refund what is left instead.",
@@ -5073,6 +5074,9 @@ var en_default = {
     refundLineAlreadyReturnedError: "One of the marked lines already went back with an earlier refund. Open the refund again to see what is left.",
     refundLineUnknown: "One of the marked lines is not on this sale. Open the refund again.",
     refundLineDuplicated: "The same line is marked twice. Open the refund again.",
+    refundLinePartlyReturned: "{returned} of {total} already returned",
+    refundLineUnits: "Units that go back",
+    refundLineQuantityExceeded: "One of the marked lines no longer has that many units left to give back: another refund took some. Open the refund again to see what is left.",
     refundTenderPending: "The money is back, but what was paid another way could not be returned. Check it from its own module.",
     refundTenderReopen: "The refund is recorded, but what was paid another way has not been given back yet. Open this sale's refund again on this device to give it back.",
     refundTenderGiveBack: "Give back what was paid another way",
@@ -5421,6 +5425,7 @@ var es_default = {
     "sales.refund_line_unknown": "Una de las l\xEDneas que se devolver\xEDan no es de esta venta.",
     "sales.refund_line_duplicated": "La misma l\xEDnea aparece dos veces en la devoluci\xF3n.",
     "sales.refund_line_already_returned": "Esa l\xEDnea ya se devolvi\xF3 en otra devoluci\xF3n.",
+    "sales.refund_line_quantity_exceeded": "Son m\xE1s unidades de la l\xEDnea de las que quedan por devolver.",
     "sales.refund_tender_not_eligible": "Ese medio de pago no puede recuperar su propio dinero. Elige otro destino.",
     "sales.refund_tender_unknown": "Ese medio de pago no es una de las formas en que se cobr\xF3 esta venta.",
     "sales.sale_already_refunded": "Esta venta ya tiene devoluciones, as\xED que ya no se puede anular. Devuelve lo que queda.",
@@ -5787,6 +5792,9 @@ var es_default = {
     refundLineAlreadyReturnedError: "Una de las l\xEDneas marcadas ya se devolvi\xF3 en otra devoluci\xF3n. Vuelve a abrir la devoluci\xF3n para ver lo que queda.",
     refundLineUnknown: "Una de las l\xEDneas marcadas no es de esta venta. Vuelve a abrir la devoluci\xF3n.",
     refundLineDuplicated: "La misma l\xEDnea est\xE1 marcada dos veces. Vuelve a abrir la devoluci\xF3n.",
+    refundLinePartlyReturned: "{returned} de {total} ya devueltas",
+    refundLineUnits: "Unidades que vuelven",
+    refundLineQuantityExceeded: "A una de las l\xEDneas marcadas ya no le quedan tantas unidades por devolver: otra devoluci\xF3n se llev\xF3 parte. Vuelve a abrir la devoluci\xF3n para ver lo que queda.",
     refundTenderPending: "El dinero ha vuelto, pero lo que se pag\xF3 de otra forma no se ha podido devolver. Rev\xEDsalo desde su m\xF3dulo.",
     refundTenderReopen: "La devoluci\xF3n est\xE1 registrada, pero lo que se pag\xF3 de otra forma a\xFAn no se ha devuelto. Vuelve a abrir la devoluci\xF3n de esta venta en este dispositivo para devolverlo.",
     refundTenderGiveBack: "Devolver lo pagado de otra forma",
@@ -12154,11 +12162,11 @@ var ErpPosTouch = class extends i3 {
     }
   }
   /** sales#113 — aplica un importe FIJO (céntimos; 0 = quitar) al ticket, persistiéndolo en el pedido. */
-  async applyDiscountAmount(cents2) {
+  async applyDiscountAmount(cents3) {
     const sheet = this.discountSheet;
     this.discountSheet = void 0;
     if (!sheet || sheet.target !== "ticket") return;
-    const value = Math.max(0, Math.round(cents2));
+    const value = Math.max(0, Math.round(cents3));
     if (!this.orderId) {
       this.ticketDiscountAmount = value;
       return;
@@ -12411,9 +12419,9 @@ var ErpPosTouch = class extends i3 {
    *  con ellos viene de un SERVICIO de precio no cerrado y arranca sugerido (services#12).
    *  `0` no se sugiere: un «desde 0 €» no es una pista, es ruido en la casilla. */
   openOpenPrice(seed) {
-    const cents2 = seed?.amountCents ?? 0;
+    const cents3 = seed?.amountCents ?? 0;
     this.openServiceName = seed?.name?.trim() ?? "";
-    this.openAmount = cents2 > 0 ? minorToTyped(cents2) : "";
+    this.openAmount = cents3 > 0 ? minorToTyped(cents3) : "";
     this.openDept = this.seededDeptKey(seed?.deptKey);
     this.openPriceOpen = true;
   }
@@ -17775,24 +17783,64 @@ function serviceOrdinals(covered) {
 }
 
 // ui/lib/refund-lines.ts
+var UNIT = 1e6;
+function cents2(v3) {
+  return Math.max(0, Math.round(Number(v3 ?? 0)) || 0);
+}
+function lineQuantity(l3) {
+  return l3.quantity === void 0 || l3.quantity === null ? UNIT : cents2(l3.quantity);
+}
 function isCovered2(l3) {
   return l3.is_covered === true || Number(l3.is_covered ?? 0) > 0;
 }
 function returnableLines(lines) {
   return lines.filter((l3) => !!l3.id && !isCovered2(l3) && !l3.parent_line_ref);
 }
-function pickedLineIds(lines, picked) {
-  const out = [];
-  for (const l3 of returnableLines(lines)) {
-    if (!picked.has(l3.id)) continue;
-    out.push(l3.id);
-    for (const child of lines) if (child.id && child.parent_line_ref === l3.id) out.push(child.id);
+function returnedUnits(rows4) {
+  const out = /* @__PURE__ */ new Map();
+  for (const r6 of rows4) {
+    const id = String(r6.sale_item_id ?? "");
+    if (!id) continue;
+    const q = r6.quantity === void 0 || r6.quantity === null ? Number.POSITIVE_INFINITY : cents2(r6.quantity);
+    out.set(id, (out.get(id) ?? 0) + q);
   }
   return out;
 }
-function pickedAmount(lines, picked) {
-  const ids = new Set(pickedLineIds(lines, picked));
-  return lines.reduce((sum, l3) => ids.has(l3.id) ? sum + Math.max(0, Math.round(Number(l3.line_total ?? 0)) || 0) : sum, 0);
+function unitsLeft(l3, returned) {
+  return Math.max(0, lineQuantity(l3) - (returned.get(l3.id) ?? 0));
+}
+function wholeUnitsLeft(l3, returned) {
+  const left = unitsLeft(l3, returned);
+  return left % UNIT === 0 ? left / UNIT : 0;
+}
+function share(total, qty, prev, q) {
+  if (qty <= 0) return q > 0 ? total : 0;
+  const upTo = (n6) => Math.round(total * Math.min(n6, qty) / qty);
+  return upTo(prev + q) - upTo(prev);
+}
+function pickedLines(lines, picked, returned) {
+  const out = [];
+  for (const l3 of returnableLines(lines)) {
+    const q = Math.min(cents2(picked.get(l3.id)), unitsLeft(l3, returned));
+    if (q <= 0) continue;
+    out.push({ line_id: l3.id, quantity: q });
+    const qty = lineQuantity(l3);
+    const prev = returned.get(l3.id) ?? 0;
+    for (const child of lines) {
+      if (!child.id || child.parent_line_ref !== l3.id) continue;
+      const units = Math.min(share(lineQuantity(child), qty, prev, q), unitsLeft(child, returned));
+      if (units > 0) out.push({ line_id: child.id, quantity: units });
+    }
+  }
+  return out;
+}
+function pickedAmount(lines, picked, returned) {
+  const byId = new Map(lines.map((l3) => [l3.id, l3]));
+  return pickedLines(lines, picked, returned).reduce((sum, p4) => {
+    const l3 = byId.get(p4.line_id);
+    if (!l3) return sum;
+    return sum + share(cents2(l3.line_total), lineQuantity(l3), returned.get(l3.id) ?? 0, p4.quantity);
+  }, 0);
 }
 
 // ui/lib/reversal-notice.ts
@@ -17871,7 +17919,8 @@ var REFUND_MESSAGES = {
   // services#158 - the lines marked in «Qué se devuelve».
   "sales.refund_line_already_returned": "ui.refundLineAlreadyReturnedError",
   "sales.refund_line_unknown": "ui.refundLineUnknown",
-  "sales.refund_line_duplicated": "ui.refundLineDuplicated"
+  "sales.refund_line_duplicated": "ui.refundLineDuplicated",
+  "sales.refund_line_quantity_exceeded": "ui.refundLineQuantityExceeded"
 };
 function refundErrorKey(code) {
   const key = REFUND_MESSAGES[code];
@@ -17928,8 +17977,8 @@ var ErpSaleRefund = class extends i3 {
     this.saleLines = [];
     /** services#158 - `sales.lines` could not be read: «Qué se devuelve» is not painted. */
     this.saleLinesFailed = false;
-    this.returnedLines = /* @__PURE__ */ new Set();
-    this.picked = /* @__PURE__ */ new Set();
+    this.returnedLines = /* @__PURE__ */ new Map();
+    this.picked = /* @__PURE__ */ new Map();
     /** La clave del intento, congelada: un reintento NO la renueva. */
     this.key = "";
     /** That line goes back to its external tender. The warning travels with the event because the
@@ -18001,8 +18050,12 @@ var ErpSaleRefund = class extends i3 {
        name may wrap (a long service name on a phone), the price never does. */
     .rl-block { display:flex; flex-direction:column; gap:.4rem; }
     .rl-list { list-style:none; margin:.2rem 0 0; padding:0; display:flex; flex-direction:column; gap:.35rem; }
-    .rl-line { display:flex; align-items:center; justify-content:space-between; gap:.75rem;
+    .rl-line { display:flex; flex-direction:column; gap:.35rem;
       border:1px solid var(--ion-border-color,#e0ddd4); border-radius:var(--ok-radius,12px); padding:.45rem .7rem; }
+    .rl-main { display:flex; align-items:center; justify-content:space-between; gap:.75rem; }
+    /* sales#571 - how many units of a marked line go back: its own row, so a phone never squeezes it. */
+    .rl-units { display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap; }
+    .rl-units ok-qty-stepper { --ok-qty-field-width:2.3rem; }
     .rl-line ion-checkbox { flex:1 1 auto; min-width:0; --size:22px; }
     .rl-line ion-checkbox::part(label) { white-space:normal; overflow-wrap:anywhere; }
     .rl-figure { flex:0 0 auto; white-space:nowrap; font-variant-numeric:tabular-nums; }
@@ -18181,8 +18234,8 @@ var ErpSaleRefund = class extends i3 {
   async loadSaleLines(saleId) {
     this.saleLines = [];
     this.saleLinesFailed = false;
-    this.returnedLines = /* @__PURE__ */ new Set();
-    this.picked = /* @__PURE__ */ new Set();
+    this.returnedLines = /* @__PURE__ */ new Map();
+    this.picked = /* @__PURE__ */ new Map();
     try {
       this.saleLines = await erplora5().query("sales.lines", { sale_id: saleId }) ?? [];
     } catch {
@@ -18192,24 +18245,40 @@ var ErpSaleRefund = class extends i3 {
     if (!returnableLines(this.saleLines).length) return;
     try {
       const rows4 = await erplora5().query("sales.refund_lines", { sale_id: saleId }) ?? [];
-      this.returnedLines = new Set(rows4.map((r6) => String(r6.sale_item_id ?? "")).filter(Boolean));
+      this.returnedLines = returnedUnits(rows4);
     } catch {
-      this.returnedLines = /* @__PURE__ */ new Set();
+      this.returnedLines = /* @__PURE__ */ new Map();
     }
   }
   /** services#158 - the operator marks (or un-marks) a line. The proposal follows the marked lines:
    *  what they cost, capped at what is left and split by tender; with none marked, the whole refund
    *  again. As before, it is a proposal - each amount can still be changed. */
   toggleLine(lineId, on) {
-    if (this.returnedLines.has(lineId)) return;
-    const next = new Set(this.picked);
-    if (on) next.add(lineId);
+    const line = returnableLines(this.saleLines).find((l3) => l3.id === lineId);
+    const left = line ? unitsLeft(line, this.returnedLines) : 0;
+    if (left <= 0) return;
+    const next = new Map(this.picked);
+    if (on) next.set(lineId, left);
     else next.delete(lineId);
+    this.setPicked(next);
+  }
+  /** sales#571 - the stepper of a marked line: how many whole units of it go back, 1…what is left. */
+  setLineUnits(lineId, units) {
+    const line = returnableLines(this.saleLines).find((l3) => l3.id === lineId);
+    if (!line || !this.picked.has(lineId)) return;
+    const most = wholeUnitsLeft(line, this.returnedLines);
+    if (most < 1) return;
+    const n6 = Math.min(Math.max(1, Math.round(Number(units) || 0)), most);
+    const next = new Map(this.picked);
+    next.set(lineId, n6 * UNIT);
+    this.setPicked(next);
+  }
+  setPicked(next) {
     this.picked = next;
-    const amount = next.size ? pickedAmount(this.saleLines, next) : refundableTotal(this.legs);
+    const amount = next.size ? pickedAmount(this.saleLines, next, this.returnedLines) : refundableTotal(this.legs);
     const split = proportionalSplit(amount, this.legs);
     this.draft = Object.fromEntries(
-      Object.entries(split).map(([id, cents2]) => [id, { ...this.draft[id], amount: cents2 }])
+      Object.entries(split).map(([id, cents3]) => [id, { ...this.draft[id], amount: cents3 }])
     );
   }
   /**
@@ -18326,10 +18395,11 @@ var ErpSaleRefund = class extends i3 {
       this.busy = false;
     }
   }
-  /** services#158 - `lines` for `sales.refund`: each marked line and the supplements under it. */
+  /** services#158 / sales#571 - `lines` for `sales.refund`: each marked line with its units, and
+   *  the supplements under it in the same proportion. */
   pickedPayload() {
-    const ids = pickedLineIds(this.saleLines, this.picked);
-    return ids.length ? { lines: ids.map((line_id) => ({ line_id })) } : {};
+    const lines = pickedLines(this.saleLines, this.picked, this.returnedLines);
+    return lines.length ? { lines } : {};
   }
   /**
    * sales#456 - after «we can't tell», the screen asks the hub itself, by the SAME key, like the
@@ -18567,17 +18637,39 @@ var ErpSaleRefund = class extends i3 {
       <p class="hint">${t7("ui.refundLinesHint")}</p>
       <ul class="rl-list">
         ${lines.map((l3) => {
-      const done = this.returnedLines.has(l3.id);
+      const left = unitsLeft(l3, this.returnedLines);
+      const done = left <= 0;
+      const back = this.returnedLines.get(l3.id) ?? 0;
+      const whole = wholeUnitsLeft(l3, this.returnedLines);
+      const units = this.picked.get(l3.id);
+      const partly = !done && back > 0 && Number.isFinite(back) && back % UNIT === 0 && left % UNIT === 0;
       return b2`<li class="rl-line" data-testid=${`refund-line-${l3.id}`}>
-            <ion-checkbox
-              data-testid=${`refund-line-check-${l3.id}`}
-              label-placement="end"
-              justify="start"
-              .checked=${this.picked.has(l3.id)}
-              ?disabled=${done}
-              @ionChange=${(e8) => this.toggleLine(l3.id, e8.detail?.checked === true)}
-            >${l3.product_name ?? ""}</ion-checkbox>
-            <span class="rl-figure">${done ? b2`<span class="rl-done">${t7("ui.refundLineAlreadyReturned")}</span>` : erplora5().formatMoney(Math.round(Number(l3.line_total ?? 0)) || 0)}</span>
+            <div class="rl-main">
+              <ion-checkbox
+                data-testid=${`refund-line-check-${l3.id}`}
+                label-placement="end"
+                justify="start"
+                .checked=${units !== void 0}
+                ?disabled=${done}
+                @ionChange=${(e8) => this.toggleLine(l3.id, e8.detail?.checked === true)}
+              >${l3.product_name ?? ""}</ion-checkbox>
+              <span class="rl-figure">${done ? b2`<span class="rl-done">${t7("ui.refundLineAlreadyReturned")}</span>` : erplora5().formatMoney(Math.round(Number(l3.line_total ?? 0)) || 0)}</span>
+            </div>
+            ${partly ? b2`<span class="rl-done" data-testid=${`refund-line-partly-${l3.id}`}>${erplora5().t(CATALOG5, "ui.refundLinePartlyReturned", {
+        returned: back / UNIT,
+        total: (back + left) / UNIT
+      })}</span>` : A}
+            ${units !== void 0 && whole >= 2 ? b2`<div class="rl-units">
+                  <span>${t7("ui.refundLineUnits")}</span>
+                  <ok-qty-stepper
+                    data-testid=${`refund-line-qty-${l3.id}`}
+                    .value=${Math.round(units / UNIT)}
+                    .min=${1}
+                    .max=${whole}
+                    .step=${1}
+                    @ok-change=${(e8) => this.setLineUnits(l3.id, e8.detail?.value)}
+                  ></ok-qty-stepper>
+                </div>` : A}
           </li>`;
     })}
       </ul>
