@@ -28,6 +28,14 @@ fact, and the credit note is its document, issued from `invoice`.
 
 When the last cent goes back, the sale's status becomes **Devuelta**.
 
+**What goes back** lists the sale's lines with a checkbox each (services#158). Marking the lines the
+customer returns proposes their amount — the sum of the marked lines, capped at what is still
+refundable, split across the tenders like the full proposal — and the refund names those lines. A
+line already returned by an earlier refund shows **Already returned** and cannot be marked again.
+With nothing marked only money goes back, as before. The returned lines travel on `sale.refunded`
+(`lines`), so a module that sold something on a line undoes it: **Services voids the voucher sold on
+that line**. Stock does not come back yet: Inventory does not listen to the lines.
+
 If the hub does not answer when you confirm (sales#451), nobody can tell yet whether the refund was
 recorded, so the screen never says it failed. The hub's own «we can't tell» toast is the only toast;
 the screen adds none. Instead it **finds out by itself** (sales#456): it shows «Checking whether the

@@ -477,6 +477,8 @@ export class ErpSaleRefund extends LitElement {
       this.saleLinesFailed = true;
       return;
     }
+    // No line to mark, nothing to grey out: the read would be a call no pixel uses.
+    if (!returnableLines(this.saleLines).length) return;
     try {
       const rows = (await erplora().query<Array<{ sale_item_id?: string }>>('sales.refund_lines', { sale_id: saleId })) ?? [];
       this.returnedLines = new Set(rows.map((r) => String(r.sale_item_id ?? '')).filter(Boolean));
@@ -493,8 +495,8 @@ export class ErpSaleRefund extends LitElement {
     const next = new Set(this.picked);
     if (on) next.add(lineId); else next.delete(lineId);
     this.picked = next;
-    const left = refundableTotal(this.legs);
-    const amount = next.size ? Math.min(pickedAmount(this.saleLines, next), left) : left;
+    // `proportionalSplit` caps the amount at what is left, so marking more than that proposes it all.
+    const amount = next.size ? pickedAmount(this.saleLines, next) : refundableTotal(this.legs);
     const split = proportionalSplit(amount, this.legs);
     this.draft = Object.fromEntries(
       Object.entries(split).map(([id, cents]) => [id, { ...this.draft[id], amount: cents }]),
@@ -639,7 +641,7 @@ export class ErpSaleRefund extends LitElement {
 
   /** services#158 - `lines` for `sales.refund`: each marked line and the supplements under it. */
   private pickedPayload(): { lines?: Array<{ line_id: string }> } {
-    const ids = pickedLineIds(this.saleLines, this.picked).filter((id) => !this.returnedLines.has(id));
+    const ids = pickedLineIds(this.saleLines, this.picked);
     return ids.length ? { lines: ids.map((line_id) => ({ line_id })) } : {};
   }
 
@@ -919,6 +921,7 @@ export class ErpSaleRefund extends LitElement {
           const done = this.returnedLines.has(l.id);
           return html`<li class="rl-line" data-testid=${`refund-line-${l.id}`}>
             <ion-checkbox
+              data-testid=${`refund-line-check-${l.id}`}
               label-placement="end"
               justify="start"
               .checked=${this.picked.has(l.id)}

@@ -155,6 +155,7 @@ describe('«Qué se devuelve»: the lines of the ticket, marked by the operator 
     expect(row.textContent).toContain('ui.refundLineAlreadyReturned');
     expect(box(el, 'li-voucher')!.hasAttribute('disabled')).toBe(true);
     await mark(el, 'li-voucher');
+    expect(total(el), 'the proposal does not follow a line that cannot be marked').toBe('70,00 €');
     el.reason = 'otra vez';
     await el.confirm();
     expect(sent.find((c) => c.name === 'sales.refund')?.payload.lines).toBeUndefined();

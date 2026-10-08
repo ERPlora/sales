@@ -129,6 +129,9 @@ const COVERED: Record<string, { prefix: string; contract: string[]; tables?: str
       'refund-no-money-left',
       // services#157: where other modules say what the refund does to what the sale sold.
       'refund-reversal-notice',
+      // services#158: «What goes back», the lines marked as returned (each row and its box carry
+      // the line id: `refund-line-<id>`, `refund-line-check-<id>`).
+      'refund-lines',
     ],
   },
   // The «void sale» window (services#157; it was an ion-alert): the reason, the hole other modules
