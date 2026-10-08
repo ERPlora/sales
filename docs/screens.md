@@ -347,7 +347,9 @@ item is voided with a reason and a manager, never silently deleted. On the serve
 without a reason (`sales.order_line_not_voidable`), and `sales.order.remove_line` now refuses a sent
 line (`sales.order_line_not_removable`) instead of answering ok and removing nothing. A void raises
 `sales.order.line_removed` and **`sales.order.line_voided`** (`order_id`, `line_id`, `reason`). The
-kitchen display does not listen to it yet (kitchen#161): tell the kitchen.
+kitchen display strikes that dish with «Voided» and the reason, and the round goes on with what is
+left (kitchen#161). The kitchen printer does not print a void slip for a single dish yet (hub#2640):
+in a kitchen that works from printed tickets, tell the kitchen.
 
 **Charging a check with pending lines sends them first** (sales#439). The **Cobrar** sheet says so
 before the tap — «El producto pendiente de la comanda se enviará a cocina al cobrar» (or «Los N
