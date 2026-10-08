@@ -129,7 +129,9 @@ Ventana «Devolver la venta <número>» desde **Ventas**: explicación, una tarj
 («Cobrado», «Ya devuelto», «Devolvible», «Importe a devolver» y, si hace falta, «Devolver por»),
 «Devolver todo», «Qué se devuelve» (las líneas de la venta con una casilla cada una, «Marca lo que
 devuelve el cliente y el importe se propone solo. Si no marcas nada, solo se devuelve dinero.» y
-«Ya devuelta» en la que volvió antes), «Motivo», «Se devuelve», las líneas pagadas por bono con su
+«Ya devuelta» en la que volvió entera antes; en una línea de varias unidades de la que ya volvió una
+parte, «<n> de <m> ya devueltas»; marcada una línea con dos o más unidades enteras por devolver, debajo
+«Unidades que vuelven» con un selector de 1 a lo que queda), «Motivo», «Se devuelve», las líneas pagadas por bono con su
 hueco, encima del botón el hueco `sales.reversal.notice` (lo que la devolución deshace en otros
 módulos: el aviso del bono vendido en la venta, SERVICES-F14) y «Devolver <importe>». Cargando: «Cargando lo que se puede
 devolver…»; nada que devolver: «No queda nada por devolver en esta venta.».
@@ -270,7 +272,7 @@ flujos de su fila en la misma entrega.
 | Anular revierte todo lo que la venta movió | parcial: caja, stock, cliente, mesa y bono sí; la cita no; la mesa se libera aunque la cuenta siga abierta | F30 |
 | Devolución total o parcial por el medio original o por otro | hecho | F31 |
 | Devolución que ajusta la caja y el historial del cliente | parcial: caja solo con caja abierta; el cliente no se ajusta | F31 |
-| Devolución por artículos con vuelta de stock | parcial: se marcan las líneas que vuelven y el importe se propone solo (Servicios anula el bono de esa línea), pero cada línea vuelve entera y el stock no vuelve (inventory#158, INVENTORY-F24) | F31 |
+| Devolución por artículos con vuelta de stock | parcial: se marcan las líneas que vuelven, se elige cuántas unidades de cada una, y el importe se propone solo, prorrateado (Servicios anula un bono por unidad devuelta); una línea por peso vuelve entera de lo que queda (sales#574) y el stock no vuelve (inventory#158, INVENTORY-F24) | F31 |
 | Devolución → rectificativa | hecho (en Facturación, INVOICE-F09 e INVOICE-F10; VeriFactu la registra, VERIFACTU-F14); parcial si la venta aún no tenía factura | F31 |
 | Devolver la sesión del bono | parcial (sales#512; imposible tras devolver todo el dinero) | F32 |
 | Reabrir una cuenta cobrada | no hecho, a propósito: se devuelve o se anula | — |
