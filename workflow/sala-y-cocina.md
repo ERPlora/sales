@@ -9,7 +9,7 @@ pone las cuentas, las líneas y los importes; la mesa es de Mesas y la comanda e
 ## Flujos
 
 ### SALES-F19 Abrir la cuenta de una mesa y dejarla en la mesa
-Estado: parcial — en una mesa con dos cuentas (dividida), tocarla abre una sin elegir; al dejar en la mesa una cuenta con cliente, el cliente se queda en pantalla y la cuenta siguiente sale a su nombre (sales#566)
+Estado: parcial — en una mesa con dos cuentas (dividida), tocarla abre una sin elegir; con un cliente en la cuenta de una mesa, tocar otra mesa libre sin dejarla antes hace que la cuenta de la mesa nueva salga a su nombre (sales#569)
 Vertical: restaurante
 Actor: empleado, responsable
 Pantalla: Vender
@@ -17,12 +17,12 @@ Pasos:
 1. En la cabecera de la cuenta, toca el botón de mesa (lo pone Mesas) y elige la mesa.
 2. Si la mesa ya tenía cuenta, sus líneas aparecen en pantalla; si no, la cuenta empieza vacía con el nombre de la mesa como título y el chip de la mesa.
 3. Añade lo que pidan. El primer artículo crea la cuenta y Mesas la enlaza a la mesa.
-4. Para soltarla sin cobrar, pulsa el botón de pausa, que con mesa es «Dejar en la mesa»: sale «La cuenta se queda en <mesa>» y la pantalla queda libre. Se retoma tocando la mesa o desde **Cuentas abiertas**.
+4. Para soltarla sin cobrar, pulsa el botón de pausa, que con mesa es «Dejar en la mesa»: sale «La cuenta se queda en <mesa>» y la pantalla queda libre, también de cliente: el botón de Clientes vuelve a «Asignar cliente» y la cuenta siguiente no lleva al cliente de la mesa ni le gasta su bono. Se retoma tocando la mesa o desde **Cuentas abiertas**, y Clientes le devuelve su cliente (CUSTOMERS-F17).
 5. Si al tocar otra mesa hay delante una cuenta de barra (sin mesa), pregunta «Tienes una cuenta a medias» sin «Cancelar»: «Aparcarla y abrir» o «Eliminarla y abrir». Lo que se aparca o se elimina es la cuenta de barra; la mesa tocada sigue Ocupada con su cuenta (TABLES-F11). Una cuenta que ya tenía mesa se queda en su mesa.
-Entra: la mesa elegida y su cuenta, de Mesas.
-Sale: la cuenta abierta con el título de la mesa; Mesas guarda qué cuenta tiene cada mesa (avisa: sales.order.opened al crearla, que hoy no escucha nadie).
+Entra: la mesa elegida y su cuenta, de Mesas; al retomarla, su cliente, de Clientes (CUSTOMERS-F17).
+Sale: la cuenta abierta con el título de la mesa; Mesas guarda qué cuenta tiene cada mesa (avisa: sales.order.opened al crearla, que hoy no escucha nadie). Al dejarla en la mesa, Clientes mantiene el vínculo y suelta al cliente de la pantalla (el mismo aviso que tras cobrar o aparcar).
 Si falla: «No se ha podido dejar la cuenta en su mesa. Sigue en pantalla.»; con líneas sin enviar a cocina no se cambia de mesa ni de cuenta («Productos sin enviar»).
-Implicados: TABLES-F10, TABLES-F11, TABLES-F12, TABLES-F21, REC_RESTAURANTE-F05, REC_RESTAURANTE-F08
+Implicados: CUSTOMERS-F17, TABLES-F10, TABLES-F11, TABLES-F12, TABLES-F21, REC_RESTAURANTE-F05, REC_RESTAURANTE-F08
 QA: R-03, R-06, qa-hub-restaurant §7.06
 
 ### SALES-F20 Enviar la comanda a cocina

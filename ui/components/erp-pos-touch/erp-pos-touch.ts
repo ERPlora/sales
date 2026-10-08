@@ -1824,6 +1824,9 @@ export class ErpPosTouch extends LitElement {
     this.orderId = linked;
     this.orderLabel = this.tableLabel;
     if (linked) rememberCurrentCheck(localStorage, linked); else forgetCurrentCheck(localStorage);
+    // sales#566 — leaving the check at its table dropped its customer: Customers gives her back
+    // (CUSTOMERS-F17), the same as resuming it from the open checks list.
+    if (linked) this.notifyOrderRestored();
     this.cart = linked ? await loadOrderLines(erplora(), linked) : [];
   };
 
@@ -2805,6 +2808,10 @@ export class ErpPosTouch extends LitElement {
     this.tableLabel = '';
     this.parkedOpen = false;
     this.appointmentId = undefined; // appointments#154 — see `park()`
+    // sales#566 — the customer goes with the check, as when parking; Customers gives her back
+    // when the table is resumed (customers#135).
+    this.dropCustomer();
+    this.notifyCustomerReset();
     this.notifyOrderDetached();
     erplora().notify?.({ type: 'success', message: t('ui.leftAtTable', { label: donde }) });
     this.parked = await listOpenChecks(erplora());
@@ -2861,6 +2868,9 @@ export class ErpPosTouch extends LitElement {
     this.orderLabel = '';
     this.cart = [];
     this.appointmentId = undefined; // appointments#154 — see `park()`
+    // sales#567 — the picker was told to empty itself, but this screen kept her: the next check
+    // was charged in her name.
+    this.dropCustomer();
     this.resetSlotContexts();
     return true;
   }

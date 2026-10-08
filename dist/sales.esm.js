@@ -8806,6 +8806,7 @@ var ErpPosTouch = class extends i3 {
       this.orderLabel = this.tableLabel;
       if (linked) rememberCurrentCheck(localStorage, linked);
       else forgetCurrentCheck(localStorage);
+      if (linked) this.notifyOrderRestored();
       this.cart = linked ? await loadOrderLines(erplora2(), linked) : [];
     };
     // Fusionar mesas (punto 3): el filler ya ejecutó tables.sessions.merge; aquí se combinan los
@@ -10678,6 +10679,8 @@ var ErpPosTouch = class extends i3 {
     this.tableLabel = "";
     this.parkedOpen = false;
     this.appointmentId = void 0;
+    this.dropCustomer();
+    this.notifyCustomerReset();
     this.notifyOrderDetached();
     erplora2().notify?.({ type: "success", message: t5("ui.leftAtTable", { label: donde }) });
     this.parked = await listOpenChecks(erplora2());
@@ -10731,6 +10734,7 @@ var ErpPosTouch = class extends i3 {
     this.orderLabel = "";
     this.cart = [];
     this.appointmentId = void 0;
+    this.dropCustomer();
     this.resetSlotContexts();
     return true;
   }
