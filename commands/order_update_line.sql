@@ -27,9 +27,9 @@ SET quantity    = :quantity,
     increment_value = COALESCE(:increment_value, increment_value),
     updated_by  = :current_user_id,
     updated_at  = :now
--- `fired_at IS NULL`: una línea YA ENVIADA a cocina no se edita desde el TPV (tandas,
--- 2026-07-19) — la comida está en fuego; corregirla = ronda nueva o invitación. ⚠️ A CONFIRMAR
--- EN REVIEW (recomendación aplicada).
+-- `fired_at IS NULL`: a line ALREADY SENT to the kitchen is not edited from the till (tandas,
+-- 2026-07-19) — the food is on the fire; correcting it means a new round or a comp, and taking
+-- it off means voiding it (`sales.order.void_line`, sales#521).
 --
 -- sales#546: `sale_id IS NULL` — a line a partial charge already paid is bound to its sale and
 -- does not change any more. The door queues on the check first (`sales._order_lock`, which also
