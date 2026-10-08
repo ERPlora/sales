@@ -129,24 +129,24 @@ Implicados: STAFF-F03, STAFF-F09, STAFF-F21, REC_PELUQUERIA-F09, REC_PELUQUERIA-
 QA: B-04, B-07, R-10
 
 ### SALES-F17 Aparcar una cuenta y recuperarla
-Estado: parcial — «Permitir tiques aparcados» apagado solo quita el botón de la cabecera: desde «Cuentas abiertas» se sigue aparcando; una cuenta de mesa aparcada no vuelve a su mesa: queda «Aparcada» en Mesas para siempre, también tras cobrarla (TABLES-F13); al aparcar una cuenta con clienta, la clienta se queda en pantalla y la cuenta siguiente sale a su nombre (sales#557)
+Estado: parcial — «Permitir tiques aparcados» apagado solo quita el botón de la cabecera: desde «Cuentas abiertas» se sigue aparcando; una cuenta de mesa aparcada no vuelve a su mesa: queda «Aparcada» en Mesas para siempre, también tras cobrarla (TABLES-F13)
 Vertical: comun
 Actor: empleado, responsable
 Pantalla: Cuentas abiertas
 Pasos:
 1. Con una cuenta a medias y sin mesa, pulsa el botón de pausa («Aparcar esta cuenta») o, en **Cuentas abiertas**, «Aparcar esta cuenta».
-2. En «Aparcar cuenta» el título viene con la hora; cámbialo si quieres («p. ej. Ana — terraza») y confirma: sale «Aparcada como «…»» y la pantalla queda vacía.
+2. En «Aparcar cuenta» el título viene con la hora; cámbialo si quieres («p. ej. Ana — terraza») y confirma: sale «Aparcada como «…»» y la pantalla queda vacía, también de cliente: el botón de Clientes vuelve a «Asignar cliente» y la cuenta siguiente no lleva a la clienta de la aparcada ni le ofrece su bono.
 3. Para retomarla, abre **Cuentas abiertas** (icono de tique con el número de cuentas) y toca su fila.
 4. Si delante hay otra cuenta sin mesa, pregunta «Tienes una cuenta a medias»: «Aparcarla y abrir», «Eliminarla y abrir» o «Cancelar». Si tiene mesa, se queda en su mesa (SALES-F19).
 5. Al recargar la pantalla, cada dispositivo vuelve a la cuenta que tenía abierta. Al recargar y al recuperar una cuenta, Clientes le devuelve su clienta (CUSTOMERS-F17) y una línea pagada con bono vuelve cubierta; si nadie cobra la cuenta en un día, la sesión retenida vuelve sola al bono (SERVICES-F22, SERVICES-F25).
 Entra: al retomar la cuenta, su clienta, de Clientes (CUSTOMERS-F17).
-Sale: la cuenta sigue abierta con su título; aparcar nunca la anula. Con un cliente asignado, Clientes mantiene el vínculo.
+Sale: la cuenta sigue abierta con su título; aparcar nunca la anula. Con un cliente asignado, Clientes mantiene el vínculo y suelta al cliente de la pantalla (el mismo aviso que tras cobrar, CUSTOMERS-F17).
 Si falla: si el hub rechaza el título, el diálogo sigue abierto con el motivo y «No se ha podido aparcar la cuenta. Sigue en pantalla.». Con líneas sin enviar a cocina no se cambia de cuenta: «Hay productos en la comanda actual sin enviar (N). Envíalos o elimínalos antes de cambiar de cuenta.».
 Implicados: CUSTOMERS-F17, CUSTOMERS-F19, SERVICES-F22, SERVICES-F25, TABLES-F11, TABLES-F13, REC_PELUQUERIA-F10, HUB_SHELL-F08
 QA: qa-hub-restaurant §7.06
 
 ### SALES-F18 Eliminar una cuenta abierta
-Estado: parcial — no pide motivo; Mesas no recibe ningún aviso del servidor; anular una cuenta que ya no está abierta contesta bien y avisa igual
+Estado: parcial — no pide motivo; Mesas no recibe ningún aviso del servidor; anular una cuenta que ya no está abierta contesta bien y avisa igual; si la cuenta llevaba cliente, el botón de Clientes se vacía pero la cuenta siguiente se cobra a su nombre (sales#567)
 Vertical: comun
 Actor: responsable, empleado
 Pantalla: Cuentas abiertas
