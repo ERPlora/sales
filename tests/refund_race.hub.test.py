@@ -323,6 +323,90 @@ def test_two_voids_at_once(hub: Hub, card: str) -> None:
         hub.check(f"round {r}: sale status", status(hub, sale_id), "voided")
 
 
+def charge_three(hub: Hub, card: str, tag: str) -> tuple:
+    """A 45,00 € ticket: a line of three shampoos (30,00 €) and a coffee (15,00 €), so returning
+    every shampoo does not close the sale. Answers (sale id, shampoo line id)."""
+    out = hub.run(
+        "sales.complete_sale",
+        {
+            "idempotency_key": key(tag),
+            "payment_method_id": card,
+            "tax_included": True,
+            "items": [
+                {
+                    "product_name": "Champú",
+                    "price": 1000,
+                    "quantity": 3 * ONE,
+                    "tax_rate": 21.0,
+                },
+                {
+                    "product_name": "Café",
+                    "price": CHARGED,
+                    "quantity": ONE,
+                    "tax_rate": 21.0,
+                },
+            ],
+        },
+    )
+    sale_id = out["new_ids"][0]
+    shampoo = [l for l in hub.query("sales.lines", {"sale_id": sale_id}) if l["product_name"] == "Champú"]
+    if len(shampoo) != 1:
+        raise AssertionError(f"one line of three shampoos: {shampoo}")
+    return sale_id, shampoo[0]["id"]
+
+
+def units_call(
+    sale_id: str, payment_id: str, line_id: str, units: int, tag: str, amount: int | None = None
+) -> tuple:
+    return (
+        "sales.refund",
+        {
+            "sale_id": sale_id,
+            "reason": "units",
+            "idempotency_key": key(tag),
+            "allocations": [{"payment_id": payment_id, "amount": amount or 1000 * units}],
+            "lines": [{"line_id": line_id, "quantity": units * ONE}],
+        },
+    )
+
+
+def units_back(hub: Hub, sale_id: str) -> int:
+    return sum(
+        int(r["quantity"]) for r in hub.query("sales.refund_lines", {"sale_id": sale_id})
+    )
+
+
+def test_units_of_a_line(hub: Hub, card: str) -> None:
+    # sales#571: the payload door (`lines[].quantity`, schema `additionalProperties: false`), the
+    # handler's «what is left» and `_insert_refund_line`'s cap, through the real dispatcher.
+    print("\n7 · one shampoo of three goes back, then two refunds of two at once (sales#571)")
+    for r in range(ROUNDS):
+        sale_id, line_id = charge_three(hub, card, f"units-{r}")
+        leg = leg_of(hub, sale_id)
+        one = fire_together(hub, [units_call(sale_id, leg, line_id, 1, f"units-{r}-one")])
+        hub.check(f"round {r}: one of three goes back", one, ["ok"])
+        hub.check(f"round {r}: ...one unit recorded", units_back(hub, sale_id), ONE)
+        over = fire_together(hub, [units_call(sale_id, leg, line_id, 3, f"units-{r}-over")])
+        hub.check(
+            f"round {r}: three more when two are left", over, ["sales.refund_line_quantity_exceeded"]
+        )
+        # Little money each, so neither the tender cap nor the sale closing decides: only the units.
+        out = fire_together(
+            hub,
+            [units_call(sale_id, leg, line_id, 2, f"units-{r}-race-{i}", 100) for i in range(2)],
+        )
+        # The loser read «two left» before the winner committed: the cap inside the transaction
+        # refuses it, nothing of it is written.
+        hub.check(
+            f"round {r}: two of two at once",
+            sorted(out),
+            sorted(["ok", "sales.refund_line_already_returned"]),
+        )
+        hub.check(f"round {r}: the line is back whole, not more", units_back(hub, sale_id), 3 * ONE)
+        hub.check(f"round {r}: money back, the loser's included in nothing", refunded(hub, sale_id), 1100)
+        hub.check(f"round {r}: the coffee is still to refund", status(hub, sale_id), "completed")
+
+
 def main() -> int:
     hub = Hub("refund_race.hub")
     print(
@@ -335,6 +419,7 @@ def main() -> int:
     test_void_and_partial_refund_at_once(hub, card)
     test_void_and_full_refund_at_once(hub, card)
     test_two_voids_at_once(hub, card)
+    test_units_of_a_line(hub, card)
     return hub.finish(
         "refunds and voids of the same ticket fired at once never hand back more than was "
         "charged, and the one that loses is refused by name"
