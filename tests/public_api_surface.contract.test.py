@@ -66,6 +66,9 @@ EXPOSED_QUERIES = {
     "sales.refund_options",
     "sales.refunds",
     "sales.refund_by_idempotency_key",
+    # services#158: which lines of a sale already went back (read-only, `sales.view_sale`, like
+    # `sales.refunds`): the refund screen greys them out.
+    "sales.refund_lines",
 }
 
 failures: list[str] = []
