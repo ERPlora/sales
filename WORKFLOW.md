@@ -273,7 +273,7 @@ flujos de su fila en la misma entrega.
 | Devolución total o parcial por el medio original o por otro | hecho | F31 |
 | Devolución que ajusta la caja y el historial del cliente | parcial: caja solo con caja abierta; el cliente no se ajusta | F31 |
 | Devolución por artículos con vuelta de stock | parcial: se marcan las líneas que vuelven, se elige cuántas unidades de cada una, y el importe se propone solo, prorrateado (Servicios anula un bono por unidad devuelta); una línea por peso vuelve entera de lo que queda (sales#574) y el stock no vuelve (inventory#158, INVENTORY-F24) | F31 |
-| Devolución → rectificativa | hecho (en Facturación, INVOICE-F09 e INVOICE-F10; VeriFactu la registra, VERIFACTU-F14); parcial si la venta aún no tenía factura | F31 |
+| Devolución → rectificativa | hecho (en Facturación, INVOICE-F09 e INVOICE-F10; VeriFactu la registra, VERIFACTU-F14); parcial si la venta aún no tenía factura, y una devolución por artículos reparte su IVA sobre toda la venta (invoice#164) | F31 |
 | Devolver la sesión del bono | parcial (sales#512; imposible tras devolver todo el dinero) | F32 |
 | Reabrir una cuenta cobrada | no hecho, a propósito: se devuelve o se anula | — |
 | Abrir el cajón al cobrar | hecho fuera de este módulo: el hub lo abre en el dispositivo que cobró si Impresión lo tiene activado, con cualquier forma de pago (PRINTING-F13) | F01, F02 |
