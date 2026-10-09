@@ -155,7 +155,8 @@
       "migrations/postgres/038_order_discount_approval.sql",
       "migrations/postgres/039_order_line_discount_approval.sql",
       "migrations/postgres/040_order_line_void.sql",
-      "migrations/postgres/041_sale_refund_line.sql"
+      "migrations/postgres/041_sale_refund_line.sql",
+      "migrations/postgres/042_sale_refund_line_units.sql"
     ]
   },
   "seed": {
@@ -731,7 +732,7 @@
         "sale.refunded"
       ],
       "ai": {
-        "description": "Refunds a COMPLETED sale by ELIGIBLE TENDER with an EDITABLE split (ADR-0386): the operator decides how much goes back to each leg of the original payment. A leg can never give back more than it was charged minus what it already returned, and going over is refused naming WHICH leg (sales.refund_exceeds_tender). A leg whose payment method is no longer available is marked not eligible with its reason instead of failing at confirm — the money still comes out through another destination the operator names. Unlike sales.void, an invoiced sale CAN be refunded: the credit note is issued by invoice. Idempotent by idempotency_key: the same key answers with the same refund document instead of paying twice. The operator can also name the LINES that go back (`lines`): each must be a line of this sale and not returned yet (sales.refund_line_unknown, sales.refund_line_duplicated, sales.refund_line_already_returned); they are recorded and announced on sale.refunded so the modules that sold something on that line undo it (services voids a voucher sold on it)."
+        "description": "Refunds a COMPLETED sale by ELIGIBLE TENDER with an EDITABLE split (ADR-0386): the operator decides how much goes back to each leg of the original payment. A leg can never give back more than it was charged minus what it already returned, and going over is refused naming WHICH leg (sales.refund_exceeds_tender). A leg whose payment method is no longer available is marked not eligible with its reason instead of failing at confirm — the money still comes out through another destination the operator names. Unlike sales.void, an invoiced sale CAN be refunded: the credit note is issued by invoice. Idempotent by idempotency_key: the same key answers with the same refund document instead of paying twice. The operator can also name the LINES that go back (`lines`): each must be a line of this sale and not returned yet (sales.refund_line_unknown, sales.refund_line_duplicated, sales.refund_line_already_returned), and may say how many of its units go back (`quantity`, in millionths; omitted = all that is left; more than is left is sales.refund_line_quantity_exceeded); they are recorded and announced on sale.refunded so the modules that sold something on that line undo it (services voids a voucher sold on it)."
       }
     },
     "sales._void_lock": {
@@ -1438,7 +1439,7 @@
         "op": "min",
         "n": 1,
         "error": "sales.refund_line_already_returned",
-        "message": "That line already went back with another refund of this sale."
+        "message": "That line, or those units of it, already went back with another refund of this sale."
       }
     },
     "sales._mark_refunded": {
@@ -1531,7 +1532,8 @@
     "sales.order_changed": {},
     "sales.refund_line_unknown": {},
     "sales.refund_line_duplicated": {},
-    "sales.refund_line_already_returned": {}
+    "sales.refund_line_already_returned": {},
+    "sales.refund_line_quantity_exceeded": {}
   },
   "events": {
     "listen": {

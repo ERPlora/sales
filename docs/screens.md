@@ -31,7 +31,12 @@ When the last cent goes back, the sale's status becomes **Devuelta**.
 **What goes back** lists the sale's lines with a checkbox each (services#158). Marking the lines the
 customer returns proposes their amount — the sum of the marked lines, capped at what is still
 refundable, split across the tenders like the full proposal — and the refund names those lines. A
-line already returned by an earlier refund shows **Already returned** and cannot be marked again.
+marked line with two or more whole units left shows **Units that go back**, a stepper from 1 to what
+is left (sales#571): one shampoo of three goes back as one unit and proposes a third of the line, its
+supplements go back in the same proportion, and the refunds of a line always add up to its exact
+price. A line partly returned shows **<n> of <m> already returned** and offers the rest; a line whose
+units all went back, in one refund or several, shows **Already returned** and cannot be marked. A
+line sold by weight goes back whole from what is left (sales#574).
 With nothing marked only money goes back, as before. The returned lines travel on `sale.refunded`
 (`lines`), so a module that sold something on a line undoes it: **Services voids the voucher sold on
 that line**. Stock does not come back yet: Inventory does not listen to the lines.

@@ -21,6 +21,7 @@ transaction, the declared `expect_rows` judged on the rows of the statement it a
   5. Each guard of the statement holds on its own (a missing head, another sale's head, a
      neighbour's forged head).
   6. A soft-deleted returned line is neither listed nor blocks the line from going back.
+  7. sales#571: a line of three goes back one unit, then two, and never more than it had (nor zero).
 
 Usage: tests/refund_lines.postgres.test.py
   `erplora-test-pg-5433` by default (override: SALES_TEST_PG_CONTAINER). Creates a scratch
@@ -159,7 +160,7 @@ def refund_calls(
             },
         ),
     ]
-    for idx, (line_id, product) in enumerate(lines):
+    for idx, (line_id, product, *units) in enumerate(lines):
         calls.append(
             (
                 "sales._insert_refund_line",
@@ -169,7 +170,8 @@ def refund_calls(
                     "sale_id": sale_id,
                     "sale_item_id": line_id,
                     "product_id": product,
-                    "quantity": 1_000_000,
+                    # sales#571: how many units of the line go back (10^6); one unless named.
+                    "quantity": units[0] if units else 1_000_000,
                 },
             )
         )
@@ -456,6 +458,113 @@ def step_6_a_deleted_returned_line_does_not_count(s: Session) -> None:
     s.check("...which is now returned", returned(s, "sale-6"), ["sale-6-voucher"])
 
 
+UNIT = 1_000_000
+SHAMPOO = 1000  # 10,00 € each
+
+
+def seed_units_sale(s: Session, sale_id: str, units: int) -> None:
+    """A ticket charged by card with ONE line of `units` identical shampoos."""
+    total = units * SHAMPOO
+    s.command_ok(
+        f"the card method ({sale_id})",
+        "sales.create_payment_method",
+        {"new_id": f"{method(HUB)}-{sale_id}", "name": "Card", "type": "card", "sort_order": 0},
+    )
+    s.command_ok(
+        f"the day counter ({sale_id})",
+        "sales._bump_counter",
+        {"day": DAY, "new_id": f"cnt-{HUB}-{sale_id}"},
+    )
+    s.command_ok(
+        f"sale {sale_id} charged",
+        "sales._insert_sale",
+        sale_header_params(
+            sale_id=sale_id,
+            day=DAY,
+            subtotal=total,
+            total=total,
+            amount_tendered=total,
+            payment_method_id=f"{method(HUB)}-{sale_id}",
+            payment_method_name="Card",
+            idempotency_key=f"idem-{HUB}-{sale_id}",
+        ),
+    )
+    s.command_ok(
+        f"its line of {units} shampoos",
+        "sales._insert_line",
+        sale_line_params(
+            line_id=f"{sale_id}-shampoo",
+            sale_id=sale_id,
+            product_id="p-shampoo",
+            product_name="Shampoo",
+            quantity=units * UNIT,
+            unit_price=SHAMPOO,
+            net_amount=total,
+            line_total=total,
+        ),
+    )
+    s.command_ok(
+        f"its leg ({sale_id})",
+        "sales._insert_payment",
+        {
+            "payment_id": f"pay-{sale_id}",
+            "sale_id": sale_id,
+            "sort_order": 0,
+            "payment_method_id": f"{method(HUB)}-{sale_id}",
+            "payment_method_name": "Card",
+            "payment_method_type": "card",
+            "amount": total,
+            "amount_tendered": total,
+            "change_due": 0,
+            "reference": "",
+        },
+    )
+
+
+def returned_units(s: Session, sale_id: str) -> int:
+    return sum(
+        int(r.get("quantity") or 0)
+        for r in s.query("sales.refund_lines", {"sale_id": sale_id})
+    )
+
+
+def step_7_a_line_goes_back_unit_by_unit(s: Session) -> None:
+    print("\n7 · one shampoo of three goes back, then the other two, and no more (sales#571)")
+    seed_units_sale(s, "sale-7", 3)
+    line = ("sale-7-shampoo", "p-shampoo")
+    s.check(
+        "one shampoo of the line goes back",
+        play(s, refund_calls("r7-1", "sale-7", SHAMPOO, [(*line, UNIT)], HUB)),
+        "ok",
+    )
+    s.check("...sales.refund_lines says one unit", returned_units(s, "sale-7"), UNIT)
+    s.check(
+        "three when only two are left are refused",
+        play(s, refund_calls("r7-x", "sale-7", SHAMPOO, [(*line, 3 * UNIT)], HUB)),
+        "sales.refund_line_already_returned",
+    )
+    s.check("...and nothing more went back", returned_units(s, "sale-7"), UNIT)
+    s.check(
+        # Money and lines are separate axes: 10,00 € back with two units leaves money on the sale,
+        # so it stays completed and the next refusal is the LINE's, not the head's.
+        "the two left go back with a second refund",
+        play(s, refund_calls("r7-2", "sale-7", SHAMPOO, [(*line, 2 * UNIT)], HUB)),
+        "ok",
+    )
+    s.check("...the line is back whole, over two refunds", returned_units(s, "sale-7"), 3 * UNIT)
+    s.check(
+        "...and not one unit more",
+        play(s, refund_calls("r7-3", "sale-7", SHAMPOO, [(*line, UNIT)], HUB)),
+        "sales.refund_line_already_returned",
+    )
+    s.check(
+        "zero units are refused too (they would void a voucher in services: it counts at least one)",
+        play(s, refund_calls("r7-0", "sale-7", SHAMPOO, [(*line, 0)], HUB)),
+        "sales.refund_line_already_returned",
+    )
+    s.check("...still three", returned_units(s, "sale-7"), 3 * UNIT)
+
+
 def main() -> int:
     print(
         f"→ services#158 · a refund records the lines that go back, once ({pg_harness.CONTAINER})"
@@ -473,6 +582,7 @@ def main() -> int:
         step_4_tenancy(s)
         step_5_each_guard_on_its_own(s)
         step_6_a_deleted_returned_line_does_not_count(s)
+        step_7_a_line_goes_back_unit_by_unit(s)
     finally:
         s.drop()
     return s.report(

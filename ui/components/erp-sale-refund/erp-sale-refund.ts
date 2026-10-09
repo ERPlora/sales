@@ -20,6 +20,7 @@ import { LitElement, html, css, nothing } from 'lit';
 import { property, state } from 'lit/decorators.js';
 import { define } from '@erplora/outfitkit/define';
 import '@erplora/outfitkit/ok-inline-feedback';
+import '@erplora/outfitkit/ok-qty-stepper';
 import {
   proportionalSplit,
   refundableTotal,
@@ -33,7 +34,10 @@ import {
   type RefundDraft,
 } from '../../lib/refund-allocation.js';
 import { coveredLines, serviceOrdinals, type SaleLine } from '../../lib/refund-tender.js';
-import { pickedAmount, pickedLineIds, returnableLines, type ReturnLine } from '../../lib/refund-lines.js';
+import {
+  UNIT, pickedAmount, pickedLines, returnableLines, returnedUnits, unitsLeft, wholeUnitsLeft,
+  type ReturnLine, type ReturnedRow,
+} from '../../lib/refund-lines.js';
 import { payMethodDisplayName } from '../../lib/pay-icons.js';
 import { hubDecimals } from '../../lib/hub-currency.js';
 import { errorCode } from '../../lib/checkout-key.js';
@@ -65,6 +69,7 @@ const REFUND_MESSAGES: Record<string, string> = {
   'sales.refund_line_already_returned': 'ui.refundLineAlreadyReturnedError',
   'sales.refund_line_unknown': 'ui.refundLineUnknown',
   'sales.refund_line_duplicated': 'ui.refundLineDuplicated',
+  'sales.refund_line_quantity_exceeded': 'ui.refundLineQuantityExceeded',
 };
 
 /**
@@ -169,8 +174,12 @@ export class ErpSaleRefund extends LitElement {
        name may wrap (a long service name on a phone), the price never does. */
     .rl-block { display:flex; flex-direction:column; gap:.4rem; }
     .rl-list { list-style:none; margin:.2rem 0 0; padding:0; display:flex; flex-direction:column; gap:.35rem; }
-    .rl-line { display:flex; align-items:center; justify-content:space-between; gap:.75rem;
+    .rl-line { display:flex; flex-direction:column; gap:.35rem;
       border:1px solid var(--ion-border-color,#e0ddd4); border-radius:var(--ok-radius,12px); padding:.45rem .7rem; }
+    .rl-main { display:flex; align-items:center; justify-content:space-between; gap:.75rem; }
+    /* sales#571 - how many units of a marked line go back: its own row, so a phone never squeezes it. */
+    .rl-units { display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap; }
+    .rl-units ok-qty-stepper { --ok-qty-field-width:2.3rem; }
     .rl-line ion-checkbox { flex:1 1 auto; min-width:0; --size:22px; }
     .rl-line ion-checkbox::part(label) { white-space:normal; overflow-wrap:anywhere; }
     .rl-figure { flex:0 0 auto; white-space:nowrap; font-variant-numeric:tabular-nums; }
@@ -266,10 +275,10 @@ export class ErpSaleRefund extends LitElement {
   @state() private saleLines: Array<SaleLine & ReturnLine> = [];
   /** services#158 - `sales.lines` could not be read: «Qué se devuelve» is not painted. */
   private saleLinesFailed = false;
-  /** services#158 - the lines an earlier refund already took back (`sales.refund_lines`). */
-  @state() private returnedLines = new Set<string>();
-  /** services#158 - the lines the operator marked as going back. */
-  @state() private picked = new Set<string>();
+  /** services#158 / sales#571 - the units of each line earlier refunds took back (`sales.refund_lines`). */
+  @state() private returnedLines: ReadonlyMap<string, number> = new Map();
+  /** services#158 / sales#571 - the lines the operator marked as going back, with their units (10^6). */
+  @state() private picked: ReadonlyMap<string, number> = new Map();
 
   /** La clave del intento, congelada: un reintento NO la renueva. */
   private key = '';
@@ -469,8 +478,8 @@ export class ErpSaleRefund extends LitElement {
   private async loadSaleLines(saleId: string): Promise<void> {
     this.saleLines = [];
     this.saleLinesFailed = false;
-    this.returnedLines = new Set();
-    this.picked = new Set();
+    this.returnedLines = new Map();
+    this.picked = new Map();
     try {
       this.saleLines = (await erplora().query<Array<SaleLine & ReturnLine>>('sales.lines', { sale_id: saleId })) ?? [];
     } catch {
@@ -480,10 +489,10 @@ export class ErpSaleRefund extends LitElement {
     // No line to mark, nothing to grey out: the read would be a call no pixel uses.
     if (!returnableLines(this.saleLines).length) return;
     try {
-      const rows = (await erplora().query<Array<{ sale_item_id?: string }>>('sales.refund_lines', { sale_id: saleId })) ?? [];
-      this.returnedLines = new Set(rows.map((r) => String(r.sale_item_id ?? '')).filter(Boolean));
+      const rows = (await erplora().query<ReturnedRow[]>('sales.refund_lines', { sale_id: saleId })) ?? [];
+      this.returnedLines = returnedUnits(rows);
     } catch {
-      this.returnedLines = new Set();
+      this.returnedLines = new Map();
     }
   }
 
@@ -491,12 +500,31 @@ export class ErpSaleRefund extends LitElement {
    *  what they cost, capped at what is left and split by tender; with none marked, the whole refund
    *  again. As before, it is a proposal - each amount can still be changed. */
   private toggleLine(lineId: string, on: boolean): void {
-    if (this.returnedLines.has(lineId)) return;
-    const next = new Set(this.picked);
-    if (on) next.add(lineId); else next.delete(lineId);
+    const line = returnableLines(this.saleLines).find((l) => l.id === lineId);
+    const left = line ? unitsLeft(line, this.returnedLines) : 0;
+    if (left <= 0) return;
+    const next = new Map(this.picked);
+    // sales#571: marking a line proposes everything still left of it; the stepper narrows it.
+    if (on) next.set(lineId, left); else next.delete(lineId);
+    this.setPicked(next);
+  }
+
+  /** sales#571 - the stepper of a marked line: how many whole units of it go back, 1…what is left. */
+  private setLineUnits(lineId: string, units: number): void {
+    const line = returnableLines(this.saleLines).find((l) => l.id === lineId);
+    if (!line || !this.picked.has(lineId)) return;
+    const most = wholeUnitsLeft(line, this.returnedLines);
+    if (most < 1) return;
+    const n = Math.min(Math.max(1, Math.round(Number(units) || 0)), most);
+    const next = new Map(this.picked);
+    next.set(lineId, n * UNIT);
+    this.setPicked(next);
+  }
+
+  private setPicked(next: ReadonlyMap<string, number>): void {
     this.picked = next;
     // `proportionalSplit` caps the amount at what is left, so marking more than that proposes it all.
-    const amount = next.size ? pickedAmount(this.saleLines, next) : refundableTotal(this.legs);
+    const amount = next.size ? pickedAmount(this.saleLines, next, this.returnedLines) : refundableTotal(this.legs);
     const split = proportionalSplit(amount, this.legs);
     this.draft = Object.fromEntries(
       Object.entries(split).map(([id, cents]) => [id, { ...this.draft[id], amount: cents }]),
@@ -639,10 +667,11 @@ export class ErpSaleRefund extends LitElement {
     }
   }
 
-  /** services#158 - `lines` for `sales.refund`: each marked line and the supplements under it. */
-  private pickedPayload(): { lines?: Array<{ line_id: string }> } {
-    const ids = pickedLineIds(this.saleLines, this.picked);
-    return ids.length ? { lines: ids.map((line_id) => ({ line_id })) } : {};
+  /** services#158 / sales#571 - `lines` for `sales.refund`: each marked line with its units, and
+   *  the supplements under it in the same proportion. */
+  private pickedPayload(): { lines?: Array<{ line_id: string; quantity: number }> } {
+    const lines = pickedLines(this.saleLines, this.picked, this.returnedLines);
+    return lines.length ? { lines } : {};
   }
 
   /**
@@ -918,19 +947,45 @@ export class ErpSaleRefund extends LitElement {
       <p class="hint">${t('ui.refundLinesHint')}</p>
       <ul class="rl-list">
         ${lines.map((l) => {
-          const done = this.returnedLines.has(l.id);
+          const left = unitsLeft(l, this.returnedLines);
+          const done = left <= 0;
+          const back = this.returnedLines.get(l.id) ?? 0;
+          const whole = wholeUnitsLeft(l, this.returnedLines);
+          const units = this.picked.get(l.id);
+          // sales#571: «N of M already returned» while part of the line is still left.
+          const partly = !done && back > 0 && Number.isFinite(back) && back % UNIT === 0 && left % UNIT === 0;
           return html`<li class="rl-line" data-testid=${`refund-line-${l.id}`}>
-            <ion-checkbox
-              data-testid=${`refund-line-check-${l.id}`}
-              label-placement="end"
-              justify="start"
-              .checked=${this.picked.has(l.id)}
-              ?disabled=${done}
-              @ionChange=${(e: CustomEvent<{ checked?: boolean }>) => this.toggleLine(l.id, e.detail?.checked === true)}
-            >${l.product_name ?? ''}</ion-checkbox>
-            <span class="rl-figure">${done
-              ? html`<span class="rl-done">${t('ui.refundLineAlreadyReturned')}</span>`
-              : erplora().formatMoney(Math.round(Number(l.line_total ?? 0)) || 0)}</span>
+            <div class="rl-main">
+              <ion-checkbox
+                data-testid=${`refund-line-check-${l.id}`}
+                label-placement="end"
+                justify="start"
+                .checked=${units !== undefined}
+                ?disabled=${done}
+                @ionChange=${(e: CustomEvent<{ checked?: boolean }>) => this.toggleLine(l.id, e.detail?.checked === true)}
+              >${l.product_name ?? ''}</ion-checkbox>
+              <span class="rl-figure">${done
+                ? html`<span class="rl-done">${t('ui.refundLineAlreadyReturned')}</span>`
+                : erplora().formatMoney(Math.round(Number(l.line_total ?? 0)) || 0)}</span>
+            </div>
+            ${partly
+              ? html`<span class="rl-done" data-testid=${`refund-line-partly-${l.id}`}>${erplora().t(CATALOG, 'ui.refundLinePartlyReturned', {
+                  returned: back / UNIT, total: (back + left) / UNIT,
+                })}</span>`
+              : nothing}
+            ${units !== undefined && whole >= 2
+              ? html`<div class="rl-units">
+                  <span>${t('ui.refundLineUnits')}</span>
+                  <ok-qty-stepper
+                    data-testid=${`refund-line-qty-${l.id}`}
+                    .value=${Math.round(units / UNIT)}
+                    .min=${1}
+                    .max=${whole}
+                    .step=${1}
+                    @ok-change=${(e: CustomEvent<{ value: number }>) => this.setLineUnits(l.id, e.detail?.value)}
+                  ></ok-qty-stepper>
+                </div>`
+              : nothing}
           </li>`;
         })}
       </ul>

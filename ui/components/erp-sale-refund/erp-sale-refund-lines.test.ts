@@ -131,13 +131,15 @@ describe('«Qué se devuelve»: the lines of the ticket, marked by the operator 
     expect(el.draft['pay-card']?.amount).toBe(3000);
   });
 
-  it('the refund carries the marked line', async () => {
+  // sales#571 changed this contract: the line now always travels with HOW MANY of its units go
+  // back (10^6; a one-unit line → 1000000), so the server never has to guess «all that is left».
+  it('the refund carries the marked line and its units', async () => {
     const el = await mount();
     await mark(el, 'li-voucher');
     el.reason = 'Devuelve el bono';
     await el.confirm();
     const call = sent.find((c) => c.name === 'sales.refund');
-    expect(call?.payload.lines).toEqual([{ line_id: 'li-voucher' }]);
+    expect(call?.payload.lines).toEqual([{ line_id: 'li-voucher', quantity: 1_000_000 }]);
   });
 
   it('with nothing marked only money goes back: no `lines` in the payload', async () => {
@@ -188,8 +190,94 @@ describe('«Qué se devuelve»: the lines of the ticket, marked by the operator 
   });
 });
 
+// sales#571 — three shampoos on one line, the customer brings one back. Until now the marked line
+// went back whole (30,00 € and the three units) and could never be marked again; as in Square,
+// Shopify or Lightspeed, the operator now says how many units go back.
+const SHAMPOO = { id: 'li-shampoo', product_id: 'p-shampoo', product_name: 'Champú', line_total: 3000, quantity: 3_000_000, is_covered: 0 };
+const SHAMPOO_SALE = { lines: [LINES[0], SHAMPOO], legs: [{ ...CARD, charged: 5000, remaining: 5000 }] };
+
+type Stepper = HTMLElement & { value?: number; min?: number; max?: number };
+const stepper = (el: Refund, id: string): Stepper | null =>
+  el.shadowRoot!.querySelector(`[data-testid="refund-line-qty-${id}"]`);
+
+async function step(el: Refund, id: string, value: number): Promise<void> {
+  stepper(el, id)!.dispatchEvent(new CustomEvent('ok-change', { detail: { value }, bubbles: true, composed: true }));
+  await el.updateComplete;
+}
+
+describe('«Qué se devuelve»: how many units of a line go back (sales#571)', () => {
+  it('a marked line of three offers a stepper from 1 to 3, starting at all three', async () => {
+    const el = await mount(SHAMPOO_SALE);
+    expect(stepper(el, 'li-shampoo'), 'no stepper before marking').toBeNull();
+    await mark(el, 'li-shampoo');
+    const s = stepper(el, 'li-shampoo')!;
+    expect(s).toBeTruthy();
+    expect([s.value, s.min, s.max]).toEqual([3, 1, 3]);
+    expect(total(el)).toBe('30,00 €');
+  });
+
+  it('one shampoo of three proposes a third of the line and sends ONE unit', async () => {
+    const el = await mount(SHAMPOO_SALE);
+    await mark(el, 'li-shampoo');
+    await step(el, 'li-shampoo', 1);
+    expect(el.draft['pay-card']?.amount).toBe(1000);
+    expect(total(el)).toBe('10,00 €');
+    el.reason = 'Devuelve un champú';
+    await el.confirm();
+    expect(sent.find((c) => c.name === 'sales.refund')?.payload.lines).toEqual([{ line_id: 'li-shampoo', quantity: 1_000_000 }]);
+  });
+
+  it('the stepper never goes outside 1…what is left', async () => {
+    const el = await mount(SHAMPOO_SALE);
+    await mark(el, 'li-shampoo');
+    await step(el, 'li-shampoo', 7);
+    expect(total(el)).toBe('30,00 €');
+    await step(el, 'li-shampoo', 0);
+    expect(total(el)).toBe('10,00 €');
+  });
+
+  it('a one-unit line has no stepper', async () => {
+    const el = await mount(SHAMPOO_SALE);
+    await mark(el, 'li-cut');
+    expect(stepper(el, 'li-cut')).toBeNull();
+  });
+
+  it('a line partly returned says how many already went back and offers the rest', async () => {
+    const el = await mount({ ...SHAMPOO_SALE, returned: [{ sale_item_id: 'li-shampoo', refund_id: 'ref-0', quantity: 1_000_000 }] });
+    const row = el.shadowRoot!.querySelector('[data-testid="refund-line-li-shampoo"]')!;
+    expect(row.textContent).toContain('ui.refundLinePartlyReturned');
+    expect(row.textContent).not.toContain('ui.refundLineAlreadyReturned');
+    expect(box(el, 'li-shampoo')!.hasAttribute('disabled')).toBe(false);
+    await mark(el, 'li-shampoo');
+    expect(stepper(el, 'li-shampoo')?.max).toBe(2);
+    expect(total(el)).toBe('20,00 €');
+  });
+
+  it('a line whose units all went back over several refunds is «Ya devuelta»', async () => {
+    const el = await mount({
+      ...SHAMPOO_SALE,
+      returned: [
+        { sale_item_id: 'li-shampoo', refund_id: 'ref-0', quantity: 1_000_000 },
+        { sale_item_id: 'li-shampoo', refund_id: 'ref-1', quantity: 2_000_000 },
+      ],
+    });
+    const row = el.shadowRoot!.querySelector('[data-testid="refund-line-li-shampoo"]')!;
+    expect(row.textContent).toContain('ui.refundLineAlreadyReturned');
+    expect(box(el, 'li-shampoo')!.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('more units than are left, refused by the server, is told by its CODE', async () => {
+    const el = await mount({ ...SHAMPOO_SALE, refuseWith: 'sales.refund_line_quantity_exceeded' });
+    await mark(el, 'li-shampoo');
+    el.reason = 'x';
+    await el.confirm();
+    expect(notices).toContainEqual(expect.objectContaining({ type: 'error', message: 'ui.refundLineQuantityExceeded' }));
+  });
+});
+
 describe('the codes of the lines, and their words in en + es', () => {
   it('each code has its own sentence', () => {
+    expect(refundErrorKey('sales.refund_line_quantity_exceeded')).toBe('ui.refundLineQuantityExceeded');
     expect(refundErrorKey('sales.refund_line_already_returned')).toBe('ui.refundLineAlreadyReturnedError');
     expect(refundErrorKey('sales.refund_line_unknown')).toBe('ui.refundLineUnknown');
     expect(refundErrorKey('sales.refund_line_duplicated')).toBe('ui.refundLineDuplicated');
@@ -199,6 +287,7 @@ describe('the codes of the lines, and their words in en + es', () => {
     const keys = [
       'refundLinesTitle', 'refundLinesHint', 'refundLineAlreadyReturned',
       'refundLineAlreadyReturnedError', 'refundLineUnknown', 'refundLineDuplicated',
+      'refundLinePartlyReturned', 'refundLineQuantityExceeded', 'refundLineUnits',
     ];
     for (const k of keys) {
       expect((enCatalog.ui as Record<string, string>)[k], `en.${k}`).toBeTruthy();
